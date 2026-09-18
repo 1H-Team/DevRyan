@@ -7,6 +7,10 @@ const object = (value) => value !== null && typeof value === 'object' && !Array.
 export function createPrimaryRecoveryManagedAdapter(rpc) {
   return {
     managedBarrier: (rootSessionId) => rpc({ method: 'barrier_status', params: { rootSessionId } }),
+    verifyRecoveredCollection: (record, collection) => rpc({ method: 'verify_recovered_collection', params: {
+      taskId: collection.taskId, claimantId: collection.claimantId,
+      rootSessionId: record.sessionID, directory: record.directory,
+    } }),
     async cancelDescendants(rootSessionId) {
       const snapshot = await rpc({ method: 'snapshot', params: { rootSessionId } });
       if (!Array.isArray(snapshot?.tasks)) throw recoveryError('managed_stop_unconfirmed');
@@ -105,7 +109,7 @@ export function createPrimaryRecoveryHost(options) {
       : process.env.DEVRYAN_PROVIDER_PROGRESS_TIMEOUT_MS ? Number(process.env.DEVRYAN_PROVIDER_PROGRESS_TIMEOUT_MS) : undefined),
     isManaged: options.isManaged, authorize: options.authorize, classifyFailure: options.classifyFailure,
     publishEvent: options.publishEvent, recordIncident: options.recordIncident,
-    observeTurn, abortSession,
+    observeTurn, abortSession, verifyRecoveredCollection: options.verifyRecoveredCollection,
     getToolPolicy: async (record) => {
       const { data } = await request('/experimental/tool/ids', record.directory);
       if (!Array.isArray(data) || data.length > 4096 || data.some((id) => typeof id !== 'string' || id.length > 256)) throw recoveryError('recovery_tool_catalog_unavailable');
@@ -155,12 +159,14 @@ export function createPrimaryRecoveryHost(options) {
             const check = inspectRecoveryTurn(stored, observed);
             const executing = observed.messages.some((m) => m.parts.some((p) => p.type === 'tool'
               && !['completed', 'error'].includes(p.state?.status)));
-            if (observed.status !== 'idle' || observed.blocked || executing || !check.last?.info.time?.completed) throw recoveryError('provider_stop_unconfirmed');
+            const collectBlockedResult = Boolean(stored.collectionIssue && observed.blockedByRequests === false
+              && observed.managedBarrierState === 'awaiting_acknowledgement');
+            if (observed.status !== 'idle' || check.superseded || (observed.blocked && !collectBlockedResult) || executing || !check.last?.info.time?.completed) throw recoveryError('provider_stop_unconfirmed');
             if (!/^msg_[a-zA-Z0-9]+$/.test(body.messageID ?? '') || !await options.authorize(stored)) throw recoveryError('recovery_continuation_unavailable');
             await controller.control(id, 'supersede', body.revision);
             const prompt = { messageID: body.messageID, model: { providerID: stored.providerID, modelID: stored.modelID },
               agent: stored.agent, ...(stored.variant ? { variant: stored.variant } : {}), tools: stored.tools,
-              parts: [{ type: 'text', text: `${RECOVERY_CONTINUATION} The user has now explicitly requested continuation with the original execution permissions. Review any uncertain outcomes before taking further action.` }] };
+              parts: [{ type: 'text', text: `${collectBlockedResult ? 'Continue from the existing progress and completed tool results.' : RECOVERY_CONTINUATION} The user has now explicitly requested continuation with the original execution permissions. Review any uncertain outcomes before taking further action.${collectBlockedResult ? ` Collect and disposition the existing managed result for ${stored.collectionIssue.taskId} using devryan_task wait, then continue the unfinished objective. Do not repeat the completed child.` : ''}` }] };
             await controller.admit({ sessionID: id, directory: stored.directory, primary: true, owner: stored.owner, body: prompt });
             // Explicit user action, still a single POST. A lost acknowledgement
             // must be reconciled through GET, never silently retried.

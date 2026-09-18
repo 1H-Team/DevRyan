@@ -47,3 +47,5 @@ Repository automation entrypoint for developer workflows: validation planning, l
 - **npm runtime closure**: `pack-web-release.mjs` stages private runtime workspaces as bundled dependencies and preserves their external ranges in published metadata. `release-ci.mjs` invokes it after verified web staging; npm publishes the exact checked tarball, not a second pack.
 
 - `qa/session-changes.mjs`: deterministic file execution/private Git capture setup and production web/Electron session attribution, recorded diff, and restore visual journeys.
+
+- `verify-crash-memory.mjs` runs synthetic Electron history reconciliation in isolated app-bound and service ownership modes. The `--workload snapshots` option measures a large synthetic managed ledger separately. It writes numerical samples and synthetic allocation profiles beneath `.cache/`, with a default 95-minute soak; it never registers launchd, connects providers or reads installed-app state.

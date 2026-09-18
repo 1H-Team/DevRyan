@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { createBoundedReadPool } from './bounded-read-pool.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { createSessionChangeRuntime } from './session-changes.js';
@@ -15,6 +17,9 @@ export function createSessionChangeHost(options) {
     onDiagnostic: options.onDiagnostic,
     onChange: ({ directory, sessionID }) => options.publishEvent?.({ type: 'session.changes.updated', properties: { sessionID } }, { directory }),
   });
+  const readPool = createBoundedReadPool();
+  const readContext = new AsyncLocalStorage();
+  const responseMetrics = { activeResponses: 0, responseBytes: 0, peakResponseBytes: 0 };
   const observations = new Map();
   const callMessages = new Map();
   const rememberCall = (directory, sessionID, callID, messageID) => {
@@ -26,23 +31,32 @@ export function createSessionChangeHost(options) {
     const url = new URL(options.buildOpenCodeUrl(pathname));
     if (directory) url.searchParams.set('directory', directory);
     const response = await (options.fetchImpl ?? fetch)(url, {
-      headers: options.getOpenCodeAuthHeaders?.(), signal: AbortSignal.timeout(Math.max(1, Math.min(15_000, deadline - Date.now()))),
+      headers: options.getOpenCodeAuthHeaders?.(), signal: AbortSignal.any([
+        AbortSignal.timeout(Math.max(1, Math.min(15_000, deadline - Date.now()))),
+        ...(readContext.getStore()?.signal ? [readContext.getStore().signal] : []),
+      ]),
     });
     if (!response.ok) throw error('session_observation_unavailable', response.status === 404 ? 404 : 503);
     const reader = response.body?.getReader();
     if (!reader) throw error('session_observation_unavailable', 503);
     const chunks = [];
     let bytes = 0;
+    responseMetrics.activeResponses++;
     try {
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
         bytes += value.byteLength;
+        responseMetrics.responseBytes += value.byteLength;
+        responseMetrics.peakResponseBytes = Math.max(responseMetrics.peakResponseBytes, responseMetrics.responseBytes);
         if (bytes > 16 * 1024 * 1024) throw error('history_limit', 503);
         chunks.push(value);
       }
-    } finally { await reader.cancel().catch(() => {}); }
-    return { data: JSON.parse(Buffer.concat(chunks).toString()), bytes, cursor: response.headers.get('x-next-cursor') };
+      return { data: JSON.parse(Buffer.concat(chunks).toString()), bytes, cursor: response.headers.get('x-next-cursor') };
+    } finally {
+      responseMetrics.activeResponses--; responseMetrics.responseBytes -= bytes;
+      await reader.cancel().catch(() => {});
+    }
   };
   const session = async (id, directory) => {
     if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(id)) throw error('invalid_session_id', 400);
@@ -229,7 +243,8 @@ export function createSessionChangeHost(options) {
       await runtime.recordReceipt({ ...receipt, directory, sessionID: part.sessionID, messageID: part.messageID,
         callID, parentID: current.parentID ?? null, createdAt: part.state?.time?.start, source: 'canonical-event' });
   };
-  return { ...runtime, plugin,
+  const host = { ...runtime, plugin,
+    getReadDiagnostics: () => ({ ...readPool.snapshot(), ...responseMetrics }),
     async acceptExecution(input) {
       if (!input || !['tool', 'stream-gap', 'run-settled', 'interrupted'].includes(input.phase)
         || !['sessionID', ...(input.phase === 'interrupted' ? [] : ['messageID'])].every((key) => typeof input[key] === 'string' && /^[a-zA-Z0-9_-]{1,512}$/.test(input[key]))
@@ -255,6 +270,7 @@ export function createSessionChangeHost(options) {
       return work;
     },
     async drain() {
+      await readPool.drain();
       while (observations.size) await Promise.allSettled([...observations.values()].flatMap((pending) => [...pending]));
       await runtime.drain();
     },
@@ -282,8 +298,9 @@ export function createSessionChangeHost(options) {
             receiptStates.push(await options.reconcileExecutionReceipts?.({ directory, sessionID: entry.id }));
           }
           const histories = [];
-          for (let start = 0; start < sessions.length; start += 4) {
-            histories.push(...await Promise.all(sessions.slice(start, start + 4).map((entry) => history(entry, directory))));
+          for (const entry of sessions) {
+            readContext.getStore()?.signal?.throwIfAborted();
+            histories.push(await history(entry, directory));
           }
           let settleTimer;
           await Promise.race([Promise.allSettled(sessions.flatMap((entry) => [...(observations.get(entry.id) ?? [])])),
@@ -312,4 +329,28 @@ export function createSessionChangeHost(options) {
       }
     },
   };
+  const requestUnshared = host.handleRequest;
+  host.handleRequest = async (method, rawPath, body = {}, context = {}) => {
+    const url = new URL(rawPath, 'http://session-changes.invalid');
+    const match = url.pathname.replace(/^\/api(?=\/)/, '').match(/^\/openchamber\/session\/([a-zA-Z0-9_-]+)\/changes(?:\/(diff|undo|redo))?$/);
+    if (!match) return requestUnshared(method, rawPath, body);
+    try {
+      const directory = url.searchParams.get('directory');
+      if (!directory || !path.isAbsolute(directory)) throw error('invalid_change_directory', 400);
+      const canonical = await fs.realpath(directory);
+      const key = JSON.stringify([canonical, match[1]]);
+      url.searchParams.set('directory', canonical);
+      const run = () => requestUnshared(method, url.pathname + url.search, body);
+      const result = method === 'GET' && !match[2] && !url.searchParams.has('revision')
+        ? await readPool.run(key, signal => readContext.run({ signal }, run), context.signal)
+        : await run();
+      // Reconciliation belongs to the canonical scope, but each response must
+      // retain its caller's requested directory (including a symlink alias).
+      return result?.status === 200 && result.body && Object.hasOwn(result.body, 'directory')
+        ? { ...result, body: { ...result.body, directory } } : result;
+    } catch (cause) {
+      return { status: cause.status ?? 503, body: { code: cause.code ?? 'session_changes_unavailable', error: 'Session changes unavailable' } };
+    }
+  };
+  return host;
 }

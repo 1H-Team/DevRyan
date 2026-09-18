@@ -90,6 +90,8 @@ export function createDesktopMenu({ BrowserWindow, Menu, app, shell, log, getMai
       {
         label: 'View',
         submenu: [
+          { role: 'reload', label: 'Reload Window' },
+          { type: 'separator' },
           { label: 'Git', accelerator: 'Cmd+G', click: () => dispatchAction('open-git-tab') },
           { label: 'Diff', accelerator: 'Cmd+E', click: () => dispatchAction('open-diff-tab') },
           { label: 'Terminal', accelerator: 'Cmd+T', click: () => dispatchAction('open-terminal-tab') },

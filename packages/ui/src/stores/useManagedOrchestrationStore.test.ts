@@ -1922,3 +1922,60 @@ test('only a successful authoritative snapshot clears the loading-only wait fall
   await loading;
   expect(managedOrchestrationSelectors.hasConfirmedSnapshotForRoot('ses_root')(store.getState())).toBe(true);
 });
+
+
+describe('renewed implementation deadlines', () => {
+  for (const delivery of ['event', 'snapshot'] as const) {
+    for (const observeRenewal of [false, true]) {
+      test(`${delivery} settles completion after a ${observeRenewal ? 'seen' : 'missed'} renewal`, async () => {
+        const running = taskRecord(1, 'running', { agent: 'designer', timeoutAt: 60_000 });
+        const renewed = { ...running, timeoutAt: 90_000 };
+        const completed = { ...renewed, status: 'completed' as const, finishedAt: 80_000 };
+        const envelope = createManagedTaskResultEnvelope(completed, { sequence: 2, createdAt: 80_000, resumable: false });
+        const terminalEvent = toManagedTaskEvent(completed, envelope);
+        const store = createManagedOrchestrationStore({ api: fakeApi({
+          getSnapshot: async () => emptySnapshot({ tasks: [terminalEvent.properties.task], resultEnvelopes: [envelope] }),
+        }) });
+        store.getState().ingestEvent(toManagedTaskEvent(running));
+        if (observeRenewal) store.getState().ingestEvent(toManagedTaskEvent(renewed));
+        if (delivery === 'event') store.getState().ingestEvent(terminalEvent);
+        else await store.getState().loadSnapshot({ rootSessionId: running.rootSessionId });
+        expect(store.getState().snapshotError).toBeNull();
+        expect(store.getState().tasksById[running.taskId]).toMatchObject({ status: 'completed', timeoutAt: 90_000 });
+        expect(store.getState().resultEnvelopesByTaskId[running.taskId]?.status).toBe('completed');
+        const settled = store.getState().tasksById[running.taskId];
+        store.getState().ingestEvent(toManagedTaskEvent(running));
+        store.getState().ingestEvent(terminalEvent);
+        expect(store.getState().tasksById[running.taskId]).toBe(settled);
+      });
+    }
+  }
+
+  test('stale events and snapshots preserve the renewed deadline and references', async () => {
+    const running = taskRecord(1, 'running', { timeoutAt: 60_000 });
+    const store = createManagedOrchestrationStore({ api: fakeApi({
+      getSnapshot: async () => emptySnapshot({ tasks: [toManagedTaskEvent(running).properties.task] }),
+    }) });
+    store.getState().ingestEvent(toManagedTaskEvent(running));
+    store.getState().ingestEvent(toManagedTaskEvent({ ...running, timeoutAt: 90_000 }));
+    const renewed = store.getState().tasksById[running.taskId];
+    expect(renewed?.timeoutAt).toBe(90_000);
+    store.getState().ingestEvent(toManagedTaskEvent(running));
+    await store.getState().loadSnapshot();
+    expect(store.getState().snapshotError).toBeNull();
+    expect(store.getState().tasksById[running.taskId]).toBe(renewed);
+  });
+
+  test('preserves no-deadline semantics and rejects identity changes', () => {
+    for (const timeoutAt of [null, 60_000]) {
+      const running = taskRecord(1, 'running', { timeoutAt });
+      const store = createManagedOrchestrationStore();
+      store.getState().ingestEvent(toManagedTaskEvent(running));
+      const original = store.getState().tasksById[running.taskId];
+      store.getState().ingestEvent(toManagedTaskEvent({ ...running, timeoutAt: timeoutAt === null ? 90_000 : null }));
+      expect(store.getState().tasksById[running.taskId]).toBe(original);
+      store.getState().ingestEvent(toManagedTaskEvent({ ...running, modelId: 'different', timeoutAt: 90_000 }));
+      expect(store.getState().tasksById[running.taskId]).toBe(original);
+    }
+  });
+});

@@ -588,6 +588,39 @@ describe('managed scheduler parent actions', () => {
     expect(scheduler.listReadyProviderRecoveryContinuations()).toEqual([]);
   });
 
+  test('collection proof requires an unacknowledged recovered result and its current scoped lease', async () => {
+    let time = 1000;
+    const { scheduler, original } = await createTerminalHarness({ submitOverrides: { dispatchGroupId: 'msg_parent' },
+      schedulerOptions: { now: () => time, providerRecoveryContinuationLeaseMs: 60_000 } });
+    time = 2000;
+    const recovery = await scheduler.acknowledgeResult(original.taskId, { action: 'retry_in_place', idempotencyKey: 'user-recovery',
+      providerId: 'openai', modelId: 'gpt-5.6', variant: null });
+    await scheduler.waitForTask(recovery.followUpTask.taskId);
+    const scope = { taskId: recovery.followUpTask.taskId, rootSessionId: 'ses_root', directory: '/workspace', claimantId: 'plugin-one' };
+    expect(await scheduler.verifyRecoveredCollection(scope)).toBeNull();
+    await scheduler.claimProviderRecoveryContinuation(scope);
+    expect(await scheduler.verifyRecoveredCollection(scope)).toMatchObject({ taskId: scope.taskId, dispatchGroupId: 'msg_parent',
+      attempt: 2, createdAt: 2000, finishedAt: 2000 });
+    for (const wrong of [{ claimantId: 'plugin-other' }, { rootSessionId: 'ses_other' }, { directory: '/other' }]) {
+      expect(await scheduler.verifyRecoveredCollection({ ...scope, ...wrong })).toBeNull();
+    }
+    time = 62_000;
+    expect(await scheduler.verifyRecoveredCollection(scope)).toBeNull();
+    await scheduler.claimProviderRecoveryContinuation(scope);
+    await scheduler.acknowledgeResult(scope.taskId, { action: 'continue', idempotencyKey: 'collected' });
+    expect(await scheduler.verifyRecoveredCollection(scope)).toBeNull();
+    scheduler.shutdown();
+  });
+
+  test('ordinary completed work is not proof of a user recovery', async () => {
+    const { scheduler, original } = await createTerminalHarness({ submitOverrides: { dispatchGroupId: 'msg_parent' },
+      startResult: { status: 'completed' } });
+    const scope = { taskId: original.taskId, rootSessionId: 'ses_root', directory: '/workspace', claimantId: 'plugin-one' };
+    await scheduler.claimProviderRecoveryContinuation(scope);
+    expect(await scheduler.verifyRecoveredCollection(scope)).toBeNull();
+    scheduler.shutdown();
+  });
+
   test('claims a collectable parent continuation exactly once until release or acknowledgement', async () => {
     const { original, scheduler } = await createTerminalHarness({
       startResult: { status: 'completed', recoverablePreview: 'ordinary child result' },

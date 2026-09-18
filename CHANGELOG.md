@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.6] - 2026-09-19
+
+- Managed orchestration: accept finite implementation-deadline renewals without treating them as task identity changes, preserve the latest deadline across stale events and snapshots, and allow renewed Designer and Fixer attempts to settle without remounting.
+- Provider recovery: classify Grok personal-team spending-limit failures as usage exhaustion so managed backup recovery can proceed.
+- Recovery bridge: retry one failed read-only scope transport or body read while keeping host rejections and mutating requests single-attempt and fail-closed.
+- Chat: identify primary-recovery bridge transport failures as retryable local runtime errors instead of attributing them to the model provider.
+- Parent recovery: collect a completed, user-recovered child after a proven parent transport failure, with durable admission fencing and an explicit manual fallback when automatic collection is unsafe.
+- Session changes: single-flight summary reconciliation through bounded read pools, suppress unchanged invalid-history loops, and cancel abandoned reads without weakening mutation or revision guarantees.
+- Runtime reliability: add bounded Electron memory/work diagnostics and crash-memory verification while keeping runtime-service startup ownership explicit.
+- Desktop recovery: automatically reload an unexpectedly exited renderer once, bound repeated recovery attempts behind a native prompt, and keep View → Reload Window available without renderer IPC.
+- Production Bot memory: include the versioned automatic-recovery migration for compatible failed and legacy extraction jobs.
+- Quality: add deterministic orchestration-store, mounted UI, retry-policy, scheduler, and packaged recovery-plugin coverage for the renewed recovery paths.
+- Database: deploy and verify all repository migrations and the required Production Bots schema marker before release publication.
+- Release: update all DevRyan package and desktop metadata to 1.2.6.
+
 ## [1.2.5] - 2026-09-14
 
 - OpenCode: update the managed host runtime, SDK, packaged plugin, provider-recovery compatibility, and QA target to 1.18.31 while retaining the independently pinned Production Bot runtime image.

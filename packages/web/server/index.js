@@ -2016,9 +2016,14 @@ async function main(options = {}) {
   });
   browserObservationRuntime.registerRoutes(app);
   app.use('/api/openchamber/session/:sessionID/changes', express.json({ limit: '16kb' }), async (req, res, next) => {
-    const result = await sessionChangeHost.handleRequest(req.method, req.originalUrl, req.body);
-    if (!result) return next();
-    res.status(result.status).json(result.body);
+    const controller = new AbortController();
+    const disconnected = () => { if (!res.writableEnded) controller.abort(); };
+    res.on('close', disconnected);
+    try {
+      const result = await sessionChangeHost.handleRequest(req.method, req.originalUrl, req.body, { signal: controller.signal });
+      if (!result) return next();
+      if (!res.destroyed) res.status(result.status).json(result.body);
+    } finally { res.off('close', disconnected); }
   });
   app.use('/api/session/:sessionID',
     express.json({ limit: '50mb', verify: (req, _res, buf) => { req.rawBody = buf; } }),
@@ -2467,6 +2472,7 @@ async function main(options = {}) {
       externallyManaged: isExternalOpenCode,
     }),
     getManagedOrchestrationDiagnostics: () => managedOrchestrationRuntime?.getDiagnostics() ?? null,
+    getSessionChangeReadDiagnostics: () => sessionChangeHost.getReadDiagnostics(),
     getBrowserLeaseDiagnostics: () => ({
       activeLeases: browserLeaseRuntime?.getSnapshot().length ?? 0,
     }),

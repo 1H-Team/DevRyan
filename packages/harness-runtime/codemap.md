@@ -37,3 +37,5 @@ API contracts.
   `lib/evidence-runtime.js`
 - Diagnostic export selection/ZIP adapter: `lib/export.js`
 - Bounded Chrome Trace projection and evidence-qualified measurements: `lib/trace.js`; included as `DevRyan-trace.json` in existing exports. Journal aggregation preserves distinct causes and generations; retention writes its eviction reason before deletion. See `docs/HARNESS_OPTIMIZATION.md` for gates, compatibility and measurement limits.
+
+- Rejected historical-receipt memoization remains in `lib/session-changes.js`; `lib/bounded-read-pool.js` bounds and shares authenticated host summary reads. `lib/managed-collection-continuation.js` validates the narrow transport-failure collection proof; `provider-recovery.js` persists and reconciles wake identity before dispatch.

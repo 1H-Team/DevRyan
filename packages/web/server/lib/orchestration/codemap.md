@@ -40,3 +40,5 @@ updates. The server journals `managed_task.first_assistant_activity` once per
 successful attempt stamp, with content-free identity and detection-source fields.
 
 `packages/web/server/index.js` creates this runtime before OpenCode bootstrap, registers its UI routes, supplies its private environment to `lib/opencode/lifecycle.js`, publishes synthetic managed events, and disposes the owner through `lib/opencode/shutdown-runtime.js`.
+
+- Private `verify_recovered_collection` RPC resolves the caller's task scope before returning scheduler proof to the primary recovery adapter. It is not a model-facing tool or public UI endpoint.

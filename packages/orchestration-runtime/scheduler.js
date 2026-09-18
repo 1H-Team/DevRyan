@@ -2613,6 +2613,27 @@ export const createManagedTaskScheduler = (options = {}) => {
     });
   };
 
+  const verifyRecoveredCollection = async (input) => {
+    await ensureInitialized();
+    const scope = validateProviderRecoveryContinuationClaimInput(input);
+    return runExclusive(async () => {
+      const task = tasks.get(scope.taskId);
+      const envelope = resultEnvelopes.get(scope.taskId);
+      const source = task?.priorTaskId ? resultEnvelopes.get(task.priorTaskId) : null;
+      const claim = providerRecoveryContinuationClaims.get(scope.taskId);
+      if (!task || task.rootSessionId !== scope.rootSessionId || task.directory !== scope.directory
+        || task.mode !== 'orchestrator' || !task.dispatchGroupId || task.status !== 'completed'
+        || envelope?.status !== 'completed' || envelope.action !== null
+        || task.executionKind !== 'retry_in_place' || source?.action !== 'retry_in_place'
+        || source.followUpTaskId !== task.taskId
+        || (source.autoResume && source.autoResume.reason !== 'manual_retry')
+        || !claim || claim.claimantId !== scope.claimantId || claim.expiresAt <= now()) return null;
+      return { taskId: task.taskId, envelopeId: envelope.envelopeId, dispatchGroupId: task.dispatchGroupId,
+        rootSessionId: task.rootSessionId, directory: task.directory, createdAt: task.createdAt,
+        finishedAt: task.finishedAt, attempt: task.attempt };
+    });
+  };
+
   const inspectAgentHandoff = async (input) => {
     await ensureInitialized();
     validateAgentHandoffScope(input);
@@ -3177,6 +3198,7 @@ export const createManagedTaskScheduler = (options = {}) => {
     listReadyProviderRecoveryContinuations,
     claimProviderRecoveryContinuation,
     releaseProviderRecoveryContinuation,
+    verifyRecoveredCollection,
     inspectAgentHandoff,
     confirmAgentHandoff,
     acknowledgeResult,

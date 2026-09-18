@@ -189,3 +189,9 @@ Owner adapters provide atomic `load()` and `save()` operations. Legacy records m
 ## Testing
 
 Run `bun test packages/orchestration-runtime`. The current suite covers contract validation, live retry-policy projection, narrow prompt-rejection classification, fresh-child rewritten-prompt recovery and its one-attempt ceiling, transition immutability, unbounded immediate admission, idempotency races, mode leases, dispatch checkpoints and barriers, non-blocking barrier inspection, abortable result-action waits, confirmed cleanup handoff locking/idempotency/partial retry, acknowledgement locking, grouped retry/resume ceilings, provider-limit and exhausted-agent manual-recovery enforcement, manual retry-in-place selection and exemption, legacy `recover_in_place` hydration, retry lineage, barrier abort cleanup, canonical OpenCode execution (including stale-launch disposal, live provider retries, bounded same-child transport continuation, transient observation and reconciliation recovery, retained interruption output, and empty completed assistant shells), provider prompt-tool isolation, cancellation isolation/cascade, partial envelopes, retry/resume, active timeouts, bounded aborts, 60-second lease recovery, deadline-bounded restart reconciliation, durable-write failure, corrupt result/task mismatches, reentrant publication, compaction, and shutdown cleanup. The root full test gate and changed-file validation planner include this package and its web/UI dependents.
+
+
+The observed xAI `personal-team-blocked:spending-limit` error is a definite
+provider usage limit. It enters the existing configured-backup auto-resume
+policy, subject to its ordinary admission, cancellation and attempt limits.
+A local primary-recovery bridge failure is not a provider usage limit.

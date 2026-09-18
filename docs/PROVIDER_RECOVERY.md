@@ -50,9 +50,11 @@ signals; they cannot authorize stopping or recovering a newer invocation.
 
 The plugin allows ten seconds for the initial private handshake because the
 host's live health verification has its own five-second deadline. Subsequent
-private RPCs retain their five-second deadline. Neither path retries failed
-requests or bypasses verification; transport failures identify the RPC action
-and request/response phase without including bridge credentials.
+private RPCs retain their five-second deadline. The read-only scope lookup retries one failed request/body read with a fresh
+five-second budget; host rejections and all mutating RPCs remain single-attempt.
+An exhausted scope lookup stays fail-closed. Transport failures identify the RPC
+action and request/response phase without including bridge credentials; the UI
+identifies these as local recovery-service failures, not provider outages.
 
 The version gate follows OpenCode's [plugin hooks](https://github.com/anomalyco/opencode/blob/v1.18.25/packages/plugin/src/index.ts),
 [request preparation](https://github.com/anomalyco/opencode/blob/v1.18.25/packages/opencode/src/session/llm/request.ts),
@@ -298,3 +300,38 @@ the plugin or deleting state is not a safe rollback.
 
 These tests do not certify the managed Meridian/Claude Agent SDK connection.
 The production Claude conformance gate therefore remains closed.
+
+
+## Collecting a user-recovered child after a parent failure
+
+A completed child result remains in the managed ledger until explicitly
+acknowledged. A `collect` continuation can follow a finalized parent transport
+failure only with a scheduler proof of a completed, unacknowledged same-child
+recovery. The proof binds the task/envelope, root, directory, dispatch group,
+attempt and live plugin claim. Its recovery must start after the failed parent
+step, and the dispatch group must belong to the admitted objective. Automatic
+backup attempts and ordinary completed children do not authorize this exception.
+The legacy API connection wording is matched exactly and version-gated; this
+exception does not broaden ordinary automatic provider retry eligibility.
+
+Cancellation, supersession, questions/permissions, unresolved tools, changed
+model/agent, owner replacement, read-only recovery and rejection fences remain
+in force. Admission persists the wake's message ID and cancellation generation
+before the plugin sends its single POST. After an ambiguous acknowledgement or
+restart, a matching canonical synthetic user message confirms delivery. An
+absent message requires explicit continuation rather than another generated ID.
+A completed child is never relaunched by the collection path.
+
+Permanent admission failures publish a small `collectionIssue` in the parent
+projection and a reason-coded `managed_collection_rejected` diagnostic. The
+plugin stops retrying that task's admission fence. The chat hides collection-issue notices in both the parent card and retained
+result. Stored results, diagnostics, and the explicit continuation API remain
+available; ordinary user input can resume the parent. Explicit continuation rechecks
+live settlement, pending requests, current objective, revision and permissions
+before a fresh user-authorized prompt; the completed result stays intact.
+
+Regression coverage includes the real scheduler, plugin and primary host with
+an API-error tail, host restart, user recovery, competing watchers, lost HTTP
+acknowledgement, result collection and acknowledgement. The disposable
+`tests/visual-provider-recovery/` fixture also exercises the retained-result
+presentation without provider access.

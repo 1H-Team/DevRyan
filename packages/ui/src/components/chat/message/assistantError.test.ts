@@ -251,3 +251,11 @@ describe("classifyAssistantError", () => {
    expect(result?.text).toContain('Claude stopped sending data');
    expect(result?.retryable).toBe(true);
  });
+
+
+test("identifies recovery bridge failures as local runtime errors", () => {
+  const result = classifyAssistantError({ name: "UnknownError", data: { message: "Primary recovery scope response failed" } })
+  expect(result?.text).toContain("DevRyan could not verify this turn with its recovery service")
+  expect(result?.text).not.toContain("The model provider could not complete")
+  expect(result?.retryable).toBe(true)
+})

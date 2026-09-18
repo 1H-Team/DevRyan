@@ -53,7 +53,7 @@ Default server-scaffolded OpenCode configuration and bundled agent role template
 - Used by web server initialization paths that provision OpenCode-compatible defaults.
 - Influences out-of-box behavior of agent execution, plugin loading, and prompt-role availability.
 - Council fanout uses the managed bridge when injected so its children share the same durable lifecycle and unbounded immediate admission; the direct path remains only when no managed bridge exists.
-- `plugins/devryan-primary-recovery.mjs`: versioned host handshake, model-step admission and read-only pre-execution fencing. The older plugin SDK does not expose health; the host verifies `/global/health`.
+- `plugins/devryan-primary-recovery.mjs`: versioned host handshake, model-step admission and read-only pre-execution fencing. A read-only scope request/body failure retries once; host rejections and mutating RPCs remain single-attempt. The older plugin SDK does not expose health; the host verifies `/global/health`.
 
 - Plan-card implementation startup is admitted by `devryan-managed-orchestration.mjs` only after the available Executing Plans skill has a full active-context result and visible same-turn assistant prose precedes the first start. The check runs before pending dispatch registration and again at execution, shares native bounded history/catalog resolution, honors compaction and agent skill visibility, and returns retryable actionable input feedback without creating children. Subsequent admitted waves reuse startup.
 

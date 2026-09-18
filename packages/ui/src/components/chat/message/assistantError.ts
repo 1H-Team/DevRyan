@@ -182,6 +182,14 @@ export function classifyAssistantError(
     }
   }
 
+  if (/^Primary recovery [a-z_]+ (?:request|response) failed$/.test(detail)) {
+    return {
+      text: `DevRyan could not verify this turn with its recovery service. Retry once the local runtime is responsive.\n\`${detail}\``,
+      variant: "error",
+      retryable: true,
+    }
+  }
+
   if (isLikelyCertificateVerificationFailure(detail)) {
     return {
       text: `The secure connection to the model provider could not be verified. Retry after your connection is stable. If this keeps happening, check VPN, proxy, or certificate settings.\n\`${detail}\``,

@@ -13,6 +13,14 @@ export const updateFixture = (state: NonNullable<PrimaryRecoverySnapshot['record
       reason: reason ?? (state === 'needs_attention' ? 'recovery_requires_user_action' : null), updatedAt: Date.now() } });
 };
 updateFixture('reconciling');
+export const showRecoveredChild = () => {
+  updateFixture('observing');
+  const snapshot = usePrimaryRecoveryStore.getState().snapshots.ses_fixture;
+  if (!snapshot.record) return;
+  usePrimaryRecoveryStore.getState().accept('ses_fixture', { ...snapshot, record: { ...snapshot.record,
+    revision: snapshot.record.revision + 1, attemptCount: 0, recoveryID: null, readOnly: false,
+    collectionIssue: { taskId: 'dvr_task_recovered', code: 'managed_collection_delivery_unconfirmed' } } });
+};
 export async function requestPrimaryRecovery(_id: string, action?: string) {
   if (offline) throw new Error('Recovery status is unavailable. Stop has not been confirmed.');
   if (action) updateFixture(action === 'cancel' ? 'cancelled' : 'recovering');

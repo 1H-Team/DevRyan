@@ -159,22 +159,23 @@ const getProviderFailurePresentation = ({
     && priorEnvelope?.taskId === task.priorTaskId
     && priorEnvelope.autoResume?.lastAttemptTaskId === task.taskId,
   );
-  if (continuedAfterLimit) {
+  if (continuedAfterLimit && (task.status === 'starting' || task.status === 'running')) {
     return {
       message: t(priorEnvelope?.autoResume?.trigger === 'provider_transport'
         ? 'chat.managedTasks.transport.continued' : 'chat.managedTasks.providerLimit.continued', {
         model: providerModelLabel(task, providers).model,
         thinking: formatEffortLabel(task.variant ?? undefined, { providerId: task.providerId }),
       }),
-      className: 'text-[var(--status-success)]',
+      className: 'text-[var(--status-warning)]',
       role: 'status' as const,
     };
   }
 
-  const recoveredSameChild = recoverySourceTask?.failureKind === 'provider_usage_limit'
-    && (task.executionKind === 'retry_in_place' || task.executionKind === 'recover_in_place')
-    && task.status === 'completed';
-  if (!recoveredSameChild) return null;
+  const recoveredSameChild = recoverySourceTask?.taskId === task.priorTaskId
+    && recoverySourceTask?.failureKind === 'provider_usage_limit'
+    && (task.executionKind === 'retry_in_place' || task.executionKind === 'recover_in_place');
+  const recoveredTransport = task.transportRecovery?.phase === 'recovered';
+  if (task.status !== 'completed' || !(continuedAfterLimit || recoveredSameChild || recoveredTransport)) return null;
 
   return {
     message: t('chat.managedTasks.providerLimit.recovered', {
@@ -308,11 +309,6 @@ export const ManagedTaskRowView = React.memo(({
           {providerFailurePresentation && !(showRecovery && task.failureKind === 'deadline_exceeded') ? (
             <p role={providerFailurePresentation.role} className={`mt-1 typography-micro ${providerFailurePresentation.className}`}>
               {providerFailurePresentation.message}
-            </p>
-          ) : null}
-          {!providerFailurePresentation && (task.executionKind === 'retry_in_place' || task.executionKind === 'recover_in_place' || task.executionKind === 'resume') ? (
-            <p className="mt-1 typography-micro text-muted-foreground">
-              {providerModelLabel(task, providers).combined} · {formatEffortLabel(task.variant ?? undefined, { providerId: task.providerId })}
             </p>
           ) : null}
         </div>

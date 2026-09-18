@@ -424,9 +424,9 @@ const snapshotPersistence = (snapshot) => ({
 });
 
 describe('managed scheduler auto-resume lifecycle', () => {
-  test('parks a definite usage limit, plans, and tries the backup immediately', async () => {
+  test.each([LIMIT, 'personal-team-blocked:spending-limit: You have run out of credits or need a Grok subscription.'])('parks a definite usage limit and tries the backup: %s', async (failureReason) => {
     const gate = deferred();
-    const harness = createHarness({ retryResults: [() => gate.promise] });
+    const harness = createHarness({ startResult: { ...limited(), failureReason }, retryResults: [() => gate.promise] });
     const { scheduler } = harness;
 
     const original = await harness.park();

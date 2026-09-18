@@ -129,7 +129,8 @@ export const classifyProviderRetryFailure = (value) => {
   ) {
     return PROVIDER_PROMPT_REJECTED_FAILURE_KIND;
   }
-  return message.includes('out of usage')
+  return message.includes('personal team blocked spending limit')
+    || message.includes('out of usage')
     || message.includes('usage exceeded')
     || message.includes('usage limit')
     || message.includes('hit your limit')

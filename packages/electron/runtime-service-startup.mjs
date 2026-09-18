@@ -68,7 +68,8 @@ export const createRuntimeOwnerAcquirer = ({ getCoordinator, setCoordinator, cre
 };
 
 const diagnosticCode = (code) => typeof code === 'string'
-  && /^(?:runtime_service_|smappservice_)[a-z_]{1,100}$/.test(code) ? code : null;
+  && (/^(?:runtime_service_|smappservice_)[a-z_]{1,100}$/.test(code)
+    || code === 'desktop_host_registration_failed') ? code : null;
 const diagnosticState = (state) => [
   'enabled', 'requires_approval', 'not_registered', 'not_found',
   'unknown', 'unavailable', 'legacy_required', 'invalid',

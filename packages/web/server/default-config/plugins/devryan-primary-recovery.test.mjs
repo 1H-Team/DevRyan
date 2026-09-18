@@ -122,3 +122,46 @@ describe('versioned primary recovery plugin boundary', () => {
     } finally { timeout.mockRestore(); }
   });
 });
+
+
+describe('read-only scope transport recovery', () => {
+  it.each(['request', 'response'])('retries one failed scope %s before submitting a model step', async (phase) => {
+    process.env.DEVRYAN_ORCHESTRATION_URL = 'http://127.0.0.1:12345/rpc';
+    process.env.DEVRYAN_ORCHESTRATION_TOKEN = 'isolated-fixture-token';
+    const actions = [];
+    let scopes = 0;
+    const plugin = await DevRyanPrimaryRecoveryPlugin({
+      client: { session: { messages: async () => ({ data: [{ info: { id: 'msg_assistant', parentID: 'msg_user', role: 'assistant' }, parts: [] }] }) } },
+      fetchImpl: async (_url, init) => {
+        const { params } = JSON.parse(init.body);
+        actions.push(params.action);
+        if (params.action === 'scope' && ++scopes === 1) {
+          const cause = new DOMException('Timed out', 'TimeoutError');
+          if (phase === 'request') throw cause;
+          return { json: async () => { throw cause; } };
+        }
+        return new Response(JSON.stringify({ ok: true, result: params.action === 'scope'
+          ? { tracked: true, enforced: true, readOnly: false, agent: 'orchestrator' } : { allowed: true } }));
+      },
+    });
+    await plugin['chat.params']({ sessionID: 'ses_fixture', agent: 'orchestrator', message: { id: 'msg_user' } });
+    expect(actions).toEqual(['hello', 'scope', 'scope', 'step']);
+  });
+
+  it.each(['transport', 'rejection'])('keeps a persistent scope %s fail-closed without model or tool execution', async (failure) => {
+    process.env.DEVRYAN_ORCHESTRATION_URL = 'http://127.0.0.1:12345/rpc';
+    process.env.DEVRYAN_ORCHESTRATION_TOKEN = 'isolated-fixture-token';
+    const actions = [];
+    const plugin = await DevRyanPrimaryRecoveryPlugin({ fetchImpl: async (_url, init) => {
+      const { params } = JSON.parse(init.body);
+      actions.push(params.action);
+      if (params.action === 'scope') {
+        if (failure === 'transport') throw new DOMException('Timed out', 'TimeoutError');
+        return new Response(JSON.stringify({ ok: false, error: { code: 'recovery_owner_mismatch' } }), { status: 409 });
+      }
+      return new Response(JSON.stringify({ ok: true, result: {} }));
+    } });
+    await expect(plugin['chat.params']({ sessionID: 'ses_fixture', message: { id: 'msg_user' } })).rejects.toThrow();
+    expect(actions).toEqual(failure === 'transport' ? ['hello', 'scope', 'scope'] : ['hello', 'scope']);
+  });
+});

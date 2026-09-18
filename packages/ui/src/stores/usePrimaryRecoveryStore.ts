@@ -11,6 +11,7 @@ export const primaryRecoverySchema = z.object({
     revision: z.number().int().positive(), attemptCount: z.number().int().min(0).max(1), maxAttempts: z.literal(1),
     readOnly: z.boolean(), providerID: label, modelID: label, agent: label, variant: label.nullable(),
     reason: label.nullable(), updatedAt: z.number(),
+    collectionIssue: z.object({ taskId: label, code: label }).nullable().optional(),
     failureKind: z.enum(['provider_transport', 'provider_usage_limit', 'provider_authentication', 'provider_prompt_rejected', 'model_unavailable', 'deadline_exceeded']).nullable().optional(),
   }).nullable(),
 });

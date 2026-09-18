@@ -82,6 +82,8 @@ export const setSessionTreeChangesDebounceForTests = (ms: number | null): void =
 const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const requestSequence = new Map<string, number>()
 const inFlightControllers = new Map<string, AbortController>()
+const inFlightReads = new Map<string, Promise<void>>()
+const dirtyReads = new Set<string>()
 const subscriberCounts = new Map<string, number>()
 const workingByKey = new Map<string, boolean>()
 const sessionIdsByKey = new Map<string, ReadonlySet<string>>()
@@ -146,8 +148,32 @@ const areFilesEqual = (left: SessionTreeChangedFile[], right: SessionTreeChanged
   return true
 }
 
-/** Fetch now, ignoring the debounce. Superseded responses are dropped. */
-export async function refreshSessionTreeChanges(directory: string, rootSessionID: string): Promise<void> {
+/** One active read per scope, with one trailing refresh for changes during it. */
+export function refreshSessionTreeChanges(directory: string, rootSessionID: string): Promise<void> {
+  if (!directory || !rootSessionID) return Promise.resolve()
+  const key = getSessionTreeChangesKey(directory, rootSessionID)
+  const active = inFlightReads.get(key)
+  if (active) { dirtyReads.add(key); return active }
+  let resolve!: () => void
+  let reject!: (error: unknown) => void
+  const read = new Promise<void>((done, fail) => { resolve = done; reject = fail })
+  inFlightReads.set(key, read)
+  const release = () => {
+    if (inFlightReads.get(key) === read) {
+      inFlightReads.delete(key)
+      dirtyReads.delete(key)
+    }
+  }
+  void (async () => {
+    do {
+      dirtyReads.delete(key)
+      await fetchSessionTreeChanges(directory, rootSessionID)
+    } while (inFlightReads.get(key) === read && dirtyReads.has(key))
+  })().then(() => { release(); resolve() }, (error: unknown) => { release(); reject(error) })
+  return read
+}
+
+async function fetchSessionTreeChanges(directory: string, rootSessionID: string): Promise<void> {
   if (!directory || !rootSessionID) return
   const key = getSessionTreeChangesKey(directory, rootSessionID)
 
@@ -157,7 +183,6 @@ export async function refreshSessionTreeChanges(directory: string, rootSessionID
     debounceTimers.delete(key)
   }
 
-  inFlightControllers.get(key)?.abort()
   const controller = new AbortController()
   inFlightControllers.set(key, controller)
 
@@ -235,6 +260,7 @@ export function requestSessionTreeChangesRefresh(
     return
   }
   const key = getSessionTreeChangesKey(directory, rootSessionID)
+  if (options.delayMs === undefined && inFlightReads.has(key)) { dirtyReads.add(key); return }
   if (options.delayMs === undefined) pendingRetries.delete(key)
   const existing = debounceTimers.get(key)
   if (existing !== undefined) clearTimeout(existing)
@@ -286,6 +312,8 @@ export function subscribeSessionTreeChanges(directory: string, rootSessionID: st
       pendingRetries.delete(key)
       inFlightControllers.get(key)?.abort()
       inFlightControllers.delete(key)
+      inFlightReads.delete(key)
+      dirtyReads.delete(key)
       requestSequence.delete(key)
       const timer = debounceTimers.get(key)
       if (timer !== undefined) { clearTimeout(timer); debounceTimers.delete(key) }
@@ -308,6 +336,8 @@ export function clearSessionTreeChanges(directory: string, rootSessionID: string
   }
   inFlightControllers.get(key)?.abort()
   inFlightControllers.delete(key)
+  inFlightReads.delete(key)
+  dirtyReads.delete(key)
   requestSequence.delete(key)
   workingByKey.delete(key)
   sessionIdsByKey.delete(key)
@@ -337,6 +367,8 @@ export function resetSessionTreeChanges(): void {
   debounceTimers.clear()
   for (const controller of inFlightControllers.values()) controller.abort()
   inFlightControllers.clear()
+  inFlightReads.clear()
+  dirtyReads.clear()
   requestSequence.clear()
   subscriberCounts.clear()
   workingByKey.clear()

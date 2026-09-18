@@ -219,7 +219,7 @@ describe('useSessionTreeChangesStore', () => {
     expect(calls).toHaveLength(1)
   })
 
-  test('ignores a response that a newer request for the same key has superseded', async () => {
+  test('coalesces concurrent refreshes and reads a change arriving during the active request', async () => {
     const first = createDeferred()
     const second = createDeferred()
     const pending = [first, second]
@@ -227,12 +227,13 @@ describe('useSessionTreeChangesStore', () => {
 
     const firstRefresh = refreshSessionTreeChanges('/repo', 'ses_root')
     const secondRefresh = refreshSessionTreeChanges('/repo', 'ses_root')
-    expect(calls).toHaveLength(2)
-
-    second.resolve(makeChanges({ files: [file('src/new.ts')] }))
-    await secondRefresh
+    expect(calls).toHaveLength(1)
+    for (let i = 0; i < 20; i++) requestSessionTreeChangesRefresh('/repo', 'ses_root')
     first.resolve(makeChanges({ files: [file('src/stale.ts')] }))
-    await firstRefresh
+    await wait(0)
+    expect(calls).toHaveLength(2)
+    second.resolve(makeChanges({ files: [file('src/new.ts')] }))
+    await Promise.all([firstRefresh, secondRefresh])
 
     const entry = useSessionTreeChangesStore.getState().entries.get(getSessionTreeChangesKey('/repo', 'ses_root'))
     expect(entry?.files.map((entryFile) => entryFile.path)).toEqual(['src/new.ts'])

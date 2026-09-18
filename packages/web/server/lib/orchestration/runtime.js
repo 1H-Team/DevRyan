@@ -726,6 +726,11 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           claimantId: typeof params.claimantId === 'string' ? params.claimantId.trim() : '',
         });
       }
+      case 'verify_recovered_collection': {
+        const task = getScopedTask(params);
+        return scheduler.verifyRecoveredCollection({ taskId: task.taskId, rootSessionId: task.rootSessionId,
+          directory: task.directory, claimantId: params.claimantId });
+      }
       case 'handoff': {
         const scope = normalizeHandoffParams(params);
         const result = scope.confirm

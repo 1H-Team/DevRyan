@@ -5,6 +5,7 @@ import { defineConfig } from 'vite';
 const root = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig({ root, plugins: [react()],
   resolve: { alias: [
+    { find: /^@opencode-ai\/sdk\/v2$/, replacement: '@opencode-ai/sdk/v2/client' },
     { find: '@/lib/primaryRecoveryApi', replacement: path.join(root, 'fixture-api.ts') },
     { find: '@', replacement: path.resolve(root, '../../packages/ui/src') },
   ] },

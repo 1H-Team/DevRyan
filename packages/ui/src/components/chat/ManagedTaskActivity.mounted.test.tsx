@@ -167,3 +167,45 @@ test('first Claude activity reaches the subscribed card and child copy before a 
     }
   });
 });
+
+
+test('a renewed Designer completes without remounting while its sibling keeps running', async () => {
+  const running = {
+    ...createManagedTaskRecord({
+      taskId: 'dvr_task_deadline', idempotencyKey: 'deadline', rootSessionId: 'ses_root',
+      parentTaskId: null, directory: '/workspace', sequence: 1, mode: 'orchestrator',
+      providerId: 'anthropic', modelId: 'claude-opus-5', agent: 'designer', variant: 'high',
+      label: 'Designer task', prompt: 'Implement the gate.', attempt: 1, priorTaskId: null,
+      executionKind: 'start', createdAt: 1_000, timeoutAt: 60_000,
+    }),
+    status: 'running' as const, childSessionId: 'ses_child', startedAt: 2_000,
+    childPromptedAt: 2_100, firstAssistantPartAt: 2_200,
+  };
+  const sibling = { ...running, taskId: 'dvr_task_sibling', sequence: 2, agent: 'fixer' };
+  const completed = { ...running, timeoutAt: 90_000, status: 'completed' as const, finishedAt: 80_000 };
+  const envelope = createManagedTaskResultEnvelope(completed, { sequence: 3, createdAt: 80_000, resumable: false });
+  await withDom(async (container) => {
+    const { createRoot } = await import('react-dom/client');
+    const root = createRoot(container as unknown as Element);
+    try {
+      store.getState().ingestEvent(toManagedTaskEvent(running));
+      store.getState().ingestEvent(toManagedTaskEvent(sibling));
+      await act(async () => {
+        root.render(<I18nProvider>
+          <ManagedTaskRow taskId={running.taskId} displayTitle="Designer task" />
+          <ManagedTaskRow taskId={sibling.taskId} displayTitle="Fixer task" />
+        </I18nProvider>);
+      });
+      const designer = container.find((node) => node.attributes['data-managed-task-id'] === 'dvr_task_deadline');
+      const fixer = container.find((node) => node.attributes['data-managed-task-id'] === 'dvr_task_sibling');
+      expect(designer?.textContent).toContain('Running...');
+      await act(async () => { store.getState().ingestEvent(toManagedTaskEvent(completed, envelope)); });
+      expect(container.find((node) => node.attributes['data-managed-task-id'] === 'dvr_task_deadline')).toBe(designer);
+      expect(designer?.textContent).toContain('Complete');
+      expect(designer?.textContent).not.toContain('Running...');
+      expect(fixer?.textContent).toContain('Running...');
+    } finally {
+      await act(async () => { root.unmount(); store.getState().reset(); });
+    }
+  });
+});

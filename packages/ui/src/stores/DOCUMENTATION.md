@@ -624,3 +624,15 @@ resolve this root's provisional wait. `isLoadingSnapshotForRoot` permits the
 fallback only during that root's or a global snapshot load; failed/unavailable
 loads stop it. Confirmation survives refreshes and clears
 on store reset. Snapshot/event ordering and barrier enforcement are unchanged.
+
+
+### Managed task deadline reconciliation
+
+`timeoutAt` is mutable for a single managed task attempt: the scheduler extends
+finite deadlines for running writable Designer/Fixer tasks on observed progress.
+The UI accepts these extensions through events and snapshots and retains the
+later deadline on stale replay. Whether an attempt has a deadline remains fixed;
+null/finite changes and other task identity changes are rejected. A completion
+carrying a renewed deadline settles the existing row even if its renewal event
+was missed, without waiting for root idle or remounting. No-op reconciliation
+preserves row references and terminal status cannot regress.

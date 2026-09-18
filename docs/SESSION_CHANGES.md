@@ -61,6 +61,30 @@ marks a gap rather than silently certifying the task. Replay can repair an
 interrupted task after restart. Receipt bodies stay out of diagnostics and public
 activity events.
 
+## Read reconciliation and memory bounds
+
+Unchanged rejected historical receipts with inline bodies/patches retain a
+versioned SHA-256 input fingerprint. Reading the same rejection does not write
+metadata, repeat its diagnostic or publish another change event. Changed input
+is validated again and can repair that call. Missing referenced Git objects are
+not memoized as invalid: objects arriving later can still repair the receipt.
+
+Authenticated summary callers share work by canonical directory and selected
+session. `bounded-read-pool.js` admits two active scopes and sixteen queued
+scopes, with at most 128 subscribers per scope; excess reads return 503
+`reconciliation_busy`. This bounds read work, not agent execution. Each scope
+reads descendant histories sequentially. The existing 16 MiB response and
+history deadlines still apply. One subscriber disconnecting does not cancel
+other subscribers; the final disconnect aborts upstream fetches. Revision pages,
+diffs and mutations retain their own contracts. Responses preserve the caller's
+requested directory even when reconciliation is shared through symlink aliases.
+
+The UI retains one active summary fetch per account/directory/session key and
+one dirty follow-up for notifications arriving during that fetch. Pending
+capture retries retain their backoff. Unsubscribe, session deletion and account
+changes release that request's ownership, so late replies cannot restore stale
+rows. Identical invalid history therefore settles without an event/read loop.
+
 ## Summary and review contract
 
 `GET /api/openchamber/session/:id/changes?directory=...` returns:

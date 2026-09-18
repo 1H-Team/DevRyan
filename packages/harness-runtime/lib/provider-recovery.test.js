@@ -309,6 +309,101 @@ describe('managed objective continuation ownership', () => {
       text: '[devryan-open-todo-continuation:v1]\nContinue current work.' }] },
     { info: { id: `msg_answer${id}`, role: 'assistant', parentID: id, time: { completed: 10_000 } }, parts: [] });
   };
+  const proof = { taskId: 'dvr_task_recovered', envelopeId: 'dvr_result_recovered', rootSessionId: 'ses_test',
+    directory: '/project', dispatchGroupId: 'msg_dispatch', attempt: 2, createdAt: 11_000, finishedAt: 12_000 };
+  const recovered = () => continuation({ collection: { taskId: proof.taskId, claimantId: 'plugin-one' } });
+  const recoveredFixture = async (overrides = {}) => {
+    const f = await fixture({ verifyRecoveredCollection: async () => proof, ...overrides });
+    f.advance(3_000);
+    f.state.messages.splice(1, 0, { info: { id: 'msg_dispatch', role: 'assistant', parentID: 'msg_user', time: { completed: 5000 } }, parts: [] });
+    f.state.messages.at(-1).info.error = { name: 'APIError', data: {
+      message: 'Cannot connect to API: Unable to connect. Is the computer able to access the url?' } };
+    f.state.blocked = true; f.state.blockedByRequests = false; f.state.managedBarrierState = 'awaiting_acknowledgement';
+    return f;
+  };
+  test('incident: admits only a proven completed recovery after the parent API failure', async () => {
+    const f = await recoveredFixture();
+    await expect(f.controller.plugin(continuation())).rejects.toMatchObject({ code: 'managed_continuation_fenced' });
+    await expect(f.controller.plugin(recovered())).resolves.toMatchObject({ allowed: true, tools: {} });
+    expect(await f.controller.readRecord(identity.sessionID)).toMatchObject({ attemptCount: 0, anchorID: 'msg_user',
+      continuationID: 'msg_wake', collectionWake: { taskId: proof.taskId, messageID: 'msg_wake' }, collectionIssue: null });
+    expect(f.sent).toEqual([]); // Admission never replays the child or dispatches itself.
+    await expect(f.controller.plugin({ ...recovered(), userMessageID: 'msg_duplicate' }))
+      .rejects.toMatchObject({ code: 'managed_collection_delivery_unconfirmed' });
+  });
+  test('collection still works when canonical failure reconciliation preceded the user recovery', async () => {
+    const f = await recoveredFixture();
+    await f.fail();
+    expect((await f.snapshot()).record).toMatchObject({ state: 'needs_attention', reason: 'failure_not_eligible', attemptCount: 0 });
+    await expect(f.controller.plugin(recovered())).resolves.toMatchObject({ allowed: true });
+    await f.controller.reconcile(); // The reserved wake is not yet in OpenCode.
+    expect((await f.snapshot()).record).toMatchObject({ state: 'observing', reason: null, attemptCount: 0 });
+  });
+  test('Stop arriving during proof verification fences collection before reservation', async () => {
+    let enter, release;
+    const entered = new Promise(resolve => { enter = resolve; });
+    const pending = new Promise(resolve => { release = resolve; });
+    const f = await recoveredFixture({ verifyRecoveredCollection: async () => { enter(); await pending; return proof; } });
+    const admission = f.controller.plugin(recovered());
+    await entered;
+    const stopped = f.controller.control(identity.sessionID, 'cancel');
+    release();
+    await expect(admission).rejects.toMatchObject({ code: 'managed_continuation_fenced' });
+    await stopped;
+    expect((await f.controller.readRecord(identity.sessionID)).collectionWake).toBeUndefined();
+    expect((await f.snapshot()).record.state).toBe('cancelled');
+  });
+  test.each(['missing-proof', 'wrong-root', 'wrong-task', 'old-objective', 'old-attempt', 'not-recovered',
+    'question', 'permission', 'running-tool', 'busy', 'authentication', 'unknown-outcome', 'cancelled', 'superseded', 'runtime-changed'])(
+    'recovered collection preserves the %s fence', async scenario => {
+      const invalid = { ...proof };
+      if (scenario === 'wrong-root') invalid.rootSessionId = 'ses_other';
+      if (scenario === 'wrong-task') invalid.taskId = 'dvr_task_other';
+      if (scenario === 'old-objective') invalid.dispatchGroupId = 'msg_old';
+      if (scenario === 'old-attempt') invalid.createdAt = 9_000;
+      if (scenario === 'not-recovered') invalid.attempt = 1;
+      const f = await recoveredFixture({ verifyRecoveredCollection: async () => scenario === 'missing-proof' ? null : invalid });
+      if (scenario === 'question' || scenario === 'permission') f.state.blockedByRequests = true;
+      if (scenario === 'running-tool' || scenario === 'unknown-outcome') f.state.messages.at(-1).parts.push({ type: 'tool',
+        callID: 'call_unresolved', tool: 'bash', state: { status: scenario === 'running-tool' ? 'running' : 'pending' } });
+      if (scenario === 'busy') f.state.status = 'busy';
+      if (scenario === 'authentication') f.state.messages.at(-1).info.error = { name: 'AuthenticationError', code: 'ETIMEDOUT' };
+      if (scenario === 'cancelled') await f.controller.control(identity.sessionID, 'cancel');
+      if (scenario === 'superseded') await f.controller.admit({ sessionID: identity.sessionID, directory: '/project', primary: true,
+        body: { messageID: 'msg_new', agent: 'orchestrator', model: { providerID: 'openai', modelID: 'gpt-5.6-sol' } } });
+      if (scenario === 'runtime-changed') await f.controller.plugin({ action: 'hello', instanceID: 'new-runtime', policyVersion: 1, version: '1.18.31' });
+      await expect(f.controller.plugin(recovered())).rejects.toBeInstanceOf(Error);
+      expect(f.sent).toHaveLength(0);
+      expect((await f.controller.readRecord(identity.sessionID)).collectionWake).toBeUndefined();
+    });
+  test('a second provider failure after the accepted collection never authorizes another wake', async () => {
+    const f = await recoveredFixture();
+    await f.controller.plugin(recovered()); land(f, 'msg_wake');
+    f.state.messages.at(-1).info.error = structuredClone(f.state.messages.find(message => message.info.id === 'msg_failed').info.error);
+    await expect(f.controller.plugin({ ...recovered(), userMessageID: 'msg_again' }))
+      .resolves.toMatchObject({ deliveredMessageID: 'msg_wake' });
+    expect((await f.controller.readRecord(identity.sessionID)).continuationID).toBe('msg_wake');
+    expect(f.sent).toHaveLength(0);
+  });
+  test.each([false, true])('restart reconciles persisted wake acceptance=%s without another dispatch identity', async accepted => {
+    const f = await recoveredFixture();
+    await f.controller.plugin(recovered());
+    await expect(f.controller.plugin({ ...recovered(), userMessageID: 'msg_uncertain' }))
+      .rejects.toMatchObject({ code: 'managed_collection_delivery_unconfirmed' });
+    if (accepted) land(f, 'msg_wake');
+    await f.controller.drain();
+    const restarted = createPrimaryRecoveryController({ directory: f.directory, mode: 'enforce', isManaged: () => true,
+      authorize: async () => true, observeTurn: async () => structuredClone(f.state),
+      verifyRecoveredCollection: async () => proof, abortSession: async () => {}, promptSession: async () => { throw new Error('unexpected dispatch'); } });
+    await restarted.initialize(); cleanups.push(() => restarted.drain());
+    await restarted.plugin({ action: 'hello', instanceID: identity.instanceID, policyVersion: 1, version: '1.18.31' });
+    const result = restarted.plugin({ ...recovered(), userMessageID: 'msg_afterrestart' });
+    if (accepted) await expect(result).resolves.toMatchObject({ deliveredMessageID: 'msg_wake' });
+    else await expect(result).rejects.toMatchObject({ code: 'managed_collection_delivery_unconfirmed' });
+    expect((await restarted.readRecord(identity.sessionID)).collectionWake.messageID).toBe('msg_wake');
+    if (accepted) expect((await restarted.getSnapshot(identity.sessionID)).record.collectionIssue).toBeNull();
+  });
+
   test('reports missing pre-upgrade objective ownership without manufacturing an owner or budget', async () => {
     const f = await fixture({ mode: 'off' });
     await expect(f.controller.plugin(continuation({ sessionID: 'ses_unowned' }))).rejects.toMatchObject({ code: 'managed_objective_unavailable' });

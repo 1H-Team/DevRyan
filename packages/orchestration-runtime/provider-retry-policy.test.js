@@ -54,6 +54,9 @@ describe('classifyProviderRetryFailure', () => {
 
   it.each([
     ['Usage limit reached', 'provider_usage_limit'],
+    ['personal-team-blocked:spending-limit: You have run out of credits or need a Grok subscription.', 'provider_usage_limit'],
+    ['Change the team spending limit', null],
+    ['Primary recovery scope response failed', null],
     ['Free usage exceeded, subscribe to Go', 'provider_usage_limit'],
     ['Invalid prompt: required field messages is missing', null],
     ['The prompt was flagged for review', null],

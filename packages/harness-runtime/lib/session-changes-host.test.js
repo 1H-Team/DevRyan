@@ -207,8 +207,81 @@ test('invalid historical paths leave verified files reviewable and repair only t
   expect(first.status).toBe(200);
   expect(first.body.files.map(file => file.path)).toEqual(['known.txt']);
   expect(first.body.reasons).toContain('invalid_change_receipt');
+  const emitted = events.length;
+  for (let read = 0; read < 3; read++) {
+    const unchanged = await host.handleRequest('GET', endpoint());
+    expect(unchanged.body.reasons).toContain('invalid_change_receipt');
+    expect(unchanged.body.revision).toBe(first.body.revision);
+  }
+  expect(events).toHaveLength(emitted);
   invalid.parts[0].state.metadata.filediff.file = 'repaired.txt';
   const repaired = await host.handleRequest('GET', endpoint());
   expect(repaired.body.coverage).toBe('complete');
   expect(repaired.body.files.map(file => file.path)).toEqual(['known.txt', 'repaired.txt']);
+  expect(events.length).toBeGreaterThan(emitted);
+});
+
+
+test('concurrent summary subscribers share history and only the final disconnect cancels it', async () => {
+  let release, started;
+  const gate = new Promise(resolve => { release = resolve; });
+  const entered = new Promise(resolve => { started = resolve; });
+  let messageReads = 0, readSignal;
+  const shared = createSessionChangeHost({ dataDirectory: base, buildOpenCodeUrl: pathname => `http://fixture${pathname}`,
+    fetchImpl: async (raw, init) => {
+      const url = new URL(raw);
+      if (url.pathname.endsWith('/message')) {
+        messageReads++; readSignal = init.signal; started(); await gate;
+        return Response.json(messages);
+      }
+      if (url.pathname.endsWith('/children')) return Response.json([]);
+      return Response.json({ id: 'ses_a', directory });
+    } });
+  const abandoned = new AbortController();
+  try {
+    const alias = path.join(base, 'alias'); await fs.symlink(directory, alias);
+    const aliasEndpoint = endpoint().replace(encodeURIComponent(directory), encodeURIComponent(alias));
+    const reads = [shared.handleRequest('GET', endpoint(), {}, { signal: abandoned.signal }),
+      shared.handleRequest('GET', aliasEndpoint),
+      ...Array.from({ length: 8 }, () => shared.handleRequest('GET', endpoint()))];
+    await entered;
+    // Allow all realpath resolutions to join the same scope.
+    while (shared.getReadDiagnostics().scopes !== 1) await new Promise(resolve => setTimeout(resolve, 1));
+    abandoned.abort();
+    expect((await reads[0]).status).toBe(503);
+    expect(readSignal.aborted).toBe(false);
+    release();
+    const results = await Promise.all(reads.slice(1));
+    expect(results.every(result => result.status === 200)).toBe(true);
+    expect(results[0].body.directory).toBe(alias);
+    expect(results[1].body.directory).toBe(directory);
+    expect(results[0].body.revision).toBe(results[1].body.revision);
+    expect(messageReads).toBe(1);
+    expect(shared.getReadDiagnostics()).toMatchObject({ active: 0, queued: 0, scopes: 0, responseBytes: 0 });
+  } finally { release(); await shared.drain(); }
+});
+
+test('a disconnected sole summary client aborts upstream history and releases its scope', async () => {
+  let started;
+  const entered = new Promise(resolve => { started = resolve; });
+  let observedAbort = false;
+  const shared = createSessionChangeHost({ dataDirectory: base, buildOpenCodeUrl: pathname => `http://fixture${pathname}`,
+    fetchImpl: async (raw, init) => {
+      const url = new URL(raw);
+      if (url.pathname.endsWith('/message')) {
+        started();
+        return new Promise((resolve, reject) => init.signal.addEventListener('abort', () => {
+          observedAbort = true; reject(init.signal.reason);
+        }, { once: true }));
+      }
+      if (url.pathname.endsWith('/children')) return Response.json([]);
+      return Response.json({ id: 'ses_a', directory });
+    } });
+  const abort = new AbortController();
+  try {
+    const result = shared.handleRequest('GET', endpoint(), {}, { signal: abort.signal });
+    await entered; abort.abort(); await result; await shared.drain();
+    expect(observedAbort).toBe(true);
+    expect(shared.getReadDiagnostics()).toMatchObject({ active: 0, queued: 0, scopes: 0, responseBytes: 0 });
+  } finally { await shared.drain(); }
 });

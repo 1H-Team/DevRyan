@@ -1646,7 +1646,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
 
   // Shared by provider-recovery wakes and the open-todo continuation so both
   // use the same identity and primary-host pre-registration.
-  const promptSessionSynthetic = async ({ rootSessionId, directory, execution, text, kind = 'collect' }) => {
+  const promptSessionSynthetic = async ({ rootSessionId, directory, execution, text, kind = 'collect', collection }) => {
     // Resolve current Plan authority after the task claim, independent of the
     // child policy and execution selection captured by the recovery scan.
     const authority = await resolvePlanAuthority(client, { sessionId: rootSessionId, directory });
@@ -1658,12 +1658,14 @@ export const DevRyanManagedOrchestrationPlugin = async ({
     const wakeMessageID = `msg_${(BigInt(Date.now()) * 4096n).toString(16).slice(-12).padStart(12, '0')}${crypto.randomBytes(7).toString('hex')}`;
     const admission = await registerContinuation({ sessionID: rootSessionId, directory,
       anchorUserMessageID: authority.info.id, userMessageID: wakeMessageID, kind,
+      ...(collection ? { collection } : {}),
       execution: { providerID: execution.providerId, modelID: execution.modelId, agent: execution.agent,
         variant: execution.variant ?? null } });
     if (admission?.allowed !== true || admission.anchorUserMessageID !== authority.info.id
       || !isRecord(admission.tools) || Object.values(admission.tools).some((value) => typeof value !== 'boolean')) {
       throw new Error('Managed continuation owner did not authorize this objective');
     }
+    if (typeof admission.deliveredMessageID === 'string') return admission.deliveredMessageID;
     const response = await client.session.promptAsync({
       path: { id: rootSessionId },
       query: { directory },
@@ -1761,7 +1763,8 @@ export const DevRyanManagedOrchestrationPlugin = async ({
       ].join(' ');
       let promptDelivered = false;
       try {
-        await promptSessionSynthetic({ rootSessionId, directory, execution, text: prompt });
+        await promptSessionSynthetic({ rootSessionId, directory, execution, text: prompt,
+          collection: { taskId, claimantId: recoveryContinuationClaimantId } });
         promptDelivered = true;
         rememberRecoveryContinuationSent(taskId);
         logRecovery('recovered-parent-continued', { rootSessionId, taskId });
@@ -2005,9 +2008,15 @@ export const DevRyanManagedOrchestrationPlugin = async ({
             try {
               await requestRecoveredParentContinuation(continuation);
             } catch (error) {
-              retryNeeded = true;
+              const fenced = ['managed_continuation_fenced', 'managed_continuation_blocked',
+                'managed_objective_mismatch', 'managed_objective_unavailable', 'managed_collection_unverified',
+                'managed_collection_delivery_unconfirmed'].includes(error?.code);
+              if (fenced) rememberRecoveryContinuationSent(continuation.taskId);
+              else retryNeeded = true;
               logRecovery('recovered-parent-continuation-failed', {
                 taskId: typeof continuation?.taskId === 'string' ? continuation.taskId : null,
+                code: typeof error?.code === 'string' ? error.code : null,
+                requiresUserAction: fenced,
                 message: error instanceof Error ? error.message : String(error),
               });
             }

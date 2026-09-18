@@ -79,3 +79,5 @@ validated transport receipts show same-model recovery and backup execution;
 `autoResume.trigger` selects connection-specific wording and the automatic-backup
 control without displaying quota-reset claims. The narrow managed store preserves
 receipt revisions and unchanged row identities.
+
+- Completed managed results omit parent collection notices. `HostPrimaryRecovery.tsx` keeps polling and SSE ingestion active while hiding collection-issue cards; other parent failures retain controls within the chat message column. Completed dispatch rows show “Recovered with” model/effort details only for confirmed recovery receipts or lineage.

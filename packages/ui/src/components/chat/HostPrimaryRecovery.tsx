@@ -49,10 +49,12 @@ export const HostPrimaryRecovery = React.memo(({ sessionId, showAvailability = f
   }, [sessionId]);
   const record = snapshot?.record;
   const repeatedInput = record?.reason === 'managed_repeated_preexecution_rejection';
-  if (showAvailability && !snapshot?.enforced && !record?.readOnly && !repeatedInput) return <p className="mb-2 text-sm text-muted-foreground">
+  const collectionIssue = record?.collectionIssue;
+  if (collectionIssue) return null;
+  if (showAvailability && !snapshot?.enforced && !record?.readOnly && !repeatedInput) return <div className="chat-message-column px-4 pb-2 pt-3"><p className="typography-meta text-muted-foreground">
     {snapshot?.supported ? 'Automatic recovery is in observe mode. Manual recovery remains available.'
       : 'Automatic recovery safeguards are unavailable for this runtime. Manual recovery remains available.'}
-  </p>;
+  </p></div>;
   if (!record || (!snapshot.enforced && !record.readOnly && !repeatedInput)
     || (record.state === 'observing' && record.reason !== 'provider_input_progress_unavailable') || record.state === 'superseded'
     || (record.state === 'completed' && !record.attemptCount)) return null;
@@ -62,10 +64,9 @@ export const HostPrimaryRecovery = React.memo(({ sessionId, showAvailability = f
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Action not confirmed'); }
     finally { setPending(false); }
   };
-  return <div role="status" aria-live="polite" className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
+  return <div className="chat-message-column px-4 pb-2 pt-3"><div role="status" aria-live="polite" className="rounded-lg border border-border bg-muted/30 p-3 typography-meta">
     <p className="font-medium">{repeatedInput ? 'Paused after repeated invalid tool input'
       : record.reason === 'provider_input_progress_unavailable' ? 'Provider argument progress cannot be verified' : labels[record.state]}</p>
-    <p className="mt-1 text-muted-foreground">{record.providerID}/{record.modelID} · {record.agent}{record.variant ? ` · ${record.variant}` : ''}</p>
     <p className="mt-1">{repeatedInput ? 'The same input was rejected before execution three times. Review the input or send a corrected instruction to continue.'
       : 'Completed work and the original error remain in this session. Automatic recovery can only inspect files.'}</p>
     {record.reason === 'provider_input_progress_unavailable' && <p className="mt-1">This runtime does not report incremental tool arguments. The watchdog will not interrupt this phase automatically. Stop remains available.</p>}
@@ -74,13 +75,13 @@ export const HostPrimaryRecovery = React.memo(({ sessionId, showAvailability = f
       : record.reason === 'recovery_tool_outcome_unknown'
       ? 'A tool may have changed files before the timeout. Automatic retry is paused; review the outcome before continuing.'
       : record.providerID === 'anthropic' && record.reason === 'chunk_timeout' ? 'Claude stopped sending data.'
-      : record.reason.replaceAll('_', ' ')}</p>}
+      : record.reason.replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase())}</p>}
     {error && <p role="alert" className="mt-2 text-destructive">{error}</p>}
-    <div className="mt-2 flex gap-2">
+    <div className="mt-2 flex flex-wrap gap-2">
       {record.state !== 'completed' && <Button variant="outline" size="sm" onClick={() => void act('cancel')}>Stop</Button>}
-      {['needs_attention', 'cancelled'].includes(record.state) && <Button variant="outline" size="sm" disabled={pending}
+      {['needs_attention', 'cancelled'].includes(record.state) && <Button className="h-auto max-w-full whitespace-normal" variant="outline" size="sm" disabled={pending}
         onClick={() => void act('continue')}>Continue with original permissions</Button>}
     </div>
-  </div>;
+  </div></div>;
 });
 HostPrimaryRecovery.displayName = 'HostPrimaryRecovery';

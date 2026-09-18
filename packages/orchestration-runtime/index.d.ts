@@ -700,6 +700,10 @@ export interface ManagedTaskScheduler {
     directory: string;
     claimantId: string;
   }): Promise<{ released: boolean }>;
+  verifyRecoveredCollection(input: { taskId: string; rootSessionId: string; directory: string; claimantId: string }): Promise<{
+    taskId: string; envelopeId: string; dispatchGroupId: string; rootSessionId: string; directory: string;
+    createdAt: number; finishedAt: number; attempt: number;
+  } | null>;
   inspectAgentHandoff(input: ManagedAgentHandoffScope): Promise<ManagedAgentHandoffResult>;
   confirmAgentHandoff(input: ManagedAgentHandoffScope & {
     idempotencyKey: string;

@@ -56,7 +56,16 @@ export const DevRyanPrimaryRecoveryPlugin = async ({ client, directory, fetchImp
   // Managed continuation producers must wait for this real plugin's host
   // registration. An instance UUID by itself is not evidence of ownership.
   globalThis[Symbol.for('devryan.primary-recovery.ready.v1')] = hello;
-  const scope = async (sessionID) => { await hello(); return rpc({ action: 'scope', sessionID }); };
+  const scope = async (sessionID) => {
+    await hello();
+    try { return await rpc({ action: 'scope', sessionID }); }
+    catch (error) {
+      // Scope is a read-only guard lookup. One failed transport/body read may
+      // retry; host rejections and every mutating RPC remain single-attempt.
+      if (!error.cause) throw error;
+      return rpc({ action: 'scope', sessionID });
+    }
+  };
   const inspect = async (input) => {
     const response = await client.session.messages({ path: { id: input.sessionID },
       query: { directory, limit: 10 }, signal: AbortSignal.timeout(5000) });

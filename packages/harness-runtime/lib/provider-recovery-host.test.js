@@ -161,3 +161,30 @@ test('Claude mode environment override does not bypass production conformance', 
     else process.env.DEVRYAN_ANTHROPIC_RECOVERY_MODE = previous;
   }
 });
+
+
+test('a retained result offers explicit parent continuation but never bypasses a pending permission', async () => {
+  let waiting = false;
+  const f = await setup({ managedBarrier: async () => ({ state: 'awaiting_acknowledgement' }),
+    response: url => url.pathname === '/permission' && waiting ? Response.json([{ id: 'permission_1', sessionID: 'ses_test' }]) : null });
+  await expect(f.host.plugin({ action: 'continuation', instanceID: 'fixture', sessionID: 'ses_test', directory: '/project',
+    anchorUserMessageID: 'msg_user', userMessageID: 'msg_collection', kind: 'collect',
+    collection: { taskId: 'dvr_task_recovered', claimantId: 'plugin-one' },
+    execution: { providerID: 'openai', modelID: 'gpt-5.6-sol', agent: 'orchestrator', variant: 'xhigh' } }))
+    .rejects.toMatchObject({ code: 'managed_collection_unverified' });
+  let snapshot = await f.host.getSnapshot('ses_test');
+  expect(snapshot.record.collectionIssue.taskId).toBe('dvr_task_recovered');
+  waiting = true;
+  expect(await f.host.handleRequest('POST', '/session/ses_test/recovery/continue', { revision: snapshot.record.revision, messageID: 'msg_explicit' }))
+    .toMatchObject({ status: 409, body: { code: 'provider_stop_unconfirmed' } });
+  expect(f.calls.filter(call => call.url.pathname.endsWith('/prompt_async'))).toHaveLength(0);
+  waiting = false;
+  snapshot = await f.host.getSnapshot('ses_test');
+  expect(await f.host.handleRequest('POST', '/session/ses_test/recovery/continue', { revision: snapshot.record.revision, messageID: 'msg_explicit' }))
+    .toMatchObject({ status: 200 });
+  const sent = f.calls.filter(call => call.url.pathname.endsWith('/prompt_async'));
+  expect(sent).toHaveLength(1);
+  expect(JSON.parse(sent[0].init.body).parts[0].text).toContain('dvr_task_recovered');
+  expect(JSON.parse(sent[0].init.body).tools).toEqual({});
+  expect((await f.host.getSnapshot('ses_test')).record.collectionIssue).toBeNull();
+});

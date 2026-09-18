@@ -1,4 +1,6 @@
 import { restartSupabaseHost } from './supabase-host-restart.mjs';
+import { createRuntimeMemoryMonitor } from './runtime-memory-monitor.mjs';
+import { installRendererRecovery } from './renderer-recovery.mjs';
 import { createDesktopMenu } from './desktop-menu.mjs';
 import { createNativeNotifications } from './native-notifications.mjs';
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, safeStorage, session, shell, systemPreferences, WebContentsView } from 'electron';
@@ -281,6 +283,14 @@ const state = {
   desktopHostBrokerLease: null,
   desktopHostLeaseRefreshTimer: null,
 };
+
+const runtimeMemoryMonitor = createRuntimeMemoryMonitor({
+  log: (sample) => log.info('[runtime-memory]', sample),
+  role: isRuntimeServiceMode ? 'runtime-service' : 'foreground',
+  version: app.getVersion(),
+  getWork: () => state.serverHandle?.getSessionChangeReadDiagnostics?.(),
+});
+app.once('will-quit', () => runtimeMemoryMonitor.stop());
 
 const desktopHostBrokerClient = createDesktopHostBrokerClient({
   getLease: () => state.desktopHostBrokerLease,
@@ -2735,13 +2745,11 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
       windowId: browserWindow.id,
     });
   });
-  browserWindow.webContents.on('render-process-gone', (_event, details) => {
-    log.error('[renderer] render process exited', {
-      label: browserWindow.__ocLabel,
-      windowId: browserWindow.id,
-      reason: details?.reason || 'unknown',
-      exitCode: Number.isInteger(details?.exitCode) ? details.exitCode : null,
-    });
+  installRendererRecovery({
+    browserWindow,
+    shouldQuit: () => state.quitRequested || state.installingUpdate,
+    showMessageBox: (window, options) => dialog.showMessageBox(window, options),
+    log,
   });
   browserWindow.webContents.on(
     'did-fail-load',

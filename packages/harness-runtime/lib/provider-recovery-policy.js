@@ -62,6 +62,14 @@ export function classifyPrimaryTransportError(error, runtimeVersion) {
 }
 
 export function validatePrimaryRecoveryRecord(value) {
+  const wake = value?.collectionWake;
+  if (wake !== undefined && (!wake || !/^dvr_task_[a-zA-Z0-9]+$/.test(wake.taskId)
+    || !/^dvr_result_[a-zA-Z0-9_]+$/.test(wake.envelopeId) || !/^msg_[a-zA-Z0-9]+$/.test(wake.messageID)
+    || !Number.isFinite(wake.reservedAt) || !Number.isSafeInteger(wake.generation) || wake.generation < 0)) throw recoveryError('invalid_collection_wake');
+  const issue = value?.collectionIssue;
+  if (issue !== undefined && issue !== null && (!/^dvr_task_[a-zA-Z0-9]+$/.test(issue.taskId)
+    || !['managed_continuation_fenced', 'managed_continuation_blocked', 'managed_objective_mismatch',
+      'managed_collection_unverified', 'managed_collection_delivery_unconfirmed'].includes(issue.code))) throw recoveryError('invalid_collection_issue');
   validateObjectiveRejections(value?.rejections);
   validateObjectiveProgress(value?.progress);
   validateBuilderTodoGuard(value?.builderTodoGuard);

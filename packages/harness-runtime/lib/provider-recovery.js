@@ -1,5 +1,6 @@
 import { applyObjectiveRejection, applyObjectiveProgress, projectObjectiveProgress } from './objective-progress.js';
 import { planBuilderTodoContinuation } from './builder-todo-continuation.js';
+import { isCollectionTransportFailure, matchesRecoveredCollection, collectionIssueCodes } from './managed-collection-continuation.js';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs/promises';
@@ -65,6 +66,7 @@ export function createPrimaryRecoveryController(options) {
       reason: record.reason, updatedAt: record.updatedAt,
       progress: projectObjectiveProgress(record.progress),
       failureKind: record.failureKind ?? null,
+      collectionIssue: record.collectionIssue ?? null,
     } : null,
   });
   const publish = (record) => options.publishEvent?.({
@@ -195,6 +197,14 @@ export function createPrimaryRecoveryController(options) {
         timeout = setTimeout(() => reject(recoveryError('recovery_authorization_unavailable')), 5000);
       })]);
     } finally { clearTimeout(timeout); }
+  };
+  const verifyCollectionBounded = async (record, collection) => {
+    let timer;
+    try {
+      return await Promise.race([options.verifyRecoveredCollection?.(record, collection), new Promise((_, reject) => {
+        timer = setTimeout(() => reject(recoveryError('managed_collection_unverified')), 5000);
+      })]);
+    } finally { clearTimeout(timer); }
   };
 
   async function reconcileOne(id, watchdog = false) {
@@ -443,42 +453,84 @@ export function createPrimaryRecoveryController(options) {
       return { allowed: false, state: result.state, count: result.count };
     }
     if (input.action === 'continuation') {
-      if (!isProviderRecoverySupportedRuntimeVersion(handshake.version) || draining
-        || !/^msg_[a-zA-Z0-9]+$/.test(input.userMessageID ?? '') || r.attemptCount || r.recoverySuppressed
-        || !['observing', 'completed'].includes(r.state)) throw recoveryError('managed_continuation_fenced');
-      const admitted = await mutate(r.sessionID, async (next) => {
-        if (!next || next.anchorID !== input.anchorUserMessageID || next.directory !== input.directory
-          || next.providerID !== input.execution?.providerID || next.modelID !== input.execution?.modelID
-          || next.agent !== input.execution?.agent || next.variant !== (input.execution?.variant ?? null)
-          || !['collect', 'orchestrator_todo', 'builder_todo'].includes(input.kind)
-          || (input.kind === 'builder_todo' && !['build', 'builder'].includes(next.agent))
-          || (input.kind === 'orchestrator_todo' && next.agent !== 'orchestrator')) throw recoveryError('managed_objective_mismatch');
-        const observed = await observeBounded(next, undefined, input.kind === 'builder_todo');
-        const check = inspectRecoveryTurn(next, observed);
-        if (observed.status !== 'idle' || check.superseded || check.unresolved || !check.last?.info.time?.completed
-          || check.last.info.error || next.attemptCount || next.recoverySuppressed
-          || !['observing', 'completed'].includes(next.state)
-          || !await authorizeBounded(next)) throw recoveryError('managed_continuation_fenced');
-        // Collection may run with the child barrier present; ordinary TODO
-        // nudges must wait until all results are reconciled and blockers clear.
-        if (observed.blocked && (input.kind !== 'collect' || observed.blockedByRequests !== false
-          || !['active', 'awaiting_acknowledgement'].includes(observed.managedBarrierState))) throw recoveryError('managed_continuation_blocked');
-        const count = next.todoContinuationCount ?? 0;
-        const limit = input.kind === 'builder_todo' ? 12 : 3;
-        if (input.kind !== 'collect' && count >= limit) throw recoveryError('managed_objective_budget_exhausted');
-        const builder = input.kind === 'builder_todo' ? planBuilderTodoContinuation(next, observed) : null;
-        if (builder && !builder.allowed) throw recoveryError(builder.reason);
-        invalidate(r.sessionID);
-        return { ...next, continuationID: input.userMessageID,
-          activeUserID: undefined,
-          todoContinuationCount: count + (input.kind === 'collect' ? 0 : 1),
-          ...(builder ? { builderTodoGuard: builder.guard } : {}),
-          state: 'observing', stepID: null, requestedAt: null, failure: null, failedID: null };
-      });
-      diagnostic('managed_continuation_admitted', admitted, { kind: input.kind,
-        todoContinuationCount: admitted.todoContinuationCount, continuationMessageID: input.userMessageID });
-      return { allowed: true, anchorUserMessageID: admitted.anchorID, tools: admitted.tools,
-        todoContinuationCount: admitted.todoContinuationCount };
+      try {
+        const collectionAttention = record => input.kind === 'collect' && input.collection?.taskId
+          && record.state === 'needs_attention' && record.reason === 'failure_not_eligible';
+        const generation = generations.get(r.sessionID) ?? 0;
+        if (!isProviderRecoverySupportedRuntimeVersion(handshake.version) || draining
+          || !/^msg_[a-zA-Z0-9]+$/.test(input.userMessageID ?? '') || r.attemptCount || r.recoverySuppressed
+          || (!['observing', 'completed'].includes(r.state) && !collectionAttention(r))) throw recoveryError('managed_continuation_fenced');
+        let deliveredMessageID = null;
+        const admitted = await mutate(r.sessionID, async (next) => {
+          if (!next || next.anchorID !== input.anchorUserMessageID || next.directory !== input.directory
+            || next.providerID !== input.execution?.providerID || next.modelID !== input.execution?.modelID
+            || next.agent !== input.execution?.agent || next.variant !== (input.execution?.variant ?? null)
+            || !['collect', 'orchestrator_todo', 'builder_todo'].includes(input.kind)
+            || (input.kind === 'builder_todo' && !['build', 'builder'].includes(next.agent))
+            || (input.kind === 'orchestrator_todo' && next.agent !== 'orchestrator')) throw recoveryError('managed_objective_mismatch');
+          const observed = await observeBounded(next, undefined, input.kind === 'builder_todo');
+          if (input.kind === 'collect' && input.collection?.taskId && next.collectionWake?.taskId === input.collection.taskId) {
+            const delivered = observed.messages?.some(message => message.info?.role === 'user'
+              && message.info.id === next.collectionWake.messageID
+              && message.parts?.some(part => part.type === 'text' && part.synthetic === true));
+            if (delivered && next.collectionWake.generation === next.cancellationGeneration) {
+              deliveredMessageID = next.collectionWake.messageID;
+              return next.collectionIssue ? { ...next, collectionIssue: null } : next;
+            }
+            // A prior reservation may have reached OpenCode even if the caller
+            // missed its HTTP acknowledgement. Never manufacture a second ID.
+            throw recoveryError('managed_collection_delivery_unconfirmed');
+          }
+          const check = inspectRecoveryTurn(next, observed);
+          let collectionProof = null;
+          if (check.last?.info.error && input.kind === 'collect'
+            && isCollectionTransportFailure(check.last.info.error, handshake.version)
+            && input.collection?.taskId && typeof input.collection.claimantId === 'string') {
+            collectionProof = await verifyCollectionBounded(next, input.collection);
+            if (!matchesRecoveredCollection(next, check, observed, collectionProof, input.collection)) {
+              throw recoveryError('managed_collection_unverified');
+            }
+          }
+          if (observed.status !== 'idle' || check.superseded || check.unresolved || !check.last?.info.time?.completed
+            || (check.last.info.error && !collectionProof) || next.attemptCount || next.recoverySuppressed
+            || (!['observing', 'completed'].includes(next.state) && !(collectionProof && collectionAttention(next)))
+            || !await authorizeBounded(next)) throw recoveryError('managed_continuation_fenced');
+          // Collection may run with the child barrier present; ordinary TODO
+          // nudges must wait until all results are reconciled and blockers clear.
+          if (observed.blocked && (input.kind !== 'collect' || observed.blockedByRequests !== false
+            || !['active', 'awaiting_acknowledgement'].includes(observed.managedBarrierState))) throw recoveryError('managed_continuation_blocked');
+          const count = next.todoContinuationCount ?? 0;
+          const limit = input.kind === 'builder_todo' ? 12 : 3;
+          if (input.kind !== 'collect' && count >= limit) throw recoveryError('managed_objective_budget_exhausted');
+          const builder = input.kind === 'builder_todo' ? planBuilderTodoContinuation(next, observed) : null;
+          if (builder && !builder.allowed) throw recoveryError(builder.reason);
+          if (handshake.instanceID !== input.instanceID) throw recoveryError('recovery_owner_mismatch');
+          if (draining || (generations.get(r.sessionID) ?? 0) !== generation) throw recoveryError('managed_continuation_fenced');
+          invalidate(r.sessionID);
+          return { ...next, continuationID: input.userMessageID, collectionIssue: null,
+            ...(collectionProof ? { collectionWake: { taskId: collectionProof.taskId, envelopeId: collectionProof.envelopeId,
+              messageID: input.userMessageID, reservedAt: now(), generation: next.cancellationGeneration }, reason: null, failureKind: null } : {}),
+            activeUserID: undefined,
+            todoContinuationCount: count + (input.kind === 'collect' ? 0 : 1),
+            ...(builder ? { builderTodoGuard: builder.guard } : {}),
+            state: 'observing', stepID: null, requestedAt: null, failureObserved: false, failure: null, failedID: null };
+        });
+        if (deliveredMessageID) return { allowed: true, deliveredMessageID, anchorUserMessageID: admitted.anchorID, tools: admitted.tools };
+        diagnostic('managed_continuation_admitted', admitted, { kind: input.kind,
+          todoContinuationCount: admitted.todoContinuationCount, continuationMessageID: input.userMessageID });
+        return { allowed: true, anchorUserMessageID: admitted.anchorID, tools: admitted.tools,
+          todoContinuationCount: admitted.todoContinuationCount };
+      } catch (error) {
+        if (collectionIssueCodes.has(error.code) && /^dvr_task_[a-zA-Z0-9]+$/.test(input.collection?.taskId ?? '')) {
+          const issue = { taskId: input.collection.taskId, code: error.code };
+          await mutate(r.sessionID, next => !next || next.anchorID !== r.anchorID || next.anchorID !== input.anchorUserMessageID
+            || ['cancelled', 'superseded'].includes(next.state)
+            || (next.collectionIssue?.taskId === issue.taskId && next.collectionIssue.code === issue.code)
+            ? next : { ...next, collectionIssue: issue });
+          diagnostic('managed_collection_rejected', r, issue);
+        }
+        throw error;
+      }
     }
     if (isGuarded && input.action === 'tool_before' && (!(r.allowedReadTools ?? []).includes(input.tool)
       || (input.nativeToolVerified !== true && options.getToolPolicy) || r.tools['*'] === false || r.tools[input.tool] === false)) {
@@ -512,6 +564,7 @@ export function createPrimaryRecoveryController(options) {
           || input.userMessageID !== currentObjectiveUser(next)) throw recoveryError('provider_recovery_fenced');
         if ((enforcing || isGuarded) && next.stepID === input.assistantMessageID && next.requestedAt !== null) throw recoveryError('provider_retry_requires_reconciliation');
         return { ...next, stepID: input.assistantMessageID,
+          ...(next.collectionWake?.messageID === input.userMessageID ? { collectionIssue: null } : {}),
           requestedAt: now(), instanceID: input.instanceID, failure: null, failureObserved: false, failureKind: null,
           reason: next.reason === 'provider_input_progress_unavailable' ? null : next.reason };
       });

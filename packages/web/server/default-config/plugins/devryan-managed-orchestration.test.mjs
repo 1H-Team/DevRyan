@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createOpencodeClient } from '@opencode-ai/sdk';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { createPrimaryRecoveryHost, createPrimaryRecoveryManagedAdapter } from '@openchamber/harness-runtime';
+import { createManagedTaskScheduler } from '@openchamber/orchestration-runtime';
 import { createCompactResultHeader } from '@openchamber/orchestration-runtime';
 
 vi.mock('@opencode-ai/plugin', () => {
@@ -3463,6 +3468,97 @@ describe('DevRyan managed orchestration plugin', () => {
       },
     });
     expect(requests.map(({ method }) => method)).toEqual(['wait']);
+  });
+
+  it.each([false, true])('incident integration: failed parent survives restart, collects user recovery once (lost acknowledgement=%s)', async lostAcknowledgement => {
+    const dataDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-collection-'));
+    let time = 1000, taskNumber = 0;
+    let savedLedger = null;
+    const makeScheduler = () => createManagedTaskScheduler({ now: () => time, createTaskId: () => `dvr_task_${++taskNumber}`,
+      persistence: { load: async () => savedLedger, save: async ledger => { savedLedger = structuredClone(ledger); } },
+      executor: { start: async (task, control) => { await control.setChildSessionId('ses_child'); await control.markAccepted();
+        return { status: 'failed', failureReason: 'provider unavailable', resumable: true, partial: true, recoverablePreview: 'existing work' }; },
+        retryInPlace: async (task, control) => { await control.markAccepted(); return { status: 'completed', recoverablePreview: 'review finished' }; },
+        abort: async () => ({ aborted: true }), reconcile: async () => ({ state: 'unavailable' }), readRecoverableResult: async () => ({}) } });
+    let scheduler = makeScheduler();
+    const records = [
+      { info: { id: 'msg_parentuser', role: 'user', agent: 'orchestrator', model: { providerID: 'openai', modelID: 'gpt-5.6', variant: 'xhigh' } },
+        parts: [{ type: 'text', text: 'Review the project.' }] },
+      { info: { id: 'msg_parent', role: 'assistant', parentID: 'msg_parentuser', time: { completed: 1000 } }, parts: [] },
+      { info: { id: 'msg_failed', role: 'assistant', parentID: 'msg_parentuser', time: { completed: 2000 },
+        error: { name: 'APIError', data: { message: 'Cannot connect to API: Unable to connect. Is the computer able to access the url?' } } }, parts: [] },
+    ];
+    const rpc = async ({ method, params }) => {
+      if (method === 'list_provider_recovery_continuations') return { continuations: scheduler.listReadyProviderRecoveryContinuations() };
+      if (method === 'claim_provider_recovery_continuation') return scheduler.claimProviderRecoveryContinuation(params);
+      if (method === 'release_provider_recovery_continuation') return scheduler.releaseProviderRecoveryContinuation(params);
+      if (method === 'verify_recovered_collection') return scheduler.verifyRecoveredCollection(params);
+      if (method === 'barrier_status') return scheduler.inspectDispatchBarrier(params.rootSessionId);
+      if (method === 'status' || method === 'wait') return { task: scheduler.getTask(params.taskId), resultEnvelope: scheduler.getResultEnvelope(params.taskId) };
+      if (method === 'acknowledge') return scheduler.acknowledgeResult(params.taskId, params);
+      throw new Error(`Unexpected fixture RPC ${method}`);
+    };
+    const hostOptions = { dataDirectory, mode: 'enforce', isManaged: () => true, authorize: async () => true,
+      buildOpenCodeUrl: pathname => `http://fixture.invalid${pathname}`, ...createPrimaryRecoveryManagedAdapter(rpc),
+      fetchImpl: async raw => {
+        const url = new URL(raw);
+        if (url.pathname === '/global/health') return Response.json({ healthy: true, version: '1.18.31' });
+        if (url.pathname === '/session/ses_root') return Response.json({ id: 'ses_root', directory: '/workspace' });
+        if (url.pathname === '/session/status') return Response.json({});
+        if (url.pathname.endsWith('/message')) return Response.json(records);
+        if (['/permission', '/question'].includes(url.pathname)) return Response.json([]);
+        throw new Error(`Unexpected fixture observation ${url.pathname}`);
+      } };
+    let host = createPrimaryRecoveryHost(hostOptions);
+    try {
+      const original = await scheduler.submit({ idempotencyKey: 'initial', rootSessionId: 'ses_root', directory: '/workspace',
+        mode: 'orchestrator', dispatchGroupId: 'msg_parent', providerId: 'openai', modelId: 'gpt-5.6', agent: 'oracle', label: 'Review', prompt: 'Review' });
+      await scheduler.waitForTask(original.taskId);
+      await host.initialize();
+      await host.handleRequest('POST', '/session/ses_root/prompt_async?directory=/workspace', {
+        messageID: 'msg_parentuser', agent: 'orchestrator', model: { providerID: 'openai', modelID: 'gpt-5.6' }, variant: 'xhigh' });
+      await host.drain(); await scheduler.shutdown(); scheduler = makeScheduler(); await scheduler.initialize();
+      host = createPrimaryRecoveryHost(hostOptions); await host.initialize();
+      await host.plugin({ action: 'hello', instanceID: 'runtime-restarted', policyVersion: 1, transport: 'fetch' });
+      time = 3000;
+      const retry = await scheduler.acknowledgeResult(original.taskId, { action: 'retry_in_place', idempotencyKey: 'user-recovered',
+        providerId: 'openai', modelId: 'gpt-5.6', variant: null });
+      await scheduler.waitForTask(retry.followUpTask.taskId);
+      vi.stubGlobal('fetch', vi.fn(async (_url, init) => rpcResponse(await rpc(JSON.parse(init.body)))));
+      const client = { session: { messages: async () => ({ data: records }), status: async () => ({ data: {} }),
+        promptAsync: vi.fn(async ({ body }) => {
+          records.push({ info: { id: body.messageID, role: 'user', agent: body.agent, model: { ...body.model, variant: body.variant } }, parts: body.parts });
+          if (lostAcknowledgement) throw new Error('HTTP acknowledgement lost after acceptance');
+          return { data: true };
+        }) } };
+      const scheduled = [];
+      const start = () => DevRyanManagedOrchestrationPlugin({ client,
+        registerContinuation: input => host.plugin({ action: 'continuation', instanceID: 'runtime-restarted', ...input }),
+        scheduleTimeout: callback => { scheduled.push(callback); return { unref() {} }; } });
+      const plugin = await start(); await start();
+      scheduled.splice(0).forEach(callback => callback());
+      await vi.waitFor(() => expect(client.session.promptAsync).toHaveBeenCalledTimes(1));
+      await vi.waitFor(async () => expect((await host.readRecord('ses_root')).collectionWake?.taskId).toBe(retry.followUpTask.taskId));
+      // Restart between HTTP acceptance and collection. The canonical synthetic
+      // message survives; any watcher retry must reconcile instead of POSTing.
+      await host.drain(); await scheduler.shutdown(); scheduler = makeScheduler(); await scheduler.initialize();
+      host = createPrimaryRecoveryHost(hostOptions); await host.initialize();
+      await host.plugin({ action: 'hello', instanceID: 'runtime-restarted', policyVersion: 1, transport: 'fetch' });
+      await start(); scheduled.splice(0).forEach(callback => callback());
+      await vi.waitFor(() => expect(fetch.mock.calls.filter(([, init]) => JSON.parse(init.body).method === 'list_provider_recovery_continuations').length).toBeGreaterThanOrEqual(3));
+      expect(client.session.promptAsync).toHaveBeenCalledTimes(1);
+      const wake = client.session.promptAsync.mock.calls[0][0].body;
+      expect(wake.parts[0].text).toContain(retry.followUpTask.taskId);
+      expect(wake.parts[0].text).toContain('Do not start a replacement');
+      records.push({ info: { id: 'msg_collector', role: 'assistant', parentID: wake.messageID, time: { completed: 4000 } }, parts: [] });
+      const result = JSON.parse(await plugin.tool.devryan_task.execute({ action: 'wait', task_id: retry.followUpTask.taskId }, context({ messageID: 'msg_collector' })));
+      expect(result.task.status).toBe('completed');
+      await plugin.tool.devryan_task.execute({ action: 'continue', task_id: retry.followUpTask.taskId }, context({ messageID: 'msg_collector' }));
+      expect(scheduler.getResultEnvelope(retry.followUpTask.taskId).action).toBe('continue');
+      expect((await scheduler.inspectDispatchBarrier('ses_root')).state).toBe('clear');
+      expect((await host.readRecord('ses_root')).attemptCount).toBe(0);
+      expect(scheduler.getSnapshot().tasks).toHaveLength(2);
+    } finally { await host.drain(); await scheduler.shutdown(); await fs.rm(dataDirectory, { recursive: true, force: true }); }
   });
 
   it('wakes an idle parent exactly once after any detached terminal wait', async () => {

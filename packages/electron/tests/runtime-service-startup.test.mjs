@@ -97,7 +97,8 @@ describe('automatic background runtime startup', () => {
 });
 
 describe('transactional foreground recovery', () => {
-  for (const connectionCode of ['runtime_service_descriptor_missing', 'smappservice_registration_failed', 'runtime_service_approval_required']) {
+  for (const connectionCode of ['runtime_service_descriptor_missing', 'smappservice_registration_failed', 'runtime_service_approval_required',
+    'runtime_service_owner_stale', 'desktop_host_registration_failed']) {
     test(`recovers stale service mode or post-update failure: ${connectionCode}`, async () => {
       const calls = [];
       const logs = [];

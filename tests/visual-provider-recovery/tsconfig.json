@@ -1,1 +1,24 @@
-{"compilerOptions":{"target":"ES2022","module":"ESNext","moduleResolution":"Bundler","jsx":"react-jsx","strict":true,"skipLibCheck":true,"allowImportingTsExtensions":true,"noEmit":true,"baseUrl":"../..","paths":{"@/*":["packages/ui/src/*"]}},"include":["*.ts","*.tsx"]}
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "baseUrl": "../..",
+    "paths": {
+      "@/*": [
+        "packages/ui/src/*"
+      ]
+    }
+  },
+  "include": [
+    "*.ts",
+    "*.tsx",
+    "../../packages/ui/src/vite-env.d.ts",
+    "../../packages/ui/src/types/desktop.d.ts"
+  ]
+}

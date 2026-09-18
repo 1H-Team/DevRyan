@@ -736,6 +736,7 @@ export interface PrimaryRecoverySnapshot {
   stopConfirmed?: boolean;
   record: null | {
     sessionID: string; anchorID: string; failedID: string | null; recoveryID: string | null;
+    collectionIssue?: { taskId: string; code: string } | null;
     state: PrimaryRecoveryState; revision: number; attemptCount: number; maxAttempts: 1;
     readOnly: boolean; providerID: string; modelID: string; agent: string; variant: string | null;
     reason: string | null; updatedAt: number; failureKind: string | null;
@@ -772,6 +773,7 @@ export interface PrimaryRecoveryHostOptions {
   publishEvent?(event: unknown, options?: { directory: string }): void | Promise<void>;
   recordIncident?(incident: { event: string; sessionID?: string; messageID?: string; [key: string]: unknown }): void;
   fetchImpl?: typeof fetch;
+  verifyRecoveredCollection?(record: PrimaryRecoveryExecutionRecord, collection: { taskId: string; claimantId: string }): Promise<unknown>;
 }
 export function createPrimaryRecoveryHost(options: PrimaryRecoveryHostOptions): PrimaryRecoveryHost;
 export interface SessionChangeIdentity {
@@ -844,7 +846,8 @@ export function createSessionChangeRuntime(options: { directory: string; maxByte
 export interface SessionChangeHost {
   acceptExecution(input: SessionChangeExecution): Promise<{ acknowledged: true }>;
   plugin(input: Record<string, unknown>): Promise<unknown>;
-  handleRequest(method: string, path: string, body?: unknown): Promise<null | { status: number; body: unknown }>;
+  handleRequest(method: string, path: string, body?: unknown, context?: { signal?: AbortSignal }): Promise<null | { status: number; body: unknown }>;
+  getReadDiagnostics(): { active: number; queued: number; scopes: number; activeResponses: number; responseBytes: number; peakResponseBytes: number };
   observe(event: unknown, directory?: string | null): Promise<void>;
   drain(): Promise<void>;
 }
@@ -861,7 +864,7 @@ export function sessionChangeReceipt(part: unknown): { files: SessionChangeFileR
 export function sessionChangePatchFiles(patch: unknown, fallbackPath?: string | null): Array<{
   path: string; oldPath: string | null; status: 'added' | 'modified' | 'deleted' | 'renamed'; patch: string; additions: number; deletions: number;
 }>;
-export function createPrimaryRecoveryManagedAdapter(rpc: (request: { method: string; params: Record<string, unknown> }) => Promise<unknown>): Pick<PrimaryRecoveryHostOptions, 'managedBarrier' | 'cancelDescendants'>;
+export function createPrimaryRecoveryManagedAdapter(rpc: (request: { method: string; params: Record<string, unknown> }) => Promise<unknown>): Pick<PrimaryRecoveryHostOptions, 'managedBarrier' | 'cancelDescendants' | 'verifyRecoveredCollection'>;
 export const PROVIDER_RECOVERY_POLICY_VERSION: 1;
 export const PROVIDER_PROGRESS_TIMEOUT_MS: number;
 export const RECOVERY_READ_TOOLS: readonly string[];
@@ -885,6 +888,7 @@ export function createPrimaryRecoveryController(options: {
   anthropicMode?: PrimaryRecoveryHostOptions['anthropicMode'];
   isAnthropicConformant?: PrimaryRecoveryHostOptions['isAnthropicConformant'];
   isManaged(): boolean;
+  verifyRecoveredCollection?: PrimaryRecoveryHostOptions['verifyRecoveredCollection'];
   authorize(record: PrimaryRecoveryExecutionRecord): Promise<boolean>;
   observeTurn(record: PrimaryRecoveryExecutionRecord, options?: { signal: AbortSignal; includeTodos?: boolean }): Promise<unknown>;
   abortSession(record: PrimaryRecoveryExecutionRecord): Promise<unknown>;

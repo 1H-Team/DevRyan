@@ -58,7 +58,6 @@ const IMMUTABLE_PROJECTED_TASK_FIELDS = [
   'priorTaskId',
   'executionKind',
   'createdAt',
-  'timeoutAt',
   'recoveryLineageId',
 ] as const satisfies readonly (keyof ManagedTaskProjectedRecord)[];
 const EMPTY_TASK_IDS: readonly string[] = Object.freeze([]);
@@ -583,7 +582,10 @@ const metadataRegressed = (current: ManagedTaskProjectedRecord, incoming: Manage
 const immutableTaskMetadataChanged = (
   current: ManagedTaskProjectedRecord,
   incoming: ManagedTaskProjectedRecord,
-) => IMMUTABLE_PROJECTED_TASK_FIELDS.some((field) => !Object.is(current[field], incoming[field]));
+) => IMMUTABLE_PROJECTED_TASK_FIELDS.some((field) => !Object.is(current[field], incoming[field]))
+  // An existing finite deadline may renew; whether the attempt has a deadline
+  // remains fixed by admission.
+  || (current.timeoutAt === null) !== (incoming.timeoutAt === null);
 
 const statusStage = (status: ManagedTaskStatus) => {
   if (status === 'queued') return 0;
@@ -609,8 +611,14 @@ const mergeTask = (
   // snapshots can still advance status, but cannot clear established activity.
   const childPromptedAt = current.childPromptedAt ?? incoming.childPromptedAt;
   const firstAssistantPartAt = current.firstAssistantPartAt ?? incoming.firstAssistantPartAt;
+  // Writable implementation tasks renew their deadlines as they make progress.
+  // Older events/snapshots must not erase an observed renewal or block completion.
+  const timeoutAt = current.timeoutAt !== null && incoming.timeoutAt !== null
+    ? Math.max(current.timeoutAt, incoming.timeoutAt)
+    : incoming.timeoutAt;
   const next = childPromptedAt !== incoming.childPromptedAt || firstAssistantPartAt !== incoming.firstAssistantPartAt
-    ? { ...incoming, childPromptedAt, firstAssistantPartAt }
+    || timeoutAt !== incoming.timeoutAt
+    ? { ...incoming, childPromptedAt, firstAssistantPartAt, timeoutAt }
     : incoming;
   return sameTask(current, next) ? current : next;
 };

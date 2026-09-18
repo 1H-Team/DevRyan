@@ -29,7 +29,7 @@ export const dict = {
   'chat.managedTasks.summary.startingModel': 'Starting model…',
   'chat.managedTasks.providerLimit.reached': '{provider} rate limit reached for {model}.',
   'chat.managedTasks.authentication.required': 'Provider sign-in failed. Reconnect the provider or choose an available model to resume.',
-  'chat.managedTasks.providerLimit.recovered': 'Subagent Task Recovered with {model} · {thinking}',
+  'chat.managedTasks.providerLimit.recovered': 'Recovered with {model} · {thinking}',
   'chat.managedTasks.providerLimit.continued': 'Continued on {model} · {thinking} after the usage limit',
   'chat.managedTasks.transport.interrupted': 'The model connection was interrupted. Your existing work is preserved.',
   'chat.managedTasks.transport.recovering': 'Recovering the interrupted response on {model}',

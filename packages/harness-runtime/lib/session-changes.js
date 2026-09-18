@@ -286,6 +286,14 @@ export function createSessionChangeRuntime(options) {
         }
         const inputFingerprint = receiptInputFingerprint(input);
         if (inputFingerprint && existing?.evidence === 'exact' && existing.receiptInputFingerprint === inputFingerprint) continue;
+        // Textual historical receipts are immutable inputs. An unchanged failed
+        // read must not publish another update that asks the UI to read again.
+        // Object receipts can become valid when their referenced blobs arrive.
+        const rejectedFingerprint = historical && inputFingerprint && input.files.every((file) =>
+          typeof file.patch === 'string' || [file.before, file.after].every((value) => value === null || typeof value === 'string'))
+          ? `v1:${inputFingerprint}` : null;
+        if (rejectedFingerprint && existing?.rejectedReceiptFingerprint === rejectedFingerprint
+          && existing.state === 'unavailable' && existing.errorCode === 'invalid_change_receipt') continue;
         try {
           const op = await storeSessionChangeReceipt(repo, { ...input, historical, receiptInputFingerprint: inputFingerprint }, existing, inputDirectory);
           if (!op) continue;
@@ -298,7 +306,8 @@ export function createSessionChangeRuntime(options) {
             // files. Keep a call-scoped gap that a later valid receipt can repair.
             putOperation(repo, { ...existing, id, sessionID: input.sessionID, messageID: input.messageID, callID: input.callID,
               createdAt: existing?.createdAt ?? input.createdAt ?? Date.now(), state: 'unavailable', evidence: 'snapshot',
-              errorCode: 'invalid_change_receipt', source: input.source ?? 'native-tool' });
+              errorCode: 'invalid_change_receipt', rejectedReceiptFingerprint: rejectedFingerprint,
+              source: input.source ?? 'native-tool' });
             active.delete(id); changed.add(input.sessionID);
             diagnostics.push({ code: 'invalid_change_receipt', phase: 'history', sessionID: input.sessionID, callID: input.callID });
             continue;

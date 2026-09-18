@@ -199,7 +199,7 @@ test('connection recovery shows a backup control without claiming a usage limit'
   expect(html).not.toContain('usage limit');
 });
 
-test('connection backup completion names the actual recovery cause', () => {
+test('connection backup completion shows the recovered model and thinking', () => {
   const { envelope } = manualRecoveryFailure('provider_usage_limit', autoResumeBlock({
     trigger: 'provider_transport', state: 'succeeded', lastAttemptTaskId: 'dvr_task_backup',
   }));
@@ -208,7 +208,7 @@ test('connection backup completion names the actual recovery cause', () => {
     transportRecovery: { ...transportRecovery, phase: 'recovered', backupAttempts: 1 },
   })).properties.task;
   const html = renderView(<ManagedTaskRowView task={backup} priorEnvelope={envelope} onOpenChild={() => undefined} />);
-  expect(html).toContain('after the connection interruption');
+  expect(html).toContain('Recovered with gpt-4.1 · Default');
   expect(html).not.toContain('after the usage limit');
 });
 

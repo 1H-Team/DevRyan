@@ -558,10 +558,47 @@ describe('managed task presentation', () => {
     );
 
     expect(html).toContain('Complete');
-    expect(html).toContain('Subagent Task Recovered with GPT 5.4 · Medium');
+    expect(html).toContain('Recovered with GPT 5.4 · Medium');
     expect(html).toContain('text-[var(--status-success)]');
     expect(html).not.toContain('Recovering...');
     expect(html).not.toContain('rate limit reached for GPT 4.1. Recovering with');
+  });
+
+  test('only confirmed completed recoveries show model and thinking details', () => {
+    const base = { ...toManagedTaskEvent(terminalTask('completed')).properties.task,
+      providerId: 'openai', modelId: 'gpt-5.4', variant: 'medium' };
+    const providers = [{ id: 'openai', name: 'OpenAI', models: [{ id: 'gpt-5.4', name: 'GPT 5.4' }] }];
+    const render = (task: React.ComponentProps<typeof ManagedTaskRowView>['task'],
+      extra: Partial<React.ComponentProps<typeof ManagedTaskRowView>> = {}) => renderToStaticMarkup(
+      <I18nProvider><ManagedTaskRowView task={task} providers={providers} onOpenChild={() => undefined} {...extra} /></I18nProvider>,
+    );
+    for (const executionKind of ['start', 'resume', 'retry_in_place', 'recover_in_place'] as const) {
+      const html = render({ ...base, executionKind });
+      expect(html).toContain('Complete');
+      expect(html).not.toContain('GPT 5.4');
+      expect(html).not.toContain('Medium');
+      expect(html).not.toContain('parent needs to resume');
+    }
+    const transportRecovery = { revision: 1, phase: 'recovered' as const, kind: 'connection_failure' as const,
+      sameModelAttempts: 1 as const, backupAttempts: 1 as const, failedMessageId: 'msg_failed',
+      failedUserMessageId: null, recoveryMessageId: 'msg_recovery', eventId: null, reservedAt: 1, submittedAt: 2 };
+    expect(render({ ...base, transportRecovery }).match(/Recovered with GPT 5.4 · Medium/g)).toHaveLength(1);
+    for (const phase of ['submitted', 'exhausted', 'uncertain'] as const) {
+      expect(render({ ...base, transportRecovery: { ...transportRecovery, phase } })).not.toContain('Recovered with');
+    }
+    const source = { ...base, taskId: 'dvr_prior', status: 'failed' as const, failureKind: 'provider_usage_limit' as const };
+    const recovered = { ...base, priorTaskId: source.taskId, executionKind: 'retry_in_place' as const };
+    const priorEnvelope = createManagedTaskResultEnvelope(terminalTask('failed'), { sequence: 1, createdAt: 3000, resumable: true });
+    priorEnvelope.taskId = source.taskId;
+    priorEnvelope.autoResume = { revision: 1, cancelGeneration: 0, lineageStartedAt: 1, noSignalProbes: 0, hostFailures: 0,
+      rejectionsInWindow: 0, windowResetAt: null, resetAt: null, resetSource: null, recoveryCycleTaskId: null,
+      backupAttemptTaskId: base.taskId, lastAttemptAt: 2, enabled: true, state: 'succeeded', trigger: 'provider_transport', nextAttemptAt: null,
+      expiresAt: 4000, attemptCount: 1, target: null, lastAttemptTaskId: base.taskId, lastError: null, reason: null };
+    expect(render(recovered, { priorEnvelope })).toContain('Recovered with GPT 5.4 · Medium');
+    for (const status of ['running', 'failed', 'interrupted'] as const) {
+      expect(render({ ...recovered, status }, { recoverySourceTask: source, priorEnvelope })).not.toContain('Recovered with');
+    }
+    expect(render(recovered, { recoverySourceTask: { ...source, taskId: 'dvr_unrelated' } })).not.toContain('Recovered with');
   });
 
   test('expands a final grouped failure with enabled model and thinking controls', () => {
