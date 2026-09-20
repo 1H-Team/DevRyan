@@ -180,6 +180,10 @@ test('natural Plan captures bind both revisions to exact newly submitted human m
       sendTurn: async text => {
         const index = submittedTexts.length;
         assert.ok(index < 2, 'This regression must not send a compaction workload or implementation request');
+        if (index === 0) {
+          assert.match(text, /revision 1, the attached brief controls the proposed task ordering: high, normal, then low/);
+          assert.match(text, /Preserve the user-note file verbatim as historical input/);
+        } else assert.match(text, /reject the previously proposed automatic priority sorting/);
         submittedTexts.push(text);
         messages = [
           ...messages.map(row => row.info.id === 'msg_historical'

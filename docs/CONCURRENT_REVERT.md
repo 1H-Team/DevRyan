@@ -107,3 +107,27 @@ the packaged Electron journey. Its isolated bootstrap uses a mock OS keychain,
 private profile and home, and disables background Bots and protocol registration.
 Verification results and platform availability are recorded in the
 [implementation audit](audits/2026-09-20-concurrent-revert/README.md).
+
+## Execution admission deadlines
+
+The private execution bridge applies one 25-second budget to admission reads,
+project queue waiting, reconciliation and lease preparation. Queue cancellation
+cannot release an active owner's lock or launch an expired request later. Git
+children are killed and reaped on cancellation; filesystem preparation checks
+the budget between operations. Accepted publication and recovery commits retain
+ownership until they settle, even when a caller has stopped waiting. This is not
+a hard deadline for an uninterruptible operating-system call or durable commit.
+
+Failed preparation uses an independent five-second cleanup budget. The companion
+preserves the original error if its cancellation receipt cannot be confirmed;
+a failed begin has not launched the tool. Errors after launch still require the
+native receipt before claiming a known outcome. No timeout causes automatic replay.
+
+`session_execution` journal records include bounded session/message/call IDs,
+phase, outcome and elapsed milliseconds. Phases distinguish admission, queue
+waiting, reconciliation, lease preparation and cleanup. They contain no tool
+arguments, contents, credentials or project paths. The shared chat keeps a
+sanitized failure notice even when no assistant exists or provider recovery is
+unavailable. Viewed state does not hide it; a newer authoritative successful
+completion resolves it. Sanitized classifications survive reload in the bounded
+notification store. Failed grouped tools are labelled as failures.

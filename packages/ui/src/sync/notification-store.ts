@@ -1,3 +1,4 @@
+import { describeSessionFailure, type SessionFailure } from "./session-failure"
 // ---------------------------------------------------------------------------
 // Notification store — session turn-complete and error tracking
 //
@@ -28,7 +29,7 @@ type TurnCompleteNotification = NotificationBase & {
 
 type ErrorNotification = NotificationBase & {
   type: "error"
-  error?: { message?: string; code?: string }
+  error?: SessionFailure
   resolvedByMessageId?: string
 }
 
@@ -106,13 +107,18 @@ function readPersistedCompletionNotifications(): Notification[] {
     for (const value of parsed) {
       if (!value || typeof value !== "object") continue
       const candidate = value as Record<string, unknown>
-      if (candidate.type !== "turn-complete") continue
+      if (candidate.type !== "turn-complete" && candidate.type !== "error") continue
       if (typeof candidate.session !== "string" || candidate.session.length === 0) continue
       if (typeof candidate.time !== "number" || !Number.isFinite(candidate.time)) continue
       if (typeof candidate.viewed !== "boolean") continue
 
       completions.push({
-        type: "turn-complete",
+        type: candidate.type,
+        ...(candidate.type === "error" ? { error: describeSessionFailure(
+          candidate.error && typeof candidate.error === "object" && "code" in candidate.error
+            && typeof candidate.error.code === "string" ? { code: candidate.error.code } : undefined),
+          ...(typeof candidate.resolvedByMessageId === "string" ? { resolvedByMessageId: candidate.resolvedByMessageId } : {}),
+        } : {}),
         session: candidate.session,
         time: candidate.time,
         viewed: candidate.viewed,
@@ -132,7 +138,9 @@ function readPersistedCompletionNotifications(): Notification[] {
 
 function persistCompletionNotifications(list: Notification[]): void {
   try {
-    const completions = pruneNotifications(list.filter((notification) => notification.type === "turn-complete"))
+    const completions = pruneNotifications(list.filter((notification) => notification.type !== "question"))
+      .map((notification) => notification.type === "error"
+        ? { ...notification, error: describeSessionFailure(notification.error) } : notification)
     if (completions.length === 0) {
       notificationStorage.removeItem(COMPLETION_NOTIFICATION_STORAGE_KEY)
       return
@@ -205,7 +213,10 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
       changed = true
       return { ...notification, resolvedByMessageId: messageId }
     })
-    if (changed) set({ list: next, index: buildIndex(next) })
+    if (changed) {
+      set({ list: next, index: buildIndex(next) })
+      persistCompletionNotifications(next)
+    }
   },
 
   markSessionViewed: (sessionId) => {

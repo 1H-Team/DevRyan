@@ -36,7 +36,7 @@ Transport-neutral DevRyan-managed task contracts and scheduler policy shared by 
 - `auto-resume-policy.js`: pure automatic-resume planner — eligibility, state inheritance, rejection windows, backup-first selection with bounded host-requested replanning after configuration changes or unavailable quota backups and durable per-primary-cycle attempt tracking and legacy lineage recovery, primary-only quota reset scheduling, separate single-backup transport policy without quota probes, reset/backoff scheduling, attempt/time/rejection caps, and the exact acknowledgement params one attempt makes.
 - `single-flight.js`: keyed promise coalescing shared by host status observers and quota probes.
 - `result-envelope.js`: idempotent terminal handoff records for the parent orchestrator.
-- `persistence.js`: count/age/UTF-8 byte compaction that protects live work, unacknowledged grouped results, and attempt lineage.
+- `persistence.js`: count/age/UTF-8 byte compaction that protects live work, unacknowledged grouped results, and attempt lineage. Each record is encoded once for exact byte accounting (including array punctuation); byte-pressure selection subtracts records without serializing the surviving ledger per eviction. The version-1 format and host atomic write remain unchanged.
 - `*.test.js`: dependency-free Bun contract and scheduler conformance tests.
 
 ## Integration
@@ -50,3 +50,5 @@ The scheduler also reports durable required-check receipts and workspace-barrier
 Designer/Fixer role contracts route approved visual implementation to Designer and behavior under an unchanged presentation to Fixer. Approval does not change that ownership.
 
 - `scheduler.verifyRecoveredCollection` validates a completed, unacknowledged same-child manual recovery and its current scoped continuation claim. The primary host uses this private proof to admit collection after a finalized parent transport error; task execution limits and provider retry budgets are unchanged.
+
+- `harness-policies.js` declares independent `duplicateOutputs` / `DEVRYAN_DUPLICATE_OUTPUTS` negotiation; host release qualification is separate from `contextProjection` checkpoint policy.

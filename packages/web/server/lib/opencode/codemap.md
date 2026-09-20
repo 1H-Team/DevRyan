@@ -72,3 +72,8 @@ Core OpenCode integration layer: config entities (agents/commands/skills/provide
 - `watcher.js` retains the authoritative SSE/hub envelope directory when invoking canonical side effects, so terminal tool receipts reach session-change capture with validated directory scope.
 
 - Managed plugin upgrades and preservation gates: [upgrade runbook](../../../../../docs/PLUGIN_UPGRADES.md). `meridian-upgrade-patches.js` holds the source-gated 1.68.0 candidate port; it does not promote the selected Claude tuple.
+
+- `session-execution-host.js` applies the shared admission budget to private companion requests and journals `session_execution` phases; finish/publication retains its native settlement contract.
+
+- `harness-duplicate-qualification.js` matches the exact executable, route and ordered plugin content inventory against release-owned acceptance profiles. Missing evidence leaves duplicate projection disabled; `harness-run-fingerprint.js` serves its existing private bridge and preserves the inventory separately from factory observations.
+- `harness-duplicate-profiles.js` records the reviewed release defaults and live-evidence digest. Installation paths remain part of host/caller agreement; portable release matching uses ordered filenames/content hashes, the selected provider's full configuration and the host-attested authentication transport. API-key and unqualified routes remain inactive.

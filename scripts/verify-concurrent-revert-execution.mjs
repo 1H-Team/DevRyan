@@ -26,12 +26,18 @@ const dataDirectory = path.join(root, 'app-data');
 const origin = `http://127.0.0.1:${await reservePort()}`;
 const ownedReceipts = [];
 let cursor;
+let failToolAdmission = false;
 const host = createSessionExecutionHost({ dataDirectory, getLauncher: () => launcher,
   fetchImpl: async (...args) => { const response = await fetch(...args); if (!response.ok) console.error("Fixture request failed", String(args[0]), await response.clone().text()); return response; },
   buildOpenCodeUrl: (route) => origin + route, recordReceipt: (receipt) => ownedReceipts.push(receipt),
   stopCursor: ({ sessionID }) => cursor?.abortAndWait(sessionID) });
 const bridge = createManagedOrchestrationPrivateHost({ handleRpc: ({ method, params }) => {
-  assert.equal(method, 'session_execution'); return host.plugin(params);
+  assert.equal(method, 'session_execution');
+  if (failToolAdmission && ['begin', 'cancel-before-start'].includes(params.action)) {
+    const code = params.action === 'begin' ? 'local_execution_timeout' : 'cleanup_fixture_failed';
+    throw Object.assign(new Error(code), { code });
+  }
+  return host.plugin(params);
 } });
 let upstream, server, held, model, traceTimer;
 const request = async (route, body, base = origin) => {
@@ -140,6 +146,21 @@ try {
     assert.equal(call.state.status, 'completed', JSON.stringify(call));
     return { result, call };
   };
+  const failed = await request('/session', { title: 'Admission failure fixture' });
+  failToolAdmission = true;
+  try {
+    await request(`/session/${failed.id}/message`, { model: { providerID: 'fixture', modelID: 'fixture' },
+      agent: 'build', parts: [{ type: 'text', text: `DEVRYAN_FIXTURE_TOOL:${JSON.stringify({ name: 'write', args: { filePath: path.join(directory, 'must-not-exist'), content: 'forbidden' } })}` }] });
+    const rows = await request(`/session/${failed.id}/message`);
+    const tool = rows.flatMap((row) => row.parts).find((part) => part.type === 'tool' && part.tool === 'write');
+    assert.equal(tool?.state.status, 'error');
+    assert.match(tool.state.error, /local_execution_timeout/);
+    assert.match(tool.state.error, /execution did not start; cleanup unconfirmed/);
+    await assert.rejects(fs.access(path.join(directory, 'must-not-exist')), { code: 'ENOENT' });
+  } finally { failToolAdmission = false; }
+  await invoke(failed.id, 'write', { filePath: path.join(directory, 'after-failure'), content: 'healthy' });
+  assert.equal(await fs.readFile(path.join(directory, 'after-failure'), 'utf8'), 'healthy');
+  console.log('PASS: original admission failure survives cleanup failure, no write occurs, and the next prompt succeeds');
   const direct = await request('/session', { title: 'Direct file tools' });
   await invoke(direct.id, 'write', { filePath: path.join(directory, 'direct.txt'), content: 'first\n' });
   await invoke(direct.id, 'edit', { filePath: path.join(directory, 'direct.txt'), oldString: 'first', newString: 'second' });

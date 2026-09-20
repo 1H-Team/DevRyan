@@ -66,6 +66,7 @@ export function createPrimaryRecoveryController(options) {
       reason: record.reason, updatedAt: record.updatedAt,
       progress: projectObjectiveProgress(record.progress),
       failureKind: record.failureKind ?? null,
+      failureObserved: Boolean(record.failureObserved && ['observing', 'needs_attention'].includes(record.state)),
       collectionIssue: record.collectionIssue ?? null,
     } : null,
   });

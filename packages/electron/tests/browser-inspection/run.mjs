@@ -12,6 +12,9 @@ const repositoryRoot = path.resolve(fixtureDirectory, '../../../..');
 const requireElectron = createRequire(path.join(repositoryRoot, 'packages/electron/package.json'));
 const cacheRoot = path.join(repositoryRoot, '.cache/browser-inspect');
 const MAX_LOG_BYTES = 16 * 1024;
+if (process.argv.length !== 2 && (process.argv.length !== 4 || process.argv[2] !== '--baseline-root')) throw new Error('Usage: node run.mjs [--baseline-root <repository-local-checkout>]');
+const baselineRoot = process.argv[3] ? path.resolve(process.argv[3]) : null;
+if (baselineRoot && !baselineRoot.startsWith(`${repositoryRoot}${path.sep}`)) throw new Error('Baseline must be inside repository');
 
 await mkdir(cacheRoot, { recursive: true, mode: 0o700 });
 const temporaryRoot = await mkdtemp(path.join(cacheRoot, 'acceptance-'));
@@ -40,6 +43,7 @@ try {
   }
   environment.DEVRYAN_BROWSER_INSPECTION_ROOT = temporaryRoot;
   environment.DEVRYAN_BROWSER_INSPECTION_RESULT = resultPath;
+  if (baselineRoot) environment.DEVRYAN_BROWSER_INSPECTION_BASELINE = baselineRoot;
   child = spawn(requireElectron('electron'), [
     `--user-data-dir=${path.join(temporaryRoot, 'user-data')}`,
     '--disable-background-networking',

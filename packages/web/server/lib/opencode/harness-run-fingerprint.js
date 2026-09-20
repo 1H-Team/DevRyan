@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { resolveHarnessPolicies } from '@openchamber/orchestration-runtime';
+import { readDuplicatePluginInventory, qualifyDuplicateOutputs, resolveDuplicateOutputPolicy, createRuntimeDigestReader } from './harness-duplicate-qualification.js';
 import { createHarnessToolManifestReader } from './harness-tool-manifest.js';
 
 const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -16,8 +17,8 @@ const sourceIdentity = (spec) => {
   return { name: identifier(path.basename(clean)), sourceHash: hash(clean) };
 };
 
-export const buildHarnessRunFingerprint = ({ runtimeVersion, selection = {}, agent, source, toolManifest,
-  configuredPlugins, observedPlugins, policies = resolveHarnessPolicies() } = {}) => {
+export const buildHarnessRunFingerprint = ({ runtimeVersion, runtimeHash = null, selection = {}, agent, source, toolManifest,
+  configuredPlugins, observedPlugins, pluginInventory = null, policies = resolveHarnessPolicies() } = {}) => {
   const roleBody = typeof agent?.prompt === 'string' ? agent.prompt : null;
   const catalogAvailable = toolManifest?.availability?.catalog?.availability === 'available';
   const idsAvailable = toolManifest?.availability?.ids?.availability === 'available';
@@ -31,7 +32,7 @@ export const buildHarnessRunFingerprint = ({ runtimeVersion, selection = {}, age
   const value = {
     schemaVersion: 1,
     stage: 'resolved_runtime_configuration',
-    runtimeVersion: identifier(runtimeVersion),
+    runtimeVersion: identifier(runtimeVersion), runtimeHash: /^[a-f0-9]{64}$/.test(runtimeHash ?? '') ? runtimeHash : null,
     selection: { providerID: identifier(selection.providerID), modelID: identifier(selection.modelID),
       agent: identifier(selection.agent), variant: identifier(selection.variant) },
     role: { source: ['packaged', 'project', 'user', 'custom', 'runtime'].includes(source?.scope) ? source.scope : 'unknown',
@@ -40,16 +41,21 @@ export const buildHarnessRunFingerprint = ({ runtimeVersion, selection = {}, age
     catalog: { contentHash: catalogAvailable ? hash(ordered((toolManifest.tools ?? []).map(({ id, description, parameters }) => ({ id, description, parameters })))) : null,
       idsHash: idsAvailable ? hash([...toolManifest.toolIds].sort()) : null,
       count: idsAvailable ? toolManifest.toolIds.length : null, availability: catalogAvailable ? 'available' : 'unavailable' },
-    plugins: { configured: plugins, observed, observation: observed?.length ? 'factory_report' : 'unavailable' },
-    policies: Object.fromEntries(['readOverlap', 'waitAny', 'compactResults', 'contextProjection'].map((key) => [key, policies[key] === true])),
+    plugins: { configured: plugins, observed, inventory: pluginInventory, observation: observed?.length ? 'factory_report' : 'unavailable' },
+    policies: Object.fromEntries(['readOverlap', 'waitAny', 'compactResults', 'contextProjection', 'duplicateOutputs'].map((key) => [key, policies[key] === true])),
   };
   return { ...value, configurationHash: hash(ordered(value)) };
 };
 
 export const createHarnessRunFingerprintReader = (options) => {
   const manifests = createHarnessToolManifestReader(options);
+  const duplicateOutputs = resolveDuplicateOutputPolicy(options.environment ?? process.env, options.duplicateProfiles);
   const observations = new Map();
+  const readRuntimeHash = createRuntimeDigestReader(options.getRuntimeBinary);
+  let runtimeHash = null;
+  let qualifiedRuntimeVersion = null;
   const pending = new Map();
+  const inventories = new Map();
   const request = async (pathname, directory) => {
     try {
       const url = new URL(options.buildOpenCodeUrl(pathname));
@@ -81,19 +87,53 @@ export const createHarnessRunFingerprintReader = (options) => {
       const agent = Array.isArray(agents) ? agents.find((entry) => entry?.name === context.agent) : null;
       let source;
       try { source = options.getAgentSource?.(context.agent, context.directory); } catch { /* unknown source */ }
-      return buildHarnessRunFingerprint({ runtimeVersion: health?.version, selection: context, agent, source, toolManifest,
-        configuredPlugins: config?.plugin, observedPlugins: observations.get(context.directory),
-        policies: resolveHarnessPolicies(options.environment ?? process.env) });
+      const inventory = inventories.get(context.directory);
+      const currentInventory = inventory && Array.isArray(config?.plugin)
+        && inventory.configurationHash === hash(JSON.stringify(config.plugin))
+        && inventory.providerHash === hash(JSON.stringify(ordered(config.provider ?? {}))) ? inventory : null;
+      return buildHarnessRunFingerprint({ runtimeVersion: health?.version,
+        runtimeHash: health?.version === qualifiedRuntimeVersion ? runtimeHash : null, selection: context, agent, source, toolManifest,
+        configuredPlugins: config?.plugin, pluginInventory: currentInventory, observedPlugins: observations.get(context.directory),
+        policies: { ...resolveHarnessPolicies(options.environment ?? process.env), duplicateOutputs } });
     })().finally(() => pending.delete(key));
     pending.set(key, operation);
     return operation;
   };
   return {
     read,
+    async qualifyDuplicates(context = {}) {
+      const enabled = duplicateOutputs;
+      const managed = options.isManaged?.() === true;
+      if (!enabled || !managed || typeof context.directory !== 'string') return { qualified: false, reason: 'policy-or-runtime-unqualified' };
+      const [health, config, binaryHash] = await Promise.all([request('/global/health'), request('/config', context.directory), readRuntimeHash()]);
+      runtimeHash = binaryHash;
+      qualifiedRuntimeVersion = health?.version ?? null;
+      const inventory = await readDuplicatePluginInventory(config?.plugin, config?.provider);
+      if (inventory) inventories.set(context.directory, inventory);
+      else inventories.delete(context.directory);
+      while (inventories.size > 64) inventories.delete(inventories.keys().next().value);
+      let providerRoute;
+      try { providerRoute = options.getDuplicateProviderRoute?.(context.providerID); } catch { /* Unavailable route cannot qualify. */ }
+      return qualifyDuplicateOutputs({ managed, enabled, runtimeVersion: health?.version, runtimeHash,
+        providerRoute,
+        selection: { providerID: context.providerID, modelID: context.modelID, variant: context.variant ?? null },
+        // Route qualification includes all configured options/models for the
+        // selected provider. Unrelated provider settings are not this route's
+        // release identity. The complete host/caller inventory must still agree.
+        providerRouteHash: typeof context.providerID === 'string' && object(config?.provider?.[context.providerID])
+          ? hash(JSON.stringify(ordered({ [context.providerID]: config.provider[context.providerID] }))) : null,
+        inventory, callerInventory: context.inventory, profiles: options.duplicateProfiles });
+    },
     observeContext(context = {}) {
       if (!identifier(context.sessionID) || typeof context.directory !== 'string') throw new TypeError('Invalid context observation scope');
-      const payload = Object.fromEntries(['beforeBytes', 'projectedBytes', 'dynamicBytes'].map((key) => [key,
+      const payload = Object.fromEntries(['beforeBytes', 'projectedBytes', 'dynamicBytes', 'plannedReductions', 'appliedReductions', 'savedBytes'].map((key) => [key,
         Number.isSafeInteger(context[key]) && context[key] >= 0 ? context[key] : null]));
+      payload.phase = ['hook-applied', 'summary-suppressed', 'checkpoint', 'checkpoint-unavailable'].includes(context.phase) ? context.phase : 'legacy-estimate';
+      payload.reason = ['qualified', 'unqualified', 'canonical-state-unavailable', 'bridge-unavailable'].includes(context.reason) ? context.reason : null;
+      payload.transformDurationMs = Number.isFinite(context.transformDurationMs) && context.transformDurationMs >= 0 ? context.transformDurationMs : null;
+      // Hook RPCs cannot attest a final provider request. Only isolated wire
+      // evidence records those sizes, outside the production journal.
+      payload.finalRequestBytes = null;
       payload.sourceHash = /^[a-f0-9]{64}$/.test(context.sourceHash ?? '') ? context.sourceHash : null;
       options.recordDiagnostic?.({ type: 'lifecycle', event: 'harness_context_projected', sessionID: context.sessionID,
         directory: context.directory, payload });

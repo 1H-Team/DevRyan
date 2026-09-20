@@ -81,8 +81,8 @@ export const createHarnessTraceCollector = ({ maxEvents = 100_000, maxBytes = 32
     if (['lifecycle', 'timing', 'gap', 'connection'].includes(record?.type) || payload.type === 'session.error') {
       const observation = { sessionID, at, name: label(record.event ?? record.mark ?? payload.type) ?? record.type,
         args: metadata(payload), category: record.type,
-        metrics: record.event === 'harness_context_projected' ? Object.fromEntries(['beforeBytes', 'projectedBytes', 'dynamicBytes']
-          .map((key) => [key, number(payload[key])])) : null };
+        metrics: record.event === 'harness_context_projected' ? { phase: label(payload.phase) ?? 'legacy-estimate', ...Object.fromEntries(['beforeBytes', 'projectedBytes', 'dynamicBytes', 'plannedReductions', 'appliedReductions', 'savedBytes', 'transformDurationMs', 'finalRequestBytes']
+          .map((key) => [key, number(payload[key])])) } : null };
       const bytes = Buffer.byteLength(JSON.stringify(observation));
       if (retainedBytes + bytes > maxBytes || observations.length >= maxEvents) omittedRecords++;
       else { observations.push(observation); retainedBytes += bytes; }

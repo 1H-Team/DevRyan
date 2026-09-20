@@ -55,6 +55,7 @@ const nowMs = (): number => {
 export type EventPipelineInput = {
   sdk: OpencodeClient
   onEvent: (directory: string, payload: Event) => void
+  onBatch?: (directory: string, events: readonly Event[]) => void
   routeDirectory?: (directory: string, payload: Event) => string
   /** Called after stream reconnects (visibility restore or heartbeat timeout). */
   onReconnect?: () => void
@@ -381,6 +382,7 @@ export function createEventPipeline(input: EventPipelineInput) {
   const {
     sdk,
     onEvent,
+    onBatch,
     onReconnect,
     onDisconnect,
     onTransportSwitch,
@@ -494,9 +496,8 @@ export function createEventPipeline(input: EventPipelineInput) {
     responsivenessPerfCount("event_pipeline.flush_count")
     responsivenessPerfObserve("event_pipeline.flush_size", events.length)
     const startedAt = nowMs()
-    for (const payload of events) {
-      onEvent(directory, payload)
-    }
+    if (onBatch) onBatch(directory, events)
+    else for (const payload of events) onEvent(directory, payload)
     responsivenessPerfObserve("event_pipeline.flush_ms", nowMs() - startedAt)
 
     d.buffer.length = 0

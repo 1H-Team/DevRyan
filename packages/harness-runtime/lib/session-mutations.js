@@ -1,3 +1,4 @@
+import { executionCleanup, checkExecutionAdmission, executionPhase, executionSignal, withoutExecutionDeadline, waitForExecutionQueue } from './execution-admission.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { isUtf8 } from 'node:buffer';
@@ -39,12 +40,13 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     return hash;
   };
   const inspect = async (repo, file, directory = repo.directory) => {
+    checkExecutionAdmission();
     await verifyAncestors(directory, file);
     const target = path.join(directory, file);
     const stat = await fs.lstat(target).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
     if (!stat) return null;
     if (!stat.isFile() && !stat.isSymbolicLink()) throw changeError('unsupported_file_type');
-    const bytes = stat.isSymbolicLink() ? Buffer.from(await fs.readlink(target)) : await fs.readFile(target);
+    const bytes = stat.isSymbolicLink() ? Buffer.from(await fs.readlink(target)) : await fs.readFile(target, { signal: executionSignal() });
     return { hash: await putBytes(repo, bytes), mode: stat.isSymbolicLink() ? '120000' : stat.mode & 0o111 ? '100755' : '100644',
       ...(stat.isFile() ? { permissions: stat.mode & 0o7777 } : {}),
       identity: `${stat.dev}:${stat.ino}` };
@@ -78,6 +80,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     await repo.db.commit();
   };
   const locked = async (requested, fn) => {
+    checkExecutionAdmission();
     const logicalDirectory = await fs.realpath(requested);
     let vcs = true;
     const root = await git(logicalDirectory, ['rev-parse', '--show-toplevel'], { limit: 16 * 1024 }).then((value) => value.toString(), (cause) => {
@@ -88,23 +91,31 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     const relative = path.relative(directory, logicalDirectory);
     if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw changeError('session_directory_mismatch');
     const previous = queues.get(directory) ?? Promise.resolve();
-    const work = previous.catch(() => {}).then(() => withCrossProcessFileLock(path.join(rootFor(directory), 'owner.lock'), async () => {
-      const root = rootFor(directory), gitDir = path.join(root, 'git');
-      await fs.mkdir(root, { recursive: true, mode: 0o700 });
-      try { await fs.access(path.join(gitDir, 'HEAD')); }
-      catch (error) { if (error.code !== 'ENOENT') throw error; await git(root, ['init', '--bare', '--quiet', gitDir]); }
-      const db = await openChangeStore(root, gitDir);
-      const meta = await db.get('meta.json') ?? { version: 1, directory, sequence: 0 };
-      if (meta.version !== 1 || meta.directory !== directory) throw changeError('invalid_change_record');
-      const repo = { directory, logicalDirectory, root, gitDir, db, meta, vcs };
-      await recover(repo);
-      const result = await fn(repo);
-      db.set('meta.json', meta); await db.commit();
-      return result;
-    }, { timeoutMs: 30_000 }));
-    queues.set(directory, work);
+    const ready = executionPhase('queue_wait', () => waitForExecutionQueue(previous.catch(() => {})));
+    const work = ready.then(() => {
+      checkExecutionAdmission();
+      return withCrossProcessFileLock(path.join(rootFor(directory), 'owner.lock'), async () => {
+        const root = rootFor(directory), gitDir = path.join(root, 'git');
+        await fs.mkdir(root, { recursive: true, mode: 0o700 });
+        try { await fs.access(path.join(gitDir, 'HEAD')); }
+        catch (error) { if (error.code !== 'ENOENT') throw error; await git(root, ['init', '--bare', '--quiet', gitDir]); }
+        const db = await openChangeStore(root, gitDir);
+        const meta = await db.get('meta.json') ?? { version: 1, directory, sequence: 0 };
+        if (meta.version !== 1 || meta.directory !== directory) throw changeError('invalid_change_record');
+        const repo = { directory, logicalDirectory, root, gitDir, db, meta, vcs };
+        await withoutExecutionDeadline(() => recover(repo));
+        checkExecutionAdmission();
+        const result = await fn(repo);
+        checkExecutionAdmission();
+        db.set('meta.json', meta); await withoutExecutionDeadline(() => db.commit());
+        return result;
+      }, { timeoutMs: 30_000, signal: executionSignal() });
+    });
+    // An expired waiter must not replace the actual owner in the queue.
+    const tail = Promise.allSettled([previous, work]).then(() => undefined);
+    queues.set(directory, tail);
     try { return await work; }
-    finally { if (queues.get(directory) === work) queues.delete(directory); }
+    finally { void tail.then(() => { if (queues.get(directory) === tail) queues.delete(directory); }); }
   };
   const next = (repo) => ++repo.meta.sequence;
   const inactive = async (repo) => {
@@ -179,6 +190,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   // agent happens to be active when a snapshot is observed.
   async function* filesIn(repo, relative = '') {
     for (const entry of await fs.readdir(path.join(repo.directory, relative), { withFileTypes: true })) {
+      checkExecutionAdmission();
       if (entry.name === '.git' || inputDirectories.has(entry.name)) continue;
       if (path.resolve(repo.directory, relative, entry.name) === storage) continue;
       const file = path.posix.join(relative, entry.name);
@@ -188,6 +200,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   }
   async function* dependencyInputs(directory, relative = '') {
     for (const entry of await fs.readdir(path.join(directory, relative), { withFileTypes: true })) {
+      checkExecutionAdmission();
       if (entry.name === '.git' || path.resolve(directory, relative, entry.name) === storage) continue;
       const file = path.posix.join(relative, entry.name);
       if (inputDirectories.has(entry.name)) yield file;
@@ -200,6 +213,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       if (safeChangePath(file)) names.add(file);
     }
     for (const file of names) {
+      checkExecutionAdmission();
       const doc = paths.get(file), entry = await inspect(repo, file);
       if (!doc && !entry) continue;
       if (equal(doc?.published, entry)) continue;
@@ -328,7 +342,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         if (old.state === 'published' || old.state === 'ready') return old;
         throw changeError('execution_already_started');
       }
-      await reconcile(repo);
+      await executionPhase('reconciliation', () => reconcile(repo));
       const token = randomUUID(), viewDirectory = path.join(repo.root, 'views', token, 'worktree');
       const scope = Object.fromEntries(scopeFields.map((field) => [field, input[field]]));
       const result = { token, scope, directory: repo.logicalDirectory, projectDirectory: repo.directory,
@@ -341,6 +355,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         executionFingerprint: input.executionFingerprint };
       const disabled = await inactive(repo), base = [];
       for (const [file, doc] of await activePaths(repo)) {
+        checkExecutionAdmission();
         if (doc.published.deleted) continue;
         base.push({ path: file, documentID: doc.id, entry: doc.published });
         await saveRuns(repo, doc.id, visibleMutationRuns(await runsFor(repo, doc.id), disabled), `bases/${token}`);
@@ -357,7 +372,10 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       // lock; commands and copying do not hold that lock.
       const root = rootFor(lease.projectDirectory), db = await openChangeStore(root, path.join(root, 'git'));
       const repo = { root, directory: lease.projectDirectory };
-      for await (const file of db.list(`bases/${lease.token}/files`)) await write(repo, file.path, file.entry, lease.viewDirectory);
+      for await (const file of db.list(`bases/${lease.token}/files`)) {
+        checkExecutionAdmission();
+        await write(repo, file.path, file.entry, lease.viewDirectory);
+      }
       await git(lease.viewDirectory, ['init', '--quiet']);
       if (lease.vcs) {
         // Git commands can inspect the real revision and staged state without
@@ -395,10 +413,10 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     } catch (error) {
       // This method has not admitted a writer. A failed/cancelled copy must not
       // leave an immortal preparing lease that later recovery cannot attest.
-      await locked(lease.directory, async (repo) => {
+      await executionCleanup(() => locked(lease.directory, async (repo) => {
         const current = await repo.db.get(key('leases', lease.token));
         if (current?.state === 'preparing') { current.state = 'cancelled'; repo.db.set(key('leases', lease.token), current); }
-      }).catch(() => {});
+      })).catch(() => {});
       await fs.rm(path.dirname(lease.viewDirectory), { recursive: true, force: true });
       throw error;
     }

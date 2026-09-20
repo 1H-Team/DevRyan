@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.8] - 2026-09-21
+
+- Runtime efficiency: bound SSE and WebSocket queues by count and bytes, batch contiguous streaming deltas, enforce a protected renderer history budget, compress journal rotations asynchronously, and replace offset-based vector scans with keyset retrieval and bounded top-k ranking.
+- Harness context: deduplicate repeated skill and tool payloads without changing canonical messages, persist source-aware fingerprints and execution admission, and add deterministic and optional native comparison tooling while keeping experimental policies disabled by default.
+- Reliability and recovery: preserve execution ownership through lifecycle and persistence races, surface actionable session failures, strengthen primary-model recovery classification, and retain conflict-safe Concurrent Revert behavior across delayed or interrupted mutations.
+- Desktop and settings: park inactive manual browser tabs with background throttling while preserving agent surfaces, make OpenCode and tunnel status failures authoritative, and tighten revocable tunnel access around supported Bot routes and local ownership.
+- Quality: expand event-stream overload, history-budget, batching, browser-parking, duplicate-output, failure-notice, orchestration, QA, and performance regression coverage with retained audit evidence.
+- Database: deploy and verify all repository migrations and the required Production Bots schema marker before release publication.
+- Release: update all DevRyan package and desktop metadata to 1.2.8.
+
 ## [1.2.7] - 2026-09-20
 
 - Concurrent Revert: isolate captured executions in verified private views, preserve unrelated session and file contributions through Revert/Redo, durably recover interrupted mutations, and ship the pinned companion and native supervisor artifacts for both macOS release architectures.

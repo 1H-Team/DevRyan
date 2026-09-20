@@ -635,6 +635,7 @@ export interface HarnessPolicies {
   waitAny: boolean;
   compactResults: boolean;
   contextProjection: boolean;
+  duplicateOutputs: boolean;
 }
 export const HARNESS_POLICY_ENV: Readonly<Record<keyof HarnessPolicies, string>>;
 export const MANAGED_OVERLAP_READ_TOOLS: readonly string[];

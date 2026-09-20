@@ -10,18 +10,19 @@ Preflight and run-start diagnostics record resolved runtime version, provider/mo
 
 The existing primary recovery controller owns managed continuation reservations across providers. Collection, Orchestrator TODO and Builder TODO wakes must match its real-user anchor, model selection, cancellation generation and canonical settled state. Reservations persist before submitting a synthetic prompt. Unknown ownership fails closed; project auto-resume and Slim cannot submit a competing managed turn. Standalone use retains its own hooks. Collection and compaction do not refill repair or TODO budgets. Provider-specific transport recovery, role deadlines and Designer/Fixer's existing 150-plus-20 turn safeguards remain separate.
 
-Managed ownership applies independently of the four optional switches. A root without a retained owner record, including a pre-upgrade root, needs a new real user instruction before automatic continuation; history cannot recreate spent budgets. This condition reports `managed_objective_unavailable`. An obsolete private-bridge token reports `managed_bridge_authentication_failed` with managed-runtime reconnect guidance. These diagnostics do not silently repair credentials or permit workspace mutations when the bridge is unavailable.
+Managed ownership applies independently of the optional switches. A root without a retained owner record, including a pre-upgrade root, needs a new real user instruction before automatic continuation; history cannot recreate spent budgets. This condition reports `managed_objective_unavailable`. An obsolete private-bridge token reports `managed_bridge_authentication_failed` with managed-runtime reconnect guidance. These diagnostics do not silently repair credentials or permit workspace mutations when the bridge is unavailable.
 
 ## Independent rollout switches
 
-All four optimizations default off. Set a switch to exactly `1` in the owned managed host environment and restart that host to enable its behavior. Unset it to roll back; durable tasks, envelopes, history, receipts and decision provenance remain valid.
+Duplicate outputs default on only for the verified OpenCode 1.18.31 macOS arm64 executable, managed OpenAI ChatGPT Responses transport, `gpt-5.6-sol` / Medium route and ordered managed plugin content inventory recorded in the [qualification audit](audits/2026-09-20-context-deduplication/README.md). Other optimization defaults remain off. Set a switch to exactly `1` in the owned managed host environment and restart that host to request its behavior; duplicate outputs still require a qualified profile. Set it to `0` and restart to roll back; durable tasks, envelopes, history, receipts and decision provenance remain valid. Installed apps acquire these release defaults through their normal update and managed-runtime restart, not an in-place experiment.
 
 | Environment switch | Negotiated capability | Behavior |
 | --- | --- | --- |
 | `DEVRYAN_MANAGED_READ_OVERLAP` | `readOverlap` | Host-approved native reads and known retrieval tools while grouped children run or await disposition. |
 | `DEVRYAN_MANAGED_WAIT_ANY` | `waitAny` | `devryan_task` `wait_any` with explicit `task_ids` and optional `after_cursor`. |
 | `DEVRYAN_COMPACT_MANAGED_RESULTS` | `compactResults` | Version-1 canonical result header before selectively retrieved detail; declared required-check observation. |
-| `DEVRYAN_TASK_CONTEXT_PROJECTION` | `contextProjection` | Bounded task checkpoints, project decisions, exact duplicate observation masking and native compaction context. |
+| `DEVRYAN_TASK_CONTEXT_PROJECTION` | `contextProjection` | Bounded task checkpoints, project decisions and native compaction context. |
+| `DEVRYAN_DUPLICATE_OUTPUTS` | `duplicateOutputs` | Qualified skill/managed-result duplicates in ordinary requests; independent of checkpoints. |
 
 Legacy eager/reference result clients and single-task `wait` remain supported. `DEVRYAN_MANAGED_RESULT_MODE=eager` retains its existing rollback behavior. No optional optimization is promoted solely because deterministic tests pass.
 
@@ -51,7 +52,13 @@ Task checkpoints are derived from the real-user anchor, selected-plan references
 
 Project decisions require an exact quote from a canonical real-user message in the same project, with source identity and optional content/expiry validity. Retrieval separates active, stale, expired and superseded decisions and considers relevance before recency. Non-Git global projects remain directory-scoped. There is no personal or cross-project memory.
 
-Provider request projection retains the first exact compatible managed terminal observation and masks later duplicates, so appending another observation leaves the earlier projected prefix unchanged. It preserves tool-call/result structure, signed/opaque provider fields, attachments and native canonical history. Explicit checkpoint retrieval and native compaction supply the task checkpoint and critical references; no per-request checkpoint RPC or changing system suffix is injected. Native pruning or compaction may still change the native prefix. No summarization model or recursive memory graph is added.
+The managed harness plugin is the sole owner of duplicate output projection. It updates the message array consumed by OpenCode, cloning only changed records. The standalone skill plugin keeps discovery, aliases, descriptions and catalog formatting, with no transcript rewriting. Only completed native skills and supported structured managed observations qualify. Candidates must match scope, input, output, title and supported metadata, and fit within 256 KiB of UTF-8 output. Attachments, unknown skill metadata, signed/opaque provider fields, pending/error calls and native-pruned outputs are retained. A replacement must be smaller after JSON serialization and reference full evidence in the same outgoing request. Every content transition survives, including A → B → A. After a shortened result, the next same-key observation remains full, even when other tools intervene. Unchanged native history retains a stable projected prefix; native pruning can change it.
+
+Native summary requests skip projection. A bounded per-session marker is set before asynchronous compaction work and consumed by the next unambiguous same-session transform. It has no timer; a failed/cancelled compaction may conservatively skip one ordinary request. Unknown or mixed-session inputs remain full, and marker overflow disables projection for that plugin instance. Summary transforms/system hooks cannot replace ordinary headroom metadata. Checkpoint failures emit only a fixed diagnostic reason. Checkpoints and summaries retain their existing authority and continuation rules.
+
+`harness-duplicate-qualification.js` checks the release profiles in `harness-duplicate-profiles.js`. An exact runtime version and executable hash, provider/model/variant, selected-provider configuration hash, host-attested authentication transport, and ordered local plugin content identities must match a profile with complete acceptance evidence. The native resolved plugin list includes discovered files; the independent host read must match the plugin's full snapshot, including absolute source identities. Release matching permits relocation of identical managed files. Unresolved package specs, plugin options, custom/changed configurations and missing evidence retain full output. Factory reports remain separate from this inventory. Only validated release profiles marked `defaultEnabled` activate automatically; setting `DEVRYAN_DUPLICATE_OUTPUTS=1` cannot bypass qualification. Setting it to `0` disables projection after the normal managed-host restart. Optional capability/qualification discovery runs in the background with a 30-second failure backoff; required-check observation still retries immediately and fails closed.
+
+No extra model call, pruning of generic native tools, history store, retrieval endpoint or inference-time summary engine is introduced.
 
 Declared input/context limits and the last matching request's input/cache usage inform a labelled headroom estimate on checkpoint and compaction results; current active-context tokens remain unknown. Bytes and cumulative usage are never presented as exact active context.
 
@@ -65,6 +72,12 @@ For identical deterministic pre-execution input/binary-read rejection within one
 
 ## Diagnostics and evaluation
 
+PRs run `bun run perf:harness --baseline <checkout> --output <report.json>` against the PR base revision. Three fresh worker pairs alternate B/C, C/B, B/C. Ledger retention and vector ranking must match their independent oracles; serialization, vector decoding and offset traversal counts must not regress. Time, process CPU and forced-GC worker heap are retained as descriptive measurements, not machine-independent speed thresholds. The workflow publishes `DevRyan-harness-comparison` and uses no providers or credentials.
+
+For a release decision, `bun run perf:compare --config <config.json>` combines matching deterministic report files with optional live paired agent report files. Config schema version 1 requires `baseline`, `candidate`, and `output` paths (relative to the config), and accepts `agentPairs: [{ baseline, candidate }]`, `factor`, and `targetMetric`. Supply three pairs, or ten after outcome disagreement. Fixture/protocol/runtime identities and case membership must match; native reports additionally use the existing fingerprint/outcome comparator. The numeric projection covers success, input/output tokens, retries, latency, CPU and retained bytes. Unobserved provider retries or CPU remain null; managed retry dispositions are not relabelled as total provider retries. Passing local checks cannot enable a policy or replace the required manual/natural native journeys.
+
+Generate the optional Orchestrator candidate with `node scripts/agent-evals/compact-orchestrator.mjs --output .cache/qa/role-candidate`. It moves templates and duplicated workflow text to `skills/devryan-orchestration-guidance/SKILL.md`, retaining persistent routing, permissions, recovery and implementation-start admission. Provision the guidance identically in both isolated arms, copy only the candidate role into the candidate arm, and compare with `pairing.factor: "role"` and target `input`. The packaged default stays unchanged until those trials pass; fewer prompt bytes alone are not an outcome or token-efficiency result.
+
 The optional [cache accounting contract and QA workflow](CACHE_EFFICIENCY.md)
 adds `DevRyan-usage.json` to the existing ZIP. It reconciles runtime steps and
 message fallbacks, retains deleted title-helper attribution, and separates actual
@@ -72,7 +85,7 @@ provider evidence from runtime accounting. It changes no inference defaults.
 
 The existing diagnostics ZIP includes `DevRyan-trace.json`. The authenticated `POST /api/diagnostics/export` also accepts `format: "chrome-trace"` with its existing runtime/task scope. Open the JSON in [Perfetto](https://perfetto.dev/docs/getting-started/other-formats). Root/task lanes correlate retained ledger, message, call and recovery identifiers. Export is bounded to 100,000 events and 32 MiB per projection stage; overflow is explicit.
 
-Observed queue, tool, workspace-gating, disposition, native turn, objective and recovery durations retain missing timestamps as null. Workspace gating is not parent idle time, observed first activity is not wire time to first response, overlapping duration sums are not a critical path, and cost is labelled native-runtime-reported or unavailable. A runtime-reported cost does not establish a provider bill or a provider-reported charge. Input/output/cache usage is deduplicated by canonical message. Structural metadata excludes private reasoning, opaque provider blobs and raw tool arguments/output. Repeated identical known diagnostics aggregate by identity/cause/generation; retention writes age/size eviction reasons before deletion. These additions do not establish why older historical evidence was already missing.
+Observed queue, tool, workspace-gating, disposition, native turn, objective and recovery durations retain missing timestamps as null. Workspace gating is not parent idle time, observed first activity is not wire time to first response, overlapping duration sums are not a critical path, and cost is labelled native-runtime-reported or unavailable. A runtime-reported cost does not establish a provider bill or a provider-reported charge. Input/output/cache usage is deduplicated by canonical message. Context observations label `hook-applied`, `summary-suppressed`, `checkpoint`, `checkpoint-unavailable`, or historical `legacy-estimate` phases. Planned/applied counts and transform duration are separate from final-request sizes, which production hook diagnostics cannot establish and leave null. Structural metadata excludes private reasoning, opaque provider blobs and raw tool arguments/output. Repeated identical known diagnostics aggregate by identity/cause/generation; retention writes age/size eviction reasons before deletion. These additions do not establish why older historical evidence was already missing.
 
 Task exports attribute exact DevRyan-owned managed-task events to their root and preserve the recorded child relation even when the corresponding native session-created event has expired. The sanitizer preserves only the fixed `owner: devryan` marker needed for this attribution. Historical records whose owner marker was already dropped cannot establish that ownership. Unknown ownership, conflicting explicit roots and unrelated same-directory tasks cannot widen the export scope.
 
@@ -81,6 +94,8 @@ The existing `agent:eval` CLI accepts a deterministic 30-case golden catalog and
 Run `bun run validate:full`, `bun run build`, `bun run bundle:check`, and applicable isolated checks from `QA.md`. Fixture compaction and UI replay do not prove live native compaction. A complete memory/performance comparison requires the repaired canonical-to-visible long-history witness, matched baseline measurements and inspection of every captured PNG.
 
 The [2026-09-10 implementation audit](audits/2026-09-10-harness-optimization.md) records the completed local checks, matched whole-package observations and unresolved native acceptance gates. Optional policies remain off by default.
+
+The [2026-09-20 resource implementation audit](audits/2026-09-20-devryan-resource-improvements.md) records the bounded queues/history budget, batched streaming, compaction/search/compression changes, deterministic baseline comparisons, native fixture checks and remaining provider-dependent qualification.
 
 
 ## Designer routing regression
@@ -102,3 +117,19 @@ and unrelated files, and failing-before/passing-after source acceptance tests.
 These checks establish routing and source behavior, not rendered visual quality.
 Deterministic tests exercise the fixtures, wrong-role rejection, and stale-turn
 handling without calling a provider; live model results must be reported separately.
+
+## Duplicate-output acceptance
+
+Run the isolated real-runtime loopback probe against each supported build:
+
+```sh
+node scripts/qa/cache-serializer-probe.mjs /absolute/path/to/opencode --duplicates
+```
+
+The probe uses the existing repository SDK, private homes and synthetic requests; it never reads installed-app history or provider credentials. It verifies off/on request sizes, no-duplicate controls, native-pruned anchors, later bundled hooks, canonical history, two manual summaries, automatic compaction and hook ordering. Raw bodies are inspected only in memory; the retained report contains sizes, fixture identities and checks. Synthetic token usage exercises native compaction and is not provider usage or cost evidence. Unit tests additionally exercise cancellation/failure, concurrent sessions, model switches, capability backoff and ordinary headroom preservation.
+
+Live behavior is a separate gate in `scripts/qa/duplicate-behavior.mjs`. Supply ten distinct matched live trials per proposed profile, five skill-reuse and five managed-result-continuity pairs, with independent grading and report hashes. Require no critical continuity failures, repeated mutations, or increase in same-key repeat-call rate. Missing/incomplete trials fail qualification. Retain failed trials; do not replace them with successful retries. This gate does not alter the existing performance comparator or claim statistical reliability. Store the reviewed acceptance report hash with the exact release profile only after correctness, final-request and live behavior checks all pass.
+
+Report serialized sizes/peak size, transform overhead, compaction count, actual provider input/cache tokens and peak input separately. Unobserved provider metrics remain unknown. Do not infer monetary savings. Historical replacement-array estimates do not establish provider savings; see the correction in the [original audit](audits/2026-09-10-harness-optimization.md).
+
+The [context pipeline repair audit](audits/2026-09-20-context-deduplication/README.md) records local request evidence and the incomplete live qualification gate.

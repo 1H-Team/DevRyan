@@ -29,6 +29,7 @@ import { opencodeClient } from "@/lib/opencode/client"
 import { useSessionUIStore } from "./session-ui-store"
 import {
   applySyncEventForTest,
+  applySyncEventBatch,
   captureDirectorySessionListRevision,
   handleUserNotificationEvent,
   reconcileDirectorySessionListSnapshot,
@@ -196,6 +197,32 @@ const routingIndexFor = (messageIds: string[] = [USER_MESSAGE_ID, ASSISTANT_MESS
   sessionDirectoryById: new Map([[SESSION_ID, DIRECTORY]]),
   messageSessionById: new Map(messageIds.map((messageId) => [messageId, SESSION_ID])),
   sessionMessageIdsById: new Map([[SESSION_ID, new Set(messageIds)]]),
+})
+
+test("production streaming batches match sequential state with one subscriber commit", () => {
+  const sequential = new ChildStoreManager()
+  const batched = new ChildStoreManager()
+  for (const manager of [sequential, batched]) {
+    manager.ensureChild(DIRECTORY, { bootstrap: false }).setState({
+      ...INITIAL_STATE,
+      message: { [SESSION_ID]: [userMessage(), assistantMessage()] },
+      part: { [ASSISTANT_MESSAGE_ID]: [textPart("")] },
+      session_status: { [SESSION_ID]: { type: "busy" } },
+    })
+  }
+  const events: Event[] = Array.from({ length: 32 }, (_, index) => ({
+    id: `delta-${index}`,
+    type: "message.part.delta",
+    properties: { sessionID: SESSION_ID, messageID: ASSISTANT_MESSAGE_ID, partID: PART_ID, field: "text", delta: `${index},` },
+  }))
+  let commits = 0
+  batched.getChild(DIRECTORY)!.subscribe(() => commits++)
+  for (const event of events) applySyncEventForTest(DIRECTORY, event, sequential, routingIndexFor())
+  applySyncEventBatch(DIRECTORY, events, batched, routingIndexFor())
+  expect(batched.getState(DIRECTORY)?.part).toEqual(sequential.getState(DIRECTORY)?.part)
+  expect(commits).toBe(1)
+  sequential.disposeAll()
+  batched.disposeAll()
 })
 
 const flushAsync = async () => {

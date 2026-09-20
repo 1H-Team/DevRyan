@@ -1675,7 +1675,7 @@ new file mode 100644
 index 0000000..d74d4d5
 --- /dev/null
 +++ b/packages/opencode/src/session/devryan-execution.ts
-@@ -0,0 +1,417 @@
+@@ -0,0 +1,422 @@
 +import { createHash } from "node:crypto"
 +import { spawn, execFile } from "node:child_process"
 +import { createInterface } from "node:readline"
@@ -1887,7 +1887,12 @@ index 0000000..d74d4d5
 +                } catch (cause) {
 +                  // The begin response may have been lost after durable reservation.
 +                  // This branch has never spawned a process, including on interruption.
-+                  await rpc({ ...scope, action: "cancel-before-start" })
++                  try {
++                    await rpc({ ...scope, action: "cancel-before-start" })
++                  } catch {
++                    const message = cause instanceof Error ? cause.message : "local_execution_failed"
++                    throw new Error(`${message}; execution did not start; cleanup unconfirmed`, { cause })
++                  }
 +                  throw cause
 +                }
 +              }),

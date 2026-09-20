@@ -138,7 +138,7 @@ export const createLifecycleTracker = (options = {}) => {
     // Idle can precede assistant finalization. Publish one authoritative
     // correction for that same retained turn, never settle a newer turn.
     const correction = Boolean(turn.settledAt && turn.outcome === 'completed'
-      && reason === 'assistant_error' && ['failed', 'aborted'].includes(outcome));
+      && ['assistant_error', 'session.error'].includes(reason) && ['failed', 'aborted'].includes(outcome));
     if (turn.settledAt && !correction) return;
     const settledAt = now();
     turn.settledAt = settledAt;
@@ -295,7 +295,25 @@ export const createLifecycleTracker = (options = {}) => {
       const info = asObject(properties.info);
       const sessionID = sessionIdFrom(properties, info);
       const cancelled = /^(AbortError|MessageAbortedError)$/.test(asString(asObject(properties.error).name));
-      settleTurn(activeTurn(sessionID), type === 'session.error' && !cancelled ? 'failed' : 'aborted', type);
+      let turn = activeTurn(sessionID);
+      if (type === 'session.error') {
+        const messageID = asString(properties.messageID);
+        const recent = (turnsBySession.get(sessionID) ?? []).filter((candidate) => candidate.settledAt
+          && now() - candidate.settledAt <= 1_000);
+        const previous = recent.length === 1 && recent[0].outcome === 'completed' ? recent[0] : null;
+        if (messageID) {
+          turn = turnsByUserMessage.get(userKey(sessionID, messageID)) ?? turnsByAssistantMessage.get(messageID);
+          if (turn?.sessionID !== sessionID) return;
+        }
+        else if (recent.length > 1 || (turn && recent.length > 0)) return;
+        else if (previous) {
+          // An uncorrelated error adjacent to idle belongs to that terminal
+          // edge only if no newer turn exists. Never fail a newer invocation.
+          if (turn) return;
+          turn = previous;
+        }
+      }
+      settleTurn(turn, type === 'session.error' && !cancelled ? 'failed' : 'aborted', type);
     }
   };
 

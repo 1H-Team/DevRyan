@@ -5,6 +5,7 @@ import {
   isAllowedWebviewNavigationUrl,
 } from './browser-webview-policy.mjs';
 import { isBenignNavigationAbort } from './browser-navigation-error.mjs';
+import { createBrowserParkingPool, setBrowserSurfaceScheduling } from './browser-parking.mjs';
 
 const DEFAULT_WIDTH = 1180;
 const DEFAULT_HEIGHT = 760;
@@ -319,12 +320,7 @@ export const createBrowserSurfaceManager = ({
   const leaseSurfaceByLeaseId = new Map();
   const manualWorkspaces = new Map();
   let surfaceCounter = 0;
-  let parkingWindow = null;
-
-  const ensureParkingWindow = () => {
-    if (!isAliveWindow(parkingWindow)) parkingWindow = createParkingWindow();
-    return parkingWindow;
-  };
+  const parkingPool = createBrowserParkingPool(createParkingWindow);
 
   const snapshot = (surface) => {
     const contents = surface.view.webContents;
@@ -390,12 +386,13 @@ export const createBrowserSurfaceManager = ({
     applyViewportMode(surface, nextBounds);
     surface.lastBounds = nextBounds;
     surface.view.setVisible?.(true);
-    surface.view.webContents.setBackgroundThrottling?.(false);
+    setBrowserSurfaceScheduling(surface, false);
     return nextBounds;
   };
 
   const park = (surface) => {
-    const owner = ensureParkingWindow();
+    setBrowserSurfaceScheduling(surface, true);
+    const owner = parkingPool.windowFor(surface.kind);
     const bounds = surface.lastBounds || { x: 0, y: 0, width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT };
     if (surface.attachedWindow !== owner) {
       detachView(surface);
@@ -403,7 +400,10 @@ export const createBrowserSurfaceManager = ({
       surface.attachedWindow = owner;
     }
     surface.view.setBounds({ x: 0, y: 0, width: Math.max(1, bounds.width), height: Math.max(1, bounds.height) });
-    surface.view.setVisible?.(surface.kind === 'lease');
+    // Keep the native view attached/visible within its hidden host so Chromium
+    // observes the host's visibility. Hiding only the View leaves manual pages
+    // reporting visible and scheduling animation frames on Electron 41/macOS.
+    surface.view.setVisible?.(true);
     if (surface.kind === 'lease' && !surface.frameSubscriptionActive && typeof surface.view.webContents.beginFrameSubscription === 'function') {
       surface.view.webContents.beginFrameSubscription(true, () => {});
       surface.frameSubscriptionActive = true;
@@ -418,7 +418,7 @@ export const createBrowserSurfaceManager = ({
 
   const configureContents = (surface) => {
     const contents = surface.view.webContents;
-    contents.setBackgroundThrottling?.(false);
+    setBrowserSurfaceScheduling(surface, true);
     contents.setWindowOpenHandler(({ url }) => {
       const target = normalizeBrowserSurfaceUrl(url);
       if (target !== 'about:blank') void contents.loadURL(target).catch(() => undefined);
@@ -498,7 +498,7 @@ export const createBrowserSurfaceManager = ({
         partition: kind === 'manual'
           ? browserContext.partition
           : safeString(browserPartition, 256) || BROWSER_WEBVIEW_PARTITION,
-        backgroundThrottling: false,
+        backgroundThrottling: kind === 'manual',
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
@@ -1228,8 +1228,7 @@ export const createBrowserSurfaceManager = ({
   const closeAll = (reason = 'app_quit') => {
     for (const surface of [...surfaces.values()]) destroy(surface, reason);
     manualWorkspaces.clear();
-    if (isAliveWindow(parkingWindow)) parkingWindow.destroy();
-    parkingWindow = null;
+    parkingPool.close();
   };
 
   return {

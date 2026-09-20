@@ -268,6 +268,9 @@ export function createTunnelAccessControl({ now = Date.now } = {}) {
 
 export function registerTunnelAccessBoundary(app, server, { controller, connection, runtimeInstanceId, getRuntimeReady = () => true, authenticateOwner = (req) => connection.authenticateLocalOwner(req) }) {
   const json = express.json({ limit: '2kb' });
+  const usesManagedDirectLogin = (req) => connection.enabled
+    && controller.getActiveTunnelMode() === 'managed-remote'
+    && controller.classifyRequestScope(req) === 'tunnel';
   app.use(async (req, res, next) => {
     if (isDirectLocalRequest(req)) {
       if (/^\/api\/openchamber\/tunnel(?:\/|$)/.test(req.path)) {
@@ -311,8 +314,13 @@ export function registerTunnelAccessBoundary(app, server, { controller, connecti
         } catch { return res.status(503).json({ error: 'Tunnel authorization unavailable' }); }
       });
     }
-    // Managed account login is an explicit startup policy, never an outage
-    // fallback. A tunnel cookie always stays in its restricted authority.
+    // Valid Bot sessions retain their restricted authority. An expired or revoked
+    // cookie must not trap the stable hostname behind the obsolete link screen.
+    // Clearing it only reaches normal account authentication; it grants no access.
+    if (usesManagedDirectLogin(req) && hasTunnelCookie && !remoteSession) {
+      controller.clearTunnelSessionCookie(req, res);
+      return next();
+    }
     if (connection.enabled && !hasTunnelCookie) return next();
     if (pathname === '/auth/session' && req.method === 'GET') {
       return res.status(remoteSession ? 200 : 401).json(remoteSession
@@ -333,6 +341,8 @@ export function registerTunnelAccessBoundary(app, server, { controller, connecti
     if (socket.destroyed) return;
     if (isDirectLocalRequest(req)) return;
     if (connection.enabled && !String(req.headers?.cookie || '').includes(`${COOKIE}=`)) return;
+    // Downstream upgrade handlers still require normal account authentication.
+    if (usesManagedDirectLogin(req) && !controller.getTunnelSessionFromRequest(req)) return;
     req.tunnelAccessDenied = true;
     socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'); socket.destroy();
   };

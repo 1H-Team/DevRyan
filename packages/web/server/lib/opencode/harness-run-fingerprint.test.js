@@ -24,16 +24,21 @@ describe('run fingerprints', () => {
   it('does not infer loaded plugins or zero tool counts from unavailable metadata', () => {
     const value = buildHarnessRunFingerprint();
     expect(value.catalog).toMatchObject({ contentHash: null, idsHash: null, count: null, availability: 'unavailable' });
-    expect(value.plugins).toEqual({ configured: null, observed: null, observation: 'unavailable' });
+    expect(value.plugins).toEqual({ configured: null, observed: null, inventory: null, observation: 'unavailable' });
     expect(value.role.contentHash).toBeNull();
   });
   it('survives journal sanitization while dropping malformed hash fields', () => {
     const sanitizer = createDiagnosticSanitizer();
-    const fingerprint = buildHarnessRunFingerprint(input());
+    const fingerprint = buildHarnessRunFingerprint({ ...input(), runtimeHash: 'c'.repeat(64), pluginInventory: {
+      configurationHash: 'd'.repeat(64), providerHash: 'e'.repeat(64), contentHash: 'f'.repeat(64),
+      entries: [{ name: 'owner.mjs', sourceHash: 'a'.repeat(64), contentHash: 'b'.repeat(64) }],
+    } });
     const result = sanitizer.sanitizeRecord({ type: 'lifecycle', event: 'harness_run_start',
-      sessionID: 'ses_fixture', payload: { fingerprint, contentHash: 'a private credential' } });
+      sessionID: 'ses_fixture', payload: { fingerprint, contentHash: 'a private credential', providerHash: 'private text', runtimeHash: 'not-a-hash' } });
     expect(result.payload.fingerprint).toEqual(fingerprint);
     expect(result.payload.contentHash).toBeUndefined();
+    expect(result.payload.providerHash).toBeUndefined();
+    expect(result.payload.runtimeHash).toBeUndefined();
   });
   it('captures native selection using bounded local endpoints and shares in-flight preflight reads', async () => {
     const entries = [];

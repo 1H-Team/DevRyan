@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { access, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -8,6 +8,20 @@ import { test } from 'node:test';
 import { assertQaSelectedProviderAccess, assertQaSelectedProviderDuration, pinQaAgents, prepareQaPluginHomeWrapper, prepareQaProfile, projectQaAuth } from './profile-preparation.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
+
+test('reusing a private QA dependency tree does not recursively replace plugin originals', async () => {
+    const directory = await mkdtemp(path.join(root, '.cache/qa/wrapper-reuse-'));
+    try {
+        const entry = path.join(directory, 'index.mjs');
+        const source = 'export default () => ({});\n';
+        await writeFile(entry, source);
+        await prepareQaPluginHomeWrapper(entry);
+        const wrapped = await readFile(entry, 'utf8');
+        await prepareQaPluginHomeWrapper(entry);
+        assert.equal(await readFile(entry, 'utf8'), wrapped);
+        assert.equal(await readFile(path.join(directory, 'index.qa-original.mjs'), 'utf8'), source);
+    } finally { await rm(directory, { recursive: true, force: true }); }
+});
 
 test('private QA auth excludes other providers, refresh credentials, and expired access', () => {
     const source = { openai: { type: 'oauth', access: 'synthetic-access', refresh: 'must-stay-with-owner', expires: 500_000, accountId: 'synthetic-account' },

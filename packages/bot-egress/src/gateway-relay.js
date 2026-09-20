@@ -234,6 +234,12 @@ export function relayGatewayRequest({
       settled = true;
       if (error) reject(error); else resolve();
     };
+    // Oversized or disconnected streams can reset the downstream socket after
+    // the relay has already settled its bounded operation. Keep those native
+    // stream errors attached to the same promise instead of letting Node emit
+    // an unhandled ECONNRESET from the HTTP server.
+    request.on('error', finish);
+    response.on('error', finish);
     let origin;
     let route;
     let headers;
@@ -279,14 +285,14 @@ export function relayGatewayRequest({
       );
       upstreamResponse.pipe(response);
       upstreamResponse.once('end', () => finish());
-      upstreamResponse.once('error', finish);
+      upstreamResponse.on('error', finish);
     });
     upstream.once('timeout', () => upstream.destroy(new GatewayRelayError(
       'Bot gateway timed out',
       'bot_egress_gateway_upstream_failed',
       504,
     )));
-    upstream.once('error', finish);
+    upstream.on('error', finish);
     request.once('aborted', () => upstream.destroy());
     if (route.requestLimit === 0) {
       request.resume();

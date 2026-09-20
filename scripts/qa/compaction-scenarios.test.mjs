@@ -92,6 +92,10 @@ test('manual Plan-mode adapter captures initial and revised plans for the exact 
       sendTurn: async text => {
         const index = turnCount++;
         assert.ok(index < 2, 'The test must stop before another live turn');
+        if (index === 0) {
+          assert.match(text, /revision 1, the attached brief controls the proposed task ordering: high, normal, then low/);
+          assert.match(text, /Preserve the user-note file verbatim as historical input/);
+        } else assert.match(text, /reject the previously proposed automatic priority sorting/);
         history[0].parts[0].text = text;
         history.push(
           { info: { id: requestIDs[index], sessionID, role: 'user' }, parts: [

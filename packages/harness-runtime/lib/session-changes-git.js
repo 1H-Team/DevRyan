@@ -1,3 +1,4 @@
+import { executionSignal } from './execution-admission.js';
 import { spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -8,10 +9,14 @@ export const changeError = (code, status = 409) => Object.assign(new Error(code)
 // Never inherit a caller's index or object-store overrides. All mutation callers
 // supply the private repository explicitly; checkout commands are read-only.
 const start = (cwd, args, { env, input, timeoutMs = 30_000, stdout = 'pipe' } = {}) => {
+  const signal = executionSignal();
+  signal?.throwIfAborted();
   const child = spawn('git', args, { cwd, env: { ...process.env,
     GIT_DIR: undefined, GIT_COMMON_DIR: undefined, GIT_INDEX_FILE: undefined, GIT_WORK_TREE: undefined,
     GIT_OBJECT_DIRECTORY: undefined, GIT_ALTERNATE_OBJECT_DIRECTORIES: undefined,
     GIT_OPTIONAL_LOCKS: '0', ...env }, stdio: ['pipe', stdout, 'pipe'] });
+  const abort = () => child.kill('SIGKILL');
+  signal?.addEventListener('abort', abort, { once: true });
   let timedOut = false;
   let diskFull = false;
   let notRepository = false;
@@ -26,13 +31,14 @@ const start = (cwd, args, { env, input, timeoutMs = 30_000, stdout = 'pipe' } = 
   const done = new Promise((resolve, reject) => {
     child.on('error', reject);
     child.on('close', (code) => {
-      if (timedOut) reject(changeError('capture_timeout', 503));
+      if (signal?.aborted) reject(signal.reason);
+      else if (timedOut) reject(changeError('capture_timeout', 503));
       else if (diskFull) reject(changeError('storage_unavailable', 503));
       else if (code !== 0 && notRepository) reject(changeError('capture_not_git', 409));
       else if (code !== 0) reject(changeError('capture_git_failed', 503));
       else resolve();
     });
-  }).finally(() => clearTimeout(timer));
+  }).finally(() => { clearTimeout(timer); signal?.removeEventListener('abort', abort); });
   // Attach immediately, including while consumers are reading stdout.
   void done.catch(() => {});
   const writing = pipeline(typeof input === 'string' || Buffer.isBuffer(input)

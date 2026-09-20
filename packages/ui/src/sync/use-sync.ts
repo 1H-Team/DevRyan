@@ -143,6 +143,7 @@ export function useSync() {
     (sessionID: string, directoryOverride?: string | null) => {
       const targetDirectory = resolveDirectory(directoryOverride)
       const targetStore = childStores.ensureChild(targetDirectory, { bootstrap: false })
+      childStores.historyBudget.touch(targetDirectory, sessionID)
       registerDirectoryTracking(targetDirectory)
       const s = seenFor(targetDirectory)
       const protectedIds = getProtectedSessionCacheIds(targetStore.getState())

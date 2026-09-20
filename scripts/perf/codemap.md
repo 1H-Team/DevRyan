@@ -8,6 +8,8 @@ behavior.
 
 ## Design
 
+- `harness-resource-benchmark.mjs` compares credential-free ledger/vector fixtures against an explicit checkout in alternating three-pair order. Independent retention/full-sort outcomes and non-increasing serialization/decode/offset work gate PRs; process CPU, wall time and forced-GC whole-worker heap are descriptive. Every trial records fixture/protocol/runtime/source identities. `harness-comparison.mjs` joins deterministic reports with optional live one-factor paired agent reports. Missing token, retry, CPU or memory evidence stays unavailable; no comparison command enables a runtime policy.
+
 - `loopback-opencode-fixture.mjs` serves one selected parent and three child
   sessions with deterministic message/status/SSE fixtures on loopback. Its bounded
   `replayRecoveryVisual` helper replaces fixture-owned canonical rows and publishes

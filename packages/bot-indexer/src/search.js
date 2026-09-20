@@ -106,19 +106,54 @@ export function mergeHybridResults({ ftsResults, vectorResults, limit = 10 } = {
     .map((result) => Object.freeze({ ...result, sources: Object.freeze(result.sources) }));
 }
 
-export function rankVectorCandidates(queryVector, candidates, limit = 50) {
-  if (!Array.isArray(candidates) || !Number.isInteger(limit) || limit < 1 || limit > 500) {
+const compareVectorResults = (left, right) => right.vectorScore - left.vectorScore
+  || left.namespace.localeCompare(right.namespace)
+  || left.documentId.localeCompare(right.documentId)
+  || left.ordinal - right.ordinal;
+
+// Worst-first heap: one decode/score per candidate, O(k) retained rows, and
+// O(log k) admission. Existing tie-breaking and cosine arithmetic stay exact.
+export function createVectorAccumulator(queryVector, limit = 50) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
     fail('Vector search inputs are invalid');
   }
-  return candidates.map((candidate) => ({
-    ...candidate,
-    vectorScore: cosineSimilarity(queryVector, decodeEmbedding(candidate.embedding)),
-  })).filter((candidate) => Number.isFinite(candidate.vectorScore))
-    .sort((left, right) => right.vectorScore - left.vectorScore
-      || left.namespace.localeCompare(right.namespace)
-      || left.documentId.localeCompare(right.documentId)
-      || left.ordinal - right.ordinal)
-    .slice(0, limit);
+  const heap = [];
+  return {
+    add(candidate) {
+      const vectorScore = cosineSimilarity(queryVector, decodeEmbedding(candidate.embedding));
+      if (!Number.isFinite(vectorScore)) return;
+      const next = { ...candidate, vectorScore };
+      if (heap.length < limit) {
+        heap.push(next);
+        let index = heap.length - 1;
+        while (index > 0) {
+          const parent = Math.floor((index - 1) / 2);
+          if (compareVectorResults(heap[index], heap[parent]) <= 0) break;
+          [heap[index], heap[parent]] = [heap[parent], heap[index]];
+          index = parent;
+        }
+        return;
+      }
+      if (compareVectorResults(next, heap[0]) >= 0) return;
+      heap[0] = next;
+      let index = 0;
+      while (index * 2 + 1 < heap.length) {
+        let child = index * 2 + 1;
+        if (child + 1 < heap.length && compareVectorResults(heap[child + 1], heap[child]) > 0) child += 1;
+        if (compareVectorResults(heap[child], heap[index]) <= 0) break;
+        [heap[index], heap[child]] = [heap[child], heap[index]];
+        index = child;
+      }
+    },
+    results: () => heap.slice().sort(compareVectorResults),
+  };
+}
+
+export function rankVectorCandidates(queryVector, candidates, limit = 50) {
+  if (!Array.isArray(candidates)) fail('Vector search inputs are invalid');
+  const accumulator = createVectorAccumulator(queryVector, limit);
+  for (const candidate of candidates) accumulator.add(candidate);
+  return accumulator.results();
 }
 
 export function createHybridSearch({ store, embeddings } = {}) {
@@ -138,20 +173,21 @@ export function createHybridSearch({ store, embeddings } = {}) {
       const [queryVector] = await embeddings.embed([query]);
       const candidateLimit = Math.min(500, Math.max(50, limit * 10));
       const ftsResults = ftsQuery ? store.ftsSearch(authorized, ftsQuery, candidateLimit) : [];
-      let vectorResults = [];
+      const accumulator = createVectorAccumulator(queryVector, candidateLimit);
       const batchSize = 1_000;
+      let cursor = null;
       for (let offset = 0; offset < status.chunkCount; offset += batchSize) {
-        const candidates = store.vectorCandidates(authorized, batchSize, offset);
+        const candidates = typeof store.vectorCandidatesAfter === 'function'
+          ? store.vectorCandidatesAfter(authorized, batchSize, cursor)
+          : store.vectorCandidates(authorized, batchSize, offset);
         if (candidates.length === 0) break;
-        vectorResults = rankVectorCandidates(
-          queryVector,
-          [...vectorResults, ...candidates],
-          candidateLimit,
-        );
+        for (const candidate of candidates) accumulator.add(candidate);
+        const last = candidates[candidates.length - 1];
+        cursor = { namespace: last.namespace, documentId: last.documentId, ordinal: last.ordinal };
         if (candidates.length < batchSize) break;
       }
       return Object.freeze({
-        results: Object.freeze(mergeHybridResults({ ftsResults, vectorResults, limit })),
+        results: Object.freeze(mergeHybridResults({ ftsResults, vectorResults: accumulator.results(), limit })),
         namespaces: authorized,
         model: embeddings.model,
       });

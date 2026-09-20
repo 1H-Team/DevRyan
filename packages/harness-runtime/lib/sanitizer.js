@@ -54,15 +54,16 @@ const NESTED_FIELDS = new Set([
   'streamId', 'subscriptionId', 'snapshotBytes', 'sequence', 'generation', 'observedAt', 'origin', 'requestType',
   'firstMissingSequence', 'lastMissingSequence', 'failureCode',
   'workerCallID', 'contextModeWorkerCallID', 'sourceAt', 'elapsedMs', 'budgetMs', 'droppedEvents', 'failureCategory', 'exitCode', 'signal',
-  'schemaVersion', 'configurationHash', 'runtimeVersion', 'selection', 'catalog', 'contentHash', 'sourceHash', 'idsHash',
+  'schemaVersion', 'configurationHash', 'runtimeVersion', 'selection', 'catalog', 'contentHash', 'sourceHash', 'idsHash', 'providerHash', 'runtimeHash',
   'availability', 'bytes', 'plugins', 'configured', 'observed', 'observation', 'factoryCalls', 'ownership',
-  'policies', 'readOverlap', 'waitAny', 'compactResults', 'contextProjection',
+  'policies', 'readOverlap', 'waitAny', 'compactResults', 'contextProjection', 'duplicateOutputs',
   'anchorUserMessageID', 'continuationMessageID', 'activeUserMessageID', 'todoContinuationCount',
   'owner', 'task', 'taskId', 'rootSessionId', 'parentTaskId', 'childSessionId', 'priorTaskId', 'envelopeId', 'resultEnvelope',
   'acknowledgedAt', 'resumable', 'partial', 'executionKind', 'failureKind', 'failureReason', 'dispatchGrouped',
   'recoveryLineageId', 'recoveryMessageID', 'runtimeInstanceID', 'providerRequestID', 'cancellationGeneration',
   'firstAssistantPartAt', 'childPromptedAt', 'start', 'end', 'autoResume', 'trigger', 'rejectionState',
-  'beforeBytes', 'projectedBytes', 'dynamicBytes', 'targetKind', 'lastAt', 'coalescedDiagnostics',
+  'beforeBytes', 'projectedBytes', 'dynamicBytes', 'plannedReductions', 'appliedReductions', 'savedBytes',
+  'transformDurationMs', 'finalRequestBytes', 'inventory', 'entries', 'targetKind', 'lastAt', 'coalescedDiagnostics',
   'progressKind', 'progress', 'counts', 'lastUsefulAt', 'relevance', 'policy',
   'tool-evidence', 'child-completed', 'artifact-changed', 'required-check',
 ]);
@@ -93,7 +94,7 @@ const STABLE_IDENTIFIER_FIELDS = new Set([
   'sha256', 'hash', 'head', 'commit', 'tree', 'ref', 'parent',
   'streamId', 'subscriptionId',
   'workerCallID', 'contextModeWorkerCallID',
-  'configurationHash', 'contentHash', 'sourceHash', 'idsHash',
+  'configurationHash', 'contentHash', 'sourceHash', 'idsHash', 'providerHash', 'runtimeHash',
   'anchorUserMessageID', 'continuationMessageID', 'activeUserMessageID',
   'taskId', 'rootSessionId', 'parentTaskId', 'childSessionId', 'priorTaskId', 'envelopeId',
   'recoveryLineageId', 'recoveryMessageID', 'runtimeInstanceID', 'providerRequestID',
@@ -279,7 +280,7 @@ export const createDiagnosticSanitizer = (options = {}) => {
         report.droppedFields += 1;
         continue;
       }
-      if (['configurationHash', 'contentHash', 'sourceHash', 'idsHash'].includes(key)
+      if (['configurationHash', 'contentHash', 'sourceHash', 'idsHash', 'providerHash', 'runtimeHash'].includes(key)
         && nested !== null && (typeof nested !== 'string' || !/^[a-f0-9]{64}$/.test(nested))) {
         report.droppedFields += 1;
         continue;

@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto';
-
 // NOTE: OpenCode's plugin loader iterates *every* named export of a plugin
 // module and rejects the whole file if any of them is not a function (or an
 // object exposing a `.server` function). Constants therefore must not be
@@ -67,33 +65,12 @@ const compactAnthropicSkillCatalog = (systems) => {
 const SKILL_CONTEXT_POLICY = `${SKILL_CONTEXT_POLICY_MARKER}
 Before calling this tool, inspect the active transcript. If the same named skill already has a completed full result earlier in the current context, do not call the tool again; continue using that result. A workflow phase change, including moving from planning to implementation, is not a reason to reload it. Reload only when no full result remains after compaction, the skill content may have changed, or the user explicitly requests a refresh.`;
 
-const SKILL_CONTEXT_REUSE_OUTPUT = `${SKILL_CONTEXT_REUSE_MARKER}The byte-identical completed skill content is already present earlier in this active context. Continue following that existing content; this result intentionally omits the duplicate body.</devryan_skill_reuse>`;
-
 const EXTERNAL_SKILL_REFERENCE_POLICY = `${EXTERNAL_SKILL_REFERENCE_POLICY_MARKER}
 When a loaded skill references a supporting file whose resolved path is outside the active project/worktree, use the native read tool for that file instead of ctx_execute_file. DevRyan grants native read access only to external skill directories authorized for the active agent. Do not create or modify global OpenCode/Claude permission files or add host allow rules for skill directories. Continue using ctx_execute_file normally for files contained by the active project.`;
 
 const appendPolicy = (description, marker, policy) => (
   description.includes(marker) ? description : `${description.trimEnd()}\n\n${policy}`
 );
-
-const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-
-const getCompletedSkill = (part) => {
-  if (!isRecord(part) || part.type !== 'tool' || part.tool !== 'skill') return null;
-  if (!isRecord(part.state) || part.state.status !== 'completed') return null;
-  if (!isRecord(part.state.input)) return null;
-
-  const name = typeof part.state.input.name === 'string' ? part.state.input.name.trim() : '';
-  const output = typeof part.state.output === 'string' ? part.state.output : '';
-  if (!name || !output.trim() || output.includes(SKILL_CONTEXT_REUSE_MARKER)) return null;
-
-  const compactedAt = isRecord(part.state.time) ? part.state.time.compacted : undefined;
-  if (typeof compactedAt === 'number' && Number.isFinite(compactedAt)) return null;
-
-  return { name, output };
-};
-
-const hashSkillOutput = (output) => createHash('sha256').update(output).digest('hex');
 
 /**
  * OpenCode registers skills under their frontmatter `name:` (often a Title Case
@@ -190,45 +167,6 @@ const describeSkillCatalog = (index) => {
 
 const SKILL_NOT_FOUND_PATTERN = /Skill "([^"]*)" not found\./;
 
-const compactRepeatedSkillOutputs = (messages) => {
-  const activeVersionBySkill = new Map();
-  let transformedMessages = null;
-
-  for (let messageIndex = 0; messageIndex < messages.length; messageIndex += 1) {
-    const message = messages[messageIndex];
-    if (!isRecord(message) || !Array.isArray(message.parts)) continue;
-    let transformedParts = null;
-
-    for (let index = 0; index < message.parts.length; index += 1) {
-      const part = message.parts[index];
-      const skill = getCompletedSkill(part);
-      if (!skill) continue;
-
-      const version = hashSkillOutput(skill.output);
-      if (activeVersionBySkill.get(skill.name) !== version) {
-        activeVersionBySkill.set(skill.name, version);
-        continue;
-      }
-
-      transformedParts ||= [...message.parts];
-      transformedParts[index] = {
-        ...part,
-        state: {
-          ...part.state,
-          output: SKILL_CONTEXT_REUSE_OUTPUT,
-        },
-      };
-    }
-
-    if (transformedParts) {
-      transformedMessages ||= [...messages];
-      transformedMessages[messageIndex] = { ...message, parts: transformedParts };
-    }
-  }
-
-  return transformedMessages || messages;
-};
-
 const SKILL_INDEX_TTL_MS = 60_000;
 
 export const DevRyanSkillContextPlugin = async (pluginContext = {}) => {
@@ -292,10 +230,6 @@ export const DevRyanSkillContextPlugin = async (pluginContext = {}) => {
       );
     }
   },
-  'experimental.chat.messages.transform': async (_input, output) => {
-    if (!Array.isArray(output?.messages)) return;
-    output.messages = compactRepeatedSkillOutputs(output.messages);
-  },
   'experimental.chat.system.transform': async (input, output) => {
     const providerID = typeof input?.model?.providerID === 'string'
       ? input.model.providerID.trim().toLowerCase()
@@ -338,11 +272,7 @@ export const DevRyanSkillContextPlugin = async (pluginContext = {}) => {
 // Callable so the plugin loader (which requires every export to be a function)
 // accepts it. Constants ride along as properties.
 export const __test = Object.assign(() => ({}), {
-  compactRepeatedSkillOutputs,
   compactAnthropicSkillCatalog,
-  getCompletedSkill,
-  hashSkillOutput,
-  reuseOutput: SKILL_CONTEXT_REUSE_OUTPUT,
   resolveSkillAlias,
   buildSkillAliasIndex,
   normalizeSkillKey,

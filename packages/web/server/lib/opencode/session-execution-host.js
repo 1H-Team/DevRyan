@@ -1,3 +1,4 @@
+import { executionSignal, checkExecutionAdmission, executionPhase, withExecutionAdmission } from '@openchamber/harness-runtime/lib/execution-admission.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createSessionMutationRuntime } from '@openchamber/harness-runtime';
@@ -20,7 +21,7 @@ export function createSessionExecutionHost(options) {
     const url = new URL(options.buildOpenCodeUrl(pathname, '')); url.searchParams.set('directory', directory);
     const response = await (options.fetchImpl ?? fetch)(url, { method: body === undefined ? 'GET' : 'POST',
       headers: { ...options.getOpenCodeAuthHeaders?.(), ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(30_000) });
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.any([AbortSignal.timeout(30_000), ...(executionSignal() ? [executionSignal()] : [])]) });
     if (!response.ok) throw failure(response.status === 404 ? 'mutation_history_unavailable' : 'mutation_runtime_unavailable');
     return response.json();
   };
@@ -127,7 +128,7 @@ export function createSessionExecutionHost(options) {
     void result.catch(() => {});
     return { ...handle, result };
   };
-  const plugin = async (input) => {
+  const dispatch = async (input) => {
     const current = await session(input);
     if (!await verifySessionExecutionLauncher({ launcher: launcher() })) throw failure('mutation_runtime_unsupported');
     if (input.action === 'admit') return runtime.assertAdmission(input);
@@ -152,7 +153,8 @@ export function createSessionExecutionHost(options) {
     if (input.action === 'begin') {
       if (!/^[a-f0-9]{64}$/.test(input.argsDigest ?? '')) throw failure('invalid_capture_identity', 400);
       const executionFingerprint = input.argsDigest;
-      const lease = await runtime.begin({ ...input, userMessageID: record.info.parentID, parentID: current.parentID, executionFingerprint });
+      const lease = await executionPhase('lease_preparation', () => runtime.begin({ ...input, userMessageID: record.info.parentID, parentID: current.parentID, executionFingerprint }));
+      checkExecutionAdmission();
       await runtime.claimLease({ directory: input.directory, token: lease.token, kind: input.kind });
       if (input.kind === 'control') return { lease };
       try { return { lease, launch: await prepareSessionExecution({ launcher: launcher(), lease }) }; }
@@ -176,6 +178,10 @@ export function createSessionExecutionHost(options) {
     await options.recordReceipt?.({ ...await runtime.executionReceipt({ directory: input.directory, token: lease.token }), tool: input.tool });
     return result;
   };
+  const plugin = (input) => ['admit', 'prompt', 'begin', 'child', 'cancel-before-start'].includes(input.action)
+    ? withExecutionAdmission(input, () => executionPhase(input.action === 'cancel-before-start' ? 'cleanup' : 'host_request', () => dispatch(input)), {
+      timeoutMs: options.admissionTimeoutMs ?? 25_000, onDiagnostic: options.onDiagnostic,
+    }) : dispatch(input);
   return { runtime, executions, coordinator, plugin, isConfined, persistCursorRecord, startCursor,
     recover: async () => {
       for (const directory of await runtime.projectDirectories()) {

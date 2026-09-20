@@ -194,7 +194,7 @@ describe("notification-store", () => {
     expect(after.sessionUnseenCount("unrelated")).toBe(1)
   })
 
-  test("persists only bounded completion read state for reload restoration", () => {
+  test("persists bounded completion and sanitized failure state for reload restoration", () => {
     appendNotification({
       type: "turn-complete",
       directory: "/repo",
@@ -216,7 +216,7 @@ describe("notification-store", () => {
     const persistedBeforeRead = JSON.parse(
       getSafeStorage().getItem(COMPLETION_NOTIFICATION_STORAGE_KEY) ?? "[]",
     ) as Array<Record<string, unknown>>
-    expect(persistedBeforeRead).toHaveLength(1)
+    expect(persistedBeforeRead).toHaveLength(2)
     expect(persistedBeforeRead[0]?.type).toBe("turn-complete")
     expect(persistedBeforeRead[0]?.directory).toBe("/repo")
     expect(persistedBeforeRead[0]?.session).toBe("ses_1")

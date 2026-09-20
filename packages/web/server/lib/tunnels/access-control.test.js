@@ -218,6 +218,34 @@ describe('durable Bot-only tunnel authorization', () => {
     expect(closed).toHaveBeenCalledOnce();
     expect((await request(f.app).get('/api/bots').set(remote).set('Cookie', cookie)).status).toBe(401);
   });
+  it.each(['fresh', 'expired', 'revoked', 'malformed'])('reaches normal managed sign-in with a %s tunnel cookie', async (cookieState) => {
+    const f = await fixture('on');
+    let cookie = '';
+    if (cookieState === 'expired' || cookieState === 'revoked') {
+      cookie = await f.login();
+      if (cookieState === 'expired') f.advance(TUNNEL_SESSION_TTL_MS + 1);
+      else await f.controller.revokeTunnelArtifacts();
+    } else if (cookieState === 'malformed') cookie = 'oc_tunnel_session=invalid';
+    const app = express();
+    registerTunnelAccessBoundary(app, null, { controller: f.controller, connection: f.connection });
+    const authenticateAccount = vi.fn((_req, res) => res.status(401).json({ authenticated: false, mode: 'multi-user' }));
+    app.get('/auth/session', authenticateAccount);
+    const response = await request(app).get('/auth/session').set(remote).set('Cookie', cookie);
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({ authenticated: false, mode: 'multi-user' });
+    expect(authenticateAccount).toHaveBeenCalledOnce();
+    if (cookie) expect(response.headers['set-cookie'][0]).toContain('oc_tunnel_session=;');
+    if (cookie) expect(response.headers['set-cookie'][0]).toContain('Max-Age=0');
+  });
+
+  it('keeps valid Bot guests restricted on a managed account hostname', async () => {
+    const f = await fixture('on');
+    const cookie = await f.login();
+    const response = await request(f.app).get('/auth/session').set(remote).set('Cookie', cookie);
+    expect(response.body).toMatchObject({ authenticated: true, scope: 'tunnel-bot' });
+    expect((await request(f.app).get('/api/terminal/create').set(remote).set('Cookie', cookie)).status).toBe(403);
+  });
+
   it('never changes remote authentication policy during a cloud outage', async () => {
     const f = await fixture('on');
     const failed = await createSupabaseConnection({ config: f.config, fetchImpl: async () => { throw new Error('Offline fixture'); } });

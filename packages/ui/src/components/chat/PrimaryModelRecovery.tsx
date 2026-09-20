@@ -1,3 +1,4 @@
+import { SessionFailureNotice } from './SessionFailureNotice';
 import React from 'react';
 
 import { INTERRUPTED_PROVIDER_RESPONSE_REASON } from '@/hooks/providerErrorRecoveryDecision';
@@ -46,7 +47,7 @@ export const PrimaryModelRecovery = React.memo(({
     if (recovery) onContentChange?.();
   }, [onContentChange, recovery]);
 
-  if (!recovery || hostEnforced) return <HostPrimaryRecovery sessionId={sessionId} />;
+  if (!recovery || hostEnforced) return <><SessionFailureNotice sessionId={sessionId} /><HostPrimaryRecovery sessionId={sessionId} /></>;
 
   const usageLimitReason = getProviderUsageLimitDisplayReason(recovery.reason);
   const isClaudeClassificationError = isClaudeThirdPartyUsageClassificationError(recovery.reason);
@@ -75,7 +76,7 @@ export const PrimaryModelRecovery = React.memo(({
   };
 
   return (
-    <><HostPrimaryRecovery sessionId={sessionId} showAvailability /><ModelRecoveryCard
+    <><SessionFailureNotice sessionId={sessionId} /><HostPrimaryRecovery sessionId={sessionId} showAvailability /><ModelRecoveryCard
       title={isClaudeClassificationError
         ? t('chat.modelRecovery.claudeCompatibilityPrompt')
         : t('chat.modelRecovery.primaryPrompt')}

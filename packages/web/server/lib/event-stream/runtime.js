@@ -10,6 +10,7 @@ import {
 import { createGlobalMessageStreamHub } from './global-hub.js';
 import { stripEventDiffContent } from '../opencode/diff-summary.js';
 import { createGlobalMessageStreamWsBridge } from './global-ws-bridge.js';
+import { createBoundedEventQueue } from './bounded-event-queue.js';
 import { acceptDirectoryMessageStreamWsConnection } from './directory-ws-bridge.js';
 import {
   DEFAULT_UPSTREAM_RECONNECT_DELAY_MS,
@@ -73,17 +74,22 @@ export function createGlobalMessageStreamSseHandler({
     // connection's lifetime, so tracking stops once replay completes.
     let replayPhase = true;
     const deliveredEventIds = new Set();
+    let closed = false;
+    let heartbeat = null;
+    let unsubscribe = () => {};
+    let unregisterConnection = () => {};
     // A slow or suspended client otherwise makes Node buffer events without
     // bound in the socket write queue. Past this ceiling, drop the connection —
     // the client reconnects with Last-Event-ID and replays the gap.
     const SSE_MAX_BUFFERED_BYTES = 16 * 1024 * 1024;
-    const writeEntry = async (entry) => {
-      if (res.writableEnded || res.destroyed) {
+    const writeEntry = async (entry, signal) => {
+      if (signal.aborted || res.writableEnded || res.destroyed) {
         return false;
       }
       if (eventFilter && !await eventFilter(req.principal, entry)) {
         return true;
       }
+      if (signal.aborted || res.writableEnded || res.destroyed) return false;
       if (replayPhase && typeof entry?.eventId === 'string' && entry.eventId.length > 0) {
         deliveredEventIds.add(entry.eventId);
       }
@@ -95,30 +101,60 @@ export function createGlobalMessageStreamSseHandler({
       return true;
     };
 
-    let eventQueue = Promise.resolve(true);
-    const enqueueEntry = (entry) => {
-      eventQueue = eventQueue.then((canContinue) => canContinue ? writeEntry(entry) : false);
-      return eventQueue;
-    };
-    const unsubscribe = globalHub.subscribeEvent((entry) => {
-      void enqueueEntry(entry);
+    const eventQueue = createBoundedEventQueue({
+      deliver: writeEntry,
+      getBufferedBytes: () => res.socket?.writableLength ?? 0,
+      onClose: reason => {
+        cleanup();
+        if (reason !== 'cancelled') res.destroy?.();
+      },
     });
+    const cleanup = () => {
+      if (closed) return;
+      closed = true;
+      clearInterval(heartbeat);
+      eventQueue.close();
+      deliveredEventIds.clear();
+      unsubscribe();
+      unregisterConnection();
+      req.off?.('close', cleanup);
+      req.off?.('error', cleanup);
+      res.off?.('close', cleanup);
+    };
+    // Install cancellation before replay: authorization can remain pending while
+    // the browser disconnects, or the principal's access is revoked.
+    req.on?.('close', cleanup);
+    req.on?.('error', cleanup);
+    res.on?.('close', cleanup);
+    if (typeof registerConnection === 'function') {
+      unregisterConnection = registerConnection(req.principal, () => { cleanup(); res.destroy?.(); });
+      if (closed) { unregisterConnection(); return; }
+    }
+    unsubscribe = globalHub.subscribeEvent((entry) => {
+      void eventQueue.enqueue(entry);
+    });
+    if (closed) { unsubscribe(); return; }
     const requestedLastEventId = getRequestLastEventId(req);
     const { events } = typeof globalHub.replayAfter === 'function'
       ? globalHub.replayAfter(requestedLastEventId)
       : { events: [] };
+    let replayDone = Promise.resolve(true);
+    // Admit the bounded replay snapshot before yielding to live delivery. Awaiting
+    // each filter here allows newer live events to overtake remaining replay.
     for (const entry of events) {
+      if (closed) return;
       if (entry?.eventId && deliveredEventIds.has(entry.eventId)) {
         continue;
       }
-      await enqueueEntry(entry);
+      replayDone = eventQueue.enqueue(entry);
     }
+    if (!await replayDone || closed) return;
     replayPhase = false;
     deliveredEventIds.clear();
 
     globalHub.start?.();
 
-    const heartbeat = setInterval(() => {
+    heartbeat = setInterval(() => {
       if (res.writableEnded || res.destroyed) {
         return;
       }
@@ -126,19 +162,6 @@ export function createGlobalMessageStreamSseHandler({
     }, heartbeatIntervalMs);
     heartbeat.unref?.();
 
-    const unregisterConnection = typeof registerConnection === 'function'
-      ? registerConnection(req.principal, () => res.destroy?.())
-      : () => {};
-    const cleanup = () => {
-      clearInterval(heartbeat);
-      unsubscribe?.();
-      unregisterConnection();
-      req.off?.('close', cleanup);
-      req.off?.('error', cleanup);
-    };
-
-    req.on?.('close', cleanup);
-    req.on?.('error', cleanup);
   };
 }
 
@@ -148,6 +171,7 @@ export function createGlobalUiEventBroadcaster({
   writeSseEvent,
   globalEventHub = null,
 }) {
+  const filteredQueues = new WeakMap();
   return (payload, options = {}) => {
     const directory = typeof options.directory === 'string' && options.directory.length > 0 ? options.directory : 'global';
     const eventId = typeof options.eventId === 'string' && options.eventId.length > 0 ? options.eventId : undefined;
@@ -166,11 +190,28 @@ export function createGlobalUiEventBroadcaster({
       for (const res of sseClients) {
         const filter = res.devRyanEventFilter;
         if (typeof filter === 'function') {
-          void Promise.resolve(filter(res.devRyanPrincipal, { payload, directory, eventId }))
-            .then((allowed) => {
-              if (allowed) writeSseEvent(res, payload);
-            })
-            .catch(() => undefined);
+          let queue = filteredQueues.get(res);
+          if (!queue) {
+            const cancel = () => queue.close();
+            queue = createBoundedEventQueue({
+              getBufferedBytes: () => res.socket?.writableLength ?? 0,
+              deliver: async (entry, signal) => {
+                if (!await res.devRyanEventFilter(res.devRyanPrincipal, entry)) return true;
+                if (signal.aborted || res.destroyed || res.writableEnded || !sseClients.has(res)) return false;
+                writeSseEvent(res, entry.payload);
+                return true;
+              },
+              onClose: reason => {
+                filteredQueues.delete(res);
+                sseClients.delete(res);
+                res.off?.('close', cancel);
+                if (reason !== 'cancelled') res.destroy?.();
+              },
+            });
+            filteredQueues.set(res, queue);
+            res.once?.('close', cancel);
+          }
+          void queue.enqueue({ payload, directory, eventId });
           continue;
         }
         try {

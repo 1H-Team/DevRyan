@@ -4,6 +4,10 @@ Date: 2026-09-10. Baseline: `fd84dda2e99f0afd679147a466a1c6dcf211d707`.
 
 The P0–P5 implementation is present. Optional read overlap, wait-any, compact results and context projection remain **off by default**. Native acceptance is incomplete, so none qualifies for promotion or a claimed performance improvement. Contracts, compatibility and rollback are documented in [HARNESS_OPTIMIZATION.md](../HARNESS_OPTIMIZATION.md).
 
+## 2026-09-20 projection correction
+
+The bundled skill and managed-result transforms assigned a replacement `output.messages` array. The inspected OpenCode 1.18.31 ordinary and compaction callers consume the original array, so reductions measured only on those returned arrays do not establish provider-request savings. This narrows the earlier projection claims; checkpoint sourcing, continuation correctness and token-based headroom evidence remain valid within their recorded limits. The repaired feature has its own `duplicateOutputs` qualification gate and remains disabled without complete release evidence. See [the current contract](../HARNESS_OPTIMIZATION.md#duplicate-output-acceptance).
+
 ## Implementation coverage
 
 | Phase | Delivered behavior | Evidence and limits |

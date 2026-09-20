@@ -67,3 +67,20 @@ jobs:
 
       - name: Test
         run: bun run test:full
+
+      - name: Checkout comparison baseline
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .cache/harness-baseline
+
+      - name: Compare harness resource work and outcomes
+        run: bun run perf:harness --baseline .cache/harness-baseline --output .cache/perf/harness-comparison.json
+
+      - name: Retain harness comparison evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevRyan-harness-comparison
+          path: .cache/perf/harness-comparison.json*
+          if-no-files-found: warn

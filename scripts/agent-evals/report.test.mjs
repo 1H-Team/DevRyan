@@ -14,6 +14,18 @@ import {
 } from './report.mjs';
 
 describe('evaluation report safety', () => {
+  test('preserves ordered content inventory and distinguishes hook reductions from wire evidence', () => {
+    const inventory = { configurationHash: 'a'.repeat(64), contentHash: 'b'.repeat(64), providerHash: 'c'.repeat(64),
+      entries: [{ name: 'owner', sourceHash: 'd'.repeat(64), contentHash: 'e'.repeat(64) }] };
+    const result = projectHarnessEvidence({ startFingerprint: { schemaVersion: 1, runtimeHash: 'f'.repeat(64),
+      plugins: { inventory }, policies: { duplicateOutputs: true } }, trace: { schemaVersion: 1, roots: [{ rootSessionId: 'ses_fixture',
+        projections: [{ phase: 'hook-applied', appliedReductions: 1, finalRequestBytes: null }] }] } });
+    assert.deepEqual(result.startFingerprint.plugins.inventory, inventory);
+    assert.equal(result.startFingerprint.policies.duplicateOutputs, true);
+    assert.equal(result.evidence.roots[0].context[0].phase, 'hook-applied');
+    assert.equal(result.evidence.roots[0].context[0].appliedReductions, 1);
+    assert.equal(result.evidence.roots[0].context[0].finalRequestBytes, null);
+  });
   test('retains numeric runtime versions without admitting paths or credential-shaped values', () => {
     const project = (runtimeVersion) => projectHarnessEvidence({
       startFingerprint: { schemaVersion: 1, runtimeVersion },

@@ -143,6 +143,7 @@ export const withCrossProcessFileLock = async (lockPath, callback, options = {})
 
   await fsApi.mkdir(directory, { recursive: true, mode: 0o700 });
   while (true) {
+    options.signal?.throwIfAborted();
     let handle;
     try {
       handle = await fsApi.open(lockPath, 'wx', 0o600);
@@ -186,6 +187,7 @@ export const withCrossProcessFileLock = async (lockPath, callback, options = {})
   }
 
   try {
+    options.signal?.throwIfAborted();
     return await callback();
   } finally {
     await removeObservedLock(fsApi, lockPath, `${JSON.stringify(owner)}\n`, ownerToken);

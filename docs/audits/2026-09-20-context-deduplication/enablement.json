@@ -1,0 +1,319 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-20",
+  "enabledProfile": "opencode-1.18.31-openai-sol-medium",
+  "rollout": "release default for qualified profiles; normal managed-host update/restart",
+  "installedAppModified": false,
+  "liveReportHash": "45b1c7737f5b900c7246c2e768fd8ad676ae7fe78d8d11772e7c0368b31721b7",
+  "attempts": [
+    {
+      "artifact": ".cache/qa/duplicate-live-38zlzT/pilot-ivMrjA/result.json",
+      "reportHash": "0603941fa08bdac67574a91de3ce3cc998b7026a2121d9759671c35d89d67c20",
+      "kind": "diagnostic-pilot",
+      "qualified": false,
+      "completedPairs": 0,
+      "criticalFailures": 0,
+      "providerFailures": [],
+      "collectorFailures": [
+        "unregistered-connect",
+        "unregistered-connect",
+        "unregistered-connect",
+        "unregistered-connect",
+        "unregistered-connect",
+        "unregistered-connect",
+        "unregistered-connect",
+        "unregistered-connect"
+      ]
+    },
+    {
+      "artifact": ".cache/qa/duplicate-live-38zlzT/pilot-b8JPv6/result.json",
+      "reportHash": "3ef67221f7561170e64349cc321099c7c383fe7a02b5fe1055454642cded218f",
+      "kind": "diagnostic-pilot",
+      "qualified": false,
+      "completedPairs": 2,
+      "criticalFailures": 0,
+      "providerFailures": [],
+      "collectorFailures": [
+        "unregistered-connect:models.dev:443",
+        "unregistered-connect:antigravity-auto-updater-974169037036.us-central1.run.app:443",
+        "unregistered-connect:antigravity.google:443",
+        "unregistered-connect:models.dev:443",
+        "unregistered-connect:antigravity-auto-updater-974169037036.us-central1.run.app:443",
+        "unregistered-connect:antigravity.google:443"
+      ]
+    },
+    {
+      "artifact": ".cache/qa/duplicate-live-38zlzT/acceptance-U4W0wT/result.json",
+      "reportHash": "dbb9afd8eee6e359d09158fece92367b4c0db2201129e445f41439efef71bdde",
+      "kind": "duplicate-live-acceptance",
+      "qualified": false,
+      "completedPairs": 9,
+      "criticalFailures": 0,
+      "providerFailures": [
+        {
+          "arm": "candidate",
+          "trialIndex": 8,
+          "statusCode": 503
+        }
+      ],
+      "collectorFailures": []
+    },
+    {
+      "artifact": ".cache/qa/duplicate-live-38zlzT/acceptance-DSzKSo/result.json",
+      "reportHash": "45b1c7737f5b900c7246c2e768fd8ad676ae7fe78d8d11772e7c0368b31721b7",
+      "kind": "duplicate-live-acceptance",
+      "qualified": true,
+      "completedPairs": 10,
+      "criticalFailures": 0,
+      "providerFailures": [],
+      "collectorFailures": []
+    }
+  ],
+  "usage": {
+    "baseline": {
+      "primary": {
+        "requests": 10,
+        "totalInput": 232120,
+        "cacheRead": 86272,
+        "cacheWrite": 0,
+        "totalOutput": 666,
+        "peakInput": 24113,
+        "peakSerializedBytes": 121463
+      },
+      "auxiliaryAndWarmup": {
+        "requests": 12,
+        "totalInput": 29338,
+        "cacheRead": 14208,
+        "cacheWrite": 0,
+        "totalOutput": 124,
+        "peakInput": 12194,
+        "peakSerializedBytes": 61307
+      }
+    },
+    "candidate": {
+      "primary": {
+        "requests": 10,
+        "totalInput": 181339,
+        "cacheRead": 79232,
+        "cacheWrite": 0,
+        "totalOutput": 666,
+        "peakInput": 18661,
+        "peakSerializedBytes": 94011
+      },
+      "auxiliaryAndWarmup": {
+        "requests": 12,
+        "totalInput": 29338,
+        "cacheRead": 18560,
+        "cacheWrite": 0,
+        "totalOutput": 128,
+        "peakInput": 12194,
+        "peakSerializedBytes": 61307
+      }
+    }
+  },
+  "hook": {
+    "samples": 10,
+    "medianMs": 0.4818334999981744,
+    "maxMs": 13.979667000003246,
+    "measurements": [
+      {
+        "sessionID": "ses_f3fe35304ffePVJHQugXCJJ7rk",
+        "beforeBytes": 55448,
+        "projectedBytes": 28988,
+        "dynamicBytes": null,
+        "plannedReductions": 2,
+        "appliedReductions": 2,
+        "savedBytes": 27452,
+        "phase": "hook-applied",
+        "reason": "qualified",
+        "transformDurationMs": 0.5557499999995343,
+        "finalRequestBytes": null,
+        "sourceHash": null
+      },
+      {
+        "sessionID": "ses_f3fe362e1ffeJ1SXP2eN9PFH2h",
+        "beforeBytes": 54860,
+        "projectedBytes": 28694,
+        "dynamicBytes": null,
+        "plannedReductions": 2,
+        "appliedReductions": 2,
+        "savedBytes": 27148,
+        "phase": "hook-applied",
+        "reason": "qualified",
+        "transformDurationMs": 0.3690409999981057,
+        "finalRequestBytes": null,
+        "sourceHash": null
+      },
+      {
+        "sessionID": "ses_f3fe38967ffe0y9UlWdLWjFMwX",
+        "beforeBytes": 54272,
+        "projectedBytes": 28400,
+        "dynamicBytes": null,
+        "plannedReductions": 2,
+        "appliedReductions": 2,
+        "savedBytes": 26844,
+        "phase": "hook-applied",
+        "reason": "qualified",
+        "transformDurationMs": 0.4079169999968144,
+        "finalRequestBytes": null,
+        "sourceHash": null
+      },
+      {
+        "sessionID": "ses_f3fe3a0a9ffeq2dCINkc4B5Vew",
+        "beforeBytes": 53684,
+        "projectedBytes": 28106,
+        "dynamicBytes": null,
+        "plannedReductions": 2,
+        "appliedReductions": 2,
+        "savedBytes": 26540,
+        "phase": "hook-applied",
+        "reason": "qualified",
+        "transformDurationMs": 0.620333999999275,
+        "finalRequestBytes": null,
+        "sourceHash": null
+      },
+      {
+        "sessionID": "ses_f3fe3b4ffffeeHB24XZifhqnj9",
+        "beforeBytes": 53096,
+        "projectedBytes": 27812,
+        "dynamicBytes": null,
+        "plannedReductions": 2,
+        "appliedReductions": 2,
+        "savedBytes": 26236,
+        "phase": "hook-applied",
+        "reason": "qualified",
+        "transformDurationMs": 3.060708999997587,
+        "finalRequestBytes": null,
+        "sourceHash": null
+      },
+      {
+        "sessionID": "ses_f3fe3cd23ffeqQieLU4SO14rqw",
+        "beforeBytes": 50396,
+        "projectedBytes": 26124,
+        "dynamicBytes": null,
+        "plannedReductions": 2,
+        "appliedReductions": 2,
+        "savedBytes": 24822,
+        "phase": "hook-applied",
+        "reason": "qualified",
+        "transformDurationMs": 0.2903329999971902,
+        "finalRequestBytes": null,
+        "sourceHash": null
+      },
+      {
+        "sessionID": "ses_f3fe3dd65ffeQVdzVl6DX4D3ec",
+        "beforeBytes": 49820,
+        "projectedBytes": 25836,
+        "dynamicBytes": null,
+        "plannedReductions": 2,
+        "appliedReductions": 2,
+        "savedBytes": 24528,
+        "phase": "hook-applied",
+        "reason": "qualified",
+        "transformDurationMs": 0.33058299999902374,
+        "finalRequestBytes": null,
+        "sourceHash": null
+      },
+      {
+        "sessionID": "ses_f3fe3f33affeYsypm5pdOg8nUS",
+        "beforeBytes": 49244,
+        "projectedBytes": 25548,
+        "dynamicBytes": null,
+        "plannedReductions": 2,
+        "appliedReductions": 2,
+        "savedBytes": 24234,
+        "phase": "hook-applied",
+        "reason": "qualified",
+        "transformDurationMs": 0.36674999999740976,
+        "finalRequestBytes": null,
+        "sourceHash": null
+      },
+      {
+        "sessionID": "ses_f3fe404fbffe2Is1OD1Rod2IDp",
+        "beforeBytes": 48668,
+        "projectedBytes": 25260,
+        "dynamicBytes": null,
+        "plannedReductions": 2,
+        "appliedReductions": 2,
+        "savedBytes": 23940,
+        "phase": "hook-applied",
+        "reason": "qualified",
+        "transformDurationMs": 13.979667000003246,
+        "finalRequestBytes": null,
+        "sourceHash": null
+      },
+      {
+        "sessionID": "ses_f3fe41678ffetX5DBTaZPKYqxS",
+        "beforeBytes": 48092,
+        "projectedBytes": 24972,
+        "dynamicBytes": null,
+        "plannedReductions": 2,
+        "appliedReductions": 2,
+        "savedBytes": 23646,
+        "phase": "hook-applied",
+        "reason": "qualified",
+        "transformDurationMs": 1.0940000000009604,
+        "finalRequestBytes": null,
+        "sourceHash": null
+      }
+    ]
+  },
+  "compactionFrequency": {
+    "livePrimaryBaseline": 0,
+    "livePrimaryCandidate": 0
+  },
+  "defaultActivation": {
+    "reportHash": "d2d5650b95ef5b56ac7f09076b55d71498e2201657e29afda7eb3b90e991e147",
+    "verifiedDefault": true,
+    "probePassed": true,
+    "baselineOverride": "0",
+    "candidateOverride": null
+  },
+  "nativeFullConfiguration": {
+    "reportHash": "b7f45cd529d2186bec85e4ac445d6fe5038d76cd567f57e4424ee91a1fbb1367",
+    "liveProvider": false,
+    "passed": true,
+    "checks": {
+      "twoManualSummaries": true,
+      "automaticSummary": true,
+      "ordinaryReferences": true,
+      "summariesPresent": true,
+      "noSummaryReferences": true,
+      "wireComplete": true,
+      "cleanup": true
+    },
+    "syntheticPressureTokens": 300000
+  },
+  "monetarySavings": null,
+  "statisticalReliabilityClaim": false,
+  "privateProfileCleanup": {
+    "processesStopped": true,
+    "accessCredentialCopyRemoved": true,
+    "privateHostSourceRemoved": true,
+    "workspaceRemoved": true,
+    "originalQaSourceModified": false
+  },
+  "validation": {
+    "full": {
+      "passed": true,
+      "webFiles": 391,
+      "webTests": 4206
+    },
+    "build": {
+      "passed": true
+    },
+    "bundleCheck": {
+      "passed": true
+    },
+    "focusedQa": {
+      "passed": true,
+      "tests": 23
+    },
+    "documentation": {
+      "passed": true
+    },
+    "diffWhitespace": {
+      "passed": true
+    }
+  }
+}

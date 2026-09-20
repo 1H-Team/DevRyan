@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { app, BrowserWindow, session } from 'electron';
 import { __test } from '../../../web/server/default-config/plugins/devryan-browser.mjs';
@@ -33,6 +34,7 @@ const html = `<!doctype html><html><head><meta charset="utf-8">
 </body></html>`;
 
 let window;
+let surfaces;
 let blockedNetworkRequests = 0;
 const checks = [];
 
@@ -43,6 +45,11 @@ const inspect = async (inspection) => {
 
 const run = async () => {
   await app.whenReady();
+  const baselineRoot = process.env.DEVRYAN_BROWSER_INSPECTION_BASELINE;
+  const managerModule = baselineRoot
+    ? pathToFileURL(path.join(baselineRoot, 'packages/electron/browser-surface-manager.mjs')).href
+    : new URL('../../browser-surface-manager.mjs', import.meta.url).href;
+  const { createBrowserSurfaceManager } = await import(managerModule);
   app.dock?.hide();
   const fixtureSession = session.fromPartition('devryan-browser-inspection', { cache: false });
   assert.equal(fixtureSession.isPersistent(), false);
@@ -126,6 +133,52 @@ const run = async () => {
   });
   checks.push('Quoted and backslash-containing selector is passed as data');
 
+  surfaces = createBrowserSurfaceManager({
+    createPopoutWindow: () => { throw new Error('Unexpected popout'); },
+    emitToWindow() {}, getWindowById: id => id === window.id ? window : null,
+    getManualBrowserContext: () => ({ contextKey: 'fixture', partition: 'devryan-browser-inspection' }),
+  });
+  const manual = [];
+  window.showInactive();
+  for (let index = 0; index < 3; index++) {
+    const snapshot = surfaces.createManualSurface(window, { tabId: `tab-${index}`, initialUrl: 'about:blank' });
+    const surface = surfaces.getOwnedSurface(window, snapshot.surfaceId);
+    await surface.view.webContents.loadURL('about:blank');
+    assert.equal(surface.view.webContents.getBackgroundThrottling(), !baselineRoot);
+    manual.push(surface);
+  }
+  const lease = surfaces.createLeaseSurface(window, { leaseId: 'fixture-lease', initialUrl: 'about:blank', browserPartition: 'devryan-browser-inspection' });
+  await lease.webContents.loadURL('about:blank');
+  surfaces.layout(window, { surfaceId: lease.snapshot.surfaceId, visible: true, bounds: { x: 0, y: 0, width: 320, height: 240 } });
+  await new Promise(resolve => setTimeout(resolve, 100));
+  surfaces.layout(window, { surfaceId: lease.snapshot.surfaceId, visible: false });
+  assert.equal(lease.webContents.getBackgroundThrottling(), false);
+  if (!baselineRoot) assert.notEqual(manual[0].attachedWindow, surfaces.surfaceForLease('fixture-lease').attachedWindow);
+  const startCounter = `window.frameCount=0; window.fixtureMarker='retained'; document.body.textContent='Browser scheduling fixture'; (()=>{const frame=()=>{window.frameCount++; document.body.style.backgroundColor=window.frameCount%2?'white':'lightgray';requestAnimationFrame(frame)};requestAnimationFrame(frame)})()`;
+  for (const surface of manual) await surface.view.webContents.executeJavaScript(startCounter);
+  await lease.webContents.executeJavaScript(startCounter);
+  const samples = [];
+  for (let sample = 0; sample < 3; sample++) {
+    await new Promise(resolve => setTimeout(resolve, 250));
+    const counts = async () => Promise.all([...manual.map(surface => surface.view.webContents), lease.webContents]
+      .map(contents => contents.executeJavaScript('window.frameCount')));
+    const before = await counts();
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    const after = await counts();
+    samples.push({ frames: after.map((count, index) => count - before[index]),
+      visibility: await Promise.all([...manual.map(surface => surface.view.webContents), lease.webContents].map(contents => contents.executeJavaScript('document.visibilityState'))) });
+  }
+  const manualFrames = samples.reduce((sum, sample) => sum + sample.frames.slice(0, 3).reduce((a, b) => a + b, 0), 0);
+  if (baselineRoot) assert.ok(manualFrames > 0, 'unthrottled baseline must animate');
+  else assert.ok(samples.every(sample => sample.visibility.slice(0, 3).every(value => value === 'hidden')), 'parked manual pages must observe hidden hosts');
+  assert.ok(samples.every(sample => sample.frames[3] > 0), 'agent lease must keep producing frames');
+  surfaces.layout(window, { surfaceId: manual[0].surfaceId, visible: true, bounds: { x: 0, y: 0, width: 320, height: 240 } });
+  assert.equal(manual[0].view.webContents.getBackgroundThrottling(), false);
+  assert.equal(await manual[0].view.webContents.executeJavaScript('window.fixtureMarker'), 'retained');
+  assert.equal((await lease.webContents.capturePage()).isEmpty(), false);
+  checks.push('Parked manual scheduling policy, agent frames, capture and restored tab verified');
+  surfaces.closeAll();
+
   assert.equal(blockedNetworkRequests, 0);
   writeFileSync(resultPath, `${JSON.stringify({
     status: 'passed',
@@ -135,6 +188,7 @@ const run = async () => {
     present,
     removed,
     originalException,
+    parking: { arm: baselineRoot ? 'baseline' : 'candidate', manualFrames, samples, scope: 'animation scheduling; not a CPU/GPU benchmark' },
   }, null, 2)}\n`, { mode: 0o600 });
   window.destroy();
   app.exit(0);
@@ -144,6 +198,7 @@ const run = async () => {
 // entry module has completed evaluation.
 void run().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
+  surfaces?.closeAll();
   if (window && !window.isDestroyed()) window.destroy();
   app.exit(1);
 });

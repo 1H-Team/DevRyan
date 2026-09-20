@@ -9,6 +9,18 @@ const taskRecord = (sequence = 2) => ({ type: 'open_code_event', at: 100, payloa
 } } });
 
 describe('Chrome Trace journal projection', () => {
+  test('keeps applied-hook counts and legacy estimates distinct from unavailable wire measurements', () => {
+    const trace = createHarnessTraceCollector(), sanitizer = createDiagnosticSanitizer();
+    for (const payload of [{ beforeBytes: 100, projectedBytes: 70 },
+      { phase: 'hook-applied', beforeBytes: 100, projectedBytes: 70, plannedReductions: 1, appliedReductions: 1,
+        savedBytes: 30, transformDurationMs: 0.25, finalRequestBytes: null }]) {
+      trace.add(sanitizer.sanitizeRecord({ type: 'lifecycle', event: 'harness_context_projected', at: 1,
+        sessionID: 'ses_root', payload }));
+    }
+    const observations = trace.finish().metadata.roots[0].projections;
+    expect(observations[0]).toMatchObject({ phase: 'legacy-estimate', appliedReductions: null, finalRequestBytes: null });
+    expect(observations[1]).toMatchObject({ phase: 'hook-applied', appliedReductions: 1, transformDurationMs: 0.25, finalRequestBytes: null });
+  });
   test('correlates task, child and tool lanes with actual timestamps without duplicating reordered ledger snapshots', () => {
     const trace = createHarnessTraceCollector();
     trace.add(taskRecord()); trace.add(taskRecord());

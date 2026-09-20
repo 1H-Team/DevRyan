@@ -161,15 +161,35 @@ export const compactManagedOrchestrationState = (input, options = {}) => {
     compacted = buildState();
   }
 
-  let serializedBytes = serializedByteLength(compacted);
+  // Each retained record is encoded once. Removing one record changes only its
+  // bytes and the array separator; rebuilding/serializing the complete ledger
+  // for every eviction made byte-pressure compaction quadratic.
+  const taskBytes = new Map(compacted.tasks.map(task => [task.taskId, serializedByteLength(task)]));
+  const envelopeBytes = new Map();
+  for (const envelope of compacted.resultEnvelopes) {
+    const previous = envelopeBytes.get(envelope.taskId) ?? { bytes: 0, count: 0 };
+    envelopeBytes.set(envelope.taskId, { bytes: previous.bytes + serializedByteLength(envelope), count: previous.count + 1 });
+  }
+  let taskCount = compacted.tasks.length;
+  let envelopeCount = compacted.resultEnvelopes.length;
+  const separators = count => Math.max(0, count - 1);
+  let serializedBytes = serializedByteLength({ version: 1, tasks: [], resultEnvelopes: [] })
+    + [...taskBytes.values()].reduce((total, bytes) => total + bytes, 0)
+    + [...envelopeBytes.values()].reduce((total, entry) => total + entry.bytes, 0)
+    + separators(taskCount) + separators(envelopeCount);
   if (Number.isFinite(maxBytes)) {
     for (const task of removable) {
       if (serializedBytes <= maxBytes) break;
       if (removed.has(task.taskId)) continue;
       removeTask(task);
-      compacted = buildState();
-      serializedBytes = serializedByteLength(compacted);
+      const envelope = envelopeBytes.get(task.taskId) ?? { bytes: 0, count: 0 };
+      serializedBytes -= taskBytes.get(task.taskId) + envelope.bytes
+        + separators(taskCount) - separators(taskCount - 1)
+        + separators(envelopeCount) - separators(envelopeCount - envelope.count);
+      taskCount -= 1;
+      envelopeCount -= envelope.count;
     }
+    compacted = buildState();
   }
 
   terminalCount = compacted.tasks.filter((task) => isTerminalManagedTaskStatus(task.status)).length;

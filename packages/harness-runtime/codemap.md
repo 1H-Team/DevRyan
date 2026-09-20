@@ -9,6 +9,8 @@ API contracts.
 
 ## Where to change things
 
+- Journal compression in `lib/journal.js` uses asynchronous zlib inside the existing bounded serial writer. Per-bucket rotation is single-flight so writes cannot reopen a segment while its compressed replacement publishes. Shutdown drains the writer and rotations; active plain segments retain crash recovery.
+
 - Retained request/step/message accounting and purpose cohorts: `lib/usage.js`. Shared normalization lives in `packages/shared-runtime/lib/usage-observation.js`; `lib/sanitizer.js` attaches the optional contract to final runtime events, and `lib/export.js` includes `DevRyan-usage.json`. Exact title diagnostics preserve deleted-helper attribution in `lib/session-id.js`. See `docs/CACHE_EFFICIENCY.md`.
 
 - Selective mutation ownership: exported `lib/session-mutations.js` and internal
@@ -49,3 +51,7 @@ API contracts.
 - Rejected historical-receipt memoization remains in `lib/session-changes.js`; `lib/bounded-read-pool.js` bounds and shares authenticated host summary reads. `lib/managed-collection-continuation.js` validates the narrow transport-failure collection proof; `provider-recovery.js` persists and reconciles wake identity before dispatch.
 
 - `lib/session-execution.js`, `lib/session-execution-owner.js` and `native/` own native confinement, process termination receipts and publication ownership. `lib/session-mutations.js` and `lib/session-revert-coordinator.js` share durable operation decisions with file Undo/Redo. See [Concurrent Revert](../../docs/CONCURRENT_REVERT.md).
+
+- `lib/execution-admission.js`: scoped admission deadlines, cancellable queue waits, preparation checkpoints and sanitized phase diagnostics. Durable publication retains ownership through settlement.
+
+- Context projection trace metadata separates planned/applied reductions, summary/checkpoint phases and transform duration from unavailable final-wire sizes; production exports contain no conversation bodies.

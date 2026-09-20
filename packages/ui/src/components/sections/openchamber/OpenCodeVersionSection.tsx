@@ -73,14 +73,17 @@ const parseUpdateResponse = (value: unknown): OpenCodeUpdateResponse | null => {
   };
 };
 
-const VersionDatum: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="min-w-0">
-    <dt className="typography-micro text-muted-foreground">{label}</dt>
-    <dd className="mt-0.5 truncate font-mono typography-meta text-foreground" title={value}>
-      {value}
-    </dd>
-  </div>
-);
+const VersionDatum: React.FC<{ label: string; value: string }> = ({ label, value }) => {
+  const displayVersion = value.replace(/^(\d+\.\d+\.\d+)-devryan\.\d+$/, '$1');
+  return (
+    <div className="min-w-0">
+      <dt className="typography-micro text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 truncate font-mono typography-meta text-foreground" title={displayVersion}>
+        {displayVersion}
+      </dd>
+    </div>
+  );
+};
 
 export const OpenCodeVersionSection: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
   const { t } = useI18n();

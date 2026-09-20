@@ -81,3 +81,5 @@ control without displaying quota-reset claims. The narrow managed store preserve
 receipt revisions and unchanged row identities.
 
 - Completed managed results omit parent collection notices. `HostPrimaryRecovery.tsx` keeps polling and SSE ingestion active while hiding collection-issue cards; other parent failures retain controls within the chat message column. Completed dispatch rows show “Recovered with” model/effort details only for confirmed recovery receipts or lineage.
+
+- `SessionFailureNotice.tsx`: persistent sanitized session-error notice, including failures before an assistant exists; driven by the narrow notification selector independently of provider recovery capability.

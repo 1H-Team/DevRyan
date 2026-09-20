@@ -274,7 +274,7 @@ describe('tunnel routes', () => {
     });
   });
 
-  it('keeps a legacy managed connector visible but not connect-ready without managed accounts', async () => {
+  it.each([[true, true], [true, false], [false, true]])('reports managed readiness without a link with accounts=%s runtime=%s', async (accountLogin, runtimeReady) => {
     const tunnelService = {
       refreshHealth: vi.fn(async () => ({ connectorState: 'healthy' })),
       resolveActiveMode: vi.fn(() => 'managed-remote'),
@@ -287,6 +287,8 @@ describe('tunnel routes', () => {
       })),
     };
     const tunnelAuthController = {
+      hasOwner: vi.fn(() => true),
+      getBootstrapStatus: vi.fn(() => ({ hasBootstrapToken: true, bootstrapExpiresAt: 12345 })),
       listTunnelSessions: vi.fn(() => []),
       getActiveTunnelId: vi.fn(() => 'tunnel-1'),
       getActiveTunnelHost: vi.fn(() => 'app.example.com'),
@@ -316,13 +318,16 @@ describe('tunnel routes', () => {
       normalizeTunnelSessionTtlMs: vi.fn((value) => value ?? 28_800_000),
       getActivePort: vi.fn(() => 57123),
       getRuntimeManagedRemoteTunnelToken: vi.fn(() => ''),
-      getManagedAccountLoginAvailable: vi.fn(() => false),
+      getRuntimeReady: vi.fn(() => runtimeReady),
+      getManagedAccountLoginAvailable: vi.fn(() => accountLogin),
     })).get('/api/openchamber/tunnel/status');
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       active: true,
-      connectReady: false,
+      connectReady: accountLogin && runtimeReady,
+      hasBootstrapToken: false,
+      bootstrapExpiresAt: null,
       policy: 'account-login',
       managedRemoteTunnelTokenPresetIds: ['production'],
       managedRemoteTunnelPresets: [{
@@ -332,10 +337,11 @@ describe('tunnel routes', () => {
         originPort: 3000,
       }],
     });
+    expect(tunnelAuthController.getBootstrapStatus).not.toHaveBeenCalled();
     expect(response.text).not.toContain('stored-secret-token');
   });
 
-  it.each([true, false])('starts managed remote with managed accounts enabled=%s', async (accountLogin) => {
+  it.each([[true, []], [true, ['a7fef886-f6ef-4f43-ac04-a42c9b5f8a10']], [false, []]])('requires direct account login for managed remote with accounts=%s bots=%j', async (accountLogin, botIds) => {
     const tunnelService = {
       resolveActiveMode: vi.fn(() => null),
       resolveActiveProvider: vi.fn(() => null),
@@ -356,6 +362,7 @@ describe('tunnel routes', () => {
       issueBootstrapToken: vi.fn(() => ({ token: 'bootstrap-token', expiresAt: 12345 })),
       listTunnelSessions: vi.fn(() => []),
     };
+    const persistToken = vi.fn(async () => {});
     const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
     try {
@@ -371,7 +378,7 @@ describe('tunnel routes', () => {
         normalizeTunnelBootstrapTtlMs: vi.fn((value) => value ?? 1_800_000),
         normalizeTunnelSessionTtlMs: vi.fn((value) => value ?? 28_800_000),
         isSupportedTunnelMode: vi.fn(() => true),
-        upsertManagedRemoteTunnelToken: vi.fn(async () => {}),
+        upsertManagedRemoteTunnelToken: persistToken,
         resolveManagedRemoteTunnelToken: vi.fn(async () => ''),
         getRuntimeManagedRemoteTunnelHostname: vi.fn(() => ''),
         getRuntimeManagedRemoteTunnelToken: vi.fn(() => ''),
@@ -385,24 +392,25 @@ describe('tunnel routes', () => {
           hostname: 'app.example.com',
           token: `eyJ${'x'.repeat(80)}`,
           originPort: 3000,
-          botIds: ['a7fef886-f6ef-4f43-ac04-a42c9b5f8a10'],
+          botIds,
         });
 
-      expect(response.status).toBe(200);
-      expect(response.body).toMatchObject({
-        runtimeReady: true,
-        connectReady: true,
-        connectUrl: accountLogin ? null : 'https://app.example.com/tunnel/connect#t=bootstrap-token',
-        bootstrapExpiresAt: accountLogin ? null : 12345,
-        policy: accountLogin ? 'account-login' : 'tunnel-gated',
-      });
+      expect(tunnelAuthController.issueBootstrapToken).not.toHaveBeenCalled();
       if (accountLogin) {
-        expect(tunnelAuthController.issueBootstrapToken).not.toHaveBeenCalled();
-      } else {
-        expect(tunnelAuthController.issueBootstrapToken).toHaveBeenCalledWith({
-          botIds: ['a7fef886-f6ef-4f43-ac04-a42c9b5f8a10'],
-          ttlMs: 900_000,
+        expect(response.status).toBe(200);
+        expect(response.body).toMatchObject({
+          runtimeReady: true,
+          connectReady: true,
+          connectUrl: null,
+          bootstrapExpiresAt: null,
+          policy: 'account-login',
         });
+      } else {
+        expect(response.status).toBe(422);
+        expect(response.body.code).toBe('managed_account_auth_required');
+        expect(tunnelService.start).not.toHaveBeenCalled();
+        expect(persistToken).not.toHaveBeenCalled();
+        expect(tunnelAuthController.setActiveTunnel).not.toHaveBeenCalled();
       }
     } finally {
       consoleLog.mockRestore();

@@ -1,4 +1,5 @@
 import { sendMessageStreamWsEvent, sendMessageStreamWsFrame } from './protocol.js';
+import { createBoundedEventQueue } from './bounded-event-queue.js';
 
 function shouldTriggerUpstreamHealthCheck(upstream) {
   if (!upstream) {
@@ -25,8 +26,12 @@ export function createGlobalMessageStreamWsBridge({
   const readyClients = new Set();
   const clientPrincipals = new Map();
   const clientQueues = new Map();
+  const clientTimers = new Map();
 
   const removeClient = (socket) => {
+    clientQueues.get(socket)?.close();
+    for (const timer of clientTimers.get(socket) ?? []) clearInterval(timer);
+    clientTimers.delete(socket);
     clients.delete(socket);
     clientLastEventIds.delete(socket);
     readyClients.delete(socket);
@@ -36,19 +41,7 @@ export function createGlobalMessageStreamWsBridge({
   };
 
   const sendIfAllowed = (socket, entry) => {
-    const previous = clientQueues.get(socket) || Promise.resolve(true);
-    const next = previous.then(async (canContinue) => {
-      if (!canContinue || !clients.has(socket)) return false;
-      if (eventFilter && !await eventFilter(clientPrincipals.get(socket), entry)) return true;
-      return sendMessageStreamWsEvent(socket, entry.payload, {
-        directory: entry.directory,
-        eventId: entry.eventId,
-      });
-    });
-    clientQueues.set(socket, next.catch(() => false));
-    void next.then((sent) => {
-      if (!sent) removeClient(socket);
-    });
+    void clientQueues.get(socket)?.enqueue(entry);
   };
 
   const replayEvents = (socket, requestedLastEventId) => {
@@ -176,6 +169,7 @@ export function createGlobalMessageStreamWsBridge({
 
       sendMessageStreamWsEvent(socket, { type: 'openchamber:heartbeat', timestamp: Date.now() }, { directory: 'global' });
     }, heartbeatIntervalMs);
+    clientTimers.set(socket, [pingInterval, heartbeatInterval]);
 
     socket.on('close', () => {
       clearInterval(pingInterval);
@@ -185,12 +179,29 @@ export function createGlobalMessageStreamWsBridge({
     });
 
     socket.on('error', () => {
-      void 0;
+      removeClient(socket);
+      stopHubIfUnused();
+      try { socket.close(1011, 'Message stream connection failed'); } catch { /* Already closed. */ }
     });
 
     clients.add(socket);
     clientPrincipals.set(socket, principal);
     clientLastEventIds.set(socket, requestedLastEventId);
+    clientQueues.set(socket, createBoundedEventQueue({
+      getBufferedBytes: () => socket.bufferedAmount ?? 0,
+      deliver: async (entry, signal) => {
+        if (signal.aborted || !clients.has(socket)) return false;
+        if (eventFilter && !await eventFilter(clientPrincipals.get(socket), entry)) return true;
+        if (signal.aborted || !clients.has(socket)) return false;
+        return sendMessageStreamWsEvent(socket, entry.payload, { directory: entry.directory, eventId: entry.eventId });
+      },
+      onClose: reason => {
+        if (reason === 'cancelled') return;
+        try { socket.close(1013, 'Message stream client is too slow'); } catch { /* Cleanup still runs. */ }
+        removeClient(socket);
+        stopHubIfUnused();
+      },
+    }));
     globalHub.start();
     if (globalHub.isConnected()) {
       markReady(socket, requestedLastEventId);

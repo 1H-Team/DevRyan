@@ -42,6 +42,32 @@ afterEach(async () => {
 });
 
 describe('session-partitioned diagnostic journal', () => {
+  test('drains records queued during asynchronous segment publication before shutdown', async () => {
+    const directory = await temporaryDirectory();
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    let started;
+    const publishing = new Promise(resolve => { started = resolve; });
+    let gated = false;
+    const journal = createJournal(directory, { trim: false, maxSegmentBytes: 180,
+      fs: { ...fs, readFile: async (file, ...args) => {
+        if (String(file).endsWith('.ndjson.open') && !gated) {
+          gated = true; started(); await gate;
+        }
+        return fs.readFile(file, ...args);
+      } },
+    });
+    const enqueue = i => journal.enqueue({ type: 'prompt', sessionID: 'ses_async', at: i + 1, payload: { text: `${i}-${'x'.repeat(100)}` } });
+    enqueue(0); enqueue(1);
+    await publishing;
+    enqueue(2); enqueue(3);
+    const closing = journal.close();
+    release();
+    await closing;
+    expect((await journal.readRecords()).map(record => record.at)).toEqual([1, 2, 3, 4]);
+    expect((await journal.listSegmentPaths()).every(file => file.endsWith('.gz'))).toBe(true);
+    expect((await journal.getStatus()).lastError).toBeNull();
+  });
   test('retains Bot subscription sizes and correlation through storage without snapshot content', async () => {
     const journal = createJournal(await temporaryDirectory());
     const payload = {

@@ -214,6 +214,15 @@ const ensurePrivateDependencyLinks = async (directory) => {
 export const prepareQaPluginHomeWrapper = async (entry) => {
     const original = entry.replace(/\.(m?js)$/, '.qa-original.$1');
     if (original === entry) throw new Error('QA plugin home wrapper requires an ESM JavaScript entrypoint');
+    const current = await readFile(entry, 'utf8');
+    // A supported source can itself be an owned QA profile. Never overwrite its
+    // copied original with a wrapper that would then import itself recursively.
+    const wrapperPrefix = `import ${JSON.stringify(homeShim)};\nexport * from ${JSON.stringify(`./${path.basename(original)}`)};\n`;
+    if (current.startsWith(wrapperPrefix)) {
+        const saved = await readFile(original, 'utf8');
+        if (saved.startsWith(wrapperPrefix)) throw new Error('QA plugin original is recursively wrapped');
+        return;
+    }
     await cp(entry, original);
     const source = await readFile(original, 'utf8');
     const hasDefault = /export\s+default\b|export\s*\{[^}]*\bas\s+default\b/.test(source);
@@ -222,6 +231,7 @@ export const prepareQaPluginHomeWrapper = async (entry) => {
 
 export async function prepareQaProfile({ runtimeRoot, workspace, providerId, modelId, variant = null, agentAssignments = {},
     allowCrossProviderAssignments = false,
+    credentialProviders = allowedProviders,
     sourceHome = os.homedir(), opencodeBinary = path.join(repositoryRoot, '.cache/qa/opencode-1.18.31/package/bin/opencode') }) {
     const cacheRoot = path.join(repositoryRoot, '.cache');
     if (!path.isAbsolute(runtimeRoot) || !isInside(cacheRoot, path.resolve(runtimeRoot))) throw new Error('QA runtime root must be inside this repository cache');
@@ -229,7 +239,9 @@ export async function prepareQaProfile({ runtimeRoot, workspace, providerId, mod
     if (!allowedProviders.includes(providerId) || typeof modelId !== 'string' || !modelId.trim() || modelId.includes('/')) throw new Error('QA model must use OpenAI, Anthropic, or xAI');
     if (variant !== null && (typeof variant !== 'string' || !variant.trim())) throw new Error('QA thinking must be null or a nonempty variant');
     validateQaAgentAssignments(agentAssignments, providerId, allowCrossProviderAssignments);
-    const admittedProviders = [...new Set([...allowedProviders, ...Object.values(agentAssignments).map(selection => selection.providerId)])];
+    if (!Array.isArray(credentialProviders) || !credentialProviders.includes(providerId)
+        || credentialProviders.some(id => !managedSpecialistProviders.includes(id))) throw new Error('QA credential sources must explicitly include the selected supported provider');
+    const admittedProviders = [...new Set([...credentialProviders, ...Object.values(agentAssignments).map(selection => selection.providerId)])];
     await validateOwnedPaths(runtimeRoot, workspace, cacheRoot);
     await mkdir(runtimeRoot, { recursive: true, mode: 0o700 });
     const home = path.join(runtimeRoot, 'home');
@@ -296,7 +308,7 @@ export async function prepareQaProfile({ runtimeRoot, workspace, providerId, mod
     }
     const projectedAuth = projectQaAuth(await readOptionalJson(path.join(sourceHome, '.local/share/opencode/auth.json')), Date.now(), admittedProviders);
     await writePrivateJson(path.join(authDirectory, 'auth.json'), projectedAuth.records);
-    const claude = await readClaudeAccess(sourceHome);
+    const claude = admittedProviders.includes('anthropic') ? await readClaudeAccess(sourceHome) : null;
     const credentialsEnvironment = {};
     if (claude) {
         credentialsEnvironment.MERIDIAN_PROFILES = JSON.stringify([{ id: 'qa', type: 'oauth-token', oauthToken: claude.access }]);

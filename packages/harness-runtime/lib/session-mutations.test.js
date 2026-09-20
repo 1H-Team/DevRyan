@@ -1,4 +1,4 @@
-import { afterEach, expect, test as bunTest } from 'bun:test';
+import { afterEach, expect, spyOn, test as bunTest } from 'bun:test';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -368,4 +368,101 @@ test('publication preserves private permissions and later permission changes ret
   expect((await fs.stat(path.join(f.directory, 'x'))).mode & 0o777).toBe(0o640);
   await f.revert('b', 'pb');
   expect((await fs.stat(path.join(f.directory, 'x'))).mode & 0o777).toBe(0o600);
+});
+
+test('expired concurrent admissions never run after a held publication and a later prompt succeeds', async () => {
+  const { withExecutionAdmission } = await import('./execution-admission.js');
+  let release, entered;
+  const held = new Promise((resolve) => { release = resolve; });
+  const started = new Promise((resolve) => { entered = resolve; });
+  const f = await fixture({ onMaterialize: async () => { entered(); await held; } });
+  await f.write('x', 'old');
+  const owner = await f.begin('owner', 'p0', 'c0');
+  await fs.writeFile(path.join(owner.viewDirectory, 'x'), 'new');
+  const publication = f.finish(owner);
+  await started;
+  const diagnostics = [];
+  const attempts = Array.from({ length: 4 }, (_, i) => {
+    const input = { sessionID: `s${i}`, callID: `c${i}` };
+    return withExecutionAdmission(input, () => f.begin(input.sessionID, `p${i}`, input.callID), {
+      timeoutMs: 100, onDiagnostic: (record) => diagnostics.push(record),
+    });
+  });
+  attempts.push(withExecutionAdmission({ sessionID: 'prompt' }, () => f.runtime.registerPrompt({
+    directory: f.directory, sessionID: 'prompt', userMessageID: 'p-next',
+  }), { timeoutMs: 100 }));
+  const settledAttempts = Promise.allSettled(attempts);
+  try {
+    const other = await fixture();
+    await expect(withExecutionAdmission({ sessionID: 'other' }, () => other.runtime.assertAdmission({
+      directory: other.directory, sessionID: 'other',
+    }))).resolves.toEqual({ admitted: true });
+    const results = await settledAttempts;
+    expect(results.every((result) => result.status === 'rejected' && result.reason.code === 'local_execution_timeout')).toBe(true);
+    expect(diagnostics.filter((row) => row.phase === 'queue_wait' && row.state === 'failed')).toHaveLength(4);
+    expect(diagnostics.some((row) => 'directory' in row || 'args' in row)).toBe(false);
+  } finally { release(); await publication; }
+  await f.runtime.drain();
+  expect(await f.runtime.activeLeases({ directory: f.directory })).toHaveLength(0);
+  await expect(f.runtime.registerPrompt({ directory: f.directory, sessionID: 'prompt', userMessageID: 'p-next' })).resolves.toHaveProperty('sequence');
+  expect(await f.read('x')).toBe('new');
+});
+
+test('cancellation during reconciliation discards preparation and allows a subsequent tool', async () => {
+  const { withExecutionAdmission } = await import('./execution-admission.js');
+  const f = await fixture(); await f.write('x', 'preserved');
+  const controller = new AbortController();
+  const cancelled = Object.assign(new Error('local_execution_timeout'), { code: 'local_execution_timeout' });
+  const phases = [];
+  await expect(withExecutionAdmission({ sessionID: 'cancelled', callID: 'c' }, () => f.begin('cancelled', 'p', 'c'), {
+    signal: controller.signal,
+    onDiagnostic: (record) => {
+      phases.push(record);
+      if (record.phase === 'reconciliation' && record.state === 'started') controller.abort(cancelled);
+    },
+  })).rejects.toBe(cancelled);
+  expect(phases.some((row) => row.phase === 'reconciliation' && row.state === 'failed')).toBe(true);
+  expect(await f.runtime.leaseForCall({ directory: f.directory, sessionID: 'cancelled', callID: 'c' })).toBeNull();
+  const healthy = await f.begin('healthy', 'p2', 'c2');
+  expect(await fs.readFile(path.join(healthy.viewDirectory, 'x'), 'utf8')).toBe('preserved');
+});
+
+
+test('slow reconciliation retains ownership until its file read settles, then expires all waiting work', async () => {
+  const { withExecutionAdmission } = await import('./execution-admission.js');
+  const f = await fixture(); await f.write('slow.txt', 'preserve me');
+  let release, enter;
+  const held = new Promise((resolve) => { release = resolve; });
+  const entered = new Promise((resolve) => { enter = resolve; });
+  const readFile = fs.readFile.bind(fs);
+  const probe = spyOn(fs, 'readFile').mockImplementation(async (file, options) => {
+    if (String(file) === path.join(await fs.realpath(f.directory), 'slow.txt')) { enter(); await held; }
+    return readFile(file, options);
+  });
+  const phases = [];
+  let ownerSettled = false;
+  const owner = withExecutionAdmission({ sessionID: 's0', callID: 'c0' }, () => f.begin('s0', 'p0', 'c0'), {
+    timeoutMs: 1000, onDiagnostic: (row) => phases.push(row),
+  }).then((result) => { ownerSettled = true; return result; }, (cause) => { ownerSettled = true; return cause; });
+  let waiting = Promise.resolve([]);
+  try {
+    await Promise.race([entered, owner.then(() => { throw new Error('fixture failed before reconciliation'); })]);
+    waiting = Promise.allSettled([
+      ...Array.from({ length: 3 }, (_, index) => withExecutionAdmission({ sessionID: `s${index + 1}` },
+        () => f.begin(`s${index + 1}`, `p${index + 1}`, `c${index + 1}`), { timeoutMs: 1000 })),
+      withExecutionAdmission({ sessionID: 'prompt' }, () => f.runtime.registerPrompt({ directory: f.directory,
+        sessionID: 'prompt', userMessageID: 'next' }), { timeoutMs: 1000 }),
+    ]);
+    const results = await waiting;
+    expect(results.every((result) => result.status === 'rejected' && result.reason.code === 'local_execution_timeout')).toBe(true);
+    expect(ownerSettled).toBe(false);
+  } finally {
+    release(); await owner; await waiting; probe.mockRestore();
+  }
+  expect((await owner).code).toBe('local_execution_timeout');
+  expect(phases.some((row) => row.phase === 'reconciliation' && row.state === 'failed')).toBe(true);
+  await f.runtime.drain();
+  expect(await f.runtime.activeLeases({ directory: f.directory })).toHaveLength(0);
+  const healthy = await f.begin('healthy', 'p-ok', 'c-ok');
+  expect(await readFile(path.join(healthy.viewDirectory, 'slow.txt'), 'utf8')).toBe('preserve me');
 });

@@ -1,6 +1,7 @@
 import { sendMessageStreamWsEvent, sendMessageStreamWsFrame } from './protocol.js';
 import { createUpstreamSseReader } from './upstream-reader.js';
 import { deriveDirectoryCompatibilityEvents } from './compatibility-events.js';
+import { createBoundedEventQueue } from './bounded-event-queue.js';
 
 function shouldTriggerUpstreamHealthCheck(upstream) {
   if (!upstream) {
@@ -33,12 +34,14 @@ export function acceptDirectoryMessageStreamWsConnection({
   let upstreamConnected = false;
   let streamReady = false;
   let reader = null;
+  let eventQueue = null;
 
   const cleanup = () => {
     if (!controller.signal.aborted) {
       controller.abort();
     }
     reader?.stop();
+    eventQueue?.close();
     wsClients.delete(socket);
   };
 
@@ -69,30 +72,44 @@ export function acceptDirectoryMessageStreamWsConnection({
   });
 
   socket.on('error', () => {
-    void 0;
+    clearInterval(pingInterval);
+    clearInterval(heartbeatInterval);
+    cleanup();
+    try { socket.close(1011, 'Message stream connection failed'); } catch { /* Already closed. */ }
   });
 
   const run = async () => {
-    let eventQueue = Promise.resolve();
-    const forwardOne = async ({ envelope, payload }) => {
+    const forwardOne = async ({ envelope, payload }, signal) => {
       const directory = requestedDirectory || envelope?.directory || 'global';
 
       if (eventFilter && !await eventFilter(principal, { payload, directory, eventId: envelope?.eventId })) {
-        return;
+        return true;
       }
+      if (signal.aborted) return false;
 
-      sendMessageStreamWsEvent(socket, payload, {
+      if (!sendMessageStreamWsEvent(socket, payload, {
         directory,
         eventId: typeof envelope?.eventId === 'string' && envelope.eventId.length > 0 ? envelope.eventId : undefined,
-      });
+      })) return false;
 
       for (const syntheticPayload of deriveDirectoryCompatibilityEvents(payload)) {
         if (eventFilter && !await eventFilter(principal, { payload: syntheticPayload, directory: 'global' })) continue;
-        sendMessageStreamWsEvent(socket, syntheticPayload, { directory: 'global' });
+        if (signal.aborted) return false;
+        if (!sendMessageStreamWsEvent(socket, syntheticPayload, { directory: 'global' })) return false;
       }
+      return true;
     };
+    eventQueue = createBoundedEventQueue({
+      deliver: forwardOne,
+      getBufferedBytes: () => socket.bufferedAmount ?? 0,
+      onClose: reason => {
+        if (reason === 'cancelled') return;
+        cleanup();
+        try { socket.close(1013, 'Message stream client is too slow'); } catch { /* Already disconnected. */ }
+      },
+    });
     const forwardEvent = (entry) => {
-      eventQueue = eventQueue.then(() => forwardOne(entry)).catch(() => undefined);
+      void eventQueue.enqueue(entry);
     };
 
     try {

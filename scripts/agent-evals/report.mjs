@@ -232,14 +232,20 @@ const runtimeVersion = (value) => typeof value === 'string'
   && /^[a-zA-Z0-9][a-zA-Z0-9.+_-]{0,127}$/.test(value.trim()) && !identifierLooksUnsafe(value.trim())
   ? value.trim() : 'unknown';
 const projectFingerprint = (value) => value?.schemaVersion === 1 ? {
-  schemaVersion: 1, configurationHash: safeHash(value.configurationHash), runtimeVersion: runtimeVersion(value.runtimeVersion),
+  schemaVersion: 1, configurationHash: safeHash(value.configurationHash), runtimeVersion: runtimeVersion(value.runtimeVersion), runtimeHash: safeHash(value.runtimeHash),
   selection: { providerId: opaqueIdentifier(value.selection?.providerID, 'provider'), modelId: opaqueIdentifier(value.selection?.modelID, 'model'),
     agent: opaqueIdentifier(value.selection?.agent, 'agent'), variant: value.selection?.variant === null ? null : opaqueIdentifier(value.selection?.variant, 'variant') },
   role: { source: normalizeStatus(value.role?.source), sourceHash: safeHash(value.role?.sourceHash), contentHash: safeHash(value.role?.contentHash), bytes: finiteNumber(value.role?.bytes) },
   catalog: { contentHash: safeHash(value.catalog?.contentHash), idsHash: safeHash(value.catalog?.idsHash), count: finiteNumber(value.catalog?.count), availability: normalizeStatus(value.catalog?.availability) },
-  plugins: { configured: Array.isArray(value.plugins?.configured) ? value.plugins.configured.slice(0, 128).map((entry) => ({ name: opaqueIdentifier(entry.name, 'plugin'), sourceHash: safeHash(entry.sourceHash) })) : null,
+  plugins: { inventory: value.plugins?.inventory ? {
+    configurationHash: safeHash(value.plugins.inventory.configurationHash), contentHash: safeHash(value.plugins.inventory.contentHash),
+    providerHash: safeHash(value.plugins.inventory.providerHash),
+    entries: Array.isArray(value.plugins.inventory.entries) ? value.plugins.inventory.entries.slice(0, 128).map(entry => ({
+      name: opaqueIdentifier(entry.name, 'plugin'), sourceHash: safeHash(entry.sourceHash), contentHash: safeHash(entry.contentHash),
+    })) : null,
+  } : null, configured: Array.isArray(value.plugins?.configured) ? value.plugins.configured.slice(0, 128).map((entry) => ({ name: opaqueIdentifier(entry.name, 'plugin'), sourceHash: safeHash(entry.sourceHash) })) : null,
     observed: Array.isArray(value.plugins?.observed) ? value.plugins.observed.slice(0, 128).map((entry) => ({ name: opaqueIdentifier(entry.name, 'plugin'), contentHash: safeHash(entry.contentHash), factoryCalls: nonNegativeInteger(entry.factoryCalls), ownership: normalizeStatus(entry.ownership) })) : null },
-  policies: Object.fromEntries(['readOverlap', 'waitAny', 'compactResults', 'contextProjection'].map((key) => [key, value.policies?.[key] === true])),
+  policies: Object.fromEntries(['readOverlap', 'waitAny', 'compactResults', 'contextProjection', 'duplicateOutputs'].map((key) => [key, value.policies?.[key] === true])),
 } : null;
 
 const measured = (value) => ({ observed: nonNegativeInteger(value?.observed), unknown: nonNegativeInteger(value?.unknown), total: finiteNumber(value?.total) });
@@ -258,7 +264,7 @@ export const projectHarnessEvidence = (value) => ({
       costProvenance: ['native-runtime-reported', 'native-provider-reported'].includes(root.costProvenance)
         ? 'native-runtime-reported' : 'unavailable',
       toolVolumeBytes: measured(root.measurements?.toolVolumeBytes), retrievedPages: nonNegativeInteger(root.retrievedPages),
-      context: Array.isArray(root.projections) ? root.projections.slice(0, 512).map((entry) => ({ beforeBytes: finiteNumber(entry.beforeBytes), projectedBytes: finiteNumber(entry.projectedBytes), dynamicBytes: finiteNumber(entry.dynamicBytes) })) : [],
+      context: Array.isArray(root.projections) ? root.projections.slice(0, 512).map((entry) => ({ phase: normalizeStatus(entry.phase), ...Object.fromEntries(['beforeBytes', 'projectedBytes', 'dynamicBytes', 'plannedReductions', 'appliedReductions', 'savedBytes', 'transformDurationMs', 'finalRequestBytes'].map(key => [key, finiteNumber(entry[key])])) })) : [],
     })) : [],
   } : null,
 });

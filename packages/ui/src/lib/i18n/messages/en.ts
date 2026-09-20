@@ -2026,6 +2026,8 @@ export const dict = {
   'chat.sessionChanges.footer.confirm.descriptionNoSubagents': 'Undo {files} changed by this session? Other sessions’ changes are kept.',
   'chat.sessionChanges.footer.confirm.actions.cancel': 'Cancel',
   'chat.sessionChanges.footer.confirm.actions.confirm': 'Undo',
+  'chat.toolGroup.failedToolSingle': '{count} tool failed',
+  'chat.toolGroup.failedToolPlural': '{count} tools failed',
   'chat.toolGroup.searchedFileSingle': 'Searched {count} file',
   'chat.toolGroup.searchedFilePlural': 'Searched {count} files',
   'chat.toolGroup.appliedPatchSingle': 'Applied {count} patch',

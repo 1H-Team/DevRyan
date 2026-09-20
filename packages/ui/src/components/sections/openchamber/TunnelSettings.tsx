@@ -918,7 +918,7 @@ export const TunnelSettings: React.FC = () => {
         body: JSON.stringify({
           provider: tunnelProvider,
           mode: tunnelMode,
-          botIds: selectedBotIds,
+          ...(tunnelMode !== 'managed-remote' ? { botIds: selectedBotIds } : {}),
           ...(tunnelMode === 'managed-remote' && selectedPreset ? {
             managedRemoteTunnelPresetId: selectedPreset.id,
             managedRemoteTunnelPresetName: selectedPreset.name,
@@ -1061,20 +1061,21 @@ export const TunnelSettings: React.FC = () => {
   }, [t]);
 
   const handleCopyUrl = React.useCallback(async () => {
-    if (!tunnelInfo?.connectUrl) {
-      return;
-    }
+    const url = activeTunnelMode === 'managed-remote' ? tunnelInfo?.url : tunnelInfo?.connectUrl;
+    if (!url) return;
 
     try {
-      const result = await copyTextToClipboard(tunnelInfo.connectUrl, { sourceSurface: 'settings', copyKind: 'text' });
+      const result = await copyTextToClipboard(url, { sourceSurface: 'settings', copyKind: 'text' });
       if (!result.ok) throw new Error(result.error);
       setCopied(true);
-      toast.success(t('settings.openchamber.tunnel.toast.connectLinkCopied'));
+      toast.success(t(activeTunnelMode === 'managed-remote'
+        ? 'settings.openchamber.tunnel.toast.publicUrlCopied'
+        : 'settings.openchamber.tunnel.toast.connectLinkCopied'));
       setTimeout(() => setCopied(false), 2000);
     } catch {
       toast.error(t('settings.openchamber.tunnel.toast.copyUrlFailed'));
     }
-  }, [t, tunnelInfo?.connectUrl]);
+  }, [activeTunnelMode, t, tunnelInfo?.url, tunnelInfo?.connectUrl]);
 
   const handleBootstrapTtlChange = React.useCallback(async (value: string) => {
     const option = BOOTSTRAP_TTL_OPTIONS.find((entry) => entry.value === value);
@@ -1276,7 +1277,7 @@ export const TunnelSettings: React.FC = () => {
         <p className="typography-meta mt-0 text-muted-foreground/60">
           {t('settings.openchamber.tunnel.note.serverSideEnforced')}
         </p>
-        {tunnelMode === 'managed-remote' && managedAccountLoginAvailable ? (
+        {tunnelMode === 'managed-remote' ? (
           <p className="typography-meta mt-0 text-muted-foreground/60">
             {t('settings.openchamber.tunnel.note.managedRemoteDirectLogin')}
           </p>
@@ -1296,17 +1297,17 @@ export const TunnelSettings: React.FC = () => {
             <RiErrorWarningLine className="mt-0.5 size-4 shrink-0 text-[var(--status-warning)]" />
             <div className="space-y-1">
               <p className="typography-ui-label text-foreground">
-                Bot workspace access
+                {t('settings.openchamber.tunnel.managedAccountRequired.title')}
               </p>
               <p className="typography-meta text-[var(--status-warning)]">
-                Supabase can stay off. Authenticate as this host’s local owner to start the connector and share selected Bot workspaces.
+                {t('settings.openchamber.tunnel.managedAccountRequired.description')}
               </p>
             </div>
           </div>
         </div>
       )}
 
-      {!(tunnelMode === 'managed-remote' && managedAccountLoginAvailable) && <fieldset className="space-y-2 rounded-lg border border-border p-3">
+      {tunnelMode !== 'managed-remote' && <fieldset className="space-y-2 rounded-lg border border-border p-3">
         <legend className="typography-ui-label">Bots allowed by the connection link</legend>
         <p className="typography-meta text-muted-foreground">Select Bot workspaces to create a link. Links expire after 15 minutes; connected sessions last seven days. You can start the connector with no link.</p>
         {grantBotsUnavailable && <p role="status" className="typography-meta text-muted-foreground">Bots are unavailable in the current connection mode.</p>}
@@ -1927,7 +1928,7 @@ export const TunnelSettings: React.FC = () => {
                   !runtimeReady
                   || state === 'starting'
                   || isSavingMode
-                  || (tunnelMode === 'managed-remote' && !selectedPreset)
+                  || (tunnelMode === 'managed-remote' && (!selectedPreset || !managedAccountLoginAvailable))
                   || (tunnelMode === 'managed-local' && isManagedLocalConfigPathInvalid)
                 }
                 className={cn(primaryCtaClass, state === 'starting' && 'opacity-70')}
@@ -2036,7 +2037,7 @@ export const TunnelSettings: React.FC = () => {
               </div>
             )}
 
-            {!isManagedRemoteDegraded && connectReady && isConnectLinkLive && tunnelInfo.connectUrl && (
+            {activeTunnelMode !== 'managed-remote' && !isManagedRemoteDegraded && connectReady && isConnectLinkLive && tunnelInfo.connectUrl && (
               <>
                 <div>
                   <p className="typography-meta mb-1 text-muted-foreground/70">{t('settings.openchamber.tunnel.field.connectLink')}</p>
@@ -2068,7 +2069,15 @@ export const TunnelSettings: React.FC = () => {
 
           <div className="pt-1">
             <div className="flex flex-wrap items-center gap-2">
-              {botOnlyLinks && !(activeTunnelMode === 'managed-remote' && managedAccountLoginAvailable) && <Button
+              {activeTunnelMode === 'managed-remote' && <>
+                <Button size="sm" variant="outline" disabled={!connectReady} onClick={() => void openExternal(tunnelInfo.url)}>
+                  {t('settings.openchamber.tunnel.actions.openCustomDomain')}
+                </Button>
+                <Button size="sm" variant="ghost" disabled={!connectReady} onClick={handleCopyUrl}>
+                  {copied ? t('settings.openchamber.tunnel.actions.copied') : t('settings.openchamber.tunnel.actions.copyUrl')}
+                </Button>
+              </>}
+              {botOnlyLinks && activeTunnelMode !== 'managed-remote' && <Button
                 size="sm" variant="outline" onClick={handleCreateLink}
                 disabled={isCreatingLink || selectedBotIds.length === 0 || state === 'stopping' || isManagedRemoteDegraded}
               >{t('settings.openchamber.tunnel.actions.newConnectLink')}</Button>}
@@ -2078,6 +2087,7 @@ export const TunnelSettings: React.FC = () => {
                 disabled={
                   !runtimeReady
                   || state === 'stopping'
+                  || (tunnelMode === 'managed-remote' && !managedAccountLoginAvailable)
                   || isSavingMode
                   || (tunnelMode === 'managed-local' && isManagedLocalConfigPathInvalid)
                 }

@@ -1,0 +1,187 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-20",
+  "status": "local-verification-passed; release-unqualified",
+  "featureDefault": "off",
+  "qualifiedReleaseProfiles": 0,
+  "providerRoute": "openai/gpt-5.6-sol via synthetic loopback Responses transport",
+  "runs": [
+    {
+      "runtimeVersion": "1.18.31",
+      "runtimeHash": "16c960ba77421da11b53e785f359b73f328a86118b48feb4af143db5d9afb198",
+      "checks": {
+        "paired": true,
+        "uniqueEvidence": true,
+        "cleanupComplete": true,
+        "referencesResolve": true,
+        "callPairsIntact": true,
+        "summaryReferencesAbsent": true,
+        "manualBoundaries": true,
+        "automaticBoundary": true,
+        "nativeOrdering": true,
+        "prunedAnchorsRejected": true
+      },
+      "paired": [
+        {
+          "label": "control",
+          "baselineBytes": 43200,
+          "candidateBytes": 43200,
+          "passed": true
+        },
+        {
+          "label": "duplicates",
+          "baselineBytes": 72459,
+          "candidateBytes": 54741,
+          "passed": true
+        },
+        {
+          "label": "pruned",
+          "baselineBytes": 63172,
+          "candidateBytes": 54313,
+          "passed": true
+        }
+      ],
+      "pluginInventory": {
+        "entries": [
+          {
+            "name": "duplicate-serializer-fixture.mjs",
+            "sourceHash": "3d63a101c8357a1a007d399d8df7437406aaf13660856e288be03a951e321384",
+            "contentHash": "df6af5632ca49deea3f9806c06e055ca15543e4a45728feb4ef5ef13ec180b39"
+          },
+          {
+            "name": "devryan-harness-context.mjs",
+            "sourceHash": "2147b5550b22426c5e677ca170ee0cc36899b1ef189342ed19ab58615040ea7b",
+            "contentHash": "e1a8eb08591ae80744270b0ba35ba4e51df01b093ce5c2e25c2289fec7925f6c"
+          },
+          {
+            "name": "devryan-skill-context.mjs",
+            "sourceHash": "94e71129151cdacbcc877bf9b4ce3fcf5b51c4e4554c29869301402eeecfb0f8",
+            "contentHash": "f3ea463d78c513fd1b1b41612b28f59c88a5320c7418a0b76652f140811447ef"
+          },
+          {
+            "name": "devryan-document-reader.mjs",
+            "sourceHash": "8d6f001fe58d31991dee1c4d1ab82eed69ecf7ccb4192ed4ed34ce2c32971eec",
+            "contentHash": "0df5deda30bd3fd91070c91eaceaedbaac8ee21604d5fd01194a6ab7347be729"
+          },
+          {
+            "name": "devryan-tool-input-guard.mjs",
+            "sourceHash": "4dbeeed832db3ed4b9b1232829639f5b6ab1bb8fa68a8130c6ff879809c3e832",
+            "contentHash": "499ac58893f57ebd8f0fcb405dd8586be42c80291cef520f8f7a73300d151c67"
+          }
+        ],
+        "providerHash": "4d05ef6c301c5432487eb36d981a8df9d3b26626da8e5a1b474c8594a89d61f4",
+        "configurationHash": "2160eff6619b624faeda49e6bdb4e71068e58ced2895a574e9232f90d81155b6",
+        "contentHash": "ce98e049f6af52078f6d30ff729cfbd39022d93422a1f10d1d5433f9b5fef2bf"
+      },
+      "peakSerializedRequestBytes": 72459,
+      "compactionFrequency": 6,
+      "providerInputTokens": null,
+      "providerCacheTokens": null,
+      "peakInputTokens": null,
+      "observedHookDurationMs": {
+        "count": 10,
+        "mean": 0.4301918000000796,
+        "maximum": 0.8722499999998945
+      },
+      "nativeEvidenceDirectory": ".cache/qa/duplicate-serializer-Zc2SbI",
+      "liveProvider": false,
+      "defaultNativePluginsEnabled": false,
+      "qualification": "synthetic-fixture-only",
+      "timingScope": "observed hook only; concurrent test workload; not provider or end-to-end latency"
+    },
+    {
+      "runtimeVersion": "1.18.31-devryan.2",
+      "runtimeHash": "dd08258e63ce33171ee4589b9e116ab6b20cfee0fe67bf7e7da090ef50e00afd",
+      "checks": {
+        "paired": true,
+        "uniqueEvidence": true,
+        "cleanupComplete": true,
+        "referencesResolve": true,
+        "callPairsIntact": true,
+        "summaryReferencesAbsent": true,
+        "manualBoundaries": true,
+        "automaticBoundary": true,
+        "nativeOrdering": true,
+        "prunedAnchorsRejected": true
+      },
+      "paired": [
+        {
+          "label": "control",
+          "baselineBytes": 43200,
+          "candidateBytes": 43200,
+          "passed": true
+        },
+        {
+          "label": "duplicates",
+          "baselineBytes": 72459,
+          "candidateBytes": 54741,
+          "passed": true
+        },
+        {
+          "label": "pruned",
+          "baselineBytes": 63172,
+          "candidateBytes": 54313,
+          "passed": true
+        }
+      ],
+      "pluginInventory": {
+        "entries": [
+          {
+            "name": "duplicate-serializer-fixture.mjs",
+            "sourceHash": "3d63a101c8357a1a007d399d8df7437406aaf13660856e288be03a951e321384",
+            "contentHash": "df6af5632ca49deea3f9806c06e055ca15543e4a45728feb4ef5ef13ec180b39"
+          },
+          {
+            "name": "devryan-harness-context.mjs",
+            "sourceHash": "2147b5550b22426c5e677ca170ee0cc36899b1ef189342ed19ab58615040ea7b",
+            "contentHash": "e1a8eb08591ae80744270b0ba35ba4e51df01b093ce5c2e25c2289fec7925f6c"
+          },
+          {
+            "name": "devryan-skill-context.mjs",
+            "sourceHash": "94e71129151cdacbcc877bf9b4ce3fcf5b51c4e4554c29869301402eeecfb0f8",
+            "contentHash": "f3ea463d78c513fd1b1b41612b28f59c88a5320c7418a0b76652f140811447ef"
+          },
+          {
+            "name": "devryan-document-reader.mjs",
+            "sourceHash": "8d6f001fe58d31991dee1c4d1ab82eed69ecf7ccb4192ed4ed34ce2c32971eec",
+            "contentHash": "0df5deda30bd3fd91070c91eaceaedbaac8ee21604d5fd01194a6ab7347be729"
+          },
+          {
+            "name": "devryan-tool-input-guard.mjs",
+            "sourceHash": "4dbeeed832db3ed4b9b1232829639f5b6ab1bb8fa68a8130c6ff879809c3e832",
+            "contentHash": "499ac58893f57ebd8f0fcb405dd8586be42c80291cef520f8f7a73300d151c67"
+          }
+        ],
+        "providerHash": "1c6d345cd0271244d826f82c78678dba125954652f7f84886ad8b803879ddc99",
+        "configurationHash": "2160eff6619b624faeda49e6bdb4e71068e58ced2895a574e9232f90d81155b6",
+        "contentHash": "ce98e049f6af52078f6d30ff729cfbd39022d93422a1f10d1d5433f9b5fef2bf"
+      },
+      "peakSerializedRequestBytes": 72459,
+      "compactionFrequency": 6,
+      "providerInputTokens": null,
+      "providerCacheTokens": null,
+      "peakInputTokens": null,
+      "observedHookDurationMs": {
+        "count": 10,
+        "mean": 0.40951239999992595,
+        "maximum": 0.7703750000000582
+      },
+      "nativeEvidenceDirectory": ".cache/qa/duplicate-serializer-tvS1Gb",
+      "liveProvider": false,
+      "defaultNativePluginsEnabled": false,
+      "qualification": "synthetic-fixture-only",
+      "timingScope": "observed hook only; concurrent test workload; not provider or end-to-end latency"
+    }
+  ],
+  "liveBehavior": {
+    "status": "unavailable",
+    "requiredPairs": 10,
+    "skillPairs": 0,
+    "managedPairs": 0,
+    "reason": "No configured isolated live-provider origin or approved live profile; no installed-app history accessed."
+  },
+  "monetarySavings": null,
+  "representativeWorkloadSavings": null,
+  "snapshotStage": "Initial synthetic/native verification, before the subsequent live qualification",
+  "rolloutSupersededBy": "enablement.json"
+}

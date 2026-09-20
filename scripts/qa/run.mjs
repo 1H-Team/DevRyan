@@ -16,7 +16,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function runQa({ runtime = 'web', scenario = 'chat', outputRoot = path.join(root, '.cache/qa'), holdMs = 0 } = {}) {
   if (!Number.isSafeInteger(holdMs) || holdMs < 0 || holdMs > 300000) throw new Error('QA inspection hold must be 0–300000 milliseconds');
   if (!['web', 'electron'].includes(runtime)) throw new Error('QA runtime must be web or electron');
-  if (!['chat', 'mobile', 'recovery', 'thinking', 'grok-plan', 'context-mode', 'session-changes'].includes(scenario) || (scenario === 'mobile' && runtime !== 'web')) throw new Error('QA scenario must be chat, recovery, thinking, grok-plan, context-mode, session-changes, or mobile on web');
+  if (!['chat', 'mobile', 'recovery', 'thinking', 'grok-plan', 'context-mode', 'session-changes', 'execution-failure'].includes(scenario) || (scenario === 'mobile' && runtime !== 'web')) throw new Error('QA scenario must be chat, recovery, thinking, grok-plan, context-mode, session-changes, execution-failure, or mobile on web');
   if (runtime === 'electron') {
     const [webIndex, stagedIndex] = await Promise.all([
       readFile(path.join(root, 'packages/web/dist/index.html'), 'utf8'),
@@ -149,6 +149,10 @@ export async function runQa({ runtime = 'web', scenario = 'chat', outputRoot = p
     if (process.env.DEVRYAN_QA_BACKGROUND !== '1') await cdp.send('Page.bringToFront');
     if (runtime === 'electron') {
       await waitFor('Electron loopback origin', async () => /^http:\/\/127\.0\.0\.1:\d+/.test(await evaluate(cdp, 'location.href')));
+      // A loopback URL is visible at navigation commit, before the renderer
+      // finishes loading its modules. Do not cancel that initial boot by
+      // immediately navigating again. Keep the console-error gate intact.
+      await waitFor('Electron initial document', () => evaluate(cdp, `document.readyState === 'complete' && Boolean(document.querySelector('textarea'))`), 60000);
       const appOrigin = await evaluate(cdp, 'location.origin');
       await cdp.send('Page.navigate', { url: `${appOrigin}/?session=${PERF_PARENT_SESSION_ID}` });
     }
@@ -196,6 +200,10 @@ export async function runQa({ runtime = 'web', scenario = 'chat', outputRoot = p
       await waitFor('renderer event transport readiness', async () => transportReady);
       await delay(500);
       fixture.startScenario('four-stream');
+      // A loopback URL is visible at navigation commit, before the renderer
+      // finishes loading its modules. Do not cancel that initial boot by
+      // immediately navigating again. Keep the console-error gate intact.
+      await waitFor('Electron initial document', () => evaluate(cdp, `document.readyState === 'complete' && Boolean(document.querySelector('textarea'))`), 60000);
       const appOrigin = await evaluate(cdp, 'location.origin');
       evidence.streamEvents = {};
       const controller = new AbortController();
@@ -265,6 +273,10 @@ export async function runQa({ runtime = 'web', scenario = 'chat', outputRoot = p
         if (!expected || !rendered?.includes(expected)) throw new Error('Reopened response lost fixture text');
       }
     });
+    if (scenario === 'execution-failure') {
+      const { runExecutionFailureQa } = await import('./execution-failure.mjs');
+      evidence.executionFailure = await runExecutionFailureQa({ fixture, cdp, directory: workspace, check, screenshot });
+    }
     if (scenario === 'thinking') {
       const { runThinkingSliderQa } = await import('./thinking-slider.mjs');
       evidence.thinkingSlider = await runThinkingSliderQa({ fixture, cdp, runtime, check, screenshot });

@@ -7,6 +7,7 @@ import type { StoreApi } from "zustand"
 import { useStore } from "zustand"
 import type { OpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { createEventPipeline } from "./event-pipeline"
+import { applyStreamingEventBatch, createEventDraft, type StreamingEventBatch } from "./event-batch"
 import {
   resolveEventPipelineConnectionUpdate,
   type EventPipelineConnectionEvent,
@@ -2739,6 +2740,7 @@ function handleEvent(
   routingIndex: EventRoutingIndex,
   activeDirectory: string,
   messageLoader?: SessionMessageLoader,
+  batch?: StreamingEventBatch,
 ) {
   const directory = resolveDirectoryFromRoutingIndex(routingIndex, rawDirectory, payload, childStores)
 
@@ -2833,6 +2835,8 @@ function handleEvent(
     }
     return
   }
+
+  if (batch?.source === store) store = batch.staged
 
   if (payload.type === "session.created" || payload.type === "session.updated") {
     const incoming = (payload.properties as { info?: Session }).info
@@ -3039,67 +3043,13 @@ function handleEvent(
   const outputSessionID = getOutputSessionIdFromPayload(current, routingIndex, payload)
   markOutputEventObserved(resolvedDirectory, outputSessionID)
   markFirstAssistantStreamForDebug(current, payload)
-  const draft: State = { ...current }
+  const draft = batch ? batch.draft(current, payload) : createEventDraft(current, payload)
   const sessionUpdateInfo = payload.type === "session.updated"
     ? (payload.properties as { info?: Session }).info
     : undefined
   const wasKnownActiveSession = sessionUpdateInfo
     ? current.session.some((session) => session.id === sessionUpdateInfo.id)
     : false
-
-  switch (payload.type) {
-    case "session.created":
-    case "session.updated":
-      draft.session = [...current.session]
-      draft.revert_transaction = { ...current.revert_transaction }
-      draft.permission = { ...current.permission }
-      draft.todo = { ...current.todo }
-      draft.part = { ...current.part }
-      break
-    case "session.diff":
-      draft.session_diff = { ...current.session_diff }
-      draft.session = [...current.session]
-      break
-    case "session.status":
-    case "session.idle":
-    case "session.error":
-      draft.session_status = { ...(current.session_status ?? {}) }
-      break
-    case "todo.updated":
-      draft.todo = { ...current.todo }
-      break
-    case "message.updated":
-      draft.message = { ...current.message }
-      break
-    case "message.removed":
-      draft.message = { ...current.message }
-      draft.part = { ...current.part }
-      break
-    case "message.part.removed":
-    case "message.part.delta":
-      draft.part = { ...current.part }
-      break
-    case "message.part.updated":
-      draft.message = { ...current.message }
-      draft.part = { ...current.part }
-      break
-    case "vcs.branch.updated":
-      break
-    case "permission.asked":
-    case "permission.replied":
-      draft.permission = { ...current.permission }
-      break
-    case "question.asked":
-    case "question.replied":
-    case "question.rejected":
-      draft.question = { ...current.question }
-      break
-    case "lsp.updated":
-      draft.lsp = [...current.lsp]
-      break
-    default:
-      break
-  }
 
   const reducerStartedAt = nowMs()
   const reducerResult = applyDirectoryEvent(draft, payload, {
@@ -3322,6 +3272,23 @@ export function applySyncEventForTest(
   activeDirectory = "",
 ) {
   handleEvent(rawDirectory, payload, childStores, routingIndex, activeDirectory)
+}
+
+export function applySyncEventBatch(
+  directory: string,
+  events: readonly Event[],
+  childStores: ChildStoreManager,
+  routingIndex: EventRoutingIndex,
+  activeDirectory = "",
+  messageLoader?: SessionMessageLoader,
+) {
+  applyStreamingEventBatch({
+    events,
+    resolveStore: (event) => childStores.getChild(resolveDirectoryFromRoutingIndex(routingIndex, directory, event, childStores)),
+    resolveSession: (event) => event.type === "message.part.delta"
+      ? routingIndex.messageSessionById.get(event.properties.messageID) : undefined,
+    apply: (event, batch) => handleEvent(directory, event, childStores, routingIndex, activeDirectory, messageLoader, batch),
+  })
 }
 
 export function createForegroundRecoveryHandlers(
@@ -3566,6 +3533,12 @@ export function SyncProvider(props: {
       },
       isBooting: (directory) => bootingDirs.has(directory),
       isLoadingSessions: () => false,
+      isHistoryProtected: (directory, sessionID) => (
+        getSessionUIStoreIfInitialized()?.getState().currentSessionId === sessionID
+        || messageLoader.hasOptimistic({ directory, sessionID })
+        || messageLoader.getSnapshot({ directory, sessionID }).status === "loading"
+      ),
+      onHistoryEvict: (directory, sessionID) => messageLoader.invalidateSession({ directory, sessionID }),
     })
     for (const directory of getActiveDirectoryStoreKeys(childStores.children.keys(), activeDirectoryRef.current)) {
       const store = childStores.children.get(directory)
@@ -3861,6 +3834,9 @@ export function SyncProvider(props: {
       },
       onEvent: (directory, payload) => {
         handleEvent(directory, payload, childStores, routingIndex, activeDirectoryRef.current, messageLoader)
+      },
+      onBatch: (directory, events) => {
+        applySyncEventBatch(directory, events, childStores, routingIndex, activeDirectoryRef.current, messageLoader)
       },
       onManagedOrchestrationEvent: (payload) => {
         useManagedOrchestrationStore.getState().ingestEvent(payload)

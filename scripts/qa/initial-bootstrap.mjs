@@ -120,9 +120,9 @@ export async function reloadQaInitialBootstrap({ cdp, cell, directory, cellDeadl
   const phase = async name => { evidence.phases.push({ name, elapsedMs: now() - startedAt }); await record(evidence); };
   try {
     await phase('reload-started');
-    const documentTimeout = Math.min(30000, remaining());
+    const documentTimeout = remaining();
     await Promise.all([cdp.waitFor('Page.loadEventFired', documentTimeout),
-      bounded(cdp.send('Page.reload'), documentTimeout, 'reload')]);
+      bounded(cdp.send('Page.reload'), Math.min(30000, documentTimeout), 'reload')]);
     await bounded(cdp.send('Page.bringToFront'), Math.min(30000, remaining()), 'foreground');
     await phase('document-loaded');
     let previousSnapshot;

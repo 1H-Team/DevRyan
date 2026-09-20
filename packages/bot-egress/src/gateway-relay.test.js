@@ -30,8 +30,22 @@ const listen = async (server) => {
 const startGateway = async (handler) => {
   const received = [];
   const server = http.createServer(async (request, response) => {
+    const handleExpectedRelayReset = (error) => {
+      if (error?.code === 'ECONNRESET') return;
+      throw error;
+    };
+    // The relay deliberately resets both sides when a streamed response crosses
+    // its byte limit. The fixture server must consume that expected peer reset;
+    // every other socket error still fails the test.
+    request.on('error', handleExpectedRelayReset);
+    response.on('error', handleExpectedRelayReset);
     const chunks = [];
-    for await (const chunk of request) chunks.push(chunk);
+    try {
+      for await (const chunk of request) chunks.push(chunk);
+    } catch (error) {
+      if (error?.code === 'ECONNRESET') return;
+      throw error;
+    }
     received.push({
       method: request.method,
       url: request.url,

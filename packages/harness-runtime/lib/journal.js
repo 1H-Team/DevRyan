@@ -3,7 +3,8 @@ import { createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
-import { createGunzip, gunzipSync, gzipSync } from 'node:zlib';
+import { createGunzip, gunzip, gzip } from 'node:zlib';
+import { promisify } from 'node:util';
 
 import { writeFileAtomic } from './atomic-file.js';
 import { createJournalTrimmer, RUNTIME_KEY } from './journal-trim.js';
@@ -17,6 +18,8 @@ const DEFAULT_BLOB_THRESHOLD_BYTES = 256 * 1024;
 const DEFAULT_MAX_OPEN_WRITERS = 6;
 const MANIFEST_VERSION = 1;
 const METADATA_DEBOUNCE_MS = 250;
+const gzipAsync = promisify(gzip);
+const gunzipAsync = promisify(gunzip);
 
 const byteLength = (value) => Buffer.byteLength(value, 'utf8');
 const isLegacyClosedSegment = (name) => /^\d+-\d+\.ndjson$/.test(name);
@@ -440,7 +443,7 @@ export const createDiagnosticJournal = (options = {}) => {
     }
     const complete = raw.subarray(0, lastNewline + 1);
     const destination = source.replace(/\.ndjson\.open$/, '.ndjson.gz');
-    await writeFileAtomic(destination, gzipSync(complete), { fs: fsApi, now });
+    await writeFileAtomic(destination, await gzipAsync(complete), { fs: fsApi, now });
     await fsApi.rm(source, { force: true });
     return destination;
   };
@@ -488,6 +491,7 @@ export const createDiagnosticJournal = (options = {}) => {
   };
 
   const openBucket = async (bucket) => {
+    if (bucket.rotation) await bucket.rotation;
     bucket.lastUsed = ++accessSequence;
     if (bucket.handle) return;
     await evictHandleIfNeeded(bucket.key);
@@ -501,22 +505,28 @@ export const createDiagnosticJournal = (options = {}) => {
     bucket.openBytes = (await bucket.handle.stat()).size;
   };
 
-  const rotateBucket = async (bucket) => {
-    if (!bucket.openPath) return;
-    await closeHandle(bucket);
-    const oldBytes = bucket.openBytes;
-    const destination = await gzipOpenFile(bucket.openPath);
-    bucket.openPath = null;
-    bucket.openBytes = 0;
-    if (destination) {
-      const compressedBytes = (await fsApi.stat(destination)).size;
-      bucket.manifest.bytes += compressedBytes - oldBytes;
-    } else {
-      bucket.manifest.chunkCount = Math.max(0, bucket.manifest.chunkCount - 1);
-      bucket.manifest.bytes = Math.max(0, bucket.manifest.bytes - oldBytes);
-    }
-    bucket.dirty = true;
-    await flushMetadata();
+  const rotateBucket = (bucket) => {
+    if (bucket.rotation) return bucket.rotation;
+    if (!bucket.openPath) return Promise.resolve();
+    // Shared by flush/close and the serial writer. No writer may reopen the old
+    // segment while asynchronous compression is publishing its replacement.
+    bucket.rotation = (async () => {
+      await closeHandle(bucket);
+      const oldBytes = bucket.openBytes;
+      const destination = await gzipOpenFile(bucket.openPath);
+      bucket.openPath = null;
+      bucket.openBytes = 0;
+      if (destination) {
+        const compressedBytes = (await fsApi.stat(destination)).size;
+        bucket.manifest.bytes += compressedBytes - oldBytes;
+      } else {
+        bucket.manifest.chunkCount = Math.max(0, bucket.manifest.chunkCount - 1);
+        bucket.manifest.bytes = Math.max(0, bucket.manifest.bytes - oldBytes);
+      }
+      bucket.dirty = true;
+      await flushMetadata();
+    })().finally(() => { bucket.rotation = null; });
+    return bucket.rotation;
   };
 
   const writeBlob = async (bucket, value) => {
@@ -526,7 +536,9 @@ export const createDiagnosticJournal = (options = {}) => {
     const blobPath = path.join(blobDirectory, `${digest}.txt.gz`);
     await fsApi.mkdir(blobDirectory, { recursive: true, mode: 0o700 });
     let created = false;
-    await fsApi.writeFile(blobPath, gzipSync(Buffer.from(value, 'utf8')), {
+    // The bounded serial writer awaits compression before accepting its next
+    // record; moving CPU work to zlib does not introduce a new work backlog.
+    await fsApi.writeFile(blobPath, await gzipAsync(Buffer.from(value, 'utf8')), {
       mode: 0o600,
       flag: 'wx',
     }).then(() => {
@@ -887,7 +899,7 @@ export const createDiagnosticJournal = (options = {}) => {
       throw new Error('Diagnostic blob path escapes the journal');
     }
     const data = await fsApi.readFile(absolute);
-    return isNew ? gunzipSync(data).toString('utf8') : data.toString('utf8');
+    return isNew ? (await gunzipAsync(data)).toString('utf8') : data.toString('utf8');
   };
 
   const materializeBlobReferences = async (value) => {

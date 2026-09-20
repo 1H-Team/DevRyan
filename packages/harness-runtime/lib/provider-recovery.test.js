@@ -801,3 +801,16 @@ test('a queued watchdog from an old turn cannot stop a fresh provider step', asy
   expect(f.aborted).toHaveLength(0); expect(f.sent).toHaveLength(0);
   expect((await f.snapshot()).record).toMatchObject({ anchorID: 'msg_new', state: 'observing', reason: null });
 });
+
+test('unsupported provider failure is projected for reconnect without enabling replay', async () => {
+  const f = await fixture({ mode: 'observe' }, 'xai');
+  await f.fail();
+  const snapshot = await f.snapshot();
+  expect(snapshot.supported).toBe(false);
+  expect(snapshot.enforced).toBe(false);
+  expect(snapshot.record.failureObserved).toBe(true);
+  expect(f.sent).toHaveLength(0);
+  await f.controller.admit({ sessionID: identity.sessionID, directory: '/project', primary: true,
+    body: { messageID: 'msg_new', agent: 'orchestrator', model: { providerID: 'xai', modelID: 'grok-4.6' } } });
+  expect((await f.snapshot()).record.failureObserved).toBe(false);
+});

@@ -105,38 +105,8 @@ describe('harness observations and check bridge', () => {
   });
 });
 
-const { projectObservations, measureHeadroom } = __test();
-const observation = (id) => ({ info: { id, role: 'assistant', sessionID: 'ses_root' }, parts: [{ type: 'tool',
-  callID: `call_${id}`, tool: 'devryan_task', state: { status: 'completed', input: { action: 'wait' }, metadata: {},
-    output: JSON.stringify({ task: { taskId: 'dvr_task_a', rootSessionId: 'ses_root', status: 'failed' },
-      resultEnvelope: { envelopeId: 'dvr_result_a' }, resultHeader: { schemaVersion: 1, taskId: 'dvr_task_a',
-        envelopeId: 'dvr_result_a', outcome: { status: 'failed' }, criticalFailures: ['Unit tests failed'], verification: { status: 'failed' } } }) } }] });
-
+const { measureHeadroom } = __test();
 describe('deterministic input projection and measured headroom', () => {
-  it('masks only exact duplicate managed observations while preserving canonical history and call pairs', () => {
-    const messages = [observation('msg_1'), observation('msg_2')];
-    const original = structuredClone(messages);
-    const projected = projectObservations(messages);
-    expect(projected).not.toBe(messages);
-    expect(messages).toEqual(original);
-    expect(projected[1].parts[0].callID).toBe('call_msg_2');
-    expect(JSON.parse(projected[1].parts[0].state.output)).toMatchObject({ reference: { messageID: 'msg_1', callID: 'call_msg_1' } });
-    expect(projected[0]).toBe(messages[0]);
-    expect(projected[0].parts[0].state.output).toContain('Unit tests failed');
-    const extended = projectObservations([...messages, observation('msg_3')]);
-    expect(extended.slice(0, 2)).toEqual(projected);
-    expect(JSON.parse(extended[2].parts[0].state.output).reference).toEqual({ messageID: 'msg_1', callID: 'call_msg_1' });
-  });
-  it('preserves opaque provider material, attachments, changed evidence and separate roots', () => {
-    for (const variant of ['provider', 'attachment', 'changed', 'root']) {
-      const messages = [observation('msg_1'), observation('msg_2')];
-      if (variant === 'provider') messages[0].parts[0].providerMetadata = { opaque: 'signed-data' };
-      if (variant === 'attachment') messages[0].parts[0].state.attachments = [{ type: 'file' }];
-      if (variant === 'changed') messages[1].parts[0].state.output += ' ';
-      if (variant === 'root') messages[1].info.sessionID = 'ses_other';
-      expect(projectObservations(messages)).toBe(messages);
-    }
-  });
   it('uses current declared limits and last measured provider usage without treating bytes or totals as active input', () => {
     const model = { id: 'model', providerID: 'provider', limit: { input: 1000, context: 1200 }, variants: { small: { limit: { input: 800 } } } };
     const messages = [{ info: { id: 'msg_usage', role: 'assistant', providerID: 'provider', modelID: 'model',

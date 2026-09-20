@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { encodeEmbedding } from './embeddings.js';
+import { encodeEmbedding, decodeEmbedding } from './embeddings.js';
 import {
   botIndexNamespaces,
   createHybridSearch,
+  createVectorAccumulator,
+  cosineSimilarity,
   mergeHybridResults,
   rankVectorCandidates,
   toFtsQuery,
@@ -16,6 +18,20 @@ const row = (documentId, ordinal = 0) => ({
 });
 
 describe('Bot hybrid retrieval', () => {
+  test('bounded accumulation matches a full exact sort across batches and tied scores', () => {
+    const query = new Float32Array([1, 0]);
+    const candidates = Array.from({ length: 3200 }, (_, i) => ({ ...row(`doc-${i % 701}`, i),
+      namespace: i % 2 ? 'channel:c1' : 'bot:bot-1', embedding: encodeEmbedding([1 + (i % 17), 1 + (i % 11)]) }));
+    const reference = candidates.map(candidate => ({ ...candidate,
+      vectorScore: cosineSimilarity(query, decodeEmbedding(candidate.embedding)),
+    })).sort((a, b) => b.vectorScore - a.vectorScore || a.namespace.localeCompare(b.namespace)
+      || a.documentId.localeCompare(b.documentId) || a.ordinal - b.ordinal);
+    for (const limit of [1, 10, 50, 500]) {
+      const accumulator = createVectorAccumulator(query, limit);
+      for (const candidate of candidates) accumulator.add(candidate);
+      assert.deepEqual(accumulator.results(), reference.slice(0, limit));
+    }
+  });
   test('constructs only exact shared, private, and channel namespaces', () => {
     assert.deepEqual(botIndexNamespaces({ botId: 'b1', userId: 'u1', channelId: 'c1' }), [
       'bot:b1', 'bot:b1:user:u1', 'channel:c1',

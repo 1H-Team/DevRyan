@@ -5,6 +5,10 @@ Implements client-side sync primitives for session/event reconciliation and cach
 
 ## Design
 
+`history-cache-budget.ts` owns the renderer's shared 128 MiB estimated transcript budget. Child stores register deferred, identity-memoized accounting; `useSync.touch` updates LRU order. Busy/unfinished, active, loading, optimistic, pending-revert and unresolved-request histories are protected. Eviction invalidates loader coverage and drops idle session caches in one commit per directory; protected excess is reported rather than discarded.
+
+`event-batch.ts` owns event-specific draft preparation and contiguous busy-session text/reasoning batches. `event-pipeline.ts` hands an ordered batch to `applySyncEventBatch`; the production handler retains per-event bookkeeping. Only materialized text deltas share one parts-map clone and commit. Status, snapshots, permissions, terminal, unknown and recovery events form commit boundaries.
+
 `user-message-history.ts` owns the composer history selector and external-store snapshot hook. Its cache follows the current directory store/session, observes user part references and the effective local/server revert boundary, and preserves the history array during assistant-only updates.
 
 `session-creation.ts` owns captured creation attempts, the overall deadline,

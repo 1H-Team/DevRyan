@@ -1,5 +1,11 @@
 # Sync architecture, event handling & store update rules
 
+## Resource bounds and batch commits
+
+`ChildStoreManager.historyBudget` caps estimated retained transcript bytes across all directory stores at 128 MiB, alongside the existing count/TTL caps. Immutable record sizes are weakly memoized; dirty directories are measured at most once per 500 ms accounting interval. Estimates include UTF-16 text and structural overhead, not browser RSS. Active, loading, optimistic, unfinished, busy, unresolved-question/permission and pending-revert sessions may exceed this soft cap. Evicted idle histories invalidate loader coverage and reload normally; disposing a directory releases its accounting and subscription.
+
+The pipeline passes ordered batches to `event-batch.ts`. Contiguous materialized text/reasoning deltas for busy sessions reuse one private parts-map clone and publish once. Each still runs the production event handler's diagnostics and activity bookkeeping. All other events flush the private state first, preserving status, permission, notification, cancellation and recovery ordering. Previously published part arrays/records remain immutable.
+
 ## Composer history snapshot
 
 `useUserMessageHistory` binds `user-message-history.ts` to the selected directory's child store. The selector caches the session message array, relevant user-part arrays, and effective revert marker. Assistant part updates do not rebuild the history, and unchanged user text returns the same array even if user metadata changes. Each hook/store/session owns its cache; there is no persisted history or global selector store.
@@ -877,3 +883,5 @@ selection deletion. Archive preserves them with the other reversible choices.
 selection and directory stores. Native button events exercise delayed parts,
 session switching/remounts, explicit Default, model changes and the actual
 optimistic dispatch boundary with controlled transport promises.
+
+Session error notifications persist only bounded classifications and safe display text alongside completion read state. Raw exception stacks and provider bodies are never persisted. Viewing a session does not resolve its failure notice; only a newer authoritative successful completion resolves captured older failures.

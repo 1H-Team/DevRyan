@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createPrimaryRecoveryHost, createPrimaryRecoveryManagedAdapter } from '@openchamber/harness-runtime';
 import { createManagedTaskScheduler } from '@openchamber/orchestration-runtime';
+import { __test as duplicateTest } from './devryan-harness-context.mjs';
 import { createCompactResultHeader } from '@openchamber/orchestration-runtime';
 
 vi.mock('@opencode-ai/plugin', () => {
@@ -458,7 +459,13 @@ describe('approved-plan implementation startup', () => {
   it.each(['compacted', 'reuse-marker', 'failed'])('does not mistake %s skill output for full active content', async (kind) => {
     const f = await setup({ loaded: true, statement: true });
     if (kind === 'compacted') f.skillPart.state.time.compacted = 123;
-    if (kind === 'reuse-marker') f.skillPart.state.output = '<devryan_skill_reuse>Existing content</devryan_skill_reuse>';
+    if (kind === 'reuse-marker') {
+      const full = { ...f.skillPart, state: { ...f.skillPart.state, output: f.skillPart.state.output.repeat(50) } };
+      const messages = ['msg_full', 'msg_repeat'].map((id, index) => ({ info: { id, role: 'assistant', sessionID: 'ses_root' },
+        parts: [{ ...full, callID: `call_${index}` }] }));
+      expect(duplicateTest().projectObservations(messages).appliedReductions).toBe(1);
+      f.skillPart.state.output = messages[1].parts[0].state.output;
+    }
     if (kind === 'failed') f.skillPart.state.status = 'error';
     await expect(f.check()).rejects.toMatchObject({ details: { skillRequired: true, statementRequired: false } });
   });

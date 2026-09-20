@@ -761,7 +761,7 @@ export interface PrimaryRecoverySnapshot {
     collectionIssue?: { taskId: string; code: string } | null;
     state: PrimaryRecoveryState; revision: number; attemptCount: number; maxAttempts: 1;
     readOnly: boolean; providerID: string; modelID: string; agent: string; variant: string | null;
-    reason: string | null; updatedAt: number; failureKind: string | null;
+    reason: string | null; updatedAt: number; failureKind: string | null; failureObserved?: boolean;
     progress: { policy: 'report-only'; lastUsefulAt: number | null; counts: Partial<Record<ObjectiveProgressKind, number>>; relevance: string };
   };
 }

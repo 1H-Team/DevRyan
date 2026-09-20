@@ -35,6 +35,25 @@ test('cold initialization can exceed ordinary reload30s while requiring real rea
   assert.ok(snapshots.some(value => value.lastSnapshot?.initialized === false && value.outcome === 'pending'));
 });
 
+test('cold document loading shares the bootstrap budget and respects a shorter cell deadline', async () => {
+  for (const [cellDeadline, expectedTimeout] of [[420000, 180000], [40000, 40000]]) {
+    let clock = 0;
+    const cdp = cdpFor(() => ready);
+    cdp.waitFor = async (event, timeoutMs) => {
+      assert.equal(event, 'Page.loadEventFired');
+      assert.equal(timeoutMs, expectedTimeout);
+      clock += 35000;
+      return {};
+    };
+    const result = await reloadQaInitialBootstrap({ cdp, cell, directory: '/owned/project', cellDeadline,
+      now: () => clock, fetchImpl: fetchCatalog });
+    assert.equal(result.outcome, 'passed');
+    assert.equal(result.elapsedMs, 35000);
+    assert.equal(result.phases.find(phase => phase.name === 'document-loaded').elapsedMs, 35000);
+    assert.equal(cdp.calls.filter(method => method === 'Page.reload').length, 1);
+  }
+});
+
 test('every visual and catalog condition must hold instead of accepting health or a textarea alone', () => {
   assert.equal(initialBootstrapIsReady(ready), true);
   for (const [key, value] of Object.entries({ initialized: false, providersLoadStatus: 'loading', agentsLoadStatus: 'error',

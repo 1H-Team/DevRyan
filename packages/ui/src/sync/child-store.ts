@@ -3,6 +3,7 @@ import type { DirState, State } from "./types"
 import { INITIAL_STATE, MAX_DIR_STORES, DIR_IDLE_TTL_MS } from "./types"
 import { pickDirectoriesToEvict, canDisposeDirectory, hasPendingBlockingRequests } from "./eviction"
 import { readDirCache, persistVcs, persistProjectMeta, persistIcon, persistSessions } from "./persist-cache"
+import { HistoryCacheBudget } from "./history-cache-budget"
 
 export type DirectoryStore = State & {
   /** Apply a partial state update */
@@ -99,6 +100,17 @@ export class ChildStoreManager {
   private onDispose?: (directory: string, snapshot: State) => void
   private isBooting?: (directory: string) => boolean
   private isLoadingSessions?: (directory: string) => boolean
+  private isHistoryProtected?: (directory: string, sessionID: string) => boolean
+  private onHistoryEvict?: (directory: string, sessionID: string) => void
+  readonly historyBudget: HistoryCacheBudget
+
+  constructor(options: { historyByteLimit?: number } = {}) {
+    this.historyBudget = new HistoryCacheBudget({
+      maxBytes: options.historyByteLimit,
+      isProtected: (directory, sessionID) => this.isHistoryProtected?.(directory, sessionID) ?? false,
+      onEvict: (directory, sessionID) => this.onHistoryEvict?.(directory, sessionID),
+    })
+  }
 
   private notifyRegistrySubscribers() {
     for (const subscriber of this.registrySubscribers) {
@@ -111,11 +123,15 @@ export class ChildStoreManager {
     onDispose?: (directory: string, snapshot: State) => void
     isBooting?: (directory: string) => boolean
     isLoadingSessions?: (directory: string) => boolean
+    isHistoryProtected?: (directory: string, sessionID: string) => boolean
+    onHistoryEvict?: (directory: string, sessionID: string) => void
   }) {
     this.onBootstrap = callbacks.onBootstrap
     this.onDispose = callbacks.onDispose
     this.isBooting = callbacks.isBooting
     this.isLoadingSessions = callbacks.isLoadingSessions
+    this.isHistoryProtected = callbacks.isHistoryProtected
+    this.onHistoryEvict = callbacks.onHistoryEvict
   }
 
   mark(directory: string) {
@@ -152,6 +168,7 @@ export class ChildStoreManager {
     if (!store) {
       store = createDirectoryStore(directory)
       this.children.set(directory, store)
+      this.historyBudget.track(directory, store)
       this.notifyRegistrySubscribers()
     }
 
@@ -198,6 +215,7 @@ export class ChildStoreManager {
     const disposers = [...(this.disposers.get(directory) ?? [])]
     this.disposers.delete(directory)
     this.children.delete(directory)
+    this.historyBudget.removeDirectory(directory)
     this.lifecycle.delete(directory)
     this.pins.delete(directory)
     for (const dispose of disposers) {
@@ -283,6 +301,7 @@ export class ChildStoreManager {
     this.lifecycle.clear()
     this.pins.clear()
     this.disposers.clear()
+    this.historyBudget.dispose()
   }
 
   subscribeRegistry(listener: () => void): () => void {

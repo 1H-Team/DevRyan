@@ -40,6 +40,26 @@ const withStore = async (operation, options = {}) => {
 };
 
 describe('local rebuildable Bot index store', () => {
+  test('keyset pages preserve exact order and scope without repeats or omissions', async () => {
+    await withStore(async store => {
+      store.rebuild(Array.from({ length: 25 }, (_, i) => document({
+        namespace: i % 3 === 0 ? 'channel:c1' : 'bot:b1', documentId: `d${i}`,
+      })).concat(document({ namespace: 'bot:foreign', documentId: 'hidden' })));
+      const namespaces = ['bot:b1', 'channel:c1'];
+      const reference = store.vectorCandidates(namespaces, 50);
+      let cursor = null; const collected = [];
+      for (;;) {
+        const page = store.vectorCandidatesAfter(namespaces, 4, cursor);
+        if (!page.length) break;
+        collected.push(...page);
+        const last = page.at(-1);
+        cursor = { namespace: last.namespace, documentId: last.documentId, ordinal: last.ordinal };
+      }
+      assert.deepEqual(collected, reference);
+      assert.equal(collected.length, 25);
+      assert.throws(() => store.vectorCandidatesAfter(namespaces, 4, { ...cursor, namespace: 'bot:foreign' }));
+    });
+  });
   test('starts rebuild-required and persists a deterministic rebuild', async () => {
     await withStore(async (store, databasePath) => {
       assert.equal(store.status().state, 'rebuild_required');

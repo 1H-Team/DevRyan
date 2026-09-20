@@ -90,10 +90,10 @@ export const createTunnelRoutesRuntime = (dependencies) => {
     }
 
     if (provider === TUNNEL_PROVIDER_CLOUDFLARE && mode === TUNNEL_MODE_MANAGED_REMOTE) {
-      if (!getManagedAccountLoginAvailable() && !tunnelAuthController.hasOwner?.()) {
+      if (!getManagedAccountLoginAvailable()) {
         throw new TunnelServiceError(
           'managed_account_auth_required',
-          'Managed Remote requires Supabase-backed individual DevRyan accounts.'
+          'Configure and enable Supabase-backed DevRyan account sign-in before starting Managed Remote.'
         );
       }
       if (!isValidManagedRemoteOriginPort(originPort)) {
@@ -442,7 +442,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
           });
         }
 
-        const usesDirectLogin = activeNormalizedMode === TUNNEL_MODE_MANAGED_REMOTE && (getManagedAccountLoginAvailable() || !tunnelAuthController.hasOwner);
+        const usesDirectLogin = activeNormalizedMode === TUNNEL_MODE_MANAGED_REMOTE;
         const bootstrapStatus = usesDirectLogin
           ? { hasBootstrapToken: false, bootstrapExpiresAt: null }
           : tunnelAuthController.getBootstrapStatus();
@@ -596,7 +596,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
         const previousProvider = tunnelService.resolveActiveProvider();
         const previousUrl = tunnelService.getPublicUrl();
         const selectedBotIds = _req.body?.botIds;
-        const usesDirectLogin = mode === TUNNEL_MODE_MANAGED_REMOTE && (getManagedAccountLoginAvailable() || !tunnelAuthController.hasOwner);
+        const usesDirectLogin = mode === TUNNEL_MODE_MANAGED_REMOTE;
         if (!usesDirectLogin && selectedBotIds !== undefined && (!Array.isArray(selectedBotIds) || selectedBotIds.length)) {
           await tunnelAuthController.validateSelection?.(selectedBotIds);
         }

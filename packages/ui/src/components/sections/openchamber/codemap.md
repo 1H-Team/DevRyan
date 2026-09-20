@@ -36,6 +36,8 @@ server instead of asking users to update Cloudflare when DevRyan's active port c
 Remote exposes the stable public hostname through normal DevRyan account login and does not render
 one-time connect-link TTL, QR, or session controls. It requires a managed-account principal;
 local-admin sessions see an account-setup callout and cannot start or restart Managed Remote.
+Open custom domain and Copy URL use the stable hostname once server readiness is true;
+managed startup never submits Bot selections. Explicit Bot-link issuance is separate from startup.
 
 `useGitHubDeviceFlow.ts` owns the reusable OAuth start/poll/cancel flow and
 `GitHubDeviceFlow.tsx` renders its shared verification panel for local and

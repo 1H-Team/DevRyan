@@ -812,6 +812,12 @@ export const createLoopbackOpenCodeFixture = async ({ directory, agentVariant, t
       }
       emitStatus(sessionID, { type: status });
     },
+    replaySessionFailure: (sessionID, code = 'local_execution_timeout') => {
+      requireSession(sessionID);
+      if (!['local_execution_timeout', 'session_timeout'].includes(code)) throw new Error('Invalid fixture failure');
+      emitStatus(sessionID, { type: 'idle' });
+      sendEvent(directory, { type: 'session.error', properties: { sessionID, error: { name: 'UnknownError', data: { message: code } } } });
+    },
     appendCompactionBoundary,
     configureNextPrompt,
     configureNextCreatedSessionPrompt: (options) => {

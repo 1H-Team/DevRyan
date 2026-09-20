@@ -448,6 +448,29 @@ export function createIndexStore({
       return statement.all(ftsQuery, ...exact, limit).map(rowToResult);
     },
 
+    vectorCandidatesAfter(namespaces, limit, cursor = null) {
+      const exact = namespaces.map(validateIndexNamespace);
+      if (exact.length === 0 || exact.length > 32
+        || !Number.isInteger(limit) || limit < 1 || limit > 5_000
+        || (cursor !== null && (!exact.includes(cursor.namespace)
+          || typeof cursor.documentId !== 'string' || !cursor.documentId
+          || !Number.isSafeInteger(cursor.ordinal) || cursor.ordinal < 0))) {
+        fail('Vector candidate cursor is invalid');
+      }
+      const placeholders = exact.map(() => '?').join(', ');
+      const statement = database.prepare(`
+        SELECT c.namespace, c.document_id, c.ordinal, c.text, c.embedding,
+          d.version, d.metadata_json
+        FROM chunks c
+        JOIN documents d ON d.namespace = c.namespace AND d.document_id = c.document_id
+        WHERE c.namespace IN (${placeholders})
+          ${cursor === null ? '' : 'AND (c.namespace, c.document_id, c.ordinal) > (?, ?, ?)'}
+        ORDER BY c.namespace ASC, c.document_id ASC, c.ordinal ASC
+        LIMIT ?
+      `);
+      return statement.all(...exact, ...(cursor === null ? [] : [cursor.namespace, cursor.documentId, cursor.ordinal]), limit).map(rowToResult);
+    },
+
     vectorCandidates(namespaces, limit, offset = 0) {
       const exact = namespaces.map(validateIndexNamespace);
       if (exact.length === 0 || exact.length > 32

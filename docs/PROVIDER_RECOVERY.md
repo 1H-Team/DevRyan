@@ -335,3 +335,5 @@ an API-error tail, host restart, user recovery, competing watchers, lost HTTP
 acknowledgement, result collection and acknowledgement. The disposable
 `tests/visual-provider-recovery/` fixture also exercises the retained-result
 presentation without provider access.
+
+The version-1 public record also exposes optional `failureObserved`. It reports an unresolved observed error in observing/needs-attention state independently of automatic-recovery support. The shared chat uses it as a sanitized fallback after reconnect when the original notification was missed; it does not establish provider blame, settlement, or permission to retry.

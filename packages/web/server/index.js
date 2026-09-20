@@ -106,6 +106,7 @@ import { createProjectPrewarmRuntime } from './lib/opencode/project-prewarm-runt
 import { createXaiToolCatalogRuntime } from './lib/opencode/xai-tool-catalog-runtime.js';
 import { createStandardSessionTitleRuntime } from './lib/opencode/standard-session-title-runtime.js';
 import { createHarnessPreflight, registerHarnessPreflightRoute } from './lib/opencode/harness-preflight.js';
+import { resolveDuplicateOutputPolicy } from './lib/opencode/harness-duplicate-qualification.js';
 import { createHarnessRunFingerprintReader } from './lib/opencode/harness-run-fingerprint.js';
 import { inspectClaudeRuntimeCompatibility } from './lib/opencode/claude-runtime-compatibility.js';
 import { resolveApprovedSkills } from './lib/opencode/skill-policy.js';
@@ -1410,6 +1411,11 @@ const primaryRecoveryRuntime = createWebPrimaryRecoveryRuntime({
 });
 harnessRuntime.setPrimaryRecoveryRuntime(primaryRecoveryRuntime);
 const harnessFingerprintReader = createHarnessRunFingerprintReader({
+  getDuplicateProviderRoute: (providerID) => providerID === 'openai' && openAiOAuthCoordinator.usesOAuth()
+    ? 'openai-chatgpt-managed-responses-v1' : null,
+  getRuntimeBinary: () => useWslForOpencode ? null : capturedExecutions
+    ? capturedExecutionEnvironment.DEVRYAN_OPENCODE_ARTIFACT : resolvedOpencodeBinary,
+  isManaged: () => !(isExternalOpenCode || ENV_SKIP_OPENCODE_START || ENV_CONFIGURED_OPENCODE_HOST),
   buildOpenCodeUrl, getOpenCodeAuthHeaders, fetchImpl: fetch,
   getAgentSource: (agent, directory) => getAgentSources(agent, directory).md,
   recordDiagnostic: (entry) => harnessRuntime.record(entry),
@@ -1442,7 +1448,7 @@ const sessionExecutionHost = createSessionExecutionHost({ dataDirectory: OPENCHA
   getLauncher: () => executionArtifacts().launcher, buildOpenCodeUrl, getOpenCodeAuthHeaders,
   recordReceipt: (input) => sessionChangeHost.recordReceipt(input),
   stopCursor: (input) => cursorSdkRuntime.abortAndWait(input.sessionID),
-  onDiagnostic: (event) => harnessRuntime.record({ type: 'lifecycle', event: 'session_revert',
+  onDiagnostic: (event) => harnessRuntime.record({ type: 'lifecycle', event: event.event === 'session_execution' ? 'session_execution' : 'session_revert',
     sessionID: event.sessionID, payload: event }),
 });
 observeCommandDeadline = (payload) => commandDeadlineRuntime.observe(payload);
@@ -2160,9 +2166,11 @@ async function main(options = {}) {
       ?? resolveLocalAgentBackupExecution({ directory: params.directory, agent: params.agent })
     ),
     resolveProviderReset: (params) => providerResetProbe.resolveProviderReset(params),
+    harnessPolicies: { duplicateOutputs: resolveDuplicateOutputPolicy(process.env) },
     auxiliaryRpcHandlers: {
       context_mode_diagnostic: (params) => recordContextModeDiagnostic(params, harnessRuntime.record),
       primary_recovery: (params) => primaryRecoveryRuntime.plugin(params),
+      harness_duplicate_qualification: (params) => harnessFingerprintReader.qualifyDuplicates(params),
       harness_run: (params) => harnessFingerprintReader.capture(params),
       harness_context_observation: (params) => harnessFingerprintReader.observeContext(params),
       harness_context: (params) => harnessTaskContext.handleRpc(params),

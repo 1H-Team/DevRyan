@@ -86,6 +86,39 @@ const tightCaps = {
 };
 
 describe('managed orchestration ledger compaction', () => {
+  test('byte accounting matches canonical JSON across escaping, Unicode and complete eviction', () => {
+    const tasks = Array.from({ length: 80 }, (_, index) => terminal(index + 1, {
+      prompt: `quoted \"\\\n 🦊 漢字 ${index}`.repeat(20),
+    }));
+    const input = state(tasks, Object.fromEntries(tasks.map(entry => [entry.taskId, acknowledged()])));
+    for (const maxBytes of [0, 48, 2000, 15000, 30000, Number.POSITIVE_INFINITY]) {
+      const result = compactManagedOrchestrationState(input, { now: 100, maxAgeMs: Infinity, maxBytes });
+      expect(result.serializedBytes).toBe(Buffer.byteLength(JSON.stringify(result.state), 'utf8'));
+      expect(result.overLimit).toBe(result.serializedBytes > maxBytes);
+      expect(input.tasks).toHaveLength(80);
+    }
+  });
+
+  test('byte-pressure eviction serializes each record once rather than each remaining ledger', () => {
+    const tasks = Array.from({ length: 500 }, (_, index) => terminal(index + 1, { prompt: 'x'.repeat(1000) }));
+    const input = state(tasks, Object.fromEntries(tasks.map(entry => [entry.taskId, acknowledged()])));
+    const limit = Math.floor(Buffer.byteLength(JSON.stringify(input), 'utf8') / 2);
+    const stringify = JSON.stringify;
+    let encodedBytes = 0;
+    let result;
+    try {
+      JSON.stringify = function(value, ...options) {
+        const text = stringify(value, ...options);
+        encodedBytes += Buffer.byteLength(text, 'utf8');
+        return text;
+      };
+      result = compactManagedOrchestrationState(input, { now: 600, maxAgeMs: Infinity, maxBytes: limit, assumeOwnedInput: true });
+    } finally { JSON.stringify = stringify; }
+    expect(result.removedTaskIds.length).toBeGreaterThan(200);
+    expect(encodedBytes).toBeGreaterThan(limit);
+    expect(encodedBytes).toBeLessThanOrEqual(Buffer.byteLength(JSON.stringify(input), 'utf8'));
+    expect(result.overLimit).toBe(false);
+  });
   test('exports the approved production bounds', () => {
     expect(DEFAULT_MANAGED_TERMINAL_MAX_RECORDS).toBe(2_000);
     expect(DEFAULT_MANAGED_TERMINAL_MAX_AGE_MS).toBe(90 * 24 * 60 * 60 * 1_000);

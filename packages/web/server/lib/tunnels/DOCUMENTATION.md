@@ -56,16 +56,23 @@ the OpenCode bootstrap before launching a configured connector. An already-conne
 connector remains visible during a later OpenCode restart, but `runtimeReady` and `connectReady`
 become false and clients must show the stable hostname as unavailable until readiness returns.
 Start and status responses expose both booleans. For managed-remote mode, `connectReady` requires a
-ready runtime, a non-degraded connector, and either configured managed-account login or
-a locally issued Bot workspace link. Starting a connector without selecting Bots is
-allowed, but does not issue a link or grant access.
+ready runtime, a non-degraded connector, and configured managed-account login. Managed-remote startup never issues a Bot link
+and rejects missing account authentication before persisting configuration or launching
+the connector, even when a local owner is enrolled.
 
 ## Link routing contract
 
-With Supabase enabled, managed-remote tunnels retain individual account login.
-With Supabase Off or absent, an authenticated local owner can start the connector
-and issue links for selected Bot workspaces. A database outage never changes the
-startup authentication policy.
+Managed-remote tunnels require Supabase-backed individual account login and open
+the stable public hostname directly. With Supabase Off or absent, setup must be
+completed locally before managed-remote startup or automatic resume. Other tunnel
+modes retain locally issued links for selected Bot workspaces. Explicit Bot sharing
+remains available through the separate links API. A database outage never changes
+the startup authentication policy.
+
+On an active managed hostname, stale tunnel cookies are cleared before normal
+account authentication. Valid Bot sessions retain their restricted permissions;
+clearing a stale cookie never authenticates a visitor. WebSocket upgrades follow
+the same distinction and still require downstream account authentication.
 
 `access-control.js` is the production authority, initialized before private native
 routes, the disconnected boundary, proxies, or WebSocket handlers. Direct-local

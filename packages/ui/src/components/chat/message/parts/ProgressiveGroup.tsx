@@ -305,7 +305,11 @@ const GroupedToolActivityRowInner: React.FC<GroupedToolActivityRowProps> = ({
     const summaryCount = React.useMemo(() => {
         return getToolActivityGroupSummaryCount(groupInfo.kind, activities, getActivityToolPart);
     }, [activities, groupInfo.kind]);
-    const label = t(getToolActivityGroupLabelKey(groupInfo, summaryCount), { count: summaryCount });
+    const failedCount = activities.filter((activity) => ['error', 'failed', 'timeout', 'timedout', 'aborted', 'cancelled', 'canceled']
+        .includes(getToolStateStatus(getActivityToolPart(activity)) ?? '')).length;
+    const label = failedCount > 0
+        ? t(failedCount === 1 ? 'chat.toolGroup.failedToolSingle' : 'chat.toolGroup.failedToolPlural', { count: failedCount })
+        : t(getToolActivityGroupLabelKey(groupInfo, summaryCount), { count: summaryCount });
     const description = React.useMemo(() => {
         return getToolActivityGroupDescription(groupInfo.kind, activities.map(getActivityToolPart));
     }, [activities, groupInfo.kind]);
@@ -445,6 +449,7 @@ const GroupedToolActivityRowInner: React.FC<GroupedToolActivityRowProps> = ({
     }, [activities, animateTailText, expandedTools, groupInfo.representativeToolName, isMobile, onContentChange, onShowPopup, onToggleTool, syntaxTheme]);
 
     const expandedDetails = React.useMemo(() => {
+        if (failedCount > 0) return defaultActivityRows;
         if (groupInfo.kind === 'patch' && patchFiles.length > 0) {
             return <PatchFilesList files={patchFiles} currentDirectory={currentDirectory} onOpenFile={handleOpenPatchFile} />;
         }
@@ -458,7 +463,7 @@ const GroupedToolActivityRowInner: React.FC<GroupedToolActivityRowProps> = ({
             return <ToolUrlList urls={fetchedUrlEntries} />;
         }
         return defaultActivityRows;
-    }, [currentDirectory, defaultActivityRows, fetchedUrlEntries, groupInfo.kind, handleOpenPatchFile, handleOpenPath, patchFiles, readFileEntries, searchFileEntries]);
+    }, [currentDirectory, defaultActivityRows, failedCount, fetchedUrlEntries, groupInfo.kind, handleOpenPatchFile, handleOpenPath, patchFiles, readFileEntries, searchFileEntries]);
 
     const content = groupInfo.kind === 'browser' ? (
         <StaticToolRow

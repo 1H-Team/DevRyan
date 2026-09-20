@@ -2,6 +2,8 @@
 
 ## Responsibility
 
+`compact-orchestrator.mjs` generates an unpromoted role candidate and discoverable first-party native skill under an explicit repository-cache path. Templates and duplicated workflow detail load on demand; persistent permissions, routing, recovery and startup admission remain unchanged. Install the guidance in both isolated trial arms so catalog identity is constant, vary only the role, and use the existing `pairing.factor: "role"` runner. Never install the candidate as a default before native acceptance and paired outcome checks.
+
 Non-interactive evaluation of pinned agents through an already-running DevRyan loopback API, with deterministic fixture/test/tool/task grading, bounded read-only Oracle review cases, and optional macOS Electron process-tree sampling. The harness does not start providers, discover credentials, or change production lifecycle behavior.
 
 ## Entrypoints and modules

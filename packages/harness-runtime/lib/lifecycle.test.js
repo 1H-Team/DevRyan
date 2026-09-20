@@ -125,3 +125,40 @@ describe('turn lifecycle tracker', () => {
    expect(events.filter((event) => event.type === 'turn_failed')).toHaveLength(0);
    expect(tracker.getActiveTurn('ses_1')?.assistantMessageID).toBe('msg_new');
  });
+
+test('session error immediately following idle corrects that turn once', () => {
+  const events = [];
+  const tracker = createLifecycleTracker({ clock: () => 1000, onTurnEvent: (event) => events.push(event) });
+  tracker.recordPromptAccepted({ sessionID: 's', messageID: 'u' });
+  tracker.processEvent({ type: 'session.idle', properties: { sessionID: 's' } });
+  const error = { type: 'session.error', properties: { sessionID: 's', error: { name: 'UnknownError' } } };
+  tracker.processEvent(error); tracker.processEvent(error);
+  expect(events.filter((event) => event.type === 'turn_failed').map((event) => event.userMessageID)).toEqual(['u']);
+});
+
+test('uncorrelated error after a previous idle cannot fail a newer prompt', () => {
+  const events = [];
+  const tracker = createLifecycleTracker({ clock: () => 1000, onTurnEvent: (event) => events.push(event) });
+  tracker.recordPromptAccepted({ sessionID: 's', messageID: 'old' });
+  tracker.processEvent({ type: 'session.idle', properties: { sessionID: 's' } });
+  tracker.recordPromptAccepted({ sessionID: 's', messageID: 'new' });
+  tracker.processEvent({ type: 'session.error', properties: { sessionID: 's', error: { name: 'UnknownError' } } });
+  expect(events.filter((event) => event.type === 'turn_failed')).toHaveLength(0);
+  tracker.processEvent({ type: 'session.error', properties: { sessionID: 's', messageID: 'old', error: { name: 'UnknownError' } } });
+  expect(events.filter((event) => event.type === 'turn_failed').map((event) => event.userMessageID)).toEqual(['old']);
+});
+
+test('ambiguous errors cannot rewrite a newer completed turn or cascade through older completions', () => {
+  const events = [];
+  const tracker = createLifecycleTracker({ clock: () => 1000, onTurnEvent: (event) => events.push(event) });
+  for (const messageID of ['old', 'new']) {
+    tracker.recordPromptAccepted({ sessionID: 's', messageID });
+    tracker.processEvent({ type: 'session.idle', properties: { sessionID: 's' } });
+  }
+  const error = { type: 'session.error', properties: { sessionID: 's', error: { name: 'UnknownError' } } };
+  tracker.processEvent(error);
+  expect(events.filter((event) => event.type === 'turn_failed')).toHaveLength(0);
+  tracker.processEvent({ ...error, properties: { ...error.properties, messageID: 'old' } });
+  tracker.processEvent(error);
+  expect(events.filter((event) => event.type === 'turn_failed').map((event) => event.userMessageID)).toEqual(['old']);
+});

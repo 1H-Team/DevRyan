@@ -6,6 +6,8 @@ Only the Electron-owned web host can reach it; reasoning containers cannot.
 
 ## Entry points
 
+- `src/search.js` uses a bounded worst-first top-k heap and scores each vector once across scan batches. `src/index-store.js` supplies namespace-scoped `(namespace, document_id, ordinal)` keyset iteration. The original offset method remains compatible with injected stores; final cosine scores, locale tie-breaking and hybrid fusion are unchanged.
+
 - `src/server.js` owns the authenticated host API, mutation serialization, and
   plaintext-to-chunk/embedding pipeline.
 - `Dockerfile` bakes the exact Transformers.js model cache, its integrity

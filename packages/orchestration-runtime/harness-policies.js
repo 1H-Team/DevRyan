@@ -6,6 +6,7 @@ export const HARNESS_POLICY_ENV = Object.freeze({
   waitAny: 'DEVRYAN_MANAGED_WAIT_ANY',
   compactResults: 'DEVRYAN_COMPACT_MANAGED_RESULTS',
   contextProjection: 'DEVRYAN_TASK_CONTEXT_PROJECTION',
+  duplicateOutputs: 'DEVRYAN_DUPLICATE_OUTPUTS',
 });
 
 export const resolveHarnessPolicies = (environment = {}) => Object.fromEntries(
