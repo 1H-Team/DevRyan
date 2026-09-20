@@ -8,7 +8,7 @@ import { serveMeridianHttp } from './meridian-http-server.js';
 import { MERIDIAN_HANDOFF_EDITS, MERIDIAN_HANDOFF_HELPER, MERIDIAN_PREFIX_EDITS, stripMeridianHandoffPatch } from './meridian-passthrough-hotfix.js';
 
 const roots = [];
-const source = `async function start() {\n${MERIDIAN_HTTP_SERVER_ORIGINAL}\n    port: finalConfig.port\n  }, () => {\n  });\n  const idleMs = finalConfig.idleTimeoutSeconds * 1000;\n}\n${MERIDIAN_HANDOFF_EDITS.map(([before]) => before).join('\n')}`;
+const source = `      pathToClaudeCodeExecutable: claudeExecutable,\nasync function start() {\n${MERIDIAN_HTTP_SERVER_ORIGINAL}\n    port: finalConfig.port\n  }, () => {\n  });\n  const idleMs = finalConfig.idleTimeoutSeconds * 1000;\n}\n${MERIDIAN_HANDOFF_EDITS.map(([before]) => before).join('\n')}`;
 const sha256 = text => crypto.createHash('sha256').update(text).digest('hex');
 const fixture = (version = '1.62.6') => {
   const cache = path.resolve(import.meta.dirname, '../../../../../.cache/qa');
@@ -136,7 +136,7 @@ describe('Meridian upgrade source gates', () => {
     const review = MERIDIAN_REVIEWED_PATCHES['1.68.0'];
     const { root, dist } = fixture('1.68.0');
     const upstreamFork = '...isUndo || forkSession || resumeSessionId && forkSessionId || passthrough && resumeSessionAtUuid ? { forkSession: true } : {},';
-    const candidateSource = `async function start() {\n${MERIDIAN_HTTP_SERVER_ORIGINAL}\n    port: finalConfig.port\n  }, () => {\n  });\n  const idleMs = finalConfig.idleTimeoutSeconds * 1000;\n}\n${review.edits.map(([before]) => before).join('\n')}\n${upstreamFork}`;
+    const candidateSource = `      pathToClaudeCodeExecutable: claudeExecutable,\nasync function start() {\n${MERIDIAN_HTTP_SERVER_ORIGINAL}\n    port: finalConfig.port\n  }, () => {\n  });\n  const idleMs = finalConfig.idleTimeoutSeconds * 1000;\n}\n${review.edits.map(([before]) => before).join('\n')}\n${upstreamFork}`;
     const entry = path.join(dist, review.entry);
     fs.writeFileSync(entry, candidateSource);
     const options = { configDirectory: root, expectedOriginalSha256: sha256(candidateSource) };

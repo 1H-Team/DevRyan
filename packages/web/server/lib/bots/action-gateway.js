@@ -1310,6 +1310,7 @@ export function createBotActionGateway({
       });
       if (!row) fail('Bot action was not found', 'bot_action_not_found', 404);
       const { membership } = await authorization.requireActiveMembership(principal, row.bot_id);
+      if (principal.scope === 'tunnel-bot') await authorization.requireTunnelRunRead(principal, row.run_id);
       if (row.initiated_by !== principal.id && !['operator', 'manager'].includes(membership.role)) {
         fail('Bot action access is forbidden', 'bot_action_forbidden', 403);
       }

@@ -1,5 +1,6 @@
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { projectUsageObservation, runtimeUsageObservation } from '../../shared-runtime/lib/usage-observation.js';
 
 const REDACTED = '[REDACTED]';
 
@@ -29,7 +30,7 @@ const RECORD_FIELDS = Object.freeze({
 const NESTED_FIELDS = new Set([
   'type', 'properties', 'payload', 'actor', 'info', 'part', 'status', 'state', 'time',
   'id', 'helperSessionID', 'sessionID', 'sessionId', 'messageID', 'messageId', 'parentID', 'parentId',
-  'requestID', 'requestId',
+  'requestID', 'requestId', 'transactionID', 'errorID',
   'botID', 'botId', 'channelID', 'channelId', 'runID', 'runId',
   'role', 'scope', 'finish', 'completed', 'created', 'updated', 'started', 'ended',
   'version', 'phase', 'outcome', 'settledAt',
@@ -82,6 +83,8 @@ const TOKEN_FIELDS = new Set(['total', 'input', 'output', 'reasoning', 'cache'])
 const TOKEN_CACHE_FIELDS = new Set(['read', 'write']);
 
 const STABLE_IDENTIFIER_FIELDS = new Set([
+  'requestID', 'requestId', 'transactionID', 'errorID',
+  'observationID', 'attemptID', 'responseID', 'stepID', 'parentMessageID', 'rootTaskID', 'rootSessionID', 'counterScopeID',
   'id', 'helperSessionID', 'sessionID', 'sessionId', 'messageID', 'messageId', 'parentID', 'parentId',
   'botID', 'botId', 'channelID', 'channelId', 'runID', 'runId',
   'callID', 'callId', 'providerID', 'providerId', 'modelID', 'modelId',
@@ -100,6 +103,7 @@ const CONTEXT_MODE_FIELDS = new Set(['phase', 'callID', 'messageID', 'workerCall
   'sourceAt', 'elapsedMs', 'budgetMs', 'droppedEvents', 'failureCategory', 'exitCode', 'signal']);
 const CONTEXT_MODE_IDENTIFIERS = new Set(['workerCallID', 'contextModeWorkerCallID']);
 const CONTEXT_MODE_NUMBERS = new Set(['sourceAt', 'elapsedMs', 'budgetMs', 'droppedEvents']);
+const REVERT_FIELDS = new Set(['requestID', 'transactionID', 'sessionID', 'messageID', 'phase', 'errorID', 'code']);
 
 const BROWSER_NETWORK_FIELDS = new Set([
   'botId', 'streamId', 'sequence', 'generation', 'observedAt', 'kind', 'origin',
@@ -304,8 +308,15 @@ export const createDiagnosticSanitizer = (options = {}) => {
     if (!allowed) throw new TypeError(`unsupported diagnostic record type: ${type || 'missing'}`);
     const output = {};
     for (const [key, value] of Object.entries(object)) {
+      if (key === 'usageObservation') continue;
       if (!allowed.has(key)) {
         report.droppedFields += 1;
+        continue;
+      }
+      if (key === 'payload' && type === 'lifecycle' && object.event === 'session_revert') {
+        output[key] = Object.fromEntries(Object.entries(asObject(value) || {}).filter(([field, nested]) => (
+          REVERT_FIELDS.has(field) && typeof nested === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(nested)
+        )).map(([field, nested]) => [field, redactString(nested, { highEntropy: false })]));
         continue;
       }
       if (key === 'payload' && type === 'lifecycle'
@@ -356,6 +367,8 @@ export const createDiagnosticSanitizer = (options = {}) => {
     }
     output.type = type;
     output.at = Number.isFinite(output.at) ? output.at : Date.now();
+    const usage = projectUsageObservation(object.usageObservation) ?? runtimeUsageObservation({ ...output, at: output.at });
+    if (usage) output.usageObservation = sanitizeExportValue(usage);
     report.sanitizedRecords += 1;
     return output;
   };

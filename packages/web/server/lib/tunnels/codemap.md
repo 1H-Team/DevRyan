@@ -4,6 +4,8 @@
 Public tunnel management subsystem: provider registry, tunnel mode/intent typing, request normalization/validation, and managed configuration support.
 
 ## Design
+- `access-control.js` owns durable Bot grants, hashed sessions, authorization generations, the early HTTP/upgrade boundary and explicit POST landing flow. It is the production tunnel authority injected by `server/index.js`.
+- `bot-grants.js` owns the default-deny Bot route allowlist and grant checks reused by Bot authorization/catalog/event code.
 - **Provider registry pattern** (`registry.js`) enforces required provider capabilities (`start/stop/checkAvailability/resolvePublicUrl`).
 - **Strong request normalization** (`types.js`) canonicalizes provider/mode/intent/token/hostname/configPath.
 - **Capability-driven validation**: request validity depends on provider-declared mode requirements.

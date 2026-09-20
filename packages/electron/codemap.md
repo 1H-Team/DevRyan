@@ -277,3 +277,5 @@ owner through native startup/bootstrap and refreshes attached windows after a
 service generation change. See [connection behavior](../../docs/SUPABASE_CONNECTION.md).
 
 - `runtime-memory-monitor.mjs` samples content-free V8/RSS/external memory, event-loop delay and session-change read counters in foreground and runtime-service processes. It logs at most once per minute plus hysteretic pressure transitions; it collects no heap dumps. The synthetic `scripts/verify-crash-memory.mjs` fixture owns explicit allocation profiling and isolated ownership-mode soaks.
+
+- Concurrent Revert executables ship as `Resources/revert-runtime/<platform>-<arch>`. `scripts/package-prepared.mjs` requires verified artifacts; `scripts/adhoc-sign-macos-app.mjs` verifies them before signing, updates signed digests and reseals the app. Build contracts: [Concurrent Revert](../../docs/CONCURRENT_REVERT.md).

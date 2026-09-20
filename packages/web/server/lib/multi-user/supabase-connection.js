@@ -4,6 +4,8 @@ import { writeSupabaseConnectionPreference } from './connection-preference.js';
 import { createSupabaseServerClient } from './supabase-client.js';
 import { createSupabaseTraffic } from './supabase-traffic.js';
 import { PRODUCTION_BOTS_MIGRATION } from './auth-compat.js';
+import { isDirectLocalRequest } from '../security/direct-local-request.js';
+export { isDirectLocalRequest } from '../security/direct-local-request.js';
 
 const OWNER_KEY = 'supabase-local-owner';
 const LOCAL_SESSIONS_KEY = 'supabase-local-sessions';
@@ -16,27 +18,10 @@ const cookies = (req) => Object.fromEntries(String(req.headers?.cookie || '').sp
   return i < 0 ? ['', ''] : [part.slice(0, i).trim(), part.slice(i + 1).trim()];
 }));
 
-// Socket, authority and proxy headers must all agree. A tunnel commonly reaches
-// the server through a loopback socket; that socket alone is never owner proof.
-export function isDirectLocalRequest(req) {
-  const address = String(req.socket?.remoteAddress || '').replace(/^::ffff:/, '');
-  const rawHost = String(req.headers?.host || '').toLowerCase();
-  const host = rawHost.startsWith('[') ? rawHost.slice(1, rawHost.indexOf(']')) : rawHost.split(':')[0];
-  if (!['127.0.0.1', '::1'].includes(address) || !['localhost', '127.0.0.1', '::1'].includes(host)) return false;
-  if (['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'cf-connecting-ip'].some((key) => req.headers?.[key])) return false;
-  const origin = req.headers?.origin;
-  if (origin) {
-    try {
-      const parsed = new URL(origin);
-      if (parsed.host !== rawHost || !['http:', 'https:'].includes(parsed.protocol)) return false;
-    } catch { return false; }
-  }
-  return true;
-}
-
 export async function createSupabaseConnection({ config, fetchImpl = fetch, now = Date.now } = {}) {
   const configured = config.configured ?? config.enabled;
-  const vault = configured ? await createSessionVault({ dataDirectory: config.dataDirectory }) : null;
+  const authenticationMode = configured && config.enabled ? 'managed-accounts' : 'local-owner';
+  const vault = await createSessionVault({ dataDirectory: config.dataDirectory });
   const traffic = createSupabaseTraffic({ now });
   let effectiveEnabled = configured && config.enabled;
   let desiredEnabled = effectiveEnabled;
@@ -49,11 +34,15 @@ export async function createSupabaseConnection({ config, fetchImpl = fetch, now 
   let disposed = false;
   let driver = null;
   let owner = vault?.get(OWNER_KEY) || null;
+  const authorizationListeners = new Set();
+  const authorizationChanged = async () => { for (const listener of authorizationListeners) await listener(); };
   const localSessions = new Map(Object.entries(vault?.get(LOCAL_SESSIONS_KEY) || {}));
+  const restartRequired = () => desiredEnabled !== effectiveEnabled
+    || desiredEnabled !== (authenticationMode === 'managed-accounts');
 
   const status = () => ({
     configured, desiredEnabled, effectiveEnabled, state, errorCode,
-    restartRequired: desiredEnabled !== effectiveEnabled,
+    restartRequired: restartRequired(),
     restartAvailable: typeof driver?.restart === 'function',
     blockers: [...blockers], traffic: traffic.snapshot(),
   });
@@ -72,8 +61,9 @@ export async function createSupabaseConnection({ config, fetchImpl = fetch, now 
     if (!ownerPrincipal()) return null;
     const token = crypto.randomBytes(32).toString('base64url');
     const sessions = (owner.sessions || []).filter((session) => session.expiresAt > now()).slice(-31);
-    owner = { ...owner, sessions: [...sessions, { tokenHash: hash(token), expiresAt: now() + OWNER_TTL_MS }] };
-    await vault.set(OWNER_KEY, owner);
+    const nextOwner = { ...owner, sessions: [...sessions, { tokenHash: hash(token), expiresAt: now() + OWNER_TTL_MS }] };
+    await vault.set(OWNER_KEY, nextOwner);
+    owner = nextOwner;
     return { name: COOKIE, value: token, maxAge: OWNER_TTL_MS / 1000 };
   };
   const setOwnerCookie = (res, cookie) => {
@@ -96,12 +86,13 @@ export async function createSupabaseConnection({ config, fetchImpl = fetch, now 
   };
   const recordFailure = async (error) => {
     effectiveEnabled = false;
-    desiredEnabled = false;
     state = 'connection_failed';
     errorCode = Number(error?.status) === 402 ? 'supabase_quota_exceeded'
       : ['supabase_owner_revoked', 'bot_schema_migration_required'].includes(error?.code)
         ? error.code : 'supabase_connection_failed';
-    await writeSupabaseConnectionPreference(config.dataDirectory, false);
+    // Availability cannot change the owner's selected authentication policy.
+    // A failed explicit reconnect retains Off; a failed On startup retains On.
+    await writeSupabaseConnectionPreference(config.dataDirectory, desiredEnabled);
   };
   // Only explicitly enrolled installations validate before reconnect startup.
   // Original configured installations retain their established bootstrap path.
@@ -109,7 +100,7 @@ export async function createSupabaseConnection({ config, fetchImpl = fetch, now 
     try { await validateConnection(); } catch (error) { await recordFailure(error); }
   }
   const schedule = () => {
-    if (disposed || timer || restarting || desiredEnabled === effectiveEnabled) return;
+    if (disposed || timer || restarting || !restartRequired()) return;
     timer = setTimeout(() => {
       timer = null;
       void applyWhenIdle();
@@ -117,7 +108,7 @@ export async function createSupabaseConnection({ config, fetchImpl = fetch, now 
     timer.unref?.();
   };
   const applyWhenIdle = async () => {
-    if (disposed || restarting || errorCode === 'supabase_restart_failed' || desiredEnabled === effectiveEnabled || !driver) return;
+    if (disposed || restarting || errorCode || !restartRequired() || !driver) return;
     try {
       blockers = await driver.getBlockers();
       if (blockers.length) { schedule(); return; }
@@ -142,9 +133,22 @@ export async function createSupabaseConnection({ config, fetchImpl = fetch, now 
   return Object.freeze({
     traffic, status, vault,
     get enabled() { return effectiveEnabled; },
+    authenticationMode,
     get configured() { return configured; },
     get admissionPaused() { return desiredEnabled !== effectiveEnabled || !effectiveEnabled; },
     authenticateLocalOwner, ownerPrincipal, setOwnerCookie,
+    onAuthorizationChange(listener) { authorizationListeners.add(listener); return () => authorizationListeners.delete(listener); },
+    // Called only by the host's in-process handle or the filesystem-owner
+    // bootstrap exchange. Merely serving a loopback HTTP request never calls it.
+    async bootstrapLocalOwner() {
+      if (!owner && !configured) {
+        const nextOwner = { principal: { id: crypto.randomUUID(), role: 'admin', scope: 'local-admin', assignments: [], policy: {} }, sessions: [] };
+        await vault.set(OWNER_KEY, nextOwner);
+        owner = nextOwner;
+        await authorizationChanged();
+      }
+      return ownerPrincipal();
+    },
     localSessionOwner: (sessionId) => localSessions.get(sessionId) || null,
     async recordLocalSession(info) {
       if (effectiveEnabled || !owner?.principal?.id || typeof info?.id !== 'string'
@@ -159,15 +163,20 @@ export async function createSupabaseConnection({ config, fetchImpl = fetch, now 
       if (principal?.role !== 'admin' || principal?.scope !== 'managed' || !principal?.id) {
         throw failure('An authenticated local administrator is required', 'supabase_owner_required', 403);
       }
-      owner = { principal: structuredClone(principal), sessions: owner?.principal?.id === principal.id ? owner.sessions || [] : [] };
-      await vault.set(OWNER_KEY, owner);
+      const changed = owner?.principal?.id !== principal.id;
+      const nextOwner = { principal: structuredClone(principal), sessions: owner?.principal?.id === principal.id ? owner.sessions || [] : [] };
+      await vault.set(OWNER_KEY, nextOwner);
+      owner = nextOwner;
+      if (changed) await authorizationChanged();
       setOwnerCookie(res, await issueLocalOwnerSession());
     },
     async logoutLocalOwner(res, req = null) {
       if (owner) {
         const tokenHash = req ? hash(cookies(req)[COOKIE] || '') : null;
-        owner = { ...owner, sessions: tokenHash ? (owner.sessions || []).filter((session) => session.tokenHash !== tokenHash) : [] };
-        await vault.set(OWNER_KEY, owner);
+        const nextOwner = { ...owner, sessions: tokenHash ? (owner.sessions || []).filter((session) => session.tokenHash !== tokenHash) : [] };
+        await vault.set(OWNER_KEY, nextOwner);
+        owner = nextOwner;
+        if (!req) await authorizationChanged();
       }
       setOwnerCookie(res, { name: COOKIE, value: '', maxAge: 0 });
     },
@@ -184,12 +193,13 @@ export async function createSupabaseConnection({ config, fetchImpl = fetch, now 
           catch (error) { await recordFailure(error); return status(); }
         }
         await writeSupabaseConnectionPreference(config.dataDirectory, enabled);
+        if (enabled !== desiredEnabled) await authorizationChanged();
         desiredEnabled = enabled;
-        state = desiredEnabled === effectiveEnabled ? enabled ? 'connected' : 'disconnected'
+        state = !restartRequired() ? enabled ? 'connected' : 'disconnected'
           : enabled ? 'connecting' : 'disconnecting';
         errorCode = null;
         blockers = [];
-        if (desiredEnabled !== effectiveEnabled) {
+        if (restartRequired()) {
           await driver?.pauseAdmissions?.();
           // Give the PATCH response time to flush before an idle restart.
           schedule();

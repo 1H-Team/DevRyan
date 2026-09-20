@@ -24,3 +24,7 @@ directory and compaction-refresh hints, and fails closed to a complete
 - Upstream consumer: `packages/web/src/main.tsx`.
 - Downstream dependencies: server routes in `packages/web/server/index.js` + `server/lib/**`.
 - Type contract owner: `@openchamber/ui` runtime API definitions.
+
+`supabaseConnection.ts` preserves authorization and unsupported-endpoint failures
+as typed errors, validates status responses, and retains the owner-only PATCH
+and CSRF contract. It never turns an unavailable status into an Off preference.

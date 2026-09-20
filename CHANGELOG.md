@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.7] - 2026-09-20
+
+- Concurrent Revert: isolate captured executions in verified private views, preserve unrelated session and file contributions through Revert/Redo, durably recover interrupted mutations, and ship the pinned companion and native supervisor artifacts for both macOS release architectures.
+- Session ownership: add immutable execution ledgers, ancestry-aware publication, conflict-safe projection for text, binary, rename, permission, and descendant changes, plus deterministic runtime, route, UI, and artifact-integrity coverage.
+- Settings: render navigation, Home, Back, and compact content loading states synchronously while lazily loading feature sections and managed/full data boundaries across web and Electron.
+- Supabase connection and tunnels: preserve authoritative connection failures in Settings, support secure local-owner enrollment, and add revocable, expiring Bot-only tunnel grants that fail closed around host capabilities and non-Bot routes.
+- Cache efficiency: add provenance-aware usage observation and retained-journal reporting, bounded final-wire QA and serializer fixtures, and default-off experiment scaffolding without changing inference policy.
+- Production Bot readiness: validate the existing Bot schema, RLS, SQL suites, repository consumers, encrypted files, private access, backup/restore, and ARM64 container path against disposable PostgreSQL/PostgREST and Supabase environments; retain local backend rollout as a separate future change.
+- Release: build, verify, and stage architecture-specific Revert runtimes for both Electron and the published web package, and update all DevRyan package and desktop metadata to 1.2.7.
+
 ## [1.2.6] - 2026-09-19
 
 - Managed orchestration: accept finite implementation-deadline renewals without treating them as task identity changes, preserve the latest deadline across stale events and snapshots, and allow renewed Designer and Fixer attempts to settle without remounting.

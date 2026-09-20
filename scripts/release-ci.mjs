@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { BOT_RUNTIME_IMAGE_DEFINITIONS, assembleBotRuntimeImages, createBotRuntimeImageBuildPlan, signBotRuntimeImage } from './build-bot-runtime-images.mjs';
 import { describeWebArtifact, verifyWebArtifact, stageWebArtifact, hash, releaseIdentity, verifyPreparedMetadata } from './release-artifacts.mjs';
+import { restoreRevertRuntimeExecutableModes } from './verify-revert-runtime-artifacts.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const env = process.env;
@@ -41,6 +42,7 @@ switch (env.RELEASE_OPERATION) {
   }
   case 'web-pack':
     await verifyWebArtifact(path.join(root, 'packages/web/dist'), await read('web.json'), identity);
+    for (const arch of ['arm64', 'x64']) await restoreRevertRuntimeExecutableModes({ platform: 'darwin', arch });
     await packWebRelease({ root, destination: path.join(root, 'packages/web') });
     break;
   case 'web-describe':
@@ -54,7 +56,7 @@ switch (env.RELEASE_OPERATION) {
     const arch = env.ELECTRON_BUILDER_ARCH;
     if (!['arm64', 'x64'].includes(arch)) throw new Error('Invalid prepared architecture');
     await fs.mkdir(output, { recursive: true });
-    const files = ['node_modules', 'packages/electron/dist-bundle', 'packages/electron/resources/native', 'packages/electron/resources/runtime-service'];
+    const files = ['node_modules', 'packages/electron/dist-bundle', 'packages/electron/resources/native', 'packages/electron/resources/runtime-service', 'packages/web/runtime'];
     for (const entry of await fs.readdir(path.join(root, 'packages'))) {
       const relative = `packages/${entry}/node_modules`;
       if (await fs.lstat(path.join(root, relative)).then(() => true, () => false)) files.push(relative);

@@ -29,6 +29,7 @@ type TurnCompleteNotification = NotificationBase & {
 type ErrorNotification = NotificationBase & {
   type: "error"
   error?: { message?: string; code?: string }
+  resolvedByMessageId?: string
 }
 
 type QuestionNotification = NotificationBase & {
@@ -81,12 +82,12 @@ function buildIndex(list: Notification[]): NotificationIndex {
 
     if (n.session) {
       index.session.unseenCount[n.session] = (index.session.unseenCount[n.session] ?? 0) + 1
-      if (n.type === "error") index.session.unseenHasError[n.session] = true
+      if (n.type === "error" && !n.resolvedByMessageId) index.session.unseenHasError[n.session] = true
       if (n.type === "turn-complete") index.session.unseenHasCompletion[n.session] = true
     }
     if (n.directory) {
       index.project.unseenCount[n.directory] = (index.project.unseenCount[n.directory] ?? 0) + 1
-      if (n.type === "error") index.project.unseenHasError[n.directory] = true
+      if (n.type === "error" && !n.resolvedByMessageId) index.project.unseenHasError[n.directory] = true
       if (n.type === "turn-complete") index.project.unseenHasCompletion[n.directory] = true
     }
   }
@@ -152,6 +153,7 @@ interface NotificationStore {
 
   // Mutations
   append: (notification: Notification) => void
+  resolveErrors: (errors: readonly Notification[], messageId: string, completedAt: number) => void
   markSessionViewed: (sessionId: string) => void
   markSessionsViewed: (sessionIds: string[]) => void
   markSessionCompletionsViewed: (sessionId: string) => void
@@ -188,6 +190,22 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
     const next = pruneNotifications([...current, notification])
     set({ list: next, index: buildIndex(next) })
     persistCompletionNotifications(next)
+  },
+
+  resolveErrors: (errors, messageId, completedAt) => {
+    if (!messageId || !Number.isFinite(completedAt) || completedAt <= 0 || errors.length === 0) return
+    const captured = new Set(errors)
+    const current = get().list
+    let changed = false
+    const next = current.map((notification) => {
+      // Only captured records older than the authoritative completion may be
+      // superseded. Replaying old completion cannot clear a subsequent error.
+      if (notification.type !== "error" || notification.resolvedByMessageId
+        || !captured.has(notification) || notification.time >= completedAt) return notification
+      changed = true
+      return { ...notification, resolvedByMessageId: messageId }
+    })
+    if (changed) set({ list: next, index: buildIndex(next) })
   },
 
   markSessionViewed: (sessionId) => {

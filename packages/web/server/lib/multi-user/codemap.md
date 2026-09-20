@@ -6,6 +6,7 @@ Server-only multi-user identity, policy, project/branch assignment, session
 ownership, directory opacity, and audit control plane.
 
 ## Main files
+- `local-owner-bootstrap.js` owns the explicit filesystem-owner CLI challenge and two-minute loopback POST exchange. `supabase-connection.js` persists owner identity even without Supabase and exposes in-process native enrollment; localhost visits cannot enroll. Vault/key loss or corruption fails closed.
 
 - `runtime.js`: composition root, auth/session lifecycle, HTTP/SSE/WS policy,
   administration routes (including the token-free GitHub account inventory,

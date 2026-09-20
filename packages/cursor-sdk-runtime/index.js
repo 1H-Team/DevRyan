@@ -1732,6 +1732,9 @@ export function createCursorSdkRuntime(options = {}) {
   };
 
   const persistQueues = new Map();
+  const executionDirectories = new Map();
+  const settlingRuns = new Map();
+  const startingRuns = new Map();
 
   const enqueuePersist = (sessionID, record, options = {}) => {
     const previous = persistQueues.get(sessionID) || Promise.resolve();
@@ -1753,6 +1756,7 @@ export function createCursorSdkRuntime(options = {}) {
     if (index >= 0) nextRecords[index] = record;
     nextRecords.sort((left, right) => String(left?.info?.id || '').localeCompare(String(right?.info?.id || '')));
     const nextState = { ...state, records: nextRecords };
+    await options.onPersistRecord?.({ sessionID, directory: executionDirectories.get(sessionID), record });
     await writeSessionState(sessionID, nextState);
     return nextState;
   };
@@ -2247,7 +2251,9 @@ export function createCursorSdkRuntime(options = {}) {
     const apiKey = getCursorSdkApiKey({ env, readAuth });
     if (!apiKey) return null;
 
-    const child = spawnImpl(nodeBinary, [workerPath], {
+    const owned = options.executionAdapter ? await options.executionAdapter.startReadOnly({
+      command: nodeBinary, args: [workerPath], env: { ...process.env, ...workerEnv } }) : null;
+    const child = owned ? owned.child : spawnImpl(nodeBinary, [workerPath], {
       cwd: workerCwd,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
@@ -2265,7 +2271,7 @@ export function createCursorSdkRuntime(options = {}) {
       type: 'title',
       apiKey,
       text: promptText,
-      directory: trimString(directory),
+      directory: owned ? owned.lease.workingDirectory : trimString(directory),
       modelID: 'auto',
       modelSelection: { id: 'auto' },
     }));
@@ -2295,6 +2301,7 @@ export function createCursorSdkRuntime(options = {}) {
     }
 
     const exit = await exitPromise;
+    if (owned) await owned.result;
     if (workerError) throw new Error(workerError);
     if (exit.error) throw exit.error;
     if (exit.code && exit.code !== 0) {
@@ -2309,6 +2316,7 @@ export function createCursorSdkRuntime(options = {}) {
   const createNodeWorkerPromptRun = async ({
     sessionID,
     messageID,
+    assistantMessageID,
     apiKey,
     modelID,
     modelSelection,
@@ -2318,10 +2326,14 @@ export function createCursorSdkRuntime(options = {}) {
     agentDefinitions,
     mcpServers,
     mcpServerIdentity,
+    signal,
   }) => {
     const state = await readSessionState(sessionID);
     const workerStartedAt = now();
-    const child = spawnImpl(nodeBinary, [workerPath], {
+    const owned = options.executionAdapter ? await options.executionAdapter.start({ sessionID, messageID, assistantMessageID,
+      directory, signal, command: nodeBinary, args: [workerPath], env: { ...process.env, ...workerEnv } }) : null;
+    if (owned && !owned.child) throw Object.assign(new Error('This Cursor execution was already published'), { code: 'execution_already_started' });
+    const child = owned ? owned.child : spawnImpl(nodeBinary, [workerPath], {
       cwd: trimString(directory) || workerCwd,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
@@ -2329,6 +2341,7 @@ export function createCursorSdkRuntime(options = {}) {
         ...workerEnv,
       },
     });
+    if (owned) child.kill = () => { owned.cancel(); return true; };
     const markMetadata = { providerID: CURSOR_PROVIDER_ID, modelID };
     recordTimingMark?.({
       sessionId: sessionID,
@@ -2364,10 +2377,15 @@ export function createCursorSdkRuntime(options = {}) {
       agents: cloneCursorSdkAgentDefinitions(agentDefinitions),
       mcpServers: cloneCursorMcpServers(mcpServers),
       mcpServerIdentity: trimString(mcpServerIdentity),
-      prompt,
+      prompt: owned ? [
+        ...state.records.filter((record) => record.info.id !== messageID && record.info.id !== assistantMessageID)
+          .map((record) => `[${record.info.role}]\n${record.parts.map((part) => part.type === 'text' ? part.text
+            : part.type === 'tool' ? `${part.tool}: ${part.state?.output ?? part.state?.error ?? ''}` : '').filter(Boolean).join('\n')}`),
+        `[user]\n${prompt}`,
+      ].join('\n\n') : prompt,
       images: Array.isArray(images) ? images : [],
-      directory: trimString(directory),
-      agentID: trimString(state.agentID),
+      directory: owned?.lease.workingDirectory ?? trimString(directory),
+      agentID: owned ? '' : trimString(state.agentID),
     }));
 
     const exitPromise = new Promise((resolve) => {
@@ -2484,6 +2502,7 @@ export function createCursorSdkRuntime(options = {}) {
 
         if (completedNaturally) {
           const exit = await exitPromise;
+          if (owned) await owned.result;
           if (workerError) {
             throw new Error(workerError);
           }
@@ -2518,13 +2537,19 @@ export function createCursorSdkRuntime(options = {}) {
     };
 
     return {
+      settled: owned?.result ?? exitPromise,
       getUsageObservation: () => latestUsageObservation,
       async cancel() {
         cancelWorker();
+        if (owned) await owned.result.catch((error) => {
+          if (!['execution_cancelled', 'execution_reverted'].includes(error.code)) throw error;
+        });
       },
       async waitFinalResult(options = {}) {
         startWorkerReader();
-        return withTimeout(finalResultPromise, options.timeoutMs);
+        const result = await withTimeout(finalResultPromise, options.timeoutMs);
+        if (owned) await owned.result;
+        return result;
       },
       async *stream() {
         startWorkerReader();
@@ -2535,7 +2560,7 @@ export function createCursorSdkRuntime(options = {}) {
             yield next.value;
           }
         } finally {
-          if (finalResultSettled && child.exitCode === null && !child.killed) {
+          if (!owned && finalResultSettled && child.exitCode === null && !child.killed) {
             cancelWorker();
           }
         }
@@ -3211,6 +3236,7 @@ export function createCursorSdkRuntime(options = {}) {
         }
       },
     };
+    if (options.executionAdapter) return generateNodeWorkerTitle(titleInput);
     if (!useNodeWorkerForPrompts) {
       return generateDirectTitle(titleInput);
     }
@@ -3220,12 +3246,12 @@ export function createCursorSdkRuntime(options = {}) {
     return generateNodeWorkerTitle(titleInput);
   };
 
-  const createPromptRun = typeof options.createPromptRun === 'function'
+  const createPromptRun = options.executionAdapter ? createNodeWorkerPromptRun : typeof options.createPromptRun === 'function'
     ? options.createPromptRun
     : useNodeWorkerForPrompts
       ? (usePersistentWorkerForPrompts ? createPersistentWorkerPromptRun : createNodeWorkerPromptRun)
       : createDirectPromptRun;
-  const shouldRaceFinalResultBeforeStream = typeof options.createPromptRun === 'function' || useNodeWorkerForPrompts;
+  const shouldRaceFinalResultBeforeStream = Boolean(options.executionAdapter) || typeof options.createPromptRun === 'function' || useNodeWorkerForPrompts;
 
   const recordCursorTimingMark = ({
     sessionID,
@@ -3477,7 +3503,7 @@ export function createCursorSdkRuntime(options = {}) {
     }
   };
 
-  const runPrompt = async ({ sessionID, body, directory }) => {
+  const runPromptImpl = async ({ sessionID, body, directory, signal }) => {
     const apiKey = getCursorSdkApiKey({ env, readAuth });
     if (!apiKey) {
       return {
@@ -3492,6 +3518,21 @@ export function createCursorSdkRuntime(options = {}) {
     // down), release it first so we never orphan its activeRuns entry or run two
     // streams against the same session.
     releaseActiveRun(sessionID, { source: 'superseded', emitIdle: false });
+    if (options.executionAdapter) {
+      const settled = await Promise.allSettled([...(settlingRuns.get(sessionID) ?? [])]);
+      for (const result of settled) if (result.status === 'rejected'
+        && !['execution_cancelled', 'execution_reverted'].includes(result.reason?.code)) throw result.reason;
+      signal?.throwIfAborted();
+      const boundary = await options.executionAdapter.beforePrompt({ sessionID, directory });
+      if (boundary?.messageID) {
+        await persistQueues.get(sessionID);
+        const state = await readSessionState(sessionID);
+        await writeSessionState(sessionID, { ...state, agentID: null,
+          records: state.records.filter((record) => record.info.id.localeCompare(boundary.messageID) < 0) });
+        agentsBySession.delete(sessionID);
+      }
+    }
+    executionDirectories.set(sessionID, directory);
 
     const {
       executionText: prompt,
@@ -3514,6 +3555,7 @@ export function createCursorSdkRuntime(options = {}) {
     const assistantMessageID = createAssistantMessageId(userMessageID);
     let hasNativeChanges = false, changeCaptureFailed = false;
     const captureNativeChange = async (event) => {
+      if (options.executionAdapter) return;
       if (!executionOutbox || !event) return;
       hasNativeChanges = true;
       const saved = await executionOutbox.append({ ...event, sessionID, messageID: assistantMessageID,
@@ -3602,10 +3644,11 @@ export function createCursorSdkRuntime(options = {}) {
     let syntheticPatchPartID = null;
     let sawMutationCandidateTool = false;
     const toolPartIdsByCallId = new Map();
+    const partPrefix = options.executionAdapter ? 'prt_cursor_' : '';
     const nextPartID = (kind, suffix = '') => {
       partSequence += 1;
       const sequence = String(partSequence).padStart(6, '0');
-      return `${assistantMessageID}_part_${sequence}_${kind}${suffix ? `_${suffix}` : ''}`;
+      return `${partPrefix}${assistantMessageID}_part_${sequence}_${kind}${suffix ? `_${suffix}` : ''}`;
     };
     const ensureSyntheticPatchPartID = () => {
       if (!syntheticPatchPartID) {
@@ -3623,7 +3666,7 @@ export function createCursorSdkRuntime(options = {}) {
     };
     const created = now();
     const userParts = [{
-      id: `${userMessageID}_text`,
+      id: `${partPrefix}${userMessageID}_text`,
       sessionID,
       messageID: userMessageID,
       type: 'text',
@@ -3632,7 +3675,7 @@ export function createCursorSdkRuntime(options = {}) {
     if (isPlanModePrompt) {
       for (const [index, part] of planInstructionParts.entries()) {
         userParts.push({
-          id: `${userMessageID}_plan_mode_${String(index + 1).padStart(2, '0')}`,
+          id: `${partPrefix}${userMessageID}_plan_mode_${String(index + 1).padStart(2, '0')}`,
           sessionID,
           messageID: userMessageID,
           type: 'text',
@@ -3641,7 +3684,7 @@ export function createCursorSdkRuntime(options = {}) {
         });
       }
     }
-    userParts.push(...fileParts);
+    userParts.push(...fileParts.map((part) => partPrefix && !part.id.startsWith('prt') ? { ...part, id: partPrefix + part.id } : part));
 
     const userRecord = {
       info: {
@@ -4287,9 +4330,12 @@ export function createCursorSdkRuntime(options = {}) {
     }
 
     try {
+      signal?.throwIfAborted();
       run = await createPromptRun({
         sessionID,
         messageID: userMessageID,
+        assistantMessageID,
+        signal,
         apiKey,
         modelID,
         modelSelection,
@@ -4806,6 +4852,13 @@ export function createCursorSdkRuntime(options = {}) {
       }
     })();
 
+    const pendingRuns = settlingRuns.get(sessionID) ?? new Set();
+    const settled = Promise.all([pump, run.settled]).finally(() => {
+      pendingRuns.delete(settled); if (!pendingRuns.size) settlingRuns.delete(sessionID);
+    });
+    pendingRuns.add(settled); settlingRuns.set(sessionID, pendingRuns);
+    void settled.catch(() => {});
+
     pump.catch((error) => {
       lastError = error instanceof Error ? error.message : 'Cursor SDK stream failed.';
       logger.error?.('[CursorSDK] stream failed:', error);
@@ -4816,6 +4869,31 @@ export function createCursorSdkRuntime(options = {}) {
       status: 204,
       body: null,
     };
+  };
+
+  const runPrompt = (input) => {
+    if (!options.executionAdapter) return runPromptImpl(input);
+    const runs = startingRuns.get(input.sessionID) ?? new Set();
+    const controller = new AbortController();
+    const entry = { controller, settled: null };
+    runs.add(entry); startingRuns.set(input.sessionID, runs);
+    entry.settled = runPromptImpl({ ...input, signal: controller.signal }).finally(() => {
+      runs.delete(entry); if (!runs.size) startingRuns.delete(input.sessionID);
+    });
+    return entry.settled;
+  };
+
+  const abortAndWait = async (sessionID) => {
+    const starts = [...(startingRuns.get(sessionID) ?? [])];
+    for (const start of starts) start.controller.abort(Object.assign(new Error('execution_cancelled'), { code: 'execution_cancelled' }));
+    releaseActiveRun(sessionID, { source: 'user_abort', emitIdle: true });
+    const started = await Promise.allSettled(starts.map((start) => start.settled));
+    releaseActiveRun(sessionID, { source: 'user_abort', emitIdle: true });
+    const results = await Promise.allSettled([...(settlingRuns.get(sessionID) ?? [])]);
+    for (const result of [...started, ...results]) if (result.status === 'rejected'
+      && !['execution_cancelled', 'execution_reverted', 'session_reverting'].includes(result.reason?.code)) throw result.reason;
+    await persistQueues.get(sessionID);
+    return { terminated: true, sessions: [sessionID] };
   };
 
   return {
@@ -4930,6 +5008,7 @@ export function createCursorSdkRuntime(options = {}) {
       // model switch / prompt cannot race a run that is still cancelling.
       return releaseActiveRun(sessionID, { source: 'user_abort', emitIdle: true });
     },
+    abortAndWait,
     async getSessionMessages(sessionID) {
       const state = await readSessionState(sessionID);
       return Array.isArray(state.records) ? state.records : [];
@@ -4938,6 +5017,7 @@ export function createCursorSdkRuntime(options = {}) {
       return deleteSessionState(sessionID);
     },
     async dispose() {
+      if (options.executionAdapter) await Promise.all([...new Set([...startingRuns.keys(), ...settlingRuns.keys(), ...activeRuns.keys()])].map(abortAndWait));
       await questionRuntime.dispose();
       await persistentWorkerRuntime.dispose();
       await executionOutbox?.drain();

@@ -496,6 +496,7 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     }
     try {
       await uiAuthController.requireAuth(req, res, async () => {
+        await tunnelAuthController.revokeTunnelArtifacts?.();
         await uiAuthController.handleResetAuth(req, res);
       });
     } catch (error) {
@@ -578,6 +579,9 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
 
   app.use('/api', async (req, res, next) => {
     try {
+      // The early tunnel boundary already authenticated this explicit,
+      // restricted principal and checked the Bot route allowlist.
+      if (req.principal?.scope === 'tunnel-bot') return next();
       if (requiresManagedAccountAuth(req)) {
         return sendManagedAccountAuthRequired(res);
       }

@@ -94,6 +94,7 @@ import {
 import { useMessageQueueStore } from "@/stores/messageQueueStore"
 import { useContextStore } from "@/stores/contextStore"
 import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
+import { usePrimaryRecoveryStore } from "@/stores/usePrimaryRecoveryStore"
 import { useProviderStallStore } from "@/stores/useProviderStallStore"
 import { useLongRunningToolStore } from "@/stores/useLongRunningToolStore"
 import {
@@ -1400,6 +1401,8 @@ async function detectAndMarkPlanLifecycle(
   completionMessageId?: string | null,
   isCurrent: () => boolean = () => true,
 ): Promise<void> {
+  // Capture the immutable list before yielding; scan only on settled success.
+  const capturedNotifications = useNotificationStore.getState().list
   const { useSessionUIStore } = await import("./session-ui-store")
   if (!isCurrent()) return
   let sessionUI = useSessionUIStore.getState()
@@ -1469,6 +1472,48 @@ async function detectAndMarkPlanLifecycle(
   const suppressPlanCandidate = settledPlanCandidate
     ? isManuallyAbortedCandidate(settledPlanCandidate.completedMessageId)
     : false
+
+  const successfulCandidate = (!suppressPlanCandidate && settledPlanCandidate)
+    || (!suppressTurnCandidate && settledTurnCandidate)
+  const capturedErrors = successfulCandidate ? capturedNotifications.filter((notification) => (
+    notification.type === "error" && !notification.resolvedByMessageId
+    && notification.directory === directory
+  )) : []
+  if (successfulCandidate && capturedErrors.length > 0) {
+    const session = state.session.find((item) => item.id === sessionID)
+    // A root owns descendant attention; a child may settle only its own errors.
+    const branchIds = collectLoadedSessionScopeIds(state, sessionID)
+    const scopeIds = session?.parentID ? [sessionID] : branchIds
+    const recoveries = useProviderRecoveryStore.getState().recoveriesBySessionId
+    const hostRecoveries = usePrimaryRecoveryStore.getState().snapshots
+    const managedState = useManagedOrchestrationStore.getState()
+    const blocked = branchIds.some((id) => {
+      const host = hostRecoveries[id]
+      const hostState = host?.record?.state
+      const hostOwnsRecovery = host?.enforced || host?.record?.readOnly
+        || host?.record?.reason === "managed_repeated_preexecution_rejection"
+      const hostBlocked = hostOwnsRecovery && hostState && [
+        "stopping", "reconciling", "recovery_reserved", "recovering", "needs_attention",
+      ].includes(hostState)
+      return (state.session_status[id] && state.session_status[id].type !== "idle")
+        || (state.permission[id]?.length ?? 0) > 0
+        || (state.question[id]?.length ?? 0) > 0
+        || Boolean(recoveries[id])
+        || hostBlocked
+        || managedOrchestrationSelectors.hasActiveTasksForRoot(id)(managedState)
+        || managedOrchestrationSelectors.hasManualRecoveryForRoot(id)(managedState)
+        || Boolean(managedOrchestrationSelectors.manualRecoveryTaskIdForChildSession(id)(managedState))
+    })
+    const completedAt = getMessageCompletedAt(state, sessionID, successfulCandidate.completedMessageId)
+    if (!blocked && completedAt !== undefined) {
+      const scope = new Set(scopeIds)
+      useNotificationStore.getState().resolveErrors(
+        capturedErrors.filter((notification) => notification.session && scope.has(notification.session)),
+        successfulCandidate.completedMessageId,
+        completedAt,
+      )
+    }
+  }
 
   if (settledTurnCandidate && !suppressTurnCandidate && !isViewed) {
     sessionUI.markSessionTurnCompleted(

@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { hasForwardingHeaders } from '../security/forwarded-request.js';
 
 const BOOTSTRAP_TOKEN_COOKIE_SAFE_BYTES = 32;
 const TUNNEL_SESSION_COOKIE_NAME = 'oc_tunnel_session';
@@ -7,6 +8,13 @@ const CONNECT_RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
 const CONNECT_RATE_LIMIT_LOCK_MS = 10 * 60 * 1000;
 const CONNECT_RATE_LIMIT_MAX_ATTEMPTS = 20;
 const CONNECT_RATE_LIMIT_NO_IP_MAX_ATTEMPTS = 5;
+
+const CONNECT_RATE_LIMIT_NO_IP_KEY = 'connect-rate-limit:no-ip';
+const CONNECT_RATE_LIMIT_GLOBAL_KEY = 'connect-rate-limit:global';
+// A per-client bucket cannot bound an attacker who can vary the value it keys
+// on, so a single global ceiling backstops every per-client bucket.
+const CONNECT_RATE_LIMIT_GLOBAL_MAX_ATTEMPTS = 200;
+const CONNECT_RATE_LIMIT_MAX_TRACKED_KEYS = 4096;
 
 const parseCookies = (cookieHeader) => {
   if (!cookieHeader || typeof cookieHeader !== 'string') {
@@ -185,6 +193,13 @@ const isLocalHost = (host, req) => {
     return false;
   }
 
+  // Every request through a tunnel reaches this process over a loopback socket,
+  // so the socket peer alone is never proof of a local client. A forwarding
+  // header means the request was relayed, which rules local scope out outright.
+  if (hasForwardingHeaders(req)) {
+    return false;
+  }
+
   const isLocalHostname = host === 'localhost'
     || host === 'host.docker.internal'
     || isPrivateOrLoopbackIp(host);
@@ -192,37 +207,17 @@ const isLocalHost = (host, req) => {
   return isLocalHostname && isPrivateOrLoopbackIp(getSocketRemoteIp(req));
 };
 
-const getClientIp = (req) => {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string') {
-    const ip = forwarded.split(',')[0].trim();
-    if (ip.startsWith('::ffff:')) {
-      return ip.substring(7);
-    }
-    return ip;
-  }
-
-  const ip = req.ip || req.connection?.remoteAddress;
-  if (ip) {
-    if (ip.startsWith('::ffff:')) {
-      return ip.substring(7);
-    }
-    return ip;
-  }
-  return null;
-};
-
-const getRateLimitKey = (req) => {
-  const ip = getClientIp(req);
-  if (ip) {
-    return ip;
-  }
-  return 'connect-rate-limit:no-ip';
+const getHeaderValue = (req, header) => {
+  const value = req?.headers?.[header];
+  return typeof value === 'string' ? value : '';
 };
 
 const rateLimitMaxForKey = (key) => {
-  if (key === 'connect-rate-limit:no-ip') {
+  if (key === CONNECT_RATE_LIMIT_NO_IP_KEY) {
     return CONNECT_RATE_LIMIT_NO_IP_MAX_ATTEMPTS;
+  }
+  if (key === CONNECT_RATE_LIMIT_GLOBAL_KEY) {
+    return CONNECT_RATE_LIMIT_GLOBAL_MAX_ATTEMPTS;
   }
   return CONNECT_RATE_LIMIT_MAX_ATTEMPTS;
 };
@@ -261,14 +256,18 @@ export const createTunnelAuth = () => {
   };
 
   const classifyRequestScope = (req) => {
-    const hostHeader = normalizeHost(typeof req.headers.host === 'string' ? req.headers.host : '');
-    const reqHost = normalizeHost(typeof req.hostname === 'string' ? req.hostname : '') || hostHeader;
+    // Classify on the raw Host header only. The server runs with
+    // `trust proxy` enabled, which makes Express derive `req.hostname` from the
+    // X-Forwarded-Host header — a header Cloudflare forwards untouched from the
+    // client. Reading `req.hostname` here would let a remote caller claim
+    // `localhost` and skip tunnel authentication altogether.
+    const requestHost = normalizeHost(typeof req.headers.host === 'string' ? req.headers.host : '');
 
-    if (activeTunnelHost && reqHost === activeTunnelHost) {
+    if (activeTunnelHost && requestHost === activeTunnelHost) {
       return 'tunnel';
     }
 
-    if (isLocalHost(reqHost, req)) {
+    if (isLocalHost(requestHost, req)) {
       return 'local';
     }
 
@@ -277,6 +276,22 @@ export const createTunnelAuth = () => {
     }
 
     return 'unknown-public';
+  };
+
+  // The key must be something the caller cannot choose, or an attacker rotates
+  // it and never trips the limiter. The socket peer is the only value this
+  // process observes directly; CF-Connecting-IP is used purely to keep genuine
+  // tunnel clients in separate buckets, never as proof of identity, so the
+  // global ceiling is what actually bounds a forged-header flood.
+  const getRateLimitKey = (req) => {
+    const socketIp = getSocketRemoteIp(req);
+
+    if (classifyRequestScope(req) !== 'local' && isPrivateOrLoopbackIp(socketIp)) {
+      const edgeIp = normalizeIpCandidate(getHeaderValue(req, 'cf-connecting-ip'));
+      return edgeIp ? `edge:${edgeIp}` : 'tunnel:unattributed';
+    }
+
+    return socketIp ? `socket:${socketIp}` : CONNECT_RATE_LIMIT_NO_IP_KEY;
   };
 
   const revokeBootstrapToken = () => {
@@ -397,10 +412,7 @@ export const createTunnelAuth = () => {
       && crypto.timingSafeEqual(Buffer.from(incomingHash), Buffer.from(expected));
   };
 
-  const checkConnectRateLimit = (req) => {
-    const key = getRateLimitKey(req);
-    const now = nowTs();
-    const maxAttempts = rateLimitMaxForKey(key);
+  const evaluateRateLimitBucket = (key, now) => {
     const record = connectRateLimiter.get(key);
 
     if (record?.lockedUntil && now < record.lockedUntil) {
@@ -414,7 +426,7 @@ export const createTunnelAuth = () => {
       return { allowed: true, retryAfter: 0 };
     }
 
-    if (record.count >= maxAttempts) {
+    if (record.count >= rateLimitMaxForKey(key)) {
       const lockedUntil = now + CONNECT_RATE_LIMIT_LOCK_MS;
       connectRateLimiter.set(key, {
         count: record.count + 1,
@@ -430,9 +442,25 @@ export const createTunnelAuth = () => {
     return { allowed: true, retryAfter: 0 };
   };
 
-  const recordConnectFailedAttempt = (req) => {
-    const key = getRateLimitKey(req);
-    const now = nowTs();
+  // Distinct keys are bounded by the global ceiling, but drop lapsed buckets so
+  // a long-lived process cannot accumulate them indefinitely.
+  const pruneRateLimiter = (now) => {
+    if (connectRateLimiter.size <= CONNECT_RATE_LIMIT_MAX_TRACKED_KEYS) {
+      return;
+    }
+
+    for (const [key, record] of connectRateLimiter) {
+      if (key === CONNECT_RATE_LIMIT_GLOBAL_KEY) {
+        continue;
+      }
+      const locked = record.lockedUntil && now < record.lockedUntil;
+      if (!locked && now - record.lastAttempt > CONNECT_RATE_LIMIT_WINDOW_MS) {
+        connectRateLimiter.delete(key);
+      }
+    }
+  };
+
+  const bumpRateLimitBucket = (key, now) => {
     const record = connectRateLimiter.get(key);
 
     if (!record || now - record.lastAttempt > CONNECT_RATE_LIMIT_WINDOW_MS) {
@@ -447,9 +475,33 @@ export const createTunnelAuth = () => {
     });
   };
 
+  const checkConnectRateLimit = (req) => {
+    const now = nowTs();
+    const perClient = evaluateRateLimitBucket(getRateLimitKey(req), now);
+    const global = evaluateRateLimitBucket(CONNECT_RATE_LIMIT_GLOBAL_KEY, now);
+
+    if (perClient.allowed && global.allowed) {
+      return { allowed: true, retryAfter: 0 };
+    }
+
+    return {
+      allowed: false,
+      retryAfter: Math.max(perClient.retryAfter, global.retryAfter),
+    };
+  };
+
+  const recordConnectFailedAttempt = (req) => {
+    const now = nowTs();
+    bumpRateLimitBucket(getRateLimitKey(req), now);
+    bumpRateLimitBucket(CONNECT_RATE_LIMIT_GLOBAL_KEY, now);
+    pruneRateLimiter(now);
+  };
+
+  // A successful exchange clears only the caller's own bucket. The global
+  // ceiling counts failures across every client, so one success must not reset
+  // the evidence of a flood from others.
   const clearConnectRateLimit = (req) => {
-    const key = getRateLimitKey(req);
-    connectRateLimiter.delete(key);
+    connectRateLimiter.delete(getRateLimitKey(req));
   };
 
   const getTunnelSessionFromRequest = (req) => {

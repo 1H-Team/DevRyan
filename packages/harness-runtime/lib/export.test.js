@@ -109,7 +109,7 @@ describe('diagnostics export preparation', () => {
       }),
     });
 
-    expect(buffered).toBe(7); // Includes the bounded DevRyan Chrome Trace projection.
+    expect(buffered).toBe(8); // Includes bounded trace and usage projections.
     expect(streamed.map((entry) => entry.name)).toEqual([
       'sessions/ses_1.ndjson',
       'runtime.ndjson',

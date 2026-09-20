@@ -63,3 +63,37 @@ describe('prepared settings navigation', () => {
     expect(committed).toEqual(['agents']);
   });
 });
+
+  test('cancellation prevents an unresolved destination from committing', async () => {
+    const load = deferred();
+    const committed: string[] = [];
+    const coordinator = createPreparedSettingsNavigationCoordinator({
+      isReady: () => false, preload: () => load.promise, onPendingChange: () => {},
+    });
+    coordinator.navigate({ currentSlug: 'home', slug: 'agents', commit: () => committed.push('agents') });
+    coordinator.cancel();
+    load.resolve();
+    await load.promise;
+    await Promise.resolve();
+    expect(committed).toEqual([]);
+  });
+
+  test('rechecks permission after loading, and does not start a forbidden import', async () => {
+    const load = deferred();
+    let allowed = true;
+    let imports = 0;
+    let commits = 0;
+    const coordinator = createPreparedSettingsNavigationCoordinator({
+      isReady: () => false, canNavigate: () => allowed,
+      preload: () => { imports += 1; return load.promise; }, onPendingChange: () => {},
+    });
+    coordinator.navigate({ currentSlug: 'home', slug: 'agents', commit: () => { commits += 1; } });
+    allowed = false;
+    load.resolve();
+    await load.promise;
+    await Promise.resolve();
+    expect(commits).toBe(0);
+    coordinator.navigate({ currentSlug: 'home', slug: 'users', commit: () => { commits += 1; } });
+    expect(imports).toBe(1);
+    expect(commits).toBe(0);
+  });

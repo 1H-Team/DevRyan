@@ -4,6 +4,8 @@
 Repository automation entrypoint for developer workflows: validation planning, local dev orchestration, release/build smoke checks, and utility tooling.
 
 ## Design
+- **Local Bot database feasibility** (`local-bots-spike/`): disposable, pinned PostgreSQL/PostgREST and isolated Supabase parity checks; unchanged migration replay, the three production repositories, encrypted-file storage, verified snapshot restoration and resource measurements. The runner fences project names and loopback listeners and never links a cloud project. Usage and limits: [local-bots-spike/README.md](local-bots-spike/README.md).
+- **Typecheck diagnostics** (`typecheck-diagnostics.mjs`): runs the UI or web TypeScript CLI in a measured Node process with a fresh disposable incremental cache. Reports compiler/runtime versions, effective heap limit, compiler diagnostics, duration and peak RSS without dumping environment values. Normal workspace checks run sequentially with separate persistent UI/web caches.
 - **Context Mode liveness** (`verify-context-mode-workers.mjs`, `generate-context-mode-worker-sources.mjs`, `qa/context-mode.mjs`): disposable pinned Bun workers verify thirty concurrent calls across fifteen sessions, shared storage/statistics, a 31-second indexing stall, deadlines, cancellation/background ownership and index reopening; the check reports cold/warm latency, RSS and event-loop delay in its disposable package verification.json; the generated helpers are source-checked; isolated web/Electron QA projects actual pool timeout errors through the real UI and reconnect flow.
 - **Orchestrator scripts** (`*.mjs`) spawn and supervise child processes with graceful shutdown (`SIGINT` → `SIGTERM` → `SIGKILL`) and detached-group handling on macOS. Group shutdown remains active after a wrapper leader exits, so nested watchers can finish reaping their owned runtimes before the orchestrator returns.
 - **Development data isolation** (`dev-data-directory.mjs`): derives a stable temporary `OPENCHAMBER_DATA_DIR` from the checkout path and launcher mode while preserving any explicit override. The web-stack, HMR, full-web, direct server watcher, and Electron launchers pass that value to every process that shares their runtime so development cannot silently reuse an installed app's production ledger.
@@ -23,6 +25,14 @@ Repository automation entrypoint for developer workflows: validation planning, l
 - **Packaged default-config gates**: `verify-default-config-artifact.mjs` SHA-verifies the canonical asset inventory and rejects prohibited files in managed roots. `smoke-packaged-orchestration-config.mjs` provisions a temporary clean user and runtime overlay from an extracted artifact, checking dependencies, agents, manifests, plugin bytes, and the absence of bundled user-profile skills without touching user configuration.
 
 ## Flow
+
+- `build-session-execution.mjs` builds the dependency-free native supervisor and
+  its digest manifest in an explicit output directory. It does not install it.
+- `verify-session-execution.mjs` verifies native write confinement and process
+  termination in disposable roots. `verify-concurrent-revert-runtime.mjs` adds
+  the built companion OpenCode's real legacy HTTP API, restart, prompt cleanup,
+  Revert and Redo around a held-open native writer. These are explicit acceptance
+  commands with supplied binary paths, separate from deterministic unit suites.
 1. Developer invokes a script via `bun run` or shell.
 2. Script resolves repo paths/env, validates prerequisites, and builds an execution plan.
 3. It runs one or more child commands (watchers/builds/checks), forwarding output and handling lifecycle events.
@@ -49,3 +59,5 @@ Repository automation entrypoint for developer workflows: validation planning, l
 - `qa/session-changes.mjs`: deterministic file execution/private Git capture setup and production web/Electron session attribution, recorded diff, and restore visual journeys.
 
 - `verify-crash-memory.mjs` runs synthetic Electron history reconciliation in isolated app-bound and service ownership modes. The `--workload snapshots` option measures a large synthetic managed ledger separately. It writes numerical samples and synthetic allocation profiles beneath `.cache/`, with a default 95-minute soak; it never registers launchd, connects providers or reads installed-app state.
+
+- `build-revert-runtime.mjs` reproduces the pinned companion and native supervisor, runs acceptance, and stages manifests. `verify-revert-runtime-artifacts.mjs` validates packaging; `verify-concurrent-revert-execution.mjs` exercises real dispatch, Context Mode, descendants, Cursor and optional web/Electron journeys. `tests/fixtures/revert-runtime` pins the existing Context Mode dependency for clean acceptance builds.

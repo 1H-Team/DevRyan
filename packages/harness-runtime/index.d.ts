@@ -1,3 +1,6 @@
+export * from './lib/session-mutations.js';
+export * from './lib/session-revert-coordinator.js';
+
 export interface HarnessPaths {
   harnessDir: string;
   commandDeadlineDir: string;
@@ -475,6 +478,25 @@ export interface DiagnosticsExportScope {
   directory?: string;
 }
 
+export interface UsageMetric { known: number; unknown: number; total: number | null }
+export interface UsageSummary {
+  observations: number;
+  tokens: Record<keyof import('../shared-runtime/lib/usage-observation.js').UsageTokens, UsageMetric>;
+  cacheReadTokenRatio: number | null; requestHitRate: number | null;
+  ratioCoverage: { known: number; unknown: number };
+  requests: { observed: number; knownCacheUsage: number; hits: number; unknownCacheUsage: number };
+  responseModelCoverage: number; modelMismatches: number; costs: Record<string, UsageMetric>;
+  requestDurationMs: UsageMetric; timeToFirstTokenMs: UsageMetric; interRequestGapMs: UsageMetric; observedSpanMs: number | null;
+}
+export interface UsageCohorts { all: UsageSummary; byPurpose: Record<string, UsageSummary>; byUse: Record<string, UsageSummary>; helpers: UsageSummary; helperInputShare: number | null }
+export interface UsageReportV1 {
+  version: 1; source: 'retained-journal'; incomplete: boolean;
+  coverage: { retained: number; omitted: number; omittedRoots: number; journalGaps: number; duplicates: number; cumulativeGaps: number; conflicts: number; unsettled: number; attributionConflicts: number };
+  roots: Array<{ rootSessionID: string; runtime: UsageCohorts; provider: UsageCohorts; observedTaskSpanMs: number | null; routes: Array<{ identity: Array<string | null>; bySource: Record<string, UsageSummary> }> }>;
+  limitations: string[]; observations: import('../shared-runtime/lib/usage-observation.js').UsageObservationV1[];
+}
+export function createUsageCollector(options?: { maxObservations?: number; maxBytes?: number }): { add(record: unknown): void; finish(): UsageReportV1 };
+
 export interface HarnessTraceMeasurement {
   observed: number;
   unknown: number;
@@ -782,7 +804,8 @@ export interface SessionChangeIdentity {
   source?: string; tool?: string;
 }
 export type SessionChangeEvidenceKind = 'snapshot' | 'exact';
-export type SessionChangeFileContent = string | null | { oid: string; mode: '100644' | '100755' | '120000' };
+export type SessionChangeFileContent = string | null | { oid: string; mode: '100644' | '100755' | '120000' }
+  | { bytes: Uint8Array; mode: string };
 export type SessionChangeFileReceipt = { path: string; oldPath?: string | null } & (
   { before: SessionChangeFileContent; after: SessionChangeFileContent; patch?: never }
   | { patch: string; before?: never; after?: never }
@@ -839,11 +862,15 @@ export interface SessionChangeRuntime {
   observe(event: unknown, directory?: string | null): Promise<void>;
   drain(): Promise<void>;
 }
+export interface SessionOwnedRestoreRequest { directory: string; sessionID: string; revision: string; redo: boolean;
+  calls: Array<{ sessionID: string; messageID: string; callID: string }> }
 export function createSessionChangeRuntime(options: { directory: string; maxBytes?: number; maxOperations?: number;
+  restoreOwned?: (input: SessionOwnedRestoreRequest) => Promise<unknown>;
   maxCaptureBytes?: number; maxRevisions?: number; maintenanceEvery?: number;
   onDiagnostic?: (event: SessionChangeDiagnostic) => void | Promise<void>;
   onChange?: (scope: { directory: string; sessionID: string }) => void | Promise<void> }): SessionChangeRuntime;
 export interface SessionChangeHost {
+  recordReceipt(input: SessionChangeReceipt): Promise<unknown>;
   acceptExecution(input: SessionChangeExecution): Promise<{ acknowledged: true }>;
   plugin(input: Record<string, unknown>): Promise<unknown>;
   handleRequest(method: string, path: string, body?: unknown, context?: { signal?: AbortSignal }): Promise<null | { status: number; body: unknown }>;
@@ -852,6 +879,7 @@ export interface SessionChangeHost {
   drain(): Promise<void>;
 }
 export function createSessionChangeHost(options: Pick<PrimaryRecoveryHostOptions, 'dataDirectory' | 'buildOpenCodeUrl' | 'getOpenCodeAuthHeaders' | 'fetchImpl' | 'publishEvent'> & {
+  restoreOwned?: (input: SessionOwnedRestoreRequest) => Promise<unknown>;
   onDiagnostic?: (event: SessionChangeDiagnostic) => void | Promise<void>;
   reconcileExecutionReceipts?: (scope: { directory: string; sessionID: string }) => Promise<{ pending: boolean; reasons: string[] }>;
 }): SessionChangeHost;

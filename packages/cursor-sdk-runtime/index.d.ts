@@ -174,6 +174,7 @@ export type CursorSdkRuntime = {
   replyToQuestion(requestID: string, answers: string[][]): Promise<boolean>;
   rejectQuestion(requestID: string): Promise<boolean>;
   abortSession(sessionID: string): Promise<boolean>;
+  abortAndWait(sessionID: string): Promise<{ terminated: true; sessions: string[] }>;
   getSessionMessages(sessionID: string): Promise<Array<{ info: Record<string, unknown>; parts: Record<string, unknown>[] }>>;
   deleteSessionState(sessionID: string): Promise<boolean>;
   dispose(): Promise<void>;

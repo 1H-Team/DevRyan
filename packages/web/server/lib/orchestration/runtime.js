@@ -261,6 +261,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     buildOpenCodeUrl: options.buildOpenCodeUrl,
     getOpenCodeAuthHeaders: options.getOpenCodeAuthHeaders,
     cursorSdkRuntime: options.cursorSdkRuntime,
+    registerExecutionChild: options.registerExecutionChild,
     fetchImpl: options.fetchImpl,
     readTerminalError: (input) => terminalErrors.read(input),
     subscribeAssistantActivity: assistantActivity.subscribe,

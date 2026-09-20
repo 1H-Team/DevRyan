@@ -26,6 +26,10 @@ const PATCHED_END = '  }, serve);\n  const idleMs = finalConfig.idleTimeoutSecon
 const sha256 = source => crypto.createHash('sha256').update(source).digest('hex');
 const helperSource = fs.readFileSync(new URL('./meridian-http-server.js', import.meta.url), 'utf8');
 const handoffSource = fs.readFileSync(new URL('./meridian-passthrough-handoff.js', import.meta.url), 'utf8');
+const providerSource = fs.readFileSync(new URL('./session-provider-spawn.js', import.meta.url), 'utf8');
+const PROVIDER_IMPORT = 'import { spawnConfinedProvider } from "./devryan-session-provider-spawn.js";\n';
+const PROVIDER_ANCHOR = '      pathToClaudeCodeExecutable: claudeExecutable,';
+const PROVIDER_PATCHED = PROVIDER_ANCHOR + '\n      ...(process.env.DEVRYAN_EXECUTION_BOUNDARY === "1" ? { spawnClaudeCodeProcess: passthrough ? spawnConfinedProvider : () => { throw new Error("mutation_runtime_unsupported: Claude native execution requires passthrough mode"); } } : {}),';
 const incompatible = error => ({ ok: false, changed: false, code: MERIDIAN_HTTP_HOTFIX_INCOMPATIBLE, error });
 
 export const applyMeridianHttpHotfix = ({ configDirectory, fs: fsApi = fs,
@@ -45,7 +49,8 @@ export const applyMeridianHttpHotfix = ({ configDirectory, fs: fsApi = fs,
     source = fsApi.readFileSync(entry, 'utf8');
   } catch { return incompatible('Meridian HTTP hotfix files are unavailable'); }
   const originalSha256 = expectedOriginalSha256 ?? review.originalSha256;
-  const original = stripMeridianHandoffPatch(source, review.edits).replace(IMPORT, '').replace(PATCHED, MERIDIAN_HTTP_SERVER_ORIGINAL).replace(PATCHED_END, ORIGINAL_END);
+  const withoutProvider = source.replace(PROVIDER_IMPORT, '').replace(PROVIDER_PATCHED, PROVIDER_ANCHOR);
+  const original = stripMeridianHandoffPatch(withoutProvider, review.edits).replace(IMPORT, '').replace(PATCHED, MERIDIAN_HTTP_SERVER_ORIGINAL).replace(PATCHED_END, ORIGINAL_END);
   if (sha256(original) !== originalSha256) return incompatible('Meridian HTTP source hash is incompatible');
   if (original.split(MERIDIAN_HTTP_SERVER_ORIGINAL).length !== 2 || original.split(ORIGINAL_END).length !== 2) {
     return incompatible('Meridian HTTP source anchors are incompatible');
@@ -58,10 +63,13 @@ export const applyMeridianHttpHotfix = ({ configDirectory, fs: fsApi = fs,
     previousPatched = patchMeridianHandoff(httpPatched, { edits: review.previousEdits });
   }
   catch { return incompatible('Meridian handoff source anchors are incompatible'); }
-  if (source !== original && source !== httpPatched && source !== previousPatched && source !== patched) return incompatible('Meridian source contains an incomplete patch');
+  if (withoutProvider !== original && withoutProvider !== httpPatched && withoutProvider !== previousPatched && withoutProvider !== patched) return incompatible('Meridian source contains an incomplete patch');
+  if (original.split(PROVIDER_ANCHOR).length !== 2) return incompatible('Meridian provider execution anchors are incompatible');
+  patched = PROVIDER_IMPORT + patched.replace(PROVIDER_ANCHOR, PROVIDER_PATCHED);
   let changed = false;
   try {
-    for (const [file, content] of [[helper, helperSource], [path.join(packageRoot, 'dist', MERIDIAN_HANDOFF_HELPER), handoffSource], [entry, patched]]) {
+    for (const [file, content] of [[helper, helperSource], [path.join(packageRoot, 'dist', MERIDIAN_HANDOFF_HELPER), handoffSource],
+      [path.join(packageRoot, 'dist', 'devryan-session-provider-spawn.js'), providerSource], [entry, patched]]) {
       let previous = null;
       try { previous = fsApi.readFileSync(file, 'utf8'); } catch { /* New managed helper. */ }
       if (previous === content) continue;

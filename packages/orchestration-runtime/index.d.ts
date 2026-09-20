@@ -388,6 +388,7 @@ export interface ManagedOpenCodeTransport {
   createSession(input: {
     directory: string;
     parentSessionId: string;
+    parentCallID?: string;
     title: string;
   }): Promise<{ id?: string } | null>;
   promptSession(input: ManagedOpenCodeTransportInput & {

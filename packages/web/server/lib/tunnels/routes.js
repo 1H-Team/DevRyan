@@ -1,4 +1,5 @@
 import { ManagedRemoteTunnelTokenValidationError } from './managed-token.js';
+import { TUNNEL_LINK_TTL_MS, TUNNEL_SESSION_TTL_MS } from './access-control.js';
 
 export const createTunnelRoutesRuntime = (dependencies) => {
   const {
@@ -89,7 +90,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
     }
 
     if (provider === TUNNEL_PROVIDER_CLOUDFLARE && mode === TUNNEL_MODE_MANAGED_REMOTE) {
-      if (!getManagedAccountLoginAvailable()) {
+      if (!getManagedAccountLoginAvailable() && !tunnelAuthController.hasOwner?.()) {
         throw new TunnelServiceError(
           'managed_account_auth_required',
           'Managed Remote requires Supabase-backed individual DevRyan accounts.'
@@ -124,6 +125,8 @@ export const createTunnelRoutesRuntime = (dependencies) => {
       hostname,
       originPort,
     });
+
+    if (tunnelAuthController.hasOwner) await tunnelAuthController.setActiveTunnel({ publicUrl: result.publicUrl, mode: result.activeMode });
 
     console.log(`Tunnel active (${result.provider}): ${result.publicUrl}`);
     return {
@@ -351,6 +354,18 @@ export const createTunnelRoutesRuntime = (dependencies) => {
       return res.json({ providers });
     });
 
+    app.post('/api/openchamber/tunnel/links', async (req, res) => {
+      try {
+        const link = await tunnelAuthController.issueBootstrapToken({ botIds: req.body?.botIds, ttlMs: TUNNEL_LINK_TTL_MS });
+        return res.json({ connectUrl: `https://${tunnelAuthController.getActiveTunnelHost()}/tunnel/connect#t=${link.token}`, expiresAt: link.expiresAt });
+      } catch (error) { return res.status(error.statusCode || 503).json({ error: error.message, code: error.code || 'tunnel_link_unavailable' }); }
+    });
+
+    app.delete('/api/openchamber/tunnel/grants/:grantId', async (req, res) => {
+      try { await tunnelAuthController.revokeGrant(req.params.grantId); return res.sendStatus(204); }
+      catch (error) { return res.status(error.statusCode || 503).json({ error: 'Tunnel grant could not be revoked' }); }
+    });
+
     app.get('/api/openchamber/tunnel/status', async (_req, res) => {
       try {
         await tunnelService.refreshHealth?.({ maxAgeMs: 5000 });
@@ -401,9 +416,10 @@ export const createTunnelRoutesRuntime = (dependencies) => {
             activeTunnelMode: tunnelAuthController.getActiveTunnelMode() || null,
             activeSessions,
             localPort: getActivePort(),
+            botOnlyLinks: Boolean(tunnelAuthController.hasOwner),
             ttlConfig: {
-              bootstrapTtlMs,
-              sessionTtlMs,
+              bootstrapTtlMs: tunnelAuthController.hasOwner ? TUNNEL_LINK_TTL_MS : bootstrapTtlMs,
+              sessionTtlMs: tunnelAuthController.hasOwner ? TUNNEL_SESSION_TTL_MS : sessionTtlMs,
             },
           });
         }
@@ -419,14 +435,14 @@ export const createTunnelRoutesRuntime = (dependencies) => {
           || activeTunnelHost !== resolvedTunnelHost
           || activeTunnelMode !== activeNormalizedMode;
         if (needsActiveTunnelSync) {
-          tunnelAuthController.setActiveTunnel({
+          await tunnelAuthController.setActiveTunnel({
             tunnelId: activeTunnelId || crypto.randomUUID(),
             publicUrl,
             mode: activeNormalizedMode,
           });
         }
 
-        const usesDirectLogin = activeNormalizedMode === TUNNEL_MODE_MANAGED_REMOTE;
+        const usesDirectLogin = activeNormalizedMode === TUNNEL_MODE_MANAGED_REMOTE && (getManagedAccountLoginAvailable() || !tunnelAuthController.hasOwner);
         const bootstrapStatus = usesDirectLogin
           ? { hasBootstrapToken: false, bootstrapExpiresAt: null }
           : tunnelAuthController.getBootstrapStatus();
@@ -456,9 +472,10 @@ export const createTunnelRoutesRuntime = (dependencies) => {
           activeTunnelMode: activeNormalizedMode,
           activeSessions: tunnelAuthController.listTunnelSessions(),
           localPort: getActivePort(),
+          botOnlyLinks: Boolean(tunnelAuthController.hasOwner),
           ttlConfig: {
-            bootstrapTtlMs,
-            sessionTtlMs,
+            bootstrapTtlMs: tunnelAuthController.hasOwner ? TUNNEL_LINK_TTL_MS : bootstrapTtlMs,
+            sessionTtlMs: tunnelAuthController.hasOwner ? TUNNEL_SESSION_TTL_MS : sessionTtlMs,
           },
         });
       } catch (error) {
@@ -501,6 +518,10 @@ export const createTunnelRoutesRuntime = (dependencies) => {
 
     app.post('/api/openchamber/tunnel/start', async (_req, res) => {
       try {
+        if (tunnelAuthController.hasOwner && ((_req.body?.connectTtlMs !== undefined && _req.body.connectTtlMs !== TUNNEL_LINK_TTL_MS)
+          || (_req.body?.sessionTtlMs !== undefined && _req.body.sessionTtlMs !== TUNNEL_SESSION_TTL_MS))) {
+          return res.status(400).json({ code: 'tunnel_expiry_fixed', error: 'Bot links expire after 15 minutes and sessions after seven days' });
+        }
         if (!getRuntimeReady()) {
           return res.status(503).json({
             ok: false,
@@ -574,6 +595,11 @@ export const createTunnelRoutesRuntime = (dependencies) => {
         const previousMode = tunnelAuthController.getActiveTunnelMode();
         const previousProvider = tunnelService.resolveActiveProvider();
         const previousUrl = tunnelService.getPublicUrl();
+        const selectedBotIds = _req.body?.botIds;
+        const usesDirectLogin = mode === TUNNEL_MODE_MANAGED_REMOTE && (getManagedAccountLoginAvailable() || !tunnelAuthController.hasOwner);
+        if (!usesDirectLogin && selectedBotIds !== undefined && (!Array.isArray(selectedBotIds) || selectedBotIds.length)) {
+          await tunnelAuthController.validateSelection?.(selectedBotIds);
+        }
 
         const { publicUrl, provider: activeProvider, providerMetadata, controllerReused } = await startTunnelWithNormalizedRequest({
           provider,
@@ -596,24 +622,23 @@ export const createTunnelRoutesRuntime = (dependencies) => {
         );
         let revokedBootstrapCount = 0;
         let invalidatedSessionCount = 0;
-        if ((replacedTunnel || mode === TUNNEL_MODE_MANAGED_REMOTE) && previousTunnelId) {
-          const revoked = tunnelAuthController.revokeTunnelArtifacts(previousTunnelId);
+        if (!tunnelAuthController.hasOwner && (replacedTunnel || mode === TUNNEL_MODE_MANAGED_REMOTE) && previousTunnelId) {
+          const revoked = await tunnelAuthController.revokeTunnelArtifacts(previousTunnelId);
           revokedBootstrapCount = revoked.revokedBootstrapCount;
           invalidatedSessionCount = revoked.invalidatedSessionCount;
         }
 
-        tunnelAuthController.setActiveTunnel({
+        await tunnelAuthController.setActiveTunnel({
           tunnelId: replacedTunnel || !previousTunnelId ? crypto.randomUUID() : previousTunnelId,
           publicUrl,
           mode,
         });
 
-        const usesDirectLogin = mode === TUNNEL_MODE_MANAGED_REMOTE;
-        const bootstrapToken = usesDirectLogin
+        const bootstrapToken = usesDirectLogin || (tunnelAuthController.hasOwner && !selectedBotIds?.length)
           ? null
-          : tunnelAuthController.issueBootstrapToken({ ttlMs: bootstrapTtlMs });
+          : await tunnelAuthController.issueBootstrapToken({ botIds: selectedBotIds, ttlMs: tunnelAuthController.hasOwner ? TUNNEL_LINK_TTL_MS : bootstrapTtlMs });
         const connectUrl = bootstrapToken
-          ? `${publicUrl.replace(/\/$/, '')}/tunnel/connect?t=${encodeURIComponent(bootstrapToken.token)}`
+          ? `${publicUrl.replace(/\/$/, '')}/tunnel/connect#t=${encodeURIComponent(bootstrapToken.token)}`
           : null;
         const managedRemoteTunnelConfig = await readManagedRemoteTunnelConfigFromDisk();
         const isCloudflareProvider = activeProvider === TUNNEL_PROVIDER_CLOUDFLARE;
@@ -630,7 +655,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
           connectUrl,
           bootstrapExpiresAt: bootstrapToken?.expiresAt ?? null,
           runtimeReady: true,
-          connectReady: providerMetadata?.connectorState !== 'degraded',
+          connectReady: providerMetadata?.connectorState !== 'degraded' && (usesDirectLogin || Boolean(bootstrapToken)),
           replacedTunnel,
           replaced: replacedTunnel
             ? {
@@ -646,14 +671,14 @@ export const createTunnelRoutesRuntime = (dependencies) => {
           activeSessions: tunnelAuthController.listTunnelSessions(),
           localPort: getActivePort(),
           ttlConfig: {
-            bootstrapTtlMs,
-            sessionTtlMs,
+            bootstrapTtlMs: tunnelAuthController.hasOwner ? TUNNEL_LINK_TTL_MS : bootstrapTtlMs,
+            sessionTtlMs: tunnelAuthController.hasOwner ? TUNNEL_SESSION_TTL_MS : sessionTtlMs,
           },
         });
       } catch (error) {
         console.error('Failed to start tunnel:', error);
         if (!getActiveTunnelController()) {
-          tunnelAuthController.clearActiveTunnel();
+          tunnelAuthController.suspendActiveTunnel?.();
         }
         if (error instanceof TunnelServiceError) {
           const status = error.code === 'missing_dependency'
@@ -704,12 +729,12 @@ export const createTunnelRoutesRuntime = (dependencies) => {
       }
 
       if (activeTunnelId) {
-        const revoked = tunnelAuthController.revokeTunnelArtifacts(activeTunnelId);
+        const revoked = await tunnelAuthController.revokeTunnelArtifacts(activeTunnelId);
         revokedBootstrapCount = revoked.revokedBootstrapCount;
         invalidatedSessionCount = revoked.invalidatedSessionCount;
       }
 
-      tunnelAuthController.clearActiveTunnel();
+      await tunnelAuthController.clearActiveTunnel();
       res.json({ ok: true, revokedBootstrapCount, invalidatedSessionCount });
     });
   };

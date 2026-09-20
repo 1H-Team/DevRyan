@@ -515,8 +515,8 @@ button svg.remixicon path,
 button svg.remixicon circle[fill],
 [role="button"] svg.remixicon path,
 [role="button"] svg.remixicon circle[fill],
-button svg path,
-[role="button"] svg path {
+button svg:not(.oc-stroke-icon) path,
+[role="button"] svg:not(.oc-stroke-icon) path {
   fill: currentColor !important;
 }
 

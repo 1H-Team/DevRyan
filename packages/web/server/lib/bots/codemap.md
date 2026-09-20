@@ -21,6 +21,11 @@ options, and exact save-gate-publish semantics.
 Domain logic stays out of `multi-user/runtime.js` and the
 Electron shell.
 
+Tunnel guests carry explicit `tunnel-bot` principals. The early tunnel boundary
+allowlists transport routes; Bot authorization separately intersects selected
+Bot UUIDs with membership and channel ACLs. Catalog, SSE, run and approval reads
+must preserve those checks. A grant never inherits global administrator access.
+
 ## Entry points
 
 - `index.js`: public module exports.
@@ -85,7 +90,8 @@ Electron shell.
 - `audit-retention.js`: content-free Bot audit events and the one-year/default,
   30-day-minimum retention job.
 - `audit-query.js`: exact-managed-admin Bot audit validation, generalized
-  resolution-aware issues-first keyset queries with stable time bounds, batch
+  resolution-aware issues-first keyset queries with stable time bounds and
+  microsecond-preserving PostgREST offset cursors, batch
   Bot/user hydration, deleted/former fallbacks, and per-row metadata safety
   revalidation/redaction. Range-based review clearing
   records separate service-only dismissal rows; retained ledger/UUID detail

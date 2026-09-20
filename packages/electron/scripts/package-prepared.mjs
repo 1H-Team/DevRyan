@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import { verifyRevertRuntimeArtifacts } from '../../../scripts/verify-revert-runtime-artifacts.mjs';
 import { prepareBotRuntimeReleaseManifest } from './stage-bot-manifest.mjs';
 
 const require = createRequire(import.meta.url);
@@ -11,10 +12,11 @@ const run = (args) => {
 };
 
 export async function packagePrepared({ args = [], arch = process.env.ELECTRON_BUILDER_ARCH,
-  stageManifest = prepareBotRuntimeReleaseManifest, execute = run,
+  stageManifest = prepareBotRuntimeReleaseManifest, verifyRuntime = verifyRevertRuntimeArtifacts, execute = run,
   builder = () => require.resolve('electron-builder/cli.js'),
 } = {}) {
   await stageManifest({ required: true });
+  await verifyRuntime({ arch: arch || process.arch });
   execute([builder(), ...args]);
   execute(['./scripts/verify-runtime-service-package.mjs', ...(arch ? ['--arch', arch] : [])]);
 }

@@ -3,7 +3,6 @@ import { RiLoaderLine, RiRefreshLine } from '@remixicon/react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
-import { resolveOpenCodeVersionViewStatus } from './openCodeVersionState';
 
 type SupportStatus = 'supported' | 'older' | 'newer' | 'unknown';
 
@@ -157,28 +156,6 @@ export const OpenCodeVersionSection: React.FC<{ compact?: boolean }> = ({ compac
     }
   }, [state.checking, t]);
 
-  const viewStatus = resolveOpenCodeVersionViewStatus(state);
-  const statusText = (() => {
-    switch (viewStatus) {
-      case 'checking':
-        return t('settings.openchamber.about.opencode.state.checking');
-      case 'updateAvailable':
-        return t('settings.openchamber.about.opencode.state.updateAvailable', {
-          version: state.latestVersion || t('settings.openchamber.about.opencode.state.unknown'),
-        });
-      case 'upToDate':
-        return t('settings.openchamber.about.opencode.state.upToDate');
-      case 'newerThanLatest':
-        return t('settings.openchamber.about.opencode.state.newerThanLatest');
-      case 'currentUnavailable':
-        return t('settings.openchamber.about.opencode.state.currentUnavailable');
-      case 'error':
-        return state.error || t('settings.openchamber.about.opencode.error.checkFailed');
-      default:
-        return t('settings.openchamber.about.opencode.state.notChecked');
-    }
-  })();
-
   const supportText = state.checked
     ? t(`settings.openchamber.about.opencode.support.${state.supportStatus}`)
     : null;
@@ -208,11 +185,6 @@ export const OpenCodeVersionSection: React.FC<{ compact?: boolean }> = ({ compac
           >
             {t('settings.openchamber.about.opencode.title')}
           </h4>
-          {!compact && (
-            <p className="mt-0.5 typography-micro text-muted-foreground">
-              {t('settings.openchamber.about.opencode.description')}
-            </p>
-          )}
         </div>
         <Button
           type="button"
@@ -220,7 +192,6 @@ export const OpenCodeVersionSection: React.FC<{ compact?: boolean }> = ({ compac
           size={compact ? 'xs' : 'sm'}
           onClick={() => { void checkForUpdates(); }}
           disabled={state.checking}
-          aria-describedby="about-opencode-version-status"
           className="shrink-0 !font-normal"
         >
           {state.checking
@@ -248,16 +219,6 @@ export const OpenCodeVersionSection: React.FC<{ compact?: boolean }> = ({ compac
       </dl>
 
       <div className="mt-2 flex flex-col gap-0.5">
-        <p
-          id="about-opencode-version-status"
-          aria-live="polite"
-          className={cn(
-            'typography-micro',
-            viewStatus === 'error' ? 'text-[var(--status-error)]' : 'text-muted-foreground',
-          )}
-        >
-          {statusText}
-        </p>
         {supportText && (
           <p className="typography-micro text-muted-foreground/80">{supportText}</p>
         )}

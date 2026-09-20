@@ -139,7 +139,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish-npm:
-    needs: [create-release, build-web-artifact]
+    needs: [create-release, build-web-artifact, prepare-desktop-electron-macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -161,6 +161,16 @@ jobs:
           name: web-release
           path: artifacts
 
+      - name: Download verified ARM64 Revert runtime
+        uses: actions/download-artifact@v4
+        with:
+          name: revert-runtime-darwin-arm64
+          path: packages/web/runtime/darwin-arm64
+      - name: Download verified x64 Revert runtime
+        uses: actions/download-artifact@v4
+        with:
+          name: revert-runtime-darwin-x64
+          path: packages/web/runtime/darwin-x64
       - name: Verify and stage web artifact
         env:
           RELEASE_OPERATION: web-stage
@@ -372,15 +382,17 @@ jobs:
 
   prepare-desktop-electron-macos:
     needs: create-release
-    runs-on: macos-26
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: aarch64-apple-darwin
+            runner: macos-26
             arch: arm64
             platform: darwin-aarch64
           - target: x86_64-apple-darwin
+            runner: macos-15-intel
             arch: x64
             platform: darwin-x86_64
     steps:
@@ -391,6 +403,14 @@ jobs:
           node-version: '22'
       - name: Install target dependencies
         run: bun install --frozen-lockfile --cpu '*' --os darwin
+      - name: Build and verify concurrent Revert runtime
+        run: bun run build:revert-runtime
+      - uses: actions/upload-artifact@v4
+        with:
+          name: revert-runtime-darwin-${{ matrix.arch }}
+          path: packages/web/runtime/darwin-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 1
       - name: Prepare native helpers
         working-directory: packages/electron
         env:

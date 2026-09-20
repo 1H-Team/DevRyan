@@ -7,6 +7,7 @@ Node CLI surface for launching and operating DevRyan/OpenChamber server features
 - **Single-command orchestrator** in `cli.js` with shared output/prompt helpers from `cli-output.js`.
 - **Policy-first validation**: hard checks for unsafe browser ports, managed origin ports (`1024–65535`), duration/TTL bounds, and runtime preconditions before prompt UX.
 - **Dual-mode output**: human-friendly Clack UI in TTY and deterministic JSON/quiet modes for automation.
+- **Local owner proof**: `enroll-owner` creates a two-minute filesystem challenge. `tunnel-owner-auth.js` authenticates subsequent CLI tunnel requests through that exchange without implicitly enrolling a host or saving cookies to disk. Bot links have a 15-minute lifetime and sessions last seven days.
 
 ## Flow
 1. `cli.js` parses argv/env, resolves command mode, and selects output strategy.

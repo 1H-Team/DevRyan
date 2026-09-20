@@ -244,6 +244,17 @@ describe('common request middleware', () => {
 });
 
 describe('managed tunnel and invitation links', () => {
+  it('revokes tunnel grants before acknowledging a local authentication reset', async () => {
+    const app = express(); const order = [];
+    registerAuthAndAccessRoutes(app, {
+      tunnelAuthController: { classifyRequestScope: () => 'local', revokeTunnelArtifacts: async () => { order.push('tunnels'); } },
+      uiAuthController: { multiUser: false, requireAuth: (_req, _res, next) => next(),
+        handleResetAuth: (_req, res) => { order.push('reset'); res.json({ ok: true }); } },
+      readSettingsFromDiskMigrated: async () => ({}), normalizeTunnelSessionTtlMs: (value) => value,
+    });
+    expect((await request(app).post('/api/auth/reset')).status).toBe(200);
+    expect(order).toEqual(['tunnels', 'reset']);
+  });
   const createAuthApp = ({ multiUser = true, prepareFreshTunnelLogin, getRuntimeReady } = {}) => {
     const app = express();
     const tunnelAuthController = createTunnelAuth();
@@ -474,5 +485,39 @@ describe('managed tunnel and invitation links', () => {
     expect(response.status).toBe(200);
     expect(response.text).toBe('invite');
     expect(handleConnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps tunnel bootstrap required when a request forges a local forwarded host', async () => {
+    const app = express();
+    // Mirrors packages/web/server/index.js. With `trust proxy` enabled Express
+    // reports req.hostname from the client-supplied X-Forwarded-Host header, so
+    // this is the configuration the spoof would be mounted against.
+    app.set('trust proxy', true);
+    const tunnelAuthController = createTunnelAuth();
+    tunnelAuthController.setActiveTunnel({
+      tunnelId: 'tunnel-1',
+      publicUrl: 'https://tunnel.example.com',
+    });
+    const handleSessionStatus = vi.fn((_req, res) => res.json({ authenticated: true }));
+
+    registerAuthAndAccessRoutes(app, {
+      // A single-user install: the multi-user short-circuit is absent here, and
+      // so is the Supabase boundary that otherwise masks a misclassification.
+      uiAuthController: { multiUser: false, handleSessionStatus },
+      tunnelAuthController,
+      readSettingsFromDiskMigrated: vi.fn(async () => ({ tunnelSessionTtlMs: 60_000 })),
+      normalizeTunnelSessionTtlMs: (value) => value,
+      getRuntimeReady: vi.fn(() => true),
+    });
+
+    const response = await request(app)
+      .get('/auth/session')
+      .set('Host', 'tunnel.example.com')
+      .set('X-Forwarded-Host', 'localhost')
+      .set('X-Forwarded-For', '203.0.113.9');
+
+    expect(response.status).toBe(401);
+    expect(response.body).toMatchObject({ authenticated: false, tunnelLocked: true });
+    expect(handleSessionStatus).not.toHaveBeenCalled();
   });
 });

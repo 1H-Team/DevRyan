@@ -2,12 +2,11 @@ import React from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   RiSearchLine,
-  RiChatNewLine,
   RiGitBranchLine,
   RiTimerLine,
 } from '@remixicon/react';
 import { cn } from '@/lib/utils';
-import { SidebarLeftCollapseIcon } from '@/components/icons/ToolbarIcons';
+import { NewChatIcon, SidebarLeftCollapseIcon } from '@/components/icons/ToolbarIcons';
 import { useI18n } from '@/lib/i18n';
 import { ProductAudienceTabs } from '@/components/shared/ProductAudienceTabs';
 import type { ProductAudience } from '@/stores/useMainSidebarAudienceStore';
@@ -76,7 +75,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
             className={cn(headerActionButtonClass, 'h-8 min-w-0 flex-1 justify-start gap-2 px-2')}
             aria-label={t('sessions.sidebar.header.actions.newChat')}
           >
-            <RiChatNewLine className={cn(headerActionIconClass, 'flex-shrink-0')} />
+            <NewChatIcon className={cn(headerActionIconClass, 'flex-shrink-0')} />
             <span className="truncate typography-ui-label font-medium">{t('sessions.sidebar.header.actions.newChat')}</span>
           </button>
         </TooltipTrigger>

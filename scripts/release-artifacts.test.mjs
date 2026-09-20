@@ -35,11 +35,14 @@ test('prepared native archive is bound to architecture, commit and bytes', () =>
 test('packaging requires verified manifest before invoking builder and verifies built artifacts', async () => {
   const calls = [];
   const options = { arch: 'x64', builder: () => 'builder', execute: (args) => calls.push(args),
-    stageManifest: async (args) => { assert.equal(args.required, true); calls.push('manifest'); } };
+    stageManifest: async (args) => { assert.equal(args.required, true); calls.push('manifest'); },
+    verifyRuntime: async (args) => { assert.equal(args.arch, 'x64'); calls.push('revert-runtime'); } };
   await packagePrepared(options);
-  assert.deepEqual(calls, ['manifest', ['builder'], ['./scripts/verify-runtime-service-package.mjs', '--arch', 'x64']]);
+  assert.deepEqual(calls, ['manifest', 'revert-runtime', ['builder'], ['./scripts/verify-runtime-service-package.mjs', '--arch', 'x64']]);
   calls.length = 0;
   await assert.rejects(packagePrepared({ ...options, stageManifest: async () => { throw new Error('invalid'); } }), /invalid/);
   assert.equal(calls.length, 0);
+  await assert.rejects(packagePrepared({ ...options, verifyRuntime: async () => { throw new Error('unverified runtime'); } }), /unverified runtime/);
+  assert.deepEqual(calls, ['manifest']);
   await assert.rejects(packagePrepared({ ...options, execute: () => { throw new Error('builder failed'); } }), /builder failed/);
 });

@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/web",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "private": false,
   "type": "module",
   "main": "./server/index.js",
@@ -106,6 +106,7 @@
   },
   "files": [
     "dist",
+    "runtime/**",
     "server/**",
     "!server/default-config/agents/*.test.*",
     "!server/default-config/agents/*.spec.*",

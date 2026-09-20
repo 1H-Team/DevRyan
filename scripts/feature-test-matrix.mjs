@@ -1,5 +1,20 @@
 export const FEATURE_TEST_MATRIX = Object.freeze([
   {
+    id: 'selective-session-revert',
+    sourcePaths: ['packages/harness-runtime/lib/session-mutations.js', 'packages/harness-runtime/lib/session-mutation-text.js',
+      'packages/harness-runtime/lib/session-revert-coordinator.js', 'packages/harness-runtime/lib/session-execution.js',
+      'packages/harness-runtime/lib/session-execution-owner.js', 'packages/web/server/lib/opencode/session-execution-host.js',
+      'packages/web/server/lib/opencode/execution-artifacts.js', 'scripts/build-revert-runtime.mjs',
+      'scripts/verify-revert-runtime-artifacts.mjs', 'packages/harness-runtime/native/session-execution.c',
+      'packages/harness-runtime/native/session-execution-windows.c', 'packages/harness-runtime/native/session-spawn-darwin.c',
+      'packages/web/server/lib/opencode/session-revert-coordinator.js', 'packages/web/server/lib/opencode/session-scoped-revert.js'],
+    testPaths: ['packages/harness-runtime/lib/session-mutations.test.js', 'packages/harness-runtime/lib/session-mutation-text.test.js',
+      'packages/harness-runtime/lib/session-revert-coordinator.test.js', 'packages/harness-runtime/lib/session-execution.test.js',
+      'packages/web/server/lib/opencode/execution-artifacts.test.js', 'scripts/verify-revert-runtime-artifacts.test.mjs',
+      'packages/web/server/lib/opencode/session-revert-coordinator.test.js', 'packages/web/server/opencode-proxy.test.js',
+      'packages/ui/src/sync/session-actions.test.ts'],
+  },
+  {
     id: 'context-mode-worker-liveness',
     sourcePaths: ['packages/web/server/lib/opencode/context-mode-worker-pool.js',
       'packages/web/server/lib/opencode/context-mode-worker.js', 'packages/web/server/lib/opencode/context-mode-native-hotfix.js',

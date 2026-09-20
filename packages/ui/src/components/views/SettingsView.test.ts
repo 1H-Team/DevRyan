@@ -6,6 +6,7 @@ import {
   getSettingsBackButtonHeaderContentClassName,
   getSettingsFullPageOverlayClassName,
   getSettingsNavButtonClassName,
+  getSettingsNavigationColumnClassName,
   getSettingsNavScrollClassName,
   getSettingsPageSidebarClassName,
 } from './SettingsView.styles';
@@ -54,6 +55,18 @@ describe('SettingsView navigation', () => {
 
     expect(classes).toContain('overflow-y-auto');
     expect(classes).toContain('pt-14');
+  });
+
+  test('desktop settings navigation stays fixed width without a resize control', () => {
+    const classes = getSettingsNavigationColumnClassName().split(/\s+/);
+    const source = readFileSync(new URL('./SettingsFrame.tsx', import.meta.url), 'utf8');
+
+    expect(classes).toContain('w-[216px]');
+    expect(classes).toContain('min-w-[216px]');
+    expect(classes).toContain('max-w-[216px]');
+    expect(source).not.toContain('settings.view.actions.resizeNavigation');
+    expect(source).not.toContain('SETTINGS_NAV_MIN_WIDTH');
+    expect(source).not.toContain('handleResizeKeyDown');
   });
 
   test('settings full-page overlay covers the app shell without dialog styling', () => {
@@ -190,7 +203,7 @@ describe('SettingsView navigation', () => {
   });
 
   test('keeps global Skills and MCP as Coding Agent settings without Bot assignment tabs', () => {
-    const source = readFileSync(new URL('./SettingsView.tsx', import.meta.url), 'utf8');
+    const source = readFileSync(new URL('./SettingsFrame.tsx', import.meta.url), 'utf8');
     expect(source).toContain("settingsSlug === 'skills.installed' || settingsSlug === 'mcp'");
     expect(source).not.toContain('ProductAudienceTabs');
     expect(source).not.toContain('skillsAudience');

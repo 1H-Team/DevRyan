@@ -26,6 +26,7 @@ import { startAppearanceAutoSave } from '@/lib/appearanceAutoSave';
 import { startModelPrefsAutoSave } from '@/lib/modelPrefsAutoSave';
 import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
 import {
+  authStoragePrincipalId,
   hasAuthCapability,
   registerAuthSessionRetry,
   setAuthOfflineGrace,
@@ -285,7 +286,7 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
     acceptedPrincipalRef.current = nextPrincipal;
     offlineGraceRef.current = isOfflineGrace;
     setAuthOfflineGrace(isOfflineGrace);
-    const changed = setStoragePrincipal(nextPrincipal.id);
+    const changed = setStoragePrincipal(authStoragePrincipalId(nextPrincipal));
     setAuthPrincipal(nextPrincipal);
     if (!hasAuthCapability(nextPrincipal, 'bots')) {
       useMainSidebarAudienceStore.getState().setAudience('coding-agents');
@@ -299,7 +300,7 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
       window.location.reload();
       return false;
     }
-    applyPersistedDirectoryPreferences(nextPrincipal);
+    if (nextPrincipal.scope !== 'tunnel-bot') applyPersistedDirectoryPreferences(nextPrincipal);
     return true;
   }, []);
 
@@ -448,6 +449,15 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
   }, [checkStatus]);
 
   React.useEffect(() => {
+    if (state !== 'authenticated' || acceptedPrincipalRef.current?.scope !== 'tunnel-bot') return;
+    // Tunnel grants have their own event stream and no host/project stream.
+    const timer = setInterval(() => { void checkStatus(); }, 30_000);
+    const visible = () => { if (document.visibilityState === 'visible') void checkStatus(); };
+    document.addEventListener('visibilitychange', visible);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', visible); };
+  }, [checkStatus, state]);
+
+  React.useEffect(() => {
     if (state !== 'authenticated' || acceptedPrincipalRef.current?.scope !== 'managed') {
       return;
     }
@@ -544,6 +554,7 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
 
     if (state === 'authenticated' && !hasResyncedRef.current) {
       hasResyncedRef.current = true;
+      if (acceptedPrincipalRef.current?.scope === 'tunnel-bot') return;
       void (async () => {
         try {
           await syncDesktopSettings();

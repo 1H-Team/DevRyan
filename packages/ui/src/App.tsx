@@ -513,7 +513,15 @@ const StartupReadinessGate: React.FC<{
   );
 };
 
+const BotTunnelApp = React.lazy(() => import('./apps/BotTunnelApp').then((module) => ({ default: module.BotTunnelApp })));
+
 function App({ apis }: AppProps) {
+  const principal = useAuthPrincipal();
+  if (principal.scope === 'tunnel-bot') return <React.Suspense fallback={<p role="status">Loading Bot workspaces…</p>}><BotTunnelApp apis={apis} /></React.Suspense>;
+  return <HostApp apis={apis} />;
+}
+
+function HostApp({ apis }: AppProps) {
   const initializeApp = useConfigStore((s) => s.initializeApp);
   const isInitialized = useConfigStore((s) => s.isInitialized);
   const isConnected = useConfigStore((s) => s.isConnected);

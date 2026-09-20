@@ -1,5 +1,8 @@
 # Concurrent prompt revert: implementation checkpoint
 
+This is the historical September 9 checkpoint. Continued implementation and
+current verification results are in the [September 20 implementation audit](../2026-09-20-concurrent-revert/README.md).
+
 ## Status
 
 The requested user-facing fix is **not enabled**. The existing scoped Revert,

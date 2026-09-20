@@ -2,6 +2,8 @@
 
 Repository-only Electron/web QA and shared CDP inspection helpers. No file in this directory enters the shipped UI or changes native security policy.
 
+- Cache accounting QA: `cache-study.mjs` owns canonical profiles and shared parent campaign ledgers with persistent 160/40 attempt caps; fixture ledgers stay local. `cache-wire-evidence.mjs` projects hashes/usage, and `cache-wire-observer.mjs` preserves bounded streaming and rejects unregistered inference during qualified runs. Load only its default-only `cache-wire-plugin.mjs` entrypoint. `cache-serializer-probe.mjs` checks installed OpenCode adapters on loopback; full DevRyan overlay qualification remains separate. `cache-usage-report.mjs` reads retained evidence without initializing a runtime. `cache-title-plugin.mjs`, `cache-efficiency-experiments.mjs` and `cache-pair-runner.mjs` own exact-route gates, wire reconciliation, balanced title arms and a blinded rubric; the 16 A/A / 24 title allocation is unchanged. A verified live host adapter remains a prerequisite. See `docs/CACHE_EFFICIENCY.md`; fixture success cannot establish live coverage or enable cache-policy A/B.
+
 - `run.mjs`: existing isolated QA entrypoint plus an explicit `--config` path to the separate matrix runner.
 - `session-changes.mjs`: deterministic exact-receipt attribution journeys through the production web/Electron controller, HTTP/SSE, and private Git store; verifies concurrent/external writers, selected descendants, segment paging, capture limitations, and conflict-safe restore in both themes and widths. Screenshots require individual visual review.
 - `grok-plan.mjs`: xAI-shaped Plan-mode HTTP/SSE replay through real web/Electron UI. Verifies progressive reasoning plan assembly, hidden traces, final-text replacement, busy/cancel safeguards, saved Markdown, reload, and responsive themes. This fixture is separate from live-provider acceptance.
@@ -66,3 +68,14 @@ Commands, prerequisites, coverage limits and journal investigation: `docs/QA.md`
 - `cursor-usage-live.mjs` / `cursor-usage-child.mjs`: explicit opt-in SDK 1.0.28 comparison under a cache-contained study root. Frozen direct/control/candidate sources, model parameters and instructions, private native stores, serial quota admission with separate pool reserves, file/test graders, reload, idle observation and owned-process cleanup. A failed attempt stays in the fixed-baseline ledger. An optional final `electron` argument verifies the current candidate using the repository's Electron-as-Node worker and records the actual host version. This compares the shared Cursor runtime; it does not establish browser or packaged Electron acceptance.
 - `cursor-usage-observer.mjs` / `cursor-usage-evidence.mjs`: content-free native counters, identifiers, prompt hashes, one-shot/title observations and honest billing unavailability, plus pure quota/deduplication contracts. `summary` projects a shareable report with matched-work averages and failed-inclusive spend; missing readings remain unavailable. SDK calls and options remain unchanged. Exposed SDK runs do not count hidden provider attempts.
 - `cursor-usage-lifecycle.mjs`: opt-in native question-scope rotation, one bounded subagent, foreground shell cancellation sentinels and reload/resume acceptance within the same quota ledger. A deleted random source file tests recall from retained native tool history. The runner's separate `title-retry` workload injects a failed metadata save around actual native Auto title generation.
+
+- `revert-model-fixture.mjs` provides a deterministic loopback model for real-runtime execution tests. `revert-ui.mjs` exercises actual web and Electron Revert controls with a held unrelated command, without provider credentials or installed-app state.
+
+- `settings-loading.mjs`: deterministic Settings cold/warm entry measurements
+  against the real web build and an optional isolated packaged Electron QA binary.
+  Uses the loopback OpenCode fixture, private data/profile/home, disabled idle
+  preloading, 200 ms network latency, and desktop/touch-mobile captures.
+  `--baseline` compares a repository-local earlier web build; `--electron` uses
+  a candidate produced by `package-electron.mjs`. Reports frame/content timing,
+  module requests/bytes and full-screen fallback regressions without touching
+  the installed app or making provider calls.

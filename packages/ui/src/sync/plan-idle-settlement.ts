@@ -32,6 +32,10 @@ export function isSessionTurnSettledForCompletion({
     return false
   }
 
+  // Terminal failure/abort messages can contain visible partial output.
+  // They end streaming, but are not successful completions.
+  if (trailingMessage.error) return false
+
   if (!isFinalAssistantSummaryMessage(trailingMessage, state.part[completedMessageId])) return false
 
   return true

@@ -438,6 +438,9 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
   const createManagedOpenCodeServerProcess = async ({ hostname, port, timeout, cwd, env: processEnv, shellEnvKeysCount = 0 }) => {
     let binary = (process.env.OPENCODE_BINARY || 'opencode').trim() || 'opencode';
+    if (processEnv.DEVRYAN_EXECUTION_BOUNDARY === '1' && path.isAbsolute(processEnv.DEVRYAN_OPENCODE_ARTIFACT ?? '')) {
+      binary = processEnv.DEVRYAN_OPENCODE_ARTIFACT;
+    }
     const logLevel = resolveManagedOpenCodeLogLevel();
     let args = ['serve', '--hostname', hostname, '--port', String(port), '--log-level', logLevel];
     let launchWrapperType = null;
@@ -941,6 +944,12 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     delete processEnvironment.OPENCODE_DISABLE_EXTERNAL_SKILLS;
     delete processEnvironment.DEVRYAN_ORCHESTRATION_URL;
     delete processEnvironment.DEVRYAN_ORCHESTRATION_TOKEN;
+    for (const key of ['DEVRYAN_EXECUTION_BOUNDARY', 'DEVRYAN_OPENCODE_ARTIFACT', 'DEVRYAN_EXECUTION_CONTROL_PLUGINS',
+      'DEVRYAN_EXECUTION_LAUNCHER', 'DEVRYAN_PROVIDER_WORKER', 'DEVRYAN_PROVIDER_STORAGE']) {
+      delete processEnvironment[key];
+      if (!(process.platform === 'win32' && state.useWslForOpencode)
+        && typeof orchestrationEnvironmentInput?.[key] === 'string') processEnvironment[key] = orchestrationEnvironmentInput[key];
+    }
     delete processEnvironment.DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS;
     delete processEnvironment.DEVRYAN_BROWSER_CDP_DISCOVERY_URL;
     delete processEnvironment.DEVRYAN_BROWSER_CDP_TOKEN;

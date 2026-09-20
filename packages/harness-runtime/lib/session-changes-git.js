@@ -14,18 +14,21 @@ const start = (cwd, args, { env, input, timeoutMs = 30_000, stdout = 'pipe' } = 
     GIT_OPTIONAL_LOCKS: '0', ...env }, stdio: ['pipe', stdout, 'pipe'] });
   let timedOut = false;
   let diskFull = false;
+  let notRepository = false;
   let stderrTail = '';
   const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, timeoutMs);
   // Classify only; never include file contents, Git configuration or paths in errors.
   child.stderr.on('data', (chunk) => {
     stderrTail = (stderrTail + chunk.toString()).slice(-1024);
     if (/No space left on device|Disk quota exceeded/i.test(stderrTail)) diskFull = true;
+    if (/not a git repository/i.test(stderrTail)) notRepository = true;
   });
   const done = new Promise((resolve, reject) => {
     child.on('error', reject);
     child.on('close', (code) => {
       if (timedOut) reject(changeError('capture_timeout', 503));
       else if (diskFull) reject(changeError('storage_unavailable', 503));
+      else if (code !== 0 && notRepository) reject(changeError('capture_not_git', 409));
       else if (code !== 0) reject(changeError('capture_git_failed', 503));
       else resolve();
     });

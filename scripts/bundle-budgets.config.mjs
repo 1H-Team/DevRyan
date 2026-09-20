@@ -21,7 +21,7 @@ export default {
         { id: 'usage-gated-bot-panels', identities: ['BotOperationsRail', 'BotSidebarSection'] },
         {
           id: 'lazy-top-level-view-chunks',
-          identities: ['DiffView', 'FilesView', 'GitView', 'MultiRunWindow', 'PlanView', 'SettingsView'],
+          identities: ['DiffView', 'FilesView', 'GitView', 'MultiRunWindow', 'PlanView', 'SettingsView', 'SettingsDataBoundary', 'ManagedSettingsDataBoundary'],
         },
         {
           id: 'lazy-session-dialog-chunks',

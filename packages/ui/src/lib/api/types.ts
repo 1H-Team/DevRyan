@@ -1500,6 +1500,7 @@ export interface SupabaseConnectionStatus {
 }
 
 export interface SupabaseConnectionAPI {
+  /** New adapters throw SupabaseConnectionError; null is supported only for older hosts. */
   getStatus(): Promise<SupabaseConnectionStatus | null>;
   setEnabled(enabled: boolean): Promise<SupabaseConnectionStatus>;
 }

@@ -113,7 +113,7 @@ Role-aware shared-host user and access administration inside Settings.
 
 ## Integration
 
-- Routed by `components/views/SettingsView.tsx` through the `users` settings slug.
+- Routed by `components/views/SettingsFrame.tsx` through the `users` settings slug.
 - Consumes `/api/admin/*` contracts owned by
   `packages/web/server/lib/multi-user/runtime.js`.
 - `lib/interactionAnalytics.ts` owns low-frequency file-open/copy batching and

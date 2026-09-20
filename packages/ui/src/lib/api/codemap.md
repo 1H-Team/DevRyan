@@ -17,3 +17,6 @@ Used by settings sections, auth, providers, skills, and session operations.
 switch. Its typed status separates desired mode, effective mode and restart
 blockers. The web adapter lives in `packages/web/src/api/supabaseConnection.ts`;
 Electron consumes the same HTTP capability.
+`supabaseConnection.ts` owns status validation and typed authorization,
+unsupported-runtime and temporary errors. About keeps the control visible when
+this optional capability is absent or an older adapter returns null.

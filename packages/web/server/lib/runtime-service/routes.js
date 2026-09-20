@@ -1,3 +1,5 @@
+import { hasTunnelBoundaryAuthorization } from '../tunnels/access-control.js';
+
 const SESSION_COOKIE = 'devryan_runtime_service';
 const MAX_BOOTSTRAP_TOKEN_LENGTH = 256;
 const MAX_BROKER_TOKEN_LENGTH = 256;
@@ -115,6 +117,9 @@ export const registerRuntimeServiceRoutes = (app, {
   });
 
   const requireRuntimeSession = (req, res, next) => {
+    // Only the early server boundary can mark this request. Native capability
+    // paths are excluded there; admitted Bot traffic needs no desktop cookie.
+    if (hasTunnelBoundaryAuthorization(req)) return next();
     if (req.path === '/health' || req.path === '/api/health') return next();
     if (!controller.authorizeSession(sessionFromRequest(req))) return unauthorized(res);
     if (!SAFE_METHODS.has(String(req.method || '').toUpperCase()) && !hasCsrfHeader(req)) {
@@ -254,6 +259,7 @@ export const registerRuntimeServiceRoutes = (app, {
 
   if (server && typeof server.prependListener === 'function') {
     server.prependListener('upgrade', (request, socket) => {
+      if (request.tunnelAccessDenied || socket.destroyed) return;
       if (controller.authorizeSession(sessionFromRequest(request))) return;
       socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
       socket.destroy();

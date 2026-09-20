@@ -68,7 +68,9 @@ describe('web managed OpenCode executor transport', () => {
       if (pathname.endsWith('/abort')) return jsonResponse({ success: true });
       throw new Error(`Unexpected request ${init.method} ${pathname}`);
     });
+    const registerExecutionChild = vi.fn(async () => { expect(requests).toHaveLength(1); });
     const executor = createWebManagedOpenCodeExecutor({
+      registerExecutionChild,
       buildOpenCodeUrl: (pathname) => `http://127.0.0.1:4096${pathname}`,
       getOpenCodeAuthHeaders: () => ({ authorization: 'Basic opaque' }),
       fetchImpl,
@@ -81,6 +83,7 @@ describe('web managed OpenCode executor transport', () => {
     };
     const task = {
       taskId: 'dvr_task_1',
+      dispatchCallId: 'call_owned_dispatch',
       rootSessionId: 'ses_root',
       childSessionId: null,
       directory: '/workspace with spaces',
@@ -95,6 +98,8 @@ describe('web managed OpenCode executor transport', () => {
     const result = await executor.start(task, control);
 
     expect(result.status).toBe('completed');
+    expect(registerExecutionChild).toHaveBeenCalledWith({ directory: '/workspace with spaces',
+      sessionID: 'ses_child', parentID: 'ses_root', parentCallID: 'call_owned_dispatch' });
     expect(control.setChildSessionId).toHaveBeenCalledWith('ses_child');
     expect(requests[0].url).toBe('http://127.0.0.1:4096/session?directory=%2Fworkspace+with+spaces');
     expect(JSON.parse(requests[0].init.body)).toEqual({

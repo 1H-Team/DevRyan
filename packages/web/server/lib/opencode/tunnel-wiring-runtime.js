@@ -49,7 +49,7 @@ export const createTunnelWiringRuntime = (dependencies) => {
         printTunnelWarning();
       },
       onControllerTerminated: () => {
-        tunnelAuthController.clearActiveTunnel();
+        tunnelAuthController.suspendActiveTunnel?.();
       },
       runtimeInstanceId: runtimeOptions.runtimeInstanceId,
       fetchImpl: runtimeOptions.fetchImpl,

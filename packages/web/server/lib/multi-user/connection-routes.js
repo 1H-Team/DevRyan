@@ -19,6 +19,14 @@ export function registerSupabaseConnectionRoutes(app, { runtime, preserveLocalCo
   };
   app.get('/api/system/supabase-connection', async (req, res) => {
     try {
+      // An absent configuration has no managed owner to authenticate. Expose
+      // only this fixed, redacted status to a direct local caller; PATCH still
+      // requires enrolled owner proof and validates the complete configuration.
+      if (!connection.configured && isDirectLocalRequest(req)) {
+        res.setHeader('Cache-Control', 'no-store');
+        return res.json({ configured: false, desiredEnabled: false, effectiveEnabled: false,
+          state: 'disconnected', errorCode: null, restartRequired: false, restartAvailable: false, blockers: [] });
+      }
       if (!await authorize(req, res)) return;
       res.setHeader('Cache-Control', 'no-store');
       return res.json(connection.status());
@@ -50,12 +58,12 @@ export function registerSupabaseConnectionRoutes(app, { runtime, preserveLocalCo
 
 // Runs before any private routes, auth bootstrap or public HTTP proxy. It also
 // covers reconnect startup failures: those never silently become public local mode.
-export function attachSupabaseConnectionBoundary(app, server, connection) {
+export function attachSupabaseConnectionBoundary(app, server, connection, { allowRemoteRequest = () => false } = {}) {
   if (!connection?.configured) return () => 0;
   let activeRequests = 0;
   app.use((req, res, next) => {
-    if (!connection.enabled && !isDirectLocalRequest(req)) return unavailable(res);
-    if (!connection.enabled && /^\/api\/(?:admin|bots|bot-actions|bot-channels|bot-runs|bug-reports|user-analytics)(?:\/|$)/.test(req.path)) return unavailable(res);
+    if (!connection.enabled && !isDirectLocalRequest(req) && !allowRemoteRequest(req)) return unavailable(res);
+    if (!connection.enabled && /^\/api\/(?:admin|bots|bot-actions|bot-channels|bot-runs|bug-reports|user-analytics)(?:\/|$)/.test(req.path) && !allowRemoteRequest(req)) return unavailable(res);
     if (connection.status().restartRequired && !safeMethods.has(req.method)) {
       // Completion, cancellation and approval for admitted work remain usable.
       const startsWork = /\/(?:prompt_async|message|command|shell|enqueue|retry|prewarm|fork|run-now|execute)$/.test(req.path)
@@ -71,7 +79,8 @@ export function attachSupabaseConnectionBoundary(app, server, connection) {
     }
     return next();
   });
-  server?.prependListener('upgrade', (req, socket) => {
+  server?.on('upgrade', (req, socket) => {
+    if (req.tunnelAccessDenied || socket.destroyed) return;
     if (connection.enabled || connection.authenticateLocalOwner(req)) return;
     socket.write('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
     socket.destroy();

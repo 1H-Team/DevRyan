@@ -3,6 +3,9 @@ import { validateBotAuditMetadata } from './audit-retention.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/;
+// PostgREST emits timestamptz with an offset. Preserve microseconds in keyset
+// cursors; normalizing through Date would truncate them and skip close events.
+const CURSOR_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
 const CURSOR_VERSION = 1;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -111,7 +114,7 @@ const decodeCursor = (value) => {
       || parsed.v !== CURSOR_VERSION
       || parsed.kind !== 'bot_audit'
       || typeof parsed.createdAt !== 'string'
-      || !ISO_TIMESTAMP_PATTERN.test(parsed.createdAt)
+      || !CURSOR_TIMESTAMP_PATTERN.test(parsed.createdAt)
       || !Number.isFinite(Date.parse(parsed.createdAt))
       || typeof parsed.id !== 'string'
       || !/^[0-9]+$/.test(parsed.id)) {

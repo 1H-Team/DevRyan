@@ -1,5 +1,9 @@
 # packages/ui/src/apps/
 
+`BotTunnelApp.tsx` is the restricted root selected by `App.tsx` for `tunnel-bot`
+principals. It mounts the existing Bot sidebar/chat and `BotsEventOwner`, without
+the host App effects, OpenCode sync tree, settings, native integrations or agent views.
+
 ## Responsibility
 Hosts app-shell entry compositions for different runtime surfaces.
 

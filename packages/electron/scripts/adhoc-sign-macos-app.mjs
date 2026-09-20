@@ -1,6 +1,7 @@
 import { readdirSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { spawnSync } from "node:child_process"
+import { verifyRevertRuntimeArtifacts, refreshSignedRevertDigests } from "../../../scripts/verify-revert-runtime-artifacts.mjs"
 import { verifyPackagedNativeArtifacts } from "./packaged-native-modules.mjs"
 
 function run(command, args, options = {}) {
@@ -61,6 +62,9 @@ export default async function adhocSignMacosApp(context) {
   console.log(`[adhoc-sign] Verifying packaged native artifacts in ${appPath}`)
   verifyPackagedNativeArtifacts(appPath, context.arch)
 
+  const revert = await verifyRevertRuntimeArtifacts({ directory: join(appPath, "Contents", "Resources", "revert-runtime"),
+    arch: typeof context.arch === "string" ? context.arch : context.arch === 3 ? "arm64" : "x64" })
+
   console.log(`[adhoc-sign] Cleaning ${appPath}`)
   removeDsStoreFiles(appPath)
 
@@ -69,6 +73,10 @@ export default async function adhocSignMacosApp(context) {
 
   console.log(`[adhoc-sign] Ad-hoc signing ${appPath}`)
   run("codesign", ["--force", "--deep", "--sign", "-", appPath])
+
+  await refreshSignedRevertDigests(revert)
+  // Updating signed executable digests changes resources; reseal the app only.
+  run("codesign", ["--force", "--sign", "-", appPath])
 
   console.log(`[adhoc-sign] Verifying ${appPath}`)
   run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", appPath])

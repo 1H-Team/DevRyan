@@ -39,3 +39,7 @@ Worktree headers resolve their visible identity from the branch only. Their clea
 
 ## Integration
 Integrated with session hooks/stores and navigation/layout components.
+
+`SidebarFooter` warms the remembered permitted Settings destination on pointer,
+focus and touch intent through `preloadCurrentSettingsDestination`; opening
+Settings itself is synchronous because its navigation frame is already loaded.

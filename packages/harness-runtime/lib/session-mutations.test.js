@@ -50,6 +50,24 @@ test('late unrelated execution keeps its changes without resurrecting reverted b
   expect(await f.read('x')).toBe('a=1 b=4');
 });
 
+test('sessions in separate subdirectories share one publication history and preserve their cwd', async () => {
+  const f = await fixture();
+  await fs.mkdir(path.join(f.directory, 'nested'));
+  await f.write('nested/x', 'a=1; b=2');
+  const a = await f.begin('a', 'pa', 'ca');
+  await fs.writeFile(path.join(a.viewDirectory, 'nested/x'), 'a=3; b=2'); await f.finish(a);
+  const b = await f.begin('b', 'pb', 'cb', { directory: path.join(f.directory, 'nested') });
+  expect(b.projectDirectory).toBe(await fs.realpath(f.directory));
+  expect(b.workingDirectory).toBe(path.join(b.viewDirectory, 'nested'));
+  expect(await fs.readFile(path.join(b.workingDirectory, 'x'), 'utf8')).toBe('a=3; b=2');
+  await fs.writeFile(path.join(b.workingDirectory, 'x'), 'a=3; b=4');
+  await f.revert('a', 'pa');
+  await f.runtime.finish({ directory: b.directory, token: b.token });
+  expect(await f.read('nested/x')).toBe('a=1; b=4');
+  await expect(f.runtime.registerPrompt({ directory: f.directory, sessionID: 'b', userMessageID: 'other' }))
+    .rejects.toMatchObject({ code: 'session_directory_mismatch' });
+});
+
 test('durable descendant chronology includes work after the boundary and fences late children', async () => {
   const f = await fixture(); await f.write('x', 'x=0 y=0 z=0');
   const root = await f.begin('root', 'p0', 'root0'); await f.finish(root);
@@ -85,6 +103,25 @@ test('unrelated creation of the same path is preserved when the earlier creation
   expect(await f.read('x')).toBe('B');
 });
 
+test('explicit rename ancestry survives a replacement inode and later foreign edits', async () => {
+  const f = await fixture(); await f.write('x', 'a=1; b=2');
+  const a = await f.begin('a', 'pa', 'ca');
+  await fs.rename(path.join(a.viewDirectory, 'x'), path.join(a.viewDirectory, 'moved'));
+  await fs.writeFile(path.join(a.viewDirectory, 'replacement'), 'a=3; b=2');
+  await fs.rename(path.join(a.viewDirectory, 'replacement'), path.join(a.viewDirectory, 'moved'));
+  await f.runtime.finish({ directory: f.directory, token: a.token, renames: [{ from: 'x', to: 'moved' }] });
+  const b = await f.begin('b', 'pb', 'cb'); await fs.writeFile(path.join(b.viewDirectory, 'moved'), 'a=3; b=4'); await f.finish(b);
+  await f.revert('a', 'pa'); expect(await f.read('x')).toBe('a=1; b=4');
+  await expect(f.read('moved')).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+test('successive replacements preserve the later replacement when its ancestor is reverted', async () => {
+  const f = await fixture(); await f.write('x', 'x=1; x=1');
+  const a = await f.begin('a', 'pa', 'ca'); await fs.writeFile(path.join(a.viewDirectory, 'x'), 'x=2; x=1'); await f.finish(a);
+  const b = await f.begin('b', 'pb', 'cb'); await fs.writeFile(path.join(b.viewDirectory, 'x'), 'x=3; x=1'); await f.finish(b);
+  await f.revert('a', 'pa'); expect(await f.read('x')).toBe('x=3; x=1');
+});
+
 test('accepted materialization recovers idempotently after a host crash', async () => {
   let crash = true;
   const f = await fixture({ onMaterialize: () => { if (crash) throw new Error('fixture crash'); } });
@@ -95,6 +132,39 @@ test('accepted materialization recovers idempotently after a host crash', async 
   expect(await f.read('x')).toBe('new');
   await restarted.finish({ directory: f.directory, token: a.token });
   expect(await f.read('x')).toBe('new');
+  expect((await restarted.finish({ directory: f.directory, token: a.token })).files).toEqual([{ path: 'x', status: 'modified' }]);
+});
+
+test('a crash during revert retains its decision, receipt and redo ownership', async () => {
+  let crash = false;
+  const f = await fixture({ onMaterialize: () => { if (crash) throw new Error('fixture crash'); } });
+  await f.write('x', '0'); const a = await f.begin('a', 'pa', 'ca');
+  await fs.writeFile(path.join(a.viewDirectory, 'x'), '1'); await f.finish(a);
+  const tx = await f.runtime.prepareRevert({ directory: f.directory, sessionID: 'a', messageID: 'pa' });
+  crash = true;
+  await expect(f.runtime.settleRevert({ directory: f.directory, transactionID: tx.id, commit: true })).rejects.toThrow('fixture crash');
+  const restarted = createSessionMutationRuntime({ directory: f.storage });
+  const result = await restarted.settleRevert({ directory: f.directory, transactionID: tx.id, commit: true });
+  expect(result.files).toEqual([{ path: 'x', status: 'modified' }]); expect(await f.read('x')).toBe('0');
+  const redo = await restarted.prepareRedo({ directory: f.directory, sessionID: 'a' });
+  await restarted.settleRevert({ directory: f.directory, transactionID: redo.id, commit: true });
+  expect(await f.read('x')).toBe('1');
+});
+
+test('recovery refuses to overwrite a newer foreign edit', async () => {
+  const f = await fixture({ onMaterialize: () => { throw new Error('fixture crash'); } });
+  await f.write('x', '0'); const a = await f.begin('a', 'pa', 'ca');
+  await fs.writeFile(path.join(a.viewDirectory, 'x'), '1'); await expect(f.finish(a)).rejects.toThrow('fixture crash');
+  await f.write('x', 'foreign');
+  const restarted = createSessionMutationRuntime({ directory: f.storage });
+  await expect(restarted.finish({ directory: f.directory, token: a.token })).rejects.toMatchObject({ code: 'mutation_recovery_required' });
+  expect(await f.read('x')).toBe('foreign');
+});
+
+test('duplicate execution identities must match the original immutable scope', async () => {
+  const f = await fixture(); const a = await f.begin('a', 'pa', 'ca');
+  expect((await f.begin('a', 'pa', 'ca')).token).toBe(a.token);
+  await expect(f.begin('a', 'other', 'ca')).rejects.toMatchObject({ code: 'capture_identity_mismatch' });
 });
 
 test('moving the revert boundary accumulates the exact operation set for redo', async () => {
@@ -102,7 +172,9 @@ test('moving the revert boundary accumulates the exact operation set for redo', 
   const a = await f.begin('a', 'p1', 'c1'); await fs.writeFile(path.join(a.viewDirectory, 'x'), '1'); await f.finish(a);
   const b = await f.begin('a', 'p2', 'c2'); await fs.writeFile(path.join(b.viewDirectory, 'x'), '2'); await f.finish(b);
   await f.revert('a', 'p2'); expect(await f.read('x')).toBe('1');
-  await f.revert('a', 'p1'); expect(await f.read('x')).toBe('0');
+  const earlier = await f.revert('a', 'p1'); expect(await f.read('x')).toBe('0');
+  expect(await f.revert('a', 'p2')).toEqual(earlier);
+  expect(await f.read('x')).toBe('0');
   await expect(f.begin('a', 'p2', 'stale')).rejects.toMatchObject({ code: 'execution_reverted' });
   const redo = await f.runtime.prepareRedo({ directory: f.directory, sessionID: 'a' });
   await f.runtime.settleRevert({ directory: f.directory, transactionID: redo.id, commit: true });
@@ -118,6 +190,42 @@ test('a prepared revert fences new descendants and includes children without fil
   await expect(f.begin('late', 'pl', 'cl', { parentID: 'b' })).rejects.toMatchObject({ code: 'session_reverting' });
   await f.runtime.settleRevert({ directory: f.directory, transactionID: tx.id, commit: true });
   await expect(f.begin('late', 'pl', 'cl', { parentID: 'b', parentGeneration: 0 })).rejects.toMatchObject({ code: 'execution_reverted' });
+});
+
+test('file Undo and conversation Revert retain independent decisions over the same owned operations', async () => {
+  const f = await fixture(); await f.write('x', 'a=1; b=2');
+  const a = await f.begin('a', 'pa', 'ca'); await fs.writeFile(path.join(a.viewDirectory, 'x'), 'a=3; b=2'); await f.finish(a);
+  const b = await f.begin('b', 'pb', 'cb'); await fs.writeFile(path.join(b.viewDirectory, 'x'), 'a=3; b=4');
+  const selection = { directory: f.directory, sessionID: 'a', revision: 'review-1', calls: [{ sessionID: 'a', callID: 'ca' }] };
+  const undo = await f.runtime.prepareFileRestore(selection);
+  await f.runtime.settleRevert({ directory: f.directory, transactionID: undo.id, commit: true });
+  await f.finish(b); expect(await f.read('x')).toBe('a=1; b=4');
+  expect((await f.runtime.prepareFileRestore(selection)).id).toBe(undo.id);
+  await f.revert('a', 'pa');
+  const redo = await f.runtime.prepareRedo({ directory: f.directory, sessionID: 'a' });
+  await f.runtime.settleRevert({ directory: f.directory, transactionID: redo.id, commit: true });
+  expect(await f.read('x')).toBe('a=1; b=4');
+  const fileRedo = await f.runtime.prepareFileRestore({ ...selection, revision: 'review-2', redo: true });
+  await f.runtime.settleRevert({ directory: f.directory, transactionID: fileRedo.id, commit: true });
+  expect(await f.read('x')).toBe('a=3; b=4');
+});
+
+test('an already reverted session boundary can expand to its descendants without losing Redo', async () => {
+  const f = await fixture(); await f.write('x', 'a=1; b=2');
+  const root = await f.begin('a', 'pa', 'ca');
+  await fs.writeFile(path.join(root.viewDirectory, 'x'), 'a=3; b=2'); await f.finish(root);
+  const child = await f.begin('child', 'pc', 'cc', { parentID: 'a' });
+  await fs.writeFile(path.join(child.viewDirectory, 'x'), 'a=3; b=4'); await f.finish(child);
+  const sessionOnly = await f.runtime.prepareRevert({ directory: f.directory, sessionID: 'a', messageID: 'pa', scope: 'session' });
+  await f.runtime.settleRevert({ directory: f.directory, transactionID: sessionOnly.id, commit: true });
+  expect(await f.read('x')).toBe('a=1; b=4');
+  const tree = await f.runtime.prepareRevert({ directory: f.directory, sessionID: 'a', messageID: 'pa', scope: 'tree' });
+  expect(tree.id).not.toBe(sessionOnly.id);
+  await f.runtime.settleRevert({ directory: f.directory, transactionID: tree.id, commit: true });
+  expect(await f.read('x')).toBe('a=1; b=2');
+  const redo = await f.runtime.prepareRedo({ directory: f.directory, sessionID: 'a' });
+  await f.runtime.settleRevert({ directory: f.directory, transactionID: redo.id, commit: true });
+  expect(await f.read('x')).toBe('a=3; b=4');
 });
 
 test('a foreign deletion keeps shadowed same-path creations absent', async () => {
@@ -155,4 +263,109 @@ test('a new prompt invalidates redo when its provider history will be discarded'
   await f.revert('a', 'pa');
   await f.runtime.registerPrompt({ directory: f.directory, sessionID: 'a', userMessageID: 'next' });
   await expect(f.runtime.prepareRedo({ directory: f.directory, sessionID: 'a' })).rejects.toMatchObject({ code: 'redo_unavailable' });
+});
+
+test('descendants of an earlier dispatch retain their edits after a later parent boundary', async () => {
+  const f = await fixture(); await f.write('x', 'a=1; b=2');
+  const earlier = await f.begin('root', 'p0', 'dispatch');
+  await f.runtime.registerChild({ directory: f.directory, sessionID: 'child', parentID: 'root', parentCallID: 'dispatch' });
+  await f.finish(earlier);
+  const later = await f.begin('root', 'p1', 'later');
+  await fs.writeFile(path.join(later.viewDirectory, 'x'), 'a=3; b=2'); await f.finish(later);
+  const child = await f.begin('child', 'pc', 'cc', { parentID: 'root' });
+  await fs.writeFile(path.join(child.viewDirectory, 'x'), 'a=3; b=4'); await f.finish(child);
+  await f.revert('root', 'p1'); expect(await f.read('x')).toBe('a=1; b=4');
+  await f.revert('root', 'p0'); expect(await f.read('x')).toBe('a=1; b=2');
+});
+
+test('file Undo fences hidden descendants and call aliases select one publication', async () => {
+  const f = await fixture(); await f.write('x', 'before');
+  const root = await f.begin('a', 'pa', 'turn'); await fs.writeFile(path.join(root.viewDirectory, 'x'), 'after'); await f.finish(root);
+  await f.runtime.aliasCalls({ directory: f.directory, token: root.token, calls: ['tool-1', 'tool-2'] });
+  await f.runtime.registerChild({ directory: f.directory, sessionID: 'hidden', parentID: 'a', parentCallID: 'turn' });
+  const child = await f.begin('hidden', 'pc', 'cc', { parentID: 'a' });
+  const tx = await f.runtime.prepareFileRestore({ directory: f.directory, sessionID: 'a', revision: 'review',
+    calls: ['tool-1', 'tool-2'].map((callID) => ({ sessionID: 'a', callID })) });
+  expect(tx.members).toContain('hidden');
+  await expect(f.runtime.assertAdmission({ directory: f.directory, sessionID: 'hidden' })).rejects.toMatchObject({ code: 'session_reverting' });
+  await expect(f.finish(child)).rejects.toMatchObject({ code: 'execution_reverted' });
+  await f.runtime.settleRevert({ directory: f.directory, transactionID: tx.id, commit: true });
+  expect(await f.read('x')).toBe('before');
+});
+
+test('a lost reservation response cannot launch later or reuse the cancelled call', async () => {
+  const f = await fixture();
+  const a = await f.begin('a', 'pa', 'ca');
+  await f.runtime.claimLease({ directory: f.directory, token: a.token, kind: 'process' });
+  await f.runtime.cancelUnstartedCall({ directory: f.directory, sessionID: 'a', messageID: 'pa-assistant', callID: 'ca' });
+  await expect(f.begin('a', 'pa', 'ca')).rejects.toMatchObject({ code: 'execution_cancelled' });
+  await f.runtime.cancelUnstartedCall({ directory: f.directory, sessionID: 'b', messageID: 'pb-assistant', callID: 'cb' });
+  await expect(f.begin('b', 'pb', 'cb')).rejects.toMatchObject({ code: 'execution_cancelled' });
+});
+
+
+test('private Git views retain HEAD and index while original metadata stays untouched', async () => {
+  const f = await fixture(); await f.write('x', 'committed');
+  for (const input of ['node_modules', 'packages/lib/node_modules', '.venv']) {
+    await fs.mkdir(path.join(f.directory, input), { recursive: true });
+    await fs.writeFile(path.join(f.directory, input, 'dependency'), input);
+  }
+  await git(f.directory, ['add', 'x']);
+  await git(f.directory, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'base']);
+  const head = (await git(f.directory, ['rev-parse', 'HEAD'])).toString();
+  await f.write('x', 'pending');
+  const lease = await f.begin('a', 'pa', 'ca');
+  for (const input of ['node_modules', 'packages/lib/node_modules', '.venv']) {
+    expect((await fs.lstat(path.join(lease.viewDirectory, input))).isSymbolicLink()).toBe(true);
+    expect(await fs.readFile(path.join(lease.viewDirectory, input, 'dependency'), 'utf8')).toBe(input);
+  }
+  expect((await git(lease.viewDirectory, ['rev-parse', 'HEAD'])).toString()).toBe(head);
+  expect((await git(lease.viewDirectory, ['show', 'HEAD:x'])).toString()).toBe('committed');
+  expect((await git(lease.viewDirectory, ['diff', '--', 'x'])).toString()).toContain('+pending');
+  await git(lease.viewDirectory, ['add', 'x']);
+  expect((await git(f.directory, ['show', ':x'])).toString()).toBe('committed');
+  await f.finish(lease);
+});
+
+test('non-Git projects retain durable ownership and recovery directory identity', async () => {
+  const f = await fixture(); await fs.rm(path.join(f.directory, '.git'), { recursive: true });
+  await f.write('x', 'a=1; b=2');
+  const a = await f.begin('a', 'pa', 'ca'); await fs.writeFile(path.join(a.viewDirectory, 'x'), 'a=3; b=2'); await f.finish(a);
+  const b = await f.begin('b', 'pb', 'cb'); await fs.writeFile(path.join(b.viewDirectory, 'x'), 'a=3; b=4');
+  await f.revert('a', 'pa'); await f.finish(b);
+  expect(await f.read('x')).toBe('a=1; b=4');
+  expect(await f.runtime.projectDirectories()).toEqual([await fs.realpath(f.directory)]);
+});
+
+
+test('ignore rules cannot hide owned project changes or change their execution base', async () => {
+  const f = await fixture(); await f.write('.gitignore', '*.local\n'); await f.write('config.local', 'a=1; b=2');
+  const a = await f.begin('a', 'pa', 'ca');
+  expect(await fs.readFile(path.join(a.viewDirectory, 'config.local'), 'utf8')).toBe('a=1; b=2');
+  await fs.writeFile(path.join(a.viewDirectory, 'config.local'), 'a=3; b=2');
+  await fs.writeFile(path.join(a.viewDirectory, 'new.local'), 'owned'); await f.finish(a);
+  await f.write('config.local', 'a=3; b=4'); await f.revert('a', 'pa');
+  expect(await f.read('config.local')).toBe('a=1; b=4');
+  await expect(f.read('new.local')).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+
+test('successive Unicode replacements preserve the entire surviving code point', async () => {
+  const f = await fixture(); await f.write('x', 'é; b=2; 😀');
+  const a = await f.begin('a', 'pa', 'ca'); await fs.writeFile(path.join(a.viewDirectory, 'x'), 'Ā; b=2; 🀄'); await f.finish(a);
+  const b = await f.begin('b', 'pb', 'cb'); await fs.writeFile(path.join(b.viewDirectory, 'x'), 'Ă; b=4; 🃏'); await f.finish(b);
+  await f.revert('a', 'pa'); expect(await f.read('x')).toBe('Ă; b=4; 🃏');
+});
+
+test('publication preserves private permissions and later permission changes retain ownership', async () => {
+  const f = await fixture(); await f.write('x', 'before'); await fs.chmod(path.join(f.directory, 'x'), 0o600);
+  const a = await f.begin('a', 'pa', 'ca');
+  expect((await fs.stat(path.join(a.viewDirectory, 'x'))).mode & 0o777).toBe(0o600);
+  await fs.writeFile(path.join(a.viewDirectory, 'x'), 'after'); await f.finish(a);
+  expect((await fs.stat(path.join(f.directory, 'x'))).mode & 0o777).toBe(0o600);
+  const b = await f.begin('b', 'pb', 'cb'); await fs.chmod(path.join(b.viewDirectory, 'x'), 0o640); await f.finish(b);
+  await f.revert('a', 'pa'); expect(await f.read('x')).toBe('before');
+  expect((await fs.stat(path.join(f.directory, 'x'))).mode & 0o777).toBe(0o640);
+  await f.revert('b', 'pb');
+  expect((await fs.stat(path.join(f.directory, 'x'))).mode & 0o777).toBe(0o600);
 });

@@ -1,3 +1,6 @@
+export * from './lib/usage-observation.js';
+export * from './lib/cache-efficiency-policy.js';
+
 export interface ArchiveLimits {
   maxArchiveBytes?: number;
   maxEntries?: number;

@@ -60,6 +60,19 @@ const buildState = (overrides: Partial<State> = {}): State => ({
 })
 
 describe("isSessionTurnSettledForCompletion", () => {
+  for (const name of ["UnknownError", "MessageAbortedError"]) {
+    test(`rejects terminal ${name} with visible partial output`, () => {
+      const state = buildState({ session_status: { [SESSION_ID]: { type: "idle" } } })
+      state.message[SESSION_ID] = [userMessage(USER_ID, 1), {
+        ...assistantMessage(PLAN_ASSISTANT_ID, 2, 3),
+        error: { name, data: { message: "Interrupted after partial output" } },
+      } as Message]
+      expect(isSessionTurnSettledForCompletion({
+        sessionID: SESSION_ID, state, completedMessageId: PLAN_ASSISTANT_ID,
+      })).toBe(false)
+    })
+  }
+
   test("rejects completion while authoritative status is busy", () => {
     expect(isSessionTurnSettledForCompletion({
       sessionID: SESSION_ID,

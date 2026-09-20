@@ -611,8 +611,8 @@ Expected: migration applies from zero, pgTAP passes, and the compatibility test 
 - Create: `packages/ui/src/components/sections/bots/BotPolicyEditor.test.tsx`
 - Create: `packages/ui/src/components/sections/bots/BotLifecycleActions.test.tsx`
 - Create: `packages/ui/src/components/sections/bots/BotTestLab.test.tsx`
-- Modify: `packages/ui/src/components/views/SettingsView.tsx`
-- Modify: `packages/ui/src/components/views/ManagedSettingsView.tsx`
+- Modify: `packages/ui/src/components/views/SettingsFrame.tsx`
+- Modify: `packages/ui/src/components/views/ManagedSettingsFrame.tsx`
 - Modify: `packages/ui/src/components/views/lazyViews.tsx`
 - Modify: `packages/ui/src/lib/i18n/messages/en.settings.ts`
 - Modify: `packages/ui/src/components/sections/codemap.md`

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { assertTunnelBotGrant, isBotTunnelPrincipal } from '../tunnels/bot-grants.js';
 
 import { hashCanonicalBotJson } from '@openchamber/bots-runtime';
 
@@ -408,6 +409,7 @@ export function createBotManagement({
   };
 
   const readDecision = async (principal, botId) => {
+    assertTunnelBotGrant(principal, botId);
     requirePrincipal(principal);
     const bot = await loadBot(botId);
     if (isGlobalAdmin(principal)) return { bot, membership: null, canManage: true };
@@ -418,7 +420,7 @@ export function createBotManagement({
     if (!activeMembership(membership)) {
       fail('Active Bot membership is required', 'bot_membership_required', 403);
     }
-    return { bot, membership, canManage: membership.role === 'manager' };
+    return { bot, membership, canManage: membership.role === 'manager' && !isBotTunnelPrincipal(principal) };
   };
 
   const withKey = async (operation) => {

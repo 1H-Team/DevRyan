@@ -279,6 +279,7 @@ export function createMessageStreamWsRuntime({
 
     const handleUpgrade = async () => {
       try {
+        if (req.tunnelAccessDenied || socket.destroyed || req.principal?.scope === 'tunnel-bot') return;
         if (typeof uiAuthController?.ensureSessionToken === 'function') {
           const sessionToken = await uiAuthController?.ensureSessionToken?.(req, null);
           if (!sessionToken) {

@@ -210,6 +210,7 @@ export function createBotApprovalService({
           continue;
         }
         const { membership } = await authorization.requireActiveMembership(principal, action.bot_id);
+        if (principal.scope === 'tunnel-bot') await authorization.requireTunnelRunRead(principal, action.run_id);
         signal?.throwIfAborted();
         if ((!approvableOnly && action.initiated_by === principal.id)
           || mayApprove(action, principal, membership)) {
@@ -365,6 +366,7 @@ export function createBotApprovalService({
       const normalized = normalizeDecisionRequest(request);
       let action = await loadAction(actionAttemptId);
       const { membership } = await authorization.requireActiveMembership(principal, action.bot_id);
+      if (principal.scope === 'tunnel-bot') await authorization.requireTunnelRunRead(principal, action.run_id);
       if (normalized.actionHash !== action.action_hash
         || normalized.revisionId !== action.revision_id
         || normalized.argsDigest !== action.args_digest) {

@@ -52,6 +52,12 @@ const decrypt = (key, envelope) => {
 export async function createSessionVault({ dataDirectory }) {
   const keyPath = path.join(dataDirectory, 'multi-user-vault.key');
   const vaultPath = path.join(dataDirectory, 'multi-user-vault.json');
+  const exists = async (file) => {
+    try { await fs.stat(file); return true; }
+    catch (error) { if (error?.code === 'ENOENT') return false; throw error; }
+  };
+  const [hasKey, hasVault] = await Promise.all([exists(keyPath), exists(vaultPath)]);
+  if (hasKey !== hasVault) throw new Error('Local authorization storage is incomplete; restore the matching vault and key');
   const key = await readOrCreateKey(keyPath);
   let state = { ...EMPTY_VAULT, sessions: {} };
   let mutation = Promise.resolve();
@@ -59,12 +65,14 @@ export async function createSessionVault({ dataDirectory }) {
   try {
     const raw = JSON.parse(await fs.readFile(vaultPath, 'utf8'));
     const decoded = decrypt(key, raw);
-    if (decoded?.version === 1 && decoded.sessions && typeof decoded.sessions === 'object') state = decoded;
+    if (decoded?.version !== 1 || !decoded.sessions || typeof decoded.sessions !== 'object' || Array.isArray(decoded.sessions)) throw new Error('Invalid local authorization storage');
+    state = decoded;
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error;
   }
 
-  const persist = () => atomicWrite(vaultPath, `${JSON.stringify(encrypt(key, state))}\n`);
+  const persist = (next = state) => atomicWrite(vaultPath, `${JSON.stringify(encrypt(key, next))}\n`);
+  if (!hasVault) await persist();
   const mutate = (operation) => {
     const next = mutation.then(operation, operation);
     mutation = next.catch(() => {});
@@ -88,8 +96,9 @@ export async function createSessionVault({ dataDirectory }) {
     },
     set(sessionId, value) {
       return mutate(async () => {
-        state = { ...state, sessions: { ...state.sessions, [sessionId]: structuredClone(value) } };
-        await persist();
+        const next = { ...state, sessions: { ...state.sessions, [sessionId]: structuredClone(value) } };
+        await persist(next);
+        state = next;
       });
     },
     delete(sessionId) {
@@ -97,8 +106,9 @@ export async function createSessionVault({ dataDirectory }) {
         if (!Object.prototype.hasOwnProperty.call(state.sessions, sessionId)) return;
         const sessions = { ...state.sessions };
         delete sessions[sessionId];
-        state = { ...state, sessions };
-        await persist();
+        const next = { ...state, sessions };
+        await persist(next);
+        state = next;
       });
     },
     drain: () => mutation,

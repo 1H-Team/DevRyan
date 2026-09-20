@@ -1,6 +1,7 @@
 import { authorizeBotOperation } from '../../../../bots-runtime/policy.js';
 
 import { validateBreakGlassReason, validateUuid } from './validation.js';
+import { assertTunnelBotGrant } from '../tunnels/bot-grants.js';
 
 export class BotAuthorizationError extends Error {
   constructor(message, code = 'bot_channel_forbidden', statusCode = 403) {
@@ -94,6 +95,7 @@ export function createBotAuthorization({
       throw new BotAuthorizationError('Channel is required', 'bot_channel_not_found', 404);
     }
     const isGlobalAdmin = principalPolicy?.isGlobalAdmin?.(principal) === true;
+    assertTunnelBotGrant(principal, bot.id, operation);
     const wantsBreakGlass = breakGlassReason !== null && breakGlassReason !== undefined;
     const normalizedReason = wantsBreakGlass ? validateBreakGlassReason(breakGlassReason) : null;
     if (wantsBreakGlass && !isGlobalAdmin) {
@@ -191,6 +193,7 @@ export function createBotAuthorization({
   };
 
   const requireActiveMembership = async (principal, botId) => {
+    assertTunnelBotGrant(principal, botId);
     if (!principal?.id) {
       throw new BotAuthorizationError('Authentication required', 'bot_authentication_required', 401);
     }
@@ -208,6 +211,12 @@ export function createBotAuthorization({
 
   return Object.freeze({
     authorize,
+    async requireTunnelRunRead(principal, runId) {
+      if (principal?.scope !== 'tunnel-bot') return;
+      const run = await store.get('bot_runs', { id: validateUuid(runId, 'runId') });
+      if (!run) throw new BotAuthorizationError('Bot run not found', 'bot_run_not_found', 404);
+      return authorize({ principal, botId: run.bot_id, channelId: run.channel_id, operation: 'read_channel' });
+    },
     requireMembership: requireActiveMembership,
     requireActiveMembership,
     requireOperator: (principal, botId) => authorize({ principal, botId, operation: 'operate_bot' }),

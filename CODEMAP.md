@@ -119,3 +119,5 @@ DevRyan is a Bun/Node monorepo that provides web and desktop UI runtimes for int
 - [Bot failure repair verification](docs/audits/2026-08-30-bot-failure-repair/README.md): memory conflict recovery, durable browser-control waiting, dedicated OAuth image tooling, local migration/Docker/visual evidence, and the hosted-schema prerequisite for remaining live acceptance.
 
 - **Release compilation, shared web/native handoffs, image caching and package commands** → [docs/RELEASE_PIPELINE.md](docs/RELEASE_PIPELINE.md), `scripts/release-artifacts.mjs`, `scripts/release-ci.mjs`, and `.github/workflows/release.yml`.
+
+- **Concurrent conversation Revert, native execution confinement and companion packaging** → [docs/CONCURRENT_REVERT.md](docs/CONCURRENT_REVERT.md), harness mutation/coordinator modules, web `session-execution-host.js`, and `scripts/build-revert-runtime.mjs`.

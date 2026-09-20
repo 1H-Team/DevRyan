@@ -88,22 +88,25 @@ export const createServerStartupRuntime = (dependencies) => {
               selectedPresetName: '',
             });
             if (publicUrl) {
-              tunnelAuthController.setActiveTunnel({
+              await tunnelAuthController.setActiveTunnel({
                 tunnelId: crypto.randomUUID(),
                 publicUrl,
                 mode,
               });
               let connectUrl = null;
-              if (mode !== TUNNEL_MODE_MANAGED_REMOTE) {
+              if (!tunnelAuthController.hasOwner && mode !== TUNNEL_MODE_MANAGED_REMOTE) {
                 const settings = await readSettingsFromDiskMigrated();
                 const bootstrapTtlMs = settings?.tunnelBootstrapTtlMs === null
                   ? null
                   : normalizeTunnelBootstrapTtlMs(settings?.tunnelBootstrapTtlMs);
-                const bootstrapToken = tunnelAuthController.issueBootstrapToken({ ttlMs: bootstrapTtlMs });
-                connectUrl = `${publicUrl.replace(/\/$/, '')}/tunnel/connect?t=${encodeURIComponent(bootstrapToken.token)}`;
+                const bootstrapToken = await tunnelAuthController.issueBootstrapToken({ ttlMs: bootstrapTtlMs });
+                connectUrl = `${publicUrl.replace(/\/$/, '')}/tunnel/connect#t=${encodeURIComponent(bootstrapToken.token)}`;
               }
               if (onTunnelReady) {
                 onTunnelReady(publicUrl, connectUrl);
+              } else if (tunnelAuthController.hasOwner) {
+                console.log(`\nTunnel connector ready: ${publicUrl}`);
+                console.log('Create Bot access links from the authenticated local tunnel settings.');
               } else if (mode === TUNNEL_MODE_MANAGED_REMOTE) {
                 console.log(`\n🌐 Tunnel URL: ${publicUrl}`);
                 console.log('🔐 Sign in with your DevRyan account\n');

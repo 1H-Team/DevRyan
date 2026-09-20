@@ -8,6 +8,8 @@ import crypto from 'crypto';
 import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { isModuleCliExecution } from './cli-entry.js';
+import { prepareLocalOwnerEnrollment } from '../server/lib/multi-user/local-owner-bootstrap.js';
+import { createOwnerAuthenticatedTunnelFetch } from './tunnel-owner-auth.js';
 import { cloudflareTunnelProviderCapabilities } from '../server/lib/tunnels/providers/cloudflare.js';
 import {
   getUnauthenticatedLanErrorMessage,
@@ -44,28 +46,17 @@ const TUNNEL_PROFILES_VERSION = 2;
 const TUNNEL_PROFILES_FILE_NAME = 'tunnel-profiles.json';
 const LEGACY_CLOUDFLARE_MANAGED_REMOTE_FILE_NAME = 'cloudflare-managed-remote-tunnels.json';
 const TUNNEL_CLI_STATE_FILE_NAME = 'tunnel-cli-state.json';
-const TUNNEL_BOOTSTRAP_TTL_DEFAULT_MS = 30 * 60 * 1000;
-const TUNNEL_BOOTSTRAP_TTL_MIN_MS = 60 * 1000;
-const TUNNEL_BOOTSTRAP_TTL_MAX_MS = 24 * 60 * 60 * 1000;
-const TUNNEL_SESSION_TTL_DEFAULT_MS = 8 * 60 * 60 * 1000;
-const TUNNEL_SESSION_TTL_MIN_MS = 5 * 60 * 1000;
-const TUNNEL_SESSION_TTL_MAX_MS = 30 * 24 * 60 * 60 * 1000;
+const TUNNEL_BOOTSTRAP_TTL_DEFAULT_MS = 15 * 60 * 1000;
+const TUNNEL_BOOTSTRAP_TTL_MIN_MS = TUNNEL_BOOTSTRAP_TTL_DEFAULT_MS;
+const TUNNEL_BOOTSTRAP_TTL_MAX_MS = TUNNEL_BOOTSTRAP_TTL_DEFAULT_MS;
+const TUNNEL_SESSION_TTL_DEFAULT_MS = 7 * 24 * 60 * 60 * 1000;
+const TUNNEL_SESSION_TTL_MIN_MS = TUNNEL_SESSION_TTL_DEFAULT_MS;
+const TUNNEL_SESSION_TTL_MAX_MS = TUNNEL_SESSION_TTL_DEFAULT_MS;
 const CONNECT_TTL_PICKER_OPTIONS = [
-  { value: String(3 * 60 * 1000), label: '3m' },
-  { value: String(TUNNEL_BOOTSTRAP_TTL_DEFAULT_MS), label: '30m' },
-  { value: String(2 * 60 * 60 * 1000), label: '2h' },
-  { value: String(8 * 60 * 60 * 1000), label: '8h' },
-  { value: String(24 * 60 * 60 * 1000), label: '24h' },
-  { value: '__custom__', label: 'Custom' },
+  { value: String(TUNNEL_BOOTSTRAP_TTL_DEFAULT_MS), label: '15m' },
 ];
 const SESSION_TTL_PICKER_OPTIONS = [
-  { value: String(60 * 60 * 1000), label: '1h' },
-  { value: String(TUNNEL_SESSION_TTL_DEFAULT_MS), label: '8h' },
-  { value: String(12 * 60 * 60 * 1000), label: '12h' },
-  { value: String(24 * 60 * 60 * 1000), label: '24h' },
-  { value: String(7 * 24 * 60 * 60 * 1000), label: '1w' },
-  { value: String(30 * 24 * 60 * 60 * 1000), label: '30d' },
-  { value: '__custom__', label: 'Custom' },
+  { value: String(TUNNEL_SESSION_TTL_DEFAULT_MS), label: '7d' },
 ];
 const PACKAGE_JSON = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
 const DEFAULT_TUNNEL_PROVIDER_CAPABILITIES = [cloudflareTunnelProviderCapabilities];
@@ -939,6 +930,7 @@ COMMANDS:
   restart        Stop and start the server
   status         Show server status
   tunnel         Tunnel lifecycle commands
+  enroll-owner   Create a two-minute local-owner enrollment link (--port)
   logs           Tail DevRyan logs
   update         Check for and install updates
 
@@ -1001,8 +993,8 @@ START OPTIONS:
   --token-stdin           Read token from stdin
   --hostname <hostname>   Managed-remote hostname
   --origin-port <port>    Fixed Cloudflare origin port (default: 3000)
-  --connect-ttl <value>   Connect-link TTL (e.g. 30m, 24h, 1d)
-  --session-ttl <value>   Session TTL (e.g. 8h, 24h, 1d)
+  --connect-ttl <value>   Connect-link TTL (15m)
+  --session-ttl <value>   Session TTL (7d)
   --qr                    Print QR code for resulting tunnel URL
   --no-qr                 Disable QR output
   --dry-run               Validate inputs without applying changes
@@ -2246,6 +2238,8 @@ async function requestServerShutdown(port) {
   }
 }
 
+const tunnelOwnerFetch = createOwnerAuthenticatedTunnelFetch({ getDataDirectory: getDataDir });
+
 async function requestJson(port, endpoint, options = {}) {
   const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
     ? Math.trunc(options.timeoutMs)
@@ -2256,7 +2250,7 @@ async function requestJson(port, endpoint, options = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(buildLocalUrl(port, endpoint), {
+    const response = await tunnelOwnerFetch(buildLocalUrl(port, endpoint), {
       ...fetchOptions,
       headers: {
         Accept: 'application/json',
@@ -2268,6 +2262,7 @@ async function requestJson(port, endpoint, options = {}) {
     const body = await response.json().catch(() => null);
     return { response, body };
   } catch (error) {
+    if (error?.code === 'local_owner_required') throw new TunnelCliError(error.message, EXIT_CODE.AUTH_CONFIG_ERROR);
     if (error && (error.name === 'AbortError' || error.code === 'ABORT_ERR')) {
       throw new Error(`Request to ${endpoint} timed out after ${timeoutMs}ms.`);
     }
@@ -5289,8 +5284,21 @@ async function main() {
     return;
   }
 
+  if (command === 'enroll-owner') {
+    try {
+      const result = await prepareLocalOwnerEnrollment({ dataDirectory: getDataDir(), origin: `http://127.0.0.1:${options.port || DEFAULT_PORT}` });
+      if (isJsonMode(options)) printJson(result);
+      else console.log(isQuietMode(options) ? result.url : `Open this local enrollment link within two minutes:\n${result.url}`);
+    } catch (error) {
+      if (isJsonMode(options)) printJson({ status: 'error', error: { message: error.message } });
+      else console.error(`Owner enrollment failed: ${error.message}`);
+      process.exitCode = EXIT_CODE.AUTH_CONFIG_ERROR;
+    }
+    return;
+  }
+
   if (!commands[command]) {
-    const knownCommands = ['serve', 'stop', 'restart', 'status', 'tunnel', 'logs', 'update'];
+    const knownCommands = ['serve', 'stop', 'restart', 'status', 'tunnel', 'logs', 'update', 'enroll-owner'];
     const suggestion = findClosestMatch(command, knownCommands);
     const hint = suggestion ? ` Did you mean '${suggestion}'?` : '';
     if (isJsonMode(options)) {

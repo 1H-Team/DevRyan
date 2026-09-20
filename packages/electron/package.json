@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/electron",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "private": true,
   "description": "Electron desktop runtime for DevRyan",
   "author": "DevRyan",
@@ -78,6 +78,10 @@
       {
         "from": "resources/bot-runtime/images.release.json",
         "to": "bot-runtime/images.release.json"
+      },
+      {
+        "from": "../web/runtime",
+        "to": "revert-runtime"
       }
     ],
     "extraFiles": [
@@ -142,6 +146,10 @@
       "provider": "github",
       "owner": "1H-Team",
       "repo": "DevRyan"
-    }
+    },
+    "asarUnpack": [
+      "node_modules/@openchamber/harness-runtime/**",
+      "node_modules/@openchamber/web/server/lib/opencode/session-provider-worker.mjs"
+    ]
   }
 }

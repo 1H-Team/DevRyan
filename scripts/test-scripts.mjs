@@ -30,8 +30,17 @@ export function runScriptTests(root = repositoryRoot) {
     return 0;
   }
 
-  console.log(`\n$ node --test ${files.join(' ')}`);
-  const result = spawnSync(process.execPath, ['--test', ...files], {
+  const args = ['--test'];
+  const concurrency = process.env.DEVRYAN_SCRIPT_TEST_CONCURRENCY;
+  if (concurrency !== undefined) {
+    if (!/^[1-9]\d*$/.test(concurrency) || !Number.isSafeInteger(Number(concurrency))) {
+      throw new Error('DEVRYAN_SCRIPT_TEST_CONCURRENCY must be a positive integer');
+    }
+    args.push(`--test-concurrency=${concurrency}`);
+  }
+  args.push(...files);
+  console.log(`\n$ node ${args.join(' ')}`);
+  const result = spawnSync(process.execPath, args, {
     cwd: root,
     stdio: 'inherit',
     env: process.env,

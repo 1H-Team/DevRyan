@@ -43,3 +43,9 @@ App entry mounts layout; feature regions receive data via context/hooks.
 Integrated with views, sidebar/session/chat components, and global providers.
 
 Mobile `MainLayout` drawer offsets track `useDeviceInfo().screenWidth` in layout effects. A resize snaps to the new open/closed endpoint before paint; ordinary toggles retain the spring. This prevents stale closed-drawer strips after mobile viewport changes.
+
+`MainLayout` mounts the lightweight full/managed Settings frames synchronously.
+Its Settings entry warmup runs after authentication and initial readiness,
+preparing only the remembered authorized destination during idle time.
+Feature sections and their data effects remain lazy; loading/errors are confined
+to the Settings content area so navigation and Back stay available.

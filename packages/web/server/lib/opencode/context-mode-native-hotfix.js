@@ -73,6 +73,10 @@ const PROCESS_END_PATCHED = [
 const PRELOAD_ORIGINAL = '`cm-fs-preload-${process.pid}.js`';
 const PRELOAD_PATCHED = '`cm-fs-preload-${process.pid}-${devryanThreadId}.js`';
 const THREAD_IMPORT = 'import { threadId as devryanThreadId } from "node:worker_threads";\n';
+const DETACHED_ORIGINAL = 'detached: !isWin,';
+const DETACHED_PATCHED = 'detached: process.env.DEVRYAN_EXECUTION_WORKER === "1" ? false : !isWin,';
+const TEMP_ORIGINAL = 'const OS_TMPDIR = (() => {';
+const TEMP_PATCHED = TEMP_ORIGINAL + '\n    if (process.env.DEVRYAN_EXECUTION_WORKER === "1") {\n        if (!process.env.TMPDIR) throw new Error("Confined execution scratch directory is unavailable");\n        return process.env.TMPDIR;\n    }';
 const SERVER_APPEND_PREVIOUS = '\n// DevRyan worker lifecycle: persist existing databases; never delete indexes.\nexport function devryanCloseWorker() {\n    _lastStatsPersist = 0;\n    try { persistStats(); } catch {}\n    executor.cleanupBackgrounded();\n    if (_store) _store.close();\n    try { unlinkSync(CM_FS_PRELOAD); } catch {}\n}\n';
 const SERVER_APPEND = SERVER_APPEND_PREVIOUS.replace('    executor.cleanupBackgrounded();', '    _devryanSessionDb?.close();\n    executor.cleanupBackgrounded();') + `
 let _devryanSessionDb;
@@ -101,6 +105,10 @@ function devryanGetLifetimeStats(options) {
 }
 `;
 const SERVER_CONCURRENCY_EDITS = [
+  ['return resolveContentStorePath({ projectDir: getProjectDir(), contentDir: dir });',
+    'return resolveContentStorePath({ projectDir: process.env.DEVRYAN_LOGICAL_DIRECTORY || getProjectDir(), contentDir: dir });'],
+  ['return resolveSessionDbPath({\n        projectDir: getProjectDir(),',
+    'return resolveSessionDbPath({\n        projectDir: process.env.DEVRYAN_LOGICAL_DIRECTORY || getProjectDir(),'],
   // ContentStore is shared by project, including timeline results attributed by
   // unified search. It cannot establish the calling agent's task or session.
   ['const origin = r.origin || "current-session";', 'const origin = !r.origin || r.origin === "current-session" ? "project-index" : r.origin;'],
@@ -138,6 +146,8 @@ export function prepareNativeContextModeHotfix({ packageRoot, fsApi = fs,
   const plugin = fsApi.readFileSync(pluginPath, 'utf8').replace(PLUGIN_IMPORT, '')
     .replace(NATIVE_EXECUTE_PATCHED, NATIVE_EXECUTE_ORIGINAL).replace(NATIVE_EXECUTE_THREADED, NATIVE_EXECUTE_ORIGINAL).replace(NATIVE_EXECUTE_PREVIOUS, NATIVE_EXECUTE_ORIGINAL).replace(NATIVE_EXECUTE_LEGACY, NATIVE_EXECUTE_ORIGINAL);
   const executor = normalizeExecutionSource(fsApi.readFileSync(executorPath, 'utf8'), EXECUTION_EXECUTOR_EDITS).replaceAll(CLEAR_TIMER_PATCHED, CLEAR_TIMER_ORIGINAL)
+    .replaceAll(DETACHED_PATCHED, DETACHED_ORIGINAL)
+    .replace(TEMP_PATCHED, TEMP_ORIGINAL)
     .replace(PROCESS_START_PATCHED, PROCESS_START_ORIGINAL).replace(PROCESS_START_PREVIOUS, PROCESS_START_ORIGINAL)
     .replace(PROCESS_END_PATCHED, PROCESS_END_ORIGINAL).replace(PROCESS_END_PREVIOUS, PROCESS_END_ORIGINAL)
     .replace(SPAWN_PATCHED, SPAWN_ORIGINAL).replace(TIMER_PATCHED, TIMER_ORIGINAL)
@@ -147,7 +157,7 @@ export function prepareNativeContextModeHotfix({ packageRoot, fsApi = fs,
     throw new Error('Context-mode native plugin/executor source hash is incompatible');
   }
   const patchedExecutor = replaceOnce(replaceOnce(replaceOnce(executor, SPAWN_ORIGINAL, SPAWN_PATCHED),
-    PROCESS_START_ORIGINAL, PROCESS_START_PATCHED), PROCESS_END_ORIGINAL, PROCESS_END_PATCHED);
+    PROCESS_START_ORIGINAL, PROCESS_START_PATCHED), PROCESS_END_ORIGINAL, PROCESS_END_PATCHED).replaceAll(DETACHED_ORIGINAL, DETACHED_PATCHED).replace(TEMP_ORIGINAL, TEMP_PATCHED);
   return [
     [pluginPath, PLUGIN_IMPORT + replaceOnce(plugin, NATIVE_EXECUTE_ORIGINAL, NATIVE_EXECUTE_PATCHED)],
     [executorPath, patchExecutionSource(replaceOnce(replaceOnce(replaceOnce(patchedExecutor, TIMER_ORIGINAL, TIMER_PATCHED),

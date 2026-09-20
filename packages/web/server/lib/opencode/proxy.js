@@ -804,6 +804,8 @@ export const registerOpenCodeProxy = (app, deps) => {
     openchamberDataDir: deps.openchamberDataDir,
     scopedRevertTimeoutMs: deps.scopedRevertTimeoutMs,
     scopedRevertSlowOperationMs: deps.scopedRevertSlowOperationMs,
+    sessionRevertCoordinator: deps.sessionRevertCoordinator,
+    recordDiagnostic: deps.recordDiagnostic,
   });
 
   app.post('/api/mcp/:name/:action', forwardMcpActionRequest);

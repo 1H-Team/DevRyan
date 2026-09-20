@@ -47,7 +47,7 @@ Provider metadata exposes only safe origin and lifecycle state: `cloudflareOrigi
 
 The status route performs a cached single-attempt public probe for managed-remote controllers.
 Failures mark the controller `degraded`. Unexpected connector
-exit clears the service controller and active tunnel authentication artifacts; an explicit stop
+exit suspends the service controller and live connections while preserving durable sessions; an explicit stop
 continues to wait for process exit before clearing either.
 
 Tunnel start is also gated by authoritative OpenCode readiness. Manual starts return
@@ -56,25 +56,62 @@ the OpenCode bootstrap before launching a configured connector. An already-conne
 connector remains visible during a later OpenCode restart, but `runtimeReady` and `connectReady`
 become false and clients must show the stable hostname as unavailable until readiness returns.
 Start and status responses expose both booleans. For managed-remote mode, `connectReady` requires a
-ready runtime, a non-degraded connector, and Supabase-backed managed-account login; no browser
-bootstrap token is created. A connector left running from a legacy shared-password configuration
-remains visible with its saved token and preset intact, but reports `connectReady: false`.
+ready runtime, a non-degraded connector, and either configured managed-account login or
+a locally issued Bot workspace link. Starting a connector without selecting Bots is
+allowed, but does not issue a link or grant access.
 
 ## Link routing contract
 
-Managed-remote tunnels use direct account login at their stable public hostname and return
-`policy: account-login`; startup is rejected with `managed_account_auth_required` unless Supabase
-multi-user auth is configured. The legacy shared UI password is deliberately ineligible because it
-cannot attribute remote developers to separate durable owners. Public `/auth/*` and `/api/*`
-requests use managed-account authentication, fail closed with the same deterministic code when a
-legacy connector is still running, and never issue a `/tunnel/connect` link.
+With Supabase enabled, managed-remote tunnels retain individual account login.
+With Supabase Off or absent, an authenticated local owner can start the connector
+and issue links for selected Bot workspaces. A database outage never changes the
+startup authentication policy.
 
-Quick and managed-local tunnels retain one-time links at `/tunnel/connect?t=...`; multi-user access
-invitations use `/invite?t=...`. `/connect` remains a compatibility dispatcher for previously
-issued links. It recognizes the current tunnel token by its in-memory digest—including after use
-or expiry—before considering the invitation flow, so a tunnel token can never be reinterpreted as
-an invitation. The exchange pre-commit cleanup and retry semantics remain unchanged for those
-legacy/link-gated modes.
+`access-control.js` is the production authority, initialized before private native
+routes, the disconnected boundary, proxies, or WebSocket handlers. Direct-local
+classification uses the socket, raw Host and matching Origin, rejecting all
+`forwarded`, `x-forwarded-*` and `cf-*` headers. An inactive connector never makes
+a remote peer local. Only requests recorded in this boundary's private WeakSet
+can pass the disconnected boundary. Terminal, OpenCode and preview WebSocket
+handlers also honor the early upgrade rejection.
+
+Links use `/tunnel/connect#t=...`. GET renders a landing page, removes the fragment
+from history and exchanges nothing. Connect sends a same-origin, CSRF-protected
+POST. Tokens expire within 15 minutes and are single-use. Fixed seven-day sessions
+and hashed link credentials live in the private encrypted authorization vault.
+Sessions bind owner, grant, selected Bot UUIDs, durable profile, hostname and
+authorization generation. Raw credentials do not enter server logs or referrers.
+Two fixed installation/tunnel buckets limit exchanges without trusting forwarding headers.
+
+The explicit `tunnel-bot` principal has no administrator or host capabilities.
+`bot-grants.js` allows only enumerated Bot catalog, conversation, attachment, run,
+approval and isolated computer routes. Membership and channel ACLs still apply,
+including action/run channel checks and SSE filtering. Host terminal/files/Git,
+agent sessions, previews, imports, credentials, settings, tunnel control and
+native capabilities are denied before handlers. Shared UI mounts only Bot state
+and its event owner for this principal.
+Persisted UI state is namespaced by grant as well as owner, so replacing a link
+cannot restore cached conversations from another grant or the owner's account.
+
+Normal restart resumes the saved managed-remote profile with its existing connector
+configuration and preserves unexpired sessions. Recovery suspends live connections
+without deleting sessions. Stop, grant revocation, owner changes, authentication-mode
+changes and hostname changes invalidate authorization and close associated streams.
+Expired/lost sessions require another locally issued link; remote passkey enrollment
+is unsupported. `POST /api/openchamber/tunnel/links` issues a selected-Bot link;
+`DELETE /api/openchamber/tunnel/grants/:grantId` revokes one. Both require direct-local
+owner authentication and CSRF protection.
+
+Electron enrolls an absent local owner through its in-process server handle or
+authenticated runtime-service bootstrap. Standalone web owners explicitly run
+`openchamber enroll-owner --port <port>` with the matching `OPENCHAMBER_DATA_DIR`.
+The private filesystem challenge expires after two minutes and is consumed only
+by a loopback, same-origin POST. Visiting localhost cannot enroll an owner. Missing
+or corrupt vault/key state fails closed; restore the matching pair to recover access.
+After enrollment, CLI tunnel commands prove filesystem ownership through a new
+one-use challenge and retain their owner cookie only in memory. They cannot
+silently enroll a new owner. About reports failed On startup as a connection
+failure while preserving On and its managed authentication policy.
 
 ## Shutdown contract
 

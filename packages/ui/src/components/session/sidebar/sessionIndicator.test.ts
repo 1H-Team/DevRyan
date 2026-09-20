@@ -218,7 +218,7 @@ describe('resolveSidebarIndicator', () => {
     });
   });
 
-  test('keeps unread errors higher priority than unread completion', () => {
+  test('keeps unresolved unread errors higher priority than unread completion', () => {
     expect(resolveSidebarIndicator({
       isRootSession: true,
       isWorking: false,

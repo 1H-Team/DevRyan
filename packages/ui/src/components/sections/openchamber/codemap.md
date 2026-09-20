@@ -45,3 +45,12 @@ managed GitHub account controls in User Management.
 
 ## Integration
 Integrated with views, lib adapters, and settings/auth stores. `OpenCodeVersionSection.tsx` consumes `/api/config/opencode-resolution` for active runtime metadata and `/api/opencode/update-check` for explicit upstream checks; `openCodeVersionState.ts` keeps its view-state resolution independently testable.
+
+## Loading boundaries
+
+`OpenChamberPage.tsx` is a lightweight layout selecting one resource from
+`openChamberSectionResources.ts`. Appearance/Chat share `VisualSectionContent.tsx`;
+Sessions composition lives in `SessionsSectionContent.tsx`. Shortcuts,
+Notifications, Voice and Tunnel load independently. The section-less combined
+layout is preserved in lazy `LegacyOpenChamberContent.tsx`. Preparing a section
+loads the same resource that rendering consumes, without fetching section data.

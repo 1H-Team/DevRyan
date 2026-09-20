@@ -345,7 +345,7 @@ export function createBotEventStream({
           let retained = false;
           try {
             if (subscriber.closed || !await withBotAbort(
-              canDeliver(subscriber.principal, botId), subscriber.controller.signal,
+              canDeliver(subscriber.principal, botId, channelId), subscriber.controller.signal,
             )) return;
             if (subscriber.closed) return;
             removeSuperseded(subscriber, key);

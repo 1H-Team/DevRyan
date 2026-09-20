@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'bun:test';
 
 describe('ManagedSettingsView capabilities', () => {
-  const source = readFileSync(new URL('./ManagedSettingsView.tsx', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('./ManagedSettingsFrame.tsx', import.meta.url), 'utf8');
 
   test('keeps Skills and MCP Servers available only as Coding Agent settings', () => {
     expect(source).toContain("slug: 'skills.installed'");

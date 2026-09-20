@@ -1575,7 +1575,7 @@ describe('OpenCode tree-scoped revert, redo and change summary', () => {
     return { app, calls };
   };
 
-  const stubSession = (id, extra = {}) => ({ id, title: id, time: { created: 1, updated: 1 }, ...extra });
+  const stubSession = (id, extra = {}) => ({ id, directory: repoDirectory, title: id, time: { created: 1, updated: 1 }, ...extra });
   const userMessage = ({ id, sessionID, created, diffs = [] }) => ({
     info: {
       id,
@@ -1930,7 +1930,9 @@ describe('OpenCode tree-scoped revert, redo and change summary', () => {
   it('refuses with directory_busy when another session is working in the directory', async () => {
     await setupRepo({ 'child.txt': 'base\n' });
     await writeRepoFile('child.txt', 'base\nchild\n');
-    const stub = createOpenCodeStub({ ...childOnlyScenario(), statuses: { root: { type: 'idle' }, elsewhere: { type: 'busy' } } });
+    const scenario = childOnlyScenario();
+    const stub = createOpenCodeStub({ ...scenario, sessions: { ...scenario.sessions, elsewhere: stubSession('elsewhere') },
+      statuses: { root: { type: 'idle' }, elsewhere: { type: 'busy' } } });
     const urls = await startStack(stub);
 
     const response = await postJson(urls.revertUrl('root'), { messageID: 'msg-root' });
@@ -1940,6 +1942,35 @@ describe('OpenCode tree-scoped revert, redo and change summary', () => {
     expect(payload).toEqual(expect.objectContaining({ code: 'directory_busy', sessions: ['elsewhere'] }));
     expect(stub.calls.revert).toEqual([]);
     expect(await readRepoFile('child.txt')).toBe('base\nchild\n');
+  });
+
+  it('ignores deleted status entries instead of reporting another task in this project', async () => {
+    await setupRepo({ 'child.txt': 'base\n' }); await writeRepoFile('child.txt', 'base\nchild\n');
+    const stub = createOpenCodeStub({ ...childOnlyScenario(), statuses: { deleted: { type: 'busy' } } });
+    const urls = await startStack(stub);
+    const response = await postJson(urls.revertUrl('root'), { messageID: 'msg-root' });
+    expect(response.status).toBe(200); expect(await readRepoFile('child.txt')).toBe('base\n');
+  });
+
+  it('ignores active sessions whose verified canonical directory is a different project', async () => {
+    await setupRepo({ 'child.txt': 'base\n' }); await writeRepoFile('child.txt', 'base\nchild\n');
+    const scenario = childOnlyScenario();
+    const stub = createOpenCodeStub({ ...scenario, sessions: { ...scenario.sessions,
+      elsewhere: stubSession('elsewhere', { directory: path.dirname(repoDirectory) }) }, statuses: { elsewhere: { type: 'busy' } } });
+    const urls = await startStack(stub);
+    const response = await postJson(urls.revertUrl('root'), { messageID: 'msg-root' });
+    expect(response.status).toBe(200); expect(await readRepoFile('child.txt')).toBe('base\n');
+  });
+
+  it('retains legacy protection for another task started in a subdirectory of the same worktree', async () => {
+    await setupRepo({ 'child.txt': 'base\n' }); await fs.mkdir(path.join(repoDirectory, 'nested'));
+    const scenario = childOnlyScenario();
+    const stub = createOpenCodeStub({ ...scenario, sessions: { ...scenario.sessions,
+      elsewhere: stubSession('elsewhere', { directory: path.join(repoDirectory, 'nested') }) }, statuses: { elsewhere: { type: 'busy' } } });
+    const urls = await startStack(stub);
+    const response = await postJson(urls.revertUrl('root'), { messageID: 'msg-root' });
+    expect(response.status).toBe(409); expect((await response.json()).code).toBe('directory_busy');
+    expect(stub.calls.revert).toEqual([]);
   });
 
   it('refuses with session_busy when a session inside the tree is still running', async () => {
@@ -1952,6 +1983,28 @@ describe('OpenCode tree-scoped revert, redo and change summary', () => {
 
     expect(response.status).toBe(409);
     expect(payload).toEqual(expect.objectContaining({ code: 'session_busy', sessions: ['child'] }));
+    expect(stub.calls.revert).toEqual([]);
+  });
+
+  it('reports unverifiable activity separately from a busy project', async () => {
+    await setupRepo({ 'child.txt': 'base\n' });
+    const scenario = childOnlyScenario();
+    const stub = createOpenCodeStub({ ...scenario, sessions: { ...scenario.sessions,
+      elsewhere: stubSession('wrong-identity') }, statuses: { elsewhere: { type: 'busy' } } });
+    const urls = await startStack(stub);
+    const response = await postJson(urls.revertUrl('root'), { messageID: 'msg-root' });
+    expect(response.status).toBe(409); expect((await response.json()).code).toBe('activity_unverified');
+    expect(stub.calls.revert).toEqual([]);
+  });
+
+  it('checks the canonical directory of active descendants before classifying activity', async () => {
+    await setupRepo({ 'child.txt': 'base\n' });
+    const scenario = childOnlyScenario();
+    const stub = createOpenCodeStub({ ...scenario, sessions: { ...scenario.sessions,
+      child: { ...scenario.sessions.child, directory: path.dirname(repoDirectory) } }, statuses: { child: { type: 'busy' } } });
+    const urls = await startStack(stub);
+    const response = await postJson(urls.revertUrl('root'), { messageID: 'msg-root' });
+    expect(response.status).toBe(409); expect((await response.json()).code).toBe('session_directory_mismatch');
     expect(stub.calls.revert).toEqual([]);
   });
 

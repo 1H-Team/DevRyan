@@ -1,11 +1,9 @@
 import React from 'react';
 
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
-import { lazyWithChunkRecovery, retryableLazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
+import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { loadPlanView } from './planViewLoader';
-import { loadManagedSettingsView, loadSettingsView } from './settingsViewLoader';
 
-const SETTINGS_CHUNK_OPTIONS = { timeoutMs: 10_000 } as const;
 
 export const LazyGitView = /* @__PURE__ */ lazyWithChunkRecovery(() =>
   import('@/components/views/GitView').then((module) => ({ default: module.GitView })),
@@ -17,8 +15,6 @@ export const LazyFilesView = /* @__PURE__ */ lazyWithChunkRecovery(() =>
   import('@/components/views/FilesView').then((module) => ({ default: module.FilesView })),
 );
 export const LazyPlanView = /* @__PURE__ */ lazyWithChunkRecovery(loadPlanView);
-export const LazySettingsView = /* @__PURE__ */ retryableLazyWithChunkRecovery(loadSettingsView, SETTINGS_CHUNK_OPTIONS);
-export const LazyManagedSettingsView = /* @__PURE__ */ retryableLazyWithChunkRecovery(loadManagedSettingsView, SETTINGS_CHUNK_OPTIONS);
 export const LazyTerminalView = /* @__PURE__ */ lazyWithChunkRecovery(() =>
   import('@/components/views/TerminalView').then((module) => ({ default: module.TerminalView })),
 );

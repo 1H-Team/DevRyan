@@ -6,6 +6,7 @@ Authentication UI components for login, token/device flows, dependency and
 schema failures, local session reset, and loopback agent verification.
 
 ## Design
+- Bot tunnel principals use the same session gate and periodic revalidation, but never hydrate or autosave host settings. Their policy and root restrict them to the existing Bot workspace UI.
 
 - `SessionAuthGate.tsx` owns rendering, password/passkey submission, retry,
   partial-failure-safe local reset, and explicit developer/admin fixture login.

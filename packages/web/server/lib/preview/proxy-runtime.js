@@ -2182,6 +2182,7 @@ export const createPreviewProxyRuntime = ({
     const loopbackProxy = createProxy();
 
     app.use('/api/preview/proxy', async (req, res, next) => {
+      if (req.principal?.scope === 'tunnel-bot') return res.sendStatus(403);
       const resolved = resolveTargetFromRequest(req);
       if (!resolved.ok) {
         return res.status(resolved.status).json({
@@ -2218,6 +2219,7 @@ export const createPreviewProxyRuntime = ({
 
       const handleUpgrade = async () => {
         try {
+          if (req.tunnelAccessDenied || socket.destroyed || req.principal?.scope === 'tunnel-bot') return;
           if (typeof uiAuthController?.ensureSessionToken === 'function') {
             const sessionToken = await uiAuthController?.ensureSessionToken?.(req, null);
             if (!sessionToken) {

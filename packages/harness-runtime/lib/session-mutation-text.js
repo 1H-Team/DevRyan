@@ -2,11 +2,31 @@
 // execution's base revision, never to a text search in today's working file.
 // Strings here are byte strings (latin1); storage and filesystem boundaries use
 // Buffers, so invalid UTF-8 and newline conventions round-trip without loss.
+import { isUtf8 } from 'node:buffer';
+
+// Keep UTF-8 code points indivisible when assigning replacement ownership.
+// Byte-level matching could otherwise combine a restored leading byte with a
+// surviving contributor's continuation byte, producing a different character.
+const units = (text) => {
+  if (!/[\x80-\xff]/.test(text) || !isUtf8(Buffer.from(text, 'latin1'))) return text;
+  const result = [];
+  for (let offset = 0; offset < text.length;) {
+    const first = text.charCodeAt(offset);
+    const size = first < 0x80 ? 1 : first < 0xe0 ? 2 : first < 0xf0 ? 3 : 4;
+    result.push(text.slice(offset, offset + size)); offset += size;
+  }
+  return result;
+};
 
 /** Myers' bisect diff uses linear auxiliary space, including for large rewrites. */
 export function mutationDiff(before, after) {
+  if (before === after) return before ? [{ kind: 'equal', text: before }] : [];
+  if ([before, after].some((text) => text.includes('\0') || !isUtf8(Buffer.from(text, 'latin1')))) {
+    return [...(before ? [{ kind: 'delete', text: before }] : []), ...(after ? [{ kind: 'insert', text: after }] : [])];
+  }
   const result = [];
-  const push = (kind, text) => {
+  const push = (kind, value) => {
+    const text = typeof value === 'string' ? value : value.join('');
     if (!text) return;
     if (result.at(-1)?.kind === kind) result.at(-1).text += text;
     else result.push({ kind, text });
@@ -20,8 +40,8 @@ export function mutationDiff(before, after) {
     while (suffix < a.length && suffix < b.length && a[a.length - suffix - 1] === b[b.length - suffix - 1]) suffix++;
     const tail = a.slice(a.length - suffix);
     a = a.slice(0, a.length - suffix); b = b.slice(0, b.length - suffix);
-    if (!a) push('insert', b);
-    else if (!b) push('delete', a);
+    if (!a.length) push('insert', b);
+    else if (!b.length) push('delete', a);
     else {
       const split = bisect(a, b);
       if (!split || (split[0] === 0 && split[1] === 0) || (split[0] === a.length && split[1] === b.length)) {
@@ -33,7 +53,7 @@ export function mutationDiff(before, after) {
     }
     push('equal', tail);
   };
-  walk(before, after);
+  walk(units(before), units(after));
   return result;
 }
 

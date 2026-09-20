@@ -128,6 +128,7 @@ export class ContextModeWorkerPool {
       else {
         try { slot = this.spawn(call); this.emit(call, 'worker_started'); }
         catch (error) {
+          if (process.env.DEVRYAN_EXECUTION_TRACE === '1') console.error('Confined Context Mode startup:', error);
           this.emit(call, 'unavailable');
           const reason = typeof error?.code === 'string' && /^[A-Z0-9_]{1,64}$/.test(error.code) ? ` (${error.code})` : '';
           this.settle(call, failure('UNAVAILABLE', `could not start worker${reason}. ${NOT_EXECUTED}`));

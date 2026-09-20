@@ -32,7 +32,7 @@ Shared non-React application logic for the UI package: API clients, routing/seri
 4. Persistence and auto-save helpers synchronize selected UI preferences with local storage and desktop settings APIs.
 
 ## Integration
-- Heavy consumers: `components/chat/*`, `components/views/SettingsView.tsx`, and `stores/*`.
+- Heavy consumers: `components/chat/*`, `components/views/SettingsFrame.tsx`, and `stores/*`.
 - Bridges to backend through `/api/*` and `@opencode-ai/sdk/v2`.
 - Provides foundational contracts for `hooks/*` and `sync/*` (routing, message/session helpers, runtime/platform checks).
 

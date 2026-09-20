@@ -26,6 +26,46 @@ reported as unchecked. It does not contact external sites.
 
 ## Suite ownership
 
+### Typecheck memory and incremental state
+
+`bun run type-check` runs workspace checks sequentially to bound overlap within
+that invocation. UI and web retain separate checks because their ambient types
+and compiler contexts differ, even though both include the shared UI. Each uses
+its own incremental build-info file under ignored `.cache/typecheck/`; deleting
+that cache directory forces fresh checks. Cached checks still report type errors
+and invalidate affected results when sources change. Independent agent commands
+can still overlap; avoid launching multiple full typechecks at once.
+
+For a fresh memory diagnostic, run one target at a time:
+
+```bash
+bun run type-check:diagnose ui
+bun run type-check:diagnose web
+```
+
+These commands print Node/TypeScript versions, the effective V8 heap limit,
+host memory, TypeScript extended diagnostics, elapsed time, peak RSS and exit
+status. They use fresh disposable caches without replacing the normal caches.
+Peak RSS and TypeScript's memory counter measure different things. Host memory
+is not a container allowance. Environment values are not printed. A fatal abort
+or forced kill may prevent the final summary and cache cleanup; retain stderr
+and the shell's exit status, and remove any leftover `diagnose-*` cache directory.
+
+No command raises the heap limit or retries automatically. Only after confirming
+a V8 heap-exhaustion diagnostic, choose a limit that fits the host/container
+budget and apply it to the failing command, for example:
+
+```bash
+NODE_OPTIONS=--max-old-space-size=4096 bun run type-check:diagnose ui
+```
+
+4096 is an example in MiB, not necessarily an increase over the runtime default.
+A process kill, timeout, or exit code 134 alone does not prove heap exhaustion.
+For failures inside DevRyan tools, follow the journal correlation and gap checks
+in [runtime verification](AGENT_RUNTIME_VERIFICATION.md).
+
+### Package suites
+
 | Surface | Command or runner | Ownership |
 | --- | --- | --- |
 | Repository, release, and project-plugin tooling | `bun run test:scripts` | `scripts/**/*.test.mjs` and `.opencode/plugins/**/*.test.mjs`, recursively discovered by `scripts/test-scripts.mjs` |

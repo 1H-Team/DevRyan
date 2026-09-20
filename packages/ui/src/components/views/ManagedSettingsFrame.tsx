@@ -7,10 +7,6 @@ import { canAccessSettingsPage, useAuthPrincipal } from '@/lib/authSession';
 import { useI18n } from '@/lib/i18n';
 import { SettingsPagePermissionBoundary } from '@/lib/settings/permission-context';
 import { cn } from '@/lib/utils';
-import { useProjectsStore } from '@/stores/useProjectsStore';
-import { usePluginsStore } from '@/stores/usePluginsStore';
-import { useSkillsCatalogStore } from '@/stores/useSkillsCatalogStore';
-import { useSkillsStore } from '@/stores/useSkillsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { setStoragePrincipal } from '@/stores/utils/safeStorage';
 import { CapabilitySettingsWorkspace } from './CapabilitySettingsWorkspace';
@@ -19,6 +15,7 @@ import { canAccessSettingsDestination } from './SettingsView.access';
 import { SettingsLoadFallback } from './SettingsLoadFallback';
 import { usePreparedSettingsNavigation } from './usePreparedSettingsNavigation';
 import {
+  PreparedSettingsDataBoundary,
   PreparedAgentsPage,
   PreparedAgentsSidebar,
   PreparedBotsPage,
@@ -53,7 +50,7 @@ type ManagedSettingsPage =
   | 'mcp'
   | 'bug-reports';
 
-interface ManagedSettingsViewProps {
+interface ManagedSettingsFrameProps {
   onClose?: () => void;
 }
 
@@ -89,12 +86,11 @@ const CodingAgentSettingsAccessRequired: React.FC = () => (
   </div>
 );
 
-export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClose }) => {
+export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onClose }) => {
   const { t } = useI18n();
   const principal = useAuthPrincipal();
   const settingsPage = useUIStore((state) => state.settingsPage) as ManagedSettingsPage;
   const setSettingsPage = useUIStore((state) => state.setSettingsPage);
-  const activeProjectId = useProjectsStore((state) => state.activeProjectId);
   const backButtonRef = React.useRef<HTMLButtonElement | null>(null);
 
   React.useEffect(() => {
@@ -188,18 +184,6 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
       setSettingsPage(requestedActiveSlug);
     }
   }, [requestedActiveSlug, setSettingsPage, settingsPage]);
-
-  React.useEffect(() => {
-    if (activeSlug === 'skills.installed' && canAccessSettingsPage(principal, activeSlug)) {
-      void useSkillsStore.getState().loadSkills();
-      void useSkillsCatalogStore.getState().loadCatalog();
-      return;
-    }
-    if (activeSlug === 'plugins' && canAccessSettingsPage(principal, activeSlug)) {
-      void usePluginsStore.getState().loadPlugins();
-      void usePluginsStore.getState().loadSlimStatus();
-    }
-  }, [activeProjectId, activeSlug, principal]);
 
   const openPage = React.useCallback((slug: ManagedSettingsPage) => {
     prepareAndCommit(slug, () => setSettingsPage(slug));
@@ -455,7 +439,13 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
                 : activePage?.title || t('settings.view.home.title')}
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-hidden">{renderPage()}</div>
+        <div className="min-h-0 flex-1 overflow-hidden">
+          {activeSlug === 'home' ? renderPage() : (
+            <SectionBoundary key={activeSlug}>
+              <PreparedSettingsDataBoundary slug={activeSlug}>{renderPage()}</PreparedSettingsDataBoundary>
+            </SectionBoundary>
+          )}
+        </div>
       </main>
     </div>
   );

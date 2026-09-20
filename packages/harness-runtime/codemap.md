@@ -9,11 +9,19 @@ API contracts.
 
 ## Where to change things
 
-- Unexported concurrent-revert implementation work: `lib/session-mutations.js`
-  and `lib/session-mutation-text.js`, with adjacent disposable tests. These are
-  not connected to host routes or execution adapters. Required integration and
-  confinement contracts are tracked in
-  `docs/audits/2026-09-09-concurrent-revert/README.md`.
+- Retained request/step/message accounting and purpose cohorts: `lib/usage.js`. Shared normalization lives in `packages/shared-runtime/lib/usage-observation.js`; `lib/sanitizer.js` attaches the optional contract to final runtime events, and `lib/export.js` includes `DevRyan-usage.json`. Exact title diagnostics preserve deleted-helper attribution in `lib/session-id.js`. See `docs/CACHE_EFFICIENCY.md`.
+
+- Selective mutation ownership: exported `lib/session-mutations.js` and internal
+  `lib/session-mutation-text.js`, with immutable bases, replacement ancestry,
+  generation fences and recoverable publication receipts. Exported
+  `lib/session-revert-coordinator.js` coordinates conversation boundaries,
+  acknowledged target-tree cancellation and the durable commit decision.
+  `lib/session-execution-owner.js`, `lib/session-execution.js` and
+  `native/session-execution.c` and `native/session-execution-windows.c` own the
+  native confinement boundary. The host connects captured writers and file
+  Undo/Redo only after verifying matching accepted artifacts. Contracts are in
+  `docs/CONCURRENT_REVERT.md`; platform verification is recorded in
+  `docs/audits/2026-09-20-concurrent-revert/README.md`.
 
 - Session-owned tool captures, cumulative revisions, stored diffs and conflict-checked restore: `lib/session-changes.js`; authenticated host HTTP/plugin adapter: `lib/session-changes-host.js`. `lib/session-changes-tools.js` owns shared tool/receipt normalization; `lib/session-changes-receipts.js` persists exact evidence and immutable segments. Snapshot observations never establish ownership. Call-scoped repair, monotonic exact evidence, retained descendant lineage and pending reconciliation are covered by `lib/session-changes-recovery.test.js`; the host acknowledges private Cursor execution receipts after persistence. `lib/session-changes-git.js` streams Git I/O; `lib/session-changes-snapshot.js` owns scoped capture and the bounded stat cache; `lib/session-changes-store.js` owns individually indexed metadata and atomic publication. `lib/session-changes-scale.test.js` covers large capture, pagination, migration and collection. See `docs/SESSION_CHANGES.md`.
 
@@ -39,3 +47,5 @@ API contracts.
 - Bounded Chrome Trace projection and evidence-qualified measurements: `lib/trace.js`; included as `DevRyan-trace.json` in existing exports. Journal aggregation preserves distinct causes and generations; retention writes its eviction reason before deletion. See `docs/HARNESS_OPTIMIZATION.md` for gates, compatibility and measurement limits.
 
 - Rejected historical-receipt memoization remains in `lib/session-changes.js`; `lib/bounded-read-pool.js` bounds and shares authenticated host summary reads. `lib/managed-collection-continuation.js` validates the narrow transport-failure collection proof; `provider-recovery.js` persists and reconciles wake identity before dispatch.
+
+- `lib/session-execution.js`, `lib/session-execution-owner.js` and `native/` own native confinement, process termination receipts and publication ownership. `lib/session-mutations.js` and `lib/session-revert-coordinator.js` share durable operation decisions with file Undo/Redo. See [Concurrent Revert](../../docs/CONCURRENT_REVERT.md).

@@ -172,6 +172,33 @@ safety, protocol, storage, rollout and rollback contracts are documented in
 
 `lib/session-changes.js` owns always-on execution receipts, private Git snapshots, cumulative net summaries, paged stored revisions retained until deletion, and conflict-checked file-only Undo/Redo. It is independent of optional diagnostic evidence. `lib/session-changes-host.js` validates canonical session identity, lineage and directory; consumes and repairs paginated history; acknowledges private native execution receipts; reconciles pending observations before summary and restore; and exposes the same plugin/HTTP contract in web/Electron. The focused `session-changes-{git,snapshot,store}.js` modules own bounded Git I/O, scoped raw capture/stat caching, and atomic individually indexed metadata. Full contract, operational limits and verification: `docs/SESSION_CHANGES.md`.
 
+### Selective conversation rollback
+
+`createSessionMutationRuntime` records immutable execution bases and attributed
+operations. `begin` creates a private view; it does **not** confine writes.
+An adapter must enforce the filesystem boundary and obtain an authoritative
+process-tree termination receipt before calling `finish`. Exact call scope and
+execution fingerprints protect duplicate delivery. Explicit rename receipts
+preserve identity when a rename also replaces the inode. Publication decisions
+and their results are committed together before materializing shared files.
+Recovery refuses to replace a file changed by a foreign writer after that intent.
+
+`createSessionRevertCoordinator` requires both the legacy conversation-only API
+capability and a confined execution owner. It persists target-tree fences,
+previous conversation boundaries and phases before changing native history.
+Conversation failures restore only those boundaries; after the file commit
+decision, recovery proceeds forward. Revert disables recorded operations and
+Redo reactivates them. No project publication lock is held during cancellation.
+Absent exact history, incompatible runtime and unconfirmed termination are
+distinct errors. The declarations adjacent to these modules define the host
+contract.
+
+The production host installs this coordinator when the companion and native
+artifacts have passed acceptance. Native OpenCode, Context Mode, managed
+descendants, Cursor/Claude and file Undo/Redo share that boundary. See
+[Concurrent Revert](../../docs/CONCURRENT_REVERT.md) for rollout, recovery and
+unsupported-runtime behavior.
+
 ### Session title correlation
 
 The web host emits `session_title_generation` lifecycle records with the target session in top-level `sessionID` and the hidden helper in `payload.helperSessionID`. The sanitizer preserves both identifiers along with stage, outcome, reason, provider/model, status, attempt, and duration. Title text and source prompts are excluded by the producer.

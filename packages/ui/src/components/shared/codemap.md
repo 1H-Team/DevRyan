@@ -13,6 +13,6 @@ audience and labelled tab panels; this folder does not own global state.
 
 ## Integration
 
-Used by `session/sidebar/SidebarHeader.tsx` and `views/SettingsView.tsx`; the
+Used by `session/sidebar/SidebarHeader.tsx` and `views/SettingsFrame.tsx`; the
 session-only main-sidebar selection lives in
 `stores/useMainSidebarAudienceStore.ts`.

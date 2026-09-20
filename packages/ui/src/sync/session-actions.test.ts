@@ -4082,7 +4082,7 @@ describe("revertToMessage recovery behavior", () => {
     expect(scopedRevertCalls).toEqual([])
   })
 
-  test("refetches messages after aborting when scoped revert fails", async () => {
+  test("refetches messages without cancelling more work when the coordinator rejects Revert", async () => {
     const userMessage = {
       id: "msg-user",
       sessionID: "session-a",
@@ -4106,14 +4106,6 @@ describe("revertToMessage recovery behavior", () => {
     })
     const childStores = createChildStores([["/test/project", store]])
     scopedRevertHandler = () => Promise.reject(new Error("server rejected revert"))
-    // The tree revert waits for the aborted session to report idle, as the
-    // server does after an abort lands.
-    sessionAbortHandler = (params) => {
-      store.setState((state) => ({
-        session_status: { ...state.session_status, [String(params.sessionID)]: { type: "idle" } as SessionStatus },
-      }))
-      return Promise.resolve({ data: true })
-    }
     sessionMessagesHandler = () => Promise.resolve({
       data: [
         {
@@ -4138,8 +4130,8 @@ describe("revertToMessage recovery behavior", () => {
 
     expect(thrown instanceof Error ? thrown.message : "").toBe("server rejected revert")
 
-    expect(sessionAbortCalls).toEqual([{ sessionID: "session-a", directory: "/test/project" }])
-    expect(store.getState().session_status["session-a"]).toEqual({ type: "idle" })
+    expect(sessionAbortCalls).toEqual([])
+    expect(store.getState().session_status["session-a"]).toEqual({ type: "busy" })
     expect(sessionMessageCalls).toEqual([{ sessionID: "session-a", directory: "/test/project", limit: 200 }])
   })
 })
@@ -4269,7 +4261,7 @@ describe("session tree revert", () => {
     return store
   }
 
-  test("aborts the whole tree deepest-first, waits for idle, then sends tree scope with the root id", async () => {
+  test("lets the coordinator cancel affected writers without aborting the entire known tree", async () => {
     const store = createTreeStore()
     store.setState({
       session_status: {
@@ -4291,20 +4283,45 @@ describe("session tree revert", () => {
 
     await revertToMessage("session-a", "msg_2")
 
-    expect(sessionAbortCalls.map((call) => call.sessionID)).toEqual(["child-2", "child-1", "session-a"])
+    expect(sessionAbortCalls).toEqual([])
     expect(scopedRevertCalls).toEqual([{
       sessionId: "session-a",
       messageId: "msg_2",
       directory: "/test/project",
       options: { scope: "tree", rootSessionId: "session-a" },
     }])
-    expect(store.getState().session_status["child-2"]).toEqual({ type: "idle" })
+    expect(store.getState().session_status["child-2"]).toEqual({ type: "busy" })
     expect(store.getState().revert_transaction["session-a"]?.status).toBe("confirmed")
     expect(store.getState().message["session-a"]?.map((message) => message.id)).toEqual(["msg_1", "msg_2a"])
   })
 
+  test("stops the legacy tree and retries only when the server explicitly requires it", async () => {
+    const store = createTreeStore()
+    store.setState({ session_status: {
+      "session-a": { type: "busy" }, "child-1": { type: "busy" }, "child-2": { type: "busy" },
+    } as Record<string, SessionStatus> })
+    scopedRevertHandler = (sessionId, messageId) => scopedRevertCalls.length === 1
+      ? Promise.reject(Object.assign(new Error("legacy tree is busy"), { code: "session_busy" }))
+      : Promise.resolve(makeScopedRevertResult(sessionId, messageId))
+    sessionAbortHandler = (params) => {
+      store.setState((state) => ({ session_status: {
+        ...state.session_status, [String(params.sessionID)]: { type: "idle" } as SessionStatus,
+      } }))
+      return Promise.resolve({ data: true })
+    }
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", store]]), () => "/test/project")
+    await revertToMessage("session-a", "msg_2")
+    expect(sessionAbortCalls.map((call) => call.sessionID)).toEqual(["child-2", "child-1", "session-a"])
+    expect(scopedRevertCalls).toHaveLength(2)
+    expect(store.getState().revert_transaction["session-a"]?.status).toBe("confirmed")
+  })
+
   test("reverting from a child's message sends the child's message and session with the root id", async () => {
     const store = createTreeStore()
+    store.setState({ session_status: {
+      "session-a": { type: "busy" }, "child-1": { type: "busy" }, "child-2": { type: "busy" },
+    } as Record<string, SessionStatus> })
     const childStores = createChildStores([["/test/project", store]])
 
     const { setActionRefs, revertToMessage } = await import("./session-actions")
@@ -4319,6 +4336,7 @@ describe("session tree revert", () => {
       options: { scope: "tree", rootSessionId: "session-a" },
     }])
     expect(sessionAbortCalls).toEqual([])
+    expect(store.getState().session_status["session-a"]).toEqual({ type: "busy" })
   })
 
   test("applies the markers the server reports for other tree sessions and announces the outcome", async () => {
@@ -4477,6 +4495,11 @@ describe("session tree revert", () => {
 
   test("maps server error codes to user-facing copy and rolls back the optimistic revert", async () => {
     const cases: Array<{ code: string; files?: Array<{ path: string; status: string }>; expected: string }> = [
+      { code: "mutation_runtime_unsupported", expected: "This runtime does not yet support reverting while other tasks continue working" },
+      { code: "mutation_history_unavailable", expected: "Exact edit ownership is unavailable for this part of the conversation. No messages or files were changed" },
+      { code: "mutation_cancellation_failed", expected: "Could not confirm that this task and its descendants stopped. Revert has not changed messages or files" },
+      { code: "mutation_recovery_required", expected: "Revert was interrupted and needs recovery. Newer edits have been preserved" },
+      { code: "activity_unverified", expected: "Could not verify the task and its project. Refresh and retry Revert" },
       { code: "directory_busy", expected: "Another session is working in this project; wait for it to finish" },
       { code: "session_busy", expected: "This chat is still working; wait for it to finish" },
       { code: "working_tree_changed", expected: "Files changed while reverting; nothing was written" },

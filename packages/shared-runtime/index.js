@@ -6,3 +6,5 @@ export * from './lib/commit-message-draft.js';
 export * from './lib/free-zen-model-catalog.js';
 export * from './lib/free-zen-generation.js';
 export * from './lib/free-zen-cooldowns.js';
+export * from './lib/usage-observation.js';
+export * from './lib/cache-efficiency-policy.js';

@@ -39,6 +39,8 @@ import {
   setExternallyViewedSession,
 } from "./sync-context"
 import { useNotificationStore } from "./notification-store"
+import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
+import { usePrimaryRecoveryStore } from "@/stores/usePrimaryRecoveryStore"
 import { isAbortGuardActive, registerManualAbortGuard, resetAbortGuardState } from "./abort-retry-guard"
 import { useSelectionStore } from "./selection-store"
 import { useMessageQueueStore } from "@/stores/messageQueueStore"
@@ -230,6 +232,8 @@ const contextUsage = (activeInputTokens: number): SessionContextUsage => ({
 
 describe("sync plan lifecycle on message.part.delta", () => {
   beforeEach(() => {
+    useProviderRecoveryStore.getState().reset()
+    usePrimaryRecoveryStore.setState({ snapshots: {} })
     registerRuntimeAPIs(null)
     resetGlobalSessionLifecycleOverlayForTest()
     resetDirectorySessionLifecycleOverlaysForTest()
@@ -2366,6 +2370,153 @@ describe("sync plan lifecycle on message.part.delta", () => {
       completedAt: 3,
     })
   })
+
+  for (const kind of ["normal", "plan"]) {
+    test(`${kind} success supersedes root and child errors without opening the task`, async () => {
+      const childStores = new ChildStoreManager()
+      const store = childStores.ensureChild(DIRECTORY)
+      const completedAt = Date.now()
+      const childID = "ses_failed_child"
+      const completedId = kind === "plan" ? IMPLEMENT_ASSISTANT_MESSAGE_ID : ASSISTANT_MESSAGE_ID
+      const completedPart = kind === "plan" ? implementTextPart("Implemented successfully.") : textPart("Completed successfully.")
+      const completedMessage = {
+        ...(kind === "plan" ? implementingAssistantMessage() : assistantMessage()),
+        time: { created: completedAt - 5, completed: completedAt },
+      } as Message
+      store.setState({
+        ...INITIAL_STATE,
+        session: [
+          { id: SESSION_ID, title: "Root", time: { created: 1, updated: 2 } } as Session,
+          { id: childID, parentID: SESSION_ID, title: "Child", time: { created: 1, updated: 2 } } as Session,
+        ],
+        message: { [SESSION_ID]: kind === "plan"
+          ? [userMessage(), assistantMessage(), implementingUserMessage(), completedMessage]
+          : [userMessage(), completedMessage] },
+        part: {
+          [USER_MESSAGE_ID]: kind === "plan" ? [planModePart()] : [],
+          [ASSISTANT_MESSAGE_ID]: [textPart(`<!--plan-->\n${structuredPlanBody}`)],
+          [completedId]: [completedPart],
+        },
+        session_status: { [SESSION_ID]: { type: "idle" }, [childID]: { type: "idle" } },
+      })
+      if (kind === "plan") {
+        useSessionUIStore.getState().recordUserMessagePlanMode(SESSION_ID, USER_MESSAGE_ID, true)
+        useSessionUIStore.getState().markPlanImplementationRequested(`${SESSION_ID}:${ASSISTANT_MESSAGE_ID}:plan:0`)
+        useSessionUIStore.getState().markPlanImplementing(SESSION_ID, ASSISTANT_MESSAGE_ID, IMPLEMENT_USER_MESSAGE_ID)
+      }
+      for (const session of [SESSION_ID, childID, "ses_unrelated"]) {
+        useNotificationStore.getState().append({ type: "error", directory: DIRECTORY, session, time: completedAt - 10, viewed: false })
+      }
+      applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndexFor())
+      await flushAsync()
+      await waitForCompletionIndicatorSettlement()
+      const notifications = useNotificationStore.getState()
+      expect(notifications.sessionHasError(SESSION_ID)).toBe(false)
+      expect(notifications.sessionHasError(childID)).toBe(false)
+      expect(notifications.sessionHasError("ses_unrelated")).toBe(true)
+      expect(notifications.list.filter((n) => n.type === "error").every((n) => !n.viewed)).toBe(true)
+      expect(resolveSidebarIndicator({
+        isRootSession: true, isWorking: false, isActive: false,
+        hasUnreadCompletion: notifications.sessionHasCompletion(SESSION_ID),
+        hasCompletedStatus: useSessionUIStore.getState().sessionCompletionIndicator.has(SESSION_ID),
+        hasErrorStatus: [SESSION_ID, childID].some(notifications.sessionHasError),
+        pendingQuestionCount: 0,
+        planState: useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)?.state ?? null,
+      })?.className).toBe("bg-status-success")
+
+      // A later failure followed by a duplicate old completion must stay red.
+      applySyncEventForTest(DIRECTORY, {
+        type: "session.error", properties: { sessionID: SESSION_ID, error: { name: "UnknownError", data: { message: "New failure" } } },
+      } as Event, childStores, routingIndexFor())
+      applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndexFor())
+      await flushAsync()
+      expect(useNotificationStore.getState().sessionHasError(SESSION_ID)).toBe(true)
+    })
+  }
+
+  test("successful child completion waits for descendants and resolves only that child's error", async () => {
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    const completedAt = Date.now()
+    const completedPart = textPart("Child finished.")
+    store.setState({
+      ...INITIAL_STATE,
+      session: [
+        { id: "ses_parent", title: "Parent", time: { created: 1, updated: 2 } } as Session,
+        { id: SESSION_ID, parentID: "ses_parent", title: "Child", time: { created: 1, updated: 2 } } as Session,
+        { id: "ses_grandchild", parentID: SESSION_ID, title: "Grandchild", time: { created: 1, updated: 2 } } as Session,
+      ],
+      message: { [SESSION_ID]: [userMessage(), { ...assistantMessage(), time: { created: completedAt - 5, completed: completedAt } } as Message] },
+      part: { [ASSISTANT_MESSAGE_ID]: [completedPart] },
+      session_status: { [SESSION_ID]: { type: "idle" }, ses_grandchild: { type: "busy" } },
+    })
+    for (const session of ["ses_parent", SESSION_ID, "ses_grandchild"]) {
+      useNotificationStore.getState().append({ type: "error", session, directory: DIRECTORY, time: completedAt - 10, viewed: false })
+    }
+    applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndexFor())
+    await flushAsync()
+    expect(useNotificationStore.getState().sessionHasError(SESSION_ID)).toBe(true)
+    store.setState({ session_status: { [SESSION_ID]: { type: "idle" }, ses_grandchild: { type: "idle" } } })
+    applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndexFor())
+    await flushAsync()
+    expect(useNotificationStore.getState().sessionHasError(SESSION_ID)).toBe(false)
+    expect(useNotificationStore.getState().sessionHasError("ses_parent")).toBe(true)
+    expect(useNotificationStore.getState().sessionHasError("ses_grandchild")).toBe(true)
+  })
+
+  for (const scenario of ["working-child", "child-question", "child-permission", "provider-recovery", "host-recovery", "manual-stop", "failure", "new-user", "deleted"]) {
+    test(`does not supersede errors after ${scenario}`, async () => {
+      const childStores = new ChildStoreManager()
+      const store = childStores.ensureChild(DIRECTORY)
+      const completedAt = Date.now()
+      const childID = "ses_blocking_child"
+      const completedPart = textPart("Partial or final output.")
+      const message = {
+        ...assistantMessage(), time: { created: completedAt - 5, completed: completedAt },
+        ...(scenario === "failure" ? { error: { name: "UnknownError", data: { message: "Failed" } } } : {}),
+      } as Message
+      store.setState({
+        ...INITIAL_STATE,
+        session: [
+          { id: SESSION_ID, title: "Root", time: { created: 1, updated: 2 } } as Session,
+          { id: childID, parentID: SESSION_ID, title: "Child", time: { created: 1, updated: 2 } } as Session,
+        ],
+        message: { [SESSION_ID]: [userMessage(), message] },
+        part: { [ASSISTANT_MESSAGE_ID]: [completedPart] },
+        session_status: { [SESSION_ID]: { type: "idle" }, [childID]: { type: scenario === "working-child" ? "busy" : "idle" } },
+        question: scenario === "child-question" ? { [childID]: [{ id: "q", sessionID: childID, questions: [] }] } : {},
+        permission: scenario === "child-permission" ? { [childID]: [{ id: "p", sessionID: childID, permission: "edit", patterns: [], always: [], metadata: {} }] } : {},
+      })
+      useNotificationStore.getState().append({ type: "error", session: SESSION_ID, directory: DIRECTORY, time: completedAt - 10, viewed: false })
+      if (scenario === "provider-recovery") useProviderRecoveryStore.getState().offerRecovery({
+        sessionId: childID, directory: DIRECTORY, anchorUserMessageId: "msg_child_user", reason: "provider failed",
+        providerId: "fixture", modelId: "fixture", variant: null, agent: null, createdAt: completedAt,
+      })
+      if (scenario === "host-recovery") usePrimaryRecoveryStore.getState().accept(SESSION_ID, {
+        schemaVersion: 1, mode: "enforce", supported: true, enforced: true, progressTimeoutMs: 300_000,
+        record: {
+          sessionID: SESSION_ID, anchorID: USER_MESSAGE_ID, failedID: null, recoveryID: null,
+          state: "needs_attention", revision: 1, attemptCount: 1, maxAttempts: 1, readOnly: false,
+          providerID: "fixture", modelID: "fixture", agent: "build", variant: null, reason: null, updatedAt: completedAt,
+        },
+      })
+      if (scenario === "manual-stop") useSessionUIStore.setState({ sessionAbortFlags: new Map([[SESSION_ID, {
+        id: ASSISTANT_MESSAGE_ID, reason: "manual", timestamp: completedAt, acknowledged: true,
+      }]]) })
+      applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndexFor())
+      if (scenario === "new-user") store.setState({ message: { [SESSION_ID]: [userMessage(), message, { ...userMessage(), id: "msg_new_user" }] } })
+      if (scenario === "deleted") applySyncEventForTest(DIRECTORY, {
+        type: "session.deleted", properties: { info: store.getState().session[0] },
+      } as Event, childStores, routingIndexFor())
+      await flushAsync()
+      if (scenario === "deleted") {
+        expect(useNotificationStore.getState().list).toHaveLength(0)
+      } else {
+        expect(useNotificationStore.getState().sessionHasError(SESSION_ID)).toBe(true)
+        expect("resolvedByMessageId" in useNotificationStore.getState().list[0]).toBe(false)
+      }
+    })
+  }
 
   test("retires notifications and pending completion settlement only after authoritative deletion", async () => {
     const childStores = new ChildStoreManager()

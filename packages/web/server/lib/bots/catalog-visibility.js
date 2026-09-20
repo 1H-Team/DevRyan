@@ -1,3 +1,5 @@
+import { hasTunnelBotGrant } from '../tunnels/bot-grants.js';
+
 // Catalog presentation, not authorization. All membership and channel checks
 // still apply to test accounts. Never infer fixture status from a Bot's name.
 const CACHE_LIMIT = 512;
@@ -20,13 +22,14 @@ export function createBotCatalogVisibility({ store, now = Date.now }) {
     ]);
     const testViewer = kinds.get(principal.id) === 'agent_test';
     return bots.filter((bot) => {
-      const visible = testViewer || kinds.get(bot.created_by) !== 'agent_test';
+      const visible = hasTunnelBotGrant(principal, bot.id) && (testViewer || kinds.get(bot.created_by) !== 'agent_test');
       remember(principal, bot.id, visible);
       return visible;
     });
   };
 
   const isVisible = async (principal, botId) => {
+    if (!hasTunnelBotGrant(principal, botId)) return false;
     if (!botId) return true;
     const cached = decisions.get(cacheKey(principal, botId));
     if (cached && cached.expiresAt > now()) return cached.visible;

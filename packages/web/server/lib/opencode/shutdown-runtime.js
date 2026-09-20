@@ -214,7 +214,10 @@ export const createGracefulShutdownRuntime = (dependencies) => {
       console.log('Stopping active tunnel...');
       activeTunnelController.stop();
       setActiveTunnelController(null);
-      tunnelAuthController.clearActiveTunnel();
+      // Restart suspends transport; only the explicit Stop action revokes
+      // durable Bot grants and sessions.
+      if (tunnelAuthController.suspendActiveTunnel) tunnelAuthController.suspendActiveTunnel();
+      else tunnelAuthController.clearActiveTunnel();
     }
 
     console.log('Graceful shutdown complete');

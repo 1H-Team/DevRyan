@@ -187,10 +187,13 @@ const updateManifestFromRecord = (manifest, record) => {
   if (recordLooksLikeError(record)) manifest.errorCount += 1;
 
   const relation = resolveSessionRelation(record);
-  if (relation?.parentID) manifest.parentID = relation.parentID;
+  if (relation?.parentID && relation.sessionID === manifest.sessionID) manifest.parentID = relation.parentID;
   const info = record?.payload?.properties?.info;
-  if (typeof info?.parentID === 'string') manifest.parentID = info.parentID || null;
-  if (typeof info?.parentId === 'string') manifest.parentID = info.parentId || null;
+  // Assistant parentID identifies a user message, not a parent session.
+  if (eventType.startsWith('session.')) {
+    if (typeof info?.parentID === 'string') manifest.parentID = info.parentID || null;
+    if (typeof info?.parentId === 'string') manifest.parentID = info.parentId || null;
+  }
   if (typeof info?.title === 'string' && info.title) manifest.title = info.title;
   if (typeof info?.directory === 'string' && info.directory) manifest.directory = info.directory;
   for (const model of modelNamesFromRecord(record)) {

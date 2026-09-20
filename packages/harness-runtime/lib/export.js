@@ -2,6 +2,7 @@ import { Readable } from 'node:stream';
 
 import { resolveRecordSessionID, resolveSessionRelation } from './session-id.js';
 import { createHarnessTraceCollector } from './trace.js';
+import { createUsageCollector } from './usage.js';
 
 const asString = (value) => (
   typeof value === 'string' && value.trim().length > 0 ? value.trim() : ''
@@ -108,10 +109,12 @@ export const createDiagnosticsExport = async (options = {}) => {
   const recordSessionIDs = new Set(includedSessionIDs);
   const blobPaths = new Set();
   const trace = createHarnessTraceCollector();
+  const usage = createUsageCollector();
   for await (const record of recordSource()) {
     if (!includesRecord(record)) continue;
     recordCount += 1;
     trace.add(record);
+    usage.add(record);
     const sessionID = resolveRecordSessionID(record);
     if (sessionID) recordSessionIDs.add(sessionID);
     else runtimeRecordCount += 1;
@@ -166,6 +169,7 @@ export const createDiagnosticsExport = async (options = {}) => {
     exportSecondPassApplied: true,
   };
   const files = [
+    { name: 'DevRyan-usage.json', data: `${secondPass(options.sanitizer, usage.finish())}\n` },
     { name: 'DevRyan-trace.json', data: `${secondPass(options.sanitizer, trace.finish())}\n` },
     { name: 'manifest.json', data: `${secondPass(options.sanitizer, manifest)}\n` },
     { name: 'redaction-report.json', data: `${secondPass(options.sanitizer, redactionReport)}\n` },

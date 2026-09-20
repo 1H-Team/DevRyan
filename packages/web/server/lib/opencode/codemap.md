@@ -5,6 +5,17 @@ Core OpenCode integration layer: config entities (agents/commands/skills/provide
 
 ## Design
 
+- `session-scoped-revert.js` validates live session identity and canonical
+  directory before applying the legacy project activity guard. Deleted status
+  entries and verified other projects do not block it. The optional coordinator
+  injection is adapted by `session-revert-coordinator.js`; it requires complete
+  confined ownership capture and a compatible legacy API. `session-execution-host.js`
+  supplies it after `execution-artifacts.js` verifies acceptance and artifact digests. Bounded `session_revert` lifecycle records retain
+  request, transaction, message, phase and failure identities. See
+  `docs/CONCURRENT_REVERT.md` for the rollout gate. `session-provider-spawn.js`
+  and `session-provider-worker.mjs` own the confined Claude transport; the pinned
+  companion change and generated clients live under `companion/`.
+
 - `imagegen-model-hotfix.js` owns the exact-source GPT-6 Astra / medium image request patch, applied during managed profile provisioning and copied into the Bot image build. Unknown or partial source changes block startup/build; unrelated model defaults remain owned by their existing configuration.
 
 `env-runtime.js` owns synchronous executable/environment discovery with one monotonic ten-second probe budget per lookup. Shell/where/PowerShell/CMD probes receive at most five seconds; nested WSL commands keep their six-second ceiling within the same budget. Failed or timed-out stdout is discarded.

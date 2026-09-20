@@ -1,62 +1,14 @@
 import React from 'react';
 
-import { importWithChunkRecovery } from '@/lib/chunkLoadRecovery';
+import { getAuthPrincipal, useAuthPrincipal } from '@/lib/authSession';
+import { canPrepareSettingsSection, usesManagedSettings } from './SettingsView.access';
+import { createPreparedSettingsComponent } from './preparedSettingsComponent';
+import type { SettingsDataBoundaryProps } from './SettingsDataBoundary';
+import { OpenChamberPage } from '@/components/sections/openchamber/OpenChamberPage';
+import { openChamberSectionResources } from '@/components/sections/openchamber/openChamberSectionResources';
+
+export { createPreparedSettingsComponent } from './preparedSettingsComponent';
 import type { SettingsPageSlug } from '@/lib/settings/metadata';
-
-type SettingsComponentModule<Props extends object> = {
-  default: React.ComponentType<Props>;
-};
-
-type PreparedSettingsComponent<Props extends object> = {
-  Component: React.ComponentType<Props>;
-  isReady: () => boolean;
-  load: () => Promise<SettingsComponentModule<Props>>;
-};
-
-const SETTINGS_CHUNK_OPTIONS = { timeoutMs: 10_000 } as const;
-
-export function createPreparedSettingsComponent<Props extends object>(
-  importComponent: () => Promise<SettingsComponentModule<Props>>,
-): PreparedSettingsComponent<Props> {
-  let loadedModule: SettingsComponentModule<Props> | null = null;
-  let inFlight: Promise<SettingsComponentModule<Props>> | null = null;
-  let rejectedError: unknown;
-
-  const load = (): Promise<SettingsComponentModule<Props>> => {
-    if (loadedModule) return Promise.resolve(loadedModule);
-    if (inFlight) return inFlight;
-
-    rejectedError = undefined;
-    const next = importWithChunkRecovery(importComponent, SETTINGS_CHUNK_OPTIONS).then(
-      (module) => {
-        loadedModule = module;
-        return module;
-      },
-      (error: unknown) => {
-        inFlight = null;
-        rejectedError = error;
-        throw error;
-      },
-    );
-    inFlight = next;
-    return next;
-  };
-
-  const Component: React.FC<Props> = (props) => {
-    if (loadedModule) {
-      return React.createElement(loadedModule.default, props);
-    }
-    if (rejectedError !== undefined) {
-      const error = rejectedError;
-      rejectedError = undefined;
-      throw error;
-    }
-    throw load();
-  };
-
-  Component.displayName = 'PreparedSettingsComponent';
-  return { Component, isReady: () => loadedModule !== null, load };
-}
 
 const agentsSidebar = createPreparedSettingsComponent(() =>
   import('@/components/sections/agents/AgentsSidebar').then((module) => ({ default: module.AgentsSidebar })));
@@ -102,8 +54,6 @@ const magicPromptsPage = createPreparedSettingsComponent(() =>
   import('@/components/sections/magic-prompts/MagicPromptsPage').then((module) => ({ default: module.MagicPromptsPage })));
 const gitPage = createPreparedSettingsComponent(() =>
   import('@/components/sections/git-identities/GitPage').then((module) => ({ default: module.GitPage })));
-const openChamberPage = createPreparedSettingsComponent(() =>
-  import('@/components/sections/openchamber/OpenChamberPage').then((module) => ({ default: module.OpenChamberPage })));
 const aboutSettings = createPreparedSettingsComponent(() =>
   import('@/components/sections/openchamber/AboutSettings').then((module) => ({ default: module.AboutSettings })));
 const userManagementPage = createPreparedSettingsComponent(() =>
@@ -135,13 +85,31 @@ export const PreparedUsagePage = usagePage.Component;
 export const PreparedMagicPromptsSidebar = magicPromptsSidebar.Component;
 export const PreparedMagicPromptsPage = magicPromptsPage.Component;
 export const PreparedGitPage = gitPage.Component;
-export const PreparedOpenChamberPage = openChamberPage.Component;
+export const PreparedOpenChamberPage = OpenChamberPage;
 export const PreparedAboutSettings = aboutSettings.Component;
 export const PreparedUserManagementPage = userManagementPage.Component;
 export const PreparedBugReportsPage = bugReportsPage.Component;
 export const PreparedBotsPage = botsPage.Component;
 
-type SettingsSectionResource = Pick<PreparedSettingsComponent<object>, 'isReady' | 'load'>;
+type SettingsSectionResource = { isReady: () => boolean; load: () => Promise<unknown> };
+
+const settingsData = createPreparedSettingsComponent<SettingsDataBoundaryProps>(() =>
+  import('./SettingsDataBoundary').then((module) => ({ default: module.SettingsDataBoundary })));
+const managedSettingsData = createPreparedSettingsComponent<SettingsDataBoundaryProps>(() =>
+  import('./ManagedSettingsDataBoundary').then((module) => ({ default: module.ManagedSettingsDataBoundary })));
+const getDataResource = (slug: SettingsPageSlug, managed = usesManagedSettings(getAuthPrincipal())) => {
+  if (managed) return slug === 'skills.installed' || slug === 'plugins' ? managedSettingsData : null;
+  return ['agents', 'commands', 'mcp', 'skills.installed', 'skills.catalog', 'plugins'].includes(slug) ? settingsData : null;
+};
+
+export const PreparedSettingsDataBoundary: React.FC<SettingsDataBoundaryProps> = (props) => {
+  const principal = useAuthPrincipal();
+  if (!canPrepareSettingsSection(principal, props.slug)) return null;
+  const resource = getDataResource(props.slug, usesManagedSettings(principal));
+  if (!resource) return props.children;
+  const Component = resource.Component;
+  return React.createElement(Component, props);
+};
 
 const pageResources: Partial<Record<SettingsPageSlug, readonly SettingsSectionResource[]>> = {
   users: [userManagementPage],
@@ -161,71 +129,80 @@ const pageResources: Partial<Record<SettingsPageSlug, readonly SettingsSectionRe
   'magic-prompts': [magicPromptsSidebar, magicPromptsPage],
   git: [gitPage],
   about: [aboutSettings],
-  appearance: [openChamberPage],
-  chat: [openChamberPage],
-  shortcuts: [openChamberPage],
-  sessions: [openChamberPage],
-  notifications: [openChamberPage],
-  voice: [openChamberPage],
-  tunnel: [openChamberPage],
+  appearance: [openChamberSectionResources.visual],
+  chat: [openChamberSectionResources.chat],
+  shortcuts: [openChamberSectionResources.shortcuts],
+  sessions: [openChamberSectionResources.sessions],
+  notifications: [openChamberSectionResources.notifications],
+  voice: [openChamberSectionResources.voice],
+  tunnel: [openChamberSectionResources.tunnel],
 };
 
-const sectionPreloads = new Map<SettingsPageSlug, Promise<void>>();
+const sectionPreloads = new Map<string, Promise<void>>();
+const intentPreloads = new Set<Promise<void>>();
+const resourcesFor = (slug: SettingsPageSlug): readonly SettingsSectionResource[] => {
+  const data = getDataResource(slug);
+  return [...(data ? [data] : []), ...(pageResources[slug] ?? [])];
+};
+
 export function isSettingsSectionReady(slug: SettingsPageSlug): boolean {
-  const resources = pageResources[slug];
-  return !resources || resources.length === 0 || resources.every((resource) => resource.isReady());
+  return resourcesFor(slug).every((resource) => resource.isReady());
 }
 
-export function preloadSettingsSection(slug: SettingsPageSlug): Promise<void> {
-  const existing = sectionPreloads.get(slug);
-  if (existing) {
-    return existing;
+export function preloadSettingsSection(slug: SettingsPageSlug, priority: 'intent' | 'idle' = 'intent'): Promise<void> {
+  if (!canPrepareSettingsSection(getAuthPrincipal(), slug)) return Promise.resolve();
+  const key = `${usesManagedSettings(getAuthPrincipal()) ? 'managed' : 'full'}:${slug}`;
+  let preload = sectionPreloads.get(key);
+  if (!preload) {
+    // Start the data entrypoint, sidebar and page together, never as an import waterfall.
+    preload = Promise.all(resourcesFor(slug).map((resource) => resource.load())).then(() => undefined).catch((error: unknown) => {
+      sectionPreloads.delete(key);
+      throw error;
+    });
+    sectionPreloads.set(key, preload);
   }
-
-  const resources = pageResources[slug];
-  if (!resources || resources.length === 0) {
-    return Promise.resolve();
+  if (priority === 'intent' && !intentPreloads.has(preload)) {
+    intentPreloads.add(preload);
+    const tracked = preload;
+    void tracked.then(() => intentPreloads.delete(tracked), () => intentPreloads.delete(tracked));
   }
-
-  const preload = Promise.all(resources.map((resource) => resource.load())).then(() => undefined);
-  sectionPreloads.set(slug, preload);
-  return preload.catch((error: unknown) => {
-    sectionPreloads.delete(slug);
-    throw error;
-  });
+  return preload;
 }
 
 export function preloadSettingsSectionsWhenIdle(slugs: readonly SettingsPageSlug[]): () => void {
   if (typeof window === 'undefined') return () => {};
+  const principal = getAuthPrincipal();
   const queue = [...new Set(slugs)].filter((slug) => !isSettingsSectionReady(slug));
   let cancelled = false;
   let idleId: number | null = null;
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
   const schedule = () => {
-    if (cancelled || queue.length === 0) return;
+    if (cancelled || principal !== getAuthPrincipal() || queue.length === 0) return;
     const run = () => {
       idleId = null;
       timeoutId = null;
+      if (cancelled || principal !== getAuthPrincipal()) return;
+      if (intentPreloads.size > 0) {
+        // Wait for explicit navigation rather than compete with its imports.
+        void Promise.allSettled([...intentPreloads]).then(schedule);
+        return;
+      }
       const slug = queue.shift();
-      if (!slug || cancelled) return;
-      void preloadSettingsSection(slug)
-        .catch(() => undefined)
-        .finally(schedule);
+      if (!slug) return;
+      void preloadSettingsSection(slug, 'idle').catch(() => undefined).finally(schedule);
     };
     if (typeof window.requestIdleCallback === 'function') {
       idleId = window.requestIdleCallback(run, { timeout: 1_500 });
-      return;
+    } else {
+      timeoutId = setTimeout(run, 50);
     }
-    timeoutId = setTimeout(run, 50);
   };
 
   schedule();
   return () => {
     cancelled = true;
-    if (idleId !== null && typeof window.cancelIdleCallback === 'function') {
-      window.cancelIdleCallback(idleId);
-    }
+    if (idleId !== null && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(idleId);
     if (timeoutId !== null) clearTimeout(timeoutId);
   };
 }

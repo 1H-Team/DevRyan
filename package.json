@@ -1,6 +1,6 @@
 {
   "name": "openchamber-monorepo",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "description": "OpenChamber monorepo workspace for web, ui, and desktop runtimes",
   "private": true,
   "type": "module",
@@ -30,7 +30,8 @@
     "build:ui": "bun run type-check:ui",
     "build:desktop": "bun run --cwd packages/desktop build",
     "build:electron": "bun run --cwd packages/electron build",
-    "type-check": "bun run --filter '*' type-check",
+    "type-check": "bun run --sequential --filter '*' type-check",
+    "type-check:diagnose": "node scripts/typecheck-diagnostics.mjs",
     "type-check:affected": "node scripts/validate.mjs type-check-affected",
     "type-check:web": "bun run --cwd packages/web type-check",
     "type-check:ui": "bun run --cwd packages/ui type-check",
@@ -85,7 +86,9 @@
     "release:test:intel": "./scripts/test-release-build.sh x86_64",
     "release:test:arm": "./scripts/test-release-build.sh aarch64",
     "qa": "node scripts/qa/run.mjs",
-    "perf:reducer": "bun scripts/perf/streaming-reducer-benchmark.mjs"
+    "perf:reducer": "bun scripts/perf/streaming-reducer-benchmark.mjs",
+    "build:revert-runtime": "node scripts/build-revert-runtime.mjs",
+    "verify:revert-runtime": "node scripts/verify-revert-runtime-artifacts.mjs"
   },
   "dependencies": {
     "@opencode-ai/sdk": "^1.18.31",

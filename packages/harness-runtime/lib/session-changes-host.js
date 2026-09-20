@@ -15,6 +15,7 @@ const error = (code, status = 409) => Object.assign(new Error(code), { code, sta
 export function createSessionChangeHost(options) {
   const runtime = createSessionChangeRuntime({ directory: path.join(options.dataDirectory, 'harness', 'session-changes'),
     onDiagnostic: options.onDiagnostic,
+    restoreOwned: options.restoreOwned,
     onChange: ({ directory, sessionID }) => options.publishEvent?.({ type: 'session.changes.updated', properties: { sessionID } }, { directory }),
   });
   const readPool = createBoundedReadPool();
@@ -316,10 +317,12 @@ export function createSessionChangeHost(options) {
           if (summary.revision !== body?.revision) throw error('summary_revision_changed');
         }
         if (method === 'POST' && ['undo', 'redo'].includes(action)) {
-          const { data: statuses } = await request('/session/status', directory);
-          if (!statuses || typeof statuses !== 'object' || Array.isArray(statuses)
-            || Object.values(statuses).some((status) => !['idle', 'busy', 'retry'].includes(status?.type))) throw error('session_status_unavailable', 503);
-          if (Object.values(statuses).some((status) => ['busy', 'retry'].includes(status.type))) throw error('directory_busy');
+          if (!options.restoreOwned) {
+            const { data: statuses } = await request('/session/status', directory);
+            if (!statuses || typeof statuses !== 'object' || Array.isArray(statuses)
+              || Object.values(statuses).some((status) => !['idle', 'busy', 'retry'].includes(status?.type))) throw error('session_status_unavailable', 503);
+            if (Object.values(statuses).some((status) => ['busy', 'retry'].includes(status.type))) throw error('directory_busy');
+          }
           const result = await runtime.restore({ directory, rootSessionID, revision: body?.revision, redo: action === 'redo' });
           return { status: 200, body: result };
         }

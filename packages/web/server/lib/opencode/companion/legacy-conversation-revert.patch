@@ -1,0 +1,2095 @@
+diff --git a/packages/client/src/generated/types.ts b/packages/client/src/generated/types.ts
+index 3b3188c..d6485a1 100644
+--- a/packages/client/src/generated/types.ts
++++ b/packages/client/src/generated/types.ts
+@@ -254,6 +254,7 @@ export type SessionsListOutput = {
+       readonly partID?: string
+       readonly snapshot?: string
+       readonly diff?: string
++      readonly fileRestore?: boolean
+       readonly files?: ReadonlyArray<{
+         readonly path: string
+         readonly status: "added" | "modified" | "deleted"
+@@ -316,6 +317,7 @@ export type SessionsCreateOutput = {
+       readonly partID?: string
+       readonly snapshot?: string
+       readonly diff?: string
++      readonly fileRestore?: boolean
+       readonly files?: ReadonlyArray<{
+         readonly path: string
+         readonly status: "added" | "modified" | "deleted"
+@@ -354,6 +356,7 @@ export type SessionsGetOutput = {
+       readonly partID?: string
+       readonly snapshot?: string
+       readonly diff?: string
++      readonly fileRestore?: boolean
+       readonly files?: ReadonlyArray<{
+         readonly path: string
+         readonly status: "added" | "modified" | "deleted"
+@@ -502,6 +505,7 @@ export type SessionsStageOutput = {
+     readonly partID?: string
+     readonly snapshot?: string
+     readonly diff?: string
++    readonly fileRestore?: boolean
+     readonly files?: ReadonlyArray<{
+       readonly path: string
+       readonly status: "added" | "modified" | "deleted"
+@@ -1106,6 +1110,7 @@ export type SessionsHistoryOutput = {
+             readonly partID?: string
+             readonly snapshot?: string
+             readonly diff?: string
++            readonly fileRestore?: boolean
+             readonly files?: ReadonlyArray<{
+               readonly path: string
+               readonly status: "added" | "modified" | "deleted"
+@@ -1564,6 +1569,7 @@ export type SessionsEventsOutput =
+           readonly partID?: string
+           readonly snapshot?: string
+           readonly diff?: string
++          readonly fileRestore?: boolean
+           readonly files?: ReadonlyArray<{
+             readonly path: string
+             readonly status: "added" | "modified" | "deleted"
+diff --git a/packages/core/src/cross-spawn-spawner.ts b/packages/core/src/cross-spawn-spawner.ts
+index 6ea9022..2cb4386 100644
+--- a/packages/core/src/cross-spawn-spawner.ts
++++ b/packages/core/src/cross-spawn-spawner.ts
+@@ -375,7 +375,12 @@ export const make = Effect.gen(function* () {
+               cwd: dir,
+               env: env(command.options),
+               stdio: stdios(sin, sout, serr, extra),
+-              detached: command.options.detached ?? process.platform !== "win32",
++              // The native DevRyan supervisor owns the entire process group.
++              // Its policy deliberately forbids tools from escaping that group.
++              detached:
++                process.env.DEVRYAN_EXECUTION_WORKER === "1"
++                  ? false
++                  : (command.options.detached ?? process.platform !== "win32"),
+               shell: command.options.shell,
+               windowsHide: process.platform === "win32",
+             }),
+diff --git a/packages/core/src/session.ts b/packages/core/src/session.ts
+index 2dabfb2..e109b73 100644
+--- a/packages/core/src/session.ts
++++ b/packages/core/src/session.ts
+@@ -358,31 +358,33 @@ const layer = Layer.effect(
+         })
+       }),
+       prompt: Effect.fn("V2Session.prompt")((input) =>
+-        Effect.uninterruptible(
+-          Effect.gen(function* () {
+-            yield* result.get(input.sessionID)
+-            const prompt = resolvePrompt(input.prompt)
+-            const messageID = input.id ?? SessionMessage.ID.create()
+-            const delivery = input.delivery ?? "steer"
+-            const expected = { sessionID: input.sessionID, messageID, prompt, delivery }
+-            const admitted = yield* SessionInput.admit(db, events, {
+-              id: messageID,
+-              sessionID: input.sessionID,
+-              prompt,
+-              delivery,
+-            }).pipe(
+-              Effect.catchDefect((defect) =>
+-                defect instanceof SessionInput.LifecycleConflict
+-                  ? new PromptConflictError({ sessionID: input.sessionID, messageID })
+-                  : Effect.die(defect),
+-              ),
+-            )
+-            if (!SessionInput.equivalent(admitted, expected))
+-              return yield* new PromptConflictError({ sessionID: input.sessionID, messageID })
+-            if (input.resume !== false) yield* execution.wake(admitted.sessionID)
+-            return admitted
+-          }),
+-        ),
++        process.env.DEVRYAN_EXECUTION_BOUNDARY === "1"
++          ? Effect.die(new Error("mutation_runtime_unsupported: use the legacy session API for captured conversations"))
++          : Effect.uninterruptible(
++              Effect.gen(function* () {
++                yield* result.get(input.sessionID)
++                const prompt = resolvePrompt(input.prompt)
++                const messageID = input.id ?? SessionMessage.ID.create()
++                const delivery = input.delivery ?? "steer"
++                const expected = { sessionID: input.sessionID, messageID, prompt, delivery }
++                const admitted = yield* SessionInput.admit(db, events, {
++                  id: messageID,
++                  sessionID: input.sessionID,
++                  prompt,
++                  delivery,
++                }).pipe(
++                  Effect.catchDefect((defect) =>
++                    defect instanceof SessionInput.LifecycleConflict
++                      ? new PromptConflictError({ sessionID: input.sessionID, messageID })
++                      : Effect.die(defect),
++                  ),
++                )
++                if (!SessionInput.equivalent(admitted, expected))
++                  return yield* new PromptConflictError({ sessionID: input.sessionID, messageID })
++                if (input.resume !== false) yield* execution.wake(admitted.sessionID)
++                return admitted
++              }),
++            ),
+       ),
+       shell: Effect.fn("V2Session.shell")(function* () {
+         return yield* new OperationUnavailableError({ operation: "shell" })
+diff --git a/packages/core/src/session/execution/local.ts b/packages/core/src/session/execution/local.ts
+index d874c40..9098b30 100644
+--- a/packages/core/src/session/execution/local.ts
++++ b/packages/core/src/session/execution/local.ts
+@@ -31,8 +31,18 @@ const layer = Layer.effect(
+     return SessionExecution.Service.of({
+       active: coordinator.active,
+       interrupt: coordinator.interrupt,
+-      resume: coordinator.run,
+-      wake: coordinator.wake,
++      resume: (id) =>
++        process.env.DEVRYAN_EXECUTION_BOUNDARY === "1"
++          ? Effect.die(
++              new Error("mutation_runtime_unsupported: captured legacy history requires the legacy session API"),
++            )
++          : coordinator.run(id),
++      wake: (id) =>
++        process.env.DEVRYAN_EXECUTION_BOUNDARY === "1"
++          ? Effect.die(
++              new Error("mutation_runtime_unsupported: captured legacy history requires the legacy session API"),
++            )
++          : coordinator.wake(id),
+     })
+   }),
+ )
+diff --git a/packages/core/src/session/revert.ts b/packages/core/src/session/revert.ts
+index 9999d5d..d70a1b9 100644
+--- a/packages/core/src/session/revert.ts
++++ b/packages/core/src/session/revert.ts
+@@ -64,6 +64,16 @@ export const stage = Effect.fn("SessionRevert.stage")(function* (input: {
+ }) {
+   const snapshot = yield* Snapshot.Service
+   const events = yield* EventV2.Service
++  if (input.files === false || input.session.revert?.fileRestore === false) {
++    yield* plan({ sessionID: input.session.id, messageID: input.messageID })
++    const revert = { messageID: input.messageID, fileRestore: false, files: [] }
++    yield* events.publish(SessionEvent.RevertEvent.Staged, {
++      sessionID: input.session.id,
++      timestamp: yield* DateTime.now,
++      revert,
++    })
++    return revert
++  }
+   const original = input.session.revert?.snapshot
+     ? Snapshot.ID.make(input.session.revert.snapshot)
+     : yield* snapshot.capture()
+@@ -72,9 +82,9 @@ export const stage = Effect.fn("SessionRevert.stage")(function* (input: {
+   if (original) {
+     for (const file of input.session.revert?.files ?? []) restore.set(file.path, original)
+   }
+-  if (input.files !== false) for (const [file, tree] of next) restore.set(file, tree)
++  for (const [file, tree] of next) restore.set(file, tree)
+   if (restore.size) yield* snapshot.restore({ files: restore })
+-  const paths = input.files === false ? [] : Array.from(next.keys())
++  const paths = Array.from(next.keys())
+   const files = original
+     ? yield* snapshot.diff({ from: original, to: (yield* snapshot.capture()) ?? original, paths })
+     : []
+@@ -99,7 +109,7 @@ export const clear = Effect.fn("SessionRevert.clear")(function* (session: Sessio
+   if (!session.revert) return
+   const snapshot = yield* Snapshot.Service
+   const original = session.revert.snapshot ? Snapshot.ID.make(session.revert.snapshot) : undefined
+-  if (original)
++  if (original && session.revert.fileRestore !== false)
+     yield* snapshot.restore({
+       files: new Map((session.revert.files ?? []).map((file) => [file.path, original])),
+     })
+diff --git a/packages/opencode/src/cli/cmd/debug/index.ts b/packages/opencode/src/cli/cmd/debug/index.ts
+index 9dcaa33..47f283b 100644
+--- a/packages/opencode/src/cli/cmd/debug/index.ts
++++ b/packages/opencode/src/cli/cmd/debug/index.ts
+@@ -15,6 +15,7 @@ import { SnapshotCommand } from "./snapshot"
+ import { AgentCommand } from "./agent"
+ import { StartupCommand } from "./startup"
+ import { V2Command } from "./v2"
++import { DevRyanToolCommand } from "./devryan-tool"
+ 
+ export const DebugCommand = cmd({
+   command: "debug",
+@@ -31,6 +32,7 @@ export const DebugCommand = cmd({
+       .command(StartupCommand)
+       .command(AgentCommand)
+       .command(V2Command)
++      .command(DevRyanToolCommand)
+       .command(InfoCommand)
+       .command(PathsCommand)
+       .command(WaitCommand)
+diff --git a/packages/opencode/src/config/config.ts b/packages/opencode/src/config/config.ts
+index 9e10b67..6d14879 100644
+--- a/packages/opencode/src/config/config.ts
++++ b/packages/opencode/src/config/config.ts
+@@ -449,26 +449,30 @@ const layer = Layer.effect(
+ 
+           yield* ensureGitignore(dir).pipe(Effect.orDie)
+ 
+-          const dep = yield* npmSvc
+-            .install(dir, {
+-              add: [
+-                {
+-                  name: "@opencode-ai/plugin",
+-                  version: InstallationLocal ? undefined : InstallationVersion,
+-                },
+-              ],
+-            })
+-            .pipe(
+-              Effect.exit,
+-              Effect.tap((exit) =>
+-                Exit.isFailure(exit)
+-                  ? Effect.logWarning("background dependency install failed", { dir, error: String(exit.cause) })
+-                  : Effect.void,
+-              ),
+-              Effect.asVoid,
+-              Effect.forkDetach,
+-            )
+-          deps.push(dep)
++          // Workers receive resolved plugins and read-only dependencies.
++          // Installing in their disposable configuration is unnecessary.
++          if (process.env.DEVRYAN_EXECUTION_WORKER !== "1" && process.env.DEVRYAN_EXECUTION_BOUNDARY !== "1") {
++            const dep = yield* npmSvc
++              .install(dir, {
++                add: [
++                  {
++                    name: "@opencode-ai/plugin",
++                    version: InstallationLocal ? undefined : InstallationVersion.replace(/-devryan\.\d+$/, ""),
++                  },
++                ],
++              })
++              .pipe(
++                Effect.exit,
++                Effect.tap((exit) =>
++                  Exit.isFailure(exit)
++                    ? Effect.logWarning("background dependency install failed", { dir, error: String(exit.cause) })
++                    : Effect.void,
++                ),
++                Effect.asVoid,
++                Effect.forkDetach,
++              )
++            deps.push(dep)
++          }
+ 
+           result.command = mergeDeep(result.command ?? {}, yield* Effect.promise(() => ConfigCommand.load(dir)))
+           result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.load(dir)))
+diff --git a/packages/opencode/src/mcp/index.ts b/packages/opencode/src/mcp/index.ts
+index 05f12fa..978a52b 100644
+--- a/packages/opencode/src/mcp/index.ts
++++ b/packages/opencode/src/mcp/index.ts
+@@ -374,6 +374,17 @@ const layer = Layer.effect(
+         if (mcp.enabled === false) {
+           return DISABLED_RESULT
+         }
++        // An external server owns a separate filesystem and lifecycle. It
++        // cannot provide this legacy transaction's native termination proof.
++        // Never start a local writer outside the capture boundary.
++        if (process.env.DEVRYAN_EXECUTION_BOUNDARY === "1")
++          return {
++            status: {
++              status: "failed" as const,
++              error:
++                "mutation_runtime_unsupported: external MCP servers do not support confined legacy Revert; use the native Context Mode tools",
++            },
++          }
+ 
+         const { client: mcpClient, status } =
+           mcp.type === "remote"
+diff --git a/packages/opencode/src/plugin/index.ts b/packages/opencode/src/plugin/index.ts
+index 6f05329..2c3231b 100644
+--- a/packages/opencode/src/plugin/index.ts
++++ b/packages/opencode/src/plugin/index.ts
+@@ -33,6 +33,7 @@ import type { WorkspaceAdapter } from "@/control-plane/types"
+ import { RuntimeFlags } from "@/effect/runtime-flags"
+ import { EventV2Bridge } from "@/event-v2-bridge"
+ import { InstallationChannel } from "@opencode-ai/core/installation/version"
++import { DevRyanExecution } from "@/session/devryan-execution"
+ 
+ type State = {
+   hooks: Hooks[]
+@@ -115,12 +116,16 @@ async function applyPlugin(load: PluginLoader.Loaded, input: PluginInput, hooks:
+   const plugin = readV1Plugin(load.mod, load.spec, "server", "detect")
+   if (plugin) {
+     await resolvePluginId(load.source, load.spec, load.target, readPluginId(plugin.id, load.spec), load.pkg)
+-    hooks.push(await (plugin as PluginModule).server(input, load.options))
++    const hook = await (plugin as PluginModule).server(input, load.options)
++    await DevRyanExecution.plugin(load.entry, hook, load.options, input.directory)
++    hooks.push(hook)
+     return
+   }
+ 
+   for (const server of getLegacyPlugins(load.mod)) {
+-    hooks.push(await server(input, load.options))
++    const hook = await server(input, load.options)
++    await DevRyanExecution.plugin(load.entry, hook, load.options, input.directory)
++    hooks.push(hook)
+   }
+ }
+ 
+diff --git a/packages/opencode/src/server/routes/instance/httpapi/groups/session.ts b/packages/opencode/src/server/routes/instance/httpapi/groups/session.ts
+index 959a303..c95922f 100644
+--- a/packages/opencode/src/server/routes/instance/httpapi/groups/session.ts
++++ b/packages/opencode/src/server/routes/instance/httpapi/groups/session.ts
+@@ -78,6 +78,8 @@ export const PermissionResponsePayload = Schema.Struct({
+ export const SessionPaths = {
+   list: root,
+   status: `${root}/status`,
++  revertCapabilities: `${root}/revert-capabilities`,
++  externalMessage: `${root}/:sessionID/external-message`,
+   get: `${root}/:sessionID`,
+   children: `${root}/:sessionID/children`,
+   todo: `${root}/:sessionID/todo`,
+@@ -108,6 +110,30 @@ export const SessionApi = HttpApi.make("session")
+   .add(
+     HttpApiGroup.make("session")
+       .add(
++        HttpApiEndpoint.post("externalMessage", SessionPaths.externalMessage, {
++          params: Schema.Struct({ sessionID: SessionID }),
++          query: WorkspaceRoutingQuery,
++          payload: SessionV1.WithParts,
++          success: Schema.Boolean,
++        }).annotateMerge(
++          OpenApi.annotations({
++            identifier: "session.externalMessage",
++            summary: "Persist an external provider message",
++          }),
++        ),
++        HttpApiEndpoint.get("revertCapabilities", SessionPaths.revertCapabilities, {
++          query: WorkspaceRoutingQuery,
++          success: Schema.Struct({
++            legacyConversationRevert: Schema.Literal(1),
++            executionBoundary: Schema.optional(Schema.Literal(1)),
++          }),
++        }).annotateMerge(
++          OpenApi.annotations({
++            identifier: "session.revertCapabilities",
++            summary: "Get conversation rollback capabilities",
++            description: "Reports durable conversation-only revert support for legacy session histories.",
++          }),
++        ),
+         HttpApiEndpoint.get("list", SessionPaths.list, {
+           query: ListQuery,
+           success: described(Schema.Array(Session.Info), "List of sessions"),
+diff --git a/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts b/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts
+index 6625850..9a39dde 100644
+--- a/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts
++++ b/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts
+@@ -9,6 +9,7 @@ import { Session } from "@/session/session"
+ import { SessionCompaction } from "@/session/compaction"
+ import { MessageV2 } from "@/session/message-v2"
+ import { SessionPrompt } from "@/session/prompt"
++import { DevRyanExecution } from "@/session/devryan-execution"
+ import { SessionRevert } from "@/session/revert"
+ import { SessionRunState } from "@/session/run-state"
+ import { SessionStatus } from "@/session/status"
+@@ -16,7 +17,7 @@ import { SessionSummary } from "@/session/summary"
+ import { Todo } from "@/session/todo"
+ import { MessageID, PartID, SessionID } from "@/session/schema"
+ import { NamedError } from "@opencode-ai/core/util/error"
+-import { Cause, Effect, Option, Schema, Scope } from "effect"
++import { Cause, Effect, Option, Schema, Scope, Types } from "effect"
+ import * as Stream from "effect/Stream"
+ import { InstanceState } from "@/effect/instance-state"
+ import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+@@ -270,27 +271,27 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session",
+       return yield* requireSession(ctx.params.sessionID)
+     })
+ 
+-    const summarize = Effect.fn("SessionHttpApi.summarize")(function* (ctx: {
+-      params: { sessionID: SessionID }
+-      payload: typeof SummarizePayload.Type
+-    }) {
+-      yield* revertSvc.cleanup(yield* requireSession(ctx.params.sessionID))
+-      const messages = yield* SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID }))
+-      const defaultAgent = yield* agentSvc.defaultAgent()
+-      const currentAgent = messages.findLast((message) => message.info.role === "user")?.info.agent ?? defaultAgent
+-
+-      yield* compactSvc.create({
+-        sessionID: ctx.params.sessionID,
+-        agent: currentAgent,
+-        model: {
+-          providerID: ctx.payload.providerID,
+-          modelID: ctx.payload.modelID,
+-        },
+-        auto: ctx.payload.auto ?? false,
+-      })
+-      yield* promptSvc.loop({ sessionID: ctx.params.sessionID })
+-      return true
+-    })
++    const summarize = Effect.fn("SessionHttpApi.summarize")(
++      function* (ctx: { params: { sessionID: SessionID }; payload: typeof SummarizePayload.Type }) {
++        yield* revertSvc.cleanup(yield* requireSession(ctx.params.sessionID))
++        const messages = yield* SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID }))
++        const defaultAgent = yield* agentSvc.defaultAgent()
++        const currentAgent = messages.findLast((message) => message.info.role === "user")?.info.agent ?? defaultAgent
++
++        yield* compactSvc.create({
++          sessionID: ctx.params.sessionID,
++          agent: currentAgent,
++          model: {
++            providerID: ctx.payload.providerID,
++            modelID: ctx.payload.modelID,
++          },
++          auto: ctx.payload.auto ?? false,
++        })
++        yield* promptSvc.loop({ sessionID: ctx.params.sessionID })
++        return true
++      },
++      (effect, ctx) => DevRyanExecution.admitted(ctx.params.sessionID, effect),
++    )
+ 
+     const prompt = Effect.fn("SessionHttpApi.prompt")(function* (ctx: {
+       params: { sessionID: SessionID }
+@@ -411,8 +412,51 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session",
+     })
+ 
+     return handlers
++      .handle("externalMessage", (ctx) =>
++        DevRyanExecution.admitted(
++          ctx.params.sessionID,
++          Effect.gen(function* () {
++            const { info, parts } = ctx.payload
++            if (
++              process.env.DEVRYAN_EXECUTION_BOUNDARY !== "1" ||
++              info.sessionID !== ctx.params.sessionID ||
++              (info.role === "user" ? info.model.providerID : info.providerID) !== "cursor-acp" ||
++              parts.some((part) => part.sessionID !== info.sessionID || part.messageID !== info.id)
++            ) {
++              return yield* Effect.die(new Error("Invalid external provider message"))
++            }
++            const current = yield* session.get(info.sessionID).pipe(Effect.orDie)
++            const old = yield* session
++              .findMessage(info.sessionID, (message) => message.info.id === info.id)
++              .pipe(Effect.orDie)
++            if (
++              Option.isSome(old) &&
++              (old.value.info.role === "user" ? old.value.info.model.providerID : old.value.info.providerID) !==
++                "cursor-acp"
++            ) {
++              return yield* Effect.die(new Error("External provider message identity collision"))
++            }
++            if (Option.isNone(old) && info.role === "user") yield* revertSvc.cleanup(current)
++            yield* session.updateMessage(structuredClone(info) as Types.DeepMutable<typeof info>)
++            for (const part of parts) yield* session.updatePart(structuredClone(part) as Types.DeepMutable<typeof part>)
++            if (Option.isSome(old))
++              for (const part of old.value.parts) {
++                if (!parts.some((next) => next.id === part.id))
++                  yield* session.removePart({ sessionID: info.sessionID, messageID: info.id, partID: part.id })
++              }
++            if (info.role === "user") yield* DevRyanExecution.prompt(info.sessionID, info.id)
++            return true
++          }),
++        ),
++      )
+       .handle("list", list)
+       .handle("status", status)
++      .handle("revertCapabilities", () =>
++        Effect.succeed({
++          legacyConversationRevert: 1 as const,
++          ...(process.env.DEVRYAN_EXECUTION_BOUNDARY === "1" ? { executionBoundary: 1 as const } : {}),
++        }),
++      )
+       .handle("get", get)
+       .handle("children", children)
+       .handle("todo", todo)
+diff --git a/packages/opencode/src/server/shared/workspace-routing.ts b/packages/opencode/src/server/shared/workspace-routing.ts
+index de4dc67..65a4fae 100644
+--- a/packages/opencode/src/server/shared/workspace-routing.ts
++++ b/packages/opencode/src/server/shared/workspace-routing.ts
+@@ -5,6 +5,7 @@ type Rule = { method?: string; path: string; exact?: boolean; action: "local" |
+ const RULES: Array<Rule> = [
+   { path: "/experimental/workspace", action: "local" },
+   { path: "/session/status", action: "forward" },
++  { path: "/session/revert-capabilities", action: "forward" },
+   { method: "GET", path: "/session", action: "local" },
+ ]
+ 
+@@ -18,7 +19,7 @@ export function isLocalWorkspaceRoute(method: string, path: string) {
+ }
+ 
+ export function getWorkspaceRouteSessionID(url: URL) {
+-  if (url.pathname === "/session/status") return null
++  if (["/session/status", "/session/revert-capabilities"].includes(url.pathname)) return null
+ 
+   const id =
+     url.pathname.match(/^\/session\/([^/]+)(?:\/|$)/)?.[1] ??
+diff --git a/packages/opencode/src/session/prompt.ts b/packages/opencode/src/session/prompt.ts
+index 0f85d44..f3b8b72 100644
+--- a/packages/opencode/src/session/prompt.ts
++++ b/packages/opencode/src/session/prompt.ts
+@@ -56,6 +56,7 @@ import { SessionTable } from "@opencode-ai/core/session/sql"
+ import { SessionReminders } from "./reminders"
+ import { SessionTools } from "./tools"
+ import { LLMEvent } from "@opencode-ai/llm"
++import { DevRyanExecution } from "./devryan-execution"
+ 
+ // @ts-ignore
+ globalThis.AI_SDK_LOG_WARNINGS = false
+@@ -151,6 +152,7 @@ const layer = Layer.effect(
+ 
+     const cancel = Effect.fn("SessionPrompt.cancel")(function* (sessionID: SessionID) {
+       yield* Effect.logInfo("cancel", { "session.id": sessionID })
++      yield* DevRyanExecution.cancelAdmissions(sessionID)
+       yield* state.cancel(sessionID)
+     })
+ 
+@@ -485,6 +487,7 @@ const layer = Layer.effect(
+               synthetic: true,
+             }
+             yield* sessions.updatePart(userPart)
++            yield* DevRyanExecution.prompt(input.sessionID, userMsg.id)
+ 
+             const msg: SessionV1.Assistant = {
+               id: MessageID.ascending(),
+@@ -519,6 +522,45 @@ const layer = Layer.effect(
+             return { msg, part, cwd: ctx.directory }
+           }).pipe(Effect.ensuring(markReady))
+ 
++          if (DevRyanExecution.enabled()) {
++            const shell = (yield* registry.all()).find((tool) => tool.id === ShellID.ToolID)
++            if (!shell) throw new Error("Confined shell tool is unavailable")
++            const controller = new AbortController()
++            const result = yield* restore(
++              shell.execute(
++                { command: input.command, description: "User shell command", workdir: cwd },
++                {
++                  sessionID: input.sessionID,
++                  messageID: msg.id,
++                  callID: part.callID,
++                  agent: input.agent,
++                  abort: controller.signal,
++                  messages: [],
++                  ask: () => Effect.void,
++                  metadata: (value) =>
++                    sessions.updatePart({ ...part, state: { ...part.state, ...value } }).pipe(Effect.asVoid),
++                },
++              ),
++            ).pipe(Effect.onInterrupt(() => Effect.sync(() => controller.abort())))
++            msg.time.completed = Date.now()
++            yield* sessions.updateMessage(msg)
++            const completed = yield* sessions.updatePart({
++              ...part,
++              state: {
++                status: "completed",
++                input: part.state.input,
++                time: { start: part.state.status === "running" ? part.state.time.start : Date.now(), end: Date.now() },
++                ...result,
++                attachments: result.attachments?.map((attachment) => ({
++                  ...attachment,
++                  id: PartID.ascending(),
++                  messageID: msg.id,
++                  sessionID: msg.sessionID,
++                })),
++              },
++            })
++            return { info: msg, parts: [completed] }
++          }
+           const cfg = yield* config.get()
+           const sh = Shell.preferred(cfg.shell)
+           const args = Shell.args(sh, input.command, cwd)
+@@ -1051,24 +1093,28 @@ const layer = Layer.effect(
+ 
+     const prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error> = Effect.fn(
+       "SessionPrompt.prompt",
+-    )(function* (input: PromptInput) {
+-      const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+-      yield* revert.cleanup(session)
+-      const message = yield* createUserMessage(input)
+-      yield* sessions.touch(input.sessionID)
+-
+-      const permissions: PermissionV1.Rule[] = []
+-      for (const [t, enabled] of Object.entries(input.tools ?? {})) {
+-        permissions.push({ permission: t, action: enabled ? "allow" : "deny", pattern: "*" })
+-      }
+-      if (permissions.length > 0) {
+-        session.permission = permissions
+-        yield* sessions.setPermission({ sessionID: session.id, permission: permissions })
+-      }
++    )(
++      function* (input: PromptInput) {
++        const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
++        yield* revert.cleanup(session)
++        const message = yield* createUserMessage(input)
++        yield* DevRyanExecution.prompt(input.sessionID, message.info.id)
++        yield* sessions.touch(input.sessionID)
++
++        const permissions: PermissionV1.Rule[] = []
++        for (const [t, enabled] of Object.entries(input.tools ?? {})) {
++          permissions.push({ permission: t, action: enabled ? "allow" : "deny", pattern: "*" })
++        }
++        if (permissions.length > 0) {
++          session.permission = permissions
++          yield* sessions.setPermission({ sessionID: session.id, permission: permissions })
++        }
+ 
+-      if (input.noReply === true) return message
+-      return yield* loop({ sessionID: input.sessionID })
+-    })
++        if (input.noReply === true) return message
++        return yield* loop({ sessionID: input.sessionID })
++      },
++      (effect, input) => DevRyanExecution.admitted(input.sessionID, effect),
++    )
+ 
+     const lastAssistant = Effect.fnUntraced(function* (sessionID: SessionID) {
+       const match = yield* sessions.findMessage(sessionID, (m) => m.info.role !== "user").pipe(Effect.orDie)
+@@ -1096,6 +1142,7 @@ const layer = Layer.effect(
+           const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
+ 
+           if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
++          yield* DevRyanExecution.prompt(sessionID, lastUser.id)
+ 
+           const lastAssistantMsg = msgs.findLast(
+             (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
+@@ -1340,145 +1387,158 @@ const layer = Layer.effect(
+       },
+     )
+ 
+-    const loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts> = Effect.fn("SessionPrompt.loop")(function* (
+-      input: LoopInput,
+-    ) {
+-      return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID))
+-    })
++    const loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts> = Effect.fn("SessionPrompt.loop")(
++      function* (input: LoopInput) {
++        return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID))
++      },
++      (effect, input) => DevRyanExecution.admitted(input.sessionID, effect),
++    )
+ 
+     const shell: (input: ShellInput) => Effect.Effect<SessionV1.WithParts, Session.BusyError> = Effect.fn(
+       "SessionPrompt.shell",
+     )(function* (input: ShellInput) {
+       const ready = yield* Latch.make()
+-      return yield* state.startShell(input.sessionID, lastAssistant(input.sessionID), shellImpl(input, ready), ready)
++      return yield* state.startShell(
++        input.sessionID,
++        lastAssistant(input.sessionID),
++        DevRyanExecution.admitted(input.sessionID, shellImpl(input, ready)),
++        ready,
++      )
+     })
+ 
+-    const command = Effect.fn("SessionPrompt.command")(function* (input: CommandInput) {
+-      yield* Effect.logInfo("command", {
+-        "session.id": input.sessionID,
+-        command: input.command,
+-        agent: input.agent,
+-      })
+-      const cmd = yield* commands.get(input.command)
+-      if (!cmd) {
+-        const available = (yield* commands.list()).map((c) => c.name)
+-        const hint = available.length ? ` Available commands: ${available.join(", ")}` : ""
+-        const error = new NamedError.Unknown({ message: `Command not found: "${input.command}".${hint}` })
+-        yield* events.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
+-        throw error
+-      }
+-      const agentName = cmd.agent ?? input.agent
+-
+-      const raw = input.arguments.match(argsRegex) ?? []
+-      const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))
+-      const templateCommand = yield* Effect.promise(async () => cmd.template)
+-
+-      const placeholders = templateCommand.match(placeholderRegex) ?? []
+-      let last = 0
+-      for (const item of placeholders) {
+-        const value = Number(item.slice(1))
+-        if (value > last) last = value
+-      }
++    const command = Effect.fn("SessionPrompt.command")(
++      function* (input: CommandInput) {
++        yield* Effect.logInfo("command", {
++          "session.id": input.sessionID,
++          command: input.command,
++          agent: input.agent,
++        })
++        const cmd = yield* commands.get(input.command)
++        if (!cmd) {
++          const available = (yield* commands.list()).map((c) => c.name)
++          const hint = available.length ? ` Available commands: ${available.join(", ")}` : ""
++          const error = new NamedError.Unknown({ message: `Command not found: "${input.command}".${hint}` })
++          yield* events.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
++          throw error
++        }
++        const agentName = cmd.agent ?? input.agent
+ 
+-      const withArgs = templateCommand.replaceAll(placeholderRegex, (_, index) => {
+-        const position = Number(index)
+-        const argIndex = position - 1
+-        if (argIndex >= args.length) return ""
+-        if (position === last) return args.slice(argIndex).join(" ")
+-        return args[argIndex]
+-      })
+-      const usesArgumentsPlaceholder = templateCommand.includes("$ARGUMENTS")
+-      let template = withArgs.replaceAll("$ARGUMENTS", input.arguments)
++        const raw = input.arguments.match(argsRegex) ?? []
++        const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))
++        const templateCommand = yield* Effect.promise(async () => cmd.template)
+ 
+-      if (placeholders.length === 0 && !usesArgumentsPlaceholder && input.arguments.trim()) {
+-        template = template + "\n\n" + input.arguments
+-      }
++        const placeholders = templateCommand.match(placeholderRegex) ?? []
++        let last = 0
++        for (const item of placeholders) {
++          const value = Number(item.slice(1))
++          if (value > last) last = value
++        }
+ 
+-      const shellMatches = ConfigMarkdown.shell(template)
+-      if (shellMatches.length > 0) {
+-        const cfg = yield* config.get()
+-        const sh = Shell.preferred(cfg.shell)
+-        const results = yield* Effect.promise(() =>
+-          Promise.all(
+-            shellMatches.map(async ([, cmd]) => (await Process.text([cmd], { shell: sh, nothrow: true })).text),
+-          ),
+-        )
+-        let index = 0
+-        template = template.replace(bashRegex, () => results[index++])
+-      }
+-      template = template.trim()
++        const withArgs = templateCommand.replaceAll(placeholderRegex, (_, index) => {
++          const position = Number(index)
++          const argIndex = position - 1
++          if (argIndex >= args.length) return ""
++          if (position === last) return args.slice(argIndex).join(" ")
++          return args[argIndex]
++        })
++        const usesArgumentsPlaceholder = templateCommand.includes("$ARGUMENTS")
++        let template = withArgs.replaceAll("$ARGUMENTS", input.arguments)
+ 
+-      const taskModel = yield* Effect.gen(function* () {
+-        if (cmd.model) return Provider.parseModel(cmd.model)
+-        if (cmd.agent) {
+-          const cmdAgent = yield* agents.get(cmd.agent)
+-          if (cmdAgent?.model) return cmdAgent.model
++        if (placeholders.length === 0 && !usesArgumentsPlaceholder && input.arguments.trim()) {
++          template = template + "\n\n" + input.arguments
+         }
+-        if (input.model) return Provider.parseModel(input.model)
+-        return yield* currentModel(input.sessionID)
+-      })
+ 
+-      yield* getModel(taskModel.providerID, taskModel.modelID, input.sessionID)
++        const shellMatches = ConfigMarkdown.shell(template)
++        if (shellMatches.length > 0) {
++          if (DevRyanExecution.enabled())
++            throw new Error(
++              "mutation_runtime_unsupported: command template shell substitutions require an attributed tool call",
++            )
++          const cfg = yield* config.get()
++          const sh = Shell.preferred(cfg.shell)
++          const results = yield* Effect.promise(() =>
++            Promise.all(
++              shellMatches.map(async ([, cmd]) => (await Process.text([cmd], { shell: sh, nothrow: true })).text),
++            ),
++          )
++          let index = 0
++          template = template.replace(bashRegex, () => results[index++])
++        }
++        template = template.trim()
+ 
+-      const agent = agentName ? yield* agents.get(agentName) : yield* agents.defaultInfo()
+-      if (!agent) {
+-        const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
+-        const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
+-        const error = new NamedError.Unknown({ message: `Agent not found: "${agentName}".${hint}` })
+-        yield* events.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
+-        throw error
+-      }
++        const taskModel = yield* Effect.gen(function* () {
++          if (cmd.model) return Provider.parseModel(cmd.model)
++          if (cmd.agent) {
++            const cmdAgent = yield* agents.get(cmd.agent)
++            if (cmdAgent?.model) return cmdAgent.model
++          }
++          if (input.model) return Provider.parseModel(input.model)
++          return yield* currentModel(input.sessionID)
++        })
+ 
+-      const templateParts = yield* resolvePromptParts(template)
+-      const inputFiles = new Set(
+-        input.parts?.filter((part) => new URL(part.url).protocol === "file:").map((part) => fileURLToPath(part.url)),
+-      )
+-      const uniqueTemplateParts = templateParts.filter(
+-        (part) => part.type !== "file" || !inputFiles.has(fileURLToPath(part.url)),
+-      )
+-      const isSubtask = (agent.mode === "subagent" && cmd.subtask !== false) || cmd.subtask === true
+-      const parts = isSubtask
+-        ? [
+-            {
+-              type: "subtask" as const,
+-              agent: agent.name,
+-              description: cmd.description ?? "",
+-              command: input.command,
+-              model: { providerID: taskModel.providerID, modelID: taskModel.modelID },
+-              prompt: templateParts.find((y) => y.type === "text")?.text ?? "",
+-            },
+-          ]
+-        : [...uniqueTemplateParts, ...(input.parts ?? [])]
++        yield* getModel(taskModel.providerID, taskModel.modelID, input.sessionID)
+ 
+-      const userAgent = isSubtask ? (input.agent ?? (yield* agents.defaultInfo()).name) : agent.name
+-      const userModel = isSubtask
+-        ? input.model
+-          ? Provider.parseModel(input.model)
+-          : yield* currentModel(input.sessionID)
+-        : taskModel
++        const agent = agentName ? yield* agents.get(agentName) : yield* agents.defaultInfo()
++        if (!agent) {
++          const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
++          const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
++          const error = new NamedError.Unknown({ message: `Agent not found: "${agentName}".${hint}` })
++          yield* events.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
++          throw error
++        }
+ 
+-      yield* plugin.trigger(
+-        "command.execute.before",
+-        { command: input.command, sessionID: input.sessionID, arguments: input.arguments },
+-        { parts },
+-      )
++        const templateParts = yield* resolvePromptParts(template)
++        const inputFiles = new Set(
++          input.parts?.filter((part) => new URL(part.url).protocol === "file:").map((part) => fileURLToPath(part.url)),
++        )
++        const uniqueTemplateParts = templateParts.filter(
++          (part) => part.type !== "file" || !inputFiles.has(fileURLToPath(part.url)),
++        )
++        const isSubtask = (agent.mode === "subagent" && cmd.subtask !== false) || cmd.subtask === true
++        const parts = isSubtask
++          ? [
++              {
++                type: "subtask" as const,
++                agent: agent.name,
++                description: cmd.description ?? "",
++                command: input.command,
++                model: { providerID: taskModel.providerID, modelID: taskModel.modelID },
++                prompt: templateParts.find((y) => y.type === "text")?.text ?? "",
++              },
++            ]
++          : [...uniqueTemplateParts, ...(input.parts ?? [])]
++
++        const userAgent = isSubtask ? (input.agent ?? (yield* agents.defaultInfo()).name) : agent.name
++        const userModel = isSubtask
++          ? input.model
++            ? Provider.parseModel(input.model)
++            : yield* currentModel(input.sessionID)
++          : taskModel
++
++        yield* plugin.trigger(
++          "command.execute.before",
++          { command: input.command, sessionID: input.sessionID, arguments: input.arguments },
++          { parts },
++        )
+ 
+-      const result = yield* prompt({
+-        sessionID: input.sessionID,
+-        messageID: input.messageID,
+-        model: userModel,
+-        agent: userAgent,
+-        parts,
+-        variant: input.variant,
+-      })
+-      yield* events.publish(Command.Event.Executed, {
+-        name: input.command,
+-        sessionID: input.sessionID,
+-        arguments: input.arguments,
+-        messageID: result.info.id,
+-      })
+-      return result
+-    })
++        const result = yield* prompt({
++          sessionID: input.sessionID,
++          messageID: input.messageID,
++          model: userModel,
++          agent: userAgent,
++          parts,
++          variant: input.variant,
++        })
++        yield* events.publish(Command.Event.Executed, {
++          name: input.command,
++          sessionID: input.sessionID,
++          arguments: input.arguments,
++          messageID: result.info.id,
++        })
++        return result
++      },
++      (effect, input) => DevRyanExecution.admitted(input.sessionID, effect),
++    )
+ 
+     return Service.of({
+       cancel,
+diff --git a/packages/opencode/src/session/revert.ts b/packages/opencode/src/session/revert.ts
+index 03e5afd..a59a211 100644
+--- a/packages/opencode/src/session/revert.ts
++++ b/packages/opencode/src/session/revert.ts
+@@ -14,6 +14,7 @@ export const RevertInput = Schema.Struct({
+   sessionID: SessionID,
+   messageID: MessageID,
+   partID: Schema.optional(PartID),
++  files: Schema.optional(Schema.Boolean),
+ })
+ export type RevertInput = Schema.Schema.Type<typeof RevertInput>
+ 
+@@ -66,11 +67,25 @@ const layer = Layer.effect(
+       }
+ 
+       if (!rev) return session
++      if (
++        process.env.DEVRYAN_EXECUTION_BOUNDARY === "1" &&
++        input.files !== false &&
++        session.revert?.fileRestore !== false
++      ) {
++        throw new Error("mutation_runtime_unsupported: use the attributed Revert coordinator")
++      }
+ 
+-      rev.snapshot = session.revert?.snapshot ?? (yield* snap.track())
+-      if (session.revert?.snapshot) yield* snap.restore(session.revert.snapshot)
+-      yield* snap.revert(patches)
+-      if (rev.snapshot) rev.diff = yield* snap.diff(rev.snapshot)
++      // External ownership survives repeated reverts and process restarts. In
++      // particular, switching an existing native revert to conversation-only
++      // must not restore its earlier whole-workspace snapshot.
++      if (input.files === false || session.revert?.fileRestore === false) {
++        rev.fileRestore = false
++      } else {
++        rev.snapshot = session.revert?.snapshot ?? (yield* snap.track())
++        if (session.revert?.snapshot) yield* snap.restore(session.revert.snapshot)
++        yield* snap.revert(patches)
++        if (rev.snapshot) rev.diff = yield* snap.diff(rev.snapshot)
++      }
+       const index = all.findIndex((msg) => msg.info.id === rev.messageID)
+       const range = index < 0 ? [] : all.slice(index)
+       const diffs = yield* summary.computeDiff({ messages: range })
+@@ -93,7 +108,10 @@ const layer = Layer.effect(
+       yield* state.assertNotBusy(input.sessionID)
+       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+       if (!session.revert) return session
+-      if (session.revert.snapshot) yield* snap.restore(session.revert.snapshot)
++      if (process.env.DEVRYAN_EXECUTION_BOUNDARY === "1" && session.revert.fileRestore !== false) {
++        throw new Error("mutation_history_unavailable")
++      }
++      if (session.revert.fileRestore !== false && session.revert.snapshot) yield* snap.restore(session.revert.snapshot)
+       yield* sessions.clearRevert(input.sessionID)
+       return yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+     })
+diff --git a/packages/opencode/src/session/session.ts b/packages/opencode/src/session/session.ts
+index a2a91cd..031af6d 100644
+--- a/packages/opencode/src/session/session.ts
++++ b/packages/opencode/src/session/session.ts
+@@ -73,6 +73,7 @@ export function fromRow(row: SessionRow): Info {
+         partID: row.revert.partID ? PartID.make(row.revert.partID) : undefined,
+         snapshot: row.revert.snapshot,
+         diff: row.revert.diff,
++        fileRestore: row.revert.fileRestore,
+       }
+     : undefined
+   return {
+@@ -148,6 +149,7 @@ export function toRow(info: Info) {
+           partID: info.revert.partID,
+           snapshot: info.revert.snapshot,
+           diff: info.revert.diff,
++          fileRestore: info.revert.fileRestore,
+         }
+       : null,
+     permission: info.permission,
+@@ -211,6 +213,7 @@ const Revert = Schema.Struct({
+   partID: optional(PartID),
+   snapshot: optional(Schema.String),
+   diff: optional(Schema.String),
++  fileRestore: optional(Schema.Boolean),
+ })
+ 
+ const Model = Schema.Struct({
+diff --git a/packages/opencode/src/tool/read.ts b/packages/opencode/src/tool/read.ts
+index 678ed44..d900620 100644
+--- a/packages/opencode/src/tool/read.ts
++++ b/packages/opencode/src/tool/read.ts
+@@ -115,6 +115,7 @@ export const ReadTool = Tool.define<
+     })
+ 
+     const warm = Effect.fn("ReadTool.warm")(function* (filepath: string) {
++      if (process.env.DEVRYAN_EXECUTION_BOUNDARY === "1" && process.env.DEVRYAN_EXECUTION_WORKER !== "1") return
+       // LSP warm-up is optional; do not let a background defect fail an otherwise successful read.
+       yield* lsp.touchFile(filepath).pipe(Effect.ignoreCause, Effect.forkIn(scope))
+     })
+diff --git a/packages/opencode/src/tool/registry.ts b/packages/opencode/src/tool/registry.ts
+index 9167cb3..ad9b923 100644
+--- a/packages/opencode/src/tool/registry.ts
++++ b/packages/opencode/src/tool/registry.ts
+@@ -54,6 +54,7 @@ import { ModelV2 } from "@opencode-ai/core/model"
+ import { MCP } from "@/mcp"
+ import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+ import { McpCatalog } from "@/mcp/catalog"
++import { DevRyanExecution } from "@/session/devryan-execution"
+ 
+ export function webSearchEnabled(providerID: ProviderV2.ID, flags = { exa: false, parallel: false }) {
+   return (
+@@ -135,55 +136,67 @@ const layer = Layer.effect(
+           const parameters = zodParams
+             ? Schema.declare<unknown>((u): u is unknown => zodParams.safeParse(u).success)
+             : Schema.Unknown
+-          return {
+-            id,
+-            parameters,
+-            jsonSchema,
+-            description: def.description,
+-            execute: (args, toolCtx) =>
+-              Effect.gen(function* () {
+-                // Bridge the host's Effect-based `ask` into a Promise-returning
+-                // function for the plugin to make sure context persists
+-                const bridge = yield* EffectBridge.make()
+-                const pluginCtx: PluginToolContext = {
+-                  ...toolCtx,
+-                  ask: (req) => bridge.promise(toolCtx.ask(req)),
+-                  directory: ctx.directory,
+-                  worktree: ctx.worktree,
+-                }
+-                const result = yield* Effect.promise(() => def.execute(args as any, pluginCtx))
+-                const output = typeof result === "string" ? result : result.output
+-                const metadata = typeof result === "string" ? {} : (result.metadata ?? {})
+-                const attachments = typeof result === "string" ? undefined : result.attachments
+-                const info = yield* agent.get(toolCtx.agent)
+-                const out = yield* truncate.output(output, {}, info)
+-                return {
+-                  title: typeof result === "string" ? "" : (result.title ?? ""),
+-                  output: out.truncated ? out.content : output,
+-                  attachments,
+-                  metadata: {
+-                    ...metadata,
+-                    truncated: out.truncated,
+-                    ...(out.truncated && { outputPath: out.outputPath }),
+-                  },
+-                }
+-              }).pipe(
+-                Effect.withSpan("Tool.execute", {
+-                  attributes: {
+-                    "tool.name": id,
+-                    "session.id": toolCtx.sessionID,
+-                    "message.id": toolCtx.messageID,
+-                    ...(toolCtx.callID ? { "tool.call_id": toolCtx.callID } : {}),
+-                  },
+-                }),
+-              ),
+-          }
++          return DevRyanExecution.wrap(
++            {
++              id,
++              parameters,
++              jsonSchema,
++              description: def.description,
++              execute: (args, toolCtx) =>
++                Effect.gen(function* () {
++                  // Bridge the host's Effect-based `ask` into a Promise-returning
++                  // function for the plugin to make sure context persists
++                  const bridge = yield* EffectBridge.make()
++                  const pluginCtx: PluginToolContext = {
++                    ...toolCtx,
++                    ask: (req) => bridge.promise(toolCtx.ask(req)),
++                    directory: ctx.directory,
++                    worktree: ctx.worktree,
++                  }
++                  const result = yield* Effect.promise(() => def.execute(args as any, pluginCtx))
++                  const output = typeof result === "string" ? result : result.output
++                  const metadata = typeof result === "string" ? {} : (result.metadata ?? {})
++                  const attachments = typeof result === "string" ? undefined : result.attachments
++                  const info = yield* agent.get(toolCtx.agent)
++                  const out = yield* truncate.output(output, {}, info)
++                  return {
++                    title: typeof result === "string" ? "" : (result.title ?? ""),
++                    output: out.truncated ? out.content : output,
++                    attachments,
++                    metadata: {
++                      ...metadata,
++                      truncated: out.truncated,
++                      ...(out.truncated && { outputPath: out.outputPath }),
++                    },
++                  }
++                }).pipe(
++                  Effect.withSpan("Tool.execute", {
++                    attributes: {
++                      "tool.name": id,
++                      "session.id": toolCtx.sessionID,
++                      "message.id": toolCtx.messageID,
++                      ...(toolCtx.callID ? { "tool.call_id": toolCtx.callID } : {}),
++                    },
++                  }),
++                ),
++            },
++            config,
++            "process",
++            def,
++          )
+         }
+ 
+         const dirs = yield* config.directories()
+         const matches = dirs.flatMap((dir) =>
+           Glob.scanSync("{tool,tools}/*.{js,ts}", { cwd: dir, absolute: true, dot: true, symlink: true }),
+         )
++        if (process.env.DEVRYAN_EXECUTION_WORKER === "1")
++          matches.push(
++            ...Schema.decodeUnknownSync(Schema.Array(Schema.String))(
++              JSON.parse(process.env.DEVRYAN_EXECUTION_TOOL_FILES ?? "[]"),
++            ),
++          )
++        DevRyanExecution.files(ctx.directory, [...new Set(matches)])
+         if (matches.length) yield* config.waitForDependencies()
+         for (const match of matches) {
+           const namespace = path.basename(match, path.extname(match))
+@@ -226,6 +239,15 @@ const layer = Layer.effect(
+           ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),
+         })
+ 
++        // Object identity keeps a custom tool shadowing a builtin from gaining
++        // the builtin's control-process privileges.
++        const preludeRead = { ...tool.read }
++        const control = new Set<Tool.Def>([tool.invalid, tool.task, tool.todo, tool.question, tool.plan])
++        for (const value of Object.values(tool)) {
++          const wrapped = DevRyanExecution.wrap(value, config, control.has(value) ? "control" : "process")
++          value.execute = wrapped.execute
++        }
++
+         return {
+           custom,
+           builtin: [
+@@ -248,7 +270,9 @@ const layer = Layer.effect(
+             ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
+           ],
+           task: tool.task,
+-          read: tool.read,
++          // Attachment expansion is a built-in read before message persistence.
++          // Its LSP warm-up is disabled in the captured control process.
++          read: DevRyanExecution.enabled() ? preludeRead : tool.read,
+         }
+       }),
+     )
+diff --git a/packages/opencode/src/tool/task.ts b/packages/opencode/src/tool/task.ts
+index d8ca640..36225bc 100644
+--- a/packages/opencode/src/tool/task.ts
++++ b/packages/opencode/src/tool/task.ts
+@@ -14,6 +14,7 @@ import { Effect, Exit, Schema, Scope } from "effect"
+ import { EffectBridge } from "@/effect/bridge"
+ import { RuntimeFlags } from "@/effect/runtime-flags"
+ import { Database } from "@opencode-ai/core/database/database"
++import { DevRyanExecution } from "@/session/devryan-execution"
+ 
+ export interface TaskPromptOps {
+   cancel(sessionID: SessionID): Effect.Effect<void>
+@@ -171,6 +172,7 @@ export const TaskTool = Tool.define(
+           ],
+         }))
+ 
++      yield* DevRyanExecution.child(nextSession.id, ctx.sessionID, ctx.callID)
+       const msg = yield* MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }).pipe(
+         Effect.provideService(Database.Service, database),
+         Effect.orDie,
+diff --git a/packages/opencode/test/server/httpapi-session.test.ts b/packages/opencode/test/server/httpapi-session.test.ts
+index 9d7643c..bb6f199 100644
+--- a/packages/opencode/test/server/httpapi-session.test.ts
++++ b/packages/opencode/test/server/httpapi-session.test.ts
+@@ -332,6 +332,9 @@ describe("session HttpApi", () => {
+         expect(Object.hasOwn(listed[0]!, "parentID")).toBe(false)
+ 
+         expect(yield* requestJson<Record<string, unknown>>(SessionPaths.status, { headers })).toEqual({})
++        expect(yield* requestJson<Record<string, unknown>>(SessionPaths.revertCapabilities, { headers })).toEqual({
++          legacyConversationRevert: 1,
++        })
+ 
+         expect(
+           yield* requestJson<Session.Info>(pathFor(SessionPaths.get, { sessionID: parent.id }), { headers }),
+diff --git a/packages/opencode/test/server/workspace-routing.test.ts b/packages/opencode/test/server/workspace-routing.test.ts
+index 29c2203..30d3052 100644
+--- a/packages/opencode/test/server/workspace-routing.test.ts
++++ b/packages/opencode/test/server/workspace-routing.test.ts
+@@ -24,6 +24,11 @@ describe("isLocalWorkspaceRoute", () => {
+     expect(isLocalWorkspaceRoute("POST", "/session/status")).toBe(false)
+   })
+ 
++  test("revert capabilities belong to the runtime owning the selected workspace", () => {
++    expect(isLocalWorkspaceRoute("GET", "/session/revert-capabilities")).toBe(false)
++    expect(getWorkspaceRouteSessionID(new URL("http://localhost/session/revert-capabilities"))).toBeNull()
++  })
++
+   test("unrecognized paths are not local", () => {
+     expect(isLocalWorkspaceRoute("GET", "/config")).toBe(false)
+     expect(isLocalWorkspaceRoute("POST", "/session/ses_abc/message")).toBe(false)
+diff --git a/packages/opencode/test/session/revert-compact.test.ts b/packages/opencode/test/session/revert-compact.test.ts
+index f9e8cfd..617d092 100644
+--- a/packages/opencode/test/session/revert-compact.test.ts
++++ b/packages/opencode/test/session/revert-compact.test.ts
+@@ -108,6 +108,50 @@ const tokens = {
+ }
+ 
+ describe("revert + compact workflow", () => {
++  it.live(
++    "persists conversation-only rollback through repeats, clear, and cleanup",
++    provideTmpdirInstance(
++      (dir) =>
++        Effect.gen(function* () {
++          const session = yield* Session.Service
++          const revert = yield* SessionRevert.Service
++          const snapshot = yield* Snapshot.Service
++          const info = yield* session.create({})
++          const first = yield* user(info.id)
++          yield* text(info.id, first.id, "first")
++          yield* write(path.join(dir, "a.txt"), "original")
++          const before = yield* snapshot.track()
++          if (!before) throw new Error("expected snapshot")
++          const second = yield* user(info.id)
++          yield* text(info.id, second.id, "second")
++          yield* write(path.join(dir, "a.txt"), "foreign contribution")
++          // A pre-existing snapshot must never be restored on mode transition.
++          yield* session.setRevert({
++            sessionID: info.id,
++            revert: { messageID: second.id, snapshot: before },
++            summary: undefined,
++          })
++          yield* revert.revert({ sessionID: info.id, messageID: second.id, files: false })
++          expect((yield* session.get(info.id)).revert?.fileRestore).toBe(false)
++          expect((yield* session.get(info.id)).revert?.snapshot).toBeUndefined()
++          expect(yield* read(path.join(dir, "a.txt"))).toBe("foreign contribution")
++          // Omitting the option cannot accidentally re-enable snapshot restore.
++          yield* revert.revert({ sessionID: info.id, messageID: first.id })
++          expect((yield* session.get(info.id)).revert?.fileRestore).toBe(false)
++          yield* revert.unrevert({ sessionID: info.id })
++          expect(yield* read(path.join(dir, "a.txt"))).toBe("foreign contribution")
++          yield* revert.revert({ sessionID: info.id, messageID: second.id, files: false })
++          const persisted = yield* session.get(info.id)
++          expect(persisted.revert?.fileRestore).toBe(false)
++          yield* revert.cleanup(persisted)
++          expect((yield* session.get(info.id)).revert).toBeUndefined()
++          expect((yield* session.messages({ sessionID: info.id })).map((msg) => msg.info.id)).toEqual([first.id])
++          expect(yield* read(path.join(dir, "a.txt"))).toBe("foreign contribution")
++        }),
++      { git: true },
++    ),
++  )
++
+   it.live(
+     "should properly handle compact command after revert",
+     provideTmpdirInstance(
+diff --git a/packages/schema/src/revert.ts b/packages/schema/src/revert.ts
+index 05222d5..9735eeb 100644
+--- a/packages/schema/src/revert.ts
++++ b/packages/schema/src/revert.ts
+@@ -19,6 +19,7 @@ export const State = Schema.Struct({
+   partID: Schema.String.pipe(optional),
+   snapshot: Schema.String.pipe(optional),
+   diff: Schema.String.pipe(optional),
++  fileRestore: Schema.Boolean.pipe(optional),
+   files: Schema.Array(FileDiff).pipe(optional),
+ }).annotate({ identifier: "Revert.State" })
+ export interface State extends Schema.Schema.Type<typeof State> {}
+diff --git a/packages/schema/src/v1/session.ts b/packages/schema/src/v1/session.ts
+index 75e9282..b8bdef5 100644
+--- a/packages/schema/src/v1/session.ts
++++ b/packages/schema/src/v1/session.ts
+@@ -532,6 +532,7 @@ const SessionRevert = Schema.Struct({
+   partID: optional(PartID),
+   snapshot: optional(Schema.String),
+   diff: optional(Schema.String),
++  fileRestore: optional(Schema.Boolean),
+ })
+ 
+ const SessionModel = Schema.Struct({
+diff --git a/packages/sdk/js/src/v2/gen/sdk.gen.ts b/packages/sdk/js/src/v2/gen/sdk.gen.ts
+index a2bcd42..c03f109 100644
+--- a/packages/sdk/js/src/v2/gen/sdk.gen.ts
++++ b/packages/sdk/js/src/v2/gen/sdk.gen.ts
+@@ -111,6 +111,7 @@ import type {
+   McpRemoteConfig,
+   McpStatusErrors,
+   McpStatusResponses,
++  Message,
+   ModelRef,
+   MoveSessionDestination,
+   OutputFormat,
+@@ -189,6 +190,8 @@ import type {
+   SessionDeleteResponses,
+   SessionDiffErrors,
+   SessionDiffResponses,
++  SessionExternalMessageErrors,
++  SessionExternalMessageResponses,
+   SessionForkErrors,
+   SessionForkResponses,
+   SessionGetErrors,
+@@ -205,6 +208,8 @@ import type {
+   SessionPromptAsyncResponses,
+   SessionPromptErrors,
+   SessionPromptResponses,
++  SessionRevertCapabilitiesErrors,
++  SessionRevertCapabilitiesResponses,
+   SessionRevertErrors,
+   SessionRevertResponses,
+   SessionShareErrors,
+@@ -3360,6 +3365,83 @@ export class Provider extends HeyApiClient {
+ }
+ 
+ export class Session2 extends HeyApiClient {
++  /**
++   * Persist an external provider message
++   */
++  public externalMessage<ThrowOnError extends boolean = false>(
++    parameters: {
++      sessionID: string
++      directory?: string
++      workspace?: string
++      info?: Message
++      parts?: Array<Part2>
++    },
++    options?: Options<never, ThrowOnError>,
++  ) {
++    const params = buildClientParams(
++      [parameters],
++      [
++        {
++          args: [
++            { in: "path", key: "sessionID" },
++            { in: "query", key: "directory" },
++            { in: "query", key: "workspace" },
++            { in: "body", key: "info" },
++            { in: "body", key: "parts" },
++          ],
++        },
++      ],
++    )
++    return (options?.client ?? this.client).post<
++      SessionExternalMessageResponses,
++      SessionExternalMessageErrors,
++      ThrowOnError
++    >({
++      url: "/session/{sessionID}/external-message",
++      ...options,
++      ...params,
++      headers: {
++        "Content-Type": "application/json",
++        ...options?.headers,
++        ...params.headers,
++      },
++    })
++  }
++
++  /**
++   * Get conversation rollback capabilities
++   *
++   * Reports durable conversation-only revert support for legacy session histories.
++   */
++  public revertCapabilities<ThrowOnError extends boolean = false>(
++    parameters?: {
++      directory?: string
++      workspace?: string
++    },
++    options?: Options<never, ThrowOnError>,
++  ) {
++    const params = buildClientParams(
++      [parameters],
++      [
++        {
++          args: [
++            { in: "query", key: "directory" },
++            { in: "query", key: "workspace" },
++          ],
++        },
++      ],
++    )
++    return (options?.client ?? this.client).get<
++      SessionRevertCapabilitiesResponses,
++      SessionRevertCapabilitiesErrors,
++      ThrowOnError
++    >({
++      url: "/session/revert-capabilities",
++      ...options,
++      ...params,
++    })
++  }
++
+   /**
+    * List sessions
+    *
+@@ -4265,6 +4347,7 @@ export class Session2 extends HeyApiClient {
+       workspace?: string
+       messageID?: string
+       partID?: string
++      files?: boolean
+     },
+     options?: Options<never, ThrowOnError>,
+   ) {
+@@ -4278,6 +4361,7 @@ export class Session2 extends HeyApiClient {
+             { in: "query", key: "workspace" },
+             { in: "body", key: "messageID" },
+             { in: "body", key: "partID" },
++            { in: "body", key: "files" },
+           ],
+         },
+       ],
+diff --git a/packages/sdk/js/src/v2/gen/types.gen.ts b/packages/sdk/js/src/v2/gen/types.gen.ts
+index f06c20c..3bd67ef 100644
+--- a/packages/sdk/js/src/v2/gen/types.gen.ts
++++ b/packages/sdk/js/src/v2/gen/types.gen.ts
+@@ -217,6 +217,7 @@ export type Session = {
+     partID?: string
+     snapshot?: string
+     diff?: string
++    fileRestore?: boolean
+   }
+ }
+ 
+@@ -2245,6 +2246,7 @@ export type GlobalSession = {
+     partID?: string
+     snapshot?: string
+     diff?: string
++    fileRestore?: boolean
+   }
+   project: ProjectSummary | null
+ }
+@@ -3119,6 +3121,7 @@ export type RevertState = {
+   partID?: string
+   snapshot?: string
+   diff?: string
++  fileRestore?: boolean
+   files?: Array<FileDiff>
+ }
+ 
+@@ -9439,6 +9442,71 @@ export type ProviderOauthCallbackResponses = {
+ 
+ export type ProviderOauthCallbackResponse = ProviderOauthCallbackResponses[keyof ProviderOauthCallbackResponses]
+ 
++export type SessionExternalMessageData = {
++  body?: {
++    info: Message
++    parts: Array<Part>
++  }
++  path: {
++    sessionID: string
++  }
++  query?: {
++    directory?: string
++    workspace?: string
++  }
++  url: "/session/{sessionID}/external-message"
++}
++
++export type SessionExternalMessageErrors = {
++  /**
++   * Bad request
++   */
++  400: BadRequestError
++}
++
++export type SessionExternalMessageError = SessionExternalMessageErrors[keyof SessionExternalMessageErrors]
++
++export type SessionExternalMessageResponses = {
++  /**
++   * Success
++   */
++  200: boolean
++}
++
++export type SessionExternalMessageResponse = SessionExternalMessageResponses[keyof SessionExternalMessageResponses]
++
++export type SessionRevertCapabilitiesData = {
++  body?: never
++  path?: never
++  query?: {
++    directory?: string
++    workspace?: string
++  }
++  url: "/session/revert-capabilities"
++}
++
++export type SessionRevertCapabilitiesErrors = {
++  /**
++   * Bad request
++   */
++  400: BadRequestError
++}
++
++export type SessionRevertCapabilitiesError = SessionRevertCapabilitiesErrors[keyof SessionRevertCapabilitiesErrors]
++
++export type SessionRevertCapabilitiesResponses = {
++  /**
++   * Success
++   */
++  200: {
++    legacyConversationRevert: 1
++    executionBoundary?: 1
++  }
++}
++
++export type SessionRevertCapabilitiesResponse =
++  SessionRevertCapabilitiesResponses[keyof SessionRevertCapabilitiesResponses]
++
+ export type SessionListData = {
+   body?: never
+   path?: never
+@@ -10295,6 +10363,7 @@ export type SessionRevertData = {
+   body?: {
+     messageID: string
+     partID?: string
++    files?: boolean
+   }
+   path: {
+     sessionID: string
+diff --git a/packages/opencode/src/cli/cmd/debug/devryan-tool.handler.ts b/packages/opencode/src/cli/cmd/debug/devryan-tool.handler.ts
+new file mode 100644
+index 0000000..923c0f3
+--- /dev/null
++++ b/packages/opencode/src/cli/cmd/debug/devryan-tool.handler.ts
+@@ -0,0 +1,116 @@
++import { createInterface } from "node:readline"
++import { randomUUID } from "node:crypto"
++import { Effect, Schema, type Types } from "effect"
++import { SessionV1 } from "@opencode-ai/core/v1/session"
++import { SessionID, MessageID } from "@/session/schema"
++import { DevRyanExecution } from "@/session/devryan-execution"
++
++const Input = Schema.Struct({
++  tool: Schema.String,
++  args: Schema.Unknown,
++  config: Schema.Unknown,
++  files: Schema.Array(Schema.String),
++  messages: Schema.Array(SessionV1.WithParts),
++  extra: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
++  sessionID: SessionID,
++  messageID: MessageID,
++  callID: Schema.String,
++  agent: Schema.String,
++  projectDirectory: Schema.String,
++  logicalDirectory: Schema.String,
++})
++const Reply = Schema.Struct({ id: Schema.String, approved: Schema.Boolean })
++
++export async function run() {
++  const started = Date.now()
++  const trace = (phase: string) => {
++    if (process.env.DEVRYAN_EXECUTION_TRACE === "1") process.stderr.write(`worker ${phase} ${Date.now() - started}ms\n`)
++  }
++  trace("input")
++  if (process.env.DEVRYAN_EXECUTION_WORKER !== "1") throw new Error("This command requires a confined execution lease")
++  const lines = createInterface({ input: process.stdin, crlfDelay: Infinity })
++  const iterator = lines[Symbol.asyncIterator]()
++  const first = await iterator.next()
++  if (first.done || Buffer.byteLength(first.value) > 16 * 1024 * 1024) throw new Error("Invalid tool execution input")
++  const input = Schema.decodeUnknownSync(Input)(JSON.parse(first.value))
++  process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
++    ...Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown))(input.config),
++    snapshot: false,
++    watcher: { ignore: ["**/*"] },
++  })
++  process.env.DEVRYAN_LOGICAL_DIRECTORY = input.logicalDirectory
++  process.env.DEVRYAN_EXECUTION_TOOL_FILES = JSON.stringify(input.files)
++  const pending = new Map<string, { resolve: () => void; reject: (cause: Error) => void }>()
++  const replyLoop = (async () => {
++    while (true) {
++      const line = await iterator.next()
++      if (line.done) break
++      const reply = Schema.decodeUnknownSync(Reply)(JSON.parse(line.value))
++      const waiter = pending.get(reply.id)
++      pending.delete(reply.id)
++      if (reply.approved) waiter?.resolve()
++      else waiter?.reject(new Error("Permission denied"))
++    }
++    for (const waiter of pending.values()) waiter.reject(new Error("Host disconnected"))
++  })()
++  void replyLoop.catch(() => {
++    for (const waiter of pending.values()) waiter.reject(new Error("Invalid host response"))
++  })
++  const send = (frame: typeof DevRyanExecution.Frame.Type) => {
++    process.stdout.write(DevRyanExecution.prefix + JSON.stringify(frame) + "\n")
++  }
++  const { AppRuntime } = await import("@/effect/app-runtime")
++  const { InstanceStore } = await import("@/project/instance-store")
++  const { ToolRegistry } = await import("@/tool/registry")
++  trace("runtime")
++  try {
++    const result = await AppRuntime.runPromise(
++      Effect.gen(function* () {
++        const store = yield* InstanceStore.Service
++        return yield* store.provide(
++          { directory: process.cwd() },
++          Effect.gen(function* () {
++            const registry = yield* ToolRegistry.Service
++            trace("registry")
++            const tool = (yield* registry.all()).findLast((def) => def.id === input.tool)
++            trace("execute")
++            if (!tool) throw new Error(`Confined tool is unavailable: ${input.tool}`)
++            return yield* tool.execute(input.args, {
++              sessionID: input.sessionID,
++              messageID: input.messageID,
++              callID: input.callID,
++              agent: input.agent,
++              messages: structuredClone(input.messages) as Types.DeepMutable<typeof input.messages>,
++              extra: input.extra,
++              abort: new AbortController().signal,
++              metadata: (value) => Effect.sync(() => send({ type: "metadata", value })),
++              ask: (value) =>
++                Effect.promise(
++                  () =>
++                    new Promise<void>((resolve, reject) => {
++                      const id = randomUUID()
++                      pending.set(id, { resolve, reject })
++                      send({ type: "permission", id, value })
++                    }),
++                ),
++            })
++          }),
++        )
++      }),
++    )
++    send({ type: "result", result })
++    trace("result")
++  } catch (cause) {
++    send({ type: "error", message: cause instanceof Error ? cause.message : "Confined tool failed" })
++    process.exitCode = 1
++  } finally {
++    lines.close()
++    process.stdin.destroy()
++    await AppRuntime.runPromise(InstanceStore.Service.use((store) => store.disposeAll()))
++    trace("disposed")
++    // Plugin timers and worker pools belong to this one execution. Flush the
++    // protocol, then let the native supervisor reap every remaining child.
++    await new Promise<void>((resolve) => process.stdout.write("", () => resolve()))
++    process.exit(process.exitCode ?? 0)
++  }
++}
+diff --git a/packages/opencode/src/cli/cmd/debug/devryan-tool.ts b/packages/opencode/src/cli/cmd/debug/devryan-tool.ts
+new file mode 100644
+index 0000000..0ebe3af
+--- /dev/null
++++ b/packages/opencode/src/cli/cmd/debug/devryan-tool.ts
+@@ -0,0 +1,10 @@
++import { cmd } from "../cmd"
++
++export const DevRyanToolCommand = cmd({
++  command: "devryan-tool",
++  describe: false,
++  async handler() {
++    const { run } = await import("./devryan-tool.handler")
++    await run()
++  },
++})
+diff --git a/packages/opencode/src/session/devryan-execution.ts b/packages/opencode/src/session/devryan-execution.ts
+new file mode 100644
+index 0000000..d74d4d5
+--- /dev/null
++++ b/packages/opencode/src/session/devryan-execution.ts
+@@ -0,0 +1,417 @@
++import { createHash } from "node:crypto"
++import { spawn, execFile } from "node:child_process"
++import { createInterface } from "node:readline"
++import { readFile } from "node:fs/promises"
++import path from "node:path"
++import { fileURLToPath } from "node:url"
++import { Effect, Fiber, Schema } from "effect"
++import { Config } from "@/config/config"
++import { EffectBridge } from "@/effect/bridge"
++import { InstanceState } from "@/effect/instance-state"
++import { Tool } from "@/tool/tool"
++import type { Hooks } from "@opencode-ai/plugin"
++
++const controls = new WeakSet<object>()
++const resolvedPlugins = new Map<string, Map<string, unknown>>()
++const toolFiles = new Map<string, string[]>()
++export function files(directory: string, entries: string[]) {
++  toolFiles.set(directory, entries)
++}
++const Record = Schema.Record(Schema.String, Schema.Unknown)
++const Launch = Schema.Struct({
++  lease: Schema.Struct({ token: Schema.String, viewDirectory: Schema.String, projectDirectory: Schema.String }),
++  launch: Schema.optional(
++    Schema.Struct({
++      launcher: Schema.String,
++      arguments: Schema.Array(Schema.String),
++      cwd: Schema.String,
++      scratchDirectory: Schema.String,
++      environment: Schema.Record(Schema.String, Schema.String),
++    }),
++  ),
++})
++export const Result = Schema.Struct({
++  title: Schema.String,
++  output: Schema.String,
++  metadata: Record,
++  attachments: Schema.optional(
++    Schema.Array(
++      Schema.Struct({
++        type: Schema.Literal("file"),
++        mime: Schema.String,
++        url: Schema.String,
++        filename: Schema.optional(Schema.String),
++      }),
++    ),
++  ),
++})
++export const Frame = Schema.Union([
++  Schema.Struct({ type: Schema.Literal("result"), result: Result }),
++  Schema.Struct({ type: Schema.Literal("error"), message: Schema.String }),
++  Schema.Struct({
++    type: Schema.Literal("metadata"),
++    value: Schema.Struct({ title: Schema.optional(Schema.String), metadata: Schema.optional(Record) }),
++  }),
++  Schema.Struct({
++    type: Schema.Literal("permission"),
++    id: Schema.String,
++    value: Schema.Struct({
++      permission: Schema.String,
++      patterns: Schema.Array(Schema.String),
++      always: Schema.Array(Schema.String),
++      metadata: Record,
++    }),
++  }),
++])
++export const prefix = "DEVRYAN_TOOL:"
++export const enabled = () =>
++  process.env.DEVRYAN_EXECUTION_BOUNDARY === "1" && process.env.DEVRYAN_EXECUTION_WORKER !== "1"
++const admissions = new Map<string, Set<Fiber.Fiber<unknown, unknown>>>()
++
++// Track the whole prompt, including its prelude. SessionRunner alone owns only
++// the model loop, which starts after cleanup and message persistence.
++export function admitted<A, E, R>(sessionID: string, action: Effect.Effect<A, E, R>) {
++  if (!enabled()) return action
++  return Effect.gen(function* () {
++    const instance = yield* InstanceState.context
++    const key = JSON.stringify([instance.directory, sessionID])
++    const fiber = Fiber.getCurrent()!
++    const running = admissions.get(key) ?? new Set()
++    const nested = running.has(fiber)
++    running.add(fiber)
++    admissions.set(key, running)
++    return yield* Effect.gen(function* () {
++      yield* Effect.promise(() => rpc({ action: "admit", directory: instance.directory, sessionID }))
++      return yield* action
++    }).pipe(
++      Effect.ensuring(
++        Effect.sync(() => {
++          if (nested) return
++          running.delete(fiber)
++          if (!running.size) admissions.delete(key)
++        }),
++      ),
++    )
++  })
++}
++
++export const cancelAdmissions = (sessionID: string) =>
++  Effect.gen(function* () {
++    if (!enabled()) return
++    const instance = yield* InstanceState.context
++    const running = admissions.get(JSON.stringify([instance.directory, sessionID]))
++    const current = Fiber.getCurrent()
++    yield* Effect.forEach(
++      [...(running ?? [])].filter((fiber) => fiber !== current),
++      Fiber.interrupt,
++      { concurrency: "unbounded" },
++    )
++  })
++
++export async function rpc(params: object) {
++  const url = new URL(process.env.DEVRYAN_ORCHESTRATION_URL ?? "")
++  if (
++    url.protocol !== "http:" ||
++    url.hostname !== "127.0.0.1" ||
++    url.pathname !== "/rpc" ||
++    !process.env.DEVRYAN_ORCHESTRATION_TOKEN
++  )
++    throw new Error("mutation_runtime_unsupported")
++  const response = await fetch(url, {
++    method: "POST",
++    headers: {
++      "content-type": "application/json",
++      authorization: `Bearer ${process.env.DEVRYAN_ORCHESTRATION_TOKEN}`,
++    },
++    body: JSON.stringify({ method: "session_execution", params }),
++    signal: AbortSignal.timeout(60_000),
++  })
++  const body = Schema.decodeUnknownSync(
++    Schema.Struct({
++      ok: Schema.Boolean,
++      result: Schema.optional(Schema.Unknown),
++      error: Schema.optional(Schema.Struct({ code: Schema.optional(Schema.String) })),
++    }),
++  )(await response.json())
++  if (!response.ok || !body.ok) throw new Error(body.error?.code ?? "mutation_runtime_unavailable")
++  return body.result
++}
++
++// Only the host's content-pinned, declarative orchestration adapters can stay in
++// the control process. A custom tool with the same name remains confined.
++export async function plugin(entry: string, hooks: Hooks, options: unknown, directory: string) {
++  const plugins = resolvedPlugins.get(directory) ?? new Map<string, unknown>()
++  plugins.set(entry, options)
++  resolvedPlugins.set(directory, plugins)
++  if (!enabled()) return
++  const pins = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.String))(
++    JSON.parse(process.env.DEVRYAN_EXECUTION_CONTROL_PLUGINS ?? "{}"),
++  )
++  const file = entry.startsWith("file:") ? fileURLToPath(entry) : entry
++  // Runtime overlays copy the reviewed entry verbatim. Accept those copies by
++  // content, never by a tool's user-controlled name or installation location.
++  if (
++    !Object.values(pins).includes(
++      createHash("sha256")
++        .update(await readFile(file))
++        .digest("hex"),
++    )
++  )
++    return
++  for (const def of Object.values(hooks.tool ?? {})) controls.add(def)
++}
++
++export const prompt = (sessionID: string, userMessageID: string) =>
++  Effect.gen(function* () {
++    if (!enabled()) return
++    const ctx = yield* InstanceState.context
++    yield* Effect.promise(() => rpc({ action: "prompt", directory: ctx.directory, sessionID, userMessageID }))
++  })
++
++export const child = (sessionID: string, parentID: string, parentCallID: string | undefined) =>
++  Effect.gen(function* () {
++    if (!enabled()) return
++    const ctx = yield* InstanceState.context
++    yield* Effect.promise(() => rpc({ action: "child", directory: ctx.directory, sessionID, parentID, parentCallID }))
++  })
++
++export function wrap<P extends Schema.Decoder<unknown>, M extends { [key: string]: unknown }>(
++  def: Tool.Def<P, M>,
++  config: Config.Interface,
++  mode: "process" | "control" = "process",
++  source?: object,
++): Tool.Def<P, M> {
++  if (!enabled()) return def
++  const original = def.execute
++  return {
++    ...def,
++    execute: (args, ctx) =>
++      Effect.gen(function* () {
++        const instance = yield* InstanceState.context
++        const bridge = yield* EffectBridge.make()
++        const kind = mode === "control" || (source && controls.has(source)) ? "control" : "process"
++        const scope = {
++          directory: instance.directory,
++          sessionID: ctx.sessionID,
++          messageID: ctx.messageID,
++          callID: ctx.callID,
++          tool: def.id,
++        }
++        return yield* Effect.uninterruptibleMask((restore) =>
++          Effect.gen(function* () {
++            const argsDigest = createHash("sha256")
++              .update(JSON.stringify([def.id, args, kind]))
++              .digest("hex")
++            const started = Schema.decodeUnknownSync(Launch)(
++              yield* Effect.promise(async () => {
++                try {
++                  return await rpc({ ...scope, action: "begin", argsDigest, kind })
++                } catch (cause) {
++                  // The begin response may have been lost after durable reservation.
++                  // This branch has never spawned a process, including on interruption.
++                  await rpc({ ...scope, action: "cancel-before-start" })
++                  throw cause
++                }
++              }),
++            )
++            const receipt = { ...scope, token: started.lease.token }
++            if (kind === "control")
++              return yield* restore(original(args, ctx)).pipe(
++                Effect.ensuring(Effect.promise(() => rpc({ ...receipt, action: "finish" }))),
++              )
++            const cfg = yield* config.get()
++            const controller = new AbortController()
++            const pending = execute({
++              started,
++              args,
++              tool: def.id,
++              ctx,
++              config: {
++                ...cfg,
++                plugin: [...(resolvedPlugins.get(instance.directory) ?? [])].map(([entry, options]) =>
++                  options === undefined ? entry : [entry, options],
++                ),
++              },
++              files: toolFiles.get(instance.directory) ?? [],
++              signal: AbortSignal.any([ctx.abort, controller.signal]),
++              receipt,
++              metadata: (value) => bridge.promise(ctx.metadata(value)),
++              ask: (value) => bridge.promise(ctx.ask(value)),
++            })
++            // A provider cancellation acknowledges the entire native process tree,
++            // including the publication finalizer, before releasing its session fence.
++            const result = yield* restore(Effect.promise(() => pending)).pipe(
++              Effect.onInterrupt(() =>
++                Effect.promise(async () => {
++                  controller.abort()
++                  await pending.catch(() => {})
++                }),
++              ),
++            )
++            // Native tools' metadata is intentionally open; the wire decoder above
++            // validates the shared result contract before rejoining their typed caller.
++            return result as Tool.ExecuteResult<M>
++          }),
++        )
++      }),
++  }
++}
++
++async function execute(input: {
++  started: typeof Launch.Type
++  args: unknown
++  tool: string
++  ctx: Tool.Context
++  config: unknown
++  files: string[]
++  signal: AbortSignal
++  receipt: object
++  metadata: Tool.Context["metadata"] extends (x: infer A) => unknown ? (value: A) => Promise<void> : never
++  ask: Tool.Context["ask"] extends (x: infer A) => unknown ? (value: A) => Promise<void> : never
++}) {
++  const launch = input.started.launch
++  if (!launch) throw new Error("mutation_runtime_unsupported")
++  const environment: NodeJS.ProcessEnv = {
++    ...process.env,
++    ...launch.environment,
++    HOME: launch.scratchDirectory,
++    XDG_CONFIG_HOME: path.join(launch.scratchDirectory, "config"),
++    XDG_DATA_HOME: path.join(launch.scratchDirectory, "data"),
++    XDG_STATE_HOME: path.join(launch.scratchDirectory, "state"),
++    XDG_CACHE_HOME: path.join(launch.scratchDirectory, "cache"),
++    OPENCODE_TEST_HOME: launch.scratchDirectory,
++    OPENCODE_TEST_MANAGED_CONFIG_DIR: path.join(launch.scratchDirectory, "managed"),
++    DEVRYAN_EXECUTION_WORKER: "1",
++    OPENCODE_DISABLE_DEFAULT_PLUGINS: "true",
++    OPENCODE_DISABLE_PROJECT_CONFIG: "true",
++    OPENCODE_DISABLE_AUTOUPDATE: "true",
++    OPENCODE_DISABLE_MODELS_FETCH: "true",
++    OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "true",
++  }
++  // Never pass a host control credential to a tool or its descendants.
++  for (const key of Object.keys(environment))
++    if (
++      /^(DEVRYAN_.*(?:TOKEN|URL)|OPENCODE_SERVER_(?:PASSWORD|USERNAME)|OPENCODE_CONFIG(?:_DIR|_CONTENT)?|DEVRYAN_EXECUTION_CONTROL_PLUGINS)$/.test(
++        key,
++      )
++    )
++      delete environment[key]
++  const processArgs =
++    Bun.main.includes("$bunfs") || Bun.main.includes("~BUN") || process.execPath === Bun.main ? [] : [Bun.main]
++  const proc = spawn(
++    launch.launcher,
++    [...launch.arguments, process.execPath, ...processArgs, "debug", "devryan-tool"],
++    { cwd: launch.cwd, env: environment, stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
++  )
++  let spawned = false
++  proc.once("spawn", () => {
++    spawned = true
++  })
++  const closed = new Promise<number | null>((resolve, reject) => {
++    proc.once("error", reject)
++    proc.once("close", resolve)
++  })
++  void closed.catch(() => {})
++  const cancel = () => {
++    if (process.platform !== "win32") {
++      proc.kill("SIGTERM")
++      return
++    }
++    const signal = () =>
++      execFile(launch.launcher, ["--cancel", launch.environment.DEVRYAN_EXECUTION_CANCEL_EVENT!], (cause) => {
++        if (cause && proc.exitCode === null && proc.signalCode === null) setTimeout(signal, 20).unref()
++      })
++    signal()
++  }
++  input.signal.addEventListener("abort", cancel, { once: true })
++  if (input.signal.aborted) cancel()
++  const remap = (value: unknown) =>
++    JSON.parse(
++      JSON.stringify(value).replaceAll(
++        JSON.stringify(input.started.lease.projectDirectory).slice(1, -1),
++        JSON.stringify(input.started.lease.viewDirectory).slice(1, -1),
++      ),
++    )
++  // File arguments have logical absolute names. Shell/code strings retain their
++  // spelling: native policy must reject attempts to write the original tree.
++  const args =
++    input.args && typeof input.args === "object"
++      ? Object.fromEntries(
++          Object.entries(input.args).map(([key, value]) => [
++            key,
++            ["filePath", "path", "workdir", "cwd"].includes(key) ? remap(value) : value,
++          ]),
++        )
++      : input.args
++  proc.stdin.on("error", () => {})
++  let result: typeof Result.Type | undefined,
++    error: Error | undefined,
++    bytes = 0
++  proc.stderr.on("data", (data) => {
++    if (process.env.DEVRYAN_EXECUTION_TRACE === "1") process.stderr.write(data)
++  })
++  try {
++    proc.stdin.write(
++      JSON.stringify({
++        tool: input.tool,
++        args,
++        sessionID: input.ctx.sessionID,
++        messageID: input.ctx.messageID,
++        callID: input.ctx.callID,
++        agent: input.ctx.agent,
++        messages: input.ctx.messages,
++        extra: input.ctx.extra,
++        config: input.config,
++        files: input.files,
++        projectDirectory: input.started.lease.viewDirectory,
++        logicalDirectory: input.receipt && "directory" in input.receipt ? input.receipt.directory : undefined,
++      }) + "\n",
++    )
++    for await (const line of createInterface({ input: proc.stdout, crlfDelay: Infinity })) {
++      bytes += Buffer.byteLength(line)
++      if (bytes > 32 * 1024 * 1024) throw new Error("Confined tool output exceeded its protocol limit")
++      if (!line.startsWith(prefix)) continue
++      const frame = Schema.decodeUnknownSync(Frame)(JSON.parse(line.slice(prefix.length)))
++      if (frame.type === "result") {
++        result = frame.result
++        continue
++      }
++      if (frame.type === "error") {
++        error = new Error(frame.message)
++        continue
++      }
++      if (frame.type === "metadata") {
++        await input.metadata(frame.value)
++        continue
++      }
++      const approved = await input
++        .ask({ ...frame.value, patterns: [...frame.value.patterns], always: [...frame.value.always] })
++        .then(
++          () => true,
++          () => false,
++        )
++      proc.stdin.write(JSON.stringify({ id: frame.id, approved }) + "\n")
++    }
++    await closed
++  } catch (cause) {
++    cancel()
++    await closed.catch(() => {})
++    error = cause instanceof Error ? cause : new Error("Confined tool failed")
++  } finally {
++    input.signal.removeEventListener("abort", cancel)
++    if (!spawned) await rpc({ ...input.receipt, action: "cancel-before-start" })
++    else await rpc({ ...input.receipt, action: "finish" })
++  }
++  if (error) throw error
++  if (!result) throw new Error("Confined tool exited without a result")
++  return Schema.decodeUnknownSync(Result)(
++    JSON.parse(
++      JSON.stringify(result).replaceAll(
++        JSON.stringify(input.started.lease.viewDirectory).slice(1, -1),
++        JSON.stringify(input.started.lease.projectDirectory).slice(1, -1),
++      ),
++    ),
++  )
++}
++
++export * as DevRyanExecution from "./devryan-execution"

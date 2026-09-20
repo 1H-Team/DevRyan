@@ -65,6 +65,11 @@ For identical deterministic pre-execution input/binary-read rejection within one
 
 ## Diagnostics and evaluation
 
+The optional [cache accounting contract and QA workflow](CACHE_EFFICIENCY.md)
+adds `DevRyan-usage.json` to the existing ZIP. It reconciles runtime steps and
+message fallbacks, retains deleted title-helper attribution, and separates actual
+provider evidence from runtime accounting. It changes no inference defaults.
+
 The existing diagnostics ZIP includes `DevRyan-trace.json`. The authenticated `POST /api/diagnostics/export` also accepts `format: "chrome-trace"` with its existing runtime/task scope. Open the JSON in [Perfetto](https://perfetto.dev/docs/getting-started/other-formats). Root/task lanes correlate retained ledger, message, call and recovery identifiers. Export is bounded to 100,000 events and 32 MiB per projection stage; overflow is explicit.
 
 Observed queue, tool, workspace-gating, disposition, native turn, objective and recovery durations retain missing timestamps as null. Workspace gating is not parent idle time, observed first activity is not wire time to first response, overlapping duration sums are not a critical path, and cost is labelled native-runtime-reported or unavailable. A runtime-reported cost does not establish a provider bill or a provider-reported charge. Input/output/cache usage is deduplicated by canonical message. Structural metadata excludes private reasoning, opaque provider blobs and raw tool arguments/output. Repeated identical known diagnostics aggregate by identity/cause/generation; retention writes age/size eviction reasons before deletion. These additions do not establish why older historical evidence was already missing.

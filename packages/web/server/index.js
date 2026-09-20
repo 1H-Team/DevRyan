@@ -20,7 +20,8 @@ import { createUiAuth } from './lib/ui-auth/ui-auth.js';
 import { createMultiUserRuntime, getRequestPrincipal } from './lib/multi-user/index.js';
 import { canUseBrowser } from './lib/multi-user/policy.js';
 import { createBotModelCatalogLoader } from './lib/bots/model-catalog.js';
-import { createTunnelAuth } from './lib/opencode/tunnel-auth.js';
+import { createTunnelAccessControl as createTunnelAuth, registerTunnelAccessBoundary, hasTunnelBoundaryAuthorization } from './lib/tunnels/access-control.js';
+import { registerLocalOwnerBootstrap } from './lib/multi-user/local-owner-bootstrap.js';
 import { createManagedTunnelConfigRuntime } from './lib/tunnels/managed-config.js';
 import { normalizeManagedRemoteTunnelToken } from './lib/tunnels/managed-token.js';
 import { createTunnelProviderRegistry } from './lib/tunnels/registry.js';
@@ -61,6 +62,8 @@ import {
 import { createCanonicalOpenCodeEventProcessor } from './lib/event-stream/canonical-ingestion.js';
 import { createFsSearchRuntime as createFsSearchRuntimeFactory } from './lib/fs/search.js';
 import { createOpenCodeLifecycleRuntime } from './lib/opencode/lifecycle.js';
+import { createSessionExecutionHost } from './lib/opencode/session-execution-host.js';
+import { executionArtifacts, executionEnvironment } from './lib/opencode/execution-artifacts.js';
 import { createOpenAiOAuthCoordinator } from './lib/opencode/openai-oauth-coordinator.js';
 import { createOpenAiOAuthBridge, registerManagedOAuthMutationGate } from './lib/opencode/openai-oauth-bridge.js';
 import { resolveContextModeCapability } from './lib/opencode/context-mode-hotfix.js';
@@ -615,7 +618,15 @@ const resolveCursorSdkAgentDefinitions = async ({ directory, resolveModelSelecti
   return definitions;
 };
 
+const capturedExecutionEnvironment = await executionEnvironment({ pluginDirectory: path.join(defaultConfigRoot, 'plugins'), dataDirectory: OPENCHAMBER_DATA_DIR });
+const capturedExecutions = capturedExecutionEnvironment.DEVRYAN_EXECUTION_BOUNDARY === '1'
+  && (!process.env.OPENCODE_HOST || process.env.DEVRYAN_EXECUTION_BOUNDARY === '1');
+
 const cursorSdkRuntime = createCursorSdkRuntime({
+  ...(capturedExecutions ? { executionAdapter: { start: (input) => sessionExecutionHost.startCursor(input),
+    startReadOnly: (input) => sessionExecutionHost.startReadOnly(input),
+    beforePrompt: (input) => sessionExecutionHost.beforeCursorPrompt(input) },
+  onPersistRecord: (input) => sessionExecutionHost.persistCursorRecord(input) } : {}),
   storageDir: path.join(OPENCHAMBER_DATA_DIR, 'cursor-sdk-sessions'),
   readAuth: readAuthFile,
   env: process.env,
@@ -1094,6 +1105,8 @@ const openCodeWatcherRuntime = createOpenCodeWatcherRuntime({
 
 
 const serverUtilsRuntime = createServerUtilsRuntime({
+  getSessionRevertCoordinator: () => capturedExecutions ? sessionExecutionHost.coordinator : undefined,
+  recordDiagnostic: (entry) => harnessRuntime.record(entry),
   fs,
   os,
   path,
@@ -1329,7 +1342,8 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
     if (!managedOrchestrationRuntime) {
       throw new Error('Managed orchestration runtime was not prepared before OpenCode startup');
     }
-    return await managedOrchestrationRuntime.prepareBridge();
+    return { ...await managedOrchestrationRuntime.prepareBridge(),
+      ...capturedExecutionEnvironment };
   },
   getManagedBrowserEnvironment: async () => (
     typeof managedBrowserEnvironmentProvider === 'function'
@@ -1409,6 +1423,7 @@ const harnessTaskContext = createHarnessTaskContextHost({
 });
 harnessRuntime.setTaskContextRuntime(harnessTaskContext);
 const sessionChangeHost = createSessionChangeHost({
+  restoreOwned: capturedExecutions ? (input) => sessionExecutionHost.coordinator.restoreFiles(input) : undefined,
   dataDirectory: OPENCHAMBER_DATA_DIR,
   onDiagnostic: (event) => {
     harnessRuntime.record({ type: 'log', event: 'session_changes_capture', sessionID: event.sessionID, payload: event });
@@ -1423,6 +1438,13 @@ const sessionChangeHost = createSessionChangeHost({
   reconcileExecutionReceipts: (input) => cursorSdkRuntime.reconcileSessionChanges(input),
 });
 harnessRuntime.setSessionChangeHost(sessionChangeHost);
+const sessionExecutionHost = createSessionExecutionHost({ dataDirectory: OPENCHAMBER_DATA_DIR,
+  getLauncher: () => executionArtifacts().launcher, buildOpenCodeUrl, getOpenCodeAuthHeaders,
+  recordReceipt: (input) => sessionChangeHost.recordReceipt(input),
+  stopCursor: (input) => cursorSdkRuntime.abortAndWait(input.sessionID),
+  onDiagnostic: (event) => harnessRuntime.record({ type: 'lifecycle', event: 'session_revert',
+    sessionID: event.sessionID, payload: event }),
+});
 observeCommandDeadline = (payload) => commandDeadlineRuntime.observe(payload);
 const canForceConfigRestart = (principal) => (
   principal?.scope === 'local-admin' || principal?.role === 'admin'
@@ -1507,6 +1529,7 @@ const ensureGlobalWatcherStarted = async () => {
 };
 const bootstrapOpenCodeAtStartup = async (...args) => {
   await openCodeLifecycleRuntime.bootstrapOpenCodeAtStartup(...args);
+  if (isOpenCodeReady && openCodePort) await sessionExecutionHost.recover();
   if (
     managedOrchestrationRuntime
     && isOpenCodeReady
@@ -1698,7 +1721,7 @@ async function main(options = {}) {
     || typeof options.tunnelConfigPath === 'string'
     || typeof options.tunnelToken === 'string'
     || typeof options.tunnelHostname === 'string';
-  const startupTunnelRequest = shouldUseCanonicalTunnelConfig
+  let startupTunnelRequest = shouldUseCanonicalTunnelConfig
     ? normalizeTunnelStartRequest({
         provider: normalizeTunnelProvider(options.tunnelProvider),
         mode: options.tunnelMode,
@@ -1811,7 +1834,35 @@ async function main(options = {}) {
     sayTTSCapabilityPromise,
   ]);
   multiUserRuntime = nextMultiUserRuntime;
-  const getConnectionActiveRequests = attachSupabaseConnectionBoundary(app, server, multiUserRuntime.connection);
+  await tunnelAuthController.initialize({
+    connection: multiUserRuntime.connection,
+    passwordProtected: typeof configuredUiPassword === 'string' && configuredUiPassword.trim().length > 0,
+    validateBots: (principal, botIds) => multiUserRuntime.botsRuntime.validateTunnelBotSelection(principal, botIds),
+  });
+  if (!startupTunnelRequest) {
+    const resumeProfile = tunnelAuthController.getResumeProfile();
+    if (resumeProfile) {
+      const savedProfiles = await readManagedRemoteTunnelConfigFromDisk();
+      const saved = savedProfiles.tunnels.find((profile) => profile.hostname === resumeProfile.hostname);
+      if (saved) startupTunnelRequest = normalizeTunnelStartRequest({ provider: TUNNEL_PROVIDER_CLOUDFLARE,
+        mode: TUNNEL_MODE_MANAGED_REMOTE, hostname: saved.hostname, token: saved.token, originPort: saved.originPort });
+    }
+  }
+  registerLocalOwnerBootstrap(app, { dataDirectory: OPENCHAMBER_DATA_DIR, connection: multiUserRuntime.connection });
+  registerTunnelAccessBoundary(app, server, { controller: tunnelAuthController, connection: multiUserRuntime.connection, runtimeInstanceId,
+    getRuntimeReady: () => isOpenCodeReady,
+    authenticateOwner: async (req, res) => {
+      const owner = multiUserRuntime.connection.authenticateLocalOwner(req);
+      if (owner) return owner;
+      const principal = await multiUserRuntime.resolvePrincipal?.(req, res);
+      if (principal?.role !== 'admin' || principal.scope !== 'managed' || principal.offlineGrace) return null;
+      await multiUserRuntime.connection.rememberOwner(principal, res);
+      return multiUserRuntime.connection.ownerPrincipal();
+    },
+  });
+  const getConnectionActiveRequests = attachSupabaseConnectionBoundary(app, server, multiUserRuntime.connection, {
+    allowRemoteRequest: hasTunnelBoundaryAuthorization,
+  });
   if (multiUserRuntime.enabled) {
     console.log('Supabase multi-user identity and policy enforcement enabled');
   }
@@ -1955,7 +2006,10 @@ async function main(options = {}) {
         registerRuntimeServiceRoutes(privateApp, {
           controller: options.runtimeServiceController,
           onLocalOwnerBootstrap: async (res) => {
-            if (!multiUserRuntime.connection.enabled) multiUserRuntime.connection.setOwnerCookie(res, await multiUserRuntime.connection.issueLocalOwnerSession());
+            if (!multiUserRuntime.connection.enabled) {
+              await multiUserRuntime.connection.bootstrapLocalOwner();
+              multiUserRuntime.connection.setOwnerCookie(res, await multiUserRuntime.connection.issueLocalOwnerSession());
+            }
           },
           server,
           onDesktopHostLease: options.onDesktopHostLease,
@@ -2083,6 +2137,7 @@ async function main(options = {}) {
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     cursorSdkRuntime,
+    registerExecutionChild: capturedExecutions ? (input) => sessionExecutionHost.plugin({ ...input, action: 'child' }) : undefined,
     publishEvent: emitSyntheticOpenCodeEvent,
     isManagedOpenCode: () => !(
       isExternalOpenCode
@@ -2112,6 +2167,7 @@ async function main(options = {}) {
       harness_context_observation: (params) => harnessFingerprintReader.observeContext(params),
       harness_context: (params) => harnessTaskContext.handleRpc(params),
       session_changes: (params) => sessionChangeHost.plugin(params),
+      session_execution: (params) => sessionExecutionHost.plugin(params),
       resolve_agent_execution: (params) => multiUserRuntime.resolveSessionAgentExecution?.(params)
         ?? params.fallbackExecution,
     },
@@ -2463,7 +2519,11 @@ async function main(options = {}) {
   reportStartupPhase('ready', 'DevRyan is ready.');
 
   return {
-    issueLocalOwnerSession: () => !multiUserRuntime.connection.enabled ? multiUserRuntime.connection.issueLocalOwnerSession() : null,
+    issueLocalOwnerSession: async () => {
+      if (multiUserRuntime.connection.enabled) return null;
+      await multiUserRuntime.connection.bootstrapLocalOwner();
+      return multiUserRuntime.connection.issueLocalOwnerSession();
+    },
     expressApp: app,
     httpServer: server,
     getPort: () => tunnelRuntimeContext.getActivePort(),

@@ -2256,6 +2256,22 @@ async function abortSessionTreeBeforeRevert(tree: RevertTree, fallbackDirectory:
   await waitForSessionTreeIdle(tree, fallbackDirectory)
 }
 
+async function withLegacyRevertCancellation<T>(
+  operation: () => Promise<T>,
+  tree: RevertTree,
+  directory: string | undefined,
+): Promise<T> {
+  try {
+    return await operation()
+  } catch (error) {
+    // Captured execution owns precise dispatch ancestry and cancellation on the
+    // server. Only the legacy route asks the UI to stop its known tree first.
+    if (!error || typeof error !== "object" || !("code" in error) || error.code !== "session_busy") throw error
+    await abortSessionTreeBeforeRevert(tree, directory)
+    return operation()
+  }
+}
+
 /** Copy every revert marker the server applied onto the local session records. */
 function applyRevertedSessionMarkers(
   sessions: Session[],
@@ -2282,6 +2298,20 @@ export function describeScopedRevertFailure(error: unknown): string | null {
   const code = typeof candidate.code === "string" ? candidate.code : undefined
   const file = candidate.files?.[0]?.path
   switch (code) {
+    case "mutation_runtime_unsupported":
+    case "mutation_platform_unsupported":
+      return translate("chat.sessionChanges.error.runtimeUnsupported")
+    case "mutation_history_unavailable":
+      return translate("chat.sessionChanges.error.historyUnavailable")
+    case "mutation_cancellation_failed":
+    case "mutation_termination_unconfirmed":
+      return translate("chat.sessionChanges.error.terminationUnconfirmed")
+    case "mutation_recovery_required":
+    case "mutation_recovery_failed":
+      return translate("chat.sessionChanges.error.recoveryRequired")
+    case "activity_unverified":
+    case "session_directory_mismatch":
+      return translate("chat.sessionChanges.error.activityUnverified")
     case "directory_busy":
       return translate("chat.sessionChanges.error.directoryBusy")
     case "session_busy":
@@ -2356,7 +2386,7 @@ function settleSessionTreeAfterRevert(directory: string | undefined, rootSession
 /**
  * Revert to a specific user message.
  *
- * 1. Resolve the session tree (root + sub-agents) and abort every working member
+ * 1. Resolve the known tree for optimistic coordination and legacy compatibility
  * 2. Extract text from the target message for prompt restoration
  * 3. Optimistically set revert marker so messages hide immediately
  * 4. Call OpenChamber's tree-scoped session revert and merge returned session
@@ -2452,40 +2482,20 @@ export async function revertToMessage(
     if (!updateSessionUserActivityFromMessages(draft, sessionId)) return nextState
     return { session_user_activity: draft.session_user_activity }
   })
-  // Abort the whole tree (deepest first) after the transaction marker is
-  // active, then wait for the statuses to settle. The selected session keeps
-  // the optimistic idle edge it always had so the row never shows a stale
-  // "working" label while the revert request is in flight.
-  await abortSessionTreeBeforeRevert(tree, sessionDirectory)
-  store.setState((current) => {
-    const currentTransaction = current.revert_transaction[sessionId]
-    if (!currentTransaction || currentTransaction.version !== transaction.version) {
-      return current
-    }
-    const currentStatus = current.session_status[sessionId]
-    if (!currentStatus || currentStatus.type === "idle") {
-      return current
-    }
-    return {
-      session_status: {
-        ...current.session_status,
-        [sessionId]: { type: "idle" as const },
-      },
-    }
-  })
-
   // Call SDK and merge authoritative result into store
   try {
     if (options.unrevertFirst) {
       // Redo: put the working tree back first, then rewind to the new point.
       // Both requests share one client transaction so the suffix stays hidden
       // (and can be rolled back) as a unit.
-      await opencodeClient.unrevertSessionScoped(sessionId, sessionDirectory)
+      await withLegacyRevertCancellation(
+        () => opencodeClient.unrevertSessionScoped(sessionId, sessionDirectory), tree, sessionDirectory,
+      )
     }
-    const result = await opencodeClient.revertSessionScoped(sessionId, messageId, sessionDirectory, {
+    const result = await withLegacyRevertCancellation(() => opencodeClient.revertSessionScoped(sessionId, messageId, sessionDirectory, {
       scope: "tree",
       rootSessionId,
-    })
+    }), tree, sessionDirectory)
     if (result) {
       const current = store.getState()
       const currentTransaction = current.revert_transaction[sessionId]

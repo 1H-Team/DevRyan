@@ -20,6 +20,56 @@ describe("notification-store", () => {
     getSafeStorage().removeItem(COMPLETION_NOTIFICATION_STORAGE_KEY)
   })
 
+  test("successful completion resolves captured older errors without changing history or read state", () => {
+    const completedAt = Date.now()
+    const store = useNotificationStore.getState()
+    store.append({ type: "error", session: "root", directory: "/repo", time: completedAt - 10, viewed: false })
+    const captured = useNotificationStore.getState().list
+    store.append({ type: "error", session: "root", directory: "/repo", time: completedAt + 1, viewed: false })
+    store.resolveErrors(captured, "msg_success", completedAt)
+    const state = useNotificationStore.getState()
+    expect(state.list).toHaveLength(2)
+    expect(state.list[0]).toMatchObject({ viewed: false, resolvedByMessageId: "msg_success" })
+    expect("resolvedByMessageId" in state.list[1]).toBe(false)
+    expect(state.sessionUnseenCount("root")).toBe(2)
+    expect(state.sessionHasError("root")).toBe(true)
+    expect(state.projectHasError("/repo")).toBe(true)
+
+    // A replay with a fresh capture still cannot clear the later error.
+    store.resolveErrors(state.list, "msg_success", completedAt)
+    expect(useNotificationStore.getState()).toBe(state)
+  })
+
+  test("resolved errors stop driving session and project red while remaining unread", () => {
+    const completedAt = Date.now()
+    useNotificationStore.getState().append({
+      type: "error", session: "root", directory: "/repo", time: completedAt - 1, viewed: false,
+    })
+    const captured = useNotificationStore.getState().list
+    useNotificationStore.getState().resolveErrors(captured, "msg_success", completedAt)
+    const state = useNotificationStore.getState()
+    expect(state.sessionHasError("root")).toBe(false)
+    expect(state.projectHasError("/repo")).toBe(false)
+    expect(state.sessionUnseenCount("root")).toBe(1)
+    expect(state.list[0]?.viewed).toBe(false)
+    state.resolveErrors(captured, "msg_success", completedAt)
+    expect(useNotificationStore.getState()).toBe(state)
+  })
+
+  test("errors arriving during settlement and ambiguous timestamps are preserved", () => {
+    const completedAt = Date.now()
+    const store = useNotificationStore.getState()
+    store.append({ type: "error", session: "root", time: completedAt, viewed: false })
+    const captured = useNotificationStore.getState().list
+    store.append({ type: "error", session: "root", time: completedAt - 1, viewed: false })
+    store.resolveErrors(captured, "msg_success", completedAt)
+    expect(useNotificationStore.getState().list.every((n) => n.type === "error" && !n.resolvedByMessageId)).toBe(true)
+    for (const invalid of [NaN, Infinity, 0, -1]) {
+      store.resolveErrors(useNotificationStore.getState().list, "msg_success", invalid)
+      expect(useNotificationStore.getState().sessionHasError("root")).toBe(true)
+    }
+  })
+
   test("indexes unviewed turn-complete notifications as session completion", () => {
     appendNotification({
       type: "turn-complete",

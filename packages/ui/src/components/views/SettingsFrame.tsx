@@ -1,13 +1,6 @@
 import React from 'react';
 import { cn, isMacOS } from '@/lib/utils';
 import { useUIStore } from '@/stores/useUIStore';
-import { useProjectsStore } from '@/stores/useProjectsStore';
-import { useAgentsStore } from '@/stores/useAgentsStore';
-import { useCommandsStore } from '@/stores/useCommandsStore';
-import { useMcpConfigStore } from '@/stores/useMcpConfigStore';
-import { useSkillsStore } from '@/stores/useSkillsStore';
-import { useSkillsCatalogStore } from '@/stores/useSkillsCatalogStore';
-import { usePluginsStore } from '@/stores/usePluginsStore';
 import {
   RiArrowLeftSLine,
   RiListUnordered,
@@ -40,6 +33,7 @@ import {
   getSettingsBackButtonHeaderContentClassName,
   getSettingsNavScrollClassName,
   getSettingsNavButtonClassName,
+  getSettingsNavigationColumnClassName,
   getSettingsPageSidebarClassName,
 } from './SettingsView.styles';
 import {
@@ -61,6 +55,7 @@ import {
 import { SettingsLoadFallback } from './SettingsLoadFallback';
 import { usePreparedSettingsNavigation } from './usePreparedSettingsNavigation';
 import {
+  PreparedSettingsDataBoundary,
   PreparedAboutSettings,
   PreparedAgentsPage,
   PreparedAgentsSidebar,
@@ -109,16 +104,7 @@ const CodingAgentSettingsAccessRequired: React.FC = () => (
   </div>
 );
 
-// Same constraints as main sidebar
-const SETTINGS_NAV_MIN_WIDTH = 176;
-const SETTINGS_NAV_MAX_WIDTH = 280;
-const SETTINGS_NAV_RESIZE_STEP = 8;
-
-function clampSettingsNavWidth(width: number): number {
-  return Math.min(SETTINGS_NAV_MAX_WIDTH, Math.max(SETTINGS_NAV_MIN_WIDTH, width));
-}
-
-interface SettingsViewProps {
+interface SettingsFrameProps {
   onClose?: () => void;
   /** Force mobile layout regardless of device detection */
   forceMobile?: boolean;
@@ -200,26 +186,18 @@ const SettingsHome: React.FC<{
   );
 };
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile }) => {
+export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobile }) => {
   const { t } = useI18n();
   const principal = useAuthPrincipal();
   const deviceInfo = useDeviceInfo();
   const isMobile = forceMobile ?? deviceInfo.isMobile;
 
   const settingsPageRaw = useUIStore((state) => state.settingsPage);
-  const isSettingsDialogOpen = useUIStore((state) => state.isSettingsDialogOpen);
   const setSettingsPage = useUIStore((state) => state.setSettingsPage);
   const isBehaviorAliasPage = isBehaviorSettingsAlias(settingsPageRaw);
   const requestedSettingsSlug = resolveSettingsSlug(settingsPageRaw);
   const [mobileStage, setMobileStage] = React.useState<MobileStage>('nav');
   const autoNavSlugRef = React.useRef<string | null>(null);
-
-  const [navWidth, setNavWidth] = React.useState(216);
-  const [hasManuallyResized, setHasManuallyResized] = React.useState(false);
-  const [isResizing, setIsResizing] = React.useState(false);
-  const startXRef = React.useRef(0);
-  const startWidthRef = React.useRef(navWidth);
-  const containerRef = React.useRef<HTMLDivElement>(null);
 
   const isDesktopApp = React.useMemo(() => {
     return isDesktopShell();
@@ -288,114 +266,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     () => visiblePages.map((page) => page.slug),
     [visiblePages],
   );
-  const { displayedSlug: settingsSlug, pendingSlug, prepareAndCommit } = usePreparedSettingsNavigation({
-    requestedSlug: requestedSettingsSlug,
+  const { displayedSlug: settingsSlug, pendingSlug, prepareAndCommit, cancelPending } = usePreparedSettingsNavigation({
+    requestedSlug: requestedSettingsSlug === 'home' || visiblePages.some((page) => page.slug === requestedSettingsSlug)
+      ? requestedSettingsSlug
+      : getSettingsDestinationFallbackSlug(requestedSettingsSlug, new Set(preloadSlugs)) ?? 'home',
     preloadSlugs,
   });
-
-  const activeProjectId = useProjectsStore((state) => state.activeProjectId);
-
-  React.useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const handleResize = () => {
-      if (!hasManuallyResized) {
-        const proportionalWidth = clampSettingsNavWidth(Math.floor(window.innerWidth * 0.12));
-        setNavWidth(proportionalWidth);
-      }
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [hasManuallyResized]);
-
-  React.useEffect(() => {
-    if (!isResizing) return;
-    const handlePointerMove = (event: PointerEvent) => {
-      const delta = event.clientX - startXRef.current;
-      const nextWidth = clampSettingsNavWidth(startWidthRef.current + delta);
-      setNavWidth(nextWidth);
-      setHasManuallyResized(true);
-    };
-    const handlePointerUp = () => setIsResizing(false);
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp, { once: true });
-    return () => {
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
-    };
-  }, [isResizing]);
-
-  const handlePointerDown = (event: React.PointerEvent) => {
-    setIsResizing(true);
-    startXRef.current = event.clientX;
-    startWidthRef.current = navWidth;
-    event.preventDefault();
-  };
-
-  const handleResizeKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    const step = event.shiftKey ? SETTINGS_NAV_RESIZE_STEP * 4 : SETTINGS_NAV_RESIZE_STEP;
-    let nextWidth: number;
-
-    switch (event.key) {
-      case 'ArrowLeft':
-        nextWidth = navWidth - step;
-        break;
-      case 'ArrowRight':
-        nextWidth = navWidth + step;
-        break;
-      case 'Home':
-        nextWidth = SETTINGS_NAV_MIN_WIDTH;
-        break;
-      case 'End':
-        nextWidth = SETTINGS_NAV_MAX_WIDTH;
-        break;
-      default:
-        return;
-    }
-
-    event.preventDefault();
-    setNavWidth(clampSettingsNavWidth(nextWidth));
-    setHasManuallyResized(true);
-  };
-
-  // Load stores when project changes or when a page becomes active.
-  React.useEffect(() => {
-    if (!isSettingsDialogOpen) {
-      return;
-    }
-
-    if (settingsSlug === 'agents') {
-      void useAgentsStore.getState().loadAgents();
-      return;
-    }
-    if (settingsSlug === 'commands') {
-      void useCommandsStore.getState().loadCommands();
-      return;
-    }
-    if (settingsSlug === 'mcp') {
-      if (!canAccessSettingsPage(principal, settingsSlug)) return;
-      void useMcpConfigStore.getState().loadMcpConfigs();
-      return;
-    }
-    if (settingsSlug === 'skills.installed' || settingsSlug === 'skills.catalog') {
-      if (settingsSlug === 'skills.installed'
-        && !canAccessSettingsPage(principal, settingsSlug)) return;
-      void useSkillsStore.getState().loadSkills();
-      void useSkillsCatalogStore.getState().loadCatalog();
-      return;
-    }
-    if (settingsSlug === 'plugins') {
-      void usePluginsStore.getState().loadPlugins();
-      void usePluginsStore.getState().loadSlimStatus();
-    }
-  }, [activeProjectId, isSettingsDialogOpen, principal, settingsSlug]);
-
-  React.useEffect(() => {
-    if (!isBehaviorAliasPage) {
-      return;
-    }
-    useAgentsStore.getState().setSelectedAgent(null);
-    setSettingsPage('agents');
-  }, [isBehaviorAliasPage, setSettingsPage]);
 
   const commitOpenPage = React.useCallback((slug: SettingsPageSlug) => {
     setSettingsPage(slug);
@@ -691,8 +567,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   const reserveSettingsNavTopChrome = !showFullPageBackButton && shouldAvoidMacTrafficLights;
 
   const handleBack = React.useCallback(() => {
+    cancelPending();
     setMobileStage((stage) => resolveMobileSettingsBackStage(stage, activePageMeta));
-  }, [activePageMeta]);
+  }, [activePageMeta, cancelPending]);
 
   const handleOpenPageSidebar = React.useCallback(() => {
     setMobileStage('page-sidebar');
@@ -909,7 +786,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         <div
           className="flex flex-1 min-h-0 overflow-hidden"
         >
-          {renderMobileStage()}
+          {mobileStage === 'nav' ? renderMobileStage() : (
+            <SettingsSectionBoundary key={settingsSlug}>
+              <PreparedSettingsDataBoundary slug={settingsSlug} resetSelectedAgent={isBehaviorAliasPage}>
+                {renderMobileStage()}
+              </PreparedSettingsDataBoundary>
+            </SettingsSectionBoundary>
+          )}
         </div>
       </>
     );
@@ -920,7 +803,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   };
 
   return (
-    <div ref={containerRef} data-settings-view="true" className={cn('relative flex h-full min-h-0 flex-col overflow-hidden bg-background')}>
+    <div data-settings-view="true" className={cn('relative flex h-full min-h-0 flex-col overflow-hidden bg-background')}>
       {isMobile ? (
         <div
           className={cn(
@@ -965,41 +848,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
           <>
             <div
               className={cn(
-                'relative flex h-full min-h-0 flex-col overflow-hidden border-r',
+                getSettingsNavigationColumnClassName(),
                 isDesktopApp
                   ? 'bg-sidebar'
-                  : 'bg-sidebar',
-                isResizing ? '' : 'transition-[width,min-width] duration-200 ease-[cubic-bezier(0.25,0.1,0.25,1)]'
+                  : 'bg-sidebar'
               )}
               style={{
-                width: `${navWidth}px`,
-                minWidth: `${navWidth}px`,
                 borderColor: 'var(--interactive-border)',
               }}
             >
-              <div
-                className={cn(
-                  'absolute right-0 top-0 z-20 h-full w-[6px] -mr-[3px] cursor-col-resize',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]',
-                  isResizing ? 'bg-primary/30' : 'bg-transparent hover:bg-primary/20'
-                )}
-                tabIndex={0}
-                onPointerDown={handlePointerDown}
-                onKeyDown={handleResizeKeyDown}
-                role="separator"
-                aria-orientation="vertical"
-                aria-valuemin={SETTINGS_NAV_MIN_WIDTH}
-                aria-valuemax={SETTINGS_NAV_MAX_WIDTH}
-                aria-valuenow={navWidth}
-                aria-label={t('settings.view.actions.resizeNavigation')}
-              />
               <ErrorBoundary>
                 {renderSettingsNav()}
               </ErrorBoundary>
             </div>
 
             <div className="flex-1 overflow-hidden bg-background">
-              {renderDesktopContent()}
+              {settingsSlug === 'home' ? renderDesktopContent() : (
+                <SettingsSectionBoundary key={settingsSlug}>
+                  <PreparedSettingsDataBoundary slug={settingsSlug} resetSelectedAgent={isBehaviorAliasPage}>
+                    {renderDesktopContent()}
+                  </PreparedSettingsDataBoundary>
+                </SettingsSectionBoundary>
+              )}
             </div>
           </>
         </div>

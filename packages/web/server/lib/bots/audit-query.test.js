@@ -111,6 +111,17 @@ describe('Bot audit query service', () => {
     expect(filtered.query.and).toContain('created_at.gte.2026-08-01T00:00:00.000Z');
   });
 
+  it.each(['2026-08-28T20:00:00.123456+00:00', '2026-08-29T00:00:00.123456+04:00'])(
+    'round-trips PostgREST timestamp %s without losing cursor precision', async (createdAt) => {
+      const harness = createHarness({ rows: [auditRow({ created_at: createdAt }), auditRow({ id: '40' })] });
+      const first = await harness.query.list(admin, { limit: '1' });
+      await harness.query.list(admin, { limit: '1', cursor: first.nextCursor });
+      const request = harness.rest.mock.calls.filter(([table]) => table === 'bot_audit_review_events').at(-1)[1];
+      expect(request.query.or).toContain(`created_at.lt.${createdAt}`);
+      expect(request.query.or).toContain(`created_at.eq.${createdAt}`);
+    },
+  );
+
   it('projects immutable issue resolution fields in All and detail views', async () => {
     const resolvedByEventId = 'c0000000-0000-4000-8000-000000000099';
     const row = auditRow({

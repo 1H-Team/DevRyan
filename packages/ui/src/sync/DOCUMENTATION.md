@@ -494,6 +494,11 @@ array: `session.created` or `session.updated` can add a newer target record or
 unrelated sessions while the mutation request is pending. Directory-specific
 delete uses the same reconciliation helper as batch archive/delete rollback.
 
+Captured Revert delegates cancellation to the server's durable dispatch ancestry;
+the UI must not preemptively abort all known descendants. Only an explicit legacy
+`session_busy` response triggers the old tree-abort-and-retry flow. Earlier child
+dispatches and ancestors of a selected child retain their authoritative activity.
+
 Failed scoped reverts immediately restore the optimistic session marker, message,
 and part snapshots, then start a version-owned bounded authoritative message refetch,
 including when the session was idle before the
@@ -654,6 +659,8 @@ Server compatibility events named `openchamber:session-status` are normalized in
 ## Completion vs active work
 
 Completion indicators combine an authoritatively idle lifecycle record with unread state; neither historical messages nor unread notifications create green by themselves. Green is restricted to an idle background session with a terminal visible summary, no active tools or blocking requests, and unread completion. The active session never renders green, and selecting a session synchronously marks its root/descendant notifications viewed and clears settled normal/completed-plan indicators. Pending questions retain their blocking presentation. For all other states the precedence is active work (neutral spinner), idle proposed plan (yellow), unread error, then idle unread completion (green).
+
+Successful normal/implementation completion supersedes older error attention in the shared notification index. A root may resolve its loaded descendants' errors; a child resolves only its own. The sync layer captures notification references before asynchronous lifecycle detection and resolves only those in the same directory/scope with timestamps strictly before the assistant's finite completion timestamp. Missing or tied timestamps remain conservative; delayed/repeated completion cannot resolve later errors. Error records retain their contents and viewed flags, with an in-memory `resolvedByMessageId` recording the successful response; unread counts remain unchanged, but resolved errors no longer drive session/project red indicators. Resolution is blocked by active descendants, permissions/questions, provider recovery, enforcing host recovery, and active/manual-recovery managed tasks. Failed assistant messages and manual aborts do not settle successful completion. No new persisted notification format or server event is introduced.
 
 Proposed-plan and unread-completion state are restored after startup from authoritative materialized messages. Restoration is narrowed by the persisted session-to-plan-mode-message ownership map and compact completion identity/read records, processed sequentially per directory, and re-runs normal lifecycle detection after each snapshot load. Only completion identity, directory/session/message IDs, timestamp, and read state are persisted; provider errors and response content are not. This avoids treating arbitrary historical output as active while preserving yellow/green background indicators across reload and reconnect.
 

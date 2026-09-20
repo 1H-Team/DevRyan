@@ -162,9 +162,10 @@ bytes still matching this transaction, reporting rollback failure explicitly
 instead of overwriting a concurrent writer. Independent files are preserved.
 Successful Undo/Redo advances the summary generation and invalidates UI data.
 
-Card Undo is file-only. Existing per-message conversation revert continues to
-use its existing planner and rollback protections. An active native conversation
-rewind disables card Undo until restored. Like other filesystem operations,
+Card Undo is file-only. With verified concurrent execution, card Undo/Redo
+and conversation Revert share the durable operation coordinator described in
+[Concurrent Revert](CONCURRENT_REVERT.md). Legacy runtimes retain the original
+planner; an active native rewind disables their card Undo until restored. Like other filesystem operations,
 external programs are not subject to the private lock; state checks prevent
 known conflicts but do not constitute an OS-wide write lock.
 

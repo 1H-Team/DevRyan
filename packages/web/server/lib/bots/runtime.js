@@ -293,7 +293,15 @@ export function createBotsRuntime({
     recordDiagnostic,
     loadSnapshot: (principal, options) => channels.snapshotForPrincipal(principal, options),
     filterSnapshot: catalogVisibility.filterSnapshot,
-    canDeliver: catalogVisibility.isVisible,
+    canDeliver: async (principal, botId, channelId) => {
+      if (!await catalogVisibility.isVisible(principal, botId)) return false;
+      if (principal?.scope !== 'tunnel-bot') return true;
+      try {
+        if (channelId) await authorization.requireChannelRead(principal, botId, channelId);
+        else await authorization.requireActiveMembership(principal, botId);
+        return true;
+      } catch { return false; }
+    },
   });
   const dockerProvider = createBotDockerProvider({ botHost });
   const computerBackend = createDockerBotComputerBackend({ dockerProvider });
@@ -1439,6 +1447,9 @@ export function createBotsRuntime({
         startPromise = null;
       });
       return startPromise;
+    },
+    async validateTunnelBotSelection(principal, botIds) {
+      for (const botId of botIds) await authorization.requireActiveMembership(principal, botId);
     },
     registerRoutes(app) {
       registerBotRoutes(app, {

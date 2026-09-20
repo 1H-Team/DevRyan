@@ -18,6 +18,8 @@ const managedTask = (record) => {
 export const resolveRecordSessionID = (record) => {
   const explicit = explicitSessionID(record);
   if (explicit) return explicit;
+  if (asString(record?.usageObservation?.sessionID)) return asString(record.usageObservation.sessionID);
+  if (asString(record?.payload?.properties?.part?.sessionID)) return asString(record.payload.properties.part.sessionID);
 
   const task = managedTask(record);
   if (task) return asString(task.rootSessionId);
@@ -30,6 +32,12 @@ export const resolveRecordSessionID = (record) => {
     : '';
 };
 export const resolveSessionRelation = (record) => {
+  // Only the title owner establishes this relation. A helper is deleted after
+  // generation; its durable diagnostic keeps it in task-scoped exports.
+  if (record?.type === 'lifecycle' && record.event === 'session_title_generation') {
+    const sessionID = asString(record.payload?.helperSessionID), parentID = asString(record.sessionID);
+    if (sessionID && parentID && sessionID !== parentID) return { sessionID, parentID };
+  }
   const task = managedTask(record);
   if (task) {
     const sessionID = asString(task.childSessionId), parentID = asString(task.rootSessionId);

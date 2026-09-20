@@ -649,8 +649,44 @@ const assertSessionsIdle = async ({ client, directory, treeSessionIDs, signal })
   const statuses = await abortable(listSessionStatuses({ ...client, directory, signal }), signal);
   const busyInside = [];
   const busyOutside = [];
+  const canonicalDirectory = await fs.realpath(directory);
+  const roots = new Map();
+  const restoreRoot = async (candidate) => {
+    if (roots.has(candidate)) return roots.get(candidate);
+    let root;
+    try {
+      const { stdout } = await execFileAsync('git', ['-C', candidate, 'rev-parse', '--show-toplevel'], {
+        signal, timeout: 2_000, maxBuffer: 16 * 1024, env: { ...process.env, LC_ALL: 'C' },
+      });
+      root = await fs.realpath(stdout.endsWith('\n') ? stdout.slice(0, -1) : stdout);
+    } catch (cause) {
+      throwIfAborted(signal);
+      if (cause.code !== 128 || !String(cause.stderr).includes('not a git repository')) {
+        throw new ScopedRevertConflictError('activity_unverified', 'Could not verify the active session worktree');
+      }
+      root = candidate;
+    }
+    roots.set(candidate, root); return root;
+  };
   for (const [id, status] of Object.entries(statuses)) {
     if (!isActiveSessionStatus(status)) continue;
+    const query = new URLSearchParams({ directory });
+    const response = await client.fetchImpl(client.buildOpenCodeUrl(`/session/${encodeURIComponent(id)}?${query}`, ''), {
+      headers: client.getOpenCodeAuthHeaders(), signal,
+    });
+    if (response.status === 404 && !treeSessionIDs.has(id)) continue;
+    const candidate = response.ok ? await response.json().catch(() => null) : null;
+    if (candidate?.id !== id || typeof candidate.directory !== 'string') {
+      throw new ScopedRevertConflictError('activity_unverified', 'Could not verify the active session and its project');
+    }
+    const candidateDirectory = await fs.realpath(candidate.directory).catch(() => null);
+    if (!candidateDirectory) throw new ScopedRevertConflictError('activity_unverified', 'Could not verify the active session project');
+    if (candidateDirectory !== canonicalDirectory) {
+      if (treeSessionIDs.has(id)) throw new ScopedRevertConflictError('session_directory_mismatch', 'A task in this tree belongs to a different project');
+      // Legacy native restoration covers the Git worktree, including tasks
+      // started from different subdirectories of that same checkout.
+      if (await restoreRoot(candidateDirectory) !== await restoreRoot(canonicalDirectory)) continue;
+    }
     (treeSessionIDs.has(id) ? busyInside : busyOutside).push(id);
   }
   if (busyInside.length > 0) {
@@ -1760,7 +1796,9 @@ const sendScopedRevertError = (res, error, fallbackMessage) => {
       code: 'SCOPED_REVERT_ROLLBACK_FAILED',
     });
   }
-  if (error instanceof ScopedRevertConflictError) {
+  if (error instanceof ScopedRevertConflictError || ['mutation_runtime_unsupported', 'mutation_platform_unsupported',
+    'mutation_history_unavailable', 'mutation_cancellation_failed', 'mutation_termination_unconfirmed',
+    'mutation_recovery_required', 'mutation_recovery_failed', 'session_directory_mismatch', 'session_reverting', 'revert_cancelled'].includes(error?.code)) {
     const payload = { error: error.message, code: error.code };
     if (Array.isArray(error.files)) payload.files = error.files;
     if (typeof error.file === 'string') payload.file = error.file;
@@ -1771,6 +1809,15 @@ const sendScopedRevertError = (res, error, fallbackMessage) => {
 };
 
 export const registerScopedSessionRevertRoute = (app, deps) => {
+  const diagnostic = (req, requestID, phase, details = {}) => {
+    const id = (value) => typeof value === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(value) ? value : undefined;
+    try {
+      void Promise.resolve(deps.recordDiagnostic?.({ type: 'lifecycle', event: 'session_revert',
+        sessionID: id(req.params.sessionID), messageID: id(req.body?.messageID),
+        payload: { requestID, phase, messageID: id(req.body?.messageID), transactionID: id(details.transactionID),
+          errorID: phase === 'failed' ? crypto.randomUUID() : undefined, code: id(details.code) } })).catch(() => {});
+    } catch { /* Diagnostics cannot change control-plane settlement. */ }
+  };
   const runnerOptions = () => ({
     buildOpenCodeUrl: deps.buildOpenCodeUrl,
     getOpenCodeAuthHeaders: deps.getOpenCodeAuthHeaders,
@@ -1786,6 +1833,7 @@ export const registerScopedSessionRevertRoute = (app, deps) => {
   // middleware in all runtimes/test harnesses.
   app.post('/api/openchamber/session/:sessionID/scoped-revert', parseScopedRevertJson, async (req, res) => {
     const requestAbort = bindScopedRevertRequestAbort(req, res);
+    const requestID = crypto.randomUUID();
 
     try {
       const sessionID = req.params.sessionID;
@@ -1807,7 +1855,8 @@ export const registerScopedSessionRevertRoute = (app, deps) => {
         return res.status(400).json({ error: "scope must be 'tree' or 'session'" });
       }
 
-      const result = await runScopedSessionRevert({
+      diagnostic(req, requestID, 'requested');
+      const result = await (deps.sessionRevertCoordinator?.revert ?? runScopedSessionRevert)({
         ...runnerOptions(),
         directory,
         sessionID,
@@ -1815,8 +1864,10 @@ export const registerScopedSessionRevertRoute = (app, deps) => {
         scope,
         signal: requestAbort.signal,
       });
+      diagnostic(req, requestID, 'completed', { transactionID: result.verification?.transactionID });
       return res.json(result);
     } catch (error) {
+      diagnostic(req, requestID, 'failed', { code: error?.code });
       console.error('[scoped-revert] Failed to revert session safely:', error);
       return sendScopedRevertError(res, error, 'Failed to revert session safely');
     } finally {
@@ -1826,6 +1877,7 @@ export const registerScopedSessionRevertRoute = (app, deps) => {
 
   app.post('/api/openchamber/session/:sessionID/scoped-unrevert', parseScopedRevertJson, async (req, res) => {
     const requestAbort = bindScopedRevertRequestAbort(req, res);
+    const requestID = crypto.randomUUID();
 
     try {
       const sessionID = req.params.sessionID;
@@ -1838,14 +1890,17 @@ export const registerScopedSessionRevertRoute = (app, deps) => {
         return res.status(400).json({ error: 'directory query parameter is required' });
       }
 
-      const result = await runScopedSessionUnrevert({
+      diagnostic(req, requestID, 'redo_requested');
+      const result = await (deps.sessionRevertCoordinator?.redo ?? runScopedSessionUnrevert)({
         ...runnerOptions(),
         directory,
         sessionID,
         signal: requestAbort.signal,
       });
+      diagnostic(req, requestID, 'completed', { transactionID: result.verification?.transactionID });
       return res.json(result);
     } catch (error) {
+      diagnostic(req, requestID, 'failed', { code: error?.code });
       console.error('[scoped-revert] Failed to redo session revert safely:', error);
       return sendScopedRevertError(res, error, 'Failed to redo session revert safely');
     } finally {

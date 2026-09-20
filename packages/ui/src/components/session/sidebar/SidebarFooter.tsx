@@ -20,8 +20,7 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import type { GitHubAuthStatus } from '@/lib/api/types';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
-import { getAuthPrincipal } from '@/lib/authSession';
-import { preloadSettingsView } from '@/components/views/settingsViewLoader';
+import { preloadCurrentSettingsDestination } from '@/components/views/useSettingsEntryPreload';
 
 type Props = {
   onOpenSettings: () => void;
@@ -185,9 +184,7 @@ export function SidebarFooter({
   const { t } = useI18n();
   const { currentTheme, setThemeMode } = useThemeSystem();
   const preloadSettings = React.useCallback(() => {
-    const principal = getAuthPrincipal();
-    const useManagedView = principal.scope === 'managed' && principal.role !== 'admin';
-    void preloadSettingsView(useManagedView).catch(() => undefined);
+    void preloadCurrentSettingsDestination().catch(() => undefined);
   }, []);
   const isDarkMode = currentTheme.metadata.variant === 'dark';
   const themeToggleLabel = isDarkMode

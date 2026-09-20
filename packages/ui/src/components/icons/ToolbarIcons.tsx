@@ -25,7 +25,7 @@ function ToolbarIcon({ size, className, style, children, ...props }: ToolbarIcon
       strokeWidth="1.8"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className}
+      className={className ? `oc-stroke-icon ${className}` : 'oc-stroke-icon'}
       style={style}
       aria-hidden="true"
       {...props}
@@ -98,10 +98,10 @@ export function ServicesIcon(props: ToolbarIconProps) {
 export function NewChatIcon(props: ToolbarIconProps) {
   return (
     <ToolbarIcon {...props}>
-      <path d="M5.75 18.25 4 20l.75-3.25V7.25a3 3 0 0 1 3-3h8.5a3 3 0 0 1 3 3v5.5" />
-      <path d="M8.25 9h5.5" />
-      <path d="M8.25 12.25h3.5" />
-      <path d="m14.25 18.75 4.95-4.95a1.55 1.55 0 0 1 2.2 2.2l-4.95 4.95-2.7.55.5-2.75Z" />
+      <path d="M13.25 6.75H6.25A4.25 4.25 0 0 0 2 11v4.25a4.25 4.25 0 0 0 4.25 4.25h10.5A4.25 4.25 0 0 0 21 15.25V11.5" />
+      <path d="M8 19.5v2.4l3.25-2.4" />
+      <path d="M16.9 5h4.2" />
+      <path d="M19 2.9v4.2" />
     </ToolbarIcon>
   );
 }

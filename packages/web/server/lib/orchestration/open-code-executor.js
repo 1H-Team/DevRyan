@@ -112,7 +112,7 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
 
   const transport = {
     async createSession(input) {
-      return await requestJson(appendDirectory('/session', input.directory), {
+      const child = await requestJson(appendDirectory('/session', input.directory), {
         method: 'POST',
         label: 'session.create',
         timeoutMs: dispatchRequestTimeoutMs,
@@ -121,6 +121,9 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
           ...(input.parentSessionId ? { parentID: input.parentSessionId } : {}),
         },
       });
+      if (input.parentSessionId && input.parentCallID) await options.registerExecutionChild?.({ directory: input.directory,
+        sessionID: child.id, parentID: input.parentSessionId, parentCallID: input.parentCallID });
+      return child;
     },
     async promptSession(input) {
       const body = buildPromptBody(input);

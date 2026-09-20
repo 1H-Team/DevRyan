@@ -657,6 +657,41 @@ export function createSessionChangeRuntime(options) {
   };
   const restore = async ({ directory: requested, rootSessionID, revision, redo = false }) => {
     const directory = await resolveDirectory(requested);
+    if (options.restoreOwned) {
+      const selection = await serialize(directory, async () => {
+        const repo = await load(directory), stored = await repo.db.get(summaryKey(rootSessionID));
+        if (!stored || stored.summary.revision !== revision) throw failure('summary_revision_changed');
+        if (stored.summary.coverage !== 'complete' || stored.summary.restoreAvailable !== true
+          || stored.summary.attributionVersion !== ATTRIBUTION_VERSION) throw failure('summary_incomplete');
+        const calls = [];
+        for await (const id of repo.db.list(membersKey(rootSessionID, revision))) {
+          const op = await repo.db.get(operationKey(id));
+          if (!op || op.evidence !== 'exact') throw failure('mutation_history_unavailable');
+          calls.push({ sessionID: op.sessionID, messageID: op.messageID, callID: op.callID });
+        }
+        return { stored, calls };
+      });
+      // Never hold the observation-store lock while terminating a provider:
+      // its final receipts may need that lock before termination can settle.
+      await options.restoreOwned({ directory: requested, sessionID: rootSessionID, revision, redo, calls: selection.calls });
+      return serialize(directory, async () => {
+        const repo = await load(directory), current = await repo.db.get(summaryKey(rootSessionID));
+        const generation = (await repo.db.get(`generations/${hash(rootSessionID)}.json`) ?? 0) + 1;
+        repo.db.set(`generations/${hash(rootSessionID)}.json`, generation);
+        for await (const id of repo.db.list(membersKey(rootSessionID, revision))) {
+          const op = await repo.db.get(operationKey(id));
+          if (!op) throw failure('invalid_change_record');
+          op.undone = !redo; putOperation(repo, op);
+        }
+        if (current?.summary.revision === revision) {
+          const next = { ...selection.stored, undone: !redo, createdAt: Date.now(),
+            summary: { ...selection.stored.summary, revision: hash(`${revision}\0${redo}\0${generation}`) } };
+          await saveSummary(repo, rootSessionID, next, repo.db.list(rowsKey(rootSessionID, revision)), repo.db.list(membersKey(rootSessionID, revision)));
+        }
+        await repo.db.commit();
+        return { undone: !redo };
+      });
+    }
     return serialize(directory, async () => {
       const repo = await load(directory), stored = await repo.db.get(summaryKey(rootSessionID));
       if (!stored || stored.summary.revision !== revision) throw failure('summary_revision_changed');

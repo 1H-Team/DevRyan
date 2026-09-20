@@ -71,7 +71,7 @@ export async function packageQaElectron({ webDist, nativeSourceApp } = {}) {
     ],
     extraMetadata: { main: './packaged-host.mjs' },
     extraResources: packageJson.build.extraResources
-      .filter(resource => ['web-dist', 'native'].includes(resource.to))
+      .filter(resource => ['web-dist', 'native', 'revert-runtime'].includes(resource.to))
       .map(resource => resource.to === 'web-dist' ? { from: canonicalDist, to: 'web-dist' } : resource),
     extraFiles: [],
     mac: { ...packageJson.build.mac, target: ['dir'], identity: null, hardenedRuntime: false, notarize: false },
@@ -84,7 +84,12 @@ export async function packageQaElectron({ webDist, nativeSourceApp } = {}) {
   await writeFile(configPath, `module.exports = ${JSON.stringify(config, null, 2)};\n`);
   await build({ projectDir: electronRoot, targets: Platform.MAC.createTarget('dir', Arch.arm64), config: configPath, publish: 'never' });
   const after = await captureQaSourceIdentity(root);
-  if (before.sha256 !== after.sha256) throw new Error('Candidate source changed while Electron was packaging');
+  if (before.sha256 !== after.sha256) {
+    const previous = new Map(before.entries.map(entry => [entry.file, entry.sha256]));
+    const changed = after.entries.filter(entry => previous.get(entry.file) !== entry.sha256).map(entry => entry.file);
+    await writeFile(path.join(output, 'source-changed.json'), JSON.stringify({ before, after, changed }, null, 2));
+    throw new Error(`Candidate source changed while Electron was packaging: ${changed.slice(0, 30).join(', ')}`);
+  }
   const resources = path.join(appPath, 'Contents/Resources');
   const archive = path.join(resources, 'app.asar');
   const packagedMain = asar.extractFile(archive, 'dist-bundle/main.mjs');

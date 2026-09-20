@@ -155,6 +155,8 @@ export const createServerUtilsRuntime = (dependencies) => {
       ensureOpenCodeApiPrefix,
       turnTimingRuntime,
       getUiNotificationClients,
+      recordDiagnostic: dependencies.recordDiagnostic,
+      sessionRevertCoordinator: dependencies.getSessionRevertCoordinator?.(),
     });
   };
 

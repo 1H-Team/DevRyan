@@ -1563,6 +1563,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     const child = await transport.createSession({
       directory: task.directory,
       parentSessionId: task.rootSessionId,
+      ...(task.dispatchCallId ? { parentCallID: task.dispatchCallId } : {}),
       title: formatManagedTaskDisplayName(task.label),
     });
     const childSessionId = trimString(child?.id);

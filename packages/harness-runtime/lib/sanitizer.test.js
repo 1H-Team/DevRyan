@@ -136,3 +136,14 @@ describe('diagnostic sanitizer', () => {
   } });
   expect(record.payload).toEqual({ failureCategory: 'node_heap_exhausted', exitCode: 134, signal: 'SIGABRT' });
 });
+
+test('retains exact revert correlation with no file contents or unbounded details', () => {
+  const transactionID = '3b241101-e2bb-4255-8caf-4136c566a962';
+  const payload = { transactionID, errorID: '93a24f75-e9aa-49ca-80e6-775e2173901a', requestID: 'request_1',
+    sessionID: 'ses_a', messageID: 'msg_a', phase: 'recovery_failed', code: 'mutation_recovery_required' };
+  const sanitizer = createDiagnosticSanitizer();
+  const record = sanitizer.sanitizeRecord({ type: 'lifecycle', event: 'session_revert', sessionID: 'ses_a',
+    payload: { ...payload, before: 'private bytes', after: 'private bytes', path: '/private', error: 'private error', output: 'x'.repeat(1000) } });
+  expect(record.payload).toEqual(payload);
+  expect(sanitizer.sanitizeExportValue(record).payload.transactionID).toBe(transactionID);
+});

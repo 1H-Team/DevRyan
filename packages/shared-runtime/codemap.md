@@ -6,6 +6,9 @@
 
 ## Modules
 
+- `lib/usage-observation.js` / `.d.ts` — optional content-free UsageObservationV1, source-aware token semantics and explicitly priced API-equivalent estimates; separate from context occupancy and quotas.
+- `lib/cache-efficiency-policy.js` / `.d.ts` — shared loopback classification and default-off, exact-route qualification for repository QA title-effort and conversation-affinity experiments. See `docs/CACHE_EFFICIENCY.md`.
+
 - `lib/plan-storage-id.js` — shared filesystem-safe plan project directory identity; existing short project IDs remain unchanged.
 
 - `lib/safe-archive.js` — bounded HTTPS ZIP downloads, archive preflight, safe extraction, tree audit, and transactional installation.

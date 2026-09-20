@@ -335,7 +335,7 @@ describe('tunnel routes', () => {
     expect(response.text).not.toContain('stored-secret-token');
   });
 
-  it('starts managed remote with direct account login and no bootstrap link', async () => {
+  it.each([true, false])('starts managed remote with managed accounts enabled=%s', async (accountLogin) => {
     const tunnelService = {
       resolveActiveMode: vi.fn(() => null),
       resolveActiveProvider: vi.fn(() => null),
@@ -349,6 +349,7 @@ describe('tunnel routes', () => {
       })),
     };
     const tunnelAuthController = {
+      hasOwner: vi.fn(() => true),
       getActiveTunnelId: vi.fn(() => null),
       getActiveTunnelMode: vi.fn(() => null),
       setActiveTunnel: vi.fn(),
@@ -375,7 +376,7 @@ describe('tunnel routes', () => {
         getRuntimeManagedRemoteTunnelHostname: vi.fn(() => ''),
         getRuntimeManagedRemoteTunnelToken: vi.fn(() => ''),
         getActivePort: vi.fn(() => 57123),
-        getManagedAccountLoginAvailable: vi.fn(() => true),
+        getManagedAccountLoginAvailable: vi.fn(() => accountLogin),
       }))
         .post('/api/openchamber/tunnel/start')
         .send({
@@ -384,17 +385,25 @@ describe('tunnel routes', () => {
           hostname: 'app.example.com',
           token: `eyJ${'x'.repeat(80)}`,
           originPort: 3000,
+          botIds: ['a7fef886-f6ef-4f43-ac04-a42c9b5f8a10'],
         });
 
       expect(response.status).toBe(200);
       expect(response.body).toMatchObject({
         runtimeReady: true,
         connectReady: true,
-        connectUrl: null,
-        bootstrapExpiresAt: null,
-        policy: 'account-login',
+        connectUrl: accountLogin ? null : 'https://app.example.com/tunnel/connect#t=bootstrap-token',
+        bootstrapExpiresAt: accountLogin ? null : 12345,
+        policy: accountLogin ? 'account-login' : 'tunnel-gated',
       });
-      expect(tunnelAuthController.issueBootstrapToken).not.toHaveBeenCalled();
+      if (accountLogin) {
+        expect(tunnelAuthController.issueBootstrapToken).not.toHaveBeenCalled();
+      } else {
+        expect(tunnelAuthController.issueBootstrapToken).toHaveBeenCalledWith({
+          botIds: ['a7fef886-f6ef-4f43-ac04-a42c9b5f8a10'],
+          ttlMs: 900_000,
+        });
+      }
     } finally {
       consoleLog.mockRestore();
     }
@@ -492,7 +501,7 @@ describe('tunnel routes', () => {
 
       expect(response.status).toBe(200);
       expect(response.body).toMatchObject({
-        connectUrl: 'https://ephemeral.example.com/tunnel/connect?t=bootstrap-token',
+        connectUrl: 'https://ephemeral.example.com/tunnel/connect#t=bootstrap-token',
         bootstrapExpiresAt: 12345,
         policy: 'tunnel-gated',
       });

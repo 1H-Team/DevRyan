@@ -36,7 +36,7 @@ export interface AuthPrincipal {
   email: string | null;
   displayName: string;
   role: DevRyanRole;
-  scope: 'local-admin' | 'managed';
+  scope: 'local-admin' | 'managed' | 'tunnel-bot';
   policy: {
     settingsPages: string[];
     settingsPermissions?: SettingsPermissions;
@@ -55,7 +55,22 @@ export interface AuthPrincipal {
     github: boolean;
   };
   assignments: AuthAssignment[];
+  tunnelGrant?: {
+    id: string;
+    sessionId: string;
+    ownerId: string;
+    profileId: string;
+    generation: string;
+    botIds: readonly string[];
+    expiresAt: number;
+  };
 }
+
+// Two links associated with the same owner can expose different workspaces.
+// Their persisted UI caches must never share the owner's account namespace.
+export const authStoragePrincipalId = (principal: AuthPrincipal): string => principal.scope === 'tunnel-bot'
+  ? `${principal.id}:tunnel:${principal.tunnelGrant?.id || 'unavailable'}`
+  : principal.id;
 
 export type AuthCapability = keyof AuthPrincipal['policy'];
 
@@ -148,7 +163,7 @@ export const canEditSettingsPage = (principal: AuthPrincipal, slug: string): boo
 export const canAccessSettingsPage = canReadSettingsPage;
 
 export const canPersistHostProjectSettings = (principal: AuthPrincipal): boolean => (
-  principal.scope !== 'managed' || principal.role === 'admin'
+  principal.scope === 'local-admin' || principal.role === 'admin'
 );
 
 export const isAgentPermissionsUiHidden = (principal: AuthPrincipal): boolean => (

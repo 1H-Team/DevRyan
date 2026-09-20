@@ -5,6 +5,18 @@ administrator accessing this host directly. It is shared by all windows using
 that runtime, including Electron's background service. Other installations using
 the same Supabase project have their own switch and still contribute traffic.
 
+The About control stays visible while loading or unavailable. It distinguishes
+authentication required, forbidden, an unsupported runtime, and temporary
+failure; Retry reads status again without changing the saved preference. Older
+runtime adapters (including the shared Tauri UI) show an unavailable explanation
+instead of hiding the control. Changes remain disabled until status is known.
+
+A never-configured host exposes only a fixed, redacted “Not configured” status
+to strictly direct-local requests. This does not enroll an owner or authorize a
+change. Configured hosts, including those switched Off, still require the
+authenticated local owner for both status and changes. Missing configuration
+and a saved Off preference are separate states.
+
 ## Modes and access
 
 The private `supabase-connection.json` file in the configured DevRyan data root
@@ -15,8 +27,9 @@ original location. No database schema or cloud records are removed.
 The first local administrator change enrolls an encrypted local-owner identity
 and an HttpOnly, SameSite=Strict cookie. A loopback socket alone never grants
 access. The local boundary also checks Host, Origin and forwarding headers.
-External HTTP, SSE and WebSocket access is closed while disconnected, including
-through tunnels. Ordinary local chats, projects, files and diagnostics remain
+External access is closed while disconnected except for the authenticated Bot-only
+tunnel boundary and public static/liveness responses. Tunnel grants never admit
+host WebSockets or native capabilities. Ordinary local chats, projects, files and diagnostics remain
 available. Bots, Telegram, managed-user scheduled execution, shared-user access
 and cloud audit delivery are unavailable. Existing actor-audit records remain in
 the durable outbox; disconnected diagnostics do not enter that outbox.
@@ -43,8 +56,11 @@ process manually after its listed blockers clear.
 
 An explicit reconnect probes the saved owner's active administrator role and the
 required Bot schema before opening access. The new process repeats that check
-before initializing workers. Failure persists Off and leaves remote access
-closed; quota failures never trigger automatic reconnect attempts. Normal worker
+before initializing workers. Failure preserves the selected preference and leaves remote access
+closed: a failed Off-to-On attempt stays Off, while a failed On startup retains
+managed-account authentication. Explicitly changing that policy requires the idle
+restart even when the failed connection is already unavailable. Quota failures
+never trigger automatic reconnect attempts. Normal worker
 startup retains the existing durable claims, missed-run policies and idempotency
 keys.
 

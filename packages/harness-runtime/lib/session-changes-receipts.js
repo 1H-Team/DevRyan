@@ -21,7 +21,8 @@ export function receiptInputFingerprint(input) {
   if (!Array.isArray(input.files)) return null;
   const digest = crypto.createHash('sha256');
   const add = (value) => {
-    if (typeof value === 'string') digest.update(`s${Buffer.byteLength(value)}:`).update(value);
+    if (Buffer.isBuffer(value?.bytes)) digest.update(`b${value.bytes.length}:${value.mode}:`).update(value.bytes);
+    else if (typeof value === 'string') digest.update(`s${Buffer.byteLength(value)}:`).update(value);
     else digest.update(JSON.stringify(value ?? null));
     digest.update('\0');
   };
@@ -57,6 +58,9 @@ export async function storeSessionChangeReceipt(repo, input, existing, canonical
   let explicitModes = true, matchesObservation = existing?.state === 'complete' && existing.evidence !== 'exact' && !existing.historical, count = 0;
   const content = async (value) => {
     if (value === null) return null;
+    if (Buffer.isBuffer(value?.bytes) && MODES.has(value.mode) && input.source === 'confined-execution') {
+      return { oid: (await repo.run(['hash-object', '-w', '--stdin', '--no-filters'], { input: value.bytes })).toString().trim(), mode: value.mode };
+    }
     if (typeof value === 'string') {
       explicitModes = false;
       return { oid: (await repo.run(['hash-object', '-w', '--stdin', '--no-filters'], { input: value })).toString().trim(), mode: '100644' };
@@ -86,7 +90,7 @@ export async function storeSessionChangeReceipt(repo, input, existing, canonical
     if (before) beforeFiles.set(oldPath, before);
     if (after) afterFiles.set(relative, after);
   }
-  if (!count) throw changeError('invalid_change_receipt', 400);
+  if (!count && input.source !== 'confined-execution') throw changeError('invalid_change_receipt', 400);
   let before = await makeChangeTree(repo, beforeFiles), after = await makeChangeTree(repo, afterFiles);
   const patchTree = patches.length ? await makeChangeTree(repo, patches.map((entry) => [`${changeKey(entry.file)}.patch`, { oid: entry.patchOID, mode: '100644' }])) : null;
   patches.sort((left, right) => left.file.localeCompare(right.file));

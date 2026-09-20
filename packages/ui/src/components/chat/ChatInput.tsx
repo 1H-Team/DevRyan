@@ -4326,6 +4326,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                         "flex flex-col relative overflow-visible",
                         isDesktopExpanded && 'flex-1 min-h-0',
                         "border border-border/60 shadow-[var(--chat-input-shadow)] focus-within:border-[var(--chat-input-focus-ring)] focus-within:shadow-[var(--chat-input-shadow-focus)]",
+                        "transition-[border-color,box-shadow] duration-200 ease-out motion-reduce:transition-none",
                         isDragging && "ring-2 ring-primary ring-offset-2"
                     )}
                     style={{

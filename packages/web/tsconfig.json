@@ -12,6 +12,8 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
+    "incremental": true,
+    "tsBuildInfoFile": "../../.cache/typecheck/web.tsbuildinfo",
     "baseUrl": ".",
     "types": ["vite/client", "@types/dom-speech-recognition"],
     "paths": {

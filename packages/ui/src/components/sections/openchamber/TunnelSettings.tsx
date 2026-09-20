@@ -1,5 +1,6 @@
 import React from 'react';
 import QRCode from 'qrcode';
+import { botsApi, type BotSummary } from '@/lib/botsApi';
 import {
   RiAddLine,
   RiArrowDownSLine,
@@ -19,6 +20,7 @@ import {
 } from '@remixicon/react';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -116,6 +118,7 @@ interface TunnelInfo {
 
 interface TunnelSessionRecord {
   sessionId: string;
+  grantId?: string;
   mode: TunnelMode | null;
   status: 'active' | 'inactive';
   inactiveReason?: string | null;
@@ -127,6 +130,7 @@ interface TunnelSessionRecord {
 
 interface TunnelStatusResponse {
   active: boolean;
+  botOnlyLinks?: boolean;
   url: string | null;
   runtimeReady?: boolean;
   connectReady?: boolean;
@@ -345,6 +349,16 @@ export const TunnelSettings: React.FC = () => {
   const { t } = useI18n();
   const principal = useAuthPrincipal();
   const managedAccountLoginAvailable = isManagedAccountLoginAvailable(principal.scope);
+  const [grantBots, setGrantBots] = React.useState<BotSummary[]>([]);
+  const [selectedBotIds, setSelectedBotIds] = React.useState<string[]>([]);
+  const [isCreatingLink, setIsCreatingLink] = React.useState(false);
+  const [grantBotsUnavailable, setGrantBotsUnavailable] = React.useState(false);
+  React.useEffect(() => {
+    let disposed = false;
+    void botsApi.listBots().then(({ bots }) => { if (!disposed) setGrantBots(bots); })
+      .catch(() => { if (!disposed) setGrantBotsUnavailable(true); });
+    return () => { disposed = true; };
+  }, []);
   const tUnsafe = React.useCallback((key: string) => t(key as Parameters<typeof t>[0]), [t]);
   const [state, setState] = React.useState<TunnelState>('checking');
   const [tunnelInfo, setTunnelInfo] = React.useState<TunnelInfo | null>(null);
@@ -378,6 +392,7 @@ export const TunnelSettings: React.FC = () => {
   const [activeProviderMetadata, setActiveProviderMetadata] = React.useState<TunnelStatusResponse['providerMetadata'] | null>(null);
   const [runtimeReady, setRuntimeReady] = React.useState(false);
   const [connectReady, setConnectReady] = React.useState(false);
+  const [botOnlyLinks, setBotOnlyLinks] = React.useState(false);
   const managedLocalConfigExtensionError = t(MANAGED_LOCAL_CONFIG_EXTENSION_ERROR_KEY);
   const managedLocalConfigFileInputRef = React.useRef<HTMLInputElement>(null);
   const isManagedLocalConfigPathInvalid = React.useMemo(() => {
@@ -523,6 +538,7 @@ export const TunnelSettings: React.FC = () => {
       setActiveProviderMetadata(statusData.providerMetadata ?? null);
       setRuntimeReady(statusData.runtimeReady === true);
       setConnectReady(statusData.connectReady === true);
+      setBotOnlyLinks(statusData.botOnlyLinks === true);
 
       if (statusData.active && statusData.url) {
         setTunnelInfo({
@@ -867,11 +883,6 @@ export const TunnelSettings: React.FC = () => {
     setErrorDiagnostics(null);
     setManagedRemoteValidationError(null);
 
-    if (tunnelMode === 'managed-remote' && !managedAccountLoginAvailable) {
-      toast.error(t('settings.openchamber.tunnel.managedAccountRequired.description'));
-      return;
-    }
-
     if (tunnelMode === 'managed-local' && managedLocalConfigPath && !hasAllowedManagedLocalConfigExtension(managedLocalConfigPath)) {
       setErrorMessage(managedLocalConfigExtensionError);
       toast.error(managedLocalConfigExtensionError);
@@ -903,10 +914,11 @@ export const TunnelSettings: React.FC = () => {
 
       const res = await fetch('/api/openchamber/tunnel/start', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-DevRyan-CSRF': '1' },
         body: JSON.stringify({
           provider: tunnelProvider,
           mode: tunnelMode,
+          botIds: selectedBotIds,
           ...(tunnelMode === 'managed-remote' && selectedPreset ? {
             managedRemoteTunnelPresetId: selectedPreset.id,
             managedRemoteTunnelPresetName: selectedPreset.name,
@@ -990,7 +1002,7 @@ export const TunnelSettings: React.FC = () => {
     }
   }, [
     managedLocalConfigExtensionError,
-    managedAccountLoginAvailable,
+    selectedBotIds,
     managedRemoteTunnelPresets,
     saveTunnelSettings,
     selectedPreset,
@@ -1001,11 +1013,31 @@ export const TunnelSettings: React.FC = () => {
     managedLocalConfigPath,
   ]);
 
+  const handleCreateLink = React.useCallback(async () => {
+    setIsCreatingLink(true);
+    try {
+      const response = await fetch('/api/openchamber/tunnel/links', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-DevRyan-CSRF': '1' },
+        body: JSON.stringify({ botIds: selectedBotIds }),
+      });
+      const data: unknown = await response.json();
+      if (!response.ok || !data || typeof data !== 'object' || !('connectUrl' in data)
+        || typeof data.connectUrl !== 'string' || !('expiresAt' in data) || typeof data.expiresAt !== 'number') {
+        throw new Error('The connection link could not be created. Check the selected Bots and local owner authentication.');
+      }
+      const { connectUrl, expiresAt } = data;
+      setTunnelInfo((current) => current ? { ...current, connectUrl, bootstrapExpiresAt: expiresAt } : current);
+      setConnectReady(true);
+      toast.success(t('settings.openchamber.tunnel.toast.linkReady'));
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'The connection link could not be created'); }
+    finally { setIsCreatingLink(false); }
+  }, [selectedBotIds, t]);
+
   const handleStop = React.useCallback(async () => {
     setState('stopping');
 
     try {
-      await fetch('/api/openchamber/tunnel/stop', { method: 'POST' });
+      await fetch('/api/openchamber/tunnel/stop', { method: 'POST', headers: { 'X-DevRyan-CSRF': '1' } });
       const statusRes = await fetch('/api/openchamber/tunnel/status');
       if (statusRes.ok) {
         const statusData = (await statusRes.json()) as TunnelStatusResponse;
@@ -1244,7 +1276,7 @@ export const TunnelSettings: React.FC = () => {
         <p className="typography-meta mt-0 text-muted-foreground/60">
           {t('settings.openchamber.tunnel.note.serverSideEnforced')}
         </p>
-        {tunnelMode === 'managed-remote' ? (
+        {tunnelMode === 'managed-remote' && managedAccountLoginAvailable ? (
           <p className="typography-meta mt-0 text-muted-foreground/60">
             {t('settings.openchamber.tunnel.note.managedRemoteDirectLogin')}
           </p>
@@ -1264,17 +1296,26 @@ export const TunnelSettings: React.FC = () => {
             <RiErrorWarningLine className="mt-0.5 size-4 shrink-0 text-[var(--status-warning)]" />
             <div className="space-y-1">
               <p className="typography-ui-label text-foreground">
-                {t('settings.openchamber.tunnel.managedAccountRequired.title')}
+                Bot workspace access
               </p>
               <p className="typography-meta text-[var(--status-warning)]">
-                {t('settings.openchamber.tunnel.managedAccountRequired.description')}
+                Supabase can stay off. Authenticate as this host’s local owner to start the connector and share selected Bot workspaces.
               </p>
             </div>
           </div>
         </div>
       )}
 
-      {activeTunnelMode !== 'managed-remote' && renderedSessionRecords.length > 0 && (
+      {!(tunnelMode === 'managed-remote' && managedAccountLoginAvailable) && <fieldset className="space-y-2 rounded-lg border border-border p-3">
+        <legend className="typography-ui-label">Bots allowed by the connection link</legend>
+        <p className="typography-meta text-muted-foreground">Select Bot workspaces to create a link. Links expire after 15 minutes; connected sessions last seven days. You can start the connector with no link.</p>
+        {grantBotsUnavailable && <p role="status" className="typography-meta text-muted-foreground">Bots are unavailable in the current connection mode.</p>}
+        {grantBots.map((bot) => <label key={bot.id} className="flex items-center gap-2 typography-ui-label">
+          <Checkbox checked={selectedBotIds.includes(bot.id)} onChange={(checked) => setSelectedBotIds((ids) => checked ? [...ids, bot.id] : ids.filter((id) => id !== bot.id))} />{bot.name}
+        </label>)}
+      </fieldset>}
+
+      {renderedSessionRecords.length > 0 && (
         <section className="space-y-2 px-2 pb-2 pt-0">
           <div className="rounded-lg border border-[var(--status-info-border)] bg-[var(--status-info-background)]/30 p-3">
             <div className="mb-2 flex items-center gap-2">
@@ -1318,6 +1359,13 @@ export const TunnelSettings: React.FC = () => {
                           ? t('settings.openchamber.tunnel.state.inactive')
                           : t('settings.openchamber.tunnel.session.inactiveWithReason', { reason: record.inactiveLabel }))}
                     </span>
+                    {record.grantId && record.isActive && <Button variant="outline" size="sm" onClick={async () => {
+                      try {
+                        const response = await fetch(`/api/openchamber/tunnel/grants/${record.grantId}`, { method: 'DELETE', headers: { 'X-DevRyan-CSRF': '1' } });
+                        if (!response.ok) throw new Error('Revoke failed');
+                        setSessionRecords((records) => records.filter((entry) => entry.grantId !== record.grantId));
+                      } catch { toast.error('Could not revoke this Bot connection.'); }
+                    }}>Revoke</Button>}
                   </div>
                 );
               })}
@@ -1403,7 +1451,7 @@ export const TunnelSettings: React.FC = () => {
             </div>
           </div>
 
-          {tunnelMode !== 'managed-remote' && (
+          {tunnelMode !== 'managed-remote' && !botOnlyLinks && (
             <div className="mt-2 grid grid-cols-1 gap-2 py-1.5 md:grid-cols-[14rem_auto] md:gap-x-8 md:gap-y-2">
               <div className="flex min-w-0 items-center gap-2">
                 <span className="typography-ui-label shrink-0 text-foreground">{t('settings.openchamber.tunnel.field.connectLinkTtl')}</span>
@@ -1879,7 +1927,6 @@ export const TunnelSettings: React.FC = () => {
                   !runtimeReady
                   || state === 'starting'
                   || isSavingMode
-                  || (tunnelMode === 'managed-remote' && !managedAccountLoginAvailable)
                   || (tunnelMode === 'managed-remote' && !selectedPreset)
                   || (tunnelMode === 'managed-local' && isManagedLocalConfigPathInvalid)
                 }
@@ -2021,6 +2068,10 @@ export const TunnelSettings: React.FC = () => {
 
           <div className="pt-1">
             <div className="flex flex-wrap items-center gap-2">
+              {botOnlyLinks && !(activeTunnelMode === 'managed-remote' && managedAccountLoginAvailable) && <Button
+                size="sm" variant="outline" onClick={handleCreateLink}
+                disabled={isCreatingLink || selectedBotIds.length === 0 || state === 'stopping' || isManagedRemoteDegraded}
+              >{t('settings.openchamber.tunnel.actions.newConnectLink')}</Button>}
               <Button size="sm"
                 variant="outline"
                 onClick={handleStart}
@@ -2028,7 +2079,6 @@ export const TunnelSettings: React.FC = () => {
                   !runtimeReady
                   || state === 'stopping'
                   || isSavingMode
-                  || (tunnelMode === 'managed-remote' && !managedAccountLoginAvailable)
                   || (tunnelMode === 'managed-local' && isManagedLocalConfigPathInvalid)
                 }
                 className={primaryCtaClass}
@@ -2111,7 +2161,6 @@ export const TunnelSettings: React.FC = () => {
             size="sm"
             variant="ghost"
             onClick={handleStart}
-            disabled={tunnelMode === 'managed-remote' && !managedAccountLoginAvailable}
           >
             {t('settings.openchamber.tunnel.actions.retry')}
           </Button>
