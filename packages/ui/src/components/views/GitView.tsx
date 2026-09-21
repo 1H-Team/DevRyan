@@ -2668,12 +2668,17 @@ export const GitView: React.FC = () => {
                           className="flex min-h-0 flex-col overflow-hidden"
                           style={changesPanelStyle}
                         >
+                          {status?.untrackedTruncated && (
+                            <p className="px-3 py-2 text-sm text-muted-foreground" role="status">
+                              Showing the first {status.untrackedLimit} untracked files. Additional files remain in the repository.
+                            </p>
+                          )}
                           {stagedEntries.length > 0 ? (
                             <ChangesSection
                               title={t('gitView.changes.stagedTitle')}
                               changedFilesAriaLabel={t('gitView.changes.stagedChangedFilesAria')}
                               changeEntries={stagedEntries}
-                              diffStats={status?.diffStats}
+                              diffStats={status?.stagedStats ?? status?.diffStats}
                               revertingPaths={revertingPaths}
                               stagingPaths={stagingPaths}
                               onViewDiff={(path) => {
@@ -2698,7 +2703,7 @@ export const GitView: React.FC = () => {
                             title={t('gitView.changes.title')}
                             changeEntries={unstagedEntries}
                             onVisiblePathsChange={setVisibleChangePaths}
-                            diffStats={status?.diffStats}
+                            diffStats={status?.unstagedStats ?? status?.diffStats}
                             revertingPaths={revertingPaths}
                             stagingPaths={stagingPaths}
                             onRevertAll={handleRevertAll}

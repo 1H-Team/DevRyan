@@ -22,7 +22,7 @@ mock.module("@/lib/worktrees/worktreeBootstrap", () => ({
   },
 } as unknown as Window & typeof globalThis
 
-const { createNoStoreApiFetch, opencodeClient, requestScopedSessionRevert } = await import("./client")
+const { createNoStoreApiFetch, opencodeClient, requestScopedSessionRevert, requestScopedSessionUnrevert } = await import("./client")
 
 const getPromptBody = () => {
   const promptRequest = fetchCalls.find((call) => call.url.includes("/prompt_async"))
@@ -30,6 +30,15 @@ const getPromptBody = () => {
 }
 
 describe("opencode client sends", () => {
+  test("keeps partial file outcomes through both Revert response parsers", async () => {
+    const fetchImpl: typeof fetch = mock(async () => Response.json({ session: { id: 'session-a' },
+      outcome: 'partial', conflicts: [{ path: 'binary.dat' }, { path: 42 }] })) as typeof fetch
+    const options = { baseUrl: 'http://fixture/api', sessionId: 'session-a', messageId: 'msg-a', fetchImpl }
+    for (const result of [await requestScopedSessionRevert(options), await requestScopedSessionUnrevert(options)]) {
+      expect(result.outcome).toBe('partial')
+      expect(result.conflicts).toEqual([{ path: 'binary.dat' }])
+    }
+  })
   beforeEach(() => {
     waitForWorktreeBootstrapCalls.length = 0
     fetchCalls.length = 0

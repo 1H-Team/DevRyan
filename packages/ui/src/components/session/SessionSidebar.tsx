@@ -1,3 +1,5 @@
+import { createSidebarRowModel, selectableModelRows } from './sidebar/sidebarRowModel';
+import { SidebarRowsContext } from './sidebar/SidebarRowsContext';
 import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { RiDeleteBinLine } from '@remixicon/react';
@@ -95,6 +97,7 @@ import type { GitHubAuthStatus } from '@/lib/api/types';
 import { markWorktreeBootstrapPending } from '@/lib/worktrees/worktreeBootstrap';
 import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
 import {
+  filterBranchBackedWorktrees,
   filterWorktreesByGrantedBranches,
   isManagedBranchGranted,
 } from '@/lib/worktrees/managedBranches';
@@ -254,6 +257,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   hideDirectoryControls = false,
   showOnlyMainWorkspace = false,
 }) => {
+  const [sidebarModel] = React.useState(createSidebarRowModel);
+  const sidebarRows = React.useSyncExternalStore(sidebarModel.subscribe, sidebarModel.getRows);
   const { t } = useI18n();
   const audience = useMainSidebarAudienceStore((state) => state.audience);
   const setAudience = useMainSidebarAudienceStore((state) => state.setAudience);
@@ -530,9 +535,10 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
             const isGitRepo = cachedIsGitRepo ?? await import('@/lib/gitApi').then(m => m.checkIsGitRepository(projectPath));
             if (!isGitRepo) return;
             const discoveredWorktrees = await listProjectWorktrees({ id: project.id, path: projectPath });
+            const branchWorktrees = filterBranchBackedWorktrees(discoveredWorktrees);
             const worktrees = filterByGrant
-              ? filterWorktreesByGrantedBranches(discoveredWorktrees, project, managedVisibleWorktreeDirectories)
-              : discoveredWorktrees;
+              ? filterWorktreesByGrantedBranches(branchWorktrees, project, managedVisibleWorktreeDirectories)
+              : branchWorktrees;
             if (cancelled || worktrees.length === 0) return;
             worktreesByProject.set(projectPath, worktrees);
             allWorktrees.push(...worktrees);
@@ -1462,12 +1468,13 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   }), [projectPathById, renderedGroupDirectories, visibleDrafts]);
 
   const renderGroupSessions = React.useCallback(
-    (group: SessionGroup, groupKey: string, projectId?: string | null, hideGroupLabel?: boolean, dragHandleProps?: SortableDragHandleProps | null, compactBodyPadding?: boolean) => {
+    (group: SessionGroup, groupKey: string, projectId?: string | null, hideGroupLabel?: boolean, dragHandleProps?: SortableDragHandleProps | null, compactBodyPadding?: boolean, modelOrder?: import('./sidebar/sidebarRowModel').SidebarRowOrder) => {
       const groupDrafts = getDraftsForGroup(group, projectId);
       return (
         <SessionGroupSection
         group={group}
         groupKey={groupKey}
+        modelOrder={modelOrder}
         projectId={projectId}
         hideGroupLabel={hideGroupLabel}
         compactBodyPadding={compactBodyPadding}
@@ -1580,31 +1587,13 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   }, []);
 
   const bulkScopeIsArchived = React.useMemo(() => {
-    if (selectedIds.size === 0) return false;
-    if (typeof document === 'undefined') return false;
-    let sawActive = false;
-    let sawArchived = false;
-    for (const id of selectedIds) {
-      const rows = document.querySelectorAll<HTMLElement>(`[data-session-row="${CSS.escape(id)}"]`);
-      for (const row of rows) {
-        if (row.getAttribute('data-session-archived') === '1') sawArchived = true;
-        else sawActive = true;
-      }
-    }
-    return sawArchived && !sawActive;
-  }, [selectedIds]);
+    const archived = new Set(archivedSessions.map((session) => session.id));
+    return selectedIds.size > 0 && [...selectedIds].every((id) => archived.has(id));
+  }, [selectedIds, archivedSessions]);
 
-  const derivedSelectionScope = React.useMemo(() => {
-    if (selectionScopeKey) return selectionScopeKey;
-    if (selectedIds.size === 0) return null;
-    if (typeof document === 'undefined') return null;
-    for (const id of selectedIds) {
-      const row = document.querySelector<HTMLElement>(`[data-session-row="${CSS.escape(id)}"]`);
-      const scope = row?.getAttribute('data-session-scope');
-      if (scope && scope.length > 0) return scope;
-    }
-    return null;
-  }, [selectedIds, selectionScopeKey]);
+  const derivedSelectionScope = React.useMemo(() => selectionScopeKey
+    ?? sidebarRows.find((row) => selectedIds.has(row.id) || row.descendants.some((id) => selectedIds.has(id)))?.scope ?? null,
+  [selectedIds, selectionScopeKey, sidebarRows]);
 
   const bulkScopeFolders = React.useMemo(() => {
     if (!derivedSelectionScope) return [];
@@ -1719,30 +1708,18 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         return;
       }
       if (modifier && (event.key === 'a' || event.key === 'A')) {
-        const rows = typeof document !== 'undefined'
-          ? Array.from(document.querySelectorAll<HTMLElement>('[data-session-row]'))
-          : [];
+        const rows = selectableModelRows(sidebarModel.getRows());
         if (rows.length === 0) return;
         event.preventDefault();
-        const currentScope = multiSelectStoreApi.getState().scopeKey;
-        const targetScope = currentScope
-          ?? rows[0]?.getAttribute('data-session-scope')
-          ?? null;
-        const scopeFilter = (el: HTMLElement): boolean => {
-          if (!targetScope) return true;
-          return el.getAttribute('data-session-scope') === targetScope;
-        };
-        const ids = rows
-          .filter(scopeFilter)
-          .map((el) => el.getAttribute('data-session-row'))
-          .filter((id): id is string => typeof id === 'string' && id.length > 0);
+        const targetScope = multiSelectStoreApi.getState().scopeKey ?? rows[0].scope;
+        const ids = selectableModelRows(rows, targetScope).map((row) => row.id);
         if (ids.length === 0) return;
         multiSelectStoreApi.getState().replaceAll(ids, targetScope || null);
       }
     };
     window.addEventListener('keydown', listener);
     return () => window.removeEventListener('keydown', listener);
-  }, [handleBulkDelete, isInlineEditing, multiSelectStoreApi, selectionModeEnabled]);
+  }, [handleBulkDelete, isInlineEditing, multiSelectStoreApi, selectionModeEnabled, sidebarModel]);
   const handleSidebarNewSession = React.useCallback(() => {
     setAudience('coding-agents');
     setActiveMainTab('chat');
@@ -1752,7 +1729,11 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     openNewSessionDraft();
   }, [mobileVariant, openNewSessionDraft, setActiveMainTab, setAudience, setSessionSwitcherOpen]);
 
+  const sidebarRowsContext = React.useMemo(() => ({ model: sidebarModel, expanded: expandedParents,
+    search: hasSessionSearchQuery, editingId, menuKey: openSidebarMenuKey, currentSessionId }),
+  [sidebarModel, expandedParents, hasSessionSearchQuery, editingId, openSidebarMenuKey, currentSessionId]);
   return (
+    <SidebarRowsContext.Provider value={sidebarRowsContext}>
     <div
       className={cn(
         'relative flex h-full flex-col text-foreground overflow-x-hidden',
@@ -1986,5 +1967,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         </LazyViewBoundary>
       </DeferredSessionDialog>
     </div>
+    </SidebarRowsContext.Provider>
   );
 };

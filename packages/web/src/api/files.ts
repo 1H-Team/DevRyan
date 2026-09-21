@@ -4,6 +4,9 @@ import type {
   FileSearchResult,
   FilesAPI,
   FileStatResult,
+  FileReadResult,
+  FileWriteOptions,
+  FileWriteResult,
 } from '@openchamber/ui/lib/api/types';
 
 const normalizePath = (path: string): string => path.replace(/\\/g, '/');
@@ -155,11 +158,12 @@ export const createWebFilesAPI = (): FilesAPI => ({
       exists: (result as { exists?: boolean }).exists !== false,
       isFile: Boolean((result as { isFile?: boolean }).isFile),
       size: typeof (result as { size?: number }).size === 'number' ? (result as { size: number }).size : 0,
+      ctimeMs: typeof result.ctimeMs === 'number' ? result.ctimeMs : undefined,
       mtimeMs: typeof (result as { mtimeMs?: number }).mtimeMs === 'number' ? (result as { mtimeMs: number }).mtimeMs : undefined,
     };
   },
 
-  async readFile(path: string, options): Promise<{ content: string; path: string }> {
+  async readFile(path: string, options): Promise<FileReadResult> {
     const target = normalizePath(path);
     const params = new URLSearchParams({ path: target });
     applyFileReadOptions(params, options);
@@ -173,7 +177,8 @@ export const createWebFilesAPI = (): FilesAPI => ({
     }
 
     const content = await response.text();
-    return { content, path: target };
+    return { content, path: target, version: response.headers.get('X-DevRyan-File-Version') ?? undefined,
+      complete: response.headers.get('X-DevRyan-File-Complete') === '1' };
   },
 
   async readFileBinary(path: string, options): Promise<{ dataUrl: string; path: string }> {
@@ -197,22 +202,24 @@ export const createWebFilesAPI = (): FilesAPI => ({
     };
   },
 
-  async writeFile(path: string, content: string): Promise<{ success: boolean; path: string }> {
+  async writeFile(path: string, content: string, options?: FileWriteOptions): Promise<FileWriteResult> {
     const target = normalizePath(path);
     const response = await fetch('/api/fs/write', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: target, content }),
+      body: JSON.stringify({ path: target, content, expectedVersion: options?.expectedVersion }),
     });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: response.statusText }));
-      throw new Error((error as { error?: string }).error || 'Failed to write file');
+      throw Object.assign(new Error((error as { error?: string }).error || 'Failed to write file'),
+        { code: typeof error.code === 'string' ? error.code : undefined });
     }
 
     const result = await response.json().catch(() => ({}));
     return {
       success: Boolean((result as { success?: boolean }).success),
+      version: typeof result.version === 'string' ? result.version : undefined,
       path: typeof (result as { path?: string }).path === 'string' ? normalizePath((result as { path: string }).path) : target,
     };
   },

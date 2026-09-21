@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Ghostty, Terminal as GhosttyTerminal, FitAddon } from 'ghostty-web';
+import { Ghostty, Terminal as GhosttyTerminal, FitAddon } from '@/lib/ghostty';
 
 import type { TerminalTheme } from '@/lib/terminalTheme';
 import { getGhosttyTerminalOptions } from '@/lib/terminalTheme';
@@ -104,7 +104,13 @@ const TerminalViewport = React.forwardRef<TerminalController, TerminalViewportPr
     const inputHandlerRef = React.useRef<(data: string) => void>(onInput);
     const resizeHandlerRef = React.useRef<(cols: number, rows: number) => void>(onResize);
     const lastReportedSizeRef = React.useRef<{ cols: number; rows: number } | null>(null);
-    const pendingWriteRef = React.useRef('');
+    const pendingWriteRef = React.useRef<Array<{ data: string; replay: boolean }>>([]);
+    const chunksRef = React.useRef(chunks);
+    chunksRef.current = chunks;
+    const replayThroughRef = React.useRef<number | null>(null);
+    const previousSessionRef = React.useRef(sessionKey);
+    const visibleRef = React.useRef(isVisible);
+    visibleRef.current = isVisible;
     const writeScheduledRef = React.useRef<number | null>(null);
     const isWritingRef = React.useRef(false);
     const lastProcessedChunkIdRef = React.useRef<number | null>(null);
@@ -469,7 +475,7 @@ const TerminalViewport = React.forwardRef<TerminalController, TerminalViewportPr
     }, [copySelectionToClipboard, hasCopyableSelectionInViewport]);
 
     const resetWriteState = React.useCallback(() => {
-      pendingWriteRef.current = '';
+      pendingWriteRef.current = [];
       if (writeScheduledRef.current !== null && typeof window !== 'undefined') {
         window.cancelAnimationFrame(writeScheduledRef.current);
       }
@@ -511,17 +517,16 @@ const TerminalViewport = React.forwardRef<TerminalController, TerminalViewportPr
         return;
       }
 
-      if (!pendingWriteRef.current) {
+      if (!pendingWriteRef.current.length) {
         return;
       }
 
-      const chunk = pendingWriteRef.current;
-      pendingWriteRef.current = '';
+      const chunk = pendingWriteRef.current.shift()!;
 
       isWritingRef.current = true;
-      term.write(chunk, () => {
+      term.write(chunk.data, () => {
         isWritingRef.current = false;
-        if (pendingWriteRef.current) {
+        if (pendingWriteRef.current.length) {
           if (typeof window !== 'undefined') {
             writeScheduledRef.current = window.requestAnimationFrame(() => {
               writeScheduledRef.current = null;
@@ -531,7 +536,7 @@ const TerminalViewport = React.forwardRef<TerminalController, TerminalViewportPr
             flushWrites();
           }
         }
-      });
+      }, chunk.replay);
     }, [resetWriteState]);
 
     const scheduleFlushWrites = React.useCallback(() => {
@@ -549,11 +554,13 @@ const TerminalViewport = React.forwardRef<TerminalController, TerminalViewportPr
     }, [flushWrites]);
 
     const enqueueWrite = React.useCallback(
-      (data: string) => {
+      (data: string, replay: boolean) => {
         if (!data) {
           return;
         }
-        pendingWriteRef.current += data;
+        const previous = pendingWriteRef.current.at(-1);
+        if (previous?.replay === replay) previous.data += data;
+        else pendingWriteRef.current.push({ data, replay });
         scheduleFlushWrites();
       },
       [scheduleFlushWrites]
@@ -1027,6 +1034,7 @@ const TerminalViewport = React.forwardRef<TerminalController, TerminalViewportPr
 
       let localTerminalTextarea: HTMLTextAreaElement | null = null;
 
+      replayThroughRef.current = chunksRef.current.at(-1)?.id ?? null;
       const initialize = async () => {
         try {
           const ghostty = await getGhostty();
@@ -1036,7 +1044,8 @@ const TerminalViewport = React.forwardRef<TerminalController, TerminalViewportPr
 
           const options = getGhosttyTerminalOptions(fontFamily, fontSize, theme, ghostty, false);
 
-          const terminal = new GhosttyTerminal(options);
+          const terminal = new GhosttyTerminal({ ...options, handleTouchPointer: !enableTouchScroll,
+            labels: { input: t('terminalView.viewport.inputAria'), scrollbar: t('terminalView.viewport.scrollbackAria'), output: t('terminalView.viewport.outputAria') } });
           followOutputRef.current = true;
 
           if (useHiddenInputOverlay) {
@@ -1063,7 +1072,9 @@ const TerminalViewport = React.forwardRef<TerminalController, TerminalViewportPr
           fitAddonRef.current = fitAddon;
 
           terminal.loadAddon(fitAddon);
-          terminal.open(container);
+          await terminal.open(container);
+          if (disposed) { terminal.dispose(); return; }
+          terminal.setVisible(visibleRef.current);
           bumpTerminalReady();
           cursorBlinkStateRef.current = false;
 
@@ -1106,6 +1117,13 @@ const TerminalViewport = React.forwardRef<TerminalController, TerminalViewportPr
           }
           setupTouchScroll();
           localDisposables = [
+            terminal.onResize((next) => {
+              const previous = lastReportedSizeRef.current;
+              if (!previous || previous.cols !== next.cols || previous.rows !== next.rows) {
+                lastReportedSizeRef.current = next;
+                resizeHandlerRef.current(next.cols, next.rows);
+              }
+            }),
             terminal.onData((data: string) => {
               inputHandlerRef.current(data);
             }),
@@ -1174,13 +1192,17 @@ const TerminalViewport = React.forwardRef<TerminalController, TerminalViewportPr
         cursorBlinkStateRef.current = null;
         resetWriteState();
       };
-    }, [disableTerminalTextareas, enableTouchScroll, fitTerminal, focusHiddenInput, fontFamily, fontSize, setupTouchScroll, theme, resetWriteState, setTerminalCursorBlink, useHiddenInputOverlay]);
+    }, [disableTerminalTextareas, enableTouchScroll, fitTerminal, focusHiddenInput, fontFamily, fontSize, setupTouchScroll, theme, resetWriteState, setTerminalCursorBlink, useHiddenInputOverlay, t]);
 
 
     React.useEffect(() => {
       const terminal = terminalRef.current;
       if (!terminal) {
         return;
+      }
+      if (previousSessionRef.current !== sessionKey) {
+        replayThroughRef.current = chunksRef.current.at(-1)?.id ?? null;
+        previousSessionRef.current = sessionKey;
       }
       terminal.reset();
       resetWriteState();
@@ -1235,11 +1257,16 @@ const TerminalViewport = React.forwardRef<TerminalController, TerminalViewportPr
       }
 
       if (pending.length > 0) {
-        enqueueWrite(pending.map((chunk) => chunk.data).join(''));
+        for (const chunk of pending) {
+          const replay = chunk.replay === true || (replayThroughRef.current !== null && chunk.id <= replayThroughRef.current);
+          enqueueWrite(chunk.data, replay);
+        }
       }
 
       lastProcessedChunkIdRef.current = chunks[chunks.length - 1].id;
     }, [chunks, terminalReadyVersion, enqueueWrite, fitTerminal, resetWriteState]);
+
+    React.useEffect(() => { terminalRef.current?.setVisible(isVisible); }, [isVisible, terminalReadyVersion]);
 
     React.useImperativeHandle(
       ref,

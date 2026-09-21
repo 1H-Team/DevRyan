@@ -256,9 +256,14 @@ describe('createGlobalMessageStreamHub', () => {
     try {
       hub.start();
       await waitForAssertion(() => expect(received).toHaveLength(3));
-      expect(received.map((event) => event.eventId)).toEqual(['evt-1', undefined, undefined]);
+      expect(received[0].eventId).toBe('evt-1');
+      expect(received[1].eventId).toMatch(/^devryan-/);
+      expect(received[2].eventId).toMatch(/^devryan-/);
+      expect(received[2].eventId).not.toBe(received[1].eventId);
+      expect(received[1].envelope.eventId).toBeNull();
       expect(transformEventPayload).toHaveBeenCalledTimes(3);
-      expect(hub.replayAfter('missing').events.map((event) => event.eventId)).toEqual(['evt-1']);
+      expect(hub.replayAfter('missing').events).toEqual(received);
+      expect(hub.replayAfter(received[1].eventId).events).toEqual([received[2]]);
     } finally {
       hub.stop();
     }

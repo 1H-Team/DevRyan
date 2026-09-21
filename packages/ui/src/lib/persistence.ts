@@ -418,6 +418,7 @@ const applyDesktopUiPreferences = (
       store.setAutoDeleteAfterDays(normalized);
     }
   }
+  if (typeof settings.sessionRetentionArchivedOnly === 'boolean' && settings.sessionRetentionArchivedOnly !== store.sessionRetentionArchivedOnly) store.setSessionRetentionArchivedOnly(settings.sessionRetentionArchivedOnly);
   if (settings.sessionRetentionAction === 'archive' || settings.sessionRetentionAction === 'delete') {
     if (settings.sessionRetentionAction !== store.sessionRetentionAction) {
       store.setSessionRetentionAction(settings.sessionRetentionAction);
@@ -753,6 +754,7 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   if (typeof candidate.autoDeleteAfterDays === 'number' && Number.isFinite(candidate.autoDeleteAfterDays)) {
     result.autoDeleteAfterDays = candidate.autoDeleteAfterDays;
   }
+  if (typeof candidate.sessionRetentionArchivedOnly === 'boolean') result.sessionRetentionArchivedOnly = candidate.sessionRetentionArchivedOnly;
   if (candidate.sessionRetentionAction === 'archive' || candidate.sessionRetentionAction === 'delete') {
     result.sessionRetentionAction = candidate.sessionRetentionAction;
   }

@@ -252,6 +252,8 @@ const state = {
   quitConfirmed: false,
   quitConfirmationPending: false,
   quitCleanupPromise: null,
+  updateCleanupPromise: null,
+  updateInstallReady: false,
   installingUpdate: false,
   pendingUpdate: null,
   unreachableHosts: new Set(),
@@ -1121,9 +1123,11 @@ const spawnLocalServer = async () => {
 };
 
 let sidecarStopPromise = null;
+let sidecarStopFailure = null;
 let runtimeServiceShutdownPromise = null;
 
-const killSidecar = () => {
+const killSidecar = ({ strict = false } = {}) => {
+  if (strict && sidecarStopFailure) return Promise.reject(sidecarStopFailure);
   if (!state.serverHandle) {
     if (state.runtimeServiceCoordinator?.getOwner?.()?.mode === 'app_bound') {
       const coordinator = state.runtimeServiceCoordinator;
@@ -1138,7 +1142,9 @@ const killSidecar = () => {
   sidecarStopPromise = Promise.resolve()
     .then(() => serverHandle.stop({ exitProcess: false }))
     .catch((error) => {
+      sidecarStopFailure = error;
       log.warn('[electron] web runtime shutdown failed:', error);
+      if (strict) throw error;
     })
     .finally(() => {
       sidecarStopPromise = null;
@@ -4512,19 +4518,9 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         }
       }
       if (applyUpdate) {
+        if (state.updateCleanupPromise) return null;
         await prepareBackgroundRuntimeForAppUpdate();
-        // Match the working updater pattern closely: only bypass the macOS
-        // hide-on-close / quit-confirmation guards, leave the rest of the
-        // updater-driven quit/install sequence alone.
-        state.quitRequested = true;
-        state.installingUpdate = true;
-        state.quitConfirmationPending = false;
-        if (state.mainWindow && !state.mainWindow.isDestroyed()) {
-          try {
-            debounceWindowStatePersist(state.mainWindow, true);
-          } catch {
-          }
-        }
+        prepareForQuit({ installingUpdate: true });
       }
       browserCdpBridge?.closeAll('app_restart');
       // Defer so the IPC reply flushes before the app starts shutting down.
@@ -4533,7 +4529,36 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       setImmediate(() => {
         try {
           if (applyUpdate) {
-            autoUpdater.quitAndInstall();
+            state.updateCleanupPromise = finishQuitAfterCleanup({
+              owner: 'updater',
+              checkpointBotRuns: () => state.serverHandle?.checkpointBotRuns?.({ reason: 'app_update' }),
+              stopBotDispatcher: () => state.serverHandle?.stopBotDispatcher?.(),
+              stopBotIndexerRequests: () => state.serverHandle?.stopBotIndexerRequests?.(),
+              cleanupOwnedResources: async () => {
+                speechManager.shutdown();
+                await Promise.all([killSidecar({ strict: true }), sshManager.shutdownAll(), stopDesktopHostBroker()]);
+              },
+              requestQuit: () => { state.updateInstallReady = true; autoUpdater.quitAndInstall(); },
+              // Never call app.quit/exit on behalf of electron-updater.
+              forceExit: () => {},
+              onCleanupError: (error) => {
+                log.warn('[electron] update cleanup failed:', error?.code || 'update_cleanup_failed');
+                emitToAllWindows('openchamber:update-progress', { event: 'Error', data: { message: 'Update cleanup did not finish. Quit and reopen DevRyan before retrying the update.' } });
+              },
+            }).then((outcome) => {
+              if (outcome === 'blocked') {
+                state.installingUpdate = false;
+                state.updateInstallReady = false;
+                state.quitRequested = false;
+                state.quitConfirmed = false;
+              }
+            }).catch((error) => {
+              state.installingUpdate = false;
+              state.updateInstallReady = false;
+              state.quitRequested = false;
+              state.quitConfirmed = false;
+              log.error('[electron] update installation failed', error);
+            });
           } else {
             app.relaunch();
             app.exit(0);
@@ -4800,6 +4825,12 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', (event) => {
+  if (state.installingUpdate) {
+    if (!state.updateInstallReady) { event.preventDefault(); return; }
+    state.quitRequested = true;
+    releaseDesktopKeepAwake();
+    return;
+  }
   if (isRuntimeServiceMode && !state.quitConfirmed) {
     event.preventDefault();
     state.quitRequested = true;

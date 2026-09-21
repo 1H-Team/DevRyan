@@ -1,3 +1,5 @@
+import { FlatSidebarRowContext, SidebarRowsContext } from './SidebarRowsContext';
+import { selectableModelRows } from './sidebarRowModel';
 import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { AnimatePresence } from 'motion/react';
@@ -315,6 +317,8 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     renderContext = 'project',
   } = props;
 
+  const flatRow = React.useContext(FlatSidebarRowContext);
+  const sidebarRows = React.useContext(SidebarRowsContext);
   const isElectron = React.useMemo(() => canUseElectronDesktopIPC(), []);
   const session = node.session;
   const isArchiveAncestorOnly = archivedBucket && node.isArchiveAncestorOnly === true;
@@ -375,6 +379,9 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   }, []);
 
   const [exportDialogOpen, setExportDialogOpen] = React.useState(false);
+  React.useEffect(() => {
+    if (exportDialogOpen || mobileActionsRevealed) return sidebarRows?.model.pin(session.id);
+  }, [exportDialogOpen, mobileActionsRevealed, sidebarRows?.model, session.id]);
   const [exportIncludeSubtasks, setExportIncludeSubtasks] = React.useState(true);
   const exportInFlightRef = React.useRef(false);
 
@@ -894,15 +901,10 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
       event?.preventDefault();
       event?.stopPropagation();
       if (event?.shiftKey) {
-        const rows = typeof document !== 'undefined'
-          ? Array.from(document.querySelectorAll<HTMLElement>('[data-session-row]'))
-          : [];
-        const orderedIds = rows
-          .map((el) => el.getAttribute('data-session-row'))
-          .filter((id): id is string => typeof id === 'string' && id.length > 0);
+        const orderedRows = selectableModelRows(sidebarRows?.model.getRows() ?? [], sessionDirectory);
+        const orderedIds = orderedRows.map((row) => row.id);
         const currentAnchor = useSessionMultiSelectStore.getState().anchorId;
-        const descendantsById = new Map<string, string[]>();
-        descendantsById.set(session.id, collectNodeDescendantIds(node));
+        const descendantsById = new Map(orderedRows.map((row) => [row.id, row.descendants]));
         setRowRange(currentAnchor, session.id, orderedIds, sessionDirectory ?? null, descendantsById);
         return;
       }
@@ -1141,6 +1143,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
               <button
                 type="button"
                 disabled={isMissingDirectory}
+                data-session-select
                 onPointerDown={handleRowPointerDown}
                 onPointerMove={handleRowPointerMove}
                 onPointerUp={handleRowPointerEnd}
@@ -1361,7 +1364,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
           own SessionSidebarMotionRow for per-child enter/exit (e.g. when
           a single child is archived or the parent is collapsed/expended).
         */}
-        {hasChildren ? (
+        {hasChildren && !flatRow ? (
           <AnimatePresence initial={false}>
             {isExpanded
               ? node.children.map((child) => renderSessionNode(child, depth + 1, sessionDirectory ?? groupDirectory, projectId, archivedBucket, undefined, renderContext))

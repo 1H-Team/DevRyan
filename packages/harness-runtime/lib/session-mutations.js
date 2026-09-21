@@ -1,5 +1,6 @@
-import { executionCleanup, checkExecutionAdmission, executionPhase, executionSignal, withoutExecutionDeadline, waitForExecutionQueue } from './execution-admission.js';
+import { executionCleanup, checkExecutionAdmission, executionPhase, executionSignal, executionProgressMeter, executionProgress, withoutExecutionDeadline, waitForExecutionQueue } from './execution-admission.js';
 import fs from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import { isUtf8 } from 'node:buffer';
 import { randomUUID, createHash } from 'node:crypto';
@@ -8,6 +9,10 @@ import { openChangeStore, changeKey } from './session-changes-store.js';
 import { safeChangePath, verifyAncestors } from './session-changes-snapshot.js';
 import { withCrossProcessFileLock, writeFileAtomic } from './atomic-file.js';
 import { applyMutationText, initialMutationRuns, mutationText, visibleMutationRuns } from './session-mutation-text.js';
+import { inspectMutationFile, copyMutationObject, mutationFileStamp, GRANULAR_TEXT_BYTES } from './session-mutation-files.js';
+import { withExecutionIO } from './execution-io-pool.js';
+import { readSessionExecutionReceipt } from './session-execution.js';
+import { removeExecutionDirectory } from './execution-cleanup.js';
 
 const key = (kind, id) => `${kind}/${changeKey(id)}.json`;
 const permissions = (entry) => !entry || entry.deleted || entry.mode === '120000' ? null
@@ -39,28 +44,17 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     catch (error) { if (error.code !== 'ENOENT') throw error; await writeFileAtomic(target, bytes); }
     return hash;
   };
-  const inspect = async (repo, file, directory = repo.directory) => {
-    checkExecutionAdmission();
-    await verifyAncestors(directory, file);
-    const target = path.join(directory, file);
-    const stat = await fs.lstat(target).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
-    if (!stat) return null;
-    if (!stat.isFile() && !stat.isSymbolicLink()) throw changeError('unsupported_file_type');
-    const bytes = stat.isSymbolicLink() ? Buffer.from(await fs.readlink(target)) : await fs.readFile(target, { signal: executionSignal() });
-    return { hash: await putBytes(repo, bytes), mode: stat.isSymbolicLink() ? '120000' : stat.mode & 0o111 ? '100755' : '100644',
-      ...(stat.isFile() ? { permissions: stat.mode & 0o7777 } : {}),
-      identity: `${stat.dev}:${stat.ino}` };
-  };
+  const inspect = (repo, file, directory) => withExecutionIO(repo.root, () => inspectMutationFile(repo, file, directory));
   const write = async (repo, file, entry, directory = repo.directory) => {
     await verifyAncestors(directory, file);
     const target = path.join(directory, file);
     if (!entry) { await fs.rm(target, { force: true }); return; }
-    const bytes = await bytesFor(repo, entry.hash);
     await fs.mkdir(path.dirname(target), { recursive: true });
     if (entry.mode !== '120000') {
-      await writeFileAtomic(target, bytes, { mode: permissions(entry) });
+      await withExecutionIO(repo.root, () => copyMutationObject(repo, entry, target, permissions(entry)));
       return;
     }
+    const bytes = await bytesFor(repo, entry.hash);
     const temporary = `${target}.devryan-${randomUUID()}`;
     try { await fs.symlink(bytes.toString(), temporary); await fs.rename(temporary, target); }
     finally { await fs.rm(temporary, { force: true }); }
@@ -154,9 +148,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     const access = revisions.findLast((revision) => revision.permissions !== undefined)?.permissions;
     if (latest.deleted) return { path: name, sequence: latest.sequence, deleted: true };
     const content = revisions.findLast((revision) => revision.hash !== undefined);
-    const bytes = content?.binary ? await bytesFor(repo, content.hash) : Buffer.from(mutationText(await runsFor(repo, doc.id), disabled), 'latin1');
+    const hash = content?.binary ? content.hash : await putBytes(repo, Buffer.from(mutationText(await runsFor(repo, doc.id), disabled), 'latin1'));
     return { path: name, mode, ...(access === undefined ? {} : { permissions: access }),
-      hash: await putBytes(repo, bytes), sequence: latest.sequence };
+      hash, sequence: latest.sequence };
   };
   const activePaths = async (repo) => {
     const paths = new Map();
@@ -169,13 +163,19 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   const recordFile = async (repo, { doc, beforeRuns, baseEntry, basePath, entry, file, operation, disabled }) => {
     doc ??= { id: randomUUID(), published: null };
     const revisions = await revisionsFor(repo, doc.id);
-    const before = await runsFor(repo, doc.id);
     if (entry) {
-      const bytes = await bytesFor(repo, entry.hash);
-      const binary = entry.mode === '120000' || bytes.includes(0) || !isUtf8(bytes);
-      const runs = operation === null ? initialMutationRuns(bytes.toString('latin1'), `${doc.id}:baseline`)
-        : applyMutationText(before, beforeRuns ?? visibleMutationRuns(before, disabled), bytes.toString('latin1'), operation.id);
-      await saveRuns(repo, doc.id, runs);
+      // Keep whole-content ancestry once a document crosses the threshold.
+      // Earlier granular revisions retain their runs for old-reader Revert.
+      let binary = entry.whole || entry.size > GRANULAR_TEXT_BYTES || revisions.some((revision) => revision.binary);
+      const bytes = binary ? null : await bytesFor(repo, entry.hash);
+      binary ||= entry.mode === '120000' || bytes.includes(0) || !isUtf8(bytes);
+      if (!binary) {
+        const before = await runsFor(repo, doc.id);
+        const runs = operation === null ? initialMutationRuns(bytes.toString('latin1'), `${doc.id}:baseline`)
+          : applyMutationText(before, beforeRuns ?? visibleMutationRuns(before, disabled), bytes.toString('latin1'), operation.id);
+        doc.runsUnfiltered = runs.every((run) => run.deletedBy.length === 0);
+        await saveRuns(repo, doc.id, runs);
+      }
       revisions.push({ owner: operation?.id ?? null, sequence: operation?.sequence ?? 0,
         ...(file !== (basePath ?? doc.published?.path) ? { path: file } : {}),
         ...(entry.mode !== (baseEntry ?? doc.published)?.mode ? { mode: entry.mode } : {}),
@@ -189,7 +189,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   // External edits are their own origin. They cannot be attributed to whichever
   // agent happens to be active when a snapshot is observed.
   async function* filesIn(repo, relative = '') {
-    for (const entry of await fs.readdir(path.join(repo.directory, relative), { withFileTypes: true })) {
+    const entries = await fs.readdir(path.join(repo.directory, relative), { withFileTypes: true });
+    executionProgress();
+    for (const entry of entries) {
       checkExecutionAdmission();
       if (entry.name === '.git' || inputDirectories.has(entry.name)) continue;
       if (path.resolve(repo.directory, relative, entry.name) === storage) continue;
@@ -207,9 +209,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       else if (entry.isDirectory()) yield* dependencyInputs(directory, file);
     }
   }
-  const reconcile = async (repo) => {
-    const paths = await activePaths(repo), names = new Set(paths.keys()), disabled = await inactive(repo);
-    for await (const file of filesIn(repo)) {
+  const reconcile = async (repo, selected) => {
+    const paths = await activePaths(repo), names = new Set(selected ?? paths.keys()), disabled = await inactive(repo);
+    if (!selected) for await (const file of filesIn(repo)) {
       if (safeChangePath(file)) names.add(file);
     }
     for (const file of names) {
@@ -223,6 +225,77 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       repo.db.set(key('files', changed.id), changed);
       if (operation) { operation.files = [changed.id]; repo.db.set(key('operations', operation.id), operation); }
     }
+  };
+  const observations = new Map();
+  const observe = async (lease) => {
+    const previous = observations.get(lease.projectDirectory);
+    if (previous?.started >= lease.reservedAt) {
+      try { return await waitForExecutionQueue(previous.work, previous.progress); }
+      catch { checkExecutionAdmission(); } // The observing caller may have been cancelled independently.
+    }
+    if (previous) await waitForExecutionQueue(previous.work.catch(() => {}), previous.progress);
+    // Recheck after waiting: another reservation may have installed the next
+    // sufficiently fresh pass while this caller was queued.
+    const current = observations.get(lease.projectDirectory);
+    if (current && current !== previous && current.started >= lease.reservedAt) {
+      try { return await waitForExecutionQueue(current.work, current.progress); }
+      catch { checkExecutionAdmission(); }
+    }
+    const pass = { started: Date.now(), work: null, progress: executionProgressMeter() };
+    pass.work = (async () => {
+      const root = rootFor(lease.projectDirectory), gitDir = path.join(root, 'git');
+      let dirty, attempts = 0;
+      do {
+        if (++attempts > 4) throw changeError('workspace_changing', 503);
+        dirty = false;
+        const snapshot = { directory: lease.projectDirectory, root, gitDir, db: await openChangeStore(root, gitDir) };
+        const paths = await activePaths(snapshot), names = new Set(paths.keys());
+        for await (const file of filesIn(snapshot)) if (safeChangePath(file)) names.add(file);
+        let rows = [];
+        const install = async () => {
+          if (!rows.length) return;
+          await locked(lease.directory, async (repo) => {
+            const latest = await activePaths(repo), disabled = await inactive(repo);
+            for (const row of rows) {
+              const doc = latest.get(row.file);
+              if (JSON.stringify(doc?.published ?? null) !== JSON.stringify(row.published)
+                || await mutationFileStamp(repo.directory, row.file) !== (row.entry?.observation ?? null)) { dirty = true; continue; }
+              if (equal(doc?.published, row.entry)) {
+                if (doc?.published && row.entry) { doc.published = { ...doc.published, ...row.entry }; repo.db.set(key('files', doc.id), doc); }
+                continue;
+              }
+              const operation = doc ? { id: randomUUID(), sequence: next(repo), active: true, origin: 'external', scope: null } : null;
+              const changed = await recordFile(repo, { doc, entry: row.entry, file: row.file, operation, disabled });
+              changed.published = row.entry ? { ...row.entry, path: row.file, sequence: operation?.sequence ?? 0 } : null;
+              repo.db.set(key('files', changed.id), changed);
+              if (operation) { operation.files = [changed.id]; repo.db.set(key('operations', operation.id), operation); }
+            }
+          });
+          executionProgress();
+          rows = [];
+        };
+        for (const file of names) {
+          checkExecutionAdmission();
+          const published = paths.get(file)?.published ?? null;
+          // Advisory only. Publication and projection always inspect affected
+          // current bytes again; legacy records have no observation and rehash.
+          if (published?.observation && await mutationFileStamp(snapshot.directory, file) === published.observation) {
+            executionProgress();
+            continue;
+          }
+          let entry;
+          try { entry = await inspect(snapshot, file); }
+          catch (cause) { if (cause.code !== 'observation_changed') throw cause; dirty = true; continue; }
+          if (!published && !entry) continue;
+          rows.push({ file, published, entry });
+          if (rows.length >= 32) await install();
+        }
+        await install();
+      } while (dirty);
+    })();
+    observations.set(lease.projectDirectory, pass);
+    try { return await pass.work; }
+    finally { if (observations.get(lease.projectDirectory) === pass) observations.delete(lease.projectDirectory); }
   };
   const materialize = async (repo, documents, accept) => {
     const disabled = await inactive(repo), paths = new Set();
@@ -323,12 +396,12 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     }
     return { admitted: true };
   });
-  const begin = async (input) => {
+  const reserve = async (input) => {
     if (!scopeFields.every((field) => validID(input[field]))) throw changeError('invalid_capture_identity', 400);
     if (input.executionFingerprint !== undefined && !/^[a-f0-9]{64}$/.test(input.executionFingerprint)) {
       throw changeError('invalid_capture_identity', 400);
     }
-    const lease = await locked(input.directory, async (repo) => {
+    return locked(input.directory, async (repo) => {
       const { session, prompt } = await register(repo, input);
       if (session.pending) throw changeError('session_reverting');
       const scopeKey = `${input.sessionID}\0${input.callID}`;
@@ -338,11 +411,12 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         const old = await repo.db.get(key('leases', existing.token));
         if (!old || scopeFields.some((field) => old.scope[field] !== input[field])
           || old.parentCallID !== (input.parentCallID ?? null)
-          || old.executionFingerprint !== input.executionFingerprint) throw changeError('capture_identity_mismatch');
-        if (old.state === 'published' || old.state === 'ready') return old;
-        throw changeError('execution_already_started');
+          || old.executionFingerprint !== input.executionFingerprint
+          || (old.preparation === 'none') !== (input.kind === 'control')) throw changeError('capture_identity_mismatch');
+        if (['preparing', 'published', 'ready'].includes(old.state)) return old;
+        throw changeError('execution_cancelled');
       }
-      await executionPhase('reconciliation', () => reconcile(repo));
+      const control = input.kind === 'control';
       const token = randomUUID(), viewDirectory = path.join(repo.root, 'views', token, 'worktree');
       const scope = Object.fromEntries(scopeFields.map((field) => [field, input[field]]));
       const result = { token, scope, directory: repo.logicalDirectory, projectDirectory: repo.directory,
@@ -352,30 +426,81 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         vcs: repo.vcs,
         origins: prompt.origins,
         promptSequence: prompt.sequence, viewDirectory, state: 'preparing', parentCallID: input.parentCallID ?? null,
-        executionFingerprint: input.executionFingerprint };
-      const disabled = await inactive(repo), base = [];
-      for (const [file, doc] of await activePaths(repo)) {
-        checkExecutionAdmission();
-        if (doc.published.deleted) continue;
-        base.push({ path: file, documentID: doc.id, entry: doc.published });
-        await saveRuns(repo, doc.id, visibleMutationRuns(await runsFor(repo, doc.id), disabled), `bases/${token}`);
-      }
-      await repo.db.setList(`bases/${token}/files`, base);
+        executionFingerprint: input.executionFingerprint, reservedAt: Date.now(),
+        ...(input.ownerID ? { ownerID: input.ownerID } : {}), ...(control ? { preparation: 'none' } : {}) };
       repo.db.set(key('leases', token), result);
       repo.db.set(key('calls', scopeKey), { token });
       return result;
     });
-    if (lease.state === 'ready' || lease.state === 'published') return lease;
+  };
+  const snapshotPathListings = new Map();
+  const snapshotPaths = async (repo) => {
+    const identity = await repo.db.prefixIdentity('files');
+    if (!identity) return new Map();
+    const cacheKey = `${repo.root}:${identity}`;
+    if (!snapshotPathListings.has(cacheKey)) {
+      const work = activePaths(repo);
+      snapshotPathListings.set(cacheKey, work);
+      while (snapshotPathListings.size > 4) snapshotPathListings.delete(snapshotPathListings.keys().next().value);
+      void work.catch(() => { if (snapshotPathListings.get(cacheKey) === work) snapshotPathListings.delete(cacheKey); });
+    }
+    return snapshotPathListings.get(cacheKey);
+  };
+  const preparations = new Map();
+  const prepare = (lease) => {
+    if (lease.state === 'ready' || lease.state === 'published') return Promise.resolve(lease);
+    if (preparations.has(lease.token)) return preparations.get(lease.token);
+    const work = prepareView(lease).catch(async (cause) => {
+      preparations.delete(lease.token);
+      await executionCleanup(() => cleanupLease({ directory: lease.directory, token: lease.token })).catch(() => {});
+      throw cause;
+    }).finally(() => { preparations.delete(lease.token); });
+    preparations.set(lease.token, work);
+    return work;
+  };
+  const prepareView = async (lease) => {
     try {
       await fs.mkdir(lease.viewDirectory, { recursive: true, mode: 0o700 });
+      if (lease.preparation === 'none') {
+        await fs.mkdir(lease.workingDirectory, { recursive: true, mode: 0o700 });
+        return await locked(lease.directory, async (repo) => {
+          const current = await repo.db.get(key('leases', lease.token));
+          if (current?.state !== 'preparing') throw changeError('execution_cancelled');
+          const session = await repo.db.get(key('sessions', lease.scope.sessionID));
+          if (session?.generation !== lease.generation || session.pending) throw changeError('execution_reverted');
+          lease.state = 'ready'; repo.db.set(key('leases', lease.token), lease); return lease;
+        });
+      }
+      await executionPhase('reconciliation', () => observe(lease));
+      await locked(lease.directory, async (repo) => {
+        const current = await repo.db.get(key('leases', lease.token));
+        const session = await repo.db.get(key('sessions', lease.scope.sessionID));
+        if (current?.state !== 'preparing') throw changeError('execution_cancelled');
+        if (session?.generation !== lease.generation || session.pending) throw changeError('execution_reverted');
+        lease.baseSequence = repo.meta.sequence;
+        lease.snapshotRef = repo.db.leaseRef(lease.token);
+        repo.db.set(key('leases', lease.token), lease);
+        // pin commits the identity before installing the ref, closing the
+        // crash window between ref creation and its durable association.
+        await repo.db.pin(lease.token);
+      });
       // Materialization uses immutable objects captured under the publication
       // lock; commands and copying do not hold that lock.
-      const root = rootFor(lease.projectDirectory), db = await openChangeStore(root, path.join(root, 'git'));
-      const repo = { root, directory: lease.projectDirectory };
-      for await (const file of db.list(`bases/${lease.token}/files`)) {
-        checkExecutionAdmission();
-        await write(repo, file.path, file.entry, lease.viewDirectory);
-      }
+      const root = rootFor(lease.projectDirectory), db = await openChangeStore(root, path.join(root, 'git'), { ref: lease.snapshotRef });
+      const repo = { root, directory: lease.projectDirectory, db }, disabled = await inactive(repo);
+      const base = async function* () {
+        for (const [file, doc] of await snapshotPaths(repo)) {
+          checkExecutionAdmission();
+          if (doc.published.deleted) continue;
+          await write(repo, file, doc.published, lease.viewDirectory);
+          if (!disabled.size && doc.runsUnfiltered) await db.importPrefix(db.tree, `runs/${doc.id}`, `bases/${lease.token}/${doc.id}`);
+          else await saveRuns(repo, doc.id, visibleMutationRuns(await runsFor(repo, doc.id), disabled), `bases/${lease.token}`);
+          const stat = await fs.lstat(path.join(lease.viewDirectory, file), { bigint: true });
+          yield { path: file, documentID: doc.id, entry: doc.published, identity: `${stat.dev}:${stat.ino}` };
+        }
+      };
+      await db.setList(`bases/${lease.token}/files`, base());
+      await db.commit();
       await git(lease.viewDirectory, ['init', '--quiet']);
       if (lease.vcs) {
         // Git commands can inspect the real revision and staged state without
@@ -403,11 +528,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         if ((await current.db.get(key('leases', lease.token)))?.state === 'cancelled') throw changeError('execution_cancelled');
         const session = await current.db.get(key('sessions', lease.scope.sessionID));
         if (session.generation !== lease.generation || session.pending) throw changeError('execution_reverted');
-        const base = [];
-        for await (const file of current.db.list(`bases/${lease.token}/files`)) {
-          base.push({ ...file, identity: (await inspect(current, file.path, lease.viewDirectory))?.identity });
-        }
-        await current.db.setList(`bases/${lease.token}/files`, base);
+        await current.db.importPrefix(db.tree, `bases/${lease.token}`);
         lease.state = 'ready'; current.db.set(key('leases', lease.token), lease); return lease;
       });
     } catch (error) {
@@ -415,13 +536,34 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       // leave an immortal preparing lease that later recovery cannot attest.
       await executionCleanup(() => locked(lease.directory, async (repo) => {
         const current = await repo.db.get(key('leases', lease.token));
-        if (current?.state === 'preparing') { current.state = 'cancelled'; repo.db.set(key('leases', lease.token), current); }
+        if (current?.state === 'preparing') { current.state = 'cancelled'; current.cleanupPending = true; repo.db.set(key('leases', lease.token), current); }
       })).catch(() => {});
-      await fs.rm(path.dirname(lease.viewDirectory), { recursive: true, force: true });
       throw error;
     }
   };
-  const finish = async ({ directory, token, renames = [] }) => {
+  const begin = async (input) => {
+    const lease = await reserve(input);
+    if (lease.state === 'preparing' && preparations.has(lease.token)) throw changeError('execution_already_started');
+    return prepare(lease);
+  };
+  const finishOwned = async ({ directory, token, renames = [] }) => {
+    const captured = await locked(directory, (repo) => repo.db.get(key('leases', token)));
+    if (!captured) throw changeError('execution_unavailable');
+    if (captured.state === 'published') return captured.result;
+    if (captured.state !== 'ready') throw changeError('execution_not_ready');
+    const base = new Map(), identities = new Map(), files = new Map();
+    if (captured.preparation !== 'none') {
+      const root = rootFor(captured.projectDirectory), db = await openChangeStore(root, path.join(root, 'git'),
+        captured.snapshotRef ? { ref: captured.snapshotRef } : {});
+      const repo = { root, directory: captured.projectDirectory };
+      for await (const file of db.list(`bases/${token}/files`)) { base.set(file.path, file); if (file.identity) identities.set(file.identity, file); }
+      // The host has verified native termination before calling finish. Hashing
+      // this immutable output does not serialize unrelated project admissions.
+      for await (const file of filesIn({ directory: captured.viewDirectory })) {
+        if (safeChangePath(file)) files.set(file, await inspect(repo, file, captured.viewDirectory));
+      }
+      for (const file of base.keys()) if (!files.has(file)) files.set(file, null);
+    }
     const result = await locked(directory, async (repo) => {
       const lease = await repo.db.get(key('leases', token));
       if (!lease) throw changeError('execution_unavailable');
@@ -429,16 +571,17 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       const session = await repo.db.get(key('sessions', lease.scope.sessionID));
       if (session.generation !== lease.generation || session.pending) throw changeError('execution_reverted');
       if (lease.state !== 'ready') throw changeError('execution_not_ready');
-      await reconcile(repo);
-      const base = new Map(), identities = new Map();
-      for await (const file of repo.db.list(`bases/${token}/files`)) { base.set(file.path, file); if (file.identity) identities.set(file.identity, file); }
-      const files = new Map();
-      for await (const file of filesIn({ directory: lease.viewDirectory, vcs: lease.vcs !== false })) {
-        if (!safeChangePath(file) || file === 'node_modules') continue;
-        files.set(file, await inspect(repo, file, lease.viewDirectory));
+      if (lease.preparation === 'none') {
+        if (lease.executionKind !== 'control') throw changeError('execution_not_ready');
+        const operation = { id: randomUUID(), sequence: next(repo), scope: lease.scope, parentCallID: lease.parentCallID,
+          promptSequence: lease.promptSequence, origins: lease.origins, active: true, origin: 'execution', files: [], baseSequence: lease.baseSequence };
+        repo.db.set(key('operations', operation.id), operation);
+        lease.state = 'published'; lease.cleanupPending = true; lease.result = { operationID: operation.id, sequence: operation.sequence, files: [] };
+        repo.db.set(key('leases', token), lease);
+        return lease.result;
       }
-      // Tracked files remain captured even if the command changes ignore rules.
-      for (const file of base.keys()) if (!files.has(file)) files.set(file, await inspect(repo, file, lease.viewDirectory));
+      const touched = [...new Set([...base.keys(), ...files.keys()])].filter((file) => !equal(base.get(file)?.entry, files.get(file)));
+      await reconcile(repo, touched);
       const renamed = new Map(), sources = new Set();
       if (!Array.isArray(renames)) throw changeError('invalid_rename_receipt');
       for (const move of renames) {
@@ -450,7 +593,23 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       const operation = { id: randomUUID(), sequence: next(repo), scope: lease.scope, parentCallID: lease.parentCallID,
         promptSequence: lease.promptSequence, origins: lease.origins,
         active: true, origin: 'execution', files: [], baseSequence: lease.baseSequence };
-      const changed = new Map(), moved = new Set(), disabled = await inactive(repo);
+      const changed = new Map(), moved = new Set(), disabled = await inactive(repo), conflicts = [];
+      const published = await activePaths(repo);
+      const conflict = async (file, from, entry, doc) => {
+        const before = from?.entry ?? null, current = doc?.published?.deleted ? null : doc?.published ?? null;
+        const changesContent = (before?.hash ?? null) !== (entry?.hash ?? null);
+        const changesMode = permissions(before) !== permissions(entry);
+        const whole = entry?.whole || before?.whole || (doc && (await revisionsFor(repo, doc.id)).some((revision) => revision.binary));
+        const sourceMoved = from && from.path !== file && current?.path !== from.path;
+        const destination = published.get(file)?.published;
+        const destinationTaken = from && from.path !== file && destination && destination.path !== current?.path;
+        if (!(sourceMoved || destinationTaken
+          || changesContent && (whole || !entry) && (current?.hash ?? null) !== (before?.hash ?? null) && current?.hash !== entry?.hash
+          || changesMode && permissions(current) !== permissions(before) && permissions(current) !== permissions(entry))) return false;
+        const value = { path: file, base: before, current, proposed: entry, ...(from && from.path !== file ? { source: from.path } : {}) };
+        conflicts.push(value);
+        return true;
+      };
       for (const [file, entry] of files) {
         let from = renamed.get(file) ?? base.get(file);
         if (renamed.has(file)) moved.add(from.path);
@@ -461,6 +620,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         if (from?.path === file && equal(from.entry, entry) || !from && !entry) continue;
         if (!entry) continue;
         const doc = from ? await repo.db.get(key('files', from.documentID)) : null;
+        if (await conflict(file, from, entry, doc ?? published.get(file))) continue;
         const updated = await recordFile(repo, { doc, entry, file, operation, disabled, baseEntry: from?.entry, basePath: from?.path,
           beforeRuns: from ? await runsFor(repo, from.documentID, `bases/${token}`) : [] });
         changed.set(updated.id, updated);
@@ -468,25 +628,62 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       for (const [file, from] of base) {
         if (files.get(file) || moved.has(file)) continue;
         const doc = await repo.db.get(key('files', from.documentID));
+        if (await conflict(file, from, null, doc)) continue;
         const updated = await recordFile(repo, { doc, entry: null, file, operation, disabled });
         changed.set(updated.id, updated);
       }
       operation.files = [...changed.keys()];
+      if (conflicts.length) {
+        // Old readers project every normal revision. Conflicting proposals must
+        // therefore live outside that prefix, with objects retained by receipt.
+        operation.conflicts = `conflicts/${token}`;
+        await repo.db.setList(operation.conflicts, conflicts);
+      }
+      const rejected = new Set(conflicts.flatMap((row) => [row.path, ...(row.source ? [row.source] : [])]));
       const receipt = [];
       for (const file of new Set([...base.keys(), ...files.keys()])) {
         const before = base.get(file)?.entry ?? null, after = files.get(file) ?? null;
-        if (!equal(before, after)) receipt.push({ path: file, before, after });
+        if (!rejected.has(file) && !equal(before, after)) receipt.push({ path: file, before, after });
       }
       await repo.db.setList(`publications/${token}/files`, receipt);
       repo.db.set(key('operations', operation.id), operation);
       await materialize(repo, [...changed.values()], (files) => {
-        lease.state = 'published'; lease.result = { operationID: operation.id, sequence: operation.sequence, files };
+        lease.state = 'published'; lease.cleanupPending = true; lease.result = { operationID: operation.id, sequence: operation.sequence, files,
+          ...(conflicts.length ? { outcome: 'partial', conflicts: conflicts.map(({ path, source }) => ({ path, ...(source ? { source } : {}) })) } : {}) };
         repo.db.set(key('leases', token), lease);
       });
       return lease.result;
     });
     await onChange({ directory, ...result });
     return result;
+  };
+  const settlements = new Map();
+  const finish = (input) => {
+    if (settlements.has(input.token)) return settlements.get(input.token);
+    const work = finishOwned(input).finally(() => settlements.delete(input.token));
+    settlements.set(input.token, work); return work;
+  };
+  const cleanupLease = async (input) => {
+    if (preparations.has(input.token) || settlements.has(input.token)) return false;
+    const lease = await locked(input.directory, async (repo) => {
+      const lease = await repo.db.get(key('leases', input.token));
+      if (!lease || lease.cleaned || !['published', 'cancelled'].includes(lease.state)) return null;
+      if (lease.executionKind === 'process' && !lease.cancelledBeforeStart) await readSessionExecutionReceipt(lease);
+      else if (lease.state === 'published' && lease.executionKind !== 'control') return null;
+      return lease;
+    });
+    if (!lease) return false;
+    // The parent holds termination.json. It is recovery evidence, not scratch.
+    await removeExecutionDirectory(lease.viewDirectory);
+    await removeExecutionDirectory(path.join(path.dirname(lease.viewDirectory), 'scratch'));
+    await locked(input.directory, async (repo) => {
+      // Deterministic ref identity also recovers pins from older crash windows.
+      await repo.db.release(lease.token);
+      for await (const { key: page } of repo.db.entries(`bases/${lease.token}`)) repo.db.remove(page);
+      const current = await repo.db.get(key('leases', lease.token));
+      current.cleaned = true; current.cleanupPending = false; repo.db.set(key('leases', lease.token), current);
+    });
+    return true;
   };
   const prepareRevert = (input) => locked(input.directory, async (repo) => {
     const prompt = await repo.db.get(key('prompts', `${input.sessionID}\0${input.messageID}`));
@@ -556,12 +753,13 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     if (!tx) throw changeError('revert_unavailable');
     if (tx.state === 'committed') return tx.result;
     if (tx.state !== 'prepared') throw changeError('revert_unavailable');
-    const documents = new Map();
+    const documents = new Map(), conflicts = [];
     if (input.commit) {
       await reconcile(repo);
       for await (const id of repo.db.list(`transactions/${tx.id}/operations`)) {
         const op = await repo.db.get(key('operations', id));
         if (!op) throw changeError('invalid_change_record');
+        if (op.conflicts) for await (const row of repo.db.list(op.conflicts)) conflicts.push({ path: row.path });
         if (tx.kind === 'files') op.fileUndone = !tx.redo;
         else op.active = tx.redo;
         repo.db.set(key('operations', id), op);
@@ -577,7 +775,8 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     const accept = async (files) => {
       tx.state = input.commit ? 'committed' : 'cancelled';
       tx.phase = tx.state;
-      tx.result = { files, sessions: tx.targets, redoAvailable: input.commit && !tx.redo };
+      tx.result = { files, sessions: tx.targets, redoAvailable: input.commit && !tx.redo,
+        ...(conflicts.length ? { outcome: 'partial', conflicts } : {}) };
       repo.db.set(key('transactions', tx.id), tx);
       for (const member of tx.members) {
         const session = await repo.db.get(key('sessions', member));
@@ -699,15 +898,30 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     const lease = await repo.db.get(key('leases', input.token));
     if (lease?.state !== 'published') throw changeError('execution_unavailable');
     const files = [];
-    const content = async (entry) => entry ? { bytes: await bytesFor(repo, entry.hash), mode: entry.mode } : null;
+    const content = (entry) => {
+      if (!entry) return null;
+      if (!/^[a-f0-9]{64}$/.test(entry.hash ?? '')) throw changeError('invalid_change_record');
+      // Lazy streams cross only the in-process trusted receipt boundary. No
+      // large file buffer or lock-held file read is needed to return a receipt.
+      const byteStream = async function* () {
+        const hash = createHash('sha256');
+        for await (const chunk of createReadStream(path.join(repo.root, 'objects', entry.hash), { highWaterMark: 128 * 1024 })) {
+          hash.update(chunk); yield chunk;
+        }
+        if (hash.digest('hex') !== entry.hash) throw changeError('invalid_change_record');
+      };
+      return { byteStream: byteStream(), sha256: entry.hash, mode: entry.mode };
+    };
     for await (const file of repo.db.list(`publications/${input.token}/files`)) {
       files.push({ path: path.join(repo.directory, file.path), before: await content(file.before), after: await content(file.after) });
     }
-    return { ...lease.scope, directory: lease.directory, source: 'confined-execution', complete: true, files };
+    return { ...lease.scope, directory: lease.directory, source: 'confined-execution', complete: true, files,
+      ...(lease.result?.outcome ? { outcome: lease.result.outcome, conflicts: lease.result.conflicts } : {}) };
   });
   const claimLease = (input) => locked(input.directory, async (repo) => {
     const lease = await repo.db.get(key('leases', input.token));
     if (!['control', 'process'].includes(input.kind) || lease?.state !== 'ready' || lease.executionKind) throw changeError('execution_already_started');
+    if (lease.preparation === 'none' && input.kind !== 'control') throw changeError('capture_identity_mismatch');
     const session = await repo.db.get(key('sessions', lease.scope.sessionID));
     if (session?.pending || session?.generation !== lease.generation) throw changeError('execution_reverted');
     lease.executionKind = input.kind;
@@ -757,7 +971,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     const lease = await repo.db.get(key('leases', input.token));
     if (!lease) throw changeError('execution_unavailable');
     if (lease.state === 'published') throw changeError('execution_already_published');
-    lease.state = 'cancelled'; repo.db.set(key('leases', lease.token), lease);
+    lease.state = 'cancelled'; lease.cleanupPending = !lease.cleaned; repo.db.set(key('leases', lease.token), lease);
   });
   const cancelUnstartedCall = (input) => locked(input.directory, async (repo) => {
     if (!validID(input.sessionID) || !validID(input.callID) || !validID(input.messageID)) throw changeError('invalid_capture_identity');
@@ -766,7 +980,8 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       const lease = await repo.db.get(key('leases', call.token));
       if (!lease || lease.scope.messageID !== input.messageID || input.token && lease.token !== input.token) throw changeError('capture_identity_mismatch');
       if (lease.state === 'published') throw changeError('execution_already_published');
-      lease.state = 'cancelled'; repo.db.set(key('leases', lease.token), lease);
+      lease.cancelledBeforeStart = true;
+      lease.state = 'cancelled'; lease.cleanupPending = !lease.cleaned; repo.db.set(key('leases', lease.token), lease);
     }
     repo.db.set(key('cancelled-calls', scopeKey), { messageID: input.messageID });
   });
@@ -774,6 +989,14 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     const entries = [];
     for await (const { value } of repo.db.entries('leases')) {
       if (['preparing', 'ready'].includes(value.state) && (!input.sessions || input.sessions.includes(value.scope.sessionID))) entries.push(value);
+    }
+    return entries;
+  });
+  const pendingCleanup = (input) => locked(input.directory, async (repo) => {
+    const entries = [];
+    for await (const { value } of repo.db.entries('leases')) {
+      // Include pre-marker terminal records to recover existing installations.
+      if (!value.cleaned && ['published', 'cancelled'].includes(value.state)) entries.push(value);
     }
     return entries;
   });
@@ -789,7 +1012,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     return directories;
   };
   return { projectDirectories, projectDirectory: (input) => locked(input.directory, (repo) => repo.directory),
-    assertAdmission, registerPrompt, registerChild, begin, claimLease, finish, executionReceipt, aliasCalls, prepareRevert, prepareRedo, prepareFileRestore, settleRevert, leaseForCall,
-    transaction, updateTransaction, pendingTransactions, cancelLease, cancelUnstartedCall, activeLeases,
-    drain: () => Promise.allSettled([...queues.values()]) };
+    assertAdmission, registerPrompt, registerChild, reserve, prepare, begin, claimLease, finish, cleanupLease, executionReceipt, aliasCalls, prepareRevert, prepareRedo, prepareFileRestore, settleRevert, leaseForCall,
+    transaction, updateTransaction, pendingTransactions, cancelLease, cancelUnstartedCall, activeLeases, pendingCleanup,
+    drain: () => Promise.allSettled([...preparations.values(), ...settlements.values(), ...queues.values()]) };
 }

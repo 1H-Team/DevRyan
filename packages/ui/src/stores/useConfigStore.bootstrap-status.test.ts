@@ -225,7 +225,7 @@ describe("useConfigStore startup load status", () => {
 
     await useConfigStore.getState().loadProviders()
 
-    expect(providerCallOptions).toEqual([undefined, { directory: null }])
+    expect(providerCallOptions).toEqual([{ directory: null }, { directory: null }])
     expect(useConfigStore.getState().providersLoadStatus).toBe("ready")
     expect(useConfigStore.getState().providersLoadError).toBe(undefined)
     expect(useDirectoryStore.getState().currentDirectory).toBe("/default-workspace")
@@ -236,7 +236,7 @@ describe("useConfigStore startup load status", () => {
     let agentCallCount = 0
     getProvidersImpl = (options) => {
       providerCallCount += 1
-      if (providerCallCount === 1 && options === undefined) {
+      if (providerCallCount === 1 && options?.directory === "/stale-workspace") {
         return Promise.reject(Object.assign(
           new Error("config.providers failed (403): Directory is outside your assigned workspace"),
           { status: 403 },
@@ -272,9 +272,42 @@ describe("useConfigStore startup load status", () => {
 
     await useConfigStore.getState().loadProviders()
 
-    expect(providerCallOptions).toEqual([undefined, { directory: null }])
+    expect(providerCallOptions).toEqual([{ directory: null }, { directory: null }])
     expect(useConfigStore.getState().providersLoadStatus).toBe("error")
     expect(useConfigStore.getState().providersLoadError).toContain("default workspace failed")
+  })
+
+  test("explicit null loads the global catalog while omitted directory loads the active project", async () => {
+    useConfigStore.setState({ activeDirectoryKey: "/repo", directoryScoped: {} })
+    await useConfigStore.getState().loadProviders({ directory: null })
+    expect(providerCallOptions).toEqual([{ directory: null }])
+    expect(useConfigStore.getState().directoryScoped.__global__?.providers).toEqual([])
+    expect(useConfigStore.getState().directoryScoped["/repo"]).toBeUndefined()
+    await useConfigStore.getState().loadProviders()
+    expect(providerCallOptions[1]).toEqual({ directory: "/repo" })
+    expect(useConfigStore.getState().directoryScoped["/repo"]?.providers).toEqual([])
+  })
+
+  test("catalog model defaults do not replace a pending settings provider selection", async () => {
+    useConfigStore.setState({ selectedProviderId: "opencode-go", currentProviderId: "", currentModelId: "" })
+    getProvidersImpl = async () => ({ providers: [{ id: "fixture", name: "Fixture", models: { "fixture-model": selectionModel("fixture-model") } }], default: {} })
+    await useConfigStore.getState().loadProviders({ directory: null, force: true })
+    expect(useConfigStore.getState().currentProviderId).toBe("fixture")
+    expect(useConfigStore.getState().selectedProviderId).toBe("opencode-go")
+  })
+
+  test("a pre-auth response cannot overwrite the forced post-auth catalog", async () => {
+    let resolveOld: ((value: unknown) => void) | undefined
+    getProvidersImpl = () => new Promise((resolve) => { resolveOld = resolve })
+    const old = useConfigStore.getState().loadProviders({ directory: null })
+    getProvidersImpl = async () => ({ providers: [{
+      id: "opencode-go", name: "OpenCode Go", models: { "go-model": selectionModel("go-model") },
+    }], default: {} })
+    await useConfigStore.getState().loadProviders({ directory: null, force: true })
+    resolveOld?.({ providers: [], default: {} })
+    await old
+    expect(useConfigStore.getState().directoryScoped.__global__?.providers.map((p) => p.id))
+      .toEqual(["opencode-go"])
   })
 
   test("concurrent provider loads dedup by default but force issues a real refetch", async () => {

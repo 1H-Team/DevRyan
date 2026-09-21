@@ -13,9 +13,12 @@ import { applyContextModeHotfix } from '../packages/web/server/lib/opencode/cont
 import { pathToFileURL } from 'node:url';
 import { startRevertModelFixture } from './qa/revert-model-fixture.mjs';
 import { createCursorSdkRuntime } from '../packages/cursor-sdk-runtime/index.js';
+import { resolveCursorRipgrepPath } from '../packages/cursor-sdk-runtime/ripgrep-path.js';
 import { createWebManagedOpenCodeExecutor } from '../packages/web/server/lib/orchestration/open-code-executor.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import http from 'node:http';
+import { createExecutionHostOwner, executionHostOwnerLost } from '../packages/harness-runtime/lib/execution-host-owner.js';
 
 const binary = process.env.DEVRYAN_TEST_OPENCODE_BINARY;
 const launcher = process.env.DEVRYAN_TEST_EXECUTION_LAUNCHER;
@@ -39,7 +42,7 @@ const bridge = createManagedOrchestrationPrivateHost({ handleRpc: ({ method, par
   }
   return host.plugin(params);
 } });
-let upstream, server, held, model, traceTimer;
+let upstream, server, held, model, traceTimer, skillSource;
 const request = async (route, body, base = origin) => {
   const url = new URL(route, base); url.searchParams.set('directory', directory);
   const response = await fetch(url, { method: body === undefined ? 'GET' : 'POST',
@@ -69,16 +72,43 @@ try {
     else await fs.symlink(path.join(contextSource, 'node_modules', entry), path.join(contextModules, entry), 'dir');
   }
   const hotfix = applyContextModeHotfix({ configDirectory: contextConfig }); assert(hotfix.ok, hotfix.error);
-  const env = { PATH: process.env.PATH, HOME: path.join(root, 'home'), XDG_CONFIG_HOME: path.join(root, 'config'),
+  const skillText = (name) => `---\nname: ${name}\ndescription: Isolated execution skill fixture\n---\nSelected ${name} content. Read reference.txt relative to this skill.\n`;
+  const skillRoots = [
+    [path.join(root, 'home/.agents/skills/global-fixture'), 'global-fixture'],
+    [path.join(directory, '.agents/skills/project-fixture'), 'project-fixture'],
+    [path.join(root, 'home/custom-skills/tilde-fixture'), 'tilde-fixture'],
+    [path.join(root, 'linked-skill'), 'symlink-fixture'],
+  ];
+  for (const [folder, name] of skillRoots) {
+    await fs.mkdir(folder, { recursive: true });
+    await fs.writeFile(path.join(folder, 'SKILL.md'), skillText(name));
+    await fs.writeFile(path.join(folder, 'reference.txt'), `Included ${name} reference`);
+  }
+  await fs.symlink(path.join(root, 'linked-skill'), path.join(directory, '.agents/skills/symlink-fixture'), 'dir');
+  const ripgrep = resolveCursorRipgrepPath();
+  assert(path.isAbsolute(ripgrep.path), 'Pinned release ripgrep binary required');
+  let skillFetches = 0;
+  skillSource = http.createServer((req, res) => {
+    skillFetches++;
+    if (req.url === '/index.json') { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ skills: [{ name: 'url-fixture', files: ['SKILL.md', 'reference.txt'], version: 'fixture-1' }] })); }
+    else if (req.url === '/url-fixture/SKILL.md') res.end(skillText('url-fixture'));
+    else if (req.url === '/url-fixture/reference.txt') res.end('Included URL reference');
+    else { res.statusCode = 404; res.end(); }
+  });
+  await new Promise((resolve) => skillSource.listen(0, '127.0.0.1', resolve));
+  const skillURL = `http://127.0.0.1:${skillSource.address().port}/`;
+  const env = { PATH: [path.dirname(ripgrep.path), process.env.PATH].filter(Boolean).join(path.delimiter),
+    HOME: path.join(root, 'home'), XDG_CONFIG_HOME: path.join(root, 'config'),
     XDG_DATA_HOME: path.join(root, 'data'), XDG_CACHE_HOME: path.join(root, 'cache'), XDG_STATE_HOME: path.join(root, 'state'),
     OPENCODE_TEST_HOME: path.join(root, 'home'), OPENCODE_TEST_MANAGED_CONFIG_DIR: path.join(root, 'managed'),
     OPENCODE_DISABLE_DEFAULT_PLUGINS: 'true', OPENCODE_DISABLE_MODELS_FETCH: 'true', OPENCODE_DISABLE_PROJECT_CONFIG: 'true',
     OPENCODE_DISABLE_AUTOUPDATE: 'true', OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: 'true',
     OPENCODE_CONFIG_CONTENT: JSON.stringify({ plugin: [pathToFileURL(path.join(contextModules, 'context-mode/build/adapters/opencode/plugin.js')).href],
       model: 'fixture/fixture', small_model: 'fixture/fixture', provider: { fixture: model.config, 'cursor-acp': { ...model.config, models: { 'composer-2.5': model.config.models.fixture } } },
+      skills: { paths: ['~/custom-skills'], urls: [skillURL] },
       mcp: {}, snapshot: false, permission: 'allow' }),
     ...await bridge.start(), DEVRYAN_EXECUTION_BOUNDARY: '1', DEVRYAN_EXECUTION_TRACE: '1' };
-  await fs.mkdir(env.HOME);
+  await fs.mkdir(env.HOME, { recursive: true });
   await fs.writeFile(path.join(env.HOME, '.devryan-qa-home'), 'isolated Revert verification');
   await fs.writeFile(path.join(root, 'credentials.env.json'), '{}');
   const providerProbe = path.join(root, 'provider-probe.mjs');
@@ -107,6 +137,39 @@ try {
     const healthy = r.ok; await r.text(); return healthy;
   }, () => false));
   assert.equal((await request('/session/revert-capabilities')).executionBoundary, 1);
+  assert.equal((await request('/session/revert-capabilities')).sessionRetention, 1);
+  const retentionCall = async (body, token = env.DEVRYAN_ORCHESTRATION_TOKEN) => {
+    const response = await fetch(`${origin}/session/retention-control?directory=${encodeURIComponent(directory)}`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-devryan-retention-token': token }, body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10_000),
+    });
+    return { status: response.status, body: await response.json() };
+  };
+  assert.equal((await retentionCall({ action: 'snapshot' }, 'not-authorized')).status, 403);
+  const retained = await request('/session', { title: 'Retention admission fixture' });
+  const snapshotResponse = await retentionCall({ action: 'snapshot' });
+  assert.equal(snapshotResponse.status, 200, JSON.stringify(snapshotResponse.body));
+  const nativeSnapshot = snapshotResponse.body;
+  assert.equal(nativeSnapshot.complete, true); assert(nativeSnapshot.sessions.some((row) => row.id === retained.id));
+  let nativeHold = (await retentionCall({ action: 'hold', instanceID: nativeSnapshot.instanceID, ids: [retained.id] })).body.token;
+  assert.equal(typeof nativeHold, 'string');
+  const blocked = await fetch(`${origin}/session/${retained.id}/prompt_async?directory=${encodeURIComponent(directory)}`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: { providerID: 'fixture', modelID: 'fixture' }, parts: [{ type: 'text', text: 'must not launch' }] }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  assert.equal(blocked.status, 409); assert.deepEqual(await blocked.json(), { error: 'session_retention_in_progress', retryable: true });
+  assert.equal((await request(`/session/${retained.id}/message`)).length, 0);
+  assert.deepEqual((await retentionCall({ action: 'archive', instanceID: nativeSnapshot.instanceID, token: nativeHold, ids: [retained.id] })).body.completed, [retained.id]);
+  assert((await request(`/session/${retained.id}`)).time.archived > 0);
+  nativeHold = (await retentionCall({ action: 'hold', instanceID: nativeSnapshot.instanceID, ids: [retained.id] })).body.token;
+  assert.deepEqual((await retentionCall({ action: 'delete', instanceID: nativeSnapshot.instanceID, token: nativeHold, ids: [retained.id] })).body.completed, [retained.id]);
+  const lockDirectory = path.join(root, 'owner-check');
+  const nativeOwner = await createExecutionHostOwner({ directory: lockDirectory, launcher });
+  assert.equal(await executionHostOwnerLost({ directory: lockDirectory, launcher, id: nativeOwner.id }), false);
+  nativeOwner.close(); await new Promise((resolve) => nativeOwner.signal.aborted ? resolve() : nativeOwner.signal.addEventListener('abort', resolve, { once: true }));
+  assert.equal(await executionHostOwnerLost({ directory: lockDirectory, launcher, id: nativeOwner.id }), true);
+  assert.throws(() => nativeOwner.assert(), /execution_owner_lost/);
+  console.log('PASS: private retention authentication, held async admission, archive/delete, and native owner loss');
   const express = createRequire(new URL('../packages/web/package.json', import.meta.url))('express');
   const app = express(); registerScopedSessionRevertRoute(app, { sessionRevertCoordinator: host.coordinator });
   server = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
@@ -146,6 +209,18 @@ try {
     assert.equal(call.state.status, 'completed', JSON.stringify(call));
     return { result, call };
   };
+  const skills = await request('/session', { title: 'Selected skills' });
+  // Includes consecutive leases and a return to the first skill, with real
+  // global, project, tilde, symlink and downloaded-cache discovery.
+  for (const name of ['global-fixture', 'project-fixture', 'tilde-fixture', 'symlink-fixture', 'url-fixture', 'project-fixture']) {
+    const fetchedBefore = skillFetches;
+    const loaded = await invoke(skills.id, 'skill', { name });
+    assert(loaded.call.state.output.includes(`Selected ${name} content.`));
+    assert(loaded.call.state.output.includes('reference.txt'));
+    assert(!loaded.call.state.output.includes('/views/'), 'Skill output paths retain logical project identity');
+    assert.equal(skillFetches, fetchedBefore, 'The worker must not refetch skill URLs');
+  }
+  console.log('PASS: selected global/project/tilde/symlink/URL skills, include paths, and consecutive leases');
   const failed = await request('/session', { title: 'Admission failure fixture' });
   failToolAdmission = true;
   try {
@@ -248,6 +323,7 @@ try {
 } catch (cause) {
   console.error(upstream?.getLog()); throw cause;
 } finally {
+  if (skillSource) await new Promise((resolve) => skillSource.close(resolve));
   clearInterval(traceTimer);
   await cursor?.dispose();
   await upstream?.stop(); await held?.catch(() => {});

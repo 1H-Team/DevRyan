@@ -106,6 +106,7 @@ type FileStatSnapshot = {
   path: string;
   size: number;
   mtimeMs?: number;
+  ctimeMs?: number;
 };
 
 type SelectedLineRange = {
@@ -517,7 +518,7 @@ const FileRow: React.FC<FileRowProps> = ({
   );
 };
 
-export const FilesView: React.FC = () => {
+export const FilesView: React.FC<{ visible?: boolean }> = ({ visible = true }) => {
   const { t } = useI18n();
   const { files, runtime } = useRuntimeAPIs();
   const { currentTheme, availableThemes, lightThemeId, darkThemeId } = useThemeSystem();
@@ -642,6 +643,8 @@ export const FilesView: React.FC = () => {
   const [searching, setSearching] = React.useState(false);
 
   const [fileContent, setFileContent] = React.useState<string>('');
+  const [fileSource, setFileSource] = React.useState<{ path: string; version?: string; complete: boolean } | null>(null);
+  const [saveConflict, setSaveConflict] = React.useState(false);
   const [fileLoading, setFileLoading] = React.useState(false);
   const [fileError, setFileError] = React.useState<string | null>(null);
   const [desktopImageSrc, setDesktopImageSrc] = React.useState<string>('');
@@ -650,6 +653,7 @@ export const FilesView: React.FC = () => {
 
   const [draftContent, setDraftContent] = React.useState('');
   const [isSaving, setIsSaving] = React.useState(false);
+  const saveInFlight = React.useRef(false);
   const autoSaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastLoadedFileStatRef = React.useRef<FileStatSnapshot | null>(null);
   const activeFileLoadIdRef = React.useRef(0);
@@ -1015,7 +1019,7 @@ export const FilesView: React.FC = () => {
 
   // Auto-refresh expanded directories when user returns to the tab
   React.useEffect(() => {
-    if (!files.listDirectory) return;
+    if (!visible || !files.listDirectory) return;
 
     const handleVisibilityChange = () => {
       if (!document.hidden && expandedPaths.length > 0) {
@@ -1027,22 +1031,24 @@ export const FilesView: React.FC = () => {
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [expandedPaths, files.listDirectory, refreshDirectory]);
+  }, [visible, expandedPaths, files.listDirectory, refreshDirectory]);
 
   // Poll expanded directories for external changes
   React.useEffect(() => {
-    if (!files.listDirectory) return;
+    if (!visible || !files.listDirectory) return;
     if (expandedPaths.length === 0) return;
 
-    const interval = setInterval(() => {
+    const refresh = () => {
       if (document.hidden) return;
       for (const dir of expandedPaths) {
         void refreshDirectory(dir);
       }
-    }, 8000);
+    };
+    refresh();
+    const interval = setInterval(refresh, 8000);
 
     return () => clearInterval(interval);
-  }, [expandedPaths, files.listDirectory, refreshDirectory]);
+  }, [visible, expandedPaths, files.listDirectory, refreshDirectory]);
 
   const handleDialogSubmit = React.useCallback(async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -1253,10 +1259,10 @@ export const FilesView: React.FC = () => {
     };
   }, [currentDirectory, debouncedSearchQuery, searchFiles, showHidden, showGitignored]);
 
-  const readFile = React.useCallback(async (path: string, options?: FileReadOptions): Promise<string> => {
+  const readFile = React.useCallback(async (path: string, options?: FileReadOptions): Promise<import('@/lib/api/types').FileReadResult> => {
     if (files.readFile) {
       const result = await files.readFile(path, options);
-      return result.content ?? '';
+      return result;
     }
 
     const params = new URLSearchParams({ path });
@@ -1277,7 +1283,8 @@ export const FilesView: React.FC = () => {
       const error = await response.json().catch(() => ({ error: response.statusText }));
       throw new Error((error as { error?: string }).error || t('filesView.error.readFileFailed'));
     }
-    return response.text();
+    return { content: await response.text(), path, version: response.headers.get('X-DevRyan-File-Version') ?? undefined,
+      complete: response.headers.get('X-DevRyan-File-Complete') === '1' };
   }, [files, t]);
 
   const readFileStat = React.useCallback(async (path: string, options?: FileReadOptions): Promise<FileStatSnapshot | null> => {
@@ -1287,6 +1294,7 @@ export const FilesView: React.FC = () => {
         path: result.path,
         size: result.size,
         mtimeMs: result.mtimeMs,
+        ctimeMs: result.ctimeMs,
       };
     }
     return null;
@@ -1298,10 +1306,11 @@ export const FilesView: React.FC = () => {
       : fileContent;
   }, [fileContent]);
 
-  const isDirty = React.useMemo(() => draftContent !== displayedContent, [draftContent, displayedContent]);
+  const isDirty = draftContent !== fileContent;
 
   const saveDraft = React.useCallback(async () => {
-    if (!selectedFile || !files.writeFile) {
+    if (saveInFlight.current) return false;
+    if (!selectedFile || !files.writeFile || fileSource?.path !== selectedFile.path || !fileSource.complete || !fileSource.version) {
       toast.error(t('filesView.toast.savingNotSupported'));
       return false;
     }
@@ -1310,31 +1319,38 @@ export const FilesView: React.FC = () => {
       return true;
     }
 
+    saveInFlight.current = true;
     setIsSaving(true);
 
     try {
-      const result = await files.writeFile(selectedFile.path, draftContent);
+      const loadId = activeFileLoadIdRef.current;
+      const result = await files.writeFile(selectedFile.path, draftContent, { expectedVersion: fileSource.version });
       if (!result?.success) {
         toast.error(t('filesView.toast.writeFileFailed'));
         return false;
       }
+      if (loadId !== activeFileLoadIdRef.current) return true;
       setFileContent(draftContent);
+      setFileSource({ path: selectedFile.path, version: result.version, complete: Boolean(result.version) });
+      setSaveConflict(false);
       // Refresh stat after write so polling doesn't see a stale metadata change.
       void readFileStat(selectedFile.path)
         .then((stat) => {
-          if (stat) {
+          if (stat && loadId === activeFileLoadIdRef.current) {
             lastLoadedFileStatRef.current = stat;
           }
         })
         .catch(() => {});
       return true;
     } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'FILE_VERSION_CONFLICT') setSaveConflict(true);
       toast.error(error instanceof Error ? error.message : t('filesView.toast.saveFailed'));
       return false;
     } finally {
+      saveInFlight.current = false;
       setIsSaving(false);
     }
-  }, [draftContent, files, isDirty, readFileStat, selectedFile, t]);
+  }, [draftContent, fileSource, files, isDirty, readFileStat, selectedFile, t]);
 
   React.useEffect(() => {
     if (!isDirty) {
@@ -1386,7 +1402,7 @@ export const FilesView: React.FC = () => {
   const AUTO_SAVE_DELAY = 1500;
 
   React.useEffect(() => {
-    const canWrite = Boolean(selectedFile && files.writeFile);
+    const canWrite = Boolean(selectedFile && files.writeFile && fileSource?.version && fileSource.complete && !saveConflict);
     if (!autoSaveEnabled || !isDirty || !canWrite || isSaving) {
       return;
     }
@@ -1405,7 +1421,7 @@ export const FilesView: React.FC = () => {
         autoSaveTimerRef.current = null;
       }
     };
-  }, [autoSaveEnabled, draftContent, isDirty, selectedFile, files.writeFile, isSaving, saveDraft]);
+  }, [autoSaveEnabled, draftContent, fileSource, saveConflict, isDirty, selectedFile, files.writeFile, isSaving, saveDraft]);
 
   // Reset auto-save status when switching files
   React.useEffect(() => {
@@ -1453,6 +1469,8 @@ export const FilesView: React.FC = () => {
     };
 
     setFileError(null);
+    setFileSource(null);
+    setSaveConflict(false);
     setDesktopImageSrc('');
     setLoadedFilePath(null);
 
@@ -1488,14 +1506,14 @@ export const FilesView: React.FC = () => {
     };
 
     await readFile(node.path, readOptions)
-      .then((content) => {
+      .then((result) => {
+        const content = result.content;
         if (!isCurrentLoad()) {
           return;
         }
         setFileContent(content);
-        setDraftContent(content.length > MAX_VIEW_CHARS
-          ? `${content.slice(0, MAX_VIEW_CHARS)}\n\n… truncated …`
-          : content);
+        setDraftContent(content);
+        setFileSource({ path: node.path, version: result.version, complete: result.complete === true });
         setLoadedFilePath(node.path);
         void readFileStat(node.path, readOptions)
           .then((stat) => {
@@ -1635,12 +1653,12 @@ export const FilesView: React.FC = () => {
   // When a change is detected, reset loadedFilePath so the effect above
   // triggers a single reload — no double-load.
   React.useEffect(() => {
-    if (!selectedFile?.path || loadedFilePath !== selectedFile.path) {
+    if (!visible || !selectedFile?.path || loadedFilePath !== selectedFile.path) {
       return;
     }
 
     let cancelled = false;
-    const interval = window.setInterval(() => {
+    const refresh = () => {
       if (document.hidden) {
         return;
       }
@@ -1662,7 +1680,9 @@ export const FilesView: React.FC = () => {
             && latestStat.mtimeMs !== previousStat.mtimeMs;
           const changedBySize = latestStat.size !== previousStat.size;
 
-          if (!changedByMtime && !changedBySize) {
+          const changedByCtime = latestStat.ctimeMs !== undefined && previousStat.ctimeMs !== undefined
+            && latestStat.ctimeMs !== previousStat.ctimeMs;
+          if (!changedByMtime && !changedBySize && !changedByCtime) {
             return;
           }
 
@@ -1675,13 +1695,15 @@ export const FilesView: React.FC = () => {
           setLoadedFilePath(null);
         })
         .catch(() => {});
-    }, 2000);
+    };
+    refresh();
+    const interval = window.setInterval(refresh, 2000);
 
     return () => {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [loadedFilePath, readFileStat, selectedFile?.path, selectedFileReadOptions]);
+  }, [visible, loadedFilePath, readFileStat, selectedFile?.path, selectedFileReadOptions]);
 
   const discardAndContinue = React.useCallback(() => {
     const nextFile = pendingSelectFileRef.current;
@@ -1698,7 +1720,7 @@ export const FilesView: React.FC = () => {
     setConfirmDiscardOpen(false);
 
     // Discard draft by reverting back to last loaded content
-    setDraftContent(displayedContent);
+    setDraftContent(fileContent);
 
     if (closePath) {
       if (root) {
@@ -1732,7 +1754,7 @@ export const FilesView: React.FC = () => {
       setMainTabGuard(null);
       useUIStore.getState().setActiveMainTab(nextTab);
     }
-  }, [displayedContent, handleSelectFile, isMobile, removeOpenPath, root, selectedFile?.path, setMainTabGuard, setSelectedPath]);
+  }, [fileContent, handleSelectFile, isMobile, removeOpenPath, root, selectedFile?.path, setMainTabGuard, setSelectedPath]);
 
   const saveAndContinue = React.useCallback(async () => {
     const nextFile = pendingSelectFileRef.current;
@@ -1941,7 +1963,7 @@ export const FilesView: React.FC = () => {
 
   const canCopy = Boolean(selectedFile && (!isSelectedImage || isSelectedSvg) && fileContent.length > 0);
   const canCopyPath = Boolean(selectedFile && displaySelectedPath.length > 0);
-  const canEdit = Boolean(selectedFile && !selectedFileIsOutsideWorkspace && !isSelectedImage && files.writeFile && fileContent.length <= MAX_VIEW_CHARS);
+  const canEdit = Boolean(selectedFile && !selectedFileIsOutsideWorkspace && !isSelectedImage && files.writeFile && fileSource?.path === selectedFile.path && fileSource.complete && fileSource.version);
   const isMarkdown = Boolean(selectedFile?.path && isMarkdownFile(selectedFile.path));
   const isJson = Boolean(selectedFile?.path && isJsonFile(selectedFile.path));
   const isHtml = Boolean(selectedFile?.path && isHtmlFile(selectedFile.path));
@@ -2565,6 +2587,9 @@ export const FilesView: React.FC = () => {
 
     return (
       <div className="pointer-events-auto flex items-center gap-1 rounded-lg border border-[var(--interactive-border)] bg-[var(--surface-elevated)] p-1 shadow-sm">
+        {!canEdit && fileSource?.path === selectedFile.path && !isSelectedImage && (
+          <span role="status" className="max-w-64 px-2 typography-meta text-muted-foreground">{t('filesView.editor.completeTextUnavailable')}</span>
+        )}
         {canEdit && textViewMode === 'edit' && (
           <>
             {isSaving ? (
@@ -3034,7 +3059,7 @@ export const FilesView: React.FC = () => {
               />
             </div>
           ) : selectedFile && canUseShikiFileView && textViewMode === 'view' ? (
-            renderShikiFileView(selectedFile, draftContent)
+            renderShikiFileView(selectedFile, displayedContent)
           ) : (
             <div
               className={cn('relative h-full', shouldMaskEditorForPendingNavigation && 'overflow-hidden')}
@@ -3042,7 +3067,7 @@ export const FilesView: React.FC = () => {
             >
               <div className={cn('h-full', shouldMaskEditorForPendingNavigation && 'invisible')}>
                 <CodeMirrorEditor
-                  value={draftContent}
+                  value={canEdit ? draftContent : displayedContent}
                   onChange={setDraftContent}
                   readOnly={!canEdit}
                   extensions={editorExtensions}

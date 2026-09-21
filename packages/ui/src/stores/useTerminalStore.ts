@@ -8,6 +8,7 @@ import { getSafeSessionStorage } from '@/stores/utils/safeStorage';
 export interface TerminalChunk {
   id: number;
   data: string;
+  replay?: boolean;
 }
 
 export type TerminalTabLifecycle = 'idle' | 'running' | 'exited';
@@ -61,7 +62,7 @@ interface TerminalStore {
   setTabSessionId: (directory: string, tabId: string, sessionId: string | null) => void;
   setTabLifecycle: (directory: string, tabId: string, lifecycle: TerminalTabLifecycle) => void;
   setConnecting: (directory: string, tabId: string, isConnecting: boolean) => void;
-  appendToBuffer: (directory: string, tabId: string, chunk: string) => void;
+  appendToBuffer: (directory: string, tabId: string, chunk: string, replay?: boolean) => void;
   clearBuffer: (directory: string, tabId: string) => void;
   setTabPreviewUrl: (directory: string, tabId: string, url: string | null, options?: { locked?: boolean; autoOpened?: boolean }) => void;
   markPreviewAutoOpened: (directory: string, tabId: string) => void;
@@ -544,7 +545,7 @@ export const useTerminalStore = create<TerminalStore>()(
           });
         },
 
-        appendToBuffer: (directory: string, tabId: string, chunk: string) => {
+        appendToBuffer: (directory: string, tabId: string, chunk: string, replay?: boolean) => {
           if (!chunk) {
             return;
           }
@@ -564,7 +565,7 @@ export const useTerminalStore = create<TerminalStore>()(
 
             const tab = existing.tabs[idx];
             const chunkId = state.nextChunkId;
-            const chunkEntry: TerminalChunk = { id: chunkId, data: chunk };
+            const chunkEntry: TerminalChunk = { id: chunkId, data: chunk, ...(replay ? { replay } : {}) };
 
             const bufferChunks = [...tab.bufferChunks, chunkEntry];
             let bufferLength = tab.bufferLength + chunk.length;

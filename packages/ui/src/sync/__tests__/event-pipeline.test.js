@@ -812,6 +812,34 @@ describe('createEventPipeline', () => {
     }
   });
 
+  it('handles a named SSE replay gap before an inherited id and never queues its yielded payload', async () => {
+    installDomStubs();
+    let release, second;
+    const held = new Promise((resolve) => { release = resolve; });
+    const reconnected = new Promise((resolve) => { second = resolve; });
+    const options = [], received = [];
+    let gaps = 0;
+    const sdk = { global: { event: async (input) => {
+      options.push(input);
+      if (options.length === 1) return { stream: (async function* () {
+        input.onSseEvent({ id: 'evt-before-gap', event: 'message' });
+        input.onSseEvent({ id: 'inherited-do-not-use', event: 'devryan.replay-gap' });
+        yield { replayGap: { scope: 'global' } };
+      })() };
+      second();
+      return { stream: (async function* () { await held; })() };
+    } } };
+    const pipeline = createEventPipeline({ sdk, transport: 'sse', reconnectDelayMs: 0,
+      onReplayGap: () => { gaps++; }, onEvent: (_directory, event) => received.push(event) });
+    try {
+      await reconnected;
+      expect(options[0].headers['X-DevRyan-Replay-Gap']).toBe('1');
+      expect(options[1].headers['Last-Event-ID']).toBe('evt-before-gap');
+      expect(gaps).toBe(1);
+      expect(received).toEqual([]);
+    } finally { pipeline.cleanup(); release(); }
+  });
+
   it('marks the pipeline disconnected on heartbeat timeout and recovers on the next websocket connect', async () => {
     installDomStubs();
     globalThis.WebSocket = FakeWebSocket;

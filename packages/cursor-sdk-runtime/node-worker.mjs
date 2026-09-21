@@ -1,3 +1,4 @@
+import { assertWorkerPayloadBytes } from './worker-payload.js';
 import process from 'node:process';
 import {
   normalizeCursorSdkAgentDefinitions,
@@ -12,9 +13,11 @@ import { cursorRunUsageObservation } from './cursor-usage.js';
 import { assertCursorSdkNodeCompatibility } from './node-version.js';
 
 const readStdin = async () => {
-  let raw = '';
+  let raw = '', bytes = 0;
   process.stdin.setEncoding('utf8');
   for await (const chunk of process.stdin) {
+    bytes += Buffer.byteLength(chunk, 'utf8');
+    assertWorkerPayloadBytes(bytes);
     raw += chunk;
   }
   return JSON.parse(raw);

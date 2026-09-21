@@ -1293,11 +1293,11 @@ const collectObjectSpans = (source) => {
 };
 
 const fieldPattern = (field, valuePattern) => new RegExp(
-  `(?:^|[,\\{])\\s*(?:"${field}"|${field})\\s*:\\s*(${valuePattern})`,
+  `(?:^|[,\\{])\\s*(?:"${field}"|${field})\\s*:\\s*(${valuePattern})${valuePattern ? '\\s*(?=[,}])' : ''}`,
 );
 
 const readSolidPrimitive = (source, field) => {
-  const match = source.match(fieldPattern(field, 'null|true|false|!0|!1|-?\\d+(?:\\.\\d+)?'));
+  const match = source.match(fieldPattern(field, 'null|true|false|!0|!1|-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?'));
   if (!match) return { found: false, value: null };
   if (match[1] === 'null') return { found: true, value: null };
   if (match[1] === 'true' || match[1] === '!0') return { found: true, value: true };
@@ -1352,35 +1352,111 @@ const readSolidTimestamp = (objectSource, fullSource, field) => {
   return { found: value !== null, value };
 };
 
+// Read only data expressions reachable from the requested Solid hydration resource.
+// This is a bounded lexical scan, never JavaScript evaluation.
+const readSolidExpressionEnd = (source, start) => {
+  let depth = 0;
+  let quote = null;
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index];
+    if (quote) {
+      if (char === '\\') index += 1;
+      else if (char === quote) quote = null;
+      continue;
+    }
+    if (char === '"' || char === "'" || char === '`') quote = char;
+    else if ('{[('.includes(char)) depth += 1;
+    else if ('}])'.includes(char)) {
+      if (depth === 0) return index;
+      depth -= 1;
+    } else if (depth === 0 && (char === ',' || char === ';' || char === '<')) return index;
+  }
+  return source.length;
+};
+
+const resolveZenBillingSource = (html, workspaceId) => {
+  const assignments = new Map();
+  const resolutions = new Map();
+  const roots = [];
+  const resourceKey = `billing.get["${workspaceId}"]`;
+  let quote = null;
+  for (let index = 0; index < html.length; index += 1) {
+    const char = html[index];
+    if (quote) {
+      if (char === '\\') index += 1;
+      else if (char === quote) quote = null;
+      continue;
+    }
+    const tail = char === '_' || char === '$' ? html.slice(index) : '';
+    const resource = (char === '_' || char === '$')
+      ? tail.match(/^(?:_)?\$HY\.r\[("(?:\\.|[^"\\])*")\]\s*=\s*(?!=)/)
+      : null;
+    const reference = char === '$' ? tail.match(/^\$R\[(\d+)\]\s*=\s*(?!=)/) : null;
+    const resolution = char === '$' ? tail.match(/^\$R\[(\d+)\]\.resolve\(\s*/) : null;
+    const match = resource ?? reference ?? resolution;
+    if (match) {
+      const start = index + match[0].length;
+      const end = readSolidExpressionEnd(html, start);
+      const expression = { start, end };
+      if (resource && unescapeSolidString(resource[1]) === resourceKey) roots.push(expression);
+      if (reference) {
+        // Reassigned references cannot identify a unique billing snapshot.
+        assignments.set(reference[1], assignments.has(reference[1]) ? null : expression);
+      }
+      if (resolution) {
+        resolutions.set(resolution[1], resolutions.has(resolution[1]) ? null : expression);
+      }
+      index = start - 1;
+      continue;
+    }
+    if (char === '"' || char === "'" || char === '`') quote = char;
+  }
+  if (roots.length !== 1) return null;
+  const visited = new Set();
+  const sources = [];
+  const queue = [roots[0]];
+  while (queue.length > 0) {
+    if (visited.size > 256) return null;
+    const span = queue.pop();
+    if (span === null || span.end - span.start > 64 * 1024) return null;
+    sources.push(span);
+    const source = html.slice(span.start, span.end);
+    // Quoted strings are values, not links to other hydration objects.
+    const references = source.replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`/g, '""')
+      .matchAll(/\$R\[(\d+)\]/g);
+    for (const [, id] of references) {
+      if (visited.has(id)) continue;
+      visited.add(id);
+      const expression = resolutions.has(id) ? resolutions.get(id) : assignments.get(id);
+      if (expression !== undefined) queue.push(expression);
+    }
+  }
+  return sources;
+};
+
 export const parseOpenCodeZenBillingHtml = (html, workspaceId, now = Date.now()) => {
-  if (typeof html !== 'string' || !html.includes('billing.get') || !html.includes(workspaceId)) return null;
-
-  const requiredFields = [
-    'customerID',
-    'paymentMethodID',
-    'balance',
-    'monthlyLimit',
-    'monthlyUsage',
-    'timeMonthlyUsageUpdated',
-    'reload',
-    'reloadAmount',
-    'reloadAmountMin',
-    'reloadTrigger',
-    'reloadTriggerMin',
-    'subscriptionID',
-  ];
-  const candidates = collectObjectSpans(html)
-    .filter(({ start, end }) => end - start <= 64 * 1024)
-    .filter(({ start, end }) => {
-      const source = html.slice(start, end);
-      return requiredFields.every((field) => fieldPattern(field, '').test(source));
-    });
-  const leafCandidates = candidates.filter((candidate) => !candidates.some((other) => (
-    other !== candidate && other.start > candidate.start && other.end < candidate.end
-  )));
-  if (leafCandidates.length !== 1) return null;
-
-  const source = html.slice(leafCandidates[0].start, leafCandidates[0].end);
+  if (typeof html !== 'string' || html.length > OPENCODE_ZEN_MAX_RESPONSE_BYTES
+    || !OPENCODE_ZEN_WORKSPACE_PATTERN.test(workspaceId)) return null;
+  const sources = resolveZenBillingSource(html, workspaceId);
+  if (!sources) return null;
+  const requiredFields = ['balance', 'monthlyUsage', 'timeMonthlyUsageUpdated'];
+  const billingSources = new Map();
+  for (const span of sources) {
+    const fragment = html.slice(span.start, span.end);
+    for (const { start, end } of collectObjectSpans(fragment)) {
+      const source = fragment.slice(start, end);
+      if (requiredFields.every((field) => fieldPattern(field, '').test(source))) {
+        // A nested assignment can be reached via both its parent and its reference.
+        billingSources.set(span.start + start, { start: span.start + start, end: span.start + end, source });
+      }
+    }
+  }
+  const objects = [...billingSources.values()];
+  const candidates = objects.filter((candidate) => !objects.some(
+    (other) => other.start > candidate.start && other.end < candidate.end,
+  ));
+  if (candidates.length !== 1) return null;
+  const source = candidates[0].source;
   const customerID = readSolidString(source, 'customerID');
   const balance = readSolidPrimitive(source, 'balance');
   const monthlyLimit = readSolidPrimitive(source, 'monthlyLimit');
@@ -1389,13 +1465,9 @@ export const parseOpenCodeZenBillingHtml = (html, workspaceId, now = Date.now())
   const reloadAmount = readSolidPrimitive(source, 'reloadAmount');
   const reloadTrigger = readSolidPrimitive(source, 'reloadTrigger');
   if (
-    !customerID.found || (customerID.value !== null && !customerID.value.startsWith('cus_'))
+    (customerID.found && customerID.value !== null && !customerID.value.startsWith('cus_'))
     || !balance.found || typeof balance.value !== 'number' || balance.value < 0
-    || !monthlyLimit.found || (monthlyLimit.value !== null && (typeof monthlyLimit.value !== 'number' || monthlyLimit.value < 0))
     || !monthlyUsage.found || (monthlyUsage.value !== null && (typeof monthlyUsage.value !== 'number' || monthlyUsage.value < 0))
-    || !reload.found || (reload.value !== null && typeof reload.value !== 'boolean')
-    || !reloadAmount.found || typeof reloadAmount.value !== 'number' || reloadAmount.value < 0
-    || !reloadTrigger.found || typeof reloadTrigger.value !== 'number' || reloadTrigger.value < 0
   ) {
     return null;
   }
@@ -1418,8 +1490,8 @@ export const parseOpenCodeZenBillingHtml = (html, workspaceId, now = Date.now())
       : 0,
     usageUpdatedAt,
     reloadEnabled: reload.value === true,
-    reloadAmountDollars: reloadAmount.value,
-    reloadTriggerDollars: reloadTrigger.value,
+    reloadAmountDollars: typeof reloadAmount.value === 'number' ? reloadAmount.value : 0,
+    reloadTriggerDollars: typeof reloadTrigger.value === 'number' ? reloadTrigger.value : 0,
   };
 };
 
@@ -1541,8 +1613,11 @@ export const fetchOpenCodeZenQuotaAdapter = async ({
       configured: true,
       error: error?.code === 'RESPONSE_TOO_LARGE'
         ? 'OpenCode Zen billing response was too large to parse.'
-        : 'OpenCode Zen billing request failed.',
-      errorCode: error?.code === 'RESPONSE_TOO_LARGE' ? 'PARSE_ERROR' : 'API_ERROR',
+        : error?.name === 'TimeoutError' || error?.name === 'AbortError'
+          ? 'OpenCode Zen billing request timed out. Try again.'
+          : 'OpenCode Zen billing request failed.',
+      errorCode: error?.code === 'RESPONSE_TOO_LARGE' ? 'PARSE_ERROR'
+        : error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 'TIMEOUT' : 'API_ERROR',
       now,
     });
   }

@@ -1,4 +1,9 @@
 import simpleGit from 'simple-git';
+import { backgroundGitSignal, createGitReadCoordinator } from './read-coordinator.js';
+import { parsePushResult, pushOptionArgs } from './push-result.js';
+import { currentHunkPatch } from './hunk-validation.js';
+import { withGitIndexQueue } from './index-queue.js';
+import { boundedUntracked, fileStatusVersion, parseNumstat } from './status-details.js';
 import { readGitOperationState, assertGitRemoteReady, gitStateError } from './operation-state.js';
 import crypto from 'node:crypto';
 import fs from 'fs';
@@ -404,19 +409,25 @@ const createGit = async (directory, options = {}) => {
     throw new TypeError('Git directory is required');
   }
   const env = await buildGitEnv(directoryPath, options);
-  const spawnOptions = { windowsHide: true };
+  const signal = backgroundGitSignal();
+  signal?.throwIfAborted();
+  const spawnOptions = { windowsHide: true, ...(signal ? { signal, killSignal: 'SIGKILL' } : {}) };
   const binary = getGitBinary();
   const hasCustomBinary = typeof binary === 'string' && binary.trim() && binary !== 'git' && binary !== 'git.exe';
   const unsafe = {
     ...(hasCustomBinary ? { allowUnsafeCustomBinary: true } : {}),
     ...(options.nonInteractiveEditor ? { allowUnsafeEditor: true } : {}),
+    // Only used with our fixed core.fsmonitor=false read configuration.
+    ...(signal ? { allowUnsafeFsMonitor: true } : {}),
   };
   return simpleGit({
     baseDir: directoryPath,
     env,
     spawnOptions,
+    ...(signal ? { config: ['core.fsmonitor=false'] } : {}),
     binary,
     unsafe,
+    ...(signal ? { abort: signal } : {}),
   });
 };
 
@@ -589,6 +600,11 @@ const parseWorktreePorcelain = (raw) => {
       const branchRef = line.substring('branch '.length).trim();
       current.branchRef = branchRef;
       current.branch = cleanBranchName(branchRef);
+      continue;
+    }
+
+    if (line === 'prunable' || line.startsWith('prunable ')) {
+      current.prunable = true;
     }
   }
 
@@ -756,12 +772,17 @@ export const isMissingDirectoryError = (error, directory) => {
 
 export const runGitCommand = async (cwd, args, options = {}) => withIndexLockRetryResult(async () => {
   try {
-    const { stdout, stderr } = await execFileAsync(getGitBinary(), args, {
-      cwd,
-      env: await buildGitEnv(cwd, options),
-      windowsHide: true,
-      maxBuffer: 20 * 1024 * 1024,
+    const signal = backgroundGitSignal();
+    signal?.throwIfAborted();
+    const env = await buildGitEnv(cwd, options);
+    const command = execFileAsync(getGitBinary(), args, {
+      cwd, env, windowsHide: true, maxBuffer: 20 * 1024 * 1024,
+      ...(signal ? { signal, killSignal: 'SIGKILL' } : {}),
     });
+    const closed = new Promise((resolve) => command.child.once('close', resolve));
+    let output;
+    try { output = await command; } finally { await closed; }
+    const { stdout, stderr } = output;
     return {
       success: true,
       exitCode: 0,
@@ -1489,6 +1510,13 @@ export async function setLocalIdentity(directory, profile) {
   }
 }
 
+const coordinateStatus = createGitReadCoordinator();
+export async function getBackgroundStatus(directory, options = {}) {
+  const root = await fsp.realpath(normalizeDirectoryPath(directory));
+  return coordinateStatus(JSON.stringify([root, options.mode === 'light' ? 'light' : 'full']),
+    () => getStatus(root, { ...options, background: true }));
+}
+
 export async function getStatus(directory, options = {}) {
   const directoryPath = normalizeDirectoryPath(directory);
   const lightMode = options.mode === 'light';
@@ -1526,50 +1554,27 @@ export async function getStatus(directory, options = {}) {
     // simultaneous checkout/reset. Disable only those optional writes while
     // preserving the status result itself.
     const git = await createGit(directoryPath, { optionalLocks: false });
-    // Use -uall to show all untracked files individually, not just directories
-    const status = await git.status(['-uall']);
+    const signal = backgroundGitSignal();
+    const status = await git.status(options.background ? ['-uno'] : ['-uall']);
+    const untracked = options.background ? await boundedUntracked({ binary: getGitBinary(), directory: directoryPath,
+      env: await buildGitEnv(directoryPath, { optionalLocks: false }), signal }) : null;
+    if (untracked) for (const file of untracked.names) status.files.push({ path: file, index: '?', working_dir: '?' });
+
 
     // Light mode: skip numstat + new-file line counting for faster response
     const [stagedStatsRaw, workingStatsRaw] = lightMode
       ? ['', '']
       : await Promise.all([
-          git.raw(['diff', '--cached', '--numstat']).catch(() => ''),
-          git.raw(['diff', '--numstat']).catch(() => ''),
+          git.raw(['diff', '--no-ext-diff', '--no-textconv', '--cached', '--numstat', '-z']).catch(() => ''),
+          git.raw(['diff', '--no-ext-diff', '--no-textconv', '--numstat', '-z']).catch(() => ''),
         ]);
 
-    const diffStatsMap = new Map();
-
-    const accumulateStats = (raw) => {
-      if (!raw) return;
-      raw
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .forEach((line) => {
-          const parts = line.split('\t');
-          if (parts.length < 3) {
-            return;
-          }
-          const [insertionsRaw, deletionsRaw, ...pathParts] = parts;
-          const path = pathParts.join('\t');
-          if (!path) {
-            return;
-          }
-          const insertions = insertionsRaw === '-' ? 0 : parseInt(insertionsRaw, 10) || 0;
-          const deletions = deletionsRaw === '-' ? 0 : parseInt(deletionsRaw, 10) || 0;
-
-          const existing = diffStatsMap.get(path) || { insertions: 0, deletions: 0 };
-          diffStatsMap.set(path, {
-            insertions: existing.insertions + insertions,
-            deletions: existing.deletions + deletions,
-          });
-        });
-    };
-
-    accumulateStats(stagedStatsRaw);
-    accumulateStats(workingStatsRaw);
-
-    const diffStats = Object.fromEntries(diffStatsMap.entries());
+    const stagedStats = parseNumstat(stagedStatsRaw), unstagedStats = parseNumstat(workingStatsRaw);
+    const diffStats = {};
+    for (const stats of [stagedStats, unstagedStats]) for (const [file, count] of Object.entries(stats)) {
+      const previous = diffStats[file] ?? { insertions: 0, deletions: 0 };
+      diffStats[file] = { insertions: previous.insertions + count.insertions, deletions: previous.deletions + count.deletions };
+    }
 
     const MAX_NEW_FILE_STATS = 200;
     const MAX_NEW_FILE_STAT_SIZE = 1024 * 1024;
@@ -1577,6 +1582,7 @@ export async function getStatus(directory, options = {}) {
 
     if (!lightMode) {
       for (const file of status.files) {
+        signal?.throwIfAborted();
         if (newFileStats.length >= MAX_NEW_FILE_STATS) {
           break;
         }
@@ -1642,10 +1648,9 @@ export async function getStatus(directory, options = {}) {
     }
 
     for (const entry of newFileStats) {
-      diffStats[entry.path] = {
-        insertions: entry.insertions,
-        deletions: entry.deletions,
-      };
+      diffStats[entry.path] = { insertions: entry.insertions, deletions: entry.deletions };
+      const file = status.files.find((item) => item.path === entry.path);
+      if (file?.index === '?') unstagedStats[entry.path] = diffStats[entry.path];
     }
 
     const selectBaseRefForUnpublished = async (currentBranch) => {
@@ -1717,6 +1722,14 @@ export async function getStatus(directory, options = {}) {
     }
 
     const { mergeInProgress, rebaseInProgress, headState } = await readGitOperationState(git);
+    const indexPath = String(await git.raw(['rev-parse', '--git-path', 'index'])).trim();
+    const indexVersion = await fileStatusVersion(directoryPath, indexPath);
+    const fileVersions = {};
+    for (const file of status.files) {
+      signal?.throwIfAborted();
+      fileVersions[file.path] = `${indexVersion}/${await fileStatusVersion(directoryPath, file.path)}`;
+    }
+    signal?.throwIfAborted();
 
     return {
       current: status.current,
@@ -1729,12 +1742,17 @@ export async function getStatus(directory, options = {}) {
         index: f.index,
         working_dir: f.working_dir,
       })),
-      isClean: status.isClean(),
+      isClean: status.isClean() && !untracked?.names.length && !untracked?.truncated,
+      ...(untracked ? { untrackedTruncated: untracked.truncated, untrackedLimit: 2000 } : {}),
+      fileVersions,
       diffStats: lightMode ? undefined : diffStats,
+      stagedStats: lightMode ? undefined : stagedStats,
+      unstagedStats: lightMode ? undefined : unstagedStats,
       mergeInProgress,
       rebaseInProgress,
     };
   } catch (error) {
+    backgroundGitSignal()?.throwIfAborted();
     if (!isNotGitRepositoryError(error) && !isMissingDirectoryError(error, directoryPath)) {
       console.error('Failed to get Git status:', error);
     }
@@ -1746,7 +1764,7 @@ export async function getDiff(directory, { path, paths, staged = false, contextL
   const git = await createGit(directory);
 
   try {
-    const args = ['diff', '--no-color'];
+    const args = ['diff', '--no-color', '--no-ext-diff', '--no-textconv', '--no-renames', '--src-prefix=a/', '--dst-prefix=b/'];
 
     if (typeof contextLines === 'number' && !Number.isNaN(contextLines)) {
       args.push(`-U${Math.max(0, contextLines)}`);
@@ -1821,7 +1839,7 @@ export async function getRangeDiff(directory, { base, head, path, contextLines =
     // ignore
   }
 
-  const args = ['diff', '--no-color'];
+  const args = ['diff', '--no-color', '--no-ext-diff', '--no-textconv', '--no-renames', '--src-prefix=a/', '--dst-prefix=b/'];
   if (typeof contextLines === 'number' && !Number.isNaN(contextLines)) {
     args.push(`-U${Math.max(0, contextLines)}`);
   }
@@ -1916,7 +1934,7 @@ const looksBinaryBySniff = async (absolutePath) => {
 
 const isBinaryDiff = async (directoryPath, filePath, staged) => {
   // Fast path: ask git for numstat. For binary, it returns "-\t-\t<path>".
-  const args = ['diff', '--numstat'];
+  const args = ['diff', '--no-ext-diff', '--no-textconv', '--numstat', '-z'];
   if (staged) {
     args.push('--cached');
   }
@@ -2023,7 +2041,7 @@ export async function getFileDiff(directory, { path: filePath, staged = false } 
   };
 }
 
-export async function revertFile(directory, filePath) {
+async function revertFileUnlocked(directory, filePath) {
   const directoryPath = normalizeDirectoryPath(directory);
   const git = await createGit(directoryPath);
   await assertManagedMutationBranch(directoryPath, git);
@@ -2084,7 +2102,7 @@ const assertPathInsideRepo = (directoryPath, filePath) => {
   }
 };
 
-export async function stageFile(directory, filePath) {
+async function stageFileUnlocked(directory, filePath) {
   const directoryPath = normalizeDirectoryPath(directory);
   const git = await createGit(directoryPath);
   await assertManagedMutationBranch(directoryPath, git);
@@ -2092,7 +2110,7 @@ export async function stageFile(directory, filePath) {
   await withIndexLockRetry(() => git.raw(['add', '--', filePath]));
 }
 
-export async function unstageFile(directory, filePath) {
+async function unstageFileUnlocked(directory, filePath) {
   const directoryPath = normalizeDirectoryPath(directory);
   const git = await createGit(directoryPath);
   await assertManagedMutationBranch(directoryPath, git);
@@ -2111,14 +2129,6 @@ const HUNK_ACTION_FLAGS = {
   discard: ['--reverse'],
 };
 
-const extractPatchTargetPath = (patch) => {
-  const matches = [...patch.matchAll(/^(?:-{3}|\+{3})\s+(?:[ab]\/)?([^\s\t]+)/gm)];
-  const realTargets = matches
-    .map((match) => match[1])
-    .filter((value) => value && value !== '/dev/null');
-  return realTargets[0] || null;
-};
-
 const writeTempPatchFile = async (patch) => {
   const tmpPath = path.join(os.tmpdir(), `openchamber-hunk-${Date.now()}-${Math.random().toString(36).slice(2)}.patch`);
   await fsp.writeFile(tmpPath, patch, 'utf8');
@@ -2128,9 +2138,7 @@ const writeTempPatchFile = async (patch) => {
 // Stage / unstage / discard a single diff hunk by applying a one-hunk patch with
 // `git apply` (--cached / --reverse matrix). A `--check` dry-run first surfaces a
 // clear "no longer applies" error if the index drifted.
-// Note: unlike upstream there is no index-mutation queue here, so rapid
-// concurrent applies are best-effort (matches DevRyan's existing stageFile).
-export async function applyHunk(directory, filePath, options = {}) {
+async function applyHunkUnlocked(directory, filePath, options = {}) {
   const action = options?.action;
   if (!action || !HUNK_ACTION_FLAGS[action]) {
     throw new Error('Invalid hunk action');
@@ -2148,15 +2156,15 @@ export async function applyHunk(directory, filePath, options = {}) {
   const git = await createGit(directoryPath);
   await assertManagedMutationBranch(directoryPath, git);
 
-  const targetPath = extractPatchTargetPath(patch);
-  if (targetPath && targetPath !== filePath) {
-    throw new Error('patch target path does not match the requested file');
-  }
+  if (path.isAbsolute(filePath) || filePath.includes('\0')) throw new Error('Invalid file path');
+  const current = await git.raw(['diff', '--no-color', '--no-ext-diff', '--no-textconv', '--no-renames',
+    '--src-prefix=a/', '--dst-prefix=b/', '-U3', ...(action === 'unstage' ? ['--cached'] : []), '--', `:(literal)${filePath}`]);
+  const canonicalPatch = currentHunkPatch(current, patch);
 
   const flags = HUNK_ACTION_FLAGS[action];
   let tmpPath = null;
   try {
-    tmpPath = await writeTempPatchFile(patch);
+    tmpPath = await writeTempPatchFile(canonicalPatch);
 
     try {
       await git.raw(['apply', ...flags, '--check', tmpPath]);
@@ -2192,7 +2200,7 @@ export async function collectDiffs(directory, files = []) {
   return results;
 }
 
-export async function pull(directory, options = {}) {
+async function pullUnlocked(directory, options = {}) {
   const git = await createGit(directory, { includeCredentials: true });
   await assertGitRemoteReady(git);
   const { principal, assignment } = resolveManagedGitAssignment(directory);
@@ -2290,7 +2298,7 @@ export async function countStashFiles(directory, refs = []) {
   await Promise.all(Array.from({ length: Math.min(concurrency, uniqueRefs.length) }, () => worker()));
   return counts;
 }
-export async function stashPush(directory, options = {}) {
+async function stashPushUnlocked(directory, options = {}) {
   const git = await createGit(directory);
   const message = typeof options.message === 'string' && options.message.trim()
     ? options.message.trim()
@@ -2319,7 +2327,7 @@ export async function stashPush(directory, options = {}) {
   }
 }
 
-export async function stashApply(directory, options = {}) {
+async function stashApplyUnlocked(directory, options = {}) {
   const git = await createGit(directory);
   const ref = typeof options.ref === 'string' && options.ref.trim() ? options.ref.trim() : 'stash@{0}';
   await withIndexLockRetry(() => git.raw(['stash', 'apply', ref]));
@@ -2333,7 +2341,7 @@ export async function stashDrop(directory, options = {}) {
   return { success: true, ref };
 }
 
-export async function stashPop(directory, options = {}) {
+async function stashPopUnlocked(directory, options = {}) {
   const ref = typeof options.ref === 'string' && options.ref.trim() ? options.ref.trim() : 'stash@{0}';
   await stashApply(directory, { ref });
   await stashDrop(directory, { ref });
@@ -2354,8 +2362,8 @@ export async function push(directory, options = {}) {
     if (options.branch && cleanBranchName(options.branch) !== currentBranch) {
       throw new Error('Managed workspaces may only push the checked-out branch');
     }
-    await git.raw([
-      'push',
+    const output = await git.raw([
+      'push', '--porcelain',
       assignment.remoteUrl || 'origin',
       `refs/heads/${currentBranch}:refs/heads/${currentBranch}`,
     ]);
@@ -2369,143 +2377,32 @@ export async function push(directory, options = {}) {
     } catch {
       // Best effort: a failed tracking-ref update only delays UI freshness.
     }
-    return {
-      success: true,
-      pushed: [{ local: currentBranch, remote: currentBranch }],
-      repo: directory,
-      ref: currentBranch,
-    };
+    // Keep the managed API's branch label; pushed[] retains exact porcelain refs.
+    return { ...parsePushResult(output, directory), ref: currentBranch };
   }
 
-  const describePushError = (error) => {
-    const fromNestedGit = error?.git && typeof error.git === 'object'
-      ? [error.git.message, error.git.stderr, error.git.stdout]
-      : [];
-    const candidates = [
-      error?.message,
-      error?.stderr,
-      error?.stdout,
-      ...fromNestedGit,
-    ]
-      .map((value) => String(value || '').trim())
-      .filter(Boolean);
-
-    return candidates[0] || 'Failed to push to remote';
-  };
-
-  const buildUpstreamOptions = (raw) => {
-    if (Array.isArray(raw)) {
-      return raw.includes('--set-upstream') ? raw : [...raw, '--set-upstream'];
-    }
-
-    if (raw && typeof raw === 'object') {
-      return { ...raw, '--set-upstream': null };
-    }
-
-    return ['--set-upstream'];
-  };
-
-  const looksLikeMissingUpstream = (error) => {
-    const message = String(error?.message || error?.stderr || '').toLowerCase();
-    return (
-      message.includes('has no upstream') ||
-      message.includes('no upstream') ||
-      message.includes('set-upstream') ||
-      message.includes('set upstream') ||
-      (message.includes('upstream') && message.includes('push') && message.includes('-u'))
-    );
-  };
-
-  const normalizePushResult = (result) => {
-    return {
-      success: true,
-      pushed: result.pushed,
-      repo: result.repo,
-      ref: result.ref,
-    };
-  };
-
-  const remote = String(options.remote || '').trim();
-
-  if (!remote && !options.branch) {
-    try {
-      await git.push();
-      return {
-        success: true,
-        pushed: [],
-        repo: directory,
-        ref: null,
-      };
-    } catch (error) {
-      if (!looksLikeMissingUpstream(error)) {
-        const message = describePushError(error);
-        console.error('Failed to push:', error);
-        throw new Error(message);
-      }
-
-      try {
-        const status = await git.status();
-        const branch = status.current;
-        const remotes = await git.getRemotes(true);
-        const fallbackRemote = remotes.find((entry) => entry.name === 'origin')?.name || remotes[0]?.name;
-        if (!branch || !fallbackRemote) {
-          const message = describePushError(error);
-          throw new Error(message);
-        }
-
-        const result = await git.push(fallbackRemote, branch, buildUpstreamOptions(options.options));
-        return normalizePushResult(result);
-      } catch (fallbackError) {
-        const message = describePushError(fallbackError);
-        console.error('Failed to push (including upstream fallback):', fallbackError);
-        throw new Error(message);
-      }
-    }
-  }
-
-  const remoteName = remote || 'origin';
-
-  // If caller didn't specify a branch, this is the common "Push"/"Commit & Push" path.
-  // When there's no upstream yet (typical for freshly-created worktree branches), publish it on first push.
-  if (!options.branch) {
-    try {
-      const status = await git.status();
-      if (status.current && !status.tracking) {
-        const result = await git.push(remoteName, status.current, buildUpstreamOptions(options.options));
-        return normalizePushResult(result);
-      }
-    } catch (error) {
-      // If we can't read status, fall back to the regular push path below.
-      console.warn('Failed to read git status before push:', error);
-    }
-  }
-
+  const branch = await getCheckedOutBranch(git);
+  const config = async (key) => String(await git.raw(['config', '--get', key]).catch(() => '')).trim();
+  const upstreamRemote = branch ? await config(`branch.${branch}.remote`) : '';
+  const remotes = await git.getRemotes();
+  const remote = String(options.remote || '').trim()
+    || (branch && await config(`branch.${branch}.pushRemote`))
+    || await config('remote.pushDefault')
+    || upstreamRemote
+    || remotes.find((entry) => entry.name === 'origin')?.name
+    || (remotes.length === 1 ? remotes[0].name : '');
+  if (!remote) throw gitStateError('GIT_PUSH_REMOTE_REQUIRED', 'Choose a push remote for this repository.');
+  if (remote.startsWith('-') || /[\r\n\0]/.test(remote)) throw new Error('Invalid push remote');
+  const flags = pushOptionArgs(options.options);
   try {
-    const result = await git.push(remoteName, options.branch, options.options || {});
-    return normalizePushResult(result);
+    const output = await git.raw(['push', '--porcelain', ...flags, remote, ...(options.branch ? [options.branch] : [])]);
+    return parsePushResult(output, directory);
   } catch (error) {
-    // Last-resort fallback: retry with upstream if the error suggests it's missing.
-    if (!looksLikeMissingUpstream(error)) {
-      const message = describePushError(error);
-      console.error('Failed to push:', error);
-      throw new Error(message);
-    }
-
-    try {
-      const status = await git.status();
-      const branch = options.branch || status.current;
-      if (!branch) {
-        console.error('Failed to push: missing branch name for upstream setup:', error);
-        throw error;
-      }
-
-      const result = await git.push(remoteName, branch, buildUpstreamOptions(options.options));
-      return normalizePushResult(result);
-    } catch (fallbackError) {
-      const message = describePushError(fallbackError);
-      console.error('Failed to push (including upstream fallback):', fallbackError);
-      throw new Error(message);
-    }
+    // Only the first publication of a branch may add upstream configuration.
+    // Other failures retain their original error and never select a new remote.
+    if (options.branch || !branch || !/has no upstream|no upstream branch/i.test(parseGitErrorText(error))) throw error;
+    const output = await git.raw(['push', '--porcelain', ...flags, '--set-upstream', remote, branch]);
+    return parsePushResult(output, directory);
   }
 }
 
@@ -2566,7 +2463,7 @@ export async function fetch(directory, options = {}) {
   }
 }
 
-export async function commit(directory, message, options = {}) {
+async function commitUnlocked(directory, message, options = {}) {
   const git = await createGit(directory);
 
   try {
@@ -2736,7 +2633,7 @@ async function filterActiveRemoteBranches(git, remoteBranches) {
   }
 }
 
-export async function createBranch(directory, branchName, options = {}) {
+async function createBranchUnlocked(directory, branchName, options = {}) {
   assertBranchCreationAllowed();
   const git = await createGit(directory);
 
@@ -2749,7 +2646,7 @@ export async function createBranch(directory, branchName, options = {}) {
   }
 }
 
-export async function checkoutBranch(directory, branchName) {
+async function checkoutBranchUnlocked(directory, branchName) {
   const git = await createGit(directory);
 
   try {
@@ -2772,12 +2669,14 @@ export async function getWorktrees(directory) {
       ['worktree', 'list', '--porcelain'],
       'Failed to list git worktrees'
     );
-    return parseWorktreePorcelain(result.stdout).map((entry) => ({
-      head: entry.head || '',
-      name: path.basename(entry.worktree || ''),
-      branch: entry.branch || '',
-      path: entry.worktree,
-    }));
+    return parseWorktreePorcelain(result.stdout)
+      .filter((entry) => !entry.prunable)
+      .map((entry) => ({
+        head: entry.head || '',
+        name: path.basename(entry.worktree || ''),
+        branch: entry.branch || '',
+        path: entry.worktree,
+      }));
   } catch (error) {
     console.warn('Failed to list worktrees, returning empty list:', error?.message || error);
     return [];
@@ -3886,7 +3785,7 @@ export async function removeRemote(directory, options = {}) {
   }
 }
 
-export async function rebase(directory, options = {}) {
+async function rebaseUnlocked(directory, options = {}) {
   const git = await createGit(directory);
 
   try {
@@ -3915,7 +3814,7 @@ export async function rebase(directory, options = {}) {
   }
 }
 
-export async function abortRebase(directory) {
+async function abortRebaseUnlocked(directory) {
   const git = await createGit(directory);
 
   try {
@@ -3928,7 +3827,7 @@ export async function abortRebase(directory) {
   }
 }
 
-export async function merge(directory, options = {}) {
+async function mergeUnlocked(directory, options = {}) {
   const git = await createGit(directory);
 
   try {
@@ -3953,7 +3852,7 @@ export async function merge(directory, options = {}) {
   }
 }
 
-export async function abortMerge(directory) {
+async function abortMergeUnlocked(directory) {
   const git = await createGit(directory);
 
   try {
@@ -3966,7 +3865,7 @@ export async function abortMerge(directory) {
   }
 }
 
-export async function continueRebase(directory) {
+async function continueRebaseUnlocked(directory) {
   const git = await createGit(normalizeDirectoryPath(directory), { nonInteractiveEditor: true });
   await assertManagedMutationBranch(directory, git);
   try {
@@ -3986,7 +3885,7 @@ export async function continueRebase(directory) {
   return { success: true, conflict: false };
 }
 
-export async function continueMerge(directory) {
+async function continueMergeUnlocked(directory) {
   const directoryPath = normalizeDirectoryPath(directory);
   const git = await createGit(directoryPath);
 
@@ -4071,3 +3970,37 @@ export async function getConflictDetails(directory) {
     throw error;
   }
 }
+
+export const revertFile = (directory, ...args) => withGitIndexQueue(directory, () => revertFileUnlocked(directory, ...args));
+
+export const stageFile = (directory, ...args) => withGitIndexQueue(directory, () => stageFileUnlocked(directory, ...args));
+
+export const unstageFile = (directory, ...args) => withGitIndexQueue(directory, () => unstageFileUnlocked(directory, ...args));
+
+export const applyHunk = (directory, ...args) => withGitIndexQueue(directory, () => applyHunkUnlocked(directory, ...args));
+
+export const pull = (directory, ...args) => withGitIndexQueue(directory, () => pullUnlocked(directory, ...args));
+
+export const stashPush = (directory, ...args) => withGitIndexQueue(directory, () => stashPushUnlocked(directory, ...args));
+
+export const stashApply = (directory, ...args) => withGitIndexQueue(directory, () => stashApplyUnlocked(directory, ...args));
+
+export const stashPop = (directory, ...args) => withGitIndexQueue(directory, () => stashPopUnlocked(directory, ...args));
+
+export const commit = (directory, ...args) => withGitIndexQueue(directory, () => commitUnlocked(directory, ...args));
+
+export const createBranch = (directory, ...args) => withGitIndexQueue(directory, () => createBranchUnlocked(directory, ...args));
+
+export const checkoutBranch = (directory, ...args) => withGitIndexQueue(directory, () => checkoutBranchUnlocked(directory, ...args));
+
+export const rebase = (directory, ...args) => withGitIndexQueue(directory, () => rebaseUnlocked(directory, ...args));
+
+export const abortRebase = (directory, ...args) => withGitIndexQueue(directory, () => abortRebaseUnlocked(directory, ...args));
+
+export const merge = (directory, ...args) => withGitIndexQueue(directory, () => mergeUnlocked(directory, ...args));
+
+export const abortMerge = (directory, ...args) => withGitIndexQueue(directory, () => abortMergeUnlocked(directory, ...args));
+
+export const continueRebase = (directory, ...args) => withGitIndexQueue(directory, () => continueRebaseUnlocked(directory, ...args));
+
+export const continueMerge = (directory, ...args) => withGitIndexQueue(directory, () => continueMergeUnlocked(directory, ...args));

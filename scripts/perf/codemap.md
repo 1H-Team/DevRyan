@@ -148,7 +148,7 @@ behavior.
   Activity Monitor Memory column; `ps` RSS undercounts compressed pages),
   `vm_stat`/swap/load pressure, `docker stats` for `devryan-*` containers,
   fd counts, log growth, the unauthenticated `/api/health` round trip, and
-  (with `--cookie <oc_ui_session>`) server heap, Electron app metrics, and busy
+  (with `--cookie <oc_ui_session_PORT=value>`) server heap, Electron app metrics, and busy
   session counts. Output is `samples.jsonl` + `events.jsonl` (spawn/exit/mark)
   under `.cache/perf/multi-session/<label>/`; append lines to `marks.txt` to
   annotate the timeline. It never signals or reconfigures the app.
@@ -258,3 +258,5 @@ QA controls also seed paginated histories and configure the next prompt's reject
 
 The optional `thinkingModels` fixture catalog is used only by the thinking-slider
 QA scenario; ordinary performance and mobile fixture catalogs remain unchanged.
+
+- `ui-session-cookie.mjs` validates the full instance cookie pair for authenticated samplers. Use the actual listening-port cookie name, including behind proxies; credentials are never included in output.

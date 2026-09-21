@@ -54,6 +54,21 @@ test('revert leaves a foreign execution running and merges its late result from 
   expect(f.events.some((event) => event.phase === 'committed' && event.transactionID)).toBe(true);
 }, 60_000);
 
+test('Revert and Redo preserve explicit partial publication conflicts in the host response', async () => {
+  const f = await fixture(); await f.write(Buffer.from([0, 1]));
+  const a = await f.begin('a'), b = await f.begin('b');
+  await fs.writeFile(path.join(a.viewDirectory, 'x'), Buffer.from([0, 2]));
+  await fs.writeFile(path.join(b.viewDirectory, 'x'), Buffer.from([0, 3]));
+  await f.runtime.finish({ directory: f.directory, token: a.token });
+  await f.runtime.finish({ directory: f.directory, token: b.token });
+  const coordinator = f.create();
+  expect(await coordinator.revert({ directory: f.directory, sessionID: 'b', messageID: 'pb' }))
+    .toMatchObject({ outcome: 'partial', conflicts: [{ path: 'x' }] });
+  expect(await coordinator.redo({ directory: f.directory, sessionID: 'b' }))
+    .toMatchObject({ outcome: 'partial', conflicts: [{ path: 'x' }] });
+  expect(await fs.readFile(path.join(f.directory, 'x'))).toEqual(Buffer.from([0, 2]));
+}, 60_000);
+
 test('cancellation acceptance without authoritative termination cannot change files or conversation', async () => {
   const f = await fixture(); await f.write('before');
   const a = await f.begin('a'); await fs.writeFile(path.join(a.viewDirectory, 'x'), 'after');

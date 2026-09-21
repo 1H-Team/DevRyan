@@ -1,0 +1,142 @@
+{
+  "kind": "packaged optional-auth-and-push module startup",
+  "node": "v26.0.0",
+  "platform": "darwin",
+  "arch": "arm64",
+  "scope": "Fresh processes importing the npm-packed auth and notification entrypoints. Eager baseline preloads exactly the three formerly eager dependencies. This isolates module startup cost, not end-to-end UI readiness.",
+  "summary": {
+    "eager": {
+      "samples": 12,
+      "medianMs": 82.61687450000001,
+      "medianRSS": 73613312.0
+    },
+    "lazy": {
+      "samples": 12,
+      "medianMs": 10.853333499999998,
+      "medianRSS": 51904512.0
+    }
+  },
+  "records": [
+    {
+      "mode": "eager",
+      "ms": 138.092375,
+      "rss": 73498624
+    },
+    {
+      "mode": "lazy",
+      "ms": 10.802416999999998,
+      "rss": 51953664
+    },
+    {
+      "mode": "eager",
+      "ms": 78.940792,
+      "rss": 73596928
+    },
+    {
+      "mode": "lazy",
+      "ms": 10.517458000000005,
+      "rss": 52002816
+    },
+    {
+      "mode": "eager",
+      "ms": 81.76495800000001,
+      "rss": 73465856
+    },
+    {
+      "mode": "lazy",
+      "ms": 10.309207999999998,
+      "rss": 52035584
+    },
+    {
+      "mode": "eager",
+      "ms": 79.44566699999999,
+      "rss": 73564160
+    },
+    {
+      "mode": "lazy",
+      "ms": 10.427875,
+      "rss": 52019200
+    },
+    {
+      "mode": "eager",
+      "ms": 99.32012499999999,
+      "rss": 73629696
+    },
+    {
+      "mode": "lazy",
+      "ms": 10.325958,
+      "rss": 51838976
+    },
+    {
+      "mode": "eager",
+      "ms": 80.7915,
+      "rss": 73809920
+    },
+    {
+      "mode": "lazy",
+      "ms": 10.904249999999998,
+      "rss": 51937280
+    },
+    {
+      "mode": "eager",
+      "ms": 79.51541700000001,
+      "rss": 73711616
+    },
+    {
+      "mode": "lazy",
+      "ms": 11.273459000000003,
+      "rss": 52019200
+    },
+    {
+      "mode": "eager",
+      "ms": 83.46879100000001,
+      "rss": 73547776
+    },
+    {
+      "mode": "lazy",
+      "ms": 10.766209,
+      "rss": 51838976
+    },
+    {
+      "mode": "eager",
+      "ms": 80.973875,
+      "rss": 73416704
+    },
+    {
+      "mode": "lazy",
+      "ms": 11.054457999999997,
+      "rss": 51871744
+    },
+    {
+      "mode": "eager",
+      "ms": 98.17345799999998,
+      "rss": 73875456
+    },
+    {
+      "mode": "lazy",
+      "ms": 71.81216599999999,
+      "rss": 51494912
+    },
+    {
+      "mode": "eager",
+      "ms": 405.912333,
+      "rss": 74088448
+    },
+    {
+      "mode": "lazy",
+      "ms": 42.68062499999999,
+      "rss": 51838976
+    },
+    {
+      "mode": "eager",
+      "ms": 220.91175000000004,
+      "rss": 73990144
+    },
+    {
+      "mode": "lazy",
+      "ms": 27.680083999999994,
+      "rss": 51871744
+    }
+  ],
+  "aggregation": "For even sample counts, median is the mean of the two middle sorted values."
+}

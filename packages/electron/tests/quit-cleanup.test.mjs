@@ -3,6 +3,29 @@ import test from 'node:test';
 
 import { finishQuitAfterCleanup } from '../quit-cleanup.mjs';
 
+test('update cleanup lets only the updater request the eventual quit', async () => {
+  const calls = [];
+  const result = await finishQuitAfterCleanup({ owner: 'updater',
+    checkpointBotRuns: () => calls.push('checkpoint'), cleanupOwnedResources: () => calls.push('owned'),
+    requestQuit: () => calls.push('install'), forceExit: () => calls.push('exit'),
+  });
+  assert.equal(result, 'quit'); assert.deepEqual(calls, ['checkpoint', 'owned', 'install']);
+});
+
+test('update cleanup failure or timeout never quits or starts installation', async () => {
+  for (const fail of [false, true]) {
+    const calls = []; let timeout;
+    const result = finishQuitAfterCleanup({ owner: 'updater',
+      cleanupOwnedResources: () => fail ? Promise.reject(new Error('failure')) : new Promise(() => {}),
+      requestQuit: () => calls.push('install'), forceExit: () => calls.push('exit'),
+      onCleanupError: () => calls.push('error'),
+      scheduleTimeout: (callback) => { timeout = callback; return 1; }, cancelTimeout: () => {},
+    });
+    await Promise.resolve(); if (!fail) timeout();
+    assert.equal(await result, 'blocked'); assert.deepEqual(calls, ['error']);
+  }
+});
+
 test('waits for owned-resource cleanup before requesting normal quit', async () => {
   let resolveCleanup;
   let timeoutCallback;

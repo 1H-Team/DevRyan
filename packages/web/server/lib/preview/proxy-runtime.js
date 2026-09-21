@@ -1,6 +1,6 @@
 const DEFAULT_TARGET_TTL_MS = 30 * 60 * 1000;
 const TOKEN_COOKIE_NAME = 'oc_preview_token';
-const AUTH_SESSION_COOKIE_NAMES = ['oc_app_session', 'oc_ui_session', 'oc_tunnel_session'];
+import { requestUiSessionCookieName } from '../ui-auth/session-cookie.js';
 const isReservedPreviewCookieName = (name) => {
   const normalized = String(name || '').toLowerCase();
   return normalized.startsWith('oc_')
@@ -1566,7 +1566,7 @@ export const createPreviewProxyRuntime = ({
 
   const requestOwnerKey = (req) => {
     const cookies = parseCookieHeader(req?.headers?.cookie);
-    for (const cookieName of AUTH_SESSION_COOKIE_NAMES) {
+    for (const cookieName of ['oc_app_session', requestUiSessionCookieName(req), 'oc_tunnel_session'].filter(Boolean)) {
       const token = cookies.get(cookieName);
       if (!token) continue;
       if (typeof crypto.createHash === 'function') {

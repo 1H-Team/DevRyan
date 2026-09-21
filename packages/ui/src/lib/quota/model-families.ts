@@ -158,7 +158,7 @@ export function getDefaultModels(
     // Handle gemini/ and antigravity/ prefixes
     const modelName = lower.includes('/') ? lower.split('/')[1] : lower;
     // Gemini 3.x
-    if (modelName.startsWith('gemini-3-')) return true;
+    if (/^gemini-3(?:\.\d+)?-/.test(modelName)) return true;
     // All Claude models
     if (modelName.startsWith('claude-')) return true;
     return false;

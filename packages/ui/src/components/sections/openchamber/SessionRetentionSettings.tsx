@@ -278,6 +278,8 @@ export const SessionRetentionSettings: React.FC = () => {
   const sessionRetentionAction = useUIStore((state) => state.sessionRetentionAction);
   const setAutoDeleteEnabled = useUIStore((state) => state.setAutoDeleteEnabled);
   const setAutoDeleteAfterDays = useUIStore((state) => state.setAutoDeleteAfterDays);
+  const archivedOnly = useUIStore((state) => state.sessionRetentionArchivedOnly);
+  const setArchivedOnly = useUIStore((state) => state.setSessionRetentionArchivedOnly);
   const setSessionRetentionAction = useUIStore((state) => state.setSessionRetentionAction);
 
   const { candidates, isRunning, runCleanup, action } = useSessionAutoCleanup({ autoRun: false });
@@ -286,6 +288,10 @@ export const SessionRetentionSettings: React.FC = () => {
   const handleRunCleanup = React.useCallback(async () => {
     const result = await runCleanup({ force: true });
 
+    if (result.skippedReason && !['no-candidates', 'cooldown'].includes(result.skippedReason)) {
+      toast.message(t('settings.openchamber.sessionRetention.skipped'), { description: result.skippedReason });
+      return;
+    }
     if (result.completedIds.length === 0 && result.failedIds.length === 0) {
       toast.message(
         result.action === 'archive'
@@ -399,6 +405,11 @@ export const SessionRetentionSettings: React.FC = () => {
             ))}
           </div>
         </div>
+        <div className="flex items-center gap-2 py-1.5">
+          <Checkbox checked={archivedOnly} onChange={setArchivedOnly} disabled={action !== 'delete'}
+            ariaLabel={t('settings.openchamber.sessionRetention.archivedOnly')} />
+          <span className="typography-ui-label">{t('settings.openchamber.sessionRetention.archivedOnly')}</span>
+        </div>
       </section>
 
       <div className="mt-1 px-2 py-1.5 space-y-1">
@@ -412,7 +423,7 @@ export const SessionRetentionSettings: React.FC = () => {
               variant="outline"
               size="xs"
               onClick={handleRunCleanup}
-              disabled={isRunning}
+              disabled={isRunning || !autoDeleteEnabled}
               className="!font-normal normal-case"
             >
               {isRunning ? t('settings.openchamber.sessionRetention.actions.cleaningUp') : t('settings.openchamber.sessionRetention.actions.runCleanupNow')}

@@ -17,11 +17,12 @@
 // secondary column because it undercounts compressed and swapped pages.
 //
 // Optional authenticated server metrics (server heap, Electron app metrics,
-// busy session count) need the UI session cookie: --cookie <oc_ui_session> or
+// busy session count) need the UI session cookie: --cookie <oc_ui_session_PORT=value> or
 // DEVRYAN_UI_SESSION_COOKIE. Without it the sampler still records everything
 // visible from the OS plus the unauthenticated /api/health probe.
 
 import { execFile } from 'node:child_process';
+import { uiSessionCookieHeader } from './ui-session-cookie.mjs';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
@@ -45,7 +46,7 @@ const ORPHAN_PATTERNS = [
 const SYSTEM_TOP_COUNT = 10;
 const MAX_FOOTPRINT_PIDS = 80;
 const COMMAND_PREVIEW_LENGTH = 160;
-const COOKIE_NAME = 'oc_ui_session';
+
 
 // ---------------------------------------------------------------------------
 // Argument parsing
@@ -99,6 +100,7 @@ export const parseSamplerArguments = (argv, env = process.env) => {
     }
   }
   if (!/^[A-Za-z0-9._-]+$/.test(options.label)) throw new Error('--label may only contain letters, digits, ., _ and -');
+  if (options.cookie) uiSessionCookieHeader(options.cookie);
   return options;
 };
 
@@ -111,7 +113,7 @@ const HELP = `Usage: node scripts/perf/multi-session-sampler.mjs [options]
   --fds-every <n>         lsof fd counts for main + opencode every n ticks (default 12, 0 disables)
   --categories-every <n>  footprint category breakdown every n ticks (default 12, 0 disables)
   --server <origin>       DevRyan web server origin (default http://127.0.0.1:3000)
-  --cookie <value>        ${COOKIE_NAME} cookie value for authenticated server metrics
+  --cookie <name=value>        full instance cookie name=value for authenticated server metrics
   --out <dir>             output root (default .cache/perf/multi-session)
   --quiet                 no per-tick console line
 
@@ -364,7 +366,7 @@ const countFds = async (pid) => {
 const fetchJson = async (url, { cookie = null, timeoutMs = 4000 } = {}) => {
   const startedAt = performance.now();
   const headers = { accept: 'application/json' };
-  if (cookie) headers.cookie = `${COOKIE_NAME}=${cookie}`;
+  if (cookie) headers.cookie = uiSessionCookieHeader(cookie);
   try {
     const response = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
     let body = null;

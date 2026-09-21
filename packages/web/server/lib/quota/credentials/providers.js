@@ -33,7 +33,7 @@ const normalizeOpenCodeZenCredential = (value) => {
   if (!isRecord(value) || !hasOnlyKeys(value, ['workspaceId', 'authCookie'])) return null;
   const workspaceId = cleanValue(value.workspaceId);
   const authCookie = cleanValue(value.authCookie);
-  if (!/^wrk_[0-9A-HJKMNP-TV-Z]{26}$/.test(workspaceId) || /[\s;]/.test(authCookie)) return null;
+  if (!/^wrk_[0-9A-HJKMNP-TV-Z]{26}$/.test(workspaceId) || !authCookie || /[\s;]/.test(authCookie)) return null;
   return { workspaceId, authCookie };
 };
 

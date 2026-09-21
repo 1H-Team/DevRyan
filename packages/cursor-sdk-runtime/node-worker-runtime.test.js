@@ -299,6 +299,61 @@ describe('Cursor SDK worker runtime config', () => {
     });
   });
 
+  test('persists one conflict notice after native publication before reporting a successful Cursor run idle', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-publication-conflict-'));
+    const capture = { calls: [], input: null };
+    const events = [];
+    let publish;
+    const publication = new Promise((resolve) => { publish = resolve; });
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      env: {},
+      readAuth: () => ({ 'cursor-acp': { key: 'fixture-key' } }),
+      useNodeWorkerForPrompts: true,
+      getWorkspaceDiff: async () => '',
+      emitEvent: (event) => { events.push(event); },
+      executionAdapter: {
+        beforePrompt: async () => null,
+        start: async ({ command, args, inputForLease }) => ({
+          workerInput: inputForLease({ workingDirectory: tempDir }),
+          child: createFakeWorkerSpawn(capture)(command, args, { cwd: tempDir }),
+          lease: { workingDirectory: tempDir },
+          result: publication,
+          cancel: () => {},
+        }),
+      },
+    });
+    try {
+      await runtime.handlePromptAsync({ sessionID: 'ses_conflict', directory: tempDir, body: {
+        model: { providerID: 'cursor-acp', modelID: 'composer-2.5' },
+        messageID: 'msg_conflict', parts: [{ type: 'text', text: 'Edit the binary fixture.' }],
+      } });
+      await waitFor(() => capture.input);
+      expect(runtime.getSessionStatus().ses_conflict.type).toBe('busy');
+      publish({ outcome: 'partial', conflicts: [{ path: 'binary.dat' }, { path: 'binary.dat' }] });
+      await waitFor(() => runtime.getSessionStatus().ses_conflict?.type === 'idle', 5000);
+      const records = await runtime.getSessionMessages('ses_conflict');
+      const assistant = records.find((record) => record.info.role === 'assistant');
+      expect(assistant.parts.filter((part) => part.type === 'text').map((part) => part.text)).toEqual([
+        'worker ok',
+        'Some file changes could not be published: binary.dat. Existing contents were preserved and the conflicting proposed changes were retained for recovery.',
+      ]);
+      const noticeIndex = events.findIndex((event) => event.type === 'message.part.updated'
+        && event.properties.part.text?.startsWith('Some file changes could not be published'));
+      const idleIndex = events.findIndex((event) => event.type === 'session.status' && event.properties.status.type === 'idle');
+      expect(noticeIndex).toBeGreaterThan(-1);
+      expect(idleIndex).toBeGreaterThan(noticeIndex);
+    } finally {
+      publish({});
+      await runtime.dispose();
+    }
+    const restored = createCursorSdkRuntime({ storageDir: tempDir, env: {}, getWorkspaceDiff: async () => '' });
+    try {
+      const records = await restored.getSessionMessages('ses_conflict');
+      expect(records.flatMap((record) => record.parts).filter((part) => part.text?.startsWith('Some file changes could not be published'))).toHaveLength(1);
+    } finally { await restored.dispose(); }
+  });
+
   test('generates OpenCode-compatible message identities when the caller omits one', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-worker-generated-id-'));
     const capture = { calls: [], input: null };
@@ -1953,4 +2008,56 @@ describe('Cursor SDK worker runtime config', () => {
     }
     await runtime.dispose();
   });
+  test('freezes Cursor worker input before owned preparation and checks the remapped payload before spawn', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-frozen-'));
+    const capture = { calls: [], input: null };
+    const definitions = { Helper: { description: 'fixture', prompt: 'original', model: 'inherit' } };
+    let preflight;
+    const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: {},
+      readAuth: () => ({ 'cursor-acp': { key: 'fixture-key' } }), getWorkspaceDiff: async () => '',
+      resolveAgentDefinitions: async () => definitions,
+      executionAdapter: { beforePrompt: async () => null,
+        start: async ({ command, args, input, inputForLease }) => {
+          preflight = JSON.parse(input); definitions.Helper.prompt = 'changed during preparation';
+          await Promise.resolve();
+          const lease = { workingDirectory: '/private/fixture' }, workerInput = inputForLease(lease);
+          return { lease, workerInput, child: createFakeWorkerSpawn(capture)(command, args, { cwd: tempDir }), result: Promise.resolve({}), cancel() {} };
+        } },
+    });
+    try {
+      await runtime.handlePromptAsync({ sessionID: 'ses_frozen', directory: tempDir, body: {
+        model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, messageID: 'msg_frozen', parts: [{ type: 'text', text: 'fixture task' }],
+      } });
+      await waitFor(() => capture.input, 5000);
+      expect(preflight.agents.Helper.prompt).toBe('original');
+      expect(capture.input.agents.Helper.prompt).toBe('original'); expect(capture.input.directory).toBe('/private/fixture');
+      await waitFor(() => runtime.getSessionStatus().ses_frozen?.type === 'idle', 5000);
+    } finally { await runtime.dispose(); }
+  });
+
+  test('Cursor rejects oversized history before admission and oversized final input before spawn', async () => {
+    for (const stage of ['preflight', 'final']) {
+      tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-bound-'));
+      let admissions = 0, spawns = 0;
+      const events = [];
+      const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: {},
+        readAuth: () => ({ 'cursor-acp': { key: 'fixture-key' } }), getWorkspaceDiff: async () => '', emitEvent: event => events.push(event),
+        executionAdapter: { beforePrompt: async () => null,
+          start: async ({ inputForLease }) => {
+            admissions++;
+            inputForLease({ workingDirectory: 'x'.repeat(16 * 1024 * 1024) });
+            spawns++; throw new Error('must not spawn');
+          } },
+      });
+      try {
+        await runtime.handlePromptAsync({ sessionID: `ses_${stage}`, directory: tempDir, body: {
+          model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, messageID: `msg_${stage}`,
+          parts: [{ type: 'text', text: stage === 'preflight' ? '🙂'.repeat(4 * 1024 * 1024) : 'small' }],
+        } });
+        await waitFor(() => events.some(event => JSON.stringify(event).includes('payload_too_large')), 10000);
+        expect(admissions).toBe(stage === 'preflight' ? 0 : 1); expect(spawns).toBe(0);
+      } finally { await runtime.dispose(); }
+    }
+  });
+
 });

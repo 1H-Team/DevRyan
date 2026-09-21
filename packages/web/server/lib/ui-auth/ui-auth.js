@@ -1,11 +1,12 @@
 import crypto from 'crypto';
-import { SignJWT, jwtVerify } from 'jose';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { createUiPasskeys } from './ui-passkeys.js';
+import { LEGACY_UI_SESSION_COOKIE, requestUiSessionCookieName } from './session-cookie.js';
 
-const SESSION_COOKIE_NAME = 'oc_ui_session';
+let jose;
+const loadJose = () => jose ??= import('jose');
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const TRUSTED_DEVICE_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -327,18 +328,23 @@ function persistJwtSecret(secret) {
 
 export const createUiAuth = ({
   password,
-  cookieName = SESSION_COOKIE_NAME,
+  cookieName,
   sessionTtlMs = SESSION_TTL_MS,
   readSettingsFromDiskMigrated,
 } = {}) => {
   const normalizedPassword = normalizePassword(password);
+  const sessionCookie = (req) => {
+    const name = cookieName ?? requestUiSessionCookieName(req);
+    if (!name) throw new Error('The UI session listening port is unavailable');
+    return name;
+  };
 
   if (!normalizedPassword) {
     const setSessionCookie = (req, res, token, ttlMs = sessionTtlMs) => {
       const secure = isSecureRequest(req);
       const maxAgeSeconds = Math.floor(ttlMs / 1000);
       const header = buildCookie({
-        name: cookieName,
+        name: sessionCookie(req),
         value: encodeURIComponent(token),
         maxAge: maxAgeSeconds,
         secure,
@@ -348,8 +354,8 @@ export const createUiAuth = ({
 
     const ensureSessionToken = async (req, res) => {
       const cookies = parseCookies(req.headers.cookie);
-      if (cookies[cookieName]) {
-        return cookies[cookieName];
+      if (cookies[sessionCookie(req)]) {
+        return cookies[sessionCookie(req)];
       }
       const token = crypto.randomBytes(32).toString('base64url');
       setSessionCookie(req, res, token, sessionTtlMs);
@@ -426,8 +432,8 @@ export const createUiAuth = ({
 
   const getTokenFromRequest = (req) => {
     const cookies = parseCookies(req.headers.cookie);
-    if (cookies[cookieName]) {
-      return cookies[cookieName];
+    if (cookies[sessionCookie(req)]) {
+      return cookies[sessionCookie(req)];
     }
     return null;
   };
@@ -436,7 +442,7 @@ export const createUiAuth = ({
     const secure = isSecureRequest(req);
     const maxAgeSeconds = Math.floor(ttlMs / 1000);
     const header = buildCookie({
-      name: cookieName,
+      name: sessionCookie(req),
       value: encodeURIComponent(token),
       maxAge: maxAgeSeconds,
       secure,
@@ -447,12 +453,12 @@ export const createUiAuth = ({
   const clearSessionCookie = (req, res) => {
     const secure = isSecureRequest(req);
     const header = buildCookie({
-      name: cookieName,
+      name: sessionCookie(req),
       value: '',
       maxAge: 0,
       secure,
     });
-    res.setHeader('Set-Cookie', header);
+    res.setHeader('Set-Cookie', [header, buildCookie({ name: LEGACY_UI_SESSION_COOKIE, value: '', maxAge: 0, secure })]);
   };
 
   const verifyPassword = (candidate) => {
@@ -471,12 +477,13 @@ export const createUiAuth = ({
     }
   };
 
-  const isSessionValid = async (token) => {
+  const isSessionValid = async (token, req) => {
     if (!token) {
       return false;
     }
     try {
-      await jwtVerify(token, jwtSecret);
+      const { jwtVerify } = await loadJose();
+      await jwtVerify(token, jwtSecret, { audience: sessionCookie(req) });
       return true;
     } catch {
       return false;
@@ -485,8 +492,10 @@ export const createUiAuth = ({
 
   const issueSession = async (req, res, { trustDevice = false } = {}) => {
     const ttlMs = resolveSessionTtlMs(trustDevice);
+    const { SignJWT } = await loadJose();
     const token = await new SignJWT({ type: 'ui-session' })
       .setProtectedHeader({ alg: 'HS256' })
+      .setAudience(sessionCookie(req))
       .setIssuedAt()
       .setExpirationTime(ttlMs / 1000 + 's')
       .sign(jwtSecret);
@@ -511,7 +520,7 @@ export const createUiAuth = ({
       return next();
     }
     const token = getTokenFromRequest(req);
-    if (await isSessionValid(token)) {
+    if (await isSessionValid(token, req)) {
       return next();
     }
     clearSessionCookie(req, res);
@@ -520,7 +529,7 @@ export const createUiAuth = ({
 
   const handleSessionStatus = async (req, res) => {
     const token = getTokenFromRequest(req);
-    if (await isSessionValid(token)) {
+    if (await isSessionValid(token, req)) {
       res.json({ authenticated: true });
       return;
     }
@@ -674,7 +683,7 @@ export const createUiAuth = ({
     handleResetAuth,
     ensureSessionToken: async (req, _res) => {
       const token = getTokenFromRequest(req);
-      return (await isSessionValid(token)) ? token : null;
+      return (await isSessionValid(token, req)) ? token : null;
     },
     dispose,
   };

@@ -136,9 +136,10 @@ export function createSessionRevertCoordinator({ runtime, conversation, executio
     const result = await resume(directory, tx.id);
     const session = await verified(directory, input.sessionID);
     const verification = { ok: true, transactionID: tx.id };
-    if (redo) return { ...session, session, restored: result.files, sessions: result.sessions.map(({ id }) => ({ id })), verification };
+    const publication = result.outcome === 'partial' ? { outcome: 'partial', conflicts: result.conflicts ?? [] } : {};
+    if (redo) return { ...session, session, restored: result.files, sessions: result.sessions.map(({ id }) => ({ id })), verification, ...publication };
     return { ...session, session, reverted: { files: result.files, sessions: result.sessions },
-      verification, redoAvailable: result.redoAvailable };
+      verification, redoAvailable: result.redoAvailable, ...publication };
   };
   return {
     revert: (input) => run(input, false),

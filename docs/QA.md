@@ -1,5 +1,11 @@
 # Isolated Electron and web QA
 
+For manual reclamation of superseded QA application binaries while preserving
+reports and required native donors, see [local storage cleanup](STORAGE_CLEANUP.md).
+New packages record creation/completion and optional retention pins in
+`storage-retention.json`. Historical or partially removed packages cannot be used
+as runnable acceptance artifacts; rebuild them or select a retained package.
+
 Run from the repository root using the Node and Bun versions declared in `package.json`. Install the lockfile dependencies with `bun install --frozen-lockfile`. No extra QA dependency is required; the browser driver reuses Electron and `ws` already installed in its workspace.
 
 ```sh
@@ -473,3 +479,5 @@ or installed-app verification.
 The [Cursor usage audit](audits/2026-09-15-cursor-usage.md) records SDK 1.0.28 model selections, the fixed two-pool budget, observed limitations and rollback. `scripts/qa/cursor-usage-live.mjs` is explicit opt-in and never runs as part of deterministic validation. It compares direct SDK execution with frozen control/candidate shared runtimes in private `.cache/qa/` workspaces. The runner keeps failed consumption, rotates per-run question scopes, checks completed files/tests and reload/idle behavior, and stops admission on missing quota, changed account evidence or reserved headroom. `lifecycle` adds bounded native question, subagent, cancellation/resume and title checks. Its measurements do not establish browser or packaged Electron acceptance; run isolated host QA separately. Never infer provider cache hits from local Agent-cache reuse, turn occupancy from cumulative run totals, or zero consumption from missing billing data.
 
 Run `DEVRYAN_QA_SCENARIO=execution-failure bun scripts/qa/run.mjs` (and add `DEVRYAN_QA_RUNTIME=electron` for desktop) to replay a session error after idle without an assistant, reload its persistent notice, and verify failed grouped tools. Build and stage current assets first. The fixture uses no live provider and no installed-app data.
+
+Use `DEVRYAN_QA_SCENARIO=skill-loading bun run qa` (plus `DEVRYAN_QA_RUNTIME=electron` for desktop) for the isolated skill-loading, preparation-failure, reload and loaded-state journey. It retains the shared chat smoke checks and uses only the loopback fixture.

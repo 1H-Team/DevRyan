@@ -211,7 +211,7 @@ describe('session sidebar archive reflow animation wiring', () => {
     // AnimatePresence block appears before the motion row's closing tag.
     const motionRowOpen = itemSource.indexOf('<SessionSidebarMotionRow>');
     const motionRowClose = itemSource.indexOf('</SessionSidebarMotionRow>');
-    const childrenAnimatePresence = itemSource.indexOf('hasChildren ?', motionRowOpen);
+    const childrenAnimatePresence = itemSource.indexOf('hasChildren && !flatRow ?', motionRowOpen);
     expect(motionRowOpen).toBeGreaterThan(-1);
     expect(childrenAnimatePresence).toBeGreaterThan(motionRowOpen);
     expect(motionRowClose).toBeGreaterThan(childrenAnimatePresence);
@@ -344,7 +344,9 @@ describe('session sidebar archive reflow animation wiring', () => {
     expect(source).toContain('const shouldReduceMotion = useReducedMotion();');
     expect(source).toContain('const isVisibleSessionCountDropping = visibleSessions.length < prevVisibleCountRef.current;');
     expect(source).toContain('const shouldDeferNoChats = !group.isArchivedBucket && isVisibleSessionCountDropping;');
-    expect(source).toContain('<AnimatePresence initial={false} onExitComplete={() => setIsExitAnimating(false)}>');
+    expect(source).toContain('onExitComplete={() => setIsExitAnimating(false)}');
+    const virtualList = readFileSync(join(testDir, 'VirtualSessionList.tsx'), 'utf8');
+    expect(virtualList).toContain('<AnimatePresence initial={false} onExitComplete={onExitComplete}>');
     expect(source).toContain('const emptyStateContent = (');
     expect(source).toContain('const emptyState = shouldReduceMotion ? emptyStateContent : (');
     expect(source).toContain('<AnimatePresence initial={false}>');

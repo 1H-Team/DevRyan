@@ -265,6 +265,7 @@ export const createSettingsHelpers = (dependencies) => {
       const normalizedDays = Math.max(1, Math.min(365, Math.round(candidate.autoDeleteAfterDays)));
       result.autoDeleteAfterDays = normalizedDays;
     }
+    if (typeof candidate.sessionRetentionArchivedOnly === 'boolean') result.sessionRetentionArchivedOnly = candidate.sessionRetentionArchivedOnly;
     if (candidate.sessionRetentionAction === 'archive' || candidate.sessionRetentionAction === 'delete') {
       result.sessionRetentionAction = candidate.sessionRetentionAction;
     }

@@ -11,3 +11,6 @@ Settings navigation selects a section; section reads/writes config through hooks
 
 ## Integration
 Integrated with views, lib adapters, and settings/auth stores.
+
+- `providerCatalogConnection.ts` owns credential-free pending API-key connections and the bounded catalog-readiness loop shared with OAuth. Settings keep a pending row visible, retry after configuration application, and clear pending state after readiness or disconnect. `useConfigStore.loadProviders` treats explicit `directory: null` as global and prevents older requests from overwriting a forced refresh.
+- `ManagedQuotaCredentials.tsx` separates saved/validated status from usage-refresh errors, displays safe server errors inline, and preserves existing credentials on rejected replacements. Its mounted fixture tests exercise save, discovery, refresh failure/recovery, and remount without reading user credentials.

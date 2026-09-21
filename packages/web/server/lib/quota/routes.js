@@ -24,6 +24,7 @@ import {
 import {
   resolveOpenCodeZenCredential,
   validateOpenCodeZenCredential,
+  OpenCodeZenCredentialError,
 } from './providers/opencode.js';
 import {
   createClaudeProxyBaseUrlResolver,
@@ -244,6 +245,10 @@ export function registerQuotaRoutes(app, {
       credentialRuntime.writeCredential(providerId, validatedCredential ?? credential);
       res.json(credentialStatus(providerId, credentialRuntime));
     } catch (error) {
+      if (error instanceof OpenCodeZenCredentialError) {
+        res.status(error.status).json({ code: error.code, error: error.message });
+        return;
+      }
       if (error instanceof QuotaCredentialError && error.code === 'UNSUPPORTED_PROVIDER') {
         sendCredentialError(res, 'UNSUPPORTED_PROVIDER', 404);
         return;
@@ -266,7 +271,11 @@ export function registerQuotaRoutes(app, {
       }
       await credentialRuntime.validate(providerId, credential);
       res.json({ valid: true });
-    } catch {
+    } catch (error) {
+      if (error instanceof OpenCodeZenCredentialError) {
+        res.status(error.status).json({ code: error.code, error: error.message });
+        return;
+      }
       sendCredentialError(res, 'INVALID_CREDENTIAL', 400);
     }
   });

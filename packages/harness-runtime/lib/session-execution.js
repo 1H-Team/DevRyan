@@ -151,7 +151,9 @@ export async function startReadOnlySessionExecution({ launcher, storage, environ
     const env = { ...input.env, HOME: scratch, XDG_CONFIG_HOME: path.join(scratch, 'config'),
       XDG_DATA_HOME: path.join(scratch, 'data'), XDG_STATE_HOME: path.join(scratch, 'state'), XDG_CACHE_HOME: path.join(scratch, 'cache') };
     for (const key of Object.keys(env)) if (/^(DEVRYAN_.*(?:TOKEN|URL)|OPENCODE_SERVER_(?:PASSWORD|USERNAME))$/.test(key)) delete env[key];
-    handle = await startSessionExecution({ ...input, launcher, lease, env: environment ? await environment(env, lease) : env });
+    const workerInput = input.inputForLease ? await input.inputForLease(lease) : input.input;
+    handle = await startSessionExecution({ ...input, input: workerInput, launcher, lease, env: environment ? await environment(env, lease) : env });
+    handle.workerInput = workerInput;
   } catch (cause) { await fs.rm(root, { recursive: true, force: true }); throw cause; }
   const result = handle.result.then(async (receipt) => {
     // A missing acknowledgement leaves the private view available for recovery.

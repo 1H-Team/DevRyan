@@ -19,6 +19,7 @@ import { useI18n } from '@/lib/i18n';
 interface SessionFolderItemProps<TSessionNode> {
   folder: SessionFolder;
   sessions: TSessionNode[];
+  sessionList?: React.ReactNode;
   /** Sub-folders that belong directly to this folder */
   subFolderItems?: React.ReactNode;
   isCollapsed: boolean;
@@ -60,6 +61,7 @@ interface SessionFolderItemProps<TSessionNode> {
 const SessionFolderItemBase = <TSessionNode,>({
   folder,
   sessions,
+  sessionList,
   subFolderItems,
   isCollapsed,
   onToggle,
@@ -326,7 +328,7 @@ const SessionFolderItemBase = <TSessionNode,>({
           {/* Sub-folders first */}
           {subFolderItems}
           {/* Then sessions */}
-          {sessions.length > 0 ? (
+          {sessions.length > 0 ? sessionList ?? (
             <AnimatePresence initial={false}>
               {sessions.map((node) =>
                 renderSessionNode(node, 0, groupDirectory ?? null, projectId ?? null, archivedBucket),

@@ -2353,7 +2353,17 @@ export function toUserFacingRevertError(error: unknown): unknown {
 export const isRevertErrorCode = (error: unknown, code: string): boolean =>
   Boolean(error) && typeof error === "object" && (error as RevertErrorLike).code === code
 
+function announcePartialMutation(result: { outcome?: 'partial'; conflicts?: Array<{ path: string }> }, redo = false): boolean {
+  if (result.outcome !== 'partial') return false
+  void import("@/components/ui").then(({ toast }) => toast.warning(translate(
+    redo ? "chat.sessionChanges.toast.partialRedo" : "chat.sessionChanges.toast.partialRevert",
+    { files: result.conflicts?.map((entry) => entry.path).join(", ") || translate("chat.sessionChanges.error.unknownFile") },
+  ))).catch(() => undefined)
+  return true
+}
+
 function announceRevertOutcome(result: ScopedSessionRevertResult): void {
+  if (announcePartialMutation(result)) return
   const fileCount = result.reverted.files.length
   const sessionCount = Math.max(1, new Set(result.reverted.sessions.map((entry) => entry.id)).size)
   const failedVerification = result.verification && result.verification.ok === false
@@ -2488,9 +2498,10 @@ export async function revertToMessage(
       // Redo: put the working tree back first, then rewind to the new point.
       // Both requests share one client transaction so the suffix stays hidden
       // (and can be rolled back) as a unit.
-      await withLegacyRevertCancellation(
+      const restored = await withLegacyRevertCancellation(
         () => opencodeClient.unrevertSessionScoped(sessionId, sessionDirectory), tree, sessionDirectory,
       )
+      if (restored) announcePartialMutation(restored, true)
     }
     const result = await withLegacyRevertCancellation(() => opencodeClient.revertSessionScoped(sessionId, messageId, sessionDirectory, {
       scope: "tree",
@@ -2767,7 +2778,7 @@ export async function unrevertSession(sessionId: string): Promise<void> {
   }
   await refetchSessionMessages(sessionId, sessionDirectory)
   const restoredCount = result?.restored.length ?? 0
-  if (restoredCount > 0) {
+  if (!announcePartialMutation(result, true) && restoredCount > 0) {
     void import("sonner").then(({ toast }) => {
       toast.success(translate("chat.sessionChanges.toast.restored", { files: formatFileCount(restoredCount) }))
     }).catch(() => undefined)

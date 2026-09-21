@@ -46,7 +46,7 @@ await run('bun', ['install', '--frozen-lockfile', '--ignore-scripts'], source);
 await run('bun', ['typecheck'], path.join(source, 'packages/opencode'));
 // HTTP/SQLite integration fixtures need a bounded budget on loaded native builders.
 await run('bun', ['test', '--timeout', '30000', 'test/session/revert-compact.test.ts', 'test/server/workspace-routing.test.ts',
-  'test/server/httpapi-session.test.ts'], path.join(source, 'packages/opencode'));
+  'test/server/httpapi-session.test.ts', 'test/session/retention-gate.test.ts', 'test/session/execution-payload.test.ts'], path.join(source, 'packages/opencode'));
 await run('bun', ['run', 'script/build.ts', '--single', '--skip-install', '--skip-embed-web-ui'], path.join(source, 'packages/opencode'),
   { ...process.env, OPENCODE_VERSION: contract.runtimeVersion, OPENCODE_CHANNEL: 'devryan' });
 await fs.mkdir(output, { recursive: true });
@@ -54,8 +54,18 @@ await fs.rm(path.join(output, 'companion.json'), { force: true });
 await run(process.execPath, ['scripts/build-session-execution.mjs', output, '--verify']);
 const binary = `DevRyan-opencode-${platform}${extension}`;
 const upstreamPlatform = platform.replace(/^win32-/, 'windows-');
-await fs.copyFile(path.join(source, 'packages/opencode/dist', `opencode-${upstreamPlatform}`, 'bin', `opencode${extension}`), path.join(output, binary));
-await fs.chmod(path.join(output, binary), 0o755);
+// Replace the inode: overwriting a previously executed Mach-O can retain stale
+// kernel code-signature pages and make a valid new build die with SIGKILL.
+const stagedBinary = path.join(output, `${binary}.${process.pid}.tmp`);
+try {
+  await fs.copyFile(path.join(source, 'packages/opencode/dist', `opencode-${upstreamPlatform}`, 'bin', `opencode${extension}`), stagedBinary);
+  await fs.chmod(stagedBinary, 0o755);
+  if (process.platform === 'darwin') {
+    await run('codesign', ['--force', '--sign', '-', stagedBinary]);
+    await run('codesign', ['--verify', '--strict', stagedBinary]);
+  }
+  await fs.rename(stagedBinary, path.join(output, binary));
+} finally { await fs.rm(stagedBinary, { force: true }); }
 const fixture = path.join(root, '.cache/revert-runtime-context');
 await fs.mkdir(fixture, { recursive: true });
 for (const name of ['package.json', 'bun.lock']) await fs.copyFile(path.join(root, 'tests/fixtures/revert-runtime', name), path.join(fixture, name));

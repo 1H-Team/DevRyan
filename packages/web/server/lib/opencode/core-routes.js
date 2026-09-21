@@ -1,3 +1,4 @@
+import { sshManagedIdentity, authorizeSshManagedShutdown } from './ssh-managed-identity.js';
 export const registerServerStatusRoutes = (app, dependencies) => {
   const {
     express,
@@ -149,7 +150,7 @@ export const registerServerStatusRoutes = (app, dependencies) => {
     }
   };
 
-  const sendHealth = (_req, res) => {
+  const sendHealth = (req, res) => {
     if (typeof runtimeInstanceId === 'string' && runtimeInstanceId.length > 0) {
       res.set('X-DevRyan-Instance-ID', runtimeInstanceId);
     }
@@ -157,11 +158,18 @@ export const registerServerStatusRoutes = (app, dependencies) => {
       status: 'ok',
       timestamp: new Date().toISOString(),
       ...getHealthSnapshot(),
+      sshManaged: sshManagedIdentity(req, { env: process.env, version: openchamberVersion, runtimeInstanceId }),
     });
   };
 
   app.get('/health', sendHealth);
   app.get('/api/health', sendHealth);
+
+  app.post('/health/ssh-shutdown', express.json({ limit: '2kb' }), (req, res) => {
+    if (!authorizeSshManagedShutdown(req, { env: process.env, runtimeInstanceId })) return res.sendStatus(403);
+    res.json({ ok: true });
+    void gracefulShutdown({ exitProcess: true }).catch(() => {});
+  });
 
   app.post('/api/system/shutdown', requireSystemAdmin, (req, res) => {
     const rawOrigin = typeof req.get === 'function' ? req.get('origin') : '';

@@ -45,3 +45,30 @@ test('packaging refuses changed, unverified and mismatched Revert artifacts', as
     await assert.rejects(verify(), /spawn library/);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
+
+test('distribution requires every declared architecture and all paired capabilities', async () => {
+  const { verifySupportedRevertRuntimeArtifacts } = await import('./verify-revert-runtime-artifacts.mjs');
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'required-runtime-'));
+  const contract = JSON.parse(await fs.readFile(new URL('../packages/web/server/lib/opencode/companion/manifest.json', import.meta.url)));
+  const hash = createHash('sha256').update('fixture').digest('hex');
+  try {
+    const missing = contract.supportedArtifacts.at(-1);
+    for (const target of contract.supportedArtifacts) {
+      if (target === missing) await assert.rejects(verifySupportedRevertRuntimeArtifacts({ directory }));
+      const [platform, arch] = target.split('-'), extension = platform === 'win32' ? '.exe' : '';
+      const location = path.join(directory, target), binary = `DevRyan-execution-${target}${extension}`, companion = `DevRyan-opencode-${target}${extension}`;
+      await fs.mkdir(location);
+      const native = { version: 1, policy: 2, acceptance: true, platform, arch, binary, sha256: hash,
+        spawnLibrary: binary + '-spawn.dylib', spawnSha256: hash };
+      const runtime = { ...contract.capability, acceptance: true, platform, arch, binary: companion,
+        baseCommit: contract.baseCommit, patchSha256: contract.patchSha256, sha256: hash };
+      for (const name of [binary, companion, native.spawnLibrary]) await fs.writeFile(path.join(location, name), 'fixture');
+      await fs.writeFile(path.join(location, binary + '.json'), JSON.stringify(native));
+      await fs.writeFile(path.join(location, 'companion.json'), JSON.stringify(runtime));
+    }
+    await verifySupportedRevertRuntimeArtifacts({ directory });
+    const file = path.join(directory, missing, 'companion.json'), runtime = JSON.parse(await fs.readFile(file));
+    delete runtime.executionPreparation; await fs.writeFile(file, JSON.stringify(runtime));
+    await assert.rejects(verifySupportedRevertRuntimeArtifacts({ directory }), /companion artifact/);
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+});

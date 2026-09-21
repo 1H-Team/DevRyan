@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/file.h>
 #ifdef __APPLE__
 #include <libproc.h>
 #include <sandbox.h>
@@ -199,6 +200,19 @@ static int group_live(pid_t group) {
 }
 
 int main(int argc, char **argv) {
+  if (argc == 3 && (!strcmp(argv[1], "--owner-lock") || !strcmp(argv[1], "--owner-probe"))) {
+    int fd = open(argv[2], O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600);
+    if (fd < 0) fatal("owner lock");
+    if (flock(fd, LOCK_EX | LOCK_NB)) {
+      if (errno == EWOULDBLOCK || errno == EAGAIN) { close(fd); return 73; }
+      fatal("owner lock acquisition");
+    }
+    if (!strcmp(argv[1], "--owner-probe")) { close(fd); return 0; }
+    if (write(STDOUT_FILENO, "owned\n", 6) != 6) fatal("owner lock acknowledgement");
+    char byte;
+    while (read(STDIN_FILENO, &byte, 1) > 0) {}
+    close(fd); return 0;
+  }
   if (argc < 7 || strcmp(argv[5], "--")) { fprintf(stderr, "usage: DevRyan-execution cwd scratch profile receipt -- command [args]\n"); return 125; }
   int receipt = open(argv[4], O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
   if (receipt < 0) fatal("exclusive termination receipt");

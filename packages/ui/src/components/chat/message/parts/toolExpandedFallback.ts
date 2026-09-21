@@ -1,3 +1,4 @@
+import { describeExecutionFailure } from '@/lib/executionFailure';
 import { coerceRuntimeText } from './runtimeText';
 
 export type ToolExpandedPrimaryKind = 'structured' | 'input' | 'output' | 'failure' | 'empty';
@@ -74,7 +75,8 @@ export const resolveToolExpandedDetails = ({
 }: ResolveToolExpandedDetailsInput): ToolExpandedDetails => {
     const hasInput = hasText(inputText);
     const hasOutput = hasText(output);
-    const failureReason = readFailureReason(error);
+    const rawFailure = readFailureReason(error);
+    const failureReason = rawFailure ? describeExecutionFailure(rawFailure) ?? rawFailure : undefined;
     const normalizedStatus = normalizeStatus(status);
     const failureStatus = normalizedStatus && FAILURE_STATUSES.has(normalizedStatus)
         ? normalizedStatus

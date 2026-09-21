@@ -70,6 +70,9 @@ let viewportMemoryState = new Map<string, Record<string, unknown>>()
 let mockCreatedSession: Record<string, unknown> | null = null
 let mockConfigState: Record<string, unknown> = {}
 let mockDirectoryState: Record<string, unknown> = { command: [] }
+let resolvedCommands: Array<{ name: string }> = []
+let commandLookupError: Error | null = null
+const commandLookups: Array<string | null> = []
 let mockAllSyncSessions: Array<Record<string, unknown>> = [
   { id: "session-a", directory: "/repo/a" },
   { id: "session-b", directory: "/repo/b" },
@@ -502,6 +505,7 @@ const originalOpencodeClientMethods = {
   getSdkClient: testOpencodeClient.getSdkClient.bind(testOpencodeClient),
   getContextModeAvailable: testOpencodeClient.getContextModeAvailable.bind(testOpencodeClient),
   sendCommand: testOpencodeClient.sendCommand.bind(testOpencodeClient),
+  listCommandsForDirectory: testOpencodeClient.listCommandsForDirectory.bind(testOpencodeClient),
   sendMessage: testOpencodeClient.sendMessage.bind(testOpencodeClient),
   sendImmediateSubtaskPrompt: testOpencodeClient.sendImmediateSubtaskPrompt.bind(testOpencodeClient),
   prewarmCursorSession: testOpencodeClient.prewarmCursorSession.bind(testOpencodeClient),
@@ -509,6 +513,11 @@ const originalOpencodeClientMethods = {
 }
 
 const installOpencodeClientMock = () => {
+  testOpencodeClientRecord.listCommandsForDirectory = async (directory: string | null) => {
+    commandLookups.push(directory)
+    if (commandLookupError) throw commandLookupError
+    return resolvedCommands
+  }
   testOpencodeClientRecord.getDirectory = () => "/repo"
   testOpencodeClientRecord.setDirectory = () => {}
   testOpencodeClientRecord.getSdkClient = () => ({
@@ -707,6 +716,9 @@ describe("session-ui-store send routing", () => {
     mockCreatedSession = null
     mockConfigState = {}
     mockDirectoryState = { command: [] }
+    resolvedCommands = []
+    commandLookupError = null
+    commandLookups.length = 0
     mockAllSyncSessions = [
       { id: "session-a", directory: "/repo/a" },
       { id: "session-b", directory: "/repo/b" },
@@ -3590,6 +3602,7 @@ describe("session-ui-store send routing", () => {
   })
 
   test("successful slash command send unarchives an archived current session", async () => {
+    resolvedCommands = [{ name: "help" }]
     mockArchivedSessions = [{ id: "session-b", time: { archived: 10 } }]
     mockDirectoryState = { command: [{ name: "help" }] }
     useSessionUIStore.setState({ currentSessionId: "session-b" })
@@ -3612,6 +3625,7 @@ describe("session-ui-store send routing", () => {
 
   for (const variant of ["low", null] as const) {
     test(`passes captured ${variant ?? "provider default"} to slash-command optimism and transport`, async () => {
+      resolvedCommands = [{ name: "help" }]
       mockDirectoryState = { command: [{ name: "help" }] }
       mockConfigState = {
         currentVariant: "high",
@@ -3633,6 +3647,7 @@ describe("session-ui-store send routing", () => {
   }
 
   test("routes a known skill through command transport when command snapshots are empty", async () => {
+    resolvedCommands = [{ name: "review-code" }]
     mockDirectoryState = { command: [] }
     useCommandsStore.setState({ commands: [] })
     useSkillsStore.setState({
@@ -3666,6 +3681,17 @@ describe("session-ui-store send routing", () => {
 
   test("plan mode synthetic instruction follows the plan.md layout contract", () => {
     expectPlanModeInstructionContract(buildPlanModeSyntheticInstruction(true))
+  })
+
+  test("command discovery uses the target session directory and failed discovery never sends a prompt", async () => {
+    commandLookupError = new Error("Commands could not be loaded. Retry sending your message.")
+    await expect(useSessionUIStore.getState().sendMessageToSession(
+      "session-a", "/fresh-command", "fixture", "fixture-model", "Builder",
+    )).rejects.toThrow("Retry sending")
+    expect(commandLookups).toEqual(["/repo/a"])
+    expect(sendMessageCalls).toHaveLength(0)
+    expect(sendCommandCalls).toHaveLength(0)
+    expect(optimisticCalls).toHaveLength(0)
   })
 
   test("plan mode synthetic instruction omits Context Mode routing when unavailable", () => {

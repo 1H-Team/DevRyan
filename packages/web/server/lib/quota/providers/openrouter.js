@@ -4,7 +4,6 @@ import {
   normalizeAuthEntry,
   buildResult,
   toUsageWindow,
-  toNumber,
   formatMoney
 } from '../utils/index.js';
 
@@ -18,8 +17,25 @@ export const isConfigured = () => {
   return Boolean(entry?.key || entry?.token);
 };
 
-export const fetchQuota = async () => {
-  const auth = readAuthFile();
+export const parseOpenRouterKey = (key) => {
+  const finite = (value) => typeof value === 'number' && Number.isFinite(value) ? value : null;
+  const limit = finite(key?.limit), usage = finite(key?.usage), remaining = finite(key?.limit_remaining);
+  const unlimited = key?.limit === null;
+  const labels = [];
+  if (unlimited) labels.push('No key spending limit');
+  else if (remaining !== null) labels.push(`$${formatMoney(Math.max(0, remaining))} key budget left`);
+  else if (limit !== null) labels.push(`$${formatMoney(limit)} key limit`);
+  if (usage !== null) labels.push(`$${formatMoney(usage)} spent`);
+  if (!labels.length) throw new Error('OpenRouter key usage data is unavailable');
+  return { credits: toUsageWindow({
+    usedPercent: limit !== null && limit > 0 && remaining !== null ? Math.max(0, Math.min(100, (limit - remaining) / limit * 100))
+      : limit === 0 && remaining === 0 ? 100 : null,
+    windowSeconds: null, resetAt: null, valueLabel: labels.join(' · '),
+  }) };
+};
+
+export const fetchQuota = async ({ fetchImpl = globalThis.fetch, readAuth = readAuthFile } = {}) => {
+  const auth = readAuth();
   const entry = normalizeAuthEntry(getAuthEntry(auth, aliases));
   const apiKey = entry?.key ?? entry?.token;
 
@@ -34,12 +50,13 @@ export const fetchQuota = async () => {
   }
 
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/credits', {
+    const response = await fetchImpl('https://openrouter.ai/api/v1/key', {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
-      }
+      },
+      signal: AbortSignal.timeout(15_000),
     });
 
     if (!response.ok) {
@@ -53,25 +70,7 @@ export const fetchQuota = async () => {
     }
 
     const payload = await response.json();
-    const credits = payload?.data ?? {};
-    const totalCredits = toNumber(credits.total_credits);
-    const totalUsage = toNumber(credits.total_usage);
-    const remaining = totalCredits !== null && totalUsage !== null
-      ? Math.max(0, totalCredits - totalUsage)
-      : null;
-    let valueLabel = null;
-    if (remaining !== null && totalUsage !== null) {
-      valueLabel = `$${formatMoney(remaining)} left · $${formatMoney(totalUsage)} spent`;
-    }
-
-    const windows = {
-      credits: toUsageWindow({
-        usedPercent: null,
-        windowSeconds: null,
-        resetAt: null,
-        valueLabel
-      })
-    };
+    const windows = parseOpenRouterKey(payload?.data);
 
     return buildResult({
       providerId,

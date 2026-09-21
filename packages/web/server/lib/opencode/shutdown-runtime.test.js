@@ -71,6 +71,17 @@ describe('graceful shutdown runtime', () => {
     expect(cursorSdkRuntime.dispose).toHaveBeenCalledTimes(1);
   });
 
+  it('drains preparation after Cursor and continues other shutdown paths if it rejects', async () => {
+    const order = [];
+    const runtime = createRuntime({ close: (done) => { order.push('http'); done(); } }, {
+      getCursorSdkRuntime: () => ({ dispose: async () => { order.push('cursor'); } }),
+      getSessionExecutionHost: () => ({ drain: async () => { order.push('preparation'); throw new Error('failed keeper'); } }),
+      getSessionTitleRuntime: () => ({ dispose: async () => { order.push('titles'); } }),
+    });
+    await runtime.gracefulShutdown({ exitProcess: false });
+    expect(order).toEqual(['cursor', 'preparation', 'titles', 'http']);
+  });
+
   it('flushes the durable session title outbox during graceful shutdown', async () => {
     const sessionTitleRuntime = { dispose: vi.fn(async () => {}) };
     const runtime = createRuntime(null, {

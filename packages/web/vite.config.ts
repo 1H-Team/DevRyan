@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import { VitePWA } from 'vite-plugin-pwa';
 import { themeStoragePlugin } from '../../vite-theme-plugin';
 import { resolveVendorChunkName } from './vite-chunking';
+import { terminalAssetsPlugin } from './vite-terminal-assets';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageJson = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8'));
@@ -16,6 +17,7 @@ const enableReactScan = reactScanToggle === '1' || reactScanToggle === 'true' ||
 export default defineConfig({
   root: path.resolve(__dirname, '.'),
   plugins: [
+    terminalAssetsPlugin(path.resolve(__dirname, '../ui/src/lib/ghostty')),
     react({
       babel: {
         plugins: ['babel-plugin-react-compiler'],

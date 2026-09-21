@@ -681,7 +681,7 @@ export const ProjectActionsButton = ({
           activeSessionId,
           (event) => {
             if (event.type === 'data' && typeof event.data === 'string' && event.data.length > 0) {
-              useTerminalStore.getState().appendToBuffer(normalizedDirectory, tabId, event.data);
+              useTerminalStore.getState().appendToBuffer(normalizedDirectory, tabId, event.data, event.replay);
             }
             if (event.type === 'exit') {
               useTerminalStore.getState().setTabLifecycle(normalizedDirectory, tabId, 'exited');

@@ -148,14 +148,6 @@ export const McpDropdownContent: React.FC<McpDropdownContentProps> = ({ active, 
   const [busyName, setBusyName] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    void refresh({ directory, silent: true });
-  }, [refresh, directory]);
-
-  React.useEffect(() => {
-    void loadMcpConfigs({ force: true, directory });
-  }, [directory, loadMcpConfigs]);
-
-  React.useEffect(() => {
     if (!active) return;
     void Promise.all([
       refresh({ directory, silent: true }),
@@ -325,12 +317,6 @@ export const McpDropdown: React.FC<McpDropdownProps> = ({ headerIconButtonClass 
   const [isSpinning, setIsSpinning] = React.useState(false);
 
   const [busyName, setBusyName] = React.useState<string | null>(null);
-
-  // Fetch on mount and when directory changes
-  React.useEffect(() => {
-    void refresh({ directory, silent: true });
-    void loadMcpConfigs({ force: true, directory });
-  }, [refresh, directory, loadMcpConfigs]);
 
   // Refresh when dropdown opens
   React.useEffect(() => {

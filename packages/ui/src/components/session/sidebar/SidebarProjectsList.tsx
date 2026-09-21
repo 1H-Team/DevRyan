@@ -42,7 +42,7 @@ type Props = {
   hasSessionSearchQuery: boolean;
   emptyState: React.ReactNode;
   searchEmptyState: React.ReactNode;
-  renderGroupSessions: (group: SessionGroup, groupKey: string, projectId?: string | null, hideGroupLabel?: boolean, dragHandleProps?: SortableDragHandleProps | null, compactBodyPadding?: boolean) => React.ReactNode;
+  renderGroupSessions: (group: SessionGroup, groupKey: string, projectId?: string | null, hideGroupLabel?: boolean, dragHandleProps?: SortableDragHandleProps | null, compactBodyPadding?: boolean, modelOrder?: import('./sidebarRowModel').SidebarRowOrder) => React.ReactNode;
   homeDirectory: string | null;
   collapsedProjects: Set<string>;
   hideProjectAdminControls: boolean;
@@ -80,15 +80,15 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
   );
 
   if (props.projectSections.length === 0) {
-    return <ScrollableOverlay useScrollShadow scrollShadowSize={96} outerClassName="flex-1 min-h-0" className={cn('space-y-1 pb-1 pl-2.5 pr-2', props.mobileVariant ? '' : '')}>{props.topContent}{props.emptyState}</ScrollableOverlay>;
+    return <ScrollableOverlay data-sidebar-scroll useScrollShadow scrollShadowSize={96} outerClassName="flex-1 min-h-0" className={cn('space-y-1 pb-1 pl-2.5 pr-2', props.mobileVariant ? '' : '')}>{props.topContent}{props.emptyState}</ScrollableOverlay>;
   }
 
   if (props.sectionsForRender.length === 0) {
-    return <ScrollableOverlay useScrollShadow scrollShadowSize={96} outerClassName="flex-1 min-h-0" className={cn('space-y-1 pb-1 pl-2.5 pr-2', props.mobileVariant ? '' : '')}>{props.searchEmptyState}</ScrollableOverlay>;
+    return <ScrollableOverlay data-sidebar-scroll useScrollShadow scrollShadowSize={96} outerClassName="flex-1 min-h-0" className={cn('space-y-1 pb-1 pl-2.5 pr-2', props.mobileVariant ? '' : '')}>{props.searchEmptyState}</ScrollableOverlay>;
   }
 
   return (
-    <ScrollableOverlay useScrollShadow scrollShadowSize={96} outerClassName="flex-1 min-h-0" className={cn('space-y-1 pb-1 pl-2.5 pr-2', props.mobileVariant ? '' : '')}>
+    <ScrollableOverlay data-sidebar-scroll useScrollShadow scrollShadowSize={96} outerClassName="flex-1 min-h-0" className={cn('space-y-1 pb-1 pl-2.5 pr-2', props.mobileVariant ? '' : '')}>
       {props.topContent}
       {props.showOnlyMainWorkspace ? (
         <div className="space-y-[0.6rem] py-1">
@@ -111,13 +111,13 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
               ...(archivedGroup && archivedGroup.id !== primaryGroup.id ? [archivedGroup] : []),
             ];
 
-            return groupsToRender.map((group) => {
+            return groupsToRender.map((group, groupIndex) => {
               const groupKey = `${activeSection.project.id}:${group.id}`;
               const hideGroupLabel = group.id === primaryGroup.id
                 && !props.projectRepoStatus.get(activeSection.project.id);
               return (
                 <React.Fragment key={groupKey}>
-                  {props.renderGroupSessions(group, groupKey, activeSection.project.id, hideGroupLabel, null, true)}
+                  {props.renderGroupSessions(group, groupKey, activeSection.project.id, hideGroupLabel, null, true, groupIndex)}
                 </React.Fragment>
               );
             });
@@ -139,7 +139,7 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
             }}
           >
             <SortableContext items={props.sectionsForRender.map((section) => section.project.id)} strategy={verticalListSortingStrategy}>
-              {props.sectionsForRender.map((section) => {
+              {props.sectionsForRender.map((section, projectIndex) => {
                 const project = section.project;
                 const projectKey = project.id;
                 const projectLabel = resolveProjectDisplayName({
@@ -228,22 +228,22 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
                                   });
                                 }}
                               >
-                                {rootGroup ? props.renderGroupSessions(rootGroup, `${projectKey}:${rootGroup.id}`, projectKey, !isRepo || !rootGroup.branch) : null}
+                                {rootGroup ? props.renderGroupSessions(rootGroup, `${projectKey}:${rootGroup.id}`, projectKey, !isRepo || !rootGroup.branch, null, false, [projectIndex, 0]) : null}
                                 <SortableContext items={sortableNestedGroups.map((group) => group.id)} strategy={verticalListSortingStrategy}>
-                                  {sortableNestedGroups.map((group) => {
+                                  {sortableNestedGroups.map((group, groupIndex) => {
                                     const groupKey = `${projectKey}:${group.id}`;
                                     return (
                                       <SortableGroupItem key={group.id} id={group.id} disabled={props.isInlineEditing}>
-                                        {(dragHandleProps) => props.renderGroupSessions(group, groupKey, projectKey, false, dragHandleProps)}
+                                        {(dragHandleProps) => props.renderGroupSessions(group, groupKey, projectKey, false, dragHandleProps, false, [projectIndex, 1 + groupIndex])}
                                       </SortableGroupItem>
                                     );
                                   })}
                                 </SortableContext>
-                                {staticNestedGroups.map((group) => {
+                                {staticNestedGroups.map((group, groupIndex) => {
                                   const groupKey = `${projectKey}:${group.id}`;
                                   return (
                                     <React.Fragment key={group.id}>
-                                      {props.renderGroupSessions(group, groupKey, projectKey, false, null)}
+                                      {props.renderGroupSessions(group, groupKey, projectKey, false, null, false, [projectIndex, 1 + sortableNestedGroups.length + groupIndex])}
                                     </React.Fragment>
                                   );
                                 })}

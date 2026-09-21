@@ -231,3 +231,11 @@ describe('current prompt status isolation', () => {
         expect(selectAssistantStatusRecord([{ info: user, parts: [] }, { info: old, parts: [] }])).toBeNull();
     });
 });
+
+
+test('a failed skill yields activity to the next dispatch after live update or history reload', () => {
+    const parts = [toolPart('skill', 'skill', 'error'), toolPart('dispatch', 'devryan_task', 'running', 'wait')];
+    for (const restored of [parts, JSON.parse(JSON.stringify(parts))]) {
+        expect(getAssistantActivePartStatus(restored)).toMatchObject({ activeToolName: 'devryan_task', activeToolAction: 'wait' });
+    }
+});

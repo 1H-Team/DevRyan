@@ -1,5 +1,7 @@
 import { readSessionExecutionReceipt, startSessionExecution } from './session-execution.js';
+import { cleanupExecutionLease } from './execution-cleanup.js';
 import { createHash } from 'node:crypto';
+import { withExecutionAdmission, withExecutionPreparation, withoutExecutionDeadline } from './execution-admission.js';
 
 const failure = (code) => Object.assign(new Error(code), { code, status: 409 });
 
@@ -7,7 +9,7 @@ const failure = (code) => Object.assign(new Error(code), { code, status: 409 });
  * supply provider cancellation separately: cancelling a child process does not
  * prove that its parent model loop has stopped admitting more tool calls.
  */
-export function createSessionExecutionOwner({ runtime, launcher, stopSessions, verifyLauncher }) {
+export function createSessionExecutionOwner({ runtime, launcher, stopSessions, verifyLauncher, getHostOwner, onDiagnostic }) {
   const active = new Map();
   const supported = () => verifyLauncher({ launcher, platform: process.platform });
   const start = async (input) => {
@@ -16,39 +18,48 @@ export function createSessionExecutionOwner({ runtime, launcher, stopSessions, v
     const environment = Object.entries(input.env ?? {}).sort(([a], [b]) => a.localeCompare(b));
     const executionFingerprint = createHash('sha256').update(JSON.stringify([input.command, input.args ?? [], environment,
       input.input === undefined ? null : createHash('sha256').update(input.input).digest('hex')])).digest('hex');
-    const lease = await runtime.begin({ ...input, executionFingerprint });
-    if (lease.state === 'published') return { lease, child: null, result: Promise.resolve({ ...await readSessionExecutionReceipt(lease), ...lease.result }) };
-    if (active.has(lease.token)) throw failure('execution_already_started');
-    await runtime.claimLease({ directory: input.directory, token: lease.token, kind: 'process' });
+    const hostOwner = await getHostOwner?.();
+    hostOwner?.assert();
     const controller = new AbortController();
-    const signal = input.signal ? AbortSignal.any([input.signal, controller.signal]) : controller.signal;
+    const signal = AbortSignal.any([controller.signal, ...[input.signal, hostOwner?.signal].filter(Boolean)]);
+    const lease = await withExecutionAdmission(input,
+      () => runtime.reserve({ ...input, kind: 'process', executionFingerprint, ownerID: hostOwner?.id }), { signal });
+    if (lease.state === 'published') return { lease, child: null, result: Promise.resolve({ ...await readSessionExecutionReceipt(lease), ...lease.result }) };
+    if (hostOwner && lease.ownerID !== hostOwner.id) throw failure('execution_owner_lost');
+    if (active.has(lease.token) || lease.executionKind) throw failure('execution_already_started');
     const owned = { lease, controller, settled: null };
     active.set(lease.token, owned);
     const started = Promise.withResolvers();
     owned.settled = (async () => {
       let handle;
       try {
-        handle = await startSessionExecution({ launcher, lease, command: input.command, args: input.args,
-          env: input.environment ? await input.environment(lease) : input.env, signal, onOutput: input.onOutput,
-          input: input.input, interactive: input.interactive });
+        const ready = await withExecutionPreparation(input, () => runtime.prepare(lease), { signal });
+        signal.throwIfAborted(); hostOwner?.assert();
+        await runtime.claimLease({ directory: input.directory, token: lease.token, kind: 'process' });
+        const workerInput = input.inputForLease ? await input.inputForLease(ready) : input.input;
+        handle = await startSessionExecution({ launcher, lease: ready, command: input.command, args: input.args,
+          env: input.environment ? await input.environment(ready) : input.env, signal, onOutput: input.onOutput,
+          input: workerInput, interactive: input.interactive });
+        handle.workerInput = workerInput;
         started.resolve(handle);
       } catch (cause) {
-        // Setup failed before a supervisor was returned; no command owns this
-        // view. Errors from handle.result still require a termination receipt.
+        // No supervisor was returned. The host still owns preparation and has
+        // awaited all its I/O before recording this no-launch attestation.
         started.reject(cause);
-        await runtime.cancelLease({ directory: input.directory, token: lease.token });
+        await withoutExecutionDeadline(async () => {
+          await runtime.cancelUnstartedCall({ ...input, token: lease.token });
+          await cleanupExecutionLease(runtime, { directory: input.directory, token: lease.token }, onDiagnostic);
+        });
         throw signal.aborted ? failure('execution_cancelled') : cause;
       }
       const receipt = await handle.result;
-      if (receipt.cancelled || signal.aborted) {
+      if (receipt.cancelled || signal.aborted || !receipt.confined) {
         await runtime.cancelLease({ directory: input.directory, token: lease.token });
-        throw failure('execution_cancelled');
-      }
-      if (!receipt.confined) {
-        await runtime.cancelLease({ directory: input.directory, token: lease.token });
-        throw failure('mutation_runtime_unsupported');
+        await cleanupExecutionLease(runtime, { directory: input.directory, token: lease.token }, onDiagnostic);
+        throw failure(receipt.cancelled || signal.aborted ? 'execution_cancelled' : 'mutation_runtime_unsupported');
       }
       const publication = await runtime.finish({ directory: input.directory, token: lease.token });
+      await cleanupExecutionLease(runtime, { directory: input.directory, token: lease.token }, onDiagnostic);
       return { ...receipt, ...publication };
     })().finally(() => { if (active.get(lease.token) === owned) active.delete(lease.token); });
     // Streaming adapters may not await settlement until after their output

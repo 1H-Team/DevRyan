@@ -395,18 +395,18 @@ describe('parseProfileArguments', () => {
 
   it('reads flags and the environment', () => {
     const options = parseProfileArguments(
-      ['--session', 'ses_x', '--db', '~/db.sqlite', '--run', 'dozen', '--out', '/tmp/out', '--server', 'http://127.0.0.1:4000/', '--cookie', 'abc', '--preflight', '--turn-timing', '--quiet'],
+      ['--session', 'ses_x', '--db', '~/db.sqlite', '--run', 'dozen', '--out', '/tmp/out', '--server', 'http://127.0.0.1:4000/', '--cookie', 'oc_ui_session_3000=fixture', '--preflight', '--turn-timing', '--quiet'],
       { DEVRYAN_UI_SESSION_COOKIE: 'ignored' },
     );
     assert.equal(options.dbPath, path.join(os.homedir(), 'db.sqlite'));
     assert.equal(options.run, 'dozen');
     assert.equal(options.outRoot, '/tmp/out');
     assert.equal(options.server, 'http://127.0.0.1:4000');
-    assert.equal(options.cookie, 'abc');
+    assert.equal(options.cookie, 'oc_ui_session_3000=fixture');
     assert.equal(options.preflight, true);
     assert.equal(options.turnTiming, true);
     assert.equal(options.quiet, true);
-    assert.equal(parseProfileArguments(['--session', 'ses_x'], { DEVRYAN_UI_SESSION_COOKIE: 'env', OPENCODE_DB_PATH: '/x/opencode.db' }).cookie, 'env');
+    assert.equal(parseProfileArguments(['--session', 'ses_x'], { DEVRYAN_UI_SESSION_COOKIE: 'oc_ui_session_3000=env', OPENCODE_DB_PATH: '/x/opencode.db' }).cookie, 'oc_ui_session_3000=env');
     assert.equal(parseProfileArguments(['--session', 'ses_x'], { OPENCODE_DB_PATH: '/x/opencode.db' }).dbPath, '/x/opencode.db');
     assert.equal(parseProfileArguments(['--help'], {}).help, true);
   });

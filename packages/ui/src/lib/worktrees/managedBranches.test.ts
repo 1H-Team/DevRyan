@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { WorktreeMetadata } from '@/types/worktree';
 import {
+  filterBranchBackedWorktrees,
   filterBranchNamesByGrantedBranches,
   filterWorktreesByGrantedBranches,
   isManagedBranchGranted,
@@ -119,5 +120,21 @@ describe('isManagedBranchGranted', () => {
 
     expect(isManagedBranchGranted(project, 'refs/heads/Dev')).toBe(true);
     expect(isManagedBranchGranted(project, 'main')).toBe(false);
+  });
+});
+
+describe('filterBranchBackedWorktrees', () => {
+  test('keeps branch worktrees and hides detached or branchless worktrees', () => {
+    const branch = worktree('Dev', '/worktrees/Dev');
+    const detached = {
+      ...worktree('', '/worktrees/qa-snapshot'),
+      headState: 'detached' as const,
+    };
+    const staleDetached = {
+      ...worktree('removed-branch', '/worktrees/removed-branch'),
+      headState: 'detached' as const,
+    };
+
+    expect(filterBranchBackedWorktrees([branch, detached, staleDetached])).toEqual([branch]);
   });
 });

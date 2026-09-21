@@ -43,3 +43,5 @@ Integrated with session hooks/stores and navigation/layout components.
 `SidebarFooter` warms the remembered permitted Settings destination on pointer,
 focus and touch intent through `preloadCurrentSettingsDestination`; opening
 Settings itself is synchronous because its navigation frame is already loaded.
+
+- `sidebarRowModel.ts` and `SidebarRowsContext.tsx` own logical row order, selection scope and ref-counted pins independently of mounted DOM rows. `VirtualSessionList.tsx` uses variable-height windowing above 200 visible model rows with overscan 10, selection reveal, keyboard focus, anchor preservation and pins for active interactions. Set local storage `devryan:sidebar:virtualization` to `off` before reload to disable windowing.

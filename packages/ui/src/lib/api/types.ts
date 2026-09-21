@@ -50,6 +50,7 @@ export interface TerminalSession {
 export interface TerminalStreamEvent {
   type: 'connected' | 'data' | 'exit' | 'reconnecting';
   data?: string;
+  replay?: boolean;
   exitCode?: number;
   signal?: number | null;
   attempt?: number;
@@ -126,6 +127,11 @@ export interface GitStatus {
   files: GitStatusFile[];
   isClean: boolean;
   diffStats?: Record<string, { insertions: number; deletions: number }>;
+  stagedStats?: Record<string, { insertions: number; deletions: number }>;
+  unstagedStats?: Record<string, { insertions: number; deletions: number }>;
+  fileVersions?: Record<string, string>;
+  untrackedTruncated?: boolean;
+  untrackedLimit?: number;
   /** Present when a merge is in progress with conflicts */
   mergeInProgress?: GitMergeInProgress | null;
   /** Present when a rebase is in progress */
@@ -705,16 +711,21 @@ export interface FileStatResult {
   isFile: boolean;
   size: number;
   mtimeMs?: number;
+  ctimeMs?: number;
 }
+
+export interface FileReadResult { content: string; path: string; version?: string; complete?: boolean }
+export interface FileWriteOptions { expectedVersion?: string }
+export interface FileWriteResult { success: boolean; path: string; version?: string }
 
 export interface FilesAPI {
   listDirectory(path: string, options?: ListDirectoryOptions): Promise<DirectoryListResult>;
   search(payload: FileSearchQuery): Promise<FileSearchResult[]>;
   createDirectory(path: string): Promise<{ success: boolean; path: string }>;
   statFile?(path: string, options?: FileReadOptions): Promise<FileStatResult>;
-  readFile?(path: string, options?: FileReadOptions): Promise<{ content: string; path: string }>;
+  readFile?(path: string, options?: FileReadOptions): Promise<FileReadResult>;
   readFileBinary?(path: string, options?: FileReadOptions): Promise<{ dataUrl: string; path: string }>;
-  writeFile?(path: string, content: string): Promise<{ success: boolean; path: string }>;
+  writeFile?(path: string, content: string, options?: FileWriteOptions): Promise<FileWriteResult>;
   delete?(path: string): Promise<{ success: boolean }>;
   rename?(oldPath: string, newPath: string): Promise<{ success: boolean; path: string }>;
   revealPath?(path: string): Promise<{ success: boolean }>;
@@ -785,6 +796,7 @@ export interface SettingsPayload {
   autoDeleteEnabled?: boolean;
   autoDeleteAfterDays?: number;
   sessionRetentionAction?: 'archive' | 'delete';
+  sessionRetentionArchivedOnly?: boolean;
   queueModeEnabled?: boolean;
   gitmojiEnabled?: boolean;
   inputSpellcheckEnabled?: boolean;

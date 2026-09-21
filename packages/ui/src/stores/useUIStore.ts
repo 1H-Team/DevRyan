@@ -685,6 +685,8 @@ interface UIStore {
   autoDeleteEnabled: boolean;
   autoDeleteAfterDays: number;
   sessionRetentionAction: SessionRetentionAction;
+  sessionRetentionArchivedOnly: boolean;
+  setSessionRetentionArchivedOnly: (value: boolean) => void;
   autoDeleteLastRunAt: number | null;
   messageLimit: number;
   fontSize: number;
@@ -978,6 +980,8 @@ export const useUIStore = create<UIStore>()(
         autoDeleteEnabled: false,
         autoDeleteAfterDays: 30,
         sessionRetentionAction: 'archive',
+        sessionRetentionArchivedOnly: false,
+        setSessionRetentionArchivedOnly: (value) => set({ sessionRetentionArchivedOnly: value }),
         autoDeleteLastRunAt: null,
         messageLimit: 200,
         fontSize: 100,
@@ -2922,6 +2926,7 @@ export const useUIStore = create<UIStore>()(
           autoDeleteEnabled: state.autoDeleteEnabled,
           autoDeleteAfterDays: state.autoDeleteAfterDays,
           sessionRetentionAction: state.sessionRetentionAction,
+          sessionRetentionArchivedOnly: state.sessionRetentionArchivedOnly,
           autoDeleteLastRunAt: state.autoDeleteLastRunAt,
           messageLimit: state.messageLimit,
           fontSize: state.fontSize,

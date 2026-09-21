@@ -1,7 +1,7 @@
 import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
-import { opencodeClient } from '@/lib/opencode/client';
-import { ensureGlobalSessionsLoaded, useGlobalSessionsStore, resolveGlobalSessionDirectory } from '@/stores/useGlobalSessionsStore';
+import { protectRetentionSelection, runSessionRetention } from '@/lib/sessionRetention';
+import { ensureGlobalSessionsLoaded, useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { getAllSyncSessions } from '@/sync/sync-refs';
 import { useUIStore } from '@/stores/useUIStore';
@@ -56,7 +56,8 @@ type CleanupResult = {
   completedIds: string[];
   failedIds: string[];
   action: 'archive' | 'delete';
-  skippedReason?: 'disabled' | 'loading' | 'cooldown' | 'no-candidates' | 'running';
+  skippedReason?: string;
+  skipped?: Array<{ id: string | null; reason: string }>;
 };
 
 type CleanupOptions = {
@@ -84,6 +85,10 @@ export const useSessionAutoCleanup = (enabledOrOptions?: boolean | CleanupOption
   const runningRef = React.useRef(false);
 
   React.useEffect(() => {
+    void protectRetentionSelection(currentSessionId).catch(() => { /* An unacknowledged client blocks cleanup on the server. */ });
+  }, [currentSessionId]);
+
+  React.useEffect(() => {
     void ensureGlobalSessionsLoaded(getAllSyncSessions());
   }, []);
 
@@ -105,9 +110,7 @@ export const useSessionAutoCleanup = (enabledOrOptions?: boolean | CleanupOption
       }
 
       if (!autoDeleteEnabled || autoDeleteAfterDays <= 0) {
-        if (!force) {
-          return { completedIds: [], failedIds: [], action: sessionRetentionAction, skippedReason: 'disabled' };
-        }
+        return { completedIds: [], failedIds: [], action: sessionRetentionAction, skippedReason: 'disabled' };
       }
 
       if (isLoading) {
@@ -119,59 +122,19 @@ export const useSessionAutoCleanup = (enabledOrOptions?: boolean | CleanupOption
         return { completedIds: [], failedIds: [], action: sessionRetentionAction, skippedReason: 'cooldown' };
       }
 
-      const { activeSessions: sessions } = await ensureGlobalSessionsLoaded(getAllSyncSessions());
-
-      if (sessions.length === 0) {
-        return { completedIds: [], failedIds: [], action: sessionRetentionAction, skippedReason: 'no-candidates' };
-      }
-
-      const candidateIds = buildAutoDeleteCandidates({
-        sessions,
-        currentSessionId,
-        cutoffDays: autoDeleteAfterDays,
-        now,
-      });
-
-      if (candidateIds.length === 0) {
-        setAutoDeleteLastRunAt(now);
-        return { completedIds: [], failedIds: [], action: sessionRetentionAction, skippedReason: 'no-candidates' };
-      }
-
       runningRef.current = true;
       setIsRunning(true);
       try {
-        const sessionMap = new Map(sessions.map((session) => [session.id, session]));
-        const completedIds: string[] = [];
-        const failedIds: string[] = [];
-
-        for (const id of candidateIds) {
-          const session = sessionMap.get(id);
-          const directory = session ? resolveGlobalSessionDirectory(session) : null;
-          if (!directory) {
-            failedIds.push(id);
-            continue;
-          }
-
-          const scopedSdk = opencodeClient.getScopedSdkClient(directory);
-
-          try {
-            if (sessionRetentionAction === 'archive') {
-              await scopedSdk.session.update({ sessionID: id, directory, time: { archived: Date.now() } });
-            } else {
-              await scopedSdk.session.delete({ sessionID: id, directory });
-            }
-            completedIds.push(id);
-          } catch {
-            failedIds.push(id);
-          }
-        }
-
-        if (sessionRetentionAction === 'archive') {
-          useGlobalSessionsStore.getState().archiveSessions(completedIds);
-        } else {
-          useGlobalSessionsStore.getState().removeSessions(completedIds);
-        }
-        return { completedIds, failedIds, action: sessionRetentionAction };
+        await protectRetentionSelection(currentSessionId);
+        const result = await runSessionRetention();
+        const completedIds = result.completed;
+        if (result.action === 'archive') useGlobalSessionsStore.getState().archiveSessions(completedIds);
+        else useGlobalSessionsStore.getState().removeSessions(completedIds);
+        return { completedIds, failedIds: result.failed.map((entry) => entry.id), action: result.action,
+          skipped: result.skipped, skippedReason: result.skipped.find((entry) => entry.id === null)?.reason };
+      } catch (error) {
+        return { completedIds: [], failedIds: [], action: sessionRetentionAction,
+          skippedReason: error instanceof Error ? error.message : 'retention_unavailable' };
       } finally {
         runningRef.current = false;
         setIsRunning(false);

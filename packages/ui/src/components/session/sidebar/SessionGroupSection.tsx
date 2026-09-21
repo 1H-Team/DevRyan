@@ -1,3 +1,6 @@
+import { VirtualSessionList } from './VirtualSessionList';
+import { flattenSessionRows, sessionModelRows } from './sidebarRowModel';
+import { SidebarRowsContext } from './SidebarRowsContext';
 import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
@@ -55,6 +58,7 @@ const emptyStateTransition = {
 type Props = {
   group: SessionGroup;
   groupKey: string;
+  modelOrder?: import('./sidebarRowModel').SidebarRowOrder;
   projectId?: string | null;
   hideGroupLabel?: boolean;
   hasSessionSearchQuery: boolean;
@@ -97,6 +101,7 @@ type Props = {
 
 export function SessionGroupSection(props: Props): React.ReactNode {
   const { t } = useI18n();
+  const rowContext = React.useContext(SidebarRowsContext);
   const shouldReduceMotion = useReducedMotion();
   const {
     group,
@@ -286,6 +291,20 @@ export function SessionGroupSection(props: Props): React.ReactNode {
     prevVisibleCountRef.current = visibleSessions.length;
   }, [visibleSessions.length]);
 
+  const modelRows = React.useMemo(() => {
+    if (isCollapsed || !rowContext) return [];
+    const flattened = (nodes: SessionNode[]) => sessionModelRows(flattenSessionRows(nodes, rowContext.expanded,
+      hasSessionSearchQuery, group.directory), group.isArchivedBucket === true);
+    const folderRows = (parentId: string | null): import('./sidebarRowModel').SidebarModelRow[] => allFoldersForGroup
+      .filter(({ folder }) => (folder.parentId ?? null) === parentId)
+      .flatMap(({ folder, nodes }) => !hasSessionSearchQuery && collapsedFolderIds.has(folder.id) ? []
+        : [...folderRows(folder.id), ...flattened(nodes)]);
+    const folders = folderRows(null), sessions = flattened(visibleSessions);
+    return group.isArchivedBucket ? [...sessions, ...folders] : [...folders, ...sessions];
+  }, [isCollapsed, rowContext, hasSessionSearchQuery, group.directory, group.isArchivedBucket, allFoldersForGroup, collapsedFolderIds, visibleSessions]);
+  React.useLayoutEffect(() => { rowContext?.model.set(groupKey, props.modelOrder ?? 0, modelRows); }, [rowContext?.model, groupKey, props.modelOrder, modelRows]);
+  React.useLayoutEffect(() => () => rowContext?.model.remove(groupKey), [rowContext?.model, groupKey]);
+
   if (hasSessionSearchQuery && !groupMatchesSearch && rootFolders.length === 0 && ungroupedSessions.length === 0 && draftCount === 0) {
     return null;
   }
@@ -329,6 +348,8 @@ export function SessionGroupSection(props: Props): React.ReactNode {
           <SessionFolderItem
             folder={folder}
             sessions={nodes}
+            sessionList={<VirtualSessionList nodes={nodes} directory={group.directory} projectId={projectId}
+              archived={group.isArchivedBucket === true} renderNode={renderSessionNode} />}
             subFolderItems={subFolderItems}
             isCollapsed={hasSessionSearchQuery ? false : collapsedFolderIds.has(folder.id)}
             onToggle={() => toggleFolderCollapse(folder.id)}
@@ -439,13 +460,8 @@ export function SessionGroupSection(props: Props): React.ReactNode {
     >
       {draftItems}
       {group.isArchivedBucket ? null : renderFolderItems()}
-      <AnimatePresence initial={false} onExitComplete={() => setIsExitAnimating(false)}>
-        {visibleSessions.map((node) => (
-          <React.Fragment key={node.session.id}>
-            {renderSessionNode(node, 0, group.directory, projectId, group.isArchivedBucket === true)}
-          </React.Fragment>
-        ))}
-      </AnimatePresence>
+      <VirtualSessionList nodes={visibleSessions} directory={group.directory} projectId={projectId}
+        archived={group.isArchivedBucket === true} renderNode={renderSessionNode} onExitComplete={() => setIsExitAnimating(false)} />
       {group.isArchivedBucket ? renderFolderItems() : null}
       <AnimatePresence initial={false}>
         {totalSessions === 0 && allFoldersForGroup.length === 0 && draftCount === 0 && !isExitAnimating && !shouldDeferNoChats ? (

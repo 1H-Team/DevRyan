@@ -223,6 +223,12 @@ const hasStatusChanged = (oldStatus: GitStatus | null, newStatus: GitStatus | nu
   if (!oldStatus && !newStatus) return false;
   if (!oldStatus || !newStatus) return true;
 
+  if (oldStatus.untrackedTruncated !== newStatus.untrackedTruncated) return true;
+  if (newStatus.fileVersions && (Object.keys(oldStatus.fileVersions ?? {}).length !== Object.keys(newStatus.fileVersions).length
+    || Object.entries(newStatus.fileVersions).some(([file, version]) => oldStatus.fileVersions?.[file] !== version))) return true;
+  for (const field of ['stagedStats', 'unstagedStats'] as const) {
+    if (newStatus[field] !== undefined && haveDiffStatsChanged(oldStatus[field], newStatus[field])) return true;
+  }
   const oldFiles = oldStatus.files ?? [];
   const newFiles = newStatus.files ?? [];
 
@@ -275,7 +281,8 @@ const getChangedFilePaths = (oldStatus: GitStatus | null, newStatus: GitStatus |
     }
 
     // Index/worktree state changed (indicates actual content/state changed)
-    if (oldFile.index !== newFile.index || oldFile.working_dir !== newFile.working_dir) {
+    if (oldFile.index !== newFile.index || oldFile.working_dir !== newFile.working_dir
+      || (newStatus.fileVersions?.[filePath] !== undefined && oldStatus?.fileVersions?.[filePath] !== newStatus.fileVersions[filePath])) {
       changed.add(filePath);
       continue;
     }
@@ -419,13 +426,15 @@ export const useGitStore = create<GitStore>()(
               // Drop cache for removed files
               for (const oldPath of oldPaths) {
                 if (!newPaths.has(oldPath)) {
-                  nextDiffCache.delete(oldPath);
+                  nextDiffCache.delete(getDiffCacheKey(oldPath));
+                  nextDiffCache.delete(getDiffCacheKey(oldPath, { staged: true }));
                 }
               }
 
               // Drop cache for files whose state/content changed
               for (const filePath of changedPaths) {
-                nextDiffCache.delete(filePath);
+                nextDiffCache.delete(getDiffCacheKey(filePath));
+                nextDiffCache.delete(getDiffCacheKey(filePath, { staged: true }));
               }
 
               const hasFileContentChange = changedPaths.size > 0;
@@ -435,7 +444,8 @@ export const useGitStore = create<GitStore>()(
 
               // Preserve diffStats from previous status when light mode returns none
               const mergedStatus = newStatus.diffStats === undefined && currentDirState.status?.diffStats
-                ? { ...newStatus, diffStats: currentDirState.status.diffStats }
+                ? { ...newStatus, diffStats: currentDirState.status.diffStats,
+                  stagedStats: currentDirState.status.stagedStats, unstagedStats: currentDirState.status.unstagedStats }
                 : newStatus;
 
               newDirectories.set(directory, {

@@ -1,3 +1,4 @@
+import { serializeWorkerPayload } from './worker-payload.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -2251,8 +2252,12 @@ export function createCursorSdkRuntime(options = {}) {
     const apiKey = getCursorSdkApiKey({ env, readAuth });
     if (!apiKey) return null;
 
+    const frozen = { type: 'title', apiKey, text: promptText, directory: trimString(directory),
+      modelID: 'auto', modelSelection: { id: 'auto' } };
+    const preflightWire = serializeWorkerPayload(frozen);
+    const inputForLease = (lease) => serializeWorkerPayload({ ...frozen, directory: lease.workingDirectory });
     const owned = options.executionAdapter ? await options.executionAdapter.startReadOnly({
-      command: nodeBinary, args: [workerPath], env: { ...process.env, ...workerEnv } }) : null;
+      input: preflightWire, inputForLease, command: nodeBinary, args: [workerPath], env: { ...process.env, ...workerEnv } }) : null;
     const child = owned ? owned.child : spawnImpl(nodeBinary, [workerPath], {
       cwd: workerCwd,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -2267,14 +2272,7 @@ export function createCursorSdkRuntime(options = {}) {
       stderr = `${stderr}${chunk}`;
       if (stderr.length > 8000) stderr = stderr.slice(-8000);
     });
-    child.stdin.end(JSON.stringify({
-      type: 'title',
-      apiKey,
-      text: promptText,
-      directory: owned ? owned.lease.workingDirectory : trimString(directory),
-      modelID: 'auto',
-      modelSelection: { id: 'auto' },
-    }));
+    child.stdin.end(owned ? owned.workerInput : preflightWire);
 
     const exitPromise = new Promise((resolve) => {
       child.on('error', (error) => resolve({ code: 1, signal: null, error }));
@@ -2328,10 +2326,28 @@ export function createCursorSdkRuntime(options = {}) {
     mcpServerIdentity,
     signal,
   }) => {
+    // Freeze caller-owned objects before any preparation or filesystem await.
+    const frozen = JSON.parse(serializeWorkerPayload({
+      apiKey, sessionID, modelID,
+      modelSelection: cloneCursorSdkModelSelection(modelSelection) || createFallbackCursorSdkModelSelection(modelID),
+      agents: cloneCursorSdkAgentDefinitions(agentDefinitions), mcpServers: cloneCursorMcpServers(mcpServers),
+      mcpServerIdentity: trimString(mcpServerIdentity), prompt,
+      images: Array.isArray(images) ? images : [], directory: trimString(directory), agentID: '',
+    }));
     const state = await readSessionState(sessionID);
+    if (options.executionAdapter) frozen.prompt = [
+      ...state.records.filter((record) => record.info.id !== messageID && record.info.id !== assistantMessageID)
+        .map((record) => `[${record.info.role}]\n${record.parts.map((part) => part.type === 'text' ? part.text
+          : part.type === 'tool' ? `${part.tool}: ${part.state?.output ?? part.state?.error ?? ''}` : '').filter(Boolean).join('\n')}`),
+      `[user]\n${frozen.prompt}`,
+    ].join('\n\n');
+    else frozen.agentID = trimString(state.agentID);
+    const preflightWire = serializeWorkerPayload(frozen);
+    const inputForLease = (lease) => serializeWorkerPayload({ ...frozen, directory: lease.workingDirectory });
+    signal?.throwIfAborted();
     const workerStartedAt = now();
     const owned = options.executionAdapter ? await options.executionAdapter.start({ sessionID, messageID, assistantMessageID,
-      directory, signal, command: nodeBinary, args: [workerPath], env: { ...process.env, ...workerEnv } }) : null;
+      directory, signal, input: preflightWire, inputForLease, command: nodeBinary, args: [workerPath], env: { ...process.env, ...workerEnv } }) : null;
     if (owned && !owned.child) throw Object.assign(new Error('This Cursor execution was already published'), { code: 'execution_already_started' });
     const child = owned ? owned.child : spawnImpl(nodeBinary, [workerPath], {
       cwd: trimString(directory) || workerCwd,
@@ -2369,24 +2385,7 @@ export function createCursorSdkRuntime(options = {}) {
       if (stderr.length > 8000) stderr = stderr.slice(-8000);
     });
 
-    child.stdin.end(JSON.stringify({
-      apiKey,
-      sessionID,
-      modelID,
-      modelSelection: cloneCursorSdkModelSelection(modelSelection) || createFallbackCursorSdkModelSelection(modelID),
-      agents: cloneCursorSdkAgentDefinitions(agentDefinitions),
-      mcpServers: cloneCursorMcpServers(mcpServers),
-      mcpServerIdentity: trimString(mcpServerIdentity),
-      prompt: owned ? [
-        ...state.records.filter((record) => record.info.id !== messageID && record.info.id !== assistantMessageID)
-          .map((record) => `[${record.info.role}]\n${record.parts.map((part) => part.type === 'text' ? part.text
-            : part.type === 'tool' ? `${part.tool}: ${part.state?.output ?? part.state?.error ?? ''}` : '').filter(Boolean).join('\n')}`),
-        `[user]\n${prompt}`,
-      ].join('\n\n') : prompt,
-      images: Array.isArray(images) ? images : [],
-      directory: owned?.lease.workingDirectory ?? trimString(directory),
-      agentID: owned ? '' : trimString(state.agentID),
-    }));
+    child.stdin.end(owned ? owned.workerInput : preflightWire);
 
     const exitPromise = new Promise((resolve) => {
       child.on('error', (error) => resolve({ code: 1, signal: null, error }));
@@ -2548,7 +2547,10 @@ export function createCursorSdkRuntime(options = {}) {
       async waitFinalResult(options = {}) {
         startWorkerReader();
         const result = await withTimeout(finalResultPromise, options.timeoutMs);
-        if (owned) await owned.result;
+        const publication = owned ? await owned.result : null;
+        if (publication?.outcome === 'partial') {
+          return { ...result, publication: { outcome: 'partial', conflicts: publication.conflicts } };
+        }
         return result;
       },
       async *stream() {
@@ -3642,6 +3644,8 @@ export function createCursorSdkRuntime(options = {}) {
     const abortRequestedPromise = new Promise((resolve) => { resolveAbortRequested = resolve; });
     const abortRacePromise = abortRequestedPromise.then(() => ({ aborted: true }));
     let syntheticPatchPartID = null;
+    let partialPublication = null;
+    let publicationNoticePartID = null;
     let sawMutationCandidateTool = false;
     const toolPartIdsByCallId = new Map();
     const partPrefix = options.executionAdapter ? 'prt_cursor_' : '';
@@ -4101,6 +4105,7 @@ export function createCursorSdkRuntime(options = {}) {
       if (!result) return null;
       observeRunUsage(result.usageObservation);
       applyFinalAssistantText(result.finalText);
+      if (result.publication?.outcome === 'partial') partialPublication = result.publication;
       return result.finalStatus || null;
     };
 
@@ -4228,6 +4233,18 @@ export function createCursorSdkRuntime(options = {}) {
         return part;
       });
       normalizeAssistantPlanParts();
+      if (partialPublication) {
+        publicationNoticePartID ??= nextPartID('text', 'publication_conflict');
+        const paths = [...new Set((partialPublication.conflicts || []).map((conflict) => conflict.path))];
+        upsertAssistantPart({
+          id: publicationNoticePartID,
+          sessionID,
+          messageID: assistantMessageID,
+          type: 'text',
+          text: `Some file changes could not be published${paths.length ? `: ${paths.join(', ')}` : ''}. Existing contents were preserved and the conflicting proposed changes were retained for recovery.`,
+          time: { start: completed, end: completed },
+        });
+      }
       assistantRecord.info = {
         ...assistantRecord.info,
         finish,
@@ -4873,12 +4890,16 @@ export function createCursorSdkRuntime(options = {}) {
 
   const runPrompt = (input) => {
     if (!options.executionAdapter) return runPromptImpl(input);
+    const releaseActivity = options.executionAdapter.reserveActivity?.(input) ?? (() => {});
     const runs = startingRuns.get(input.sessionID) ?? new Set();
     const controller = new AbortController();
     const entry = { controller, settled: null };
     runs.add(entry); startingRuns.set(input.sessionID, runs);
     entry.settled = runPromptImpl({ ...input, signal: controller.signal }).finally(() => {
       runs.delete(entry); if (!runs.size) startingRuns.delete(input.sessionID);
+      // The HTTP 204 precedes the provider pump. Keep the reservation until
+      // both the provider process and persistence pump have settled.
+      void Promise.allSettled([...(settlingRuns.get(input.sessionID) ?? [])]).finally(releaseActivity);
     });
     return entry.settled;
   };

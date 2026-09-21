@@ -18,12 +18,13 @@
 // --turn-timing joins GET /api/diagnostics/turn-timing/recent by assistant
 // message id. Both ask the running DevRyan server (--server, default
 // http://127.0.0.1:3000; --cookie or DEVRYAN_UI_SESSION_COOKIE for the
-// oc_ui_session cookie) and are skipped silently when it is unreachable.
+// full oc_ui_session_PORT=value cookie) and are skipped silently when it is unreachable.
 //
 // better-sqlite3 is loaded from packages/web through createRequire; when its
 // native binding was built for another Node ABI the built-in node:sqlite
 // driver is used instead. Both open the database read-only.
 
+import { uiSessionCookieHeader } from './ui-session-cookie.mjs';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -38,7 +39,7 @@ const localRequire = createRequire(import.meta.url);
 
 export const GUARD_REJECTION_PREFIX = 'DEVRYAN_TOOL_INPUT_INVALID:';
 export const DEFAULT_DB_PATH = path.join(os.homedir(), '.local/share/opencode/opencode.db');
-const COOKIE_NAME = 'oc_ui_session';
+
 const GUARD_SAMPLE_LIMIT = 3;
 const TURN_TIMING_PAGE = 500;
 
@@ -618,7 +619,7 @@ export const loadSessionTree = (db, rootId) => {
 
 export const fetchJson = async (url, { cookie = null, timeoutMs = 8000 } = {}) => {
   const headers = { accept: 'application/json' };
-  if (cookie) headers.cookie = `${COOKIE_NAME}=${cookie}`;
+  if (cookie) headers.cookie = uiSessionCookieHeader(cookie);
   try {
     const response = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
     let body = null;
@@ -923,6 +924,7 @@ export const parseProfileArguments = (argv, env = process.env) => {
   }
   if (!/^[A-Za-z0-9._-]+$/.test(options.run)) throw new Error('--run may only contain letters, digits, ., _ and -');
   if (!options.help && !options.sessionId) throw new Error('--session <ses_id> is required');
+  if (options.cookie) uiSessionCookieHeader(options.cookie);
   return options;
 };
 
@@ -935,7 +937,7 @@ const HELP = `Usage: node scripts/perf/session-pipeline-profile.mjs --session <s
   --preflight        join /api/diagnostics/harness/preflight once per (agent, provider, model)
   --turn-timing      join /api/diagnostics/turn-timing/recent by assistant message id
   --server <origin>  DevRyan web server origin for the joins (default http://127.0.0.1:3000)
-  --cookie <value>   ${COOKIE_NAME} cookie value for the joins (or DEVRYAN_UI_SESSION_COOKIE)
+  --cookie <name=value>   full instance cookie name=value for the joins (or DEVRYAN_UI_SESSION_COOKIE)
   --quiet            no console summary
 
 Output: <out>/<run>/pipeline/report.md and report.json. The database is opened

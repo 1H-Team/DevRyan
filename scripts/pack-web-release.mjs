@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { verifySupportedRevertRuntimeArtifacts } from './verify-revert-runtime-artifacts.mjs';
 
 // Private workspaces cannot be fetched from npm. Bundle their source packages,
 // and expose their external runtime requirements to the normal npm installer.
@@ -38,6 +39,7 @@ const command = (file, args, cwd) => {
 };
 
 export async function packWebRelease({ root, destination }) {
+  await verifySupportedRevertRuntimeArtifacts({ directory: path.join(root, 'packages/web/runtime') });
   const workspaces = new Map();
   const directories = new Map();
   for (const entry of await fs.readdir(path.join(root, 'packages'))) {
@@ -59,6 +61,7 @@ export async function packWebRelease({ root, destination }) {
   };
   try {
     await unpack(source.name, staging);
+    await verifySupportedRevertRuntimeArtifacts({ directory: path.join(staging, 'runtime') });
     for (const [name, workspace] of bundled) {
       const target = path.join(staging, 'node_modules', name);
       await unpack(name, target);

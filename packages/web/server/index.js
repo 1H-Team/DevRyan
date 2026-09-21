@@ -63,7 +63,7 @@ import { createCanonicalOpenCodeEventProcessor } from './lib/event-stream/canoni
 import { createFsSearchRuntime as createFsSearchRuntimeFactory } from './lib/fs/search.js';
 import { createOpenCodeLifecycleRuntime } from './lib/opencode/lifecycle.js';
 import { createSessionExecutionHost } from './lib/opencode/session-execution-host.js';
-import { executionArtifacts, executionEnvironment } from './lib/opencode/execution-artifacts.js';
+import { executionArtifacts, executionRuntimeState, executionReadinessMiddleware } from './lib/opencode/execution-artifacts.js';
 import { createOpenAiOAuthCoordinator } from './lib/opencode/openai-oauth-coordinator.js';
 import { createOpenAiOAuthBridge, registerManagedOAuthMutationGate } from './lib/opencode/openai-oauth-bridge.js';
 import { resolveContextModeCapability } from './lib/opencode/context-mode-hotfix.js';
@@ -150,6 +150,8 @@ import { createWebManagedOrchestrationRuntime } from './lib/orchestration/runtim
 import { registerManagedOrchestrationRoutes } from './lib/orchestration/routes.js';
 import { createWebHarnessRuntime } from './lib/harness/runtime.js';
 import { createSessionChangeHost } from '@openchamber/harness-runtime';
+import { createSessionActivityGate } from './lib/opencode/session-activity-gate.js';
+import { createSessionRetention, registerSessionRetentionRoutes } from './lib/opencode/session-retention.js';
 import { createWebPrimaryRecoveryRuntime } from './lib/harness/provider-recovery.js';
 import { createWebCommandDeadlineRuntime } from './lib/harness/command-deadline-runtime.js';
 import { registerDiagnosticsRoutes } from './lib/diagnostics/routes.js';
@@ -169,7 +171,6 @@ import {
 } from './lib/opencode/db-maintenance.js';
 import { registerOpenCodeDbMaintenanceRoutes } from './lib/opencode/db-maintenance-routes.js';
 import { createProxyMiddleware, responseInterceptor } from 'http-proxy-middleware';
-import webPush from 'web-push';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -462,7 +463,6 @@ const getUiSessionTokenFromRequest = (...args) => requestSecurityRuntime.getUiSe
 const pushRuntime = createPushRuntime({
   fsPromises,
   path,
-  webPush,
   PUSH_SUBSCRIPTIONS_FILE_PATH,
   readSettingsFromDiskMigrated,
   writeSettingsToDisk,
@@ -619,12 +619,16 @@ const resolveCursorSdkAgentDefinitions = async ({ directory, resolveModelSelecti
   return definitions;
 };
 
-const capturedExecutionEnvironment = await executionEnvironment({ pluginDirectory: path.join(defaultConfigRoot, 'plugins'), dataDirectory: OPENCHAMBER_DATA_DIR });
+const executionReadiness = await executionRuntimeState({ pluginDirectory: path.join(defaultConfigRoot, 'plugins'), dataDirectory: OPENCHAMBER_DATA_DIR,
+  runtimeMode: process.env.DEVRYAN_EXECUTION_BOUNDARY === '1' ? 'captured'
+    : process.env.OPENCODE_HOST || process.env.OPENCODE_SKIP_START === 'true' || process.env.OPENCHAMBER_SKIP_OPENCODE_START === 'true' ? 'external' : 'managed' });
+const capturedExecutionEnvironment = executionReadiness.environment;
 const capturedExecutions = capturedExecutionEnvironment.DEVRYAN_EXECUTION_BOUNDARY === '1'
   && (!process.env.OPENCODE_HOST || process.env.DEVRYAN_EXECUTION_BOUNDARY === '1');
 
+const sessionActivityGate = createSessionActivityGate();
 const cursorSdkRuntime = createCursorSdkRuntime({
-  ...(capturedExecutions ? { executionAdapter: { start: (input) => sessionExecutionHost.startCursor(input),
+  ...(executionReadiness.state !== 'not_expected' ? { executionAdapter: { reserveActivity: ({ sessionID }) => sessionActivityGate.enter([sessionID]), start: (input) => sessionExecutionHost.startCursor(input),
     startReadOnly: (input) => sessionExecutionHost.startReadOnly(input),
     beforePrompt: (input) => sessionExecutionHost.beforeCursorPrompt(input) },
   onPersistRecord: (input) => sessionExecutionHost.persistCursorRecord(input) } : {}),
@@ -1367,6 +1371,7 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
   },
   onStartupStatus: (text) => onOpenCodeStartupStatus?.(text),
   beforeManagedSpawn: runOpenCodeDbMaintenanceBeforeSpawn,
+  assertExecutionReady: executionReadiness.assertReady,
 });
 
 observeContextModeToolFailure = (payload) => (
@@ -1413,7 +1418,7 @@ harnessRuntime.setPrimaryRecoveryRuntime(primaryRecoveryRuntime);
 const harnessFingerprintReader = createHarnessRunFingerprintReader({
   getDuplicateProviderRoute: (providerID) => providerID === 'openai' && openAiOAuthCoordinator.usesOAuth()
     ? 'openai-chatgpt-managed-responses-v1' : null,
-  getRuntimeBinary: () => useWslForOpencode ? null : capturedExecutions
+  getRuntimeBinary: () => useWslForOpencode || executionReadiness.state === 'required_unavailable' ? null : capturedExecutions
     ? capturedExecutionEnvironment.DEVRYAN_OPENCODE_ARTIFACT : resolvedOpencodeBinary,
   isManaged: () => !(isExternalOpenCode || ENV_SKIP_OPENCODE_START || ENV_CONFIGURED_OPENCODE_HOST),
   buildOpenCodeUrl, getOpenCodeAuthHeaders, fetchImpl: fetch,
@@ -1444,7 +1449,7 @@ const sessionChangeHost = createSessionChangeHost({
   reconcileExecutionReceipts: (input) => cursorSdkRuntime.reconcileSessionChanges(input),
 });
 harnessRuntime.setSessionChangeHost(sessionChangeHost);
-const sessionExecutionHost = createSessionExecutionHost({ dataDirectory: OPENCHAMBER_DATA_DIR,
+const sessionExecutionHost = createSessionExecutionHost({ assertExecutionReady: executionReadiness.assertReady, dataDirectory: OPENCHAMBER_DATA_DIR, activityGate: sessionActivityGate,
   getLauncher: () => executionArtifacts().launcher, buildOpenCodeUrl, getOpenCodeAuthHeaders,
   recordReceipt: (input) => sessionChangeHost.recordReceipt(input),
   stopCursor: (input) => cursorSdkRuntime.abortAndWait(input.sessionID),
@@ -1597,6 +1602,7 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   getManagedOrchestrationRuntime: () => managedOrchestrationRuntime,
   getBrowserLeaseRuntime: () => browserLeaseRuntime,
   getCursorSdkRuntime: () => cursorSdkRuntime,
+  getSessionExecutionHost: () => sessionExecutionHost,
   getSessionTitleRuntime: () => standardSessionTitleRuntime,
   shouldSkipOpenCodeStop: () => ENV_SKIP_OPENCODE_START || isExternalOpenCode,
   getOpenCodePort: () => openCodePort,
@@ -2046,6 +2052,8 @@ async function main(options = {}) {
   });
   uiAuthController = bootstrapResult.uiAuthController;
   // Must precede managed session routes, which intercept the generic proxy.
+  app.get('/api/diagnostics/execution-runtime', (_req, res) => res.json({ state: executionReadiness.state, diagnostic: executionReadiness.diagnostic }));
+  app.use(executionReadinessMiddleware(executionReadiness));
   app.use('/api/session', (req, res, next) => {
     if (isSessionCreateRequest(req)) {
       const trace = beginSessionCreationTrace(req, (entry) => harnessRuntime.record(entry));
@@ -2181,6 +2189,30 @@ async function main(options = {}) {
     },
     logger: console,
   });
+  const retention = createSessionRetention({
+    gate: sessionActivityGate, readSettings: readSettingsFromDiskMigrated,
+    buildOpenCodeUrl, getOpenCodeAuthHeaders,
+    getControlToken: async () => (await managedOrchestrationRuntime.prepareBridge()).DEVRYAN_ORCHESTRATION_TOKEN,
+    getDirectory: () => openCodeWorkingDirectory,
+    isExclusive: () => capturedExecutions && sessionExecutionHost.retentionReady && isOpenCodeReady && !isRestartingOpenCode
+      && !multiUserRuntime.enabled && !(isExternalOpenCode || ENV_SKIP_OPENCODE_START || ENV_CONFIGURED_OPENCODE_HOST),
+    protectedSessions: async () => {
+      const snapshot = await managedOrchestrationRuntime.getSnapshot();
+      if (!snapshot.available || snapshot.recoveryWarning) throw Object.assign(new Error('managed_ownership_unknown'), { code: 'managed_ownership_unknown' });
+      return snapshot.tasks.flatMap((task) => [task.rootSessionId, task.childSessionId]).filter(Boolean);
+    },
+    checkLedger: async ({ directory, sessions }) => {
+      if ((await sessionExecutionHost.runtime.activeLeases({ directory, sessions })).length
+        || (await sessionExecutionHost.runtime.pendingTransactions({ directory })).length)
+        throw Object.assign(new Error('captured_execution_active'), { code: 'captured_execution_active' });
+      for (const sessionID of sessions) {
+        const recovery = await primaryRecoveryRuntime.readRecord(sessionID);
+        if (recovery && !['completed', 'cancelled', 'superseded'].includes(recovery.state))
+          throw Object.assign(new Error('recovery_owned_session'), { code: 'recovery_owned_session' });
+      }
+    },
+  });
+  registerSessionRetentionRoutes(app, { retention, gate: sessionActivityGate });
   registerManagedOrchestrationRoutes(app, {
     runtime: managedOrchestrationRuntime,
     express,
@@ -2452,6 +2484,7 @@ async function main(options = {}) {
     getOpenCodeAuthHeaders,
     globalEventHub: globalMessageStreamHub,
     messageStreamWsClients: uiNotificationWsClients,
+    registerRetentionConnection: (req) => sessionActivityGate.connect(req),
     upstreamStallTimeoutMs: getUpstreamStallTimeoutMs,
     terminalHeartbeatIntervalMs: TERMINAL_INPUT_WS_HEARTBEAT_INTERVAL_MS,
     terminalRebindWindowMs: TERMINAL_INPUT_WS_REBIND_WINDOW_MS,

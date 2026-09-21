@@ -359,15 +359,16 @@ export type ScopedRevertScope = "tree" | "session";
 
 export type ScopedRevertFile = { path: string; status: string };
 export type ScopedRevertSessionTarget = { id: string; targetMessageID: string };
+export type ScopedMutationOutcome = { outcome?: 'partial'; conflicts?: Array<{ path: string }> };
 
-export type ScopedSessionRevertResult = {
+export type ScopedSessionRevertResult = ScopedMutationOutcome & {
   session: Session;
   reverted: { files: ScopedRevertFile[]; sessions: ScopedRevertSessionTarget[] };
   verification: { ok: boolean; files?: ScopedRevertFile[] } | null;
   redoAvailable: boolean;
 };
 
-export type ScopedSessionUnrevertResult = {
+export type ScopedSessionUnrevertResult = ScopedMutationOutcome & {
   session: Session;
   restored: ScopedRevertFile[];
 };
@@ -478,7 +479,12 @@ const parseScopedRevertSessions = (value: unknown): ScopedRevertSessionTarget[] 
   return sessions;
 };
 
-const SCOPED_REVERT_ENVELOPE_KEYS = new Set(["reverted", "verification", "redoAvailable", "restored"]);
+const SCOPED_REVERT_ENVELOPE_KEYS = new Set(["reverted", "verification", "redoAvailable", "restored", "outcome", "conflicts"]);
+
+const parseScopedMutationOutcome = (payload: Record<string, unknown>): ScopedMutationOutcome => payload.outcome === 'partial'
+  ? { outcome: 'partial', conflicts: Array.isArray(payload.conflicts) ? payload.conflicts.flatMap((entry: unknown) =>
+    isRecord(entry) && typeof entry.path === 'string' ? [{ path: entry.path }] : []) : [] }
+  : {};
 
 const parseScopedRevertSession = (payload: Record<string, unknown>): Session | null => {
   if (isRecord(payload.session) && typeof payload.session.id === "string") {
@@ -602,6 +608,7 @@ export async function requestScopedSessionRevert({
       },
       verification,
       redoAvailable: payload.redoAvailable === true,
+      ...parseScopedMutationOutcome(payload),
     };
   }, timeoutMs, "Scoped session revert timed out");
 }
@@ -643,6 +650,7 @@ export async function requestScopedSessionUnrevert({
     return {
       session,
       restored: parseScopedRevertFiles(payload.restored),
+      ...parseScopedMutationOutcome(payload),
     };
   }, timeoutMs, "Scoped session unrevert timed out");
 }
@@ -2362,6 +2370,14 @@ class OpencodeService {
   }
 
   // Command Management
+  async listCommandsForDirectory(directory: string | null, signal?: AbortSignal) {
+    const response = await this.client.command.list({ directory: directory ?? undefined }, { signal });
+    if (response.error || !Array.isArray(response.data)) {
+      throw new Error('Commands could not be loaded. Retry sending your message.');
+    }
+    return response.data;
+  }
+
   async listCommands(): Promise<Array<{ name: string; description?: string; agent?: string; model?: string }>> {
     try {
       const response = await this.client.command.list(

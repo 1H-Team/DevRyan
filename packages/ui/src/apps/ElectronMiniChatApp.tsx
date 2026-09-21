@@ -22,7 +22,10 @@ import { useMiniChatKeyboardShortcuts } from '@/hooks/useMiniChatKeyboardShortcu
 import { listProjectWorktrees } from '@/lib/worktrees/worktreeManager';
 import type { WorktreeMetadata } from '@/types/worktree';
 import { useAuthPrincipal } from '@/lib/authSession';
-import { filterWorktreesByGrantedBranches } from '@/lib/worktrees/managedBranches';
+import {
+  filterBranchBackedWorktrees,
+  filterWorktreesByGrantedBranches,
+} from '@/lib/worktrees/managedBranches';
 
 const MINI_CHAT_PRESENCE_CHANNEL = 'openchamber:mini-chat-presence';
 
@@ -148,9 +151,10 @@ const MiniChatBootstrap: React.FC<{ config: MiniChatConfig }> = ({ config }) => 
           const isGitRepo = cachedIsGitRepo ?? await import('@/lib/gitApi').then((m) => m.checkIsGitRepository(projectPath));
           if (!isGitRepo) return;
           const discoveredWorktrees = await listProjectWorktrees({ id: project.id, path: projectPath });
+          const branchWorktrees = filterBranchBackedWorktrees(discoveredWorktrees);
           const worktrees = filterByGrant
-            ? filterWorktreesByGrantedBranches(discoveredWorktrees, project)
-            : discoveredWorktrees;
+            ? filterWorktreesByGrantedBranches(branchWorktrees, project)
+            : branchWorktrees;
           if (cancelled || worktrees.length === 0) return;
           worktreesByProject.set(projectPath, worktrees);
           allWorktrees.push(...worktrees);

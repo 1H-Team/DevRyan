@@ -1,3 +1,5 @@
+import { selectRetentionSession, setRetentionSelectionReader, retentionNavigationChanged } from '@/lib/sessionRetention';
+import { toast } from '@/components/ui';
 /**
  * Session UI Store — ephemeral UI state only.
  *
@@ -24,8 +26,6 @@ import { useGlobalSessionsStore } from "@/stores/useGlobalSessionsStore"
 import { useProjectsStore } from "@/stores/useProjectsStore"
 import { useDirectoryStore } from "@/stores/useDirectoryStore"
 import { useSessionFoldersStore } from "@/stores/useSessionFoldersStore"
-import { useCommandsStore } from "@/stores/useCommandsStore"
-import { useSkillsStore } from "@/stores/useSkillsStore"
 import { useMessageQueueStore } from "@/stores/messageQueueStore"
 import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
 import { useSessionPlanFileStore } from "@/stores/useSessionPlanFileStore"
@@ -430,14 +430,10 @@ async function routeMessage(params: {
     const [head, ...tail] = params.content.split(" ")
     const cmdName = head.slice(1)
 
-    const dirState = getDirectoryState(messageDirectory ?? undefined)
-    const syncCommands = dirState?.command ?? []
-    const storeCommands = useCommandsStore.getState().commands
-    const skills = useSkillsStore.getState().skills
-
-    const isCommand = syncCommands.find((c) => c.name === cmdName)
-      || storeCommands.find((c) => c.name === cmdName)
-      || skills.find((skill) => skill.name === cmdName)
+    // Resolve against this send's directory. A stale catalogue from another
+    // workspace must not turn a command into a normal model prompt.
+    const commands = await opencodeClient.listCommandsForDirectory(messageDirectory, params.lifecycleCallbacks?.signal)
+    const isCommand = commands.some((command) => command.name === cmdName)
 
     if (isCommand) {
       await optimisticSend({
@@ -1861,15 +1857,12 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // setCurrentSession
   // ---------------------------------------------------------------------------
   setCurrentSession: (id, directoryHint?: string | null) => {
-    const previousSessionId = get().currentSessionId
-
-    // Set currentSessionId immediately so the skeleton renders without delay.
-    set({
-      currentSessionId: id,
-      currentDraftId: id ? null : get().currentDraftId,
-      newSessionDraft: id ? { ...DEFAULT_DRAFT } : get().newSessionDraft,
-    })
-    applyCurrentSessionSideEffects(id, directoryHint, previousSessionId, get)
+    selectRetentionSession(id, () => {
+      const previousSessionId = get().currentSessionId
+      set({ currentSessionId: id, currentDraftId: id ? null : get().currentDraftId,
+        newSessionDraft: id ? { ...DEFAULT_DRAFT } : get().newSessionDraft })
+      applyCurrentSessionSideEffects(id, directoryHint, previousSessionId, get)
+    }, (error) => toast.error(error.message))
   },
 
   // ---------------------------------------------------------------------------
@@ -3787,3 +3780,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 }))
 
 setSessionUIStoreRef(useSessionUIStore)
+
+setRetentionSelectionReader(() => useSessionUIStore.getState().currentSessionId)
+useSessionUIStore.subscribe((state, previous) => {
+  if (state.currentSessionId !== previous.currentSessionId || state.currentDraftId !== previous.currentDraftId
+    || state.newSessionDraft.open !== previous.newSessionDraft.open) retentionNavigationChanged()
+})

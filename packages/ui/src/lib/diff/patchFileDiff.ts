@@ -21,7 +21,7 @@
 export const splitPatchIntoHunks = (patch: string): string[] => {
   if (!patch) return [];
 
-  const lines = patch.split(/\r?\n/);
+  const lines = patch.split('\n');
   const hunkHeaderRegex = /^@@\s/;
   const headerLines: string[] = [];
   let firstHunk = 0;

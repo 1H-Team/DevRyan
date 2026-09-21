@@ -282,3 +282,8 @@ service generation change. See [connection behavior](../../docs/SUPABASE_CONNECT
 - `runtime-memory-monitor.mjs` samples content-free V8/RSS/external memory, event-loop delay and session-change read counters in foreground and runtime-service processes. It logs at most once per minute plus hysteretic pressure transitions; it collects no heap dumps. The synthetic `scripts/verify-crash-memory.mjs` fixture owns explicit allocation profiling and isolated ownership-mode soaks.
 
 - Concurrent Revert executables ship as `Resources/revert-runtime/<platform>-<arch>`. `scripts/package-prepared.mjs` requires verified artifacts; `scripts/adhoc-sign-macos-app.mjs` verifies them before signing, updates signed digests and reseals the app. Build contracts: [Concurrent Revert](../../docs/CONCURRENT_REVERT.md).
+
+- `ssh-managed-probe.mjs` validates the remote ownership challenge, runtime version and actual loopback binding before `ssh-manager.mjs` installs credentials. Shutdown signatures pin the instance, owner, port, timestamp and one-use nonce.
+- `quit-cleanup.mjs` provides the updater's bounded owned-process cleanup. `main.mjs` leaves installation ownership with the updater and blocks installation if cleanup fails or times out; unrelated runtime-service/Bot owners remain outside foreground cleanup.
+
+- Managed SSH version mismatch permits signed shutdown after ownership verification. Installation waits for confirmed listener absence; ambiguous ownership or shutdown failures prevent upgrade/start.

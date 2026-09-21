@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import { quotaRefreshCoordinator } from '@/stores/useQuotaStore';
+import { quotaRefreshCoordinator, useQuotaStore } from '@/stores/useQuotaStore';
 
 export type ManagedQuotaProviderId = 'ollama-cloud' | 'cursor-acp' | 'opencode';
 
@@ -32,6 +32,9 @@ export const ManagedQuotaCredentials = React.memo(function ManagedQuotaCredentia
 }) {
   const { t } = useI18n();
   const [status, setStatus] = React.useState<CredentialStatus>({ configured: false });
+  const [operationError, setOperationError] = React.useState<string | null>(null);
+  const [operationMessage, setOperationMessage] = React.useState<string | null>(null);
+  const refreshError = useQuotaStore((state) => state.providerRefreshState[providerId]?.refreshError);
   const [loading, setLoading] = React.useState(true);
   const [busy, setBusy] = React.useState<'save' | 'delete' | 'validate' | 'import' | null>(null);
   const [cookie, setCookie] = React.useState('');
@@ -92,6 +95,8 @@ export const ManagedQuotaCredentials = React.memo(function ManagedQuotaCredentia
   React.useEffect(() => {
     const controller = new AbortController();
     clearSecrets();
+    setOperationError(null);
+    setOperationMessage(null);
     void loadStatus(controller.signal);
     return () => controller.abort();
   }, [clearSecrets, loadStatus]);
@@ -113,6 +118,8 @@ export const ManagedQuotaCredentials = React.memo(function ManagedQuotaCredentia
 
   const mutate = async (action: 'save' | 'delete' | 'validate' | 'import') => {
     setBusy(action);
+    setOperationError(null);
+    setOperationMessage(null);
     try {
       const suffix = action === 'validate' || action === 'import' ? `/${action}` : '';
       const response = await fetch(`/api/quota/credentials/${encodeURIComponent(providerId)}${suffix}`, {
@@ -128,34 +135,47 @@ export const ManagedQuotaCredentials = React.memo(function ManagedQuotaCredentia
         throw new Error(parseResponseError(payload, t('settings.providers.page.toast.managedQuotaMutationFailed')));
       }
 
-      if (action === 'validate') {
-        await quotaRefreshCoordinator.refreshNow({ forceRefresh: true });
-        toast.success(t('settings.providers.page.toast.managedQuotaValidated'));
-        return;
-      }
-
-      clearSecrets();
-      if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
-        const nextStatus = payload as CredentialStatus;
-        setStatus(nextStatus);
-        if (providerId === 'cursor-acp'
-          && (nextStatus.credentialKind === 'oauth' || nextStatus.credentialKind === 'dashboard')) {
-          setCursorMode(nextStatus.credentialKind);
+      if (action !== 'validate') {
+        clearSecrets();
+        if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+          const nextStatus = payload as CredentialStatus;
+          setStatus(nextStatus);
+          if (providerId === 'cursor-acp'
+            && (nextStatus.credentialKind === 'oauth' || nextStatus.credentialKind === 'dashboard')) {
+            setCursorMode(nextStatus.credentialKind);
+          }
+        } else {
+          await loadStatus();
         }
-      } else {
-        await loadStatus();
       }
+      const message = t(action === 'delete'
+        ? 'settings.providers.page.toast.managedQuotaCleared'
+        : action === 'validate'
+          ? 'settings.providers.page.toast.managedQuotaValidationSucceeded'
+          : action === 'import'
+            ? 'settings.providers.page.toast.cursorUsageImported'
+            : 'settings.providers.page.toast.managedQuotaSaved');
+      setOperationMessage(message);
+      toast.success(message);
+
+      // Refresh failures must not turn a successful credential write into a failed save.
       await quotaRefreshCoordinator.refreshNow({ forceRefresh: true, rediscover: true });
-      toast.success(action === 'delete'
-        ? t('settings.providers.page.toast.managedQuotaCleared')
-        : action === 'import'
-          ? t('settings.providers.page.toast.cursorUsageImported')
-          : t('settings.providers.page.toast.managedQuotaSaved'));
+      if (action !== 'delete') {
+        const latest = useQuotaStore.getState();
+        const error = latest.providerRefreshState[providerId]?.refreshError || latest.error;
+        const result = latest.results.find((entry) => entry.providerId === providerId);
+        if (error || !result?.ok) {
+          const detail = error || t('settings.providers.page.toast.managedQuotaRefreshFailed');
+          setOperationError(detail);
+          toast.error(detail);
+        }
+      }
     } catch (error) {
-      console.error('Failed to update managed quota credential:', error);
-      toast.error(error instanceof Error
+      const message = error instanceof Error
         ? error.message
-        : t('settings.providers.page.toast.managedQuotaMutationFailed'));
+        : t('settings.providers.page.toast.managedQuotaMutationFailed');
+      setOperationError(message);
+      toast.error(message);
     } finally {
       setBusy(null);
     }
@@ -189,6 +209,11 @@ export const ManagedQuotaCredentials = React.memo(function ManagedQuotaCredentia
           ) : null}
         </div>
       </div>
+
+      {operationMessage ? <p role="status" className="typography-meta text-muted-foreground">{operationMessage}</p> : null}
+      {operationError || (status.configured && refreshError) ? (
+        <p role="alert" className="typography-meta text-[var(--status-error)]">{operationError || refreshError}</p>
+      ) : null}
 
       {providerId === 'cursor-acp' ? (
         <div className="flex gap-1" role="group" aria-label={t('settings.providers.page.auth.cursorCredentialMode')}>

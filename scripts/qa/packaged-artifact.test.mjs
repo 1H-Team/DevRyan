@@ -46,6 +46,22 @@ test('loads only the recorded package with unchanged shell and served UI', () =>
   await assert.rejects(loadQaPackagedArtifact(input), /packaged UI changed/);
 }));
 
+test('historical and interrupted-cleanup packages cannot be used as runnable acceptance evidence', () => fixture(async input => {
+  for (const payloadState of ['historical', 'removing', 'building']) {
+    await writeFile(path.join(input.root, 'storage-retention.json'), JSON.stringify({ schemaVersion: 1, payloadState }));
+    await assert.rejects(loadQaPackagedArtifact(input), /historical or incomplete/);
+  }
+  await writeFile(path.join(input.root, 'storage-retention.json'), JSON.stringify({ schemaVersion: 1, payloadState: 'ready' }));
+  await loadQaPackagedArtifact(input);
+}));
+
+test('retention metadata cannot redirect reads through a symlink', () => fixture(async input => {
+  const target = path.join(input.root, 'private-metadata.json');
+  await writeFile(target, JSON.stringify({ schemaVersion: 1, payloadState: 'ready' }));
+  await symlink(target, path.join(input.root, 'storage-retention.json'));
+  await assert.rejects(loadQaPackagedArtifact(input), /must be a regular file/);
+}));
+
 test('rejects a changed archive and missing package evidence', () => fixture(async input => {
   await writeFile(path.join(input.resources, 'app.asar'), 'changed archive');
   await assert.rejects(loadQaPackagedArtifact(input), /packaged server or shell changed/);

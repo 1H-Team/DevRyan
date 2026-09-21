@@ -23,6 +23,8 @@ export const createPushRuntime = (deps) => {
     readSettingsFromDiskMigrated,
     writeSettingsToDisk,
   } = deps;
+  let webPushPromise;
+  const loadWebPush = () => webPush ? Promise.resolve(webPush) : webPushPromise ??= import('web-push').then((module) => module.default);
 
   let persistPushSubscriptionsLock = Promise.resolve();
   let pushInitialized = false;
@@ -97,7 +99,7 @@ export const createPushRuntime = (deps) => {
       return { publicKey: existing.publicKey, privateKey: existing.privateKey };
     }
 
-    const generated = webPush.generateVAPIDKeys();
+    const generated = (await loadWebPush()).generateVAPIDKeys();
     const next = {
       ...settings,
       vapidKeys: {
@@ -214,7 +216,7 @@ export const createPushRuntime = (deps) => {
     };
 
     try {
-      await webPush.sendNotification(pushSubscription, body);
+      await (await loadWebPush()).sendNotification(pushSubscription, body);
     } catch (error) {
       const statusCode = typeof error?.statusCode === 'number' ? error.statusCode : null;
       if (statusCode === 410 || statusCode === 404) {
@@ -321,7 +323,7 @@ export const createPushRuntime = (deps) => {
       console.warn('[Push] No public origin configured for VAPID; set OPENCHAMBER_VAPID_SUBJECT or enable push once from a real origin.');
     }
 
-    webPush.setVapidDetails(subject, keys.publicKey, keys.privateKey);
+    (await loadWebPush()).setVapidDetails(subject, keys.publicKey, keys.privateKey);
     pushInitialized = true;
   };
 

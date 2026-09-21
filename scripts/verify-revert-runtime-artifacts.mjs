@@ -6,6 +6,16 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const digest = async (file) => createHash('sha256').update(await fs.readFile(file)).digest('hex');
 
+export async function verifySupportedRevertRuntimeArtifacts({ directory } = {}) {
+  const contract = JSON.parse(await fs.readFile(path.join(root, 'packages/web/server/lib/opencode/companion/manifest.json')));
+  if (!Array.isArray(contract.supportedArtifacts) || !contract.supportedArtifacts.length) throw new Error('Missing supported execution artifact policy');
+  for (const target of contract.supportedArtifacts) {
+    const match = /^(darwin|linux|win32)-(arm64|x64)$/.exec(target);
+    if (!match) throw new Error('Invalid supported execution artifact policy');
+    await verifyRevertRuntimeArtifacts({ directory, platform: match[1], arch: match[2] });
+  }
+}
+
 export async function verifyRevertRuntimeArtifacts({ directory = path.join(root, 'packages/web/runtime'),
   platform = process.platform, arch = process.arch } = {}) {
   const location = path.join(directory, `${platform}-${arch}`);
@@ -21,7 +31,7 @@ export async function verifyRevertRuntimeArtifacts({ directory = path.join(root,
   }
   if (platform === 'darwin' && (native.spawnLibrary !== launcher + '-spawn.dylib'
     || native.spawnSha256 !== await digest(path.join(location, native.spawnLibrary)))) throw new Error('Revert spawn library changed');
-  if (runtime.acceptance !== true || runtime.legacyConversationRevert !== 1 || runtime.executionBoundary !== 1
+  if (runtime.acceptance !== true || Object.entries(contract.capability).some(([name, value]) => runtime[name] !== value)
     || runtime.platform !== platform || runtime.arch !== arch || runtime.binary !== companion
     || runtime.patchSha256 !== contract.patchSha256 || runtime.baseCommit !== contract.baseCommit
     || runtime.sha256 !== await digest(path.join(location, companion))) throw new Error('Revert companion artifact is missing, changed, or unverified');

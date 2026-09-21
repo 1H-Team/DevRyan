@@ -1,3 +1,4 @@
+import { describeExecutionFailure } from '@/lib/executionFailure';
 export type SessionFailure = {
   code?: string;
   message?: string;
@@ -13,6 +14,8 @@ export const isSessionCancellation = (error?: SessionFailure): boolean =>
 export function describeSessionFailure(error?: SessionFailure): { code: string; message: string } {
   if (isSessionCancellation(error)) return { code: 'session_cancelled', message: 'Request cancelled.' };
   const text = `${error?.code ?? ''} ${error?.message ?? ''} ${error?.data?.message ?? ''}`;
+  const execution = describeExecutionFailure(text);
+  if (execution) return { code: 'local_execution_failed', message: execution };
   if (/local_execution_|mutation_runtime_|capture_timeout/.test(text)) return {
     code: 'local_execution_failed',
     message: 'Local tool execution could not start or finish. Review failed tools before sending another prompt.',

@@ -18,6 +18,7 @@ import {
   getRemotes,
   getRemoteUrl,
   getStatus,
+  getWorktrees,
   getWorktreeBootstrapStatus,
   isInsideOrSameDirectory,
   isGitRepository,
@@ -64,6 +65,28 @@ describe('getRemotes', () => {
 
     await expect(getRemotes(directory)).resolves.toEqual([]);
     expect(consoleError).not.toHaveBeenCalled();
+  });
+});
+
+describe('getWorktrees', () => {
+  it('does not return worktree registrations Git marks as prunable', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'openchamber-worktrees-'));
+    const staleWorktree = `${directory}-stale`;
+    tempDirs.push(directory, staleWorktree);
+    const git = simpleGit(directory);
+    await git.init();
+    await git.addConfig('user.name', 'DevRyan Test');
+    await git.addConfig('user.email', 'devryan@example.com');
+    await writeFile(join(directory, 'tracked.txt'), 'initial\n');
+    await git.add('tracked.txt');
+    await git.commit('initial commit');
+    await git.raw(['worktree', 'add', '-b', 'stale-branch', staleWorktree]);
+    await rm(staleWorktree, { recursive: true, force: true });
+
+    const worktrees = await getWorktrees(directory);
+
+    expect(worktrees.some((worktree) => worktree.path === staleWorktree)).toBe(false);
+    expect(worktrees).toHaveLength(1);
   });
 });
 

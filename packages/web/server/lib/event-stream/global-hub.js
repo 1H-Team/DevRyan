@@ -1,4 +1,5 @@
 import { createUpstreamSseReader } from './upstream-reader.js';
+import { randomUUID } from 'node:crypto';
 
 // Raised from 512 → 2048 to improve recovery after brief disconnects during
 // long-running agent sessions where many events accumulate quickly.
@@ -33,6 +34,8 @@ export function createGlobalMessageStreamHub({
   const replayEventIds = new Set();
   let replayTotalBytes = 0;
   let syntheticEventSequence = 0;
+  const bootID = randomUUID();
+  let cursorSequence = 0;
 
   let controller = null;
   let reader = null;
@@ -61,7 +64,7 @@ export function createGlobalMessageStreamHub({
 
   const approxEventSizeBytes = (normalized) => {
     try {
-      return JSON.stringify(normalized).length;
+      return Buffer.byteLength(JSON.stringify(normalized));
     } catch {
       return 1024;
     }
@@ -100,7 +103,9 @@ export function createGlobalMessageStreamHub({
   const normalizeEvent = ({ envelope, payload }) => {
     const directory =
       typeof envelope?.directory === 'string' && envelope.directory.length > 0 ? envelope.directory : 'global';
-    const eventId = normalizeEventId(envelope?.eventId);
+    // Transport cursors do not change the event's own identity or envelope.
+    // Upstream reconnection continues to use only upstream-supplied SSE IDs.
+    const eventId = normalizeEventId(envelope?.eventId) ?? `devryan-${bootID}-${++cursorSequence}`;
     return {
       envelope,
       payload,
@@ -217,7 +222,7 @@ export function createGlobalMessageStreamHub({
             : 'global';
       const normalizedEventId = typeof eventId === 'string' && eventId.length > 0
         ? eventId
-        : `synthetic-${Date.now()}-${syntheticEventSequence}`;
+        : `synthetic-${bootID}-${syntheticEventSequence}`;
       const normalized = {
         ...normalizeEvent({
           envelope: {

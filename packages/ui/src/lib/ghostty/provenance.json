@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "core": {
+    "repository": "https://github.com/ghostty-org/ghostty",
+    "commit": "9f62873bf195e4d8a762d768a1405a5f2f7b1697",
+    "zig": "0.15.2"
+  },
+  "adapter": {
+    "repository": "https://github.com/openchamber/openchamber",
+    "commit": "896776d81e13c061b724be98c32b2df17e030806",
+    "license": "LICENSE-ADAPTER"
+  },
+  "t3License": "LICENSE-T3CODE",
+  "assets": {
+    "vendor/ghostty-vt.wasm": "51b016a6aa3c29ead71c7c8acf8c01d43b064bae19957a9c9f9e2bf469267629",
+    "fonts/SymbolsNerdFontMono-Regular.woff2": "a8e2fc5ae3c2525812151b95da80c5beab0befa84aca84fc33aaed94317502df"
+  }
+}

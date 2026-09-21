@@ -1,7 +1,7 @@
 /**
- * SerializeAddon for ghostty-web
+ * SerializeAddon for the DevRyan terminal
  * 
- * Port of xterm.js addon-serialize for ghostty-web terminal.
+ * ANSI and text serialization at the terminal compatibility boundary.
  * Enables serialization of terminal contents to restore state after reconnection.
  * 
  * Features:
@@ -12,7 +12,7 @@
  * - Cursor positioning
  */
 
-import type { Terminal as GhosttyTerminal } from 'ghostty-web';
+import type { Terminal as GhosttyTerminal } from '../ghostty';
 
 // Constants for ANSI escape codes
 const C0 = {
@@ -112,15 +112,15 @@ const NULL_CELL_STATE: CellState = {
 };
 
 /**
- * SerializeAddon for ghostty-web terminal
+ * SerializeAddon for the DevRyan terminal terminal
  */
 export class SerializeAddon {
-  private _terminal: GhosttyTerminal | undefined;
+  private _terminal: Pick<GhosttyTerminal, 'buffer'> | undefined;
 
   /**
    * Activate the addon
    */
-  activate(terminal: GhosttyTerminal): void {
+  activate(terminal: Pick<GhosttyTerminal, 'buffer'>): void {
     this._terminal = terminal;
   }
 
@@ -158,8 +158,7 @@ export class SerializeAddon {
       endRow = options.range.end;
     } else {
       // Serialize scrollback + viewport
-      const totalRows = buffer.length;
-      const scrollbackRows = Math.min(scrollbackLimit, totalRows - buffer.baseY);
+      const scrollbackRows = Math.min(scrollbackLimit, buffer.baseY);
       startRow = Math.max(0, buffer.baseY - scrollbackRows);
       endRow = buffer.baseY + buffer.cursorY;
     }
@@ -178,7 +177,8 @@ export class SerializeAddon {
       let lineContent = '';
       let lastNonSpaceCol = -1;
 
-      // Find the last non-space column
+      const wrapsToNext = buffer.getLine(y + 1)?.isWrapped === true;
+      // A soft wrap retains the full row width, including spaces.
       for (let x = line.length - 1; x >= 0; x--) {
         const cell = line.getCell(x);
         if (cell) {
@@ -190,6 +190,8 @@ export class SerializeAddon {
         }
       }
 
+      if (wrapsToNext) lastNonSpaceCol = line.length - 1;
+
       // Serialize each cell up to the last non-space
       for (let x = 0; x <= lastNonSpaceCol; x++) {
         const cell = line.getCell(x);
@@ -197,6 +199,8 @@ export class SerializeAddon {
           lineContent += ' ';
           continue;
         }
+
+        if (cell.getWidth() === 0) continue;
 
         // Get cell attributes and generate SGR sequences if needed
         const newState = this._getCellState(cell);
@@ -220,7 +224,7 @@ export class SerializeAddon {
       result.push(lineContent);
 
       // Add newline unless it's the last row with cursor
-      if (y < endRow) {
+      if (y < endRow && !wrapsToNext) {
         result.push('\r\n');
       }
     }
@@ -259,8 +263,7 @@ export class SerializeAddon {
     const result: string[] = [];
 
     // Determine range
-    const totalRows = buffer.length;
-    const scrollbackRows = Math.min(scrollbackLimit, totalRows - buffer.baseY);
+    const scrollbackRows = Math.min(scrollbackLimit, buffer.baseY);
     const startRow = Math.max(0, buffer.baseY - scrollbackRows);
     const endRow = buffer.baseY + buffer.cursorY;
 
@@ -275,6 +278,7 @@ export class SerializeAddon {
       for (let x = 0; x < line.length; x++) {
         const cell = line.getCell(x);
         if (cell) {
+          if (cell.getWidth() === 0) continue;
           const char = this._getCellChar(cell);
           lineContent += char || ' ';
         } else {
@@ -282,21 +286,23 @@ export class SerializeAddon {
         }
       }
 
-      if (trimWhitespace) {
+      const wrapsToNext = buffer.getLine(y + 1)?.isWrapped === true;
+      if (trimWhitespace && !wrapsToNext) {
         lineContent = lineContent.trimEnd();
       }
 
       result.push(lineContent);
+      if (y < endRow && !wrapsToNext) result.push('\n');
     }
 
-    return result.join('\n');
+    return result.join('');
   }
 
   /**
    * Get the character from a cell, handling wide characters and special codepoints
    */
   private _getCellChar(cell: { getChars?: () => string; getCodepoint?: () => number }): string {
-    // Try getChars() first (ghostty-web standard)
+    // Prefer complete graphemes over a single codepoint
     if (typeof cell.getChars === 'function') {
       const chars = cell.getChars();
       if (chars) return chars;

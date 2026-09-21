@@ -20,3 +20,5 @@ Web runtime package that ships the main app plus mini-chat and detachable-browse
 - Serves `@openchamber/ui` frontend runtime and consumes `@opencode-ai/sdk` via server-side OpenCode integration.
 - Used directly by Electron desktop shell (in-process server boot) and standalone CLI/web deployments.
 - Browser build output is measured from `dist/.vite/manifest.json` by the root bundle-budget checker; generated `dist` files remain untracked build artifacts.
+
+- `vite-terminal-assets.ts` verifies vendored terminal binary digests and includes its license/provenance files in `dist/licenses/terminal` for web and Electron packaging.

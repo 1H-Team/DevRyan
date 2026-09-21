@@ -21,7 +21,8 @@ export function receiptInputFingerprint(input) {
   if (!Array.isArray(input.files)) return null;
   const digest = crypto.createHash('sha256');
   const add = (value) => {
-    if (Buffer.isBuffer(value?.bytes)) digest.update(`b${value.bytes.length}:${value.mode}:`).update(value.bytes);
+    if (typeof value?.byteStream?.[Symbol.asyncIterator] === 'function') digest.update(`stream:${value.sha256}:${value.mode}`);
+    else if (Buffer.isBuffer(value?.bytes)) digest.update(`b${value.bytes.length}:${value.mode}:`).update(value.bytes);
     else if (typeof value === 'string') digest.update(`s${Buffer.byteLength(value)}:`).update(value);
     else digest.update(JSON.stringify(value ?? null));
     digest.update('\0');
@@ -58,6 +59,10 @@ export async function storeSessionChangeReceipt(repo, input, existing, canonical
   let explicitModes = true, matchesObservation = existing?.state === 'complete' && existing.evidence !== 'exact' && !existing.historical, count = 0;
   const content = async (value) => {
     if (value === null) return null;
+    if (input.source === 'confined-execution' && typeof value?.byteStream?.[Symbol.asyncIterator] === 'function'
+      && /^[a-f0-9]{64}$/.test(value.sha256 ?? '') && MODES.has(value.mode)) {
+      return { oid: (await repo.run(['hash-object', '-w', '--stdin', '--no-filters'], { input: value.byteStream })).toString().trim(), mode: value.mode };
+    }
     if (Buffer.isBuffer(value?.bytes) && MODES.has(value.mode) && input.source === 'confined-execution') {
       return { oid: (await repo.run(['hash-object', '-w', '--stdin', '--no-filters'], { input: value.bytes })).toString().trim(), mode: value.mode };
     }

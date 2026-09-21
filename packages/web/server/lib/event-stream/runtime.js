@@ -135,9 +135,13 @@ export function createGlobalMessageStreamSseHandler({
     });
     if (closed) { unsubscribe(); return; }
     const requestedLastEventId = getRequestLastEventId(req);
-    const { events } = typeof globalHub.replayAfter === 'function'
+    const { events, gap } = typeof globalHub.replayAfter === 'function'
       ? globalHub.replayAfter(requestedLastEventId)
       : { events: [] };
+    if (gap && requestedLastEventId && req.headers?.['x-devryan-replay-gap'] === '1') {
+      // No id line: this control frame must not advance the replay cursor.
+      res.write('event: devryan.replay-gap\ndata: {"replayGap":{"scope":"global"}}\n\n');
+    }
     let replayDone = Promise.resolve(true);
     // Admit the bounded replay snapshot before yielding to live delivery. Awaiting
     // each filter here allows newer live events to overtake remaining replay.
@@ -170,6 +174,7 @@ export function createGlobalUiEventBroadcaster({
   wsClients,
   writeSseEvent,
   globalEventHub = null,
+  registerRetentionConnection = null,
 }) {
   const filteredQueues = new WeakMap();
   return (payload, options = {}) => {
@@ -249,6 +254,7 @@ export function createMessageStreamWsRuntime({
   upstreamReconnectDelayMs = DEFAULT_UPSTREAM_RECONNECT_DELAY_MS,
   fetchImpl = fetch,
   globalEventHub = null,
+  registerRetentionConnection = null,
   eventFilter = null,
 }) {
   const wsServer = new WebSocketServer({
@@ -276,6 +282,8 @@ export function createMessageStreamWsRuntime({
   });
 
   wsServer.on('connection', (socket, req) => {
+    const releaseRetention = registerRetentionConnection?.(req);
+    if (releaseRetention) socket.once('close', releaseRetention);
     const unregisterConnection = typeof uiAuthController?.registerConnection === 'function'
       ? uiAuthController.registerConnection(req.principal, () => socket.close(4001, 'Access revoked'))
       : () => {};

@@ -43,3 +43,8 @@ override the variant sent to the provider.
 - `sessionVisibility.ts` hides exact internal title/text generation helper titles, including temporary commit/PR helpers, while preserving array and record references for unchanged visible sessions.
 
 - `botCatalog.ts` shares Bot/revision/membership parsing across HTTP assigned-catalog bootstrap and live events. `botsApi.ts` exposes `getAssignedCatalog()` for `GET /api/bots/assigned` and rejects missing or malformed catalog collections.
+
+- `sessionRetention.ts` and pure `retentionSelection.ts` stage the old and new selections at the authenticated server before UI navigation, reject stale acknowledgements and keep failed selection changes undisplayed. A synchronous subscription to authoritative session/draft navigation invalidates pending clicks, including draft round trips; completed requests retire and passive observations recheck the current selection.
+- `executionFailure.ts` maps typed execution failures to recovery guidance while retaining their diagnostic code.
+- `ghostty/` owns the vendored WASM terminal, surface and compatibility adapter; see its `DOCUMENTATION.md` and provenance. `terminal/SerializeAddon.ts` serializes full scrollback without moving the visible viewport.
+- `codemirror/sourceText.ts` maps editor changes onto the complete raw buffer, preserving untouched line endings and final-newline state.

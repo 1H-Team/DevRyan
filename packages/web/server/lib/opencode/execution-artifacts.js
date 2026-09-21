@@ -17,18 +17,47 @@ export function executionArtifacts(directory = process.env.DEVRYAN_EXECUTION_ART
     opencode: path.join(directory, `DevRyan-opencode-${platform}${extension}`) };
 }
 
-/** A version string alone cannot attest the companion patch or native policy. */
-export async function executionEnvironment({ pluginDirectory, directory, dataDirectory } = {}) {
-  const artifacts = executionArtifacts(directory);
-  if (!await verifySessionExecutionLauncher(artifacts)) return {};
+/** Keep diagnostics available without interpreting required-but-missing as an
+ * opt-out. Callers must enforce assertReady at every execution entrypoint. */
+export async function executionRuntimeState(options) {
   try {
-    const contract = JSON.parse(await fs.readFile(new URL('./companion/manifest.json', import.meta.url), 'utf8'));
+    const environment = await executionEnvironment(options);
+    return { state: environment.DEVRYAN_EXECUTION_BOUNDARY === '1' ? 'active' : 'not_expected',
+      environment, assertReady() {}, diagnostic: null };
+  } catch {
+    const diagnostic = { code: 'execution_artifacts_unavailable',
+      message: 'The verified execution runtime is missing or incompatible. Repair or update DevRyan, then restart the server.' };
+    return { state: 'required_unavailable', environment: {}, diagnostic,
+      assertReady() { throw Object.assign(new Error(diagnostic.message), { code: diagnostic.code, status: 503 }); } };
+  }
+}
+
+export function executionReadinessMiddleware(runtime) {
+  return (req, res, next) => {
+    if (runtime.state !== 'required_unavailable' || req.method !== 'POST') return next();
+    let pathname;
+    try { pathname = decodeURIComponent(req.path); } catch { return res.status(400).json({ error: 'Invalid request path' }); }
+    if (!/^\/api\/session\/[^/]+\/(?:message|prompt_async|command|shell|summarize)\/*$/i.test(pathname)) return next();
+    return res.status(503).json({ error: runtime.diagnostic.message, code: runtime.diagnostic.code });
+  };
+}
+
+/** A version string alone cannot attest the companion patch or native policy. */
+export async function executionEnvironment({ pluginDirectory, directory, dataDirectory, runtimeMode = 'managed' } = {}) {
+  const contract = JSON.parse(await fs.readFile(new URL('./companion/manifest.json', import.meta.url), 'utf8'));
+  if (runtimeMode === 'external' || runtimeMode !== 'captured' && !contract.supportedArtifacts?.includes(platform)) return {};
+  const unavailable = () => Object.assign(new Error('The verified DevRyan execution runtime is missing or incompatible. Repair the runtime before starting captured tasks.'), {
+    code: 'execution_artifacts_unavailable', status: 503,
+  });
+  const artifacts = executionArtifacts(directory);
+  if (!await verifySessionExecutionLauncher(artifacts)) throw unavailable();
+  try {
     const manifest = JSON.parse(await fs.readFile(path.join(artifacts.directory, 'companion.json'), 'utf8'));
-    if (manifest.executionBoundary !== 1 || manifest.legacyConversationRevert !== 1 || manifest.acceptance !== true
+    if (Object.entries(contract.capability).some(([name, version]) => manifest[name] !== version) || manifest.acceptance !== true
       || manifest.platform !== process.platform || manifest.arch !== process.arch
       || manifest.baseCommit !== contract.baseCommit || manifest.patchSha256 !== contract.patchSha256
       || manifest.binary !== path.basename(artifacts.opencode)
-      || createHash('sha256').update(await fs.readFile(artifacts.opencode)).digest('hex') !== manifest.sha256) return {};
+      || createHash('sha256').update(await fs.readFile(artifacts.opencode)).digest('hex') !== manifest.sha256) throw unavailable();
     const controls = {};
     // These bundled adapters only issue attributed host RPCs. Native/custom
     // file tools, including a shadowed name, still run inside the private view.
@@ -40,5 +69,5 @@ export async function executionEnvironment({ pluginDirectory, directory, dataDir
       DEVRYAN_EXECUTION_CONTROL_PLUGINS: JSON.stringify(controls), DEVRYAN_EXECUTION_LAUNCHER: artifacts.launcher,
       DEVRYAN_PROVIDER_WORKER: fileURLToPath(new URL('./session-provider-worker.mjs', import.meta.url)).replace(/\.asar([\\/])/, '.asar.unpacked$1'),
       DEVRYAN_PROVIDER_STORAGE: path.join(dataDirectory, 'harness', 'provider-executions') };
-  } catch { return {}; }
+  } catch { throw unavailable(); }
 }

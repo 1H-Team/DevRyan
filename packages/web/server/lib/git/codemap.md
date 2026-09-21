@@ -38,3 +38,10 @@ Git service layer for repository operations, direct commit-message and PR-descri
 - Managed chat and scheduled-task branch attachment is orchestrated by `../multi-user/branch-target.js`, which consumes `getBranches`, `getStatus`, `getWorktrees`, and `createWorktree` without switching a shared checkout.
 - Works with GitHub repo parsing/auth modules for remote-aware features.
 - Uses filesystem and process-level git binaries through server runtime deps.
+
+## Status and mutation contracts
+
+- `read-coordinator.js` coalesces background status by canonical root/mode, requires a sufficiently fresh start, bounds global concurrency and terminates/reaps deadline-owned subprocesses. Foreground mutations stay outside this limiter.
+- `status-details.js` computes separate staged/unstaged counts and file versions, bounds untracked enumeration and reports truncation. Combined `diffStats` remains compatible.
+- `index-queue.js` serializes index-changing service and integration operations. `hunk-validation.js` regenerates the canonical current single-file patch under that lock and rejects stale/ambiguous hunks before applying.
+- `push-result.js` reports actual porcelain destinations/ref results; explicit and configured push-remote precedence preserves managed-branch policy.

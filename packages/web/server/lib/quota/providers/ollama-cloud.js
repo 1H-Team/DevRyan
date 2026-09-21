@@ -1,7 +1,7 @@
 import { homedir } from 'os';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
-import { buildResult, toUsageWindow, toNumber } from '../utils/index.js';
+import { buildResult, toUsageWindow, toNumber, formatMoney } from '../utils/index.js';
 import { readManagedQuotaCredential } from '../credentials/providers.js';
 
 const COOKIE_PATH = join(homedir(), '.config', 'ollama-quota', 'cookie');
@@ -23,6 +23,18 @@ const readCookieFile = ({ exists = existsSync, readFile = readFileSync } = {}) =
 
 export const parseOllamaSettingsHtml = (html) => {
   const windows = {};
+  const text = html.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<[^>]*>/g, ' ').replace(/&nbsp;|&#160;/g, ' ').replace(/\s+/g, ' ');
+  const amount = '([0-9]+(?:,[0-9]{3})*(?:\\.[0-9]+)?)';
+  const cost = text.match(new RegExp(`\\$${amount}\\s+(?:used|spent)\\b`, 'i'))
+    ?? text.match(new RegExp(`(?:usage cost|total cost|cost)\\s*:?\\s*\\$${amount}(?=\\s|$)`, 'i'));
+  const balance = text.match(new RegExp(`(?:usage credit balance|credit balance|balance)\\s*:?\\s*\\$${amount}(?=\\s|$)`, 'i'));
+  for (const [name, match, label] of [['cost', cost, 'used'], ['balance', balance, 'credit balance']]) {
+    const value = match ? toNumber(match[1].replaceAll(',', '')) : null;
+    if (value === null) continue;
+    windows[name] = toUsageWindow({ usedPercent: null, windowSeconds: null, resetAt: null,
+      valueLabel: `$${formatMoney(value)} ${label}` });
+  }
   const sessionMatch = html.match(/Session\s+usage[^0-9]*([0-9.]+)%/i);
   if (sessionMatch) {
     windows.session = toUsageWindow({

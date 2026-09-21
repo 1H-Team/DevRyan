@@ -1,3 +1,4 @@
+import { readVersionedFile, writeVersionedFile } from './file-versions.js';
 import { createDeterministicGitReadCache } from './git-read-cache.js';
 
 const EXEC_JOB_TTL_MS = 30 * 60 * 1000;
@@ -759,7 +760,7 @@ export const registerFsRoutes = (app, dependencies) => {
         return res.status(400).json({ error: 'Specified path is not a file' });
       }
 
-      return res.json({ path: canonicalPath, exists: true, isFile: true, size: stats.size, mtimeMs: stats.mtimeMs });
+      return res.json({ path: canonicalPath, exists: true, isFile: true, size: stats.size, mtimeMs: stats.mtimeMs, ctimeMs: stats.ctimeMs });
     } catch (error) {
       const err = error;
       if (err && typeof err === 'object' && err.code === 'ENOENT') {
@@ -814,8 +815,10 @@ export const registerFsRoutes = (app, dependencies) => {
         return res.status(400).json({ error: 'Specified path is not a file' });
       }
 
-      const content = await fsPromises.readFile(canonicalPath, 'utf8');
-      return res.type('text/plain').send(content);
+      const result = await readVersionedFile(canonicalPath);
+      res.set('X-DevRyan-File-Version', result.version);
+      res.set('X-DevRyan-File-Complete', result.complete ? '1' : '0');
+      return res.type('text/plain').send(result.bytes.toString('utf8'));
     } catch (error) {
       const err = error;
       if (err && typeof err === 'object' && err.code === 'ENOENT') {
@@ -921,7 +924,7 @@ export const registerFsRoutes = (app, dependencies) => {
   });
 
   app.post('/api/fs/write', async (req, res) => {
-    const { path: filePath, content } = req.body || {};
+    const { path: filePath, content, expectedVersion } = req.body || {};
     if (!filePath || typeof filePath !== 'string') {
       return res.status(400).json({ error: 'Path is required' });
     }
@@ -945,13 +948,14 @@ export const registerFsRoutes = (app, dependencies) => {
       }
 
       await fsPromises.mkdir(path.dirname(resolved.resolved), { recursive: true });
-      await fsPromises.writeFile(resolved.resolved, content, 'utf8');
-      return res.json({ success: true, path: resolved.resolved });
+      const version = await writeVersionedFile(resolved.resolved, content, expectedVersion);
+      return res.json({ success: true, path: resolved.resolved, version });
     } catch (error) {
       const err = error;
       if (err && typeof err === 'object' && err.code === 'EACCES') {
         return res.status(403).json({ error: 'Access denied' });
       }
+      if (error?.code === 'FILE_VERSION_CONFLICT') return res.status(409).json({ code: error.code, error: error.message });
       console.error('Failed to write file:', error);
       return res.status(500).json({ error: (error && error.message) || 'Failed to write file' });
     }

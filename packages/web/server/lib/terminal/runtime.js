@@ -419,6 +419,7 @@ export function createTerminalRuntime({
         });
 
         const replayChunks = listTerminalOutputReplayChunksSince(targetSession.outputReplayBuffer, replaySince);
+        if (controlMessage.replay === true) sendTerminalInputWsControl(socket, { t: 'replay-start', s: nextSessionId });
         for (const replayChunk of replayChunks) {
           try {
             socket.send(replayChunk.data);
@@ -427,6 +428,7 @@ export function createTerminalRuntime({
             break;
           }
         }
+        if (controlMessage.replay === true) sendTerminalInputWsControl(socket, { t: 'replay-end', s: nextSessionId });
         return;
       }
 

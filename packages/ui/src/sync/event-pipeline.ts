@@ -12,6 +12,7 @@
  * Abort controller created once at init, cleaned up via returned cleanup fn.
  */
 
+import { retentionClientID } from "@/lib/sessionRetention"
 import type { Event, OpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { opencodeClient } from "@/lib/opencode/client"
 import { syncDebug } from "./debug"
@@ -241,6 +242,7 @@ function buildGlobalEventWsUrl(lastEventId?: string): string {
   }
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`
   const httpUrl = new URL("global/event/ws", resolveAbsoluteUrl(normalizedBase))
+  httpUrl.searchParams.set("clientID", retentionClientID)
   if (lastEventId && lastEventId.length > 0) {
     httpUrl.searchParams.set("lastEventId", lastEventId)
   }
@@ -750,10 +752,16 @@ export function createEventPipeline(input: EventPipelineInput) {
     }
     const events = await sdk.global.event({
       signal,
-      ...(lastEventId && lastEventId.length > 0 ? { headers: { "Last-Event-ID": lastEventId } } : {}),
-      onSseEvent: (event: { id?: unknown }) => {
+      headers: { "X-DevRyan-Replay-Gap": "1", "X-DevRyan-Client-ID": retentionClientID, ...(lastEventId && lastEventId.length > 0 ? { "Last-Event-ID": lastEventId } : {}) },
+      onSseEvent: (event: { id?: unknown; event?: unknown }) => {
         markSseConnected()
         resetHeartbeat()
+        // The SDK can inherit the preceding id for an id-less named event.
+        // Handle this signal before touching lastEventId or the reducer queue.
+        if (event.event === "devryan.replay-gap") {
+          onReplayGap?.()
+          return
+        }
         if (typeof event.id === "string" && event.id.length > 0) {
           lastEventId = event.id
         }

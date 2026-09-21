@@ -15,10 +15,12 @@ export interface SessionRevertCoordinator {
     reverted: { files: MutationFile[]; sessions: MutationTarget[] };
     verification: { ok: true; transactionID: string };
     redoAvailable: boolean;
+    outcome?: 'partial'; conflicts?: Array<{ path: string }>;
   }>;
   redo(input: MutationSessionReference): Promise<MutationSession & {
     session: MutationSession; restored: MutationFile[]; sessions: Array<{ id: string }>;
     verification: { ok: true; transactionID: string };
+    outcome?: 'partial'; conflicts?: Array<{ path: string }>;
   }>;
   recover(input: { directory: string }): Promise<void>;
   restoreFiles(input: MutationSessionReference & { revision: string; redo?: boolean;

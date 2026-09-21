@@ -519,6 +519,17 @@ describe('OpenCode lifecycle', () => {
     await server.close();
   });
 
+  it('never launches a fallback when required execution artifacts are unavailable', async () => {
+    const runtime = createRuntime({ assertExecutionReady: () => { throw Object.assign(new Error('Repair runtime'), { code: 'execution_artifacts_unavailable', status: 503 }); } });
+    await expect(runtime.startOpenCode()).rejects.toMatchObject({ code: 'execution_artifacts_unavailable' });
+    expect(spawnMock).not.toHaveBeenCalled();
+    runtime.__testState.isOpenCodeReady = true;
+    await expect(runtime.bootstrapOpenCodeAtStartup()).resolves.toBeUndefined();
+    expect(runtime.__testState.isOpenCodeReady).toBe(false);
+    expect(runtime.__testState.lastOpenCodeError).toBe('Repair runtime');
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
   it('launches anyway when beforeManagedSpawn rejects', async () => {
     delete process.env.OPENCODE_BINARY;
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});

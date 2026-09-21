@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/ui",
-  "version": "1.2.8",
+  "version": "1.2.9",
   "private": true,
   "type": "module",
   "main": "src/main.tsx",
@@ -9,7 +9,8 @@
     "build": "tsc --noEmit",
     "type-check": "tsc --noEmit",
     "lint": "eslint \"./src/**/*.{ts,tsx}\" --config ../../eslint.config.js --cache --cache-location ../../.cache/eslint/ui",
-    "test": "node ../../scripts/test-ui.mjs"
+    "test": "node ../../scripts/test-ui.mjs",
+    "build:ghostty-wasm": "bash scripts/build-libghostty-wasm.sh"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -55,7 +56,6 @@
     "codemirror-lang-elixir": "^4.0.1",
     "dompurify": "^3.4.15",
     "fuse.js": "^7.5.0",
-    "ghostty-web": "^0.4.0",
     "heic2any": "^0.0.4",
     "html-to-image": "^1.11.13",
     "katex": "^0.16.47",

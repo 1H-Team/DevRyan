@@ -445,7 +445,7 @@ export function registerGitRoutes(app, {
   });
 
   app.get('/api/git/status', async (req, res) => {
-    const { getStatus, isGitRepository, isMissingDirectoryError } = await getGitLibraries();
+    const { getBackgroundStatus, isMissingDirectoryError } = await getGitLibraries();
 
     try {
       const directory = req.query.directory;
@@ -453,13 +453,8 @@ export function registerGitRoutes(app, {
         return res.status(400).json({ error: 'directory parameter is required' });
       }
 
-      const isRepo = await isGitRepository(directory);
-      if (!isRepo) {
-        return res.json(nonRepositoryStatus());
-      }
-
       const mode = req.query.mode === 'light' ? 'light' : undefined;
-      const status = await getStatus(directory, { mode });
+      const status = await getBackgroundStatus(directory, { mode });
       res.json(status);
     } catch (error) {
       const errorText = extractGitErrorText(error);
@@ -468,7 +463,7 @@ export function registerGitRoutes(app, {
         return res.json(nonRepositoryStatus());
       }
       console.error('Failed to get git status:', error);
-      res.status(500).json({ error: error.message || 'Failed to get git status' });
+      res.status(error.statusCode || 500).json({ code: error.code, error: error.message || 'Failed to get git status' });
     }
   });
 

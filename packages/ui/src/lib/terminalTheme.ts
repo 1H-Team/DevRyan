@@ -1,4 +1,4 @@
-import type { Ghostty } from 'ghostty-web';
+import type { Ghostty } from './ghostty';
 import type { Theme } from '@/types/theme';
 
 export interface TerminalTheme {
@@ -92,7 +92,7 @@ export function getTerminalOptions(
 }
 
 /**
- * Get terminal options for Ghostty Web terminal
+ * Get terminal options for DevRyan terminal
  */
 export function getGhosttyTerminalOptions(
   fontFamily: string,

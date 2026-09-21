@@ -2,6 +2,9 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import http from 'node:http';
+import { once } from 'node:events';
+import WebSocket from 'ws';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as nodePty from 'node-pty';
 
@@ -89,6 +92,38 @@ async function callRoute(routes, method, route, req) {
 describe('terminal runtime', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('marks historical output only for clients that opt in, before live output', async () => {
+    const server = http.createServer();
+    const { runtime, routes } = createRuntime(server, { isExecutable: (candidate) => candidate === '/bin/sh' });
+    const sockets = [];
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const created = await callRoute(routes, 'post', '/api/terminal/create', { body: { cwd: process.cwd(), cols: 80, rows: 24 } });
+      const output = mockPtyProcess.onData.mock.calls.at(-1)[0];
+      output('history\x1b[6n');
+      for (const replay of [true, false]) {
+        const socket = new WebSocket(`ws://127.0.0.1:${server.address().port}/api/terminal/ws`);
+        sockets.push(socket);
+        const frames = [];
+        socket.on('message', (bytes) => frames.push(bytes[0] === 1 ? JSON.parse(bytes.subarray(1).toString()).t : bytes.toString()));
+        await once(socket, 'open');
+        socket.send(Buffer.concat([Buffer.from([1]), Buffer.from(JSON.stringify({ t: 'b', s: created.body.sessionId, v: 2, replay }))]));
+        await vi.waitFor(() => expect(frames).toContain(replay ? 'replay-end' : 'history\x1b[6n'));
+        expect(frames.slice(0, replay ? 5 : 3)).toEqual(replay
+          ? ['ok', 'bok', 'replay-start', 'history\x1b[6n', 'replay-end'] : ['ok', 'bok', 'history\x1b[6n']);
+        if (replay) {
+          output('live\x1b[6n');
+          await vi.waitFor(() => expect(frames.at(-1)).toBe('live\x1b[6n'));
+        } else expect(frames).not.toContain('replay-start');
+        socket.close(); await once(socket, 'close');
+      }
+    } finally {
+      for (const socket of sockets) socket.terminate();
+      await runtime.shutdown();
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 
   it('removes its websocket upgrade listener on shutdown', async () => {

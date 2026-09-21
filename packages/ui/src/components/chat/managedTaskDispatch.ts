@@ -1,3 +1,4 @@
+import { describeExecutionFailure } from '@/lib/executionFailure';
 import type { Part, ToolPart } from '@opencode-ai/sdk/v2';
 import type { ManagedTaskStatus } from '@openchamber/orchestration-runtime';
 
@@ -121,7 +122,7 @@ const readErrorMessage = (value: unknown): string => {
   const withoutRules = permissionRulesIndex >= 0
     ? normalized.slice(0, permissionRulesIndex)
     : normalized;
-  return withoutRules.slice(0, 240);
+  return describeExecutionFailure(withoutRules) ?? withoutRules.slice(0, 240);
 };
 
 const parsePayload = (output: unknown): ManagedTaskPayload | null => {

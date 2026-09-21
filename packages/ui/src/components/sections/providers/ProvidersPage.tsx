@@ -1,4 +1,5 @@
 import React from 'react';
+import { useProviderConnectionStore, waitForProviderCatalogReady } from './providerCatalogConnection';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -112,13 +113,6 @@ interface PendingProviderOAuth {
   error?: string;
 }
 
-// Must outlast the server-side readiness hold (6s, see server proxy READINESS_HOLD_MAX_MS) that
-// 503s /api/provider* while OpenCode restarts to pick up newly saved credentials. The old 2.5s
-// budget expired inside that window, so a successful sign-in looked like a failure.
-const PROVIDER_CATALOG_RETRY_DELAYS_MS = [0, 500, 1000, 1500, 2000, 3000, 3000, 4000] as const;
-/** Attempts of plain polling (~1.5s) before asking the server to re-apply config. */
-const PROVIDER_CATALOG_ESCALATE_AFTER_ATTEMPTS = 3;
-
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
@@ -180,6 +174,9 @@ export const ProvidersPage: React.FC = () => {
   const loadProviders = useConfigStore((state) => state.loadProviders);
   const getModelMetadata = useConfigStore((state) => state.getModelMetadata);
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
+  const activeProviderCatalog = useConfigStore((state) => currentDirectory
+    ? state.directoryScoped[currentDirectory.trim()]?.providers
+    : state.directoryScoped.__global__?.providers);
   const hiddenModels = useUIStore((state) => state.hiddenModels);
   const hideModelRefs = useUIStore((state) => state.hideModelRefs);
   const showModelRefs = useUIStore((state) => state.showModelRefs);
@@ -192,6 +189,7 @@ export const ProvidersPage: React.FC = () => {
   const [apiKeyInputs, setApiKeyInputs] = React.useState<Record<string, string>>({});
   const [authBusyKey, setAuthBusyKey] = React.useState<string | null>(null);
   const [modelQuery, setModelQuery] = React.useState('');
+  const pendingConnections = useProviderConnectionStore((state) => state.pending);
   const [pendingOAuth, setPendingOAuth] = React.useState<PendingProviderOAuth | null>(null);
   const [oauthCodes, setOauthCodes] = React.useState<Record<string, string>>({});
   const [oauthDetails, setOauthDetails] = React.useState<Record<string, ProviderOAuthAuthorization>>({});
@@ -234,9 +232,10 @@ export const ProvidersPage: React.FC = () => {
 
   React.useEffect(() => {
     if (selectedProviderId === ADD_PROVIDER_ID) return;
+    if (pendingConnections[selectedProviderId]) return;
     if (providers.some((provider) => provider.id === selectedProviderId)) return;
     setSelectedProvider(providers[0]?.id ?? ADD_PROVIDER_ID);
-  }, [providers, selectedProviderId, setSelectedProvider]);
+  }, [providers, pendingConnections, selectedProviderId, setSelectedProvider]);
 
   React.useEffect(() => {
     let isMounted = true;
@@ -312,8 +311,8 @@ export const ProvidersPage: React.FC = () => {
   }, [t]);
 
   const connectedProviderIds = React.useMemo(
-    () => new Set(providers.map((provider) => provider.id)),
-    [providers]
+    () => new Set([...providers.map((provider) => provider.id), ...Object.keys(pendingConnections)]),
+    [providers, pendingConnections]
   );
 
   const unconnectedProviders = React.useMemo(
@@ -538,30 +537,21 @@ export const ProvidersPage: React.FC = () => {
     const activeDirectory = currentDirectory?.trim() || null;
     const directories = activeDirectory ? [null, activeDirectory] : [null];
 
-    for (const [attempt, delayMs] of PROVIDER_CATALOG_RETRY_DELAYS_MS.entries()) {
-      if (delayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
-
-      // Escalate once when plain polling hasn't surfaced the provider: the catalog may be stale
-      // rather than slow. Doing this here — instead of unconditionally up front — keeps the
-      // common case free of a needless OpenCode restart.
-      if (attempt === PROVIDER_CATALOG_ESCALATE_AFTER_ATTEMPTS && options?.onStalled) {
-        const keepWaiting = await options.onStalled();
-        if (!keepWaiting) return false;
-      }
-
-      // force: a deduped in-flight load could resolve against the pre-auth catalog and burn a retry.
-      await Promise.all(directories.map((directory) => loadProviders({ directory, force: true })));
-      const state = useConfigStore.getState();
-      const globalProviders = state.directoryScoped.__global__?.providers
-        ?? (activeDirectory ? [] : state.providers);
-      const globalReady = providerCatalogHasModels(globalProviders, providerId);
-      const activeReady = !activeDirectory || providerCatalogHasModels(state.providers, providerId);
-      if (globalReady && activeReady) return true;
-    }
-
-    return false;
+    return waitForProviderCatalogReady({
+      onStalled: options?.onStalled,
+      refresh: async () => {
+        await Promise.all(directories.map((directory) => loadProviders({ directory, force: true })));
+      },
+      isReady: () => {
+        const state = useConfigStore.getState();
+        const globalProviders = state.directoryScoped.__global__?.providers ?? [];
+        const activeProviders = activeDirectory
+          ? state.directoryScoped[activeDirectory]?.providers
+          : globalProviders;
+        return providerCatalogHasModels(globalProviders, providerId)
+          && providerCatalogHasModels(activeProviders, providerId);
+      },
+    });
   }, [currentDirectory, loadProviders]);
 
   // Returns whether the model catalog caught up. A `false` result is NOT a failure — the
@@ -577,6 +567,45 @@ export const ProvidersPage: React.FC = () => {
 
     return providerReady;
   }, [setSelectedProvider, waitForProviderCatalog]);
+
+  const retryApiKeyConnection = React.useCallback(async (providerId: string, allowReload = true) => {
+    const pending = useProviderConnectionStore.getState().pending[providerId];
+    if (!pending) return;
+    const attempt = {
+      ...pending,
+      lastAttemptRevision: useConfigApplyStore.getState().status?.appliedRevision ?? 0,
+    };
+    useProviderConnectionStore.getState().markPending(attempt);
+    const ready = await waitForProviderCatalog(providerId, allowReload ? {
+      onStalled: async () => {
+        const reload = await requestPostAuthConfigReload();
+        await useConfigApplyStore.getState().refresh();
+        return !reload.deferred;
+      },
+    } : undefined);
+    if (ready && useProviderConnectionStore.getState().pending[providerId] === attempt) {
+      useProviderConnectionStore.getState().clear(providerId);
+    }
+    quotaRefreshCoordinator.settingsChanged();
+  }, [waitForProviderCatalog]);
+
+  React.useEffect(() => {
+    if (authBusyKey) return;
+    for (const pending of Object.values(pendingConnections)) {
+      if (appliedRevision > pending.lastAttemptRevision) {
+        void retryApiKeyConnection(pending.id, false);
+      }
+    }
+  }, [appliedRevision, authBusyKey, pendingConnections, retryApiKeyConnection]);
+
+  React.useEffect(() => {
+    for (const pending of Object.values(pendingConnections)) {
+      if (providerCatalogHasModels(rawProviders, pending.id)
+        && providerCatalogHasModels(activeProviderCatalog, pending.id)) {
+        useProviderConnectionStore.getState().clear(pending.id);
+      }
+    }
+  }, [rawProviders, activeProviderCatalog, pendingConnections]);
 
   const handleSaveApiKey = async (providerId: string) => {
     const apiKey = apiKeyInputs[providerId]?.trim() ?? '';
@@ -604,12 +633,16 @@ export const ProvidersPage: React.FC = () => {
       toast.success(t('settings.providers.page.toast.apiKeySaved'));
       setApiKeyInputs((prev) => ({ ...prev, [providerId]: '' }));
       recordConfigMutationResponse(payload);
-      await loadProviders({ directory: null });
+      useProviderConnectionStore.getState().markPending({
+        id: providerId,
+        name: availableProviders.find((provider) => provider.id === providerId)?.name || providerId,
+        lastAttemptRevision: useConfigApplyStore.getState().status?.appliedRevision ?? 0,
+      });
       setSelectedProvider(providerId);
       if (providerId === CURSOR_ACP_PROVIDER_ID) {
         await refreshCursorRuntimeStatus();
       }
-      quotaRefreshCoordinator.settingsChanged();
+      await retryApiKeyConnection(providerId);
     } catch (error) {
       console.error('Failed to save API key:', error);
       toast.error(t('settings.providers.page.toast.apiKeySaveFailed'));
@@ -999,6 +1032,7 @@ export const ProvidersPage: React.FC = () => {
       const payload = await disconnectProvider(providerId, currentDirectory);
       const applyStatus = recordConfigMutationResponse(payload);
       markDisconnectRequested(providerId, payload);
+      useProviderConnectionStore.getState().clear(providerId);
       toast.success(applyStatus?.pending
         ? t('settings.providers.page.toast.providerDisconnectQueued')
         : t('settings.providers.page.toast.providerDisconnected'));
@@ -1166,6 +1200,27 @@ export const ProvidersPage: React.FC = () => {
       </div>
     </div>
   );
+
+  const pendingConnection = pendingConnections[selectedProviderId];
+  const connectionStatus = pendingConnection ? (
+    <div role="status" className="mb-4 space-y-2 rounded-md border p-3">
+      <p className="typography-ui-label">{t('settings.providers.page.auth.modelsPendingTitle')}</p>
+      <p className="typography-meta text-muted-foreground">
+        {t('settings.providers.page.auth.modelsPendingDescription', { provider: pendingConnection.name })}
+      </p>
+      <Button size="xs" variant="outline" disabled={Boolean(authBusyKey)} onClick={async () => {
+        setAuthBusyKey(`catalog:${pendingConnection.id}`);
+        try { await retryApiKeyConnection(pendingConnection.id); }
+        finally { setAuthBusyKey(null); }
+      }}>
+        {t('settings.providers.page.actions.retry')}
+      </Button>
+    </div>
+  ) : null;
+
+  if (pendingConnection && !selectedProvider) {
+    return <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">{connectionStatus}</div>;
+  }
 
   if (!isAddMode && providers.length === 0) {
     return (
@@ -1354,7 +1409,7 @@ export const ProvidersPage: React.FC = () => {
                   {activeCursorAcpProviderId === candidateProviderId && renderCursorRuntimeNotice()}
 
                   {activeManagedQuotaProviderId === candidateProviderId && (
-                    <ManagedQuotaCredentials providerId={activeManagedQuotaProviderId} />
+                    <ManagedQuotaCredentials key={activeManagedQuotaProviderId} providerId={activeManagedQuotaProviderId} />
                   )}
 
                   {(() => {
@@ -1497,6 +1552,7 @@ export const ProvidersPage: React.FC = () => {
     <ScrollableOverlay outerClassName="h-full" className="w-full">
       <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
 
+        {connectionStatus}
         {/* Header */}
         <div className="mb-4 flex items-center gap-3">
           <ProviderLogo providerId={selectedProvider.id} className="h-5 w-5 shrink-0" />
@@ -1619,7 +1675,7 @@ export const ProvidersPage: React.FC = () => {
                 {activeCursorAcpProviderId === selectedProvider.id && renderCursorRuntimeNotice()}
 
                 {activeManagedQuotaProviderId === selectedProvider.id && (
-                  <ManagedQuotaCredentials providerId={activeManagedQuotaProviderId} />
+                  <ManagedQuotaCredentials key={activeManagedQuotaProviderId} providerId={activeManagedQuotaProviderId} />
                 )}
 
                 {visibleOAuthAuthMethods.length > 0 && (

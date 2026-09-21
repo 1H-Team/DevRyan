@@ -74,9 +74,10 @@ manifest and fails on a revision mismatch. Test-only QA shells remain separate.
 
 Workspace consumers declare their own dependencies. Root dependencies cover root
 scripts and repository visual fixtures; root development dependencies cover
-shared tooling. The root retains `ghostty-web@0.3.0` as the existing patch-package
-target, while the UI's separately resolved version is unchanged. Package ownership
-cleanup must not change resolved dependency versions or container-local lockfiles.
+shared tooling. The terminal adapter, pinned WASM and symbols font are vendored
+under `packages/ui/src/lib/ghostty`; normal builds consume checked-in artifacts.
+The former terminal package, patch and ambient types were removed together.
+Rebuild instructions and license/provenance records live beside the adapter.
 
 `scripts/pack-web-release.mjs` stages the npm package with its five private runtime
 workspaces bundled under their existing identities and versions. It removes

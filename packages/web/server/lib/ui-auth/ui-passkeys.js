@@ -2,12 +2,8 @@ import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import {
-  generateAuthenticationOptions,
-  generateRegistrationOptions,
-  verifyAuthenticationResponse,
-  verifyRegistrationResponse,
-} from '@simplewebauthn/server';
+let webAuthn;
+const loadWebAuthn = () => webAuthn ??= import('@simplewebauthn/server');
 
 const DEFAULT_STORE_VERSION = 1;
 const DEFAULT_CHALLENGE_TTL_MS = 5 * 60 * 1000;
@@ -326,7 +322,7 @@ export const createUiPasskeys = ({
       throw error;
     }
 
-    const options = await generateRegistrationOptions({
+    const options = await (await loadWebAuthn()).generateRegistrationOptions({
       rpName,
       rpID,
       userID,
@@ -377,7 +373,7 @@ export const createUiPasskeys = ({
 
     registrationChallenges.delete(requestId);
 
-    const verification = await verifyRegistrationResponse({
+    const verification = await (await loadWebAuthn()).verifyRegistrationResponse({
       response,
       expectedChallenge: matchingRecord.challenge,
       expectedOrigin: matchingRecord.expectedOrigins,
@@ -437,7 +433,7 @@ export const createUiPasskeys = ({
       throw error;
     }
 
-    const options = await generateAuthenticationOptions({
+    const options = await (await loadWebAuthn()).generateAuthenticationOptions({
       rpID,
       userVerification: 'required',
       allowCredentials: passkeys.map((passkey) => ({
@@ -485,7 +481,7 @@ export const createUiPasskeys = ({
 
     authenticationChallenges.delete(requestId);
 
-    const verification = await verifyAuthenticationResponse({
+    const verification = await (await loadWebAuthn()).verifyAuthenticationResponse({
       response,
       expectedChallenge: matchingRecord.challenge,
       expectedOrigin: matchingRecord.expectedOrigins,

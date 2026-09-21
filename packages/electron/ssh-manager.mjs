@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { managedSshOperationScript } from './ssh-managed-probe.mjs';
 import fsp from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
@@ -889,24 +890,24 @@ export class ElectronSshManager {
     }
   }
 
-  async startRemoteServerManaged(parsed, controlPath, instance, desiredPort) {
-    let envPrefix = 'OPENCHAMBER_RUNTIME=ssh-remote';
-    const secret = this.configuredOpenChamberPassword(instance);
-    if (secret) {
-      envPrefix += ` OPENCHAMBER_UI_PASSWORD=${shellQuote(secret)}`;
-    }
-    const output = await runRemoteCommand(parsed, controlPath, `${envPrefix} openchamber serve --hostname 127.0.0.1 --port ${desiredPort}`);
-    const port = output.split(/\s+/).map((token) => Number.parseInt(token, 10)).find((value) => Number.isFinite(value));
-    return port || desiredPort;
+  async managedRemoteOperation(parsed, controlPath, input) {
+    const script = shellQuote(managedSshOperationScript(input));
+    const output = await runRemoteCommand(parsed, controlPath,
+      `if command -v node >/dev/null 2>&1; then node -e ${script}; elif command -v bun >/dev/null 2>&1; then bun -e ${script}; else exit 127; fi`);
+    const result = JSON.parse(output);
+    if (!['absent', 'unverified', 'version_mismatch', 'ready', 'started', 'stopped'].includes(result?.state)) throw new Error('Managed SSH ownership verification failed');
+    return result;
   }
 
-  async stopRemoteServerBestEffort(parsed, controlPath, remotePort) {
+  async startRemoteServerManaged(parsed, controlPath, instance, desiredPort) {
+    await this.managedRemoteOperation(parsed, controlPath, { action: 'start', id: instance.id, port: desiredPort,
+      version: this.appVersion, password: this.configuredOpenChamberPassword(instance) });
+    return desiredPort;
+  }
+
+  async stopRemoteServerBestEffort(parsed, controlPath, remotePort, id) {
     try {
-      await runRemoteCommand(
-        parsed,
-        controlPath,
-        `if command -v curl >/dev/null 2>&1; then curl -fsS -X POST http://127.0.0.1:${remotePort}/api/system/shutdown >/dev/null 2>&1 || true; elif command -v wget >/dev/null 2>&1; then wget -qO- --method=POST http://127.0.0.1:${remotePort}/api/system/shutdown >/dev/null 2>&1 || true; fi`,
-      );
+      await this.managedRemoteOperation(parsed, controlPath, { action: 'stop', id, port: remotePort, version: this.appVersion });
     } catch {
     }
   }
@@ -952,32 +953,37 @@ export class ElectronSshManager {
       return { remotePort: port, startedByUs: false };
     }
 
-    this.setStatus(instance.id, 'remote_probe', 'Checking remote OpenChamber installation');
+    const remotePort = instance.remoteOpenchamber.preferredPort || randomPortCandidate(instance.id);
+    this.setStatus(instance.id, 'server_detecting', 'Verifying managed DevRyan server');
+    const identity = { action: 'probe', id: instance.id, port: remotePort, version: this.appVersion };
+    const existing = await this.managedRemoteOperation(parsed, controlPath, identity);
+    if (existing.state === 'ready') return { remotePort, startedByUs: false };
+    if (existing.state === 'version_mismatch') {
+      this.setStatus(instance.id, 'updating', 'Stopping the owned remote server before updating');
+      const stopped = await this.managedRemoteOperation(parsed, controlPath, { ...identity, action: 'stop' });
+      if (!['stopped', 'absent'].includes(stopped.state)) throw new Error('Could not stop the verified remote DevRyan server');
+      let absent = stopped.state === 'absent';
+      for (let attempt = 0; !absent && attempt < 20; attempt++) {
+        const observed = await this.managedRemoteOperation(parsed, controlPath, identity);
+        absent = observed.state === 'absent';
+        if (observed.state === 'unverified') throw new Error('Remote ownership changed while waiting for shutdown');
+        if (!absent) await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      if (!absent) throw new Error('The owned remote DevRyan server has not finished stopping');
+    } else if (existing.state !== 'absent') {
+      throw new Error('The remote port could not be verified as this managed DevRyan instance. Choose another port or stop the existing listener.');
+    }
+    this.setStatus(instance.id, 'remote_probe', 'Checking remote DevRyan installation');
     const installedVersion = await this.currentRemoteOpenChamberVersion(parsed, controlPath);
-    if (!installedVersion) {
-      this.setStatus(instance.id, 'installing', 'Installing OpenChamber on remote host');
-      await this.installOpenChamberManaged(parsed, controlPath, this.appVersion, instance.remoteOpenchamber.installMethod);
-    } else if (installedVersion !== this.appVersion) {
-      this.setStatus(instance.id, 'updating', `Updating remote OpenChamber from ${installedVersion} to ${this.appVersion}`);
+    if (installedVersion !== this.appVersion) {
+      this.setStatus(instance.id, installedVersion ? 'updating' : 'installing', 'Preparing remote DevRyan installation');
       await this.installOpenChamberManaged(parsed, controlPath, this.appVersion, instance.remoteOpenchamber.installMethod);
     }
-
-    this.setStatus(instance.id, 'server_detecting', 'Detecting managed OpenChamber server');
-    let remotePort = instance.remoteOpenchamber.preferredPort || null;
-    let startedByUs = false;
-    if (remotePort && !(await this.remoteServerRunning(parsed, controlPath, remotePort, this.configuredOpenChamberPassword(instance)))) {
-      remotePort = null;
-    }
-    if (!remotePort) {
-      this.setStatus(instance.id, 'server_starting', 'Starting managed OpenChamber server');
-      const desiredPort = instance.remoteOpenchamber.preferredPort || randomPortCandidate(instance.id);
-      remotePort = await this.startRemoteServerManaged(parsed, controlPath, instance, desiredPort);
-      startedByUs = true;
-    }
-    if (!(await this.remoteServerRunning(parsed, controlPath, remotePort, this.configuredOpenChamberPassword(instance)))) {
-      throw new Error('Managed OpenChamber server failed to become reachable');
-    }
-    return { remotePort, startedByUs };
+    this.setStatus(instance.id, 'server_starting', 'Starting managed DevRyan server');
+    await this.startRemoteServerManaged(parsed, controlPath, instance, remotePort);
+    const verified = await this.managedRemoteOperation(parsed, controlPath, identity);
+    if (verified.state !== 'ready') throw new Error('Managed DevRyan server did not prove its ownership, version and loopback binding');
+    return { remotePort, startedByUs: true };
   }
 
   async disconnectInternal(id, reportIdle) {
@@ -992,7 +998,7 @@ export class ElectronSshManager {
 
     if (session) {
       if (session.startedByUs && session.instance.remoteOpenchamber.mode === 'managed' && !session.instance.remoteOpenchamber.keepRunning) {
-        await this.stopRemoteServerBestEffort(session.parsed, session.controlPath, session.remotePort);
+        await this.stopRemoteServerBestEffort(session.parsed, session.controlPath, session.remotePort, session.instance.id);
       }
       await stopControlMasterBestEffort(session.parsed, session.controlPath);
       for (const child of [session.mainForward, session.master]) {

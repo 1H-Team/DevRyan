@@ -1,4 +1,5 @@
 import React from 'react';
+import { useProviderConnectionStore } from './providerCatalogConnection';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { Button } from '@/components/ui/button';
@@ -29,6 +30,7 @@ interface ProvidersSidebarProps {
 
 export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect }) => {
   const { t } = useI18n();
+  const pendingConnections = useProviderConnectionStore((state) => state.pending);
   const rawProviders = useConfigStore((state) => state.directoryScoped.__global__?.providers ?? state.providers);
   const discoveredProviders = React.useMemo(
     () => splitAntigravityProviderForDisplay(rawProviders),
@@ -52,6 +54,9 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
       Object.prototype.hasOwnProperty.call(pendingRevisionByProvider, provider.id),
     )),
     [discoveredProviders, pendingRevisionByProvider, sourcesByProvider],
+  );
+  const pendingProviders = Object.values(pendingConnections).filter(
+    (pending) => !providers.some((provider) => provider.id === pending.id),
   );
   const sortedProviders = React.useMemo(
     () => sortProvidersByDisplayName(providers, sourcesByProvider),
@@ -125,6 +130,7 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
         const payload = await disconnectProvider(providerId, currentDirectory);
         const applyStatus = recordConfigMutationResponse(payload);
         markDisconnectRequested(providerId, payload);
+        useProviderConnectionStore.getState().clear(providerId);
         toast.success(applyStatus?.pending
           ? t('settings.providers.page.toast.providerDisconnectQueued')
           : t('settings.providers.page.toast.providerDisconnected'));
@@ -145,7 +151,7 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
       <div className="border-b px-3 pt-4 pb-3">
         <h2 className="text-base font-semibold text-foreground mb-3">{t('settings.providers.sidebar.title')}</h2>
         <div className="flex items-center justify-between gap-2">
-          <span className="typography-meta text-muted-foreground">{t('settings.providers.sidebar.total', { count: providers.length })}</span>
+          <span className="typography-meta text-muted-foreground">{t('settings.providers.sidebar.total', { count: providers.length + pendingProviders.length })}</span>
           <Button size="sm"
             variant="ghost"
             className="h-7 w-7 px-0 -my-1 text-muted-foreground"
@@ -162,7 +168,7 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
       </div>
 
       <ScrollableOverlay outerClassName="flex-1 min-h-0" className="space-y-1 px-3 py-2 overflow-x-hidden">
-        {providers.length === 0 ? (
+        {providers.length === 0 && pendingProviders.length === 0 ? (
           <div className="py-12 px-4 text-center text-muted-foreground">
             <RiStackLine className="mx-auto mb-3 h-10 w-10 opacity-50" />
             <p className="typography-ui-label font-medium">{t('settings.providers.sidebar.empty.title')}</p>
@@ -170,6 +176,10 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
           </div>
         ) : (
           <>
+            {pendingProviders.map((provider) => (
+              <ProviderListItem key={provider.id} provider={provider} selectedProviderId={selectedProviderId}
+                onSelect={() => { setSelectedProvider(provider.id); onItemSelect?.(); }} />
+            ))}
             {sortedProviders.map((provider) => {
               const sources = sourcesByProvider[provider.id];
               const isDisconnectPending = Object.prototype.hasOwnProperty.call(

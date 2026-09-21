@@ -20,3 +20,5 @@ Filesystem helper domain for server-side file operations; key modules provide fu
 - Wired into server routes for file search APIs.
 - Consumed by UI file picker/search features through web runtime adapters.
 - Depends on git binary resolution from server bootstrap for ignore checks.
+
+- `file-versions.js` owns complete text reads, source digests and expected-version saves. Saves reject stale content with HTTP 409, atomically rename the replacement, and fsync its parent where supported. This coordinates DevRyan writes; external writers are not subject to a filesystem-wide compare-and-swap lock.

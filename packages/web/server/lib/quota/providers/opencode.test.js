@@ -13,7 +13,7 @@ const credential = {
 };
 
 const billingHtml = `<!doctype html><script>
-_$HY.r["billing.get[\\"${credential.workspaceId}\\"]"]=$R[1];
+_$HY.r["billing.get[\\"${credential.workspaceId}\\"]"]=$R[2];
 $R[2]={customerID:"cus_safe",paymentMethodID:null,balance:2000000000,monthlyLimit:null,monthlyUsage:0,timeMonthlyUsageUpdated:null,reload:!1,reloadAmount:20,reloadAmountMin:10,reloadTrigger:5,reloadTriggerMin:5,subscriptionID:null};
 </script>`;
 
@@ -43,7 +43,7 @@ describe('OpenCode Zen quota provider', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps configured failures visible and validation generic', async () => {
+  it('keeps configured failures visible and preserves safe validation codes', async () => {
     const fetchImpl = async () => ({
       ok: false,
       status: 403,
@@ -53,6 +53,6 @@ describe('OpenCode Zen quota provider', () => {
     const result = await fetchQuota({ readManagedCredential: () => credential, fetchImpl });
     expect(result).toMatchObject({ configured: true, errorCode: 'AUTHENTICATION_FAILED' });
     await expect(validateOpenCodeZenCredential(credential, { fetchImpl }))
-      .rejects.toThrow('OpenCode Zen dashboard credential could not be validated.');
+      .rejects.toMatchObject({ code: 'AUTHENTICATION_FAILED', status: 400 });
   });
 });

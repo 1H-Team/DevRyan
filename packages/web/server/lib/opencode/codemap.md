@@ -77,3 +77,15 @@ Core OpenCode integration layer: config entities (agents/commands/skills/provide
 
 - `harness-duplicate-qualification.js` matches the exact executable, route and ordered plugin content inventory against release-owned acceptance profiles. Missing evidence leaves duplicate projection disabled; `harness-run-fingerprint.js` serves its existing private bridge and preserves the inventory separately from factory observations.
 - `harness-duplicate-profiles.js` records the reviewed release defaults and live-evidence digest. Installation paths remain part of host/caller agreement; portable release matching uses ordered filenames/content hashes, the selected provider's full configuration and the host-attested authentication transport. API-key and unqualified routes remain inactive.
+
+## Paired execution and retention
+
+- `execution-preparations.js` tracks original-identity preparing/ready/failure results, progress, polling ownership and cancellation; polls never dispatch a second tool. `execution-artifacts.js` requires artifacts from the supported manifest, with protocol and digest acceptance gates.
+- `session-activity-gate.js` owns synchronous activity/tree holds and staged connected-client selections. `session-retention.js` runs authenticated, server-enforced archive/delete only for an exclusive paired runtime after complete-tree, activity, ownership and selection checks. Unavailable state skips work; unknown commit responses retain protection until confirmed. It is disabled by default.
+- `companion/manifest.json` and its patch form the native protocol pair (preparation v2, retention v1). Private native retention routes require the bridge token and bypass session-ID path parsing. The companion gates durable session publication and asynchronous prompt admission through settlement.
+- `ssh-managed-identity.js` proves managed ownership and signs instance-bound shutdown requests; health responses alone never authorize credential installation or shutdown.
+
+- Artifact readiness distinguishes `active`, `not_expected` and `required_unavailable`. The last state keeps authenticated diagnostics available and fences lifecycle spawn, execution HTTP routes, the tool bridge and Cursor adapters. All release-required capabilities and artifact hashes remain gated.
+- Preparation claim synchronously fences its poller timer before the durable claim. Abandonment and drain settle I/O before cancellation/cleanup; recovery isolates each lease and retries durable terminal cleanup while preserving uncertain writer protection.
+
+`execution-preparations.js` bounds poll waiting by the admission budget remaining after identity and lease lookup, retaining response headroom. Preparation lifetime remains independent of each poll; cleanup failures retain the original preparation error and emit separate diagnostics.

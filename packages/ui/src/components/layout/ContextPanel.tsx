@@ -1023,8 +1023,8 @@ export const ContextPanel: React.FC = () => {
     toggleContextPanelExpanded(directoryKey);
   }, [directoryKey, toggleContextPanelExpanded]);
 
-  const handlePanelKeyDownCapture = React.useCallback((event: React.KeyboardEvent<HTMLElement>) => {
-    if (event.key !== 'Escape') {
+  const handlePanelKeyDown = React.useCallback((event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Escape' || event.defaultPrevented) {
       return;
     }
 
@@ -1313,7 +1313,7 @@ export const ContextPanel: React.FC = () => {
             : 'relative h-full flex-shrink-0 border-l border-border/40',
         isResizing ? 'transition-none' : 'transition-[width] duration-200 ease-in-out'
       )}
-      onKeyDownCapture={handlePanelKeyDownCapture}
+      onKeyDown={handlePanelKeyDown}
       onAnimationEnd={handlePlanMotionEnd}
       style={panelStyle}
     >
@@ -1349,10 +1349,10 @@ export const ContextPanel: React.FC = () => {
       >
         {isOpen ? header : null}
         <div className={cn('relative min-h-0 flex-1 overflow-hidden', isResizing && 'pointer-events-none')}>
-          {isOpen && hasFileTabs ? (
+          {hasFileTabs ? (
             <div className={cn('absolute inset-0', isFileTabActive ? 'block' : 'hidden')}>
               <LazyViewBoundary>
-                <LazyFilesView />
+                <LazyFilesView visible={isOpen && isFileTabActive} />
               </LazyViewBoundary>
             </div>
           ) : null}

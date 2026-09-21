@@ -49,6 +49,10 @@ export async function packageQaElectron({ webDist, nativeSourceApp } = {}) {
   const outputRoot = path.join(root, '.cache/qa');
   await mkdir(outputRoot, { recursive: true, mode: 0o700 });
   const output = await mkdtemp(path.join(outputRoot, 'packaged-electron-'));
+  const createdAt = new Date().toISOString();
+  const retentionFile = path.join(output, 'storage-retention.json');
+  await writeFile(retentionFile, JSON.stringify({ schemaVersion: 1, createdAt, completedAt: null,
+    pinned: false, payloadState: 'building' }, null, 2) + '\n', { mode: 0o600 });
   const staging = path.join(output, 'staging');
   const before = await captureQaSourceIdentity(root);
   const main = await bundleElectronMain({ outdir: path.join(staging, 'dist-bundle') });
@@ -150,6 +154,8 @@ export async function packageQaElectron({ webDist, nativeSourceApp } = {}) {
     signing: 'disabled', publication: 'disabled', nativeRebuild: 'not-run; matched local packaged binaries copied into owned output',
     excludedAcceptance: ['signing/notarization', 'updater installation', 'global protocol registration', 'OS keychain integration', 'background Bot service', 'legacy Tauri'] };
   await writeFile(path.join(output, 'package-evidence.json'), `${JSON.stringify(evidence, null, 2)}\n`);
+  await writeFile(retentionFile, JSON.stringify({ schemaVersion: 1, createdAt, completedAt: new Date().toISOString(),
+    pinned: false, payloadState: 'ready' }, null, 2) + '\n', { mode: 0o600 });
   return evidence;
 }
 

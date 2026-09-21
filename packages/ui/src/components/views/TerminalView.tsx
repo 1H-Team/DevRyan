@@ -342,7 +342,7 @@ export const TerminalView: React.FC = () => {
                             }
                             case 'data': {
                                 if (event.data) {
-                                    appendToBuffer(directory, tabId, event.data);
+                                    appendToBuffer(directory, tabId, event.data, event.replay);
                                 }
                                 break;
                             }

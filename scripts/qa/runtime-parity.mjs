@@ -1,0 +1,85 @@
+import assert from 'node:assert/strict';
+import path from 'node:path';
+import fs from 'node:fs/promises';
+import {createRequire} from 'node:module';
+import {pathToFileURL} from 'node:url';
+import {reservePort,startOwnedProcess} from './process.mjs';
+import {CdpConnection,discoverPageTarget,evaluate} from './cdp.mjs';
+const root=path.resolve(import.meta.dirname,'../..'), fixture=path.join(root,'tests/visual-runtime-parity');
+await fs.mkdir(path.join(root,'.cache'),{recursive:true});
+const output=await fs.mkdtemp(path.join(root,'.cache/runtime-parity-'));
+const uiRequire=createRequire(path.join(root,'packages/ui/package.json'));
+const webRequire=createRequire(path.join(root,'packages/web/package.json'));
+const {createServer}=await import(pathToFileURL(webRequire.resolve('vite')));
+const port=await reservePort(), debug=await reservePort();
+const vite=await createServer({root:fixture,configFile:false,server:{host:'127.0.0.1',port,strictPort:true,fs:{allow:[root]}},
+ resolve:{alias:{'@':path.join(root,'packages/ui/src'),react:path.dirname(uiRequire.resolve('react/package.json')), 'react-dom':path.dirname(uiRequire.resolve('react-dom/package.json')),'@dnd-kit/core':uiRequire.resolve('@dnd-kit/core'),'@codemirror/view':uiRequire.resolve('@codemirror/view'),'@codemirror/state':uiRequire.resolve('@codemirror/state')}},
+ esbuild:{jsx:'automatic',tsconfigRaw:{compilerOptions:{jsx:'react-jsx'}}},optimizeDeps:{include:['react','react-dom/client','@dnd-kit/core','@codemirror/state','@codemirror/view','@codemirror/commands','@codemirror/language','@codemirror/search'],esbuildOptions:{tsconfigRaw:{compilerOptions:{jsx:'react-jsx'}}}}});
+await vite.listen();
+const requireElectron=createRequire(path.join(root,'packages/electron/package.json'));
+const browser=startOwnedProcess(requireElectron('electron'),['--remote-debugging-port='+debug,'--user-data-dir='+path.join(output,'chromium'),path.join(root,'scripts/qa/browser-shell.cjs')],{
+ cwd:root,env:{...process.env,DEVRYAN_QA_BACKGROUND:'1',DEVRYAN_QA_ORIGIN:`http://127.0.0.1:${port}`}});
+let cdp;
+const evidence={checks:[],consoleErrors:[]};
+try {
+ const target=await discoverPageTarget(debug);cdp=await CdpConnection.connect(target.webSocketDebuggerUrl);
+ cdp.on('Runtime.exceptionThrown',data=>evidence.consoleErrors.push(data.exceptionDetails?.exception?.description??data.exceptionDetails?.text));
+ await cdp.send('Runtime.enable');await cdp.send('Page.enable');
+ let ready=false;for(let i=0;i<150;i++){if(await evaluate(cdp,'Boolean(window.fixture?.ready && window.editorFixture?.view)')){ready=true;break;}await new Promise(r=>setTimeout(r,100));}
+ if(!ready)throw new Error('Fixture failed to load: '+JSON.stringify(evidence.consoleErrors));
+ const state=await evaluate(cdp,`({rows:document.querySelectorAll('[data-session-row]').length,cols:fixture.terminal.cols,lines:fixture.terminal.rows,text:fixture.serializer.serializeAsText()})`);
+ assert(state.rows>0&&state.rows<80);assert(state.cols>40);assert(state.text.includes('DevRyan terminal parity fixture'));evidence.checks.push({check:'real canvas and 1000-row list mounted',...state});
+ await evaluate(cdp,`document.querySelector('[data-session-select]').focus()`);
+ await cdp.send('Input.dispatchKeyEvent',{type:'keyDown',key:'End',code:'End',windowsVirtualKeyCode:35});
+ await new Promise(r=>setTimeout(r,200));
+ const focus=await evaluate(cdp,`document.activeElement.closest('[data-session-row]')?.dataset.sessionRow`);assert.equal(focus,'session_999');evidence.checks.push({check:'End focuses final virtual row',focus});
+ const anchorBefore=await evaluate(cdp, `(()=>{const scroll=document.querySelector('#sidebar');scroll.scrollTop=12000;return true})()`);
+ assert(anchorBefore); await new Promise(r=>setTimeout(r,250));
+ const anchor=await evaluate(cdp, `(()=>{const top=document.querySelector('#sidebar').getBoundingClientRect().top;const row=[...document.querySelectorAll('[data-session-row]')].find(r=>r.getBoundingClientRect().bottom>top);return {id:row.dataset.sessionRow,top:row.getBoundingClientRect().top-top}})()`);
+ await evaluate(cdp,'fixture.sidebarState.prepend()');await new Promise(r=>setTimeout(r,300));
+ const afterPrepend=await evaluate(cdp, `(()=>{const top=document.querySelector('#sidebar').getBoundingClientRect().top;const row=document.querySelector('[data-session-row="${anchor.id}"]');return row.getBoundingClientRect().top-top})()`);
+ assert(Math.abs(afterPrepend-anchor.top)<3,`Prepend moved anchor ${afterPrepend-anchor.top}px`);
+ await evaluate(cdp,'fixture.sidebarState.taller()');await new Promise(r=>setTimeout(r,350));
+ assert((await evaluate(cdp,`document.querySelectorAll('[data-session-row]').length`))<80);
+ evidence.checks.push({check:'sidebar preserves prepend anchor and measures dynamic heights',anchor});
+ await evaluate(cdp,`fixture.terminal.focus()`);await cdp.send('Input.insertText',{text:'hello café'});
+ const input=await evaluate(cdp,'fixture.inputs.join("")');assert(input.includes('hello café'));evidence.checks.push({check:'keyboard text reaches PTY callback',input});
+ await evaluate(cdp,'fixture.inputs.length=0');
+ await cdp.send('Input.imeSetComposition',{text:'漢',selectionStart:1,selectionEnd:1});
+ await cdp.send('Input.insertText',{text:'漢'});
+ assert.equal(await evaluate(cdp,'fixture.inputs.join("")'),'漢');evidence.checks.push({check:'IME commits once'});
+ await evaluate(cdp,`fixture.inputs.length=0;fixture.terminal.write('\\x1b[?2004h');const clipboard=new DataTransfer();clipboard.setData('text/plain','paste café');fixture.terminal.textarea.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:clipboard}));`);
+ assert.equal(await evaluate(cdp,'fixture.inputs.join("")'),'\x1b[200~paste café\x1b[201~');evidence.checks.push({check:'native paste retains bracketed-paste encoding'});
+ await evaluate(cdp,`fixture.inputs.length=0;fixture.terminal.write('\\x1b[6n')`);assert((await evaluate(cdp,'fixture.inputs.join("")')).match(/\x1b\[\d+;\d+R/));evidence.checks.push({check:'VT reply reaches PTY callback'});
+ await evaluate(cdp,`fixture.inputs.length=0;fixture.terminal.resetAndWrite('replay\\x1b[6n')`);assert.equal(await evaluate(cdp,'fixture.inputs.join("")'),'');evidence.checks.push({check:'historical replay suppresses VT replies'});
+ await evaluate(cdp,`fixture.terminal.write('\\r\\n'+Array.from({length:80},(_,i)=>'scroll line '+i).join('\\r\\n'));fixture.terminal.scrollLines(-20)`);
+ const before=await evaluate(cdp,'fixture.terminal.getViewportY()');assert(before>0);
+ const serialized=await evaluate(cdp,'fixture.serializer.serializeAsText()');assert(serialized.includes('scroll line 0'));assert(serialized.includes('scroll line 79'));
+ assert.equal(await evaluate(cdp,'fixture.terminal.getViewportY()'),before);evidence.checks.push({check:'serialization includes scrollback and restores viewport',before});
+ await evaluate(cdp,`fixture.terminal.setVisible(false);fixture.terminal.write('\\r\\nhidden parsed');fixture.terminal.setVisible(true);fixture.terminal.scrollToBottom()`);
+ assert((await evaluate(cdp,'fixture.serializer.serializeAsText()')).includes('hidden parsed'));
+ await evaluate(cdp,`document.querySelector('#terminal').style.maxWidth='580px';fixture.fit.fit()`);await new Promise(r=>setTimeout(r,250));assert((await evaluate(cdp,'fixture.terminal.cols'))<state.cols);evidence.checks.push({check:'resize and hidden output retained'});
+ await evaluate(cdp, `fixture.terminal.resetAndWrite('selectable text\\r\\nhttps://example.test/path');fixture.terminal.scrollToBottom()`);
+ await new Promise(r=>setTimeout(r,100));
+ const grid=await evaluate(cdp, `(()=>{const r=document.querySelector('#terminal canvas').getBoundingClientRect();return {x:r.x,y:r.y,cw:r.width/fixture.terminal.cols,ch:r.height/fixture.terminal.rows}})()`);
+ await cdp.send('Input.dispatchMouseEvent',{type:'mousePressed',x:grid.x+grid.cw*.3,y:grid.y+grid.ch*.5,button:'left',buttons:1,clickCount:1});
+ await cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:grid.x+grid.cw*10.4,y:grid.y+grid.ch*.5,button:'left',buttons:1});
+ await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:grid.x+grid.cw*10.4,y:grid.y+grid.ch*.5,button:'left',buttons:0,clickCount:1});
+ assert((await evaluate(cdp,'fixture.terminal.getSelection()')).startsWith('selectable'));
+ for(const type of ['mousePressed','mouseReleased']) await cdp.send('Input.dispatchMouseEvent',{type,x:grid.x+grid.cw*6,y:grid.y+grid.ch*1.5,button:'left',buttons:type==='mousePressed'?1:0,clickCount:1,modifiers:4});
+ assert.deepEqual(await evaluate(cdp,'fixture.links'),['https://example.test/path']);evidence.checks.push({check:'native pointer selection and link activation'});
+ const editor = await evaluate(cdp, `({length:editorFixture.view.state.doc.length,source:editorFixture.source})`);
+ assert(editor.length>250000);assert(editor.source.startsWith('first\r\nsecond\n'));assert(editor.source.endsWith('no final newline'));
+ await evaluate(cdp, `editorFixture.view.dispatch({changes:{from:0,to:5,insert:'FIRST'}})`);
+ assert.equal(await evaluate(cdp,'editorFixture.source'),editor.source.replace('first','FIRST'));
+ await evaluate(cdp, `editorFixture.view.focus()`);
+ await cdp.send('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+ assert.deepEqual(await evaluate(cdp,'({handled:editorFixture.escapeHandled,escaped:editorFixture.escaped})'),{handled:1,escaped:0});
+ evidence.checks.push({check:'real CodeMirror edits full 250KB mixed-EOL buffer and editor extension consumes Escape',length:editor.length});
+ const shot=await cdp.send('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(output,'terminal-sidebar.png'),Buffer.from(shot.data,'base64'));
+ await evaluate(cdp,'fixture.sidebarState.clear()');await new Promise(r=>setTimeout(r,100));
+ assert.equal(await evaluate(cdp,"document.querySelectorAll('[data-session-row]').length"),0);
+ assert.equal(await evaluate(cdp,'fixture.sidebarState.exits'),1);evidence.checks.push({check:'removing virtual rows releases empty-state animation guard'});
+
+ assert.deepEqual(evidence.consoleErrors,[]);await fs.writeFile(path.join(output,'evidence.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify({passed:evidence.checks.length,evidence:path.join(output,'evidence.json')}));
+} finally {cdp?.close();await browser.stop();await vite.close();}

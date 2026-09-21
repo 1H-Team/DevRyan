@@ -1,4 +1,5 @@
 import React from 'react';
+import { getSkillPresentation } from './skillPresentation';
 import type { ToolPart as ToolPartType } from '@opencode-ai/sdk/v2';
 import type { TurnActivityRecord as TurnActivityPart } from '../../lib/turns/types';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
@@ -173,7 +174,10 @@ const StaticToolRowInner: React.FC<{
     animateTailText: boolean;
 }> = ({ toolName, activities, animateTailText }) => {
     const showToolFileIcons = useUIStore((state) => state.showToolFileIcons);
-    const displayName = getToolMetadata(toolName).displayName;
+    const skill = normalizeToolName(toolName) === 'skill'
+        ? getSkillPresentation(activities.flatMap(activity => activity.part.type === 'tool' ? [activity.part] : []))
+        : null;
+    const displayName = skill?.title ?? getToolMetadata(toolName).displayName;
     const icon = getToolIcon(toolName);
     const isReadGroup = toolName.toLowerCase() === 'read';
     const runtime = React.useContext(RuntimeAPIContext);
@@ -242,9 +246,10 @@ const StaticToolRowInner: React.FC<{
             </div>
             <MinDurationShineText
                 active={hasRunningActivity}
-                minDurationMs={1000}
+                key={skill?.title}
+                minDurationMs={skill ? 0 : 1000}
                 className="typography-meta leading-5 font-medium inline-flex h-5 items-center flex-shrink-0 opacity-85"
-                style={{ color: 'var(--tools-title)' }}
+                style={{ color: skill?.failed ? 'var(--status-error)' : 'var(--tools-title)' }}
                 title={displayName}
             >
                 {displayName}
@@ -272,7 +277,7 @@ const StaticToolRowInner: React.FC<{
                 ? descriptions.map((desc, index) => (
                     <span key={`${desc}-${index}`} className="inline-flex min-w-0 flex-1">
                         <Text
-                            variant={animateTailText ? 'generate-effect' : 'static'}
+                            variant={animateTailText && (!skill || skill.running) ? 'generate-effect' : 'static'}
                             className="min-w-0 flex-1 truncate whitespace-nowrap typography-meta leading-5"
                             style={{ color: 'var(--tools-description)' }}
                             title={desc}
@@ -302,7 +307,7 @@ const StaticToolRowInner: React.FC<{
                 : null}
             {!isReadGroup && !isSearchGroup && !isFetchGroup && descriptions.length > 0 ? (
                 <Text
-                    variant={animateTailText ? 'generate-effect' : 'static'}
+                    variant={animateTailText && (!skill || skill.running) ? 'generate-effect' : 'static'}
                     className="min-w-0 flex-1 truncate whitespace-nowrap typography-meta leading-5"
                     style={{ color: 'var(--tools-description)' }}
                 >
@@ -310,6 +315,7 @@ const StaticToolRowInner: React.FC<{
                 </Text>
             ) : null}
           </div>
+          {skill?.explanation ? <p className="typography-meta text-[var(--status-error)] pl-px">{skill.explanation}</p> : null}
         </div>
     );
 };

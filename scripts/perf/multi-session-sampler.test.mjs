@@ -93,15 +93,15 @@ describe('size and duration parsing', () => {
   });
 
   it('parses sampler flags and rejects unsafe labels', () => {
-    const options = parseSamplerArguments(['--label', 'dozen', '--interval', '10', '--duration', '30m', '--docker-every', '0', '--cookie', 'abc'], {});
+    const options = parseSamplerArguments(['--label', 'dozen', '--interval', '10', '--duration', '30m', '--docker-every', '0', '--cookie', 'oc_ui_session_3000=fixture'], {});
     assert.equal(options.label, 'dozen');
     assert.equal(options.intervalMs, 10_000);
     assert.equal(options.durationMs, 1_800_000);
     assert.equal(options.dockerEvery, 0);
-    assert.equal(options.cookie, 'abc');
+    assert.equal(options.cookie, 'oc_ui_session_3000=fixture');
     assert.throws(() => parseSamplerArguments(['--label', '../escape'], {}));
     assert.throws(() => parseSamplerArguments(['--bogus'], {}));
-    assert.equal(parseSamplerArguments([], { DEVRYAN_UI_SESSION_COOKIE: 'env' }).cookie, 'env');
+    assert.equal(parseSamplerArguments([], { DEVRYAN_UI_SESSION_COOKIE: 'oc_ui_session_3000=env' }).cookie, 'oc_ui_session_3000=env');
   });
 });
 

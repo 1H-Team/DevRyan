@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.9] - 2026-09-21
+
+- Sessions and runtime: add configurable automatic cleanup, improve long-session efficiency, preserve execution ownership through recovery and revert flows, and make failure states actionable across web and Electron.
+- Desktop and terminal: ship the in-tree Ghostty terminal adapter, strengthen managed SSH reuse and shutdown cleanup, and keep packaged runtime behavior aligned across supported macOS architectures.
+- Git and worktrees: serialize repository mutations, validate hunk operations, preserve managed branch ancestry, and harden status, push, and concurrent revert behavior.
+- Settings and integrations: improve provider connection state, retention controls, MCP navigation, mobile/PWA web-package updates, and secure local session handling.
+- Quality: expand deterministic coverage for execution admission, recovery, skill presentation, session lists, file editing, terminal rendering, storage policy, packaged artifacts, and runtime parity.
+- Database: verify all repository migrations and the required Production Bots schema marker before release publication.
+- Release: update all DevRyan package and desktop metadata to 1.2.9 and publish branded web and macOS artifacts.
+
 ## [1.2.8] - 2026-09-21
 
 - Runtime efficiency: bound SSE and WebSocket queues by count and bytes, batch contiguous streaming deltas, enforce a protected renderer history budget, compress journal rotations asynchronously, and replace offset-based vector scans with keyset retrieval and bounded top-k ranking.

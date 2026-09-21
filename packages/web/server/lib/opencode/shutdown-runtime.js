@@ -19,6 +19,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     getManagedOrchestrationRuntime,
     getBrowserLeaseRuntime,
     getCursorSdkRuntime,
+    getSessionExecutionHost,
     getSessionTitleRuntime,
     shouldSkipOpenCodeStop,
     getOpenCodePort,
@@ -130,6 +131,12 @@ export const createGracefulShutdownRuntime = (dependencies) => {
         await cursorSdkRuntime.dispose();
       } catch {
       }
+    }
+
+    const executionHost = getSessionExecutionHost?.();
+    if (executionHost) {
+      try { await executionHost.drain(); }
+      catch (error) { console.warn('Error draining execution preparation:', error?.code || 'execution_cleanup_failed'); }
     }
 
     const sessionTitleRuntime = typeof getSessionTitleRuntime === 'function'

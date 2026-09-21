@@ -24,7 +24,7 @@ test('capture requires the exact shipped companion contract and accepted native 
     binary: path.basename(launcher), sha256, spawnLibrary: path.basename(launcher) + '-spawn.dylib', spawnSha256: sha256 };
   const companion = { ...contract.capability, acceptance: true, platform: process.platform, arch: process.arch,
     binary: path.basename(opencode), baseCommit: contract.baseCommit, patchSha256: contract.patchSha256, sha256 };
-  const environment = () => executionEnvironment({ directory, pluginDirectory: directory, dataDirectory: directory });
+  const environment = () => executionEnvironment({ directory, pluginDirectory: directory, dataDirectory: directory, runtimeMode: 'captured' });
   try {
     for (const file of [launcher, opencode, launcher + '-spawn.dylib', ...['devryan-managed-orchestration.mjs', 'council-session.js'].map((name) => path.join(directory, name))]) {
       await fs.writeFile(file, 'fixture');
@@ -33,11 +33,31 @@ test('capture requires the exact shipped companion contract and accepted native 
     await fs.writeFile(path.join(directory, 'companion.json'), JSON.stringify(companion));
     expect((await environment()).DEVRYAN_EXECUTION_BOUNDARY).toBe('1');
     await fs.writeFile(path.join(directory, 'companion.json'), JSON.stringify({ ...companion, patchSha256: 'older-patch' }));
-    expect(await environment()).toEqual({});
+    await expect(environment()).rejects.toMatchObject({ code: 'execution_artifacts_unavailable' });
     await fs.writeFile(path.join(directory, 'companion.json'), JSON.stringify({ ...companion, baseCommit: 'different-source' }));
-    expect(await environment()).toEqual({});
+    await expect(environment()).rejects.toMatchObject({ code: 'execution_artifacts_unavailable' });
     await fs.writeFile(path.join(directory, 'companion.json'), JSON.stringify(companion));
     await fs.writeFile(launcher + '.json', JSON.stringify({ ...native, acceptance: false }));
-    expect(await environment()).toEqual({});
+    await expect(environment()).rejects.toMatchObject({ code: 'execution_artifacts_unavailable' });
+    expect(await executionEnvironment({ directory, runtimeMode: 'external' })).toEqual({});
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+});
+
+test('required artifact failures preserve diagnostics and block all mutating execution routes', async () => {
+  const { executionRuntimeState, executionReadinessMiddleware } = await import('./execution-artifacts.js');
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'execution-unavailable-'));
+  try {
+    const state = await executionRuntimeState({ runtimeMode: 'captured', directory });
+    expect(state.state).toBe('required_unavailable'); expect(state.environment).toEqual({});
+    expect(() => state.assertReady()).toThrow();
+    const gate = executionReadinessMiddleware(state);
+    for (const route of ['message', 'prompt_async', 'command', 'shell', 'summarize', '%70rompt_async', 'COMMAND/']) {
+      let status, body, next = false;
+      const res = { status: (value) => { status = value; return res; }, json: (value) => { body = value; } };
+      gate({ method: 'POST', path: `/api/session/s/${route}` }, res, () => { next = true; });
+      expect(next).toBe(false); expect(status).toBe(503); expect(body.code).toBe('execution_artifacts_unavailable');
+    }
+    let next = false; gate({ method: 'GET', path: '/api/diagnostics/execution-runtime' }, {}, () => { next = true; }); expect(next).toBe(true);
+    expect((await executionRuntimeState({ runtimeMode: 'external', directory })).state).toBe('not_expected');
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });

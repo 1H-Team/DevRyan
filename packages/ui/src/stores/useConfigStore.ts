@@ -791,6 +791,7 @@ declare global {
 
 // In-flight dedup: prevent concurrent duplicate loadProviders/loadAgents calls for the same directory
 const _inFlightProviders = new Map<string, Promise<void>>();
+const _providerLoadTokens = new Map<string, object>();
 const _inFlightAgents = new Map<string, Promise<boolean>>();
 let _initializeAppInFlight: Promise<void> | null = null;
 
@@ -1105,7 +1106,9 @@ export const useConfigStore = create<ConfigStore>()(
                 },
 
                 loadProviders: async (options) => {
-                    const directoryKey = toDirectoryKey(options?.directory ?? fromDirectoryKey(get().activeDirectoryKey));
+                    const directoryKey = options?.directory === undefined
+                        ? get().activeDirectoryKey
+                        : toDirectoryKey(options.directory);
 
                     // Dedup: if a load is already in-flight for this directory, reuse it.
                     // `force` opts out — callers polling for a freshly-authorized provider need a
@@ -1116,6 +1119,8 @@ export const useConfigStore = create<ConfigStore>()(
                         set({ providersLoadStatus: "loading", providersLoadError: undefined });
                     }
 
+                    const loadToken = {};
+                    _providerLoadTokens.set(directoryKey, loadToken);
                     const promise = (async () => {
                     const existingSnapshot = get().directoryScoped[directoryKey];
                     const previousProviders = existingSnapshot?.providers ?? (get().activeDirectoryKey === directoryKey ? get().providers : []);
@@ -1126,6 +1131,7 @@ export const useConfigStore = create<ConfigStore>()(
                         providers?: Provider[];
                         default?: { [key: string]: string };
                     }) => {
+                        if (_providerLoadTokens.get(directoryKey) !== loadToken) return;
                         const providers = Array.isArray(apiResult?.providers) ? apiResult.providers : [];
                         const defaults = apiResult?.default || {};
 
@@ -1206,10 +1212,10 @@ export const useConfigStore = create<ConfigStore>()(
                                     if (resolved) {
                                         nextState.currentProviderId = resolved.providerId;
                                         nextState.currentModelId = resolved.modelId;
-                                        nextState.selectedProviderId = resolved.providerId;
+                                        nextState.selectedProviderId = state.selectedProviderId || resolved.providerId;
                                         nextSnapshot.currentProviderId = resolved.providerId;
                                         nextSnapshot.currentModelId = resolved.modelId;
-                                        nextSnapshot.selectedProviderId = resolved.providerId;
+                                        nextSnapshot.selectedProviderId = baseSnapshot.selectedProviderId || resolved.providerId;
                                     }
                                 }
                             }
@@ -1224,14 +1230,14 @@ export const useConfigStore = create<ConfigStore>()(
                                 () => get().modelsMetadata,
                                 (metadata) => set({ modelsMetadata: metadata }),
                             );
-                            const apiResult = await opencodeClient.withDirectory(
-                                fromDirectoryKey(directoryKey),
-                                () => opencodeClient.getProviders()
-                            );
+                            const apiResult = await opencodeClient.getProviders({
+                                directory: fromDirectoryKey(directoryKey),
+                            });
                             commitProviders(apiResult);
 
                             return;
                         } catch (error) {
+                            if (_providerLoadTokens.get(directoryKey) !== loadToken) return;
                             lastError = error;
                             if (isWorkspaceDirectoryAccessError(error)) {
                                 break;
@@ -1256,6 +1262,7 @@ export const useConfigStore = create<ConfigStore>()(
                         }
                     }
 
+                    if (_providerLoadTokens.get(directoryKey) !== loadToken) return;
                     console.error("Failed to load providers:", lastError);
                     const errorMessage = getErrorMessage(lastError, "Failed to load providers");
 
@@ -1284,7 +1291,12 @@ export const useConfigStore = create<ConfigStore>()(
 
                         return nextState;
                     });
-                    })().finally(() => _inFlightProviders.delete(directoryKey));
+                    })().finally(() => {
+                        if (_providerLoadTokens.get(directoryKey) === loadToken) {
+                            _inFlightProviders.delete(directoryKey);
+                            _providerLoadTokens.delete(directoryKey);
+                        }
+                    });
 
                     _inFlightProviders.set(directoryKey, promise);
                     return promise;

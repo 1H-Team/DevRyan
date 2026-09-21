@@ -255,6 +255,26 @@ describe('event stream broadcaster', () => {
 });
 
 describe('global message stream SSE handler', () => {
+  it('sends an opted-in cursor-free gap marker before authorized replay and leaves old clients unchanged', async () => {
+    for (const optedIn of [false, true]) {
+      const hub = { subscribeEvent: () => () => {}, start() {}, replayAfter: () => ({ gap: true, events: [
+        { eventId: 'hidden', directory: '/hidden', payload: { type: 'session.updated' } },
+        { eventId: 'visible', directory: '/visible', payload: { type: 'session.updated' } },
+      ] }) };
+      const handler = createGlobalMessageStreamSseHandler({ globalHub: hub,
+        eventFilter: async (_principal, entry) => entry.directory === '/visible', heartbeatIntervalMs: 60_000 });
+      const req = createMockSseRequest({ headers: { 'last-event-id': 'expired', ...(optedIn ? { 'x-devryan-replay-gap': '1' } : {}) } });
+      const res = createMockSseResponse();
+      try {
+        void handler(req, res);
+        await waitForCondition(() => res.body.includes('id: visible'));
+        expect(res.body).not.toContain('hidden');
+        const marker = 'event: devryan.replay-gap\ndata: {"replayGap":{"scope":"global"}}\n\n';
+        if (optedIn) expect(res.body.startsWith(marker)).toBe(true);
+        else expect(res.body).not.toContain('devryan.replay-gap');
+      } finally { req.emit('close'); }
+    }
+  });
   it('replays synthetic global hub events as SSE envelopes after Last-Event-ID', async () => {
     const hub = createGlobalMessageStreamHub({
       buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,

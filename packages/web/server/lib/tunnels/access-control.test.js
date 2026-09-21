@@ -108,7 +108,7 @@ describe('durable Bot-only tunnel authorization', () => {
         '/api/openchamber/tunnel/status', '/api/system/supabase-connection', '/api/passkeys', `/api/bots/${BOT}/credentials`]) {
         for (const value of [cookie, revokedCookie, `oc_tunnel_session=${'A'.repeat(43)}`, '']) {
           const result = await request(f.app).get(route).set(remote).set('Cookie', value);
-          expect([401, 403]).toContain(result.status);
+          expect([401, 403], `${mode}: ${route}, ${value === cookie ? 'valid' : value === revokedCookie ? 'revoked' : 'invalid'} cookie`).toContain(result.status);
         }
         for (const headers of [{ ...remote, Host: 'localhost', 'X-Forwarded-Host': 'localhost' }, { ...remote, Origin: 'https://attacker.test' }]) {
           expect([401, 403]).toContain((await request(f.app).get(route).set(headers).set('Cookie', cookie)).status);

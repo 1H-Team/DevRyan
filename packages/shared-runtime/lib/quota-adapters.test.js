@@ -91,11 +91,70 @@ const zenBillingHtml = ({
   reloadAmount = 20,
   reloadTrigger = 5,
 } = {}) => `<!doctype html><script>
-_$HY.r["billing.get[\\"${ZEN_WORKSPACE_ID}\\"]"]=$R[1];
+_$HY.r["billing.get[\\"${ZEN_WORKSPACE_ID}\\"]"]=$R[20];
 $R[20]={customerID:"cus_safe",paymentMethodID:"pm_safe",balance:${balance},monthlyLimit:${monthlyLimit === null ? 'null' : monthlyLimit},monthlyUsage:${monthlyUsage},timeMonthlyUsageUpdated:${updatedAt === null ? 'null' : `$R[21]=new Date(${JSON.stringify(updatedAt)})`},reload:${reload ? '!0' : '!1'},reloadAmount:${reloadAmount},reloadAmountMin:10,reloadTrigger:${reloadTrigger},reloadTriggerMin:5,subscriptionID:null,lite:$R[22]={useBalance:!0}};
 </script>`;
 
 describe('OpenCode Zen shared quota adapter', () => {
+  test('accepts minimal billing data without subscription or auto-reload fields', async () => {
+    const html = `_$HY.r[${JSON.stringify(`billing.get["${ZEN_WORKSPACE_ID}"]`)}]=$R[1];
+      $R[1]={data:$R[2]};
+      $R[2]={balance:2000000000,monthlyUsage:625000000,timeMonthlyUsageUpdated:"2026-08-10T09:00:00.000Z"};`;
+    const result = await fetchOpenCodeZenQuotaAdapter({
+      credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'cookie' }, now,
+      fetchImpl: async () => response(html),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.usage.windows.credits.valueLabel).toBe('$6.25 used / $20.00 available');
+  });
+
+  test('resolves streamed hydration and ignores unrelated workspace billing objects', async () => {
+    const html = `_$HY.r[${JSON.stringify(`billing.get["${ZEN_WORKSPACE_ID}"]`)}]=$R[1];
+      $R[1].resolve($R[2]={balance:2000000000,monthlyUsage:0,timeMonthlyUsageUpdated:null});
+      $R[3]={balance:9900000000,monthlyUsage:0,timeMonthlyUsageUpdated:null};`;
+    const result = await fetchOpenCodeZenQuotaAdapter({
+      credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'cookie' }, now,
+      fetchImpl: async () => response(html),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.usage.windows.credits.valueLabel).toBe('$0.00 used / $20.00 available');
+  });
+
+  test('rejects detached, wrong-workspace, and ambiguous reachable billing data', async () => {
+    const root = `_$HY.r[${JSON.stringify(`billing.get["${ZEN_WORKSPACE_ID}"]`)}]=$R[1];`;
+    const record = '{balance:2000000000,monthlyUsage:0,timeMonthlyUsageUpdated:null}';
+    for (const html of [
+      `${root}$R[2]=${record};`,
+      `${root.replace(ZEN_WORKSPACE_ID, 'wrk_01K46JDFR0E75SG2Q8K172KF3Z')}$R[1]=${record};`,
+      `${root}$R[1]=[$R[2],$R[3]];$R[2]=${record};$R[3]=${record.replace('2000000000', '3000000000')};`,
+      `${root}$R[1]=${record};$R[1]=${record};`,
+      `${root}$R[1]=[$R[2],$R[3]];$R[2]=${record};$R[3]=${record};`,
+      `${root}$R[1]={balance:2000000000,monthlyUsage:0};`,
+      `${root}$R[1]=${record.replace('2000000000', '20 * 100000000')};`,
+    ]) {
+      const result = await fetchOpenCodeZenQuotaAdapter({
+        credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'never-echo' }, now,
+        fetchImpl: async () => response(html),
+      });
+      expect(result).toMatchObject({ ok: false, errorCode: 'PARSE_ERROR' });
+      expect(JSON.stringify(result)).not.toContain('never-echo');
+    }
+  });
+
+  test('distinguishes timeout from upstream failures without echoing thrown messages', async () => {
+    for (const [error, errorCode] of [
+      [new DOMException('secret-cookie', 'TimeoutError'), 'TIMEOUT'],
+      [new Error('secret-cookie'), 'API_ERROR'],
+    ]) {
+      const result = await fetchOpenCodeZenQuotaAdapter({
+        credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'secret-cookie' }, now,
+        fetchImpl: async () => { throw error; },
+      });
+      expect(result).toMatchObject({ ok: false, configured: true, errorCode });
+      expect(JSON.stringify(result)).not.toContain('secret-cookie');
+    }
+  });
+
   test('reads only the workspace billing page and maps spend versus available credits', async () => {
     const result = await fetchOpenCodeZenQuotaAdapter({
       credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'signed-cookie' },
@@ -198,7 +257,7 @@ describe('OpenCode Zen shared quota adapter', () => {
   test('fails closed for malformed, ambiguous, and oversized billing payloads', async () => {
     for (const html of [
       '<script>billing.get["workspace"]={balance:10}</script>',
-      `_$HY.r["billing.get[\\"${ZEN_WORKSPACE_ID}\\"]"]=$R[1];<script>{customerID:"decoy",paymentMethodID:null,balance:10,monthlyLimit:null,monthlyUsage:0,timeMonthlyUsageUpdated:null,reload:!1,reloadAmount:10,reloadAmountMin:10,reloadTrigger:5,reloadTriggerMin:5,subscriptionID:null}</script>`,
+      `_$HY.r["billing.get[\\"${ZEN_WORKSPACE_ID}\\"]"]=$R[20];<script>{customerID:"decoy",paymentMethodID:null,balance:10,monthlyLimit:null,monthlyUsage:0,timeMonthlyUsageUpdated:null,reload:!1,reloadAmount:10,reloadAmountMin:10,reloadTrigger:5,reloadTriggerMin:5,subscriptionID:null}</script>`,
       `${zenBillingHtml()}${zenBillingHtml({ balance: 100 })}`,
     ]) {
       const result = await fetchOpenCodeZenQuotaAdapter({

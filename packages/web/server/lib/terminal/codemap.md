@@ -18,6 +18,8 @@ Terminal transport/runtime utilities for PTY streaming: WebSocket protocol norma
 
 ## Integration
 - Used by `/api/terminal/*` routes in server runtime.
-- Consumed by `src/api/terminal.ts` adapter + shared terminal UI (`ghostty-web`).
+- Consumed by `src/api/terminal.ts` adapter + shared terminal UI (`packages/ui/src/lib/ghostty`).
 - Coordinates with event-stream/websocket lifecycle in server bootstrap.
 - Uses the multi-user project's canonical registered repository only as the source for ignored public dotenv values; the developer's active worktree remains the PTY working directory.
+
+- Clients may opt into replay markers with `replay: true` on a WebSocket bind. `runtime.js` brackets history with `replay-start`/`replay-end`; old clients retain their existing stream. Shared UI serializes frame decoding and suppresses historical VT replies while live output continues to answer them.

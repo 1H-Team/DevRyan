@@ -32,6 +32,18 @@ export const filterBranchNamesByGrantedBranches = (
   return branches.filter((branch) => grantedBranches.has(normalizeManagedBranchName(branch)));
 };
 
+/**
+ * The session sidebar presents branch worktrees, not every Git worktree.
+ * Detached worktrees remain available to the worktree settings UI, but must
+ * not be mislabeled as live branches in navigation.
+ */
+export const filterBranchBackedWorktrees = (
+  worktrees: readonly WorktreeMetadata[],
+): WorktreeMetadata[] => worktrees.filter((worktree) => (
+  worktree.headState !== 'detached'
+  && Boolean(normalizeManagedBranchName(worktree.branch || ''))
+));
+
 export const filterWorktreesByGrantedBranches = (
   worktrees: readonly WorktreeMetadata[],
   project: ProjectEntry,

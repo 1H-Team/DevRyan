@@ -207,16 +207,16 @@ mock.module("@/lib/opencode/client", () => ({
 const recordToast = (kind: string) => (message: unknown) => {
   toastCalls.push({ kind, message: String(message) })
 }
-mock.module("sonner", () => ({
-  toast: Object.assign(recordToast("default"), {
-    success: recordToast("success"),
-    error: recordToast("error"),
-    info: recordToast("info"),
-    warning: recordToast("warning"),
-    message: recordToast("message"),
-    dismiss: () => {},
-  }),
-}))
+const recordedToast = Object.assign(recordToast("default"), {
+  success: recordToast("success"),
+  error: recordToast("error"),
+  info: recordToast("info"),
+  warning: recordToast("warning"),
+  message: recordToast("message"),
+  dismiss: () => {},
+})
+mock.module("sonner", () => ({ toast: recordedToast, Toaster: () => null }))
+mock.module("@/components/ui", () => ({ toast: recordedToast, Toaster: () => null }))
 
 // Mock useConfigStore
 mock.module("@/stores/useConfigStore", () => ({
@@ -4362,6 +4362,19 @@ describe("session tree revert", () => {
     expect(sessions.find((session) => session.id === "session-a")?.revert).toEqual({ messageID: "msg_2" })
     expect(sessions.find((session) => session.id === "child-1")?.revert).toEqual({ messageID: "c1_1" })
     expect(toastCalls).toEqual([{ kind: "success", message: "Reverted 2 files across 2 sessions" }])
+  })
+
+  test("a partial Revert warns about preserved conflicts instead of reporting complete success", async () => {
+    const store = createTreeStore()
+    const childStores = createChildStores([["/test/project", store]])
+    scopedRevertHandler = (sessionId, messageId) => Promise.resolve(makeScopedRevertResult(sessionId, messageId, {
+      outcome: 'partial', conflicts: [{ path: 'binary.dat' }],
+    }))
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+    await revertToMessage("session-a", "msg_2")
+    await flushToasts()
+    expect(toastCalls).toEqual([{ kind: 'warning', message: 'Chat rewound with file conflicts. Preserved current files: binary.dat' }])
   })
 
   test("undoSession reverts the root to the first user message reported by the changes endpoint", async () => {

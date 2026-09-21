@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFile, realpath } from 'node:fs/promises';
+import { lstat, readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { captureQaArtifactIdentity } from './artifact-evidence.mjs';
 
@@ -16,6 +16,17 @@ export async function loadQaPackagedArtifact({ root, evidencePath }) {
   const file = await realpath(path.resolve(root, evidencePath));
   if (!within(canonicalRoot, file)) throw new Error('QA package evidence must remain inside this repository');
   const evidence = JSON.parse(await readFile(file, 'utf8'));
+  const retentionFile = path.join(path.dirname(file), 'storage-retention.json');
+  let retentionStat;
+  try { retentionStat = await lstat(retentionFile); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (retentionStat) {
+    if (!retentionStat.isFile()) throw new Error('QA package retention metadata must be a regular file');
+    const retention = JSON.parse(await readFile(retentionFile, 'utf8'));
+    if (retention.schemaVersion !== 1 || retention.payloadState !== 'ready') {
+      throw new Error('QA package is historical or incomplete; rebuild its executable before use');
+    }
+  }
   if (evidence.schemaVersion !== 1 || typeof evidence.appPath !== 'string' || typeof evidence.binary !== 'string'
     || !/^[a-f0-9]{64}$/.test(evidence.archiveSha256 ?? '') || evidence.nativeSmoke?.sqlite !== 'passed'
     || evidence.nativeSmoke?.pty !== 'passed') throw new Error('QA package evidence is incomplete');

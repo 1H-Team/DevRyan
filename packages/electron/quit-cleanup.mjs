@@ -11,6 +11,7 @@ export const finishQuitAfterCleanup = async ({
   scheduleTimeout = setTimeout,
   cancelTimeout = clearTimeout,
   timeoutMs = DEFAULT_QUIT_CLEANUP_TIMEOUT_MS,
+  owner = 'app',
 }) => {
   let timeoutHandle;
   const timeout = new Promise((resolve) => {
@@ -42,17 +43,26 @@ export const finishQuitAfterCleanup = async ({
           onCleanupError(error);
         } catch {
         }
-        return 'clean';
+        return owner === 'updater' ? 'failed' : 'clean';
       },
     );
 
   const result = await Promise.race([cleanup, timeout]);
   if (result === 'timeout') {
+    if (owner === 'updater') {
+      // The installer owns the eventual quit. Never force-exit it or start
+      // installation while checkpoints/owned processes are still unsettled.
+      onCleanupError(Object.assign(new Error('Update cleanup timed out; installation has not started.'), {
+        code: 'update_cleanup_timeout',
+      }));
+      return 'blocked';
+    }
     forceExit();
     return 'forced';
   }
 
   cancelTimeout(timeoutHandle);
+  if (result === 'failed') return 'blocked';
   requestQuit();
   return 'quit';
 };

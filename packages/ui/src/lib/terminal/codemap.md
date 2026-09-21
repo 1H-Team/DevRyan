@@ -11,3 +11,5 @@ Callers import folder modules, pass runtime/store context, receive transformed d
 
 ## Integration
 Used by nearby UI surfaces under packages/ui/src and wired through app-level stores/hooks.
+
+- `SerializeAddon.ts` consumes the vendored `../ghostty` buffer contract. It includes scrollback, skips wide-character continuation cells, joins soft wraps, preserves colors/cursor state and restores the viewport after a snapshot. Historical blocks in terminal transport/store queues carry replay provenance through remounts.

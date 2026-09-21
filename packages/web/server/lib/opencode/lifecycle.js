@@ -196,6 +196,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     // window in which OpenCode's database is not in use). Best-effort: errors
     // are logged and never block the launch.
     beforeManagedSpawn = async () => {},
+    assertExecutionReady = () => {},
   } = deps;
 
   const emitStartupStatus = (text) => {
@@ -829,6 +830,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   };
 
   const startOpenCodeOnce = async () => {
+    assertExecutionReady();
     // Electron provisions the managed browser skill here so the immediately
     // following skill discovery/overlay sync sees it on this same launch.
     // External and non-Electron runtimes return an empty object without IO.
@@ -1036,7 +1038,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       } catch (error) {
         lastError = error;
         if (
-          error?.code === 'OPENCODE_BINARY_INVALID'
+          error?.code === 'execution_artifacts_unavailable'
+          || error?.code === 'OPENCODE_BINARY_INVALID'
           || error?.code === 'PACKAGED_AGENT_SYNC_CONFLICT'
           || isManagedOrchestrationOwnershipError(error)
         ) {
@@ -1364,6 +1367,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
   const bootstrapOpenCodeAtStartup = async () => {
     try {
+      assertExecutionReady();
       await reapManagedOpenCodeOrphansOnce();
       syncFromHmrState();
       if (await isOpenCodeProcessHealthy()) {
@@ -1434,6 +1438,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       console.error(`Failed to start OpenCode: ${error.message}`);
       console.log('Continuing without OpenCode integration...');
       state.lastOpenCodeError = error.message;
+      state.isOpenCodeReady = false;
+      syncToHmrState();
     }
   };
 

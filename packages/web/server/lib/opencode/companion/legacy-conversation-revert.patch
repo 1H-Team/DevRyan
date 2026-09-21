@@ -1,5 +1,5 @@
 diff --git a/packages/client/src/generated/types.ts b/packages/client/src/generated/types.ts
-index 3b3188c..d6485a1 100644
+index 3b3188c87..d6485a1e9 100644
 --- a/packages/client/src/generated/types.ts
 +++ b/packages/client/src/generated/types.ts
 @@ -254,6 +254,7 @@ export type SessionsListOutput = {
@@ -51,7 +51,7 @@ index 3b3188c..d6485a1 100644
              readonly path: string
              readonly status: "added" | "modified" | "deleted"
 diff --git a/packages/core/src/cross-spawn-spawner.ts b/packages/core/src/cross-spawn-spawner.ts
-index 6ea9022..2cb4386 100644
+index 6ea9022ac..2cb438610 100644
 --- a/packages/core/src/cross-spawn-spawner.ts
 +++ b/packages/core/src/cross-spawn-spawner.ts
 @@ -375,7 +375,12 @@ export const make = Effect.gen(function* () {
@@ -69,7 +69,7 @@ index 6ea9022..2cb4386 100644
                windowsHide: process.platform === "win32",
              }),
 diff --git a/packages/core/src/session.ts b/packages/core/src/session.ts
-index 2dabfb2..e109b73 100644
+index 2dabfb2d6..e109b7376 100644
 --- a/packages/core/src/session.ts
 +++ b/packages/core/src/session.ts
 @@ -358,31 +358,33 @@ const layer = Layer.effect(
@@ -132,7 +132,7 @@ index 2dabfb2..e109b73 100644
        shell: Effect.fn("V2Session.shell")(function* () {
          return yield* new OperationUnavailableError({ operation: "shell" })
 diff --git a/packages/core/src/session/execution/local.ts b/packages/core/src/session/execution/local.ts
-index d874c40..9098b30 100644
+index d874c4083..9098b30c4 100644
 --- a/packages/core/src/session/execution/local.ts
 +++ b/packages/core/src/session/execution/local.ts
 @@ -31,8 +31,18 @@ const layer = Layer.effect(
@@ -157,7 +157,7 @@ index d874c40..9098b30 100644
    }),
  )
 diff --git a/packages/core/src/session/revert.ts b/packages/core/src/session/revert.ts
-index 9999d5d..d70a1b9 100644
+index 9999d5da5..d70a1b94a 100644
 --- a/packages/core/src/session/revert.ts
 +++ b/packages/core/src/session/revert.ts
 @@ -64,6 +64,16 @@ export const stage = Effect.fn("SessionRevert.stage")(function* (input: {
@@ -199,7 +199,7 @@ index 9999d5d..d70a1b9 100644
        files: new Map((session.revert.files ?? []).map((file) => [file.path, original])),
      })
 diff --git a/packages/opencode/src/cli/cmd/debug/index.ts b/packages/opencode/src/cli/cmd/debug/index.ts
-index 9dcaa33..47f283b 100644
+index 9dcaa33b3..47f283b23 100644
 --- a/packages/opencode/src/cli/cmd/debug/index.ts
 +++ b/packages/opencode/src/cli/cmd/debug/index.ts
 @@ -15,6 +15,7 @@ import { SnapshotCommand } from "./snapshot"
@@ -219,7 +219,7 @@ index 9dcaa33..47f283b 100644
        .command(PathsCommand)
        .command(WaitCommand)
 diff --git a/packages/opencode/src/config/config.ts b/packages/opencode/src/config/config.ts
-index 9e10b67..6d14879 100644
+index 9e10b67fe..6d14879bc 100644
 --- a/packages/opencode/src/config/config.ts
 +++ b/packages/opencode/src/config/config.ts
 @@ -449,26 +449,30 @@ const layer = Layer.effect(
@@ -273,8 +273,30 @@ index 9e10b67..6d14879 100644
  
            result.command = mergeDeep(result.command ?? {}, yield* Effect.promise(() => ConfigCommand.load(dir)))
            result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.load(dir)))
+diff --git a/packages/opencode/src/event-v2-bridge.ts b/packages/opencode/src/event-v2-bridge.ts
+index 8e65f2752..7e679e337 100644
+--- a/packages/opencode/src/event-v2-bridge.ts
++++ b/packages/opencode/src/event-v2-bridge.ts
+@@ -1,3 +1,4 @@
++import { RetentionGate } from "./session/retention-gate"
+ // Opencode publish boundary for core events. Attach routed instance location
+ // so direct EventV2 consumers can isolate directory/workspace streams.
+ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+@@ -30,6 +31,12 @@ const layer = Layer.effect(
+             project: { id: Project.ID.make(ctx.project.id), directory: AbsolutePath.make(ctx.worktree) },
+           }),
+         })
++      }).pipe((action) => {
++        const ids: string[] = []
++        if (typeof data === "object" && data !== null && "sessionID" in data && typeof data.sessionID === "string") ids.push(data.sessionID)
++        if (typeof data === "object" && data !== null && "info" in data && typeof data.info === "object" && data.info !== null
++          && "parentID" in data.info && typeof data.info.parentID === "string") ids.push(data.info.parentID)
++        return RetentionGate.activity(ids, action)
+       })
+ 
+     const unsubscribe = yield* events.listen((event) =>
 diff --git a/packages/opencode/src/mcp/index.ts b/packages/opencode/src/mcp/index.ts
-index 05f12fa..978a52b 100644
+index 05f12fa2e..978a52b9a 100644
 --- a/packages/opencode/src/mcp/index.ts
 +++ b/packages/opencode/src/mcp/index.ts
 @@ -374,6 +374,17 @@ const layer = Layer.effect(
@@ -296,7 +318,7 @@ index 05f12fa..978a52b 100644
          const { client: mcpClient, status } =
            mcp.type === "remote"
 diff --git a/packages/opencode/src/plugin/index.ts b/packages/opencode/src/plugin/index.ts
-index 6f05329..2c3231b 100644
+index 6f05329a0..2c3231be9 100644
 --- a/packages/opencode/src/plugin/index.ts
 +++ b/packages/opencode/src/plugin/index.ts
 @@ -33,6 +33,7 @@ import type { WorkspaceAdapter } from "@/control-plane/types"
@@ -327,22 +349,45 @@ index 6f05329..2c3231b 100644
  }
  
 diff --git a/packages/opencode/src/server/routes/instance/httpapi/groups/session.ts b/packages/opencode/src/server/routes/instance/httpapi/groups/session.ts
-index 959a303..c95922f 100644
+index 959a303dc..74e70bac9 100644
 --- a/packages/opencode/src/server/routes/instance/httpapi/groups/session.ts
 +++ b/packages/opencode/src/server/routes/instance/httpapi/groups/session.ts
-@@ -78,6 +78,8 @@ export const PermissionResponsePayload = Schema.Struct({
+@@ -78,6 +78,9 @@ export const PermissionResponsePayload = Schema.Struct({
  export const SessionPaths = {
    list: root,
    status: `${root}/status`,
 +  revertCapabilities: `${root}/revert-capabilities`,
++  retentionControl: `${root}/retention-control`,
 +  externalMessage: `${root}/:sessionID/external-message`,
    get: `${root}/:sessionID`,
    children: `${root}/:sessionID/children`,
    todo: `${root}/:sessionID/todo`,
-@@ -108,6 +110,30 @@ export const SessionApi = HttpApi.make("session")
+@@ -104,10 +107,54 @@ export const SessionPaths = {
+   updatePart: `${root}/:sessionID/message/:messageID/part/:partID`,
+ } as const
+ 
++export const RetentionPayload = Schema.Struct({
++  action: Schema.Literals(["snapshot", "hold", "release", "archive", "delete"]),
++  instanceID: Schema.optional(Schema.String),
++  token: Schema.optional(Schema.String),
++  ids: Schema.optional(Schema.Array(SessionID)),
++})
++
++export const RetentionResponse = Schema.Union([
++  Schema.Struct({ protocol: Schema.Literal(1), instanceID: Schema.String, complete: Schema.Boolean, sessions: Schema.Array(Session.GlobalInfo) }),
++  Schema.Struct({ error: Schema.String }),
++  Schema.Struct({ released: Schema.Boolean }),
++  Schema.Struct({ token: Schema.String }),
++  Schema.Struct({ completed: Schema.Array(Schema.String), failed: Schema.Array(Schema.Struct({ id: Schema.String, reason: Schema.String })) }),
++])
++
+ export const SessionApi = HttpApi.make("session")
    .add(
      HttpApiGroup.make("session")
        .add(
++        HttpApiEndpoint.post("retentionControl", SessionPaths.retentionControl, {
++          query: WorkspaceRoutingQuery, payload: RetentionPayload, success: RetentionResponse, error: HttpApiError.Forbidden,
++        }),
 +        HttpApiEndpoint.post("externalMessage", SessionPaths.externalMessage, {
 +          params: Schema.Struct({ sessionID: SessionID }),
 +          query: WorkspaceRoutingQuery,
@@ -359,6 +404,8 @@ index 959a303..c95922f 100644
 +          success: Schema.Struct({
 +            legacyConversationRevert: Schema.Literal(1),
 +            executionBoundary: Schema.optional(Schema.Literal(1)),
++            executionPreparation: Schema.optional(Schema.Literal(2)),
++            sessionRetention: Schema.optional(Schema.Literal(1)),
 +          }),
 +        }).annotateMerge(
 +          OpenApi.annotations({
@@ -371,10 +418,15 @@ index 959a303..c95922f 100644
            query: ListQuery,
            success: described(Schema.Array(Session.Info), "List of sessions"),
 diff --git a/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts b/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts
-index 6625850..9a39dde 100644
+index 662585020..1d8ec3b0a 100644
 --- a/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts
 +++ b/packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts
-@@ -9,6 +9,7 @@ import { Session } from "@/session/session"
+@@ -1,3 +1,4 @@
++import { RetentionGate } from "@/session/retention-gate"
+ import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+ import { Agent } from "@/agent/agent"
+ import { SessionV1 } from "@opencode-ai/core/v1/session"
+@@ -9,6 +10,7 @@ import { Session } from "@/session/session"
  import { SessionCompaction } from "@/session/compaction"
  import { MessageV2 } from "@/session/message-v2"
  import { SessionPrompt } from "@/session/prompt"
@@ -382,7 +434,7 @@ index 6625850..9a39dde 100644
  import { SessionRevert } from "@/session/revert"
  import { SessionRunState } from "@/session/run-state"
  import { SessionStatus } from "@/session/status"
-@@ -16,7 +17,7 @@ import { SessionSummary } from "@/session/summary"
+@@ -16,13 +18,14 @@ import { SessionSummary } from "@/session/summary"
  import { Todo } from "@/session/todo"
  import { MessageID, PartID, SessionID } from "@/session/schema"
  import { NamedError } from "@opencode-ai/core/util/error"
@@ -391,7 +443,14 @@ index 6625850..9a39dde 100644
  import * as Stream from "effect/Stream"
  import { InstanceState } from "@/effect/instance-state"
  import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-@@ -270,27 +271,27 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session",
+ import { HttpApiBuilder, HttpApiError, HttpApiSchema } from "effect/unstable/httpapi"
+ import { InstanceHttpApi } from "../api"
+ import {
++  RetentionPayload,
+   CommandPayload,
+   DiffQuery,
+   ForkPayload,
+@@ -270,27 +273,27 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session",
        return yield* requireSession(ctx.params.sessionID)
      })
  
@@ -440,7 +499,26 @@ index 6625850..9a39dde 100644
  
      const prompt = Effect.fn("SessionHttpApi.prompt")(function* (ctx: {
        params: { sessionID: SessionID }
-@@ -411,8 +412,51 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session",
+@@ -313,7 +316,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session",
+       payload: typeof PromptPayload.Type
+     }) {
+       yield* requireSession(ctx.params.sessionID)
+-      yield* promptSvc.prompt({ ...ctx.payload, sessionID: ctx.params.sessionID }).pipe(
++      yield* RetentionGate.forkActivity([ctx.params.sessionID], promptSvc.prompt({ ...ctx.payload, sessionID: ctx.params.sessionID }).pipe(
+         Effect.catchCause((cause) =>
+           Effect.gen(function* () {
+             yield* Effect.logError("prompt_async failed", { sessionID: ctx.params.sessionID, cause })
+@@ -323,8 +326,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session",
+             })
+           }),
+         ),
+-        Effect.forkIn(scope, { startImmediately: true }),
+-      )
++      ), scope)
+       return HttpApiSchema.NoContent.make()
+     })
+ 
+@@ -411,8 +413,82 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session",
      })
  
      return handlers
@@ -481,40 +559,91 @@ index 6625850..9a39dde 100644
 +          }),
 +        ),
 +      )
++      .handle("retentionControl", (ctx: { payload: typeof RetentionPayload.Type }) => Effect.gen(function* () {
++        const request = yield* HttpServerRequest.HttpServerRequest
++        if (!DevRyanExecution.enabled() || !process.env.DEVRYAN_ORCHESTRATION_TOKEN
++          || request.headers["x-devryan-retention-token"] !== process.env.DEVRYAN_ORCHESTRATION_TOKEN)
++          return yield* new HttpApiError.Forbidden({})
++        const input = ctx.payload
++        if (input.action === "snapshot") {
++          // An explicit sentinel proves completeness; never silently truncate.
++          const sessions = yield* session.listGlobal({ archived: true, limit: 100_001 })
++          return { protocol: 1, instanceID: RetentionGate.instanceID, complete: sessions.length < 100_001, sessions }
++        }
++        if (input.instanceID !== RetentionGate.instanceID) return { error: "runtime_restarted" }
++        if (input.action === "release") return { released: RetentionGate.release(input.token ?? "") }
++        if (input.action === "hold") {
++          const token = RetentionGate.hold(input.ids ?? [])
++          return { token }
++        }
++        const ids = [...(input.ids ?? [])]
++        return yield* RetentionGate.commit(input.token ?? "", ids, Effect.gen(function* () {
++          const completed: string[] = [], failed: { id: string; reason: string }[] = []
++          for (const id of ids) {
++            const result = yield* (input.action === "archive"
++              ? session.setArchived({ sessionID: id, time: Date.now() }) : session.remove(id)).pipe(Effect.result)
++            if (result._tag === "Failure") { failed.push({ id, reason: "mutation_failed" }); continue }
++            const current = yield* session.get(id).pipe(Effect.option)
++            if (input.action === "delete" ? Option.isNone(current) : Option.isSome(current) && Boolean(current.value.time.archived)) completed.push(id)
++            else failed.push({ id, reason: "mutation_unconfirmed" })
++          }
++          return { completed, failed }
++        }))
++      }))
        .handle("list", list)
        .handle("status", status)
 +      .handle("revertCapabilities", () =>
 +        Effect.succeed({
 +          legacyConversationRevert: 1 as const,
-+          ...(process.env.DEVRYAN_EXECUTION_BOUNDARY === "1" ? { executionBoundary: 1 as const } : {}),
++          ...(process.env.DEVRYAN_EXECUTION_BOUNDARY === "1" ? { executionBoundary: 1 as const, executionPreparation: 2 as const, sessionRetention: 1 as const } : {}),
 +        }),
 +      )
        .handle("get", get)
        .handle("children", children)
        .handle("todo", todo)
+diff --git a/packages/opencode/src/server/routes/instance/httpapi/middleware/error.ts b/packages/opencode/src/server/routes/instance/httpapi/middleware/error.ts
+index 3bedd1970..7d3365eea 100644
+--- a/packages/opencode/src/server/routes/instance/httpapi/middleware/error.ts
++++ b/packages/opencode/src/server/routes/instance/httpapi/middleware/error.ts
+@@ -1,3 +1,4 @@
++import { RetentionError } from "@/session/retention-gate"
+ import { NamedError } from "@opencode-ai/core/util/error"
+ import { ConfigErrorV1 } from "@opencode-ai/core/v1/config/error"
+ import { Cause, Effect } from "effect"
+@@ -16,6 +17,9 @@ export const errorLayer = HttpRouter.middleware<{ handles: unknown }>()((effect)
+       if (!defect) return Effect.failCause(cause)
+ 
+       const error = defect.defect
++      if (error instanceof RetentionError) {
++        return Effect.succeed(HttpServerResponse.jsonUnsafe({ error: error.code, retryable: true }, { status: 409, headers: { "retry-after": "1" } }))
++      }
+       if (
+         ConfigErrorV1.JsonError.isInstance(error) ||
+         ConfigErrorV1.InvalidError.isInstance(error) ||
 diff --git a/packages/opencode/src/server/shared/workspace-routing.ts b/packages/opencode/src/server/shared/workspace-routing.ts
-index de4dc67..65a4fae 100644
+index de4dc6720..fa274290c 100644
 --- a/packages/opencode/src/server/shared/workspace-routing.ts
 +++ b/packages/opencode/src/server/shared/workspace-routing.ts
-@@ -5,6 +5,7 @@ type Rule = { method?: string; path: string; exact?: boolean; action: "local" |
+@@ -5,6 +5,8 @@ type Rule = { method?: string; path: string; exact?: boolean; action: "local" |
  const RULES: Array<Rule> = [
    { path: "/experimental/workspace", action: "local" },
    { path: "/session/status", action: "forward" },
 +  { path: "/session/revert-capabilities", action: "forward" },
++  { path: "/session/retention-control", action: "forward" },
    { method: "GET", path: "/session", action: "local" },
  ]
  
-@@ -18,7 +19,7 @@ export function isLocalWorkspaceRoute(method: string, path: string) {
+@@ -18,7 +20,7 @@ export function isLocalWorkspaceRoute(method: string, path: string) {
  }
  
  export function getWorkspaceRouteSessionID(url: URL) {
 -  if (url.pathname === "/session/status") return null
-+  if (["/session/status", "/session/revert-capabilities"].includes(url.pathname)) return null
++  if (["/session/status", "/session/revert-capabilities", "/session/retention-control"].includes(url.pathname)) return null
  
    const id =
      url.pathname.match(/^\/session\/([^/]+)(?:\/|$)/)?.[1] ??
 diff --git a/packages/opencode/src/session/prompt.ts b/packages/opencode/src/session/prompt.ts
-index 0f85d44..f3b8b72 100644
+index 0f85d44f2..f3b8b728c 100644
 --- a/packages/opencode/src/session/prompt.ts
 +++ b/packages/opencode/src/session/prompt.ts
 @@ -56,6 +56,7 @@ import { SessionTable } from "@opencode-ai/core/session/sql"
@@ -922,7 +1051,7 @@ index 0f85d44..f3b8b72 100644
      return Service.of({
        cancel,
 diff --git a/packages/opencode/src/session/revert.ts b/packages/opencode/src/session/revert.ts
-index 03e5afd..a59a211 100644
+index 03e5afd08..a59a211b2 100644
 --- a/packages/opencode/src/session/revert.ts
 +++ b/packages/opencode/src/session/revert.ts
 @@ -14,6 +14,7 @@ export const RevertInput = Schema.Struct({
@@ -976,10 +1105,15 @@ index 03e5afd..a59a211 100644
        return yield* sessions.get(input.sessionID).pipe(Effect.orDie)
      })
 diff --git a/packages/opencode/src/session/session.ts b/packages/opencode/src/session/session.ts
-index a2a91cd..031af6d 100644
+index a2a91cd47..c3f93766e 100644
 --- a/packages/opencode/src/session/session.ts
 +++ b/packages/opencode/src/session/session.ts
-@@ -73,6 +73,7 @@ export function fromRow(row: SessionRow): Info {
+@@ -1,3 +1,4 @@
++import { RetentionGate } from "./retention-gate"
+ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+ import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+ import { Slug } from "@opencode-ai/core/util/slug"
+@@ -73,6 +74,7 @@ export function fromRow(row: SessionRow): Info {
          partID: row.revert.partID ? PartID.make(row.revert.partID) : undefined,
          snapshot: row.revert.snapshot,
          diff: row.revert.diff,
@@ -987,7 +1121,7 @@ index a2a91cd..031af6d 100644
        }
      : undefined
    return {
-@@ -148,6 +149,7 @@ export function toRow(info: Info) {
+@@ -148,6 +150,7 @@ export function toRow(info: Info) {
            partID: info.revert.partID,
            snapshot: info.revert.snapshot,
            diff: info.revert.diff,
@@ -995,7 +1129,7 @@ index a2a91cd..031af6d 100644
          }
        : null,
      permission: info.permission,
-@@ -211,6 +213,7 @@ const Revert = Schema.Struct({
+@@ -211,6 +214,7 @@ const Revert = Schema.Struct({
    partID: optional(PartID),
    snapshot: optional(Schema.String),
    diff: optional(Schema.String),
@@ -1003,8 +1137,50 @@ index a2a91cd..031af6d 100644
  })
  
  const Model = Schema.Struct({
+@@ -906,8 +910,8 @@ const layer: Layer.Layer<
+     return Service.of({
+       list,
+       listGlobal,
+-      create,
+-      fork,
++      create: (input) => RetentionGate.activity(input?.parentID ? [input.parentID] : [], create(input)),
++      fork: (input) => RetentionGate.activity([input.sessionID], fork(input)),
+       touch,
+       get,
+       setTitle,
+diff --git a/packages/opencode/src/skill/index.ts b/packages/opencode/src/skill/index.ts
+index 5a04ec213..6874cbb59 100644
+--- a/packages/opencode/src/skill/index.ts
++++ b/packages/opencode/src/skill/index.ts
+@@ -183,7 +183,7 @@ const discoverSkills = Effect.fnUntraced(function* (
+   const state: ScanState = { matches: new Set(), dirs: new Set() }
+ 
+   const externalDirs: string[] = []
+-  if (!disableExternalSkills) {
++  if (!disableExternalSkills && process.env.DEVRYAN_EXECUTION_WORKER !== "1") {
+     if (!disableClaudeCodeSkills) externalDirs.push(CLAUDE_EXTERNAL_DIR)
+     externalDirs.push(AGENTS_EXTERNAL_DIR)
+ 
+@@ -202,7 +202,7 @@ const discoverSkills = Effect.fnUntraced(function* (
+     }
+   }
+ 
+-  const configDirs = yield* config.directories()
++  const configDirs = process.env.DEVRYAN_EXECUTION_WORKER === "1" ? [] : yield* config.directories()
+   for (const dir of configDirs) {
+     yield* scan(state, dir, OPENCODE_SKILL_PATTERN)
+   }
+@@ -219,7 +219,7 @@ const discoverSkills = Effect.fnUntraced(function* (
+     yield* scan(state, dir, SKILL_PATTERN)
+   }
+ 
+-  for (const url of cfg.skills?.urls ?? []) {
++  for (const url of process.env.DEVRYAN_EXECUTION_WORKER === "1" ? [] : cfg.skills?.urls ?? []) {
+     const pulledDirs = yield* discovery.pull(url)
+     for (const dir of pulledDirs) {
+       yield* scan(state, dir, SKILL_PATTERN)
 diff --git a/packages/opencode/src/tool/read.ts b/packages/opencode/src/tool/read.ts
-index 678ed44..d900620 100644
+index 678ed4451..d900620ff 100644
 --- a/packages/opencode/src/tool/read.ts
 +++ b/packages/opencode/src/tool/read.ts
 @@ -115,6 +115,7 @@ export const ReadTool = Tool.define<
@@ -1016,7 +1192,7 @@ index 678ed44..d900620 100644
        yield* lsp.touchFile(filepath).pipe(Effect.ignoreCause, Effect.forkIn(scope))
      })
 diff --git a/packages/opencode/src/tool/registry.ts b/packages/opencode/src/tool/registry.ts
-index 9167cb3..ad9b923 100644
+index 9167cb3ea..56012cfd9 100644
 --- a/packages/opencode/src/tool/registry.ts
 +++ b/packages/opencode/src/tool/registry.ts
 @@ -54,6 +54,7 @@ import { ModelV2 } from "@opencode-ai/core/model"
@@ -1027,7 +1203,15 @@ index 9167cb3..ad9b923 100644
  
  export function webSearchEnabled(providerID: ProviderV2.ID, flags = { exa: false, parallel: false }) {
    return (
-@@ -135,55 +136,67 @@ const layer = Layer.effect(
+@@ -114,6 +115,7 @@ const layer = Layer.effect(
+     const greptool = yield* GrepTool
+     const patchtool = yield* ApplyPatchTool
+     const skilltool = yield* SkillTool
++    const skillCatalog = yield* Skill.Service
+     const agent = yield* Agent.Service
+     const codeMode = flags.experimentalCodeMode ? yield* Effect.promise(() => import("./code-mode")) : undefined
+     const codeModeTool = codeMode ? yield* codeMode.CodeModeTool : undefined
+@@ -135,55 +137,67 @@ const layer = Layer.effect(
            const parameters = zodParams
              ? Schema.declare<unknown>((u): u is unknown => zodParams.safeParse(u).success)
              : Schema.Unknown
@@ -1138,7 +1322,7 @@ index 9167cb3..ad9b923 100644
          if (matches.length) yield* config.waitForDependencies()
          for (const match of matches) {
            const namespace = path.basename(match, path.extname(match))
-@@ -226,6 +239,15 @@ const layer = Layer.effect(
+@@ -226,6 +240,16 @@ const layer = Layer.effect(
            ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),
          })
  
@@ -1147,14 +1331,15 @@ index 9167cb3..ad9b923 100644
 +        const preludeRead = { ...tool.read }
 +        const control = new Set<Tool.Def>([tool.invalid, tool.task, tool.todo, tool.question, tool.plan])
 +        for (const value of Object.values(tool)) {
-+          const wrapped = DevRyanExecution.wrap(value, config, control.has(value) ? "control" : "process")
++          const wrapped = DevRyanExecution.wrap(value, config, control.has(value) ? "control" : "process", undefined,
++            value === tool.skill ? (name) => skillCatalog.require(name).pipe(Effect.orDie) : undefined)
 +          value.execute = wrapped.execute
 +        }
 +
          return {
            custom,
            builtin: [
-@@ -248,7 +270,9 @@ const layer = Layer.effect(
+@@ -248,7 +272,9 @@ const layer = Layer.effect(
              ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
            ],
            task: tool.task,
@@ -1166,7 +1351,7 @@ index 9167cb3..ad9b923 100644
        }),
      )
 diff --git a/packages/opencode/src/tool/task.ts b/packages/opencode/src/tool/task.ts
-index d8ca640..36225bc 100644
+index d8ca640cf..36225bc3b 100644
 --- a/packages/opencode/src/tool/task.ts
 +++ b/packages/opencode/src/tool/task.ts
 @@ -14,6 +14,7 @@ import { Effect, Exit, Schema, Scope } from "effect"
@@ -1186,7 +1371,7 @@ index d8ca640..36225bc 100644
          Effect.provideService(Database.Service, database),
          Effect.orDie,
 diff --git a/packages/opencode/test/server/httpapi-session.test.ts b/packages/opencode/test/server/httpapi-session.test.ts
-index 9d7643c..bb6f199 100644
+index 9d7643cb3..bb6f1998d 100644
 --- a/packages/opencode/test/server/httpapi-session.test.ts
 +++ b/packages/opencode/test/server/httpapi-session.test.ts
 @@ -332,6 +332,9 @@ describe("session HttpApi", () => {
@@ -1200,10 +1385,10 @@ index 9d7643c..bb6f199 100644
          expect(
            yield* requestJson<Session.Info>(pathFor(SessionPaths.get, { sessionID: parent.id }), { headers }),
 diff --git a/packages/opencode/test/server/workspace-routing.test.ts b/packages/opencode/test/server/workspace-routing.test.ts
-index 29c2203..30d3052 100644
+index 29c22038c..7d728ac7d 100644
 --- a/packages/opencode/test/server/workspace-routing.test.ts
 +++ b/packages/opencode/test/server/workspace-routing.test.ts
-@@ -24,6 +24,11 @@ describe("isLocalWorkspaceRoute", () => {
+@@ -24,6 +24,16 @@ describe("isLocalWorkspaceRoute", () => {
      expect(isLocalWorkspaceRoute("POST", "/session/status")).toBe(false)
    })
  
@@ -1212,11 +1397,16 @@ index 29c2203..30d3052 100644
 +    expect(getWorkspaceRouteSessionID(new URL("http://localhost/session/revert-capabilities"))).toBeNull()
 +  })
 +
++  test("private retention routes resolve without a session ID", () => {
++    expect(isLocalWorkspaceRoute("POST", "/session/retention-control")).toBe(false)
++    expect(getWorkspaceRouteSessionID(new URL("http://localhost/session/retention-control"))).toBeNull()
++  })
++
    test("unrecognized paths are not local", () => {
      expect(isLocalWorkspaceRoute("GET", "/config")).toBe(false)
      expect(isLocalWorkspaceRoute("POST", "/session/ses_abc/message")).toBe(false)
 diff --git a/packages/opencode/test/session/revert-compact.test.ts b/packages/opencode/test/session/revert-compact.test.ts
-index f9e8cfd..617d092 100644
+index f9e8cfd9a..617d0922b 100644
 --- a/packages/opencode/test/session/revert-compact.test.ts
 +++ b/packages/opencode/test/session/revert-compact.test.ts
 @@ -108,6 +108,50 @@ const tokens = {
@@ -1271,7 +1461,7 @@ index f9e8cfd..617d092 100644
      "should properly handle compact command after revert",
      provideTmpdirInstance(
 diff --git a/packages/schema/src/revert.ts b/packages/schema/src/revert.ts
-index 05222d5..9735eeb 100644
+index 05222d539..9735eebd7 100644
 --- a/packages/schema/src/revert.ts
 +++ b/packages/schema/src/revert.ts
 @@ -19,6 +19,7 @@ export const State = Schema.Struct({
@@ -1283,7 +1473,7 @@ index 05222d5..9735eeb 100644
  }).annotate({ identifier: "Revert.State" })
  export interface State extends Schema.Schema.Type<typeof State> {}
 diff --git a/packages/schema/src/v1/session.ts b/packages/schema/src/v1/session.ts
-index 75e9282..b8bdef5 100644
+index 75e9282f1..b8bdef516 100644
 --- a/packages/schema/src/v1/session.ts
 +++ b/packages/schema/src/v1/session.ts
 @@ -532,6 +532,7 @@ const SessionRevert = Schema.Struct({
@@ -1295,7 +1485,7 @@ index 75e9282..b8bdef5 100644
  
  const SessionModel = Schema.Struct({
 diff --git a/packages/sdk/js/src/v2/gen/sdk.gen.ts b/packages/sdk/js/src/v2/gen/sdk.gen.ts
-index a2bcd42..c03f109 100644
+index a2bcd4252..c03f10904 100644
 --- a/packages/sdk/js/src/v2/gen/sdk.gen.ts
 +++ b/packages/sdk/js/src/v2/gen/sdk.gen.ts
 @@ -111,6 +111,7 @@ import type {
@@ -1425,7 +1615,7 @@ index a2bcd42..c03f109 100644
          },
        ],
 diff --git a/packages/sdk/js/src/v2/gen/types.gen.ts b/packages/sdk/js/src/v2/gen/types.gen.ts
-index f06c20c..3bd67ef 100644
+index f06c20cc4..3bd67ef6c 100644
 --- a/packages/sdk/js/src/v2/gen/types.gen.ts
 +++ b/packages/sdk/js/src/v2/gen/types.gen.ts
 @@ -217,6 +217,7 @@ export type Session = {
@@ -1534,12 +1724,13 @@ index f06c20c..3bd67ef 100644
      sessionID: string
 diff --git a/packages/opencode/src/cli/cmd/debug/devryan-tool.handler.ts b/packages/opencode/src/cli/cmd/debug/devryan-tool.handler.ts
 new file mode 100644
-index 0000000..923c0f3
+index 000000000..318e2614f
 --- /dev/null
 +++ b/packages/opencode/src/cli/cmd/debug/devryan-tool.handler.ts
-@@ -0,0 +1,116 @@
+@@ -0,0 +1,127 @@
 +import { createInterface } from "node:readline"
-+import { randomUUID } from "node:crypto"
++import { randomUUID, createHash } from "node:crypto"
++import { readFile, realpath } from "node:fs/promises"
 +import { Effect, Schema, type Types } from "effect"
 +import { SessionV1 } from "@opencode-ai/core/v1/session"
 +import { SessionID, MessageID } from "@/session/schema"
@@ -1547,6 +1738,7 @@ index 0000000..923c0f3
 +
 +const Input = Schema.Struct({
 +  tool: Schema.String,
++  skill: Schema.optional(DevRyanExecution.SkillBinding),
 +  args: Schema.Unknown,
 +  config: Schema.Unknown,
 +  files: Schema.Array(Schema.String),
@@ -1613,6 +1805,15 @@ index 0000000..923c0f3
 +            const registry = yield* ToolRegistry.Service
 +            trace("registry")
 +            const tool = (yield* registry.all()).findLast((def) => def.id === input.tool)
++            if (input.skill) {
++              const { Skill } = yield* Effect.promise(() => import("@/skill"))
++              const selected = yield* (yield* Skill.Service).require(input.skill.name)
++              const source = selected.location === "<built-in>" ? selected.location : yield* Effect.promise(() => realpath(selected.location))
++              const bytes = source === "<built-in>" ? selected.content : yield* Effect.promise(() => readFile(source))
++              if (source !== input.skill.source || selected.name !== input.skill.name
++                || createHash("sha256").update(bytes).digest("hex") !== input.skill.digest)
++                throw new Error("skill_source_mismatch")
++            }
 +            trace("execute")
 +            if (!tool) throw new Error(`Confined tool is unavailable: ${input.tool}`)
 +            return yield* tool.execute(input.args, {
@@ -1656,7 +1857,7 @@ index 0000000..923c0f3
 +}
 diff --git a/packages/opencode/src/cli/cmd/debug/devryan-tool.ts b/packages/opencode/src/cli/cmd/debug/devryan-tool.ts
 new file mode 100644
-index 0000000..0ebe3af
+index 000000000..0ebe3afb7
 --- /dev/null
 +++ b/packages/opencode/src/cli/cmd/debug/devryan-tool.ts
 @@ -0,0 +1,10 @@
@@ -1672,14 +1873,17 @@ index 0000000..0ebe3af
 +})
 diff --git a/packages/opencode/src/session/devryan-execution.ts b/packages/opencode/src/session/devryan-execution.ts
 new file mode 100644
-index 0000000..d74d4d5
+index 000000000..95679e534
 --- /dev/null
 +++ b/packages/opencode/src/session/devryan-execution.ts
-@@ -0,0 +1,422 @@
+@@ -0,0 +1,493 @@
++import { assertWorkerPayload } from "./execution-payload"
++import { RetentionGate } from "./retention-gate"
 +import { createHash } from "node:crypto"
 +import { spawn, execFile } from "node:child_process"
 +import { createInterface } from "node:readline"
-+import { readFile } from "node:fs/promises"
++import { readFile, realpath } from "node:fs/promises"
++import { Skill } from "@/skill"
 +import path from "node:path"
 +import { fileURLToPath } from "node:url"
 +import { Effect, Fiber, Schema } from "effect"
@@ -1695,6 +1899,17 @@ index 0000000..d74d4d5
 +export function files(directory: string, entries: string[]) {
 +  toolFiles.set(directory, entries)
 +}
++const Preparation = Schema.Struct({
++  protocol: Schema.Literal(2),
++  state: Schema.Literals(["preparing", "ready", "failed"]),
++  lease: Schema.Struct({ token: Schema.String }),
++  error: Schema.optional(Schema.Struct({ code: Schema.String })),
++})
++export const SkillBinding = Schema.Struct({ name: Schema.String, source: Schema.String, digest: Schema.String })
++const Publication = Schema.Struct({
++  outcome: Schema.optional(Schema.Literal("partial")),
++  conflicts: Schema.optional(Schema.Array(Schema.Struct({ path: Schema.String, source: Schema.optional(Schema.String) }))),
++})
 +const Record = Schema.Record(Schema.String, Schema.Unknown)
 +const Launch = Schema.Struct({
 +  lease: Schema.Struct({ token: Schema.String, viewDirectory: Schema.String, projectDirectory: Schema.String }),
@@ -1754,6 +1969,7 @@ index 0000000..d74d4d5
 +    const instance = yield* InstanceState.context
 +    const key = JSON.stringify([instance.directory, sessionID])
 +    const fiber = Fiber.getCurrent()!
++    const leaveRetention = RetentionGate.enter([sessionID])
 +    const running = admissions.get(key) ?? new Set()
 +    const nested = running.has(fiber)
 +    running.add(fiber)
@@ -1764,6 +1980,7 @@ index 0000000..d74d4d5
 +    }).pipe(
 +      Effect.ensuring(
 +        Effect.sync(() => {
++          leaveRetention()
 +          if (nested) return
 +          running.delete(fiber)
 +          if (!running.size) admissions.delete(key)
@@ -1786,7 +2003,7 @@ index 0000000..d74d4d5
 +    )
 +  })
 +
-+export async function rpc(params: object) {
++export async function rpc(params: object, signal?: AbortSignal) {
 +  const url = new URL(process.env.DEVRYAN_ORCHESTRATION_URL ?? "")
 +  if (
 +    url.protocol !== "http:" ||
@@ -1802,7 +2019,7 @@ index 0000000..d74d4d5
 +      authorization: `Bearer ${process.env.DEVRYAN_ORCHESTRATION_TOKEN}`,
 +    },
 +    body: JSON.stringify({ method: "session_execution", params }),
-+    signal: AbortSignal.timeout(60_000),
++    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(60_000)]) : AbortSignal.timeout(60_000),
 +  })
 +  const body = Schema.decodeUnknownSync(
 +    Schema.Struct({
@@ -1858,6 +2075,7 @@ index 0000000..d74d4d5
 +  config: Config.Interface,
 +  mode: "process" | "control" = "process",
 +  source?: object,
++  skillFor?: (name: string) => Effect.Effect<Skill.Info>,
 +): Tool.Def<P, M> {
 +  if (!enabled()) return def
 +  const original = def.execute
@@ -1875,15 +2093,42 @@ index 0000000..d74d4d5
 +          callID: ctx.callID,
 +          tool: def.id,
 +        }
++        const cfg = yield* config.get()
++        const frozen = Schema.decodeUnknownSync(Schema.Struct({
++          args: Schema.Unknown, messages: Schema.Unknown, extra: Schema.optional(Schema.Unknown),
++          config: Record, files: Schema.Array(Schema.String),
++        }))(JSON.parse(JSON.stringify({
++          args, messages: ctx.messages, extra: ctx.extra,
++          config: { ...cfg, plugin: [...(resolvedPlugins.get(instance.directory) ?? [])].map(([entry, options]) =>
++            options === undefined ? entry : [entry, options]) },
++          files: toolFiles.get(instance.directory) ?? [],
++        })))
++        const selected = skillFor
++          ? yield* skillFor(Schema.decodeUnknownSync(Schema.Struct({ name: Schema.String }))(args).name)
++          : undefined
++        const selectedSource = selected && selected.location !== "<built-in>"
++          ? yield* Effect.promise(() => realpath(selected.location)) : selected?.location
++        // Freeze the entire worker input before admission; never truncate history.
++        assertWorkerPayload(JSON.stringify({ ...frozen, ...scope, agent: ctx.agent,
++          projectDirectory: instance.directory, logicalDirectory: instance.directory,
++          skill: selected ? { name: selected.name, source: selectedSource, digest: "0".repeat(64) } : undefined }))
 +        return yield* Effect.uninterruptibleMask((restore) =>
 +          Effect.gen(function* () {
 +            const argsDigest = createHash("sha256")
-+              .update(JSON.stringify([def.id, args, kind]))
++              .update(JSON.stringify([def.id, frozen.args, kind]))
 +              .digest("hex")
 +            const started = Schema.decodeUnknownSync(Launch)(
 +              yield* Effect.promise(async () => {
 +                try {
-+                  return await rpc({ ...scope, action: "begin", argsDigest, kind })
++                  const identity = { ...scope, protocol: 2, argsDigest, kind }
++                  let state = Schema.decodeUnknownSync(Preparation)(await rpc({ ...identity, action: "begin" }, ctx.abort))
++                  while (state.state === "preparing") {
++                    ctx.abort.throwIfAborted()
++                    state = Schema.decodeUnknownSync(Preparation)(await rpc({ ...identity, action: "prepare-poll", token: state.lease.token }, ctx.abort))
++                  }
++                  if (state.state === "failed") throw new Error(state.error?.code ?? "local_execution_failed")
++                  ctx.abort.throwIfAborted()
++                  return await rpc({ ...identity, action: "claim", token: state.lease.token }, ctx.abort)
 +                } catch (cause) {
 +                  // The begin response may have been lost after durable reservation.
 +                  // This branch has never spawned a process, including on interruption.
@@ -1902,20 +2147,31 @@ index 0000000..d74d4d5
 +              return yield* restore(original(args, ctx)).pipe(
 +                Effect.ensuring(Effect.promise(() => rpc({ ...receipt, action: "finish" }))),
 +              )
-+            const cfg = yield* config.get()
++            const skill = selected && selectedSource ? yield* Effect.promise(async () => {
++              try {
++              const relative = path.relative(started.lease.projectDirectory, selectedSource)
++              const mapped = selectedSource === "<built-in>" ? selectedSource
++                : relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
++                  ? path.join(started.lease.viewDirectory, relative) : selectedSource
++              const canonical = mapped === "<built-in>" ? mapped : await realpath(mapped)
++              const bytes = mapped === "<built-in>" ? selected.content : await readFile(canonical)
++              return { name: selected.name, source: canonical, digest: createHash("sha256").update(bytes).digest("hex") }
++              } catch (cause) {
++                await rpc({ ...receipt, action: "cancel-before-start" })
++                throw cause
++              }
++            }) : undefined
 +            const controller = new AbortController()
 +            const pending = execute({
 +              started,
-+              args,
++              args: frozen.args,
 +              tool: def.id,
 +              ctx,
-+              config: {
-+                ...cfg,
-+                plugin: [...(resolvedPlugins.get(instance.directory) ?? [])].map(([entry, options]) =>
-+                  options === undefined ? entry : [entry, options],
-+                ),
-+              },
-+              files: toolFiles.get(instance.directory) ?? [],
++              messages: frozen.messages,
++              extra: frozen.extra,
++              config: { ...frozen.config, skills: { paths: skill && skill.source !== "<built-in>" ? [path.dirname(skill.source)] : [], urls: [] } },
++              files: [...frozen.files],
++              skill,
 +              signal: AbortSignal.any([ctx.abort, controller.signal]),
 +              receipt,
 +              metadata: (value) => bridge.promise(ctx.metadata(value)),
@@ -1945,7 +2201,10 @@ index 0000000..d74d4d5
 +  args: unknown
 +  tool: string
 +  ctx: Tool.Context
++  messages: unknown
++  extra: unknown
 +  config: unknown
++  skill?: typeof SkillBinding.Type
 +  files: string[]
 +  signal: AbortSignal
 +  receipt: object
@@ -1979,6 +2238,45 @@ index 0000000..d74d4d5
 +      )
 +    )
 +      delete environment[key]
++  const remap = (value: unknown) =>
++    JSON.parse(
++      JSON.stringify(value).replaceAll(
++        JSON.stringify(input.started.lease.projectDirectory).slice(1, -1),
++        JSON.stringify(input.started.lease.viewDirectory).slice(1, -1),
++      ),
++    )
++  // File arguments have logical absolute names. Shell/code strings retain their
++  // spelling: native policy must reject attempts to write the original tree.
++  const args =
++    input.args && typeof input.args === "object"
++      ? Object.fromEntries(
++          Object.entries(input.args).map(([key, value]) => [
++            key,
++            ["filePath", "path", "workdir", "cwd"].includes(key) ? remap(value) : value,
++          ]),
++        )
++      : input.args
++  const wire = JSON.stringify({
++        tool: input.tool,
++        skill: input.skill,
++        args,
++        sessionID: input.ctx.sessionID,
++        messageID: input.ctx.messageID,
++        callID: input.ctx.callID,
++        agent: input.ctx.agent,
++        messages: input.messages,
++        extra: input.extra,
++        config: input.config,
++        files: input.files,
++        projectDirectory: input.started.lease.viewDirectory,
++        logicalDirectory: input.receipt && "directory" in input.receipt ? input.receipt.directory : undefined,
++      }) + "\n"
++  try { assertWorkerPayload(wire, input.signal) } catch (error) {
++    try { await rpc({ ...input.receipt, action: "cancel-before-start" }) } catch {
++      throw new Error(`${input.signal.aborted ? "execution_cancelled" : "payload_too_large"} (execution did not start; cleanup unconfirmed)`, { cause: error })
++    }
++    throw error
++  }
 +  const processArgs =
 +    Bun.main.includes("$bunfs") || Bun.main.includes("~BUN") || process.execPath === Bun.main ? [] : [Bun.main]
 +  const proc = spawn(
@@ -2008,25 +2306,8 @@ index 0000000..d74d4d5
 +  }
 +  input.signal.addEventListener("abort", cancel, { once: true })
 +  if (input.signal.aborted) cancel()
-+  const remap = (value: unknown) =>
-+    JSON.parse(
-+      JSON.stringify(value).replaceAll(
-+        JSON.stringify(input.started.lease.projectDirectory).slice(1, -1),
-+        JSON.stringify(input.started.lease.viewDirectory).slice(1, -1),
-+      ),
-+    )
-+  // File arguments have logical absolute names. Shell/code strings retain their
-+  // spelling: native policy must reject attempts to write the original tree.
-+  const args =
-+    input.args && typeof input.args === "object"
-+      ? Object.fromEntries(
-+          Object.entries(input.args).map(([key, value]) => [
-+            key,
-+            ["filePath", "path", "workdir", "cwd"].includes(key) ? remap(value) : value,
-+          ]),
-+        )
-+      : input.args
 +  proc.stdin.on("error", () => {})
++  let publication: typeof Publication.Type | undefined
 +  let result: typeof Result.Type | undefined,
 +    error: Error | undefined,
 +    bytes = 0
@@ -2034,22 +2315,7 @@ index 0000000..d74d4d5
 +    if (process.env.DEVRYAN_EXECUTION_TRACE === "1") process.stderr.write(data)
 +  })
 +  try {
-+    proc.stdin.write(
-+      JSON.stringify({
-+        tool: input.tool,
-+        args,
-+        sessionID: input.ctx.sessionID,
-+        messageID: input.ctx.messageID,
-+        callID: input.ctx.callID,
-+        agent: input.ctx.agent,
-+        messages: input.ctx.messages,
-+        extra: input.ctx.extra,
-+        config: input.config,
-+        files: input.files,
-+        projectDirectory: input.started.lease.viewDirectory,
-+        logicalDirectory: input.receipt && "directory" in input.receipt ? input.receipt.directory : undefined,
-+      }) + "\n",
-+    )
++    proc.stdin.write(wire)
 +    for await (const line of createInterface({ input: proc.stdout, crlfDelay: Infinity })) {
 +      bytes += Buffer.byteLength(line)
 +      if (bytes > 32 * 1024 * 1024) throw new Error("Confined tool output exceeded its protocol limit")
@@ -2083,7 +2349,13 @@ index 0000000..d74d4d5
 +  } finally {
 +    input.signal.removeEventListener("abort", cancel)
 +    if (!spawned) await rpc({ ...input.receipt, action: "cancel-before-start" })
-+    else await rpc({ ...input.receipt, action: "finish" })
++    else publication = Schema.decodeUnknownSync(Publication)(await rpc({ ...input.receipt, action: "finish" }))
++  }
++  if (publication?.outcome === "partial") {
++    const notice = `Some changes were not published because these files changed during execution: ${(publication.conflicts ?? []).map((item) => item.path).join(", ")}. Proposed contents were retained for recovery.`
++    if (error) error = new Error(`${error.message}\n${notice}`, { cause: error })
++    if (result) result = { ...result, output: `${result.output}\n\n${notice}`,
++      metadata: { ...result.metadata, publication: { outcome: "partial", conflicts: publication.conflicts ?? [] } } }
 +  }
 +  if (error) throw error
 +  if (!result) throw new Error("Confined tool exited without a result")
@@ -2098,3 +2370,155 @@ index 0000000..d74d4d5
 +}
 +
 +export * as DevRyanExecution from "./devryan-execution"
+diff --git a/packages/opencode/src/session/execution-payload.ts b/packages/opencode/src/session/execution-payload.ts
+new file mode 100644
+index 000000000..b8d1655e7
+--- /dev/null
++++ b/packages/opencode/src/session/execution-payload.ts
+@@ -0,0 +1,10 @@
++export const workerPayloadLimit = 16 * 1024 * 1024
++
++// Count the exact UTF-8 wire representation, including the final delimiter.
++// Never trim messages to fit: omitted history changes tool authorization/context.
++export function assertWorkerPayload(wire: string, signal?: AbortSignal) {
++  signal?.throwIfAborted()
++  if (Buffer.byteLength(wire) > workerPayloadLimit) {
++    throw Object.assign(new Error("payload_too_large"), { code: "payload_too_large" })
++  }
++}
+diff --git a/packages/opencode/src/session/retention-gate.ts b/packages/opencode/src/session/retention-gate.ts
+new file mode 100644
+index 000000000..44679a3f4
+--- /dev/null
++++ b/packages/opencode/src/session/retention-gate.ts
+@@ -0,0 +1,68 @@
++import { randomUUID } from "node:crypto"
++import { Effect, Fiber, Scope } from "effect"
++
++// Session IDs are runtime-global. Holds are installed atomically in this JS
++// process; no network or repository lock is held by the admission operation.
++const active = new Map<string, number>()
++const holds = new Map<string, { ids: Set<string>; expires: number; committing: boolean }>()
++const owners = new Map<object, string>()
++export const instanceID = randomUUID()
++const enabled = () => process.env.DEVRYAN_EXECUTION_BOUNDARY === "1" && process.env.DEVRYAN_EXECUTION_WORKER !== "1"
++export class RetentionError extends Error {
++  constructor(readonly code: string) { super(`${code}; retry`) }
++}
++const fail = (code: string) => { throw new RetentionError(code) }
++function collect() {
++  for (const [token, hold] of holds) if (!hold.committing && hold.expires < Date.now()) holds.delete(token)
++}
++export function enter(ids: readonly string[]) {
++  if (!enabled()) return () => {}
++  collect()
++  const owner = owners.get(Fiber.getCurrent()!)
++  for (const [token, hold] of holds) {
++    if (token !== owner && ids.some((id) => hold.ids.has(id))) fail("session_retention_in_progress")
++  }
++  for (const id of ids) active.set(id, (active.get(id) ?? 0) + 1)
++  let released = false
++  return () => {
++    if (released) return
++    released = true
++    for (const id of ids) { const count = active.get(id)! - 1; if (count) active.set(id, count); else active.delete(id) }
++  }
++}
++export function activity<A, E, R>(ids: readonly string[], action: Effect.Effect<A, E, R>) {
++  return Effect.uninterruptibleMask((restore) => Effect.gen(function* () {
++    const leave = enter(ids)
++    return yield* restore(action).pipe(Effect.ensuring(Effect.sync(leave)))
++  }))
++}
++export function forkActivity<A, E, R>(ids: readonly string[], action: Effect.Effect<A, E, R>, scope: Scope.Scope) {
++  return Effect.uninterruptible(Effect.gen(function* () {
++    const leave = enter(ids)
++    return yield* action.pipe(Effect.ensuring(Effect.sync(leave)), Effect.forkIn(scope, { startImmediately: true }))
++  }))
++}
++export function hold(ids: readonly string[]) {
++  collect()
++  if (!enabled() || !ids.length || new Set(ids).size !== ids.length) fail("retention_unsupported")
++  if (ids.some((id) => active.has(id))) fail("session_active")
++  for (const hold of holds.values()) if (ids.some((id) => hold.ids.has(id))) fail("session_retention_in_progress")
++  const token = randomUUID()
++  holds.set(token, { ids: new Set(ids), expires: Date.now() + 60_000, committing: false })
++  return token
++}
++export function release(token: string) { if (holds.get(token)?.committing) return false; holds.delete(token); return true }
++export function commit<A, E, R>(token: string, ids: readonly string[], action: Effect.Effect<A, E, R>) {
++  return Effect.uninterruptibleMask((restore) => Effect.gen(function* () {
++    collect()
++    const hold = holds.get(token)
++    if (!hold || hold.committing || ids.length !== hold.ids.size || ids.some((id) => !hold.ids.has(id)))
++      return fail("retention_hold_lost")
++    hold.committing = true
++    const fiber = Fiber.getCurrent()!
++    owners.set(fiber, token)
++    return yield* restore(action).pipe(Effect.ensuring(Effect.sync(() => { owners.delete(fiber); holds.delete(token) })))
++  }))
++}
++export function busy(ids: readonly string[]) { return ids.some((id) => active.has(id)) }
++export * as RetentionGate from "./retention-gate"
+diff --git a/packages/opencode/test/session/execution-payload.test.ts b/packages/opencode/test/session/execution-payload.test.ts
+new file mode 100644
+index 000000000..4bfb46142
+--- /dev/null
++++ b/packages/opencode/test/session/execution-payload.test.ts
+@@ -0,0 +1,20 @@
++import { expect, test } from "bun:test"
++import { assertWorkerPayload, workerPayloadLimit } from "../../src/session/execution-payload"
++
++test("accepts the exact worker wire limit and rejects one additional byte", () => {
++  const wire = "x".repeat(workerPayloadLimit - 1) + "\n"
++  expect(() => assertWorkerPayload(wire)).not.toThrow()
++  expect(() => assertWorkerPayload(wire + "x")).toThrow("payload_too_large")
++})
++test("counts multibyte history without truncating the submitted input", () => {
++  const history = "🙂".repeat(workerPayloadLimit / 4)
++  expect(history.length).toBeLessThan(workerPayloadLimit)
++  expect(() => assertWorkerPayload(history)).not.toThrow()
++  expect(() => assertWorkerPayload(JSON.stringify({ history }))).toThrow("payload_too_large")
++  expect(history.endsWith("🙂")).toBe(true)
++})
++test("rejects an abort observed immediately before spawn", () => {
++  const controller = new AbortController()
++  controller.abort(new Error("execution_cancelled"))
++  expect(() => assertWorkerPayload("{}", controller.signal)).toThrow("execution_cancelled")
++})
+diff --git a/packages/opencode/test/session/retention-gate.test.ts b/packages/opencode/test/session/retention-gate.test.ts
+new file mode 100644
+index 000000000..155bd515a
+--- /dev/null
++++ b/packages/opencode/test/session/retention-gate.test.ts
+@@ -0,0 +1,30 @@
++import { afterEach, expect, test } from "bun:test"
++import { Effect } from "effect"
++import { RetentionGate } from "../../src/session/retention-gate"
++const previous = process.env.DEVRYAN_EXECUTION_BOUNDARY
++afterEach(() => { if (previous === undefined) delete process.env.DEVRYAN_EXECUTION_BOUNDARY; else process.env.DEVRYAN_EXECUTION_BOUNDARY = previous })
++test("retention holds reject new activity and preserve accepted work", async () => {
++  process.env.DEVRYAN_EXECUTION_BOUNDARY = "1"
++  const leave = RetentionGate.enter(["root"])
++  expect(() => RetentionGate.hold(["root"])).toThrow("session_active")
++  leave()
++  const token = RetentionGate.hold(["root"])
++  expect(() => RetentionGate.enter(["root"])).toThrow("session_retention_in_progress")
++  await Effect.runPromise(RetentionGate.commit(token, ["root"], RetentionGate.activity(["root"], Effect.succeed(true))))
++  expect(() => RetentionGate.enter(["root"])()).not.toThrow()
++})
++test("failed accepted actions release their activity reservation", async () => {
++  process.env.DEVRYAN_EXECUTION_BOUNDARY = "1"
++  await Effect.runPromise(RetentionGate.activity(["failure"], Effect.die("failure"))).catch(() => {})
++  const token = RetentionGate.hold(["failure"])
++  expect(RetentionGate.release(token)).toBe(true)
++})
++test("release cannot clear a committing hold", async () => {
++  process.env.DEVRYAN_EXECUTION_BOUNDARY = "1"
++  const token = RetentionGate.hold(["commit"])
++  await Effect.runPromise(RetentionGate.commit(token, ["commit"], Effect.sync(() => {
++    expect(RetentionGate.release(token)).toBe(false)
++    expect(RetentionGate.busy(["commit"])).toBe(false)
++  })))
++  expect(RetentionGate.release(token)).toBe(true)
++})

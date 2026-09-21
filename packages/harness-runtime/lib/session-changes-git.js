@@ -1,4 +1,4 @@
-import { executionSignal } from './execution-admission.js';
+import { executionSignal, executionProgress } from './execution-admission.js';
 import { spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -36,7 +36,7 @@ const start = (cwd, args, { env, input, timeoutMs = 30_000, stdout = 'pipe' } = 
       else if (diskFull) reject(changeError('storage_unavailable', 503));
       else if (code !== 0 && notRepository) reject(changeError('capture_not_git', 409));
       else if (code !== 0) reject(changeError('capture_git_failed', 503));
-      else resolve();
+      else { executionProgress(); resolve(); }
     });
   }).finally(() => { clearTimeout(timer); signal?.removeEventListener('abort', abort); });
   // Attach immediately, including while consumers are reading stdout.
@@ -126,7 +126,7 @@ export async function* gitRecords(cwd, args, rows) {
       const size = Number(header[2]);
       if (end < 0 || header[1] !== 'blob' || !Number.isSafeInteger(size) || size < 0 || end + 1 + size >= data.length) throw changeError('invalid_change_record', 503);
       offset = end + 1 + size + 1;
-      return { key: entry.key, value: JSON.parse(data.subarray(end + 1, offset - 1).toString()) };
+      return { key: entry.key, oid: entry.oid, value: JSON.parse(data.subarray(end + 1, offset - 1).toString()) };
     });
   };
   for await (const row of rows) {

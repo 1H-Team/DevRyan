@@ -325,7 +325,8 @@ describe('managed Git credential isolation', () => {
     };
 
     await expect(runWithRequestPrincipal(managedPrincipal, () => push(directory)))
-      .resolves.toMatchObject({ success: true, ref: 'developer' });
+      .resolves.toMatchObject({ success: true, ref: 'developer',
+        pushed: [{ local: 'refs/heads/developer', remote: 'refs/heads/developer' }] });
 
     const head = (await git(directory, ['rev-parse', 'refs/heads/developer'])).stdout.trim();
     const trackingRef = (await git(directory, ['rev-parse', 'refs/remotes/origin/developer'])).stdout.trim();

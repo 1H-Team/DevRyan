@@ -23,7 +23,7 @@ describe('context panel tabs', () => {
   });
 
   test('still owns the file editor mount', () => {
-    expect(contextPanel).toContain('<LazyFilesView />');
+    expect(contextPanel).toContain('<LazyFilesView visible={isOpen && isFileTabActive} />');
   });
 });
 

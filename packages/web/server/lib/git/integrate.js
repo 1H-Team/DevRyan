@@ -3,7 +3,10 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 
-import { runGitCommand, runGitCommandOrThrow } from './service.js';
+import { runGitCommand as runGitCommandUnqueued, runGitCommandOrThrow as runGitCommandOrThrowUnqueued } from './service.js';
+import { withGitIndexQueue } from './index-queue.js';
+const runGitCommandOrThrow = (directory, args, message, options) => withGitIndexQueue(directory, () => runGitCommandOrThrowUnqueued(directory, args, message, options));
+const runGitCommand = (directory, args, options) => withGitIndexQueue(directory, () => runGitCommandUnqueued(directory, args, options));
 import { getRequestPrincipal } from '../multi-user/request-context.js';
 
 export const INTEGRATE_TMP_PREFIX = 'devryan-integrate-';
@@ -136,7 +139,12 @@ const cleanTargetWorktrees = async (repoRoot, targetBranch, excludedPaths) => {
 
 const syncCleanTargetWorktrees = async (worktrees) => {
   for (const worktree of worktrees) {
-    await runGitCommand(worktree, ['reset', '--hard']);
+    // The temporary integration worktree may already have been removed.
+    try { await fs.access(worktree); } catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+    await withGitIndexQueue(worktree, async () => {
+      const status = await runGitCommand(worktree, ['status', '--porcelain']);
+      if (status.success && !String(status.stdout || '').trim()) await runGitCommand(worktree, ['reset', '--hard']);
+    });
   }
 };
 

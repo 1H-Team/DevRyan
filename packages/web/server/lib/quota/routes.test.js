@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import request from '../../test-supertest.js';
 import { assertManagedQuotaCredential } from './credentials/providers.js';
+import { validateOpenCodeZenCredential } from './providers/opencode.js';
 import { registerQuotaRoutes } from './routes.js';
 
 const createApp = (overrides = {}) => {
@@ -103,6 +104,44 @@ describe('managed quota credential routes', () => {
     });
     expect(JSON.stringify(response.body)).not.toContain('wrk_');
     expect(JSON.stringify(response.body)).not.toContain('signed-cookie');
+  });
+
+  it.each([
+    [403, '', 'AUTHENTICATION_FAILED', 400],
+    [200, '<html>Changed billing response</html>', 'PARSE_ERROR', 502],
+    [503, 'upstream-secret', 'API_ERROR', 502],
+    [0, '', 'TIMEOUT', 504],
+  ])('preserves Zen validation categories for HTTP %s and retains the saved credential', async (status, html, code, httpStatus) => {
+    const saved = { workspaceId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y', authCookie: 'old-secret' };
+    const { app, runtime } = createApp({
+      readCredential: vi.fn(() => saved),
+      validate: (_providerId, credential) => validateOpenCodeZenCredential(credential, {
+        fetchImpl: async () => {
+          if (!status) throw new DOMException('new-secret', 'TimeoutError');
+          return { ok: status === 200, status, headers: { get: () => null }, text: async () => html };
+        },
+      }),
+    });
+    const replaced = await request(app).put('/api/quota/credentials/opencode')
+      .send({ ...saved, authCookie: 'new-secret' }).expect(httpStatus);
+    const validated = await request(app).post('/api/quota/credentials/opencode/validate')
+      .send({}).expect(httpStatus);
+    for (const response of [replaced, validated]) {
+      expect(response.body.code).toBe(code);
+      expect(response.body.error).toBeTruthy();
+      expect(JSON.stringify(response.body)).not.toMatch(/old-secret|new-secret|upstream-secret|wrk_/);
+    }
+    expect(runtime.writeCredential).not.toHaveBeenCalled();
+    expect(runtime.readCredential('opencode')).toBe(saved);
+  });
+
+  it('rejects an empty Zen cookie before attempting validation', async () => {
+    const { app, runtime } = createApp();
+    await request(app).put('/api/quota/credentials/opencode').send({
+      workspaceId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y', authCookie: '   ',
+    }).expect(400);
+    expect(runtime.validate).not.toHaveBeenCalled();
+    expect(runtime.writeCredential).not.toHaveBeenCalled();
   });
 
   it('does not write invalid credentials and emits stable error codes', async () => {

@@ -96,7 +96,8 @@ export const McpSidebar: React.FC<McpSidebarProps> = ({ onItemSelect }) => {
 
   React.useEffect(() => {
     void loadMcpConfigs({ force: true, directory: currentDirectory });
-  }, [currentDirectory, loadMcpConfigs]);
+    void refreshStatus({ directory: currentDirectory, silent: true });
+  }, [currentDirectory, loadMcpConfigs, refreshStatus]);
 
   const handleRefresh = React.useCallback(() => {
     if (isRefreshingStatus) return;

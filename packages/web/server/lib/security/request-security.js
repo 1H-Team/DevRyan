@@ -1,3 +1,5 @@
+import { requestUiSessionCookieName } from '../ui-auth/session-cookie.js';
+
 export const createRequestSecurityRuntime = (deps) => {
   const { readSettingsFromDiskMigrated } = deps;
 
@@ -11,7 +13,7 @@ export const createRequestSecurityRuntime = (deps) => {
       const [rawName, ...rest] = segment.split('=');
       const name = rawName?.trim();
       if (!name) continue;
-      if (name !== 'oc_ui_session') continue;
+      if (name !== requestUiSessionCookieName(req)) continue;
       const value = rest.join('=').trim();
       try {
         return decodeURIComponent(value || '');

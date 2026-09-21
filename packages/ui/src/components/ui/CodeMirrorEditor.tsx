@@ -8,6 +8,7 @@ import { forceParsing, indentUnit } from '@codemirror/language';
 import { search, searchKeymap, openSearchPanel, closeSearchPanel, searchPanelOpen } from '@codemirror/search';
 import { createPortal } from 'react-dom';
 
+import { applySourceChanges, normalizedEditorText, type SourceChange } from '@/lib/codemirror/sourceText';
 import { cn } from '@/lib/utils';
 
 /** Patches `title` attributes onto CodeMirror search-panel controls for icon-only tooltips. */
@@ -189,6 +190,8 @@ export function CodeMirrorEditor({
   const hostRef = React.useRef<HTMLDivElement | null>(null);
   const viewRef = React.useRef<EditorView | null>(null);
   const valueRef = React.useRef(value);
+  const sourceRef = React.useRef(value);
+  const replacingSourceRef = React.useRef(false);
   const onChangeRef = React.useRef(onChange);
   const onViewReadyRef = React.useRef(onViewReady);
   const onViewDestroyRef = React.useRef(onViewDestroy);
@@ -280,7 +283,7 @@ export function CodeMirrorEditor({
     })();
 
     const state = EditorState.create({
-      doc: valueRef.current,
+      doc: normalizedEditorText(valueRef.current),
       extensions: [
         ...(cspNonce ? [EditorView.cspNonce.of(cspNonce)] : []),
         gutters({ fixed: true }),
@@ -302,7 +305,13 @@ export function CodeMirrorEditor({
           if (!update.docChanged) {
             return;
           }
-          const next = update.state.doc.toString();
+          if (replacingSourceRef.current) return;
+          const changes: SourceChange[] = [];
+          update.changes.iterChanges((from, to, _fromB, _toB, inserted) => {
+            changes.push({ from, to, insert: inserted.toString() });
+          });
+          const next = applySourceChanges(sourceRef.current, changes);
+          sourceRef.current = next;
           valueRef.current = next;
           onChangeRef.current(next);
           syncPortalWidgets(blockWidgetsRef.current);
@@ -387,11 +396,12 @@ export function CodeMirrorEditor({
       return;
     }
 
-    const current = view.state.doc.toString();
-    if (current !== value) {
-      view.dispatch({
-        changes: { from: 0, to: current.length, insert: value },
-      });
+    if (sourceRef.current !== value) {
+      sourceRef.current = value;
+      replacingSourceRef.current = true;
+      try {
+        view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: normalizedEditorText(value) } });
+      } finally { replacingSourceRef.current = false; }
       forceParsingCompat(view, view.state.doc.length, 300);
       view.requestMeasure();
       requestAnimationFrame(() => syncEditorCssVars(view));

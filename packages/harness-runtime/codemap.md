@@ -55,3 +55,16 @@ API contracts.
 - `lib/execution-admission.js`: scoped admission deadlines, cancellable queue waits, preparation checkpoints and sanitized phase diagnostics. Durable publication retains ownership through settlement.
 
 - Context projection trace metadata separates planned/applied reductions, summary/checkpoint phases and transform duration from unavailable final-wire sizes; production exports contain no conversation bodies.
+
+## Execution preparation v2
+
+- `lib/execution-io-pool.js` owns four fair per-project preparation slots. `lib/execution-admission.js` separates bounded admission from supervised preparation and cancellation settlement.
+- `lib/session-mutation-files.js` streams file observation/materialization. Text up to 8 MiB retains granular ownership; larger text and binary files retain whole-content ownership with independent modes. Conflicts live outside normal revisions and remain explicit through Revert.
+- `lib/session-mutations.js` reserves before observation, pins the reconciled base durably, shares immutable listings and materializes outside the project lock. Trusted control leases use empty views; they cannot claim a process launcher. `lib/session-changes-receipts.js` streams trusted in-process receipts into Git.
+- `lib/execution-host-owner.js` and the native supervisor prove host lifetime through an OS lock. Cleanup requires terminal state, no consumers and verified writer termination; it preserves receipts, conflicts and live base refs.
+
+- Preparation observers share actual progress meters across admission contexts and bound both observation retry causes to four passes. `workspace_changing` preserves both stamp and ledger guards. Terminal leases remain discoverable through `pendingCleanup`.
+- `lib/execution-cleanup.js` removes settled private directories without following symlinks and reports deferred cleanup without masking publication. Snapshot identities commit before their ref is installed. Host initialization only retries after reaping the failed keeper; recovery isolates individual lease failures.
+- Owned worker adapters may supply `inputForLease` to finalize immutable input after preparation but before process launch; the returned `workerInput` is the exact checked input for interactive transports.
+
+`execution-admission.js` exposes the remaining request budget for bounded host polls; completed workspace enumeration, stamp checks and reconciliation batches advance preparation progress. Typed stall and cleanup failures remain distinguishable in diagnostic phases.

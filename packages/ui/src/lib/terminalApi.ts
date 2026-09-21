@@ -23,6 +23,7 @@ export interface TerminalSession {
 export interface TerminalStreamEvent {
   type: 'connected' | 'data' | 'exit' | 'reconnecting';
   data?: string;
+  replay?: boolean;
   exitCode?: number;
   signal?: number | null;
   attempt?: number;
@@ -50,6 +51,7 @@ type TerminalControlMessage = {
   c?: string;
   f?: boolean;
   v?: number;
+  replay?: boolean;
   exitCode?: number;
   signal?: number | null;
   runtime?: 'node' | 'bun';
@@ -143,6 +145,8 @@ const createTransportError = (code: string | undefined): Error => {
 
 class TerminalTransportManager {
   private socket: WebSocket | null = null;
+  private replaying = false;
+  private incoming = Promise.resolve();
   private socketUrl = '';
   private boundSessionId: string | null = null;
   private requestedSessionId: string | null = null;
@@ -233,7 +237,7 @@ class TerminalTransportManager {
     try {
       if (this.boundSessionId !== sessionId) {
         this.requestedSessionId = sessionId;
-        socket.send(encodeControlFrame({ t: 'b', s: sessionId, v: 2 }));
+        socket.send(encodeControlFrame({ t: 'b', s: sessionId, v: 2, replay: true }));
       }
       socket.send(data);
       return true;
@@ -391,7 +395,11 @@ class TerminalTransportManager {
         };
 
         socket.onmessage = (event) => {
-          void this.handleSocketMessage(event.data);
+          this.incoming = this.incoming.then(async () => {
+            if (this.socket === socket) await this.handleSocketMessage(event.data);
+          }).catch((error: unknown) => {
+            if (this.socket === socket) this.handleSocketFailure(error instanceof Error ? error : new Error('Terminal stream failed'));
+          });
         };
 
         socket.onerror = () => {
@@ -438,7 +446,7 @@ class TerminalTransportManager {
     this.requestedSessionId = activeSubscription.sessionId;
 
     try {
-      this.socket.send(encodeControlFrame({ t: 'b', s: activeSubscription.sessionId, v: 2 }));
+      this.socket.send(encodeControlFrame({ t: 'b', s: activeSubscription.sessionId, v: 2, replay: true }));
     } catch {
       this.handleSocketFailure(new Error('Terminal websocket bind failed'));
     }
@@ -545,7 +553,7 @@ class TerminalTransportManager {
       return;
     }
 
-    activeSubscription.onEvent({ type: 'data', data: text });
+    activeSubscription.onEvent({ type: 'data', data: text, replay: this.replaying });
   }
 
   private handleControlMessage(bytes: Uint8Array): void {
@@ -569,7 +577,12 @@ class TerminalTransportManager {
         return;
       case 'po':
         return;
+      case 'replay-start':
+      case 'replay-end':
+        if (payload.s === this.boundSessionId) this.replaying = payload.t === 'replay-start';
+        return;
       case 'bok': {
+        this.replaying = false;
         this.boundSessionId = payload.s ?? this.requestedSessionId;
         if (!activeSubscription) {
           return;
@@ -669,6 +682,7 @@ class TerminalTransportManager {
   }
 
   private resetConnection(): void {
+    this.replaying = false;
     this.openPromise = null;
     this.stopKeepalive();
     if (this.socket) {

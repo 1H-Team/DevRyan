@@ -247,8 +247,6 @@ export async function bootstrapDirectory(input: {
   // ---------------------------------------------------------------------------
   void Promise.allSettled([
     retry(() => sdk.app.agents().then((x) => set({ agent: unwrap(x, "app.agents") }))),
-    retry(() => sdk.command.list().then((x) => set({ command: unwrap(x, "command.list") }))),
-    retry(() => sdk.mcp.status().then((x) => set({ mcp: unwrap(x, "mcp.status") }))),
     retry(() => sdk.lsp.status().then((x) => set({ lsp: unwrap(x, "lsp.status") }))),
     retry(() =>
       sdk.vcs.get().then((x) => {

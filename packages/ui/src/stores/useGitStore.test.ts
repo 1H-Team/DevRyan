@@ -73,6 +73,20 @@ describe('useGitStore', () => {
     });
   });
 
+  test('invalidates both diff variants when bytes change with unchanged line counts', async () => {
+    const status = { ...createStatus({ 'same.txt': { insertions: 1, deletions: 1 } }),
+      files: [{ path: 'same.txt', index: 'M', working_dir: 'M' }], isClean: false,
+      fileVersions: { 'same.txt': 'version-one' } };
+    const git = createGitApi(async () => status);
+    await useGitStore.getState().fetchStatus('/repo', git);
+    useGitStore.getState().setDiff('/repo', 'same.txt', { original: 'old', modified: 'one' });
+    useGitStore.getState().setDiff('/repo', 'same.txt', { original: 'old', modified: 'one' }, { staged: true });
+    git.getGitStatus = async () => ({ ...status, fileVersions: { 'same.txt': 'version-two' } });
+    expect(await useGitStore.getState().fetchStatus('/repo', git)).toBe(true);
+    expect(useGitStore.getState().getDiff('/repo', 'same.txt')).toBeNull();
+    expect(useGitStore.getState().getDiff('/repo', 'same.txt', { staged: true })).toBeNull();
+  });
+
   test('does not reuse an in-flight light status request for full status', async () => {
     const requests: Deferred<GitStatus>[] = [];
     const statusCalls: Array<{ directory: string; options?: { mode?: 'light' } }> = [];
