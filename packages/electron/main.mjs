@@ -1411,13 +1411,22 @@ const runtimeServiceBotRuntimeOperation = (operation, method = 'GET') => (
   requestRuntimeService(`/api/runtime-service/bot-runtime/${operation}`, { method })
 );
 
+// The user's switch in Settings → Bots. Off keeps the runtime app-bound (it
+// exits with the app) and stops automatic registration on later launches.
+const runtimeServiceOptedOut = () => readSettingsRoot().productionBotsRuntimeServiceOptOut === true;
+
 const runtimeServiceStatus = async () => {
   const registration = await getRuntimeServiceRegistration().status();
   const handshake = state.runtimeServiceClient
     ? await requestRuntimeService('/api/runtime-service/handshake').catch(() => null)
     : null;
+  const configuredMode = readSettingsRoot().productionBotsRuntimeMode || 'app_bound';
   return Object.freeze({
-    configuredMode: readSettingsRoot().productionBotsRuntimeMode || 'app_bound',
+    configuredMode,
+    serviceEnabled: Boolean(handshake) || configuredMode === 'service' || (
+      configuredMode !== 'disabled' && !runtimeServiceOptedOut()
+      && process.platform === 'darwin' && app.isPackaged
+    ),
     registrationMode: getRuntimeServiceRegistration().mode || 'unsupported',
     registration,
     connected: Boolean(handshake),
@@ -1481,6 +1490,9 @@ const waitForRuntimeServiceConnection = async (timeoutMs = 20_000) => {
 
 const enableBackgroundBots = async ({ allowLegacy = false } = {}) => {
   if (state.runtimeServiceClient) return runtimeServiceStatus();
+  await mutateSettingsRoot((root) => {
+    delete root.productionBotsRuntimeServiceOptOut;
+  });
   const registration = getRuntimeServiceRegistration();
   const registered = await registration.register({ allowLegacy: allowLegacy === true });
   if (registered.state !== 'enabled') {
@@ -1507,11 +1519,21 @@ const enableBackgroundBots = async ({ allowLegacy = false } = {}) => {
   }
 };
 
+// Switching the service off returns ownership to the app: Bots keep running
+// while DevRyan is open and the runtime exits when the app quits.
 const disableBackgroundBots = async () => {
+  const optOut = (root) => {
+    root.productionBotsRuntimeServiceOptOut = true;
+    if (root.productionBotsRuntimeMode === 'service') root.productionBotsRuntimeMode = 'app_bound';
+  };
   if (!state.runtimeServiceClient) {
-    await mutateSettingsRoot((root) => {
-      root.productionBotsRuntimeMode = 'disabled';
-    });
+    await mutateSettingsRoot(optOut);
+    // Withdraw a registration still pending Login Items approval, or one left
+    // behind by a failed handoff, so launchd never starts the service later.
+    const registration = await getRuntimeServiceRegistration().status();
+    if (registration.state === 'enabled' || registration.state === 'requires_approval') {
+      await getRuntimeServiceRegistration().unregister();
+    }
     return runtimeServiceStatus();
   }
   await requestRuntimeService('/api/runtime-service/disable', { method: 'POST' });
@@ -1525,9 +1547,7 @@ const disableBackgroundBots = async () => {
   }
   state.runtimeServiceClient = false;
   state.sidecarUrl = null;
-  await mutateSettingsRoot((root) => {
-    root.productionBotsRuntimeMode = 'disabled';
-  });
+  await mutateSettingsRoot(optOut);
   const localUrl = await spawnLocalServer();
   await activateMainWindow(localUrl, new URL(localUrl).origin, { target: 'local', status: 'ok' });
   return runtimeServiceStatus();
@@ -1570,6 +1590,7 @@ const autoEnableBackgroundRuntimeOnFirstLaunch = async () => {
   const settings = readSettingsRoot();
   return prepareAutomaticRuntimeService({
     currentMode: settings.productionBotsRuntimeMode,
+    optedOut: settings.productionBotsRuntimeServiceOptOut === true,
     platform: process.platform,
     isPackaged: app.isPackaged,
     registration: getRuntimeServiceRegistration(),

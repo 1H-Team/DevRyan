@@ -1,6 +1,5 @@
 import { attachSupabaseConnectionBoundary, registerSupabaseConnectionRoutes } from './lib/multi-user/connection-routes.js';
 import { createHarnessTaskContextHost } from './lib/opencode/harness-task-context.js';
-import { recordContextModeDiagnostic } from './lib/opencode/context-mode-diagnostics.js';
 import { createCompressionPolicy } from './lib/http-compression-policy.js';
 import { createHarnessSkillDiscovery } from './lib/opencode/harness-skill-discovery.js';
 import 'reflect-metadata';
@@ -67,7 +66,6 @@ import { createSessionExecutionHost } from './lib/opencode/session-execution-hos
 import { executionArtifacts, executionRuntimeState, executionReadinessMiddleware } from './lib/opencode/execution-artifacts.js';
 import { createOpenAiOAuthCoordinator } from './lib/opencode/openai-oauth-coordinator.js';
 import { createOpenAiOAuthBridge, registerManagedOAuthMutationGate } from './lib/opencode/openai-oauth-bridge.js';
-import { resolveContextModeCapability } from './lib/opencode/context-mode-hotfix.js';
 import { createConfigApplyCoordinator, createConfigChangeMarker } from '@openchamber/shared-runtime';
 import { syncPackagedAgents } from './lib/opencode/packaged-agent-sync.js';
 import { syncRuntimeAgentOverlays } from './lib/opencode/runtime-agent-overlays.js';
@@ -107,6 +105,7 @@ import { createProjectPrewarmRuntime } from './lib/opencode/project-prewarm-runt
 import { createXaiToolCatalogRuntime } from './lib/opencode/xai-tool-catalog-runtime.js';
 import { createStandardSessionTitleRuntime } from './lib/opencode/standard-session-title-runtime.js';
 import { createHarnessPreflight, registerHarnessPreflightRoute } from './lib/opencode/harness-preflight.js';
+import { readConfigCredentialScan } from './lib/opencode/config-credential-scan.js';
 import { resolveDuplicateOutputPolicy } from './lib/opencode/harness-duplicate-qualification.js';
 import { createHarnessRunFingerprintReader } from './lib/opencode/harness-run-fingerprint.js';
 import { inspectClaudeRuntimeCompatibility } from './lib/opencode/claude-runtime-compatibility.js';
@@ -722,7 +721,6 @@ let lastOpenCodeLaunchDiagnostics = null;
 let isOpenCodeReady = false;
 let openCodeNotReadySince = 0;
 let isExternalOpenCode = false;
-let observeContextModeToolFailure = () => false;
 // Desktop shells set this via startWebUiServer options to surface OpenCode
 // boot progress on the native startup splash.
 let onOpenCodeStartupStatus = null;
@@ -1106,7 +1104,6 @@ const processCanonicalOpenCodeEvent = createCanonicalOpenCodeEventProcessor({
   processBrowserLease: (payload) => browserLeaseRuntime?.processOpenCodeEvent(payload),
   processManagedOrchestration: (payload, directory) => managedOrchestrationRuntime?.processOpenCodeEvent?.(payload, directory),
   processSessionTitle: (payload) => standardSessionTitleRuntime.processOpenCodeEvent(payload),
-  processContextModeRecovery: (payload) => observeContextModeToolFailure(payload),
   processCommandDeadline: (payload) => observeCommandDeadline(payload),
   onSessionDeleted: (deletedSessionId) => {
     sessionRuntime.clearSessionActivity(deletedSessionId);
@@ -1334,14 +1331,6 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
   buildManagedOpenCodePath,
   getManagedOpenCodeShellEnvSnapshot: getLoginShellEnvSnapshot,
   getActiveSessionCount,
-  getAuthoritativeActiveSessionCount,
-  acquireContextModeAdmissionHold: harnessRuntime.acquirePromptAdmissionHold,
-  recordContextModeRecoveryIncident: (status) => harnessRuntime.record({
-    type: 'log',
-    level: status.state === 'healthy' ? 'info' : 'warn',
-    event: 'context_mode_recovery',
-    payload: status,
-  }),
   provisionUserProfile: createUserProfileProvisioningRuntime({
     configRoot: defaultConfigRoot,
     profileRoot: path.join(defaultConfigRoot, 'user-profile'),
@@ -1391,9 +1380,6 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
   assertExecutionReady: executionReadiness.assertReady,
 });
 
-observeContextModeToolFailure = (payload) => (
-  openCodeLifecycleRuntime.observeContextModeToolFailure(payload)
-);
 const restartOpenCode = (...args) => openCodeLifecycleRuntime.restartOpenCode(...args);
 const syncManagedAgentRuntimeConfig = (...args) => openCodeLifecycleRuntime.syncManagedAgentRuntimeConfig(...args);
 const waitForOpenCodeReady = (...args) => openCodeLifecycleRuntime.waitForOpenCodeReady(...args);
@@ -1959,13 +1945,6 @@ async function main(options = {}) {
       const launchSpec = resolvedOpencodeBinary && !useWslForOpencode
         ? resolveManagedOpenCodeLaunchSpec(resolvedOpencodeBinary)
         : null;
-      const contextModeAvailable = resolveContextModeCapability({
-        isOpenCodeReady,
-        isRestartingOpenCode,
-        isExternalOpenCode,
-        skipOpenCodeStart: ENV_SKIP_OPENCODE_START,
-        configuredOpenCodeHost: ENV_CONFIGURED_OPENCODE_HOST,
-      });
       return {
         openCodePort,
         openCodeVersion: openCodePort ? openCodeVersion : null,
@@ -1991,8 +1970,6 @@ async function main(options = {}) {
         bunBinaryResolved: resolvedBunBinary || null,
         desktopNotifyEnabled: ENV_DESKTOP_NOTIFY,
         planModeExperimentalEnabled: PLAN_MODE_EXPERIMENT_ENABLED,
-        contextModeAvailable,
-        contextModeReadOnlyIndexing: contextModeAvailable,
         multiUserControlPlane: multiUserRuntime.getControlPlaneStatus?.() ?? {
           state: multiUserRuntime.enabled ? 'unknown' : 'disabled',
           lastErrorCode: null,
@@ -2127,7 +2104,6 @@ async function main(options = {}) {
   registerDiagnosticsRoutes(app, {
     runtime: harnessRuntime,
     getEvidenceRecords: (scope) => evidenceRuntime.getRecords(scope),
-    getContextModeRecoveryStatus: openCodeLifecycleRuntime.getContextModeRecoveryStatus,
     getCommandDeadlineRecoveryStatus: commandDeadlineRuntime.getStatus,
   });
   registerMemoryDebugRoutes(app, {
@@ -2198,7 +2174,6 @@ async function main(options = {}) {
     resolveProviderReset: (params) => providerResetProbe.resolveProviderReset(params),
     harnessPolicies: { duplicateOutputs: resolveDuplicateOutputPolicy(process.env) },
     auxiliaryRpcHandlers: {
-      context_mode_diagnostic: (params) => recordContextModeDiagnostic(params, harnessRuntime.record),
       primary_recovery: (params) => primaryRecoveryRuntime.plugin(params),
       harness_duplicate_qualification: (params) => harnessFingerprintReader.qualifyDuplicates(params),
       harness_run: (params) => harnessFingerprintReader.capture(params),
@@ -2352,6 +2327,7 @@ async function main(options = {}) {
       return sanitizeHiddenSkills(settings?.hiddenSkills);
     },
     getStaleOverrides: ({ directory } = {}) => (directory ? listStaleAgentModelOverrides(directory) : []),
+    getConfigCredentialScan: ({ directory } = {}) => readConfigCredentialScan({ directory }),
     getLatestWarmup: () => agentRuntimeWarmup.getLatestResult(),
     getRunFingerprint: (context) => harnessFingerprintReader.read(context),
     getRuntimeMode: () => (isExternalOpenCode || ENV_SKIP_OPENCODE_START ? 'external' : 'managed'),

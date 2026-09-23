@@ -58,8 +58,7 @@ ownership, directory opacity, and audit control plane.
 - `audit-outbox.js`, `activity-projection.js`: durable idempotent actor audit,
   deferred telemetry delivery, an exclusive flush barrier for diagnostic
   clearing and Bot audit pruning, content-free OpenCode tool/file projection, and active-worktree-aware
-  failure projection for sessions, tools, and managed tasks. Context-mode disk
-  I/O failures are rewritten to a stable wedged-handle message.
+  failure projection for sessions, tools, and managed tasks.
 - `error-diagnostics.js`, `diagnostic-recovery.js`: shared immutable
   impact/failure-class/disposition policy, expected-outcome classification, and
   append-only recovery/unresolved correlation.

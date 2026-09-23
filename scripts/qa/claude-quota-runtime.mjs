@@ -89,7 +89,7 @@ export async function prepareClaudeQuotaRuntime({ fixture, installedModules, ope
   }), null, 2));
   // The compiled OpenCode binary needs these wrappers before plugin imports;
   // its own paths use OPENCODE_TEST_HOME and the XDG directories above.
-  for (const plugin of opencodeConfig.plugin.filter(entry => entry.startsWith('./node_modules/') && !entry.startsWith('./node_modules/context-mode/'))) {
+  for (const plugin of opencodeConfig.plugin.filter(entry => entry.startsWith('./node_modules/'))) {
     const entry = await fs.realpath(path.join(config, plugin));
     if (!entry.startsWith(`${privateModules}${path.sep}`)) throw new Error('Private plugin escaped its installation');
     await prepareQaPluginHomeWrapper(entry);

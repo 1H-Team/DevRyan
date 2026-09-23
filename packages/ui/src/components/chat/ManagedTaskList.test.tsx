@@ -564,7 +564,7 @@ describe('managed task presentation', () => {
     expect(html).not.toContain('rate limit reached for GPT 4.1. Recovering with');
   });
 
-  test('only confirmed completed recoveries show model and thinking details', () => {
+  test('follow-up attempts name their model once; only confirmed recoveries say Recovered with', () => {
     const base = { ...toManagedTaskEvent(terminalTask('completed')).properties.task,
       providerId: 'openai', modelId: 'gpt-5.4', variant: 'medium' };
     const providers = [{ id: 'openai', name: 'OpenAI', models: [{ id: 'gpt-5.4', name: 'GPT 5.4' }] }];
@@ -572,11 +572,15 @@ describe('managed task presentation', () => {
       extra: Partial<React.ComponentProps<typeof ManagedTaskRowView>> = {}) => renderToStaticMarkup(
       <I18nProvider><ManagedTaskRowView task={task} providers={providers} onOpenChild={() => undefined} {...extra} /></I18nProvider>,
     );
-    for (const executionKind of ['start', 'resume', 'retry_in_place', 'recover_in_place'] as const) {
+    const first = render({ ...base, executionKind: 'start' });
+    expect(first).toContain('Complete');
+    expect(first).not.toContain('GPT 5.4');
+    expect(first).not.toContain('Medium');
+    for (const executionKind of ['resume', 'retry_in_place', 'recover_in_place'] as const) {
       const html = render({ ...base, executionKind });
       expect(html).toContain('Complete');
-      expect(html).not.toContain('GPT 5.4');
-      expect(html).not.toContain('Medium');
+      expect(html.match(/OpenAI \/ GPT 5\.4 · Medium/g)).toHaveLength(1);
+      expect(html).not.toContain('Recovered with');
       expect(html).not.toContain('parent needs to resume');
     }
     const transportRecovery = { revision: 1, phase: 'recovered' as const, kind: 'connection_failure' as const,

@@ -17,7 +17,4 @@ export const resolveHarnessPolicies = (environment = {}) => Object.fromEntries(
 // classification. No arbitrary execution, delegation, or MCP annotations.
 export const MANAGED_OVERLAP_READ_TOOLS = Object.freeze([
   'read', 'glob', 'grep', 'webfetch',
-  'ctx_search', 'ctx_stats', 'ctx_fetch_and_index',
-  'context-mode_ctx_search', 'context-mode_ctx_stats', 'context-mode_ctx_fetch_and_index',
-  'mcp__context_mode__ctx_search', 'mcp__context_mode__ctx_stats', 'mcp__context_mode__ctx_fetch_and_index',
 ]);

@@ -21,8 +21,6 @@ const graders = 'scripts/agent-evals/graders.test.mjs';
 // Keep them in the existing evaluation runner so failures and omissions share
 // its strict report and CLI behavior. The named selectors must run >0 tests.
 export const GOLDEN_CASES = Object.freeze([
-  { id: 'golden-bounded-lookup', area: 'tools', specs: [node(graders, 'bounded lookup control')] },
-  { id: 'golden-broad-retrieval', area: 'tools', specs: [node(graders, 'Context Mode for broad')] },
   { id: 'golden-image-inspection', area: 'tools', specs: [web(guard, 'native image attachment|raw PNG bytes')] },
   { id: 'golden-skill-resolution', area: 'tools', specs: [web('server/default-config/plugins/devryan-skill-context.test.mjs', 'directory slug|aliases collide|unknown name')] },
   { id: 'golden-ambiguous-edit', area: 'tools', specs: [web('server/default-config/agents/tool-recovery-guidance.test.js', 'patch-context recovery|refresh every direct patch')] },

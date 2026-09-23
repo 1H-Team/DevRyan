@@ -97,41 +97,10 @@ describe('deterministic evaluation graders', () => {
     assert.equal(gradeToolRequirements('inspect', tools('read', 'grep', 'bash', 'edit')).passed, false);
   });
 
-  test('requires Context Mode for broad parent analysis and in the managed Explorer child trace', () => {
-    const broadParent = [
-      { tool: 'mcp__context_mode__ctx_index', status: 'completed', final: true, sessionScope: 'root' },
-      { tool: 'mcp__context_mode__ctx_search', status: 'completed', final: true, sessionScope: 'root' },
-    ];
-    assert.equal(gradeToolRequirements('context-large-analysis', broadParent).passed, true);
-    assert.equal(gradeToolRequirements('context-large-analysis', [
-      { tool: 'read', status: 'completed', final: true, sessionScope: 'root' },
-    ]).passed, false);
-
-    const explorerTrace = [
-      { tool: 'devryan_task', status: 'completed', final: true, sessionScope: 'root' },
-      { tool: 'ctx_index', status: 'completed', final: true, sessionScope: 'child' },
-      { tool: 'ctx_search', status: 'completed', final: true, sessionScope: 'child' },
-    ];
-    assert.equal(gradeToolRequirements('context-explorer-analysis', explorerTrace).passed, true);
-    assert.equal(gradeToolRequirements('context-explorer-analysis', [
-      { tool: 'devryan_task', status: 'completed', final: true, sessionScope: 'root' },
-      { tool: 'ctx_search', status: 'completed', final: true, sessionScope: 'root' },
-    ]).passed, false);
-  });
-
-  test('keeps the bounded lookup control on native inspection tools', () => {
-    assert.equal(gradeToolRequirements('context-bounded-lookup', [
-      { tool: 'read', status: 'completed', final: true, sessionScope: 'root' },
-    ]).passed, true);
-    assert.equal(gradeToolRequirements('context-bounded-lookup', [
-      { tool: 'ctx_execute_file', status: 'completed', final: true, sessionScope: 'root' },
-    ]).passed, false);
-  });
-
   test('bounds Oracle review tools and rejects validation, mutation, or delegation', () => {
     const focused = [
       { tool: 'read', status: 'completed', final: true, sessionScope: 'root' },
-      { tool: 'ctx_search', status: 'completed', final: true, sessionScope: 'root' },
+      { tool: 'grep', status: 'completed', final: true, sessionScope: 'root' },
     ];
     assert.equal(gradeToolRequirements('oracle-review-focused', focused).passed, true);
     assert.equal(gradeToolRequirements('oracle-review-deep', focused).passed, true);
@@ -200,6 +169,21 @@ describe('deterministic evaluation graders', () => {
     });
     assert.equal(missing.find((grader) => grader.id.endsWith('.findings')).passed, false);
     assert.equal(missing.find((grader) => grader.id.endsWith('.evidence')).passed, false);
+  });
+
+  test('grades a clean Oracle review by its declared zero-finding count', () => {
+    const grade = (evidence) => gradeOracleReviewOutcome({ caseId: 'oracle-review-clean', evidence, durationMs: 1 });
+    assert.deepEqual(grade({ signals: ['authorization_boundary'], pathLineEvidence: false, declaredFindingCount: 0, terminalComplete: true }), [
+      { id: 'oracle-review-clean.findings', passed: true },
+      { id: 'oracle-review-clean.evidence', passed: true },
+      { id: 'oracle-review-clean.latency', passed: true },
+    ]);
+    assert.equal(grade({ declaredFindingCount: 1, terminalComplete: true })[0].passed, false);
+    assert.equal(grade({ declaredFindingCount: null, terminalComplete: true })[0].passed, false);
+    assert.equal(grade({ declaredFindingCount: 0, terminalComplete: false })[1].passed, false);
+    assert.equal(gradeToolRequirements('oracle-review-clean', Array.from({ length: 21 }, () => ({
+      tool: 'read', status: 'completed', final: true, sessionScope: 'root',
+    }))).passed, false);
   });
 
   test('requires a final mutation tool and test execution for repair-and-test', () => {
@@ -491,8 +475,8 @@ describe('deterministic evaluation graders', () => {
       results: [{ taskId: 'dvr_task_1', action: 'continue', status: 'completed' }],
     };
     const managedTools = [
-      ...tools('devryan_task', 'apply_patch', 'bash'),
-      { tool: 'mcp__context_mode__ctx_execute', status: 'completed', final: true, sessionScope: 'child' },
+      ...tools('devryan_task', 'apply_patch'),
+      { tool: 'bash', status: 'completed', final: true, sessionScope: 'child' },
     ];
     assert.equal(gradeToolRequirements('managed-change', managedTools).passed, true);
     assert.equal(gradeToolRequirements('managed-change', tools('devryan_task', 'apply_patch', 'bash')).passed, false);

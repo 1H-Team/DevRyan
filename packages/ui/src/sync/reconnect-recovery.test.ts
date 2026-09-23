@@ -63,10 +63,10 @@ function createPendingToolPart(
   } as unknown as Part
 }
 
-function createRunningContextToolPart(
+function createRunningToolPart(
   id: string,
   messageID: string,
-  tool = "ctx_execute",
+  tool = "bash",
   status = "running",
 ): Part {
   return {
@@ -76,7 +76,7 @@ function createRunningContextToolPart(
     callID: `call_${id}`,
     type: "tool",
     tool,
-    state: { status, input: { language: "javascript", code: "console.log('ok')" } },
+    state: { status, input: { command: "sleep 1" } },
   } as unknown as Part
 }
 
@@ -453,7 +453,7 @@ describe("getReconnectCandidateSessionIds", () => {
     expect(haveSamePendingToolInputStallFingerprint(first, changed)).toBe(false)
   })
 
-  test("recognizes running Context Mode and shell calls by exact identity", () => {
+  test("recognizes running shell calls by exact identity", () => {
     const makeState = (tool: string, partID = "tool-1", status = "running") => createState({
       session: [createSession("active")],
       session_status: { active: { type: "busy" } as SessionStatus },
@@ -464,12 +464,12 @@ describe("getReconnectCandidateSessionIds", () => {
         } as Message],
       },
       part: {
-        "assistant-1": [createRunningContextToolPart(partID, "assistant-1", tool, status)],
+        "assistant-1": [createRunningToolPart(partID, "assistant-1", tool, status)],
       },
     })
 
     const direct = getLongRunningToolFingerprint({
-      state: makeState("ctx_execute"),
+      state: makeState("bash"),
       sessionID: "active",
     })
     expect(direct).toEqual({
@@ -479,24 +479,20 @@ describe("getReconnectCandidateSessionIds", () => {
       anchorUserMessageID: "user-1",
       partID: "tool-1",
       callID: "call_tool-1",
-      tool: "ctx_execute",
+      tool: "bash",
     })
 
     const wrapped = getLongRunningToolFingerprint({
-      state: makeState("mcp__context-mode__ctx_execute"),
+      state: makeState("shell"),
       sessionID: "active",
     })
-    expect(wrapped?.tool).toBe("mcp__context-mode__ctx_execute")
-    expect(getLongRunningToolFingerprint({
-      state: makeState("bash"),
-      sessionID: "active",
-    })?.tool).toBe("bash")
+    expect(wrapped?.tool).toBe("shell")
     expect(haveSameLongRunningToolFingerprint(direct, direct)).toBe(true)
     expect(haveSameLongRunningToolFingerprint(direct, wrapped)).toBe(false)
   })
 
   test("rejects pending, terminal, unsupported, blocked, and child tool calls", () => {
-    const makeState = (tool = "ctx_execute", status = "running") => createState({
+    const makeState = (tool = "bash", status = "running") => createState({
       session: [createSession("active")],
       session_status: { active: { type: "busy" } as SessionStatus },
       message: {
@@ -506,12 +502,12 @@ describe("getReconnectCandidateSessionIds", () => {
         } as Message],
       },
       part: {
-        "assistant-1": [createRunningContextToolPart("tool-1", "assistant-1", tool, status)],
+        "assistant-1": [createRunningToolPart("tool-1", "assistant-1", tool, status)],
       },
     })
 
-    expect(getLongRunningToolFingerprint({ state: makeState("ctx_execute", "pending"), sessionID: "active" })).toBeNull()
-    expect(getLongRunningToolFingerprint({ state: makeState("ctx_execute", "completed"), sessionID: "active" })).toBeNull()
+    expect(getLongRunningToolFingerprint({ state: makeState("bash", "pending"), sessionID: "active" })).toBeNull()
+    expect(getLongRunningToolFingerprint({ state: makeState("bash", "completed"), sessionID: "active" })).toBeNull()
     expect(getLongRunningToolFingerprint({ state: makeState("read"), sessionID: "active" })).toBeNull()
 
     const blocked = makeState()
@@ -523,7 +519,7 @@ describe("getReconnectCandidateSessionIds", () => {
     expect(getLongRunningToolFingerprint({ state: child, sessionID: "active" })).toBeNull()
   })
 
-  test("confirms only an unchanged Context Mode call after ten minutes without a managed child", () => {
+  test("confirms only an unchanged shell call after ten minutes without a managed child", () => {
     const fingerprint = {
       kind: "long-running-tool",
       sessionID: "active",
@@ -531,7 +527,7 @@ describe("getReconnectCandidateSessionIds", () => {
       anchorUserMessageID: "user-1",
       partID: "tool-1",
       callID: "call-1",
-      tool: "ctx_execute",
+      tool: "bash",
     } as const
 
     expect(shouldConfirmLongRunningTool({

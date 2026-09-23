@@ -303,6 +303,36 @@ describe('DevRyan document reader plugin', () => {
     }, { sessionID: 'ses_unrelated' })).rejects.toThrow('unavailable');
   });
 
+  it('tells only descendant tasks about parent documents, resolving each parent link once', async () => {
+    const sessions = {
+      ses_parent: { id: 'ses_parent' },
+      ses_child: { id: 'ses_child', parentID: 'ses_parent' },
+      ses_grandchild: { id: 'ses_grandchild', parentID: 'ses_child' },
+      ses_unrelated: { id: 'ses_unrelated' },
+    };
+    const client = { session: { get: vi.fn(async (request) => sessions[request?.path?.id || request?.sessionID] || null) } };
+    const plugin = await DevRyanDocumentReaderPlugin({ client, parseAttachment: __test.parseAttachmentPayload });
+    await plugin['experimental.chat.messages.transform']({}, outputWith([
+      filePart({ name: 'brief.csv', mime: 'text/csv', contents: 'a,b\n1,2\n' }),
+    ]));
+    const notice = 'Parent-task documents are available via devryan_document';
+    const request = async (sessionID) => {
+      const output = outputWith([{ type: 'text', text: 'continue' }], sessionID);
+      await plugin['experimental.chat.messages.transform']({ sessionID }, output);
+      return output.messages[0].parts.some((part) => String(part.text).includes(notice));
+    };
+
+    client.session.get.mockClear();
+    expect(await request('ses_child')).toBe(true);
+    expect(await request('ses_child')).toBe(true);
+    expect(await request('ses_grandchild')).toBe(true);
+    expect(await request('ses_parent')).toBe(false);
+    expect(await request('ses_unrelated')).toBe(false);
+    const lookups = client.session.get.mock.calls.map(([call]) => call?.path?.id || call?.sessionID);
+    expect(lookups.filter((id) => id === 'ses_child')).toHaveLength(1);
+    expect(lookups.filter((id) => id === 'ses_grandchild')).toHaveLength(1);
+  });
+
   it('deletes the session-scoped cache when OpenCode deletes the task', async () => {
     const plugin = await DevRyanDocumentReaderPlugin({ parseAttachment: __test.parseAttachmentPayload });
     const output = outputWith([

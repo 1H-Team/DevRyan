@@ -110,6 +110,19 @@ export function applyPaymentEvent(current, event) {
 }
 `;
 
+const oracleCleanSource = `export function saveProfile(actor, current, expectedRevision, patch) {
+  if (!actor?.id) throw new Error('Authentication required');
+  if (actor.id !== current.ownerId && actor.role !== 'admin') throw new Error('Forbidden');
+  if (expectedRevision !== current.revision) throw new Error('Revision conflict');
+  const { id, ownerId, revision, ...changes } = patch ?? {};
+  return {
+    ...current,
+    ...changes,
+    revision: current.revision + 1,
+  };
+}
+`;
+
 const oracleFocusedContract = `export const profileSaveContract = Object.freeze({
   authorization: 'Only the profile owner or an administrator may save.',
   concurrency: 'Reject a save when expectedRevision differs from the stored revision.',
@@ -144,16 +157,10 @@ test('exposes the complete generated route inventory', () => {
 });
 `;
 
-const ORACLE_REVIEW_CASE_IDS = new Set(['oracle-review-focused', 'oracle-review-deep']);
-const CONTEXT_ANALYSIS_CASE_IDS = new Set([
-  'context-large-analysis',
-  'context-explorer-analysis',
-  'context-bounded-lookup',
-  'managed-independent',
-]);
+const ORACLE_REVIEW_CASE_IDS = new Set(['oracle-review-focused', 'oracle-review-deep', 'oracle-review-clean']);
 
 const isOracleReviewCase = (caseId) => ORACLE_REVIEW_CASE_IDS.has(caseId);
-const isContextAnalysisCase = (caseId) => CONTEXT_ANALYSIS_CASE_IDS.has(caseId);
+const isContextAnalysisCase = (caseId) => caseId === 'managed-independent';
 
 export const buildCaseDefinition = (caseId, runFiles) => {
   if (isRoutingCase(caseId)) return buildRoutingDefinition(caseId, runFiles);
@@ -167,16 +174,6 @@ export const buildCaseDefinition = (caseId, runFiles) => {
       ].join(' '),
     };
   }
-  if (caseId === 'context-large-analysis') {
-    return {
-      caseId,
-      prompt: [
-        `Analyze the generated route inventory across ${runFiles.sourceRelativePath} and ${runFiles.testRelativePath} without changing either file.`,
-        'Derive exact counts grouped by domain and risk, identify the sentinel contract, and return a concise summary.',
-        'This is broad, multi-file derived analysis: use at least one applicable ctx_* tool. Do not delegate, write, edit, patch, or create files.',
-      ].join(' '),
-    };
-  }
   if (caseId === 'managed-independent') {
     return {
       caseId,
@@ -187,25 +184,6 @@ export const buildCaseDefinition = (caseId, runFiles) => {
         `After dispatch, independently read the CONTEXT_SENTINEL declaration in ${runFiles.sourceRelativePath} yourself while children run if the host permits read overlap; otherwise perform that read after the barrier clears.`,
         'Use wait_any when advertised, otherwise wait. Collect and disposition every result with continue before finishing. Do not start extra children or run repeated checks.',
         'Finish with this JSON object filled from the observed evidence: {"identity":number,"session":number,"billing":number,"elevated":number,"standard":number,"sentinel":string}.',
-      ].join(' '),
-    };
-  }
-  if (caseId === 'context-explorer-analysis') {
-    return {
-      caseId,
-      prompt: [
-        `Use devryan_task to delegate a broad read-only inventory of ${runFiles.sourceRelativePath} and ${runFiles.testRelativePath} to Explorer.`,
-        'The Explorer child must use its safe Context Mode indexing/search tools, derive domain and risk coverage, and report the sentinel contract.',
-        'Wait for the managed result and disposition it with continue. Do not change any file.',
-      ].join(' '),
-    };
-  }
-  if (caseId === 'context-bounded-lookup') {
-    return {
-      caseId,
-      prompt: [
-        `Read only the exact CONTEXT_SENTINEL declaration in ${runFiles.sourceRelativePath} and return its string value.`,
-        'This is a bounded lookup: use a native read or search tool, not broad Context Mode indexing. Do not change any file.',
       ].join(' '),
     };
   }
@@ -227,9 +205,23 @@ export const buildCaseDefinition = (caseId, runFiles) => {
       prompt: [
         `Implement the owned stub in ${runFiles.sourceRelativePath} so ${runFiles.testRelativePath} passes.`,
         'Use devryan_task managed child work for discovery and implementation.',
-        'The writable specialist child must use an execution-capable Context Mode tool while deriving or validating the change.',
+        'The writable specialist child must validate its change by running the test with a shell tool.',
         'Start the managed work, wait for every result, and disposition each successful result with continue before resuming.',
         `Do not change ${runFiles.testRelativePath} or any other file. Run node --test ${runFiles.testRelativePath} after managed work settles.`,
+      ].join(' '),
+    };
+  }
+  if (caseId === 'oracle-review-clean') {
+    return {
+      caseId,
+      prompt: [
+        'Review depth: focused.',
+        `Changed scope: ${runFiles.sourceRelativePath} and ${runFiles.testRelativePath}; inspect no other files.`,
+        'Critical invariants: profile authorization and optimistic concurrency.',
+        'Validation evidence: the fixture was prepared deterministically; do not run tests, builds, lint, or type-checking.',
+        'Exclusions: no edits, shell commands, delegation, external research, or broad repository audit.',
+        `Return: actionable findings only, at most three, with severity and exact ${runFiles.sourceRelativePath}:line evidence; include residual risk.`,
+        'Before the status line, state the number of actionable findings as <findings>N</findings>, then end with <status>complete</status>.',
       ].join(' '),
     };
   }
@@ -270,7 +262,9 @@ export const prepareCaseFixture = (caseId, runFiles) => {
   }
   if (isOracleReviewCase(caseId)) {
     const deep = caseId === 'oracle-review-deep';
-    const baselineSource = deep ? oracleDeepSource : oracleFocusedSource;
+    const baselineSource = caseId === 'oracle-review-clean'
+      ? oracleCleanSource
+      : deep ? oracleDeepSource : oracleFocusedSource;
     const baselineTest = deep ? oracleDeepContract : oracleFocusedContract;
     writeRunOwnedFile(runFiles.sourcePath, baselineSource, runFiles);
     writeRunOwnedFile(runFiles.testPath, baselineTest, runFiles);

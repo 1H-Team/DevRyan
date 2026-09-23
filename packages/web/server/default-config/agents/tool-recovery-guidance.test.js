@@ -23,10 +23,9 @@ describe('bundled agent tool recovery guidance', () => {
     expect(explorer).toContain('never replay the rejected arguments unchanged');
   });
 
-  it('requires Orchestrator to correct guarded grep and context-mode inputs once', () => {
+  it('requires Orchestrator to correct guarded grep inputs once', () => {
     const orchestrator = readAgent('orchestrator');
     expect(orchestrator).toContain('`grep.path` accepts exactly one path');
-    expect(orchestrator).toContain('Keep context-mode JavaScript small and syntactically complete');
     expect(orchestrator).toContain('DEVRYAN_TOOL_INPUT_INVALID');
     expect(orchestrator).toContain('retry once');
     expect(orchestrator).toContain('never replay the rejected arguments unchanged');
@@ -46,15 +45,17 @@ describe('bundled agent tool recovery guidance', () => {
     expect(prompt).toContain('After a patch-context mismatch, reread only the narrow target hunk');
   });
 
-  it.each(['builder', 'fixer', 'orchestrator'])('bounds context-mode recovery for %s', (agent) => {
+  it.each(['builder', 'fixer', 'orchestrator'])('bounds unknown-outcome recovery and test runs for %s', (agent) => {
     const prompt = readAgent(agent);
-    expect(prompt).toContain('do not retry any `ctx_*` tool for the rest of the turn');
-    expect(prompt).not.toContain('Retry a context-mode SQLite or disk I/O failure once only');
-    expect(prompt).toMatch(/continue with native read\/search tools/i);
-    expect(prompt).toContain('Never automatically replay a potentially mutating context-mode command');
-    expect(prompt).toContain('keep each `ctx_execute` call bounded to one test command or group');
-    expect(prompt).toContain('report between calls');
+    expect(prompt).toContain("If a tool's execution outcome is unknown, inspect current state before any mutation or retry");
+    expect(prompt).toContain('never replay the failed command automatically');
+    expect(prompt).toContain('Keep large test runs bounded to one test command or group and report between runs');
     expect(prompt).toContain('Never wrap an entire test matrix in one synchronous `spawnSync` or `execSync` loop');
+  });
+
+  it.each(['builder', 'council', 'designer', 'explorer', 'fixer', 'librarian', 'oracle', 'orchestrator', 'plan'])('carries no Context Mode tool guidance for %s', (agent) => {
+    const prompt = readAgent(agent);
+    expect(prompt).not.toMatch(/context[ _-]mode|ctx_[a-z]/i);
   });
 
   it.each(['builder', 'fixer', 'orchestrator'])('requires repository-sanctioned bounded shell work for %s', (agent) => {
@@ -64,12 +65,5 @@ describe('bundled agent tool recovery guidance', () => {
     expect(prompt).toContain('every shell invocation to one bounded command or group');
     expect(prompt).toContain('four-minute default deadline');
     expect(prompt).toContain('up to sixty minutes');
-  });
-
-  it('gives Orchestrator a safe fallback after a context-mode storage failure', () => {
-    const orchestrator = readAgent('orchestrator');
-    expect(orchestrator).toContain('SQLite, disk I/O, database-is-locked, worker timeout, or worker-unavailable failure');
-    expect(orchestrator).toContain('native read/search tools or appropriately scoped specialist discovery');
-    expect(orchestrator).toContain('Report a blocker only when neither safe fallback can satisfy the task');
   });
 });

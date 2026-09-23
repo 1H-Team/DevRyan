@@ -33,8 +33,9 @@ Defines settings-domain feature sections (providers, agents, Bots, MCP, skills, 
   consequential actions use requester confirmation. Lifecycle presents Active,
   Paused, and exact-name Delete; internal retirement/purge mechanics remain
   partial-failure-safe but are not product concepts. `BotRuntimeServicePanel.tsx`
-  still projects the Electron-owned background runtime status independently of
-  the React component.
+  is the page's Global Settings section: the administrator-only Background
+  Runtime Service switch plus the Electron-owned runtime status, projected
+  independently of the Bot editor.
 - **Global capabilities versus Bot SOPs**: Coding Agent Skills, MCP Servers, and
   plugins keep their existing Settings destinations. Bots do not have an MCP
   assignment workspace. An installed Skill can be added as an optional SOP from

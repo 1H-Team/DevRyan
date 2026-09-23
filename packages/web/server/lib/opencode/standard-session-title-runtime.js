@@ -47,6 +47,8 @@ const titleCaseWord = (word, index) => {
 const stripManagedTaskPreamble = (text) => {
   // Only the known initial runtime blocks are metadata. Keep the delegated
   // brief verbatim and never strip an arbitrary instruction from its body.
+  // The context-mode routing tags are legacy: Context Mode is retired, but
+  // placeholder recovery still titles stored child sessions that carry them.
   const blocks = trimString(text).split(/\n\s*\n/);
   while (blocks.length > 1 && /^\[devryan-(?:agent-contract|context-mode-routing|context-mode-read-only-routing|managed-read-only):v1\]/.test(blocks[0])) {
     blocks.shift();

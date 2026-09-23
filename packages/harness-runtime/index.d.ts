@@ -351,26 +351,6 @@ export function createDiagnosticSanitizer(options?: {
   pathMappings?: Array<{ path: string; placeholder: string }>;
 }): DiagnosticSanitizer;
 
-export type ContextModeRecoveryState =
-  | 'healthy'
-  | 'draining'
-  | 'restarting'
-  | 'external_action_required';
-
-export interface ContextModeRecoveryStatus {
-  state: ContextModeRecoveryState;
-  incidentId: string | null;
-  detectedAt: number | null;
-  updatedAt: number;
-  recoveredAt: number | null;
-  occurrenceCount: number;
-  restartAttempts: number;
-  lastRestartError: string | null;
-  outcome: 'recovered' | 'external_action_required' | null;
-  guidance: string | null;
-  transitions: Array<{ state: ContextModeRecoveryState; at: number; error?: string }>;
-}
-
 export interface DiagnosticsStatus {
   enabled: true;
   directory: string;
@@ -382,7 +362,6 @@ export interface DiagnosticsStatus {
   writtenRecords: number;
   gapRecords: number;
   lastError: string | null;
-  contextModeRecovery?: ContextModeRecoveryStatus | null;
   commandDeadlineRecovery?: CommandDeadlineRecoveryStatus | null;
 }
 

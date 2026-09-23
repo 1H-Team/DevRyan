@@ -9,6 +9,7 @@ import {
   DEVRYAN_MANAGED_PLUGINS,
   DEVRYAN_MANAGED_PROFILE_DEPENDENCIES,
   DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS,
+  RETIRED_DEVRYAN_PROFILE_DEPENDENCIES,
   getDevRyanManagedPluginRegistrationForConfigPath,
   inspectDevRyanManagedPluginInstallation,
   reconcileDevRyanManagedPluginSpecs,
@@ -47,7 +48,6 @@ describe('managed plugin manifest', () => {
       '@rama_nigg/open-cursor': '2.5.8',
       'opencode-with-claude': '1.8.0',
       'opencode-gpt-imagegen': '0.1.12',
-      'context-mode': '1.0.169',
       'oh-my-opencode-slim': '2.2.18',
     });
     expect(DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS).toEqual([
@@ -55,7 +55,6 @@ describe('managed plugin manifest', () => {
       './node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js',
       './node_modules/opencode-with-claude/dist/index.js',
       './node_modules/opencode-gpt-imagegen/dist/index.js',
-      './node_modules/context-mode/build/adapters/opencode/plugin.js',
       './plugins/devryan-oh-my-opencode-slim.mjs',
       './plugins/devryan-superpowers.mjs',
       './plugins/devryan-skill-context.mjs',
@@ -106,7 +105,11 @@ describe('managed plugin manifest', () => {
         expect(spec).not.toContain('@latest');
         expect(spec).not.toContain('git+');
         expect(spec).not.toBe('cursor-acp');
+        expect(spec).not.toContain('context-mode');
       }
+    }
+    for (const packageJson of [webPackage, tauriPackage]) {
+      expect(packageJson.dependencies).not.toHaveProperty('context-mode');
     }
 
     // Tauri retains Slim 2.0.5 and its legacy loader; the forward profile also
@@ -143,16 +146,28 @@ describe('managed plugin manifest', () => {
       './node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js',
       ['./node_modules/opencode-with-claude/dist/index.js', { enabled: true }],
       './node_modules/opencode-gpt-imagegen/dist/index.js',
-      './node_modules/context-mode/build/adapters/opencode/plugin.js',
       './plugins/devryan-oh-my-opencode-slim.mjs',
       './plugins/devryan-superpowers.mjs',
       './plugins/devryan-skill-context.mjs',
       './plugins/devryan-document-reader.mjs',
     ]);
+  });
 
-    const customPin = reconcileDevRyanManagedPluginSpecs(['context-mode@1.0.168']);
-    expect(customPin).toContain('context-mode@1.0.168');
-    expect(customPin).not.toContain('./node_modules/context-mode/build/adapters/opencode/plugin.js');
+  it('retires every DevRyan-provisioned Context Mode registration but keeps user-owned pins', () => {
+    const reconciled = reconcileDevRyanManagedPluginSpecs([
+      'context-mode',
+      'context-mode@1.0.169',
+      './node_modules/context-mode/build/adapters/opencode/plugin.js',
+      ['./node_modules/context-mode/build/adapters/opencode/plugin.js', { enabled: true }],
+      'file:///Users/test/.config/opencode/node_modules/context-mode/build/adapters/opencode/plugin.js',
+      '/Users/test/.config/opencode/node_modules/context-mode/build/adapters/opencode/plugin.js',
+      'context-mode@1.0.168',
+    ]);
+    expect(reconciled).toContain('context-mode@1.0.168');
+    expect(reconciled.filter((entry) => JSON.stringify(entry).includes('context-mode'))).toEqual([
+      'context-mode@1.0.168',
+    ]);
+    expect(RETIRED_DEVRYAN_PROFILE_DEPENDENCIES).toEqual({ 'context-mode': '1.0.169' });
   });
 
   it('removes only DevRyan-owned legacy specs from older user config layers', () => {

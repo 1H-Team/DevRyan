@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.11] - 2026-09-24
+
+- Managed runtime: remove the bundled Context Mode integration and its worker stack, simplify prompt tool routing, and update agent guidance and QA fixtures for native tools.
+- Orchestration and recovery: improve specialist review and prompt budgets, provider tool discovery, session admission, reconnect reconciliation, and tool activity reporting.
+- Desktop and Bots: add an administrator control for the background runtime service, strengthen service startup and ownership recovery, and update the OpenCode companion to `1.18.31-devryan.13`.
+- Security and diagnostics: scan raw configuration layers for credential exposure, tighten tool input and document reading, and improve diagnostic sanitization and journal coverage.
+- Quality: expand deterministic coverage across runtime, server, UI, Electron, and agent evaluation paths; update all package and desktop metadata to 1.2.11.
+- Database: apply pending repository migrations and verify the Production Bots schema marker before release publication.
+
 ## [1.2.10] - 2026-09-23
 
 - Recovery and orchestration: improve provider failure handling, collection of completed sub-agent results, runtime restart reconciliation, and execution admission diagnostics.

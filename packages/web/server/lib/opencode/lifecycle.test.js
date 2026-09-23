@@ -185,6 +185,8 @@ const createRuntime = (overrides = {}) => {
     })),
     // spawn is mocked here; the real watchdog is covered by parent-death-watchdog.test.js.
     startManagedProcessWatchdog: vi.fn(() => ({ dispose: vi.fn() })),
+    // Mock children use fake PIDs: never signal a real process group.
+    signalManagedProcessGroup: vi.fn(() => { throw Object.assign(new Error('No such group'), { code: 'ESRCH' }); }),
     ...dependencyOverrides,
   });
   runtime.__testState = state;
@@ -248,7 +250,6 @@ describe('OpenCode lifecycle', () => {
     const runtime = createRuntime();
 
     expect(typeof runtime.killProcessOnPort).toBe('function');
-    expect(typeof runtime.observeContextModeToolFailure).toBe('function');
   });
 
   it('launches managed OpenCode with the managed PATH', async () => {
@@ -275,8 +276,8 @@ describe('OpenCode lifecycle', () => {
     expect(options.env.OPENCODE_DISABLE_DEFAULT_PLUGINS).toBeUndefined();
     expect(options.env.OPENCODE_DISABLE_EXTERNAL_SKILLS).toBeUndefined();
     expect(options.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS).toBe('1');
-    expect(options.env.CONTEXT_MODE_DATA_DIR).toBe(process.env.OPENCHAMBER_DATA_DIR);
-    expect(options.env.CONTEXT_MODE_DIR).toBe(join(process.env.OPENCHAMBER_DATA_DIR, 'context-mode'));
+    expect(options.env).not.toHaveProperty('CONTEXT_MODE_DATA_DIR');
+    expect(options.env).not.toHaveProperty('CONTEXT_MODE_DIR');
 
     await server.close();
   });
@@ -490,6 +491,46 @@ describe('OpenCode lifecycle', () => {
 
     await server.close();
     expect(readManagedOpenCodeRegistry()).toEqual([]);
+    expect(dispose).toHaveBeenCalled();
+  });
+
+  it('refuses a managed server that cannot be tied to this process', async () => {
+    delete process.env.OPENCODE_BINARY;
+    const registryRoot = mkdtempSync(join(tmpdir(), 'openchamber-managed-registry-'));
+    tempDirs.push(registryRoot);
+    process.env.OPENCHAMBER_DATA_DIR = registryRoot;
+    const child = createMockChild();
+    child.pid = 23457;
+    spawnMock.mockImplementation(() => child);
+    const runtime = createRuntime({
+      startManagedProcessWatchdog: vi.fn(() => ({ pid: null, error: { code: 'managed_opencode_watchdog_unavailable', cause: 'EAGAIN' }, dispose: vi.fn() })),
+    });
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await expect(runtime.startOpenCode()).rejects.toThrow();
+      expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+      expect(readManagedOpenCodeRegistry()).toEqual([]);
+    } finally {
+      errorLog.mockRestore();
+      spawnMock.mockReset();
+    }
+  });
+
+  it('kills the exited server group so its MCP children cannot outlive it', async () => {
+    delete process.env.OPENCODE_BINARY;
+    const child = createMockChild();
+    child.pid = 23458;
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n'));
+      return child;
+    });
+    const dispose = vi.fn();
+    const signalManagedProcessGroup = vi.fn();
+    const runtime = createRuntime({ startManagedProcessWatchdog: vi.fn(() => ({ pid: 1, dispose })), signalManagedProcessGroup });
+    await runtime.startOpenCode();
+    child.exitCode = 1;
+    child.emit('exit', 1, null);
+    if (process.platform !== 'win32') expect(signalManagedProcessGroup).toHaveBeenCalledWith(23458, 'SIGKILL');
     expect(dispose).toHaveBeenCalled();
   });
 

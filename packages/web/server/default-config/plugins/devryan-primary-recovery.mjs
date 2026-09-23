@@ -77,13 +77,27 @@ export const DevRyanPrimaryRecoveryPlugin = async ({ client, directory, fetchImp
     if (!invoking?.info.id || !invoking.info.parentID) throw new Error('Invoking model step unresolved');
     return { assistantMessageID: invoking.info.id, userMessageID: invoking.info.parentID };
   };
+  // A tool call's invoking step never changes, so its before/after hooks share
+  // one message lookup instead of each fetching recent history with outputs.
+  const callIdentities = new Map();
+  const inspectCall = async (input) => {
+    if (!input.callID) return inspect(input);
+    const key = `${input.sessionID}\u0000${input.callID}`;
+    const known = callIdentities.get(key);
+    if (known) return known;
+    const identity = await inspect(input);
+    callIdentities.set(key, identity);
+    while (callIdentities.size > 512) callIdentities.delete(callIdentities.keys().next().value);
+    return identity;
+  };
   const execute = async (action, input, extra = {}) => {
     const policy = await scope(input.sessionID);
     if (!policy.tracked) return;
     const agent = typeof input.agent === 'string' ? input.agent : input.agent?.name;
     if (action === 'step' && agent && agent !== policy.agent) return;
     try {
-      const identity = await inspect(input);
+      const identity = await inspectCall(input);
+      if (action === 'tool_after' && input.callID) callIdentities.delete(`${input.sessionID}\u0000${input.callID}`);
       let nativeToolVerified = false;
       if (action === 'tool_before' && policy.readOnly && ['read', 'glob', 'grep'].includes(input.tool)) {
         const catalog = await client.tool.ids({ query: { directory }, signal: AbortSignal.timeout(5000) });

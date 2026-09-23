@@ -57,8 +57,6 @@ export const MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT = 'Continue the task 
 export const MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT = 'Continue the task from the existing progress. The previous model connection was interrupted. Do not repeat completed work.';
 export const MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT = 'Continue the task from the existing progress. The previous model ended before providing a final answer. Reuse completed work and tool results, retry only missing work, and return the requested final output.';
 export const MANAGED_READ_ONLY_PROMPT = '[devryan-managed-read-only:v1] The parent session is in plan mode. Inspect and report only. Do not edit, create, delete, rename, or move files; do not run commands that mutate the workspace; and do not delegate work.';
-export const MANAGED_CONTEXT_MODE_WRITABLE_PROMPT = '[devryan-context-mode-routing:v1] Use Context Mode by default when analysis is broad, multi-file, derived, aggregated, or unpredictably large: prefer ctx_execute_file, ctx_execute, ctx_batch_execute, or ctx_index followed by batched ctx_search as appropriate. Use native read/search tools for bounded exact lookups, navigation, and edit hunks. After one Context Mode storage failure, use bounded native tools for the rest of this turn and do not retry Context Mode.';
-export const MANAGED_CONTEXT_MODE_READ_ONLY_PROMPT = '[devryan-context-mode-read-only-routing:v1] For broad or multi-file workspace analysis, prefer ctx_index followed by batched ctx_search. For large web research, prefer ctx_fetch_and_index followed by batched ctx_search. Use native read/search tools for bounded exact lookups. ctx_execute, ctx_execute_file, and ctx_batch_execute are intentionally unavailable. After one Context Mode storage failure, use bounded native tools for the rest of this turn and do not retry Context Mode.';
 const MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPTS = Object.freeze([
   MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT,
   MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT,
@@ -147,20 +145,10 @@ const resolveContinuationTaskPrompt = (task, prompt) => (
   resolveTaskPrompt(task, appendManagedAssignment(task, prompt))
 );
 
-const taskHasContextMode = (task) => (
-  trimString(task.providerId).toLowerCase() !== 'cursor-acp'
-);
-
 const resolveInitialTaskPrompt = (task, preamble = null) => {
-  let prompt = resolveTaskPrompt(task, task.prompt);
-  if (taskHasContextMode(task)) {
-    const routingPrompt = task.readOnly
-      ? MANAGED_CONTEXT_MODE_READ_ONLY_PROMPT
-      : MANAGED_CONTEXT_MODE_WRITABLE_PROMPT;
-    prompt = `${routingPrompt}\n\n${prompt}`;
-  }
+  const prompt = resolveTaskPrompt(task, task.prompt);
   // A host-supplied preamble (e.g. the compact agent contract for Claude
-  // compatibility mode) sits ahead of the routing prefix so it reads as the
+  // compatibility mode) sits ahead of the task prompt so it reads as the
   // child's standing rules. It belongs to the first prompt of a fresh child only;
   // resume and retry continuations never repeat it.
   const trimmedPreamble = typeof preamble === 'string' ? preamble.trim() : '';
@@ -171,10 +159,7 @@ const resolveTaskPromptTools = (task) => ({
   ...resolveProviderPromptTools(
     task.providerId,
     task.agent,
-    {
-      readOnly: task.readOnly,
-      contextModeAvailable: taskHasContextMode(task),
-    },
+    { readOnly: task.readOnly },
   ),
   // Managed tasks are already child sessions. Keep all further delegation
   // root-owned even when project agent permissions expose OpenCode's task tool.

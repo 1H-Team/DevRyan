@@ -1,9 +1,9 @@
 # Session creation implementation and verification
 
-The worker limits below describe the August 31 implementation. The current
-[Context Mode concurrency contract](../packages/web/server/lib/opencode/DOCUMENTATION.md#public-exports-context-mode-hotfixjs--context-mode-content-store-recoveryjs)
-removes those command-queue limits; its disposable verification now exercises
-thirty concurrent calls across fifteen sessions.
+This is a dated verification record. Context Mode, its worker pool and the
+worker/benchmark scripts it cites were removed from DevRyan on 2026-09-24; the
+worker statements below describe the August 31 implementation only. The session
+creation, cancellation and recovery contracts remain current.
 
 Verified on macOS arm64, 2026-08-31, using OpenCode 1.18.25 and Context Mode
 1.0.169. The user's live DevRyan/OpenCode processes were not restarted or patched.
@@ -103,19 +103,7 @@ The packaged shell checks exercise the production renderer and actual web
 backend, but do not constitute a signed installer/update test. Windows worker
 process-tree cleanup was not run on this Mac. No live runtime rollout occurred.
 
-## Reproduction and artifacts
-
-Install Context Mode 1.0.169 only in a disposable directory under repository
-`.cache`, then run:
-
-```sh
-bun scripts/verify-context-mode-workers.mjs .cache/context-mode-worker-check
-node scripts/benchmark-session-creation.mjs .cache/context-mode-worker-check
-```
-
-The benchmark creates its own synthetic repository, config, storage, and OpenCode
-child. It never targets the user's runtime. An optional second argument reuses
-one of its synthetic profiles for a quiet 30-sample cold-process-only repeat.
+## Artifacts
 
 Local evidence is under `.cache/session-create-benchmark-cJuTAf/`,
 `.cache/e2e/session-creation-visual/`, and
@@ -126,7 +114,4 @@ session list was checked. This observation is not claimed as a deletion fix.
 Copied verification credentials and authenticated renderer profiles are removed
 at cleanup; sanitized journal evidence is retained separately.
 
-Rollout remains normal managed provisioning after active work finishes. Keep the
-dependency pinned. If compatibility validation fails, leave the adapter disabled
-and restore the prior repository provisioning implementation; indexes require no
-rollback or migration. Do not restart a busy runtime to chase a latency target.
+Do not restart a busy runtime to chase a latency target.

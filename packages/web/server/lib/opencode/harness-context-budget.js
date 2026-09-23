@@ -485,6 +485,7 @@ function buildHarnessContextBudget({
 
 export {
   buildHarnessContextBudget,
+  buildPackagedPromptMeasurement,
   deduplicateExactToolDefinitions,
   findDuplicateIds,
   findDuplicateSchemas,

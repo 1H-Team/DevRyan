@@ -20,8 +20,7 @@ describe('core-routes', () => {
       }),
       getHealthSnapshot: () => ({
         status: 'ok',
-        contextModeAvailable: true,
-        contextModeReadOnlyIndexing: true,
+        openCodeRunning: true,
       }),
       openchamberVersion: '1.0.0',
       runtimeName: 'test',
@@ -44,8 +43,7 @@ describe('core-routes', () => {
     expect(response.type).toBe('application/json');
     expect(response.body).toMatchObject({
       status: 'ok',
-      contextModeAvailable: true,
-      contextModeReadOnlyIndexing: true,
+      openCodeRunning: true,
     });
     expect(response.headers['x-devryan-instance-id']).toBe('instance-test-id');
     expect(response.text).not.toContain('<!doctype html>');

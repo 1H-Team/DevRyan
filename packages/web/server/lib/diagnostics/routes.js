@@ -49,7 +49,6 @@ export const registerDiagnosticsRoutes = (app, options = {}) => {
       const status = await runtime.getStatus();
       res.json({
         ...status,
-        contextModeRecovery: options.getContextModeRecoveryStatus?.() ?? null,
         commandDeadlineRecovery: options.getCommandDeadlineRecoveryStatus?.() ?? null,
       });
     } catch (error) {

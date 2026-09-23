@@ -3,7 +3,9 @@
 export const SESSION_CHANGE_READ_ONLY_TOOLS = Object.freeze([
   'read', 'oc_read', 'glob', 'oc_glob', 'grep', 'oc_grep', 'list', 'ls', 'oc_ls', 'stat', 'oc_stat',
   'webfetch', 'websearch', 'todowrite', 'todoread', 'question', 'skill',
-  'task', 'devryan_task', 'council_session', 'ctx_search', 'ctx_stats',
+  'task', 'devryan_task', 'council_session',
+  // Legacy: retired Context Mode tools, kept read-only so stored sessions replay their history.
+  'ctx_search', 'ctx_stats',
 ]);
 const READ_ONLY = new Set(SESSION_CHANGE_READ_ONLY_TOOLS);
 const FILE_TOOLS = new Set(['edit', 'write', 'apply_patch', 'multiedit', 'create', 'file_write', 'str_replace', 'str_replace_based_edit_tool']);

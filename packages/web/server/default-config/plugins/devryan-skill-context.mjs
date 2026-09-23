@@ -66,7 +66,7 @@ const SKILL_CONTEXT_POLICY = `${SKILL_CONTEXT_POLICY_MARKER}
 Before calling this tool, inspect the active transcript. If the same named skill already has a completed full result earlier in the current context, do not call the tool again; continue using that result. A workflow phase change, including moving from planning to implementation, is not a reason to reload it. Reload only when no full result remains after compaction, the skill content may have changed, or the user explicitly requests a refresh.`;
 
 const EXTERNAL_SKILL_REFERENCE_POLICY = `${EXTERNAL_SKILL_REFERENCE_POLICY_MARKER}
-When a loaded skill references a supporting file whose resolved path is outside the active project/worktree, use the native read tool for that file instead of ctx_execute_file. DevRyan grants native read access only to external skill directories authorized for the active agent. Do not create or modify global OpenCode/Claude permission files or add host allow rules for skill directories. Continue using ctx_execute_file normally for files contained by the active project.`;
+When a loaded skill references a supporting file whose resolved path is outside the active project/worktree, use the native read tool for that file. DevRyan grants native read access only to external skill directories authorized for the active agent. Do not create or modify global OpenCode/Claude permission files or add host allow rules for skill directories.`;
 
 const appendPolicy = (description, marker, policy) => (
   description.includes(marker) ? description : `${description.trimEnd()}\n\n${policy}`
@@ -214,15 +214,6 @@ export const DevRyanSkillContextPlugin = async (pluginContext = {}) => {
         SKILL_CONTEXT_POLICY_MARKER,
         SKILL_CONTEXT_POLICY,
       );
-      output.description = appendPolicy(
-        output.description,
-        EXTERNAL_SKILL_REFERENCE_POLICY_MARKER,
-        EXTERNAL_SKILL_REFERENCE_POLICY,
-      );
-      return;
-    }
-
-    if (input?.toolID === 'ctx_execute_file') {
       output.description = appendPolicy(
         output.description,
         EXTERNAL_SKILL_REFERENCE_POLICY_MARKER,

@@ -12,14 +12,6 @@ function getOpenChamberDataDir(env = process.env) {
   return configured ? path.resolve(configured) : path.join(os.homedir(), '.config', 'openchamber');
 }
 
-function buildContextModeStorageEnv(env = process.env) {
-  const dataDir = getOpenChamberDataDir(env);
-  return {
-    CONTEXT_MODE_DATA_DIR: dataDir,
-    CONTEXT_MODE_DIR: path.join(dataDir, 'context-mode'),
-  };
-}
-
 function getManagedOpenCodeRegistryPath(options = {}) {
   if (typeof options.registryPath === 'string' && options.registryPath.trim()) {
     return path.resolve(options.registryPath);
@@ -49,6 +41,10 @@ function normalizeRegistryRecord(record) {
     startedAt: Number.isFinite(record.startedAt) ? Math.trunc(record.startedAt) : Date.now(),
     workingDirectory: typeof record.workingDirectory === 'string' && record.workingDirectory.trim()
       ? record.workingDirectory.trim()
+      : null,
+    // Owner start time distinguishes the owner from a later process that reuses its PID.
+    ownerStartTime: typeof record.ownerStartTime === 'string' && record.ownerStartTime.trim()
+      ? record.ownerStartTime.trim()
       : null,
   };
 }
@@ -135,11 +131,18 @@ function writeManagedOpenCodeRegistry(records, options = {}) {
   return normalized;
 }
 
+let currentProcessStartTime;
+
 function registerManagedOpenCodeProcess(record, options = {}) {
+  const ownerPid = record?.ownerPid ?? process.pid;
+  if (ownerPid === process.pid && currentProcessStartTime === undefined) {
+    currentProcessStartTime = readProcessStartTime(process.pid, options);
+  }
   const normalized = normalizeRegistryRecord({
     ...record,
-    ownerPid: record?.ownerPid ?? process.pid,
+    ownerPid,
     startedAt: record?.startedAt ?? Date.now(),
+    ownerStartTime: record?.ownerStartTime ?? (ownerPid === process.pid ? currentProcessStartTime : null),
   });
   if (!normalized) return null;
 
@@ -200,6 +203,26 @@ function readProcessCommand(pid, options = {}) {
       stdio: ['ignore', 'pipe', 'ignore'],
     });
     const output = typeof result.stdout === 'string' ? result.stdout.trim() : '';
+    return result.status === 0 && output ? output : null;
+  } catch {
+    return null;
+  }
+}
+
+// `ps` start time (`lstart`) is stable for a process's lifetime and changes
+// when its PID is reused. Unavailable on Windows; null keeps the PID-only check.
+function readProcessStartTime(pid, options = {}) {
+  const normalizedPid = normalizePositiveInteger(pid);
+  const platform = options.platform || process.platform;
+  if (!normalizedPid || platform === 'win32') return null;
+  const spawnSyncImpl = typeof options.spawnSync === 'function' ? options.spawnSync : spawnSync;
+  try {
+    const result = spawnSyncImpl('ps', ['-p', String(normalizedPid), '-o', 'lstart='], {
+      encoding: 'utf8',
+      env: { ...process.env, LC_ALL: 'C' },
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const output = typeof result.stdout === 'string' ? result.stdout.trim().replace(/\s+/g, ' ') : '';
     return result.status === 0 && output ? output : null;
   } catch {
     return null;
@@ -310,6 +333,16 @@ async function reapOrphanedManagedOpenCodeProcesses(options = {}) {
   const commandReader = typeof options.readProcessCommand === 'function'
     ? options.readProcessCommand
     : (pid) => readProcessCommand(pid, options);
+  const startTimeReader = typeof options.readProcessStartTime === 'function'
+    ? options.readProcessStartTime
+    : (pid) => readProcessStartTime(pid, options);
+  const ownerAlive = (record) => {
+    if (!isRunning(record.ownerPid)) return false;
+    if (!record.ownerStartTime) return true;
+    const current = startTimeReader(record.ownerPid);
+    // An unreadable start time keeps the conservative PID-only answer.
+    return current === null || current === record.ownerStartTime;
+  };
   const terminator = typeof options.terminateManagedOpenCodePid === 'function'
     ? options.terminateManagedOpenCodePid
     : (pid) => terminateManagedOpenCodePid(pid, options);
@@ -320,7 +353,7 @@ async function reapOrphanedManagedOpenCodeProcesses(options = {}) {
   const skipped = [];
 
   for (const record of records) {
-    if (isRunning(record.ownerPid)) {
+    if (ownerAlive(record)) {
       kept.push(record);
       skipped.push({ ...record, reason: 'owner-alive' });
       continue;
@@ -356,9 +389,9 @@ async function reapOrphanedManagedOpenCodeProcesses(options = {}) {
 }
 
 export {
+  readProcessStartTime,
   REGISTRY_FILE_NAME,
   getOpenChamberDataDir,
-  buildContextModeStorageEnv,
   getManagedOpenCodeRegistryPath,
   readManagedOpenCodeRegistry,
   writeManagedOpenCodeRegistry,

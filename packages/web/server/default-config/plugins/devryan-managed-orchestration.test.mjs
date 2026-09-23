@@ -231,14 +231,14 @@ describe('host-owned read overlap', () => {
     if (agent === 'builder') await expect(operation).resolves.toBeUndefined();
     else await expect(operation).rejects.toThrow('remains blocked');
   });
-  it.each(['read', 'grep', 'ctx_search'])('admits %s only when the host explicitly authorizes it', async (toolName) => {
+  it.each(['read', 'grep', 'webfetch'])('admits %s only when the host explicitly authorizes it', async (toolName) => {
     const client = createToolOwnerClient([toolCallRecord('call_read', 'orchestrator')]);
     const methods = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
       const request = JSON.parse(init.body);
       methods.push(request.method);
       return rpcResponse(request.method === 'barrier_status'
-        ? { state: 'active', taskIds: ['dvr_task_live'], capabilities: { policies: { readOverlap: true }, overlapReadTools: ['read', 'grep', 'ctx_search'] } }
+        ? { state: 'active', taskIds: ['dvr_task_live'], capabilities: { policies: { readOverlap: true }, overlapReadTools: ['read', 'grep', 'webfetch'] } }
         : { allowed: true, provisional: true });
     }));
     const plugin = await DevRyanManagedOrchestrationPlugin({ client, directory: '/workspace' });
@@ -251,7 +251,7 @@ describe('host-owned read overlap', () => {
     }
   });
 
-  it.each(['bash', 'ctx_execute', 'edit', 'mcp_untrusted_read'])('keeps %s blocked despite a read-only annotation', async (toolName) => {
+  it.each(['bash', 'oc_bash', 'edit', 'mcp_untrusted_read'])('keeps %s blocked despite a read-only annotation', async (toolName) => {
     vi.stubGlobal('fetch', vi.fn(async () => rpcResponse({ state: 'active', taskIds: ['dvr_task_live'],
       capabilities: { policies: { readOverlap: true }, overlapReadTools: ['read', 'grep'] } })));
     const client = createToolOwnerClient([toolCallRecord('call_read', 'orchestrator')]);
@@ -2888,8 +2888,30 @@ describe('DevRyan managed orchestration plugin', () => {
     expect(client.session.messages).toHaveBeenCalledTimes(1);
     expect(client.session.messages).toHaveBeenCalledWith({
       path: { id: 'ses_root' },
-      query: { limit: 20 },
+      query: { limit: 2 },
     });
+  });
+
+  it('widens the ownership window only when the newest messages cannot decide it', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      ok: true,
+      result: { state: 'awaiting_acknowledgement', taskIds: ['dvr_task_1'] },
+    }), { status: 200, headers: { 'content-type': 'application/json' } })));
+    // Two steps of one Orchestrator turn: the owner carries no agent/mode, so
+    // its parent user message (outside the newest two) decides ownership.
+    const history = [
+      { info: { id: 'msg_turn', role: 'user', agent: 'orchestrator' }, parts: [] },
+      { info: { id: 'msg_step_1', role: 'assistant', parentID: 'msg_turn' }, parts: [{ type: 'tool', callID: 'call_step_1' }] },
+      { info: { id: 'msg_step_2', role: 'assistant', parentID: 'msg_turn' }, parts: [{ type: 'tool', callID: 'call_step_2' }] },
+    ];
+    const client = { session: { messages: vi.fn(async ({ query }) => ({ data: history.slice(-query.limit) })) } };
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client });
+
+    await expect(plugin['tool.execute.before'](
+      { tool: 'write', sessionID: 'ses_root', callID: 'call_step_2', agent: 'builder' },
+      { args: {} },
+    )).rejects.toThrow('dvr_task_1');
+    expect(client.session.messages.mock.calls.map(([request]) => request.query.limit)).toEqual([2, 20]);
   });
 
   it('gates Orchestrator work and fails closed when the matching tool-call owner is unknown', async () => {

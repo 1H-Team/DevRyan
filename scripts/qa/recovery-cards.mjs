@@ -133,7 +133,7 @@ export async function runQaRecoveryCards({ fixture, cdp, directory, dataDirector
         const session = await response.json();
         const titleUserId = `msg_qa_title_${agent}`;
         const titleRows = [{
-          ...user(session.id, titleUserId, now + 300, [text(session.id, titleUserId, `[devryan-agent-contract:v1] Runtime instructions.\nFollow the task brief.\n\n[devryan-context-mode-routing:v1] Tool routing instructions.\n\n${brief}`)]),
+          ...user(session.id, titleUserId, now + 300, [text(session.id, titleUserId, `[devryan-agent-contract:v1] Runtime instructions.\nFollow the task brief.\n\n${brief}`)]),
           info: { ...user(session.id, titleUserId, now + 300, []).info, agent, model: { providerID: 'anthropic', modelID: 'fixture-model' } },
         }];
         fixture.replayRecoveryVisual({ sessionID: session.id, rows: titleRows, agent, status: 'busy' });

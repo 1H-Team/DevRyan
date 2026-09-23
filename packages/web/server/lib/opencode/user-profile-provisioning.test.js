@@ -58,7 +58,6 @@ describe('user profile provisioning', () => {
       }
       return { ok: true, exitCode: 0, stdout: '', stderr: '' };
     },
-    applyContextModeHotfix: () => ({ ok: true, changed: false }),
     applyMeridianHttpHotfix: () => ({ ok: true, changed: false }),
     applyImagegenModelHotfix: () => ({ ok: true, changed: false }),
     ...overrides,
@@ -94,7 +93,6 @@ describe('user profile provisioning', () => {
       './node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js',
       './node_modules/opencode-with-claude/dist/index.js',
       './node_modules/opencode-gpt-imagegen/dist/index.js',
-      './node_modules/context-mode/build/adapters/opencode/plugin.js',
       './plugins/devryan-oh-my-opencode-slim.mjs',
       './plugins/devryan-superpowers.mjs',
       './plugins/devryan-skill-context.mjs',
@@ -106,7 +104,6 @@ describe('user profile provisioning', () => {
       '@opencode-ai/plugin': '1.18.31',
       '@rama_nigg/open-cursor': '2.5.8',
       '@rynfar/meridian': '1.62.6',
-      'context-mode': '1.0.169',
       'adm-zip': '0.6.0',
       'mammoth': '1.12.1',
       'oh-my-opencode-slim': '2.2.18',
@@ -128,7 +125,8 @@ describe('user profile provisioning', () => {
     expect(fs.existsSync(path.join(configDir, 'node_modules', 'oh-my-opencode-slim'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'node_modules', 'opencode-with-claude'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'node_modules', 'opencode-gpt-imagegen'))).toBe(true);
-    expect(fs.existsSync(path.join(configDir, 'node_modules', 'context-mode'))).toBe(true);
+    expect(packageJson.dependencies).not.toHaveProperty('context-mode');
+    expect(fs.existsSync(path.join(configDir, 'node_modules', 'context-mode'))).toBe(false);
     expect(fs.existsSync(path.join(configDir, 'node_modules', '@rynfar', 'meridian'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'skills'))).toBe(false);
     expect(fs.existsSync(path.join(configDir, '.openchamber', 'user-profile-manifest.json'))).toBe(true);
@@ -321,7 +319,6 @@ describe('user profile provisioning', () => {
       './node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js',
       './node_modules/opencode-with-claude/dist/index.js',
       './node_modules/opencode-gpt-imagegen/dist/index.js',
-      './node_modules/context-mode/build/adapters/opencode/plugin.js',
       './plugins/devryan-superpowers.mjs',
       './plugins/devryan-oh-my-opencode-slim.mjs',
       './plugins/devryan-skill-context.mjs',
@@ -863,43 +860,49 @@ describe('user profile provisioning', () => {
     }]);
   });
 
-  it('forces one pinned reinstall when the context-mode hotfix hash is incompatible', async () => {
-    let hotfixAttempts = 0;
-    const result = await createRuntime({
-      applyContextModeHotfix: () => {
-        hotfixAttempts += 1;
-        return hotfixAttempts === 1
-          ? { ok: false, changed: false, error: 'unexpected source hash' }
-          : { ok: true, changed: true };
-      },
-    }).provision();
+  it('retires the DevRyan-pinned Context Mode dependency and registrations from an existing profile', async () => {
+    const runtime = createRuntime();
+    await runtime.provision();
+    const configDirectory = path.join(home, '.config', 'opencode');
+    const configPath = path.join(configDirectory, 'opencode.json');
+    const packagePath = path.join(configDirectory, 'package.json');
+    const config = readJson(configPath);
+    config.plugin = [
+      ...config.plugin,
+      './node_modules/context-mode/build/adapters/opencode/plugin.js',
+      'context-mode@1.0.169',
+    ];
+    writeJson(configPath, config);
+    const packageJson = readJson(packagePath);
+    packageJson.dependencies = { ...packageJson.dependencies, 'context-mode': '1.0.169' };
+    writeJson(packagePath, packageJson);
+    const dataDirectory = path.join(home, '.config', 'opencode', 'context-mode-data');
+    fs.mkdirSync(dataDirectory, { recursive: true });
+    commands = [];
 
-    expect(result).toMatchObject({
-      ok: true,
-      contextModeHotfix: { ok: true, changed: true },
-      contextModeHotfixReinstall: { ok: true, exitCode: 0 },
-    });
-    expect(commands.map(({ args }) => args)).toEqual([
-      ['install', '--ignore-scripts'],
-      ['install', '--force', '--ignore-scripts'],
-    ]);
+    const result = await runtime.provision();
+
+    expect(result.ok).toBe(true);
+    expect(JSON.stringify(readJson(configPath).plugin)).not.toContain('context-mode');
+    expect(readJson(packagePath).dependencies).not.toHaveProperty('context-mode');
+    // The dependency change must trigger an install so bun prunes the retired package.
+    expect(commands.map(({ args }) => args)).toEqual([['install', '--ignore-scripts']]);
+    // Leftover Context Mode data is user data and is never deleted.
+    expect(fs.existsSync(dataDirectory)).toBe(true);
   });
 
-  it('fails with a stable code after one incompatible context-mode reinstall', async () => {
-    const result = await createRuntime({
-      applyContextModeHotfix: () => ({
-        ok: false,
-        changed: false,
-        error: 'unexpected source hash',
-      }),
-    }).provision();
+  it('keeps a user-owned Context Mode dependency at a version DevRyan never pinned', async () => {
+    const runtime = createRuntime();
+    await runtime.provision();
+    const packagePath = path.join(home, '.config', 'opencode', 'package.json');
+    const packageJson = readJson(packagePath);
+    packageJson.dependencies = { ...packageJson.dependencies, 'context-mode': '1.1.0' };
+    writeJson(packagePath, packageJson);
 
-    expect(result.ok).toBe(false);
-    expect(result.error).toBe('CONTEXT_MODE_HOTFIX_INCOMPATIBLE: unexpected source hash');
-    expect(commands.map(({ args }) => args)).toEqual([
-      ['install', '--ignore-scripts'],
-      ['install', '--force', '--ignore-scripts'],
-    ]);
+    const result = await runtime.provision();
+
+    expect(result.ok).toBe(true);
+    expect(readJson(packagePath).dependencies['context-mode']).toBe('1.1.0');
   });
 
   it('fails explicit validation when installation succeeds without materializing managed entrypoints', async () => {

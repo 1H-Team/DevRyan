@@ -394,6 +394,7 @@ describe('standard session title runtime', () => {
     const brief = 'Fix profile review summaries and return navigation';
     fake.state.messages.set('ses_1', [userMessage([
       '[devryan-agent-contract:v1] Runtime instructions.\nDo not summarize these rules.',
+      // Legacy tag from retired Context Mode; stored child sessions still carry it.
       '[devryan-context-mode-routing:v1] Tool routing instructions.',
       '[devryan-managed-read-only:v1] Inspect only.',
       brief,

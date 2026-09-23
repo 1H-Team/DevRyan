@@ -6,7 +6,7 @@ import {
   listXaiModelIds,
 } from './xai-tool-catalog.js';
 
-const tool = (id, description = 'Run context search', parameters = { type: 'object', properties: {} }) => ({
+const tool = (id, description = 'Run docs search', parameters = { type: 'object', properties: {} }) => ({
   id,
   description,
   parameters,
@@ -15,24 +15,24 @@ const tool = (id, description = 'Run context search', parameters = { type: 'obje
 describe('xAI tool catalog reduction', () => {
   it('disables only MCP-prefixed tools with an equivalent canonical schema', () => {
     expect(deriveXaiDuplicateToolOverrides([
-      tool('ctx_search'),
-      tool('mcp__context_mode__ctx_search'),
+      tool('docs_search'),
+      tool('mcp__docs_index__docs_search'),
       tool('unique_tool', 'Unique', { type: 'object', properties: { value: { type: 'string' } } }),
     ])).toEqual({
-      mcp__context_mode__ctx_search: false,
+      mcp__docs_index__docs_search: false,
     });
   });
 
   it('fails open for different descriptions, schemas, or missing canonical tools', () => {
     expect(deriveXaiDuplicateToolOverrides([
-      tool('ctx_search'),
-      tool('mcp__context_mode__ctx_search', 'Different behavior'),
-      tool('ctx_execute'),
-      tool('mcp__context_mode__ctx_execute', 'Run context search', {
+      tool('docs_search'),
+      tool('mcp__docs_index__docs_search', 'Different behavior'),
+      tool('docs_execute'),
+      tool('mcp__docs_index__docs_execute', 'Run docs search', {
         type: 'object',
         properties: { code: { type: 'string' } },
       }),
-      tool('mcp__context_mode__ctx_stats'),
+      tool('mcp__docs_index__docs_stats'),
     ])).toBeNull();
   });
 
@@ -53,11 +53,11 @@ describe('xAI tool catalog reduction', () => {
       directory: '/repo',
       providerID: 'xai',
       modelID: 'grok-4.6',
-      catalog: [tool('ctx_search'), tool('mcp__context_mode__ctx_search')],
+      catalog: [tool('docs_search'), tool('mcp__docs_index__docs_search')],
     });
 
     expect(cache.get({ directory: '/repo', providerID: 'xai', modelID: 'grok-4.6' })).toEqual({
-      mcp__context_mode__ctx_search: false,
+      mcp__docs_index__docs_search: false,
     });
     expect(cache.get({ directory: '/repo', providerID: 'xai', modelID: 'other' })).toBeNull();
     expect(cache.get({ directory: '/repo', providerID: 'openai', modelID: 'grok-4.6' })).toBeNull();

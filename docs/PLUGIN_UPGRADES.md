@@ -41,8 +41,8 @@ Personal models, variants, prompts, permissions and MCP choices remain user-owne
 Review manifests, exports, source, schemas and prompts—not just release numbers.
 For each upstream agent change record **adopt**, **already covered**, or **defer**,
 with its reason and behavioral evidence. Preserve primary/specialist roles,
-explicit model/variant routing, permission boundaries, dispatch/collection rules,
-Context Mode recovery and user-selected MCP restrictions. Avoid blanket prompt
+explicit model/variant routing, permission boundaries, dispatch/collection rules
+and user-selected MCP restrictions. Avoid blanket prompt
 replacement, automatic model inheritance, new agents or higher concurrency.
 
 Provisioning preserves a modified managed file or a differing file with no prior

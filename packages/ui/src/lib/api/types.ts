@@ -886,23 +886,6 @@ export interface DiagnosticsStatus {
   writtenRecords: number;
   gapRecords: number;
   lastError: string | null;
-  contextModeRecovery?: {
-    state: 'healthy' | 'draining' | 'restarting' | 'external_action_required';
-    incidentId: string | null;
-    detectedAt: number | null;
-    updatedAt: number;
-    recoveredAt: number | null;
-    occurrenceCount: number;
-    restartAttempts: number;
-    lastRestartError: string | null;
-    outcome: 'recovered' | 'external_action_required' | null;
-    guidance: string | null;
-    transitions: Array<{
-      state: 'healthy' | 'draining' | 'restarting' | 'external_action_required';
-      at: number;
-      error?: string;
-    }>;
-  } | null;
 }
 
 export type DiagnosticsExportScope =
@@ -1550,7 +1533,6 @@ export type DevRyanDefaultPluginId =
   | '@rama_nigg/open-cursor'
   | 'oh-my-opencode-slim'
   | 'opencode-with-claude'
-  | 'context-mode'
   | 'superpowers'
   | 'openai-tool-schema-sanitizer';
 

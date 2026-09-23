@@ -10,7 +10,7 @@ const observation = {
   anchorUserMessageID: "msg_user",
   partID: "part_tool",
   callID: "call_tool",
-  tool: "ctx_execute",
+  tool: "bash",
   observedAt: 1_000,
   lastActivityAt: 1_000,
 } as const

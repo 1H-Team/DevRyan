@@ -7,12 +7,9 @@ import { applyEdits, modify, parse as parseJsonc } from 'jsonc-parser';
 
 import { listDefaultConfigAssets } from './default-config-assets.js';
 import {
-  applyContextModeHotfix,
-  CONTEXT_MODE_HOTFIX_INCOMPATIBLE,
-} from './context-mode-hotfix.js';
-import {
   DEVRYAN_MANAGED_PROFILE_DEPENDENCIES,
   DEVRYAN_MANAGED_PROFILE_PLUGIN_FILES,
+  RETIRED_DEVRYAN_PROFILE_DEPENDENCIES,
   inspectDevRyanManagedPluginInstallation,
   reconcileDevRyanManagedPluginSpecs,
   removeDevRyanManagedLegacyPluginSpecs,
@@ -61,12 +58,26 @@ const mergeOpenCodeConfig = (current, baseline) => ({
   },
 });
 
+// Drop dependencies DevRyan used to pin, but only at the exact version it pinned;
+// a user-owned version of the same package is left alone.
+const removeRetiredProfileDependencies = (dependencies) => {
+  if (!isRecord(dependencies)) return dependencies;
+  const retained = { ...dependencies };
+  for (const [packageName, retiredVersion] of Object.entries(RETIRED_DEVRYAN_PROFILE_DEPENDENCIES)) {
+    if (retained[packageName] === retiredVersion) delete retained[packageName];
+  }
+  return retained;
+};
+
 const mergePackageJson = (
-  current,
+  rawCurrent,
   baseline,
   previousClaudeRuntimeMarker,
   { assumePreviouslyManaged = false } = {},
 ) => {
+  const current = isRecord(rawCurrent.dependencies)
+    ? { ...rawCurrent, dependencies: removeRetiredProfileDependencies(rawCurrent.dependencies) }
+    : rawCurrent;
   const currentDependencies = isRecord(current.dependencies) ? current.dependencies : {};
   const baselineDependencies = {
     ...currentDependencies,
@@ -141,8 +152,6 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
   const runCommand = dependencies.runCommand || runCommandDefault;
   const inspectManagedPluginInstallation = dependencies.inspectManagedPluginInstallation
     || inspectDevRyanManagedPluginInstallation;
-  const applyContextModeHotfixFn = dependencies.applyContextModeHotfix
-    || applyContextModeHotfix;
   const applyMeridianHttpHotfixFn = dependencies.applyMeridianHttpHotfix || applyMeridianHttpHotfix;
   const applyImagegenModelHotfixFn = dependencies.applyImagegenModelHotfix || applyImagegenModelHotfix;
   const profileRoot = dependencies.profileRoot || DEFAULT_PROFILE_ROOT;
@@ -169,8 +178,6 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
       removed: [],
       install: null,
       installDegraded: false,
-      contextModeHotfix: null,
-      contextModeHotfixReinstall: null,
       warnings: [],
       meridianPolicy: null,
       meridianHttpHotfix: null,
@@ -451,36 +458,6 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
           result.installDegraded = true;
           result.warnings.push(`${installFailure}. Continuing with the previously installed plugins.`);
         }
-      }
-    }
-    if (result.ok) {
-      result.contextModeHotfix = applyContextModeHotfixFn({
-        configDirectory,
-        fs: fsApi,
-      });
-      if (!result.contextModeHotfix.ok && !result.installDegraded) {
-        result.contextModeHotfixReinstall = await runCommand(
-          'bun',
-          ['install', '--force', '--ignore-scripts'],
-          { cwd: configDirectory, env: process.env },
-        );
-        if (result.contextModeHotfixReinstall.ok) {
-          result.contextModeHotfix = applyContextModeHotfixFn({
-            configDirectory,
-            fs: fsApi,
-          });
-        }
-      }
-      if (!result.contextModeHotfix.ok && result.installDegraded) {
-        result.warnings.push(
-          `${CONTEXT_MODE_HOTFIX_INCOMPATIBLE}: ${result.contextModeHotfix.error}. `
-          + 'Continuing startup; provisioning will retry on the next launch.',
-        );
-      } else if (!result.contextModeHotfix.ok) {
-        result.ok = false;
-        result.error = `${CONTEXT_MODE_HOTFIX_INCOMPATIBLE}: ${result.contextModeHotfix.error}`;
-      } else if (result.contextModeHotfix.changed) {
-        result.changed = true;
       }
     }
     if (result.ok) {

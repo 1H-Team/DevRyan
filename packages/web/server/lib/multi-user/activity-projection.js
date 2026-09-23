@@ -1,7 +1,6 @@
 import path from 'node:path';
 
 import { classifyProviderTransportFailure, validateManagedTransportRecovery } from '@openchamber/orchestration-runtime';
-import { rewriteContextModeWedgeFailureText } from '../opencode/context-mode-recovery.js';
 import { stableAuditEventId } from './analytics.js';
 import { classifyDiagnosticFailure } from './error-diagnostics.js';
 
@@ -237,13 +236,10 @@ export const projectOpenCodeActivity = ({
       ? safeString(stateError.code, 160) || safeNumber(stateError.code)
       : null;
     const failureText = status === 'error'
-      ? rewriteContextModeWedgeFailureText({
-          tool,
-          failureText: safeFailureText(
-            typeof stateError === 'object' && stateError !== null ? stateError.message : stateError,
-            sanitizeFailureText,
-          ),
-        })
+      ? safeFailureText(
+          typeof stateError === 'object' && stateError !== null ? stateError.message : stateError,
+          sanitizeFailureText,
+        )
       : null;
     const stack = status === 'error' && typeof stateError === 'object' && stateError !== null
       ? safeStackText(stateError.stack, sanitizeFailureText)

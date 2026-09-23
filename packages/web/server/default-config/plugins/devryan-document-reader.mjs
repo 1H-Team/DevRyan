@@ -859,7 +859,17 @@ const resolveMessageSessionID = (input, output) => {
   return '';
 };
 
-const processFilePart = async ({ part, sessionID, parseAttachment }) => {
+// Stored data-URL attachments are replayed on every model request. Their
+// source identity is a pure function of the immutable bytes, so it is
+// remembered to skip re-decoding and hashing; the on-disk cache is still
+// validated (and repaired) on every request exactly as before.
+const dataSourceKey = (sessionID, part) => (
+  sessionID && typeof part?.id === 'string' && part.id && typeof part.url === 'string' && part.url.startsWith('data:')
+    ? `${sessionID}\u0000${part.id}\u0000${part.url.length}`
+    : null
+);
+
+const processFilePart = async ({ part, sessionID, parseAttachment, sourceIDs = null }) => {
   const name = normalizeFilename(part?.filename || part?.name);
   const mime = normalizeMime(part?.mime || part?.mimeType);
   if (mime.startsWith('image/')) return null;
@@ -877,6 +887,13 @@ const processFilePart = async ({ part, sessionID, parseAttachment }) => {
     });
   }
 
+  const memoKey = sourceIDs ? dataSourceKey(sessionID, part) : null;
+  const knownSourceID = memoKey ? sourceIDs.get(memoKey) : undefined;
+  if (knownSourceID) {
+    const known = await readCachedSource(sessionID, knownSourceID);
+    if (known) return renderSource(known);
+  }
+
   let sourceHash = '';
   let sourceID = '';
   try {
@@ -884,6 +901,10 @@ const processFilePart = async ({ part, sessionID, parseAttachment }) => {
     const type = classifyDocument(name, mime || dataMime);
     sourceHash = sha256(buffer);
     sourceID = createSourceID(sourceHash, name);
+    if (memoKey) {
+      sourceIDs.set(memoKey, sourceID);
+      while (sourceIDs.size > 256) sourceIDs.delete(sourceIDs.keys().next().value);
+    }
     const cached = await readCachedSource(sessionID, sourceID);
     if (cached) return renderSource(cached);
     try {
@@ -960,6 +981,33 @@ const listAccessibleDocuments = async (client, sessionID, directory) => {
     }
   }
   return documents;
+};
+
+// Whether any ancestor task (never the session itself) has a readable cached
+// document. Stops at the first one instead of parsing every document.
+const hasParentDocuments = async (client, sessionID, directory, parentLinks) => {
+  const seen = new Set([sessionID]);
+  let current = sessionID;
+  for (let depth = 1; depth < MAX_PARENT_DEPTH; depth += 1) {
+    let parentID = parentLinks.get(current);
+    if (parentID === undefined) {
+      const record = await getSessionRecord(client, current, directory);
+      if (!record) return false;
+      parentID = typeof record.parentID === 'string' && record.parentID.trim() ? record.parentID.trim() : '';
+      // A session's parent never changes; remember the link, not the answer.
+      parentLinks.set(current, parentID);
+      while (parentLinks.size > 1024) parentLinks.delete(parentLinks.keys().next().value);
+    }
+    if (!parentID || seen.has(parentID)) return false;
+    seen.add(parentID);
+    const sessionDirectory = getSessionCacheDirectory(parentID);
+    for (const entry of await listCacheFiles(sessionDirectory)) {
+      if (!entry.name.startsWith('doc_')) continue;
+      if (isCachedDocument(await readJsonFile(path.join(sessionDirectory, entry.name)))) return true;
+    }
+    current = parentID;
+  }
+  return false;
 };
 
 const findAccessibleDocument = async (client, sessionID, directory, documentID) => {
@@ -1082,6 +1130,8 @@ export const DevRyanDocumentReaderPlugin = async (pluginContext = {}) => {
   const directory = pluginContext.directory;
   const parseAttachment = pluginContext.parseAttachment;
   void pruneCache().catch(() => undefined);
+  const parentLinks = new Map();
+  const sourceIDs = new Map();
 
   return {
     event: async ({ event } = {}) => {
@@ -1092,6 +1142,8 @@ export const DevRyanDocumentReaderPlugin = async (pluginContext = {}) => {
           ? event.properties.info.id.trim()
           : '';
       if (!sessionID) return;
+      parentLinks.delete(sessionID);
+      for (const key of sourceIDs.keys()) if (key.startsWith(`${sessionID}\u0000`)) sourceIDs.delete(key);
       await fs.promises.rm(getSessionCacheDirectory(sessionID), { recursive: true, force: true }).catch(() => undefined);
     },
     'experimental.chat.messages.transform': async (input, output) => {
@@ -1103,15 +1155,14 @@ export const DevRyanDocumentReaderPlugin = async (pluginContext = {}) => {
         for (let index = 0; index < message.parts.length; index += 1) {
           const part = message.parts[index];
           if (part?.type !== 'file') continue;
-          const replacement = await processFilePart({ part, sessionID, parseAttachment });
+          const replacement = await processFilePart({ part, sessionID, parseAttachment, sourceIDs });
           if (replacement === null) continue;
           message.parts[index] = toTextPart(part, replacement);
           transformedDocument = true;
         }
       }
       if (!transformedDocument && sessionID && client) {
-        const available = await listAccessibleDocuments(client, sessionID, directory);
-        if (available.some((entry) => entry.depth > 0)) {
+        if (await hasParentDocuments(client, sessionID, directory, parentLinks)) {
           const firstUser = output.messages.find((message) => message?.info?.role === 'user' && Array.isArray(message.parts));
           if (firstUser && !firstUser.parts.some((part) => part?.type === 'text' && String(part.text).includes('Parent-task documents are available via devryan_document'))) {
             const reference = firstUser.parts[0] || {};

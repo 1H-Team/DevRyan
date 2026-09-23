@@ -19,6 +19,10 @@ export function startParentDeathWatchdog({ childPid, port, platform = process.pl
   if (platform === 'win32' || !Number.isSafeInteger(childPid) || childPid <= 0 || !Number.isSafeInteger(port) || port <= 0) {
     return { pid: null, dispose() {} };
   }
+  // A failed spawn is reported, never silent: the caller must not keep a
+  // server that nothing ties to this process.
+  const unavailable = (cause) => ({ pid: null, error: { code: 'managed_opencode_watchdog_unavailable',
+    cause: typeof cause?.code === 'string' ? cause.code : null }, dispose() {} });
   let watchdog;
   try {
     watchdog = spawnImpl('/bin/sh', ['-c', WATCHDOG_SCRIPT, 'devryan-opencode-watchdog', String(childPid), String(port)], {
@@ -28,10 +32,13 @@ export function startParentDeathWatchdog({ childPid, port, platform = process.pl
       detached: true,
       windowsHide: true,
     });
-  } catch {
-    return { pid: null, dispose() {} };
+  } catch (error) {
+    return unavailable(error);
   }
-  if (!watchdog || typeof watchdog.on !== 'function') return { pid: null, dispose() {} };
+  if (!watchdog || typeof watchdog.on !== 'function' || !Number.isSafeInteger(watchdog.pid)) {
+    try { watchdog?.kill?.('SIGKILL'); } catch { /* Never started. */ }
+    return unavailable(null);
+  }
   watchdog.on('error', () => {});
   watchdog.stdin?.on('error', () => {});
   watchdog.unref();

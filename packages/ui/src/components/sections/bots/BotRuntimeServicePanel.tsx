@@ -13,13 +13,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Switch } from '@/components/ui/switch';
 import {
   botsDesktopApi,
   type BotsDesktopApi,
   type RuntimeServiceStatus,
 } from '@/lib/botsDesktopApi';
 import { cn } from '@/lib/utils';
-import { runtimeServicePresentation } from './botRuntimeServicePresentation';
+import { isRuntimeServiceEnabled, runtimeServicePresentation } from './botRuntimeServicePresentation';
 
 export type BotRuntimeServicePanelProps = {
   canManage: boolean;
@@ -86,48 +87,64 @@ export const BotRuntimeServicePanel: React.FC<BotRuntimeServicePanelProps> = ({
   const view = runtimeServicePresentation(status, loading);
   const StatusIcon = view.Icon;
   const connected = status?.connected === true;
+  const serviceEnabled = isRuntimeServiceEnabled(status);
   const canOpenSettings = status?.settingsUrl && desktopApi.openRuntimeServiceSettings;
+  const canSwitchOn = status?.canEnable === true;
+  const turnOn = () => {
+    if (status?.registrationMode === 'legacy') setLegacyConsentOpen(true);
+    else void enable(false);
+  };
 
   return (
     <>
-      <section className={cn('shrink-0 border-b px-4 py-3', view.tone)} aria-labelledby="bot-runtime-service-heading">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <StatusIcon className={cn('mt-0.5 h-5 w-5 shrink-0', view.spin && 'animate-spin')} aria-hidden />
+      <section className="shrink-0 border-b px-4 py-3" aria-labelledby="bot-global-settings-heading">
+        <div className="mx-auto flex max-w-6xl flex-col gap-2">
+          <h2 id="bot-global-settings-heading" className="typography-micro font-semibold uppercase tracking-wide text-muted-foreground">
+            Global Settings
+          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
-              <h2 id="bot-runtime-service-heading" className="typography-ui-label font-semibold text-foreground">{view.label}</h2>
-              <p className="typography-micro text-muted-foreground">{view.detail}</p>
-              {error ? <p role="alert" className="mt-1 typography-micro text-[var(--status-error)]">{error}</p> : null}
+              <p id="bot-runtime-service-label" className="typography-ui-label font-semibold text-foreground">Background Runtime Service</p>
+              <p className="typography-micro text-muted-foreground">
+                On: Bots keep running after DevRyan quits. Off: the runtime exits when the app closes.
+              </p>
             </div>
+            <Switch
+              aria-labelledby="bot-runtime-service-label"
+              checked={serviceEnabled}
+              disabled={!canManage || busy || loading || (!serviceEnabled && !canSwitchOn)}
+              onCheckedChange={(checked) => {
+                if (checked) turnOn();
+                else void disable();
+              }}
+            />
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Button type="button" size="xs" variant="ghost" aria-label="Refresh Background Runtime Status" disabled={busy || loading} onClick={() => void refresh()}>
-              <RiRefreshLine className={cn('h-4 w-4', loading && 'animate-spin')} aria-hidden />
-            </Button>
-            {status?.registration.state === 'requires_approval' && canOpenSettings ? (
-              <Button type="button" size="xs" variant="outline" onClick={() => void desktopApi.openRuntimeServiceSettings?.()}>
-                <RiSettings3Line className="mr-1.5 h-4 w-4" aria-hidden />
-                Open Settings
+          <div className={cn('flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2', view.tone)}>
+            <div className="flex min-w-0 items-start gap-3">
+              <StatusIcon className={cn('mt-0.5 h-5 w-5 shrink-0', view.spin && 'animate-spin')} aria-hidden />
+              <div className="min-w-0">
+                <p id="bot-runtime-service-heading" className="typography-ui-label font-semibold text-foreground">{view.label}</p>
+                <p className="typography-micro text-muted-foreground">{view.detail}</p>
+                {error ? <p role="alert" className="mt-1 typography-micro text-[var(--status-error)]">{error}</p> : null}
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button type="button" size="xs" variant="ghost" aria-label="Refresh Background Runtime Status" disabled={busy || loading} onClick={() => void refresh()}>
+                <RiRefreshLine className={cn('h-4 w-4', loading && 'animate-spin')} aria-hidden />
               </Button>
-            ) : null}
-            {canManage && !connected && status?.canEnable === true ? (
-              <Button
-                type="button"
-                size="xs"
-                disabled={busy}
-                onClick={() => {
-                  if (status?.registrationMode === 'legacy') setLegacyConsentOpen(true);
-                  else void enable(false);
-                }}
-              >
-                {busy ? 'Starting…' : 'Enable Background Bots'}
-              </Button>
-            ) : null}
-            {canManage && connected ? (
-              <Button type="button" size="xs" variant="outline" disabled={busy} onClick={() => void disable()}>
-                Disable Background Bots
-              </Button>
-            ) : null}
+              {status?.registration.state === 'requires_approval' && canOpenSettings ? (
+                <Button type="button" size="xs" variant="outline" onClick={() => void desktopApi.openRuntimeServiceSettings?.()}>
+                  <RiSettings3Line className="mr-1.5 h-4 w-4" aria-hidden />
+                  Open Settings
+                </Button>
+              ) : null}
+              {canManage && serviceEnabled && !connected && canSwitchOn
+                && status?.registration.state !== 'requires_approval' ? (
+                <Button type="button" size="xs" disabled={busy} onClick={turnOn}>
+                  {busy ? 'Starting…' : 'Start Now'}
+                </Button>
+              ) : null}
+            </div>
           </div>
         </div>
       </section>

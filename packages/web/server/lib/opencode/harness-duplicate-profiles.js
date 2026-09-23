@@ -105,8 +105,8 @@ const profiles = [
     // A profile whose qualified bytes no longer ship stays on record with its
     // evidence but can never qualify. Requalify on the shipped runtime.
     "stale": {
-      "reason": "devryan-browser.mjs gained confined-worker browser support and devryan-harness-context.mjs / devryan-managed-orchestration.mjs re-anchor and continue compaction (2026-09-23); the profile also pins the unpatched 1.18.31 executable, not the shipped companion runtime",
-      "plugins": ["devryan-browser.mjs", "devryan-harness-context.mjs", "devryan-managed-orchestration.mjs"]
+      "reason": "devryan-browser.mjs gained confined-worker browser support and devryan-harness-context.mjs / devryan-managed-orchestration.mjs re-anchor and continue compaction (2026-09-23); the profile also pins the unpatched 1.18.31 executable, not the shipped companion runtime; devryan-document-reader.mjs, devryan-primary-recovery.mjs and devryan-tool-input-guard.mjs cache immutable per-part or per-call results instead of recomputing them on every request (2026-09-23); devryan-skill-context.mjs and devryan-tool-input-guard.mjs dropped their Context Mode tool hooks (2026-09-24)",
+      "plugins": ["devryan-browser.mjs", "devryan-document-reader.mjs", "devryan-harness-context.mjs", "devryan-managed-orchestration.mjs", "devryan-primary-recovery.mjs", "devryan-skill-context.mjs", "devryan-tool-input-guard.mjs"]
     },
     "evidence": {
       "reportHash": "45b1c7737f5b900c7246c2e768fd8ad676ae7fe78d8d11772e7c0368b31721b7",

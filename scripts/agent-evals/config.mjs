@@ -7,14 +7,12 @@ import { GOLDEN_CASE_IDS } from './golden-cases.mjs';
 export const EVALUATION_CASE_IDS = Object.freeze([
   ...Object.keys(ROUTING_CASES),
   'inspect',
-  'context-large-analysis',
-  'context-explorer-analysis',
-  'context-bounded-lookup',
   'repair-and-test',
   'managed-change',
   'managed-independent',
   'oracle-review-focused',
   'oracle-review-deep',
+  'oracle-review-clean',
 ]);
 
 const REQUIRED_FIELDS = Object.freeze([

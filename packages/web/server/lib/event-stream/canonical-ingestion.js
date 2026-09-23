@@ -21,7 +21,6 @@ export function createCanonicalOpenCodeEventProcessor({
   processBrowserLease,
   processManagedOrchestration,
   processSessionTitle,
-  processContextModeRecovery,
   processCommandDeadline,
   onSessionDeleted,
   logger = console,
@@ -40,7 +39,6 @@ export function createCanonicalOpenCodeEventProcessor({
     callAsync('[ManagedOrchestration] Failed to process OpenCode event',
       (event) => processManagedOrchestration?.(event, directory), payload, logger);
     callAsync('[SessionTitle] Failed to process OpenCode event', processSessionTitle, payload, logger);
-    callAsync('[OpenCode] Failed to observe context-mode recovery', processContextModeRecovery, payload, logger);
     callAsync('[OpenCode] Failed to observe command deadline', processCommandDeadline, payload, logger);
 
     if (payload.type !== 'session.deleted') return;

@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  buildContextModeStorageEnv,
   getOpenChamberDataDir,
   isManagedOpenCodeProcessCommand,
   readManagedOpenCodeRegistry,
@@ -11,6 +10,7 @@ import {
   registerManagedOpenCodeProcess,
   terminateManagedOpenCodePid,
   unregisterManagedOpenCodeProcess,
+  readProcessStartTime,
 } from './managed-process-registry.js';
 
 const tempDirs = [];
@@ -52,6 +52,37 @@ describe('managed OpenCode process registry', () => {
 
     expect(unregisterManagedOpenCodeProcess(200, { registryPath })).toBe(true);
     expect(readManagedOpenCodeRegistry({ registryPath })).toEqual([]);
+  });
+
+  it('reaps an orphan whose owner PID was reused by an unrelated process', async () => {
+    const registryPath = createRegistryPath();
+    registerManagedOpenCodeProcess({
+      childPid: 200, ownerPid: 100, port: 45678, binary: 'opencode', hostRuntime: 'web',
+      ownerStartTime: 'Mon Sep 21 01:07:00 2026',
+    }, { registryPath });
+    const terminate = vi.fn(async () => true);
+    const reap = (startTime) => reapOrphanedManagedOpenCodeProcesses({
+      registryPath,
+      isProcessRunning: (pid) => pid === 100 || pid === 200,
+      readProcessStartTime: () => startTime,
+      readProcessCommand: () => 'opencode serve --hostname 127.0.0.1 --port 45678',
+      terminateManagedOpenCodePid: terminate,
+    });
+
+    expect((await reap('Mon Sep 21 01:07:00 2026')).skipped).toEqual([expect.objectContaining({ reason: 'owner-alive' })]);
+    expect((await reap(null)).skipped).toEqual([expect.objectContaining({ reason: 'owner-alive' })]);
+    expect(terminate).not.toHaveBeenCalled();
+    expect((await reap('Wed Sep 23 09:00:00 2026')).reaped).toEqual([expect.objectContaining({ childPid: 200, terminated: true })]);
+    expect(terminate).toHaveBeenCalledWith(200, expect.objectContaining({ ownerPid: 100 }));
+    expect(readManagedOpenCodeRegistry({ registryPath })).toEqual([]);
+  });
+
+  it('records the registering process start time so PID reuse is detectable', () => {
+    const registryPath = createRegistryPath();
+    const record = registerManagedOpenCodeProcess({ childPid: 201, port: 45679 }, { registryPath });
+    if (process.platform === 'win32') expect(record.ownerStartTime).toBeNull();
+    else expect(record.ownerStartTime).toMatch(/\d{4}$/);
+    expect(readProcessStartTime(process.pid)).toBe(process.platform === 'win32' ? null : record.ownerStartTime);
   });
 
   it('keeps a record when the owner process is still alive', async () => {
@@ -261,12 +292,8 @@ describe('managed OpenCode process registry', () => {
     expect(termCalls).toEqual([-200, 200, 201, 202]);
   });
 
-  it('aligns context-mode storage under the OpenChamber data dir', () => {
+  it('resolves the OpenChamber data dir from the environment', () => {
     const dataDir = path.join(tmpdir(), 'openchamber-verify-data');
-    expect(buildContextModeStorageEnv({ OPENCHAMBER_DATA_DIR: dataDir })).toEqual({
-      CONTEXT_MODE_DATA_DIR: path.resolve(dataDir),
-      CONTEXT_MODE_DIR: path.join(path.resolve(dataDir), 'context-mode'),
-    });
     expect(getOpenChamberDataDir({ OPENCHAMBER_DATA_DIR: dataDir })).toBe(path.resolve(dataDir));
   });
 });

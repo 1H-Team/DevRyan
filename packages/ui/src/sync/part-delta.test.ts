@@ -221,3 +221,72 @@ describe("appendNonOverlappingDelta", () => {
     )).toBe("toolFailedToReadDiagram vs toolFailedReadDiagram • Let me fix it.")
   })
 })
+
+// The pre-optimization implementation, kept verbatim as a reference: the
+// in-place scan must produce byte-identical output for every input.
+const referenceCollapse = (value: string): string => {
+  if (value.length < 64) return value
+  const lines: Array<{ content: string; separator: string }> = []
+  for (let start = 0; start < value.length;) {
+    const newline = value.indexOf("\n", start)
+    if (newline === -1) { lines.push({ content: value.slice(start), separator: "" }); break }
+    const separatorStart = newline > start && value[newline - 1] === "\r" ? newline - 1 : newline
+    lines.push({ content: value.slice(start, separatorStart), separator: value.slice(separatorStart, newline + 1) })
+    start = newline + 1
+  }
+  const lineParts: string[] = []
+  for (let index = 0; index < lines.length; index += 1) {
+    const current = lines[index]!
+    const next = lines[index + 1]
+    if (next && current.content.trim().length >= 32 && current.content.trim() === next.content.trim()) {
+      lineParts.push(current.content, next.separator || current.separator)
+      index += 1
+      continue
+    }
+    lineParts.push(current.content, current.separator)
+  }
+  let output = lineParts.join("")
+  if (output.length > 2_048) return output
+  let changed = true
+  while (changed) {
+    changed = false
+    for (let start = 0; start < output.length; start += 1) {
+      for (let length = Math.floor((output.length - start) / 2); length >= 32; length -= 1) {
+        const first = output.slice(start, start + length)
+        if (first.trim().length < 32) continue
+        const secondStart = start + length
+        if (first !== output.slice(secondStart, secondStart + length)) continue
+        output = output.slice(0, secondStart) + output.slice(secondStart + length)
+        changed = true
+        break
+      }
+      if (changed) break
+    }
+  }
+  return output
+}
+
+describe("collapseExactAdjacentTextRepeats equivalence", () => {
+  test("matches the reference implementation on generated repeat-heavy inputs", () => {
+    let seed = 0x5eed
+    const random = () => {
+      seed = (seed + 0x6d2b79f5) | 0
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+    const pick = (alphabet: string, length: number) => Array.from({ length }, () => alphabet[Math.floor(random() * alphabet.length)]).join("")
+    const alphabets = ["ab", "abc \n", "The quick brown fox. ", "  \t\n", "xyzXYZ0123 •é\r\n"]
+    for (let index = 0; index < 400; index += 1) {
+      const alphabet = alphabets[index % alphabets.length]!
+      let value = pick(alphabet, Math.floor(random() * 200))
+      for (let plant = 0; plant < 1 + Math.floor(random() * 4); plant += 1) {
+        const unit = random() < 0.2 ? `  ${pick(" \n", 20)}${pick(alphabet, 12)}` : pick(alphabet, 20 + Math.floor(random() * 180))
+        const copies = 2 + Math.floor(random() * 3)
+        value += unit.repeat(copies) + pick(alphabet, Math.floor(random() * 60))
+      }
+      if (random() < 0.1) value += pick("abc", 2_100 - value.length > 0 ? 2_100 - value.length : 0)
+      expect(collapseExactAdjacentTextRepeats(value)).toBe(referenceCollapse(value))
+    }
+  }, 60_000)
+})

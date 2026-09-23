@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const watchdogModule = new URL('./parent-death-watchdog.js', import.meta.url).href;
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
@@ -38,6 +38,18 @@ const startOwner = async ({ port, childArgs }) => {
 };
 
 describe.skipIf(process.platform === 'win32')('managed OpenCode parent-death watchdog', () => {
+  it('reports a watchdog that could not be started instead of failing silently', async () => {
+    const { startParentDeathWatchdog } = await import(watchdogModule);
+    const throwing = startParentDeathWatchdog({ childPid: 4242, port: 47126,
+      spawnImpl: () => { throw Object.assign(new Error('fork failed'), { code: 'EAGAIN' }); } });
+    expect(throwing).toMatchObject({ pid: null, error: { code: 'managed_opencode_watchdog_unavailable', cause: 'EAGAIN' } });
+    const kill = vi.fn();
+    const unstarted = startParentDeathWatchdog({ childPid: 4242, port: 47126,
+      spawnImpl: () => ({ on() {}, kill, pid: undefined }) });
+    expect(unstarted).toMatchObject({ pid: null, error: { code: 'managed_opencode_watchdog_unavailable', cause: null } });
+    expect(kill).toHaveBeenCalledWith('SIGKILL');
+  });
+
   it('stops the owned server group when its owner is killed', async () => {
     const { owner, child } = await startOwner({ port: 47123, childArgs: ['serve', '--hostname', '127.0.0.1', '--port', '47123'] });
     expect(alive(child)).toBe(true);

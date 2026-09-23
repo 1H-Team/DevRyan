@@ -4,7 +4,6 @@ export type DevRyanDefaultPluginId =
   | 'oh-my-opencode-slim'
   | 'opencode-with-claude'
   | 'opencode-gpt-imagegen'
-  | 'context-mode'
   | 'superpowers'
   | 'devryan-skill-context'
   | 'devryan-document-reader'
@@ -29,13 +28,10 @@ export const DEVRYAN_DEFAULT_PLUGIN_IDS: Readonly<{
   SLIM: 'oh-my-opencode-slim';
   CLAUDE: 'opencode-with-claude';
   GPT_IMAGEGEN: 'opencode-gpt-imagegen';
-  CONTEXT_MODE: 'context-mode';
   SUPERPOWERS: 'superpowers';
   OPENAI_TOOL_SCHEMA_SANITIZER: 'openai-tool-schema-sanitizer';
 }>;
 export const DEVRYAN_DEFAULT_PLUGINS: ReadonlyArray<Omit<DevRyanDefaultPlugin, 'effectiveSpec' | 'kind' | 'configuredSourcePath'>>;
-export const CONTEXT_MODE_PLUGIN_VERSION: string;
-export const CONTEXT_MODE_PLUGIN_SPEC: string;
 export const OPENAI_TOOL_SCHEMA_SANITIZER_FILE: string;
 export const OPENAI_TOOL_SCHEMA_SANITIZER_SPEC: string;
 

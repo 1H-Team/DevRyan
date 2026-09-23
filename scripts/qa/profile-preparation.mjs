@@ -59,6 +59,24 @@ const hashFile = async (file) => {
     return hash.digest('hex');
 };
 
+// OpenCode's read/grep/skill tools need ripgrep, which it otherwise downloads
+// lazily into XDG_CACHE_HOME/opencode/bin. A private profile has an empty
+// cache, and a failed download leaves those tools broken ("ripgrep execution
+// failed"), so reuse the user's installed copy when one exists.
+export const provisionQaRipgrep = async ({ sourceHome, cacheHome }) => {
+    const source = path.join(sourceHome, '.cache/opencode/bin/rg');
+    let sha256;
+    try { sha256 = await hashFile(source); }
+    catch (error) {
+        if (error.code === 'ENOENT') return { state: 'not-installed' };
+        throw error;
+    }
+    const targetDirectory = path.join(cacheHome, 'opencode/bin');
+    await mkdir(targetDirectory, { recursive: true, mode: 0o700 });
+    await cp(source, path.join(targetDirectory, 'rg'), { mode: constants.COPYFILE_FICLONE });
+    return { state: 'copied', sha256 };
+};
+
 const installedFingerprints = async (config, plugins, opencodeBinary) => {
     const manifest = await readOptionalJson(path.join(config, 'package.json'));
     const packageNames = new Set([...Object.keys(manifest.dependencies ?? {}), ...Object.keys(manifest.overrides ?? {}), '@opencode-ai/sdk']);
@@ -325,11 +343,11 @@ export async function prepareQaProfile({ runtimeRoot, workspace, providerId, mod
     // Private package entry wrappers evaluate the same home shim before their
     // actual dependencies. The compiled OpenCode executable does not honor
     // NODE_OPTIONS preloads, while its own config honors OPENCODE_TEST_HOME.
-    // Context Mode and imagegen resolve their data paths from explicit XDG
-    // variables. Keep imagegen's reviewed executable intact so the ordinary
+    // Imagegen resolves its data paths from explicit XDG variables. Keep
+    // imagegen's reviewed executable intact so the ordinary
     // provisioning hash check remains valid when the private host boots.
     for (const plugin of base.plugin.filter((entry) => entry.startsWith('./node_modules/')
-        && !entry.startsWith('./node_modules/context-mode/') && !entry.startsWith('./node_modules/opencode-gpt-imagegen/'))) {
+        && !entry.startsWith('./node_modules/opencode-gpt-imagegen/'))) {
         const entry = await realpath(path.join(config, plugin));
         if (!isInside(path.join(config, 'node_modules'), entry)) throw new Error('QA plugin escaped the copied installation');
         await prepareQaPluginHomeWrapper(entry);
@@ -351,6 +369,7 @@ export async function prepareQaProfile({ runtimeRoot, workspace, providerId, mod
     const effectiveAgents = preserveOrchestration ? resolveSlimConfig(workspace, { configDirectory: config }).agents : pinnedAgents.agents;
     const modelRef = selection => typeof selection.model === 'string' ? selection.model
         : selection.model ? `${selection.model.providerID}/${selection.model.modelID}` : null;
+    const ripgrep = await provisionQaRipgrep({ sourceHome, cacheHome: env.XDG_CACHE_HOME });
     const evidence = { providerId, modelId, variant, credentials: projectedAuth.evidence,
         allowCrossProviderAssignments, preserveOrchestration, admittedProviders,
         orchestrationSidecar, savedPreset: pinnedAgents.preset ?? null,
@@ -358,6 +377,7 @@ export async function prepareQaProfile({ runtimeRoot, workspace, providerId, mod
         dependencies: { installPerformed: Boolean(provisioning.install), degraded: provisioning.installDegraded === true },
         meridianHttpHotfix: provisioning.meridianHttpHotfix,
         fingerprints: await installedFingerprints(config, base.plugin, opencodeBinary),
+        ripgrep,
         agentModels: Object.fromEntries(Object.entries(effectiveAgents).map(([agent, selection]) => [agent, modelRef(selection)])),
         agentSelections: Object.fromEntries(Object.entries(effectiveAgents).map(([agent, selection]) => [agent, {
             model: modelRef(selection), variant: selection.variant ?? null,

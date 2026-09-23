@@ -106,8 +106,7 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
       profileRoot,
       configDirectory,
       // This installer checks placeholder entrypoints only. Real source-hash acceptance and
-      // runtime behavior remain covered by the Context Mode, Meridian and image hotfix suites.
-      applyContextModeHotfix: () => ({ ok: true, changed: false }),
+      // runtime behavior remain covered by the Meridian and image hotfix suites.
       applyMeridianHttpHotfix: () => ({ ok: true, changed: false }),
       applyImagegenModelHotfix: () => ({ ok: true, changed: false }),
       runCommand: async (_command, _args, { cwd }) => {

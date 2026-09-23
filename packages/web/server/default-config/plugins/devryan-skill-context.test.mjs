@@ -66,7 +66,7 @@ Use the skill tool to load a skill when a task matches its description.
 
   it.each(['xai', 'grok', 'xai-oauth'])('compacts skill metadata for Grok provider alias %s', async (providerID) => {
     const plugin = await DevRyanSkillContextPlugin();
-    const system = `<available_skills><skill><name>context-mode</name><description>${'Verbose details. '.repeat(30)}</description><location>/private/skill/SKILL.md</location></skill></available_skills>`;
+    const system = `<available_skills><skill><name>sample-skill</name><description>${'Verbose details. '.repeat(30)}</description><location>/private/skill/SKILL.md</location></skill></available_skills>`;
     const output = { system: [system] };
 
     await plugin['experimental.chat.system.transform'](
@@ -74,34 +74,27 @@ Use the skill tool to load a skill when a task matches its description.
       output,
     );
 
-    expect(output.system[0]).toContain('<name>context-mode</name>');
+    expect(output.system[0]).toContain('<name>sample-skill</name>');
     expect(output.system[0]).not.toContain('<location>');
     expect(Buffer.byteLength(output.system[0], 'utf8')).toBeLessThan(Buffer.byteLength(system, 'utf8'));
   });
 
-  it('idempotently guides skill and ctx_execute_file while leaving unrelated tools unchanged', async () => {
+  it('idempotently guides the skill tool while leaving unrelated tools unchanged', async () => {
     const plugin = await DevRyanSkillContextPlugin();
     const skill = { description: 'Load a skill by name.' };
-    const executeFile = { description: 'Process a project file.' };
     const read = { description: 'Read a file.' };
 
     await plugin['tool.definition']({ toolID: 'skill' }, skill);
     await plugin['tool.definition']({ toolID: 'skill' }, skill);
-    await plugin['tool.definition']({ toolID: 'ctx_execute_file' }, executeFile);
-    await plugin['tool.definition']({ toolID: 'ctx_execute_file' }, executeFile);
     await plugin['tool.definition']({ toolID: 'read' }, read);
 
     expect(skill.description.split(SKILL_CONTEXT_POLICY_MARKER)).toHaveLength(2);
     expect(skill.description.split(EXTERNAL_SKILL_REFERENCE_POLICY_MARKER)).toHaveLength(2);
     expect(skill.description).toContain('moving from planning to implementation');
     expect(skill.description).toContain('no full result remains after compaction');
-    expect(skill.description).toContain('use the native read tool');
-    expect(executeFile.description.split(EXTERNAL_SKILL_REFERENCE_POLICY_MARKER)).toHaveLength(2);
-    expect(executeFile.description).toContain('instead of ctx_execute_file');
-    expect(executeFile.description).toContain('authorized for the active agent');
-    expect(executeFile.description).toContain('Do not create or modify global OpenCode/Claude permission files');
-    expect(executeFile.description).toContain('files contained by the active project');
-    expect(executeFile.description).not.toContain(SKILL_CONTEXT_POLICY_MARKER);
+    expect(skill.description).toContain('use the native read tool for that file');
+    expect(skill.description).toContain('authorized for the active agent');
+    expect(skill.description).toContain('Do not create or modify global OpenCode/Claude permission files');
     expect(read.description).toBe('Read a file.');
   });
 

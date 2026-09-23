@@ -3,11 +3,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const CONTEXT_EXECUTE_TOOLS = new Set([
-  'ctx_execute',
-  'mcp__context_mode__ctx_execute',
-]);
-
 const READ_TOOLS = new Set(['read', 'oc_read']);
 // OpenCode 1.18.30 native ReadTool returns these as typed image
 // attachments. Text-only compatibility readers still cannot load their bytes.
@@ -69,9 +64,7 @@ const HEAVY_CHECK_PATTERNS = [
   new RegExp(String.raw`${COMMAND_START}(?:bun|npm|pnpm|yarn)\s+(?:run\s+)?(?:-{1,2}[\w=./-]+\s+)*(?:build|test|lint|type-check)(?::[\w.-]+)?(?:\s|$)`),
 ];
 
-const JAVASCRIPT_LANGUAGES = new Set(['javascript', 'js']);
 const ABSOLUTE_PATH_START_PATTERN = /(?:^|\s)["']?(?:\/(?!\/)|[a-z]:[\\/]|\\\\)/gi;
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
 const isRecord = (value) => (
   value !== null
@@ -152,11 +145,29 @@ const renderBlockedBinaryRead = (readPath = '') => {
 
 const shouldBlockReadResult = (output) => looksLikeBinaryReadOutput(output);
 
+// Completed read outputs never change, but every model request replays the
+// whole history through this transform. Remember each part's verdict (keyed by
+// part identity and output length) instead of rescanning its sample each time.
+const READ_VERDICT_CACHE_LIMIT = 4096;
+const readVerdicts = new Map();
+const cachedShouldBlockReadResult = (part) => {
+  const identity = typeof part.id === 'string' && part.id ? part.id
+    : typeof part.callID === 'string' && part.callID ? part.callID : null;
+  if (!identity) return shouldBlockReadResult(part.state.output);
+  const key = `${identity}:${part.state.output.length}`;
+  const known = readVerdicts.get(key);
+  if (known !== undefined) return known;
+  const verdict = shouldBlockReadResult(part.state.output);
+  if (readVerdicts.size >= READ_VERDICT_CACHE_LIMIT) readVerdicts.delete(readVerdicts.keys().next().value);
+  readVerdicts.set(key, verdict);
+  return verdict;
+};
+
 const sanitizeReadToolPart = (part) => {
   if (!isRecord(part) || part.type !== 'tool' || !READ_TOOLS.has(part.tool)) return;
   if (!isRecord(part.state) || typeof part.state.output !== 'string') return;
   const readPath = getReadPath(part.state.input);
-  if (!shouldBlockReadResult(part.state.output)) return;
+  if (!cachedShouldBlockReadResult(part)) return;
   part.state = {
     ...part.state,
     output: renderBlockedBinaryRead(readPath),
@@ -184,22 +195,6 @@ const validateReadInput = (args, tool) => {
   throw inputError(
     `read cannot load binary files${getPathExtension(readPath) ? ` with extension ${getPathExtension(readPath)}` : ''} as text. Use native read with filePath for PNG/JPEG/GIF/WebP image attachments when available, or devryan_document for supported documents. Do not retry this raw read.`,
   );
-};
-
-const validateContextExecuteInput = (args) => {
-  if (!isRecord(args)) return;
-  const language = typeof args.language === 'string' ? args.language.trim().toLowerCase() : '';
-  const code = typeof args.code === 'string' ? args.code : '';
-  if (!JAVASCRIPT_LANGUAGES.has(language) || !code.trim()) return;
-
-  try {
-    // Compile as an async function body so top-level await and return remain valid.
-    // The function is never invoked; this hook performs syntax validation only.
-    new AsyncFunction(code);
-  } catch (error) {
-    const reason = error instanceof Error && error.message ? ` (${error.message})` : '';
-    throw inputError(`ctx_execute JavaScript must parse before execution${reason}. Correct the syntax and retry once.`);
-  }
 };
 
 const enforceShellTimeout = (args) => {
@@ -235,10 +230,8 @@ const enforceShellTimeout = (args) => {
 // ---------------------------------------------------------------------------
 
 const resolveDataDir = (env = process.env) => {
-  for (const key of ['OPENCHAMBER_DATA_DIR', 'CONTEXT_MODE_DATA_DIR']) {
-    const value = typeof env[key] === 'string' ? env[key].trim() : '';
-    if (value) return path.resolve(value);
-  }
+  const value = typeof env.OPENCHAMBER_DATA_DIR === 'string' ? env.OPENCHAMBER_DATA_DIR.trim() : '';
+  if (value) return path.resolve(value);
   return path.join(os.homedir(), '.config', 'openchamber');
 };
 
@@ -603,10 +596,6 @@ export const DevRyanToolInputGuardPlugin = async (pluginInput = {}, testOptions 
         }
         if (input?.tool === 'grep') {
           validateGrepInput(output?.args);
-          return;
-        }
-        if (CONTEXT_EXECUTE_TOOLS.has(input?.tool)) {
-          validateContextExecuteInput(output?.args);
           return;
         }
         if (SHELL_TOOLS.has(input?.tool)) {

@@ -225,7 +225,7 @@ const planUser = row => row?.info?.role === 'user' && (row.info.mode === 'plan' 
 
 export function projectQaPlanChildPolicy(tree, rootSessionID, tasks) {
   const rootRows = tree.find(session => session.sessionId === rootSessionID)?.messages ?? [];
-  const expected = resolveProviderPromptTools('openai', 'explorer', { readOnly: true, contextModeAvailable: true });
+  const expected = resolveProviderPromptTools('openai', 'explorer', { readOnly: true }) ?? {};
   const enabledAllowlist = new Set(Object.entries(expected).filter(([, allowed]) => allowed === true).map(([name]) => name));
   const result = [];
   for (const task of tasks) {

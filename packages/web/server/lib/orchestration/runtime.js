@@ -110,7 +110,7 @@ const ERROR_STATUS_BY_CODE = Object.freeze({
   supabase_change_pending: 503,
   managed_orchestration_owner_mismatch: 403,
   managed_orchestration_owner_unavailable: 503,
-  CONTEXT_MODE_RECOVERY_PENDING: 503,
+  work_admission_blocked: 503,
   provider_prompt_rejection_requires_fresh_retry: 409,
   provider_prompt_rejection_requires_reframed_prompt: 409,
   managed_orchestration_owner_conflict: 409,
@@ -311,7 +311,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       return {
         outcome: 'deferred',
         retryAfterMs: AUTO_RESUME_HOST_DEFER_MS,
-        reason: block.code || 'CONTEXT_MODE_RECOVERY_PENDING',
+        reason: block.code || 'work_admission_blocked',
       };
     }
     try {
@@ -401,8 +401,8 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     const block = getWorkAdmissionBlock();
     if (!block) return;
     throw createRuntimeError(
-      block.code || 'CONTEXT_MODE_RECOVERY_PENDING',
-      block.error || block.message || 'Context-mode recovery is pending',
+      block.code || 'work_admission_blocked',
+      block.error || block.message || 'Work admission is temporarily blocked',
       503,
     );
   };

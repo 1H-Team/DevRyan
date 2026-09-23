@@ -3,12 +3,10 @@ import { consumePrivateToolIntervals } from './tool-evidence.mjs';
 
 const TOOL_FAMILIES = Object.freeze({
   read: new Set([
-    'read', 'file_read', 'oc_read', 'ctx_execute_file', 'ctx_index',
-    'mcp__context_mode__ctx_execute_file', 'mcp__context_mode__ctx_index',
+    'read', 'file_read', 'oc_read',
   ]),
   search: new Set([
-    'grep', 'glob', 'search', 'find', 'oc_grep', 'oc_glob', 'ctx_search',
-    'mcp__context_mode__ctx_search', 'ast_grep_search',
+    'grep', 'glob', 'search', 'find', 'oc_grep', 'oc_glob', 'ast_grep_search',
   ]),
   test: new Set(['bash', 'shell', 'terminal', 'exec', 'exec_command', 'oc_bash']),
   mutation: new Set([
@@ -16,27 +14,13 @@ const TOOL_FAMILIES = Object.freeze({
     'ast_grep_replace', 'rm',
   ]),
   managed: new Set(['task', 'devryan_task', 'council_session']),
-  contextMode: new Set([
-    'ctx_execute', 'ctx_execute_file', 'ctx_batch_execute', 'ctx_index', 'ctx_search',
-    'ctx_fetch_and_index',
-    'mcp__context_mode__ctx_execute', 'mcp__context_mode__ctx_execute_file',
-    'mcp__context_mode__ctx_batch_execute', 'mcp__context_mode__ctx_index',
-    'mcp__context_mode__ctx_search', 'mcp__context_mode__ctx_fetch_and_index',
-  ]),
-  contextModeExecution: new Set([
-    'ctx_execute', 'ctx_execute_file', 'ctx_batch_execute',
-    'mcp__context_mode__ctx_execute', 'mcp__context_mode__ctx_execute_file',
-    'mcp__context_mode__ctx_batch_execute',
-  ]),
   nativeInspection: new Set([
     'read', 'file_read', 'oc_read', 'grep', 'glob', 'search', 'find', 'oc_grep',
     'oc_glob', 'ls', 'oc_ls', 'stat', 'oc_stat', 'ast_grep_search',
   ]),
   oracleInspection: new Set([
     'read', 'oc_read', 'glob', 'oc_glob', 'grep', 'ls', 'oc_ls', 'stat', 'oc_stat',
-    'ast_grep_search', 'ctx_index', 'ctx_search', 'ctx_stats',
-    'mcp__context_mode__ctx_index', 'mcp__context_mode__ctx_search',
-    'mcp__context_mode__ctx_stats',
+    'ast_grep_search',
   ]),
 });
 
@@ -55,6 +39,12 @@ const ORACLE_REVIEW_CASES = Object.freeze({
       'stale_write',
       'webhook_monotonicity',
     ],
+  },
+  // A correct fixture: the review must not manufacture findings to fill its cap.
+  'oracle-review-clean': {
+    maximumDurationMs: 15 * 60 * 1_000,
+    maximumToolCalls: 20,
+    expectedFindingCount: 0,
   },
 });
 
@@ -138,39 +128,12 @@ export const gradeToolRequirements = (caseId, toolEvents = []) => {
       && !hasFamily(events, 'mutation');
     return result('inspect.tools', passed);
   }
-  if (caseId === 'context-large-analysis') {
-    const rootEvents = events.filter((event) => event?.sessionScope === 'root');
-    return result(
-      'context-large-analysis.tools',
-      hasFamily(rootEvents, 'contextMode', { final: true })
-        && !hasFamily(events, 'mutation'),
-    );
-  }
-  if (caseId === 'context-explorer-analysis') {
-    const rootEvents = events.filter((event) => event?.sessionScope === 'root');
-    const childEvents = events.filter((event) => event?.sessionScope === 'child');
-    return result(
-      'context-explorer-analysis.tools',
-      hasFamily(rootEvents, 'managed', { final: true })
-        && hasFamily(childEvents, 'contextMode', { final: true })
-        && !hasFamily(events, 'mutation'),
-    );
-  }
   if (caseId === 'managed-independent') {
     return result('managed-independent.tools',
       hasFamily(events.filter(event => event.sessionScope === 'root'), 'managed', { final: true })
         && hasFamily(events.filter(event => event.sessionScope === 'root'), 'read', { final: true })
         && hasFamily(events.filter(event => event.sessionScope === 'child'), 'read', { final: true })
         && !hasFamily(events, 'mutation'));
-  }
-  if (caseId === 'context-bounded-lookup') {
-    const rootEvents = events.filter((event) => event?.sessionScope === 'root');
-    return result(
-      'context-bounded-lookup.tools',
-      hasFamily(rootEvents, 'nativeInspection', { final: true })
-        && !hasFamily(events, 'contextMode')
-        && !hasFamily(events, 'mutation'),
-    );
   }
   if (caseId === 'repair-and-test' || caseId === 'managed-repair-and-test') {
     const managed = caseId === 'managed-repair-and-test';
@@ -205,7 +168,7 @@ export const gradeToolRequirements = (caseId, toolEvents = []) => {
     return result(
       'managed-change.tools',
       hasFamily(events, 'managed', { final: true })
-        && hasFamily(childEvents, 'contextModeExecution', { final: true })
+        && hasFamily(childEvents, 'test', { final: true })
         && hasFamily(events, 'mutation', { final: true })
         && hasFamily(events, 'test', { final: true }),
     );
@@ -240,12 +203,7 @@ export const gradeCaseOutcome = (input = {}) => {
         && finalTestPassed,
     );
   }
-  if (
-    caseId === 'context-large-analysis'
-    || caseId === 'context-explorer-analysis'
-    || caseId === 'context-bounded-lookup'
-    || caseId === 'managed-independent'
-  ) {
+  if (caseId === 'managed-independent') {
     return result(
       `${caseId}.filesystem-test`,
       manifestSafe
@@ -283,16 +241,19 @@ export const gradeOracleReviewOutcome = (input = {}) => {
   const signals = Array.isArray(evidence.signals)
     ? [...new Set(evidence.signals.filter((signal) => typeof signal === 'string'))].sort()
     : [];
-  const expectedSignals = [...reviewCase.signals].sort();
+  const clean = Number.isInteger(reviewCase.expectedFindingCount);
+  const expectedSignals = clean ? [] : [...reviewCase.signals].sort();
   return [
     result(
       `${input.caseId}.findings`,
-      signals.length === expectedSignals.length
-        && expectedSignals.every((signal, index) => signals[index] === signal),
+      clean
+        ? evidence.declaredFindingCount === reviewCase.expectedFindingCount
+        : signals.length === expectedSignals.length
+          && expectedSignals.every((signal, index) => signals[index] === signal),
     ),
     result(
       `${input.caseId}.evidence`,
-      evidence.pathLineEvidence === true && evidence.terminalComplete === true,
+      evidence.terminalComplete === true && (clean || evidence.pathLineEvidence === true),
     ),
     result(
       `${input.caseId}.latency`,

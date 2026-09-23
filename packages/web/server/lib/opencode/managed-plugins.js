@@ -6,7 +6,6 @@ export const DEVRYAN_MANAGED_PLUGIN_IDS = Object.freeze({
   OPEN_CURSOR: '@rama_nigg/open-cursor',
   CLAUDE: 'opencode-with-claude',
   GPT_IMAGEGEN: 'opencode-gpt-imagegen',
-  CONTEXT_MODE: 'context-mode',
   SLIM: 'oh-my-opencode-slim',
   SUPERPOWERS: 'superpowers',
   SKILL_CONTEXT: 'devryan-skill-context',
@@ -62,19 +61,6 @@ const definitions = [
     entrypoint: 'dist/index.js',
     registrationPath: './node_modules/opencode-gpt-imagegen/dist/index.js',
     legacySpecs: ['opencode-gpt-imagegen', 'opencode-gpt-imagegen@latest', 'opencode-gpt-imagegen@0.1.10', 'opencode-gpt-imagegen@0.1.12'],
-    delivery: 'installed-local',
-    sourcePath: 'default-config/user-profile/package.json',
-    profileRegistration: true,
-    public: true,
-  },
-  {
-    id: DEVRYAN_MANAGED_PLUGIN_IDS.CONTEXT_MODE,
-    displayName: 'Context Mode',
-    packageName: 'context-mode',
-    version: '1.0.169',
-    entrypoint: 'build/adapters/opencode/plugin.js',
-    registrationPath: './node_modules/context-mode/build/adapters/opencode/plugin.js',
-    legacySpecs: ['context-mode', 'context-mode@1.0.169'],
     delivery: 'installed-local',
     sourcePath: 'default-config/user-profile/package.json',
     profileRegistration: true,
@@ -187,7 +173,26 @@ export const DEVRYAN_MANAGED_PROFILE_PLUGIN_FILES = Object.freeze(
     .map((spec) => spec.slice('./plugins/'.length)),
 );
 
-export const RETIRED_DEVRYAN_PLUGIN_SPECS = Object.freeze(['cursor-acp']);
+// Plugins DevRyan used to provision and now actively removes from existing profiles.
+// Context Mode (removed 2026-09) was only ever pinned at 1.0.169; any other user-owned version is left alone.
+const RETIRED_CONTEXT_MODE_REGISTRATION_PATH = './node_modules/context-mode/build/adapters/opencode/plugin.js';
+
+export const RETIRED_DEVRYAN_PLUGIN_SPECS = Object.freeze([
+  'cursor-acp',
+  'context-mode',
+  'context-mode@1.0.169',
+  RETIRED_CONTEXT_MODE_REGISTRATION_PATH,
+]);
+
+// Registration paths also retired in absolute or file:// form (matched by path suffix).
+const RETIRED_DEVRYAN_PLUGIN_REGISTRATION_SUFFIXES = Object.freeze([
+  RETIRED_CONTEXT_MODE_REGISTRATION_PATH.replace(/^\.\//, '/'),
+]);
+
+// Profile dependencies DevRyan pinned and now removes, keyed by package name with the exact pinned version.
+export const RETIRED_DEVRYAN_PROFILE_DEPENDENCIES = Object.freeze({
+  'context-mode': '1.0.169',
+});
 
 const normalizeSpec = (value) => {
   const raw = Array.isArray(value) ? value[0] : value;
@@ -246,9 +251,12 @@ const getManagedMigrationPlugin = (value) => {
   )) || null;
 };
 
-export const isRetiredDevRyanPluginSpec = (value) => (
-  RETIRED_DEVRYAN_PLUGIN_SPECS.includes(normalizeSpec(value))
-);
+export const isRetiredDevRyanPluginSpec = (value) => {
+  const spec = normalizeSpec(value);
+  if (!spec) return false;
+  return RETIRED_DEVRYAN_PLUGIN_SPECS.includes(spec)
+    || RETIRED_DEVRYAN_PLUGIN_REGISTRATION_SUFFIXES.some((suffix) => spec.endsWith(suffix));
+};
 
 export const isDevRyanManagedLegacyPluginSpec = (value) => {
   const spec = normalizeSpec(value);

@@ -9,7 +9,6 @@ import { verifySessionExecutionLauncher } from '../packages/harness-runtime/lib/
 import { createSessionExecutionHost } from '../packages/web/server/lib/opencode/session-execution-host.js';
 import { createManagedOrchestrationPrivateHost } from '../packages/web/server/lib/orchestration/private-host.js';
 import { registerScopedSessionRevertRoute } from '../packages/web/server/lib/opencode/session-scoped-revert.js';
-import { applyContextModeHotfix } from '../packages/web/server/lib/opencode/context-mode-hotfix.js';
 import { pathToFileURL } from 'node:url';
 import { startRevertModelFixture } from './qa/revert-model-fixture.mjs';
 import { createCursorSdkRuntime } from '../packages/cursor-sdk-runtime/index.js';
@@ -65,14 +64,6 @@ try {
   await fs.writeFile(path.join(directory, 'example'), 'a=1; b=2');
   await fs.chmod(path.join(directory, 'example'), 0o600);
   model = await startRevertModelFixture();
-  const contextSource = path.resolve(process.env.DEVRYAN_TEST_CONTEXT_MODE_CONFIG || '.cache/context-mode-worker-check');
-  const contextConfig = path.join(root, 'context-config'), contextModules = path.join(contextConfig, 'node_modules');
-  await fs.mkdir(contextModules, { recursive: true });
-  for (const entry of await fs.readdir(path.join(contextSource, 'node_modules'))) {
-    if (entry === 'context-mode') await fs.cp(await fs.realpath(path.join(contextSource, 'node_modules', entry)), path.join(contextModules, entry), { recursive: true });
-    else await fs.symlink(path.join(contextSource, 'node_modules', entry), path.join(contextModules, entry), 'dir');
-  }
-  const hotfix = applyContextModeHotfix({ configDirectory: contextConfig }); assert(hotfix.ok, hotfix.error);
   const skillText = (name) => `---\nname: ${name}\ndescription: Isolated execution skill fixture\n---\nSelected ${name} content. Read reference.txt relative to this skill.\n`;
   const skillRoots = [
     [path.join(root, 'home/.agents/skills/global-fixture'), 'global-fixture'],
@@ -135,8 +126,7 @@ try {
     DEVRYAN_BROWSER_CDP_DISCOVERY_URL: `http://127.0.0.1:${browserHost.address().port}/api/desktop/browser-cdp`,
     DEVRYAN_BROWSER_CDP_TOKEN: 'fixture-host-browser', DEVRYAN_AGENT_BROWSER_BIN: browserBinary,
     DEVRYAN_EXECUTION_BROWSER_PLUGIN: createHash('sha256').update(await fs.readFile(browserPlugin)).digest('hex'),
-    OPENCODE_CONFIG_CONTENT: JSON.stringify({ plugin: [pathToFileURL(transientContextPlugin).href, pathToFileURL(browserPlugin).href,
-      pathToFileURL(path.join(contextModules, 'context-mode/build/adapters/opencode/plugin.js')).href],
+    OPENCODE_CONFIG_CONTENT: JSON.stringify({ plugin: [pathToFileURL(transientContextPlugin).href, pathToFileURL(browserPlugin).href],
       model: 'fixture/fixture', small_model: 'fixture/fixture', provider: { fixture: { ...model.config, models: { ...model.config.models, 'gpt-fixture': model.config.models.fixture } }, 'cursor-acp': { ...model.config, models: { 'composer-2.5': model.config.models.fixture } } },
       skills: { paths: ['~/custom-skills'], urls: [skillURL] },
       mcp: {}, snapshot: false, permission: 'allow',
@@ -328,13 +318,6 @@ try {
   await assert.rejects(fs.access(path.join(directory, 'patch-added.txt')), { code: 'ENOENT' });
   console.log('PASS: native absolute patch add/update/move/delete use confined views and preserve literal file contents');
 
-  const context = await request('/session', { title: 'Native Context Mode' });
-  await invoke(context.id, 'ctx_execute', { language: 'javascript', code: 'require("node:fs").writeFileSync("context.txt", "owned-context"); console.log("context-written")' });
-  assert.equal(await fs.readFile(path.join(directory, 'context.txt'), 'utf8'), 'owned-context');
-  await invoke(context.id, 'ctx_index', { content: 'concurrentrevertfixture identifies content retained across private executions.', source: 'Revert fixture' });
-  const search = await invoke(context.id, 'ctx_search', { queries: ['concurrentrevertfixture'] });
-  assert(search.call.state.output.includes('concurrentrevertfixture'), search.call.state.output);
-  console.log('PASS: Context Mode execution and retrieval share logical project identity');
   const parent = await request('/session', { title: 'Descendant ownership' });
   const child = await invoke(parent.id, 'task', { description: 'Write the fixture', subagent_type: 'general',
     prompt: `DEVRYAN_FIXTURE_TOOL:${JSON.stringify({ name: 'write', args: { filePath: path.join(directory, 'child.txt'), content: 'child-owned' } })}` });
@@ -345,8 +328,9 @@ try {
   const managedResult = await managed.start({ taskId: 'dvr_revert_fixture', rootSessionId: parent.id,
     dispatchCallId: child.call.callID, childSessionId: null, directory, providerId: 'fixture', modelId: 'fixture',
     agent: 'build', variant: null, label: 'Managed Revert descendant',
-    prompt: `DEVRYAN_FIXTURE_TOOL:${JSON.stringify({ name: 'ctx_execute', args: {
-      language: 'javascript', code: 'require("node:fs").writeFileSync("managed-child.txt", "managed-owned")' } })}` },
+    prompt: `DEVRYAN_FIXTURE_TOOL:${JSON.stringify({ name: 'bash', args: {
+      command: node('require("node:fs").writeFileSync("managed-child.txt", "managed-owned")'),
+      description: 'Write the managed fixture' } })}` },
   { setChildSessionId: async () => true, markAccepted: async () => true });
   assert.equal(managedResult.status, 'completed', JSON.stringify(managedResult));
   assert.equal(await fs.readFile(path.join(directory, 'managed-child.txt'), 'utf8'), 'managed-owned');

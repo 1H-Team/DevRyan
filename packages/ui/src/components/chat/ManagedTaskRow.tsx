@@ -88,6 +88,12 @@ const providerModelLabel = (
   };
 };
 
+// Retried, recovered and resumed attempts name the model they run on unless a
+// recovery message already does.
+const isFollowUpExecution = (kind: ManagedTaskRowTask['executionKind']) => (
+  kind === 'retry_in_place' || kind === 'recover_in_place' || kind === 'resume'
+);
+
 const getProviderFailurePresentation = ({
   task,
   recoverySourceTask,
@@ -331,6 +337,11 @@ export const ManagedTaskRowView = React.memo(({
           {providerFailurePresentation && !(showRecovery && task.failureKind === 'deadline_exceeded') ? (
             <p role={providerFailurePresentation.role} className={`mt-1 typography-micro ${providerFailurePresentation.className}`}>
               {providerFailurePresentation.message}
+            </p>
+          ) : null}
+          {!providerFailurePresentation && isFollowUpExecution(task.executionKind) ? (
+            <p className="mt-1 typography-micro text-muted-foreground">
+              {providerModelLabel(task, providers).combined} · {formatEffortLabel(task.variant ?? undefined, { providerId: task.providerId })}
             </p>
           ) : null}
         </div>

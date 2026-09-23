@@ -229,7 +229,6 @@ export const createEvaluationClient = (options = {}) => {
     async promptSession(sessionId, directory, selection, prompt, signal) {
       const tools = resolveProviderPromptTools(selection.providerId, selection.agent, {
         readOnly: normalizeString(selection.agent).toLowerCase() === 'oracle',
-        contextModeAvailable: normalizeString(selection.providerId).toLowerCase() !== 'cursor-acp',
       });
       return await request(appendQuery(`/session/${encodeURIComponent(sessionId)}/prompt_async`, { directory }), {
         method: 'POST',
@@ -887,9 +886,11 @@ export const collectOracleReviewEvidence = (sessionTree, options = {}) => {
   const pathLineEvidence = scopedPaths.some((relativePath) => (
     new RegExp(`${escapeRegExp(relativePath)}(?::|\\D){1,8}\\d+`, 'i').test(text)
   ));
+  const findingCounts = [...text.matchAll(/<findings>\s*(\d{1,3})\s*<\/findings>/gi)].map((match) => Number(match[1]));
   return {
     signals,
     pathLineEvidence,
+    declaredFindingCount: findingCounts.length === 1 ? findingCounts[0] : null,
     terminalComplete: /<status>complete<\/status>\s*$/i.test(text),
   };
 };

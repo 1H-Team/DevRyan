@@ -34,8 +34,14 @@ fences in an empty private directory without reconciling or copying the project.
 Their leases cannot claim process execution. Skills and file tools still use
 confined views; there is no exemption based on a tool's name.
 
-The companion dispatches native and custom file tools in private views. Context
-Mode shares its logical project cache across those views. Native task and managed
+The companion dispatches native and custom file tools in private views. Each
+dispatch names the tool's origin (built-in or custom), so a plugin tool that
+reuses a built-in id such as `read` never replaces the built-in in the worker;
+duplicate ids within one origin fail explicitly. The host resolves ripgrep,
+including its download into the real cache, and passes that executable to the
+worker (the sandbox has no DNS and an empty cache). Resolution is best effort:
+without it only ripgrep-based tools such as grep and skill fail. Built-in web fetch and web search have no workspace effects and run as
+trusted control operations. Native task and managed
 orchestration dispatches register parent call identities before starting children.
 Cursor uses one confined process per turn, mirrors canonical conversation
 records, and awaits publication before completion. Claude through Meridian uses
@@ -56,7 +62,7 @@ bases; their eventual publication cannot resurrect reverted contributions.
 
 External MCP servers and command-template shell substitutions cannot currently
 provide this ownership contract and are refused in captured execution mode.
-Native Context Mode tools remain supported. Legacy V2 execution is refused in
+Legacy V2 execution is refused in
 this mode because its message store is a different contract. Ordinary runtimes
 without verified artifacts retain their previous execution behavior.
 
@@ -127,7 +133,7 @@ the companion step; the `Warm release caches` workflow uses this on `main`,
 because caches saved by a tag-triggered release are visible only to that tag.
 
 Only successful acceptance writes the runtime manifest. The current paired
-companion is `1.18.31-devryan.12`, with execution preparation protocol 2 and
+companion is `1.18.31-devryan.13`, with execution preparation protocol 2 and
 retention protocol 1. The host verifies the required
 capability versions, platform, architecture and artifact digests before enabling
 capture. Artifacts live under `packages/web/runtime/<platform>-<arch>`; Electron

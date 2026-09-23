@@ -18,8 +18,6 @@ This module owns the single DevRyan-managed scheduler for the web server process
 
 The private host binds `127.0.0.1:0`, requires a random bearer token, caps JSON input, exposes only `/rpc`, and is stopped before provider runtimes during graceful shutdown. URL/token values are never returned by diagnostics, UI routes, events, or routine logs.
 
-The `context_mode_diagnostic` auxiliary RPC uses that same authenticated bridge without scheduler initialization. Its OpenCode-owned validator records bounded lifecycle correlation and telemetry gaps; it cannot execute work or change recovery policy. See the [Context Mode contract](../opencode/DOCUMENTATION.md#public-exports-context-mode-hotfixjs--context-mode-content-store-recoveryjs).
-
 Private task-result RPCs accept `resultMode: "eager" | "reference"`; omission is eager for UI routes, Council, older plugins, and compatibility callers. Reference mode lazifies only a matching retained preview above 8,192 UTF-8 bytes and exposes the first page beside the existing wrapper. `read_result` requires exact task/root/directory scope plus the opaque `resultCursor`, performs no scheduler mutation, and returns only the next `resultReference`. Malformed cursors use `invalid_result_cursor` (400), retained identity/payload changes use `result_reference_mismatch` (409), and existing scope/result 403/404 errors remain authoritative. Snapshots and UI routes remain eager.
 
 ## Persistence and recovery
@@ -61,11 +59,10 @@ If `status`, `wait`, or acknowledgement encounters `task_not_found`, the plugin 
 
 Managed OpenCode launches intentionally omit `--pure` and do not set `OPENCODE_DISABLE_DEFAULT_PLUGINS`: either switch suppresses the bundled managed tool itself. The generated runtime overlay remains the plugin allowlist owner, while prompt-scoped provider rules bound only the reproduced provider-specific tool surface.
 
-During context-mode fallback recovery, both web/Electron apply the
-same named admission hold before OpenCode accepts more work. New `submit` and
-work-launching result actions (`retry`, `resume`, `retry_in_place`, and
-`recover_in_place`) return HTTP 503 with `CONTEXT_MODE_RECOVERY_PENDING` and
-`Retry-After: 1`; status, wait, cancellation, successful-result `continue`,
+While the host reports a work admission block (a harness prompt-admission hold
+or a pending Supabase restart), new `submit` and work-launching result actions
+(`retry`, `resume`, `retry_in_place`, and `recover_in_place`) return HTTP 503
+with the block's code (`work_admission_blocked` when it names none); status, wait, cancellation, successful-result `continue`,
 abandonment, and shutdown remain available so active work can drain. A
 successfully completed result supplied with any action other than `continue`
 returns `DEVRYAN_TOOL_INPUT_INVALID` together with the completed state and the
@@ -92,7 +89,7 @@ The `attempt` callback re-enters `handleRpcInternal` with the scheduler's
 `retry_in_place` acknowledgement under an internal `{ autoResume: true }`
 context. Every backup attempt, including quota recovery, revalidates the current configured model and thinking level plus model availability before acknowledgement. A changed or removed backup returns `backup_changed`: the scheduler replans immediately without spending a provider attempt, retains the same child and cancellation generation, and counts repeated changes toward the five-host-failure cap. Only that context forwards `autoResumeGeneration` to the scheduler, so
 routes and the private bridge can never replay a stale generation. Planning excludes backups confirmed absent from the catalog. If a quota backup disappears between planning and dispatch, the host rejects it and replans toward the primary reset; transient unknown catalog availability defers 30 seconds without consuming provider attempts or host failures. These catalog checks stop after 90 seconds or when the primary reset arrives, then skip the unverified backup and retain primary reset/backoff scheduling. Transport recovery retains its single-backup and host-failure bounds. A work
-admission block (context-mode recovery) or any 503 answers `deferred` (30 s);
+admission block or any 503 answers `deferred` (30 s);
 `auto_resume_stale`, `result_already_acknowledged`, and
 `result_already_acknowledging` answer `started` without a follow-up because the
 result already moved on; other errors answer `rejected`. `set_auto_resume`

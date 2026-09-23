@@ -789,6 +789,55 @@ function lintSkillPolicyEnforcement({ findings, runtimeMode }) {
   }));
 }
 
+function lintConfigCredentials({ findings, configCredentialScan }) {
+  if (!isObject(configCredentialScan)) return;
+  for (const entry of asArray(configCredentialScan.findings)) {
+    findings.push(createFinding({
+      ruleId: 'literal-credential-in-config',
+      severity: 'warning',
+      summary: `Config key "${entry.keyPath}" holds a literal ${entry.kind}`,
+      artifact: { type: 'config', name: entry.keyPath, path: entry.path, origin: entry.origin },
+      suggestedNextAction: 'Move the value into an environment variable or file and reference it as {env:NAME} or {file:path}',
+      stopCondition: 'Stop sharing or committing this configuration file until the literal credential is removed',
+    }));
+  }
+  for (const source of asArray(configCredentialScan.sources)) {
+    if (source?.availability !== 'unavailable') continue;
+    findings.push(createFinding({
+      ruleId: 'config-credential-scan-unavailable',
+      severity: 'warning',
+      summary: `Config layer could not be scanned for literal credentials (${source.reason})`,
+      artifact: { type: 'config', name: source.origin, path: source.path, origin: source.origin },
+      suggestedNextAction: 'Fix the configuration file so OpenCode and preflight can read it',
+      stopCondition: 'Stop treating the credential scan as clean until every existing config layer is readable',
+    }));
+  }
+}
+
+function summarizeConfigCredentialScan(configCredentialScan) {
+  if (!isObject(configCredentialScan)) {
+    return { availability: 'unavailable', reason: 'sourceUnavailable', sources: [], findingCount: 0 };
+  }
+  return {
+    availability: configCredentialScan.availability,
+    ...(configCredentialScan.reason ? { reason: configCredentialScan.reason } : {}),
+    sources: asArray(configCredentialScan.sources),
+    findingCount: asArray(configCredentialScan.findings).length,
+  };
+}
+
+function readConfigCredentialScanSafely(dependencies, context) {
+  if (typeof dependencies.getConfigCredentialScan !== 'function') return null;
+  const failed = { availability: 'unavailable', reason: 'scanFailed', sources: [], findings: [] };
+  try {
+    const result = dependencies.getConfigCredentialScan(context);
+    // Scan errors are reduced to a kind; their messages could quote config content.
+    return maybePromise(result) ? result.catch(() => failed) : result;
+  } catch {
+    return failed;
+  }
+}
+
 function lintAgentHarness(options = {}) {
   const agents = asArray(options.agents);
   const skills = asArray(options.skills);
@@ -816,6 +865,7 @@ function lintAgentHarness(options = {}) {
   lintToolManifestAvailability({ findings, toolManifest: options.toolManifest });
   lintRuntimeToolCount({ findings, toolManifest: options.toolManifest });
   lintSkillPolicyEnforcement({ findings, runtimeMode: options.runtimeMode });
+  lintConfigCredentials({ findings, configCredentialScan: options.configCredentialScan });
 
   return findings;
 }
@@ -907,6 +957,7 @@ function buildPreflightResult({
   anthropicUsage,
   claudeRuntime,
   runFingerprint,
+  configCredentialScan,
 }) {
   const findings = lintAgentHarness({
     agents,
@@ -918,6 +969,7 @@ function buildPreflightResult({
     slimRuntime,
     promptTools: context.promptTools,
     runtimeMode,
+    configCredentialScan,
   });
   const promptAudit = auditPackagedPromptContext({ agents: packagedAgents });
   const contextBudget = buildHarnessContextBudget({
@@ -961,6 +1013,7 @@ function buildPreflightResult({
     runtimeMode,
     promptAudit,
     contextBudget: resolvedContextBudget,
+    configCredentialScan: summarizeConfigCredentialScan(configCredentialScan),
     promptTools: context.promptTools || null,
     ...(runFingerprint ? { runFingerprint } : {}),
   }, harness);
@@ -1078,6 +1131,7 @@ function createHarnessPreflight(dependencies = {}) {
         claudeRuntime: typeof dependencies.getClaudeRuntime === 'function'
           ? dependencies.getClaudeRuntime(resolvedContext)
           : null,
+        configCredentialScan: readConfigCredentialScanSafely(dependencies, resolvedContext),
       };
 
       const pending = Object.entries(values).filter(([, value]) => maybePromise(value));

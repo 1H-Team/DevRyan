@@ -1,35 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
-  MANAGED_CONTEXT_MODE_WRITABLE_PROMPT,
   MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT,
   MANAGED_TURN_BUDGET_PROMPT,
 } from '@openchamber/orchestration-runtime';
 
 import { createWebManagedOpenCodeExecutor } from './open-code-executor.js';
-
-const WRITABLE_CONTEXT_MODE_TOOLS = Object.freeze({
-  ctx_execute: true,
-  mcp__context_mode__ctx_execute: true,
-  ctx_execute_file: true,
-  mcp__context_mode__ctx_execute_file: true,
-  ctx_batch_execute: true,
-  mcp__context_mode__ctx_batch_execute: true,
-  ctx_index: true,
-  mcp__context_mode__ctx_index: true,
-  ctx_search: true,
-  mcp__context_mode__ctx_search: true,
-  ctx_stats: true,
-  mcp__context_mode__ctx_stats: true,
-  ctx_fetch_and_index: true,
-  mcp__context_mode__ctx_fetch_and_index: true,
-  ctx_purge: false,
-  mcp__context_mode__ctx_purge: false,
-  ctx_upgrade: false,
-  mcp__context_mode__ctx_upgrade: false,
-  ctx_insight: false,
-  mcp__context_mode__ctx_insight: false,
-});
 
 const jsonResponse = (body, init = {}) => new Response(JSON.stringify(body), {
   status: init.status ?? 200,
@@ -164,12 +140,11 @@ describe('web managed OpenCode executor transport', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
-        ...WRITABLE_CONTEXT_MODE_TOOLS,
         task: false,
       },
       parts: [{
         type: 'text',
-        text: `${MANAGED_CONTEXT_MODE_WRITABLE_PROMPT}\n\nInspect the project.`,
+        text: 'Inspect the project.',
       }],
     });
     expect(requests.every((request) => request.init.headers.authorization === 'Basic opaque')).toBe(true);
@@ -446,7 +421,6 @@ describe('web managed OpenCode executor transport', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
-        ...WRITABLE_CONTEXT_MODE_TOOLS,
         task: false,
       },
       parts: [{ type: 'text', text: expect.stringContaining(MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT) }],
@@ -678,7 +652,7 @@ describe('web managed OpenCode executor host hooks', () => {
 
     expect(result.status).toBe('completed');
     expect(prompts.map((body) => body.parts[0].text)).toEqual([
-      `Contract.\n\n${MANAGED_CONTEXT_MODE_WRITABLE_PROMPT}\n\nInspect the project.`,
+      'Contract.\n\nInspect the project.',
       expect.stringContaining(MANAGED_TURN_BUDGET_PROMPT),
     ]);
     expect(JSON.parse(prompts[1].parts[0].text.split('\n').at(-1))).toEqual({

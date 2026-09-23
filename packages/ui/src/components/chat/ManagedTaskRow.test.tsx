@@ -274,6 +274,7 @@ describe('ManagedTaskRow', () => {
     expect(runningMarkup).toContain('Running...');
     expect(runningMarkup).not.toContain('data-managed-task-fallback-id');
     expect(runningMarkup).not.toContain('>Error<');
+    expect(runningMarkup).toContain('deepseek-v4-flash · ');
     ingest(toManagedTaskEvent({ ...active, status: 'completed', finishedAt: 3_000, recoverablePreview: '**Status:** complete' }).properties.task);
     const completedMarkup = await render();
     expect(completedMarkup).toContain('Complete');
@@ -355,6 +356,7 @@ describe('ManagedTaskRow', () => {
       <ManagedTaskRowView task={backup} priorEnvelope={envelope} onOpenChild={() => undefined} />,
     );
     expect(continued).toContain('Continued on claude-sonnet-5');
+    expect(continued).not.toContain('anthropic / claude-sonnet-5');
     expect(continued).toContain('after the usage limit');
     expect(continued).toContain('role="status"');
 
@@ -383,6 +385,7 @@ describe('ManagedTaskRow', () => {
     expect(html).toContain('Map the Workspace');
     expect(html).toContain('Running...');
     expect(html).not.toContain('after the usage limit');
+    expect(html.match(/ · /g)?.length).toBe(1);
   });
 
   test('renders the auto-resume box from the envelope and toggles it through the store', () => {

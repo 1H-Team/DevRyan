@@ -4,6 +4,8 @@ import { execFileSync } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { gradeQaProject } from './acceptance-graders.mjs';
+import { openCodeBaseVersion } from '../../packages/web/server/lib/opencode/opencode-update-runtime.js';
+import { TARGET_OPENCODE_VERSION } from '../../packages/web/server/lib/opencode/version-policy.js';
 import { findQaNativeCompactionCycle, findQaPlanApprovalUser, projectCompactionTaskSnapshot } from './compaction-scenarios.mjs';
 import { QA_PROJECT_PROTECTED_PATHS } from './project-fixture.mjs';
 import { gradeCompactionOperationalContinuity, gradeQaNaturalCompactionOperationalContinuity, isQaCompactionPostSummaryCohortPreserved, projectQaCompactionSummaryExit, mergeCompactionActions, projectCompactionActions, projectQaCompactionBoundaryBracket, projectQaCompactionBoundaryCohort, QA_COMPACTION_INVESTIGATION_MARKERS } from './compaction-action-evidence.mjs';
@@ -38,11 +40,18 @@ export function createQaNaturalInvestigationPrompt(boundaryIndex) {
     + 'Do not start other tasks, repeat a previous investigation, rewrite the saved plan, change todos, or modify project files. Preserve the implementation pause.';
 }
 
+// devryan_task start calls in the given rows whose call IDs are not yet known.
+export const findQaSeededInvestigationStarts = (rows, knownCallIds = new Set()) => (Array.isArray(rows) ? rows : [])
+  .flatMap(row => Array.isArray(row?.parts) ? row.parts : [])
+  .filter(part => part?.type === 'tool' && part.tool === 'devryan_task' && part.state?.input?.action === 'start'
+    && typeof part.callID === 'string' && !knownCallIds.has(part.callID))
+  .map(part => part.callID);
+
 // OpenCode 1.18.31's native Is/Dl and maxOutputTokens functions, verified
 // against the pinned executable. Input limits take precedence over context.
 // This projects the existing policy; it never writes config or model limits.
 export function deriveQaNativeCompactionPolicy({ version, modelLimits, compaction, outputTokenMax }) {
-  assert.equal(version, '1.18.31', 'Natural threshold evidence requires the verified OpenCode version');
+  assert.equal(openCodeBaseVersion(version), TARGET_OPENCODE_VERSION, 'Natural threshold evidence requires the verified OpenCode version');
   assert.ok(numeric(modelLimits?.context) && numeric(modelLimits?.output), 'Native model limits are unavailable');
   assert.notEqual(compaction?.auto, false, 'Native automatic compaction is disabled');
   assert.ok(modelLimits.context > 0, 'The selected model has no native context threshold');
@@ -363,8 +372,13 @@ export async function runQaNaturalCompaction({ cell, projectFixture, ui, api, ch
       await check(`seed exact bounded read-only natural witness ${index + 1}`, () => observeDuring(`pending-investigation-${index + 1}`, async () => {
         await rejectEarlyBoundary('before-investigation-seed');
         const before = new Set(evidence.actions.starts.map(item => item.callId));
-        await sendTurn(createQaNaturalInvestigationPrompt(index + 1));
+        const seedRows = await sendTurn(createQaNaturalInvestigationPrompt(index + 1));
         await rejectEarlyBoundary('after-investigation-seed');
+        // The seed turn has completed, and a managed start happens only inside
+        // it: without one, the witness can never appear, so fail now rather
+        // than waiting out the whole cell deadline.
+        assert.ok(findQaSeededInvestigationStarts(seedRows, before).length > 0,
+          'The parent ended the seed turn without starting the requested investigation');
         let captured;
         await ui.waitFor(`one ${witness.coverage} seeded witness`, async () => {
           captured = await captureActions('pending-investigations:children');

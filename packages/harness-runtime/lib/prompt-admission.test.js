@@ -8,19 +8,19 @@ describe('prompt admission controller', () => {
     expect(admission.getBlock()).toMatchObject({ code: 'HARNESS_INITIALIZING' });
 
     admission.markReady();
-    const releaseFirst = admission.acquireHold('context_mode_recovery', {
-      code: 'CONTEXT_MODE_RECOVERY_PENDING',
-      error: 'Context-mode recovery is pending',
+    const releaseFirst = admission.acquireHold('runtime_recovery', {
+      code: 'runtime_recovery_pending',
+      error: 'Runtime recovery is pending',
     });
-    const releaseSecond = admission.acquireHold('context_mode_recovery', {
-      code: 'CONTEXT_MODE_RECOVERY_PENDING',
-      error: 'Context-mode recovery is pending',
+    const releaseSecond = admission.acquireHold('runtime_recovery', {
+      code: 'runtime_recovery_pending',
+      error: 'Runtime recovery is pending',
     });
 
     expect(admission.isAccepting()).toBe(false);
     expect(admission.getBlock()).toMatchObject({
-      name: 'context_mode_recovery',
-      code: 'CONTEXT_MODE_RECOVERY_PENDING',
+      name: 'runtime_recovery',
+      code: 'runtime_recovery_pending',
       retryAfterSeconds: 1,
     });
     expect(releaseFirst()).toBe(true);

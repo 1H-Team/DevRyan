@@ -4,10 +4,11 @@ import { describe, test } from 'node:test';
 import { prepareAutomaticRuntimeService, createRuntimeOwnerAcquirer, recoverAppBoundRuntime } from '../runtime-service-startup.mjs';
 import { createRuntimeServiceRegistration } from '../runtime-service-registration.mjs';
 
-const run = async ({ currentMode = 'app_bound', status, register } = {}) => {
+const run = async ({ currentMode = 'app_bound', optedOut = false, status, register } = {}) => {
   const modes = [];
   const result = await prepareAutomaticRuntimeService({
     currentMode,
+    optedOut,
     platform: 'darwin',
     isPackaged: true,
     registration: {
@@ -32,6 +33,22 @@ describe('automatic background runtime startup', () => {
     assert.equal(result.mode, 'service');
     assert.deepEqual(modes, ['service']);
     assert.deepEqual(options, [{ allowLegacy: true }]);
+  });
+
+  test('never registers the service after the user switched it off', async () => {
+    let registered = false;
+    const { result, modes } = await run({
+      optedOut: true,
+      status: { ok: true, state: 'not_registered', code: null },
+      register: async () => {
+        registered = true;
+        return { ok: true, state: 'enabled', code: null };
+      },
+    });
+    assert.equal(result.mode, 'app_bound');
+    assert.equal(result.state, 'skipped');
+    assert.equal(registered, false);
+    assert.deepEqual(modes, []);
   });
 
   test('keeps app-bound Bots available while approval is required', async () => {

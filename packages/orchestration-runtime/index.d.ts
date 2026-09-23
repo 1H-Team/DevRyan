@@ -453,7 +453,7 @@ export interface ManagedOpenCodeExecutorOptions {
   /** How long a busy child with no running tool may make no transcript progress
    * before one bounded same-child timeout recovery is attempted. */
   liveProgressTimeoutMs?: number;
-  /** Host-supplied text prepended (ahead of the Context Mode routing prefix) to a
+  /** Host-supplied text prepended to a
    * task's first child prompt on `start` only; resume and retry-in-place
    * continuations never carry it. Return `null` for no preamble. */
   resolveTaskPromptPreamble?: (
@@ -772,8 +772,6 @@ export const MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT: string;
 export const MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT: string;
 export const MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT: string;
 export const MANAGED_READ_ONLY_PROMPT: string;
-export const MANAGED_CONTEXT_MODE_WRITABLE_PROMPT: string;
-export const MANAGED_CONTEXT_MODE_READ_ONLY_PROMPT: string;
 export const MANAGED_TURN_BUDGET_PROMPT: string;
 export const MANAGED_TURN_BUDGET_ABORT_GRACE_TURNS: number;
 export function isManagedTransientTransportContinuationPrompt(value: unknown): boolean;
@@ -968,11 +966,6 @@ export function resolveProviderPromptTools(
   agent?: unknown,
   options?: {
     readOnly?: boolean;
-    planMode?: boolean;
-    /** Verified managed OpenCode capability advertised by `/api/health`. */
-    contextModeAvailable?: boolean;
-    /** Verified managed-runtime capability advertised by `/api/health`. */
-    contextModeReadOnlyIndexing?: boolean;
   },
 ): Readonly<Record<string, boolean>> | undefined;
 export const MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED: 'MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED';

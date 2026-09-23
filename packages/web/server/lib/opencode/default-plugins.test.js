@@ -44,12 +44,6 @@ describe('DevRyan default plugin catalog', () => {
         delivery: 'installed-local',
       },
       {
-        pluginId: 'context-mode',
-        shippedSpec: './node_modules/context-mode/build/adapters/opencode/plugin.js',
-        version: '1.0.169',
-        delivery: 'installed-local',
-      },
-      {
         pluginId: 'oh-my-opencode-slim',
         shippedSpec: './plugins/devryan-oh-my-opencode-slim.mjs',
         version: '2.2.18',
@@ -85,7 +79,8 @@ describe('DevRyan default plugin catalog', () => {
   it('classifies default registrations and files without exposing internal helpers', () => {
     expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-oh-my-opencode-slim.mjs')).toBe('oh-my-opencode-slim');
     expect(getDevRyanDefaultPluginIdForSpec('opencode-with-claude@1.6.17')).toBe('opencode-with-claude');
-    expect(getDevRyanDefaultPluginIdForSpec('context-mode@1.0.168')).toBe('context-mode');
+    expect(getDevRyanDefaultPluginIdForSpec('opencode-gpt-imagegen@0.1.10')).toBe('opencode-gpt-imagegen');
+    expect(getDevRyanDefaultPluginIdForSpec('context-mode@1.0.169')).toBeNull();
     expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-superpowers.mjs')).toBe('superpowers');
     expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-skill-context.mjs')).toBe('devryan-skill-context');
     expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-document-reader.mjs')).toBe('devryan-document-reader');
@@ -100,7 +95,7 @@ describe('DevRyan default plugin catalog', () => {
     const inventory = buildDevRyanDefaultPluginInventory({
       entries: [
         { spec: 'opencode-with-claude@1.6.17', sourcePath: '/tmp/opencode.json' },
-        { spec: 'context-mode@1.0.168', sourcePath: '/tmp/context-mode.json' },
+        { spec: 'opencode-gpt-imagegen@0.1.10', sourcePath: '/tmp/imagegen.json' },
         { spec: './plugins/devryan-oh-my-opencode-slim.mjs', sourcePath: '/tmp/project/opencode.json' },
       ],
       files: [
@@ -116,9 +111,9 @@ describe('DevRyan default plugin catalog', () => {
       effectiveSpec: 'opencode-with-claude@1.6.17',
       configuredSourcePath: '/tmp/opencode.json',
     });
-    expect(inventory.defaults.find((plugin) => plugin.pluginId === 'context-mode')).toMatchObject({
-      effectiveSpec: 'context-mode@1.0.168',
-      configuredSourcePath: '/tmp/context-mode.json',
+    expect(inventory.defaults.find((plugin) => plugin.pluginId === 'opencode-gpt-imagegen')).toMatchObject({
+      effectiveSpec: 'opencode-gpt-imagegen@0.1.10',
+      configuredSourcePath: '/tmp/imagegen.json',
     });
     expect(inventory.defaults.find((plugin) => plugin.pluginId === 'openai-tool-schema-sanitizer')).toMatchObject({
       configuredSourcePath: '/tmp/plugins/openai-tool-schema-sanitizer.mjs',

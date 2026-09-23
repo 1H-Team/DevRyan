@@ -14,9 +14,9 @@ node scripts/build-revert-runtime.mjs --source /absolute/path/to/opencode
 ```
 
 The builder never resets an existing checkout and refuses unreviewed changes.
-It stages `1.18.31-devryan.2` and its native supervisor under
+It stages `1.18.31-devryan.13` and its native supervisor under
 `packages/web/runtime/<platform>-<arch>`. Acceptance includes real OpenCode
-execution, Context Mode, a command held across Revert, native descendants,
+execution, a command held across Revert, native and managed descendants,
 active target cancellation and Cursor publication. No live provider credentials
 or installed-app state are used. Failed acceptance cannot enable the feature.
 

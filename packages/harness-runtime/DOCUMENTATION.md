@@ -91,13 +91,7 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
   drops headers, bodies, and input even though ordinary execution records may
   permit those fields. A real journal write/read regression verifies this
   contract after sanitization, rather than testing only a recorder mock.
-  Context Mode lifecycle/gap records use a separate bounded payload projection:
-  worker-call/session/message correlation, phase/sequence, source timestamp,
-  elapsed time, budget and dropped-event count. Execution failures also retain
-  a bounded failure category and nullable exit code/signal; fatal text remains
-  in the normal sanitized tool response. Tool parts retain the validated
-  `contextModeWorkerCallID`; commands, paths and arbitrary diagnostic payloads
-  are excluded. A real journal round trip covers both correlation surfaces.
+  `elapsedMs` is retained only as a finite non-negative number.
 - `bot.memory.extraction.*` lifecycle payloads use a separate content-free
   projection: correlation IDs, bounded counters, outcome/reason/validator labels,
   and a fixed rejection histogram. Conversation, memory, input and arbitrary
@@ -196,7 +190,7 @@ distinct errors. The declarations adjacent to these modules define the host
 contract.
 
 The production host installs this coordinator when the companion and native
-artifacts have passed acceptance. Native OpenCode, Context Mode, managed
+artifacts have passed acceptance. Native OpenCode, managed
 descendants, Cursor/Claude and file Undo/Redo share that boundary. See
 [Concurrent Revert](../../docs/CONCURRENT_REVERT.md) for rollout, recovery and
 unsupported-runtime behavior.

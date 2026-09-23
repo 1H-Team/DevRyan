@@ -169,6 +169,8 @@ export const normalizeToolName = (toolName: unknown): string => {
     return TOOL_NAME_ALIASES.get(normalized) ?? normalized;
 };
 
+// Legacy sessions: DevRyan no longer ships Context Mode, but stored sessions still
+// contain ctx_* tool parts whose sandbox boilerplate description stays hidden.
 const isContextModeToolName = (toolName: unknown): boolean => {
     const normalized = normalizeToolName(toolName);
     return /^(?:ctx_.+|mcp__context_mode__.+)$/.test(normalized);
@@ -244,8 +246,8 @@ export const isShellToolName = (toolName: unknown): boolean => {
 
 export const isExpandableTool = (toolName: unknown): boolean => {
     const normalized = normalizeToolName(toolName);
-    // Context Mode failures carry recovery guidance and possibly partial output.
-    // Keep it accessible through the standard tool disclosure in both view modes.
+    // Legacy sessions: historical Context Mode (ctx_*) parts can carry recovery
+    // guidance and partial output; keep them behind the standard tool disclosure.
     return EXPANDABLE_TOOL_NAMES.has(normalized)
         || /^(?:ctx_.+|mcp__context[-_]mode__.+)$/.test(normalized);
 };

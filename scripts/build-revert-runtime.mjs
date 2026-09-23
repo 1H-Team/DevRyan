@@ -74,7 +74,7 @@ async function buildCompanion() {
   // HTTP/SQLite integration fixtures need a bounded budget on loaded native builders.
   await run('bun', ['test', '--timeout', '30000', 'test/session/revert-compact.test.ts', 'test/server/workspace-routing.test.ts',
     'test/server/httpapi-session.test.ts', 'test/session/retention-gate.test.ts', 'test/session/execution-payload.test.ts',
-    'test/session/execution-browser.test.ts'], path.join(source, 'packages/opencode'));
+    'test/session/execution-browser.test.ts', 'test/session/devryan-execution.test.ts'], path.join(source, 'packages/opencode'));
   await run('bun', ['run', 'script/build.ts', '--single', '--skip-install', '--skip-embed-web-ui'], path.join(source, 'packages/opencode'),
     { ...process.env, OPENCODE_VERSION: contract.runtimeVersion, OPENCODE_CHANNEL: 'devryan' });
   const built = path.join(source, 'packages/opencode/dist', `opencode-${upstreamPlatform}`, 'bin', `opencode${extension}`);
@@ -106,12 +106,7 @@ try {
   }
   await fs.rename(stagedBinary, path.join(output, binary));
 } finally { await fs.rm(stagedBinary, { force: true }); }
-const fixture = path.join(root, '.cache/revert-runtime-context');
-await fs.mkdir(fixture, { recursive: true });
-for (const name of ['package.json', 'bun.lock']) await fs.copyFile(path.join(root, 'tests/fixtures/revert-runtime', name), path.join(fixture, name));
-await run('bun', ['install', '--frozen-lockfile', '--ignore-scripts'], fixture);
 await run(process.execPath, ['scripts/verify-concurrent-revert-execution.mjs'], root, { ...process.env,
-  DEVRYAN_TEST_CONTEXT_MODE_CONFIG: fixture,
   DEVRYAN_TEST_OPENCODE_BINARY: path.join(output, binary),
   DEVRYAN_TEST_EXECUTION_LAUNCHER: path.join(output, `DevRyan-execution-${platform}${extension}`) });
 const manifest = { ...contract.capability, acceptance: true, version: contract.runtimeVersion, baseCommit: contract.baseCommit,

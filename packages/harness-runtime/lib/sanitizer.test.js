@@ -130,13 +130,6 @@ describe('diagnostic sanitizer', () => {
   });
 });
 
- test('retains bounded Context Mode crash facts without raw output', () => {
-  const record = createDiagnosticSanitizer().sanitizeRecord({ type: 'lifecycle', event: 'context_mode.execution_failed', payload: {
-    failureCategory: 'node_heap_exhausted', exitCode: 134, signal: 'SIGABRT', stderr: 'private output', NODE_OPTIONS: 'private options',
-  } });
-  expect(record.payload).toEqual({ failureCategory: 'node_heap_exhausted', exitCode: 134, signal: 'SIGABRT' });
-});
-
 test('retains exact revert correlation with no file contents or unbounded details', () => {
   const transactionID = '3b241101-e2bb-4255-8caf-4136c566a962';
   const payload = { transactionID, errorID: '93a24f75-e9aa-49ca-80e6-775e2173901a', requestID: 'request_1',

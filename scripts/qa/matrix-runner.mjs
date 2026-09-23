@@ -7,6 +7,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createDiagnosticSanitizer } from '../../packages/harness-runtime/lib/sanitizer.js';
 import { resolveSessionPlanRevision } from '../../packages/web/server/lib/plans/routes.js';
+import { openCodeBaseVersion } from '../../packages/web/server/lib/opencode/opencode-update-runtime.js';
+import { TARGET_OPENCODE_VERSION } from '../../packages/web/server/lib/opencode/version-policy.js';
 import { CdpConnection, discoverPageTarget, evaluate } from './cdp.mjs';
 import { reservePort, startOwnedProcess } from './process.mjs';
 import { createQaUiDriver } from './ui-driver.mjs';
@@ -173,7 +175,9 @@ export async function runQaMatrixCell(cell) {
     if (cell.transport === 'live') {
       const { prepareQaProfile, assertQaSelectedProviderDuration } = await import('./profile-preparation.mjs');
       profile = await prepareQaProfile({ runtimeRoot, workspace: fixture.fixtureRoot, providerId: cell.providerId, modelId: cell.modelId, variant: cell.variant,
-        agentAssignments: cell.agentAssignments, allowCrossProviderAssignments: cell.allowCrossProviderAssignments, preserveOrchestration: cell.preserveOrchestration });
+        agentAssignments: cell.agentAssignments, allowCrossProviderAssignments: cell.allowCrossProviderAssignments, preserveOrchestration: cell.preserveOrchestration,
+        // Explicit alternative CLI executable; its hash is still recorded in the profile evidence.
+        ...(process.env.DEVRYAN_QA_OPENCODE_BINARY ? { opencodeBinary: process.env.DEVRYAN_QA_OPENCODE_BINARY } : {}) });
       evidence.profile = profile.evidence;
       evidence.credentialAdmission = assertQaSelectedProviderDuration(cell.providerId, profile.evidence.credentials, cell.timeoutMs);
       evidence.preservedSelections = cell.preserveOrchestration ? Object.fromEntries(Object.entries(profile.evidence.agentSelections)
@@ -244,7 +248,8 @@ export async function runQaMatrixCell(cell) {
     console.log(JSON.stringify({ run: cell.runId, output: fixture.evidenceDirectory, inspection: evidence.inspection }));
     await check('candidate provider and managed runtime readiness', async () => {
       const health = await ui.waitFor('OpenCode readiness', async () => { const h = await api('/api/health'); return h.isOpenCodeReady ? h : false; }, 120000);
-      if (cell.transport === 'live' && health.openCodeVersion !== '1.18.31') throw new Error('Candidate OpenCode version does not match the pinned runtime');
+      // The shipped companion reports `<pin>-devryan.<n>`: the pinned release plus DevRyan's execution patch.
+      if (cell.transport === 'live' && openCodeBaseVersion(health.openCodeVersion) !== TARGET_OPENCODE_VERSION) throw new Error('Candidate OpenCode version does not match the pinned runtime');
       evidence.runtimeVersion = health.openCodeVersion;
       if (packaged) {
         const host = JSON.parse(await readFile(path.join(runtimeRoot, 'packaged-host.json'), 'utf8'));

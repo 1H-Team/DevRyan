@@ -13,12 +13,24 @@ import {
   lintAgentHarness,
   registerHarnessPreflightRoute,
 } from './harness-preflight.js';
+import { listPackagedAgents } from './packaged-agents.js';
 import {
   deduplicateExactToolDefinitions,
   findExactDuplicateDefinitions,
 } from './harness-context-budget.js';
 
 describe('harness preflight', () => {
+  it('ships packaged agents that all satisfy the skill-announcement policy', () => {
+    const findings = lintAgentHarness({
+      agents: listPackagedAgents(),
+      skills: [],
+      hiddenSkills: [],
+      staleOverrides: [],
+      toolManifest: {},
+    }).filter((finding) => /^skill-announcement/.test(finding.ruleId));
+    expect(findings).toEqual([]);
+  });
+
   it('warns that external runtimes cannot guarantee skill-policy enforcement', () => {
     const findings = lintAgentHarness({
       agents: [],

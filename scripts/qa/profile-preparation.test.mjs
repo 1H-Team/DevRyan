@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { test } from 'node:test';
-import { assertQaSelectedProviderAccess, assertQaSelectedProviderDuration, pinQaAgents, preserveQaOrchestration, prepareQaPluginHomeWrapper, prepareQaProfile, projectQaAuth } from './profile-preparation.mjs';
+import { assertQaSelectedProviderAccess, assertQaSelectedProviderDuration, pinQaAgents, preserveQaOrchestration, prepareQaPluginHomeWrapper, prepareQaProfile, projectQaAuth, provisionQaRipgrep } from './profile-preparation.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -297,4 +297,20 @@ test('preserved orchestration retains presets, efforts, model refs and backups w
     const auth = { 'opencode-go': { type: 'api', key: 'synthetic-key' } };
     assert.throws(() => projectQaAuth(auth, 0, ['opencode-go']), /supported providers/);
     assert.equal(projectQaAuth(auth, 0, ['opencode-go'], { preserveOrchestration: true }).evidence['opencode-go'].state, 'available');
+});
+
+test('private profiles reuse the installed ripgrep so read/grep/skill tools work without a download', async () => {
+    const scratch = await mkdtemp(path.join(root, '.cache/qa-ripgrep-'));
+    try {
+        const sourceHome = path.join(scratch, 'source-home');
+        const cacheHome = path.join(scratch, 'private-home/.cache');
+        assert.deepEqual(await provisionQaRipgrep({ sourceHome, cacheHome }), { state: 'not-installed' });
+        await mkdir(path.join(sourceHome, '.cache/opencode/bin'), { recursive: true });
+        await writeFile(path.join(sourceHome, '.cache/opencode/bin/rg'), '#!/bin/sh\necho ripgrep\n', { mode: 0o755 });
+        const copied = await provisionQaRipgrep({ sourceHome, cacheHome });
+        assert.equal(copied.state, 'copied');
+        assert.match(copied.sha256, /^[a-f0-9]{64}$/);
+        const { stdout } = await promisify(execFile)(path.join(cacheHome, 'opencode/bin/rg'));
+        assert.equal(stdout.trim(), 'ripgrep');
+    } finally { await rm(scratch, { recursive: true, force: true }); }
 });

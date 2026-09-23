@@ -7,6 +7,11 @@ import {
 
 import type { RuntimeServiceStatus } from '@/lib/botsDesktopApi';
 
+/** Older desktop hosts omit `serviceEnabled`; infer it from the live state. */
+export const isRuntimeServiceEnabled = (status: RuntimeServiceStatus | null) => (
+  status?.serviceEnabled ?? (status?.connected === true || status?.configuredMode === 'service')
+);
+
 export const runtimeServicePresentation = (status: RuntimeServiceStatus | null, loading: boolean) => {
   if (loading && !status) return {
     label: 'Checking background runtime…',
@@ -109,9 +114,16 @@ export const runtimeServicePresentation = (status: RuntimeServiceStatus | null, 
     Icon: RiErrorWarningLine,
     spin: false,
   };
+  if (isRuntimeServiceEnabled(status)) return {
+    label: 'Background runtime not running',
+    detail: 'Start it now, or DevRyan starts it the next time it opens.',
+    tone: 'border-[var(--status-warning)]/35 bg-[var(--status-warning)]/10',
+    Icon: RiErrorWarningLine,
+    spin: false,
+  };
   return {
     label: 'Bots stop when DevRyan quits',
-    detail: 'Enable the background runtime so scheduled work and supervision remain reliable.',
+    detail: 'The runtime exits when the app closes. Turn on the background runtime service to keep scheduled work running.',
     tone: 'border-[var(--status-warning)]/35 bg-[var(--status-warning)]/10',
     Icon: RiErrorWarningLine,
     spin: false,

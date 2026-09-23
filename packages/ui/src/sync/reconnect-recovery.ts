@@ -209,8 +209,6 @@ export function getProviderStallFingerprint(input: {
 }
 
 const RECOVERABLE_LONG_RUNNING_TOOL_NAMES = new Set([
-  "ctx_execute",
-  "mcp__context_mode__ctx_execute",
   "bash",
   "shell",
 ])

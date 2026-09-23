@@ -48,6 +48,17 @@ describe('versioned primary recovery plugin boundary', () => {
     await expect(f.plugin['tool.execute.before']({ sessionID: 'ses_fixture', callID: 'call_tool', tool: 'edit' }))
       .rejects.toThrow('requires_user_action');
   });
+  it("resolves a tool call's invoking step once for both of its hooks", async () => {
+    const f = await setup();
+    await f.plugin['tool.execute.before']({ sessionID: 'ses_fixture', callID: 'call_tool', tool: 'read' });
+    await f.plugin['tool.execute.after']({ sessionID: 'ses_fixture', callID: 'call_tool', tool: 'read' });
+    expect(f.client.session.messages).toHaveBeenCalledTimes(1);
+    expect(f.calls.filter((p) => p.action === 'tool_after')).toEqual([
+      expect.objectContaining({ assistantMessageID: 'msg_assistant', userMessageID: 'msg_user', callID: 'call_tool' })]);
+    // The finished call is forgotten: a later hook for it looks the step up again.
+    await f.plugin['tool.execute.before']({ sessionID: 'ses_fixture', callID: 'call_tool', tool: 'read' });
+    expect(f.client.session.messages).toHaveBeenCalledTimes(2);
+  });
   it('allows only a uniquely registered native inspection tool', async () => {
     const f = await setup();
     await f.plugin['tool.execute.before']({ sessionID: 'ses_fixture', callID: 'call_tool', tool: 'read' });

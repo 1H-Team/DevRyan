@@ -1,12 +1,15 @@
 export const prepareAutomaticRuntimeService = async ({
   currentMode,
+  optedOut = false,
   platform,
   isPackaged,
   registration,
   setMode,
   log,
 } = {}) => {
-  if (currentMode === 'disabled' || currentMode === 'service'
+  // A user who switched the background service off keeps app-bound ownership:
+  // the runtime exits with the app and is never re-registered automatically.
+  if (optedOut === true || currentMode === 'disabled' || currentMode === 'service'
     || platform !== 'darwin' || isPackaged !== true) {
     return Object.freeze({ mode: currentMode || 'app_bound', state: 'skipped', code: null });
   }

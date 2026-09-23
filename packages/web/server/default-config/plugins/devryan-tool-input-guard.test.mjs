@@ -176,6 +176,25 @@ describe('DevRyan tool input guard plugin', () => {
     expect(canonical.messages[0].parts[0].state.output).toContain('raw bytes');
   });
 
+  test('keeps history verdicts stable across repeated requests and re-evaluates changed outputs', async () => {
+    const hooks = await DevRyanToolInputGuardPlugin();
+    const binary = '\uFFFDPNG\r\n\u001a\nraw bytes';
+    const history = (output) => ({ messages: [{ parts: [
+      { id: 'prt_read_bin', type: 'tool', tool: 'read', state: { status: 'completed', input: { path: '/tmp/project/a.png' }, output: binary } },
+      { id: 'prt_read_txt', type: 'tool', tool: 'read', state: { status: 'completed', input: { path: '/tmp/project/a.ts' }, output } },
+    ] }] });
+    for (let request = 0; request < 3; request += 1) {
+      const copy = history('export const a = 1;\n');
+      await hooks['experimental.chat.messages.transform']({}, copy);
+      expect(copy.messages[0].parts[0].state.output).toContain('DEVRYAN_BINARY_READ_BLOCKED');
+      expect(copy.messages[0].parts[1].state.output).toBe('export const a = 1;\n');
+    }
+    // Same part identity, different output: judged again, never reusing a stale verdict.
+    const changed = history(binary);
+    await hooks['experimental.chat.messages.transform']({}, changed);
+    expect(changed.messages[0].parts[1].state.output).toContain('DEVRYAN_BINARY_READ_BLOCKED');
+  });
+
   test('does not change unrelated completed tool results', async () => {
     const hooks = await DevRyanToolInputGuardPlugin();
     const output = '\uFFFDPNG\r\n\u001a\nraw bytes';
@@ -205,41 +224,6 @@ describe('DevRyan tool input guard plugin', () => {
 
     expect(providerCopy.messages[0].parts[0].state.output).toBe(textualError);
     expect(logResult.output).toBe(ansiLog);
-  });
-
-  test('allows valid JavaScript without executing it', async () => {
-    await expect(beforeTool('ctx_execute', {
-      language: 'javascript',
-      code: 'globalThis.__DEVRYAN_GUARD_EXECUTED__ = true; await Promise.resolve();',
-    })).resolves.toBeUndefined();
-    expect(globalThis.__DEVRYAN_GUARD_EXECUTED__).toBeUndefined();
-  });
-
-  test('rejects malformed JavaScript with the stable input code', async () => {
-    await expect(beforeTool('ctx_execute', {
-      language: 'javascript',
-      code: 'for (const item of items) { console.log(item);',
-    })).rejects.toMatchObject({
-      code: 'DEVRYAN_TOOL_INPUT_INVALID',
-      message: expect.stringContaining('ctx_execute JavaScript must parse before execution'),
-    });
-  });
-
-  test('passes through non-JavaScript snippets', async () => {
-    await expect(beforeTool('ctx_execute', {
-      language: 'python',
-      code: 'for item in items:\n    print(item)',
-    })).resolves.toBeUndefined();
-  });
-
-  test('rejects static module declarations that are invalid function-body scripts', async () => {
-    await expect(beforeTool('mcp__context_mode__ctx_execute', {
-      language: 'javascript',
-      code: "import fs from 'node:fs';\nconsole.log(fs);",
-    })).rejects.toMatchObject({
-      code: 'DEVRYAN_TOOL_INPUT_INVALID',
-      message: expect.stringContaining('ctx_execute JavaScript must parse before execution'),
-    });
   });
 
   test.each(['bash', 'shell'])('adds the default deadline to %s', async (tool) => {
@@ -489,9 +473,9 @@ describe('DevRyan tool input guard shell policies', () => {
     expect(fs.existsSync(path.join(dataDir, 'locks'))).toBe(false);
   });
 
-  test('resolves the data dir from OPENCHAMBER_DATA_DIR, then CONTEXT_MODE_DATA_DIR', () => {
-    expect(__test.resolveDataDir({ OPENCHAMBER_DATA_DIR: '/tmp/a', CONTEXT_MODE_DATA_DIR: '/tmp/b' })).toBe(path.resolve('/tmp/a'));
-    expect(__test.resolveDataDir({ CONTEXT_MODE_DATA_DIR: '/tmp/b' })).toBe(path.resolve('/tmp/b'));
+  test('resolves the data dir from OPENCHAMBER_DATA_DIR only', () => {
+    expect(__test.resolveDataDir({ OPENCHAMBER_DATA_DIR: '/tmp/a' })).toBe(path.resolve('/tmp/a'));
+    expect(__test.resolveDataDir({ OPENCHAMBER_DATA_DIR: '   ' })).toBe(path.join(os.homedir(), '.config', 'openchamber'));
     expect(__test.resolveDataDir({})).toBe(path.join(os.homedir(), '.config', 'openchamber'));
   });
 });

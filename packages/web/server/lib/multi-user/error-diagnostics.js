@@ -60,6 +60,7 @@ const INPUT_PATTERNS = [
   /\binvalid (?:argument|input|path|request)\b/i,
   /\b(?:argument|command|path|field)\b.{0,80}\b(?:is required|must be)\b/i,
   /model tried to call unavailable tool/i,
+  // Legacy history: Context Mode is retired, but stored error rows still carry its boundary rejection.
   /File access blocked:[\s\S]{0,2048}resolves outside the project root[\s\S]{0,2048}context-mode confines ctx_execute_file to the workspace/i,
   /cannot contain an invalid null byte/i,
   /cannot contain more than/i,
@@ -310,6 +311,7 @@ const toolFailureClassification = (metadata, { legacy = false } = {}) => {
   if (!legacy && textMatches(failureText, BROWSER_RUNTIME_PATTERNS)) {
     return actionable({ impact: 'medium', failureClass: 'integration_runtime' });
   }
+  // `ctx_*` (retired Context Mode) stays classified so historical sessions and error rows keep their impact.
   if (
     !legacy
     && (tool.startsWith('ctx_') || COMMAND_TOOL_NAMES.has(tool))

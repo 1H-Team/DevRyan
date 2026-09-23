@@ -39,7 +39,6 @@ const DEVRYAN_BUNDLE_PREFIX = /\/Applications\/DevRyan\.app\/Contents\/(?:Framew
 const ORPHAN_PATTERNS = [
   /\/opencode serve\b/,
   /cursor-agent/,
-  /context-mode-worker/,
   /cloudflared tunnel/,
   /agent-browser/,
 ];
@@ -295,7 +294,6 @@ export const classifyProcess = (row, { rootPids }) => {
   if (/cursor-acp|open-cursor/.test(command)) return 'cursor-acp-runner';
   if (/cursor-agent/.test(command)) return 'cursor-agent';
   if (/claude(\.app\/Contents\/MacOS\/claude|\s--output-format)/.test(command)) return 'claude-cli';
-  if (/context-mode/.test(command)) return 'context-mode-worker';
   if (/agent-browser/.test(command)) return 'agent-browser';
   if (/(^|\/)git(\s|$)/.test(command)) return 'git';
   if (/(^|\/)(rg|ripgrep)(\s|$)/.test(command)) return 'ripgrep';

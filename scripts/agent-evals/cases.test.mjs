@@ -85,7 +85,7 @@ describe('evaluation case fixtures', () => {
     const prepared = prepareCaseFixture('managed-change', runFiles);
 
     assert.match(definition.prompt, /devryan_task/);
-    assert.match(definition.prompt, /execution-capable Context Mode tool/);
+    assert.match(definition.prompt, /running the test with a shell tool/);
     assert.match(definition.prompt, /wait/);
     assert.match(definition.prompt, /continue/);
     assert.match(definition.prompt, new RegExp(runFiles.sourceRelativePath));
@@ -118,14 +118,10 @@ describe('evaluation case fixtures', () => {
     });
   });
 
-  test('seeds broad parent, Explorer-child, and bounded Context Mode routing fixtures', async () => {
+  test('seeds the large route inventory for the independent-children case', async () => {
     const fixtureRoot = makeFixture();
     const starting = assertFixtureReady(fixtureRoot);
-    for (const caseId of [
-      'context-large-analysis',
-      'context-explorer-analysis',
-      'context-bounded-lookup',
-    ]) {
+    for (const caseId of ['managed-independent']) {
       const runFiles = allocateRunFiles(fixtureRoot, caseId);
       const prepared = prepareCaseFixture(caseId, runFiles);
       const definition = buildCaseDefinition(caseId, runFiles);
@@ -133,11 +129,7 @@ describe('evaluation case fixtures', () => {
       assert.match(prepared.baselineSource, /CONTEXT_SENTINEL/);
       assert.equal((prepared.baselineSource.match(/export const route/g) ?? []).length, 180);
       assert.match(definition.prompt, new RegExp(runFiles.sourceRelativePath.replaceAll('.', '\\.')));
-      assert.match(definition.prompt, /Context Mode|ctx_\*|native read or search/);
-      if (caseId === 'context-explorer-analysis') {
-        assert.match(definition.prompt, /devryan_task/);
-        assert.match(definition.prompt, /Explorer child/);
-      }
+      assert.match(definition.prompt, /devryan_task/);
       const testResult = await runNodeTests({
         fixtureRoot,
         testRelativePath: runFiles.testRelativePath,
@@ -151,7 +143,7 @@ describe('evaluation case fixtures', () => {
   test('seeds bounded focused and deep Oracle review fixtures without executable tests', () => {
     const fixtureRoot = makeFixture();
     const starting = assertFixtureReady(fixtureRoot);
-    for (const caseId of ['oracle-review-focused', 'oracle-review-deep']) {
+    for (const caseId of ['oracle-review-focused', 'oracle-review-deep', 'oracle-review-clean']) {
       const runFiles = allocateRunFiles(fixtureRoot, caseId);
       const prepared = prepareCaseFixture(caseId, runFiles);
       const definition = buildCaseDefinition(caseId, runFiles);
@@ -167,6 +159,11 @@ describe('evaluation case fixtures', () => {
       if (caseId.endsWith('deep')) {
         assert.match(prepared.baselineSource, /createPaymentIntent/);
         assert.match(prepared.baselineSource, /applyPaymentEvent/);
+      } else if (caseId.endsWith('clean')) {
+        assert.match(prepared.baselineSource, /actor\.id !== current\.ownerId && actor\.role !== 'admin'/);
+        assert.match(prepared.baselineSource, /expectedRevision !== current\.revision/);
+        assert.match(definition.prompt, /<findings>N<\/findings>/);
+        assert.doesNotMatch(prepared.baselineSource, /createPaymentIntent/);
       } else {
         assert.doesNotMatch(prepared.baselineSource, /createPaymentIntent/);
       }
@@ -239,7 +236,7 @@ describe('case execution', () => {
         childSessionIds: [],
         tools: [
           { tool: 'read', status: 'completed', final: true, sessionScope: 'root' },
-          { tool: 'ctx_search', status: 'completed', final: true, sessionScope: 'root' },
+          { tool: 'grep', status: 'completed', final: true, sessionScope: 'root' },
         ],
         oracleReviewEvidence: {
           signals: ['authorization_boundary', 'stale_write'],
@@ -324,12 +321,7 @@ export function summarizeEvalValues(values) {
           childSessionIds: ['ses_child'],
           tools: [
             { tool: 'devryan_task', status: 'completed', final: true },
-            {
-              tool: 'ctx_execute_file',
-              status: 'completed',
-              final: true,
-              sessionScope: 'child',
-            },
+            { tool: 'bash', status: 'completed', final: true, sessionScope: 'child' },
             { tool: 'apply_patch', status: 'completed', final: true },
             { tool: 'bash', status: 'completed', final: true },
           ],

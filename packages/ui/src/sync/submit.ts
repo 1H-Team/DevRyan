@@ -6,7 +6,6 @@ import { useSyncSDK } from "./sync-context"
 import { useDirectoryStore } from "./sync-context"
 import { useSync } from "./use-sync"
 import { resolveProviderPromptTools } from "@/lib/opencode/provider-prompt-tools"
-import { opencodeClient } from "@/lib/opencode/client"
 
 // ---------------------------------------------------------------------------
 // Ascending ID generator — monotonic timestamp + sequence counter
@@ -38,12 +37,8 @@ export type SubmitInput = {
 }
 
 export const resolveSubmitPromptTools = (
-  input: Pick<SubmitInput, "agent" | "model" | "planMode">,
-  contextModeAvailable = opencodeClient.getContextModeAvailable(),
-) => resolveProviderPromptTools(input.model.providerID, input.agent, {
-  planMode: input.planMode === true,
-  contextModeAvailable,
-})
+  input: Pick<SubmitInput, "agent" | "model">,
+) => resolveProviderPromptTools(input.model.providerID, input.agent)
 
 export function usePromptSubmit() {
   const sdk = useSyncSDK()

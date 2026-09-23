@@ -27,28 +27,6 @@ describe('createCanonicalOpenCodeEventProcessor', () => {
     }
   });
 
-  it('invokes optional context-mode recovery on every raw event', () => {
-    const processContextModeRecovery = vi.fn();
-    const processEvent = createCanonicalOpenCodeEventProcessor({
-      processContextModeRecovery,
-    });
-    const payload = {
-      type: 'message.part.updated',
-      properties: {
-        part: {
-          type: 'tool',
-          tool: 'ctx_batch_execute',
-          state: { status: 'error', error: 'disk I/O error' },
-        },
-      },
-    };
-
-    processEvent(payload);
-
-    expect(processContextModeRecovery).toHaveBeenCalledOnce();
-    expect(processContextModeRecovery).toHaveBeenCalledWith(payload);
-  });
-
   it('invokes optional command deadline recovery on every raw event', async () => {
     const processCommandDeadline = vi.fn(async () => undefined);
     const processEvent = createCanonicalOpenCodeEventProcessor({ processCommandDeadline });

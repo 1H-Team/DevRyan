@@ -9,9 +9,7 @@ import { buildVisibleSkillPolicy } from './skill-policy.js';
 import { CONFIG_FILE, readConfigFile, writeConfig } from './shared.js';
 import { migrateOpenchamberConfigToSidecar } from './openchamber-sidecar.js';
 import { SLIM_REPLACED_AGENT_NAMES, resolveSlimConfig } from './slim-config.js';
-import { createContextModeRecovery } from './context-mode-recovery.js';
 import {
-  buildContextModeStorageEnv,
   isManagedOpenCodeProcessCommand,
   readProcessCommand,
   reapOrphanedManagedOpenCodeProcesses,
@@ -183,9 +181,6 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     pauseManagedBrowserLeases = async () => null,
     resumeManagedBrowserLeases = async () => false,
     getActiveSessionCount = () => 0,
-    getAuthoritativeActiveSessionCount = getActiveSessionCount,
-    acquireContextModeAdmissionHold = () => () => {},
-    recordContextModeRecoveryIncident = () => {},
     provisionUserProfile = async () => ({ ok: true, changed: false, conflicts: [] }),
     syncPackagedAgents = async () => ({ changed: false, conflicts: [] }),
     syncRuntimeAgentOverlays = async () => ({ changed: false, targetConfigDirectory: null }),
@@ -202,6 +197,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     assertExecutionReady = () => {},
     // Ties each managed server to this process (injectable for tests that mock spawn).
     startManagedProcessWatchdog = startParentDeathWatchdog,
+    // Signals a managed server's process group (injectable so tests never reach real groups).
+    signalManagedProcessGroup = (pid, signal) => process.kill(-pid, signal),
   } = deps;
 
   const emitStartupStatus = (text) => {
@@ -414,7 +411,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     // back to a direct child kill if the group signal cannot be delivered.
     const killManaged = (signal) => {
       try {
-        process.kill(-pid, signal);
+        signalManagedProcessGroup(pid, signal);
       } catch {
         try {
           child.kill(signal);
@@ -526,7 +523,20 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     const watchdog = launchWrapperType === null
       ? startManagedProcessWatchdog({ childPid: child.pid, port })
       : { dispose() {} };
-    child.once('exit', () => watchdog.dispose());
+    child.once('exit', () => {
+      // MCP children share the server's group; they must not outlive it,
+      // and disposing the watchdog removes the only other guard.
+      if (process.platform !== 'win32' && child.pid) {
+        try { signalManagedProcessGroup(child.pid, 'SIGKILL'); } catch { /* Group already gone. */ }
+      }
+      watchdog.dispose();
+    });
+    if (watchdog.error) {
+      // Never run a managed server that can outlive this process.
+      console.error('[OpenCode] Parent-death watchdog unavailable; refusing an unowned managed server', watchdog.error);
+      await closeManagedOpenCodeChild(child);
+      throw Object.assign(new Error('Managed OpenCode could not be tied to this process'), { code: watchdog.error.code });
+    }
 
     // Register before the ready-wait: a crash in the up-to-30s window between
     // spawn and readiness must not leave an untracked orphan behind.
@@ -943,7 +953,6 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       ...shellEnv,
       ...process.env,
       PATH: envPath,
-      ...buildContextModeStorageEnv(),
       OPENCODE_SERVER_PASSWORD: openCodePassword,
       // NOTE: We intentionally do NOT set OPENCODE_DISABLE_DEFAULT_PLUGINS or
       // launch with `--pure`. Both disable required provider/bundled plugin
@@ -1523,14 +1532,6 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     }, healthCheckIntervalMs);
   };
 
-  const contextModeRecovery = createContextModeRecovery({
-    restartOpenCode,
-    getActiveSessionCount: getAuthoritativeActiveSessionCount,
-    isExternalOpenCode: () => state.isExternalOpenCode || Boolean(env.ENV_SKIP_OPENCODE_START),
-    acquireAdmissionHold: acquireContextModeAdmissionHold,
-    recordIncident: recordContextModeRecoveryIncident,
-  });
-
   return {
     startOpenCode,
     restartOpenCode,
@@ -1545,7 +1546,5 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     triggerHealthCheck,
     killProcessOnPort,
     waitForPortRelease,
-    observeContextModeToolFailure: contextModeRecovery.observeContextModeToolFailure,
-    getContextModeRecoveryStatus: contextModeRecovery.getStatus,
   };
 };

@@ -6,9 +6,7 @@ import {
   isManagedResumeContinuationPrompt,
   isManagedRetryInPlacePrompt,
   isManagedTransientTransportContinuationPrompt,
-  MANAGED_CONTEXT_MODE_READ_ONLY_PROMPT,
   MANAGED_MODEL_CONTINUATION_NOTICE_PREFIX,
-  MANAGED_CONTEXT_MODE_WRITABLE_PROMPT,
   MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT,
   MANAGED_READ_ONLY_PROMPT,
   MANAGED_RESUME_CONTINUATION_PROMPT,
@@ -18,29 +16,6 @@ import {
   MANAGED_TURN_BUDGET_ABORT_GRACE_TURNS,
   MANAGED_TURN_BUDGET_PROMPT,
 } from './open-code-executor.js';
-
-const WRITABLE_CONTEXT_MODE_TOOLS = Object.freeze({
-  ctx_execute: true,
-  mcp__context_mode__ctx_execute: true,
-  ctx_execute_file: true,
-  mcp__context_mode__ctx_execute_file: true,
-  ctx_batch_execute: true,
-  mcp__context_mode__ctx_batch_execute: true,
-  ctx_index: true,
-  mcp__context_mode__ctx_index: true,
-  ctx_search: true,
-  mcp__context_mode__ctx_search: true,
-  ctx_stats: true,
-  mcp__context_mode__ctx_stats: true,
-  ctx_fetch_and_index: true,
-  mcp__context_mode__ctx_fetch_and_index: true,
-  ctx_purge: false,
-  mcp__context_mode__ctx_purge: false,
-  ctx_upgrade: false,
-  mcp__context_mode__ctx_upgrade: false,
-  ctx_insight: false,
-  mcp__context_mode__ctx_insight: false,
-});
 
 describe('managed continuation prompt recognition', () => {
   test('recognizes writable and read-only timeout/connection continuations exactly', () => {
@@ -300,10 +275,9 @@ describe('managed OpenCode executor', () => {
     expect(result.status).toBe('completed');
     expect(prompts).toHaveLength(1);
     expect(prompts[0].prompt).toBe(
-      `${MANAGED_CONTEXT_MODE_WRITABLE_PROMPT}\n\nInspect the authentication flow.`,
+      'Inspect the authentication flow.',
     );
     expect(prompts[0].tools).toEqual({
-      ...WRITABLE_CONTEXT_MODE_TOOLS,
       task: false,
     });
   });
@@ -333,7 +307,6 @@ describe('managed OpenCode executor', () => {
     expect(result.status).toBe('completed');
     expect(prompts).toHaveLength(1);
     expect(prompts[0].prompt).toBe([
-      MANAGED_CONTEXT_MODE_READ_ONLY_PROMPT,
       MANAGED_READ_ONLY_PROMPT,
       'Inspect the authentication flow.',
     ].join('\n\n'));
@@ -344,12 +317,6 @@ describe('managed OpenCode executor', () => {
       glob: true,
       grep: true,
       ast_grep_search: true,
-      ctx_index: true,
-      mcp__context_mode__ctx_index: true,
-      ctx_search: true,
-      mcp__context_mode__ctx_search: true,
-      ctx_fetch_and_index: true,
-      mcp__context_mode__ctx_fetch_and_index: true,
       webfetch: true,
     });
   });
@@ -852,7 +819,6 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
-        ...WRITABLE_CONTEXT_MODE_TOOLS,
         task: false,
       },
     }]);
@@ -920,7 +886,6 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
-        ...WRITABLE_CONTEXT_MODE_TOOLS,
         task: false,
       },
     }]);
@@ -1035,7 +1000,6 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
-        ...WRITABLE_CONTEXT_MODE_TOOLS,
         task: false,
       },
     }]);
@@ -1430,7 +1394,7 @@ describe('managed OpenCode executor', () => {
     expect(prompts[0]).toMatchObject({
       sessionId: 'ses_child',
       prompt: appendManagedAssignment(task(), MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT),
-      tools: { ...WRITABLE_CONTEXT_MODE_TOOLS, task: false },
+      tools: { task: false },
     });
   });
 
@@ -1921,7 +1885,6 @@ describe('managed OpenCode executor', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
-        ...WRITABLE_CONTEXT_MODE_TOOLS,
         task: false,
       },
     }]);
@@ -2237,11 +2200,10 @@ describe('managed OpenCode executor', () => {
       modelId: 'gpt-4.1',
       agent: 'explorer',
       variant: 'fast',
-      prompt: `${MANAGED_CONTEXT_MODE_WRITABLE_PROMPT}\n\nInspect the authentication flow.`,
+      prompt: 'Inspect the authentication flow.',
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
-        ...WRITABLE_CONTEXT_MODE_TOOLS,
         task: false,
       },
     });
@@ -2852,7 +2814,7 @@ describe('managed task prompt preamble', () => {
     deleteSession,
   });
 
-  test('prepends a host preamble ahead of the routing prefix only when the hook returns text', async () => {
+  test('prepends a host preamble ahead of the task prompt only when the hook returns text', async () => {
     const prompts = [];
     const seen = [];
     const executor = createManagedOpenCodeExecutor({
@@ -2868,19 +2830,18 @@ describe('managed task prompt preamble', () => {
     expect((await executor.start(task({ agent: 'designer' }), control)).status).toBe('completed');
     expect(prompts[0].prompt).toBe([
       'Contract for designer.',
-      MANAGED_CONTEXT_MODE_WRITABLE_PROMPT,
       'Inspect the authentication flow.',
     ].join('\n\n'));
 
     expect((await executor.start(task({ taskId: 'dvr_task_2', agent: 'explorer' }), control)).status)
       .toBe('completed');
     expect(prompts[1].prompt).toBe(
-      `${MANAGED_CONTEXT_MODE_WRITABLE_PROMPT}\n\nInspect the authentication flow.`,
+      'Inspect the authentication flow.',
     );
     expect(seen).toEqual(['designer', 'explorer']);
   });
 
-  test('keeps the preamble ahead of the read-only routing and policy prefixes', async () => {
+  test('keeps the preamble ahead of the read-only policy prefix', async () => {
     const prompts = [];
     const executor = createManagedOpenCodeExecutor({
       transport: createStartTransport(prompts),
@@ -2892,7 +2853,6 @@ describe('managed task prompt preamble', () => {
     expect((await executor.start(task({ readOnly: true }), control)).status).toBe('completed');
     expect(prompts[0].prompt).toBe([
       'Contract.',
-      MANAGED_CONTEXT_MODE_READ_ONLY_PROMPT,
       MANAGED_READ_ONLY_PROMPT,
       'Inspect the authentication flow.',
     ].join('\n\n'));

@@ -55,6 +55,8 @@ export type RuntimeServiceStatus = {
   } | null;
   settingsUrl: string | null;
   canEnable: boolean;
+  /** The Settings → Bots switch; absent from older desktop hosts. */
+  serviceEnabled?: boolean;
 };
 
 type RuntimeServiceCommandResult = {

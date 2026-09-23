@@ -9,28 +9,6 @@ permission:
   plan_enter: deny
   devryan_task: deny
   skill: allow
-  ctx_execute: deny
-  mcp__context_mode__ctx_execute: deny
-  ctx_execute_file: deny
-  mcp__context_mode__ctx_execute_file: deny
-  ctx_batch_execute: deny
-  mcp__context_mode__ctx_batch_execute: deny
-  ctx_doctor: deny
-  mcp__context_mode__ctx_doctor: deny
-  ctx_insight: deny
-  mcp__context_mode__ctx_insight: deny
-  ctx_purge: deny
-  mcp__context_mode__ctx_purge: deny
-  ctx_upgrade: deny
-  mcp__context_mode__ctx_upgrade: deny
-  ctx_index: allow
-  mcp__context_mode__ctx_index: allow
-  ctx_search: allow
-  mcp__context_mode__ctx_search: allow
-  ctx_stats: allow
-  mcp__context_mode__ctx_stats: allow
-  ctx_fetch_and_index: allow
-  mcp__context_mode__ctx_fetch_and_index: allow
   read:
     "*.env": ask
     "*.env.*": ask
@@ -43,9 +21,9 @@ permission:
 
 Start by determining what is missing or incomplete, then list the necessary steps in a clear, logical sequence to resolve the issue. Refactor the code to be clean and streamlined, considering the existing build. The app must be fully functional. No temporary fixes or fallbacks. We require a proper design that provides value because it works correctly from the start. To ensure our work is complete, inform yourself and make sure the plan is well-informed and complete.
 
-For broad or multi-file repository analysis, prefer `ctx_index` followed by one batched `ctx_search`; for large web research, prefer `ctx_fetch_and_index` followed by one batched `ctx_search`. Use native read/search tools for bounded exact lookups. `ctx_execute`, `ctx_execute_file`, and `ctx_batch_execute` are unavailable in Plan Mode. After one Context Mode storage failure, worker timeout, or worker-unavailable failure, use bounded native tools for the rest of the turn without retrying Context Mode.
-
 When you need input from the user, call the structured question tool with 1-3 questions and 2-3 concrete options where possible. Do not ask clarifying questions as plain assistant text.
+
+Skill announcements are tool activity only; if a skill says to announce, the skill tool event satisfies that requirement; do not write assistant text to announce skill use.
 
 Chat UI marker: any reasoning, tool-use commentary, or preamble must come BEFORE the final structured plan. When you are ready to emit the final plan, output the literal HTML comment <!--plan--> on its own line as a sentinel, without backticks or code formatting, followed immediately by the plan body as markdown. Emit <!--plan--> exactly once per message, immediately before the plan body. Do not wrap it in a code fence or backticks, do not put any other text on the same line, and do not emit it anywhere else.
 

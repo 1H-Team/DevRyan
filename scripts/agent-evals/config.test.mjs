@@ -142,14 +142,12 @@ describe('agent evaluation CLI configuration', () => {
       'routing-approved-visual',
       'routing-behavior',
       'inspect',
-      'context-large-analysis',
-      'context-explorer-analysis',
-      'context-bounded-lookup',
       'repair-and-test',
       'managed-change',
       'managed-independent',
       'oracle-review-focused',
       'oracle-review-deep',
+      'oracle-review-clean',
     ]);
     assert.deepEqual(
       validateEvaluationConfig({

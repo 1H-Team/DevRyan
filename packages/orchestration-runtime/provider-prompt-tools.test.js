@@ -2,29 +2,6 @@ import { describe, expect, test } from 'bun:test';
 
 import { resolveProviderPromptTools } from './provider-prompt-tools.js';
 
-const WRITABLE_CONTEXT_MODE_TOOLS = Object.freeze({
-  ctx_execute: true,
-  mcp__context_mode__ctx_execute: true,
-  ctx_execute_file: true,
-  mcp__context_mode__ctx_execute_file: true,
-  ctx_batch_execute: true,
-  mcp__context_mode__ctx_batch_execute: true,
-  ctx_index: true,
-  mcp__context_mode__ctx_index: true,
-  ctx_search: true,
-  mcp__context_mode__ctx_search: true,
-  ctx_stats: true,
-  mcp__context_mode__ctx_stats: true,
-  ctx_fetch_and_index: true,
-  mcp__context_mode__ctx_fetch_and_index: true,
-  ctx_purge: false,
-  mcp__context_mode__ctx_purge: false,
-  ctx_upgrade: false,
-  mcp__context_mode__ctx_upgrade: false,
-  ctx_insight: false,
-  mcp__context_mode__ctx_insight: false,
-});
-
 describe('provider prompt tool policy', () => {
   test('caps GitHub Copilot tool discovery for canonical and legacy provider IDs', () => {
     expect(resolveProviderPromptTools('github-copilot')).toEqual({
@@ -62,7 +39,7 @@ describe('provider prompt tool policy', () => {
     });
   });
 
-  test('fails closed to an inspection-only allowlist when Context Mode is unavailable', () => {
+  test('fails closed to an inspection-only allowlist for read-only work', () => {
     expect(resolveProviderPromptTools('openai', 'designer', { readOnly: true })).toEqual({
       '*': false,
       read: true,
@@ -88,106 +65,11 @@ describe('provider prompt tool policy', () => {
     });
   });
 
-  test('withholds every Context Mode tool in UI Plan Mode when unavailable', () => {
-    const tools = resolveProviderPromptTools('openai', 'orchestrator', { planMode: true });
-
-    expect(tools).toMatchObject({
+  test('adds no tool overrides for UI Plan Mode', () => {
+    expect(resolveProviderPromptTools('openai', 'orchestrator', { planMode: true })).toEqual({
       task: false,
       invalid: false,
-      ctx_execute: false,
-      mcp__context_mode__ctx_execute: false,
-      ctx_execute_file: false,
-      mcp__context_mode__ctx_execute_file: false,
-      ctx_batch_execute: false,
-      mcp__context_mode__ctx_batch_execute: false,
-      ctx_purge: false,
-      mcp__context_mode__ctx_purge: false,
-      ctx_upgrade: false,
-      mcp__context_mode__ctx_upgrade: false,
-      ctx_search: false,
-      mcp__context_mode__ctx_search: false,
-      ctx_stats: false,
-      mcp__context_mode__ctx_stats: false,
-      ctx_fetch_and_index: false,
-      mcp__context_mode__ctx_fetch_and_index: false,
-      ctx_index: false,
-      mcp__context_mode__ctx_index: false,
-      ctx_insight: false,
-      mcp__context_mode__ctx_insight: false,
     });
-    expect(tools).not.toHaveProperty('*');
-  });
-
-  test('grants writable Context Mode tools in both naming forms when available', () => {
-    expect(resolveProviderPromptTools('openai', 'orchestrator', {
-      contextModeAvailable: true,
-    })).toEqual({
-      task: false,
-      invalid: false,
-      ...WRITABLE_CONTEXT_MODE_TOOLS,
-    });
-  });
-
-  test('grants only safe read-only Context Mode tools when available', () => {
-    expect(resolveProviderPromptTools('openai', 'plan', {
-      planMode: true,
-      contextModeAvailable: true,
-    })).toMatchObject({
-      ctx_execute: false,
-      mcp__context_mode__ctx_execute: false,
-      ctx_index: true,
-      mcp__context_mode__ctx_index: true,
-      ctx_search: true,
-      mcp__context_mode__ctx_search: true,
-      ctx_stats: true,
-      mcp__context_mode__ctx_stats: true,
-      ctx_fetch_and_index: true,
-      mcp__context_mode__ctx_fetch_and_index: true,
-      ctx_insight: false,
-      mcp__context_mode__ctx_insight: false,
-    });
-
-    expect(resolveProviderPromptTools('openai', 'explorer', {
-      readOnly: true,
-      contextModeAvailable: true,
-    })).toMatchObject({
-      '*': false,
-      ctx_index: true,
-      mcp__context_mode__ctx_index: true,
-      ctx_fetch_and_index: true,
-      mcp__context_mode__ctx_fetch_and_index: true,
-    });
-  });
-
-  test('retains the read-only indexing capability alias', () => {
-    expect(resolveProviderPromptTools('openai', 'plan', {
-      planMode: true,
-      contextModeReadOnlyIndexing: true,
-    })).toMatchObject({
-      ctx_index: true,
-      mcp__context_mode__ctx_index: true,
-      ctx_search: true,
-      mcp__context_mode__ctx_search: true,
-    });
-  });
-
-  test('keeps Cursor SDK-backed turns out of Context Mode scope', () => {
-    expect(resolveProviderPromptTools('cursor-acp', 'orchestrator', {
-      contextModeAvailable: true,
-    })).toEqual({ task: false, invalid: false });
-  });
-
-  test('merges Copilot caps with the Plan Mode Context policy', () => {
-    expect(resolveProviderPromptTools('github-copilot', 'orchestrator', {
-      planMode: true,
-      contextModeAvailable: true,
-    })).toMatchObject({
-      'resend_*': false,
-      'mcp__resend__*': false,
-      task: false,
-      invalid: false,
-      ctx_execute: false,
-      ctx_search: true,
-    });
+    expect(resolveProviderPromptTools('openai', 'plan', { planMode: true })).toBeUndefined();
   });
 });

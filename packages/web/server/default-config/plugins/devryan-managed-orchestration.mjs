@@ -23,6 +23,7 @@ const BARRIER_CONTROL_TOOLS = new Set(['devryan_task', 'skill', 'todowrite', 'to
 const AGENT_OWNERSHIP_CACHE_MAX_ENTRIES = 128;
 const AGENT_OWNERSHIP_CACHE_TTL_MS = 30_000;
 const AGENT_OWNERSHIP_MESSAGE_LIMIT = 20;
+const AGENT_OWNERSHIP_FAST_MESSAGE_LIMIT = 2;
 const DEFAULT_TIMEOUT_SECONDS = 30 * 60;
 const MIN_TIMEOUT_SECONDS = 15 * 60;
 const DESIGNER_MIN_TIMEOUT_SECONDS = 60 * 60;
@@ -2068,23 +2069,27 @@ export const DevRyanManagedOrchestrationPlugin = async ({
     recoveryScanTimer?.unref?.();
   };
 
-  const readInvokingAgent = async (rootSessionId, callID) => {
-    if (!client?.session || typeof client.session.messages !== 'function') return null;
+  const readOwnershipRecords = async (rootSessionId, limit) => {
     let response;
     try {
       response = await client.session.messages({
         path: { id: rootSessionId },
-        query: { limit: AGENT_OWNERSHIP_MESSAGE_LIMIT },
+        query: { limit },
       });
     } catch {
       return null;
     }
     if (response?.error) return null;
-    const records = Array.isArray(response?.data)
+    return Array.isArray(response?.data)
       ? response.data
       : Array.isArray(response)
         ? response
         : [];
+  };
+
+  // Returns the owning agent, null when the owner has none, or undefined when
+  // these records cannot decide (owner or its parent is outside the window).
+  const invokingAgentFromRecords = (records, callID) => {
     const assistantRecord = records.find((record) => (
       record?.info?.role === 'assistant'
       && Array.isArray(record.parts)
@@ -2093,7 +2098,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
         && part.callID === callID
       ))
     ));
-    if (!assistantRecord) return null;
+    if (!assistantRecord) return undefined;
 
     const directAgent = typeof assistantRecord.info.agent === 'string'
       ? assistantRecord.info.agent.trim().toLowerCase()
@@ -2107,13 +2112,27 @@ export const DevRyanManagedOrchestrationPlugin = async ({
     const parentID = typeof assistantRecord.info.parentID === 'string'
       ? assistantRecord.info.parentID
       : '';
-    const parent = parentID
-      ? records.find((record) => record?.info?.role === 'user' && record.info.id === parentID)
-      : null;
-    const parentAgent = typeof parent?.info?.agent === 'string'
+    if (!parentID) return null;
+    const parent = records.find((record) => record?.info?.role === 'user' && record.info.id === parentID);
+    if (!parent) return undefined;
+    const parentAgent = typeof parent.info.agent === 'string'
       ? parent.info.agent.trim().toLowerCase()
       : '';
     return parentAgent || null;
+  };
+
+  // The invoking step is almost always the newest message, so a two-message
+  // window usually decides ownership without transferring recent tool outputs;
+  // otherwise the full ownership window gives the original answer.
+  const readInvokingAgent = async (rootSessionId, callID) => {
+    if (!client?.session || typeof client.session.messages !== 'function') return null;
+    for (const limit of [AGENT_OWNERSHIP_FAST_MESSAGE_LIMIT, AGENT_OWNERSHIP_MESSAGE_LIMIT]) {
+      const records = await readOwnershipRecords(rootSessionId, limit);
+      if (records === null) return null;
+      const agent = invokingAgentFromRecords(records, callID);
+      if (agent !== undefined) return agent;
+    }
+    return null;
   };
 
   const resolveInvokingAgent = async (rootSessionId, callID) => {
@@ -2350,7 +2369,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
       const taskIds = taskIdList.join(', ');
       // Be explicit about the ONE call that can make progress. The generic
       // "use devryan_task wait" wording left an orchestrator retrying ordinary
-      // tools — on 2026-08-21 five consecutive ctx_search/bash/grep calls all
+      // tools — on 2026-08-21 five consecutive search/bash/grep calls all
       // failed against this barrier, each burning a full turn.
       const nextCall = barrier.capabilities?.policies?.waitAny === true && taskIdList.length > 0
         ? `devryan_task with action "wait_any" and task_ids ${JSON.stringify(taskIdList)}`

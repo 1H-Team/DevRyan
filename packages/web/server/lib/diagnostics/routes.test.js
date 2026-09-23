@@ -83,47 +83,6 @@ describe('diagnostics clear ranges', () => {
     expect(response.payload).toBe(status);
   });
 
-  test('exposes the current context-mode recovery incident in status', async () => {
-    let statusHandler;
-    const app = {
-      get(_path, handler) {
-        statusHandler = handler;
-      },
-      post() {},
-      delete() {},
-    };
-    const contextModeRecovery = {
-      state: 'draining',
-      detectedAt: '2026-08-15T12:33:19.000Z',
-      occurrenceCount: 3,
-      lastRestartError: null,
-    };
-    registerDiagnosticsRoutes(app, {
-      runtime: {
-        async getStatus() {
-          return { enabled: true, sessionCount: 2 };
-        },
-      },
-      getContextModeRecoveryStatus: () => contextModeRecovery,
-      getCommandDeadlineRecoveryStatus: () => null,
-    });
-    const response = {
-      json(payload) {
-        this.payload = payload;
-        return this;
-      },
-    };
-
-    await statusHandler({}, response);
-
-    expect(response.payload).toEqual({
-      enabled: true,
-      sessionCount: 2,
-      contextModeRecovery,
-      commandDeadlineRecovery: null,
-    });
-  });
-
   test('exposes command deadline recovery status', async () => {
     let statusHandler;
     const app = {
@@ -147,6 +106,6 @@ describe('diagnostics clear ranges', () => {
 
     await statusHandler({}, response);
 
-    expect(response.payload).toMatchObject({ commandDeadlineRecovery });
+    expect(response.payload).toEqual({ enabled: true, sessionCount: 1, commandDeadlineRecovery });
   });
 });

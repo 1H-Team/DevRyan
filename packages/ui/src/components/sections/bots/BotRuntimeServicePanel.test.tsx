@@ -116,6 +116,8 @@ describe('Bot background runtime presentation', () => {
 
   test('does not offer enable when the packaged service is unavailable', () => {
     const unavailable = status({
+      configuredMode: 'app_bound',
+      serviceEnabled: false,
       connected: false,
       handshake: null,
       canEnable: false,
@@ -132,7 +134,64 @@ describe('Bot background runtime presentation', () => {
     );
 
     expect(markup).toContain('Background runtime bridge missing');
-    expect(markup).not.toContain('Enable Background Bots');
+    expect(/role="switch"[^>]*aria-disabled="true"[^>]*aria-checked="false"/.test(markup)).toBe(true);
+  });
+
+  test('renders the Global Settings switch on while the service is connected', () => {
+    const markup = renderToStaticMarkup(
+      <I18nProvider>
+        <BotRuntimeServicePanel canManage desktopApi={desktopApi} initialStatus={status({ serviceEnabled: true })} />
+      </I18nProvider>,
+    );
+    expect(markup).toContain('Global Settings');
+    expect(markup).toContain('Background Runtime Service');
+    expect(/role="switch"[^>]*aria-checked="true"/.test(markup)).toBe(true);
+    expect(markup).not.toContain('Start Now');
+  });
+
+  test('switched off, the runtime is app-bound and exits with the app', () => {
+    const appBound = status({
+      configuredMode: 'app_bound',
+      registration: { ok: true, state: 'not_registered', code: null },
+      connected: false,
+      handshake: null,
+      serviceEnabled: false,
+    });
+    const markup = renderToStaticMarkup(
+      <I18nProvider>
+        <BotRuntimeServicePanel canManage desktopApi={desktopApi} initialStatus={appBound} />
+      </I18nProvider>,
+    );
+    expect(/role="switch"[^>]*aria-checked="false"/.test(markup)).toBe(true);
+    expect(markup).toContain('Bots stop when DevRyan quits');
+    expect(markup).not.toContain('Start Now');
+  });
+
+  test('switched on but not yet running offers an immediate start', () => {
+    const pending = status({
+      configuredMode: 'app_bound',
+      registration: { ok: true, state: 'not_registered', code: null },
+      connected: false,
+      handshake: null,
+      serviceEnabled: true,
+    });
+    expect(runtimeServicePresentation(pending, false).label).toBe('Background runtime not running');
+    const markup = renderToStaticMarkup(
+      <I18nProvider>
+        <BotRuntimeServicePanel canManage desktopApi={desktopApi} initialStatus={pending} />
+      </I18nProvider>,
+    );
+    expect(/role="switch"[^>]*aria-checked="true"/.test(markup)).toBe(true);
+    expect(markup).toContain('Start Now');
+  });
+
+  test('members see the switch but cannot change it', () => {
+    const markup = renderToStaticMarkup(
+      <I18nProvider>
+        <BotRuntimeServicePanel canManage={false} desktopApi={desktopApi} initialStatus={status({ serviceEnabled: true })} />
+      </I18nProvider>,
+    );
+    expect(/role="switch"[^>]*aria-disabled="true"/.test(markup)).toBe(true);
   });
 
   test('offers private LaunchAgent enablement and retains manual confirmation', () => {
@@ -144,6 +203,7 @@ describe('Bot background runtime presentation', () => {
       handshake: null,
       settingsUrl: null,
       canEnable: true,
+      serviceEnabled: false,
     });
     const markup = renderToStaticMarkup(
       <I18nProvider>
@@ -152,7 +212,7 @@ describe('Bot background runtime presentation', () => {
     );
     const source = readFileSync(new URL('./BotRuntimeServicePanel.tsx', import.meta.url), 'utf8');
 
-    expect(markup).toContain('Enable Background Bots');
+    expect(/role="switch"[^>]*aria-checked="false"/.test(markup)).toBe(true);
     expect(source).toContain("status?.registrationMode === 'legacy'");
     expect(source).toContain('setLegacyConsentOpen(true)');
     expect(source).toContain('This DevRyan build uses a private per-user LaunchAgent');

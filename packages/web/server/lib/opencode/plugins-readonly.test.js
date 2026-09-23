@@ -53,7 +53,6 @@ describe('read-only plugin config model', () => {
         '@rama_nigg/open-cursor',
         'opencode-with-claude',
         'opencode-gpt-imagegen',
-        'context-mode',
         'oh-my-opencode-slim',
         'superpowers',
         'devryan-skill-context',

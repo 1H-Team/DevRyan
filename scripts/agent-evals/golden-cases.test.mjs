@@ -4,9 +4,9 @@ import { GOLDEN_CASES, GOLDEN_CASE_IDS, executeGoldenCase } from './golden-cases
 import { buildSchemaV1Report, assertSchemaV1ReportSafe } from './report.mjs';
 
 describe('production-derived golden set', () => {
-  test('defines thirty unique bounded cases across the six required areas', () => {
-    assert.equal(GOLDEN_CASE_IDS.length, 30);
-    assert.equal(new Set(GOLDEN_CASE_IDS).size, 30);
+  test('defines twenty-eight unique bounded cases across the six required areas', () => {
+    assert.equal(GOLDEN_CASE_IDS.length, 28);
+    assert.equal(new Set(GOLDEN_CASE_IDS).size, 28);
     assert.equal(new Set(GOLDEN_CASES.map((entry) => entry.area)).size, 6);
     assert.ok(GOLDEN_CASES.every((entry) => entry.specs.length > 0 && entry.specs.length <= 3));
   });

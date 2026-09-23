@@ -53,7 +53,7 @@ const NESTED_FIELDS = new Set([
   'model', 'system', 'noReply', 'tools', 'tokens', 'cost', 'snapshot',
   'streamId', 'subscriptionId', 'snapshotBytes', 'sequence', 'generation', 'observedAt', 'origin', 'requestType',
   'firstMissingSequence', 'lastMissingSequence', 'failureCode',
-  'workerCallID', 'contextModeWorkerCallID', 'sourceAt', 'elapsedMs', 'budgetMs', 'droppedEvents', 'failureCategory', 'exitCode', 'signal',
+  'elapsedMs', 'failureCategory', 'exitCode', 'signal',
   'schemaVersion', 'configurationHash', 'runtimeVersion', 'selection', 'catalog', 'contentHash', 'sourceHash', 'idsHash', 'providerHash', 'runtimeHash',
   'availability', 'bytes', 'plugins', 'configured', 'observed', 'observation', 'factoryCalls', 'ownership',
   'policies', 'readOverlap', 'waitAny', 'compactResults', 'contextProjection', 'duplicateOutputs',
@@ -93,17 +93,13 @@ const STABLE_IDENTIFIER_FIELDS = new Set([
   'userMessageID', 'assistantMessageID', 'idempotencyKey', 'fingerprint',
   'sha256', 'hash', 'head', 'commit', 'tree', 'ref', 'parent',
   'streamId', 'subscriptionId',
-  'workerCallID', 'contextModeWorkerCallID',
   'configurationHash', 'contentHash', 'sourceHash', 'idsHash', 'providerHash', 'runtimeHash',
   'anchorUserMessageID', 'continuationMessageID', 'activeUserMessageID',
   'taskId', 'rootSessionId', 'parentTaskId', 'childSessionId', 'priorTaskId', 'envelopeId',
   'recoveryLineageId', 'recoveryMessageID', 'runtimeInstanceID', 'providerRequestID',
 ]);
 
-const CONTEXT_MODE_FIELDS = new Set(['phase', 'callID', 'messageID', 'workerCallID', 'tool', 'sequence',
-  'sourceAt', 'elapsedMs', 'budgetMs', 'droppedEvents', 'failureCategory', 'exitCode', 'signal']);
-const CONTEXT_MODE_IDENTIFIERS = new Set(['workerCallID', 'contextModeWorkerCallID']);
-const CONTEXT_MODE_NUMBERS = new Set(['sourceAt', 'elapsedMs', 'budgetMs', 'droppedEvents']);
+const NON_NEGATIVE_NUMBER_FIELDS = new Set(['elapsedMs']);
 const REVERT_FIELDS = new Set(['requestID', 'transactionID', 'sessionID', 'messageID', 'phase', 'errorID', 'code']);
 
 const BROWSER_NETWORK_FIELDS = new Set([
@@ -285,8 +281,7 @@ export const createDiagnosticSanitizer = (options = {}) => {
         report.droppedFields += 1;
         continue;
       }
-      if ((CONTEXT_MODE_IDENTIFIERS.has(key) && (typeof nested !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(nested)))
-        || (CONTEXT_MODE_NUMBERS.has(key) && (!Number.isFinite(nested) || nested < 0))) {
+      if (NON_NEGATIVE_NUMBER_FIELDS.has(key) && (!Number.isFinite(nested) || nested < 0)) {
         report.droppedFields += 1;
         continue;
       }
@@ -345,8 +340,6 @@ export const createDiagnosticSanitizer = (options = {}) => {
         && ['connection', 'gap'].includes(type);
       // Browser diagnostics have a narrower contract than ordinary execution
       // records: even otherwise permitted headers/body/input fields are dropped.
-      const contextMode = key === 'payload' && typeof object.event === 'string' && object.event.startsWith('context_mode.')
-        && ['lifecycle', 'gap'].includes(type);
       const botEvents = key === 'payload' && type === 'connection'
         && typeof object.event === 'string' && object.event.startsWith('bot.events.');
       const projected = botEvents && asObject(value)
@@ -356,8 +349,6 @@ export const createDiagnosticSanitizer = (options = {}) => {
             : field === 'headersSent' ? typeof nested === 'boolean'
               : typeof nested === 'string' && /^[a-zA-Z0-9_.:-]{1,160}$/.test(nested))
         )))
-        : contextMode && asObject(value)
-        ? Object.fromEntries(Object.entries(value).filter(([field]) => CONTEXT_MODE_FIELDS.has(field)))
         : browserNetwork && asObject(value)
         ? Object.fromEntries(Object.entries(value).filter(([field, nested]) => (
           BROWSER_NETWORK_FIELDS.has(field)

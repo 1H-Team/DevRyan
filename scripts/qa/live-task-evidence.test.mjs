@@ -224,7 +224,7 @@ test('only successful owned source reads and mutations can supply either role’
 test('Plan child policy requires canonical wildcard denial and safe enabled tools, scoped to actual plan dispatch turns', () => {
   const plan = { info: { id: 'msg_plan', role: 'user' }, parts: [{ type: 'text', synthetic: true, text: 'User has requested to enter plan mode' }] };
   const start = row('msg_start', [tool('devryan_task', 1, { action: 'start' })]); start.info.parentID = plan.info.id;
-  const child = { info: { id: 'msg_child_user', role: 'user', tools: { '*': false, read: true, oc_read: true, ctx_index: true, task: false } }, parts: [] };
+  const child = { info: { id: 'msg_child_user', role: 'user', tools: { '*': false, read: true, oc_read: true, task: false } }, parts: [] };
   const tree = [{ sessionId: 'ses_root', messages: [plan, start] }, { sessionId: 'ses_child', messages: [child] }];
   const tasks = [{ taskId: 'task_one', childSessionId: 'ses_child', dispatchCallId: 'call_1' }];
   assert.equal(projectQaPlanChildPolicy(tree, 'ses_root', tasks).passed, true);

@@ -7,7 +7,7 @@ import yaml from 'yaml';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 40_312;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 39_739;
 const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
   __dirname,
   '../../default-config/user-profile/oh-my-opencode-slim.json',
@@ -123,6 +123,10 @@ describe('packaged agent defaults', () => {
     expect(body).toContain(finalCloseout);
     expect(body).toContain('Orchestrator applies Oracle findings directly');
     expect(body).toContain('This closeout rule overrides normal Designer, Fixer, Explorer, Librarian, Council, and parallel-routing rules.');
+    // Closeouts limit Orchestrator's own routing, never an explicit user request for a specific task.
+    expect(body).toContain('Closeout scope: both closeout rules limit your own routing decisions.');
+    expect(body).toContain('When the user explicitly asks for a specific specialist task after a closeout, that request is new user-owned scope: start exactly the requested task, keep the current phase\'s other restrictions (Plan mode stays read-only), and do not reopen any other delegation.');
+    expect(body.indexOf(finalCloseout)).toBeLessThan(body.indexOf('Closeout scope:'));
     expect(body).toContain('A retry or resume inside the same failed managed Oracle dispatch group is recovery of that same logical checkpoint, not another review');
     expect(body).toContain('choose focused or deep before the sole dispatch.');
     expect(body).toContain('Focused is the default and omits `timeout_seconds`');

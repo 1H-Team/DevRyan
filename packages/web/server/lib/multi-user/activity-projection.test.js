@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 
 import { createDiagnosticSanitizer } from '@openchamber/harness-runtime';
 
-import { CONTEXT_MODE_WEDGE_FAILURE_TEXT } from '../opencode/context-mode-recovery.js';
 import {
   ERROR_CONTEXT_TEXT_LIMIT_BYTES,
   ERROR_STACK_TEXT_LIMIT_BYTES,
@@ -361,7 +360,8 @@ describe('OpenCode activity projection', () => {
     expect(JSON.stringify(projected)).not.toContain('do not retain this pattern');
   });
 
-  it('projects nested Context Mode command exits as low impact with correlation intact', () => {
+  // Context Mode is retired; stored sessions still replay historical ctx_* tool parts.
+  it('projects historical nested Context Mode command exits as low impact with correlation intact', () => {
     const projected = projectOpenCodeActivity({
       ownership,
       context: {
@@ -762,7 +762,7 @@ describe('OpenCode activity projection', () => {
     expect(replayed.details.eventId).toBe(projected.details.eventId);
   });
 
-  it('rewrites context-mode disk I/O failures to stable wedge copy', () => {
+  it('keeps the original text for historical Context Mode disk I/O failures', () => {
     const projected = projectOpenCodeActivity({
       ownership,
       payload: {
@@ -790,13 +790,9 @@ describe('OpenCode activity projection', () => {
         metadata: {
           tool: 'ctx_batch_execute',
           failureClass: 'tool_runtime',
-          failureText: CONTEXT_MODE_WEDGE_FAILURE_TEXT,
+          failureText: 'Batch execution error: disk I/O error',
         },
       },
     });
-    expect(projected.details.metadata.failureText).toMatch(/SQLITE_IOERR/);
-    expect(Buffer.byteLength(projected.details.metadata.failureText, 'utf8')).toBeLessThanOrEqual(
-      ERROR_CONTEXT_TEXT_LIMIT_BYTES,
-    );
   });
 });

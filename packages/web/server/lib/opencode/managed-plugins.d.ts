@@ -3,7 +3,6 @@ export type DevRyanManagedPluginId =
   | '@rama_nigg/open-cursor'
   | 'opencode-with-claude'
   | 'opencode-gpt-imagegen'
-  | 'context-mode'
   | 'oh-my-opencode-slim'
   | 'superpowers'
   | 'devryan-skill-context'
@@ -41,6 +40,7 @@ export const DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS: readonly string[];
 export const DEVRYAN_MANAGED_PROFILE_DEPENDENCIES: Readonly<Record<string, string>>;
 export const DEVRYAN_MANAGED_PROFILE_PLUGIN_FILES: readonly string[];
 export const RETIRED_DEVRYAN_PLUGIN_SPECS: readonly string[];
+export const RETIRED_DEVRYAN_PROFILE_DEPENDENCIES: Readonly<Record<string, string>>;
 
 export function getDevRyanManagedPlugin(pluginId: unknown): DevRyanManagedPlugin | null;
 export function getDevRyanManagedPluginForSpec(value: unknown): DevRyanManagedPlugin | null;

@@ -97,6 +97,20 @@ function collapseLineRepeats(value: string): string {
   return output.join("")
 }
 
+// True when `value[start, start+length)` equals the `length` characters that
+// follow it. Compares in place: almost every candidate differs at its first
+// character, so the scan must not allocate substrings to find that out.
+function isAdjacentRepeat(value: string, start: number, length: number): boolean {
+  for (let offset = 0; offset < length; offset += 1) {
+    if (value.charCodeAt(start + offset) !== value.charCodeAt(start + length + offset)) return false
+  }
+  return true
+}
+
+// Removes the second copy of the earliest, then longest, adjacent repeat of at
+// least MIN_FULL_FRAME_DUPLICATE_LENGTH meaningful characters, until none remain.
+// This runs on every streamed delta below the scan limit, so only a confirmed
+// repeat pays for slicing and trimming.
 function collapseJammedRepeats(value: string): string {
   if (value.length > MAX_JAMMED_DUPLICATE_SCAN_LENGTH) {
     return value
@@ -109,13 +123,18 @@ function collapseJammedRepeats(value: string): string {
     changed = false
     for (let start = 0; start < output.length; start += 1) {
       const maxLength = Math.floor((output.length - start) / 2)
-      for (let length = maxLength; length >= MIN_FULL_FRAME_DUPLICATE_LENGTH; length -= 1) {
-        const first = output.slice(start, start + length)
-        if (!isMeaningfulDuplicateCandidate(first)) continue
-
-        const secondStart = start + length
-        const second = output.slice(secondStart, secondStart + length)
-        if (first !== second) continue
+      if (maxLength < MIN_FULL_FRAME_DUPLICATE_LENGTH) break
+      // A repeat's second copy starts with the same character; visit only
+      // those positions, farthest first, so lengths are still tried longest first.
+      const lead = output[start]!
+      for (
+        let secondStart = output.lastIndexOf(lead, start + maxLength);
+        secondStart >= start + MIN_FULL_FRAME_DUPLICATE_LENGTH;
+        secondStart = output.lastIndexOf(lead, secondStart - 1)
+      ) {
+        const length = secondStart - start
+        if (!isAdjacentRepeat(output, start, length)) continue
+        if (!isMeaningfulDuplicateCandidate(output.slice(start, secondStart))) continue
 
         output = output.slice(0, secondStart) + output.slice(secondStart + length)
         changed = true

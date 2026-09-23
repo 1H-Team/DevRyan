@@ -215,7 +215,7 @@ describe('web managed orchestration runtime', () => {
     expect(scheduler.submit).toHaveBeenCalledTimes(1);
   });
 
-  it('blocks only work-launching RPC actions during context-mode recovery', async () => {
+  it('blocks only work-launching RPC actions while work admission is blocked', async () => {
     const { task } = createWaitScheduler();
     const submit = vi.fn();
     const acknowledgeResult = vi.fn(async () => ({
@@ -237,13 +237,13 @@ describe('web managed orchestration runtime', () => {
       persistence: createPersistence(),
       executor: { async start() { throw new Error('must not start'); } },
       getWorkAdmissionBlock: () => ({
-        code: 'CONTEXT_MODE_RECOVERY_PENDING',
-        error: 'Context-mode recovery is pending',
+        code: 'runtime_recovery_pending',
+        error: 'Runtime recovery is pending',
       }),
     });
 
     await expect(runtime.handleRpc({ method: 'submit', params: submitParams(1) }))
-      .rejects.toMatchObject({ code: 'CONTEXT_MODE_RECOVERY_PENDING', statusCode: 503 });
+      .rejects.toMatchObject({ code: 'runtime_recovery_pending', statusCode: 503 });
     expect(submit).not.toHaveBeenCalled();
     await expect(runtime.handleRpc({
       method: 'status',
@@ -268,7 +268,7 @@ describe('web managed orchestration runtime', () => {
         action: 'retry',
         idempotencyKey: 'retry-during-recovery',
       },
-    })).rejects.toMatchObject({ code: 'CONTEXT_MODE_RECOVERY_PENDING', statusCode: 503 });
+    })).rejects.toMatchObject({ code: 'runtime_recovery_pending', statusCode: 503 });
     expect(acknowledgeResult).toHaveBeenCalledOnce();
     await runtime.shutdown();
   });
@@ -2046,7 +2046,7 @@ describe('web managed orchestration runtime', () => {
       params: submitParams(1, { childSessionId: 'ses_child_auto', dispatchGroupId: 'msg_parent' }),
     });
     // Block admission only once the child is running, then let it hit the limit.
-    block = { code: 'CONTEXT_MODE_RECOVERY_PENDING', error: 'Context-mode recovery is pending' };
+    block = { code: 'runtime_recovery_pending', error: 'Runtime recovery is pending' };
     firstStart.resolve({ status: 'failed', failureReason: 'out of usage', resumable: true });
     await runtime.flush();
     const status = () => runtime.handleRpc({

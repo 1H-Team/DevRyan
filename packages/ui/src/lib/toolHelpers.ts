@@ -227,6 +227,8 @@ function formatFallbackToolDisplayName(toolName: string): string {
     .join(' ');
 }
 
+// Legacy sessions: DevRyan no longer ships Context Mode, but stored sessions still
+// contain ctx_* tool parts that keep their readable "Context Mode: <Action>" label.
 function formatContextModeToolDisplayName(toolName: string): string | null {
   const trimmedToolName = toolName.trim();
   const contextModeMcpMatch = /^mcp__context[-_]mode__(.+)$/i.exec(trimmedToolName);

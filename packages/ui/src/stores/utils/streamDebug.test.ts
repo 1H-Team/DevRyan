@@ -262,7 +262,7 @@ describe("stream responsiveness diagnostics", () => {
       directory: "/project",
       metadata: {
         source: "active-session-watchdog",
-        tool: "ctx_execute",
+        tool: "bash",
         elapsedMs: 300_123.9,
         stalledForMs: 300_000,
         runtime: "renderer-secret",
@@ -280,7 +280,7 @@ describe("stream responsiveness diagnostics", () => {
         directory: "/project",
         metadata: {
           source: "active-session-watchdog",
-          tool: "ctx_execute",
+          tool: "bash",
           elapsedMs: 300_123,
         },
       },

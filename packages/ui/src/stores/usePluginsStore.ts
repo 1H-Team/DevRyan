@@ -94,7 +94,6 @@ const normalizeDefaultPluginId = (value: unknown): DevRyanDefaultPluginId | null
     || value === "@rama_nigg/open-cursor"
     || value === "oh-my-opencode-slim"
     || value === "opencode-with-claude"
-    || value === "context-mode"
     || value === "superpowers"
     || value === "openai-tool-schema-sanitizer"
     ? value

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
-import { createQaNaturalWorkload, createQaNaturalInvestigationPrompt, QA_NATURAL_COMPACTION_PHASES, deriveQaNativeCompactionPolicy, deriveQaNaturalPrefillTarget, findNaturalCompactionBoundaries, projectQaEarlyNaturalBoundary,
+import { findQaSeededInvestigationStarts, createQaNaturalWorkload, createQaNaturalInvestigationPrompt, QA_NATURAL_COMPACTION_PHASES, deriveQaNativeCompactionPolicy, deriveQaNaturalPrefillTarget, findNaturalCompactionBoundaries, projectQaEarlyNaturalBoundary,
   qaNativeTokenUsage, qaVisibleUserText, runQaNaturalCompaction } from './natural-compaction-scenarios.mjs';
 import { readQaSavedPlanRevision } from './compaction-approval.mjs';
 import { createQaProjectFixture, removeQaProjectFixture } from './project-fixture.mjs';
@@ -39,7 +39,9 @@ test('native input reserve controls the pinned OpenAI threshold, including effec
   assert.equal(nativePolicy({ modelLimits: { context: 200000, input: null, output: 64000 } }).threshold, 168000);
   assert.equal(nativePolicy({ modelLimits: { context: 200000, input: 0, output: 4000 } }).threshold, 196000);
   assert.equal(nativePolicy({ modelLimits: { context: 200000, output: 0 } }).maximumOutput, 32000);
-  for (const override of [{ version: '1.18.27' }, { compaction: { auto: false } }, { modelLimits: undefined },
+  // The shipped companion runtime is the pinned release plus DevRyan's execution patch.
+  assert.equal(nativePolicy({ version: '1.18.31-devryan.13' }).threshold, policy.threshold);
+  for (const override of [{ version: '1.18.27' }, { version: '1.18.27-devryan.3' }, { version: '1.18.31-beta.1' }, { compaction: { auto: false } }, { modelLimits: undefined },
     { modelLimits: { context: 0, output: 1000 } }, { outputTokenMax: 'not-a-number' }, { compaction: { reserved: -1 } }]) {
     assert.throws(() => nativePolicy(override));
   }
@@ -283,4 +285,15 @@ test('second-phase prefill excludes only exact previously recorded native events
   const missingPrior = projectQaEarlyNaturalBoundary(rows(), { previousPartIds: ['prt_auto'], previousNativeEvents: [],
     observations: previousNativeEvents, sessionID: 'ses_root', startedAt: 95 });
   assert.equal(missingPrior.nativeEvents.length, 2, 'Known message IDs alone cannot discard independent native observations');
+});
+
+test('a seed turn without a new managed start is detected immediately', () => {
+  const start = (callID) => ({ type: 'tool', tool: 'devryan_task', callID, state: { status: 'completed', input: { action: 'start', prompt: 'x' } } });
+  const rows = [
+    { info: { role: 'assistant' }, parts: [start('call_witness_1'), { type: 'tool', tool: 'devryan_task', callID: 'call_status', state: { input: { action: 'status' } } }] },
+    { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'I can’t start another specialist investigation in this planning phase.' }] },
+  ];
+  assert.deepEqual(findQaSeededInvestigationStarts(rows, new Set(['call_witness_1'])), []);
+  assert.deepEqual(findQaSeededInvestigationStarts([...rows, { info: { role: 'assistant' }, parts: [start('call_witness_2')] }], new Set(['call_witness_1'])), ['call_witness_2']);
+  assert.deepEqual(findQaSeededInvestigationStarts(undefined), []);
 });

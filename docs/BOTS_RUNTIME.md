@@ -642,10 +642,17 @@ to Login Items.
 
 Closing the app releases only the broker for native focus, notification, and
 browser/CDP capabilities. Bot services continue; a UI-only operation receives
-`desktop_host_unavailable` instead of an implicit fallback. **Disable background
-Bots** checkpoints and drains execution, unregisters the service, and preserves
-configuration while making execution unavailable. Legacy Bot users may retain
-app-bound mode for the compatibility release until they accept migration.
+`desktop_host_unavailable` instead of an implicit fallback.
+
+Settings → Bots → **Global Settings** has a **Background Runtime Service** switch
+(administrators only). Switching it off checkpoints and drains service-owned
+work, unregisters the LaunchAgent (including a registration still awaiting Login
+Items approval), and returns ownership to the app: Bots keep running while
+DevRyan is open and the runtime exits when the app quits. The choice is stored
+as `productionBotsRuntimeServiceOptOut`, which stops the first-launch automatic
+registration on every later launch; switching it on clears the flag and
+registers the service. The older `productionBotsRuntimeMode: "disabled"` state,
+which also blocks Bot execution, is still honored for installs that set it.
 
 Sleep, offline periods, restart, and disabled service state still use the
 reviewed `skip`, `run_once`, or `replay_capped` missed-occurrence policy (hard

@@ -482,18 +482,16 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   classification, stable tool error codes, and sanitized UTF-8 failure text
   capped at 8 KiB. Tool arguments are never retained merely to capture a code. Prompts,
   commands, tool output, arbitrary headers, response bodies, credentials, and
-  raw host paths are excluded before the outbox persists the row. Context-mode
-  SQLITE_IOERR / disk-I/O tool failures are rewritten to a stable wedge message
-  that still contains `SQLITE_IOERR`, so classification stays `medium` /
-  `tool_runtime` without looking like a host disk fault. `database is locked`
-  remains an actionable ordinary runtime error but does not trigger process
-  recovery.
+  raw host paths are excluded before the outbox persists the row. `database is
+  locked` remains an actionable ordinary runtime error but does not trigger
+  process recovery.
   Model attempts to call an unavailable tool are classified as low-impact
   `input` failures because the rejected invocation never enters tool execution.
-  Context Mode's deterministic `ctx_execute_file` project-boundary rejection is
-  also low-impact `input`; genuine Context Mode SQLite, disk-I/O, locking, and
-  other runtime failures remain `medium` / `tool_runtime`. A Context Mode call
-  that successfully invokes a nested command which exits nonzero is retained as
+  Context Mode is no longer provisioned, but stored sessions and error rows still
+  contain its `ctx_*` tool parts, so their classification is retained for
+  history: the deterministic `ctx_execute_file` project-boundary rejection is
+  low-impact `input`; SQLite, disk-I/O, locking, and other runtime failures are
+  `medium` / `tool_runtime`; and a call whose nested command exits nonzero is
   low-impact `command_exit`, because the command failed without the tool runtime
   itself failing.
   Structured error codes take precedence over compatibility message matching.

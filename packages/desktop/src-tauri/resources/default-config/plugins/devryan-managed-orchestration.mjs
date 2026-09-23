@@ -1567,7 +1567,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
       const taskIds = taskIdList.join(', ');
       // Be explicit about the ONE call that can make progress. The generic
       // "use devryan_task wait" wording left an orchestrator retrying ordinary
-      // tools — on 2026-08-21 five consecutive ctx_search/bash/grep calls all
+      // tools — on 2026-08-21 five consecutive search/bash/grep calls all
       // failed against this barrier, each burning a full turn.
       const nextCall = taskIdList.length > 0
         ? `devryan_task with action "wait" and task_id "${taskIdList[0]}"`
