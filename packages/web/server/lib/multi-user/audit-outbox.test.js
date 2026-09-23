@@ -294,4 +294,126 @@ describe('durable activity outbox', () => {
     expect(delivered.clipboard_text_redacted).toBe(true);
     await outbox.drain();
   });
+
+  it('never holds callers behind a black-holed backend and keeps a single delivery in flight', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-audit-blackhole-'));
+    temporaryDirectories.push(directory);
+    let inFlight = 0, maxInFlight = 0, recovered = false;
+    const pending = [];
+    const rest = vi.fn((_table, request) => {
+      inFlight += 1; maxInFlight = Math.max(maxInFlight, inFlight);
+      const answer = recovered ? Promise.resolve(request.body)
+        : new Promise((resolve, reject) => pending.push({ resolve, reject, request }));
+      return answer.finally(() => { inFlight -= 1; });
+    });
+    const outbox = await createAuditOutbox({ dataDirectory: directory, supabase: { rest }, logger: { warn() {} }, flushIntervalMs: 60_000 });
+    const started = Date.now();
+    await outbox.enqueue('c0000000-0000-4000-8000-000000000000', { action: 'git.commit', metadata: {} });
+    for (let index = 1; index <= 20; index += 1) {
+      await outbox.enqueue(`c0000000-0000-4000-8000-${String(index).padStart(12, '0')}`, { action: 'git.commit', metadata: {} });
+      await outbox.enqueueDeferred(`d0000000-0000-4000-8000-${String(index).padStart(12, '0')}`, { action: 'prompt', metadata: {} });
+    }
+    // The first caller waits at most the bounded delivery window; the rest do not wait.
+    expect(Date.now() - started).toBeLessThan(4_000);
+    expect(maxInFlight).toBe(1);
+    expect(await outbox.getStatus()).toMatchObject({ backlog: 41 });
+    // The backend recovers: the in-flight request completes and a coalesced
+    // flush delivers everything in batches of passes, still one at a time.
+    recovered = true;
+    while (pending.length) { const entry = pending.shift(); entry.resolve(entry.request.body); }
+    for (let attempt = 0; attempt < 5 && (await outbox.getStatus()).backlog > 0; attempt += 1) await outbox.flush();
+    expect((await outbox.getStatus()).backlog).toBe(0);
+    expect(maxInFlight).toBe(1);
+    await outbox.drain();
+  }, 20_000);
+
+  it('stops a pass at an unavailable backend but skips a single rejected record', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-audit-pass-'));
+    temporaryDirectories.push(directory);
+    let mode = 'down';
+    const rest = vi.fn(async (_table, request) => {
+      if (mode === 'down') throw Object.assign(new Error('fetch failed'), { status: 503 });
+      if (request.body.action === 'bad.record') throw Object.assign(new Error('violates check constraint'), { status: 400 });
+      return request.body;
+    });
+    const outbox = await createAuditOutbox({ dataDirectory: directory, supabase: { rest }, logger: { warn() {} }, flushIntervalMs: 60_000 });
+    for (const [id, action] of [['e0000000-0000-4000-8000-000000000001', 'bad.record'], ['e0000000-0000-4000-8000-000000000002', 'ok'], ['e0000000-0000-4000-8000-000000000003', 'ok']]) {
+      await outbox.enqueueDeferred(id, { action, metadata: {} });
+    }
+    await outbox.flush(); // Settles the background pass the enqueues requested.
+    rest.mockClear();
+    await outbox.flush();
+    // The first failure and one probe of the next record, never the whole backlog.
+    expect(rest).toHaveBeenCalledTimes(2);
+    expect((await outbox.getStatus()).retryAfterMs).toBeGreaterThan(0);
+    mode = 'up';
+    await outbox.flush();
+    expect((await outbox.getStatus()).backlog).toBe(1);
+    await outbox.drain();
+  });
+
+  it('keeps delivering later records while one record keeps failing', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-audit-poison-'));
+    temporaryDirectories.push(directory);
+    const rest = vi.fn(async (_table, request) => {
+      if (request.body.action === 'poison') throw Object.assign(new Error('statement timeout'), { status: 500 });
+      return request.body;
+    });
+    const outbox = await createAuditOutbox({ dataDirectory: directory, supabase: { rest }, logger: { warn() {} }, flushIntervalMs: 60_000 });
+    await outbox.enqueueDeferred('f0000000-0000-4000-8000-000000000001', { action: 'poison', metadata: {} });
+    await outbox.enqueueDeferred('f0000000-0000-4000-8000-000000000009', { action: 'poison', metadata: {} });
+    await outbox.flush(); // Both failing records now carry an attempt.
+    for (let index = 2; index <= 6; index += 1) {
+      await outbox.enqueueDeferred(`f0000000-0000-4000-8000-00000000000${index}`, { action: 'healthy', metadata: {} });
+    }
+    await outbox.flush();
+    expect((await outbox.getStatus()).backlog).toBe(2);
+    expect(rest.mock.calls.filter(([, request]) => request.body.action === 'healthy')).toHaveLength(5);
+    await outbox.drain();
+  });
+
+  it('never backs the whole outbox off for one record that keeps failing', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-audit-lone-poison-'));
+    temporaryDirectories.push(directory);
+    const rest = vi.fn(async (_table, request) => {
+      if (request.body.action === 'poison') throw Object.assign(new Error('statement timeout'), { status: 500 });
+      return request.body;
+    });
+    const outbox = await createAuditOutbox({ dataDirectory: directory, supabase: { rest }, logger: { warn() {} }, flushIntervalMs: 60_000 });
+    await outbox.enqueueDeferred('d0000000-0000-4000-8000-000000000001', { action: 'poison', metadata: {} });
+    for (let pass = 0; pass < 6; pass += 1) await outbox.flush();
+    // Only the first (fresh) failure may start a short shared backoff.
+    expect((await outbox.getStatus()).retryAfterMs).toBeLessThan(61_000);
+    await outbox.enqueueDeferred('d0000000-0000-4000-8000-000000000002', { action: 'healthy', metadata: {} });
+    await outbox.flush();
+    expect(rest.mock.calls.filter(([, request]) => request.body.action === 'healthy')).toHaveLength(1);
+    expect((await outbox.getStatus()).backlog).toBe(1);
+    await outbox.drain();
+  });
+
+  it('runs a delivery barrier and an explicit flush while steady traffic keeps arriving', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-audit-traffic-'));
+    temporaryDirectories.push(directory);
+    const rest = vi.fn(async (_table, request) => { await new Promise((resolve) => setTimeout(resolve, 10)); return request.body; });
+    const outbox = await createAuditOutbox({ dataDirectory: directory, supabase: { rest }, logger: { warn() {} }, flushIntervalMs: 60_000 });
+    let traffic = true, sent = 0;
+    const pump = (async () => {
+      const until = Date.now() + 1_500;
+      while (Date.now() < until) {
+        sent += 1;
+        void outbox.enqueueDeferred(`c0000000-0000-4000-8000-${String(sent).padStart(12, '0')}`, { action: 'fixture.event', metadata: {} });
+        await new Promise((resolve) => setTimeout(resolve, 8));
+      }
+      traffic = false;
+    })();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await expect(outbox.withFlushedDeliveryBarrier(() => traffic)).resolves.toBe(true);
+    await outbox.flush();
+    expect(traffic).toBe(true);
+    await pump;
+    await outbox.flush();
+    expect((await outbox.getStatus()).backlog).toBe(0);
+    expect(rest).toHaveBeenCalledTimes(sent);
+    await outbox.drain();
+  });
 });

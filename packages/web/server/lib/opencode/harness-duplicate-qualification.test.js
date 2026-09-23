@@ -29,7 +29,12 @@ describe('duplicate output release qualification', () => {
     const f = await fixture(); expect(DUPLICATE_OUTPUT_PROFILES).toHaveLength(1);
     expect(qualifyDuplicateOutputs({ ...f.input, profiles: undefined }).qualified).toBe(false);
     expect(qualifyDuplicateOutputs(f.input).qualified).toBe(true);
-    expect(resolveDuplicateOutputPolicy({})).toBe(true);
+    // The only shipped profile is stale, so the default policy is off.
+    expect(DUPLICATE_OUTPUT_PROFILES.every((profile) => profile.stale)).toBe(true);
+    expect(resolveDuplicateOutputPolicy({})).toBe(false);
+    expect(resolveDuplicateOutputPolicy({}, [{ ...f.profile, defaultEnabled: true, stale: { reason: 'bytes changed', plugins: [] } }])).toBe(false);
+    expect(qualifyDuplicateOutputs({ ...f.input, profiles: [{ ...f.profile, stale: { reason: 'bytes changed', plugins: [] } }] }))
+      .toEqual({ qualified: false, reason: 'profile-stale' });
     expect(resolveDuplicateOutputPolicy({ DEVRYAN_DUPLICATE_OUTPUTS: '0' })).toBe(false);
     const promoted = [{ ...f.profile, defaultEnabled: true }];
     expect(resolveDuplicateOutputPolicy({}, promoted)).toBe(true);
@@ -52,11 +57,18 @@ describe('duplicate output release qualification', () => {
       const report = await fs.readFile(new URL('../../../../../docs/audits/2026-09-20-context-deduplication/live-acceptance.json', import.meta.url));
       expect(crypto.createHash('sha256').update(report).digest('hex')).toBe(profile.evidence.reportHash);
       expect(JSON.parse(report).qualified).toBe(true);
+      // A stale profile must name exactly the bundled plugins whose bytes
+      // changed; every other qualified plugin stays pinned.
+      const stale = new Set(profile.stale?.plugins ?? []);
+      if (profile.stale) expect(profile.stale.reason.length).toBeGreaterThan(20);
       for (const entry of profile.plugins) {
         if (!entry.name.endsWith('.mjs') && entry.name !== 'council-session.js') continue;
         const body = await fs.readFile(new URL(`../../default-config/plugins/${entry.name}`, import.meta.url));
-        expect(crypto.createHash('sha256').update(body).digest('hex'), entry.name).toBe(entry.contentHash);
+        const actual = crypto.createHash('sha256').update(body).digest('hex');
+        if (stale.has(entry.name)) expect(actual, entry.name).not.toBe(entry.contentHash);
+        else expect(actual, entry.name).toBe(entry.contentHash);
       }
+      for (const name of stale) expect(profile.plugins.some((entry) => entry.name === name)).toBe(true);
     }
   });
   it('matches plugin/native inventories exactly and rejects custom, reordered, changed, external or unqualified routes', async () => {

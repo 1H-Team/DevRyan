@@ -103,6 +103,7 @@ const record = (
     timeoutAt: null,
   }),
   status,
+  recoverablePreview: status === 'completed' ? 'Finished analysis\n\n**Status:** complete' : '',
   childSessionId: 'ses_child',
   ...(status === 'queued' ? {} : { startedAt: 1_100 }),
   ...(['completed', 'failed', 'aborted', 'interrupted'].includes(status) ? { finishedAt: 2_000 } : {}),
@@ -212,6 +213,31 @@ test('connection backup completion shows the recovered model and thinking', () =
   expect(html).not.toContain('after the usage limit');
 });
 
+for (const [recoverablePreview, label] of [
+  ['No tools could execute.\n\n**Status:** blocked', 'Child reports blocked'],
+  ['**Status:** blocked\n\nReason: execution unavailable', 'Result needs review'],
+]) test(`completed transport preserves reported result uncertainty: ${recoverablePreview}`, () => {
+  const task = toManagedTaskEvent(record('dvr_task_blocked', 'completed', {
+    recoverablePreview, transportRecovery: { ...transportRecovery, phase: 'recovered', backupAttempts: 1 },
+  })).properties.task;
+  const html = renderView(<ManagedTaskRowView task={task} onOpenChild={() => undefined} />);
+  expect(html).toContain(label);
+  expect(html).not.toContain('Recovered with');
+  expect(html).not.toContain('>Complete<');
+});
+
+for (const recoverablePreview of ['Implemented the change without a terminal marker.', 'Done.\n\n**Status:** Complete.', `${'Long retained output. '.repeat(2_900)}`]) {
+  test(`a completed result without a reported marker stays complete (${recoverablePreview.length} chars)`, () => {
+    const task = toManagedTaskEvent(record('dvr_task_unmarked', 'completed', {
+      recoverablePreview, transportRecovery: { ...transportRecovery, phase: 'recovered', backupAttempts: 1 },
+    })).properties.task;
+    const html = renderView(<ManagedTaskRowView task={task} onOpenChild={() => undefined} />);
+    expect(html).not.toContain('Result needs review');
+    expect(html).not.toContain('Child reports blocked');
+    expect(html).toContain('Recovered with');
+  });
+}
+
 test('an unavailable backup keeps a clear manual recovery action', () => {
   const failed = record('dvr_task_no_backup', 'failed', { failureReason: 'Connection closed mid-response', transportRecovery });
   const envelope = {
@@ -248,7 +274,7 @@ describe('ManagedTaskRow', () => {
     expect(runningMarkup).toContain('Running...');
     expect(runningMarkup).not.toContain('data-managed-task-fallback-id');
     expect(runningMarkup).not.toContain('>Error<');
-    ingest(toManagedTaskEvent({ ...active, status: 'completed', finishedAt: 3_000 }).properties.task);
+    ingest(toManagedTaskEvent({ ...active, status: 'completed', finishedAt: 3_000, recoverablePreview: '**Status:** complete' }).properties.task);
     const completedMarkup = await render();
     expect(completedMarkup).toContain('Complete');
     expect(completedMarkup).not.toContain('>Error<');

@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { withExecutionAdmission } from './execution-admission.js';
 import { createPrimaryRecoveryController } from './provider-recovery.js';
 import { recoveryError, inspectRecoveryTurn, RECOVERY_CONTINUATION, RECOVERY_READ_TOOLS } from './provider-recovery-policy.js';
 
@@ -33,7 +34,9 @@ export function createPrimaryRecoveryHost(options) {
     const response = await fetchImpl(url, { ...init,
       headers: { 'content-type': 'application/json', ...options.getOpenCodeAuthHeaders?.() },
       signal: init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(5000)]) : AbortSignal.timeout(5000) });
-    if (!response.ok) throw recoveryError('recovery_observation_unavailable', 503);
+    // The upstream status distinguishes a deleted session (definitive) from a
+    // busy or restarting runtime (transient); the code stays the same.
+    if (!response.ok) throw Object.assign(recoveryError('recovery_observation_unavailable', 503), { upstreamStatus: response.status });
     if (response.status === 204) return { data: null, response };
     const reader = response.body?.getReader();
     const chunks = [];
@@ -53,12 +56,16 @@ export function createPrimaryRecoveryHost(options) {
   };
   const session = async (id, directory, init) => {
     if (!/^ses_[a-zA-Z0-9]+$/.test(id)) throw recoveryError('invalid_session_id', 400);
-    const { data } = await request(`/session/${id}`, directory, init);
+    // Only the session route itself can prove the session is gone.
+    const { data } = await request(`/session/${id}`, directory, init).catch((error) => {
+      if (error?.upstreamStatus === 404) error.sessionMissing = true;
+      throw error;
+    });
     if (!object(data) || data.id !== id || typeof data.directory !== 'string') throw recoveryError('invalid_session_observation');
     return data;
   };
   const observeTurn = async (record, init = {}) => {
-    const { includeTodos, ...requestInit } = init;
+    const { includeTodos, includeExecutionOutcomes, ...requestInit } = init;
     const started = Date.now();
     const messages = [];
     let cursor;
@@ -68,7 +75,13 @@ export function createPrimaryRecoveryHost(options) {
     // A bound is a failure, never proof that a partial transcript is complete.
     while (!complete && messages.length < 10_000 && Date.now() - started < 15_000) {
       const query = new URLSearchParams({ limit: '100', ...(cursor ? { before: cursor } : {}) });
-      const { data, response, bytes } = await request(`/session/${record.sessionID}/message?${query}`, record.directory, requestInit);
+      const { data, response, bytes } = await request(`/session/${record.sessionID}/message?${query}`, record.directory, requestInit)
+        .catch(async (error) => {
+          // The transcript route answers first; only the session route can
+          // confirm the session itself is gone.
+          if (error?.upstreamStatus === 404) await session(record.sessionID, record.directory, requestInit);
+          throw error;
+        });
       totalBytes += bytes;
       if (totalBytes > 32 * 1024 * 1024) throw recoveryError('recovery_transcript_too_large');
       if (!Array.isArray(data) || data.some((m) => !object(m.info) || !Array.isArray(m.parts))) {
@@ -94,10 +107,31 @@ export function createPrimaryRecoveryHost(options) {
     // missing entry alone is insufficient: existence, transcript and blockers
     // are independently checked here and by inspectRecoveryTurn.
     const blockedByRequests = [...permissions.data, ...questions.data].some((p) => p.sessionID === record.sessionID);
+    const failedCalls = messages.filter(message => message.info.role === 'assistant')
+      .flatMap(message => message.parts.filter(part => part.type === 'tool' && part.state?.status === 'error')
+        .map(part => ({ messageID: message.info.id, callID: part.callID })));
+    // Missing/expired evidence leaves the existing uncertainty fence intact;
+    // evidence that could not be READ (e.g. a busy ledger) is reported so a
+    // collection is retried instead of fenced permanently.
+    let executionOutcomesUnavailable = false;
+    const executionOutcomes = includeExecutionOutcomes && failedCalls.length && options.executionOutcomes
+      ? await withExecutionAdmission({ sessionID: record.sessionID },
+        () => options.executionOutcomes({ directory: record.directory, sessionID: record.sessionID, calls: failedCalls }),
+        { timeoutMs: 4000, signal: init.signal }).catch(() => { executionOutcomesUnavailable = true; return []; }) : [];
     return { session: currentSession, messages, complete, blockedByRequests, managedBarrierState: barrier.state,
+      executionOutcomes, executionOutcomesUnavailable,
       ...(includeTodos ? { todos: todos?.data } : {}),
       status: statuses.data[record.sessionID]?.type ?? 'idle',
       blocked: barrier.state !== 'clear' || blockedByRequests };
+  };
+  // A slow ownership store (e.g. Supabase) must not hold an explicit user
+  // continuation open; an unanswered authorization denies it.
+  const authorizeWithin = async (record, timeoutMs) => {
+    let timer;
+    try {
+      return await Promise.race([Promise.resolve(options.authorize(record)).catch(() => false),
+        new Promise((resolve) => { timer = setTimeout(() => resolve(false), timeoutMs); })]);
+    } finally { clearTimeout(timer); }
   };
   const abortSession = (r) => request(`/session/${r.sessionID}/abort`, r.directory, { method: 'POST', body: '{}' });
   const controller = createPrimaryRecoveryController({
@@ -162,12 +196,13 @@ export function createPrimaryRecoveryHost(options) {
             const collectBlockedResult = Boolean(stored.collectionIssue && observed.blockedByRequests === false
               && observed.managedBarrierState === 'awaiting_acknowledgement');
             if (observed.status !== 'idle' || check.superseded || (observed.blocked && !collectBlockedResult) || executing || !check.last?.info.time?.completed) throw recoveryError('provider_stop_unconfirmed');
-            if (!/^msg_[a-zA-Z0-9]+$/.test(body.messageID ?? '') || !await options.authorize(stored)) throw recoveryError('recovery_continuation_unavailable');
+            if (!/^msg_[a-zA-Z0-9]+$/.test(body.messageID ?? '') || !await authorizeWithin(stored, 5000)) throw recoveryError('recovery_continuation_unavailable');
             await controller.control(id, 'supersede', body.revision);
             const prompt = { messageID: body.messageID, model: { providerID: stored.providerID, modelID: stored.modelID },
               agent: stored.agent, ...(stored.variant ? { variant: stored.variant } : {}), tools: stored.tools,
               parts: [{ type: 'text', text: `${collectBlockedResult ? 'Continue from the existing progress and completed tool results.' : RECOVERY_CONTINUATION} The user has now explicitly requested continuation with the original execution permissions. Review any uncertain outcomes before taking further action.${collectBlockedResult ? ` Collect and disposition the existing managed result for ${stored.collectionIssue.taskId} using devryan_task wait, then continue the unfinished objective. Do not repeat the completed child.` : ''}` }] };
-            await controller.admit({ sessionID: id, directory: stored.directory, primary: true, owner: stored.owner, body: prompt });
+            await controller.admit({ sessionID: id, directory: stored.directory, primary: true, owner: stored.owner, body: prompt,
+              objectiveID: stored.objectiveID ?? stored.anchorID });
             // Explicit user action, still a single POST. A lost acknowledgement
             // must be reconciled through GET, never silently retried.
             await request(`/session/${id}/prompt_async`, stored.directory, { method: 'POST', body: JSON.stringify(prompt) });

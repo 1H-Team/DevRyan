@@ -15,7 +15,7 @@ const snapshot = (): PrimaryRecoverySnapshot => ({ schemaVersion: 1, mode: 'enfo
     providerID: 'openai', modelID: 'gpt-fixture', agent: 'orchestrator', variant: null, reason: null, updatedAt: 100,
     collectionIssue: { taskId: 'dvr_task_recovered', code: 'managed_continuation_fenced' } } });
 
-test('hides collection notices while retaining refresh and recovering on projection changes', async () => {
+test('offers an explicit collection for a fenced sub-agent result and recovers on projection changes', async () => {
   requests.length = 0;
   respond = async () => {};
   await withDom(async container => {
@@ -24,9 +24,12 @@ test('hides collection notices while retaining refresh and recovering on project
     try {
       usePrimaryRecoveryStore.setState({ snapshots: { ses_root: snapshot() } });
       await act(async () => root.render(<HostPrimaryRecovery sessionId="ses_root" showAvailability />));
-      expect(container.textContent).toBe('');
-      expect(container.find(node => node.tagName === 'BUTTON')).toBeNull();
+      expect(container.textContent).toContain('Sub-agent result ready');
+      expect(container.textContent).not.toContain('managed_continuation_fenced');
       expect(requests).toEqual([['ses_root']]);
+      await act(async () => { container.find(node => node.tagName === 'BUTTON' && node.textContent === 'Collect Result')?.click(); });
+      expect(requests[1].slice(0, 2)).toEqual(['ses_root', 'continue']);
+      requests.splice(1);
       const changed = snapshot();
       changed.record!.collectionIssue = null;
       changed.record!.state = 'needs_attention';

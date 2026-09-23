@@ -35,6 +35,9 @@ const LIVE_TASK_STATUSES = new Set(['queued', 'starting', 'running']);
 const TERMINAL_TASK_STATUSES = new Set(['completed', 'failed', 'aborted', 'interrupted']);
 const PROVIDER_RECOVERY_SCAN_DELAY_MS = 500;
 const PROVIDER_RECOVERY_RETRY_DELAY_MS = 1_000;
+// Failed continuation attempts back off: each re-reads the parent transcript.
+// The cap stays short because other parents' wakes share the next scan.
+const PROVIDER_RECOVERY_MAX_RETRY_DELAY_MS = 8_000;
 // Child idle can lead the 750ms managed observer and durable terminal commit.
 // Keep this window bounded so ordinary idle events never create a polling loop.
 const PROVIDER_RECOVERY_SETTLE_RETRY_COUNT = 2;
@@ -335,6 +338,9 @@ const isOpenTodoContinuationPart = (part) => {
   return text === OPEN_TODO_CONTINUATION_PROMPT
     || text.startsWith(`${OPEN_TODO_CONTINUATION_MARKER}\n`);
 };
+
+const isCompactionSummaryRecord = (record) => record?.info?.role === 'assistant'
+  && (record.info.summary === true || record.info.mode === 'compaction' || record.info.agent === 'compaction');
 
 const isPlanMaintenanceRecord = (record) => (
   record?.info?.role === 'user'
@@ -1351,6 +1357,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
   let recoveryScanTimer = null;
   let recoveryScanRequested = false;
   let recoverySettleRetriesRemaining = 0;
+  let recoveryRetryStreak = 0;
   let disposed = false;
   const commitWatchController = new AbortController();
   let commitWatchPromise = null;
@@ -1843,8 +1850,21 @@ export const DevRyanManagedOrchestrationPlugin = async ({
 
     const historyPage = await readPlanHistoryPage(client, { sessionId: rootSessionId, directory });
     const records = historyPage.records;
-    const last = records[records.length - 1];
+    let last = records[records.length - 1];
     if (last?.info?.role !== 'assistant') return false;
+    // A completed manual compaction summary is maintenance: judge the work it
+    // summarized (the latest real assistant before the compaction request).
+    // Automatic compaction continues natively, so its summary is never last.
+    if (isCompactionSummaryRecord(last)) {
+      if (last.info.error || !Number.isFinite(last.info.time?.completed)) return false;
+      const requestIndex = records.findIndex((record) => record?.info?.id === last.info.parentID);
+      const request = records[requestIndex];
+      // Only a manual compaction: automatic compaction owns its native
+      // continuation, even when that continuation did not happen.
+      if (request?.info?.role !== 'user' || !request.parts?.some((part) => part?.type === 'compaction' && part.auto === false)) return false;
+      last = records.slice(0, requestIndex).findLast((record) => record?.info?.role === 'assistant' && !isCompactionSummaryRecord(record));
+      if (!last) return false;
+    }
     const lastAgent = typeof last.info.agent === 'string' && last.info.agent.trim()
       ? last.info.agent.trim().toLowerCase()
       : typeof last.info.mode === 'string'
@@ -2032,8 +2052,11 @@ export const DevRyanManagedOrchestrationPlugin = async ({
           recoveryScanRequested = false;
           const settleRetryNeeded = !retryNeeded && recoverySettleRetriesRemaining > 0;
           if (settleRetryNeeded) recoverySettleRetriesRemaining -= 1;
+          recoveryRetryStreak = retryNeeded ? recoveryRetryStreak + 1 : 0;
           if (retryNeeded || trailingScanRequested || settleRetryNeeded) {
-            scheduleRecoveryScan({ delayMs: PROVIDER_RECOVERY_RETRY_DELAY_MS });
+            scheduleRecoveryScan({ delayMs: retryNeeded
+              ? Math.min(PROVIDER_RECOVERY_RETRY_DELAY_MS * 2 ** (recoveryRetryStreak - 1), PROVIDER_RECOVERY_MAX_RETRY_DELAY_MS)
+              : PROVIDER_RECOVERY_RETRY_DELAY_MS });
           } else if (pendingOpenTodoChecks.size > 0) {
             // Only once recovery has settled with nothing left to send does the
             // open-todo safety net get to nudge an idle orchestrator turn.

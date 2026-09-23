@@ -295,6 +295,36 @@ describe('Bot capability connection controller', () => {
     expect(eventStarts).toBe(1);
   });
 
+  test('a deliberately disconnected Supabase stops capability polling until an explicit retry', async () => {
+    const timers: Array<() => void> = [];
+    let loads = 0;
+    let errorCode: string | null = 'supabase_disconnected';
+    const controller = createBotCapabilityConnectionController({
+      loadCapabilities: async () => { loads += 1; return null; },
+      getCapabilitiesErrorCode: () => errorCode,
+      canStream: () => false,
+      isTransient: () => true,
+      isFinalErrorCode: (code) => code === 'supabase_disconnected',
+      createConnection: () => ({ start: () => {}, retry: () => {}, dispose: () => {} }),
+      setConnectionState: () => {},
+      setTimeoutImpl: ((callback: () => void) => {
+        timers.push(callback);
+        return timers.length as unknown as ReturnType<typeof setTimeout>;
+      }) as typeof setTimeout,
+      clearTimeoutImpl: (() => {}) as unknown as typeof clearTimeout,
+    });
+    controller.start();
+    await flushAsync();
+    expect(loads).toBe(1);
+    expect(timers).toHaveLength(0);
+    errorCode = 'bot_request_failed';
+    controller.retry();
+    await flushAsync();
+    expect(loads).toBe(2);
+    expect(timers).toHaveLength(1);
+    controller.dispose();
+  });
+
   test('dispose cancels a scheduled capability retry and ignores its stale callback', async () => {
     const timers: Array<() => void> = [];
     const cleared: unknown[] = [];

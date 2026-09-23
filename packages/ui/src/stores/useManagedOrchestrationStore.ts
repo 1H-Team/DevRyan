@@ -240,6 +240,7 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskProjectedRecord
       || value.failureKind === null
       || value.failureKind === 'provider_usage_limit'
       || value.failureKind === 'provider_authentication'
+      || value.failureKind === 'provider_configuration'
       || value.failureKind === 'provider_prompt_rejected'
       || value.failureKind === 'model_unavailable'
       || value.failureKind === 'deadline_exceeded'
@@ -297,6 +298,7 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskProjectedRecord
       : truncateManagedText(value.failureReason, MAX_MANAGED_TASK_FAILURE_BYTES),
     failureKind: value.failureKind === 'provider_usage_limit'
       || value.failureKind === 'provider_authentication'
+      || value.failureKind === 'provider_configuration'
       || value.failureKind === 'provider_transport'
       || value.failureKind === 'provider_prompt_rejected'
       || value.failureKind === 'model_unavailable'
@@ -689,6 +691,7 @@ const isManualRecoveryTask = (
   && (
     task.failureKind === 'provider_usage_limit'
     || task.failureKind === 'provider_authentication'
+    || task.failureKind === 'provider_configuration'
     || task.failureKind === 'model_unavailable'
     || Boolean(task.transportRecovery)
     || (task.mode === 'orchestrator' && task.dispatchGrouped && task.attempt >= 2)

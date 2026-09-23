@@ -20,6 +20,14 @@ export const PROVIDER_PROMPT_REJECTED_FAILURE_KIND = 'provider_prompt_rejected';
 export const MODEL_UNAVAILABLE_FAILURE_KIND = 'model_unavailable';
 export const DEADLINE_EXCEEDED_FAILURE_KIND = 'deadline_exceeded';
 export const PROVIDER_TRANSPORT_FAILURE_KIND = 'provider_transport';
+export const PROVIDER_CONFIGURATION_FAILURE_KIND = 'provider_configuration';
+// Provider region/privacy policy rejections cannot heal on retry. Match the
+// normalized policy phrase, not exact punctuation, so provider rewording keeps
+// the configuration classification. Generic upstream failures are unaffected.
+const PROVIDER_CONFIGURATION_PATTERN = /\bmodel requires global regions?\b|\bselect global in your workspace'?s privacy settings\b/;
+export const isProviderConfigurationFailure = (value) => typeof value === 'string'
+  && value.length <= 16 * 1024
+  && PROVIDER_CONFIGURATION_PATTERN.test(value.replace(/[\u2018\u2019\u02bc]/g, "'").replace(/\s+/g, ' ').toLowerCase());
 export const MANAGED_TASK_TIMEOUT_REASON_PREFIX = 'Managed task timed out at ';
 export const PROVIDER_TRANSPORT_FAILURE_KINDS = Object.freeze([
   'request_timeout',
@@ -82,7 +90,7 @@ export const classifyProviderTransportFailure = (name, detail) => {
   const normalizedName = normalizeTransportFailureText(name);
   const normalizedDetail = normalizeTransportFailureText(detail);
   const combined = [normalizedName, normalizedDetail].filter(Boolean).join(': ');
-  if (isProviderAuthenticationFailure(combined)) return null;
+  if (isProviderAuthenticationFailure(combined) || isProviderConfigurationFailure(normalizedDetail)) return null;
   const compactName = normalizedName.replace(/[^a-z0-9]+/gi, '');
   // Checked first: these strings can legitimately contain "abort"/"cancelled".
   if (combined && PROVIDER_QUEUE_FAILURE_PATTERN.test(combined)) {
@@ -172,6 +180,7 @@ export const isManagedTaskModelUnavailable = (value) => (
 
 export const classifyManagedTaskFailure = (value) => (
   (isProviderAuthenticationFailure(value) ? PROVIDER_AUTHENTICATION_FAILURE_KIND : null)
+  ?? (isProviderConfigurationFailure(value) ? PROVIDER_CONFIGURATION_FAILURE_KIND : null)
   ?? classifyProviderRetryFailure(value)
   ?? (isManagedTaskModelUnavailable(value) ? MODEL_UNAVAILABLE_FAILURE_KIND : null)
   ?? (isManagedTaskDeadlineExceeded(value) ? DEADLINE_EXCEEDED_FAILURE_KIND : null)

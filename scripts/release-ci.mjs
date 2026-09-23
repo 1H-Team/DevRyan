@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { BOT_RUNTIME_IMAGE_DEFINITIONS, assembleBotRuntimeImages, createBotRuntimeImageBuildPlan, signBotRuntimeImage } from './build-bot-runtime-images.mjs';
 import { describeWebArtifact, verifyWebArtifact, stageWebArtifact, hash, releaseIdentity, verifyPreparedMetadata } from './release-artifacts.mjs';
 import { restoreRevertRuntimeExecutableModes } from './verify-revert-runtime-artifacts.mjs';
+import companion from '../packages/web/server/lib/opencode/companion/manifest.json' with { type: 'json' };
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const env = process.env;
@@ -22,6 +23,7 @@ const run = (args) => {
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error('Prepared artifact archive operation failed');
 };
+const preparedArchive = 'prepared.tar.zst';
 const botIdentity = { version: identity.release, revision: identity.revision, repositoryPrefix: `ghcr.io/${env.GITHUB_REPOSITORY_OWNER?.toLowerCase()}` };
 switch (env.RELEASE_OPERATION) {
   case 'image-plan': {
@@ -42,7 +44,10 @@ switch (env.RELEASE_OPERATION) {
   }
   case 'web-pack':
     await verifyWebArtifact(path.join(root, 'packages/web/dist'), await read('web.json'), identity);
-    for (const arch of ['arm64', 'x64']) await restoreRevertRuntimeExecutableModes({ platform: 'darwin', arch });
+    for (const target of companion.supportedArtifacts) {
+      const [platform, arch] = target.split('-');
+      await restoreRevertRuntimeExecutableModes({ platform, arch });
+    }
     await packWebRelease({ root, destination: path.join(root, 'packages/web') });
     break;
   case 'web-describe':
@@ -61,14 +66,15 @@ switch (env.RELEASE_OPERATION) {
       const relative = `packages/${entry}/node_modules`;
       if (await fs.lstat(path.join(root, relative)).then(() => true, () => false)) files.push(relative);
     }
-    run(['-czf', path.join(output, 'prepared.tgz'), ...files]);
-    await write('prepared.json', { version: 1, kind: 'electron-prepared', ...identity, arch, archiveHash: hash(await fs.readFile(path.join(output, 'prepared.tgz'))) });
+    // Multithreaded zstd: single-threaded gzip of the dependency tree dominated this step.
+    run(['--use-compress-program', 'zstd -T0 -3', '-cf', path.join(output, preparedArchive), ...files]);
+    await write('prepared.json', { version: 1, kind: 'electron-prepared', ...identity, arch, archiveHash: hash(await fs.readFile(path.join(output, preparedArchive))) });
     break;
   }
   case 'prepare-import':
     verifyPreparedMetadata(await read('prepared.json'), identity, env.ELECTRON_BUILDER_ARCH,
-      hash(await fs.readFile(path.join(output, 'prepared.tgz'))));
-    run(['-xzf', path.join(output, 'prepared.tgz')]);
+      hash(await fs.readFile(path.join(output, preparedArchive))));
+    run(['--use-compress-program', 'zstd -d -T0', '-xf', path.join(output, preparedArchive)]);
     break;
   default: throw new Error('Unknown release CI operation');
 }

@@ -64,7 +64,7 @@ const NESTED_FIELDS = new Set([
   'firstAssistantPartAt', 'childPromptedAt', 'start', 'end', 'autoResume', 'trigger', 'rejectionState',
   'beforeBytes', 'projectedBytes', 'dynamicBytes', 'plannedReductions', 'appliedReductions', 'savedBytes',
   'transformDurationMs', 'finalRequestBytes', 'inventory', 'entries', 'targetKind', 'lastAt', 'coalescedDiagnostics',
-  'progressKind', 'progress', 'counts', 'lastUsefulAt', 'relevance', 'policy',
+  'progressKind', 'progress', 'counts', 'lastUsefulAt', 'relevance', 'policy', 'slow', 'steps', 'fenceReason', 'retired', 'supported', 'transport',
   'tool-evidence', 'child-completed', 'artifact-changed', 'required-check',
 ]);
 

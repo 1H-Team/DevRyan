@@ -14,6 +14,11 @@ export const normalizeOpenCodeVersion = (value) => {
   return `${Number(major)}.${Number(minor)}.${Number(patch)}${prerelease ? `-${prerelease}` : ''}`;
 };
 
+// The bundled companion runtime reports `<upstream>-devryan.<n>`: it is that
+// upstream release (with DevRyan's execution patch), not a prerelease of it.
+const COMPANION_VERSION = /^(\d+\.\d+\.\d+)-devryan\.\d+$/;
+export const openCodeBaseVersion = (value) => value?.match(COMPANION_VERSION)?.[1] ?? value;
+
 const parseVersion = (value) => {
   const normalized = normalizeOpenCodeVersion(value);
   if (!normalized) return null;
@@ -82,8 +87,9 @@ export const buildOpenCodeUpdateInfo = ({
     throw new Error('Unable to determine the DevRyan-supported OpenCode version');
   }
 
-  const latestComparison = current ? compareOpenCodeVersions(latest, current) : null;
-  const supportComparison = current ? compareOpenCodeVersions(current, supported) : null;
+  const currentBase = openCodeBaseVersion(current);
+  const latestComparison = current ? compareOpenCodeVersions(latest, currentBase) : null;
+  const supportComparison = current ? compareOpenCodeVersions(currentBase, supported) : null;
   const supportStatus =
     supportComparison === null
       ? 'unknown'

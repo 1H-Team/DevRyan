@@ -3,7 +3,7 @@ import express from 'express';
 import fsPromises from 'node:fs/promises';
 import nodeOs from 'node:os';
 import path from 'node:path';
-import request from 'supertest';
+import request from '../../test-supertest.js';
 
 import { assistantImageSyntaxFixtures } from '../../../../shared-runtime/testing/assistant-image-fixtures.js';
 import {

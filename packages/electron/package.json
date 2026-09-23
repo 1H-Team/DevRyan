@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/electron",
-  "version": "1.2.9",
+  "version": "1.2.10",
   "private": true,
   "description": "Electron desktop runtime for DevRyan",
   "author": "DevRyan",
@@ -44,7 +44,7 @@
     "type-check": "node --check ./origin-policy.mjs && node --check ./browser-webview-policy.mjs && node --check ./browser-devtools-controller.mjs && node --check ./browser-surface-manager.mjs && node --check ./browser-cdp-bridge.mjs && node --check ./bot-secret-store.mjs && node --check ./bot-recovery-dialog.mjs && node --check ./bot-runtime-manifest.mjs && node --check ./bot-runtime-manager.mjs && node --check ./runtime-service.mjs && node --check ./runtime-service-native.mjs && node --check ./runtime-service-registration.mjs && node --check ./runtime-service-startup.mjs && node --check ./desktop-host-broker.mjs && node --check ./scripts/build-web-assets.mjs && node --check ./scripts/build-speech-helper.mjs && node --check ./scripts/build-runtime-service-control.mjs && node --check ./scripts/verify-runtime-service-package.mjs && node --check ./scripts/bundle-main.mjs && node --check ./scripts/electron-cdp-smoke.mjs && node --check ./scripts/bot-catalog-native-pointer-smoke.mjs && node --check ../../scripts/capture-production-bots-visuals.mjs && node --check ../../scripts/package-production-bots-visual-shell.mjs && node --check ../../tests/visual-production-bots/electron-shell.cjs && node --check ../../scripts/build-bot-runtime-images.mjs && node --check ../../scripts/verify-bot-runtime-images.mjs && node --check ./main.mjs && node --check ./preload.mjs",
     "lint": "node -e \"process.exit(0)\"",
     "prepare:native": "bun run build:native-helpers && bun run bundle:main && bun run rebuild:native",
-    "prepare": "bun run build:web-assets && bun run prepare:native",
+    "prepare": "node ./scripts/prepare.mjs",
     "package:prepared": "node ./scripts/package-prepared.mjs"
   },
   "build": {

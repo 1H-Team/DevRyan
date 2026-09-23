@@ -1,5 +1,5 @@
 import express from 'express';
-import request from 'supertest';
+import request from '../../test-supertest.js';
 import { describe, expect, it, vi } from 'vitest';
 import { registerSupabaseConnectionRoutes } from './connection-routes.js';
 
@@ -19,7 +19,7 @@ describe('About connection status authorization', () => {
     const result = await request(app).get('/api/system/supabase-connection');
     expect(result.status).toBe(200);
     expect(result.body).toEqual({ configured: false, desiredEnabled: false, effectiveEnabled: false,
-      state: 'disconnected', errorCode: null, restartRequired: false, restartAvailable: false, blockers: [] });
+      state: 'disconnected', errorCode: null, restartRequired: false, restartPending: false, restartAvailable: false, blockers: [] });
     expect(result.headers['cache-control']).toBe('no-store');
     expect(connection.status).not.toHaveBeenCalled();
     expect(connection.rememberOwner).not.toHaveBeenCalled();

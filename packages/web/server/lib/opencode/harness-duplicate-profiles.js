@@ -102,6 +102,12 @@ const profiles = [
     "providerScope": "selected-route",
     "transport": "openai-chatgpt-managed-responses-v1",
     "defaultEnabled": true,
+    // A profile whose qualified bytes no longer ship stays on record with its
+    // evidence but can never qualify. Requalify on the shipped runtime.
+    "stale": {
+      "reason": "devryan-browser.mjs gained confined-worker browser support and devryan-harness-context.mjs / devryan-managed-orchestration.mjs re-anchor and continue compaction (2026-09-23); the profile also pins the unpatched 1.18.31 executable, not the shipped companion runtime",
+      "plugins": ["devryan-browser.mjs", "devryan-harness-context.mjs", "devryan-managed-orchestration.mjs"]
+    },
     "evidence": {
       "reportHash": "45b1c7737f5b900c7246c2e768fd8ad676ae7fe78d8d11772e7c0368b31721b7",
       "correctness": true,
@@ -118,5 +124,5 @@ const profiles = [
     }
   }
 ];
-for (const profile of profiles) { for (const plugin of profile.plugins) Object.freeze(plugin); Object.freeze(profile.plugins); Object.freeze(profile.evidence); Object.freeze(profile); }
+for (const profile of profiles) { for (const plugin of profile.plugins) Object.freeze(plugin); Object.freeze(profile.plugins); Object.freeze(profile.evidence); if (profile.stale) { Object.freeze(profile.stale.plugins); Object.freeze(profile.stale); } Object.freeze(profile); }
 export default Object.freeze(profiles);

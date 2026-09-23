@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import http from 'node:http';
 import express from 'express';
-import request from 'supertest';
+import request from '../../test-supertest.js';
 import WebSocket from 'ws';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSupabaseConnection } from '../multi-user/supabase-connection.js';
@@ -26,6 +26,16 @@ const OWNER = '00000000-0000-4000-8000-000000000003';
 const remote = { Host: 'bots.example.test', Origin: 'https://bots.example.test', 'X-Forwarded-For': '192.0.2.1' };
 const roots = []; const disposers = [];
 afterEach(async () => { for (const close of disposers.splice(0).reverse()) await close(); for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
+// supertest's own listener binds the dual-stack wildcard (::) yet connects to
+// 127.0.0.1. macOS can give that listener a port another local process already
+// holds on 127.0.0.1 (OpenCode, Docker, a running DevRyan), which then answers
+// instead of the fixture: spurious 404s, or a foreign 401/403 passing an
+// assertion. An explicit loopback listener is the only possible responder.
+async function listenOnLoopback(server) {
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+  disposers.push(() => new Promise((resolve) => { server.closeAllConnections(); server.close(resolve); }));
+  return server;
+}
 async function fixture(mode = 'absent') {
   const base = path.resolve('../../.cache/tunnel-access-tests'); await fs.mkdir(base, { recursive: true });
   const root = await fs.mkdtemp(path.join(base, 'fixture-')); roots.push(root);
@@ -71,8 +81,9 @@ async function fixture(mode = 'absent') {
   app.get('/api/bots', (req, res) => res.json({ principal: req.principal, contextualScope: getRequestPrincipal()?.scope }));
   app.get('/api/bots/events', (req, res) => { res.type('text/event-stream'); res.write('event: ready\ndata: {}\n\n'); });
   app.use((_req, res) => { forbidden(); res.sendStatus(200); });
+  await listenOnLoopback(server);
   const issue = () => controller.issueBootstrapToken({ botIds: [BOT] });
-  const exchange = (token, headers = remote) => request(app).post('/tunnel/connect').set(headers).set('X-DevRyan-CSRF', '1').send({ token });
+  const exchange = (token, headers = remote) => request(server).post('/tunnel/connect').set(headers).set('X-DevRyan-CSRF', '1').send({ token });
   const login = async () => {
     const link = await issue(); const response = await exchange(link.token); expect(response.status).toBe(200);
     return response.headers['set-cookie'][0].split(';')[0];
@@ -84,16 +95,16 @@ describe('durable Bot-only tunnel authorization', () => {
   for (const mode of ['on', 'off', 'absent']) describe(mode, () => {
     it('GET previews do not consume a link; POST is same-origin, single-use and grants no administrator role', async () => {
       const f = await fixture(mode); const link = await f.issue();
-      const landing = await request(f.app).get('/tunnel/connect').set(remote);
+      const landing = await request(f.server).get('/tunnel/connect').set(remote);
       expect(landing.status).toBe(200); expect(landing.text).not.toContain(link.token);
       expect(landing.headers['referrer-policy']).toBe('no-referrer');
       expect(f.controller.getBootstrapStatus().hasBootstrapToken).toBe(true);
       expect((await f.exchange(link.token, { ...remote, Origin: 'https://attacker.test' })).status).toBe(403);
-      expect((await request(f.app).post('/tunnel/connect').set(remote).send({ token: link.token })).status).toBe(403);
+      expect((await request(f.server).post('/tunnel/connect').set(remote).send({ token: link.token })).status).toBe(403);
       const result = await f.exchange(link.token); expect(result.status).toBe(200);
       expect((await f.exchange(link.token)).status).toBe(401);
       const cookie = result.headers['set-cookie'][0].split(';')[0];
-      const catalog = await request(f.app).get('/api/bots').set(remote).set('Cookie', cookie);
+      const catalog = await request(f.server).get('/api/bots').set(remote).set('Cookie', cookie);
       expect(catalog.body.principal).toMatchObject({ scope: 'tunnel-bot', role: 'developer', localOwner: false, tunnelGrant: { botIds: [BOT] } });
       expect(catalog.body.contextualScope).toBe('tunnel-bot');
       expect(() => assertTunnelBotGrant(catalog.body.principal, OTHER)).toThrow();
@@ -107,23 +118,21 @@ describe('durable Bot-only tunnel authorization', () => {
         '/api/preview/proxy/1234567890abcdef', '/api/desktop/browser-cdp', '/api/runtime-service/handshake',
         '/api/openchamber/tunnel/status', '/api/system/supabase-connection', '/api/passkeys', `/api/bots/${BOT}/credentials`]) {
         for (const value of [cookie, revokedCookie, `oc_tunnel_session=${'A'.repeat(43)}`, '']) {
-          const result = await request(f.app).get(route).set(remote).set('Cookie', value);
+          const result = await request(f.server).get(route).set(remote).set('Cookie', value);
           expect([401, 403], `${mode}: ${route}, ${value === cookie ? 'valid' : value === revokedCookie ? 'revoked' : 'invalid'} cookie`).toContain(result.status);
         }
         for (const headers of [{ ...remote, Host: 'localhost', 'X-Forwarded-Host': 'localhost' }, { ...remote, Origin: 'https://attacker.test' }]) {
-          expect([401, 403]).toContain((await request(f.app).get(route).set(headers).set('Cookie', cookie)).status);
+          expect([401, 403]).toContain((await request(f.server).get(route).set(headers).set('Cookie', cookie)).status);
         }
       }
       expect(f.forbidden).not.toHaveBeenCalled();
       await f.controller.revokeTunnelArtifacts();
-      expect((await request(f.app).get('/api/bots').set(remote).set('Cookie', cookie)).status).toBe(401);
+      expect((await request(f.server).get('/api/bots').set(remote).set('Cookie', cookie)).status).toBe(401);
     });
     it('denies terminal, OpenCode stream and preview WebSocket upgrades without password authentication', async () => {
       const f = await fixture(mode); const revokedCookie = await f.login();
       await f.controller.revokeTunnelArtifacts();
       const cookie = await f.login();
-      await new Promise((resolve) => f.server.listen(0, '127.0.0.1', resolve));
-      disposers.push(() => new Promise((resolve) => { f.server.closeAllConnections(); f.server.close(resolve); }));
       for (const pathname of ['/api/terminal/ws', '/api/global/event/ws', '/api/preview/proxy/1234567890abcdef']) {
         for (const headers of [{ ...remote, Cookie: cookie }, { ...remote, Cookie: revokedCookie }, { ...remote, Cookie: 'oc_tunnel_session=forged' }, remote,
           { ...remote, Host: 'localhost', 'X-Forwarded-Host': 'localhost', Cookie: cookie },
@@ -141,8 +150,6 @@ describe('durable Bot-only tunnel authorization', () => {
     it('closes an admitted Bot SSE connection immediately when its grant is revoked', async () => {
       const f = await fixture(mode); const cookie = await f.login();
       const session = f.controller.getTunnelSessionFromRequest({ headers: { host: remote.Host, cookie } });
-      await new Promise((resolve) => f.server.listen(0, '127.0.0.1', resolve));
-      disposers.push(() => new Promise((resolve) => { f.server.closeAllConnections(); f.server.close(resolve); }));
       let closeResolve; const closed = new Promise((resolve) => { closeResolve = resolve; });
       await new Promise((resolve, reject) => {
         const stream = http.get({ hostname: '127.0.0.1', port: f.server.address().port, path: '/api/bots/events', headers: { ...remote, Cookie: cookie } }, (response) => {
@@ -152,7 +159,7 @@ describe('durable Bot-only tunnel authorization', () => {
         stream.on('error', reject);
       });
       await f.controller.revokeGrant(session.grantId); await closed;
-      expect((await request(f.app).get('/api/bots').set(remote).set('Cookie', cookie)).status).toBe(401);
+      expect((await request(f.server).get('/api/bots').set(remote).set('Cookie', cookie)).status).toBe(401);
     });
   });
   it('uses raw socket, Host, Origin and every provenance header, even without an active tunnel', async () => {
@@ -190,7 +197,7 @@ describe('durable Bot-only tunnel authorization', () => {
     const link = await f.issue(); f.advance(TUNNEL_LINK_TTL_MS + 1);
     expect((await f.exchange(link.token)).status).toBe(401);
     const cookie = await f.login(); f.advance(TUNNEL_SESSION_TTL_MS + 1);
-    expect((await request(f.app).get('/api/bots').set(remote).set('Cookie', cookie)).status).toBe(401);
+    expect((await request(f.server).get('/api/bots').set(remote).set('Cookie', cookie)).status).toBe(401);
     for (let i = 0; i < 25; i += 1) {
       const response = await f.exchange('invalid', { ...remote, 'X-Forwarded-For': `192.0.2.${i}`, 'CF-Connecting-IP': `192.0.2.${i}` });
       if (i >= 20) expect(response.status).toBe(429);
@@ -216,7 +223,7 @@ describe('durable Bot-only tunnel authorization', () => {
     const closed = vi.fn(); f.controller.registerConnection(principal, closed);
     await f.connection.logoutLocalOwner({ setHeader() {} });
     expect(closed).toHaveBeenCalledOnce();
-    expect((await request(f.app).get('/api/bots').set(remote).set('Cookie', cookie)).status).toBe(401);
+    expect((await request(f.server).get('/api/bots').set(remote).set('Cookie', cookie)).status).toBe(401);
   });
   it.each(['fresh', 'expired', 'revoked', 'malformed'])('reaches normal managed sign-in with a %s tunnel cookie', async (cookieState) => {
     const f = await fixture('on');
@@ -230,7 +237,7 @@ describe('durable Bot-only tunnel authorization', () => {
     registerTunnelAccessBoundary(app, null, { controller: f.controller, connection: f.connection });
     const authenticateAccount = vi.fn((_req, res) => res.status(401).json({ authenticated: false, mode: 'multi-user' }));
     app.get('/auth/session', authenticateAccount);
-    const response = await request(app).get('/auth/session').set(remote).set('Cookie', cookie);
+    const response = await request(await listenOnLoopback(http.createServer(app))).get('/auth/session').set(remote).set('Cookie', cookie);
     expect(response.status).toBe(401);
     expect(response.body).toEqual({ authenticated: false, mode: 'multi-user' });
     expect(authenticateAccount).toHaveBeenCalledOnce();
@@ -241,9 +248,9 @@ describe('durable Bot-only tunnel authorization', () => {
   it('keeps valid Bot guests restricted on a managed account hostname', async () => {
     const f = await fixture('on');
     const cookie = await f.login();
-    const response = await request(f.app).get('/auth/session').set(remote).set('Cookie', cookie);
+    const response = await request(f.server).get('/auth/session').set(remote).set('Cookie', cookie);
     expect(response.body).toMatchObject({ authenticated: true, scope: 'tunnel-bot' });
-    expect((await request(f.app).get('/api/terminal/create').set(remote).set('Cookie', cookie)).status).toBe(403);
+    expect((await request(f.server).get('/api/terminal/create').set(remote).set('Cookie', cookie)).status).toBe(403);
   });
 
   it('never changes remote authentication policy during a cloud outage', async () => {
@@ -258,8 +265,9 @@ describe('durable Bot-only tunnel authorization', () => {
     disposers.push(() => restarted.dispose());
     const app = express(); registerTunnelAccessBoundary(app, null, { connection: failed, controller: restarted });
     const downstream = vi.fn(); app.use((_req, res) => { downstream(); res.sendStatus(200); });
+    const server = await listenOnLoopback(http.createServer(app));
     for (const route of ['/auth/session', '/api/bots', '/api/terminal/create']) {
-      expect((await request(app).get(route).set(remote)).status).toBe(503);
+      expect((await request(server).get(route).set(remote)).status).toBe(503);
     }
     expect(downstream).not.toHaveBeenCalled();
     expect(JSON.parse(await fs.readFile(path.join(f.root, 'supabase-connection.json'), 'utf8')).enabled).toBe(true);

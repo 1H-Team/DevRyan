@@ -4,7 +4,7 @@ import { classifyManagedTaskFailure } from './provider-retry-policy.js';
 
 // This is a report from retained child text, never an execution or check fact.
 // Missing, conflicting and non-final markers require the existing detail path.
-const reportedResult = (preview) => {
+export const readManagedResultReport = (preview) => {
   const lines = preview.trimEnd().split(/\r?\n/);
   const markers = [];
   let fence = null;
@@ -32,7 +32,7 @@ export const createCompactResultHeader = ({ task, envelope, checks = [], observe
   if (!envelope || envelope.taskId !== task.taskId || envelope.rootSessionId !== task.rootSessionId) throw new TypeError('Compact result requires a matching durable envelope');
   const restriction = isAutoResumeActive(envelope) ? 'scheduled-recovery'
     : envelope.action === null && requiresManualModelRecovery(task, envelope) ? 'manual-attention' : null;
-  const reported = reportedResult(envelope.recoverablePreview);
+  const reported = readManagedResultReport(envelope.recoverablePreview);
   const bytes = new TextEncoder().encode(envelope.recoverablePreview).length;
   const detailRequired = reported.terminalMarker !== 'complete' || envelope.status !== 'completed'
     || envelope.partial || Boolean(envelope.failureReason) || Boolean(restriction)

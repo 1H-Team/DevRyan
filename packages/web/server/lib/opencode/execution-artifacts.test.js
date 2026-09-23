@@ -26,7 +26,7 @@ test('capture requires the exact shipped companion contract and accepted native 
     binary: path.basename(opencode), baseCommit: contract.baseCommit, patchSha256: contract.patchSha256, sha256 };
   const environment = () => executionEnvironment({ directory, pluginDirectory: directory, dataDirectory: directory, runtimeMode: 'captured' });
   try {
-    for (const file of [launcher, opencode, launcher + '-spawn.dylib', ...['devryan-managed-orchestration.mjs', 'council-session.js'].map((name) => path.join(directory, name))]) {
+    for (const file of [launcher, opencode, launcher + '-spawn.dylib', ...['devryan-managed-orchestration.mjs', 'council-session.js', 'devryan-browser.mjs'].map((name) => path.join(directory, name))]) {
       await fs.writeFile(file, 'fixture');
     }
     await fs.writeFile(launcher + '.json', JSON.stringify(native));

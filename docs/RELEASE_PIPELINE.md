@@ -1,9 +1,15 @@
 # Release builds and artifact handoffs
 
 The release workflow builds one web artifact, six Bot images with at most three
-image jobs running concurrently, and two architecture-specific Electron
-preparations. Final Electron packaging waits for all three verified inputs.
-Native bindings are never shared between ARM and Intel builds.
+image jobs running concurrently, and one Apple silicon (arm64) Electron
+preparation. Final Electron packaging waits for all three verified inputs.
+Intel (x64) macOS builds were dropped in 1.2.10 to shorten the release; the
+local `--x64` packaging paths remain but are not released.
+
+Release install steps set `DEVRYAN_SKIP_INSTALL_PREPARE=1`. Without it, Bun runs
+the Electron workspace `prepare` script (a full web build plus native helpers)
+during every install, duplicating the shared web artifact and the explicit
+native steps. Explicit `bun run prepare` invocations are unaffected.
 
 ## Commands
 
@@ -26,7 +32,7 @@ every workspace's build script. Full validation remains separate from compilatio
 ## Release graph
 
 1. Validate release metadata and create the draft release.
-2. In parallel, validate UI types and compile web assets once, prepare ARM/Intel native dependencies and
+2. In parallel, validate UI types and compile web assets once, prepare arm64 native dependencies and
    helpers, and build the six multi-platform images. Image jobs use individual
    GitHub Actions cache scopes with full intermediate-layer export.
 3. Each image job signs its index and both platform digests and emits one result.
@@ -38,6 +44,15 @@ every workspace's build script. Full validation remains separate from compilatio
    Electron consumes web assets, prepared native files, and the complete Bot
    manifest, then runs all existing packaged artifact gates.
 5. Merge update metadata and finalize the release only after every gate succeeds.
+
+macOS preparation restores the content-addressed companion build described in
+[Concurrent Revert](CONCURRENT_REVERT.md#build-and-rollout). Caches saved by a
+tag-triggered run are visible only to that tag, so `release-cache.yml` saves it
+from `main` whenever the companion changes. Keys in the two workflows must
+match. Do not cache the Bun package store: on 2026-09-23, restoring the ~800 MB
+archive took longer than downloading packages (ARM 163s before, 62s restore +
+188s install after). Jobs have timeouts, so a stalled native fixture fails the
+release instead of holding it open.
 
 Failed image jobs can be rerun within the same workflow run; successful results
 remain available. Image artifacts use stable per-image names with overwrite on a
@@ -52,8 +67,8 @@ build options and checksums for every output file. All HTML entrypoints, service
 worker, static files and `.vite/manifest.json` travel together. Consumers reject
 stale or corrupt input without an implicit rebuild.
 
-Prepared Electron artifacts use a tar archive to preserve executable permissions
-and relative symlinks. Metadata binds the archive checksum to commit, lockfile,
+Prepared Electron artifacts use a multithreaded zstd tar archive
+(`prepared.tar.zst`) to preserve executable permissions and relative symlinks. Metadata binds the archive checksum to commit, lockfile,
 release and target architecture. The archive contains installed workspace
 dependencies, compiled helpers and the main bundle. It contains no user profile
 or build credentials. Packaging restores it into a fresh checkout without running
@@ -100,6 +115,11 @@ Run full validation, root build, bundle checks, docs validation, isolated web an
 Electron QA, and packaged native checks before release. Handoff tests cover stale
 identity, altered/missing bytes, architecture mismatch, incomplete image results,
 signing failure and packaging failure propagation.
+
+Packaged runtime-service verification checks the unpacked app, the extracted ZIP
+and the mounted DMG one after another. Keep it serial: running the three deep
+codesign checks and x64 Rosetta probes concurrently raised x64 packaging from
+326s to 776s on 2026-09-23.
 
 The five runs inspected on 2026-09-07 took approximately 20–24 minutes. The latest
 run took 20m08s: Bot image publication 13m14s, followed by roughly six minutes for

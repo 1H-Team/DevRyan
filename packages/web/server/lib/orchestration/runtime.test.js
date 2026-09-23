@@ -395,6 +395,93 @@ describe('web managed orchestration runtime', () => {
     await runtime.shutdown();
   });
 
+  it('reports dependency timeouts and transport failures as retryable 503s without mutating foreign errors', async () => {
+    const timeout = new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    for (const [failure, expected] of [
+      [timeout, { code: 'managed_dependency_unavailable', statusCode: 503 }],
+      [new TypeError('fetch failed'), { code: 'managed_dependency_unavailable', statusCode: 503 }],
+      [Object.assign(new Error('Supabase connection is disabled'), { code: 'supabase_disconnected', status: 503 }),
+        { code: 'supabase_disconnected', statusCode: 503 }],
+      [Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }), { code: 'ECONNREFUSED', statusCode: 503 }],
+      [new TypeError('required check phase must be before'), { code: 'invalid_request', statusCode: 400 }],
+      [Object.assign(new Error('Supabase response too large'), { name: 'SupabaseRequestError', code: 'supabase_response_too_large', status: 502 }),
+        { code: 'supabase_response_too_large', statusCode: 503 }],
+      [Object.assign(new Error('not ready'), { code: 'execution_not_ready', status: 409 }), { code: 'execution_not_ready', statusCode: 409 }],
+    ]) {
+      const runtime = createWebManagedOrchestrationRuntime({
+        persistence: createPersistence(),
+        executor: { async start() { throw new Error('must not start'); } },
+        resolveAgentExecution: async () => { throw failure; },
+      });
+      await expect(runtime.handleRpc({ method: 'submit', params: submitParams(1) })).rejects.toMatchObject(expected);
+      await runtime.shutdown();
+    }
+    expect(timeout.code).toBe(23);
+  });
+
+  it('returns the delegated assignment owning a child session for its compaction summary', async () => {
+    const runtime = createWebManagedOrchestrationRuntime({
+      persistence: createPersistence(),
+      executor: {
+        async start() { return await new Promise(() => {}); },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' }; },
+        async readRecoverableResult() { return {}; },
+      },
+      createTaskId: () => 'dvr_task_assignment',
+      createLeaseToken: () => 'dvr_lease_assignment',
+      now: () => 10_000,
+    });
+    await runtime.handleRpc({ method: 'submit', params: submitParams(1, { childSessionId: 'ses_child_assigned', prompt: 'Fix the parser only.' }) });
+    const { text } = await runtime.handleRpc({ method: 'child_assignment', params: { childSessionId: 'ses_child_assigned', directory: '/workspace' } });
+    expect(text).toContain('Continue only the original delegated assignment below.');
+    expect(JSON.parse(text.slice(text.lastIndexOf('\n') + 1))).toMatchObject({ taskId: 'dvr_task_assignment', prompt: 'Fix the parser only.' });
+    await expect(runtime.handleRpc({ method: 'child_assignment', params: { childSessionId: 'ses_other', directory: '/workspace' } }))
+      .resolves.toEqual({ text: null });
+    await expect(runtime.handleRpc({ method: 'child_assignment', params: { directory: '/workspace' } }))
+      .rejects.toMatchObject({ code: 'task_scope_mismatch' });
+    await runtime.shutdown();
+  });
+
+  it('surfaces the Supabase restart admission block with its own message', async () => {
+    const runtime = createWebManagedOrchestrationRuntime({
+      persistence: createPersistence(),
+      executor: { async start() { throw new Error('must not start'); } },
+      getWorkAdmissionBlock: () => ({ code: 'supabase_change_pending', message: 'DevRyan is waiting to restart' }),
+    });
+    await expect(runtime.handleRpc({ method: 'submit', params: submitParams(1) }))
+      .rejects.toMatchObject({ code: 'supabase_change_pending', message: 'DevRyan is waiting to restart', statusCode: 503 });
+    await runtime.shutdown();
+  });
+
+  it('forwards only the Council dispatch class so independent reviewers are not collapsed', async () => {
+    let taskIndex = 0;
+    const runtime = createWebManagedOrchestrationRuntime({
+      persistence: createPersistence(),
+      executor: {
+        async start() { return await new Promise(() => {}); },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' }; },
+        async readRecoverableResult() { return {}; },
+      },
+      createTaskId: () => `dvr_task_seat_${++taskIndex}`,
+      createLeaseToken: () => `dvr_lease_seat_${taskIndex}`,
+      now: () => 10_000,
+    });
+    const seat = (index, overrides = {}) => submitParams(index, {
+      agent: 'councillor', label: 'Council review', prompt: 'Review the same packet.', ...overrides,
+    });
+
+    const first = await runtime.handleRpc({ method: 'submit', params: seat(1, { deadlineClass: 'council' }) });
+    const second = await runtime.handleRpc({ method: 'submit', params: seat(2, { deadlineClass: 'council' }) });
+    expect(second.task.taskId).not.toBe(first.task.taskId);
+
+    const ordinary = await runtime.handleRpc({ method: 'submit', params: seat(3, { deadlineClass: 'standard' }) });
+    const duplicate = await runtime.handleRpc({ method: 'submit', params: seat(4) });
+    expect(duplicate.task.taskId).toBe(ordinary.task.taskId);
+    await runtime.shutdown();
+  });
+
   it('exposes durable provider-recovery continuations through the private bridge', async () => {
     const continuations = [{
       sourceTaskId: 'dvr_task_limited',

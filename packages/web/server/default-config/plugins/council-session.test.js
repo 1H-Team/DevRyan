@@ -425,6 +425,9 @@ describe('CouncilSessionPlugin', () => {
     });
 
     expect(requests.filter((request) => request.method === 'submit')).toHaveLength(5);
+    const submissions = requests.filter((request) => request.method === 'submit');
+    expect(submissions.every((request) => request.params.deadlineClass === 'council')).toBe(true);
+    expect(new Set(submissions.map((request) => request.params.idempotencyKey)).size).toBe(5);
     expect(requests.filter((request) => request.method === 'wait')).toHaveLength(5);
     expect(requests.filter((request) => request.method === 'submit').map((request) => request.params.mode))
       .toEqual(['orchestrator', 'orchestrator', 'orchestrator', 'orchestrator', 'orchestrator']);

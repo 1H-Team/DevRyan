@@ -1,5 +1,5 @@
 import express from 'express';
-import request from 'supertest';
+import request from '../../test-supertest.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFreeZenCooldowns } from '@openchamber/shared-runtime';
 

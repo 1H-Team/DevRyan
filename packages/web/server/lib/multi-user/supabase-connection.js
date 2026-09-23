@@ -11,6 +11,8 @@ const OWNER_KEY = 'supabase-local-owner';
 const LOCAL_SESSIONS_KEY = 'supabase-local-sessions';
 const COOKIE = 'devryan_local_owner';
 const OWNER_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const MAX_LOCAL_SESSIONS = 20_000;
+const LOCAL_SESSION_WRITE_DEBOUNCE_MS = 1_000;
 const hash = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const failure = (message, code, statusCode = 503) => Object.assign(new Error(message), { code, statusCode });
 const cookies = (req) => Object.fromEntries(String(req.headers?.cookie || '').split(';').map((part) => {
@@ -37,13 +39,28 @@ export async function createSupabaseConnection({ config, fetchImpl = fetch, now 
   const authorizationListeners = new Set();
   const authorizationChanged = async () => { for (const listener of authorizationListeners) await listener(); };
   const localSessions = new Map(Object.entries(vault?.get(LOCAL_SESSIONS_KEY) || {}));
+  // One vault rewrite per burst of root sessions.
+  let localSessionWrite = null;
+  const persistLocalSessions = () => localSessionWrite ??= new Promise((resolve) => {
+    setTimeout(resolve, LOCAL_SESSION_WRITE_DEBOUNCE_MS).unref?.();
+  }).then(() => {
+    localSessionWrite = null;
+    return vault.set(LOCAL_SESSIONS_KEY, Object.fromEntries(localSessions));
+  });
+  let botsSchema = 'unknown';
   const restartRequired = () => desiredEnabled !== effectiveEnabled
     || desiredEnabled !== (authenticationMode === 'managed-accounts');
+  // New work is held only while an automatic restart will actually apply the
+  // change. Without a restart driver, or after a failed restart, the host
+  // keeps serving in its effective mode and reports "restart to apply".
+  const restartPending = () => restartRequired() && !errorCode && typeof driver?.restart === 'function';
 
   const status = () => ({
     configured, desiredEnabled, effectiveEnabled, state, errorCode,
     restartRequired: restartRequired(),
+    restartPending: restartPending(),
     restartAvailable: typeof driver?.restart === 'function',
+    botsSchema,
     blockers: [...blockers], traffic: traffic.snapshot(),
   });
   const ownerPrincipal = () => owner?.principal?.role === 'admin'
@@ -79,10 +96,11 @@ export async function createSupabaseConnection({ config, fetchImpl = fetch, now 
       query: { id: `eq.${owner.principal.id}`, limit: 1 }, select: 'id,role,status', maybeSingle: true,
     });
     if (profile?.role !== 'admin' || profile.status !== 'active') throw failure('The saved administrator no longer has access', 'supabase_owner_revoked', 403);
-    const version = await client.rpc('devryan_bot_schema_version');
-    if (typeof version !== 'string' || !/^\d{14}$/.test(version) || version < PRODUCTION_BOTS_MIGRATION) {
-      throw failure('The Supabase schema must be updated before reconnecting', 'bot_schema_migration_required');
-    }
+    // Bots-only schema lag makes Bots unavailable; it never takes the core
+    // connection (auth, orchestration policy, error logs) offline.
+    botsSchema = await client.rpc('devryan_bot_schema_version').then((version) => (
+      typeof version === 'string' && /^\d{14}$/.test(version) && version >= PRODUCTION_BOTS_MIGRATION ? 'ready' : 'migration_required'
+    ), (error) => (Number(error?.status) === 404 ? 'migration_required' : 'unknown'));
   };
   const recordFailure = async (error) => {
     effectiveEnabled = false;
@@ -126,7 +144,9 @@ export async function createSupabaseConnection({ config, fetchImpl = fetch, now 
       state = 'connection_failed';
       errorCode = 'supabase_restart_failed';
       blockers = ['restart_required'];
-      // Explicit retry only; never restart a host repeatedly.
+      // Explicit retry only; never restart a host repeatedly. Work resumes in
+      // the effective mode until the owner retries or restarts manually.
+      await Promise.resolve().then(() => driver?.resumeAdmissions?.()).catch(() => {});
     }
   };
 
@@ -135,7 +155,7 @@ export async function createSupabaseConnection({ config, fetchImpl = fetch, now 
     get enabled() { return effectiveEnabled; },
     authenticationMode,
     get configured() { return configured; },
-    get admissionPaused() { return desiredEnabled !== effectiveEnabled || !effectiveEnabled; },
+    get admissionPaused() { return restartPending() || !effectiveEnabled; },
     authenticateLocalOwner, ownerPrincipal, setOwnerCookie,
     onAuthorizationChange(listener) { authorizationListeners.add(listener); return () => authorizationListeners.delete(listener); },
     // Called only by the host's in-process handle or the filesystem-owner
@@ -151,11 +171,15 @@ export async function createSupabaseConnection({ config, fetchImpl = fetch, now 
     },
     localSessionOwner: (sessionId) => localSessions.get(sessionId) || null,
     async recordLocalSession(info) {
+      // Sub-agent children inherit ownership from their root; only roots are
+      // recorded, and vault rewrites are batched and bounded.
       if (effectiveEnabled || !owner?.principal?.id || typeof info?.id !== 'string'
         || !/^ses_[a-zA-Z0-9_-]+$/.test(info.id) || typeof info.directory !== 'string'
-        || !info.directory || localSessions.has(info.id)) return false;
+        || !info.directory || (typeof info.parentID === 'string' && info.parentID)
+        || localSessions.has(info.id)) return false;
       localSessions.set(info.id, { userId: owner.principal.id, directory: info.directory });
-      await vault.set(LOCAL_SESSIONS_KEY, Object.fromEntries(localSessions));
+      while (localSessions.size > MAX_LOCAL_SESSIONS) localSessions.delete(localSessions.keys().next().value);
+      await persistLocalSessions();
       return true;
     },
     issueLocalOwnerSession,
@@ -199,16 +223,19 @@ export async function createSupabaseConnection({ config, fetchImpl = fetch, now 
           : enabled ? 'connecting' : 'disconnecting';
         errorCode = null;
         blockers = [];
-        if (restartRequired()) {
+        if (restartPending()) {
           await driver?.pauseAdmissions?.();
           // Give the PATCH response time to flush before an idle restart.
           schedule();
-        } else await driver?.resumeAdmissions?.();
+        } else {
+          if (restartRequired()) blockers = ['restart_required'];
+          await driver?.resumeAdmissions?.();
+        }
         return status();
       })().finally(() => { changing = null; });
       return changing;
     },
-    async dispose() { disposed = true; if (timer) clearTimeout(timer); timer = null; await vault?.drain(); },
+    async dispose() { disposed = true; if (timer) clearTimeout(timer); timer = null; await localSessionWrite; await vault?.drain(); },
     applyWhenIdle,
   });
 }

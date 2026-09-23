@@ -43,6 +43,8 @@ import {
     hasCompactionPart,
     isCompactionBoundaryMessage,
 } from './managedTaskCompactionProjection';
+import { getCompactionBoundary, readCompactionPart } from './lib/compactionDisplay';
+import { CompactionTurn } from './CompactionTurn';
 import {
     managedOrchestrationSelectors,
     useManagedOrchestrationStore,
@@ -93,6 +95,8 @@ const estimateHistoryEntryHeight = (entry: RenderEntry | undefined): number => {
     }
 
     if (entry.kind === 'turn') {
+        // A compaction boundary renders as a collapsed divider.
+        if (getCompactionBoundary(entry.turn.userMessage)) return 56;
         return 180 + Math.min(entry.turn.assistantMessages.length, 4) * 100;
     }
 
@@ -122,6 +126,9 @@ const normalizeCompactionCommandMessage = (message: ChatMessageEntry): ChatMessa
         return message;
     }
 
+    // Consumers of compaction boundaries keep the '/compact' text; the boundary
+    // kind drives the collapsed divider instead of a user bubble.
+    const boundary = readCompactionPart(message.parts);
     let changedParts = false;
     const nextParts = message.parts.map((part) => {
         const type = (part as { type?: unknown } | null | undefined)?.type;
@@ -134,17 +141,19 @@ const normalizeCompactionCommandMessage = (message: ChatMessageEntry): ChatMessa
 
     const info = message.info as unknown as { clientRole?: string | null | undefined };
     const needsClientRole = info.clientRole !== 'user';
+    const needsBoundary = Boolean(boundary) && getCompactionBoundary(message)?.kind !== boundary?.kind;
 
-    if (!changedParts && !needsClientRole) {
+    if (!changedParts && !needsClientRole && !needsBoundary) {
         return message;
     }
 
     return {
         ...message,
-        info: needsClientRole
+        info: needsClientRole || needsBoundary
             ? ({
                 ...(message.info as unknown as Record<string, unknown>),
                 clientRole: 'user',
+                ...(boundary ? { clientCompaction: boundary } : {}),
             } as unknown as typeof message.info)
             : message.info,
         parts: changedParts ? nextParts : message.parts,
@@ -1115,6 +1124,29 @@ const MessageListEntry = React.memo(({
                 onUserAnimationConsumed={onUserAnimationConsumed}
                 activeStreamingMessageId={activeStreamingMessageId}
                 activeStreamingPhase={activeStreamingPhase}
+            />
+        );
+    }
+
+    const compaction = getCompactionBoundary(entry.turn.userMessage);
+    if (compaction) {
+        return (
+            <CompactionTurn
+                turn={entry.turn}
+                kind={compaction.kind}
+                renderAssistant={(message) => (
+                    <UngroupedMessageRow
+                        message={message}
+                        isLatestMessage={message.info.id === latestRawMessageId}
+                        onMessageContentChange={onMessageContentChange}
+                        getAnimationHandlers={getAnimationHandlers}
+                        scrollToBottom={scrollToBottom}
+                        shouldAnimateUserMessage={shouldAnimateUserMessage}
+                        onUserAnimationConsumed={onUserAnimationConsumed}
+                        activeStreamingMessageId={activeStreamingMessageId}
+                        activeStreamingPhase={activeStreamingPhase}
+                    />
+                )}
             />
         );
     }

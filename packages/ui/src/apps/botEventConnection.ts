@@ -195,6 +195,9 @@ type BotCapabilityConnectionControllerOptions = {
   getCapabilitiesErrorCode: () => string | null;
   canStream: (state: string) => boolean;
   isTransient: (state: string) => boolean;
+  /** A capability error that no retry can clear (for example Supabase is
+   * deliberately off on this host); rechecked only on an explicit retry. */
+  isFinalErrorCode?: (code: string | null) => boolean;
   createConnection: (initialRecoveryErrorCode: string | null) => BotEventConnectionController;
   setConnectionState: (state: BotEventsConnectionState, errorCode?: string | null) => void;
   setTimeoutImpl?: typeof setTimeout;
@@ -208,6 +211,7 @@ export const createBotCapabilityConnectionController = ({
   getCapabilitiesErrorCode,
   canStream,
   isTransient,
+  isFinalErrorCode = () => false,
   createConnection,
   setConnectionState,
   setTimeoutImpl = setTimeout,
@@ -273,7 +277,7 @@ export const createBotCapabilityConnectionController = ({
         || getCapabilitiesErrorCode()
         || 'bot_request_failed';
       setConnectionState('error', lastFailureCode);
-      if (!capabilities || isTransient(capabilities.state)) scheduleRetry();
+      if (capabilities ? isTransient(capabilities.state) : !isFinalErrorCode(lastFailureCode)) scheduleRetry();
     } finally {
       probing = false;
       if (retryAfterProbe && !disposed && !connection) {

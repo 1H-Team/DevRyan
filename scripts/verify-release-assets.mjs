@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-const appArchs = ['arm64', 'x64'];
+// Releases ship Apple silicon only; Intel builds were dropped in 1.2.10.
+const appArchs = ['arm64'];
 
 export function requiredReleaseAssetNames(version) {
   const appAssets = appArchs.flatMap((arch) => [

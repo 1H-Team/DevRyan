@@ -643,7 +643,7 @@ index de4dc6720..fa274290c 100644
    const id =
      url.pathname.match(/^\/session\/([^/]+)(?:\/|$)/)?.[1] ??
 diff --git a/packages/opencode/src/session/prompt.ts b/packages/opencode/src/session/prompt.ts
-index 0f85d44f2..f3b8b728c 100644
+index 0f85d44f2..1d1599d67 100644
 --- a/packages/opencode/src/session/prompt.ts
 +++ b/packages/opencode/src/session/prompt.ts
 @@ -56,6 +56,7 @@ import { SessionTable } from "@opencode-ai/core/session/sql"
@@ -670,7 +670,7 @@ index 0f85d44f2..f3b8b728c 100644
  
              const msg: SessionV1.Assistant = {
                id: MessageID.ascending(),
-@@ -519,6 +522,45 @@ const layer = Layer.effect(
+@@ -519,6 +522,46 @@ const layer = Layer.effect(
              return { msg, part, cwd: ctx.directory }
            }).pipe(Effect.ensuring(markReady))
  
@@ -688,6 +688,7 @@ index 0f85d44f2..f3b8b728c 100644
 +                  agent: input.agent,
 +                  abort: controller.signal,
 +                  messages: [],
++                  extra: { devryanUserShell: true },
 +                  ask: () => Effect.void,
 +                  metadata: (value) =>
 +                    sessions.updatePart({ ...part, state: { ...part.state, ...value } }).pipe(Effect.asVoid),
@@ -716,7 +717,7 @@ index 0f85d44f2..f3b8b728c 100644
            const cfg = yield* config.get()
            const sh = Shell.preferred(cfg.shell)
            const args = Shell.args(sh, input.command, cwd)
-@@ -1051,24 +1093,28 @@ const layer = Layer.effect(
+@@ -1051,24 +1094,28 @@ const layer = Layer.effect(
  
      const prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error> = Effect.fn(
        "SessionPrompt.prompt",
@@ -762,7 +763,7 @@ index 0f85d44f2..f3b8b728c 100644
  
      const lastAssistant = Effect.fnUntraced(function* (sessionID: SessionID) {
        const match = yield* sessions.findMessage(sessionID, (m) => m.info.role !== "user").pipe(Effect.orDie)
-@@ -1096,6 +1142,7 @@ const layer = Layer.effect(
+@@ -1096,6 +1143,7 @@ const layer = Layer.effect(
            const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
  
            if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
@@ -770,7 +771,7 @@ index 0f85d44f2..f3b8b728c 100644
  
            const lastAssistantMsg = msgs.findLast(
              (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
-@@ -1340,145 +1387,158 @@ const layer = Layer.effect(
+@@ -1340,145 +1388,158 @@ const layer = Layer.effect(
        },
      )
  
@@ -1873,11 +1874,12 @@ index 000000000..0ebe3afb7
 +})
 diff --git a/packages/opencode/src/session/devryan-execution.ts b/packages/opencode/src/session/devryan-execution.ts
 new file mode 100644
-index 000000000..95679e534
+index 000000000..11ea733d7
 --- /dev/null
 +++ b/packages/opencode/src/session/devryan-execution.ts
-@@ -0,0 +1,493 @@
-+import { assertWorkerPayload } from "./execution-payload"
+@@ -0,0 +1,516 @@
++import { assertWorkerPayload, prepareWorkerMessages, prepareWorkerPatch } from "./execution-payload"
++import { startExecutionBrowser } from "./execution-browser"
 +import { RetentionGate } from "./retention-gate"
 +import { createHash } from "node:crypto"
 +import { spawn, execFile } from "node:child_process"
@@ -1894,6 +1896,7 @@ index 000000000..95679e534
 +import type { Hooks } from "@opencode-ai/plugin"
 +
 +const controls = new WeakSet<object>()
++const browsers = new WeakSet<object>()
 +const resolvedPlugins = new Map<string, Map<string, unknown>>()
 +const toolFiles = new Map<string, string[]>()
 +export function files(directory: string, entries: string[]) {
@@ -1912,7 +1915,8 @@ index 000000000..95679e534
 +})
 +const Record = Schema.Record(Schema.String, Schema.Unknown)
 +const Launch = Schema.Struct({
-+  lease: Schema.Struct({ token: Schema.String, viewDirectory: Schema.String, projectDirectory: Schema.String }),
++  lease: Schema.Struct({ token: Schema.String, viewDirectory: Schema.String, projectDirectory: Schema.String,
++    scope: Schema.Struct({ userMessageID: Schema.String }) }),
 +  launch: Schema.optional(
 +    Schema.Struct({
 +      launcher: Schema.String,
@@ -2045,15 +2049,11 @@ index 000000000..95679e534
 +  const file = entry.startsWith("file:") ? fileURLToPath(entry) : entry
 +  // Runtime overlays copy the reviewed entry verbatim. Accept those copies by
 +  // content, never by a tool's user-controlled name or installation location.
-+  if (
-+    !Object.values(pins).includes(
-+      createHash("sha256")
-+        .update(await readFile(file))
-+        .digest("hex"),
-+    )
-+  )
-+    return
-+  for (const def of Object.values(hooks.tool ?? {})) controls.add(def)
++  const hash = createHash("sha256").update(await readFile(file)).digest("hex")
++  if (Object.values(pins).includes(hash))
++    for (const def of Object.values(hooks.tool ?? {})) controls.add(def)
++  if (hash === process.env.DEVRYAN_EXECUTION_BROWSER_PLUGIN)
++    for (const def of Object.values(hooks.tool ?? {})) browsers.add(def)
 +}
 +
 +export const prompt = (sessionID: string, userMessageID: string) =>
@@ -2098,7 +2098,7 @@ index 000000000..95679e534
 +          args: Schema.Unknown, messages: Schema.Unknown, extra: Schema.optional(Schema.Unknown),
 +          config: Record, files: Schema.Array(Schema.String),
 +        }))(JSON.parse(JSON.stringify({
-+          args, messages: ctx.messages, extra: ctx.extra,
++          args, messages: prepareWorkerMessages(ctx.messages), extra: ctx.extra,
 +          config: { ...cfg, plugin: [...(resolvedPlugins.get(instance.directory) ?? [])].map(([entry, options]) =>
 +            options === undefined ? entry : [entry, options]) },
 +          files: toolFiles.get(instance.directory) ?? [],
@@ -2163,6 +2163,8 @@ index 000000000..95679e534
 +            }) : undefined
 +            const controller = new AbortController()
 +            const pending = execute({
++              logicalDirectory: scope.directory,
++              browser: !!source && browsers.has(source),
 +              started,
 +              args: frozen.args,
 +              tool: def.id,
@@ -2197,6 +2199,8 @@ index 000000000..95679e534
 +}
 +
 +async function execute(input: {
++  logicalDirectory: string
++  browser: boolean
 +  started: typeof Launch.Type
 +  args: unknown
 +  tool: string
@@ -2217,6 +2221,10 @@ index 000000000..95679e534
 +    ...process.env,
 +    ...launch.environment,
 +    HOME: launch.scratchDirectory,
++    TMPDIR: launch.scratchDirectory,
++    TMP: launch.scratchDirectory,
++    TEMP: launch.scratchDirectory,
++    TMPPREFIX: path.join(launch.scratchDirectory, "zsh"),
 +    XDG_CONFIG_HOME: path.join(launch.scratchDirectory, "config"),
 +    XDG_DATA_HOME: path.join(launch.scratchDirectory, "data"),
 +    XDG_STATE_HOME: path.join(launch.scratchDirectory, "state"),
@@ -2233,7 +2241,7 @@ index 000000000..95679e534
 +  // Never pass a host control credential to a tool or its descendants.
 +  for (const key of Object.keys(environment))
 +    if (
-+      /^(DEVRYAN_.*(?:TOKEN|URL)|OPENCODE_SERVER_(?:PASSWORD|USERNAME)|OPENCODE_CONFIG(?:_DIR|_CONTENT)?|DEVRYAN_EXECUTION_CONTROL_PLUGINS)$/.test(
++      /^(DEVRYAN_.*(?:TOKEN|URL)|OPENCODE_SERVER_(?:PASSWORD|USERNAME)|OPENCODE_CONFIG(?:_DIR|_CONTENT)?|DEVRYAN_EXECUTION_(?:CONTROL_PLUGINS|BROWSER_PLUGIN|BROWSER_SCOPE))$/.test(
 +        key,
 +      )
 +    )
@@ -2252,7 +2260,9 @@ index 000000000..95679e534
 +      ? Object.fromEntries(
 +          Object.entries(input.args).map(([key, value]) => [
 +            key,
-+            ["filePath", "path", "workdir", "cwd"].includes(key) ? remap(value) : value,
++            input.tool === "apply_patch" && key === "patchText" && typeof value === "string"
++              ? prepareWorkerPatch(value, input.started.lease.projectDirectory, input.started.lease.viewDirectory)
++              : ["filePath", "path", "workdir", "cwd"].includes(key) ? remap(value) : value,
 +          ]),
 +        )
 +      : input.args
@@ -2279,6 +2289,19 @@ index 000000000..95679e534
 +  }
 +  const processArgs =
 +    Bun.main.includes("$bunfs") || Bun.main.includes("~BUN") || process.execPath === Bun.main ? [] : [Bun.main]
++  let browser: Awaited<ReturnType<typeof startExecutionBrowser>> | undefined
++  try {
++    if (input.browser && process.env.DEVRYAN_BROWSER_CDP_DISCOVERY_URL && process.env.DEVRYAN_BROWSER_CDP_TOKEN) {
++      browser = await startExecutionBrowser({ upstream: process.env.DEVRYAN_BROWSER_CDP_DISCOVERY_URL,
++        credential: process.env.DEVRYAN_BROWSER_CDP_TOKEN, viewDirectory: input.started.lease.viewDirectory,
++        scope: { opencodeSessionID: input.ctx.sessionID, messageID: input.started.lease.scope.userMessageID,
++          directory: input.logicalDirectory, agent: input.ctx.agent }, signal: input.signal })
++      Object.assign(environment, browser.environment)
++    }
++  } catch (cause) {
++    await rpc({ ...input.receipt, action: "cancel-before-start" })
++    throw cause
++  }
 +  const proc = spawn(
 +    launch.launcher,
 +    [...launch.arguments, process.execPath, ...processArgs, "debug", "devryan-tool"],
@@ -2348,6 +2371,7 @@ index 000000000..95679e534
 +    error = cause instanceof Error ? cause : new Error("Confined tool failed")
 +  } finally {
 +    input.signal.removeEventListener("abort", cancel)
++    await browser?.close()
 +    if (!spawned) await rpc({ ...input.receipt, action: "cancel-before-start" })
 +    else publication = Schema.decodeUnknownSync(Publication)(await rpc({ ...input.receipt, action: "finish" }))
 +  }
@@ -2372,10 +2396,41 @@ index 000000000..95679e534
 +export * as DevRyanExecution from "./devryan-execution"
 diff --git a/packages/opencode/src/session/execution-payload.ts b/packages/opencode/src/session/execution-payload.ts
 new file mode 100644
-index 000000000..b8d1655e7
+index 000000000..a9fd1b3a9
 --- /dev/null
 +++ b/packages/opencode/src/session/execution-payload.ts
-@@ -0,0 +1,10 @@
+@@ -0,0 +1,55 @@
++import path from "node:path"
++import { createHash } from "node:crypto"
++import { Schema } from "effect"
++import { SessionV1 } from "@opencode-ai/core/v1/session"
++
++const Record = Schema.Record(Schema.String, Schema.Unknown)
++const Context = Schema.Array(Schema.Struct({ info: Record, parts: Schema.Array(Record) }))
++
++// Prompt plugins may append transient synthetic text without persistence IDs.
++// Preserve that context, assigning local wire identities only. These identities
++// never authorize execution, publication, or collection and are never persisted.
++export function prepareWorkerMessages(input: unknown) {
++  const messages = Schema.decodeUnknownSync(Context)(input)
++  const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex")
++  const synthetic = (part: typeof Record.Type) => part.type === "text" && part.synthetic === true
++  return Schema.decodeUnknownSync(Schema.Array(SessionV1.WithParts))(messages.map((message, index) => {
++    const transientMessage = typeof message.info.id === "string" && !message.info.id.startsWith("msg")
++      && message.parts.length > 0 && message.parts.every(synthetic)
++    const messageID = transientMessage ? `msg_worker_context_${digest([index, message.info.id])}` : message.info.id
++    return {
++      info: transientMessage ? { ...message.info, id: messageID } : message.info,
++      parts: message.parts.map((part, partIndex) => synthetic(part) ? {
++        ...part,
++        id: part.id ?? `prt_worker_context_${digest([messageID, partIndex, part.text])}`,
++        sessionID: part.sessionID ?? message.info.sessionID,
++        messageID: transientMessage ? messageID : part.messageID ?? messageID,
++      } : part),
++    }
++  }))
++}
++
 +export const workerPayloadLimit = 16 * 1024 * 1024
 +
 +// Count the exact UTF-8 wire representation, including the final delimiter.
@@ -2385,6 +2440,20 @@ index 000000000..b8d1655e7
 +  if (Buffer.byteLength(wire) > workerPayloadLimit) {
 +    throw Object.assign(new Error("payload_too_large"), { code: "payload_too_large" })
 +  }
++}
++
++// Patch headers are file arguments, not executable code or file contents.
++// Rewrite only in-project absolute paths; external paths stay subject to the
++// worker's normal permission and filesystem policy.
++export function prepareWorkerPatch(patch: string, projectDirectory: string, viewDirectory: string) {
++  return patch.replace(/^(\*\*\* (?:Add File|Update File|Delete File|Move to):)([^\r\n]*)/gm,
++    (header, prefix: string, value: string) => {
++      const file = value.trim()
++      if (!path.isAbsolute(file)) return header
++      const relative = path.relative(projectDirectory, file)
++      if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return header
++      return `${prefix} ${path.join(viewDirectory, relative)}`
++    })
 +}
 diff --git a/packages/opencode/src/session/retention-gate.ts b/packages/opencode/src/session/retention-gate.ts
 new file mode 100644
@@ -2462,12 +2531,45 @@ index 000000000..44679a3f4
 +export * as RetentionGate from "./retention-gate"
 diff --git a/packages/opencode/test/session/execution-payload.test.ts b/packages/opencode/test/session/execution-payload.test.ts
 new file mode 100644
-index 000000000..4bfb46142
+index 000000000..a52e66a4f
 --- /dev/null
 +++ b/packages/opencode/test/session/execution-payload.test.ts
-@@ -0,0 +1,20 @@
+@@ -0,0 +1,69 @@
 +import { expect, test } from "bun:test"
-+import { assertWorkerPayload, workerPayloadLimit } from "../../src/session/execution-payload"
++import { assertWorkerPayload, prepareWorkerMessages, prepareWorkerPatch, workerPayloadLimit } from "../../src/session/execution-payload"
++
++const context = () => [{
++  info: { id: "msg_user", sessionID: "ses_parent", role: "user", time: { created: 1 },
++    agent: "orchestrator", model: { providerID: "openai", modelID: "gpt-6-astra" } },
++  parts: [{ type: "text", synthetic: true, text: "Keep the complete orchestration reminder", metadata: { reminder: true } }],
++}]
++
++test("preserves synthetic orchestration text with stable worker-local identities", () => {
++  const input = context(), before = structuredClone(input)
++  const messages = prepareWorkerMessages(input)
++  expect(messages[0].parts[0]).toMatchObject({ type: "text", synthetic: true,
++    text: input[0].parts[0].text, sessionID: "ses_parent", messageID: "msg_user", metadata: { reminder: true } })
++  expect(messages[0].parts[0].id.startsWith("prt_worker_context_")).toBe(true)
++  expect(prepareWorkerMessages(input)).toEqual(messages)
++  expect(input).toEqual(before)
++})
++
++test("accepts synthetic board message IDs without changing persisted message identities", () => {
++  const input = context()
++  input[0].info.id = "oh-my-opencode-slim:background-job-board:ses_parent:1"
++  const messages = prepareWorkerMessages(input)
++  expect(messages[0].info.id.startsWith("msg_worker_context_")).toBe(true)
++  expect(messages[0].parts[0].messageID).toBe(messages[0].info.id)
++  const persisted = prepareWorkerMessages(context())
++  expect(prepareWorkerMessages(persisted)).toEqual(persisted)
++})
++
++test("never repairs missing identities on real text or executable tool records", () => {
++  const input = context()
++  input[0].parts[0].synthetic = false
++  expect(() => prepareWorkerMessages(input)).toThrow()
++  expect(() => prepareWorkerMessages([{ ...input[0], parts: [{ type: "tool", synthetic: true, tool: "bash" }] }])).toThrow()
++})
 +
 +test("accepts the exact worker wire limit and rejects one additional byte", () => {
 +  const wire = "x".repeat(workerPayloadLimit - 1) + "\n"
@@ -2485,6 +2587,22 @@ index 000000000..4bfb46142
 +  const controller = new AbortController()
 +  controller.abort(new Error("execution_cancelled"))
 +  expect(() => assertWorkerPayload("{}", controller.signal)).toThrow("execution_cancelled")
++})
++
++test("maps only patch file headers into the owned execution view", () => {
++  const patch = ["*** Begin Patch", "*** Add File: /repo/new file", "+literal /repo/value",
++    "+*** Delete File: /repo/content", "*** Update File:/repo/old", "*** Move to: /repo/moved", "@@",
++    "-/repo/old", "+/repo/new", "*** Delete File: /repo/deleted", "*** End Patch"].join("\n")
++  expect(prepareWorkerPatch(patch, "/repo", "/view")).toBe(patch
++    .replace("Add File: /repo/new file", "Add File: /view/new file")
++    .replace("Update File:/repo/old", "Update File: /view/old")
++    .replace("Move to: /repo/moved", "Move to: /view/moved")
++    .replace("Delete File: /repo/deleted", "Delete File: /view/deleted"))
++})
++test("preserves relative and external patch targets and CRLF", () => {
++  const patch = "*** Add File: relative\r\n+x\r\n*** Delete File: /repo-sibling/file\r\n*** Update File: /repo/../external\r\n*** Move to: /outside/file"
++  expect(prepareWorkerPatch(patch, "/repo", "/view")).toBe(patch)
++  expect(prepareWorkerPatch("*** Add File: /repo/file\r\n+x", "/repo", "/view")).toBe("*** Add File: /view/file\r\n+x")
 +})
 diff --git a/packages/opencode/test/session/retention-gate.test.ts b/packages/opencode/test/session/retention-gate.test.ts
 new file mode 100644
@@ -2522,3 +2640,236 @@ index 000000000..155bd515a
 +  })))
 +  expect(RetentionGate.release(token)).toBe(true)
 +})
+diff --git a/packages/opencode/src/session/execution-browser.ts b/packages/opencode/src/session/execution-browser.ts
+new file mode 100644
+index 000000000..af4a24bdf
+--- /dev/null
++++ b/packages/opencode/src/session/execution-browser.ts
+@@ -0,0 +1,62 @@
++import { createServer } from "node:http"
++import { randomBytes, timingSafeEqual } from "node:crypto"
++
++type Scope = { opencodeSessionID: string; messageID: string; directory: string; agent: string }
++
++// One tool invocation receives access only to its own browser turn. The host
++// credential and other sessions' browser capabilities never enter the worker.
++export async function startExecutionBrowser(input: {
++  upstream: string; credential: string; scope: Scope; viewDirectory: string; signal: AbortSignal
++}) {
++  const upstream = new URL(input.upstream)
++  if (upstream.protocol !== "http:" || upstream.hostname !== "127.0.0.1"
++    || upstream.pathname !== "/api/desktop/browser-cdp" || upstream.search || upstream.hash)
++    throw new Error("invalid_browser_execution_endpoint")
++  input.signal.throwIfAborted()
++  const token = randomBytes(32).toString("hex"), leases = new Set<string>()
++  const controller = new AbortController()
++  const signal = AbortSignal.any([input.signal, controller.signal])
++  const server = createServer(async (req, res) => {
++    res.setHeader("Cache-Control", "no-store")
++    const reject = (status: number) => { res.writeHead(status); res.end() }
++    const supplied = Buffer.from(req.headers.authorization ?? ""), expected = Buffer.from(`Bearer ${token}`)
++    if (signal.aborted || supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return reject(403)
++    const route = req.url ?? "", base = "/api/desktop/browser-leases"
++    const member = /^\/api\/desktop\/browser-leases\/([a-zA-Z0-9_-]+)(\/touch)?$/.exec(route)
++    if (!(req.method === "POST" && (route === base || route === `${base}/resolve`)
++      || member && leases.has(decodeURIComponent(member[1])) && (req.method === "POST" && member[2] === "/touch"
++        || req.method === "DELETE" && !member[2]))) return reject(403)
++    try {
++      let body = ""
++      for await (const chunk of req) {
++        body += chunk.toString()
++        if (Buffer.byteLength(body) > 8192) return reject(413)
++      }
++      const scope = JSON.parse(body)
++      if (!scope || Object.keys(scope).length !== 4 || scope.opencodeSessionID !== input.scope.opencodeSessionID
++        || scope.messageID !== input.scope.messageID || scope.directory !== input.viewDirectory
++        || scope.agent !== input.scope.agent) return reject(403)
++      const response = await fetch(new URL(route, upstream.origin), { method: req.method,
++        headers: { authorization: `Bearer ${input.credential}`, "content-type": "application/json" },
++        body: JSON.stringify(input.scope), signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]), redirect: "error" })
++      const value: unknown = await response.json()
++      if (response.ok && route === base && typeof value === "object" && value !== null
++        && "leaseId" in value && typeof value.leaseId === "string") leases.add(value.leaseId)
++      if (response.ok && member && req.method === "DELETE") leases.delete(decodeURIComponent(member[1]))
++      res.writeHead(response.status, { "content-type": "application/json" }); res.end(JSON.stringify(value))
++    } catch { if (!res.headersSent) reject(signal.aborted ? 410 : 502); else res.end() }
++  })
++  server.requestTimeout = 30_000
++  await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve) })
++  const address = server.address()
++  if (!address || typeof address === "string") throw new Error("browser_execution_unavailable")
++  const close = async () => {
++    controller.abort()
++    await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections() })
++  }
++  return { environment: {
++    DEVRYAN_BROWSER_CDP_DISCOVERY_URL: `http://127.0.0.1:${address.port}/api/desktop/browser-cdp`,
++    DEVRYAN_BROWSER_CDP_TOKEN: token,
++    DEVRYAN_EXECUTION_BROWSER_SCOPE: JSON.stringify({ ...input.scope, directory: input.viewDirectory }),
++  }, close }
++}
+diff --git a/packages/opencode/test/session/execution-browser.test.ts b/packages/opencode/test/session/execution-browser.test.ts
+new file mode 100644
+index 000000000..8674bdedd
+--- /dev/null
++++ b/packages/opencode/test/session/execution-browser.test.ts
+@@ -0,0 +1,44 @@
++import { expect, test } from "bun:test"
++import { startExecutionBrowser } from "../../src/session/execution-browser"
++
++test("browser capability authenticates one turn, rewrites only its directory, and expires on close", async () => {
++  const requests: { path: string; authorization: string | null; body: unknown }[] = []
++  const host = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) {
++    requests.push({ path: new URL(req.url).pathname, authorization: req.headers.get("authorization"), body: await req.json() })
++    return Response.json({ leaseId: "lease_owned", wsUrl: "ws://127.0.0.1:1234/own-page" })
++  } })
++  const scope = { opencodeSessionID: "ses_own", messageID: "msg_own", directory: "/logical/subdir", agent: "designer" }
++  const bridge = await startExecutionBrowser({ upstream: `${host.url.origin}/api/desktop/browser-cdp`, credential: "host-secret",
++    scope, viewDirectory: "/lease/view", signal: new AbortController().signal })
++  const url = new URL("/api/desktop/browser-leases", bridge.environment.DEVRYAN_BROWSER_CDP_DISCOVERY_URL)
++  const local = { ...scope, directory: "/lease/view" }
++  const call = (body: unknown, route = url.href, token = bridge.environment.DEVRYAN_BROWSER_CDP_TOKEN, method = "POST") =>
++    fetch(route, { method, headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(body) })
++  try {
++    expect((await call(local, url.href, "host-secret")).status).toBe(403)
++    for (const changed of [{ opencodeSessionID: "other" }, { messageID: "other" }, { directory: "/elsewhere" }, { agent: "other" }, { extra: true }])
++      expect((await call({ ...local, ...changed })).status).toBe(403)
++    expect((await call(local, url.href + "/foreign/touch")).status).toBe(403)
++    expect((await call(local, new URL("/api/desktop/browser-cdp", url).href)).status).toBe(403)
++    expect(requests).toHaveLength(0)
++    expect((await call(local)).status).toBe(200)
++    expect(requests[0]).toEqual({ path: url.pathname, authorization: "Bearer host-secret", body: scope })
++    expect((await call(local, url.href + "/lease_owned/touch")).status).toBe(200)
++    expect((await call(local, url.href + "/lease_owned", undefined, "DELETE")).status).toBe(200)
++    expect((await call(local, url.href + "/lease_owned/touch")).status).toBe(403)
++    expect((await call(local, url.href + "/%zz/touch")).status).toBe(403)
++  } finally { await bridge.close(); host.stop(true) }
++  await expect(call(local)).rejects.toThrow()
++})
++
++test("cancelled browser capabilities deny requests without forwarding", async () => {
++  const controller = new AbortController()
++  const bridge = await startExecutionBrowser({ upstream: "http://127.0.0.1:1/api/desktop/browser-cdp", credential: "unused",
++    scope: { opencodeSessionID: "s", messageID: "m", directory: "/p", agent: "d" }, viewDirectory: "/v", signal: controller.signal })
++  controller.abort()
++  try {
++    const response = await fetch(new URL("/api/desktop/browser-leases", bridge.environment.DEVRYAN_BROWSER_CDP_DISCOVERY_URL), {
++      method: "POST", headers: { authorization: `Bearer ${bridge.environment.DEVRYAN_BROWSER_CDP_TOKEN}` }, body: "{}" })
++    expect(response.status).toBe(403)
++  } finally { await bridge.close() }
++})
+diff --git a/packages/opencode/src/tool/shell.ts b/packages/opencode/src/tool/shell.ts
+index 1e4423e01..da662c151 100644
+--- a/packages/opencode/src/tool/shell.ts
++++ b/packages/opencode/src/tool/shell.ts
+@@ -1,6 +1,7 @@
+ import { Effect, Stream } from "effect"
+ import os from "os"
+ import { createWriteStream } from "node:fs"
++import { spawn as spawnNode } from "node:child_process"
+ import * as Tool from "./tool"
+ import path from "path"
+ import { containsPath, type InstanceContext } from "../project/instance-context"
+@@ -289,7 +290,6 @@ const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan,
+     },
+   })
+ })
+-
+ function cmd(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv) {
+   if (process.platform === "win32" && Shell.ps(shell)) {
+     return ChildProcess.make(shell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command], {
+@@ -308,6 +308,29 @@ function cmd(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv
+     detached: process.platform !== "win32",
+   })
+ }
++
++function directSpawn(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv) {
++  const child = spawnNode(shell, ["-c", command], { cwd, env, stdio: ["ignore", "pipe", "pipe"], detached: false })
++  const exit = new Promise<number | null>((resolve) => {
++    child.once("close", (code) => resolve(code))
++    child.once("error", () => resolve(null))
++  })
++  if (process.env.DEVRYAN_EXECUTION_TRACE === "1") console.error("user shell: native child", child.pid)
++  const stream = (source: NonNullable<typeof child.stdout>) =>
++    Stream.fromAsyncIterable(source, (cause) => cause instanceof Error ? cause : new Error("Shell output failed"))
++  return {
++    direct: true as const,
++    all: Stream.merge(stream(child.stdout), stream(child.stderr)),
++    exitCode: Effect.promise(() => exit),
++    kill: (_options: { forceKillAfter: string }) => Effect.sync(() => {
++      child.kill("SIGTERM")
++      const timer = setTimeout(() => {
++        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
++      }, 3000)
++      timer.unref()
++    }),
++  }
++}
+ const parser = lazy(async () => {
+   const { Parser } = await import("web-tree-sitter")
+   const { default: treeWasm } = await import("web-tree-sitter/tree-sitter.wasm" as string, {
+@@ -481,8 +504,13 @@ export const ShellTool = Tool.define(
+       const code: number | null = yield* Effect.scoped(
+         Effect.gen(function* () {
+           yield* Effect.addFinalizer(closeSink)
+-          const handle = yield* spawner.spawn(cmd(input.shell, input.command, input.cwd, input.env))
+-
++          if (process.env.DEVRYAN_EXECUTION_TRACE === "1" && ctx.extra?.devryanUserShell === true)
++            console.error("user shell: spawning")
++          const handle = ctx.extra?.devryanUserShell === true && process.platform !== "win32"
++            ? yield* Effect.sync(() => directSpawn(input.shell, input.command, input.cwd, input.env))
++            : yield* spawner.spawn(cmd(input.shell, input.command, input.cwd, input.env))
++          if (process.env.DEVRYAN_EXECUTION_TRACE === "1" && ctx.extra?.devryanUserShell === true)
++            console.error("user shell: spawned")
+           yield* Effect.forkScoped(
+             Stream.runForEach(Stream.decodeText(handle.all), (chunk) => {
+               const size = Buffer.byteLength(chunk, "utf-8")
+@@ -536,11 +564,12 @@ export const ShellTool = Tool.define(
+             ctx.abort.addEventListener("abort", handler, { once: true })
+             return Effect.sync(() => ctx.abort.removeEventListener("abort", handler))
+           })
+-
+           const timeout = Effect.sleep(`${input.timeout + 100} millis`)
+-
++          const completion = "direct" in handle
++            ? handle.exitCode.pipe(Effect.map((code) => ({ kind: "exit" as const, code })))
++            : handle.exitCode.pipe(Effect.map((code) => ({ kind: "exit" as const, code })))
+           const exit = yield* Effect.raceAll([
+-            handle.exitCode.pipe(Effect.map((code) => ({ kind: "exit" as const, code }))),
++            completion,
+             abort.pipe(Effect.map(() => ({ kind: "abort" as const, code: null }))),
+             timeout.pipe(Effect.map(() => ({ kind: "timeout" as const, code: null }))),
+           ])
+@@ -617,17 +646,21 @@ export const ShellTool = Tool.define(
+               }
+               const timeout = params.timeout ?? defaultTimeoutMs
+               const ps = Shell.ps(shell)
+-              yield* Effect.scoped(
+-                Effect.gen(function* () {
+-                  const tree = yield* Effect.acquireRelease(parse(params.command, ps), (tree) =>
+-                    Effect.sync(() => tree.delete()),
+-                  )
+-                  const scan = yield* collect(tree.rootNode, cwd, ps, shell, instanceCtx)
+-                  if (!containsPath(cwd, instanceCtx)) scan.dirs.add(cwd)
+-                  yield* ask(ctx, scan, params)
+-                }),
+-              )
+-
++              const direct = ctx.extra?.devryanUserShell === true
++              if (process.env.DEVRYAN_EXECUTION_TRACE === "1" && direct) console.error("user shell: entry")
++              if (!direct) {
++                yield* Effect.scoped(
++                  Effect.gen(function* () {
++                    const tree = yield* Effect.acquireRelease(parse(params.command, ps), (tree) =>
++                      Effect.sync(() => tree.delete()),
++                    )
++                    const scan = yield* collect(tree.rootNode, cwd, ps, shell, instanceCtx)
++                    if (!containsPath(cwd, instanceCtx)) scan.dirs.add(cwd)
++                    yield* ask(ctx, scan, params)
++                  }),
++                )
++              }
++              if (process.env.DEVRYAN_EXECUTION_TRACE === "1" && direct) console.error("user shell: permission complete")
+               return yield* run(
+                 {
+                   shell,

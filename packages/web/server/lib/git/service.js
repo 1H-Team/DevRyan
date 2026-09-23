@@ -2658,7 +2658,7 @@ async function checkoutBranchUnlocked(directory, branchName) {
   }
 }
 
-export async function getWorktrees(directory) {
+export async function getWorktrees(directory, { strict = false } = {}) {
   const directoryPath = normalizeDirectoryPath(directory);
   if (!directoryPath || !fs.existsSync(directoryPath) || !fs.existsSync(path.join(directoryPath, '.git'))) {
     return [];
@@ -2670,7 +2670,7 @@ export async function getWorktrees(directory) {
       'Failed to list git worktrees'
     );
     return parseWorktreePorcelain(result.stdout)
-      .filter((entry) => !entry.prunable)
+      .filter((entry) => !entry.prunable && entry.worktree && fs.existsSync(entry.worktree))
       .map((entry) => ({
         head: entry.head || '',
         name: path.basename(entry.worktree || ''),
@@ -2678,6 +2678,7 @@ export async function getWorktrees(directory) {
         path: entry.worktree,
       }));
   } catch (error) {
+    if (strict) throw error;
     console.warn('Failed to list worktrees, returning empty list:', error?.message || error);
     return [];
   }

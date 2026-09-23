@@ -59,6 +59,7 @@ import {
   DEFAULT_UPSTREAM_STALL_TIMEOUT_MS,
   UPSTREAM_STALL_TIMEOUT_CONCURRENT_MS,
 } from './lib/event-stream/index.js';
+import { createBoundedTaskRunner } from './lib/event-stream/bounded-task-runner.js';
 import { createCanonicalOpenCodeEventProcessor } from './lib/event-stream/canonical-ingestion.js';
 import { createFsSearchRuntime as createFsSearchRuntimeFactory } from './lib/fs/search.js';
 import { createOpenCodeLifecycleRuntime } from './lib/opencode/lifecycle.js';
@@ -568,15 +569,31 @@ const turnTimingRuntime = createTurnTimingRuntime({
   },
 });
 
+// Activity projection is observational; a slow Supabase must not accumulate
+// unbounded in-flight projections (one per tool event).
+const activityProjection = createBoundedTaskRunner({ concurrency: 64, maxQueued: 2_000,
+  onError: (error) => console.warn('[MultiUser] Failed to project OpenCode activity:', error?.message || error),
+  onDrop: (dropped) => {
+    if (dropped === 1 || dropped % 1_000 === 0) console.warn(`[MultiUser] Activity projection backlog full; ${dropped} events dropped`);
+  } });
+const projectMultiUserActivity = (payload) => {
+  // Session creation records local root ownership when Supabase is off. It is
+  // rare and never dropped with the observational backlog.
+  if (payload?.type === 'session.created') {
+    void Promise.resolve().then(() => multiUserRuntime?.recordOpenCodeActivity?.(payload))
+      .catch((error) => console.warn('[MultiUser] Failed to record session creation:', error?.message || error));
+    return;
+  }
+  activityProjection.run(() => multiUserRuntime?.recordOpenCodeActivity?.(payload));
+};
+
 const emitSyntheticOpenCodeEvent = (payload, options = {}) => {
   managedOrchestrationRuntime?.processOpenCodeEvent?.(payload, options.directory ?? null);
   maybeCacheSessionInfoFromEvent(payload);
   sessionRuntime.processOpenCodeSsePayload(payload);
   turnTimingRuntime.processOpenCodeEvent(payload);
   harnessRuntime.recordOpenCodeEvent(payload, options.directory ?? null);
-  void multiUserRuntime?.recordOpenCodeActivity?.(payload).catch((error) => {
-    console.warn('[MultiUser] Failed to project OpenCode activity:', error?.message || error);
-  });
+  projectMultiUserActivity(payload);
   void evidenceRuntime?.processOpenCodeEvent(payload);
   broadcastGlobalUiEvent(payload, options);
 };
@@ -1084,7 +1101,7 @@ const processCanonicalOpenCodeEvent = createCanonicalOpenCodeEventProcessor({
   processSessionState: (payload) => sessionRuntime.processOpenCodeSsePayload(payload),
   processTurnTiming: (payload) => turnTimingRuntime.processOpenCodeEvent(payload),
   recordJournalEvent: (payload, directory) => harnessRuntime.recordOpenCodeEvent(payload, directory),
-  recordMultiUserActivity: (payload) => multiUserRuntime?.recordOpenCodeActivity?.(payload),
+  recordMultiUserActivity: projectMultiUserActivity,
   processEvidence: (payload) => evidenceRuntime?.processOpenCodeEvent(payload),
   processBrowserLease: (payload) => browserLeaseRuntime?.processOpenCodeEvent(payload),
   processManagedOrchestration: (payload, directory) => managedOrchestrationRuntime?.processOpenCodeEvent?.(payload, directory),
@@ -1405,6 +1422,7 @@ const commandDeadlineRuntime = createWebCommandDeadlineRuntime({
 harnessRuntime.setCommandDeadlineRuntime(commandDeadlineRuntime);
 const primaryRecoveryRuntime = createWebPrimaryRecoveryRuntime({
   dataDirectory: OPENCHAMBER_DATA_DIR,
+  executionOutcomes: (input) => sessionExecutionHost.runtime.executionOutcomes(input),
   buildOpenCodeUrl: (pathname) => buildOpenCodeUrl(pathname, ''),
   getOpenCodeAuthHeaders,
   isManaged: () => !(isExternalOpenCode || ENV_SKIP_OPENCODE_START || ENV_CONFIGURED_OPENCODE_HOST),
@@ -1431,6 +1449,10 @@ const harnessTaskContext = createHarnessTaskContextHost({
   getManagedRuntime: () => managedOrchestrationRuntime,
   sanitizeText: (text) => harnessRuntime.sanitizer.sanitizeContextText(text),
   recordDiagnostic: (entry) => harnessRuntime.record(entry),
+  compactionAnchorEnabled: process.env.DEVRYAN_COMPACTION_ANCHOR !== '0',
+  // Multi-user plan references resolve only between sessions of one owner.
+  sessionOwnerKey: async (sessionID) => (multiUserRuntime?.enabled
+    ? (await multiUserRuntime.resolveSessionOwnerKey?.({ rootSessionId: sessionID })) ?? null : 'local'),
 });
 harnessRuntime.setTaskContextRuntime(harnessTaskContext);
 const sessionChangeHost = createSessionChangeHost({
@@ -1906,7 +1928,7 @@ async function main(options = {}) {
   });
   browserObservationRuntime = createBrowserObservationRuntime({
     getLeaseRecords: () => browserLeaseRuntime.getSnapshot(),
-    ownsSession: (principal, sessionId) => multiUserRuntime.ownsSession(principal, sessionId),
+    ownsSession: (principal, sessionId) => multiUserRuntime.ownsSession?.(principal, sessionId) ?? false,
     getHostLeaseMetadata: typeof options.getBrowserLeaseObservationSnapshot === 'function'
       ? options.getBrowserLeaseObservationSnapshot
       : null,
@@ -1914,7 +1936,7 @@ async function main(options = {}) {
       ? options.openBrowserLeaseObservationStream
       : null,
     onPrincipalChanged: broadcastBrowserAgentLeasesChanged,
-    audit: (principal, action, context) => multiUserRuntime.audit(principal, action, context),
+    audit: (principal, action, context) => multiUserRuntime.audit?.(principal, action, context) ?? Promise.resolve(null),
   });
   const browserCdpDiscoveryRuntime = createBrowserCdpDiscoveryRuntime({
     getBridgeStatus: typeof options.getBrowserCdpBridgeStatus === 'function'
@@ -2063,7 +2085,7 @@ async function main(options = {}) {
     next();
   });
   multiUserRuntime.registerRoutes(app, {
-    isSessionCreationRestarting: () => isRestartingOpenCode || !isOpenCodeReady || multiUserRuntime.connection?.status().restartRequired,
+    isSessionCreationRestarting: () => isRestartingOpenCode || !isOpenCodeReady || multiUserRuntime.connection?.status().restartPending,
     recordCreationTiming: (entry) => harnessRuntime.record(entry),
     readSettingsFromDiskMigrated,
     buildOpenCodeUrl,
@@ -2158,8 +2180,8 @@ async function main(options = {}) {
       || ENV_SKIP_OPENCODE_START
       || ENV_CONFIGURED_OPENCODE_HOST
     ),
-    getWorkAdmissionBlock: () => multiUserRuntime.connection?.status().restartRequired
-      ? { code: 'supabase_change_pending', message: 'DevRyan is waiting to restart' }
+    getWorkAdmissionBlock: () => multiUserRuntime.connection?.status().restartPending
+      ? { code: 'supabase_change_pending', error: 'DevRyan is waiting to restart' }
       : harnessRuntime.getPromptAdmissionBlock(),
     resolveAgentExecution: (params) => multiUserRuntime.resolveSessionAgentExecution?.(params)
       ?? params.fallbackExecution,

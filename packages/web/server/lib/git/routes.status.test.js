@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import express from 'express';
-import request from 'supertest';
+import request from '../../test-supertest.js';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { registerGitRoutes } from './routes.js';

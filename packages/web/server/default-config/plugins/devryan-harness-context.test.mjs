@@ -116,24 +116,32 @@ describe('deterministic input projection and measured headroom', () => {
     expect(measureHeadroom({}, messages).estimatedHeadroomTokens).toBeNull();
     expect(measureHeadroom(model, [...messages, { parts: [{ type: 'compaction' }] }]).previousRequestInputTokens).toBeNull();
   });
-  it('restores the same sourced checkpoint across two native compactions without changing the static prefix', async () => {
-    const checkpoint = { schemaVersion: 1, sessionID: 'ses_root', anchor: { messageID: 'msg_user' },
-      selectedPlan: { sourceMessageId: 'msg_plan' }, children: [{ taskId: 'dvr_task_a', status: 'running' }],
-      recovery: { readOnly: true, attemptCount: 1 }, nextAction: { kind: 'inspect-managed-barrier' } };
-    const f = await setup(({ method }) => method === 'harness_capabilities' ? { policies: { contextProjection: true } }
-      : { available: true, checkpoint });
-    for (let i = 0; i < 2; i++) {
-      const compact = { context: ['Native context'] };
-      await f.plugin['experimental.session.compacting']({ sessionID: 'ses_root' }, compact);
-      expect(compact.context[1]).toContain('msg_plan');
-      const system = { system: ['Stable role and tool rules'] };
-      const prefix = system.system;
-      await f.plugin['experimental.chat.system.transform']({ sessionID: 'ses_root', model: {} }, system);
-      expect(system.system).toBe(prefix);
-      expect(compact.context[1]).toContain('inspect-managed-barrier');
-      expect(compact.context[1]).toContain('"readOnly":true');
+  it('re-anchors every native compaction with the canonical anchor without changing the static prefix', async () => {
+    const anchor = '[devryan-compaction-anchor:v1]\nBegin your summary with a "## Objective anchor" section.\n### Current objective (user message msg_user)\nShip the plan.\n### Next action\nInspect the outstanding sub-agent tasks.';
+    for (const contextProjection of [false, true]) {
+      const f = await setup(({ method, params }) => method === 'harness_capabilities' ? { policies: { contextProjection } }
+        : method === 'harness_context' && params.action === 'compaction_anchor' ? { available: true, kind: 'root', text: anchor } : {});
+      for (let i = 0; i < 2; i++) {
+        const compact = { context: ['Native context'] };
+        await f.plugin['experimental.session.compacting']({ sessionID: 'ses_root' }, compact);
+        expect(compact.context).toHaveLength(2);
+        expect(compact.context[1].startsWith(anchor)).toBe(true);
+        const system = { system: ['Stable role and tool rules'] };
+        const prefix = system.system;
+        await f.plugin['experimental.chat.system.transform']({ sessionID: 'ses_root', model: {} }, system);
+        expect(system.system).toBe(prefix);
+      }
+      expect(f.calls.filter(call => call.method === 'harness_context').map(call => call.params.action)).toEqual(['compaction_anchor', 'compaction_anchor']);
     }
-    expect(f.calls.filter(call => call.method === 'harness_context')).toHaveLength(2);
+  });
+  it('never blocks or fails compaction when the anchor is unavailable, malformed, or oversized', async () => {
+    for (const response of [() => { throw new Error('bridge down'); }, () => ({ available: false, reason: 'child_unmanaged' }),
+      () => ({ available: true, text: 'no tag' }), () => ({ available: true, text: `[devryan-compaction-anchor:v1]${'x'.repeat(17 * 1024)}` })]) {
+      const f = await setup(({ method }) => method === 'harness_capabilities' ? { policies: {} } : response());
+      const compact = { context: ['Native context'] };
+      await expect(f.plugin['experimental.session.compacting']({ sessionID: 'ses_root' }, compact)).resolves.toBeUndefined();
+      expect(compact.context).toEqual(['Native context']);
+    }
   });
   it('reports estimated headroom in explicit checkpoint results without adding a system checkpoint request', async () => {
     const f = await setup(({ method }) => method === 'harness_capabilities' ? { policies: { contextProjection: true } } : {});

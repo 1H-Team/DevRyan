@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
@@ -9,6 +9,17 @@ import {
   resolveCursorSdkWorkerRuntimeConfig,
 } from './index.js';
 import { normalizeInteractionUpdateToSdkMessage } from './interaction-update-normalize.js';
+
+// Deterministic suites must not depend on an installed DevRyan.app: the
+// ripgrep path is validated on disk, so stage an executable in a temp tree
+// shaped like the packaged app's unpacked resources.
+const PACKAGED_RIPGREP_ROOT = mkdtempSync(join(tmpdir(), 'devryan-packaged-rg-'));
+const PACKAGED_RIPGREP_PATH = join(PACKAGED_RIPGREP_ROOT,
+  'Contents/Resources/app.asar.unpacked/node_modules/@cursor/sdk-darwin-arm64/bin/rg');
+mkdirSync(join(PACKAGED_RIPGREP_PATH, '..'), { recursive: true });
+writeFileSync(PACKAGED_RIPGREP_PATH, '#!/bin/sh\nexit 0\n');
+chmodSync(PACKAGED_RIPGREP_PATH, 0o755);
+process.once('exit', () => rmSync(PACKAGED_RIPGREP_ROOT, { recursive: true, force: true }));
 
 let tempDir = null;
 
@@ -246,7 +257,7 @@ describe('Cursor SDK worker runtime config', () => {
       requestedWorkerCwd: '',
       requestedWorkerEnv: {},
       workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
-      ripgrepPath: '/Applications/DevRyan.app/Contents/Resources/app.asar.unpacked/node_modules/@cursor/sdk-darwin-arm64/bin/rg',
+      ripgrepPath: PACKAGED_RIPGREP_PATH,
     });
 
     expect(config.useNodeWorkerForPrompts).toBe(true);
@@ -254,7 +265,7 @@ describe('Cursor SDK worker runtime config', () => {
     expect(config.workerCwd).toBe('/Applications/DevRyan.app/Contents/Resources');
     expect(config.workerEnv).toEqual({
       ELECTRON_RUN_AS_NODE: '1',
-      CURSOR_SDK_RIPGREP_PATH: '/Applications/DevRyan.app/Contents/Resources/app.asar.unpacked/node_modules/@cursor/sdk-darwin-arm64/bin/rg',
+      CURSOR_SDK_RIPGREP_PATH: PACKAGED_RIPGREP_PATH,
     });
   });
 
@@ -271,7 +282,7 @@ describe('Cursor SDK worker runtime config', () => {
       workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
       workerCwd: '/Applications/DevRyan.app/Contents/Resources',
       workerEnv: { ELECTRON_RUN_AS_NODE: '1' },
-      ripgrepPath: '/Applications/DevRyan.app/Contents/Resources/app.asar.unpacked/node_modules/@cursor/sdk-darwin-arm64/bin/rg',
+      ripgrepPath: PACKAGED_RIPGREP_PATH,
       spawnImpl: createFakeWorkerSpawn(capture),
     });
 
@@ -292,7 +303,7 @@ describe('Cursor SDK worker runtime config', () => {
     ]);
     expect(capture.calls[0].options.cwd).toBe('/tmp/project');
     expect(capture.calls[0].options.env.ELECTRON_RUN_AS_NODE).toBe('1');
-    expect(capture.calls[0].options.env.CURSOR_SDK_RIPGREP_PATH).toBe('/Applications/DevRyan.app/Contents/Resources/app.asar.unpacked/node_modules/@cursor/sdk-darwin-arm64/bin/rg');
+    expect(capture.calls[0].options.env.CURSOR_SDK_RIPGREP_PATH).toBe(PACKAGED_RIPGREP_PATH);
     expect(capture.input.modelSelection).toEqual({
       id: 'composer-2.5',
       params: [{ id: 'fast', value: 'false' }],
@@ -1018,7 +1029,7 @@ describe('Cursor SDK worker runtime config', () => {
       workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
       workerCwd: '/Applications/DevRyan.app/Contents/Resources',
       workerEnv: { ELECTRON_RUN_AS_NODE: '1' },
-      ripgrepPath: '/Applications/DevRyan.app/Contents/Resources/app.asar.unpacked/node_modules/@cursor/sdk-darwin-arm64/bin/rg',
+      ripgrepPath: PACKAGED_RIPGREP_PATH,
       spawnImpl: createFakePersistentWorkerSpawn(capture),
     });
 
@@ -1056,7 +1067,7 @@ describe('Cursor SDK worker runtime config', () => {
       '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/persistent-worker.mjs',
     ]);
     expect(capture.calls[0].options.cwd).toBe('/tmp/project');
-    expect(capture.calls[0].options.env.CURSOR_SDK_RIPGREP_PATH).toBe('/Applications/DevRyan.app/Contents/Resources/app.asar.unpacked/node_modules/@cursor/sdk-darwin-arm64/bin/rg');
+    expect(capture.calls[0].options.env.CURSOR_SDK_RIPGREP_PATH).toBe(PACKAGED_RIPGREP_PATH);
     expect(promptCommands).toHaveLength(2);
     expect(promptCommands[0].modelSelection).toEqual({
       id: 'composer-2.5',
@@ -1870,7 +1881,7 @@ describe('Cursor SDK worker runtime config', () => {
       workerPath: '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
       workerCwd: '/Applications/DevRyan.app/Contents/Resources',
       workerEnv: { ELECTRON_RUN_AS_NODE: '1' },
-      ripgrepPath: '/Applications/DevRyan.app/Contents/Resources/app.asar.unpacked/node_modules/@cursor/sdk-darwin-arm64/bin/rg',
+      ripgrepPath: PACKAGED_RIPGREP_PATH,
       spawnImpl,
       logger: { warn: () => {}, error: () => {} },
     });
@@ -1899,8 +1910,8 @@ describe('Cursor SDK worker runtime config', () => {
     expect(capture.calls[1].args).toEqual([
       '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
     ]);
-    expect(capture.calls[0].options.env.CURSOR_SDK_RIPGREP_PATH).toBe('/Applications/DevRyan.app/Contents/Resources/app.asar.unpacked/node_modules/@cursor/sdk-darwin-arm64/bin/rg');
-    expect(capture.calls[1].options.env.CURSOR_SDK_RIPGREP_PATH).toBe('/Applications/DevRyan.app/Contents/Resources/app.asar.unpacked/node_modules/@cursor/sdk-darwin-arm64/bin/rg');
+    expect(capture.calls[0].options.env.CURSOR_SDK_RIPGREP_PATH).toBe(PACKAGED_RIPGREP_PATH);
+    expect(capture.calls[1].options.env.CURSOR_SDK_RIPGREP_PATH).toBe(PACKAGED_RIPGREP_PATH);
     expect(records[1].parts.find((part) => part.type === 'text')?.text).toBe('worker ok');
     await runtime.dispose();
   });

@@ -71,12 +71,17 @@ const addCoalescedCount = (record, count) => ({
   coalesced: count,
 });
 
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 5 * 60_000;
+
 export const createJournalTrimmer = (options = {}) => {
   const now = options.now ?? Date.now;
   const onFlush = typeof options.onFlush === 'function' ? options.onFlush : () => {};
   const debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
   const maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
+  // OpenCode heartbeats carry no state; one per interval records liveness.
+  const heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
+  let lastHeartbeatAt = -Infinity;
   const setTimer = options.setTimeout ?? setTimeout;
   const clearTimer = options.clearTimeout ?? clearTimeout;
   const pending = new Map();
@@ -93,6 +98,7 @@ export const createJournalTrimmer = (options = {}) => {
         coalescedSessionUpdates: 0,
         coalescedRuntimeSyncs: 0,
         coalescedDiagnostics: 0,
+        trimmedHeartbeats: 0,
       };
       counters.set(sessionKey, counter);
     }
@@ -195,6 +201,16 @@ export const createJournalTrimmer = (options = {}) => {
     if (!eventType) return [record];
     const sessionKey = sessionKeyOf(record);
 
+    if (eventType === 'server.heartbeat') {
+      const at = now();
+      if (at - lastHeartbeatAt < heartbeatIntervalMs) {
+        counterFor(sessionKey).trimmedHeartbeats += 1;
+        return [];
+      }
+      lastHeartbeatAt = at;
+      return [record];
+    }
+
     if (eventType === 'message.part.delta') {
       counterFor(sessionKey).trimmedDeltas += 1;
       return [];
@@ -250,6 +266,7 @@ export const createJournalTrimmer = (options = {}) => {
     pending.clear();
     counters.clear();
     pendingBytes = 0;
+    lastHeartbeatAt = -Infinity;
   };
 
   return { admit, flushAll, flushSession, stats, reset };

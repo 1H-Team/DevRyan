@@ -187,4 +187,7 @@ test('a retained result offers explicit parent continuation but never bypasses a
   expect(JSON.parse(sent[0].init.body).parts[0].text).toContain('dvr_task_recovered');
   expect(JSON.parse(sent[0].init.body).tools).toEqual({});
   expect((await f.host.getSnapshot('ses_test')).record.collectionIssue).toBeNull();
+  // The continuation is DevRyan-authored; compaction keeps the original objective.
+  const continued = await f.host.readRecord('ses_test');
+  expect(continued).toMatchObject({ anchorID: 'msg_explicit', objectiveID: 'msg_user' });
 });

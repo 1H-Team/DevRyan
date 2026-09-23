@@ -134,9 +134,10 @@ describe('UsagePage model rows', () => {
 
     expect(providersPageSource).toContain('ManagedQuotaCredentials');
     expect(managedCredentialsSource).toContain('/api/quota/credentials/');
-    expect(managedCredentialsSource).toContain("'ollama-cloud' | 'cursor-acp' | 'opencode'");
-    expect(managedCredentialsSource).toContain('opencode-zen-workspace-id');
-    expect(managedCredentialsSource).toContain('opencode-zen-auth-cookie');
+    const managedCredentialSupportSource = repoSource('packages/ui/src/components/sections/providers/managedQuotaCredentialSupport.ts');
+    expect(managedCredentialSupportSource).toContain("'ollama-cloud' | 'cursor-acp' | 'opencode'");
+    expect(managedCredentialsSource).toContain('<OpenCodeZenCredentials />');
+    expect(managedCredentialsSource).not.toContain('opencode-zen-auth-cookie');
     expect(managedCredentialsSource).not.toContain('opencode-go-usage-auth-cookie');
     expect(messages).toContain('settings.providers.page.auth.ollamaCloudUsageTitle');
   });

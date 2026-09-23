@@ -8,7 +8,7 @@ Provider adapter registry for quota retrieval across OpenAI/Claude/Codex/Copilot
 - One-file-per-provider adapters isolate API/auth peculiarities while emitting common result shape.
 - `zai.js`, `kimi.js`, `codex.js`, `xai.js`, and `deepseek.js` are credential/persistence adapters around `@openchamber/shared-runtime` request and parsing logic.
 - Dedicated modules isolate structured proxy, CLI, and degraded status sources (for example Claude Meridian quota and Claude Code `/usage`).
-- `opencode.js` resolves only the private managed dashboard credential and delegates bounded billing-page parsing to the shared OpenCode Zen adapter.
+- `opencode.js` owns OpenCode Console device sign-in flows (device codes kept server-side), single-flight token refresh with rotation write-back, and retired-credential reconnect reporting; billing/usage requests and parsing live in the shared OpenCode Zen adapter.
 
 ## Flow
 1. Route/runtime asks registry for configured providers or one provider by ID.

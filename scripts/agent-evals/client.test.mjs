@@ -1229,12 +1229,13 @@ describe('DevRyan loopback evaluation client', () => {
 
     await assert.rejects(
       runSessionTurn({
-        client: createEvaluationClient({ baseUrl, pollIntervalMs: 1, requestTimeoutMs: 100 }),
+        client: createEvaluationClient({ baseUrl, pollIntervalMs: 1, requestTimeoutMs: 1000 }),
         directory: '/tmp/fixture',
         selection: { providerId: 'p', modelId: 'm', agent: 'builder', variant: null },
         prompt: 'in-memory prompt',
-        timeoutMs: 30,
-        cleanupTimeoutMs: 100,
+        // Exercise deadline cleanup, not loopback startup speed under workspace validation load.
+        timeoutMs: 1000,
+        cleanupTimeoutMs: 2000,
       }),
       (error) => error?.code === 'evaluation_timeout' && error.cleanup?.complete === true,
     );

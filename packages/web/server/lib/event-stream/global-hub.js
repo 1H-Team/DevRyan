@@ -1,5 +1,6 @@
 import { createUpstreamSseReader } from './upstream-reader.js';
 import { randomUUID } from 'node:crypto';
+import { eventPayloadBytes } from './payload-serialization.js';
 
 // Raised from 512 → 2048 to improve recovery after brief disconnects during
 // long-running agent sessions where many events accumulate quickly.
@@ -62,9 +63,10 @@ export function createGlobalMessageStreamHub({
     }
   };
 
+  // The payload dominates; its serialization is shared with client delivery.
   const approxEventSizeBytes = (normalized) => {
     try {
-      return Buffer.byteLength(JSON.stringify(normalized));
+      return eventPayloadBytes(normalized.payload) + Buffer.byteLength(JSON.stringify(normalized.envelope ?? null)) + 128;
     } catch {
       return 1024;
     }
@@ -100,6 +102,12 @@ export function createGlobalMessageStreamHub({
     typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
   );
 
+  const withoutUpstreamPayload = (envelope) => {
+    if (!envelope || typeof envelope !== 'object' || !('payload' in envelope)) return envelope;
+    const { payload: _upstreamPayload, ...routing } = envelope;
+    return routing;
+  };
+
   const normalizeEvent = ({ envelope, payload }) => {
     const directory =
       typeof envelope?.directory === 'string' && envelope.directory.length > 0 ? envelope.directory : 'global';
@@ -107,7 +115,10 @@ export function createGlobalMessageStreamHub({
     // Upstream reconnection continues to use only upstream-supplied SSE IDs.
     const eventId = normalizeEventId(envelope?.eventId) ?? `devryan-${bootID}-${++cursorSequence}`;
     return {
-      envelope,
+      // The upstream envelope also holds the untransformed payload, which can
+      // carry multi-MB diff bodies the transform removed. Replay retains only
+      // its routing fields.
+      envelope: withoutUpstreamPayload(envelope),
       payload,
       directory,
       eventId,

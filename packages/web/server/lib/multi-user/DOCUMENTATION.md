@@ -723,6 +723,36 @@ to open and close lifecycle events. Session lifecycle outcomes are recorded as
 `session.archived`, `session.unarchived`, and `session.deleted`; delete metadata
 distinguishes upstream removal from ownership tombstoning so partial failure is
 visible without storing session content.
+Appends are durable local writes that complete in call order; delivery runs in
+coalesced flush passes, one at a time. Fresh records go first in append order,
+and records that failed before follow them. After an unavailable-backend failure
+a pass tries the next record once, and a second consecutive failure ends it.
+
+Backoff works at two levels:
+- A record that failed waits out its own backoff (5 s doubling to 5 min) in
+  background passes. Explicit flushes and the delivery barrier still try every
+  record.
+- The whole outbox backs off (5 s to 5 min) only when a fresh record failed and
+  nothing was delivered.
+
+One record that keeps failing therefore never blocks or delays the others. A 4xx
+rejection skips only its record.
+
+`enqueue` waits at most 2 s, and only for its own record's outcome. It does not
+wait while the backend is backing off or slow, or when more than 16 records are
+ahead of it. Supabase therefore never holds an audited operation or a
+`prompt_async` response. The delivery barrier requires
+only records that existed when it started; shutdown drain is bounded to 5 s and
+leaves undelivered records durable. Owner principals used by background work
+(sub-agent dispatch, backup model, browser leases, activity projection) are cached
+for 30 s with shared in-flight loads, and a transient Supabase failure serves the
+last good principal for up to 5 minutes; every access change clears that cache.
+Child-session ownership is recorded locally at once and committed to Supabase in
+the background with bounded retries and one stable `session.child_created` audit
+event. The pending local row is pinned, so a control-plane index rebuild from rows
+that predate the write keeps it; only a local delete removes it. User-initiated
+forks wait at most 15 s for the durable row, then fail and roll back the fork; a
+write that lands after the rollback removes its remote row.
 
 ## User analytics contract
 

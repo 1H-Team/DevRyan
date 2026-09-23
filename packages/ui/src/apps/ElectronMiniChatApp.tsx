@@ -13,19 +13,13 @@ import type { RuntimeAPIs } from '@/lib/api/types';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
-import { useGitStore } from '@/stores/useGitStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { SyncProvider, useSessions } from '@/sync/sync-context';
 import { SyncRuntimeEffects } from './AppEffects';
 import { useAppFontEffects } from './useAppFontEffects';
 import { useMiniChatKeyboardShortcuts } from '@/hooks/useMiniChatKeyboardShortcuts';
-import { listProjectWorktrees } from '@/lib/worktrees/worktreeManager';
-import type { WorktreeMetadata } from '@/types/worktree';
+import { useWorktreeDiscovery } from '@/lib/worktrees/useWorktreeDiscovery';
 import { useAuthPrincipal } from '@/lib/authSession';
-import {
-  filterBranchBackedWorktrees,
-  filterWorktreesByGrantedBranches,
-} from '@/lib/worktrees/managedBranches';
 
 const MINI_CHAT_PRESENCE_CHANNEL = 'openchamber:mini-chat-presence';
 
@@ -134,48 +128,8 @@ const MiniChatBootstrap: React.FC<{ config: MiniChatConfig }> = ({ config }) => 
     });
   }, [config, currentSessionId, draftOpen, openNewSessionDraft]);
 
-  React.useEffect(() => {
-    if (projects.length === 0) return;
-    let cancelled = false;
-
-    const discoverWorktrees = async () => {
-      const worktreesByProject = new Map<string, WorktreeMetadata[]>();
-      const allWorktrees: WorktreeMetadata[] = [];
-
-      await Promise.all(projects.map(async (project) => {
-        const projectPath = project.path.replace(/\\/g, '/').replace(/\/+$/, '');
-        if (!projectPath) return;
-        const filterByGrant = principal.scope === 'managed' && principal.role !== 'admin';
-        try {
-          const cachedIsGitRepo = useGitStore.getState().directories.get(projectPath)?.isGitRepo;
-          const isGitRepo = cachedIsGitRepo ?? await import('@/lib/gitApi').then((m) => m.checkIsGitRepository(projectPath));
-          if (!isGitRepo) return;
-          const discoveredWorktrees = await listProjectWorktrees({ id: project.id, path: projectPath });
-          const branchWorktrees = filterBranchBackedWorktrees(discoveredWorktrees);
-          const worktrees = filterByGrant
-            ? filterWorktreesByGrantedBranches(branchWorktrees, project)
-            : branchWorktrees;
-          if (cancelled || worktrees.length === 0) return;
-          worktreesByProject.set(projectPath, worktrees);
-          allWorktrees.push(...worktrees);
-        } catch {
-          // Worktree discovery is best-effort; draft selector falls back to the project root.
-        }
-      }));
-
-      if (cancelled) return;
-      useSessionUIStore.setState({
-        availableWorktrees: allWorktrees,
-        availableWorktreesByProject: worktreesByProject,
-      });
-    };
-
-    void discoverWorktrees();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [principal.role, principal.scope, projects]);
+  // The main window owns periodic discovery; this window refreshes on use.
+  useWorktreeDiscovery(projects, principal, currentDirectory, undefined, { poll: false });
 
   return null;
 };

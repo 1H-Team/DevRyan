@@ -9,6 +9,7 @@ import {
   classifyProviderTransportFailure,
   isManagedTaskDeadlineExceeded,
   isManagedTaskModelUnavailable,
+  isProviderConfigurationFailure,
   isProviderPromptRejected,
   PROVIDER_PROMPT_REJECTED_FAILURE_KIND,
   MODEL_UNAVAILABLE_FAILURE_KIND,
@@ -83,6 +84,28 @@ describe('classifyProviderRetryFailure', () => {
 });
 
 describe('classifyProviderTransportFailure', () => {
+  it('does not retry the observed Go region rejection as a network failure', () => {
+    const reason = "Upstream request failed: This Go model requires Global regions. Select Global in your workspace's Privacy settings to use it.";
+    expect(classifyProviderTransportFailure('APIError', reason)).toBeNull();
+    expect(classifyManagedTaskFailure(reason)).toBe('provider_configuration');
+  });
+  it.each([
+    "APIError: This Go model requires Global regions. Select Global in your workspace's Privacy settings to use it.",
+    'Upstream request failed: This Go model requires Global regions. Select Global in your workspace\u2019s Privacy settings.',
+    'This   Go model requires global region;  select Global in your workspace privacy settings',
+    'Upstream request failed (400): This model requires Global regions',
+    `${'Upstream request failed: '.repeat(160)}This Go model requires Global regions.`,
+  ])('classifies provider region-policy wording variants as configuration: %s', (reason) => {
+    expect(isProviderConfigurationFailure(reason)).toBe(true);
+    expect(classifyProviderTransportFailure('APIError', reason)).toBeNull();
+  });
+  it.each([
+    'Upstream request failed: connection reset by peer',
+    'Global regions are temporarily unavailable',
+    'x'.repeat(17_000) + ' model requires Global regions',
+  ])('keeps unrelated or unbounded text out of configuration: %s', (reason) => {
+    expect(isProviderConfigurationFailure(reason)).toBe(false);
+  });
   it.each([
     ['UnknownError', 'The operation timed out.', 'request_timeout'],
     ['TimeoutError', 'The request timed out', 'request_timeout'],

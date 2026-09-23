@@ -90,3 +90,5 @@ Commands, prerequisites, coverage limits and journal investigation: `docs/QA.md`
 `execution-failure.mjs` also verifies compact skill loading, timeout explanations, terminal state replacement and reload in isolated web/Electron runtimes.
 
 The `skill-loading` QA scenario runs skill terminal-state checks independently of the broader `execution-failure` notification-persistence checks.
+
+Live cells may opt into `preserveOrchestration: true`. Profile preparation then copies the saved Slim configuration and the agent overrides/backups sidecar without changing roles, efforts, presets, fallback settings, or model references. Parent model selection remains a composer choice. This option rejects assignment overrides, admits the saved Go/Cursor provider identities, and records credential availability without replacing unsupported or unavailable providers. Refresh credentials remain excluded.

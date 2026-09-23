@@ -20,3 +20,4 @@ export * from './transport-recovery.js';
 export * from './xai-tool-catalog.js';
 export * from './required-checks.js';
 export * from './compact-result-header.js';
+export { formatManagedAssignmentContext } from './continuation-assignment.js';

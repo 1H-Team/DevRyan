@@ -456,10 +456,12 @@ export interface JournalTrimStats {
   coalescedSessionUpdates: number;
   coalescedRuntimeSyncs: number;
   coalescedDiagnostics: number;
+  trimmedHeartbeats: number;
 }
 
 export function createJournalTrimmer(options?: {
   now?: () => number;
+  /** One `server.heartbeat` is kept per interval (default 5 minutes). */ heartbeatIntervalMs?: number;
   onFlush?: (records: Record<string, unknown>[]) => void;
   debounceMs?: number;
   maxEntries?: number;
@@ -780,6 +782,9 @@ export interface PrimaryRecoveryHost extends PrimaryRecoveryController {
   handleRequest(method: string, path: string, body: unknown, context?: { owner?: string | null }): Promise<null | { status: number; body: unknown }>;
 }
 export interface PrimaryRecoveryHostOptions {
+  executionOutcomes?: (input: { directory: string; sessionID: string; calls: Array<{ messageID: string; callID: string }> }) => Promise<Array<{
+    sessionID: string; messageID: string; callID: string; outcome: 'never_started' | 'finished' | 'uncertain';
+  }>>;
   classifyFailure?(error: unknown): string | null;
   dataDirectory: string;
   mode?: 'off' | 'observe' | 'enforce';
@@ -903,6 +908,7 @@ export function classifyPrimaryTransportError(error: unknown, runtimeVersion: st
 export interface PrimaryRecoveryExecutionRecord {
   rejections?: ObjectiveRejection[]; progress?: ObjectiveProgress; failureKind?: string | null;
   continuationID?: string; activeUserID?: string; recoverySourceUserID?: string; todoContinuationCount?: number;
+  /** The objective an explicit continuation continued; compaction re-anchors to it. */ objectiveID?: string;
   builderTodoGuard?: { taskSetHash: string; progressHash: string; stagnantCount: number; progressCounts: Partial<Record<ObjectiveProgressKind, number>> };
   sessionID: string; directory: string; anchorID: string; providerID: string; modelID: string;
   agent: string; variant: string | null; tools: Record<string, boolean>; owner: string | null;
@@ -918,7 +924,7 @@ export function createPrimaryRecoveryController(options: {
   isManaged(): boolean;
   verifyRecoveredCollection?: PrimaryRecoveryHostOptions['verifyRecoveredCollection'];
   authorize(record: PrimaryRecoveryExecutionRecord): Promise<boolean>;
-  observeTurn(record: PrimaryRecoveryExecutionRecord, options?: { signal: AbortSignal; includeTodos?: boolean }): Promise<unknown>;
+  observeTurn(record: PrimaryRecoveryExecutionRecord, options?: { signal: AbortSignal; includeTodos?: boolean; includeExecutionOutcomes?: boolean }): Promise<unknown>;
   abortSession(record: PrimaryRecoveryExecutionRecord): Promise<unknown>;
   promptSession(record: PrimaryRecoveryExecutionRecord, body: unknown): Promise<unknown>;
   publishEvent?: PrimaryRecoveryHostOptions['publishEvent'];
@@ -972,6 +978,9 @@ export interface TaskContextState {
 }
 export interface TaskContextRequest { sessionID: string; directory: string; query?: string }
 export function validateTaskContextRecord(record: unknown): TaskContextRecord;
+export const COMPACTION_ANCHOR_TAG: '[devryan-compaction-anchor:v1]';
+export function formatCompactionAnchor(checkpoint: TaskCheckpoint, options?: { planPath?: string | null; planOutline?: string | null }): string;
+export function formatChildCompactionAnchor(assignmentText: string): string;
 export function deriveTaskCheckpoint(input: TaskContextState & { session: TaskContextSession; projectKey: string; now?: number; sanitizeText?(value: string): string; decisions?: ProjectDecision[] }): TaskCheckpoint;
 export function createTaskContextRuntime(options: {
   dataDirectory: string; store?: RecordStore<TaskContextRecord>; now?(): number; logger?: Pick<Console, 'warn'>;
@@ -981,8 +990,13 @@ export function createTaskContextRuntime(options: {
   readTaskState(scope: TaskContextScope): Promise<TaskContextState>;
   readMessage(input: TaskContextRequest & { messageID: string }): Promise<TaskContextMessage>;
   fingerprintFiles(directory: string, paths: string[]): Promise<string | null>;
+  /** The delegated brief of a managed child session, for its compaction summary. */
+  readChildAssignment?(input: TaskContextRequest): Promise<string | null>;
+  /** The approved plan file and a bounded heading/list outline. */
+  readPlanOutline?(input: { plan: NonNullable<TaskCheckpoint['selectedPlan']>; context: TaskContextScope }): Promise<{ path: string; outline: string | null } | null>;
 }): {
   checkpoint(input: TaskContextRequest): Promise<{ available: true; checkpoint: TaskCheckpoint } | { available: false; reason: string }>;
+  compactionAnchor(input: TaskContextRequest): Promise<{ available: true; kind: 'root' | 'child'; text: string } | { available: false; reason: string }>;
   rememberDecision(input: TaskContextRequest & { statement: string; sourceMessageID: string; paths?: string[]; validUntil?: number | null; supersedes?: string }): Promise<ProjectDecision>;
   decisions(input: TaskContextRequest): Promise<ProjectDecision[]>;
   drain(): Promise<void>;

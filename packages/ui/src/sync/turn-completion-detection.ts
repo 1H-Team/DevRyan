@@ -2,6 +2,7 @@ import type { Message } from "@opencode-ai/sdk/v2/client"
 import type { PlanIndicatorEntry } from "./plan-indicator"
 import { filterMessagesForRevert, getEffectiveSessionRevertMessageID } from "./revert-transactions"
 import { isFinalAssistantSummaryMessage } from "./session-working"
+import { isCompactionSummaryInfo } from "./compaction-summary"
 import { hasIncompleteTodos } from "./todo-completion"
 import type { State } from "./types"
 
@@ -41,6 +42,8 @@ export function detectTurnCompletedCandidate({
   for (let assistantIndex = messages.length - 1; assistantIndex >= 0; assistantIndex -= 1) {
     const assistantMessage = messages[assistantIndex]
     if (assistantMessage.role !== "assistant") continue
+    // A compaction summary is maintenance; its continuation owns completion.
+    if (isCompactionSummaryInfo(assistantMessage)) return null
     if (!isFinalAssistantSummaryMessage(assistantMessage, state.part[assistantMessage.id])) continue
     if (planEntry?.sourceMessageId === assistantMessage.id) return null
 

@@ -123,6 +123,14 @@ export const shouldRenderStatusRowAssistantStatus = (
     managedChildOwnsIdleStatus || isWorking
 );
 
+// A native compaction turn owns the status row while it runs; revert, stall,
+// retry and abort surfaces keep their precedence.
+// eslint-disable-next-line react-refresh/only-export-components
+export const resolveCompactionStatusText = (
+    compaction: 'automatic' | 'manual' | null | undefined,
+    text: { automatic: string; manual: string },
+): string | null => (compaction === 'automatic' ? text.automatic : compaction === 'manual' ? text.manual : null);
+
 // Exported for focused regression tests; keep component exports unchanged otherwise.
 // eslint-disable-next-line react-refresh/only-export-components
 export const resolveStatusRowAssistantDisplay = ({
@@ -318,6 +326,14 @@ export const StatusRowContainer: React.FC = React.memo(() => {
             tool: longRunningPresentation.tool,
         });
     }
+    const compactionStatusText = resolveCompactionStatusText(working.compaction, {
+        automatic: t('chat.statusRow.compacting.automatic'),
+        manual: t('chat.statusRow.compacting.manual'),
+    });
+    if (compactionStatusText) {
+        assistantStatusText = compactionStatusText;
+        assistantIsGenericStatus = false;
+    }
     const display = resolveStatusRowAssistantDisplay({
         isRevertPending,
         revertingText: t('chat.statusRow.revertingChat'),
@@ -392,7 +408,7 @@ export const StatusRowContainer: React.FC = React.memo(() => {
     }, [childStores, currentSessionId, resyncSession]);
     return (
         <StatusRow
-            assistantStatusKey={`${currentPromptId ?? ''}:${managedDelegationPhase ?? ''}`}
+            assistantStatusKey={`${currentPromptId ?? ''}:${managedDelegationPhase ?? ''}:${working.compaction ?? ''}`}
             isWorking={display.isWorking}
             statusText={display.statusText}
             isGenericStatus={display.isGenericStatus}
@@ -418,7 +434,7 @@ export const StatusRowContainer: React.FC = React.memo(() => {
             longRunningToolError={longRunningTool?.actionError ?? null}
             onStopLongRunningTool={longRunningPresentation?.actionable ? stopCurrentLongRunningTool : undefined}
             showAssistantStatus
-            suppressAssistantStatusText={activeReasoningDisclosure}
+            suppressAssistantStatusText={activeReasoningDisclosure && !working.compaction}
             showTodos={false}
             agentName={currentAgentName}
         />

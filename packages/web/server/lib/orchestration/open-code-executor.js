@@ -47,6 +47,10 @@ const createHttpError = async (response, label) => {
   return error;
 };
 
+const CHILD_REGISTRATION_ATTEMPTS = 3;
+const TRANSIENT_CHILD_REGISTRATION_CODES = new Set(['local_execution_timeout', 'execution_preparation_stalled',
+  'LOCK_TIMEOUT', 'mutation_runtime_unavailable', 'execution_owner_unavailable']);
+
 export const createWebManagedOpenCodeExecutor = (options = {}) => {
   if (typeof options.buildOpenCodeUrl !== 'function') {
     throw new TypeError('buildOpenCodeUrl is required');
@@ -55,6 +59,7 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
     throw new TypeError('getOpenCodeAuthHeaders is required');
   }
   const fetchImpl = options.fetchImpl ?? fetch;
+  const childRegistrationRetryDelayMs = options.childRegistrationRetryDelayMs ?? 500;
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   const messagesRequestTimeoutMs = options.messagesRequestTimeoutMs
     ?? DEFAULT_MESSAGES_REQUEST_TIMEOUT_MS;
@@ -121,8 +126,35 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
           ...(input.parentSessionId ? { parentID: input.parentSessionId } : {}),
         },
       });
-      if (input.parentSessionId && input.parentCallID) await options.registerExecutionChild?.({ directory: input.directory,
-        sessionID: child.id, parentID: input.parentSessionId, parentCallID: input.parentCallID });
+      if (input.parentSessionId && input.parentCallID && options.registerExecutionChild) {
+        const registration = { directory: input.directory, sessionID: child.id,
+          parentID: input.parentSessionId, parentCallID: input.parentCallID };
+        // A transient failure may still have committed the registration (for
+        // example an abort after a deadline-free commit); only a child whose
+        // every attempt was definitively refused is provably unregistered.
+        let ambiguous = false;
+        try {
+          for (let attempt = 1; ; attempt += 1) {
+            try { await options.registerExecutionChild(registration); break; }
+            catch (error) {
+              // Contention on the execution ledger is transient; lineage and
+              // revert fences are not and must fail the dispatch.
+              const transient = TRANSIENT_CHILD_REGISTRATION_CODES.has(error?.code);
+              ambiguous ||= transient;
+              if (attempt >= CHILD_REGISTRATION_ATTEMPTS || !transient) throw error;
+              await new Promise((resolve) => setTimeout(resolve, childRegistrationRetryDelayMs * attempt));
+            }
+          }
+        } catch (error) {
+          // A definitively unregistered child can never be admitted; remove it.
+          if (!ambiguous) {
+            await requestJson(appendDirectory(`/session/${encodeURIComponent(child.id)}`, input.directory), {
+              method: 'DELETE', allowNotFound: true, label: 'session.delete',
+            }).catch(() => {});
+          }
+          throw error;
+        }
+      }
       return child;
     },
     async promptSession(input) {

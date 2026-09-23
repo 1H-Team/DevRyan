@@ -51,6 +51,7 @@ export type ManagedTaskMode = 'builder' | 'orchestrator';
 export type ManagedTaskExecutionKind = 'start' | 'retry' | 'resume' | 'recover_in_place' | 'retry_in_place';
 export type ManagedTaskResultAction = 'continue' | 'resume' | 'retry' | 'recover_in_place' | 'retry_in_place' | 'abandon';
 export type ManagedTaskFailureKind =
+  | 'provider_configuration'
   | 'provider_transport'
   | 'provider_usage_limit'
   | 'provider_authentication'
@@ -86,8 +87,11 @@ export interface ManagedTransportRecovery {
 }
 export function validateManagedTransportRecovery(value: unknown): ManagedTransportRecovery | null;
 export function isManagedTransportBackupEligible(task: Pick<ManagedTaskRecord, 'transportRecovery' | 'failureReason'> | null | undefined): boolean;
+export function isProviderConfigurationRecovery(task: Pick<ManagedTaskRecord, 'transportRecovery' | 'failureReason'> | null | undefined): boolean;
 export function createManagedRecoveryMessageId(now: number, latestMessageId: string | null): string;
 export const PROVIDER_TRANSPORT_FAILURE_KIND: 'provider_transport';
+export const PROVIDER_CONFIGURATION_FAILURE_KIND: 'provider_configuration';
+export function isProviderConfigurationFailure(value: unknown): boolean;
 
 export type ManagedTaskAutoResumeState =
   | 'planning'
@@ -667,6 +671,7 @@ export interface ManagedTaskScheduler {
     signal?: AbortSignal; timeoutMs?: number }): Promise<ManagedWaitSnapshot>;
   initialize(): Promise<void>;
   getRequiredCheckTask(childSessionId: string, directory: string): Pick<ManagedTaskRecord, 'taskId' | 'leaseToken' | 'directory' | 'requiredChecks'> | null;
+  getChildAssignment(childSessionId: string, directory: string): ManagedTaskRecord | null;
   recordRequiredCheck(taskId: string, leaseToken: string, receipt: RequiredCheckReceipt, phase: 'start' | 'bind' | 'complete'): Promise<boolean>;
   recordRequiredChecks(taskId: string, leaseToken: string, receipts: RequiredCheckReceipt[], phase: 'start' | 'bind' | 'complete'): Promise<boolean>;
   submit(input: ManagedTaskSubmitInput): Promise<ManagedTaskRecord>;
@@ -1022,6 +1027,11 @@ export function validateRequiredChecks(value?: unknown): RequiredCheck[];
 export function validateRequiredCheckReceipts(receipts?: unknown, checks?: RequiredCheck[]): RequiredCheckReceipt[];
 export function projectRequiredCheckEvidence(checks?: RequiredCheck[], receipts?: RequiredCheckReceipt[], identities?: Record<string, string | null>): RequiredCheckEvidence[];
 export function createCompactResultHeader(input: { task: ManagedTaskRecord; envelope: ManagedTaskResultEnvelope; checks?: RequiredCheckEvidence[]; observedAt: number }): CompactResultHeader;
+export function readManagedResultReport(preview: string): CompactResultHeader['reported'];
 
 export const PROVIDER_AUTHENTICATION_FAILURE_KIND: 'provider_authentication';
 export function isProviderAuthenticationFailure(value: unknown): boolean;
+export function formatManagedAssignmentContext(
+  task: Pick<ManagedTaskRecord, 'taskId' | 'rootSessionId' | 'agent' | 'label' | 'prompt'> & { readOnly?: boolean },
+  options?: { maxPromptBytes?: number },
+): string | null;

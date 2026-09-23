@@ -1,3 +1,5 @@
+import { serializeEventPayload } from './payload-serialization.js';
+
 export const MESSAGE_STREAM_GLOBAL_WS_PATH = '/api/global/event/ws';
 export const MESSAGE_STREAM_DIRECTORY_WS_PATH = '/api/event/ws';
 export const MESSAGE_STREAM_WS_HEARTBEAT_INTERVAL_MS = 15 * 1000;
@@ -84,7 +86,7 @@ export function sendMessageStreamWsFrame(socket, payload) {
   }
 
   try {
-    socket.send(JSON.stringify(payload));
+    socket.send(typeof payload === 'string' ? payload : JSON.stringify(payload));
     const bufferedAfter = typeof socket.bufferedAmount === 'number' ? socket.bufferedAmount : 0;
     if (bufferedAfter > MESSAGE_STREAM_WS_MAX_BUFFERED_BYTES) {
       try {
@@ -121,11 +123,21 @@ export function sendMessageStreamWsFrame(socket, payload) {
   }
 }
 
+/** Byte-identical to `JSON.stringify({ type: 'event', payload, eventId?, directory? })`,
+ * reusing the payload's shared serialization. */
+export function serializeMessageStreamWsEvent(payload, options = {}) {
+  const eventId = typeof options.eventId === 'string' && options.eventId.length > 0 ? options.eventId : null;
+  const directory = typeof options.directory === 'string' && options.directory.length > 0 ? options.directory : null;
+  const payloadJson = serializeEventPayload(payload);
+  if (payloadJson === undefined) {
+    return JSON.stringify({ type: 'event', ...(eventId ? { eventId } : {}), ...(directory ? { directory } : {}) });
+  }
+  return `{"type":"event","payload":${payloadJson}${eventId ? `,"eventId":${JSON.stringify(eventId)}` : ''}${directory ? `,"directory":${JSON.stringify(directory)}` : ''}}`;
+}
+
 export function sendMessageStreamWsEvent(socket, payload, options = {}) {
-  return sendMessageStreamWsFrame(socket, {
-    type: 'event',
-    payload,
-    ...(typeof options.eventId === 'string' && options.eventId.length > 0 ? { eventId: options.eventId } : {}),
-    ...(typeof options.directory === 'string' && options.directory.length > 0 ? { directory: options.directory } : {}),
-  });
+  let frame;
+  // An unserializable payload fails this delivery, as before, never the caller.
+  try { frame = serializeMessageStreamWsEvent(payload, options); } catch { return false; }
+  return sendMessageStreamWsFrame(socket, frame);
 }

@@ -44,7 +44,9 @@ credentials are not diagnostic evidence or execution ownership.
 
 Native enforcement, not a working directory convention, prevents writes to the
 original project, dependencies and ownership store. macOS uses Seatbelt and a
-supervised process group; a spawn adapter preserves that group for Bun. Linux
+supervised process group; a spawn adapter preserves that group for Bun. On
+Apple silicon the adapter is universal `arm64`/`arm64e`, so arm64e system
+tools such as `/bin/cat` can load it. Linux
 requires [Landlock ABI 9](https://docs.kernel.org/userspace-api/landlock.html), private user/mount/PID/IPC namespaces, read-only mounts
 and seccomp. Windows uses restricted tokens, private ACLs, an isolated desktop
 and an owned job object. Commands inherit only their explicit standard handles.
@@ -83,6 +85,19 @@ Each reconciled execution base has a durable Git ref while preparation, executio
 or recovery consumes it. Cleanup requires a terminal lease, proof that native
 writers have stopped and no active consumers. It removes the private view while
 preserving termination receipts, publication history and conflict objects. Snapshot ref identity commits before pin installation. Terminal leases carry durable pending cleanup; recovery also discovers older uncleaned terminal records and isolates each lease failure. Cleanup failures are reported separately from a successful publication and retried on recovery. Private read-only directories can be removed after these guards pass without following symlinks to project or dependency inputs.
+Captured content is stored as immutable content-addressed objects. An observed
+file is hashed first; content already in the store is not copied or synced
+again. New object data is synced before its hard link, and the objects
+directory is synced once before the next ledger commit that can reference it.
+Observation treats a path under a file or symlink ancestor as absent. The
+ancestor is observed instead and is never followed, so replacing a tracked
+directory does not block later executions. Writes into the project still refuse
+such paths. Symlink targets are captured and restored as raw bytes.
+Execution views are disposable, since a crash cancels their lease and a view is
+never published after one. View files are copied without sync, while writes
+into the project stay synced. Reconciliation and view preparation overlap
+per-file I/O (eight at a time, results in order) and install observed files in
+batches of 128 per ledger transaction.
 Host ownership is proven by the native supervisor's OS lifetime lock. An empty
 in-memory map, heartbeat expiry or a reused PID cannot establish writer death. Failed keeper initialization remains single-flight and becomes retryable only after the failed child is reaped; unconfirmed termination blocks replacement. Independent shutdown paths still drain when keeper initialization fails.
 
@@ -103,17 +118,29 @@ acceptance. It uses frozen dependency fixtures and no live provider credentials.
 An authorized existing checkout may be supplied with `--source`; it is never
 reset. No installed runtime or user profile is changed by this build.
 
+A companion that passed its type and regression checks is cached under
+`.cache/revert-runtime-companion`. The cache key covers the pinned commit, patch
+digest, runtime version, platform and Bun version, and the entry is reused only
+when its recorded digest matches. The native supervisor build and DevRyan
+execution acceptance always run. `DEVRYAN_REVERT_COMPANION_ONLY=1` stops after
+the companion step; the `Warm release caches` workflow uses this on `main`,
+because caches saved by a tag-triggered release are visible only to that tag.
+
 Only successful acceptance writes the runtime manifest. The current paired
-companion is `1.18.31-devryan.5`, with execution preparation protocol 2 and
+companion is `1.18.31-devryan.12`, with execution preparation protocol 2 and
 retention protocol 1. The host verifies the required
 capability versions, platform, architecture and artifact digests before enabling
 capture. Artifacts live under `packages/web/runtime/<platform>-<arch>`; Electron
 ships them under `Resources/revert-runtime`. An explicit
 `DEVRYAN_EXECUTION_ARTIFACTS` directory supports isolated verification. Electron
 packaging verifies artifacts before signing, refreshes digests after its owned
-ad-hoc signing operation, and reseals/verifies the application. Release jobs
-build and test each shipped macOS architecture on a native runner. The npm
-package includes those same artifacts. Packing verifies every declared supported architecture before staging and verifies the staged copies; missing Intel artifacts block a distributable package even on an arm64 build host.
+ad-hoc signing operation, and reseals/verifies the application. Releases ship
+Apple silicon only (`supportedArtifacts: ["darwin-arm64"]`), built and tested on
+a native macOS arm64 runner. The npm package includes those same artifacts.
+Packing verifies every declared supported architecture before staging and
+verifies the staged copies. Intel Macs are no longer a supported artifact
+target, so the host there runs managed sessions without native capture, as on
+other unsupported platforms.
 Its release staging restores executable permissions after verifying downloaded
 artifact hashes, so normalized CI download modes cannot make the runtime fail
 to start.
@@ -167,8 +194,13 @@ skills or discover unrelated sources.
 
 `session_execution` journal records include bounded session/message/call IDs,
 phase, outcome and elapsed milliseconds. Phases distinguish admission, queue
-waiting, reconciliation, lease preparation and cleanup. They contain no tool
-arguments, contents, credentials or project paths. The shared chat keeps a
+waiting, reconciliation, lease preparation and cleanup. Host requests and
+preparations are summarized: one `admission` record carries per-phase counts and
+time in `steps` (`phase:count/ms`). Host requests write it only when they failed
+or took at least 250 ms; each preparation writes one. A phase is journaled on its
+own when it fails, or as started/completed once it runs for 2 s, so a hang stays
+visible while it happens. They contain no tool arguments, contents, credentials or
+project paths. The shared chat keeps a
 sanitized failure notice even when no assistant exists or provider recovery is
 unavailable. Viewed state does not hide it; a newer authoritative successful
 completion resolves it. Sanitized classifications survive reload in the bounded

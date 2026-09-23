@@ -72,7 +72,7 @@ const terminalTask = (status: ManagedTaskStatus) => ({
   finishedAt: 2_000,
   failureReason: status === 'completed' ? null : 'Provider connection ended',
   partial: status !== 'completed',
-  recoverablePreview: status === 'completed' ? 'Finished result' : 'Useful partial result',
+  recoverablePreview: status === 'completed' ? 'Finished result\n\n**Status:** complete' : 'Useful partial result',
 });
 
 describe('managed task presentation', () => {

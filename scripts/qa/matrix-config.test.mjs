@@ -96,3 +96,14 @@ test('loading config is read-only and rejects symlink evidence escapes', () => {
     assert.throws(() => loadQaMatrixConfig('matrix.json',{repoRoot:root}), /Cannot read/);
   } finally { rmSync(root,{recursive:true,force:true}); rmSync(outside,{recursive:true,force:true}); }
 });
+
+
+test('preserved orchestration is live-only and cannot silently combine with role substitutions', () => {
+  const value = config(); value.cells[0].preserveOrchestration = true;
+  assert.equal(expandQaMatrix(value)[0].preserveOrchestration, true);
+  value.cells[0].agentAssignments = { explorer: { providerId: 'openai', modelId: 'other', variant: null } };
+  assert.throws(() => validateQaMatrixConfig(value), /without agent assignment overrides/);
+  delete value.cells[0].agentAssignments;
+  value.cells[0].preserveOrchestration = 'true';
+  assert.throws(() => validateQaMatrixConfig(value), /requires live transport/);
+});

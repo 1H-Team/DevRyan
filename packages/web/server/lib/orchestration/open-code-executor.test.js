@@ -45,6 +45,56 @@ const waitForCondition = async (condition) => {
 };
 
 describe('web managed OpenCode executor transport', () => {
+  const childRegistrationRun = async (registerExecutionChild) => {
+    const requests = [];
+    const executor = createWebManagedOpenCodeExecutor({
+      registerExecutionChild,
+      buildOpenCodeUrl: (pathname) => `http://127.0.0.1:4096${pathname}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      fetchImpl: vi.fn(async (url, init = {}) => {
+        const { pathname } = new URL(url);
+        requests.push({ method: init.method ?? 'GET', pathname });
+        if (pathname === '/session' && init.method === 'POST') return jsonResponse({ id: 'ses_child' });
+        if (init.method === 'DELETE') return jsonResponse(true);
+        throw new Error(`Unexpected request ${init.method} ${pathname}`);
+      }),
+      childRegistrationRetryDelayMs: 1,
+      pollIntervalMs: 0,
+      idleStablePolls: 1,
+    });
+    const control = { setChildSessionId: vi.fn(async () => true), markAccepted: vi.fn(async () => true) };
+    const result = await executor.start({ taskId: 'dvr_task_child', dispatchCallId: 'call_dispatch', rootSessionId: 'ses_root',
+      childSessionId: null, directory: '/workspace', providerId: 'github-copilot', modelId: 'gpt-4.1', agent: 'explorer',
+      variant: null, label: 'Child', prompt: 'Inspect.' }, control).catch((error) => ({ thrown: error }));
+    await executor.shutdown?.();
+    return { requests, result, control };
+  };
+
+  it('retries a transient child registration and never deletes a registered child', async () => {
+    let attempts = 0;
+    const { requests, control } = await childRegistrationRun(vi.fn(async () => {
+      if (++attempts < 3) throw Object.assign(new Error('local_execution_timeout'), { code: 'local_execution_timeout' });
+    }));
+    expect(attempts).toBe(3);
+    expect(requests.some((request) => request.method === 'DELETE')).toBe(false);
+    expect(control.setChildSessionId).toHaveBeenCalledWith('ses_child');
+  });
+
+  it('keeps a child whose registration may have committed before retries ran out', async () => {
+    const registration = vi.fn(async () => { throw Object.assign(new Error('local_execution_timeout'), { code: 'local_execution_timeout' }); });
+    const { requests } = await childRegistrationRun(registration);
+    expect(registration).toHaveBeenCalledTimes(3);
+    expect(requests.some((request) => request.method === 'DELETE')).toBe(false);
+  });
+
+  it('deletes the unregistered child when registration fails terminally', async () => {
+    const registration = vi.fn(async () => { throw Object.assign(new Error('execution_reverted'), { code: 'execution_reverted' }); });
+    const { requests, control } = await childRegistrationRun(registration);
+    expect(registration).toHaveBeenCalledTimes(1);
+    expect(requests.filter((request) => request.method === 'DELETE').map((request) => request.pathname)).toEqual(['/session/ses_child']);
+    expect(control.setChildSessionId).not.toHaveBeenCalled();
+  });
+
   it('uses the managed OpenCode HTTP contract with directory and auth isolation', async () => {
     const requests = [];
     const fetchImpl = vi.fn(async (url, init = {}) => {

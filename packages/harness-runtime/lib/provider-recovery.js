@@ -14,6 +14,7 @@ import {
 } from './provider-recovery-policy.js';
 
 const TERMINAL = new Set(['completed', 'needs_attention', 'cancelled', 'superseded']);
+const COLLECTION_EVIDENCE_ISSUE_AFTER = 5;
 const ACTIVE_RECOVERY = new Set(['stopping', 'reconciling', 'recovery_reserved', 'recovering']);
 const keyFor = (sessionID) => crypto.createHash('sha256').update(sessionID).digest('hex');
 const messageID = (now) => `msg_${(BigInt(now) * 4096n).toString(16).slice(-12).padStart(12, '0')}${crypto.randomBytes(7).toString('hex')}`;
@@ -33,6 +34,8 @@ export function createPrimaryRecoveryController(options) {
   const pending = new Map();
   const reschedule = new Map();
   const generations = new Map();
+  // Consecutive unreadable-evidence collection attempts per session and task.
+  const evidenceFailures = new Map();
   let handshake = null;
   let draining = false;
   let timer;
@@ -147,8 +150,12 @@ export function createPrimaryRecoveryController(options) {
       if ((r?.guardedIDs.length ?? 0) >= 128 || Buffer.byteLength(JSON.stringify(body.tools ?? {})) > 16_384) throw recoveryError('recovery_storage_full', 507);
       invalidate(input.sessionID);
       live.delete(input.sessionID);
+      // An explicit continuation is DevRyan-authored text: the objective it
+      // continues stays the one compaction re-anchors.
+      const objectiveID = typeof input.objectiveID === 'string' && /^msg_[a-zA-Z0-9]+$/.test(input.objectiveID)
+        && input.objectiveID !== body.messageID ? input.objectiveID : undefined;
       return {
-        version: 1, sessionID: input.sessionID, directory: input.directory, anchorID: body.messageID,
+        version: 1, sessionID: input.sessionID, directory: input.directory, anchorID: body.messageID, ...(objectiveID ? { objectiveID } : {}),
         providerID: body.model.providerID, modelID: body.model.modelID, agent: body.agent,
         variant: body.variant ?? null, tools: body.tools ?? {}, owner: input.owner ?? null,
         state: 'observing', reason: null, attemptCount: 0, failedID: null, recoveryID: null,
@@ -178,12 +185,13 @@ export function createPrimaryRecoveryController(options) {
       && message.parts?.some((part) => part.type === 'tool' && part.state?.status === 'running'));
     return state.blocked || executing || l?.calls.size || l?.blockers.size || l?.phase === 'retry';
   };
-  const observeBounded = async (record, deadline = now() + 5000, includeTodos = false) => {
+  const observeBounded = async (record, deadline = now() + 5000, includeTodos = false, includeExecutionOutcomes = false) => {
     const abort = new AbortController();
     let timeout;
     try {
       return await Promise.race([
-        options.observeTurn(record, { signal: abort.signal, ...(includeTodos ? { includeTodos: true } : {}) }),
+        options.observeTurn(record, { signal: abort.signal, ...(includeTodos ? { includeTodos: true } : {}),
+          ...(includeExecutionOutcomes ? { includeExecutionOutcomes: true } : {}) }),
         new Promise((_, reject) => {
           timeout = setTimeout(() => { abort.abort(); reject(recoveryError('recovery_observation_timeout')); },
             Math.max(1, Math.min(5000, deadline - now())));
@@ -358,7 +366,7 @@ export function createPrimaryRecoveryController(options) {
     }
   }
 
-  function schedule(id, watchdog = false) {
+  function schedule(id, watchdog = false, sweep = null) {
     if (pending.has(id)) {
       // A terminal message may arrive while an earlier idle read is in flight.
       // Coalesce bursts, but always perform a fresh read for the newer signal.
@@ -372,10 +380,22 @@ export function createPrimaryRecoveryController(options) {
         const expected = records.get(id);
         try { await reconcileOne(id, checkWatchdog); }
         catch (error) {
-          diagnostic('provider_recovery_observation_failed', expected, {
+          if (sweep) sweep.failed += 1;
+          else diagnostic('provider_recovery_observation_failed', expected, {
             reason: typeof error?.code === 'string' && /^[a-z_]{1,80}$/.test(error.code) ? error.code : 'observation_failed',
           });
-          if (active(records.get(id))) await attention(id, 'recovery_observation_unavailable', expected);
+          const latest = records.get(id);
+          if (active(latest)) await attention(id, 'recovery_observation_unavailable', expected);
+          else if (sweep && error?.sessionMissing === true && latest && !TERMINAL.has(latest.state)
+            && latest.updatedAt < sweep.startedAt && latest.instanceID !== handshake?.instanceID) {
+            // Only a session the replaced runtime no longer has is retired, so
+            // it is not re-swept on every start. A transient failure (a busy
+            // runtime at startup) never retires an objective.
+            const retired = await mutate(id, (next) => next && !TERMINAL.has(next.state) && next.updatedAt < sweep.startedAt
+              && next.instanceID !== handshake?.instanceID
+              ? { ...next, revision: next.revision + 1, state: 'superseded', reason: 'recovery_runtime_replaced', updatedAt: now() } : next);
+            if (retired?.reason === 'recovery_runtime_replaced') sweep.retired += 1;
+          }
         }
         checkWatchdog = reschedule.get(id) === true;
       } while (!draining && reschedule.has(id));
@@ -394,11 +414,21 @@ export function createPrimaryRecoveryController(options) {
     if (!options.isManaged()) throw recoveryError('provider_recovery_external', 503);
     if (input.action === 'hello') {
       if (typeof input.instanceID !== 'string' || !input.instanceID || input.policyVersion !== 1) throw recoveryError('recovery_plugin_incompatible');
-      if (handshake && handshake.instanceID !== input.instanceID) live.clear();
+      const replaced = !handshake || handshake.instanceID !== input.instanceID;
+      if (handshake && replaced) live.clear();
       handshake = { instanceID: input.instanceID, version: input.transport === 'websocket-unverified' ? null : input.version };
       diagnostic('provider_recovery_capability', null, { supported: supported(), transport: input.transport ?? 'unverified' });
-      for (const record of records.values()) {
-        if (!TERMINAL.has(record.state)) void schedule(record.sessionID);
+      // Reconcile stored objectives once per runtime instance, not on every
+      // plugin hello, and summarize the sweep in one diagnostic.
+      if (replaced) {
+        const sweep = { startedAt: now(), failed: 0, retired: 0 };
+        // A just-started runtime answers a bounded number of sweep reads at once.
+        const queue = [...records.values()].filter((record) => !TERMINAL.has(record.state)).map((record) => record.sessionID);
+        const worker = async () => { for (let id = queue.shift(); id; id = queue.shift()) await schedule(id, false, sweep); };
+        const work = Array.from({ length: Math.min(8, queue.length) }, worker);
+        void Promise.allSettled(work).then(() => {
+          if (sweep.failed || sweep.retired) diagnostic('provider_recovery_sweep_summary', null, { failed: sweep.failed, retired: sweep.retired });
+        });
       }
       return { ...project(null), instanceID: handshake.instanceID };
     }
@@ -458,9 +488,16 @@ export function createPrimaryRecoveryController(options) {
         const collectionAttention = record => input.kind === 'collect' && input.collection?.taskId
           && record.state === 'needs_attention' && record.reason === 'failure_not_eligible';
         const generation = generations.get(r.sessionID) ?? 0;
-        if (!isProviderRecoverySupportedRuntimeVersion(handshake.version) || draining
-          || !/^msg_[a-zA-Z0-9]+$/.test(input.userMessageID ?? '') || r.attemptCount || r.recoverySuppressed
-          || (!['observing', 'completed'].includes(r.state) && !collectionAttention(r))) throw recoveryError('managed_continuation_fenced');
+        // Journal-only sub-reason: which fence condition held the continuation.
+        const fenced = (reason) => Object.assign(recoveryError('managed_continuation_fenced'), { fenceReason: reason });
+        const stateFence = (record, proof = true) => (!['observing', 'completed'].includes(record.state) && !(proof && collectionAttention(record))
+          ? `state_${/^[a-z_]{1,48}$/.test(record.state ?? '') ? record.state : 'invalid'}` : null);
+        const preFence = !isProviderRecoverySupportedRuntimeVersion(handshake.version) ? 'runtime_unsupported'
+          : draining ? 'draining'
+            : !/^msg_[a-zA-Z0-9]+$/.test(input.userMessageID ?? '') ? 'invalid_continuation_id'
+              : r.attemptCount ? 'recovery_attempted'
+                : r.recoverySuppressed ? 'recovery_suppressed' : stateFence(r);
+        if (preFence) throw fenced(preFence);
         let deliveredMessageID = null;
         const admitted = await mutate(r.sessionID, async (next) => {
           if (!next || next.anchorID !== input.anchorUserMessageID || next.directory !== input.directory
@@ -469,7 +506,7 @@ export function createPrimaryRecoveryController(options) {
             || !['collect', 'orchestrator_todo', 'builder_todo'].includes(input.kind)
             || (input.kind === 'builder_todo' && !['build', 'builder'].includes(next.agent))
             || (input.kind === 'orchestrator_todo' && next.agent !== 'orchestrator')) throw recoveryError('managed_objective_mismatch');
-          const observed = await observeBounded(next, undefined, input.kind === 'builder_todo');
+          const observed = await observeBounded(next, undefined, input.kind === 'builder_todo', input.kind === 'collect');
           if (input.kind === 'collect' && input.collection?.taskId && next.collectionWake?.taskId === input.collection.taskId) {
             const delivered = observed.messages?.some(message => message.info?.role === 'user'
               && message.info.id === next.collectionWake.messageID
@@ -482,7 +519,14 @@ export function createPrimaryRecoveryController(options) {
             // missed its HTTP acknowledgement. Never manufacture a second ID.
             throw recoveryError('managed_collection_delivery_unconfirmed');
           }
-          const check = inspectRecoveryTurn(next, observed);
+          const check = inspectRecoveryTurn(next, observed, { allowSettledToolFailures: input.kind === 'collect' });
+          // Unreadable (not missing) outcome evidence is transient: retry the
+          // collection later instead of recording a permanent fence. A busy or
+          // superseded turn is still fenced by the checks below.
+          if (input.kind === 'collect' && check.unresolved && observed.executionOutcomesUnavailable === true
+            && observed.status === 'idle' && !check.superseded) {
+            throw recoveryError('managed_collection_evidence_unavailable');
+          }
           let collectionProof = null;
           if (check.last?.info.error && input.kind === 'collect'
             && isCollectionTransportFailure(check.last.info.error, handshake.version)
@@ -492,10 +536,15 @@ export function createPrimaryRecoveryController(options) {
               throw recoveryError('managed_collection_unverified');
             }
           }
-          if (observed.status !== 'idle' || check.superseded || check.unresolved || !check.last?.info.time?.completed
-            || (check.last.info.error && !collectionProof) || next.attemptCount || next.recoverySuppressed
-            || (!['observing', 'completed'].includes(next.state) && !(collectionProof && collectionAttention(next)))
-            || !await authorizeBounded(next)) throw recoveryError('managed_continuation_fenced');
+          const turnFence = observed.status !== 'idle' ? 'session_not_idle'
+            : check.superseded ? 'superseded'
+              : check.unresolved ? 'unresolved_turn'
+                : !check.last?.info.time?.completed ? 'turn_incomplete'
+                  : check.last.info.error && !collectionProof ? 'turn_error'
+                    : next.attemptCount ? 'recovery_attempted'
+                      : next.recoverySuppressed ? 'recovery_suppressed' : stateFence(next, Boolean(collectionProof));
+          if (turnFence) throw fenced(turnFence);
+          if (!await authorizeBounded(next)) throw fenced('unauthorized');
           // Collection may run with the child barrier present; ordinary TODO
           // nudges must wait until all results are reconciled and blockers clear.
           if (observed.blocked && (input.kind !== 'collect' || observed.blockedByRequests !== false
@@ -506,7 +555,7 @@ export function createPrimaryRecoveryController(options) {
           const builder = input.kind === 'builder_todo' ? planBuilderTodoContinuation(next, observed) : null;
           if (builder && !builder.allowed) throw recoveryError(builder.reason);
           if (handshake.instanceID !== input.instanceID) throw recoveryError('recovery_owner_mismatch');
-          if (draining || (generations.get(r.sessionID) ?? 0) !== generation) throw recoveryError('managed_continuation_fenced');
+          if (draining || (generations.get(r.sessionID) ?? 0) !== generation) throw fenced(draining ? 'draining' : 'generation_changed');
           invalidate(r.sessionID);
           return { ...next, continuationID: input.userMessageID, collectionIssue: null,
             ...(collectionProof ? { collectionWake: { taskId: collectionProof.taskId, envelopeId: collectionProof.envelopeId,
@@ -516,19 +565,36 @@ export function createPrimaryRecoveryController(options) {
             ...(builder ? { builderTodoGuard: builder.guard } : {}),
             state: 'observing', stepID: null, requestedAt: null, failureObserved: false, failure: null, failedID: null };
         });
+        if (input.collection?.taskId) evidenceFailures.delete(`${r.sessionID}\0${input.collection.taskId}`);
         if (deliveredMessageID) return { allowed: true, deliveredMessageID, anchorUserMessageID: admitted.anchorID, tools: admitted.tools };
         diagnostic('managed_continuation_admitted', admitted, { kind: input.kind,
           todoContinuationCount: admitted.todoContinuationCount, continuationMessageID: input.userMessageID });
         return { allowed: true, anchorUserMessageID: admitted.anchorID, tools: admitted.tools,
           todoContinuationCount: admitted.todoContinuationCount };
       } catch (error) {
-        if (collectionIssueCodes.has(error.code) && /^dvr_task_[a-zA-Z0-9]+$/.test(input.collection?.taskId ?? '')) {
-          const issue = { taskId: input.collection.taskId, code: error.code };
+        const taskId = /^dvr_task_[a-zA-Z0-9]+$/.test(input.collection?.taskId ?? '') ? input.collection.taskId : null;
+        // Evidence that stays unreadable surfaces the result to the user (the
+        // Collect Result action) while automatic retries continue.
+        // Consecutive: any other outcome for this task resets the count. An
+        // observation that times out gathering the evidence counts the same.
+        let evidenceIssue = false;
+        if (taskId && input.kind === 'collect') {
+          const key = `${r.sessionID}\0${taskId}`;
+          if (['managed_collection_evidence_unavailable', 'recovery_observation_timeout'].includes(error.code)) {
+            const count = (evidenceFailures.get(key) ?? 0) + 1;
+            evidenceFailures.delete(key); evidenceFailures.set(key, count);
+            if (evidenceFailures.size > 1000) evidenceFailures.delete(evidenceFailures.keys().next().value);
+            evidenceIssue = count >= COLLECTION_EVIDENCE_ISSUE_AFTER;
+          } else evidenceFailures.delete(key);
+        }
+        if (taskId && (collectionIssueCodes.has(error.code) || evidenceIssue)) {
+          const issue = { taskId, code: evidenceIssue ? 'managed_collection_unverified' : error.code };
+          if (evidenceIssue) error.fenceReason ??= 'collection_evidence_unavailable';
           await mutate(r.sessionID, next => !next || next.anchorID !== r.anchorID || next.anchorID !== input.anchorUserMessageID
             || ['cancelled', 'superseded'].includes(next.state)
             || (next.collectionIssue?.taskId === issue.taskId && next.collectionIssue.code === issue.code)
             ? next : { ...next, collectionIssue: issue });
-          diagnostic('managed_collection_rejected', r, issue);
+          diagnostic('managed_collection_rejected', r, { ...issue, ...(error.fenceReason ? { fenceReason: error.fenceReason } : {}) });
         }
         throw error;
       }

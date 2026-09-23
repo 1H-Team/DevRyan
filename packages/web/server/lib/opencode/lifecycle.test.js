@@ -183,6 +183,8 @@ const createRuntime = (overrides = {}) => {
       removed: [],
       targetConfigDirectory: '/tmp/openchamber-runtime-overlays/default',
     })),
+    // spawn is mocked here; the real watchdog is covered by parent-death-watchdog.test.js.
+    startManagedProcessWatchdog: vi.fn(() => ({ dispose: vi.fn() })),
     ...dependencyOverrides,
   });
   runtime.__testState = state;
@@ -438,7 +440,8 @@ describe('OpenCode lifecycle', () => {
       DEVRYAN_AGENT_BROWSER_BIN: '/managed/agent-browser',
       AGENT_BROWSER_CONFIG: '/must/not/pass',
     }));
-    const runtime = createRuntime({ getManagedBrowserEnvironment });
+    const runtime = createRuntime({ getManagedBrowserEnvironment,
+      getManagedOrchestrationEnvironment: async () => ({ DEVRYAN_EXECUTION_BROWSER_PLUGIN: 'reviewed-browser-digest' }) });
 
     const server = await runtime.startOpenCode();
     const [, , options] = spawnMock.mock.calls[0];
@@ -448,6 +451,7 @@ describe('OpenCode lifecycle', () => {
       .toBe('http://127.0.0.1:43211/api/desktop/browser-cdp');
     expect(options.env.DEVRYAN_BROWSER_CDP_TOKEN).toBe('managed-token');
     expect(options.env.DEVRYAN_AGENT_BROWSER_BIN).toBe('/managed/agent-browser');
+    expect(options.env.DEVRYAN_EXECUTION_BROWSER_PLUGIN).toBe('reviewed-browser-digest');
     expect(options.env.AGENT_BROWSER_CONFIG).toBeUndefined();
     await server.close();
   });
@@ -466,8 +470,11 @@ describe('OpenCode lifecycle', () => {
       return child;
     });
 
-    const runtime = createRuntime();
+    const dispose = vi.fn();
+    const startManagedProcessWatchdog = vi.fn(() => ({ dispose }));
+    const runtime = createRuntime({ startManagedProcessWatchdog });
     const server = await runtime.startOpenCode();
+    expect(startManagedProcessWatchdog).toHaveBeenCalledWith({ childPid: 23456, port: 45678 });
 
     const [, , spawnOptions] = spawnMock.mock.calls.at(-1);
     expect(readManagedOpenCodeRegistry()).toEqual([
@@ -483,6 +490,7 @@ describe('OpenCode lifecycle', () => {
 
     await server.close();
     expect(readManagedOpenCodeRegistry()).toEqual([]);
+    expect(dispose).toHaveBeenCalled();
   });
 
   it('awaits beforeManagedSpawn before spawning while no managed process exists', async () => {

@@ -38,9 +38,19 @@ export function createSessionExecutionHost(options) {
   const launcher = () => options.getLauncher();
   const ownerDirectory = path.join(options.dataDirectory, 'harness', 'execution-owners');
   let preparationHost;
+  // Preparations of a lost keeper already observe its aborted signal; they
+  // finish draining in the background and remain part of shutdown drain.
+  const retiredPreparations = new Set();
   const createPreparations = executionOwnerFactory(async () => {
     const owner = await createExecutionHostOwner({ directory: ownerDirectory, launcher: launcher() });
     return { owner, jobs: createExecutionPreparations({ runtime, owner, onDiagnostic: options.onDiagnostic }) };
+  }, {
+    retire: async ({ owner, jobs }) => {
+      const draining = jobs.drain().finally(() => retiredPreparations.delete(draining));
+      retiredPreparations.add(draining);
+      try { options.onDiagnostic?.({ event: 'session_execution', phase: 'owner_replacement', state: 'started' }); } catch { /* Observer only. */ }
+      await owner.close();
+    },
   });
   const preparations = () => preparationHost = createPreparations();
   const cleanup = (lease) => cleanupExecutionLease(runtime, lease, options.onDiagnostic);
@@ -146,6 +156,10 @@ export function createSessionExecutionHost(options) {
   };
   const dispatch = async (input) => {
     options.assertExecutionReady?.();
+    if (input.protocol === 2 && input.action === 'prepare-poll') {
+      if (!preparationHost) throw failure('execution_owner_unavailable');
+      return executionPhase('preparation_poll', async () => (await preparationHost).jobs.pollAuthenticated(input));
+    }
     const current = await executionPhase('identity_lookup', () => session(input));
     if (!await verifySessionExecutionLauncher({ launcher: launcher() })) throw failure('mutation_runtime_unsupported');
     if (input.action === 'admit') return runtime.assertAdmission(input);
@@ -182,7 +196,7 @@ export function createSessionExecutionHost(options) {
           throw failure('execution_owner_lost');
         }
         if (lease.executionKind || lease.state === 'published') throw failure('execution_already_started');
-        jobs.start(lease);
+        jobs.start(lease, input);
         return jobs.poll(lease, false);
       }
       const lease = await executionPhase('lease_preparation', () => runtime.begin({ ...input, userMessageID: record.info.parentID, parentID: current.parentID, executionFingerprint }));
@@ -206,14 +220,13 @@ export function createSessionExecutionHost(options) {
     }
     const lease = await executionPhase('lease_lookup', () => runtime.leaseForCall(input));
     if (!lease || lease.token !== input.token || lease.scope.messageID !== input.messageID) throw failure('capture_identity_mismatch');
-    if (input.protocol === 2 && ['prepare-poll', 'claim'].includes(input.action)) {
+    if (input.protocol === 2 && input.action === 'claim') {
       if (lease.executionFingerprint !== input.argsDigest || (lease.preparation === 'none') !== (input.kind === 'control')) {
         throw failure('capture_identity_mismatch');
       }
       const { owner, jobs } = await preparations(); owner.assert();
       if (lease.ownerID !== owner.id) throw failure('execution_owner_lost');
-      if (input.action === 'prepare-poll') return jobs.poll(lease);
-      await jobs.claim(lease, () => runtime.claimLease({ directory: input.directory, token: lease.token, kind: input.kind }));
+      await executionPhase('execution_claim', () => jobs.claim(lease, () => runtime.claimLease({ directory: input.directory, token: lease.token, kind: input.kind })));
       owner.assert();
       if (input.kind === 'control') return { lease };
       try { return { lease, launch: await prepareSessionExecution({ launcher: launcher(), lease }) }; }
@@ -237,8 +250,13 @@ export function createSessionExecutionHost(options) {
     return result;
   };
   const dispatchPlugin = (input) => ['admit', 'prompt', 'begin', 'child', 'cancel-before-start', 'prepare-poll', 'claim'].includes(input.action)
+    // Fail after 25 s without progress (this request's own work or the lock
+    // holder it queues behind), never later than 50 s: the companion's RPC
+    // limit is 60 s, and deadline-free commits may run past the abort.
     ? withExecutionAdmission(input, () => executionPhase(input.action === 'cancel-before-start' ? 'cleanup' : 'host_request', () => dispatch(input)), {
-      timeoutMs: options.admissionTimeoutMs ?? 25_000, onDiagnostic: options.onDiagnostic,
+      timeoutMs: options.admissionTimeoutMs ?? 50_000, idleMs: options.admissionIdleMs ?? 25_000, onDiagnostic: options.onDiagnostic,
+      // Healthy host requests are frequent and fast; they are journaled only when slow or failed.
+      summary: { minMs: 250 },
     }) : dispatch(input);
   const plugin = (input) => activity([input.sessionID, input.parentID], () => dispatchPlugin(input));
   return { get retentionReady() { return retentionReady; }, runtime, executions, coordinator, plugin, isConfined, persistCursorRecord, startCursor,
@@ -264,7 +282,11 @@ export function createSessionExecutionHost(options) {
     drain: async () => {
       // A failed keeper must not prevent independent owners and I/O draining.
       const results = await Promise.allSettled([
-        preparationHost?.then(async (host) => { try { await host.jobs.drain(); } finally { await host.owner.close(); } }),
+        // A keeper that never started owns nothing to drain; only an
+        // unconfirmed termination remains a shutdown failure.
+        preparationHost?.then(async (host) => { try { await host.jobs.drain(); } finally { await host.owner.close(); } },
+          (cause) => { if (cause?.code === 'execution_owner_termination_unconfirmed') throw cause; }),
+        ...retiredPreparations,
         ...[...cursorOwners.values()].map((owner) => owner.drain()),
       ]);
       await runtime.drain();

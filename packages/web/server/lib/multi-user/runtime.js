@@ -132,6 +132,11 @@ const REMEMBERED_ADMIN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const LOOPBACK_OFFLINE_GRACE_MS = 24 * 60 * 60 * 1000;
 const VAULT_VALIDATION_CHECKPOINT_MS = 5 * 60 * 1000;
 const PRINCIPAL_CACHE_MS = 5_000;
+// Owner principals for background work (sub-agent dispatch, backup model,
+// browser leases, activity projection). A transient Supabase outage serves the
+// last good principal for a bounded grace; any access change clears both.
+const OWNER_PRINCIPAL_CACHE_MS = 30_000;
+const OWNER_PRINCIPAL_GRACE_MS = 5 * 60_000;
 const OFFLINE_GRACE_RESTRICTED = 'offline_grace_restricted';
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 const LOGIN_LOCK_MS = 15 * 60 * 1000;
@@ -581,6 +586,7 @@ export async function createMultiUserRuntime({
     const botsRuntime = createBotsRuntime({
       oauthCoordinator,
       supabase: null,
+      supabaseMode: connection.configured ? 'disconnected' : 'not_configured',
       audit: async () => {},
       principalPolicy: {
         isGlobalAdmin: (principal) => principal?.role === 'admin',
@@ -606,8 +612,11 @@ export async function createMultiUserRuntime({
       canSessionTokenHashAccess: async () => true,
       resolveBrowserLeaseContext: async () => null,
       getPublicPrincipal: publicPrincipal,
-      resolveScheduledTaskAccess: async ({ ownerUserId } = {}) => ownerUserId && connection.configured
-        ? { state: 'dormant', reason: 'supabase_disconnected' } : { state: 'runnable' },
+      // An owner-bound task needs its owner's policy; without Supabase it stays
+      // dormant rather than failing every scheduled run.
+      resolveScheduledTaskAccess: async ({ ownerUserId } = {}) => ownerUserId
+        ? { state: 'dormant', reason: connection.configured ? 'supabase_disconnected' : 'supabase_not_configured' }
+        : { state: 'runnable' },
     };
   }
 
@@ -744,6 +753,18 @@ export async function createMultiUserRuntime({
     ttlMs: PRINCIPAL_CACHE_MS,
     onAvoided: () => supabase.traffic.avoided('GET rest/app_sessions'),
   });
+  const ownerPrincipalCache = createPrincipalCache({
+    ttlMs: OWNER_PRINCIPAL_CACHE_MS,
+    onAvoided: () => supabase.traffic.avoided('GET rest/user_profiles'),
+  });
+  const lastKnownOwnerPrincipals = new Map();
+  let ownerPrincipalGeneration = 0;
+  const clearPrincipalCaches = () => {
+    ownerPrincipalGeneration += 1;
+    principalCache.clear();
+    ownerPrincipalCache.clear();
+    lastKnownOwnerPrincipals.clear();
+  };
   const lastSeenWrites = new Map();
   const loginAttempts = new Map();
   const connectionsByUser = new Map();
@@ -880,7 +901,7 @@ export async function createMultiUserRuntime({
         prefer: 'resolution=merge-duplicates,return=minimal',
       });
       principal.settingsOverrides = next;
-      principalCache.clear();
+      clearPrincipalCaches();
       return next;
     } finally {
       releaseMutation();
@@ -1085,8 +1106,34 @@ export async function createMultiUserRuntime({
     return current || sessionId;
   };
 
+  const loadOwnerPrincipal = async (userId, { includeSettings = true } = {}) => {
+    const key = `${userId}:${includeSettings ? 'settings' : 'basic'}`;
+    let generation = ownerPrincipalGeneration;
+    try {
+      const resolve = () => ownerPrincipalCache.resolve(key, 'owner', () => loadPrincipal(userId, null, { includeSettings }));
+      // Background work has no request to retry: an access change during the
+      // load is re-read once against the new generation.
+      const principal = await resolve().catch((error) => {
+        if (error?.code !== 'identity_changed') throw error;
+        generation = ownerPrincipalGeneration;
+        return resolve();
+      });
+      // An access change after this load began must not re-seed the grace copy.
+      if (generation !== ownerPrincipalGeneration) return principal;
+      if (principal) {
+        lastKnownOwnerPrincipals.set(key, { principal, at: Date.now() });
+        if (lastKnownOwnerPrincipals.size > 2_000) lastKnownOwnerPrincipals.delete(lastKnownOwnerPrincipals.keys().next().value);
+      } else lastKnownOwnerPrincipals.delete(key);
+      return principal;
+    } catch (error) {
+      const known = lastKnownOwnerPrincipals.get(key);
+      if (known && isTransientDependencyError(error) && Date.now() - known.at <= OWNER_PRINCIPAL_GRACE_MS) return known.principal;
+      throw error;
+    }
+  };
+
   const loadActivityPrincipal = async (userId) => {
-    const principal = await loadPrincipal(userId, null, { includeSettings: false });
+    const principal = await loadOwnerPrincipal(userId, { includeSettings: false });
     if (principal) return principal;
     const profile = await supabase.rest('user_profiles', {
       query: {
@@ -1465,7 +1512,7 @@ export async function createMultiUserRuntime({
         if (!updated) {
           throw Object.assign(new Error('Managed project not found'), { statusCode: 404 });
         }
-        principalCache.clear();
+        clearPrincipalCaches();
         notifyManagedProjectMetadataChanged(projectId);
         return projectFromAssignment(assignment, updated);
       },
@@ -1646,7 +1693,7 @@ export async function createMultiUserRuntime({
     });
     for (const session of sessions || []) await vault.delete(session.id).catch(() => {});
     await Promise.all([abortOwnedSessions(userId), terminateOwnedTerminals(userId)]);
-    principalCache.clear();
+    clearPrincipalCaches();
   };
 
   const loginKey = (req, email) => sha256(`${requestIp(req)}|${normalizeEmail(email)}`);
@@ -1835,7 +1882,7 @@ export async function createMultiUserRuntime({
       }
       throw error;
     }
-    principalCache.clear();
+    clearPrincipalCaches();
     return { project, branchName: canonicalBranchName };
   };
 
@@ -2138,7 +2185,7 @@ export async function createMultiUserRuntime({
           : new URL(req.url || '/', 'http://127.0.0.1').pathname.replace(/^\/api/, '') || '/';
         if (req.method === 'POST' && requestPath === '/git/worktrees') {
           res.once('finish', () => {
-            if (res.statusCode < 400) principalCache.clear();
+            if (res.statusCode < 400) clearPrincipalCaches();
           });
         }
         wrapJsonResponse(req, res);
@@ -2364,7 +2411,7 @@ export async function createMultiUserRuntime({
             }).catch(() => {});
             throw error;
           }
-          principalCache.clear();
+          clearPrincipalCaches();
         }
         const consumed = await supabase.rest('access_invites', {
           method: 'PATCH',
@@ -2615,7 +2662,7 @@ export async function createMultiUserRuntime({
       for (const timer of provisionalCleanupTimers) clearTimeout(timer);
       provisionalCleanupTimers.clear();
       for (const userId of [...connectionsByUser.keys()]) revokeConnections({ userId });
-      principalCache.clear();
+      clearPrincipalCaches();
       loginAttempts.clear();
       lastSeenWrites.clear();
       projectedActivityKeys.clear();
@@ -2635,7 +2682,7 @@ export async function createMultiUserRuntime({
     if (!sessionId) return null;
     const owner = await sessionOwnership(sessionId);
     if (!owner || owner.archived_at) return null;
-    const principal = await loadPrincipal(owner.user_id);
+    const principal = await loadOwnerPrincipal(owner.user_id);
     if (!principal) {
       throw Object.assign(new Error('Managed browser owner is unavailable'), {
         statusCode: 503,
@@ -2715,7 +2762,7 @@ export async function createMultiUserRuntime({
         code: 'managed_orchestration_owner_unavailable',
       });
     }
-    const principal = await loadPrincipal(owner.user_id);
+    const principal = await loadOwnerPrincipal(owner.user_id);
     if (!principal) {
       throw Object.assign(new Error('Managed orchestration account is unavailable'), {
         statusCode: 503,
@@ -2792,7 +2839,7 @@ export async function createMultiUserRuntime({
     if (!sessionId) return null;
     const owner = await sessionOwnership(sessionId);
     if (!owner || owner.archived_at) return null;
-    const principal = await loadPrincipal(owner.user_id);
+    const principal = await loadOwnerPrincipal(owner.user_id);
     if (!principal) return null;
     const planContext = await resolveOwnedSessionPlanContext(principal, sessionId, directory);
     if (!planContext) return null;
@@ -2909,7 +2956,7 @@ export async function createMultiUserRuntime({
       },
       prefer: 'resolution=merge-duplicates,return=minimal',
     });
-    principalCache.clear();
+    clearPrincipalCaches();
     return { projectId: project.id, branchName, publicDirectory: repositoryPath };
   };
 
@@ -3084,7 +3131,57 @@ export async function createMultiUserRuntime({
     return true;
   };
 
-  const recordChildSessionOwnership = async (principal, session, parentId) => {
+  // Child ownership is recorded locally at once, so managed event streams
+  // never wait on Supabase; the durable row and one stable audit event are
+  // committed in the background with bounded retries. A permanent rejection
+  // rolls the local grant back.
+  const CHILD_OWNERSHIP_RETRY_MS = Array.isArray(sessionOwnershipRetryOptions.childDelaysMs)
+    ? sessionOwnershipRetryOptions.childDelaysMs.map((value) => Math.max(0, Number(value) || 0))
+    : [5_000, 30_000, 120_000, 600_000];
+  // A fork request waits for its durable row only this long; the background
+  // retry schedule is for observed children, not an open HTTP request.
+  const CHILD_OWNERSHIP_DURABLE_WAIT_MS = Math.max(1, Number(sessionOwnershipRetryOptions.childDurableWaitMs) || 15_000);
+  const childOwnershipCommits = new Map();
+  const commitChildSessionOwnership = async (principal, row, parentId) => {
+    const current = () => sessionOwnership(row.session_id);
+    // A child removed or archived locally (a rolled-back fork, a deletion, an
+    // archive) while a write may have reached Supabase must not stay active
+    // remotely: an archive is mirrored, anything else withdraws the row.
+    const settleRemoved = async () => {
+      const local = await current();
+      await supabase.rest('opencode_session_ownership', local?.archived_at
+        ? { method: 'PATCH', query: { session_id: `eq.${row.session_id}` }, body: { archived_at: local.archived_at }, prefer: 'return=minimal' }
+        : { method: 'DELETE', query: { session_id: `eq.${row.session_id}` }, prefer: 'return=minimal' }).catch(() => {});
+      return false;
+    };
+    const active = async () => { const local = await current(); return Boolean(local && !local.archived_at); };
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await supabase.rest('opencode_session_ownership', {
+          method: 'POST', body: row, prefer: 'resolution=merge-duplicates,return=minimal',
+        });
+        break;
+      } catch (error) {
+        if (!isTransientDependencyError(error) || attempt >= CHILD_OWNERSHIP_RETRY_MS.length) {
+          await ownershipIndex.delete(row.session_id).catch(() => {});
+          logger.warn?.('[MultiUser] Child session ownership was not recorded:', summarizeDependencyError(error));
+          // An earlier attempt may have landed without an acknowledgement.
+          return settleRemoved();
+        }
+        await new Promise((resolve) => { setTimeout(resolve, CHILD_OWNERSHIP_RETRY_MS[attempt]).unref?.(); });
+        if (!await active()) return settleRemoved(); // Revoked, removed or archived meanwhile.
+      }
+    }
+    if (!await active()) return settleRemoved();
+    await audit(principal, 'session.child_created', {
+      eventId: stableAuditEventId('session.child_created', row.session_id),
+      targetType: 'session', targetId: row.session_id, sessionId: row.session_id, projectId: row.project_id,
+      metadata: { parentSessionId: parentId },
+    }).catch((error) => { logger.warn?.('[MultiUser] Child session audit failed:', error?.message || error); });
+    return true;
+  };
+
+  const recordChildSessionOwnership = async (principal, session, parentId, { durable = false } = {}) => {
     const sessionId = typeof session?.id === 'string' ? session.id : '';
     const parent = await sessionOwnership(parentId);
     if (!sessionId || !parent || parent.user_id !== principal.id) return false;
@@ -3095,26 +3192,37 @@ export async function createMultiUserRuntime({
       branch_name: parent.branch_name,
       public_directory: parent.public_directory,
     };
-    await ownershipIndex.set(row);
-    try {
-      await supabase.rest('opencode_session_ownership', {
-        method: 'POST', body: row, prefer: 'resolution=merge-duplicates,return=minimal',
-      });
-    } catch (error) {
-      await ownershipIndex.delete(sessionId).catch(() => {});
-      throw error;
+    // One background commit per child, however many managed clients observe it:
+    // it is registered before any await, so concurrent observers share it.
+    // Until it lands, a control-plane refresh must not drop the local row.
+    let entry = childOwnershipCommits.get(sessionId);
+    if (!entry) {
+      const unpin = ownershipIndex.pin(sessionId);
+      const local = ownershipIndex.set(row);
+      const commit = local.then(() => commitChildSessionOwnership(principal, row, parentId))
+        .catch(() => false)
+        .finally(() => {
+          unpin();
+          if (childOwnershipCommits.get(sessionId)?.commit === commit) childOwnershipCommits.delete(sessionId);
+        });
+      entry = { local, commit };
+      childOwnershipCommits.set(sessionId, entry);
     }
-    try {
-      await audit(principal, 'session.child_created', {
-        targetType: 'session', targetId: sessionId, sessionId, projectId: parent.project_id,
-        metadata: { parentSessionId: parentId },
-      });
-    } catch (error) {
-      await supabase.rest('opencode_session_ownership', {
-        method: 'DELETE', query: { session_id: `eq.${sessionId}` }, prefer: 'return=minimal',
-      }).catch(() => {});
+    await entry.local;
+    // A user-initiated fork waits for the durable row, like session creation,
+    // but fails (and is rolled back by the caller) instead of waiting out the
+    // retry schedule. Removing the local row stops the background retries.
+    if (durable) {
+      const pending = childOwnershipCommits.get(sessionId)?.commit;
+      if (!pending) return sessionOwnership(sessionId).then(Boolean);
+      let timer;
+      const committed = await Promise.race([pending, new Promise((resolve) => {
+        timer = setTimeout(() => resolve(null), CHILD_OWNERSHIP_DURABLE_WAIT_MS);
+        timer.unref?.();
+      })]).finally(() => clearTimeout(timer));
+      if (committed !== null) return committed;
       await ownershipIndex.delete(sessionId).catch(() => {});
-      throw error;
+      return false;
     }
     return true;
   };
@@ -3701,7 +3809,7 @@ export async function createMultiUserRuntime({
         });
         const previousAssignedUser = assignment?.previousAssignedUser || null;
         const assignedUser = assignment?.assignedUser || null;
-        principalCache.clear();
+        clearPrincipalCaches();
         await audit(req.principal, 'github.account_assignment_changed', {
           targetType: 'github_account',
           targetId: accountId,
@@ -3840,7 +3948,7 @@ export async function createMultiUserRuntime({
         const securityChanged = Object.hasOwn(changes, 'role') || Object.hasOwn(changes, 'status');
         const githubChanged = Object.hasOwn(changes, 'github_account_id');
         if (securityChanged) await revokeUserAppSessions(req.params.userId);
-        principalCache.clear();
+        clearPrincipalCaches();
         if (Object.hasOwn(changes, 'status')) {
           await notifyScheduledTaskAccessChanged({
             ownerUserId: req.params.userId,
@@ -4091,7 +4199,7 @@ export async function createMultiUserRuntime({
         const role = await supabase.rest('role_policies', {
           method: 'POST', body: row, prefer: 'resolution=merge-duplicates,return=representation', maybeSingle: true,
         });
-        principalCache.clear();
+        clearPrincipalCaches();
         const affectedUsers = await supabase.rest('user_profiles', {
           query: { role: `eq.${req.params.role}`, status: 'eq.active', select: 'id' },
         }).catch(() => []);
@@ -4144,7 +4252,7 @@ export async function createMultiUserRuntime({
             prefer: 'return=representation',
             maybeSingle: true,
           });
-          principalCache.clear();
+          clearPrincipalCaches();
           notifyManagedProjectMetadataChanged(project.id);
           await audit(req.principal, 'project.restored', {
             targetType: 'project', targetId: project.id, projectId: project.id,
@@ -4196,7 +4304,7 @@ export async function createMultiUserRuntime({
           maybeSingle: true,
         });
         if (!archived) return jsonError(res, 404, 'Managed project not found');
-        principalCache.clear();
+        clearPrincipalCaches();
         notifyManagedProjectMetadataChanged(project.id);
         await audit(req.principal, 'project.unregistered', {
           targetType: 'project',
@@ -4246,7 +4354,7 @@ export async function createMultiUserRuntime({
           maybeSingle: true,
         });
         if (!project) return jsonError(res, 404, 'Managed project not found');
-        principalCache.clear();
+        clearPrincipalCaches();
         notifyManagedProjectMetadataChanged(project.id);
         await audit(req.principal, 'project.updated', {
           targetType: 'project',
@@ -4519,7 +4627,7 @@ export async function createMultiUserRuntime({
             revoked: false,
           });
         }
-        principalCache.clear();
+        clearPrincipalCaches();
         await Promise.all([abortOwnedSessions(req.params.userId), terminateOwnedTerminals(req.params.userId)]);
         await audit(req.principal, 'project.branches_assigned', {
           targetType: 'user', targetId: req.params.userId, projectId: req.params.projectId,
@@ -4571,7 +4679,7 @@ export async function createMultiUserRuntime({
           ownerUserId: req.params.userId,
           revoked: true,
         });
-        principalCache.clear();
+        clearPrincipalCaches();
         await Promise.all([abortOwnedSessions(req.params.userId), terminateOwnedTerminals(req.params.userId)]);
         await audit(req.principal, 'project.unassigned', {
           targetType: 'user',
@@ -5191,7 +5299,7 @@ export async function createMultiUserRuntime({
           prefer: 'resolution=merge-duplicates,return=minimal',
         });
         req.principal.settingsOverrides = settingsOverrides;
-        principalCache.clear();
+        clearPrincipalCaches();
         await audit(req.principal, 'settings.updated', {
           targetType: 'user',
           targetId: req.principal.id,
@@ -5228,7 +5336,7 @@ export async function createMultiUserRuntime({
         method: 'PATCH', query: { id: `eq.${req.principal.appSessionId}` },
         body: { active_project_id: assignment.projectId, active_branch: assignment.branchName }, prefer: 'return=minimal',
       });
-      principalCache.clear();
+      clearPrincipalCaches();
       return res.json({ success: true, restarted: false, path: assignment.publicDirectory });
     });
 
@@ -5403,7 +5511,7 @@ export async function createMultiUserRuntime({
           });
           if (!response.ok) return res.status(response.status).send(typeof payload === 'string' ? payload : JSON.stringify(payload));
           try {
-            if (!await recordChildSessionOwnership(req.principal, payload, req.params.sessionID)) {
+            if (!await recordChildSessionOwnership(req.principal, payload, req.params.sessionID, { durable: true })) {
               throw new Error('Fork ownership could not be registered');
             }
           } catch (error) {

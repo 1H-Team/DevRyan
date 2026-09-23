@@ -141,6 +141,7 @@ jobs:
   publish-npm:
     needs: [create-release, build-web-artifact, prepare-desktop-electron-macos]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -154,6 +155,8 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
+        env:
+          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
         run: bun install --frozen-lockfile
 
       - uses: actions/download-artifact@v4
@@ -166,11 +169,6 @@ jobs:
         with:
           name: revert-runtime-darwin-arm64
           path: packages/web/runtime/darwin-arm64
-      - name: Download verified x64 Revert runtime
-        uses: actions/download-artifact@v4
-        with:
-          name: revert-runtime-darwin-x64
-          path: packages/web/runtime/darwin-x64
       - name: Verify and stage web artifact
         env:
           RELEASE_OPERATION: web-stage
@@ -243,13 +241,17 @@ jobs:
   build-web-artifact:
     needs: create-release
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: bun install --frozen-lockfile
+      - name: Install dependencies
+        env:
+          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
+        run: bun install --frozen-lockfile
       - name: Validate shared UI types
         run: bun run type-check:ui
       - name: Compile web assets once
@@ -383,6 +385,8 @@ jobs:
   prepare-desktop-electron-macos:
     needs: create-release
     runs-on: ${{ matrix.runner }}
+    # A stalled native fixture must fail the release instead of holding it open.
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -391,19 +395,28 @@ jobs:
             runner: macos-26
             arch: arm64
             platform: darwin-aarch64
-          - target: x86_64-apple-darwin
-            runner: macos-15-intel
-            arch: x64
-            platform: darwin-x86_64
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+        id: bun
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      # Companion builds are keyed by their exact inputs and reused only after
+      # passing upstream checks; the DevRyan native acceptance suite always runs.
+      - name: Restore verified companion build
+        uses: actions/cache@v4
+        with:
+          path: .cache/revert-runtime-companion
+          key: revert-companion-${{ runner.os }}-${{ runner.arch }}-bun${{ steps.bun.outputs.bun-version }}-${{ hashFiles('packages/web/server/lib/opencode/companion/manifest.json', 'packages/web/server/lib/opencode/companion/*.patch') }}
       - name: Install target dependencies
+        # Web assets come from the shared web artifact and native inputs are
+        # built by the steps below; skip the duplicate install-time prepare.
+        env:
+          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
         run: bun install --frozen-lockfile --cpu '*' --os darwin
       - name: Build and verify concurrent Revert runtime
+        timeout-minutes: 20
         run: bun run build:revert-runtime
       - uses: actions/upload-artifact@v4
         with:
@@ -439,6 +452,7 @@ jobs:
   build-desktop-electron-macos:
     needs: [create-release, prepare-desktop-electron-macos, build-web-artifact, publish-bot-runtime-images]
     runs-on: macos-26
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -446,9 +460,6 @@ jobs:
           - target: aarch64-apple-darwin
             arch: arm64
             platform: darwin-aarch64
-          - target: x86_64-apple-darwin
-            arch: x64
-            platform: darwin-x86_64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -497,10 +508,6 @@ jobs:
               APP_DIR="packages/electron/dist/mac-arm64"
               CURSOR_SDK_PLATFORM_PACKAGE="sdk-darwin-arm64"
               ;;
-            x64)
-              APP_DIR="packages/electron/dist/mac"
-              CURSOR_SDK_PLATFORM_PACKAGE="sdk-darwin-x64"
-              ;;
             *)
               echo "Error: unsupported Electron architecture: ${{ matrix.arch }}"
               exit 1
@@ -547,7 +554,6 @@ jobs:
 
           case "${{ matrix.arch }}" in
             arm64) APP_DIR="packages/electron/dist/mac-arm64" ;;
-            x64) APP_DIR="packages/electron/dist/mac" ;;
             *) echo "Error: unsupported Electron architecture: ${{ matrix.arch }}"; exit 1 ;;
           esac
           APP_PATH=$(find "$APP_DIR" -maxdepth 2 -name "*.app" -print -quit)
@@ -577,7 +583,6 @@ jobs:
 
           case "${{ matrix.arch }}" in
             arm64) APP_DIR="packages/electron/dist/mac-arm64" ;;
-            x64) APP_DIR="packages/electron/dist/mac" ;;
             *) echo "Error: unsupported Electron architecture: ${{ matrix.arch }}"; exit 1 ;;
           esac
           APP_PATH=$(find "$APP_DIR" -maxdepth 2 -name "*.app" -print -quit)

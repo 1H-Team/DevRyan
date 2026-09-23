@@ -7,6 +7,18 @@ import { DIAGNOSTIC_IMPACTS, DIAGNOSTIC_SOURCES } from './error-diagnostics.js';
 
 const OUTBOX_VERSION = 1;
 const DEFAULT_FLUSH_INTERVAL_MS = 5_000;
+const MAX_BACKOFF_MS = 5 * 60_000;
+// A caller waits at most this long for opportunistic delivery; the record is
+// already durable, and background flushes keep delivering after it returns.
+const ENQUEUE_DELIVERY_WAIT_MS = 2_000;
+// A caller waits for delivery only when few records are ahead of its own.
+const ENQUEUE_WAIT_MAX_BACKLOG = 16;
+const DRAIN_FLUSH_WAIT_MS = 5_000;
+const SLOW_BACKEND_HOLD_MS = 15_000;
+// 4xx (except timeout/rate limit) is a problem with one record; anything else
+// means the backend is unavailable and the rest of a pass would fail too.
+const isBackendUnavailable = (error) => !(Number.isInteger(error?.status) && error.status >= 400 && error.status < 500
+  && error.status !== 408 && error.status !== 429);
 const CLIPBOARD_TEXT_LIMIT_BYTES = 64 * 1024;
 const CLIPBOARD_PREVIEW_CHARACTERS = 512;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -120,8 +132,13 @@ const validateRecord = (value) => {
     createdAt: typeof value.createdAt === 'string' ? value.createdAt : new Date().toISOString(),
     lastAttemptAt: typeof value.lastAttemptAt === 'string' ? value.lastAttemptAt : null,
     lastError: typeof value.lastError === 'string' ? value.lastError.slice(0, 500) : null,
+    sequence: Number.isSafeInteger(value.sequence) ? value.sequence : null,
   };
 };
+
+// Deliver in append order; legacy records without a sequence sort by time.
+const byAppendOrder = (a, b) => (a.record.sequence ?? Date.parse(a.record.createdAt) * 1_000)
+  - (b.record.sequence ?? Date.parse(b.record.createdAt) * 1_000) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
 
 const knownSecretsFromEnvironment = () => Object.entries(process.env)
   .filter(([key, value]) => (
@@ -154,6 +171,16 @@ export async function createAuditOutbox({
   let delivered = 0;
   let deliveryFailures = 0;
   let operationTail = Promise.resolve();
+  let backoffMs = 0;
+  let backoffUntil = 0;
+  let flushInFlight = null;
+  let flushRequested = false;
+  let slowUntil = 0;
+  // Records appended by this process and not yet delivered or rejected.
+  const undelivered = new Set();
+  // Callers waiting for their own record's outcome.
+  const waiters = new Map();
+  const settleWaiter = (key) => { const resolve = waiters.get(key); if (resolve) { waiters.delete(key); resolve(true); } };
 
   const serialize = (operation) => {
     const result = operationTail.then(operation, operation);
@@ -161,6 +188,7 @@ export async function createAuditOutbox({
     return result;
   };
 
+  // Returns 'delivered', 'rejected' (this record only) or 'unavailable'.
   const deliver = async (key, record) => {
     try {
       await supabase.rest('activity_logs', {
@@ -170,8 +198,10 @@ export async function createAuditOutbox({
         prefer: 'resolution=ignore-duplicates,return=minimal',
       });
       await store.deleteRecord(key);
+      undelivered.delete(key); settleWaiter(key);
       delivered += 1;
-      return true;
+      backoffMs = 0; backoffUntil = 0;
+      return 'delivered';
     } catch (error) {
       deliveryFailures += 1;
       await store.writeRecord(key, {
@@ -180,42 +210,130 @@ export async function createAuditOutbox({
         lastAttemptAt: new Date().toISOString(),
         lastError: error instanceof Error ? error.message : String(error),
       });
-      return false;
+      if (!isBackendUnavailable(error)) { undelivered.delete(key); settleWaiter(key); return 'rejected'; }
+      return 'unavailable';
     }
   };
 
-  const flushUnlocked = async () => {
-    const records = await store.listRecords();
-    for (const { key, record } of records) await deliver(key, record);
+  // One pass stops once the backend is unavailable instead of spending a
+  // request timeout on every remaining record. A single failure may be
+  // specific to its record (a timeout on one payload), so the next record is
+  // tried once; two consecutive failures end the pass. Records that failed
+  // before go after fresh ones, so failing records never block later records;
+  // without failures, delivery follows append order.
+  // A record that failed before waits out its own backoff in background passes;
+  // explicit flushes and the delivery barrier try every record.
+  const recordDue = (record, now) => record.attempts === 0 || !record.lastAttemptAt
+    || now >= Date.parse(record.lastAttemptAt) + Math.min(5_000 * 2 ** (record.attempts - 1), MAX_BACKOFF_MS);
+  const flushUnlocked = async ({ all = true } = {}) => {
+    const now = Date.now();
+    const records = (await store.listRecords())
+      .filter(({ record }) => all || recordDue(record, now))
+      .sort((left, right) => (left.record.attempts - right.record.attempts) || byAppendOrder(left, right));
+    let failedLast = false, delivered = 0, freshUnavailable = false;
+    for (const { key, record } of records) {
+      const outcome = await deliver(key, record);
+      if (outcome === 'delivered') delivered += 1;
+      freshUnavailable ||= outcome === 'unavailable' && record.attempts === 0;
+      if (outcome === 'unavailable' && failedLast) break;
+      failedLast = outcome === 'unavailable';
+    }
+    // The whole outbox backs off only when a fresh record failed and nothing
+    // was delivered: one record that keeps failing never delays the others.
+    if (freshUnavailable && delivered === 0) {
+      backoffMs = Math.min(backoffMs ? backoffMs * 2 : Math.max(1_000, flushIntervalMs), MAX_BACKOFF_MS);
+      backoffUntil = Date.now() + backoffMs;
+    }
+    // A backend that keeps up drains the backlog; one that answers but falls
+    // behind keeps callers off the delivery path until it catches up.
+    if (delivered === records.length) slowUntil = 0;
     return records.length;
   };
 
-  const flush = () => serialize(flushUnlocked);
+  // At most one background flush runs; requests during it coalesce into more
+  // passes. A barrier or explicit flush makes it yield after the current pass,
+  // so steady traffic cannot keep them waiting; yielded work resumes after.
+  let yieldRequested = 0;
+  const runFlush = () => {
+    if (flushInFlight) { flushRequested = true; return flushInFlight; }
+    flushInFlight = serialize(async () => {
+      let total = 0;
+      do {
+        flushRequested = false;
+        total += await flushUnlocked({ all: false });
+      } while (flushRequested && !yieldRequested && !stopped && Date.now() >= backoffUntil);
+      return total;
+    }).finally(() => {
+      flushInFlight = null;
+      if (flushRequested && !stopped) {
+        flushRequested = false;
+        setImmediate(() => { if (!stopped && Date.now() >= backoffUntil) requestFlush(); }).unref?.();
+      }
+    });
+    return flushInFlight;
+  };
+  // Runs one pass over every record that starts after the call, even while
+  // backing off; background requests only coalesce.
+  const withYield = async (operation) => {
+    yieldRequested += 1;
+    try { return await operation(); } finally { yieldRequested -= 1; }
+  };
+  const flush = () => withYield(() => serialize(() => flushUnlocked({ all: true })));
+  const requestFlush = () => {
+    if (stopped) return;
+    void runFlush().catch((error) => {
+      logger.warn?.('[MultiUser] Audit outbox flush failed:', error?.message || error);
+    });
+  };
 
-  const enqueue = (eventId, payload) => serialize(async () => {
-    const record = await store.writeRecord(eventId, {
+  // Local appends complete in call order (they never wait on the network), so
+  // an ordered flush pass always sees a prefix of the append sequence.
+  let lastSequence = 0;
+  let writeTail = Promise.resolve();
+  const writeRecord = (eventId, payload) => {
+    const record = {
       payload: sanitizeAuditPayload(payload, sanitizer),
       attempts: 0,
       createdAt: new Date().toISOString(),
       lastAttemptAt: null,
       lastError: null,
-    });
-    await deliver(eventId, record);
-  });
+      sequence: lastSequence = Math.max(lastSequence + 1, Date.now() * 1_000),
+    };
+    const written = writeTail.then(() => store.writeRecord(eventId, record)).then((result) => { undelivered.add(eventId); return result; });
+    writeTail = written.catch(() => {});
+    return written;
+  };
+
+  // Durable append first; delivery is opportunistic and bounded so an
+  // unavailable Supabase never holds an audited operation or response.
+  // Durable append first; delivery happens in ordered, coalesced flush passes.
+  // A caller waits a bounded time for it, and never while the backend is
+  // unavailable or slow, so Supabase never holds an audited operation.
+  const enqueue = async (eventId, payload) => {
+    await writeRecord(eventId, payload);
+    if (stopped || Date.now() < backoffUntil) return;
+    // The caller waits for its own record's outcome, or for a flush that ends
+    // without it (an unavailable backend), never for later records.
+    const outcome = new Promise((resolve) => { waiters.set(eventId, resolve); });
+    const flushing = runFlush().then(() => true, () => true);
+    // Waiting behind a backlog would hold this caller for other records.
+    if (Date.now() < slowUntil || undelivered.size - 1 > ENQUEUE_WAIT_MAX_BACKLOG) { waiters.delete(eventId); return; }
+    let timer;
+    const settled = await Promise.race([outcome, flushing, new Promise((resolve) => {
+      timer = setTimeout(() => resolve(false), ENQUEUE_DELIVERY_WAIT_MS);
+      timer.unref?.();
+    })]);
+    clearTimeout(timer);
+    waiters.delete(eventId);
+    // A backend that has not answered within the wait is treated as slow
+    // until a delivery succeeds, so later callers do not queue behind it.
+    if (!settled) slowUntil = Date.now() + SLOW_BACKEND_HOLD_MS;
+  };
 
   const enqueueDeferred = async (eventId, payload) => {
-    await serialize(() => store.writeRecord(eventId, {
-      payload: sanitizeAuditPayload(payload, sanitizer),
-      attempts: 0,
-      createdAt: new Date().toISOString(),
-      lastAttemptAt: null,
-      lastError: null,
-    }));
+    await writeRecord(eventId, payload);
     setImmediate(() => {
-      if (stopped) return;
-      void flush().catch((error) => {
-        logger.warn?.('[MultiUser] Deferred audit outbox flush failed:', error?.message || error);
-      });
+      if (!stopped && Date.now() >= backoffUntil) requestFlush();
     }).unref?.();
   };
 
@@ -223,22 +341,23 @@ export async function createAuditOutbox({
     if (typeof operation !== 'function') {
       throw new TypeError('audit outbox delivery barrier operation must be a function');
     }
-    return serialize(async () => {
+    return withYield(() => serialize(async () => {
+      // Only records that existed when the barrier started must be delivered;
+      // later appends are delivered after the protected operation.
+      const required = new Set((await store.listRecords()).map(({ key }) => key));
       await flushUnlocked();
-      const pending = await store.listRecords();
+      const pending = (await store.listRecords()).filter(({ key }) => required.has(key));
       if (pending.length > 0) {
         const error = new Error('Audit outbox backlog could not be delivered before the protected operation');
         error.code = 'DEVRYAN_AUDIT_OUTBOX_NOT_FLUSHED';
         throw error;
       }
       return operation();
-    });
+    }));
   };
 
   const timer = setInterval(() => {
-    if (!stopped) void flush().catch((error) => {
-      logger.warn?.('[MultiUser] Audit outbox flush failed:', error?.message || error);
-    });
+    if (!stopped && !flushInFlight && Date.now() >= backoffUntil) requestFlush();
   }, Math.max(1_000, flushIntervalMs));
   timer.unref?.();
   void flush().catch((error) => {
@@ -256,13 +375,20 @@ export async function createAuditOutbox({
         backlog: records.length,
         delivered,
         deliveryFailures,
+        retryAfterMs: Math.max(0, backoffUntil - Date.now()),
         sanitizer: sanitizer.getReport(),
       };
     },
     async drain() {
       stopped = true;
       clearInterval(timer);
-      await flush();
+      // Records stay durable; shutdown never waits on an unavailable backend.
+      let drainTimer;
+      await Promise.race([flush().catch(() => {}), new Promise((resolve) => {
+        drainTimer = setTimeout(resolve, DRAIN_FLUSH_WAIT_MS);
+        drainTimer.unref?.();
+      })]);
+      clearTimeout(drainTimer);
       await store.drain();
     },
   };

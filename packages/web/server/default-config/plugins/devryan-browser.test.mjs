@@ -34,6 +34,8 @@ const ORIGINAL_ENVIRONMENT = {
   binary: process.env.DEVRYAN_AGENT_BROWSER_BIN,
   config: process.env.AGENT_BROWSER_CONFIG,
   openaiKey: process.env.OPENAI_API_KEY,
+  worker: process.env.DEVRYAN_EXECUTION_WORKER,
+  scope: process.env.DEVRYAN_EXECUTION_BROWSER_SCOPE,
 };
 let managedRoot;
 let managedBinaryPath;
@@ -129,6 +131,8 @@ afterEach(() => {
     DEVRYAN_AGENT_BROWSER_BIN: ORIGINAL_ENVIRONMENT.binary,
     AGENT_BROWSER_CONFIG: ORIGINAL_ENVIRONMENT.config,
     OPENAI_API_KEY: ORIGINAL_ENVIRONMENT.openaiKey,
+    DEVRYAN_EXECUTION_WORKER: ORIGINAL_ENVIRONMENT.worker,
+    DEVRYAN_EXECUTION_BROWSER_SCOPE: ORIGINAL_ENVIRONMENT.scope,
   })) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
@@ -136,6 +140,20 @@ afterEach(() => {
 });
 
 describe('DevRyan agent browser plugin', () => {
+  it('uses the native execution turn and writable view without querying a worker-local transcript', async () => {
+    process.env.DEVRYAN_EXECUTION_WORKER = '1';
+    process.env.DEVRYAN_EXECUTION_BROWSER_SCOPE = JSON.stringify({ opencodeSessionID: 'ses_child', messageID: 'msg_user', directory: '/workspace', agent: 'builder' });
+    const client = { session: { messages: vi.fn(() => { throw new Error('worker transcript unavailable'); }) } };
+    expect(await __test.resolveTurnMessageID({ opencodeSessionID: 'ses_child', directory: '/workspace', agent: 'builder' }, client)).toBe('msg_user');
+    expect(client.session.messages).not.toHaveBeenCalled();
+    const cache = mkdtempSync(join(tmpdir(), 'devryan-browser-cache-'));
+    process.env.DEVRYAN_EXECUTION_CACHE = cache;
+    try { expect(__test.getManagedEnvironment().installRoot).toBe(join(cache, 'agent-browser')); }
+    finally { delete process.env.DEVRYAN_EXECUTION_CACHE; rmSync(cache, { recursive: true, force: true }); }
+    await expect(__test.resolveTurnMessageID({ opencodeSessionID: 'other', directory: '/workspace', agent: 'builder' }, client)).rejects.toThrow('scope');
+    delete process.env.DEVRYAN_EXECUTION_BROWSER_SCOPE;
+    await expect(__test.resolveTurnMessageID({ opencodeSessionID: 'ses_child', directory: '/workspace', agent: 'builder' }, client)).rejects.toThrow('scope');
+  });
   it('exports only callable plugin factories for the OpenCode loader', () => {
     expect(Object.values(browserPluginModule).every((value) => typeof value === 'function')).toBe(true);
     expect(__test()).toEqual({});

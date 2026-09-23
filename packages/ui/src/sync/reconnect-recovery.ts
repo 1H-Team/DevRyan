@@ -3,6 +3,7 @@ import type { Session } from "@opencode-ai/sdk/v2"
 import { filterSessionStatusThroughAbortGuard } from "./abort-retry-guard"
 import { getSessionMaterializationStatus } from "./materialization"
 import type { State } from "./types"
+import { isCompactionSummaryInfo } from "./compaction-summary"
 
 export { unwrapSdkResult } from "./sdk-result"
 
@@ -175,6 +176,8 @@ export function getProviderInferenceStallFingerprint(input: {
 }): ProviderInferenceStallFingerprint | null {
   const snapshot = getIncompleteRootAssistantSnapshot(input)
   if (!snapshot || snapshot.parts.length !== 2) return null
+  // A compaction summary can prefill for a long time before its first token.
+  if (isCompactionSummaryInfo(snapshot.assistant)) return null
 
   const [stepStartPart, trailingPart] = snapshot.parts as [Part, Part]
   if (stepStartPart.type !== "step-start") return null

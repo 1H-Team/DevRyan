@@ -12,8 +12,15 @@ export const RECOVERY_CONTINUATION = 'Continue from the existing progress and co
 // conformance evidence; the host target pin lives in
 // packages/web/server/lib/opencode/version-policy.js and must stay listed here.
 export const PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS = Object.freeze(['1.18.25', '1.18.26', '1.18.27', '1.18.29', '1.18.30', '1.18.31']);
+// The bundled companion runtime is a pinned upstream release plus DevRyan's
+// execution patch, which does not touch provider transport; it reports
+// `<upstream>-devryan.<n>` and is compatible exactly as its upstream base.
+const COMPANION_RUNTIME_VERSION = /^(\d+\.\d+\.\d+)-devryan\.\d+$/;
+export const providerRecoveryBaseVersion = (version) => (
+  typeof version === 'string' ? version.match(COMPANION_RUNTIME_VERSION)?.[1] ?? version : null
+);
 export const isProviderRecoverySupportedRuntimeVersion = (version) => (
-  typeof version === 'string' && PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS.includes(version)
+  PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS.includes(providerRecoveryBaseVersion(version))
 );
 
 // Claude transport/tool conformance must be established by the composing host.
@@ -56,7 +63,7 @@ export function classifyPrimaryTransportError(error, runtimeVersion) {
     return { kind: 'chunk_timeout', source: 'error_type' };
   }
   if (isProviderRecoverySupportedRuntimeVersion(runtimeVersion) && name === 'UnknownError' && message === 'The operation timed out.') {
-    return { kind: 'request_timeout', source: `opencode_${runtimeVersion}_compatibility` };
+    return { kind: 'request_timeout', source: `opencode_${providerRecoveryBaseVersion(runtimeVersion)}_compatibility` };
   }
   return null;
 }
@@ -84,6 +91,7 @@ export function validatePrimaryRecoveryRecord(value) {
     || (value.continuationID !== undefined && !/^msg_[a-zA-Z0-9]+$/.test(value.continuationID))
     || (value.activeUserID !== undefined && !/^msg_[a-zA-Z0-9]+$/.test(value.activeUserID))
     || (value.recoverySourceUserID !== undefined && !/^msg_[a-zA-Z0-9]+$/.test(value.recoverySourceUserID))
+    || (value.objectiveID !== undefined && !/^msg_[a-zA-Z0-9]+$/.test(value.objectiveID))
     || ![0, 1].includes(value.attemptCount) || !Number.isFinite(value.updatedAt)
     || !Number.isFinite(value.createdAt) || !Array.isArray(value.guardedIDs)
     || value.guardedIDs.some((id) => typeof id !== 'string')
@@ -99,7 +107,7 @@ export function validatePrimaryRecoveryRecord(value) {
 }
 
 // All records from the anchor to the current tail are required, not a UI page.
-export function inspectRecoveryTurn(record, observation) {
+export function inspectRecoveryTurn(record, observation, { allowSettledToolFailures = false } = {}) {
   if (!observation || observation.session?.id !== record.sessionID || observation.session.parentID
     || observation.session.directory !== record.directory || observation.session.time?.archived
     || !Array.isArray(observation.messages) || observation.complete !== true
@@ -118,10 +126,14 @@ export function inspectRecoveryTurn(record, observation) {
   const last = assistants.at(-1);
   const failed = record.failedID ? tail.find((m) => m.info.id === record.failedID
     && m.info.role === 'assistant' && m.info.parentID === originalUser) : last;
-  const parts = tail.flatMap((m) => m.parts ?? []);
   // Terminal errors on tools may hide an applied side effect: automatic recovery
   // must not decide its outcome from an error label.
-  const unresolved = parts.some((p) => p.type === 'tool' && p.state?.status !== 'completed');
+  const unresolved = tail.some(message => (message.parts ?? []).some(p => p.type === 'tool'
+    && p.state?.status !== 'completed'
+    && !(allowSettledToolFailures && p.state?.status === 'error'
+      && observation.executionOutcomes?.some(receipt => receipt.sessionID === record.sessionID
+        && receipt.messageID === message.info.id && receipt.callID === p.callID
+        && ['never_started', 'finished'].includes(receipt.outcome)))));
   const hasWork = tail.some((m) => m.info.role === 'assistant' && (m.parts ?? []).some((p) => (
     p.type === 'tool' || p.type === 'patch'
     || (['text', 'reasoning'].includes(p.type) && Boolean(p.text?.trim()))

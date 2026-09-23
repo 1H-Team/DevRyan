@@ -5,7 +5,8 @@ import {
   CODEX_USAGE_URL,
   DEEPSEEK_BALANCE_URL,
   OPENCODE_GO_USAGE_URL,
-  OPENCODE_ZEN_BILLING_ORIGIN,
+  OPENCODE_CONSOLE_BASE_URL,
+  OPENCODE_CONSOLE_CLIENT_ID,
   OPENCODE_ZEN_MAX_RESPONSE_BYTES,
   KIMI_QUOTA_URL,
   XAI_BILLING_URL,
@@ -18,10 +19,13 @@ import {
   fetchDeepSeekQuotaAdapter,
   fetchKimiQuotaAdapter,
   fetchOpenCodeGoQuotaAdapter,
+  exchangeOpenCodeConsoleDeviceCode,
   fetchOpenCodeZenQuotaAdapter,
   fetchXaiQuotaAdapter,
   fetchZaiQuotaAdapter,
+  refreshOpenCodeConsoleToken,
   refreshXaiOAuthToken,
+  startOpenCodeConsoleDeviceAuthorization,
   toQuotaTimestamp,
 } from './quota-adapters.js';
 
@@ -81,201 +85,263 @@ const resetBankResponse = (tokens) => {
   return new Uint8Array([0, ...[0, 0, 0, payload.length], ...payload]);
 };
 
-const ZEN_WORKSPACE_ID = 'wrk_01K46JDFR0E75SG2Q8K172KF3Y';
-const zenBillingHtml = ({
-  balance = 1_999_960_750,
-  monthlyLimit = 50,
-  monthlyUsage = 625_000_000,
-  updatedAt = '2026-08-10T09:00:00.000Z',
-  reload = true,
-  reloadAmount = 20,
-  reloadTrigger = 5,
-} = {}) => `<!doctype html><script>
-_$HY.r["billing.get[\\"${ZEN_WORKSPACE_ID}\\"]"]=$R[20];
-$R[20]={customerID:"cus_safe",paymentMethodID:"pm_safe",balance:${balance},monthlyLimit:${monthlyLimit === null ? 'null' : monthlyLimit},monthlyUsage:${monthlyUsage},timeMonthlyUsageUpdated:${updatedAt === null ? 'null' : `$R[21]=new Date(${JSON.stringify(updatedAt)})`},reload:${reload ? '!0' : '!1'},reloadAmount:${reloadAmount},reloadAmountMin:10,reloadTrigger:${reloadTrigger},reloadTriggerMin:5,subscriptionID:null,lite:$R[22]={useBalance:!0}};
-</script>`;
+const ZEN_ORG_ID = 'wrk_01K46JDFR0E75SG2Q8K172KF3Y';
+const zenCredential = { orgId: ZEN_ORG_ID, accessToken: 'sess_access-token' };
+const JSON_HEADERS = { 'content-type': 'application/json' };
+const zenJson = (payload, status = 200) => response(payload, status, JSON_HEADERS);
+const zenBillingStatus = (overrides = {}) => ({
+  billingMode: 'prepaid',
+  mode: 'pay-as-you-go',
+  balanceMicroCents: '1999960750',
+  creditLimitMicroCents: null,
+  availableMicroCents: '1999960750',
+  canPurchaseCredits: true,
+  canEnableAutoRecharge: true,
+  canEnrollInPrepaid: false,
+  ...overrides,
+});
+const zenUsageSummary = (overrides = {}) => ({
+  totalRequests: 12,
+  totalInputTokens: 1000,
+  totalOutputTokens: 500,
+  totalCacheReadTokens: 0,
+  totalCacheWrite5mTokens: 0,
+  totalCacheWrite1hTokens: 0,
+  totalCostMicroCents: '625000000',
+  services: [],
+  ...overrides,
+});
+const zenFetch = ({ status = zenJson(zenBillingStatus()), usage = zenJson(zenUsageSummary()) } = {}) => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, init });
+    if (url.startsWith(`${OPENCODE_CONSOLE_BASE_URL}/api/billing/status`)) return typeof status === 'function' ? status() : status;
+    if (url.startsWith(`${OPENCODE_CONSOLE_BASE_URL}/api/usage/summary`)) return typeof usage === 'function' ? usage() : usage;
+    throw new Error(`unexpected ${url}`);
+  };
+  return { calls, fetchImpl };
+};
 
 describe('OpenCode Zen shared quota adapter', () => {
-  test('accepts minimal billing data without subscription or auto-reload fields', async () => {
-    const html = `_$HY.r[${JSON.stringify(`billing.get["${ZEN_WORKSPACE_ID}"]`)}]=$R[1];
-      $R[1]={data:$R[2]};
-      $R[2]={balance:2000000000,monthlyUsage:625000000,timeMonthlyUsageUpdated:"2026-08-10T09:00:00.000Z"};`;
-    const result = await fetchOpenCodeZenQuotaAdapter({
-      credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'cookie' }, now,
-      fetchImpl: async () => response(html),
-    });
-    expect(result.ok).toBe(true);
-    expect(result.usage.windows.credits.valueLabel).toBe('$6.25 used / $20.00 available');
-  });
+  test('reads console billing status and current-UTC-month spend with bearer and workspace scope', async () => {
+    const { calls, fetchImpl } = zenFetch();
+    const result = await fetchOpenCodeZenQuotaAdapter({ credential: zenCredential, fetchImpl, now });
 
-  test('resolves streamed hydration and ignores unrelated workspace billing objects', async () => {
-    const html = `_$HY.r[${JSON.stringify(`billing.get["${ZEN_WORKSPACE_ID}"]`)}]=$R[1];
-      $R[1].resolve($R[2]={balance:2000000000,monthlyUsage:0,timeMonthlyUsageUpdated:null});
-      $R[3]={balance:9900000000,monthlyUsage:0,timeMonthlyUsageUpdated:null};`;
-    const result = await fetchOpenCodeZenQuotaAdapter({
-      credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'cookie' }, now,
-      fetchImpl: async () => response(html),
-    });
-    expect(result.ok).toBe(true);
-    expect(result.usage.windows.credits.valueLabel).toBe('$0.00 used / $20.00 available');
-  });
-
-  test('rejects detached, wrong-workspace, and ambiguous reachable billing data', async () => {
-    const root = `_$HY.r[${JSON.stringify(`billing.get["${ZEN_WORKSPACE_ID}"]`)}]=$R[1];`;
-    const record = '{balance:2000000000,monthlyUsage:0,timeMonthlyUsageUpdated:null}';
-    for (const html of [
-      `${root}$R[2]=${record};`,
-      `${root.replace(ZEN_WORKSPACE_ID, 'wrk_01K46JDFR0E75SG2Q8K172KF3Z')}$R[1]=${record};`,
-      `${root}$R[1]=[$R[2],$R[3]];$R[2]=${record};$R[3]=${record.replace('2000000000', '3000000000')};`,
-      `${root}$R[1]=${record};$R[1]=${record};`,
-      `${root}$R[1]=[$R[2],$R[3]];$R[2]=${record};$R[3]=${record};`,
-      `${root}$R[1]={balance:2000000000,monthlyUsage:0};`,
-      `${root}$R[1]=${record.replace('2000000000', '20 * 100000000')};`,
-    ]) {
-      const result = await fetchOpenCodeZenQuotaAdapter({
-        credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'never-echo' }, now,
-        fetchImpl: async () => response(html),
+    expect(calls.map(({ url }) => url).sort()).toEqual([
+      `${OPENCODE_CONSOLE_BASE_URL}/api/billing/status`,
+      `${OPENCODE_CONSOLE_BASE_URL}/api/usage/summary?since=${encodeURIComponent('2026-08-01T00:00:00.000Z')}`,
+    ]);
+    for (const { init } of calls) {
+      expect(init).toMatchObject({
+        method: 'GET',
+        redirect: 'manual',
+        headers: {
+          Accept: 'application/json',
+          Authorization: 'Bearer sess_access-token',
+          'x-org-id': ZEN_ORG_ID,
+        },
       });
-      expect(result).toMatchObject({ ok: false, errorCode: 'PARSE_ERROR' });
-      expect(JSON.stringify(result)).not.toContain('never-echo');
+      expect(init.headers.Cookie).toBeUndefined();
     }
-  });
-
-  test('distinguishes timeout from upstream failures without echoing thrown messages', async () => {
-    for (const [error, errorCode] of [
-      [new DOMException('secret-cookie', 'TimeoutError'), 'TIMEOUT'],
-      [new Error('secret-cookie'), 'API_ERROR'],
-    ]) {
-      const result = await fetchOpenCodeZenQuotaAdapter({
-        credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'secret-cookie' }, now,
-        fetchImpl: async () => { throw error; },
-      });
-      expect(result).toMatchObject({ ok: false, configured: true, errorCode });
-      expect(JSON.stringify(result)).not.toContain('secret-cookie');
-    }
-  });
-
-  test('reads only the workspace billing page and maps spend versus available credits', async () => {
-    const result = await fetchOpenCodeZenQuotaAdapter({
-      credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'signed-cookie' },
-      now,
-      fetchImpl: async (url, init) => {
-        expect(url).toBe(`${OPENCODE_ZEN_BILLING_ORIGIN}/workspace/${ZEN_WORKSPACE_ID}/billing`);
-        expect(init).toMatchObject({
-          method: 'GET',
-          redirect: 'manual',
-          headers: { Accept: 'text/html', Cookie: 'auth=signed-cookie' },
-        });
-        expect(init.signal).toBeDefined();
-        return response(zenBillingHtml(), 200, {}, url);
-      },
-    });
-    expect(result).toMatchObject({ ok: true, configured: true, providerId: 'opencode' });
+    expect(result).toMatchObject({ providerId: 'opencode', providerName: 'OpenCode Zen', ok: true, configured: true });
     expect(result.usage.windows.credits).toMatchObject({
       valueLabel: '$6.25 used / $20.00 available',
+      windowSeconds: null,
       resetAt: null,
     });
-    expect(result.usage.windows.credits.usedPercent).toBeCloseTo(23.8099, 4);
-    expect(result.usage.windows.credits.description).toBeUndefined();
-    expect(result.usage.windows.monthly).toBeUndefined();
-    expect(result.usageUpdatedAt).toBe(Date.parse('2026-08-10T09:00:00.000Z'));
+    expect(result.usage.windows.credits.usedPercent).toBeCloseTo(23.81, 2);
   });
 
-  test('ignores monthly-limit and auto-reload presentation and resets stale UTC-month usage', async () => {
-    const current = await fetchOpenCodeZenQuotaAdapter({
-      credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'cookie' },
-      now,
-      fetchImpl: async () => response(zenBillingHtml({ monthlyLimit: null, reload: false })),
-    });
-    expect(current.usage.windows.credits).toMatchObject({
-      valueLabel: '$6.25 used / $20.00 available',
-    });
-    expect(current.usage.windows.credits.description).toBeUndefined();
-    expect(current.usage.windows.monthly).toBeUndefined();
-
-    const stale = await fetchOpenCodeZenQuotaAdapter({
-      credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'cookie' },
-      now,
-      fetchImpl: async () => response(zenBillingHtml({ updatedAt: '2026-07-31T23:59:59.000Z' })),
-    });
-    expect(stale.usage.windows.credits).toMatchObject({
-      usedPercent: 0,
-      valueLabel: '$0.00 used / $20.00 available',
-    });
-  });
-
-  test('handles empty and exhausted credit pools deterministically', async () => {
+  test('accepts numeric micro-cents and handles empty and overdrawn credit pools', async () => {
     const empty = await fetchOpenCodeZenQuotaAdapter({
-      credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'cookie' },
+      credential: zenCredential,
       now,
-      fetchImpl: async () => response(zenBillingHtml({ balance: 0, monthlyUsage: 0 })),
+      fetchImpl: zenFetch({
+        status: zenJson(zenBillingStatus({ balanceMicroCents: 0, availableMicroCents: 0 })),
+        usage: zenJson(zenUsageSummary({ totalCostMicroCents: 0 })),
+      }).fetchImpl,
     });
-    expect(empty.usage.windows.credits).toMatchObject({
-      usedPercent: 0,
-      valueLabel: '$0.00 used / $0.00 available',
-    });
+    expect(empty.usage.windows.credits).toMatchObject({ usedPercent: 0, valueLabel: '$0.00 used / $0.00 available' });
 
-    const exhausted = await fetchOpenCodeZenQuotaAdapter({
-      credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'cookie' },
+    const overdrawn = await fetchOpenCodeZenQuotaAdapter({
+      credential: zenCredential,
       now,
-      fetchImpl: async () => response(zenBillingHtml({ balance: 0 })),
+      fetchImpl: zenFetch({
+        status: zenJson(zenBillingStatus({ balanceMicroCents: '-100000000', availableMicroCents: '-100000000' })),
+        usage: zenJson(zenUsageSummary({ totalCostMicroCents: '300000000' })),
+      }).fetchImpl,
     });
-    expect(exhausted.usage.windows.credits).toMatchObject({
-      usedPercent: 100,
-      valueLabel: '$6.25 used / $0.00 available',
-    });
+    expect(overdrawn.usage.windows.credits).toMatchObject({ usedPercent: 100, valueLabel: '$3.00 used / -$1.00 available' });
   });
 
-  test('rejects invalid credentials, authentication failures, redirects, and untrusted final locations', async () => {
+  test('rejects invalid credentials without any request', async () => {
+    let requests = 0;
+    const fetchImpl = async () => { requests += 1; return zenJson({}); };
     for (const credential of [
-      { workspaceId: 'bad', authCookie: 'cookie' },
-      { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'extra; cookie=bad' },
-      { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'line\nbreak' },
+      null,
+      { orgId: 'bad', accessToken: 'token' },
+      { orgId: ZEN_ORG_ID, accessToken: 'has space' },
+      { orgId: ZEN_ORG_ID, accessToken: 'line\nbreak' },
+      { workspaceId: ZEN_ORG_ID, authCookie: 'legacy-cookie' },
     ]) {
-      expect(await fetchOpenCodeZenQuotaAdapter({ credential, now }))
-        .toMatchObject({ configured: false, errorCode: 'NOT_CONFIGURED' });
+      expect(await fetchOpenCodeZenQuotaAdapter({ credential, fetchImpl, now }))
+        .toMatchObject({ ok: false, configured: false, errorCode: 'NOT_CONFIGURED' });
     }
-
-    for (const status of [302, 401, 403, 404]) {
-      const result = await fetchOpenCodeZenQuotaAdapter({
-        credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'never-echo' },
-        now,
-        fetchImpl: async () => response('', status),
-      });
-      expect(result).toMatchObject({ configured: true, errorCode: 'AUTHENTICATION_FAILED' });
-      expect(JSON.stringify(result)).not.toContain('never-echo');
-    }
-
-    const untrusted = await fetchOpenCodeZenQuotaAdapter({
-      credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'cookie' },
-      now,
-      fetchImpl: async () => response(zenBillingHtml(), 200, {}, 'https://example.com/billing'),
-    });
-    expect(untrusted).toMatchObject({ ok: false, errorCode: 'AUTHENTICATION_FAILED' });
+    expect(requests).toBe(0);
   });
 
-  test('fails closed for malformed, ambiguous, and oversized billing payloads', async () => {
-    for (const html of [
-      '<script>billing.get["workspace"]={balance:10}</script>',
-      `_$HY.r["billing.get[\\"${ZEN_WORKSPACE_ID}\\"]"]=$R[20];<script>{customerID:"decoy",paymentMethodID:null,balance:10,monthlyLimit:null,monthlyUsage:0,timeMonthlyUsageUpdated:null,reload:!1,reloadAmount:10,reloadAmountMin:10,reloadTrigger:5,reloadTriggerMin:5,subscriptionID:null}</script>`,
-      `${zenBillingHtml()}${zenBillingHtml({ balance: 100 })}`,
-    ]) {
-      const result = await fetchOpenCodeZenQuotaAdapter({
-        credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'cookie' },
-        now,
-        fetchImpl: async () => response(html),
+  test('classifies expired tokens, workspace denials, redirects, and upstream failures', async () => {
+    const cases = [
+      [{ status: zenJson({ _tag: 'Unauthorized' }, 401) }, 'AUTHENTICATION_FAILED'],
+      [{ usage: zenJson({ _tag: 'Unauthorized' }, 401), status: zenJson({ _tag: 'Forbidden' }, 403) }, 'AUTHENTICATION_FAILED'],
+      [{ status: zenJson({ _tag: 'Forbidden' }, 403) }, 'WORKSPACE_INACCESSIBLE'],
+      [{ status: zenJson({ _tag: 'OrgRequired' }, 400) }, 'WORKSPACE_INACCESSIBLE'],
+      [{ usage: zenJson({ _tag: 'NotFound' }, 404) }, 'WORKSPACE_INACCESSIBLE'],
+      [{ status: response('', 302, { location: 'https://opencode.ai/console/login' }) }, 'API_ERROR'],
+      [{ status: zenJson({}, 500) }, 'API_ERROR'],
+    ];
+    for (const [responses, errorCode] of cases) {
+      const result = await fetchOpenCodeZenQuotaAdapter({ credential: zenCredential, now, fetchImpl: zenFetch(responses).fetchImpl });
+      expect(result).toMatchObject({ ok: false, configured: true, errorCode });
+      expect(result.error).not.toContain('Unauthorized');
+    }
+  });
+
+  test('distinguishes timeout from network failures without echoing thrown messages', async () => {
+    const timeout = await fetchOpenCodeZenQuotaAdapter({
+      credential: zenCredential,
+      now,
+      fetchImpl: async () => { throw Object.assign(new Error('secret timeout detail'), { name: 'TimeoutError' }); },
+    });
+    expect(timeout).toMatchObject({ errorCode: 'TIMEOUT', error: 'OpenCode Console billing request timed out. Try again.' });
+    const network = await fetchOpenCodeZenQuotaAdapter({
+      credential: zenCredential,
+      now,
+      fetchImpl: async () => { throw new Error('secret network detail'); },
+    });
+    expect(network).toMatchObject({ errorCode: 'API_ERROR', error: 'OpenCode Console billing request failed.' });
+  });
+
+  test('fails closed for non-JSON, malformed, and oversized payloads', async () => {
+    const cases = [
+      { status: response('<!doctype html>', 200, { 'content-type': 'text/html' }) },
+      { status: zenJson('not json{') },
+      { status: zenJson(zenBillingStatus({ balanceMicroCents: '12.5' })) },
+      { status: zenJson(zenBillingStatus({ availableMicroCents: undefined })) },
+      { usage: zenJson(zenUsageSummary({ totalCostMicroCents: '-1' })) },
+      { usage: zenJson(zenUsageSummary({ totalCostMicroCents: 'NaN' })) },
+      { status: response(zenBillingStatus(), 200, { ...JSON_HEADERS, 'content-length': String(OPENCODE_ZEN_MAX_RESPONSE_BYTES + 1) }) },
+    ];
+    for (const responses of cases) {
+      expect(await fetchOpenCodeZenQuotaAdapter({ credential: zenCredential, now, fetchImpl: zenFetch(responses).fetchImpl }))
+        .toMatchObject({ ok: false, configured: true, errorCode: 'PARSE_ERROR' });
+    }
+  });
+});
+
+describe('OpenCode Console device authorization', () => {
+  const authFetch = (payload, status = 200) => {
+    const calls = [];
+    return {
+      calls,
+      fetchImpl: async (url, init) => {
+        calls.push({ url, body: JSON.parse(init.body), init });
+        return zenJson(typeof payload === 'function' ? payload(calls.length) : payload, status);
+      },
+    };
+  };
+
+  test('starts device authorization as DevRyan and resolves console-relative verification links', async () => {
+    const { calls, fetchImpl } = authFetch({
+      device_code: 'device-secret',
+      user_code: 'PPSQ-ZZSW',
+      verification_uri: '/console/device',
+      verification_uri_complete: '/console/device?user_code=PPSQ-ZZSW&client_id=devryan',
+      expires_in: 900,
+      interval: 5,
+    });
+    const flow = await startOpenCodeConsoleDeviceAuthorization({ fetchImpl });
+    expect(calls[0]).toMatchObject({
+      url: `${OPENCODE_CONSOLE_BASE_URL}/auth/device/code`,
+      body: { client_id: OPENCODE_CONSOLE_CLIENT_ID, supports_org_scope: true },
+      init: { method: 'POST', redirect: 'manual' },
+    });
+    expect(flow).toEqual({
+      deviceCode: 'device-secret',
+      userCode: 'PPSQ-ZZSW',
+      verificationUri: 'https://opencode.ai/console/device',
+      verificationUriComplete: 'https://opencode.ai/console/device?user_code=PPSQ-ZZSW&client_id=devryan',
+      expiresIn: 900,
+      interval: 5,
+    });
+  });
+
+  test('refuses verification links outside the console origin and failed starts', async () => {
+    await expect(startOpenCodeConsoleDeviceAuthorization({
+      fetchImpl: authFetch({ device_code: 'd', user_code: 'U', verification_uri: 'https://evil.example/device' }).fetchImpl,
+    })).rejects.toMatchObject({ name: 'OpenCodeConsoleAuthError', code: 'API_ERROR' });
+    await expect(startOpenCodeConsoleDeviceAuthorization({
+      fetchImpl: authFetch({ _tag: 'DeviceAuthFailed', message: 'Device authorization failed' }, 400).fetchImpl,
+    })).rejects.toMatchObject({ code: 'API_ERROR' });
+  });
+
+  test('maps RFC 8628 token states and validates approved tokens', async () => {
+    const states = [
+      ['authorization_pending', 'pending'],
+      ['slow_down', 'slow_down'],
+      ['access_denied', 'denied'],
+      ['expired_token', 'expired'],
+      ['invalid_grant', 'invalid'],
+    ];
+    for (const [error, status] of states) {
+      const result = await exchangeOpenCodeConsoleDeviceCode({
+        deviceCode: 'device-secret',
+        fetchImpl: authFetch({ _tag: 'DeviceTokenError', error, error_description: 'x' }, 400).fetchImpl,
       });
-      expect(result).toMatchObject({ ok: false, errorCode: 'PARSE_ERROR' });
+      expect(result).toEqual({ status });
     }
 
-    const oversized = await fetchOpenCodeZenQuotaAdapter({
-      credential: { workspaceId: ZEN_WORKSPACE_ID, authCookie: 'cookie' },
-      now,
-      fetchImpl: async () => response('', 200, {
-        'content-length': String(OPENCODE_ZEN_MAX_RESPONSE_BYTES + 1),
-      }),
+    const { calls, fetchImpl } = authFetch({
+      access_token: 'sess_access',
+      refresh_token: 'rt_refresh',
+      token_type: 'Bearer',
+      expires_in: 3600,
+      org_id: ZEN_ORG_ID,
     });
-    expect(oversized).toMatchObject({ ok: false, errorCode: 'PARSE_ERROR' });
+    expect(await exchangeOpenCodeConsoleDeviceCode({ deviceCode: 'device-secret', fetchImpl })).toEqual({
+      status: 'approved',
+      token: { accessToken: 'sess_access', refreshToken: 'rt_refresh', expiresIn: 3600, orgId: ZEN_ORG_ID },
+    });
+    expect(calls[0]).toMatchObject({
+      url: `${OPENCODE_CONSOLE_BASE_URL}/auth/device/token`,
+      body: {
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+        device_code: 'device-secret',
+        client_id: OPENCODE_CONSOLE_CLIENT_ID,
+      },
+    });
+
+    await expect(exchangeOpenCodeConsoleDeviceCode({
+      deviceCode: 'device-secret',
+      fetchImpl: authFetch({ access_token: 'has space', refresh_token: 'rt', expires_in: 60 }).fetchImpl,
+    })).rejects.toMatchObject({ code: 'PARSE_ERROR' });
+  });
+
+  test('refreshes with the refresh-token grant and reports upstream outages as errors', async () => {
+    const { calls, fetchImpl } = authFetch({ access_token: 'sess_next', refresh_token: 'rt_next', expires_in: 3600 });
+    expect(await refreshOpenCodeConsoleToken({ refreshToken: 'rt_old', fetchImpl })).toEqual({
+      status: 'approved',
+      token: { accessToken: 'sess_next', refreshToken: 'rt_next', expiresIn: 3600, orgId: null },
+    });
+    expect(calls[0].body).toEqual({ grant_type: 'refresh_token', refresh_token: 'rt_old', client_id: OPENCODE_CONSOLE_CLIENT_ID });
+
+    await expect(refreshOpenCodeConsoleToken({ refreshToken: 'rt_old', fetchImpl: authFetch({}, 503).fetchImpl }))
+      .rejects.toMatchObject({ code: 'API_ERROR' });
+    await expect(refreshOpenCodeConsoleToken({
+      refreshToken: 'rt_old',
+      fetchImpl: async () => { throw Object.assign(new Error('x'), { name: 'TimeoutError' }); },
+    })).rejects.toMatchObject({ code: 'TIMEOUT' });
+    expect(await refreshOpenCodeConsoleToken({ refreshToken: '' })).toEqual({ status: 'invalid' });
   });
 });
 

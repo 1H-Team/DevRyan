@@ -34,8 +34,10 @@ available. Bots, Telegram, managed-user scheduled execution, shared-user access
 and cloud audit delivery are unavailable. Existing actor-audit records remain in
 the durable outbox; disconnected diagnostics do not enter that outbox.
 
-The switch closes new work admission and persists the requested mode immediately.
-The effective mode changes only after an idle restart. Active chat status must be
+The switch persists the requested mode immediately. New work admission closes only
+while an automatic idle restart will apply it; without a restart driver, or after a
+failed restart, the host keeps serving in its effective mode and reports
+**restart required**. The effective mode changes only after that restart. Active chat status must be
 verified through OpenCode; active Bot runs, routines, Telegram jobs, memory
 extraction, managed task launches, scheduled tasks and mutation requests hold the
 restart pending. Queued cloud work remains persisted. Finishing, approving and
@@ -54,8 +56,12 @@ explicitly set `DEVRYAN_SUPERVISED_RESTART=1`; the server then drains and exits 
 status 1 once idle. Do not set that flag for an unsupervised process. Restart that
 process manually after its listed blockers clear.
 
-An explicit reconnect probes the saved owner's active administrator role and the
-required Bot schema before opening access. The new process repeats that check
+An explicit reconnect probes the saved owner's active administrator role before
+opening access and reports the Bot schema separately (`botsSchema`): a lagging or
+missing Bot migration leaves Bots showing **migration required** without keeping
+auth, orchestration policy or error logs offline. With Supabase deliberately off or
+not configured, Bots report `supabase_disconnected`/`supabase_not_configured` and the
+UI stops polling until the window regains focus. The new process repeats that check
 before initializing workers. Failure preserves the selected preference and leaves remote access
 closed: a failed Off-to-On attempt stays Off, while a failed On startup retains
 managed-account authentication. Explicitly changing that policy requires the idle

@@ -72,9 +72,14 @@ describe('persistent Supabase connection', () => {
     getBlockers.mockResolvedValue([]);
     await connection.applyWhenIdle();
     expect(connection.status().errorCode).toBe('supabase_restart_failed');
+    // A failed restart reopens admission in the effective mode; only an
+    // automatic restart that will actually run may hold new work.
+    expect(resumeAdmissions).toHaveBeenCalledTimes(1);
+    expect(connection.status()).toMatchObject({ restartRequired: true, restartPending: false });
+    expect(connection.admissionPaused).toBe(false);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(restart).toHaveBeenCalledTimes(1);
-    await connection.change(true); expect(resumeAdmissions).toHaveBeenCalledOnce();
+    await connection.change(true); expect(resumeAdmissions).toHaveBeenCalledTimes(2);
   });
 
   it('requires owner proof and rejects forwarded or foreign-origin requests', async () => {
@@ -170,5 +175,39 @@ describe('principal request coalescing', () => {
     expect(supabaseTrafficOperation('/rest/v1/user_profiles?id=eq.secret', 'GET')).toBe('GET rest/user_profiles');
     expect(supabaseTrafficOperation('/auth/v1/admin/users/private-id', 'GET')).toBe('GET auth/admin/users');
     expect(supabaseTrafficOperation('/storage/v1/object/bucket/private-id', 'GET')).toBe('GET storage/object');
+  });
+
+  it('holds new work only while an automatic restart can apply the change', async () => {
+    const { connection } = await fixture();
+    await enroll(connection);
+    const pauseAdmissions = vi.fn(); const resumeAdmissions = vi.fn();
+    connection.configureDriver({ getBlockers: vi.fn().mockResolvedValue(['active_chats']), prepare: vi.fn(), pauseAdmissions, resumeAdmissions });
+    await connection.change(false);
+    expect(connection.status()).toMatchObject({ restartRequired: true, restartPending: false, blockers: ['restart_required'] });
+    expect(pauseAdmissions).not.toHaveBeenCalled();
+    expect(connection.admissionPaused).toBe(false);
+  });
+
+  it.each([
+    ['an older Bots schema', async (url) => new Response(JSON.stringify(url.includes('/rpc/') ? '20260101000000' : [{ id: 'owner', role: 'admin', status: 'active' }]))],
+    ['a missing Bots schema function', async (url) => url.includes('/rpc/')
+      ? new Response(JSON.stringify({ message: 'function not found' }), { status: 404 })
+      : new Response(JSON.stringify([{ id: 'owner', role: 'admin', status: 'active' }]))],
+  ])('reconnects the core with %s and reports Bots as migration required', async (_label, implementation) => {
+    const { connection, fetchImpl } = await fixture(false);
+    await enroll(connection);
+    connection.configureDriver({ getBlockers: vi.fn().mockResolvedValue(['active_chats']), prepare: vi.fn(), restart: vi.fn(),
+      pauseAdmissions: vi.fn(), resumeAdmissions: vi.fn() });
+    fetchImpl.mockImplementation(implementation);
+    await connection.change(true);
+    expect(connection.status()).toMatchObject({ desiredEnabled: true, errorCode: null, state: 'connecting', botsSchema: 'migration_required' });
+  });
+
+  it('still refuses to reconnect when the saved administrator lost access', async () => {
+    const { connection, fetchImpl } = await fixture(false);
+    await enroll(connection);
+    fetchImpl.mockImplementation(async (url) => new Response(JSON.stringify(url.includes('/rpc/') ? PRODUCTION_BOTS_MIGRATION : [{ id: 'owner', role: 'developer', status: 'active' }])));
+    await connection.change(true);
+    expect(connection.status()).toMatchObject({ errorCode: 'supabase_owner_revoked', state: 'connection_failed' });
   });
 });

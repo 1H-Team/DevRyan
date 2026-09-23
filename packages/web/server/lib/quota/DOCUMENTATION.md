@@ -30,7 +30,7 @@ These provider IDs are currently dispatchable via `fetchQuotaForProvider(provide
 | `kimi-for-coding` | Kimi for Coding | `providers/kimi.js` | `kimi-for-coding`, `kimi` |
 | `nano-gpt` | NanoGPT | `providers/nanogpt.js` | `nano-gpt`, `nanogpt`, `nano_gpt` |
 | `openrouter` | OpenRouter | `providers/openrouter.js` | `openrouter` |
-| `opencode` | OpenCode Zen | `providers/opencode.js` | Managed `{ workspaceId, authCookie }` dashboard credential; aliases `zen`, `opencode-zen` |
+| `opencode` | OpenCode Zen | `providers/opencode.js` | Managed OpenCode Console device sign-in `{ orgId, accessToken, refreshToken, accessTokenExpiresAt }`; aliases `zen`, `opencode-zen` |
 | `opencode-go` | OpenCode Go | `providers/opencode-go.js` | First safe `key`, `token`, or `access` value from the existing provider auth entry |
 | `zai-coding-plan` | z.ai | `providers/zai.js` | `zai-coding-plan`, `zai`, `z.ai` |
 | `xai` | xAI | `providers/xai.js` | `xai`, `grok`, `xai-oauth` OAuth access/refresh tokens |
@@ -84,9 +84,13 @@ OpenCode Go usage uses the bearer-authenticated JSON endpoint `https://opencode.
 
 ## OpenCode Zen usage source
 
-OpenCode Zen is a separate canonical provider (`opencode`) and reads the authenticated workspace billing page at exactly `https://opencode.ai/workspace/{workspaceId}/billing`. It accepts only a strict `wrk_…` workspace ID and the value of the `auth` cookie. Redirects, cookie/header injection, untrusted final URLs, 401/403/404 responses, and inaccessible workspaces are rejected as authentication failures. Requests time out after 15 seconds and responses are capped at 512 KiB; credentials and response bodies are never logged.
+OpenCode Zen is a separate canonical provider (`opencode`) backed by the OpenCode Console JSON API at `https://opencode.ai/console`. The console replaced the server-rendered `/workspace/{wrk_…}/billing` dashboard in September 2026; that page now redirects to `/console/login` and the old `auth` cookie no longer authenticates, so the dashboard scraper was removed.
 
-The shared adapter follows the exact workspace billing hydration resource through bounded SolidJS references (including streamed promise resolutions) to one billing object without evaluating page code. Only balance, monthly usage, and its timestamp are required; missing subscription and auto-reload fields do not invalidate Credits. Unrelated workspace objects, disconnected records, ambiguous records, and malformed required values are rejected. It converts microcents to dollars and emits one Credits progress row whose used share is current-month spend divided by current-month spend plus the available balance. Monthly-limit and auto-reload details are intentionally not exposed. Usage whose authoritative timestamp is outside the current UTC month is treated as zero. An ordinary Zen API key is not a configured quota source because OpenCode does not expose a balance endpoint authenticated by that key.
+Sign-in uses the console's RFC 8628 device flow with client ID `devryan` and `supports_org_scope: true`: `POST /console/auth/device/code` returns a user code and a console-relative verification link (resolved against, and required to stay on, `https://opencode.ai`); the user approves in a browser and picks a workspace; `POST /console/auth/device/token` returns a bearer access token, a rotating refresh token, `expires_in`, and the chosen `org_id`. The same endpoint refreshes with `grant_type: refresh_token`. Approvals without a workspace are rejected (`WORKSPACE_REQUIRED`).
+
+Usage makes two bearer-authenticated GETs scoped by the `x-org-id` header (`org_…`, or a legacy `wrk_…` ID): `/console/api/billing/status` for `availableMicroCents`, and `/console/api/usage/summary?since=<start of current UTC month>` for `totalCostMicroCents`. Money fields are bigint micro-cents serialized as decimal strings (10^8 per dollar). The shared adapter emits one Credits row: `$used used / $available available`, where the used share is month-to-date spend over spend plus non-negative available credit. Requests use `redirect: 'manual'`, time out after 15 seconds, require a JSON content type, and cap bodies at 64 KiB. A 401 is `AUTHENTICATION_FAILED`; 400/403/404 are `WORKSPACE_INACCESSIBLE`; redirects and other failures are `API_ERROR`. Tokens, device codes, and response bodies are never logged or returned. An ordinary Zen API key is still not a quota source because the console does not accept it for billing.
+
+The host (`providers/opencode.js`) refreshes an access token within 60 seconds of expiry, and retries once after a 401 in case the console revoked it early. Concurrent refreshes of one refresh token share a single request, and the rotated pair is written back only if the stored credential still holds the refresh token that was used, so a disconnect or reconnect during a refresh is never undone. A rejected refresh surfaces `AUTHENTICATION_FAILED` and keeps the stored credential for an explicit reconnect.
 
 ## Managed quota credentials
 
@@ -94,15 +98,18 @@ The managed layer is additive and does not replace or mutate existing provider a
 
 - Files live under `${OPENCHAMBER_DATA_DIR ?? ~/.config/openchamber}/quota/<provider>.json`.
 - Provider IDs are allowlisted before path construction. Directories use mode `0700`; temporary and final files use `0600`; writes use same-directory atomic rename with exact temporary-file cleanup.
-- Payloads are bounded to 16 KB in the route and storage host, use exact provider-specific shapes, and reject CR/LF/NUL injection, unknown fields, mixed Cursor dashboard/OAuth forms, and malformed OpenCode Zen workspace/cookie values.
-- Status responses contain only `configured`, optional safe metadata (`credentialKind`, `hasRefreshToken`, `effectiveSource`), and a fixed mask. Secrets and secret fragments are never returned or logged.
-- Zen save/validate failures preserve safe `code` and `error` fields: `INVALID_CREDENTIAL` and `AUTHENTICATION_FAILED` use HTTP 400, `PARSE_ERROR` and `API_ERROR` use 502, and `TIMEOUT` uses 504. Messages are fixed and never include provider response bodies. A rejected replacement leaves the previous credential intact. Settings show credential-write success separately from usage-refresh failure and expose failures inline.
+- Payloads are bounded to 16 KB in the route and storage host, use exact provider-specific shapes, and reject CR/LF/NUL injection, unknown fields, mixed Cursor dashboard/OAuth forms, and malformed OpenCode Zen workspace/token values. Only the server writes the Zen credential, from an approved device sign-in.
+- Status responses contain only `configured`, optional safe metadata (`credentialKind`, `hasRefreshToken`, `effectiveSource`, Zen `workspaceId`, Zen `reconnectRequired`), and a fixed mask. `reconnectRequired` marks a retired `{ workspaceId, authCookie }` file, which is detected but never sent anywhere; the Zen provider stays listed with `RECONNECT_REQUIRED` until the user reconnects or disconnects. Secrets and secret fragments are never returned or logged.
+- Zen sign-in/validate failures preserve safe `code` and `error` fields: `SIGN_IN_REQUIRED`, `AUTHENTICATION_FAILED`, `WORKSPACE_INACCESSIBLE`, and `WORKSPACE_REQUIRED` use HTTP 400, `FLOW_NOT_FOUND` uses 404, `PARSE_ERROR` and `API_ERROR` use 502, and `TIMEOUT` uses 504. Messages are fixed and never include provider response bodies. A rejected approval leaves the previous credential intact. Settings show credential-write success separately from usage-refresh failure and expose failures inline.
 - `configured` describes only the managed file. `effectiveSource` may still report an environment, token-file, or legacy fallback after deletion.
 
 Routes are registered before the generic provider route:
 
 - `GET /api/quota/credentials/:providerId`
-- `PUT /api/quota/credentials/:providerId` (validate before write)
+- `PUT /api/quota/credentials/:providerId` (validate before write; `opencode` returns `SIGN_IN_REQUIRED`)
+- `POST /api/quota/credentials/opencode/device/start` → `{ flowId, userCode, verificationUri, verificationUriComplete, expiresIn, interval }`; the device code stays in server memory (at most 8 pending flows, dropped on expiry)
+- `POST /api/quota/credentials/opencode/device/poll` `{ flowId }` → `{ status: 'pending' | 'denied' | 'expired' }` or `{ status: 'approved', credential }`; polls faster than the console interval are answered locally, and an approval is saved only after the token can read the chosen workspace
+- `POST /api/quota/credentials/opencode/device/cancel` `{ flowId }`
 - `POST /api/quota/credentials/:providerId/validate`
 - `POST /api/quota/credentials/:providerId/import` (Cursor on macOS only)
 - `DELETE /api/quota/credentials/:providerId`
@@ -111,7 +118,7 @@ Stable error codes are `UNSUPPORTED_PROVIDER`, `INVALID_CREDENTIAL`, `NOT_CONFIG
 
 Credential precedence is intentional:
 
-1. OpenCode Zen: managed dashboard credential only.
+1. OpenCode Zen: managed OpenCode Console sign-in only.
 2. Cursor: explicit environment OAuth → explicit token-file OAuth → managed OAuth/dashboard → legacy dashboard session token.
 3. Ollama Cloud: managed cookie → legacy cookie file.
 

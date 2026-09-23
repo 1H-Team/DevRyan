@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import simpleGit from 'simple-git';
 import express from 'express';
-import request from 'supertest';
+import request from '../../test-supertest.js';
 import { afterEach, expect, it } from 'vitest';
 import { readGitOperationState } from './operation-state.js';
 import { getStatus, getConflictDetails, rebase, continueRebase, abortRebase, push } from './service.js';

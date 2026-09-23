@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { createTaskContextRuntime, deriveTaskCheckpoint } from './task-context.js';
+import { COMPACTION_ANCHOR_TAG, createTaskContextRuntime, deriveTaskCheckpoint, formatCompactionAnchor } from './task-context.js';
 
 const anchor = { info: { id: 'msg_user', sessionID: 'ses_root', role: 'user' }, parts: [
   { type: 'text', text: 'Keep dependencies unchanged. Implement the selected plan.' },
@@ -96,5 +96,57 @@ describe('project decisions with scoped provenance', () => {
     await expect(runtime.rememberDecision(decision({ sessionID: 'ses_other' }))).rejects.toThrow('canonical_user_quote');
     await expect(runtime.rememberDecision(decision({ statement: 'private-token' }))).rejects.toThrow('invalid_statement');
     await expect(runtime.rememberDecision(decision({ paths: ['../other'] }))).rejects.toThrow('invalid_paths');
+  });
+});
+
+describe('compaction anchors', () => {
+  test('are deterministic, bounded, and carry objective, plan, todos, children and next action', () => {
+    const checkpoint = deriveTaskCheckpoint({ ...base, now: 0 });
+    const text = formatCompactionAnchor(checkpoint, { planPath: '/data/projects/p/plans/1-slug-msg_plan.md', planOutline: '# Plan\n- Step 1\n- Step 2' });
+    expect(text).toBe(formatCompactionAnchor(deriveTaskCheckpoint({ ...base, now: 0 }), { planPath: '/data/projects/p/plans/1-slug-msg_plan.md', planOutline: '# Plan\n- Step 1\n- Step 2' }));
+    expect(text.startsWith(COMPACTION_ANCHOR_TAG)).toBe(true);
+    expect(text).toContain('## Objective anchor');
+    expect(text).toContain('Keep dependencies unchanged. Implement the selected plan.');
+    expect(text).toContain('File: /data/projects/p/plans/1-slug-msg_plan.md');
+    expect(text).toContain('- Step 2');
+    expect(text).toContain('- [pending] Reconcile the failed check');
+    expect(text).toContain('dvr_task_active running');
+    expect(text).toContain('Recovery is read-only');
+    expect(text).toContain('Inspect the outstanding sub-agent tasks');
+    expect(text).not.toMatch(/updatedAt|\b1\d{12}\b/);
+  });
+
+  test('shed the plan outline, then detail, before shortening the objective below its cap', () => {
+    const long = structuredClone(anchor); long.parts[0].text = `${'objective '.repeat(1_500)}`;
+    const todos = Array.from({ length: 20 }, (_, i) => ({ id: `todo_${i}`, content: 'x'.repeat(400), status: 'pending' }));
+    const tasks = Array.from({ length: 40 }, (_, i) => ({ taskId: `dvr_task_${i}`, rootSessionId: 'ses_root', childSessionId: `ses_${i}`, status: 'running' }));
+    const text = formatCompactionAnchor(deriveTaskCheckpoint({ ...base, anchor: long, todos, tasks, now: 0 }), { planPath: '/p.md', planOutline: '- step\n'.repeat(2_000) });
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(12 * 1024);
+    expect(text).toContain('truncated');
+    expect(text).not.toContain('- step');
+    expect(text).toContain('(more tasks outstanding)');
+  });
+
+  test('the runtime anchor writes no record and a managed child gets its assignment', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-anchor-'));
+    const writes = [];
+    const runtime = createTaskContextRuntime({ dataDirectory: directory,
+      store: { writeRecord: async (...args) => writes.push(args), readRecord: async () => null, listRecords: async () => [], drain: async () => {} },
+      readScope: async ({ sessionID, directory: projectDirectory }) => ({ session: { id: sessionID, directory: projectDirectory,
+        ...(sessionID === 'ses_child' ? { parentID: 'ses_root' } : {}) }, projectIdentity: projectDirectory, projectDirectory }),
+      readTaskState: async () => base, readMessage: async () => anchor, fingerprintFiles: async () => null,
+      readChildAssignment: async ({ sessionID }) => sessionID === 'ses_child' ? 'Continue only the original delegated assignment below.\n{"taskId":"dvr_task_active"}' : null,
+      readPlanOutline: async () => ({ path: '/plans/plan.md', outline: '# Plan' }),
+    });
+    try {
+      const root = await runtime.compactionAnchor({ sessionID: 'ses_root', directory: '/project' });
+      expect(root).toMatchObject({ available: true, kind: 'root' });
+      expect(root.text).toContain('File: /plans/plan.md');
+      const child = await runtime.compactionAnchor({ sessionID: 'ses_child', directory: '/project' });
+      expect(child).toMatchObject({ available: true, kind: 'child' });
+      expect(child.text).toContain('## Delegated assignment');
+      expect(child.text).toContain('"taskId":"dvr_task_active"');
+      expect(writes).toEqual([]);
+    } finally { await runtime.drain(); await fs.rm(directory, { recursive: true, force: true }); }
   });
 });

@@ -182,7 +182,7 @@ test('a renewed Designer completes without remounting while its sibling keeps ru
     childPromptedAt: 2_100, firstAssistantPartAt: 2_200,
   };
   const sibling = { ...running, taskId: 'dvr_task_sibling', sequence: 2, agent: 'fixer' };
-  const completed = { ...running, timeoutAt: 90_000, status: 'completed' as const, finishedAt: 80_000 };
+  const completed = { ...running, timeoutAt: 90_000, status: 'completed' as const, finishedAt: 80_000, recoverablePreview: '**Status:** complete' };
   const envelope = createManagedTaskResultEnvelope(completed, { sequence: 3, createdAt: 80_000, resumable: false });
   await withDom(async (container) => {
     const { createRoot } = await import('react-dom/client');

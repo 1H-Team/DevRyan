@@ -25,7 +25,9 @@ const accepted = evidence => validHash(evidence?.reportHash) && evidence.correct
 
 export const resolveDuplicateOutputPolicy = (environment = {}, profiles = DUPLICATE_OUTPUT_PROFILES) => {
   if (environment.DEVRYAN_DUPLICATE_OUTPUTS !== undefined) return environment.DEVRYAN_DUPLICATE_OUTPUTS === '1';
-  return profiles.some(profile => profile.defaultEnabled === true && accepted(profile.evidence));
+  // Without a qualifiable (non-stale) profile the default policy stays off, so
+  // requests skip per-turn qualification work that could never succeed.
+  return profiles.some(profile => profile.defaultEnabled === true && !profile.stale && accepted(profile.evidence));
 };
 
 export const createRuntimeDigestReader = (resolveBinary) => {
@@ -92,6 +94,7 @@ export const qualifyDuplicateOutputs = ({ managed, enabled, runtimeVersion, runt
     && duplicatePluginReleaseIdentity(candidate.plugins) !== null
     && JSON.stringify(duplicatePluginReleaseIdentity(candidate.plugins)) === JSON.stringify(duplicatePluginReleaseIdentity(inventory.entries)));
   if (!profile) return deny('profile-unqualified');
+  if (profile.stale) return deny('profile-stale');
   if (!identity(profile.id) || !accepted(profile.evidence)) return deny('acceptance-incomplete');
   return { qualified: true, profileId: profile.id, runtimeVersion, runtimeHash, ...selection,
     variant: selection.variant ?? null, configurationHash: inventory.configurationHash, contentHash: inventory.contentHash };

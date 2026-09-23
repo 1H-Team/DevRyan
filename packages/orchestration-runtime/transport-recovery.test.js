@@ -15,7 +15,7 @@ const done = (parentID) => ({
   parts: [{ type: 'text', text: 'Finished without repeating the completed edit' }],
 });
 
-const fixture = ({ onPrompt, beforeRead, afterReservation, persisted = null, persistenceFails = false } = {}) => {
+const fixture = ({ onPrompt, beforeRead, afterReservation, persisted = null, persistenceFails = false, priorFailureReason = null } = {}) => {
   let clock = 3_000;
   let messages = [user('msg_user'), failed('msg_failed', 'msg_user', [
     { type: 'text', text: 'Preserved completed work' },
@@ -35,6 +35,7 @@ const fixture = ({ onPrompt, beforeRead, afterReservation, persisted = null, per
     attempt: 2, priorTaskId: null, executionKind: 'resume', createdAt: 0, timeoutAt: null,
   }), status: 'running', startedAt: 1_000, transportRecovery: persisted };
   const control = {
+    readPriorFailureReason() { return priorFailureReason; },
     async markAccepted() { return true; },
     async recordProgress() { return true; },
     async recordTransportRecovery(receipt, expectedRevision) {
@@ -72,6 +73,77 @@ const fixture = ({ onPrompt, beforeRead, afterReservation, persisted = null, per
 };
 
 describe('durable managed transport recovery', () => {
+  const REGION_FAILURE = "Upstream request failed: This Go model requires Global regions. Select Global in your workspace's Privacy settings to use it.";
+  // v1.2.6-v1.2.9 validators accept only these kinds, fields and a spent
+  // same-model attempt; a downgrade must still load every persisted receipt.
+  const HISTORICAL_KINDS = ['request_timeout', 'response_header_timeout', 'stream_idle_timeout', 'connection_failure', 'provider_queue_timeout'];
+  const HISTORICAL_FIELDS = ['revision', 'phase', 'kind', 'sameModelAttempts', 'backupAttempts', 'failedMessageId',
+    'failedUserMessageId', 'recoveryMessageId', 'eventId', 'reservedAt', 'submittedAt'];
+  const expectHistoricalShape = (receipt) => {
+    expect(HISTORICAL_KINDS).toContain(receipt.kind);
+    expect(receipt.sameModelAttempts).toBe(1);
+    expect(Object.keys(receipt).every((key) => HISTORICAL_FIELDS.includes(key))).toBe(true);
+  };
+  const configurationBackup = ({ prior = REGION_FAILURE } = {}) => fixture({ priorFailureReason: prior, persisted: {
+    revision: 1, kind: 'connection_failure', phase: 'backup_pending',
+    sameModelAttempts: 1, backupAttempts: 1, failedMessageId: 'msg_failed',
+    failedUserMessageId: 'msg_user', recoveryMessageId: 'msg_user', eventId: 'evt_config',
+    reservedAt: 2_500, submittedAt: null,
+  } });
+
+  test('a configuration backup resumes the exact settled turn after native retry cancellation', async () => {
+    const f = configurationBackup();
+    f.task.executionKind = 'retry_in_place';
+    f.task.providerId = 'opencode';
+    f.task.modelId = 'deepseek-v4.1-flash';
+    const cancelled = failed('msg_failed', 'msg_user');
+    cancelled.info.error = { name: 'MessageAbortedError', data: { message: 'The operation was aborted' } };
+    f.setMessages([user('msg_user'), cancelled]);
+    expect(await f.executor.retryInPlace(f.task, f.control)).toMatchObject({ status: 'completed' });
+    expect(f.prompts).toHaveLength(1);
+    expect(f.prompts[0]).toMatchObject({ providerId: 'opencode', modelId: 'deepseek-v4.1-flash' });
+    expect(f.prompts[0].prompt).toContain('after a provider configuration rejection');
+    expect(f.saved).toMatchObject({ kind: 'connection_failure', sameModelAttempts: 1, backupAttempts: 1 });
+    for (const receipt of f.receipts) expectHistoricalShape(receipt);
+  });
+
+  test.each(['assistant', 'user', 'uncertain'])('configuration backup rejects changed or uncertain %s evidence', async (change) => {
+    const f = configurationBackup();
+    f.task.executionKind = 'retry_in_place';
+    const message = failed(change === 'assistant' ? 'msg_changed' : 'msg_failed', 'msg_user',
+      change === 'uncertain' ? [{ type: 'tool', tool: 'bash', callID: 'call_started',
+        state: { status: 'error', input: { command: 'submit-order' }, error: 'Tool execution aborted', time: { start: 1_000 } } }] : []);
+    f.setMessages([user(change === 'user' ? 'msg_changed' : 'msg_user'), message]);
+    expect(await f.executor.retryInPlace(f.task, f.control)).toMatchObject({ status: 'interrupted' });
+    expect(f.prompts).toHaveLength(0);
+    expect(f.saved.phase).toBe('blocked');
+  });
+
+  test('a transport backup without a configuration predecessor still requires a transient failure', async () => {
+    const f = configurationBackup({ prior: null });
+    f.task.executionKind = 'retry_in_place';
+    const cancelled = failed('msg_failed', 'msg_user');
+    cancelled.info.error = { name: 'MessageAbortedError', data: { message: 'The operation was aborted' } };
+    f.setMessages([user('msg_user'), cancelled]);
+    expect(await f.executor.retryInPlace(f.task, f.control)).toMatchObject({ status: 'interrupted' });
+    expect(f.prompts).toHaveLength(0);
+    expect(f.saved.phase).toBe('blocked');
+  });
+
+  test.each(['exact', 'assistant', 'user', 'uncertain'])('silent-stream backup requires the retained settled identity: %s', async (change) => {
+    const f = configurationBackup({ prior: null });
+    f.task.executionKind = 'retry_in_place';
+    f.task.transportRecovery.kind = 'stream_idle_timeout';
+    f.task.transportRecovery.sameModelAttempts = 1;
+    const message = failed(change === 'assistant' ? 'msg_changed' : 'msg_failed', 'msg_user',
+      change === 'uncertain' ? [{ type: 'tool', tool: 'bash', callID: 'call_started',
+        state: { status: 'error', input: {}, error: 'Tool execution aborted', time: { start: 1_000 } } }] : []);
+    message.info.error = { name: 'MessageAbortedError', data: { message: 'The operation was aborted' } };
+    f.setMessages([user(change === 'user' ? 'msg_changed' : 'msg_user'), message]);
+    expect(await f.executor.retryInPlace(f.task, f.control)).toMatchObject({ status: change === 'exact' ? 'completed' : 'interrupted' });
+    expect(f.prompts).toHaveLength(change === 'exact' ? 1 : 0);
+  });
+
   test('recovers the incident through the live event channel with its same child and model', async () => {
     const f = fixture();
     expect(await f.run()).toMatchObject({ status: 'completed' });

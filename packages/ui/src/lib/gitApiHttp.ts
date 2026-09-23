@@ -601,6 +601,7 @@ export async function generatePullRequestDescription(
 
 export async function listGitWorktrees(directory: string): Promise<GitWorktreeInfo[]> {
   const response = await fetch(buildUrl(`${API_BASE}/worktrees`, directory));
+  if (response.headers.get('X-OpenChamber-Warning')) throw new Error('Worktree discovery unavailable');
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || 'Failed to list worktrees');

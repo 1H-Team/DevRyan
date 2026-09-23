@@ -1,3 +1,4 @@
+import { buildKnownSessionDirectories } from '@/lib/worktrees/worktreeDiscovery';
 import { createSidebarRowModel, selectableModelRows } from './sidebar/sidebarRowModel';
 import { SidebarRowsContext } from './sidebar/SidebarRowsContext';
 import React from 'react';
@@ -19,7 +20,7 @@ import { useSessionPrefetch } from './sidebar/hooks/useSessionPrefetch';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { getSafeStorage } from '@/stores/utils/safeStorage';
-import { useGitStore, useGitAllBranches, useGitRepoStatusMap } from '@/stores/useGitStore';
+import { useGitAllBranches, useGitRepoStatusMap } from '@/stores/useGitStore';
 import { useSessionFoldersStore } from '@/stores/useSessionFoldersStore';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useArchivedAutoFolders } from './sidebar/hooks/useArchivedAutoFolders';
@@ -46,12 +47,11 @@ import { SidebarProjectsList } from './sidebar/SidebarProjectsList';
 import { SessionNodeItem } from './sidebar/SessionNodeItem';
 import { beginSessionNavigation } from '@/sync/session-load-performance';
 import type { SessionSearchDialogItem } from './sidebar/SessionSearchDialog';
-import { listProjectWorktrees } from '@/lib/worktrees/worktreeManager';
+import { useWorktreeDiscovery } from '@/lib/worktrees/useWorktreeDiscovery';
 import {
   filterUserVisibleSessions,
   isUserVisibleSessionRecord,
 } from '@/lib/sessionVisibility';
-import type { WorktreeMetadata } from '@/types/worktree';
 import type { SortableDragHandleProps } from './sidebar/sortableItems';
 import type {
   BulkDeleteSessionsConfirmState,
@@ -97,8 +97,6 @@ import type { GitHubAuthStatus } from '@/lib/api/types';
 import { markWorktreeBootstrapPending } from '@/lib/worktrees/worktreeBootstrap';
 import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
 import {
-  filterBranchBackedWorktrees,
-  filterWorktreesByGrantedBranches,
   isManagedBranchGranted,
 } from '@/lib/worktrees/managedBranches';
 import { archiveBranchSessions } from './sidebar/branchSessionCleanup';
@@ -111,23 +109,6 @@ const PROJECT_ACTIVE_SESSION_STORAGE_KEY = 'oc.sessions.activeSessionByProject';
 const SESSION_EXPANDED_STORAGE_KEY = 'oc.sessions.expandedParents';
 const SESSION_PINNED_STORAGE_KEY = 'oc.sessions.pinned';
 
-const buildKnownSessionDirectories = (
-  projects: Array<{ path: string }>,
-  availableWorktreesByProject: Map<string, WorktreeMetadata[]>,
-): Set<string> => {
-  const directories = new Set<string>();
-  for (const project of projects) {
-    const normalized = normalizePath(project.path)?.toLowerCase();
-    if (normalized) directories.add(normalized);
-  }
-  for (const worktrees of availableWorktreesByProject.values()) {
-    for (const worktree of worktrees) {
-      const normalized = normalizePath(worktree.path)?.toLowerCase();
-      if (normalized) directories.add(normalized);
-    }
-  }
-  return directories;
-};
 
 const isKnownActiveSessionDirectory = (session: Session, knownDirectories: Set<string>): boolean => {
   if (session.time?.archived) return true;
@@ -447,8 +428,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const availableWorktreesByProject = useSessionUIStore((state) => state.availableWorktreesByProject);
   const openNewSessionDraft = useSessionUIStore((state) => state.openNewSessionDraft);
   const knownSessionDirectories = React.useMemo(
-    () => buildKnownSessionDirectories(projects, availableWorktreesByProject),
-    [availableWorktreesByProject, projects],
+    () => buildKnownSessionDirectories(projects, availableWorktreesByProject, worktreeMetadata),
+    [availableWorktreesByProject, projects, worktreeMetadata],
   );
 
   const sessions = React.useMemo(() => {
@@ -514,54 +495,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     void refreshGlobalSessions(syncSessionsSnapshotRef.current);
   }, [currentDirectory, liveSessionStructureSignature]);
 
-  React.useEffect(() => {
-    let cancelled = false;
-
-    const discoverWorktrees = async () => {
-      const projectEntries = useProjectsStore.getState().projects;
-      if (projectEntries.length === 0) return;
-
-      const worktreesByProject = new Map<string, WorktreeMetadata[]>();
-      const allWorktrees: WorktreeMetadata[] = [];
-
-      await Promise.all(
-        projectEntries.map(async (project) => {
-          const projectPath = normalizePath(project.path);
-          if (!projectPath) return;
-          const filterByGrant = principal.scope === 'managed' && principal.role !== 'admin';
-          try {
-            // Use store-cached isGitRepo when available; fall back to direct check for initial worktree discovery
-            const cachedIsGitRepo = useGitStore.getState().directories.get(projectPath)?.isGitRepo;
-            const isGitRepo = cachedIsGitRepo ?? await import('@/lib/gitApi').then(m => m.checkIsGitRepository(projectPath));
-            if (!isGitRepo) return;
-            const discoveredWorktrees = await listProjectWorktrees({ id: project.id, path: projectPath });
-            const branchWorktrees = filterBranchBackedWorktrees(discoveredWorktrees);
-            const worktrees = filterByGrant
-              ? filterWorktreesByGrantedBranches(branchWorktrees, project, managedVisibleWorktreeDirectories)
-              : branchWorktrees;
-            if (cancelled || worktrees.length === 0) return;
-            worktreesByProject.set(projectPath, worktrees);
-            allWorktrees.push(...worktrees);
-          } catch {
-            // ignore discovery errors
-          }
-        }),
-      );
-
-      if (cancelled) return;
-
-      useSessionUIStore.setState({
-        availableWorktrees: allWorktrees,
-        availableWorktreesByProject: worktreesByProject,
-      });
-    };
-
-    void discoverWorktrees();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentDirectory, managedVisibleWorktreeDirectories, principal.role, principal.scope, projects]);
+  useWorktreeDiscovery(projects, principal, currentDirectory, managedVisibleWorktreeDirectories);
 
   React.useEffect(() => {
     let refreshTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -986,8 +920,9 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       normalizedProjects,
       availableWorktreesByProject,
       dedupeSessionsById([...sessions, ...archivedSessions]),
+      worktreeMetadata,
     ),
-    [archivedSessions, availableWorktreesByProject, normalizedProjects, sessions],
+    [archivedSessions, availableWorktreesByProject, normalizedProjects, sessions, worktreeMetadata],
   );
   useSessionFolderCleanup({
     isSessionsLoading,

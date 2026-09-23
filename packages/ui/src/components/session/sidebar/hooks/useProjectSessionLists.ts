@@ -95,9 +95,12 @@ export const useProjectSessionLists = (args: Args) => {
           .filter((value): value is string => Boolean(value)),
       ];
 
-      return collectProjectSessionsForDirectories(sessions, directories);
+      return dedupeSessionsById([
+        ...collectProjectSessionsForDirectories(sessions, directories),
+        ...sessions.filter(session => isSessionOwnedByProject(session, project.normalizedPath, sessionProjectOwnership)),
+      ]);
     },
-    [availableWorktreesByProject, sessions],
+    [availableWorktreesByProject, sessions, sessionProjectOwnership],
   );
 
   const getArchivedSessionsForProject = React.useCallback(

@@ -194,6 +194,7 @@ const createHarness = async ({
   onScheduledTaskAccessChanged = vi.fn(),
   ownershipWriteFailures = 0,
   ownershipWriteGate = null,
+  childOwnershipRetry = {},
   botHost = { owner: 'unsupported' },
   encryption = { getKey: null },
 } = {}) => {
@@ -281,6 +282,14 @@ const createHarness = async ({
           session.id,
           session.status || { type: 'idle' },
         ])));
+      }
+      const forkMatch = url.pathname.match(/^\/session\/([^/]+)\/fork$/);
+      if (forkMatch && method === 'POST') {
+        const source = mutableOpenCodeSessions.find((session) => session.id === decodeURIComponent(forkMatch[1]));
+        if (!source) return jsonResponse({ message: 'not found' }, 404);
+        const fork = { ...structuredClone(source), id: `forked-${source.id}`, time: { created: Date.now(), updated: Date.now() } };
+        mutableOpenCodeSessions.push(fork);
+        return jsonResponse(fork);
       }
       const sessionMatch = url.pathname.match(/^\/session\/([^/]+)$/);
       if (sessionMatch) {
@@ -701,6 +710,7 @@ const createHarness = async ({
       attempts: 4,
       timeoutMs: 5,
       delaysMs: [0, 0, 0],
+      ...childOwnershipRetry,
     },
     githubAuthStore: {
       getGitHubAuthById: (accountId) => githubAccountsById.get(accountId) || null,
@@ -1230,6 +1240,49 @@ describe('multi-user authentication runtime', () => {
     expect(harness.onManagedSessionOwnershipCommitted).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'created-session-1' }),
     );
+  });
+
+  it('fails and rolls back a fork whose ownership write stays unavailable instead of holding the request', async () => {
+    const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-session-fork-'));
+    temporaryDirectories.push(repositoryPath);
+    const project = {
+      id: '33333333-3333-4333-8333-333333333333', label: 'Fork Project', repository_path: repositoryPath,
+      remote_url: null, default_branch: 'main', status: 'active',
+    };
+    const ownershipWriteGate = deferred();
+    const harness = await createHarness({
+      signedInRole: 'admin',
+      projects: [project],
+      accessRows: [{ user_id: USER_IDS.admin, project_id: project.id, is_default: true, github_account_id: null }],
+      branchRows: [{ user_id: USER_IDS.admin, project_id: project.id, branch_name: 'main', workspace_path: repositoryPath, is_default: true }],
+      ownershipRows: [{ session_id: 'ses_parent', user_id: USER_IDS.admin, project_id: project.id, branch_name: 'main',
+        public_directory: '/projects/fork/main', archived_at: null }],
+      openCodeSessions: [{ id: 'ses_parent', title: 'Parent', directory: repositoryPath, time: { created: 1, updated: 1 } }],
+      ownershipWriteGate,
+      childOwnershipRetry: { childDurableWaitMs: 50 },
+    });
+    const handlers = new Map();
+    const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
+      method, (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+    ]));
+    harness.runtime.registerRoutes(app, { buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`, getOpenCodeAuthHeaders: () => ({}) });
+    const principal = { scope: 'managed', id: USER_IDS.admin, role: 'admin', assignments: [{
+      projectId: project.id, branchName: 'main', publicDirectory: '/projects/fork/main', repositoryPath, isDefault: true }] };
+    const response = makeResponse();
+    const started = Date.now();
+    await handlers.get('POST /api/session/:sessionID/fork')({
+      ...makeRequest({ method: 'POST', path: '/api/session/ses_parent/fork', csrf: true }),
+      originalUrl: '/api/session/ses_parent/fork', params: { sessionID: 'ses_parent' }, principal,
+    }, response, vi.fn());
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(response.statusCode).toBe(502);
+    expect(harness.openCodeDeleteRequests.map((request) => request.sessionId)).toEqual(['forked-ses_parent']);
+    await expect(harness.runtime.ownsSession(principal, 'forked-ses_parent')).resolves.toBe(false);
+    // The write that was in flight lands after the rollback and is removed again.
+    ownershipWriteGate.resolve();
+    await waitForCondition(() => harness.fetchImpl.mock.calls.some(([input, init]) => init?.method === 'DELETE'
+      && String(input).includes('opencode_session_ownership') && String(input).includes('forked-ses_parent')));
+    expect(harness.getOwnership('forked-ses_parent')).toBeFalsy();
   });
 
   it('rolls back one hidden root session after ownership retries are exhausted', async () => {
@@ -3536,6 +3589,30 @@ describe('multi-user authentication runtime', () => {
       agent: 'Unknown agent',
       fallbackExecution: { providerId: 'openai', modelId: 'must-not-run' },
     })).rejects.toMatchObject({ code: 'managed_agent_model_unavailable', statusCode: 409 });
+
+    // Parallel sub-agent dispatches for one owner share one principal load,
+    // and a transient Supabase failure serves the last good principal.
+    const profileReads = () => harness.fetchImpl.mock.calls.filter(([input]) => String(input).includes('/rest/v1/user_profiles')).length;
+    const before = profileReads();
+    const dispatch = () => harness.runtime.resolveSessionAgentExecution({
+      rootSessionId: 'ses_developer_root', directory: repositoryPath, agent: 'orchestrator' });
+    await expect(Promise.all(Array.from({ length: 8 }, dispatch))).resolves.toHaveLength(8);
+    expect(profileReads() - before).toBeLessThanOrEqual(1);
+    vi.useFakeTimers({ now: Date.now() + 31_000, toFake: ['Date'] });
+    const realFetch = harness.fetchImpl.getMockImplementation();
+    try {
+      // The cached principal has expired; its reload fails transiently.
+      const failedBefore = profileReads();
+      harness.fetchImpl.mockImplementation(async (input, init) => {
+        if (String(input).includes('/rest/v1/user_profiles')) throw new TypeError('fetch failed');
+        return realFetch(input, init);
+      });
+      await expect(dispatch()).resolves.toMatchObject({ modelId: 'claude-sonnet-4-6', source: 'personal' });
+      expect(profileReads()).toBeGreaterThan(failedBefore);
+      // Past the 5-minute grace, the outage is reported instead.
+      vi.setSystemTime(Date.now() + 5 * 60_000 + 1_000);
+      await expect(dispatch()).rejects.toBeDefined();
+    } finally { harness.fetchImpl.mockImplementation(realFetch); vi.useRealTimers(); }
   });
 
   it('resolves session owner keys and host backup executions without throwing on mismatches', async () => {

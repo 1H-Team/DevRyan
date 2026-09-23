@@ -173,10 +173,17 @@ export async function runQaMatrixCell(cell) {
     if (cell.transport === 'live') {
       const { prepareQaProfile, assertQaSelectedProviderDuration } = await import('./profile-preparation.mjs');
       profile = await prepareQaProfile({ runtimeRoot, workspace: fixture.fixtureRoot, providerId: cell.providerId, modelId: cell.modelId, variant: cell.variant,
-        agentAssignments: cell.agentAssignments, allowCrossProviderAssignments: cell.allowCrossProviderAssignments });
+        agentAssignments: cell.agentAssignments, allowCrossProviderAssignments: cell.allowCrossProviderAssignments, preserveOrchestration: cell.preserveOrchestration });
       evidence.profile = profile.evidence;
       evidence.credentialAdmission = assertQaSelectedProviderDuration(cell.providerId, profile.evidence.credentials, cell.timeoutMs);
-      evidence.specialistCredentialAdmission = [...new Set(Object.values(cell.agentAssignments ?? {}).map(selected => selected.providerId))]
+      evidence.preservedSelections = cell.preserveOrchestration ? Object.fromEntries(Object.entries(profile.evidence.agentSelections)
+        .filter(([name, selection]) => name !== cell.agent && typeof selection.model === 'string')
+        .map(([name, selection]) => { const split = selection.model.indexOf('/');
+          return [name, { providerId: selection.model.slice(0, split), modelId: selection.model.slice(split + 1), variant: selection.variant }]; })) : null;
+      const backupProviders = cell.preserveOrchestration ? Object.values(profile.evidence.orchestrationSidecar.agentBackupModels ?? {})
+        .filter(selection => typeof selection.model === 'string').map(selection => selection.model.split('/')[0]) : [];
+      evidence.specialistCredentialAdmission = [...new Set([
+        ...Object.values(evidence.preservedSelections ?? cell.agentAssignments ?? {}).map(selected => selected.providerId), ...backupProviders])]
         .map(providerId => assertQaSelectedProviderDuration(providerId, profile.evidence.credentials, cell.timeoutMs));
     } else {
       const { prepareQaFixtureProfile } = await import('./fixture-scenarios.mjs');
@@ -254,7 +261,7 @@ export async function runQaMatrixCell(cell) {
       advertisedVariant = cell.variant === null ? null : provider.models[cell.modelId].variants[cell.variant];
       evidence.advertisedVariantControls = projectReasoningOptions(advertisedVariant);
       const agents = await api('/api/agent');
-      evidence.specialistSelections = Object.entries(cell.agentAssignments ?? {}).map(([name, selected]) => {
+      evidence.specialistSelections = Object.entries(evidence.preservedSelections ?? cell.agentAssignments ?? {}).map(([name, selected]) => {
         const assignedProvider = catalog.all?.find(provider => provider.id === selected.providerId);
         const model = assignedProvider?.models?.[selected.modelId];
         const agent = agents.find(agent => agent.name === name) ?? (name === 'builder' ? agents.find(agent => agent.name === 'build') : null);

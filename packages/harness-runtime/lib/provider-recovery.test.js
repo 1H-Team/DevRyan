@@ -94,6 +94,11 @@ describe('failure classification', () => {
     expect(classifyPrimaryTransportError(timeout, '1.18.31')?.source).toBe('opencode_1.18.31_compatibility');
     expect(classifyPrimaryTransportError(timeout, '1.18.32')).toBeNull();
     expect(classifyPrimaryTransportError(timeout, undefined)).toBeNull();
+    // The bundled companion is its upstream base; nothing else borrows it.
+    expect(classifyPrimaryTransportError(timeout, '1.18.31-devryan.9')?.source).toBe('opencode_1.18.31_compatibility');
+    for (const version of ['1.18.32-devryan.1', '1.18.31-devryan', '1.18.31-beta.1', '1.18.31-devryan.9-x', 'x1.18.31-devryan.9']) {
+      expect(classifyPrimaryTransportError(timeout, version)).toBeNull();
+    }
     expect(classifyPrimaryTransportError({ name: 'UnknownError', message: 'request timeout' }, '1.18.25')).toBeNull();
     expect(classifyPrimaryTransportError({ name: 'UnknownError', message: 'request timeout' }, '1.18.26')).toBeNull();
   });
@@ -304,6 +309,73 @@ describe('managed objective continuation ownership', () => {
   const continuation = (overrides = {}) => ({ action: 'continuation', ...identity, userMessageID: 'msg_wake',
     anchorUserMessageID: 'msg_user', directory: '/project', kind: 'collect',
     execution: { providerID: 'openai', modelID: 'gpt-5.6-sol', agent: 'orchestrator', variant: 'xhigh' }, ...overrides });
+  test.each(['never_started', 'finished', 'uncertain', 'missing', 'wrong-message'])('collection requires exact durable failed-tool evidence: %s', async (outcome) => {
+    const f = await fixture();
+    delete f.state.messages.at(-1).info.error;
+    f.state.messages.at(-1).parts.push({ type: 'tool', callID: 'call_failed', state: { status: 'error', error: 'execution did not start' } });
+    f.state.executionOutcomes = outcome === 'missing' ? [] : [{ sessionID: identity.sessionID,
+      messageID: outcome === 'wrong-message' ? 'msg_other' : identity.assistantMessageID,
+      callID: 'call_failed', outcome: outcome === 'wrong-message' ? 'never_started' : outcome }];
+    await expect(f.controller.plugin(continuation({ kind: 'orchestrator_todo' }))).rejects.toMatchObject({ code: 'managed_continuation_fenced' });
+    if (['never_started', 'finished'].includes(outcome)) {
+      await expect(f.controller.plugin(continuation())).resolves.toMatchObject({ allowed: true });
+    } else await expect(f.controller.plugin(continuation())).rejects.toMatchObject({ code: 'managed_continuation_fenced' });
+    expect(f.sent).toEqual([]);
+  });
+  test('unreadable outcome evidence is retried, never persisted as a collection fence', async () => {
+    const f = await fixture({ verifyRecoveredCollection: async () => null });
+    delete f.state.messages.at(-1).info.error;
+    f.state.messages.at(-1).parts.push({ type: 'tool', callID: 'call_failed', state: { status: 'error', error: 'execution did not start' } });
+    f.state.executionOutcomes = [];
+    f.state.executionOutcomesUnavailable = true;
+    const collect = continuation({ collection: { taskId: 'dvr_task_busy', claimantId: 'plugin-one' } });
+    await expect(f.controller.plugin(collect)).rejects.toMatchObject({ code: 'managed_collection_evidence_unavailable' });
+    expect((await f.controller.readRecord(identity.sessionID)).collectionIssue ?? null).toBeNull();
+    f.state.executionOutcomesUnavailable = false;
+    f.state.executionOutcomes = [{ sessionID: identity.sessionID, messageID: identity.assistantMessageID, callID: 'call_failed', outcome: 'never_started' }];
+    await expect(f.controller.plugin(collect)).resolves.toMatchObject({ allowed: true });
+  });
+  test('persistently unreadable outcome evidence surfaces the result to the user and clears on collection', async () => {
+    const f = await fixture({ verifyRecoveredCollection: async () => null });
+    delete f.state.messages.at(-1).info.error;
+    f.state.messages.at(-1).parts.push({ type: 'tool', callID: 'call_failed', state: { status: 'error', error: 'execution did not start' } });
+    f.state.executionOutcomes = [];
+    f.state.executionOutcomesUnavailable = true;
+    const collect = continuation({ collection: { taskId: 'dvr_task_busy', claimantId: 'plugin-one' } });
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      await expect(f.controller.plugin(collect)).rejects.toMatchObject({ code: 'managed_collection_evidence_unavailable' });
+      expect((await f.controller.readRecord(identity.sessionID)).collectionIssue ?? null)
+        .toEqual(attempt < 5 ? null : { taskId: 'dvr_task_busy', code: 'managed_collection_unverified' });
+    }
+    f.state.executionOutcomesUnavailable = false;
+    f.state.executionOutcomes = [{ sessionID: identity.sessionID, messageID: identity.assistantMessageID, callID: 'call_failed', outcome: 'never_started' }];
+    await expect(f.controller.plugin(collect)).resolves.toMatchObject({ allowed: true });
+    expect((await f.controller.readRecord(identity.sessionID)).collectionIssue).toBeNull();
+  });
+  test('collection observations that keep timing out also surface the result', async () => {
+    let timingOut = false, f;
+    f = await fixture({ verifyRecoveredCollection: async () => null, observeTurn: async () => {
+      if (timingOut) throw Object.assign(new Error('timeout'), { code: 'recovery_observation_timeout' });
+      return structuredClone(f.state);
+    } });
+    timingOut = true;
+    const collect = continuation({ collection: { taskId: 'dvr_task_slow', claimantId: 'plugin-one' } });
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      await expect(f.controller.plugin(collect)).rejects.toMatchObject({ code: 'recovery_observation_timeout' });
+      expect((await f.controller.readRecord(identity.sessionID)).collectionIssue ?? null)
+        .toEqual(attempt < 5 ? null : { taskId: 'dvr_task_slow', code: 'managed_collection_unverified' });
+    }
+  });
+  test('a busy turn is fenced even when outcome evidence is unreadable', async () => {
+    const f = await fixture({ verifyRecoveredCollection: async () => null });
+    delete f.state.messages.at(-1).info.error;
+    f.state.messages.at(-1).parts.push({ type: 'tool', callID: 'call_failed', state: { status: 'error', error: 'execution did not start' } });
+    f.state.executionOutcomes = [];
+    f.state.executionOutcomesUnavailable = true;
+    f.state.status = 'busy';
+    await expect(f.controller.plugin(continuation({ collection: { taskId: 'dvr_task_busy', claimantId: 'plugin-one' } })))
+      .rejects.toMatchObject({ code: 'managed_continuation_fenced' });
+  });
   const land = (f, id) => {
     f.state.messages.push({ info: { id, role: 'user' }, parts: [{ type: 'text', synthetic: true,
       text: '[devryan-open-todo-continuation:v1]\nContinue current work.' }] },
@@ -321,6 +393,15 @@ describe('managed objective continuation ownership', () => {
     f.state.blocked = true; f.state.blockedByRequests = false; f.state.managedBarrierState = 'awaiting_acknowledgement';
     return f;
   };
+  test('a fenced collection journals which fence condition held it', async () => {
+    const f = await recoveredFixture({ verifyRecoveredCollection: async () => null });
+    await expect(f.controller.plugin(recovered())).rejects.toMatchObject({ code: 'managed_collection_unverified' });
+    const g = await recoveredFixture();
+    g.state.messages.at(-1).info.error = { name: 'APIError', data: { message: 'Invalid request body' } };
+    await expect(g.controller.plugin(recovered())).rejects.toMatchObject({ code: 'managed_continuation_fenced', fenceReason: 'turn_error' });
+    expect(g.incidents).toContainEqual(expect.objectContaining({ event: 'managed_collection_rejected',
+      code: 'managed_continuation_fenced', fenceReason: 'turn_error', taskId: proof.taskId }));
+  });
   test('incident: admits only a proven completed recovery after the parent API failure', async () => {
     const f = await recoveredFixture();
     await expect(f.controller.plugin(continuation())).rejects.toMatchObject({ code: 'managed_continuation_fenced' });
@@ -813,4 +894,40 @@ test('unsupported provider failure is projected for reconnect without enabling r
   await f.controller.admit({ sessionID: identity.sessionID, directory: '/project', primary: true,
     body: { messageID: 'msg_new', agent: 'orchestrator', model: { providerID: 'xai', modelID: 'grok-4.6' } } });
   expect((await f.snapshot()).record.failureObserved).toBe(false);
+});
+
+test('a replaced runtime sweeps stored objectives once, retires only deleted sessions, and summarizes', async () => {
+  let observations = 0;
+  let failure = null;
+  // Observe mode: an unobservable record is never escalated and used to stay
+  // 'observing' forever, re-swept on every start.
+  const f = await fixture({ mode: 'observe', observeTurn: async () => {
+    observations += 1;
+    if (failure) throw Object.assign(new Error('unavailable'), { code: 'recovery_observation_unavailable', upstreamStatus: failure,
+      ...(failure === 404 ? { sessionMissing: true } : {}) });
+    return { session: { id: identity.sessionID, directory: '/project' }, complete: true, status: 'busy', blocked: false, messages: [] };
+  } });
+  await f.controller.plugin({ action: 'step', ...identity });
+  f.advance(1_000);
+  const hello = (instanceID) => f.controller.plugin({ action: 'hello', instanceID, policyVersion: 1, version: '1.18.25' });
+  // A busy runtime at startup is transient: the objective survives.
+  failure = 503;
+  await hello('runtime-busy');
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect((await f.snapshot()).record.state).toBe('observing');
+  failure = 404;
+  f.advance(1_000);
+  await hello('runtime-next');
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const retired = (await f.snapshot()).record;
+  expect(retired).toMatchObject({ state: 'superseded', reason: 'recovery_runtime_replaced' });
+  const summaries = f.incidents.filter((entry) => entry.event === 'provider_recovery_sweep_summary');
+  expect(summaries).toHaveLength(2);
+  expect(summaries[0]).toMatchObject({ failed: 1, retired: 0 });
+  expect(summaries[1]).toMatchObject({ failed: 1, retired: 1 });
+  expect(f.incidents.some((entry) => entry.event === 'provider_recovery_observation_failed')).toBe(false);
+  const seen = observations;
+  await hello('runtime-next');
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(observations).toBe(seen);
 });

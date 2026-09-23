@@ -6,8 +6,22 @@ import { describe, expect, it, vi } from 'vitest';
 
 import request from '../../test-supertest.js';
 import { assertManagedQuotaCredential } from './credentials/providers.js';
-import { validateOpenCodeZenCredential } from './providers/opencode.js';
+import { createOpenCodeZenDeviceFlows, OpenCodeZenCredentialError } from './providers/opencode.js';
 import { registerQuotaRoutes } from './routes.js';
+
+const zenCredential = {
+  orgId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y',
+  accessToken: 'sess_old-secret',
+  refreshToken: 'rt_old-secret',
+  accessTokenExpiresAt: 1_789_000_000_000,
+};
+
+const jsonResponse = (payload, status = 200) => ({
+  ok: status >= 200 && status < 300,
+  status,
+  headers: { get: (name) => (name.toLowerCase() === 'content-type' ? 'application/json' : null) },
+  text: async () => JSON.stringify(payload),
+});
 
 const createApp = (overrides = {}) => {
   const app = express();
@@ -77,71 +91,128 @@ describe('managed quota credential routes', () => {
     expect(JSON.stringify(response.body)).not.toContain('secret-cookie');
   });
 
-  it('accepts the OpenCode Zen dashboard shape and never returns workspace or cookie values', async () => {
-    const { app, runtime } = createApp({
-      getStatus: vi.fn(() => ({
-        configured: true,
-        credentialKind: 'dashboard',
-        secretMasked: '••••••••',
-      })),
-      getEffectiveSource: vi.fn(() => 'managed'),
-    });
-    const credential = {
-      workspaceId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y',
-      authCookie: 'signed-cookie',
-    };
-    const response = await request(app)
-      .put('/api/quota/credentials/opencode')
-      .send(credential)
-      .expect(200);
-    expect(runtime.validate).toHaveBeenCalledWith('opencode', credential);
-    expect(runtime.writeCredential).toHaveBeenCalledWith('opencode', credential);
-    expect(response.body).toEqual({
-      configured: true,
-      credentialKind: 'dashboard',
-      secretMasked: '••••••••',
-      effectiveSource: 'managed',
-    });
-    expect(JSON.stringify(response.body)).not.toContain('wrk_');
-    expect(JSON.stringify(response.body)).not.toContain('signed-cookie');
+  it('refuses pasted OpenCode Zen credentials and points at device sign-in', async () => {
+    const { app, runtime } = createApp();
+    const legacy = { workspaceId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y', authCookie: 'pasted-secret' };
+    for (const response of [
+      await request(app).put('/api/quota/credentials/opencode').send(legacy).expect(400),
+      await request(app).post('/api/quota/credentials/opencode/validate').send(legacy).expect(400),
+    ]) {
+      expect(response.body.code).toBe('SIGN_IN_REQUIRED');
+      expect(JSON.stringify(response.body)).not.toContain('pasted-secret');
+    }
+    expect(runtime.validate).not.toHaveBeenCalled();
+    expect(runtime.writeCredential).not.toHaveBeenCalled();
   });
 
   it.each([
-    [403, '', 'AUTHENTICATION_FAILED', 400],
-    [200, '<html>Changed billing response</html>', 'PARSE_ERROR', 502],
-    [503, 'upstream-secret', 'API_ERROR', 502],
-    [0, '', 'TIMEOUT', 504],
-  ])('preserves Zen validation categories for HTTP %s and retains the saved credential', async (status, html, code, httpStatus) => {
-    const saved = { workspaceId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y', authCookie: 'old-secret' };
+    ['AUTHENTICATION_FAILED', 400],
+    ['WORKSPACE_INACCESSIBLE', 400],
+    ['PARSE_ERROR', 502],
+    ['API_ERROR', 502],
+    ['TIMEOUT', 504],
+  ])('preserves stored Zen validation category %s and retains the saved credential', async (code, httpStatus) => {
+    const saved = { ...zenCredential };
     const { app, runtime } = createApp({
       readCredential: vi.fn(() => saved),
-      validate: (_providerId, credential) => validateOpenCodeZenCredential(credential, {
-        fetchImpl: async () => {
-          if (!status) throw new DOMException('new-secret', 'TimeoutError');
-          return { ok: status === 200, status, headers: { get: () => null }, text: async () => html };
-        },
-      }),
+      validate: vi.fn(async () => { throw new OpenCodeZenCredentialError(code); }),
     });
-    const replaced = await request(app).put('/api/quota/credentials/opencode')
-      .send({ ...saved, authCookie: 'new-secret' }).expect(httpStatus);
-    const validated = await request(app).post('/api/quota/credentials/opencode/validate')
-      .send({}).expect(httpStatus);
-    for (const response of [replaced, validated]) {
-      expect(response.body.code).toBe(code);
-      expect(response.body.error).toBeTruthy();
-      expect(JSON.stringify(response.body)).not.toMatch(/old-secret|new-secret|upstream-secret|wrk_/);
-    }
+    const response = await request(app).post('/api/quota/credentials/opencode/validate').send({}).expect(httpStatus);
+    expect(response.body.code).toBe(code);
+    expect(response.body.error).toBeTruthy();
+    expect(JSON.stringify(response.body)).not.toMatch(/sess_|rt_/);
     expect(runtime.writeCredential).not.toHaveBeenCalled();
     expect(runtime.readCredential('opencode')).toBe(saved);
   });
 
-  it('rejects an empty Zen cookie before attempting validation', async () => {
-    const { app, runtime } = createApp();
-    await request(app).put('/api/quota/credentials/opencode').send({
-      workspaceId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y', authCookie: '   ',
-    }).expect(400);
-    expect(runtime.validate).not.toHaveBeenCalled();
-    expect(runtime.writeCredential).not.toHaveBeenCalled();
+  it('runs device sign-in without exposing the device code and saves only an approved, readable workspace', async () => {
+    let tokenCalls = 0;
+    const written = [];
+    const fetchImpl = vi.fn(async (url) => {
+      if (url.endsWith('/auth/device/code')) {
+        return jsonResponse({
+          device_code: 'device-secret',
+          user_code: 'PPSQ-ZZSW',
+          verification_uri: '/console/device',
+          verification_uri_complete: '/console/device?user_code=PPSQ-ZZSW&client_id=devryan',
+          expires_in: 900,
+          interval: 5,
+        });
+      }
+      if (url.endsWith('/auth/device/token')) {
+        tokenCalls += 1;
+        return tokenCalls === 1
+          ? jsonResponse({ _tag: 'DeviceTokenError', error: 'authorization_pending', error_description: 'x' }, 400)
+          : jsonResponse({ access_token: 'sess_new', refresh_token: 'rt_new', token_type: 'Bearer', expires_in: 3600, org_id: zenCredential.orgId });
+      }
+      if (url.includes('/api/billing/status')) return jsonResponse({ balanceMicroCents: '100000000', availableMicroCents: '100000000' });
+      if (url.includes('/api/usage/summary')) return jsonResponse({ totalCostMicroCents: '0' });
+      throw new Error(`unexpected ${url}`);
+    });
+    let clock = 1_000_000;
+    const deviceFlows = createOpenCodeZenDeviceFlows({
+      fetchImpl,
+      now: () => clock,
+      randomUUID: () => 'flow-1',
+      writeManagedCredential: (_providerId, credential) => written.push(credential),
+    });
+    const { app } = createApp({
+      deviceFlows,
+      getStatus: vi.fn(() => (written.length
+        ? { configured: true, credentialKind: 'oauth', workspaceId: zenCredential.orgId, secretMasked: '••••••••' }
+        : { configured: false })),
+      getEffectiveSource: vi.fn(() => (written.length ? 'managed' : null)),
+    });
+
+    const started = await request(app).post('/api/quota/credentials/opencode/device/start').expect(200);
+    expect(started.body).toEqual({
+      flowId: 'flow-1',
+      userCode: 'PPSQ-ZZSW',
+      verificationUri: 'https://opencode.ai/console/device',
+      verificationUriComplete: 'https://opencode.ai/console/device?user_code=PPSQ-ZZSW&client_id=devryan',
+      expiresIn: 900,
+      interval: 5,
+    });
+    expect(JSON.stringify(started.body)).not.toContain('device-secret');
+
+    // Polling faster than the console interval never reaches the console.
+    await request(app).post('/api/quota/credentials/opencode/device/poll').send({ flowId: 'flow-1' }).expect(200, { status: 'pending' });
+    expect(tokenCalls).toBe(0);
+    clock += 5_000;
+    await request(app).post('/api/quota/credentials/opencode/device/poll').send({ flowId: 'flow-1' }).expect(200, { status: 'pending' });
+    expect(tokenCalls).toBe(1);
+    clock += 5_000;
+    const approved = await request(app).post('/api/quota/credentials/opencode/device/poll').send({ flowId: 'flow-1' }).expect(200);
+    expect(approved.body).toEqual({
+      status: 'approved',
+      credential: {
+        configured: true,
+        credentialKind: 'oauth',
+        workspaceId: zenCredential.orgId,
+        secretMasked: '••••••••',
+        effectiveSource: 'managed',
+      },
+    });
+    expect(written).toEqual([{
+      orgId: zenCredential.orgId,
+      accessToken: 'sess_new',
+      refreshToken: 'rt_new',
+      accessTokenExpiresAt: clock + 3_600_000,
+    }]);
+    expect(JSON.stringify(approved.body)).not.toMatch(/sess_new|rt_new|device-secret/);
+
+    // A consumed flow cannot be replayed.
+    const replay = await request(app).post('/api/quota/credentials/opencode/device/poll').send({ flowId: 'flow-1' }).expect(404);
+    expect(replay.body.code).toBe('FLOW_NOT_FOUND');
+  });
+
+  it('cancels pending device sign-in and reports unknown flows', async () => {
+    const deviceFlows = { start: vi.fn(), poll: vi.fn(async () => { throw new OpenCodeZenCredentialError('FLOW_NOT_FOUND'); }), cancel: vi.fn() };
+    const { app } = createApp({ deviceFlows });
+    await request(app).post('/api/quota/credentials/opencode/device/cancel').send({ flowId: 'flow-1' }).expect(200, { status: 'cancelled' });
+    expect(deviceFlows.cancel).toHaveBeenCalledWith('flow-1');
+    const response = await request(app).post('/api/quota/credentials/opencode/device/poll').send({ flowId: 'missing' }).expect(404);
+    expect(response.body).toEqual({ code: 'FLOW_NOT_FOUND', error: 'This sign-in request expired. Start again.' });
   });
 
   it('does not write invalid credentials and emits stable error codes', async () => {

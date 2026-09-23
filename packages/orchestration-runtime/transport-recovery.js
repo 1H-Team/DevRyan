@@ -1,4 +1,4 @@
-import { PROVIDER_TRANSPORT_FAILURE_KINDS, classifyProviderTransportFailure } from './provider-retry-policy.js';
+import { PROVIDER_TRANSPORT_FAILURE_KINDS, classifyProviderTransportFailure, isProviderConfigurationFailure } from './provider-retry-policy.js';
 
 const PHASES = new Set(['backup_pending', 'reserved', 'submitted', 'recovered', 'exhausted', 'uncertain', 'blocked']);
 const KINDS = new Set(PROVIDER_TRANSPORT_FAILURE_KINDS);
@@ -36,11 +36,19 @@ export const validateManagedTransportRecovery = (value) => {
   return { ...value };
 };
 
+// The persisted receipt keeps the v1.2.6+ wire shape so older builds can load
+// it after a downgrade. A provider configuration rejection is classified from
+// the task's failure reason at runtime; its same-model budget is recorded as
+// spent because a retry on the same model can never succeed.
+export const isProviderConfigurationRecovery = (task) => Boolean(task?.transportRecovery)
+  && isProviderConfigurationFailure(task.failureReason);
+
 export const isManagedTransportBackupEligible = (task) => (
   task?.transportRecovery?.phase === 'exhausted'
   && task.transportRecovery.sameModelAttempts === 1
   && task.transportRecovery.backupAttempts === 0
-  && classifyProviderTransportFailure(null, task.failureReason) !== null
+  && (isProviderConfigurationFailure(task.failureReason)
+    || classifyProviderTransportFailure(null, task.failureReason) !== null)
 );
 
 /** OpenCode sorts message IDs; reserve a fresh ID beyond the canonical tail. */

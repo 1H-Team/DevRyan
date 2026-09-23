@@ -141,6 +141,7 @@ export function createBotHostStatusCache({ ttlMs = BOT_STATUS_CACHE_TTL_MS, now 
 
 export const resolveBotCapabilities = async ({
   hasSupabase,
+  supabaseMode = null,
   botHost,
   encryption,
   schemaFailure = null,
@@ -152,6 +153,11 @@ export const resolveBotCapabilities = async ({
 } = {}) => {
   const owner = typeof botHost?.owner === 'string' ? botHost.owner : 'unsupported';
   if (!hasSupabase) {
+    // A deliberate Supabase-off host is a final state; only an outage of a
+    // connected host is transient and worth retrying.
+    if (supabaseMode === 'disconnected' || supabaseMode === 'not_configured') {
+      return capability({ state: `supabase_${supabaseMode}`, code: 'bots_require_supabase', owner });
+    }
     return capability({
       state: 'supabase_unavailable',
       code: 'bots_supabase_unavailable',

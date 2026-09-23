@@ -18,6 +18,7 @@ import { createWebManagedOpenCodeExecutor } from '../packages/web/server/lib/orc
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import http from 'node:http';
+import { createHash } from 'node:crypto';
 import { createExecutionHostOwner, executionHostOwnerLost } from '../packages/harness-runtime/lib/execution-host-owner.js';
 
 const binary = process.env.DEVRYAN_TEST_OPENCODE_BINARY;
@@ -42,7 +43,7 @@ const bridge = createManagedOrchestrationPrivateHost({ handleRpc: ({ method, par
   }
   return host.plugin(params);
 } });
-let upstream, server, held, model, traceTimer, skillSource;
+let upstream, server, held, model, traceTimer, skillSource, browserHost;
 const request = async (route, body, base = origin) => {
   const url = new URL(route, base); url.searchParams.set('directory', directory);
   const response = await fetch(url, { method: body === undefined ? 'GET' : 'POST',
@@ -97,16 +98,49 @@ try {
   });
   await new Promise((resolve) => skillSource.listen(0, '127.0.0.1', resolve));
   const skillURL = `http://127.0.0.1:${skillSource.address().port}/`;
+  const transientContextPlugin = path.join(root, 'transient-context.mjs');
+  const browserPlugin = path.resolve('packages/web/server/default-config/plugins/devryan-browser.mjs');
+  const browserInstall = path.join(root, 'browser-install');
+  const browserBinary = path.join(browserInstall, 'node_modules/agent-browser/bin/fixture');
+  await fs.mkdir(path.dirname(browserBinary), { recursive: true });
+  await fs.writeFile(path.join(browserInstall, 'devryan-agent-browser.json'), '{}');
+  await fs.writeFile(browserBinary, `#!${process.execPath}\nimport('node:fs').then(fs=>{
+    if(process.env.DEVRYAN_BROWSER_CDP_TOKEN)throw new Error('credential leaked to browser CLI');
+    if(process.argv.includes('snapshot')){fs.writeFileSync('browser-owned.txt','captured-browser');console.log('Browser fixture snapshot');}
+    else console.log('Connected');});`, { mode: 0o755 });
+  const browserScopes = [];
+  browserHost = http.createServer(async (req, res) => {
+    assert.equal(req.headers.authorization, 'Bearer fixture-host-browser');
+    let body = ''; for await (const chunk of req) body += chunk;
+    browserScopes.push(JSON.parse(body));
+    assert.equal(browserScopes.at(-1).directory, directory);
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ leaseId: 'browser_owned', wsUrl: 'ws://127.0.0.1:54321/fixture', created: true }));
+  });
+  await new Promise(resolve => browserHost.listen(0, '127.0.0.1', resolve));
+  await fs.writeFile(transientContextPlugin, `export default async () => ({
+    'experimental.chat.messages.transform': async (_input, output) => {
+      const user = output.messages.findLast(message => message.info.role === 'user');
+      if (user) user.parts.push({ type: 'text', synthetic: true,
+        text: 'Preserve the complete fixture context through confined tool execution.',
+        metadata: { 'fixture.orchestrationReminder': true } });
+    },
+  });`);
   const env = { PATH: [path.dirname(ripgrep.path), process.env.PATH].filter(Boolean).join(path.delimiter),
     HOME: path.join(root, 'home'), XDG_CONFIG_HOME: path.join(root, 'config'),
     XDG_DATA_HOME: path.join(root, 'data'), XDG_CACHE_HOME: path.join(root, 'cache'), XDG_STATE_HOME: path.join(root, 'state'),
     OPENCODE_TEST_HOME: path.join(root, 'home'), OPENCODE_TEST_MANAGED_CONFIG_DIR: path.join(root, 'managed'),
     OPENCODE_DISABLE_DEFAULT_PLUGINS: 'true', OPENCODE_DISABLE_MODELS_FETCH: 'true', OPENCODE_DISABLE_PROJECT_CONFIG: 'true',
     OPENCODE_DISABLE_AUTOUPDATE: 'true', OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: 'true',
-    OPENCODE_CONFIG_CONTENT: JSON.stringify({ plugin: [pathToFileURL(path.join(contextModules, 'context-mode/build/adapters/opencode/plugin.js')).href],
-      model: 'fixture/fixture', small_model: 'fixture/fixture', provider: { fixture: model.config, 'cursor-acp': { ...model.config, models: { 'composer-2.5': model.config.models.fixture } } },
+    DEVRYAN_BROWSER_CDP_DISCOVERY_URL: `http://127.0.0.1:${browserHost.address().port}/api/desktop/browser-cdp`,
+    DEVRYAN_BROWSER_CDP_TOKEN: 'fixture-host-browser', DEVRYAN_AGENT_BROWSER_BIN: browserBinary,
+    DEVRYAN_EXECUTION_BROWSER_PLUGIN: createHash('sha256').update(await fs.readFile(browserPlugin)).digest('hex'),
+    OPENCODE_CONFIG_CONTENT: JSON.stringify({ plugin: [pathToFileURL(transientContextPlugin).href, pathToFileURL(browserPlugin).href,
+      pathToFileURL(path.join(contextModules, 'context-mode/build/adapters/opencode/plugin.js')).href],
+      model: 'fixture/fixture', small_model: 'fixture/fixture', provider: { fixture: { ...model.config, models: { ...model.config.models, 'gpt-fixture': model.config.models.fixture } }, 'cursor-acp': { ...model.config, models: { 'composer-2.5': model.config.models.fixture } } },
       skills: { paths: ['~/custom-skills'], urls: [skillURL] },
-      mcp: {}, snapshot: false, permission: 'allow' }),
+      mcp: {}, snapshot: false, permission: 'allow',
+      ...(process.platform === 'darwin' ? { shell: '/bin/zsh' } : {}) }),
     ...await bridge.start(), DEVRYAN_EXECUTION_BOUNDARY: '1', DEVRYAN_EXECUTION_TRACE: '1' };
   await fs.mkdir(env.HOME, { recursive: true });
   await fs.writeFile(path.join(env.HOME, '.devryan-qa-home'), 'isolated Revert verification');
@@ -198,8 +232,35 @@ try {
   assert.equal(ownedReceipts.length, 2);
   assert(ownedReceipts.every((receipt) => receipt.source === 'confined-execution'));
   console.log('PASS: concurrent shell Revert, late publication, and Redo');
+  const temporary = await request('/session', { title: 'Confined temporary files' });
+  await shell(temporary.id, node('const fs=require("node:fs"),os=require("node:os"),path=require("node:path"); if(os.tmpdir()!==process.env.HOME) throw new Error("temporary files escaped scratch home"); const dir=fs.mkdtempSync(path.join(os.tmpdir(),"tool-temp-")); fs.writeFileSync(path.join(dir,"scratch"),"private"); fs.rmSync(dir,{recursive:true}); fs.writeFileSync("temp-check.txt","scratch-ok")'));
+  assert.equal(await fs.readFile(path.join(directory, 'temp-check.txt'), 'utf8'), 'scratch-ok');
+  if (process.platform === 'darwin') {
+    const diagnostic = setTimeout(() => {
+      void (async () => {
+        const exists = await fs.access(path.join(directory, 'heredoc-check.txt')).then(() => true, () => false);
+        const { stdout } = await promisify(execFile)('ps', ['-Ao', 'pid=,ppid=,state=,comm=']);
+        const processes = stdout.split('\n').map((line) => {
+          const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.+)$/);
+          return match ? { pid: Number(match[1]), ppid: Number(match[2]), state: match[3], command: match[4] } : null;
+        }).filter(Boolean);
+        const relevant = new Set(processes.filter(({ command }) => /DevRyan-(?:opencode|execution)/.test(command)).map(({ pid }) => pid));
+        for (let i = 0; i < 3; i++) for (const row of processes) if (relevant.has(row.ppid)) relevant.add(row.pid);
+        console.error('Heredoc still running', { exists,
+          processes: processes.filter(({ pid, command }) => relevant.has(pid) || /\/(?:zsh|bash|sh|cat)$/.test(command)) });
+      })().catch((error) => console.error('Heredoc diagnostic failed', error));
+    }, 15_000);
+    let heredoc;
+    try { heredoc = await shell(temporary.id, 'cat <<EOF > heredoc-check.txt\nheredoc-ok\nEOF\n'); }
+    finally { clearTimeout(diagnostic); }
+    assert.equal(await fs.stat(path.join(directory, 'heredoc-check.txt')).then(() => true, () => false), true,
+      `Confined heredoc did not publish: ${JSON.stringify(heredoc)}`);
+    assert.equal(await fs.readFile(path.join(directory, 'heredoc-check.txt'), 'utf8'), 'heredoc-ok\n',
+      `Confined heredoc published unexpected content: ${JSON.stringify(heredoc)}`);
+  }
+  console.log('PASS: native tools keep temporary files and shell heredocs inside their scratch home');
   const invoke = async (sessionID, name, args) => {
-    const result = await request(`/session/${sessionID}/message`, { model: { providerID: 'fixture', modelID: 'fixture' },
+    const result = await request(`/session/${sessionID}/message`, { model: { providerID: 'fixture', modelID: name === 'apply_patch' ? 'gpt-fixture' : 'fixture' },
       agent: 'build', parts: [{ type: 'text', text: `DEVRYAN_FIXTURE_TOOL:${JSON.stringify({ name, args })}` }] });
     const messages = await request(`/session/${sessionID}/message`);
     const call = messages.filter((message) => message.info.parentID === result.info.parentID)
@@ -209,6 +270,16 @@ try {
     assert.equal(call.state.status, 'completed', JSON.stringify(call));
     return { result, call };
   };
+  const browserSession = await request('/session', { title: 'Confined browser' });
+  const browserResult = await invoke(browserSession.id, 'devryan_browser', { command: 'snapshot', args: [] });
+  assert(browserResult.call.state.output.includes('Browser fixture snapshot'));
+  // Browser CLI output lives in the shared execution cache, outside the
+  // project view. It must not become a project mutation or Revert input.
+  await assert.rejects(fs.access(path.join(directory, 'browser-owned.txt')), { code: 'ENOENT' });
+  assert(browserScopes.every(scope => scope.opencodeSessionID === browserSession.id && scope.messageID === browserResult.result.info.parentID));
+  await host.coordinator.revert({ directory, sessionID: browserSession.id, messageID: browserResult.result.info.parentID });
+  await assert.rejects(fs.access(path.join(directory, 'browser-owned.txt')), { code: 'ENOENT' });
+  console.log('PASS: scoped browser capability, cache output isolation and Revert');
   const skills = await request('/session', { title: 'Selected skills' });
   // Includes consecutive leases and a return to the first skill, with real
   // global, project, tilde, symlink and downloaded-cache discovery.
@@ -245,6 +316,18 @@ try {
     parts: [{ type: 'file', mime: 'text/plain', url: pathToFileURL(path.join(directory, 'direct.txt')).href }] });
   assert(attached.parts.some((part) => part.type === 'text' && part.text.includes('second')), 'Attached file expansion retains its read-only context');
   console.log('PASS: native Write and Edit dispatch through confined views and file attachment expansion');
+  await invoke(direct.id, 'apply_patch', { patchText: [
+    '*** Begin Patch', `*** Add File: ${path.join(directory, 'patch-added.txt')}`,
+    `+literal ${directory}/keep-this-content`, `*** Update File: ${path.join(directory, 'direct.txt')}`,
+    `*** Move to: ${path.join(directory, 'patch-moved.txt')}`, '@@', '-second', '+patched', '*** End Patch',
+  ].join('\n') });
+  assert.equal(await fs.readFile(path.join(directory, 'patch-added.txt'), 'utf8'), `literal ${directory}/keep-this-content\n`);
+  assert.equal(await fs.readFile(path.join(directory, 'patch-moved.txt'), 'utf8'), 'patched\n');
+  await assert.rejects(fs.access(path.join(directory, 'direct.txt')), { code: 'ENOENT' });
+  await invoke(direct.id, 'apply_patch', { patchText: `*** Begin Patch\n*** Delete File: ${path.join(directory, 'patch-added.txt')}\n*** End Patch` });
+  await assert.rejects(fs.access(path.join(directory, 'patch-added.txt')), { code: 'ENOENT' });
+  console.log('PASS: native absolute patch add/update/move/delete use confined views and preserve literal file contents');
+
   const context = await request('/session', { title: 'Native Context Mode' });
   await invoke(context.id, 'ctx_execute', { language: 'javascript', code: 'require("node:fs").writeFileSync("context.txt", "owned-context"); console.log("context-written")' });
   assert.equal(await fs.readFile(path.join(directory, 'context.txt'), 'utf8'), 'owned-context');
@@ -283,7 +366,14 @@ try {
   assert.equal((await host.runtime.activeLeases({ directory, sessions: [active.id] })).length, 0);
   console.log('PASS: Revert cancels the target process tree before acknowledging');
   const worker = path.join(root, 'cursor-fixture.mjs');
-  await fs.writeFile(worker, `import fs from 'node:fs'; let raw=''; for await(const chunk of process.stdin) raw+=chunk;
+  const qaHome = path.join(root, 'qa-home'); await fs.mkdir(qaHome);
+  await fs.writeFile(path.join(qaHome, '.devryan-qa-home'), 'isolated fixture');
+  await fs.writeFile(worker, `import fs from 'node:fs'; import os from 'node:os'; import assert from 'node:assert/strict';
+    process.env.DEVRYAN_QA_HOME=${JSON.stringify(qaHome)};
+    await import(${JSON.stringify(new URL('./qa/isolated-home.mjs', import.meta.url).href)});
+    assert.equal(os.homedir(),process.env.HOME); assert.notEqual(os.homedir(),process.env.DEVRYAN_QA_HOME);
+    fs.mkdirSync(os.homedir()+'/.cursor',{recursive:true}); fs.writeFileSync(os.homedir()+'/.cursor/database-fixture','writable');
+    let raw=''; for await(const chunk of process.stdin) raw+=chunk;
     const input=JSON.parse(raw); const held=JSON.stringify(input).includes('HoldCursor'); fs.writeFileSync(held?'cursor-held.txt':'cursor.txt','cursor-owned');
     if(held){console.log(JSON.stringify({type:'message',message:{type:'assistant',message:{content:[{type:'text',text:'cursor-active-ready'}]}}}));await new Promise(()=>{setInterval(()=>{},1000)});}
     console.log(JSON.stringify({type:'message',message:{type:'assistant',message:{content:[{type:'text',text:'Cursor fixture complete.'}]}}}));
@@ -323,6 +413,7 @@ try {
 } catch (cause) {
   console.error(upstream?.getLog()); throw cause;
 } finally {
+  if (browserHost) await new Promise((resolve) => browserHost.close(resolve));
   if (skillSource) await new Promise((resolve) => skillSource.close(resolve));
   clearInterval(traceTimer);
   await cursor?.dispose();

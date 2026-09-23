@@ -2,6 +2,7 @@ import React from 'react';
 import { RiExternalLinkLine } from '@remixicon/react';
 import {
   formatManagedTaskDisplayName,
+  readManagedResultReport,
   type ManagedTaskEventRecord,
 } from '@openchamber/orchestration-runtime';
 
@@ -30,11 +31,26 @@ import { useManagedTaskTitle } from './managedTaskTitle';
 type ManagedTaskRowTask = ManagedTaskProjectedRecord;
 type ManagedTaskRowEnvelope = ManagedTaskProjectedEnvelope;
 
+// An ambiguous report (several or misplaced **Status:** lines) is a warning
+// only when one of those lines reports blocked work.
+const BLOCKED_STATUS_LINE = /^\*\*Status:\*\*\s*blocked\b/im;
+const reportsBlocked = (report: ReturnType<typeof readManagedResultReport>, preview: string) => (
+  report.terminalMarker === 'ambiguous' && BLOCKED_STATUS_LINE.test(preview)
+);
+
 const getStatusPresentation = (
-  task: Pick<ManagedTaskRowTask, 'executionKind' | 'status' | 'childPromptedAt' | 'firstAssistantPartAt'>,
+  task: Pick<ManagedTaskRowTask, 'executionKind' | 'status' | 'childPromptedAt' | 'firstAssistantPartAt' | 'recoverablePreview' | 'partial'>,
   t: ReturnType<typeof useI18n>['t'],
 ) => {
   if (task.status === 'completed') {
+    // Only a blocked child report or a partial result changes the label.
+    // Agents without a final **Status:** line, previews truncated before it,
+    // and cosmetic marker drift ("**Status:** Complete.") stay completions.
+    const report = readManagedResultReport(task.recoverablePreview);
+    if (report.terminalMarker === 'blocked' || reportsBlocked(report, task.recoverablePreview) || task.partial) {
+      return { label: t(report.terminalMarker === 'blocked' ? 'chat.managedTasks.summary.childBlocked'
+        : 'chat.managedTasks.summary.needsReview'), className: 'text-[var(--status-warning)]' };
+    }
     return { label: t('chat.managedTasks.summary.complete'), className: 'text-[var(--status-success)]' };
   }
   if (task.status === 'failed' || task.status === 'aborted' || task.status === 'interrupted') {
@@ -94,6 +110,9 @@ const getProviderFailurePresentation = ({
       className: 'text-[var(--status-warning)]',
       role: 'status' as const,
     };
+  }
+  if (task.failureKind === 'provider_configuration') {
+    return { message: task.failureReason, className: 'text-[var(--status-warning)]', role: 'alert' as const };
   }
   if (task.failureKind === 'provider_transport') {
     return {
@@ -176,6 +195,8 @@ const getProviderFailurePresentation = ({
     && (task.executionKind === 'retry_in_place' || task.executionKind === 'recover_in_place');
   const recoveredTransport = task.transportRecovery?.phase === 'recovered';
   if (task.status !== 'completed' || !(continuedAfterLimit || recoveredSameChild || recoveredTransport)) return null;
+  const report = readManagedResultReport(task.recoverablePreview);
+  if (task.partial || report.terminalMarker === 'blocked' || reportsBlocked(report, task.recoverablePreview)) return null;
 
   return {
     message: t('chat.managedTasks.providerLimit.recovered', {
@@ -267,6 +288,7 @@ export const ManagedTaskRowView = React.memo(({
     && (
       task.failureKind === 'provider_usage_limit'
       || task.failureKind === 'provider_authentication'
+      || task.failureKind === 'provider_configuration'
       || task.failureKind === 'model_unavailable'
       || Boolean(task.transportRecovery)
       || (task.mode === 'orchestrator' && task.dispatchGrouped && task.attempt >= 2)

@@ -72,16 +72,29 @@ export async function executionHostOwnerLost({ directory, launcher, id }) {
   });
 }
 
-/** Cache one attempt; initialization failures are retryable only once reaped. */
-export function executionOwnerFactory(create) {
-  let current;
-  return () => {
-    if (current) return current;
-    const attempt = Promise.resolve().then(create);
-    current = attempt;
-    void attempt.catch((cause) => {
-      if (current === attempt && cause.code !== 'execution_owner_termination_unconfirmed') current = undefined;
+/** Cache one attempt; initialization failures are retryable only once reaped.
+ * A keeper lost after startup invalidates only its own instance: the next
+ * caller retires it (drain and authoritative reap) and creates a new owner
+ * with a new identity. Leases of the lost owner keep the owner-lost rules; an
+ * unconfirmed reap stays a cached, non-retryable failure. */
+export function executionOwnerFactory(create, {
+  isLost = (value) => Boolean(value?.owner?.signal?.aborted),
+  retire = (value) => value?.owner?.close?.(),
+} = {}) {
+  let current, resolved;
+  const start = (task) => {
+    const attempt = Promise.resolve().then(task);
+    current = attempt; resolved = undefined;
+    void attempt.then((value) => { if (current === attempt) resolved = value; }, (cause) => {
+      if (current === attempt && cause?.code !== 'execution_owner_termination_unconfirmed') current = undefined;
     });
     return attempt;
+  };
+  return () => {
+    if (current && resolved !== undefined && isLost(resolved)) {
+      const lost = resolved;
+      return start(async () => { await retire(lost); return create(); });
+    }
+    return current ?? start(create);
   };
 }

@@ -29,6 +29,19 @@ const transportFailed = async (_task, control) => {
 };
 
 describe('managed transport backup policy', () => {
+  test('region rejection uses the configured backup without a same-model attempt or quota probing', async () => {
+    const failureReason = "Upstream request failed: This Go model requires Global regions. Select Global in your workspace's Privacy settings to use it.";
+    const task = record(1, { failureReason, transportRecovery: transportReceipt() });
+    const envelope = createManagedTaskResultEnvelope(task, { sequence: 1, createdAt: START, resumable: true });
+    const h = createHarness({ persistence: snapshotPersistence({ version: 1, tasks: [task], resultEnvelopes: [envelope] }) });
+    try {
+      await h.scheduler.initialize();
+      await h.advance(15_000);
+      expect(h.attempts).toHaveLength(1);
+      expect(h.inPlaceRetries).toHaveLength(1);
+      expect(h.scheduler.getDiagnostics().providerBreakerCount).toBe(0);
+    } finally { await h.scheduler.shutdown(); }
+  });
   test('an unknown backup does not postpone a primary reset that arrives during catalog deferral', async () => {
     const h = createHarness({ startResult: limited(START + 45_000), attemptOutcome: async () => ({
       outcome: 'deferred', retryAfterMs: 30_000, reason: 'backup_availability_unknown',

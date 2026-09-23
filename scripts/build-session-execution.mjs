@@ -28,8 +28,11 @@ try {
   if (process.platform === 'darwin') {
     const spawnSource = path.join(root, 'packages/harness-runtime/native/session-spawn-darwin.c');
     const spawnLibrary = `${name}-spawn.dylib`;
+    // The library is inserted into every confined child. Apple arm64 system
+    // binaries such as /bin/cat are arm64e and refuse an arm64-only library.
+    const architectures = process.arch === 'arm64' ? ['-arch', 'arm64', '-arch', 'arm64e'] : [];
     await promisify(execFile)(process.env.CC || 'cc', ['-std=c11', '-Wall', '-Wextra', '-Werror', '-O2', '-dynamiclib',
-      spawnSource, '-o', path.join(output, spawnLibrary)], { cwd: root, timeout: 60_000, maxBuffer: 1024 * 1024 });
+      ...architectures, spawnSource, '-o', path.join(output, spawnLibrary)], { cwd: root, timeout: 60_000, maxBuffer: 1024 * 1024 });
     manifest.spawnLibrary = spawnLibrary;
     manifest.spawnSha256 = hash(await fs.readFile(path.join(output, spawnLibrary)));
   }

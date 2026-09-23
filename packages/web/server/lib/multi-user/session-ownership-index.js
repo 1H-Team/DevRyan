@@ -58,6 +58,9 @@ export async function createSessionOwnershipIndex({ dataDirectory }) {
   const filePath = path.join(directory, 'session-ownership.json');
   const rows = new Map();
   const pendingRefreshes = new Set();
+  // Rows whose remote write is still in flight: a rebuild from remote rows
+  // that predate the write keeps them. A local delete still removes them.
+  const pinned = new Set();
   let writeTail = Promise.resolve();
 
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
@@ -99,6 +102,10 @@ export async function createSessionOwnershipIndex({ dataDirectory }) {
       if (row) next.set(sessionId, row);
       else next.delete(sessionId);
     }
+    for (const sessionId of pinned) {
+      const row = rows.get(sessionId);
+      if (row && !next.has(sessionId)) next.set(sessionId, row);
+    }
     rows.clear();
     for (const [sessionId, row] of next) rows.set(sessionId, row);
     await persist();
@@ -139,6 +146,13 @@ export async function createSessionOwnershipIndex({ dataDirectory }) {
       return changed;
     },
     rebuild,
+    pin(sessionId) {
+      const normalizedId = String(sessionId || '').trim();
+      if (!normalizedId) return () => {};
+      pinned.add(normalizedId);
+      // A refresh that began while pinned must keep the row it did not see.
+      return () => { pinned.delete(normalizedId); recordChange(normalizedId); };
+    },
     beginRefresh() {
       const changedIds = new Set();
       pendingRefreshes.add(changedIds);

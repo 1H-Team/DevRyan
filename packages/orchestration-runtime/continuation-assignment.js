@@ -30,3 +30,20 @@ export const stripManagedAssignment = (value) => {
     return value;
   }
 };
+
+const boundedPrompt = (value, maxBytes) => {
+  if (Buffer.byteLength(value) <= maxBytes) return { text: value, truncated: false };
+  let text = Buffer.from(value).subarray(0, maxBytes).toString('utf8');
+  if (text.endsWith('\uFFFD')) text = text.slice(0, -1);
+  return { text, truncated: true };
+};
+
+/** The delegated brief, bounded, for a child's native compaction summary. It
+ * uses the same authoritative rule and fields as continuation prompts. */
+export const formatManagedAssignmentContext = (task, { maxPromptBytes = 8192 } = {}) => {
+  const assignment = Object.fromEntries(FIELDS.map((key) => [key, task?.[key]]));
+  if (!validAssignment(assignment)) return null;
+  const prompt = boundedPrompt(assignment.prompt, maxPromptBytes);
+  return `${ASSIGNMENT_RULE}${task.readOnly === true ? ' This assignment is read-only: do not modify files.' : ''}\n`
+    + JSON.stringify({ ...assignment, prompt: prompt.text, ...(prompt.truncated ? { promptTruncated: true } : {}) });
+};

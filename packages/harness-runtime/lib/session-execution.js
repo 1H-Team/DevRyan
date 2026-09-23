@@ -10,9 +10,31 @@ const sbString = (value) => {
   return JSON.stringify(value);
 };
 
+// Verified launcher identities keyed by the exact file identities hashed.
+// Any rewrite, rename-over, chmod or replacement changes ino/ctime and forces
+// a full re-hash; only successful verifications are remembered.
+const verifiedLaunchers = new Map();
+// Only regular files are cached: a symlink's own identity does not change
+// when its target is rewritten, so linked artifacts are always re-hashed.
+const fileIdentity = async (file) => {
+  const stat = await fs.lstat(file, { bigint: true });
+  if (!stat.isFile()) return null;
+  return [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs, stat.mode].join(':');
+};
+const identityOf = async (files) => {
+  const identities = await Promise.all(files.map(fileIdentity));
+  return identities.includes(null) ? null : identities.join('|');
+};
+
 export async function verifySessionExecutionLauncher({ launcher, platform = process.platform }) {
   if (!['darwin', 'linux', 'win32'].includes(platform) || !path.isAbsolute(launcher ?? '')) return false;
+  const cacheKey = `${platform}\0${process.arch}\0${launcher}`;
   try {
+    const spawnLibrary = platform === 'darwin' ? path.join(path.dirname(launcher), `${path.basename(launcher)}-spawn.dylib`) : null;
+    const artifacts = [launcher, `${launcher}.json`, ...(spawnLibrary ? [spawnLibrary] : [])];
+    const identity = await identityOf(artifacts);
+    if (identity && verifiedLaunchers.get(cacheKey) === identity) return true;
+    verifiedLaunchers.delete(cacheKey);
     const manifest = JSON.parse(await fs.readFile(`${launcher}.json`, 'utf8'));
     const stat = await fs.lstat(launcher);
     if (!stat.isFile() || stat.size > 1024 * 1024 || manifest.version !== 1 || manifest.policy !== 2 || manifest.acceptance !== true
@@ -21,8 +43,14 @@ export async function verifySessionExecutionLauncher({ launcher, platform = proc
       if (manifest.spawnLibrary !== `${path.basename(launcher)}-spawn.dylib`) return false;
       if (createHash('sha256').update(await fs.readFile(path.join(path.dirname(launcher), manifest.spawnLibrary))).digest('hex') !== manifest.spawnSha256) return false;
     }
-    return createHash('sha256').update(await fs.readFile(launcher)).digest('hex') === manifest.sha256;
-  } catch { return false; }
+    if (createHash('sha256').update(await fs.readFile(launcher)).digest('hex') !== manifest.sha256) return false;
+    // Re-read identities after hashing: a concurrent replacement is not cached.
+    if (identity && await identityOf(artifacts) === identity) {
+      verifiedLaunchers.set(cacheKey, identity);
+      while (verifiedLaunchers.size > 8) verifiedLaunchers.delete(verifiedLaunchers.keys().next().value);
+    }
+    return true;
+  } catch { verifiedLaunchers.delete(cacheKey); return false; }
 }
 
 export function sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory }) {
@@ -79,12 +107,14 @@ export async function prepareSessionExecution({ launcher, lease }) {
   const cancelEvent = `Local\\DevRyan-execution-${randomUUID()}`;
   return { launcher, arguments: [viewDirectory, scratchDirectory, profile, path.join(root, 'termination.json'), '--'],
     cwd: workingDirectory, profile, scratchDirectory,
-    environment: { DEVRYAN_EXECUTION_CWD: workingDirectory, DEVRYAN_EXECUTION_CANCEL_EVENT: cancelEvent,
+    environment: { DEVRYAN_EXECUTION_WORKER: '1', HOME: scratchDirectory,
+      DEVRYAN_EXECUTION_CWD: workingDirectory, DEVRYAN_EXECUTION_CANCEL_EVENT: cancelEvent,
       DEVRYAN_EXECUTION_CACHE: auxiliaryDirectory, CONTEXT_MODE_DIR: auxiliaryDirectory,
       CONTEXT_MODE_DATA_DIR: auxiliaryDirectory,
       ...(process.platform === 'darwin' ? { DYLD_INSERT_LIBRARIES: `${launcher}-spawn.dylib`,
         ZDOTDIR: scratchDirectory, BASH_ENV: path.join(scratchDirectory, '.bash-env') } : {}),
-      TMPDIR: scratchDirectory, TMP: scratchDirectory, TEMP: scratchDirectory } };
+      TMPDIR: scratchDirectory, TMP: scratchDirectory, TEMP: scratchDirectory,
+      TMPPREFIX: path.join(scratchDirectory, 'zsh') } };
 }
 
 /** Starts only the reviewed native launcher. Commands never inherit host fds

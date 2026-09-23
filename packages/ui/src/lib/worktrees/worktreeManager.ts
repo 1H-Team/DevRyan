@@ -1,3 +1,4 @@
+import { createWorktreeDiscoveryCache, invalidateWorktreeDiscovery } from './worktreeDiscovery';
 import { substituteCommandVariables } from '@/lib/openchamberConfig';
 import type { WorktreeMetadata } from '@/types/worktree';
 import {
@@ -157,29 +158,15 @@ const toCreatePayload = (args: {
   };
 };
 
-// Cache worktree listings to avoid repeated git worktree list + rev-parse calls
-const _worktreeListCache = new Map<string, { value: WorktreeMetadata[]; at: number }>();
-const _worktreeListInflight = new Map<string, Promise<WorktreeMetadata[]>>();
-const WORKTREE_LIST_CACHE_TTL = 30_000; // 30 seconds
+const worktreeListCache = createWorktreeDiscoveryCache<WorktreeMetadata[]>();
 
-export async function listProjectWorktrees(project: ProjectRef): Promise<WorktreeMetadata[]> {
+export async function listProjectWorktrees(project: ProjectRef, options: { refresh?: boolean } = {}): Promise<WorktreeMetadata[]> {
   const projectDirectory = normalizePath(project.path);
-
-  // Return cached if fresh
-  const cached = _worktreeListCache.get(projectDirectory);
-  if (cached && Date.now() - cached.at < WORKTREE_LIST_CACHE_TTL) {
-    return cached.value;
-  }
-
-  // Dedup in-flight requests
-  const inflight = _worktreeListInflight.get(projectDirectory);
-  if (inflight) return inflight;
-
-  const promise = (async (): Promise<WorktreeMetadata[]> => {
+  return worktreeListCache.read(projectDirectory, async () => {
     const metadataProjectDirectory = await resolvePrimaryWorktreeDirectory(projectDirectory).catch(() => projectDirectory);
     const normalizedProjectDirectory = normalizePath(projectDirectory);
 
-    const worktrees = await git.worktree.list(projectDirectory).catch(() => []);
+    const worktrees = await git.worktree.list(projectDirectory);
     const results: WorktreeMetadata[] = worktrees
       .filter((entry) => typeof entry.path === 'string' && entry.path.trim().length > 0)
       .map((entry) => {
@@ -217,14 +204,8 @@ export async function listProjectWorktrees(project: ProjectRef): Promise<Worktre
       return aLabel.localeCompare(bLabel);
     });
 
-    _worktreeListCache.set(projectDirectory, { value: sorted, at: Date.now() });
     return sorted;
-  })().finally(() => {
-    _worktreeListInflight.delete(projectDirectory);
-  });
-
-  _worktreeListInflight.set(projectDirectory, promise);
-  return promise;
+  }, options.refresh);
 }
 
 export type CreateWorktreeArgs = {
@@ -275,7 +256,7 @@ export async function createWorktree(project: ProjectRef, args: CreateWorktreeAr
 
   markWorktreeBootstrapPending(metadata.path, created.bootstrap);
 
-  _worktreeListCache.delete(projectDirectory);
+  invalidateWorktreeDiscovery();
   invalidateRootBranchCache(projectDirectory);
   invalidateRootBranchCache(metadata.path);
 
@@ -322,7 +303,7 @@ export async function removeProjectWorktree(project: ProjectRef, worktree: Workt
 
   clearWorktreeBootstrapState(worktree.path);
 
-  _worktreeListCache.delete(normalizePath(project.path));
+  invalidateWorktreeDiscovery();
   invalidateRootBranchCache(projectDirectory);
   invalidateRootBranchCache(worktree.path);
 

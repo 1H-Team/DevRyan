@@ -62,6 +62,19 @@ describe('diagnostic journal trimming', () => {
     expect(trimmer.flushAll().map((row) => [row.payload.generation, row.coalesced])).toEqual([[1, 2], [2, 1]]);
   });
 
+  test('keeps one server heartbeat per interval and counts the rest', () => {
+    const clock = createFakeClock();
+    const trimmer = createJournalTrimmer({ now: clock.now, heartbeatIntervalMs: 300_000 });
+    const heartbeat = { ...event('server.heartbeat'), sessionID: undefined };
+    expect(trimmer.admit(heartbeat)).toEqual([heartbeat]);
+    clock.advance(30_000);
+    expect(trimmer.admit(heartbeat)).toEqual([]);
+    clock.advance(270_000);
+    expect(trimmer.admit(heartbeat)).toEqual([heartbeat]);
+    const runtime = Object.values(trimmer.stats()).find((counter) => counter.trimmedHeartbeats > 0);
+    expect(runtime?.trimmedHeartbeats).toBe(1);
+  });
+
   test('drops deltas without gaps and counts the intentional trim', () => {
     const trimmer = createJournalTrimmer();
     expect(trimmer.admit(event('message.part.delta'))).toEqual([]);

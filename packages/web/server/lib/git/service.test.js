@@ -69,6 +69,14 @@ describe('getRemotes', () => {
 });
 
 describe('getWorktrees', () => {
+  it('distinguishes failed discovery from a successful empty non-Git directory', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'devryan-worktree-discovery-'));
+    tempDirs.push(directory);
+    expect(await getWorktrees(directory, { strict: true })).toEqual([]);
+    await writeFile(join(directory, '.git'), 'gitdir: missing-git-directory\n');
+    await expect(getWorktrees(directory, { strict: true })).rejects.toThrow();
+  });
+
   it('does not return worktree registrations Git marks as prunable', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'openchamber-worktrees-'));
     const staleWorktree = `${directory}-stale`;

@@ -75,3 +75,15 @@ describe('buildSessionProjectOwnership', () => {
     expect(ownership.has(explicitUnknown.id)).toBe(false);
   });
 });
+
+
+test('removed external worktrees retain chat ownership without restoring live branch entries', () => {
+  const chat = session({ id: 'history', directory: '/removed/worktree' });
+  const branches = new Map();
+  const metadata = new Map([[chat.id, { path: '/removed/worktree', projectDirectory: '/repo' }]]);
+  expect(buildSessionProjectOwnership([{ normalizedPath: '/repo' }], branches, [chat], metadata).get(chat.id)).toBe('/repo');
+  expect(branches.size).toBe(0);
+  expect(buildSessionProjectOwnership([{ normalizedPath: '/repo' }, { normalizedPath: '/removed/worktree' }], branches, [chat], metadata).get(chat.id)).toBe('/removed/worktree');
+  expect(buildSessionProjectOwnership([{ normalizedPath: '/repo' }], branches,
+    [session({ id: 'history', directory: '/different' })], metadata).has('history')).toBe(false);
+});

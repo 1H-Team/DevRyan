@@ -1464,14 +1464,13 @@ export function registerGitRoutes(app, {
         return res.status(400).json({ error: 'directory parameter is required' });
       }
 
-      const worktrees = await getWorktrees(directory);
+      const worktrees = await getWorktrees(directory, { strict: true });
       res.json(worktrees);
     } catch (error) {
-      // Worktrees are an optional feature. Avoid repeated 500s (and repeated client retries)
-      // when the directory isn't a git repo or uses shell shorthand like "~/".
-      console.warn('Failed to get worktrees, returning empty list:', error?.message || error);
+      // Unavailable discovery must not look like an authoritative empty list.
+      console.warn('Failed to discover worktrees:', error?.message || error);
       res.setHeader('X-OpenChamber-Warning', 'git worktrees unavailable');
-      res.json([]);
+      res.status(503).json({ error: 'Worktree discovery unavailable' });
     }
   });
 

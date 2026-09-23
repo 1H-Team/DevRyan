@@ -1,7 +1,7 @@
 import { resolveProviderPromptTools } from './provider-prompt-tools.js';
 import { appendManagedAssignment, stripManagedAssignment } from './continuation-assignment.js';
 import { isManagedAssistantActivityPart } from './assistant-activity.js';
-import { createManagedRecoveryMessageId } from './transport-recovery.js';
+import { createManagedRecoveryMessageId, isProviderConfigurationRecovery } from './transport-recovery.js';
 import {
   MANAGED_READ_ONLY_AGENT_UNSUPPORTED,
   MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE,
@@ -17,6 +17,7 @@ import {
   classifyProviderTransportFailure,
   isDefiniteProviderUsageLimit,
   isManagedTaskModelUnavailable,
+  isProviderConfigurationFailure,
 } from './provider-retry-policy.js';
 
 const LIVE_STATUS_TYPES = new Set(['busy', 'retry']);
@@ -335,16 +336,26 @@ const extractAssistantWork = (record) => {
   };
 };
 
+// A native compaction summary is maintenance output, never a child's result:
+// an idle child whose latest assistant is a summary gets the empty-output
+// continuation (which re-appends its assignment), not collection.
+const isCompactionSummaryRecord = (record) => record?.info?.summary === true
+  || record?.info?.mode === 'compaction' || record?.info?.agent === 'compaction';
+const NO_ASSISTANT_WORK = Object.freeze({ canonicalRefs: [], hasUsefulWork: false, recoverablePreview: '' });
+const extractResultWork = (record) => (isCompactionSummaryRecord(record) ? NO_ASSISTANT_WORK : extractAssistantWork(record));
+
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const MODEL_CONTINUATION_NOTICE_PATTERN = new RegExp(
   `\\n\\n${escapeRegExp(MANAGED_MODEL_CONTINUATION_NOTICE_PREFIX)}[^\\n]*$`,
 );
 
-const buildModelContinuationNotice = (task, failureReason) => (
+const buildModelContinuationNotice = (task, failureReason, configuration = false) => (
   `${MANAGED_MODEL_CONTINUATION_NOTICE_PREFIX}${task.providerId}/${task.modelId}`
   + `${task.variant ? ` · ${task.variant}` : ''}`
   + (isDefiniteProviderUsageLimit(failureReason)
     ? ' after a provider usage limit.'
+    : configuration || isProviderConfigurationFailure(failureReason)
+      ? ' after a provider configuration rejection.'
     : isTransientAssistantTransportFailure(failureReason)
       ? ' after a provider connection interruption.'
       : ' to continue the previous task.')
@@ -534,7 +545,7 @@ const analyzeMessages = (inputRecords, childSessionId, recovery = null) => {
     };
   }
 
-  const latestWork = extractAssistantWork(latest);
+  const latestWork = extractResultWork(latest);
   const hasInFlightTool = currentAttemptAssistants.some((record) => (
     (Array.isArray(record.parts) ? record.parts : []).some(toolPartIsInFlight)
   ));
@@ -544,7 +555,7 @@ const analyzeMessages = (inputRecords, childSessionId, recovery = null) => {
   let usefulWork = latestWork;
   if (!latestWork.hasUsefulWork) {
     for (let index = assistants.length - 2; index >= 0; index -= 1) {
-      const candidate = extractAssistantWork(assistants[index]);
+      const candidate = extractResultWork(assistants[index]);
       if (!candidate.hasUsefulWork) continue;
       usefulWork = candidate;
       break;
@@ -556,7 +567,7 @@ const analyzeMessages = (inputRecords, childSessionId, recovery = null) => {
   let previewWork = usefulWork.recoverablePreview ? usefulWork : null;
   if (!previewWork) {
     for (let index = assistants.length - 1; index >= 0; index -= 1) {
-      const candidate = extractAssistantWork(assistants[index]);
+      const candidate = extractResultWork(assistants[index]);
       if (!candidate.recoverablePreview) continue;
       previewWork = candidate;
       break;
@@ -847,11 +858,46 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     resumable: true,
   });
 
+  const configurationFailure = async (task, control, initial, result, event = null) => {
+    if (!isProviderConfigurationFailure(result.failureReason) || task.transportRecovery) return result;
+    // Native providers can announce failure/retry before their assistant finalizer.
+    // Stop the futile retry loop, then wait for authoritative settlement; never
+    // reserve a backup from the event alone or from an unfinished tool tail.
+    if (LIVE_STATUS_TYPES.has(initial?.statusType) && await ensureRetryStopped(task)) return result;
+    let observation = initial;
+    const deadline = now() + resumeTeardownSettleMs;
+    while (!observation?.assistantCompleted || LIVE_STATUS_TYPES.has(observation.statusType)) {
+      if (now() >= deadline) return result;
+      await sleep(pollIntervalMs, { signal: shutdownController.signal });
+      observation = await readObservation(task);
+    }
+    if ((initial?.latestAssistantMessageId && initial.latestAssistantMessageId !== observation.latestAssistantMessageId)
+      || observation.hasInFlightTool || observation.hasUncertainTool || observation.hasNewerUserInput
+      || observation.continuationPending || !observation.latestAssistantMessageId || !observation.latestAssistantParentId) return result;
+    // Reuse the durable one-backup protocol without sending a futile same-model
+    // prompt. The receipt keeps the downgrade-compatible wire shape: the
+    // same-model budget is recorded as spent and the configuration class is
+    // derived from the task's failure reason (isProviderConfigurationRecovery).
+    await saveTransportRecovery(task, control, { phase: 'exhausted', kind: 'connection_failure',
+      sameModelAttempts: 1, backupAttempts: 0, failedMessageId: observation.latestAssistantMessageId,
+      failedUserMessageId: observation.latestAssistantParentId, recoveryMessageId: observation.latestAssistantParentId,
+      eventId: event?.eventId ?? null, reservedAt: now(), submittedAt: null });
+    return result;
+  };
+
+  // A backup attempt is a new task without the source failure; the scheduler
+  // exposes its predecessor's reason read-only so the receipt can keep the
+  // downgrade-compatible wire shape.
+  const isConfigurationReceipt = (task, control) => isProviderConfigurationRecovery(task)
+    || (Boolean(task.transportRecovery)
+      && isProviderConfigurationFailure(control?.readPriorFailureReason?.() ?? null));
+
   const sendTransportRecovery = async (task, control, observation, event = null, backup = false) => {
+    const configuration = isConfigurationReceipt(task, control);
     let prompt;
     try {
       prompt = resolveContinuationTaskPrompt(task, backup
-        ? `${MANAGED_RETRY_IN_PLACE_PROMPT}\n\n${buildModelContinuationNotice(task, observation.failureReason)}`
+        ? `${MANAGED_RETRY_IN_PLACE_PROMPT}\n\n${buildModelContinuationNotice(task, observation.failureReason, configuration)}`
         : MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT);
     } catch (error) {
       // Invalid local context is not an ambiguous transport submission. Settle
@@ -863,7 +909,10 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     try {
       await saveTransportRecovery(task, control, {
         phase: 'reserved',
-        kind: classifyProviderTransportFailure(null, observation.failureReason) ?? task.transportRecovery?.kind ?? 'stream_idle_timeout',
+        // A configuration receipt keeps its recorded kind even when the stopped
+        // retry left a different settled error on the turn.
+        kind: (configuration ? task.transportRecovery.kind : null)
+          ?? classifyProviderTransportFailure(null, observation.failureReason) ?? task.transportRecovery?.kind ?? 'stream_idle_timeout',
         sameModelAttempts: 1,
         backupAttempts: backup ? 1 : 0,
         failedMessageId: observation.latestAssistantMessageId,
@@ -1215,7 +1264,8 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
           terminalErrorAfter,
           lastSuccessfulObservation,
         );
-        if (authoritativeError && !authoritativeError.transportKind) return authoritativeError.result;
+        if (authoritativeError && !authoritativeError.transportKind) return configurationFailure(task, waitOptions.control,
+          authoritativeError.observation, authoritativeError.result, authoritativeError.error);
         if (authoritativeError && (!pendingTransportEvent
           || pendingTransportEvent.eventId !== authoritativeError.error.eventId)) {
           pendingTransportEvent = {
@@ -1230,6 +1280,14 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         // handed to readObservation so an iteration still costs one status read.
         const status = await readLiveStatus(task);
         const liveStatus = normalizeStatusFields(status);
+        if (liveStatus.statusType === 'retry' && isProviderConfigurationFailure(liveStatus.statusMessage)) {
+          const rejected = await readObservation(task, status);
+          return configurationFailure(task, waitOptions.control, rejected, {
+            status: 'failed', failureReason: liveStatus.statusMessage, partial: rejected.hasUsefulWork,
+            recoverablePreview: rejected.recoverablePreview, canonicalRefs: rejected.canonicalRefs, resumable: true,
+          });
+        }
+
         if (
           LIVE_STATUS_TYPES.has(liveStatus.statusType)
           && !pendingTransportEvent
@@ -1292,6 +1350,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
                 return settledResult;
               }
               if (settledObservation.hasInFlightTool || settledObservation.hasUncertainTool
+                || settledObservation.hasNewerUserInput || settledObservation.continuationPending
                 || !settledObservation.assistantCompleted
                 || LIVE_STATUS_TYPES.has(settledObservation.statusType)) {
                 return transportRecoveryResult(settledObservation,
@@ -1299,7 +1358,12 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
               }
               if (continuationAlreadyUsed) {
                 if (task.transportRecovery) {
-                  await saveTransportRecovery(task, waitOptions.control, { phase: 'exhausted' });
+                  if (settledObservation.latestAssistantParentId !== task.transportRecovery.recoveryMessageId) {
+                    return transportRecoveryResult(settledObservation, 'Managed connection recovery was superseded by newer input');
+                  }
+                  await saveTransportRecovery(task, waitOptions.control, { phase: 'exhausted',
+                    failedMessageId: settledObservation.latestAssistantMessageId,
+                    failedUserMessageId: settledObservation.latestAssistantParentId });
                 }
                 return {
                   status: 'failed',
@@ -1368,6 +1432,15 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       }
       const providerUsageLimit = settleProviderUsageLimit(task, observation);
       if (providerUsageLimit) return providerUsageLimit;
+      // Only a rejection of this attempt's own turn settles it: right after a
+      // new prompt the inherited failed tail (a stale anchor, or a recovery's
+      // pre-continuation turn) can still be the latest assistant.
+      if (isProviderConfigurationFailure(observation.failureReason)
+        && !(hasStaleTailAnchor && observation.latestAssistantMessageId === staleTailAnchorId)
+        && !(task.transportRecovery && observation.latestAssistantParentId !== task.transportRecovery.recoveryMessageId)) {
+        const result = toTerminalResult(observation);
+        if (result) return configurationFailure(task, waitOptions.control, observation, result);
+      }
       if (pendingTransportEvent && !observation.failureReason
         && observation.latestAssistantMessageId !== pendingTransportEvent.failedMessageId
         && observation.assistantCompletedAt >= pendingTransportEvent.observedAt) {
@@ -1717,9 +1790,19 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     if (task.transportRecovery?.phase === 'backup_pending') {
       // Automatic fallback never aborts a newer turn to make room for itself.
       const observation = await readObservation(task);
+      // Stopping a native retry can replace the error with MessageAbortedError.
+      // Configuration rejection and host-observed silent-stream cancellation
+      // retain the exact settled turn before reserving their backup.
+      const permitsSettledCancellation = isConfigurationReceipt(task, control)
+        || task.transportRecovery.kind === 'stream_idle_timeout';
+      const settledTurnMatches = permitsSettledCancellation
+        && observation.latestAssistantMessageId === task.transportRecovery.failedMessageId
+        && observation.latestUserMessageId === task.transportRecovery.failedUserMessageId;
       if (LIVE_STATUS_TYPES.has(observation.statusType) || !observation.assistantCompleted
         || observation.hasInFlightTool || observation.hasUncertainTool || observation.continuationPending
-        || !isTransientAssistantTransportFailure(observation.failureReason)
+        || observation.hasNewerUserInput
+        || !(permitsSettledCancellation
+          ? settledTurnMatches : isTransientAssistantTransportFailure(observation.failureReason))
         || observation.latestAssistantParentId !== task.transportRecovery.recoveryMessageId) {
         await saveTransportRecovery(task, control, { phase: 'blocked' });
         return transportRecoveryResult(observation, 'Automatic backup needs attention: the failed turn is no longer safely resumable');

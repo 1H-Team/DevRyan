@@ -268,6 +268,23 @@ describe("getReconnectCandidateSessionIds", () => {
     })
   })
 
+  test("a compaction summary prefilling its first token is never an inference stall", () => {
+    const state = createState({
+      session: [createSession("active")],
+      session_status: { active: { type: "busy" } as SessionStatus },
+      message: {
+        active: [{ ...createAssistantMessage("summary-1", "active"), parentID: "compact-1", summary: true, mode: "compaction" } as Message],
+      },
+      part: {
+        "summary-1": [
+          { id: "step-1", messageID: "summary-1", sessionID: "active", type: "step-start" } as Part,
+          { id: "text-1", messageID: "summary-1", sessionID: "active", type: "text", text: "" } as Part,
+        ],
+      },
+    })
+    expect(getProviderInferenceStallFingerprint({ state, sessionID: "active" })).toBeNull()
+  })
+
   test("recognizes only the initial empty inference shell as an automatic stall candidate", () => {
     const makeState = (trailingPart: Part, parts?: Part[]) => createState({
       session: [createSession("active")],

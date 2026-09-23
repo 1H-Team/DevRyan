@@ -596,8 +596,14 @@ const resetStores = (principalId: string | null): void => {
 
 const controlPlaneCanStream = (state: string): boolean => ![
   'supabase_unavailable',
+  'supabase_disconnected',
+  'supabase_not_configured',
   'migration_required',
 ].includes(state);
+
+// Supabase deliberately off (or not configured) is not an outage: stop polling
+// and recheck when the window regains focus.
+const finalCapabilityErrorCode = (code: string | null): boolean => code === 'supabase_disconnected';
 
 const transientControlPlaneState = (state: string): boolean => [
   'supabase_unavailable',
@@ -641,6 +647,7 @@ export const BotsEventOwner: React.FC = () => {
       getCapabilitiesErrorCode: () => useBotsStore.getState().capabilitiesErrorCode,
       canStream: controlPlaneCanStream,
       isTransient: transientControlPlaneState,
+      isFinalErrorCode: finalCapabilityErrorCode,
       setConnectionState: (state, errorCode) => {
         if (!disposed) useBotOperationsStore.getState().setConnectionState(state, errorCode);
       },
@@ -688,8 +695,14 @@ export const BotsEventOwner: React.FC = () => {
     installBotEventConnection(connection);
     catalogConnection.retry();
     controller.start();
+    // A final capability state (Supabase off) is rechecked on focus only.
+    const recheckFinalState = () => {
+      if (finalCapabilityErrorCode(useBotsStore.getState().capabilitiesErrorCode)) controller.retry();
+    };
+    window.addEventListener('focus', recheckFinalState);
     return () => {
       disposed = true;
+      window.removeEventListener('focus', recheckFinalState);
       releaseBotEventConnection(connection);
       ownerCount = Math.max(0, ownerCount - 1);
       const generation = ++cleanupGeneration;

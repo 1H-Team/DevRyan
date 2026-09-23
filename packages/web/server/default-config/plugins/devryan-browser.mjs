@@ -1,5 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import { spawn as spawnChild } from 'node:child_process';
 
 import { tool } from '@opencode-ai/plugin';
@@ -225,8 +226,20 @@ const getManagedEnvironment = () => {
     token,
     binaryPath,
     configPath,
-    installRoot,
+    installRoot: process.env.DEVRYAN_EXECUTION_WORKER === '1' ? workerBrowserDirectory() : installRoot,
   };
+};
+
+// A confined worker cannot write the install root, and its cwd is the private
+// project view whose files are published into the repository. Relative browser
+// output (for example screenshots) goes to the execution cache, which every
+// confined worker may write and later tool calls can still read; per-call
+// scratch is deleted when the worker exits.
+const workerBrowserDirectory = () => {
+  const base = process.env.DEVRYAN_EXECUTION_CACHE || process.env.TMPDIR || os.tmpdir();
+  const directory = path.join(base, 'agent-browser');
+  try { fs.mkdirSync(directory, { recursive: true, mode: 0o700 }); return directory; }
+  catch { return process.env.TMPDIR || os.tmpdir(); }
 };
 
 const normalizeArguments = (value) => {
@@ -694,6 +707,16 @@ const turnLookupError = (
 };
 
 const resolveTurnMessageID = async (scope, client) => {
+  if (process.env.DEVRYAN_EXECUTION_WORKER === '1') {
+    let executionScope;
+    try { executionScope = JSON.parse(process.env.DEVRYAN_EXECUTION_BROWSER_SCOPE ?? ''); } catch { /* Fail closed below. */ }
+    if (!executionScope || executionScope.opencodeSessionID !== scope.opencodeSessionID
+      || executionScope.directory !== scope.directory || executionScope.agent !== scope.agent
+      || typeof executionScope.messageID !== 'string' || !executionScope.messageID) {
+      throw browserError(BROWSER_ERROR_CODES.turnLookupFailed, 'Browser execution scope is unavailable or mismatched');
+    }
+    return executionScope.messageID;
+  }
   if (!client?.session || typeof client.session.messages !== 'function') return scope.messageID;
 
   const response = await retryOnceOnTransportFailure(async () => {
@@ -1052,6 +1075,7 @@ export const __test = Object.assign(() => ({}), {
   normalizeArguments,
   normalizeTimeout,
   resolveOpenCommandArguments,
+  resolveTurnMessageID,
   runBinary,
   validateInvocation,
 });

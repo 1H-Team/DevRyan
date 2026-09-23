@@ -70,6 +70,8 @@ export async function packageQaElectron({ webDist, nativeSourceApp } = {}) {
     directories: { ...packageJson.build.directories, output: path.join(output, 'app') },
     files: [
       ...packageJson.build.files.filter(file => file !== 'dist-bundle/main.mjs'),
+      // Deterministic suites create and remove private fixtures while QA builds.
+      '!node_modules/**/.tmp{,/**/*}',
       { from: path.dirname(main), to: 'dist-bundle', filter: ['main.mjs'] },
       { from: path.join(root, 'scripts/qa'), to: '.', filter: ['packaged-host.mjs', 'packaged-host-policy.mjs', 'isolated-home.mjs'] },
     ],

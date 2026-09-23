@@ -121,6 +121,8 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
   stored `coalesced` counts and manifest trim totals. Property-free,
   unattributed `sync` events use the same bounded last-write-wins window without
   changing live SSE delivery; intentional trims never emit `gap` records.
+  Stateless `server.heartbeat` events keep one record per 5 minutes and count
+  the rest in `trimmedHeartbeats`.
 - Large sanitized strings are stored as bucket-local gzip blobs. Binary attachments
   retain only filename/MIME/size/SHA-256 metadata.
 - Worktree terminal receipts retain 90 days or 2,000 operations; active
@@ -202,3 +204,7 @@ unsupported-runtime behavior.
 ### Session title correlation
 
 The web host emits `session_title_generation` lifecycle records with the target session in top-level `sessionID` and the hidden helper in `payload.helperSessionID`. The sanitizer preserves both identifiers along with stage, outcome, reason, provider/model, status, attempt, and duration. Title text and source prompts are excluded by the producer.
+
+Parent collection may request host-owned `executionOutcomes` for failed tools. The mutation ledger returns `never_started`, `finished`, or `uncertain`, scoped to exact session/message/call identities. A cancelled call without execution, or a cancelled and fully cleaned pre-launch lease, proves `never_started`; a published lease proves `finished`. Missing, mismatched, or unsettled evidence stays uncertain. Only managed result collection accepts settled errors; normal recovery never treats error text as execution evidence or replays those commands. Existing collection idempotency, stop and supersession fences remain in force.
+
+Read-only lease and outcome queries retain the owner lock and durable recovery checks, but do not stage unchanged metadata or rebuild the Git index. `lock_wait`, `ledger_open`, `ledger_recovery`, `ledger_transaction`, and `ledger_commit` diagnostics identify work inside the lock; they are journaled only when a phase fails or takes at least 250 ms, because every tool call takes this lock. Every confined worker receives its own scratch `HOME`, temporary paths, and execution-worker marker, including Cursor and read-only provider workers.

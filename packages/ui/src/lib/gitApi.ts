@@ -14,6 +14,7 @@ import {
 } from './git/commitPlanContext';
 import { GIT_GENERATION_SESSION_TITLE, unregisterGitGenerationSession } from './git/gitGenerationSessions';
 import { assertCanCreateBranches } from './authSession';
+import { invalidateWorktreeDiscovery } from './worktrees/worktreeDiscovery';
 
 export { isGitGenerationSession } from './git/gitGenerationSessions';
 
@@ -247,8 +248,9 @@ export async function getGitBranches(directory: string): Promise<import('./api/t
 
 export async function deleteGitBranch(directory: string, payload: import('./api/types').GitDeleteBranchPayload): Promise<{ success: boolean }> {
   const runtime = getRuntimeGit();
-  if (runtime) return runtime.deleteGitBranch(directory, payload);
-  return gitHttp.deleteGitBranch(directory, payload);
+  const result = await (runtime ? runtime.deleteGitBranch(directory, payload) : gitHttp.deleteGitBranch(directory, payload));
+  if (result.success) invalidateWorktreeDiscovery();
+  return result;
 }
 
 export async function deleteRemoteBranch(directory: string, payload: import('./api/types').GitDeleteRemoteBranchPayload): Promise<{ success: boolean }> {
@@ -1072,13 +1074,10 @@ export async function createGitWorktree(
   payload: import('./api/types').CreateGitWorktreePayload
 ): Promise<import('./api/types').GitWorktreeCreateResult> {
   const runtime = getRuntimeGit();
-  if (runtime?.worktree?.create) {
-    return runtime.worktree.create(directory, payload);
-  }
-  if (runtime?.createGitWorktree) {
-    return runtime.createGitWorktree(directory, payload);
-  }
-  return gitHttp.createGitWorktree(directory, payload);
+  const result = await (runtime?.worktree?.create ? runtime.worktree.create(directory, payload)
+    : runtime?.createGitWorktree ? runtime.createGitWorktree(directory, payload) : gitHttp.createGitWorktree(directory, payload));
+  invalidateWorktreeDiscovery();
+  return result;
 }
 
 export async function deleteGitWorktree(
@@ -1086,13 +1085,10 @@ export async function deleteGitWorktree(
   payload: import('./api/types').RemoveGitWorktreePayload
 ): Promise<{ success: boolean; removedPath?: string }> {
   const runtime = getRuntimeGit();
-  if (runtime?.worktree?.remove) {
-    return runtime.worktree.remove(directory, payload);
-  }
-  if (runtime?.deleteGitWorktree) {
-    return runtime.deleteGitWorktree(directory, payload);
-  }
-  return gitHttp.deleteGitWorktree(directory, payload);
+  const result = await (runtime?.worktree?.remove ? runtime.worktree.remove(directory, payload)
+    : runtime?.deleteGitWorktree ? runtime.deleteGitWorktree(directory, payload) : gitHttp.deleteGitWorktree(directory, payload));
+  if (result.success) invalidateWorktreeDiscovery();
+  return result;
 }
 
 export const git = {
@@ -1310,8 +1306,9 @@ export async function dropGitStash(directory: string, options: { ref: string }):
 
 export async function checkoutBranch(directory: string, branch: string): Promise<{ success: boolean; branch: string }> {
   const runtime = getRuntimeGit();
-  if (runtime) return runtime.checkoutBranch(directory, branch);
-  return gitHttp.checkoutBranch(directory, branch);
+  const result = await (runtime ? runtime.checkoutBranch(directory, branch) : gitHttp.checkoutBranch(directory, branch));
+  if (result.success) invalidateWorktreeDiscovery();
+  return result;
 }
 
 export async function createBranch(
@@ -1321,8 +1318,9 @@ export async function createBranch(
 ): Promise<{ success: boolean; branch: string }> {
   assertCanCreateBranches();
   const runtime = getRuntimeGit();
-  if (runtime) return runtime.createBranch(directory, name, startPoint);
-  return gitHttp.createBranch(directory, name, startPoint);
+  const result = await (runtime ? runtime.createBranch(directory, name, startPoint) : gitHttp.createBranch(directory, name, startPoint));
+  if (result.success) invalidateWorktreeDiscovery();
+  return result;
 }
 
 export async function renameBranch(
@@ -1331,8 +1329,9 @@ export async function renameBranch(
   newName: string
 ): Promise<{ success: boolean; branch: string }> {
   const runtime = getRuntimeGit();
-  if (runtime) return runtime.renameBranch(directory, oldName, newName);
-  return gitHttp.renameBranch(directory, oldName, newName);
+  const result = await (runtime ? runtime.renameBranch(directory, oldName, newName) : gitHttp.renameBranch(directory, oldName, newName));
+  if (result.success) invalidateWorktreeDiscovery();
+  return result;
 }
 
 export async function getGitLog(

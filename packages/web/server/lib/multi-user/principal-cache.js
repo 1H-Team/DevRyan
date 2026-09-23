@@ -1,5 +1,5 @@
 // Invalidating access also fences refreshes that were already in flight.
-export function createPrincipalCache({ ttlMs, now = Date.now, onAvoided = () => {} }) {
+export function createPrincipalCache({ ttlMs, now = () => Date.now(), onAvoided = () => {} }) {
   const values = new Map();
   const pending = new Map();
   let generation = 0;

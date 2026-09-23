@@ -66,6 +66,7 @@ export async function executionEnvironment({ pluginDirectory, directory, dataDir
       controls[await fs.realpath(file)] = createHash('sha256').update(await fs.readFile(file)).digest('hex');
     }
     return { DEVRYAN_EXECUTION_BOUNDARY: '1', DEVRYAN_OPENCODE_ARTIFACT: artifacts.opencode,
+      DEVRYAN_EXECUTION_BROWSER_PLUGIN: createHash('sha256').update(await fs.readFile(path.join(pluginDirectory, 'devryan-browser.mjs'))).digest('hex'),
       DEVRYAN_EXECUTION_CONTROL_PLUGINS: JSON.stringify(controls), DEVRYAN_EXECUTION_LAUNCHER: artifacts.launcher,
       DEVRYAN_PROVIDER_WORKER: fileURLToPath(new URL('./session-provider-worker.mjs', import.meta.url)).replace(/\.asar([\\/])/, '.asar.unpacked$1'),
       DEVRYAN_PROVIDER_STORAGE: path.join(dataDirectory, 'harness', 'provider-executions') };

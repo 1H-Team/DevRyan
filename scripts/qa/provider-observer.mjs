@@ -12,6 +12,8 @@ const digest = value => typeof value === 'string' ? { bytes: Buffer.byteLength(v
 
 
 export default async function QaProviderObserver() {
+  // Tool workers have no provider turns and cannot write the parent's evidence.
+  if (process.env.DEVRYAN_EXECUTION_WORKER === '1') return {};
   const runtimeRoot = process.env.DEVRYAN_QA_RUNTIME_ROOT;
   const home = process.env.DEVRYAN_QA_HOME;
   if (!runtimeRoot || !home) throw new Error('QA observation requires an owned isolated runtime');

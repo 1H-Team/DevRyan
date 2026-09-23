@@ -45,4 +45,35 @@ describe('Supertest loopback requests', () => {
       ]);
     }
   });
+
+  it('serves an unbound app from an explicit IPv4 loopback listener', async () => {
+    const response = await request((incoming, outgoing) => {
+      outgoing.setHeader('content-type', 'application/json');
+      outgoing.end(JSON.stringify({ localAddress: incoming.socket.localAddress }));
+    }).get('/health');
+
+    expect(response.status).toBe(200);
+    // A dual-stack wildcard listener reports ::ffff:127.0.0.1 or ::1 instead.
+    expect(response.body).toEqual({ localAddress: '127.0.0.1' });
+  });
+
+  it('shares one loopback listener between concurrent requests and closes it', async () => {
+    const server = http.createServer((incoming, response) => {
+      response.setHeader('content-type', 'application/json');
+      const { localAddress, localPort } = incoming.socket;
+      response.end(JSON.stringify({ localAddress, localPort }));
+    });
+
+    const responses = await Promise.all([
+      request(server).get('/first'),
+      request(server).get('/second'),
+    ]);
+
+    for (const response of responses) {
+      expect(response.status).toBe(200);
+      expect(response.body.localAddress).toBe('127.0.0.1');
+    }
+    expect(responses[0].body.localPort).toBe(responses[1].body.localPort);
+    expect(server.listening).toBe(false);
+  });
 });

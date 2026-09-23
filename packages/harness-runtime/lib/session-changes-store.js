@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { git, gitRecords, gitTokens, changeError } from './session-changes-git.js';
+import { syncPendingObjectDirectory } from './object-durability.js';
 
 export const changeKey = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const STATE_REF = 'refs/devryan/state';
@@ -35,6 +36,10 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF } = {}) {
   let tree = refs || null;
   const oidLength = tree?.length ?? ((await run(['rev-parse', '--show-object-format'])).toString().trim() === 'sha256' ? 64 : 40);
   const pending = new Map();
+  // Serialized values read from the current tree in this store. Rewriting one
+  // unchanged (or removing a key read as absent) stages nothing, so a
+  // read-mostly transaction does not create a Git commit.
+  const baseline = new Map();
   const indexed = async (snapshot) => {
     const identity = `${gitDir}:${snapshot}`;
     if (!listings.has(identity)) {
@@ -69,27 +74,34 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF } = {}) {
     if (!validKey(key)) throw changeError('invalid_change_record');
     if (pending.has(key) && typeof pending.get(key) !== 'object') return JSON.parse(pending.get(key));
     if (pending.has(key) && pending.get(key) === null) return null;
-    if (!tree) return null;
+    const fromTree = !pending.has(key);
+    const observed = (value) => { if (fromTree) baseline.set(key, value); return value === null ? null : JSON.parse(value); };
+    if (!tree) return observed(null);
     const rows = pending.has(key) ? null : await indexed(tree);
     const row = rows?.[lowerBound(rows, key)];
-    if (rows && row?.key !== key) return null;
+    if (rows && row?.key !== key) return observed(null);
     const object = pending.get(key)?.oid ?? row?.oid ?? `${tree}:${key}`;
     const cacheKey = `${gitDir}:${object}`;
-    if (blobs.has(cacheKey)) return JSON.parse(blobs.get(cacheKey));
+    if (blobs.has(cacheKey)) return observed(blobs.get(cacheKey));
     const data = await run(['cat-file', '--batch'], { input: `${object}\n` });
     const end = data.indexOf(10), header = data.subarray(0, end).toString().split(' ');
-    if (header.at(-1) === 'missing') return null;
+    if (header.at(-1) === 'missing') return observed(null);
     if (header[1] !== 'blob' || Number(header[2]) !== data.length - end - 2) throw changeError('invalid_change_record');
     const value = data.subarray(end + 1, data.length - 1).toString();
-    remember(cacheKey, value); return JSON.parse(value);
+    remember(cacheKey, value); return observed(value);
   };
   const set = (key, value) => {
     if (!validKey(key)) throw changeError('invalid_change_record');
     const data = JSON.stringify(value);
     if (Buffer.byteLength(data) > 512 * 1024) throw changeError('change_record_too_large', 503);
+    if (!pending.has(key) && baseline.has(key) && baseline.get(key) === data) return;
     pending.set(key, data);
   };
-  const remove = (key) => { if (!validKey(key)) throw changeError('invalid_change_record'); pending.set(key, null); };
+  const remove = (key) => {
+    if (!validKey(key)) throw changeError('invalid_change_record');
+    if (!pending.has(key) && baseline.has(key) && baseline.get(key) === null) return;
+    pending.set(key, null);
+  };
   const entries = async function* (prefix) {
     if (tree) {
       const rows = async function* () {
@@ -128,6 +140,8 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF } = {}) {
   };
   const commit = async () => {
     if (!pending.size) return;
+    // Objects this transaction references are durable before it is.
+    await syncPendingObjectDirectory(cwd);
     const index = path.join(path.dirname(gitDir), `${crypto.randomUUID()}.metadata-index`);
     const env = { GIT_INDEX_FILE: index };
     try {
@@ -159,6 +173,7 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF } = {}) {
       await run(['update-ref', ref, next, tree ?? '0'.repeat(oidLength)]);
       tree = next;
       pending.clear();
+      baseline.clear();
     } finally {
       await fs.rm(index, { force: true });
       await fs.rm(`${index}.lock`, { force: true });
@@ -188,5 +203,5 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF } = {}) {
     return run(['rev-parse', '--verify', `${tree}:${prefix}`]).then((value) => value.toString().trim(), () => null);
   };
   return { get, set, remove, entries, list, setList, commit, leaseRef, pin, release, importPrefix, prefixIdentity,
-    get tree() { return tree; }, get exists() { return tree !== null; } };
+    get tree() { return tree; }, get exists() { return tree !== null; }, get pendingCount() { return pending.size; } };
 }

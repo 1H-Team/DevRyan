@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  resolveCompactionStatusText,
   resolveManagedChildGenericStatusText,
   resolveManagedDelegationStatusPhase,
   shouldManagedDelegationOwnStatus,
@@ -246,4 +247,19 @@ test('managed children preserve primary text/tools and keep recovered idle roots
   expect(shouldManagedDelegationOwnStatus({ isWorking: false, hasActiveTasks: true })).toBe(true);
   expect(shouldManagedDelegationOwnStatus({ isWorking: true, hasActiveTasks: false, activePartType: 'reasoning' })).toBe(false);
   expect(shouldManagedDelegationOwnStatus({ isWorking: true, hasActiveTasks: false })).toBe(false);
+});
+
+describe('resolveCompactionStatusText', () => {
+  const text = { automatic: 'Automatically compacting context…', manual: 'Compacting context…' };
+  test('names automatic and manual compaction and stays silent otherwise', () => {
+    expect(resolveCompactionStatusText('automatic', text)).toBe(text.automatic);
+    expect(resolveCompactionStatusText('manual', text)).toBe(text.manual);
+    expect(resolveCompactionStatusText(null, text)).toBeNull();
+    expect(resolveCompactionStatusText(undefined, text)).toBeNull();
+  });
+  test('a revert still owns the row over a compacting label', () => {
+    expect(resolveStatusRowAssistantDisplay({ isRevertPending: true, revertingText: 'Reverting chat…',
+      showWorkingPlaceholder: true, assistantStatusText: text.automatic, assistantIsGenericStatus: false }))
+      .toMatchObject({ statusText: 'Reverting chat…' });
+  });
 });

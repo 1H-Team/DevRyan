@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { createUserProfileProvisioningRuntime } from '../../packages/web/server/lib/opencode/user-profile-provisioning.js';
+import { resolveSlimConfig } from '../../packages/web/server/lib/opencode/slim-config.js';
 import { isRuntimePluginFileName } from '../../packages/web/server/lib/opencode/default-config-assets.js';
 
 const execute = promisify(execFile);
@@ -15,6 +16,7 @@ const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
 const { parse: parseJsonc } = createRequire(new URL('../../packages/web/package.json', import.meta.url))('jsonc-parser');
 const allowedProviders = ['openai', 'anthropic', 'xai'];
 const managedSpecialistProviders = [...allowedProviders, 'opencode'];
+const preservedProviders = [...managedSpecialistProviders, 'opencode-go', 'cursor-acp'];
 const homeShim = fileURLToPath(new URL('./isolated-home.mjs', import.meta.url));
 const providerObserver = fileURLToPath(new URL('./provider-observer.mjs', import.meta.url));
 
@@ -82,8 +84,8 @@ const installedFingerprints = async (config, plugins, opencodeBinary) => {
         source: 'prepared-private-installation; effective request metadata is recorded separately' };
 };
 
-export const projectQaAuth = (auth, now = Date.now(), providerIds = allowedProviders) => {
-    if (!Array.isArray(providerIds) || providerIds.some(id => !managedSpecialistProviders.includes(id))) {
+export const projectQaAuth = (auth, now = Date.now(), providerIds = allowedProviders, { preserveOrchestration = false } = {}) => {
+    if (!Array.isArray(providerIds) || providerIds.some(id => !(preserveOrchestration ? preservedProviders : managedSpecialistProviders).includes(id))) {
         throw new Error('QA credential projection requires explicit supported providers');
     }
     const records = {};
@@ -177,6 +179,14 @@ export const pinQaAgents = (slim, { providerId, modelId, variant, agentAssignmen
     return { ...slim, preset: 'qa', presets: { qa: agents }, agents };
 };
 
+// This opt-in preserves the model graph and recovery inputs. Parent selection
+// is a composer choice; it must not rewrite any saved role or fallback.
+export const preserveQaOrchestration = (slim, sidecar) => ({
+    slim: structuredClone(slim),
+    sidecar: structuredClone(Object.fromEntries(['agentOverrides', 'agentBackupModels'].flatMap(key =>
+        Object.hasOwn(sidecar, key) ? [[key, sidecar[key]]] : []))),
+});
+
 const readClaudeAccess = async (sourceHome) => {
     let credentials;
     try {
@@ -230,7 +240,7 @@ export const prepareQaPluginHomeWrapper = async (entry) => {
 };
 
 export async function prepareQaProfile({ runtimeRoot, workspace, providerId, modelId, variant = null, agentAssignments = {},
-    allowCrossProviderAssignments = false,
+    allowCrossProviderAssignments = false, preserveOrchestration = false,
     credentialProviders = allowedProviders,
     sourceHome = os.homedir(), opencodeBinary = path.join(repositoryRoot, '.cache/qa/opencode-1.18.31/package/bin/opencode') }) {
     const cacheRoot = path.join(repositoryRoot, '.cache');
@@ -241,7 +251,10 @@ export async function prepareQaProfile({ runtimeRoot, workspace, providerId, mod
     validateQaAgentAssignments(agentAssignments, providerId, allowCrossProviderAssignments);
     if (!Array.isArray(credentialProviders) || !credentialProviders.includes(providerId)
         || credentialProviders.some(id => !managedSpecialistProviders.includes(id))) throw new Error('QA credential sources must explicitly include the selected supported provider');
-    const admittedProviders = [...new Set([...credentialProviders, ...Object.values(agentAssignments).map(selection => selection.providerId)])];
+    if (typeof preserveOrchestration !== 'boolean' || (preserveOrchestration && (allowCrossProviderAssignments || Object.keys(agentAssignments).length))) {
+        throw new Error('Preserved orchestration cannot be combined with model assignment overrides');
+    }
+    const admittedProviders = [...new Set([...credentialProviders, ...(preserveOrchestration ? preservedProviders : []), ...Object.values(agentAssignments).map(selection => selection.providerId)])];
     await validateOwnedPaths(runtimeRoot, workspace, cacheRoot);
     await mkdir(runtimeRoot, { recursive: true, mode: 0o700 });
     const home = path.join(runtimeRoot, 'home');
@@ -267,7 +280,12 @@ export async function prepareQaProfile({ runtimeRoot, workspace, providerId, mod
     // This test-only observer therefore sees final plugin reasoning controls.
     env.OPENCODE_CONFIG_CONTENT = JSON.stringify({ plugin: [pathToFileURL(providerObserver).href] });
     await Promise.all([config, data, authDirectory, env.TMPDIR, env.XDG_CACHE_HOME, env.CLAUDE_CONFIG_DIR].map((directory) => mkdir(directory, { recursive: true, mode: 0o700 })));
-    await cp(path.join(sourceConfig, 'node_modules'), path.join(config, 'node_modules'), { recursive: true, verbatimSymlinks: true, mode: constants.COPYFILE_FICLONE });
+    await cp(path.join(sourceConfig, 'node_modules'), path.join(config, 'node_modules'), {
+        recursive: true, verbatimSymlinks: true, mode: constants.COPYFILE_FICLONE,
+        // npm's hidden .bin replacement links are installation scratch, not
+        // executable dependencies; stale ones can point at removed packages.
+        filter: file => !(path.basename(path.dirname(file)) === '.bin' && path.basename(file).startsWith('.')),
+    });
     await ensurePrivateDependencyLinks(path.join(config, 'node_modules'));
     await cp(path.join(sourceConfig, 'package.json'), path.join(config, 'package.json'));
     for (const lockfile of ['bun.lock', 'bun.lockb']) {
@@ -289,8 +307,18 @@ export async function prepareQaProfile({ runtimeRoot, workspace, providerId, mod
     const providers = Object.assign({}, ...sourceConfigs.map((value) => value.provider ?? {}));
     await writePrivateJson(path.join(config, 'opencode.json'), { ...base, model: `${providerId}/${modelId}`, enabled_providers: admittedProviders,
         provider: Object.fromEntries(Object.entries(providers).filter(([id]) => admittedProviders.includes(id))), mcp: {} });
-    const slim = await readOptionalJson(path.join(sourceConfig, 'oh-my-opencode-slim.json'));
-    const pinnedAgents = pinQaAgents(slim, { providerId, modelId, variant, agentAssignments, allowCrossProviderAssignments });
+    const slim = resolveSlimConfig(undefined, { configDirectory: sourceConfig }).userConfig;
+    const pinnedAgents = preserveOrchestration ? preserveQaOrchestration(slim, {}).slim
+        : pinQaAgents(slim, { providerId, modelId, variant, agentAssignments, allowCrossProviderAssignments });
+    let orchestrationSidecar = {};
+    if (preserveOrchestration) {
+        // Copy only the orchestration settings, never sessions or account state.
+        const sourceSidecar = { ...Object.assign({}, ...sourceConfigs.map(value => value.openchamber ?? {})),
+            ...await readOptionalJson(path.join(sourceConfig, '.openchamber/config.json')) };
+        orchestrationSidecar = preserveQaOrchestration(slim, sourceSidecar).sidecar;
+        await mkdir(path.join(config, '.openchamber'), { recursive: true, mode: 0o700 });
+        await writePrivateJson(path.join(config, '.openchamber/config.json'), orchestrationSidecar);
+    }
     await writePrivateJson(path.join(config, 'oh-my-opencode-slim.json'), pinnedAgents);
     try { await cp(path.join(sourceConfig, 'AGENTS.md'), path.join(config, 'AGENTS.md')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
 
@@ -306,7 +334,7 @@ export async function prepareQaProfile({ runtimeRoot, workspace, providerId, mod
         if (!isInside(path.join(config, 'node_modules'), entry)) throw new Error('QA plugin escaped the copied installation');
         await prepareQaPluginHomeWrapper(entry);
     }
-    const projectedAuth = projectQaAuth(await readOptionalJson(path.join(sourceHome, '.local/share/opencode/auth.json')), Date.now(), admittedProviders);
+    const projectedAuth = projectQaAuth(await readOptionalJson(path.join(sourceHome, '.local/share/opencode/auth.json')), Date.now(), admittedProviders, { preserveOrchestration });
     await writePrivateJson(path.join(authDirectory, 'auth.json'), projectedAuth.records);
     const claude = admittedProviders.includes('anthropic') ? await readClaudeAccess(sourceHome) : null;
     const credentialsEnvironment = {};
@@ -320,15 +348,19 @@ export async function prepareQaProfile({ runtimeRoot, workspace, providerId, mod
     await writePrivateJson(path.join(data, 'settings.json'), { lastDirectory: workspace, projects: [{ id: 'qa-project', path: workspace, label: 'QA workspace' }],
         activeProjectId: 'qa-project', opencodeBinary: opencodeBinary, messageStreamTransport: 'sse', showReasoningTraces: true,
         desktopWindowState: { width: 1280, height: 800, maximized: false } });
+    const effectiveAgents = preserveOrchestration ? resolveSlimConfig(workspace, { configDirectory: config }).agents : pinnedAgents.agents;
+    const modelRef = selection => typeof selection.model === 'string' ? selection.model
+        : selection.model ? `${selection.model.providerID}/${selection.model.modelID}` : null;
     const evidence = { providerId, modelId, variant, credentials: projectedAuth.evidence,
-        allowCrossProviderAssignments, admittedProviders,
+        allowCrossProviderAssignments, preserveOrchestration, admittedProviders,
+        orchestrationSidecar, savedPreset: pinnedAgents.preset ?? null,
         appearanceOverrides: { showReasoningTraces: true },
         dependencies: { installPerformed: Boolean(provisioning.install), degraded: provisioning.installDegraded === true },
         meridianHttpHotfix: provisioning.meridianHttpHotfix,
         fingerprints: await installedFingerprints(config, base.plugin, opencodeBinary),
-        agentModels: Object.fromEntries(Object.entries(pinnedAgents.agents).map(([agent, selection]) => [agent, selection.model])),
-        agentSelections: Object.fromEntries(Object.entries(pinnedAgents.agents).map(([agent, selection]) => [agent, {
-            model: selection.model, variant: selection.variant ?? null,
+        agentModels: Object.fromEntries(Object.entries(effectiveAgents).map(([agent, selection]) => [agent, modelRef(selection)])),
+        agentSelections: Object.fromEntries(Object.entries(effectiveAgents).map(([agent, selection]) => [agent, {
+            model: modelRef(selection), variant: selection.variant ?? null,
         }])),
         isolation: { home, config, data, authDirectory, workspace, opencodeBinary, refreshTokensCopied: false, personalSkillsCopied: false, multiUser: false } };
     await writePrivateJson(path.join(runtimeRoot, 'profile-evidence.json'), evidence);

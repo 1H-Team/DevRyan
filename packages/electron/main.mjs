@@ -4842,7 +4842,10 @@ app.on('before-quit', (event) => {
     event.preventDefault();
     state.quitRequested = true;
     state.quitConfirmed = true;
-    void stopDesktopHostBroker().finally(() => app.quit());
+    // Detaching from the service is best-effort; an unresponsive broker or
+    // lease release must not keep the app from quitting.
+    void Promise.race([stopDesktopHostBroker(), new Promise((resolve) => setTimeout(resolve, 5_000).unref?.())])
+      .finally(() => app.quit());
     return;
   }
   if (state.quitCleanupPromise) {
@@ -4931,6 +4934,13 @@ app.whenReady().then(async () => {
     });
     return;
   }
+  // App-bound mode: a termination signal runs the same bounded owned-resource
+  // cleanup as a confirmed quit; the runtime watchdog covers a forced exit.
+  // A runtime-service client quits through before-quit, which detaches it
+  // from the service (lease release, broker close) without a dialog.
+  const quitOnSignal = () => (state.runtimeServiceClient ? app.quit() : performConfirmedQuit());
+  process.once('SIGTERM', quitOnSignal);
+  process.once('SIGINT', quitOnSignal);
   nativeTheme.themeSource = readThemeSource();
   try {
     configureBrowserWebviewSession();

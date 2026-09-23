@@ -45,7 +45,7 @@ export const DEFAULT_ARCHIVE_LIMITS: Readonly<Required<ArchiveLimits>>;
 export function downloadArchive(
   url: string | URL,
   options?: {
-    fetchImpl?: typeof fetch;
+    fetchImpl?: SharedQuotaFetch;
     headers?: HeadersInit;
     allowedOrigins?: Iterable<string>;
     timeoutMs?: number;
@@ -189,7 +189,7 @@ export const FREE_ZEN_MODEL_CATALOG_TTL_MS: number;
 export const FREE_ZEN_MODEL_CATALOG_TIMEOUT_MS: number;
 export function normalizeFreeZenModels(zenPayload: unknown, metadataPayload: unknown): FreeZenModel[];
 export function createFreeZenModelCatalog(options?: {
-  fetchImpl?: typeof fetch;
+  fetchImpl?: SharedQuotaFetch;
   now?: () => number;
   ttlMs?: number;
   timeoutMs?: number;
@@ -435,7 +435,9 @@ export const XAI_OAUTH_TOKEN_URL: string;
 export const XAI_OAUTH_CLIENT_ID: string;
 export const DEEPSEEK_BALANCE_URL: string;
 export const OPENCODE_GO_USAGE_URL: string;
-export const OPENCODE_ZEN_BILLING_ORIGIN: string;
+export const OPENCODE_CONSOLE_ORIGIN: string;
+export const OPENCODE_CONSOLE_BASE_URL: string;
+export const OPENCODE_CONSOLE_CLIENT_ID: string;
 export const OPENCODE_ZEN_MAX_RESPONSE_BYTES: number;
 
 export function toQuotaNumber(value: unknown): number | null;
@@ -507,27 +509,57 @@ export function fetchOpenCodeGoQuotaAdapter(options?: SharedQuotaAdapterOptions<
 }>): Promise<SharedQuotaProviderResult>;
 
 export interface OpenCodeZenCredential {
-  workspaceId: string;
-  authCookie: string;
+  orgId: string;
+  accessToken: string;
 }
 
-export interface OpenCodeZenBillingSnapshot {
-  balanceMicrocents: number;
-  monthlyLimitDollars: number | null;
-  monthlyUsageMicrocents: number;
-  usageUpdatedAt: number | null;
-  reloadEnabled: boolean;
-  reloadAmountDollars: number;
-  reloadTriggerDollars: number;
+export interface OpenCodeZenBillingStatus {
+  billingMode: string | null;
+  balanceMicroCents: number;
+  availableMicroCents: number;
 }
 
+export interface OpenCodeConsoleToken {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+  orgId: string | null;
+}
+
+export interface OpenCodeConsoleDeviceAuthorization {
+  deviceCode: string;
+  userCode: string;
+  verificationUri: string;
+  verificationUriComplete: string;
+  expiresIn: number;
+  interval: number;
+}
+
+export type OpenCodeConsoleTokenExchange =
+  | { status: 'approved'; token: OpenCodeConsoleToken }
+  | { status: 'pending' | 'slow_down' | 'denied' | 'expired' | 'invalid' };
+
+export class OpenCodeConsoleAuthError extends Error {
+  code: 'API_ERROR' | 'PARSE_ERROR' | 'TIMEOUT';
+}
+
+export function isOpenCodeConsoleOrgId(value: unknown): value is string;
+export function isOpenCodeConsoleToken(value: unknown): value is string;
 export function normalizeOpenCodeZenCredential(value: unknown): OpenCodeZenCredential | null;
-export function parseOpenCodeZenBillingHtml(
-  html: string,
-  workspaceId: string,
-  now?: number,
-): OpenCodeZenBillingSnapshot | null;
+export function parseOpenCodeZenBillingStatus(payload: unknown): OpenCodeZenBillingStatus | null;
+export function parseOpenCodeZenUsageSummary(payload: unknown): { totalCostMicroCents: number } | null;
 export function fetchOpenCodeZenQuotaAdapter(options?: SharedQuotaAdapterOptions<OpenCodeZenCredential>): Promise<SharedQuotaProviderResult>;
+export function startOpenCodeConsoleDeviceAuthorization(options?: {
+  fetchImpl?: SharedQuotaFetch;
+}): Promise<OpenCodeConsoleDeviceAuthorization>;
+export function exchangeOpenCodeConsoleDeviceCode(options: {
+  deviceCode: string;
+  fetchImpl?: SharedQuotaFetch;
+}): Promise<OpenCodeConsoleTokenExchange>;
+export function refreshOpenCodeConsoleToken(options: {
+  refreshToken: string;
+  fetchImpl?: SharedQuotaFetch;
+}): Promise<OpenCodeConsoleTokenExchange>;
 
 export type AssistantImageReferenceKind = 'markdown-image' | 'markdown-link' | 'reference-image';
 

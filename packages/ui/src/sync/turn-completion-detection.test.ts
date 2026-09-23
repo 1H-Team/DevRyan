@@ -38,6 +38,16 @@ const stateWithMessages = (
 })
 
 describe("detectTurnCompletedCandidate", () => {
+  test("a completed compaction summary is maintenance, not a completed turn", () => {
+    const summary = { ...assistantMessage("msg_summary", 2, 3), summary: true, mode: "compaction" } as Message
+    const state = stateWithMessages([userMessage("msg_compact", 1), summary], {
+      msg_summary: [textPart("msg_summary", "## Objective anchor\nContinue the plan.")],
+    })
+    expect(detectTurnCompletedCandidate({
+      sessionID: "ses_1", state, isRecordedPlanModeUserMessage: () => false, planEntry: null,
+    })).toBeNull()
+  })
+
   test("returns the completed assistant response for ordinary non-plan work", () => {
     const state = stateWithMessages([
       userMessage("msg_user", 1),

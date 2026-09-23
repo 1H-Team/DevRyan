@@ -1,18 +1,9 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from '../../test-supertest.js';
 
 import { createOpenCodeDbCompactionScheduler } from './db-maintenance.js';
 import { registerOpenCodeDbMaintenanceRoutes } from './db-maintenance-routes.js';
-
-const servers = [];
-
-afterEach(async () => {
-  while (servers.length > 0) {
-    const server = servers.pop();
-    await new Promise((resolve) => server.close(resolve));
-  }
-});
 
 const createApp = (overrides = {}) => {
   const maintenance = {
@@ -44,10 +35,8 @@ const createApp = (overrides = {}) => {
     logger: { warn: vi.fn() },
     ...overrides,
   });
-  const server = app.listen(0);
-  servers.push(server);
   return {
-    server,
+    app,
     maintenance,
     scheduler,
     restartOpenCode,
@@ -57,9 +46,9 @@ const createApp = (overrides = {}) => {
 
 describe('OpenCode db maintenance routes', () => {
   it('GET /api/storage/opencode-db merges inspection, settings and runtime flags', async () => {
-    const { server } = createApp();
+    const { app } = createApp();
 
-    const response = await request(server).get('/api/storage/opencode-db');
+    const response = await request(app).get('/api/storage/opencode-db');
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
@@ -73,9 +62,9 @@ describe('OpenCode db maintenance routes', () => {
   });
 
   it('POST compact with dryRun runs a read-only pass with the configured settings and never restarts', async () => {
-    const { server, maintenance, restartOpenCode, scheduler } = createApp();
+    const { app, maintenance, restartOpenCode, scheduler } = createApp();
 
-    const response = await request(server)
+    const response = await request(app)
       .post('/api/storage/opencode-db/compact')
       .set('Content-Type', 'application/json')
       .send({ dryRun: true });
@@ -89,9 +78,9 @@ describe('OpenCode db maintenance routes', () => {
   });
 
   it('POST compact schedules a one-shot forced run and restarts OpenCode', async () => {
-    const { server, maintenance, restartOpenCode, scheduler } = createApp();
+    const { app, maintenance, restartOpenCode, scheduler } = createApp();
 
-    const response = await request(server)
+    const response = await request(app)
       .post('/api/storage/opencode-db/compact')
       .set('Content-Type', 'application/json')
       .send({});
@@ -104,7 +93,7 @@ describe('OpenCode db maintenance routes', () => {
     // The route never runs maintenance itself; the pre-launch hook consumes the flag.
     expect(maintenance.run).not.toHaveBeenCalled();
 
-    const again = await request(server)
+    const again = await request(app)
       .post('/api/storage/opencode-db/compact')
       .set('Content-Type', 'application/json')
       .send({});
@@ -114,10 +103,10 @@ describe('OpenCode db maintenance routes', () => {
   });
 
   it('POST compact refuses for an external OpenCode runtime', async () => {
-    const { server, restartOpenCode, scheduler, setManaged } = createApp();
+    const { app, restartOpenCode, scheduler, setManaged } = createApp();
     setManaged(false);
 
-    const response = await request(server)
+    const response = await request(app)
       .post('/api/storage/opencode-db/compact')
       .set('Content-Type', 'application/json')
       .send({});
@@ -129,11 +118,11 @@ describe('OpenCode db maintenance routes', () => {
   });
 
   it('reports inspection failures as 500 with the message', async () => {
-    const { server } = createApp({
+    const { app } = createApp({
       maintenance: { inspect: vi.fn(async () => { throw new Error('locked'); }), run: vi.fn() },
     });
 
-    const response = await request(server).get('/api/storage/opencode-db');
+    const response = await request(app).get('/api/storage/opencode-db');
 
     expect(response.status).toBe(500);
     expect(response.body.error).toBe('locked');

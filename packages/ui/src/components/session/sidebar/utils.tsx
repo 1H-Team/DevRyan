@@ -501,6 +501,7 @@ export const buildSessionProjectOwnership = (
   projects: readonly ProjectOwnershipInput[],
   availableWorktreesByProject: ReadonlyMap<string, readonly { path: string }[]>,
   sessions: readonly Session[],
+  historicalWorktrees: ReadonlyMap<string, { path: string; projectDirectory: string }> = new Map(),
 ): Map<string, string> => {
   const ownerByDirectory = new Map<string, ProjectDirectoryOwner>();
 
@@ -564,6 +565,11 @@ export const buildSessionProjectOwnership = (
     let owner: string | null = null;
     if (explicitDirectory) {
       owner = resolveDirectoryOwner(explicitDirectory, directoryOwners);
+      const retained = historicalWorktrees.get(session.id);
+      const retainedRoot = normalizePath(retained?.projectDirectory ?? null);
+      // Historical metadata establishes chat ownership only, never a live branch.
+      if (!owner && retainedRoot && ownerByDirectory.get(retainedRoot)?.isRegisteredProject
+        && normalizePath(retained?.path ?? null) === explicitDirectory) owner = retainedRoot;
     } else if (projectWorktree) {
       owner = resolveDirectoryOwner(projectWorktree, directoryOwners);
     } else if (record.parentID) {

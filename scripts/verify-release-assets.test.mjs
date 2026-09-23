@@ -54,16 +54,12 @@ describe('release asset verification', () => {
     assert.match(requests[1], /\/releases\?per_page=100&page=1$/);
   });
 
-  it('requires both macOS app package architectures and update metadata', () => {
+  it('requires the Apple silicon app packages and update metadata', () => {
     assert.deepEqual(requiredReleaseAssetNames('1.1.1'), [
       'DevRyan-1.1.1-arm64.dmg',
       'DevRyan-1.1.1-arm64.dmg.blockmap',
       'DevRyan-1.1.1-arm64.zip',
       'DevRyan-1.1.1-arm64.zip.blockmap',
-      'DevRyan-1.1.1-x64.dmg',
-      'DevRyan-1.1.1-x64.dmg.blockmap',
-      'DevRyan-1.1.1-x64.zip',
-      'DevRyan-1.1.1-x64.zip.blockmap',
       'latest-mac.yml',
       'DevRyan-web-1.1.1.tgz',
       'DevRyan-bot-runtime-images-1.1.1.json',
@@ -75,18 +71,14 @@ describe('release asset verification', () => {
       [
         'DevRyan-1.1.1-arm64.dmg',
         'DevRyan-1.1.1-arm64.dmg.blockmap',
-        'DevRyan-1.1.1-arm64.zip',
-        'DevRyan-1.1.1-arm64.zip.blockmap',
-        'DevRyan-1.1.1-x64.dmg',
-        'DevRyan-1.1.1-x64.dmg.blockmap',
         'latest-mac.yml',
       ],
       '1.1.1',
     );
 
     assert.deepEqual(missing, [
-      'DevRyan-1.1.1-x64.zip',
-      'DevRyan-1.1.1-x64.zip.blockmap',
+      'DevRyan-1.1.1-arm64.zip',
+      'DevRyan-1.1.1-arm64.zip.blockmap',
       'DevRyan-web-1.1.1.tgz',
       'DevRyan-bot-runtime-images-1.1.1.json',
     ]);

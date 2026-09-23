@@ -5,6 +5,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import QaProviderObserver from './provider-observer.mjs';
 
+test('confined tool workers do not open provider evidence or emit false gaps', async () => {
+  const previous = process.env.DEVRYAN_EXECUTION_WORKER;
+  process.env.DEVRYAN_EXECUTION_WORKER = '1';
+  try { assert.deepEqual(await QaProviderObserver(), {}); }
+  finally {
+    if (previous === undefined) delete process.env.DEVRYAN_EXECUTION_WORKER;
+    else process.env.DEVRYAN_EXECUTION_WORKER = previous;
+  }
+});
+
 test('observer records reasoning controls without mutating options or recording unrelated provider data', async () => {
   const cacheRoot = fileURLToPath(new URL('../../.cache/', import.meta.url));
   await mkdir(cacheRoot, { recursive: true });

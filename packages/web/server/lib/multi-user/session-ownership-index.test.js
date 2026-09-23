@@ -113,6 +113,40 @@ describe('session ownership index', () => {
     expect(index.get('revoked')?.archived_at).toBe('2026-09-13T12:00:00.000Z');
   });
 
+  it('keeps a pinned pending row through a rebuild from rows that predate its remote write', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-ownership-'));
+    temporaryDirectories.push(directory);
+    const index = await createSessionOwnershipIndex({ dataDirectory: directory });
+    const unpin = index.pin('child');
+    await index.set(ownership('child'));
+    await index.set(ownership('unpinned'));
+    const pinnedDeleted = index.pin('child-deleted');
+    await index.set(ownership('child-deleted'));
+    await index.delete('child-deleted');
+    const refresh = index.beginRefresh();
+    await refresh.rebuild([ownership('root')]);
+    refresh.dispose();
+    expect(index.get('child')).not.toBeNull();
+    expect(index.get('unpinned')).toBeNull();
+    expect(index.get('child-deleted')).toBeNull();
+    unpin(); pinnedDeleted();
+    await index.rebuild([ownership('root')]);
+    expect(index.get('child')).toBeNull();
+  });
+
+  it('keeps a row committed and unpinned while a stale refresh was in flight', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-ownership-'));
+    temporaryDirectories.push(directory);
+    const index = await createSessionOwnershipIndex({ dataDirectory: directory });
+    const unpin = index.pin('child');
+    await index.set(ownership('child'));
+    const refresh = index.beginRefresh(); // Remote rows read before the child's write landed.
+    unpin();
+    await refresh.rebuild([ownership('root')]);
+    refresh.dispose();
+    expect(index.get('child')).not.toBeNull();
+  });
+
   it('disposes a failed refresh without keeping its mutation overlay in later snapshots', async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-ownership-'));
     temporaryDirectories.push(directory);

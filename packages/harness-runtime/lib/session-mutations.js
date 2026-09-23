@@ -1,4 +1,4 @@
-import { executionCleanup, checkExecutionAdmission, executionPhase, executionSignal, executionProgressMeter, executionProgress, withoutExecutionDeadline, waitForExecutionQueue } from './execution-admission.js';
+import { executionCleanup, executionDiagnostic, checkExecutionAdmission, executionPhase, quietExecutionPhase, executionSignal, executionProgressMeter, executionProgress, withExecutionMeter, withoutExecutionDeadline, waitForExecutionQueue } from './execution-admission.js';
 import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import path from 'node:path';
@@ -11,6 +11,7 @@ import { withCrossProcessFileLock, writeFileAtomic } from './atomic-file.js';
 import { applyMutationText, initialMutationRuns, mutationText, visibleMutationRuns } from './session-mutation-text.js';
 import { inspectMutationFile, copyMutationObject, mutationFileStamp, GRANULAR_TEXT_BYTES } from './session-mutation-files.js';
 import { withExecutionIO } from './execution-io-pool.js';
+import { markObjectIfUnsynced } from './object-durability.js';
 import { readSessionExecutionReceipt } from './session-execution.js';
 import { removeExecutionDirectory } from './execution-cleanup.js';
 
@@ -23,6 +24,31 @@ const validID = (id) => typeof id === 'string' && id.length > 0 && id.length <= 
 const scopeFields = ['sessionID', 'messageID', 'userMessageID', 'callID'];
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const inputDirectories = new Set(['node_modules', '.venv', '__pycache__']);
+// Per-file filesystem work overlaps its I/O latency (the per-root I/O pool
+// still bounds heavy work); results keep input order and the first failure
+// stops new work.
+const FILE_CONCURRENCY = 8;
+// Observed rows installed per ledger transaction: each install rescans the
+// active paths and commits, so tiny batches make a first reconciliation
+// quadratic, while the lock is held for one batch at a time.
+const INSTALL_BATCH = 128;
+// Staged text runs are held in memory until the batch commits.
+const INSTALL_BATCH_BYTES = 32 * 1024 * 1024;
+const mapBounded = async (items, fn, limit = FILE_CONCURRENCY) => {
+  const results = new Array(items.length);
+  let next = 0, failed = false;
+  const worker = async () => {
+    while (!failed && next < items.length) {
+      const index = next++;
+      try { results[index] = await fn(items[index], index); }
+      catch (error) { failed = true; throw error; }
+    }
+  };
+  const settled = await Promise.allSettled(Array.from({ length: Math.min(limit, items.length) }, worker));
+  const rejected = settled.find((result) => result.status === 'rejected');
+  if (rejected) throw rejected.reason;
+  return results;
+};
 
 /** Durable mutation ledger; not an execution sandbox.
  * Adapters must enforce write confinement and stop every writer before finish.
@@ -40,23 +66,24 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   };
   const putBytes = async (repo, bytes) => {
     const hash = digest(bytes), target = path.join(repo.root, 'objects', hash);
-    try { await fs.access(target); }
+    try { markObjectIfUnsynced(path.dirname(target), (await fs.lstat(target)).ctimeMs); }
     catch (error) { if (error.code !== 'ENOENT') throw error; await writeFileAtomic(target, bytes); }
     return hash;
   };
   const inspect = (repo, file, directory) => withExecutionIO(repo.root, () => inspectMutationFile(repo, file, directory));
-  const write = async (repo, file, entry, directory = repo.directory) => {
+  const write = async (repo, file, entry, directory = repo.directory, { durable = true } = {}) => {
     await verifyAncestors(directory, file);
     const target = path.join(directory, file);
     if (!entry) { await fs.rm(target, { force: true }); return; }
-    await fs.mkdir(path.dirname(target), { recursive: true });
     if (entry.mode !== '120000') {
-      await withExecutionIO(repo.root, () => copyMutationObject(repo, entry, target, permissions(entry)));
+      // copyMutationObject creates the parent directory.
+      await withExecutionIO(repo.root, () => copyMutationObject(repo, entry, target, permissions(entry), { durable }));
       return;
     }
+    await fs.mkdir(path.dirname(target), { recursive: true });
     const bytes = await bytesFor(repo, entry.hash);
     const temporary = `${target}.devryan-${randomUUID()}`;
-    try { await fs.symlink(bytes.toString(), temporary); await fs.rename(temporary, target); }
+    try { await fs.symlink(bytes, temporary); await fs.rename(temporary, target); }
     finally { await fs.rm(temporary, { force: true }); }
   };
   const recover = async (repo) => {
@@ -73,8 +100,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     repo.db.remove('materialization.json');
     await repo.db.commit();
   };
-  const locked = async (requested, fn) => {
-    checkExecutionAdmission();
+  const resolveRepository = async (requested) => {
     const logicalDirectory = await fs.realpath(requested);
     let vcs = true;
     const root = await git(logicalDirectory, ['rev-parse', '--show-toplevel'], { limit: 16 * 1024 }).then((value) => value.toString(), (cause) => {
@@ -84,32 +110,101 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     const directory = await fs.realpath(root.endsWith('\n') ? root.slice(0, -1) : root);
     const relative = path.relative(directory, logicalDirectory);
     if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw changeError('session_directory_mismatch');
+    return { logicalDirectory, directory, vcs };
+  };
+  // Callers queued behind a repository's lock follow its current holder's
+  // progress, so waiting behind productive work is not reported as a stall.
+  const queueMeters = new Map();
+  const locked = async (requested, fn, { requireExisting = false } = {}) => {
+    checkExecutionAdmission();
+    const { logicalDirectory, directory, vcs } = await resolveRepository(requested);
+    if (requireExisting) {
+      // Read-only evidence queries never create a ledger as a side effect.
+      try { await fs.access(path.join(rootFor(directory), 'git', 'HEAD')); }
+      catch (error) { if (error.code === 'ENOENT') return fn(null); throw error; }
+    }
     const previous = queues.get(directory) ?? Promise.resolve();
-    const ready = executionPhase('queue_wait', () => waitForExecutionQueue(previous.catch(() => {})));
+    let queueMeter = queueMeters.get(directory);
+    if (!queueMeter) { queueMeter = { progress: Date.now(), waiters: 0, following: undefined }; queueMeters.set(directory, queueMeter); }
+    const ready = executionPhase('queue_wait', () => waitForExecutionQueue(previous.catch(() => {}), queueMeter));
     const work = ready.then(() => {
       checkExecutionAdmission();
-      return withCrossProcessFileLock(path.join(rootFor(directory), 'owner.lock'), async () => {
+      const lockStarted = Date.now();
+      let acquired = false;
+      return withCrossProcessFileLock(path.join(rootFor(directory), 'owner.lock'), () => withExecutionMeter(async () => {
+        acquired = true;
+        executionProgress();
+        const holder = executionProgressMeter();
+        queueMeter.following = holder; queueMeter.progress = Date.now();
+        try { return await holdLock(); }
+        finally { if (queueMeter.following === holder) queueMeter.following = undefined; queueMeter.progress = Date.now(); }
+      }), { timeoutMs: 30_000, signal: executionSignal() }).catch(cause => {
+        if (!acquired) executionDiagnostic({ phase: 'lock_wait', state: 'failed', elapsedMs: Date.now() - lockStarted,
+          code: cause?.code === 'LOCK_TIMEOUT' ? 'local_execution_timeout' : 'local_execution_failed' });
+        throw cause;
+      });
+      async function holdLock() {
+        // Journal only contended acquisitions; every tool call takes this lock.
+        const lockWaitMs = Date.now() - lockStarted;
+        if (lockWaitMs >= 250) executionDiagnostic({ phase: 'lock_wait', state: 'completed', elapsedMs: lockWaitMs, slow: true });
         const root = rootFor(directory), gitDir = path.join(root, 'git');
         await fs.mkdir(root, { recursive: true, mode: 0o700 });
         try { await fs.access(path.join(gitDir, 'HEAD')); }
         catch (error) { if (error.code !== 'ENOENT') throw error; await git(root, ['init', '--bare', '--quiet', gitDir]); }
-        const db = await openChangeStore(root, gitDir);
-        const meta = await db.get('meta.json') ?? { version: 1, directory, sequence: 0 };
+        const db = await quietExecutionPhase('ledger_open', () => openChangeStore(root, gitDir));
+        const storedMeta = await db.get('meta.json');
+        const originalMeta = JSON.stringify(storedMeta);
+        const meta = storedMeta ?? { version: 1, directory, sequence: 0 };
         if (meta.version !== 1 || meta.directory !== directory) throw changeError('invalid_change_record');
         const repo = { directory, logicalDirectory, root, gitDir, db, meta, vcs };
-        await withoutExecutionDeadline(() => recover(repo));
+        await withoutExecutionDeadline(() => quietExecutionPhase('ledger_recovery', () => recover(repo)));
         checkExecutionAdmission();
-        const result = await fn(repo);
+        const result = await quietExecutionPhase('ledger_transaction', () => fn(repo));
         checkExecutionAdmission();
-        db.set('meta.json', meta); await withoutExecutionDeadline(() => db.commit());
+        // A lease lookup must not stage an unchanged blob and rebuild Git's
+        // index under the owner lock. Mutations still commit atomically.
+        if (JSON.stringify(meta) !== originalMeta) db.set('meta.json', meta);
+        await withoutExecutionDeadline(() => quietExecutionPhase('ledger_commit', () => db.commit()));
         return result;
-      }, { timeoutMs: 30_000, signal: executionSignal() });
+      }
     });
     // An expired waiter must not replace the actual owner in the queue.
     const tail = Promise.allSettled([previous, work]).then(() => undefined);
     queues.set(directory, tail);
     try { return await work; }
-    finally { void tail.then(() => { if (queues.get(directory) === tail) queues.delete(directory); }); }
+    finally {
+      void tail.then(() => {
+        if (queues.get(directory) === tail) { queues.delete(directory); queueMeters.delete(directory); }
+      });
+    }
+  };
+  const SNAPSHOT_MISS = Symbol('snapshot-miss');
+  // Lock-free answer from the last committed ledger tree. Any durable write
+  // or error falls back to the locked path, which stays authoritative; this
+  // only removes queueing for reads that would not change state (per-step
+  // prompt registration, admission, lease and outcome lookups) behind long
+  // reconciliation or publication work.
+  const readSnapshot = async (requested, fn) => {
+    const { logicalDirectory, directory, vcs } = await resolveRepository(requested);
+    const root = rootFor(directory), gitDir = path.join(root, 'git');
+    try { await fs.access(path.join(gitDir, 'HEAD')); }
+    catch (error) { if (error.code === 'ENOENT') return SNAPSHOT_MISS; throw error; }
+    const db = await quietExecutionPhase('ledger_snapshot', () => openChangeStore(root, gitDir));
+    // A pending materialization may be unrecoverable (for example a foreign
+    // edit); only the locked path can recover it or fail closed.
+    if (!db.exists || await db.get('materialization.json')) return SNAPSHOT_MISS;
+    const meta = await db.get('meta.json');
+    if (meta?.version !== 1 || meta.directory !== directory) return SNAPSHOT_MISS;
+    const repo = { directory, logicalDirectory, root, gitDir, db, meta: { ...meta }, vcs, snapshot: true };
+    const result = await fn(repo);
+    return db.pendingCount === 0 && repo.meta.sequence === meta.sequence ? result : SNAPSHOT_MISS;
+  };
+  const snapshotOrLocked = async (requested, fn, options) => {
+    checkExecutionAdmission();
+    let result = SNAPSHOT_MISS;
+    try { result = await readSnapshot(requested, fn); }
+    catch { checkExecutionAdmission(); } // The locked path reports the authoritative error.
+    return result === SNAPSHOT_MISS ? locked(requested, fn, options) : result;
   };
   const next = (repo) => ++repo.meta.sequence;
   const inactive = async (repo) => {
@@ -251,7 +346,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         const snapshot = { directory: lease.projectDirectory, root, gitDir, db: await openChangeStore(root, gitDir) };
         const paths = await activePaths(snapshot), names = new Set(paths.keys());
         for await (const file of filesIn(snapshot)) if (safeChangePath(file)) names.add(file);
-        let rows = [];
+        let rows = [], rowBytes = 0;
         const install = async () => {
           if (!rows.length) return;
           await locked(lease.directory, async (repo) => {
@@ -269,26 +364,33 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
               changed.published = row.entry ? { ...row.entry, path: row.file, sequence: operation?.sequence ?? 0 } : null;
               repo.db.set(key('files', changed.id), changed);
               if (operation) { operation.files = [changed.id]; repo.db.set(key('operations', operation.id), operation); }
+              executionProgress();
             }
           });
           executionProgress();
-          rows = [];
+          rows = []; rowBytes = 0;
         };
-        for (const file of names) {
-          checkExecutionAdmission();
-          const published = paths.get(file)?.published ?? null;
-          // Advisory only. Publication and projection always inspect affected
-          // current bytes again; legacy records have no observation and rehash.
-          if (published?.observation && await mutationFileStamp(snapshot.directory, file) === published.observation) {
-            executionProgress();
-            continue;
+        const ordered = [...names];
+        for (let start = 0; start < ordered.length; start += 64) {
+          const observed = await mapBounded(ordered.slice(start, start + 64), async (file) => {
+            checkExecutionAdmission();
+            const published = paths.get(file)?.published ?? null;
+            // Advisory only. Publication and projection always inspect affected
+            // current bytes again; legacy records have no observation and rehash.
+            if (published?.observation && await mutationFileStamp(snapshot.directory, file) === published.observation) {
+              executionProgress();
+              return null;
+            }
+            try { return { file, published, entry: await inspect(snapshot, file) }; }
+            catch (cause) { if (cause.code !== 'observation_changed') throw cause; dirty = true; return null; }
+          });
+          for (const row of observed) {
+            if (!row || (!row.published && !row.entry)) continue;
+            rows.push(row);
+            // Only granular text is staged in memory; whole-content files are not.
+            rowBytes += row.entry && !row.entry.whole ? row.entry.size : 0;
+            if (rows.length >= INSTALL_BATCH || rowBytes >= INSTALL_BATCH_BYTES) await install();
           }
-          let entry;
-          try { entry = await inspect(snapshot, file); }
-          catch (cause) { if (cause.code !== 'observation_changed') throw cause; dirty = true; continue; }
-          if (!published && !entry) continue;
-          rows.push({ file, published, entry });
-          if (rows.length >= 32) await install();
         }
         await install();
       } while (dirty);
@@ -379,11 +481,11 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     repo.db.set(sessionKey, session);
     return { session, prompt };
   };
-  const registerPrompt = (input) => locked(input.directory, async (repo) => {
+  const registerPrompt = (input) => snapshotOrLocked(input.directory, async (repo) => {
     const { prompt } = await register(repo, input);
     return { sequence: prompt.sequence };
   });
-  const assertAdmission = (input) => locked(input.directory, async (repo) => {
+  const assertAdmission = (input) => snapshotOrLocked(input.directory, async (repo) => {
     if (!validID(input.sessionID)) throw changeError('invalid_capture_identity', 400);
     let session = await repo.db.get(key('sessions', input.sessionID));
     if (session?.directory && session.directory !== repo.logicalDirectory) throw changeError('session_directory_mismatch');
@@ -489,14 +591,20 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       const root = rootFor(lease.projectDirectory), db = await openChangeStore(root, path.join(root, 'git'), { ref: lease.snapshotRef });
       const repo = { root, directory: lease.projectDirectory, db }, disabled = await inactive(repo);
       const base = async function* () {
-        for (const [file, doc] of await snapshotPaths(repo)) {
-          checkExecutionAdmission();
-          if (doc.published.deleted) continue;
-          await write(repo, file, doc.published, lease.viewDirectory);
-          if (!disabled.size && doc.runsUnfiltered) await db.importPrefix(db.tree, `runs/${doc.id}`, `bases/${lease.token}/${doc.id}`);
-          else await saveRuns(repo, doc.id, visibleMutationRuns(await runsFor(repo, doc.id), disabled), `bases/${lease.token}`);
-          const stat = await fs.lstat(path.join(lease.viewDirectory, file), { bigint: true });
-          yield { path: file, documentID: doc.id, entry: doc.published, identity: `${stat.dev}:${stat.ino}` };
+        const live = [...await snapshotPaths(repo)].filter(([, doc]) => !doc.published.deleted);
+        for (let start = 0; start < live.length; start += 64) {
+          // Copies overlap; ledger rows stay sequential and ordered.
+          const identities = await mapBounded(live.slice(start, start + 64), async ([file, doc]) => {
+            checkExecutionAdmission();
+            await write(repo, file, doc.published, lease.viewDirectory, { durable: false });
+            const stat = await fs.lstat(path.join(lease.viewDirectory, file), { bigint: true });
+            return `${stat.dev}:${stat.ino}`;
+          });
+          for (const [index, [file, doc]] of live.slice(start, start + 64).entries()) {
+            if (!disabled.size && doc.runsUnfiltered) await db.importPrefix(db.tree, `runs/${doc.id}`, `bases/${lease.token}/${doc.id}`);
+            else await saveRuns(repo, doc.id, visibleMutationRuns(await runsFor(repo, doc.id), disabled), `bases/${lease.token}`);
+            yield { path: file, documentID: doc.id, entry: doc.published, identity: identities[index] };
+          }
         }
       };
       await db.setList(`bases/${lease.token}/files`, base());
@@ -559,9 +667,10 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       for await (const file of db.list(`bases/${token}/files`)) { base.set(file.path, file); if (file.identity) identities.set(file.identity, file); }
       // The host has verified native termination before calling finish. Hashing
       // this immutable output does not serialize unrelated project admissions.
-      for await (const file of filesIn({ directory: captured.viewDirectory })) {
-        if (safeChangePath(file)) files.set(file, await inspect(repo, file, captured.viewDirectory));
-      }
+      const viewFiles = [];
+      for await (const file of filesIn({ directory: captured.viewDirectory })) if (safeChangePath(file)) viewFiles.push(file);
+      const entries = await mapBounded(viewFiles, (file) => inspect(repo, file, captured.viewDirectory));
+      viewFiles.forEach((file, index) => files.set(file, entries[index]));
       for (const file of base.keys()) if (!files.has(file)) files.set(file, null);
     }
     const result = await locked(directory, async (repo) => {
@@ -881,10 +990,35 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     repo.db.set(key('file-restores', identity), { id, fingerprint });
     return tx;
   });
-  const leaseForCall = (input) => locked(input.directory, async (repo) => {
+  const leaseForCall = (input) => snapshotOrLocked(input.directory, async (repo) => {
     const call = await repo.db.get(key('calls', `${input.sessionID}\0${input.callID}`));
+    // Absence is only authoritative behind any queued reservation.
+    if (!call && repo.snapshot) throw changeError('snapshot_lease_absent');
     return call ? repo.db.get(key('leases', call.token)) : null;
   });
+  // Read only host-owned durable evidence. A tool error or a missing lease is
+  // never proof that a command did not execute. Batch one transcript per lock.
+  const executionOutcomes = (input) => snapshotOrLocked(input.directory, async (repo) => {
+    if (!validID(input.sessionID) || !Array.isArray(input.calls) || input.calls.length > 10_000
+      || input.calls.some(call => !validID(call.callID) || !validID(call.messageID))) throw changeError('invalid_capture_identity');
+    if (!repo) return input.calls.map(call => ({ sessionID: input.sessionID, messageID: call.messageID, callID: call.callID, outcome: 'uncertain' }));
+    const outcomes = [];
+    for (const call of input.calls) {
+      const scopeKey = `${input.sessionID}\0${call.callID}`;
+      const cancelled = await repo.db.get(key('cancelled-calls', scopeKey));
+      const pointer = await repo.db.get(key('calls', scopeKey));
+      const lease = pointer ? await repo.db.get(key('leases', pointer.token)) : null;
+      let outcome = 'uncertain';
+      if (lease && lease.directory === repo.logicalDirectory && lease.scope.sessionID === input.sessionID
+        && lease.scope.messageID === call.messageID && lease.scope.callID === call.callID) {
+        if (lease.state === 'published') outcome = 'finished';
+        else if (lease.state === 'cancelled' && lease.cleaned && !lease.cleanupPending
+          && (lease.cancelledBeforeStart || !lease.executionKind)) outcome = 'never_started';
+      } else if (!pointer && cancelled?.messageID === call.messageID) outcome = 'never_started';
+      outcomes.push({ sessionID: input.sessionID, messageID: call.messageID, callID: call.callID, outcome });
+    }
+    return outcomes;
+  }, { requireExisting: true });
   const aliasCalls = (input) => locked(input.directory, async (repo) => {
     const lease = await repo.db.get(key('leases', input.token));
     if (!lease || !Array.isArray(input.calls) || input.calls.some((call) => !validID(call))) throw changeError('capture_identity_mismatch');
@@ -1013,6 +1147,6 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   };
   return { projectDirectories, projectDirectory: (input) => locked(input.directory, (repo) => repo.directory),
     assertAdmission, registerPrompt, registerChild, reserve, prepare, begin, claimLease, finish, cleanupLease, executionReceipt, aliasCalls, prepareRevert, prepareRedo, prepareFileRestore, settleRevert, leaseForCall,
-    transaction, updateTransaction, pendingTransactions, cancelLease, cancelUnstartedCall, activeLeases, pendingCleanup,
+    transaction, updateTransaction, pendingTransactions, cancelLease, cancelUnstartedCall, activeLeases, pendingCleanup, executionOutcomes,
     drain: () => Promise.allSettled([...preparations.values(), ...settlements.values(), ...queues.values()]) };
 }

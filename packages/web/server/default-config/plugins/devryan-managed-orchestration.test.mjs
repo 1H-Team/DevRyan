@@ -3669,6 +3669,36 @@ describe('DevRyan managed orchestration plugin', () => {
     expect(client.session.promptAsync).toHaveBeenCalledTimes(1);
   });
 
+  it('backs off failed recovery scans and resets after a clean scan', async () => {
+    const scheduled = [];
+    let failing = true;
+    const client = { session: { messages: vi.fn(async () => ({ data: [] })), status: vi.fn(async () => ({ data: {} })),
+      promptAsync: vi.fn(async () => ({ data: true })) } };
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      expect(request.method).toBe('list_provider_recovery_continuations');
+      return failing ? rpcResponse({ code: 'managed_dependency_unavailable', message: 'unavailable' }, 503)
+        : rpcResponse({ continuations: [] });
+    }));
+    await DevRyanManagedOrchestrationPlugin({ client, scheduleTimeout(callback, delayMs) {
+      scheduled.push({ callback, delayMs });
+      return { unref() {} };
+    } });
+    const delays = [];
+    for (let scan = 0; scan < 6; scan += 1) {
+      expect(scheduled).toHaveLength(1);
+      scheduled.shift().callback();
+      await vi.waitFor(() => expect(scheduled).toHaveLength(1));
+      delays.push(scheduled[0].delayMs);
+    }
+    expect(delays).toEqual([1_000, 2_000, 4_000, 8_000, 8_000, 8_000]);
+    failing = false;
+    scheduled.shift().callback();
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(7));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(scheduled).toEqual([]);
+  });
+
   it('uses the host claim to deduplicate recovery wakes across plugin instances', async () => {
     const scheduled = [];
     const claimants = [];
@@ -4516,6 +4546,39 @@ describe('open-todo continuation safety net', () => {
       { args: { questions: [] } },
     )).resolves.toBeUndefined();
     expect(requests).toEqual([]);
+  });
+
+  const withManualCompaction = (summary = {}, auto = false) => [
+    ...openTodoRecords(),
+    { info: { id: 'msg_compact', role: 'user', agent: 'orchestrator', model: { providerID: 'openai', modelID: 'gpt-5.5', variant: 'medium' } },
+      parts: [{ type: 'compaction', auto }] },
+    { info: { id: 'msg_summary', role: 'assistant', agent: 'orchestrator', mode: 'compaction', summary: true, parentID: 'msg_compact',
+      time: { created: 10, completed: 20 }, finish: 'stop', ...summary }, parts: [{ type: 'text', text: '## Objective anchor\nImplement the saved plan.' }] },
+  ];
+
+  it('continues once after a manual compaction that left todos open', async () => {
+    stubOpenTodoRpc();
+    const client = createOpenTodoClient({ records: withManualCompaction() });
+    const { plugin, scheduled } = await startPlugin(client);
+    idle(plugin);
+    await drainScans(scheduled);
+    await vi.waitFor(() => expect(client.session.promptAsync).toHaveBeenCalledTimes(1));
+    expect(client.session.promptAsync.mock.calls[0][0].body.parts[0].text).toBe(`${OPEN_TODO_MARKER}\n${OPEN_TODO_PROMPT}`);
+  });
+
+  it.each([
+    ['incomplete', { time: { created: 10 } }, false],
+    ['errored', { error: { name: 'APIError', data: { message: 'context too large' } } }, false],
+    // Automatic compaction continues natively; DevRyan never adds a second prompt.
+    ['automatic', {}, true],
+  ])('does not continue after a %s compaction summary', async (_label, summary, auto) => {
+    stubOpenTodoRpc();
+    const client = createOpenTodoClient({ records: withManualCompaction(summary, auto) });
+    const { plugin, scheduled } = await startPlugin(client);
+    idle(plugin);
+    await drainScans(scheduled);
+    await flush();
+    expect(client.session.promptAsync).not.toHaveBeenCalled();
   });
 
   it('nudges an idle orchestrator root turn that left todos open', async () => {

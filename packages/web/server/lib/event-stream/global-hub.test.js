@@ -308,6 +308,9 @@ describe('createGlobalMessageStreamHub', () => {
       };
       expect(received[0].payload.properties.info.summary).toEqual(expectedSummary);
       expect(hub.replayAfter('missing').events[0].payload.properties.info.summary).toEqual(expectedSummary);
+      // Replay must not retain the untransformed payload through the envelope.
+      expect(received[0].envelope).toEqual({ eventId: 'evt-1', directory: null });
+      expect(JSON.stringify(hub.replayAfter('missing').events)).not.toContain('@@ -1 +1 @@');
     } finally {
       hub.stop();
     }

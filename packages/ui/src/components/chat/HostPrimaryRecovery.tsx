@@ -19,6 +19,8 @@ const labels = {
 export const HostPrimaryRecovery = React.memo(({ sessionId, showAvailability = false }: { sessionId: string; showAvailability?: boolean }) => {
   const snapshot = usePrimaryRecoveryStore((state) => state.snapshots[sessionId]);
   const [error, setError] = React.useState<string | null>(null);
+  // Status polling clears only its own error, never an action's outcome.
+  const [actionError, setActionError] = React.useState<string | null>(null);
   const [pending, setPending] = React.useState(false);
   React.useEffect(() => {
     let active = true;
@@ -50,7 +52,22 @@ export const HostPrimaryRecovery = React.memo(({ sessionId, showAvailability = f
   const record = snapshot?.record;
   const repeatedInput = record?.reason === 'managed_repeated_preexecution_rejection';
   const collectionIssue = record?.collectionIssue;
-  if (collectionIssue) return null;
+  const act = async (action: 'cancel' | 'continue') => {
+    setPending(true); setActionError(null);
+    try { await requestPrimaryRecovery(sessionId, action, action === 'continue' ? createClientMessageId('msg') : undefined); }
+    catch (cause) { setActionError(cause instanceof Error ? cause.message : 'Action not confirmed'); }
+    finally { setPending(false); }
+  };
+  // A completed sub-agent whose automatic delivery to this parent was refused
+  // stays pending until an explicit collection; never leave the parent silent.
+  if (collectionIssue) return <div className="chat-message-column px-4 pb-2 pt-3"><div role="status" aria-live="polite" className="rounded-lg border border-border bg-muted/30 p-3 typography-meta">
+    <p className="font-medium">Sub-agent result ready — parent paused</p>
+    <p className="mt-1">A sub-agent finished, but this session did not resume automatically. Collect the result to continue the task with its original permissions.</p>
+    {(actionError ?? error) && <p role="alert" className="mt-2 text-destructive">{actionError ?? error}</p>}
+    <div className="mt-2 flex flex-wrap gap-2">
+      <Button variant="outline" size="sm" disabled={pending} onClick={() => void act('continue')}>Collect Result</Button>
+    </div>
+  </div></div>;
   if (showAvailability && !snapshot?.enforced && !record?.readOnly && !repeatedInput) return <div className="chat-message-column px-4 pb-2 pt-3"><p className="typography-meta text-muted-foreground">
     {snapshot?.supported ? 'Automatic recovery is in observe mode. Manual recovery remains available.'
       : 'Automatic recovery safeguards are unavailable for this runtime. Manual recovery remains available.'}
@@ -58,12 +75,6 @@ export const HostPrimaryRecovery = React.memo(({ sessionId, showAvailability = f
   if (!record || (!snapshot.enforced && !record.readOnly && !repeatedInput)
     || (record.state === 'observing' && record.reason !== 'provider_input_progress_unavailable') || record.state === 'superseded'
     || (record.state === 'completed' && !record.attemptCount)) return null;
-  const act = async (action: 'cancel' | 'continue') => {
-    setPending(true); setError(null);
-    try { await requestPrimaryRecovery(sessionId, action, action === 'continue' ? createClientMessageId('msg') : undefined); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'Action not confirmed'); }
-    finally { setPending(false); }
-  };
   return <div className="chat-message-column px-4 pb-2 pt-3"><div role="status" aria-live="polite" className="rounded-lg border border-border bg-muted/30 p-3 typography-meta">
     <p className="font-medium">{repeatedInput ? 'Paused after repeated invalid tool input'
       : record.reason === 'provider_input_progress_unavailable' ? 'Provider argument progress cannot be verified' : labels[record.state]}</p>
@@ -76,7 +87,7 @@ export const HostPrimaryRecovery = React.memo(({ sessionId, showAvailability = f
       ? 'A tool may have changed files before the timeout. Automatic retry is paused; review the outcome before continuing.'
       : record.providerID === 'anthropic' && record.reason === 'chunk_timeout' ? 'Claude stopped sending data.'
       : record.reason.replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase())}</p>}
-    {error && <p role="alert" className="mt-2 text-destructive">{error}</p>}
+    {(actionError ?? error) && <p role="alert" className="mt-2 text-destructive">{actionError ?? error}</p>}
     <div className="mt-2 flex flex-wrap gap-2">
       {record.state !== 'completed' && <Button variant="outline" size="sm" onClick={() => void act('cancel')}>Stop</Button>}
       {['needs_attention', 'cancelled'].includes(record.state) && <Button className="h-auto max-w-full whitespace-normal" variant="outline" size="sm" disabled={pending}

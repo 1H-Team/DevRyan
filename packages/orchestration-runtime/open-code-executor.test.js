@@ -148,6 +148,48 @@ const recoveryControl = () => {
 
 
 describe('managed OpenCode executor', () => {
+  test('parks the Go region rejection for one configured backup without resending to that model', async () => {
+    const reason = "Upstream request failed: This Go model requires Global regions. Select Global in your workspace's Privacy settings to use it.";
+    const prompts = [];
+    const original = task({ childSessionId: 'ses_child', status: 'running' });
+    const executor = createManagedOpenCodeExecutor({ transport: {
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return { type: 'idle' }; },
+      async readMessages() { return [assistant({ info: { parentID: 'msg_original', error: { name: 'APIError', data: { message: reason, statusCode: 400 } } } })]; },
+      async promptSession(input) { prompts.push(input); },
+      async createSession() { throw new Error('must not create'); },
+      async abortSession() { throw new Error('must not abort'); }, deleteSession,
+    }, pollIntervalMs: 1 });
+    const result = await executor.observe(original, recoveryControl());
+    expect(result).toMatchObject({ status: 'failed', failureReason: reason });
+    // Downgrade-compatible receipt: historical kind and a spent same-model budget.
+    expect(original.transportRecovery).toMatchObject({ phase: 'exhausted', kind: 'connection_failure', sameModelAttempts: 1, backupAttempts: 0 });
+    expect(prompts).toEqual([]);
+    await executor.shutdown();
+  });
+  test.each(['event-before-finalizer', 'native-retry'])('region fallback waits for authoritative settlement: %s', async source => {
+    const reason = "Upstream request failed: This Go model requires Global regions. Select Global in your workspace's Privacy settings to use it.";
+    let reads = 0, aborts = 0;
+    const original = task({ childSessionId: 'ses_child', status: 'running' });
+    const executor = createManagedOpenCodeExecutor({ transport: {
+      async readSession() { return { id: 'ses_child' }; },
+      async readTerminalError() { return source === 'event-before-finalizer' ? { eventId: 'event-config', message: reason, errorName: 'APIError' } : null; },
+      async readStatus() { return source === 'native-retry' && !aborts ? { type: 'retry', message: reason, attempt: 1 } : { type: 'idle' }; },
+      async readMessages() { reads++; return [assistant({ info: { parentID: 'msg_original',
+        time: { created: 1, ...(reads >= 3 ? { completed: 2 } : {}) },
+        error: { name: 'APIError', data: { message: reason, statusCode: 400 } } } })]; },
+      async promptSession() { throw new Error('configuration rejection must not resend'); },
+      async createSession() { throw new Error('must not create'); },
+      async abortSession() { aborts++; }, deleteSession,
+    }, pollIntervalMs: 1 });
+    try {
+      expect(await executor.observe(original, recoveryControl())).toMatchObject({ status: 'failed', failureReason: reason });
+      expect(reads).toBeGreaterThanOrEqual(3);
+      expect(aborts).toBe(source === 'native-retry' ? 1 : 0);
+      expect(original.transportRecovery).toMatchObject({ kind: 'connection_failure', phase: 'exhausted', sameModelAttempts: 1 });
+    } finally { await executor.shutdown(); }
+  });
+
   test('settles an authoritative model error without waiting for an assistant message', async () => {
     const terminalReads = [];
     const transport = {
@@ -1641,8 +1683,9 @@ describe('managed OpenCode executor', () => {
       liveProgressTimeoutMs: 100,
     });
 
+    const original = task({ childSessionId: 'ses_child', status: 'running' });
     const result = await executor.observe(
-      task({ childSessionId: 'ses_child', status: 'running' }),
+      original,
       recoveryControl(),
     );
 
@@ -1655,6 +1698,8 @@ describe('managed OpenCode executor', () => {
     });
     expect(abortCount).toBe(2);
     expect(prompts).toHaveLength(1);
+    expect(original.transportRecovery).toMatchObject({ phase: 'exhausted', failedMessageId: 'msg_stalled_2',
+      failedUserMessageId: prompts[0].messageId });
   });
 
   test('does not apply the live-progress timeout while a tool is still running', async () => {
@@ -1769,6 +1814,35 @@ describe('managed OpenCode executor', () => {
       recoverablePreview: 'Completed after material tool input',
     });
     expect(abortCount).toBe(0);
+  });
+
+  test('never collects a child on its compaction summary; it continues with the assignment instead', async () => {
+    const prompts = [];
+    const statuses = [{ type: 'idle' }, { type: 'busy' }, { type: 'idle' }];
+    const work = assistant({ info: { id: 'msg_work', finish: 'tool-calls' },
+      parts: [{ type: 'tool', callID: 'call_read', state: { status: 'completed', output: 'Parser source' } }] });
+    const compaction = { info: { id: 'msg_compact', role: 'user' }, parts: [{ type: 'compaction', auto: true }] };
+    const summary = assistant({ info: { id: 'msg_summary', parentID: 'msg_compact', summary: true, mode: 'compaction' },
+      parts: [{ type: 'text', text: '## Delegated assignment\nFix the parser. Remaining: tests.' }] });
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession(input) { prompts.push(input); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return statuses.shift() ?? { type: 'idle' }; },
+      async readMessages() {
+        if (prompts.length === 0) return [work, compaction, summary];
+        return [work, compaction, summary,
+          { info: { id: 'msg_continue', role: 'user' }, parts: [{ type: 'text', text: MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT }] },
+          assistant({ info: { id: 'msg_done' }, parts: [{ type: 'text', text: 'Parser fixed and tested' }] })];
+      },
+      async abortSession() { throw new Error('must not abort'); },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
+    const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {});
+    expect(result).toMatchObject({ status: 'completed', recoverablePreview: 'Parser fixed and tested' });
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0].prompt).toBe(appendManagedAssignment(task(), MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT));
   });
 
   test('continues once in the same child when a provider stops after tools without a final answer', async () => {

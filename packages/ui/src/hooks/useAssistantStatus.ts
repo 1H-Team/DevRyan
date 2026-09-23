@@ -4,6 +4,7 @@ import type { AssistantMessage, Message, Part, ReasoningPart, TextPart, ToolPart
 import type { MessageStreamPhase } from '@/stores/types/sessionTypes';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useDirectorySync, useSessionPermissions, useSessionQuestions, useSessionStatus } from '@/sync/sync-context';
+import { readCompactionPart, type CompactionKind } from '@/components/chat/lib/compactionDisplay';
 import { isTerminalAssistantMessage as isTerminalSyncAssistantMessage } from '@/sync/session-working';
 import { isFullySyntheticMessage } from '@/lib/messages/synthetic';
 import { postRendererTurnTimingMark } from '@/stores/utils/streamDebug';
@@ -26,7 +27,8 @@ interface WorkingSummary {
     isGenericStatus: boolean;
     isWaitingForPermission: boolean;
     canAbort: boolean;
-    compactionDeadline: number | null;
+    /** Set while the working turn is a native compaction request. */
+    compaction: CompactionKind | null;
     activePartType?: 'text' | 'tool' | 'reasoning' | 'editing';
     activeToolName?: string;
     activeToolAction?: string;
@@ -90,7 +92,7 @@ const DEFAULT_WORKING: WorkingSummary = {
     isGenericStatus: true,
     isWaitingForPermission: false,
     canAbort: false,
-    compactionDeadline: null,
+    compaction: null,
     activePartType: undefined,
     activeToolName: undefined,
     wasAborted: false,
@@ -385,6 +387,15 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
         effectiveDirectory ?? undefined,
     );
 
+    // One primitive per status consumer: whether the latest user message is a
+    // native compaction request, and whether it was automatic.
+    const compactionKind = useDirectorySync(
+        React.useCallback((state) => (
+            currentPromptId ? readCompactionPart(state.part[currentPromptId])?.kind ?? null : null
+        ), [currentPromptId]),
+        effectiveDirectory ?? undefined,
+    );
+
     const sessionMessages = React.useMemo<SessionMessageRecord[]>(
         () => {
             if (rawSessionMessages.length === 0) {
@@ -566,7 +577,7 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
             isGenericStatus: isWorking ? parsedStatus.isGenericStatus : true,
             isWaitingForPermission: false,
             canAbort: isWorking,
-            compactionDeadline: null,
+            compaction: isWorking ? compactionKind : null,
             activePartType: isWorking ? parsedStatus.activePartType : undefined,
             activeToolName: isWorking ? parsedStatus.activeToolName : undefined,
             activeToolAction: isWorking ? parsedStatus.activeToolAction : undefined,
@@ -578,7 +589,7 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
             providerID: isWorking ? parsedStatus.providerID : undefined,
             hasStreamedActivity: isWorking ? parsedStatus.hasStreamedActivity : false,
         };
-    }, [activityPhase, isPhaseWorking, parsedStatus, abortState, sessionRetryAttempt, sessionRetryNext, sessionRetryMessage, visibleRetryStatus, effectiveDirectory, warmingDirectory]);
+    }, [activityPhase, isPhaseWorking, parsedStatus, abortState, sessionRetryAttempt, sessionRetryNext, sessionRetryMessage, visibleRetryStatus, effectiveDirectory, warmingDirectory, compactionKind]);
 
     const forming = React.useMemo<FormingSummary>(() => {
 

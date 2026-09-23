@@ -9,5 +9,10 @@ const qaHome = process.env.DEVRYAN_QA_HOME;
 if (!qaHome || !path.isAbsolute(qaHome)) throw new Error('QA home must be an absolute owned directory');
 const ownerFile = path.join(qaHome, '.devryan-qa-home');
 if (!fs.statSync(ownerFile).isFile()) throw new Error('QA home ownership marker is missing');
-os.homedir = () => qaHome;
+// Confined execution already owns a per-call scratch home. Redirecting its
+// plugins back to the QA profile makes local tool initialization try to write
+// outside that lease (and can contend with sibling workers).
+const resolvedHome = process.env.DEVRYAN_EXECUTION_WORKER === '1' ? process.env.HOME : qaHome;
+if (!resolvedHome || !path.isAbsolute(resolvedHome)) throw new Error('Execution home must be absolute');
+os.homedir = () => resolvedHome;
 syncBuiltinESMExports();

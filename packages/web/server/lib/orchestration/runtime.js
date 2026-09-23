@@ -4,6 +4,7 @@ import {
   createManagedAssistantActivityRegistry,
   createManagedTerminalErrorRegistry,
   createManagedTaskScheduler,
+  formatManagedAssignmentContext,
   MANAGED_OVERLAP_READ_TOOLS,
   resolveHarnessPolicies,
   isManagedModelAvailableInCatalog,
@@ -36,6 +37,7 @@ const ORACLE_TASK_TIMEOUT_MS = 15 * 60 * 1_000;
 const COUNCIL_TASK_TIMEOUT_MS = 3 * 60 * 1_000;
 const MAX_WAIT_TIMEOUT_MS = 25_000;
 const AUTO_RESUME_HOST_DEFER_MS = 30_000;
+const AUTO_RESUME_MAX_DEFER_MS = 5 * 60_000;
 // Acknowledge outcomes that mean the parked result already moved on; the
 // scheduler treats them as a settled attempt rather than a host failure.
 const AUTO_RESUME_SETTLED_CODES = new Set([
@@ -101,6 +103,11 @@ const ERROR_STATUS_BY_CODE = Object.freeze({
   MANAGED_READ_ONLY_AGENT_UNSUPPORTED: 409,
   MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED: 409,
   managed_agent_model_unavailable: 409,
+  managed_dependency_unavailable: 503,
+  managed_orchestration_internal_error: 500,
+  invalid_request: 400,
+  supabase_disconnected: 503,
+  supabase_change_pending: 503,
   managed_orchestration_owner_mismatch: 403,
   managed_orchestration_owner_unavailable: 503,
   CONTEXT_MODE_RECOVERY_PENDING: 503,
@@ -135,18 +142,36 @@ const createRuntimeError = (code, message, statusCode = ERROR_STATUS_BY_CODE[cod
   return error;
 };
 
+// Transport-level failures of a host dependency (Supabase, loopback OpenCode)
+// are retryable: callers must see 503, never a malformed 400/500.
+const TRANSPORT_ERROR_CODES = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ENOTFOUND', 'EPIPE',
+  'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_SOCKET']);
+const isDependencyUnavailable = (error) => error?.name === 'TimeoutError' || error?.name === 'AbortError'
+  || (error instanceof TypeError && error.message === 'fetch failed')
+  || (error?.name === 'SupabaseRequestError' && (error.status === 429 || error.status >= 500));
+
 const normalizeRuntimeError = (error) => {
   if (!error || typeof error !== 'object') return error;
-  if (typeof error.code !== 'string' || !error.code) {
-    const invalidInput = error instanceof TypeError || error instanceof RangeError;
-    error.code = invalidInput ? 'invalid_request' : 'managed_orchestration_internal_error';
-    error.statusCode = invalidInput ? 400 : 500;
+  if (typeof error.code === 'string' && error.code) {
+    if (!Number.isSafeInteger(error.statusCode)) {
+      const status = Number.isSafeInteger(error.status) && error.status >= 400 && error.status <= 599 ? error.status : null;
+      const statusCode = ERROR_STATUS_BY_CODE[error.code]
+        ?? (isDependencyUnavailable(error) || TRANSPORT_ERROR_CODES.has(error.code) || status >= 500 ? 503 : status ?? 400);
+      try { error.statusCode = statusCode; } catch {
+        return Object.assign(createRuntimeError(error.code, error.message || error.code, statusCode), { cause: error });
+      }
+    }
     return error;
   }
-  if (!Number.isSafeInteger(error.statusCode)) {
-    error.statusCode = ERROR_STATUS_BY_CODE[error.code] ?? 400;
+  // Foreign errors (DOMException, fetch TypeError, SupabaseRequestError) may
+  // have read-only fields; wrap them instead of mutating.
+  const wrap = (code, message) => Object.assign(createRuntimeError(code, message), { cause: error });
+  if (isDependencyUnavailable(error)) {
+    return wrap('managed_dependency_unavailable', 'A managed orchestration dependency is temporarily unavailable; retry the same request.');
   }
-  return error;
+  const invalidInput = error instanceof TypeError || error instanceof RangeError;
+  return wrap(invalidInput ? 'invalid_request' : 'managed_orchestration_internal_error',
+    error.message || 'Managed orchestration request failed');
 };
 
 const projectTask = (task, envelope = null) => (
@@ -279,6 +304,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   // recovery. It re-enters the acknowledge RPC exactly as a user's Try Again
   // would, plus the internal generation guard the scheduler uses to reject a
   // stale attempt; the host defers (never fails) while work admission is blocked.
+  const autoResumeDeferrals = new Map();
   const attemptAutoResume = async (params) => {
     const block = getWorkAdmissionBlock();
     if (block) {
@@ -314,6 +340,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         }
       }
       const result = await handleRpcInternal({ method: 'acknowledge', params }, { autoResume: true });
+      autoResumeDeferrals.delete(params.taskId);
       return {
         outcome: 'started',
         followUpTaskId: typeof result?.followUpTask?.taskId === 'string' ? result.followUpTask.taskId : null,
@@ -321,10 +348,17 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     } catch (rawError) {
       const error = normalizeRuntimeError(rawError);
       const code = typeof error?.code === 'string' && error.code ? error.code : 'attempt_failed';
-      if (AUTO_RESUME_SETTLED_CODES.has(code)) return { outcome: 'started', followUpTaskId: null };
+      if (AUTO_RESUME_SETTLED_CODES.has(code)) { autoResumeDeferrals.delete(params.taskId); return { outcome: 'started', followUpTaskId: null }; }
       if (error?.statusCode === 503) {
-        return { outcome: 'deferred', retryAfterMs: AUTO_RESUME_HOST_DEFER_MS, reason: code };
+        // An unavailable dependency backs off (30 s doubling to 5 min) instead
+        // of re-asking it every 30 s for the whole lineage window.
+        const count = (autoResumeDeferrals.get(params.taskId) ?? 0) + 1;
+        autoResumeDeferrals.delete(params.taskId);
+        autoResumeDeferrals.set(params.taskId, count);
+        while (autoResumeDeferrals.size > 1_000) autoResumeDeferrals.delete(autoResumeDeferrals.keys().next().value);
+        return { outcome: 'deferred', retryAfterMs: Math.min(AUTO_RESUME_HOST_DEFER_MS * 2 ** (count - 1), AUTO_RESUME_MAX_DEFER_MS), reason: code };
       }
+      autoResumeDeferrals.delete(params.taskId);
       return {
         outcome: 'rejected',
         code,
@@ -368,7 +402,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     if (!block) return;
     throw createRuntimeError(
       block.code || 'CONTEXT_MODE_RECOVERY_PENDING',
-      block.error || 'Context-mode recovery is pending',
+      block.error || block.message || 'Context-mode recovery is pending',
       503,
     );
   };
@@ -557,7 +591,8 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     switch (method) {
       case 'harness_capabilities': return policyProjection();
       case 'context_state': {
-        if (!harnessPolicies.contextProjection) throw createRuntimeError('harness_policy_disabled', 'Task context projection is disabled', 409);
+        // Read-only and scope-checked; compaction anchors use it regardless of
+        // the context-projection policy, which gates only model-visible tools.
         const { rootSessionId, directory } = params;
         if (typeof rootSessionId !== 'string' || !rootSessionId || typeof directory !== 'string' || !directory) throw createRuntimeError('task_scope_mismatch', 'Context scope is required', 403);
         const tasks = scheduler.listTasks({ rootSessionId });
@@ -568,6 +603,14 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           requiredCheckReceipts: (task.requiredCheckReceipts ?? []).map(({ name, status, callId, messageId }) => ({ name, status, callId, messageId })) })),
           envelopes: scheduler.listResultEnvelopes({ rootSessionId }).map((envelope) => ({ taskId: envelope.taskId,
             rootSessionId, envelopeId: envelope.envelopeId, action: envelope.action, autoResume: envelope.autoResume })) };
+      }
+      case 'child_assignment': {
+        // Read-only: the delegated brief a child's compaction summary keeps.
+        const childSessionId = typeof params.childSessionId === 'string' ? params.childSessionId.trim() : '';
+        const directory = typeof params.directory === 'string' ? params.directory.trim() : '';
+        if (!childSessionId || !directory) throw createRuntimeError('task_scope_mismatch', 'childSessionId and directory are required', 403);
+        const task = scheduler.getChildAssignment?.(childSessionId, directory) ?? null;
+        return { text: task ? formatManagedAssignmentContext(task) : null };
       }
       case 'required_check': {
         if (!harnessPolicies.compactResults) return { tracked: false };
@@ -640,6 +683,9 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           prompt: params.prompt,
           ...(params.requiredChecks ? { requiredChecks: params.requiredChecks } : {}),
           allowDuplicate: params.allowDuplicate === true,
+          // Only Council's private dispatch class reaches the scheduler; it
+          // marks independent reviewer seats for the duplicate guard.
+          ...(params.deadlineClass === 'council' ? { deadlineClass: 'council' } : {}),
           timeoutAt,
         });
         return projectTaskResult(task, resultMode);

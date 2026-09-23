@@ -22,8 +22,9 @@ import {
   validateCursorQuotaCredential,
 } from './providers/cursor-acp.js';
 import {
+  openCodeZenDeviceFlows,
   resolveOpenCodeZenCredential,
-  validateOpenCodeZenCredential,
+  validateStoredOpenCodeZenCredential,
   OpenCodeZenCredentialError,
 } from './providers/opencode.js';
 import {
@@ -99,9 +100,12 @@ const defaultCredentialRuntime = {
   importCursorCredential: importCursorManagedCredential,
   readCredential: readManagedQuotaCredential,
   writeCredential: writeManagedQuotaCredential,
+  // OpenCode Zen credentials come only from device sign-in, so validation always
+  // targets the stored credential (refreshing its token when needed).
   validate: async (providerId, credential) => {
     if (providerId === 'opencode') {
-      return validateOpenCodeZenCredential(credential);
+      await validateStoredOpenCodeZenCredential();
+      return credential;
     }
     if (providerId === 'ollama-cloud') {
       await fetchOllamaCloudUsage(credential);
@@ -109,6 +113,7 @@ const defaultCredentialRuntime = {
     }
     return validateCursorQuotaCredential(credential);
   },
+  deviceFlows: openCodeZenDeviceFlows,
   getEffectiveSource: (providerId) => {
     if (providerId === 'opencode') return resolveOpenCodeZenCredential().source;
     if (providerId === 'ollama-cloud') return resolveOllamaCloudCredential().source;
@@ -123,6 +128,11 @@ const resolveCredentialProvider = (req, res) => {
     sendCredentialError(res, 'UNSUPPORTED_PROVIDER', 404);
     return null;
   }
+};
+
+const sendOpenCodeZenError = (res, error) => {
+  const safe = error instanceof OpenCodeZenCredentialError ? error : new OpenCodeZenCredentialError('API_ERROR');
+  res.status(safe.status).json({ code: safe.code, error: safe.message });
 };
 
 const credentialStatus = (providerId, runtime) => ({
@@ -239,6 +249,10 @@ export function registerQuotaRoutes(app, {
   app.put('/api/quota/credentials/:providerId', parseCredentialBody, async (req, res) => {
     const providerId = resolveCredentialProvider(req, res);
     if (!providerId) return;
+    if (providerId === 'opencode') {
+      sendOpenCodeZenError(res, new OpenCodeZenCredentialError('SIGN_IN_REQUIRED'));
+      return;
+    }
     try {
       const { credential } = credentialRuntime.assertCredential(providerId, req.body);
       const validatedCredential = await credentialRuntime.validate(providerId, credential);
@@ -262,6 +276,10 @@ export function registerQuotaRoutes(app, {
     if (!providerId) return;
     try {
       const hasBody = req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0;
+      if (providerId === 'opencode' && hasBody) {
+        sendOpenCodeZenError(res, new OpenCodeZenCredentialError('SIGN_IN_REQUIRED'));
+        return;
+      }
       const credential = hasBody
         ? credentialRuntime.assertCredential(providerId, req.body).credential
         : credentialRuntime.readCredential(providerId);
@@ -278,6 +296,31 @@ export function registerQuotaRoutes(app, {
       }
       sendCredentialError(res, 'INVALID_CREDENTIAL', 400);
     }
+  });
+
+  app.post('/api/quota/credentials/opencode/device/start', async (_req, res) => {
+    try {
+      res.json(await credentialRuntime.deviceFlows.start());
+    } catch (error) {
+      sendOpenCodeZenError(res, error);
+    }
+  });
+
+  app.post('/api/quota/credentials/opencode/device/poll', parseCredentialBody, async (req, res) => {
+    const flowId = typeof req.body?.flowId === 'string' ? req.body.flowId : '';
+    try {
+      const result = await credentialRuntime.deviceFlows.poll(flowId);
+      res.json(result.status === 'approved'
+        ? { status: 'approved', credential: credentialStatus('opencode', credentialRuntime) }
+        : result);
+    } catch (error) {
+      sendOpenCodeZenError(res, error);
+    }
+  });
+
+  app.post('/api/quota/credentials/opencode/device/cancel', parseCredentialBody, (req, res) => {
+    if (typeof req.body?.flowId === 'string') credentialRuntime.deviceFlows.cancel(req.body.flowId);
+    res.json({ status: 'cancelled' });
   });
 
   app.post('/api/quota/credentials/:providerId/import', parseCredentialBody, async (req, res) => {

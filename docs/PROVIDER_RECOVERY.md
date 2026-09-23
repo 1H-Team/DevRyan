@@ -144,7 +144,13 @@ A blocked action ends recovery and requests explicit user continuation.
 Reservation, attempt count and the recovery message ID are persisted before
 the one POST. The ID is correlation, not assumed server execution idempotency.
 An ambiguous POST is never resent. Restart reconciliation only reads durable
-admissions; it never scans history to discover old failures. Existing accepted
+admissions; it never scans history to discover old failures. It runs once per
+runtime instance (not on every plugin hello), with at most eight observations at
+a time, and writes one `provider_recovery_sweep_summary` record. A stored
+objective from a replaced runtime is retired (`superseded`,
+`recovery_runtime_replaced`) only when OpenCode answers 404 for the session
+itself. A busy or restarting runtime is transient and never retires anything.
+Existing accepted
 recovery is observed without resubmission. Cancellation markers and consumed
 attempts survive restart. Stop persists its fence before requesting abort and
 descendant cancellation; the UI distinguishes this acknowledgement from proven
@@ -228,6 +234,18 @@ isolated loopback-provider fixture. Heartbeat-only OpenAI traffic and the exact
 Anthropic upstream-timeout envelope each completed one recovery with two provider
 requests. Semantic cutoff and interrupted Anthropic tool input each made one
 provider request and zero recovery attempts; both stopped for user attention.
+
+The bundled companion runtime reports `<upstream>-devryan.<n>` from
+`/global/health`. Its patch does not touch provider transport, request
+preparation or error shapes, so compatibility follows the upstream base: only
+`<allow-listed version>-devryan.<n>` is accepted. From v1.2.7 until this change,
+companion runtimes were treated as unsupported and never recovered automatically.
+On September 23, 2026 the fixture below was run against the bundled
+`1.18.31-devryan.9` binary. Heartbeat, silent-SSE, non-SSE, missing-header and
+Anthropic upstream-timeout traffic each completed one recovery with two provider
+requests; non-SSE needed one rerun for the documented cold start. Semantic cutoff
+and interrupted Anthropic tool input each made one request and zero recovery
+attempts, stopping for user attention.
 
 OpenCode 1.18.31 compatibility was verified on September 14, 2026 with the
 isolated loopback-provider fixture. Heartbeat, silent-SSE, non-SSE, and
@@ -324,9 +342,16 @@ A completed child is never relaunched by the collection path.
 
 Permanent admission failures publish a small `collectionIssue` in the parent
 projection and a reason-coded `managed_collection_rejected` diagnostic. The
-plugin stops retrying that task's admission fence. The chat hides collection-issue notices in both the parent card and retained
-result. Stored results, diagnostics, and the explicit continuation API remain
-available; ordinary user input can resume the parent. Explicit continuation rechecks
+plugin stops retrying that task's admission fence. The parent shows "Sub-agent
+result ready — parent paused" with a Collect Result action that uses the explicit
+continuation API; stored results and diagnostics remain available, and ordinary
+user input can also resume the parent. Unreadable (not missing) outcome evidence
+is retried, with plugin recovery scans backing off from 1 s to 8 s; after five
+consecutive unreadable attempts the task is also published as a
+`managed_collection_unverified` issue so the user can collect it. A busy or
+superseded turn is fenced regardless of evidence. An explicit continuation records
+`objectiveID`, the objective it continued, so compaction re-anchors to the user's
+objective rather than the continuation text. Explicit continuation rechecks
 live settlement, pending requests, current objective, revision and permissions
 before a fresh user-authorized prompt; the completed result stays intact.
 

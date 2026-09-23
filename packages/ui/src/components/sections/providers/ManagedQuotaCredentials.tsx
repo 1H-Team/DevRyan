@@ -5,30 +5,35 @@ import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import { quotaRefreshCoordinator, useQuotaStore } from '@/stores/useQuotaStore';
+import { useQuotaStore } from '@/stores/useQuotaStore';
 
-export type ManagedQuotaProviderId = 'ollama-cloud' | 'cursor-acp' | 'opencode';
+import {
+  type CredentialStatus,
+  type ManagedQuotaProviderId,
+  parseResponseError,
+  refreshQuotaAfterCredentialChange,
+} from './managedQuotaCredentialSupport';
+import { OpenCodeZenCredentials } from './OpenCodeZenCredentials';
 
-type CredentialStatus = {
-  configured: boolean;
-  credentialKind?: 'dashboard' | 'oauth' | 'cookie';
-  hasRefreshToken?: boolean;
-  effectiveSource?: 'environment' | 'token-file' | 'managed' | 'legacy' | null;
-  secretMasked?: string;
-};
+export type { ManagedQuotaProviderId } from './managedQuotaCredentialSupport';
 
-const parseResponseError = (payload: unknown, fallback: string) => {
-  if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
-    const error = (payload as Record<string, unknown>).error;
-    if (typeof error === 'string' && error.trim()) return error;
-  }
-  return fallback;
-};
+type PastedQuotaProviderId = Exclude<ManagedQuotaProviderId, 'opencode'>;
 
 export const ManagedQuotaCredentials = React.memo(function ManagedQuotaCredentials({
   providerId,
 }: {
   providerId: ManagedQuotaProviderId;
+}) {
+  // OpenCode Zen signs in through the OpenCode Console device flow instead of pasted secrets.
+  return providerId === 'opencode'
+    ? <OpenCodeZenCredentials />
+    : <PastedQuotaCredentials providerId={providerId} />;
+});
+
+const PastedQuotaCredentials = function PastedQuotaCredentials({
+  providerId,
+}: {
+  providerId: PastedQuotaProviderId;
 }) {
   const { t } = useI18n();
   const [status, setStatus] = React.useState<CredentialStatus>({ configured: false });
@@ -38,8 +43,6 @@ export const ManagedQuotaCredentials = React.memo(function ManagedQuotaCredentia
   const [loading, setLoading] = React.useState(true);
   const [busy, setBusy] = React.useState<'save' | 'delete' | 'validate' | 'import' | null>(null);
   const [cookie, setCookie] = React.useState('');
-  const [workspaceId, setWorkspaceId] = React.useState('');
-  const [authCookie, setAuthCookie] = React.useState('');
   const [cursorMode, setCursorMode] = React.useState<'dashboard' | 'oauth'>('dashboard');
   const [sessionToken, setSessionToken] = React.useState('');
   const [accessToken, setAccessToken] = React.useState('');
@@ -47,21 +50,15 @@ export const ManagedQuotaCredentials = React.memo(function ManagedQuotaCredentia
 
   const title = providerId === 'cursor-acp'
     ? t('settings.providers.page.auth.cursorUsageTitle')
-    : providerId === 'opencode'
-      ? t('settings.providers.page.auth.openCodeZenUsageTitle')
-      : t('settings.providers.page.auth.ollamaCloudUsageTitle');
+    : t('settings.providers.page.auth.ollamaCloudUsageTitle');
   const description = providerId === 'cursor-acp'
     ? cursorMode === 'dashboard'
       ? t('settings.providers.page.auth.cursorUsageDescription')
       : t('settings.providers.page.auth.cursorOAuthDescription')
-    : providerId === 'opencode'
-      ? t('settings.providers.page.auth.openCodeZenUsageDescription')
-      : t('settings.providers.page.auth.ollamaCloudUsageDescription');
+    : t('settings.providers.page.auth.ollamaCloudUsageDescription');
 
   const clearSecrets = React.useCallback(() => {
     setCookie('');
-    setWorkspaceId('');
-    setAuthCookie('');
     setSessionToken('');
     setAccessToken('');
     setRefreshToken('');
@@ -103,12 +100,6 @@ export const ManagedQuotaCredentials = React.memo(function ManagedQuotaCredentia
 
   const buildCredential = () => {
     if (providerId === 'ollama-cloud') return { cookie: cookie.trim() };
-    if (providerId === 'opencode') {
-      return {
-        workspaceId: workspaceId.trim(),
-        authCookie: authCookie.trim(),
-      };
-    }
     if (cursorMode === 'dashboard') return { sessionToken: sessionToken.trim() };
     return {
       ...(accessToken.trim() ? { accessToken: accessToken.trim() } : {}),
@@ -158,17 +149,13 @@ export const ManagedQuotaCredentials = React.memo(function ManagedQuotaCredentia
       setOperationMessage(message);
       toast.success(message);
 
-      // Refresh failures must not turn a successful credential write into a failed save.
-      await quotaRefreshCoordinator.refreshNow({ forceRefresh: true, rediscover: true });
-      if (action !== 'delete') {
-        const latest = useQuotaStore.getState();
-        const error = latest.providerRefreshState[providerId]?.refreshError || latest.error;
-        const result = latest.results.find((entry) => entry.providerId === providerId);
-        if (error || !result?.ok) {
-          const detail = error || t('settings.providers.page.toast.managedQuotaRefreshFailed');
-          setOperationError(detail);
-          toast.error(detail);
-        }
+      const refreshDetail = await refreshQuotaAfterCredentialChange(providerId, {
+        expectResult: action !== 'delete',
+        fallbackError: t('settings.providers.page.toast.managedQuotaRefreshFailed'),
+      });
+      if (refreshDetail) {
+        setOperationError(refreshDetail);
+        toast.error(refreshDetail);
       }
     } catch (error) {
       const message = error instanceof Error
@@ -238,30 +225,7 @@ export const ManagedQuotaCredentials = React.memo(function ManagedQuotaCredentia
         </div>
       ) : null}
 
-      {providerId === 'opencode' ? (
-        <div className="grid gap-2 sm:grid-cols-2">
-          <Input
-            id="opencode-zen-workspace-id"
-            type="text"
-            value={workspaceId}
-            onChange={(event) => setWorkspaceId(event.target.value)}
-            placeholder={t('settings.providers.page.auth.openCodeZenWorkspaceIdPlaceholder')}
-            className="font-mono text-xs"
-            autoComplete="off"
-            maxLength={30}
-          />
-          <Input
-            id="opencode-zen-auth-cookie"
-            type="password"
-            value={authCookie}
-            onChange={(event) => setAuthCookie(event.target.value)}
-            placeholder={t('settings.providers.page.auth.openCodeZenAuthCookiePlaceholder')}
-            className="font-mono text-xs"
-            autoComplete="off"
-            maxLength={16_384}
-          />
-        </div>
-      ) : providerId === 'ollama-cloud' ? (
+      {providerId === 'ollama-cloud' ? (
         <Input
           id="ollama-cloud-cookie"
           type="password"
@@ -354,4 +318,4 @@ export const ManagedQuotaCredentials = React.memo(function ManagedQuotaCredentia
       </div>
     </div>
   );
-});
+};

@@ -25,7 +25,7 @@ export function registerSupabaseConnectionRoutes(app, { runtime, preserveLocalCo
       if (!connection.configured && isDirectLocalRequest(req)) {
         res.setHeader('Cache-Control', 'no-store');
         return res.json({ configured: false, desiredEnabled: false, effectiveEnabled: false,
-          state: 'disconnected', errorCode: null, restartRequired: false, restartAvailable: false, blockers: [] });
+          state: 'disconnected', errorCode: null, restartRequired: false, restartPending: false, restartAvailable: false, blockers: [] });
       }
       if (!await authorize(req, res)) return;
       res.setHeader('Cache-Control', 'no-store');
@@ -64,7 +64,7 @@ export function attachSupabaseConnectionBoundary(app, server, connection, { allo
   app.use((req, res, next) => {
     if (!connection.enabled && !isDirectLocalRequest(req) && !allowRemoteRequest(req)) return unavailable(res);
     if (!connection.enabled && /^\/api\/(?:admin|bots|bot-actions|bot-channels|bot-runs|bug-reports|user-analytics)(?:\/|$)/.test(req.path) && !allowRemoteRequest(req)) return unavailable(res);
-    if (connection.status().restartRequired && !safeMethods.has(req.method)) {
+    if (connection.status().restartPending && !safeMethods.has(req.method)) {
       // Completion, cancellation and approval for admitted work remain usable.
       const startsWork = /\/(?:prompt_async|message|command|shell|enqueue|retry|prewarm|fork|run-now|execute)$/.test(req.path)
         || (req.method === 'POST' && /^\/api\/session\/?$/.test(req.path));

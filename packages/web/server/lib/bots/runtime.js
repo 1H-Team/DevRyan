@@ -263,6 +263,9 @@ export function createBotsRuntime({
   isAdmissionPaused = () => false,
   resolvePrincipal = null,
   oauthCoordinator = null,
+  // 'disconnected' / 'not_configured' when the host runs without Supabase by
+  // choice: Bots are unavailable until it is connected, not temporarily down.
+  supabaseMode = null,
 } = {}) {
   if (typeof dataDirectory !== 'string' || !path.isAbsolute(dataDirectory)) {
     throw new TypeError('Bots runtime requires an absolute data directory');
@@ -1250,6 +1253,7 @@ export function createBotsRuntime({
   async function resolveCurrentCapabilities({ refresh = false } = {}) {
     const input = {
       hasSupabase: store.available,
+      supabaseMode,
       botHost,
       encryption,
       schemaFailure,

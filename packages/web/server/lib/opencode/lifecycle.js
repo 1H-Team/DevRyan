@@ -4,6 +4,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { formatPackagedAgentSyncConflicts } from './packaged-agent-sync.js';
+import { startParentDeathWatchdog } from './parent-death-watchdog.js';
 import { buildVisibleSkillPolicy } from './skill-policy.js';
 import { CONFIG_FILE, readConfigFile, writeConfig } from './shared.js';
 import { migrateOpenchamberConfigToSidecar } from './openchamber-sidecar.js';
@@ -11,6 +12,8 @@ import { SLIM_REPLACED_AGENT_NAMES, resolveSlimConfig } from './slim-config.js';
 import { createContextModeRecovery } from './context-mode-recovery.js';
 import {
   buildContextModeStorageEnv,
+  isManagedOpenCodeProcessCommand,
+  readProcessCommand,
   reapOrphanedManagedOpenCodeProcesses,
   registerManagedOpenCodeProcess,
   unregisterManagedOpenCodeProcess,
@@ -197,6 +200,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     // are logged and never block the launch.
     beforeManagedSpawn = async () => {},
     assertExecutionReady = () => {},
+    // Ties each managed server to this process (injectable for tests that mock spawn).
+    startManagedProcessWatchdog = startParentDeathWatchdog,
   } = deps;
 
   const emitStartupStatus = (text) => {
@@ -327,10 +332,13 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       return [];
     }
 
+    // Only a listener that is provably a managed `serve --port N` process is
+    // signalled; anything else on the port is left alone.
     const pids = stdout
       .split(/\s+/)
       .map((value) => Number.parseInt(value, 10))
-      .filter((pid) => Number.isFinite(pid) && pid > 0 && pid !== process.pid);
+      .filter((pid) => Number.isFinite(pid) && pid > 0 && pid !== process.pid)
+      .filter((pid) => isManagedOpenCodeProcessCommand(readProcessCommand(pid), { port: Math.trunc(numericPort) }));
 
     for (const pid of pids) {
       try {
@@ -512,6 +520,14 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       detached: process.platform !== 'win32',
     });
 
+    // The server's lifetime is tied to this process: if it exits for any
+    // reason (quit, forced exit, crash, SIGKILL), the watchdog stops the
+    // OpenCode group. WSL launches are excluded (Windows).
+    const watchdog = launchWrapperType === null
+      ? startManagedProcessWatchdog({ childPid: child.pid, port })
+      : { dispose() {} };
+    child.once('exit', () => watchdog.dispose());
+
     // Register before the ready-wait: a crash in the up-to-30s window between
     // spawn and readiness must not leave an untracked orphan behind.
     if (child.pid) {
@@ -607,6 +623,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       const closed = await closeManagedOpenCodeChild(child);
       if (closed && child.pid) {
         unregisterManagedOpenCodeProcess(child.pid);
+        watchdog.dispose();
       }
       throw error;
     }
@@ -618,6 +635,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         const closed = await closeManagedOpenCodeChild(child);
         if (closed) {
           unregisterManagedOpenCodeProcess(child.pid);
+          watchdog.dispose();
         } else {
           console.warn(`[OpenCode] Managed process ${child.pid} did not confirm close; keeping registry record for orphan cleanup.`);
         }
@@ -946,7 +964,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     delete processEnvironment.OPENCODE_DISABLE_EXTERNAL_SKILLS;
     delete processEnvironment.DEVRYAN_ORCHESTRATION_URL;
     delete processEnvironment.DEVRYAN_ORCHESTRATION_TOKEN;
-    for (const key of ['DEVRYAN_EXECUTION_BOUNDARY', 'DEVRYAN_OPENCODE_ARTIFACT', 'DEVRYAN_EXECUTION_CONTROL_PLUGINS',
+    for (const key of ['DEVRYAN_EXECUTION_BOUNDARY', 'DEVRYAN_OPENCODE_ARTIFACT', 'DEVRYAN_EXECUTION_CONTROL_PLUGINS', 'DEVRYAN_EXECUTION_BROWSER_PLUGIN',
       'DEVRYAN_EXECUTION_LAUNCHER', 'DEVRYAN_PROVIDER_WORKER', 'DEVRYAN_PROVIDER_STORAGE']) {
       delete processEnvironment[key];
       if (!(process.platform === 'win32' && state.useWslForOpencode)

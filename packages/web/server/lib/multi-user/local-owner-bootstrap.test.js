@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import express from 'express';
-import request from 'supertest';
+import request from '../../test-supertest.js';
 import { afterEach, expect, it } from 'vitest';
 import { createSupabaseConnection } from './supabase-connection.js';
 import { createSessionVault } from './vault.js';

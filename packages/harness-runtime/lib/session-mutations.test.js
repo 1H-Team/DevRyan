@@ -27,6 +27,46 @@ async function fixture(options = {}) {
     write: (name, text) => fs.writeFile(path.join(directory, name), text) };
 }
 
+test('execution outcomes survive restart and never infer non-execution from missing or dirty leases', async () => {
+  const f = await fixture();
+  const input = { directory: f.directory, sessionID: 'a', userMessageID: 'pa', messageID: 'pa-assistant', callID: 'ca', kind: 'control' };
+  const query = { directory: f.directory, sessionID: 'a', calls: [{ messageID: input.messageID, callID: input.callID }] };
+  expect((await f.runtime.executionOutcomes(query))[0].outcome).toBe('uncertain');
+  const lease = await f.runtime.begin(input);
+  await f.runtime.cancelUnstartedCall(input);
+  expect((await f.runtime.executionOutcomes(query))[0].outcome).toBe('uncertain');
+  await f.runtime.cleanupLease(lease);
+  const reopened = createSessionMutationRuntime({ directory: f.storage });
+  expect((await reopened.executionOutcomes(query))[0].outcome).toBe('never_started');
+  expect((await reopened.executionOutcomes({ ...query, calls: [{ messageID: 'wrong', callID: 'ca' }] }))[0].outcome).toBe('uncertain');
+  const done = await f.begin('a', 'pb', 'cb', { kind: 'control' });
+  await f.runtime.claimLease({ directory: f.directory, token: done.token, kind: 'control' });
+  await f.finish(done);
+  expect((await reopened.executionOutcomes({ ...query, calls: [{ messageID: 'pb-assistant', callID: 'cb' }] }))[0].outcome).toBe('finished');
+});
+
+test('read-only lease and outcome lookups do not stage Git metadata, while mutations remain durable', async () => {
+  const f = await fixture();
+  const lease = await f.begin('a', 'pa', 'ca', { kind: 'control' });
+  const writeFile = fs.writeFile.bind(fs);
+  const writes = spyOn(fs, 'writeFile').mockImplementation(async (file, ...args) => {
+    if (String(file).includes('.metadata-index.blobs')) throw new Error('unexpected metadata write');
+    return writeFile(file, ...args);
+  });
+  try {
+    const reopened = createSessionMutationRuntime({ directory: f.storage });
+    expect((await reopened.leaseForCall({ directory: f.directory, sessionID: 'a', callID: 'ca' })).token).toBe(lease.token);
+    expect((await reopened.executionOutcomes({ directory: f.directory, sessionID: 'a',
+      calls: [{ messageID: 'pa-assistant', callID: 'ca' }] }))[0].outcome).toBe('uncertain');
+    await expect(reopened.claimLease({ directory: f.directory, token: lease.token, kind: 'control' }))
+      .rejects.toThrow('unexpected metadata write');
+  } finally { writes.mockRestore(); }
+  await f.runtime.claimLease({ directory: f.directory, token: lease.token, kind: 'control' });
+  const reopened = createSessionMutationRuntime({ directory: f.storage });
+  await expect(reopened.claimLease({ directory: f.directory, token: lease.token, kind: 'control' }))
+    .rejects.toMatchObject({ code: 'execution_already_started' });
+});
+
 test('control admission and finish never inspect or copy project files, and preserve one-time claim and receipts', async () => {
   const f = await fixture();
   await f.write('input', 'keep');
@@ -620,9 +660,10 @@ test('concurrent ledger changes are bounded independently of stable file stamps'
     await db.commit();
   };
   await churn();
-  const original = fs.link.bind(fs); let changes = 0;
-  const changing = spyOn(fs, 'link').mockImplementation(async (...args) => {
-    if (String(args[0]).startsWith(path.join(root, 'objects', '.pending-'))) { changes++; await churn(); }
+  // Churn once per inspection, at the object-store probe every inspection makes.
+  const original = fs.lstat.bind(fs); let changes = 0;
+  const changing = spyOn(fs, 'lstat').mockImplementation(async (...args) => {
+    if (/^[a-f0-9]{64}$/.test(path.basename(String(args[0]))) && path.dirname(String(args[0])) === path.join(root, 'objects')) { changes++; await churn(); }
     return original(...args);
   });
   try { await expect(f.begin('s', 'u', 'c')).rejects.toMatchObject({ code: 'workspace_changing' }); }
@@ -688,4 +729,142 @@ test('slow unchanged workspace enumeration keeps concurrent preparation making p
       await f.finish(lease);
     }
   } finally { reads.mockRestore(); await f.runtime.drain(); }
+});
+
+test('execution outcome queries never create a ledger for an unmanaged project', async () => {
+  const f = await fixture();
+  const outcomes = await f.runtime.executionOutcomes({ directory: f.directory, sessionID: 'ses_unmanaged',
+    calls: [{ messageID: 'msg_assistant', callID: 'call_one' }] });
+  expect(outcomes).toEqual([{ sessionID: 'ses_unmanaged', messageID: 'msg_assistant', callID: 'call_one', outcome: 'uncertain' }]);
+  await expect(fs.readdir(f.storage)).rejects.toMatchObject({ code: 'ENOENT' });
+  await expect(f.runtime.executionOutcomes({ directory: f.directory, sessionID: 'ses_unmanaged',
+    calls: [{ messageID: '', callID: 'call_one' }] })).rejects.toMatchObject({ code: 'invalid_capture_identity' });
+});
+
+test('registered prompts, admission and lease lookups answer while another process holds the ledger lock', async () => {
+  const { withExecutionAdmission } = await import('./execution-admission.js');
+  const { withCrossProcessFileLock } = await import('./atomic-file.js');
+  const f = await fixture();
+  await f.write('x', 'old');
+  const registered = await f.runtime.registerPrompt({ directory: f.directory, sessionID: 'steady', userMessageID: 'p1' });
+  const owner = await f.begin('owner', 'p0', 'c0');
+  let release, entered;
+  const held = new Promise((resolve) => { release = resolve; });
+  const started = new Promise((resolve) => { entered = resolve; });
+  const lockPath = path.join(f.storage, changeKey(await fs.realpath(f.directory)), 'owner.lock');
+  const holder = withCrossProcessFileLock(lockPath, async () => { entered(); await held; }, { timeoutMs: 5_000 });
+  await started;
+  try {
+    const fast = { timeoutMs: 1_000 };
+    await expect(withExecutionAdmission({ sessionID: 'steady' }, () => f.runtime.registerPrompt({
+      directory: f.directory, sessionID: 'steady', userMessageID: 'p1' }), fast)).resolves.toEqual(registered);
+    await expect(withExecutionAdmission({ sessionID: 'steady' }, () => f.runtime.assertAdmission({
+      directory: f.directory, sessionID: 'steady' }), fast)).resolves.toEqual({ admitted: true });
+    await expect(withExecutionAdmission({ sessionID: 'owner' }, () => f.runtime.leaseForCall({
+      directory: f.directory, sessionID: 'owner', callID: 'c0' }), fast)).resolves.toMatchObject({ token: owner.token });
+    // A new prompt needs a durable write and still waits for the lock.
+    await expect(withExecutionAdmission({ sessionID: 'steady' }, () => f.runtime.registerPrompt({
+      directory: f.directory, sessionID: 'steady', userMessageID: 'p2' }), { timeoutMs: 150 }))
+      .rejects.toMatchObject({ code: 'local_execution_timeout' });
+  } finally { release(); await holder; }
+});
+
+test('a lease lookup never reports absence while a reservation for the call is queued', async () => {
+  let release, entered;
+  const held = new Promise((resolve) => { release = resolve; });
+  const started = new Promise((resolve) => { entered = resolve; });
+  const f = await fixture({ onMaterialize: async () => { entered(); await held; } });
+  await f.write('x', 'old');
+  const owner = await f.begin('owner', 'p0', 'c0');
+  await fs.writeFile(path.join(owner.viewDirectory, 'x'), 'new');
+  const publication = f.finish(owner);
+  await started;
+  const scope = { directory: f.directory, sessionID: 's', userMessageID: 'u', messageID: 'm', callID: 'c' };
+  const reserving = f.runtime.reserve(scope);
+  const lookup = f.runtime.leaseForCall(scope);
+  release(); await publication;
+  const lease = await reserving;
+  expect(await lookup).toMatchObject({ token: lease.token });
+});
+
+test('lock-free reads fail closed when a materialization needs recovery', async () => {
+  const f = await fixture({ onMaterialize: () => { throw new Error('fixture crash'); } });
+  await f.write('x', '0'); const a = await f.begin('a', 'pa', 'ca');
+  await fs.writeFile(path.join(a.viewDirectory, 'x'), '1'); await expect(f.finish(a)).rejects.toThrow('fixture crash');
+  await f.write('x', 'foreign');
+  const restarted = createSessionMutationRuntime({ directory: f.storage });
+  await expect(restarted.assertAdmission({ directory: f.directory, sessionID: 'a' })).rejects.toMatchObject({ code: 'mutation_recovery_required' });
+  await expect(restarted.executionOutcomes({ directory: f.directory, sessionID: 'a', calls: [{ messageID: 'pa-assistant', callID: 'ca' }] }))
+    .rejects.toMatchObject({ code: 'mutation_recovery_required' });
+});
+
+test('a caller queued behind an un-admitted publication follows its progress', async () => {
+  const { withExecutionAdmission, executionProgress } = await import('./execution-admission.js');
+  let entered;
+  const started = new Promise((resolve) => { entered = resolve; });
+  const f = await fixture({ onMaterialize: async () => {
+    entered();
+    for (let n = 0; n < 12; n++) { await new Promise((resolve) => setTimeout(resolve, 50)); executionProgress(); }
+  } });
+  await f.write('x', 'old');
+  const owner = await f.begin('owner', 'p0', 'c0');
+  await fs.writeFile(path.join(owner.viewDirectory, 'x'), 'new');
+  const publication = f.finish(owner); // production 'finish' runs without an admission context
+  await started;
+  await expect(withExecutionAdmission({ sessionID: 'queued' }, () => f.runtime.registerPrompt({
+    directory: f.directory, sessionID: 'queued', userMessageID: 'q1' }), { timeoutMs: 5_000, idleMs: 200 }))
+    .resolves.toMatchObject({ sequence: expect.any(Number) });
+  await publication;
+});
+
+test('a caller queued behind a progressing lock holder is not expired by the idle deadline', async () => {
+  const { withExecutionAdmission, executionProgress } = await import('./execution-admission.js');
+  let entered;
+  const started = new Promise((resolve) => { entered = resolve; });
+  const f = await fixture({ onMaterialize: async () => {
+    entered();
+    for (let i = 0; i < 12; i++) { await new Promise((resolve) => setTimeout(resolve, 50)); executionProgress(); }
+  } });
+  await f.write('x', 'old');
+  const owner = await f.begin('owner', 'p0', 'c0');
+  await fs.writeFile(path.join(owner.viewDirectory, 'x'), 'new');
+  const publication = withExecutionAdmission({ sessionID: 'owner' }, () => f.finish(owner), { timeoutMs: 10_000 });
+  await started;
+  const queued = withExecutionAdmission({ sessionID: 'queued' }, () => f.runtime.registerPrompt({
+    directory: f.directory, sessionID: 'queued', userMessageID: 'q1' }), { timeoutMs: 5_000, idleMs: 200 });
+  await expect(queued).resolves.toMatchObject({ sequence: expect.any(Number) });
+  await publication;
+});
+
+test('leaving the queue is progress: a long queue wait is never expired right after acquiring the lock', async () => {
+  const { withExecutionAdmission, executionProgress } = await import('./execution-admission.js');
+  for (let run = 0; run < 5; run++) {
+    let entered;
+    const started = new Promise((resolve) => { entered = resolve; });
+    const f = await fixture({ onMaterialize: async () => {
+      entered();
+      // The holder works (with progress) for well over the queued caller's idle window.
+      for (let n = 0; n < 120; n++) { await new Promise((resolve) => setTimeout(resolve, 5)); executionProgress(); }
+    } });
+    await f.write('x', 'old');
+    const owner = await f.begin('owner', 'p0', 'c0');
+    await fs.writeFile(path.join(owner.viewDirectory, 'x'), 'new');
+    const publication = withExecutionAdmission({ sessionID: 'owner' }, () => f.finish(owner), { timeoutMs: 10_000 });
+    await started;
+    await expect(withExecutionAdmission({ sessionID: 'queued' }, () => f.runtime.registerPrompt({
+      directory: f.directory, sessionID: 'queued', userMessageID: 'q1' }), { timeoutMs: 10_000, idleMs: 250 }))
+      .resolves.toMatchObject({ sequence: expect.any(Number) });
+    await publication;
+  }
+});
+
+test('a tracked directory replaced by a file is observed as that file, not a blocked project', async () => {
+  const f = await fixture();
+  await fs.mkdir(path.join(f.directory, 'd')); await f.write('d/x', 'inside');
+  const first = await f.begin('s', 'p0', 'c0');
+  await f.runtime.claimLease({ directory: f.directory, token: first.token, kind: 'process' });
+  await f.finish(first);
+  await fs.rm(path.join(f.directory, 'd'), { recursive: true }); await f.write('d', 'now a file');
+  const next = await f.begin('s', 'p1', 'c1');
+  expect(await fs.readFile(path.join(next.viewDirectory, 'd'), 'utf8')).toBe('now a file');
 });

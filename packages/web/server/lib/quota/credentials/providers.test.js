@@ -8,6 +8,7 @@ import {
   assertManagedQuotaCredential,
   deleteManagedQuotaCredential,
   getManagedQuotaCredentialStatus,
+  hasLegacyOpenCodeZenCredential,
   readManagedQuotaCredential,
   writeManagedQuotaCredential,
 } from './providers.js';
@@ -18,6 +19,12 @@ import {
 } from './store.js';
 
 const tempDirectories = [];
+const zenCredential = {
+  orgId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y',
+  accessToken: 'sess_do-not-return-me',
+  refreshToken: 'rt_do-not-return-me',
+  accessTokenExpiresAt: 1_789_000_000_000,
+};
 const makeOptions = () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-quota-'));
   tempDirectories.push(directory);
@@ -44,17 +51,18 @@ describe('managed quota credentials', () => {
       workspaceId: 'wrk_example1',
       authCookie: 'auth=secret',
     })).toThrowError(expect.objectContaining({ code: 'UNSUPPORTED_PROVIDER' }));
-    expect(assertManagedQuotaCredential('opencode', {
-      workspaceId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y',
-      authCookie: 'signed-cookie',
-    }).credential).toEqual({
-      workspaceId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y',
-      authCookie: 'signed-cookie',
-    });
-    expect(() => assertManagedQuotaCredential('opencode', {
-      workspaceId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y',
-      authCookie: 'first; second=smuggled',
-    })).toThrowError(expect.objectContaining({ code: 'INVALID_CREDENTIAL' }));
+    expect(assertManagedQuotaCredential('opencode', zenCredential).credential).toEqual(zenCredential);
+    for (const invalid of [
+      { workspaceId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y', authCookie: 'retired-dashboard-cookie' },
+      { ...zenCredential, accessToken: 'first second' },
+      { ...zenCredential, refreshToken: '' },
+      { ...zenCredential, orgId: 'workspace' },
+      { ...zenCredential, accessTokenExpiresAt: '1789000000000' },
+      { ...zenCredential, extra: true },
+    ]) {
+      expect(() => assertManagedQuotaCredential('opencode', invalid))
+        .toThrowError(expect.objectContaining({ code: 'INVALID_CREDENTIAL' }));
+    }
     expect(assertManagedQuotaCredential('cursor', { accessToken: 'access', refreshToken: 'refresh' }).credential)
       .toEqual({ accessToken: 'access', refreshToken: 'refresh' });
     expect(() => assertManagedQuotaCredential('cursor-acp', {
@@ -87,19 +95,34 @@ describe('managed quota credentials', () => {
     expect(getManagedQuotaCredentialStatus('cursor-acp', options)).toEqual({ configured: false });
   });
 
-  it('stores OpenCode Zen dashboard credentials without returning either field', () => {
+  it('stores OpenCode Console tokens and returns only the workspace ID', () => {
     const options = makeOptions();
-    const status = writeManagedQuotaCredential('opencode', {
-      workspaceId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y',
-      authCookie: 'do-not-return-me',
-    }, options);
+    const status = writeManagedQuotaCredential('opencode', zenCredential, options);
     expect(status).toEqual({
       configured: true,
-      credentialKind: 'dashboard',
+      credentialKind: 'oauth',
+      workspaceId: zenCredential.orgId,
       secretMasked: '••••••••',
     });
-    expect(JSON.stringify(status)).not.toContain('wrk_');
-    expect(JSON.stringify(status)).not.toContain('do-not-return-me');
+    expect(JSON.stringify(status)).not.toContain(zenCredential.accessToken);
+    expect(JSON.stringify(status)).not.toContain(zenCredential.refreshToken);
+  });
+
+  it('asks retired OpenCode Zen dashboard credentials to reconnect without reading them as usable', () => {
+    const options = makeOptions();
+    const credentialPath = getQuotaCredentialPath('opencode', options);
+    fs.mkdirSync(path.dirname(credentialPath), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(credentialPath, JSON.stringify({
+      workspaceId: 'wrk_01K46JDFR0E75SG2Q8K172KF3Y',
+      authCookie: 'retired-dashboard-cookie',
+    }), { mode: 0o600 });
+
+    expect(readManagedQuotaCredential('opencode', options)).toBeNull();
+    expect(hasLegacyOpenCodeZenCredential(options)).toBe(true);
+    expect(getManagedQuotaCredentialStatus('opencode', options)).toEqual({ configured: false, reconnectRequired: true });
+
+    deleteManagedQuotaCredential('opencode', options);
+    expect(getManagedQuotaCredentialStatus('opencode', options)).toEqual({ configured: false });
   });
 
   it('cleans the exact temporary file after an atomic rename failure', () => {

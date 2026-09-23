@@ -10,6 +10,20 @@ export const safeChangePath = (value) => typeof value === 'string' && value && !
 export const equalEntry = (a, b) => a?.oid === b?.oid && a?.mode === b?.mode;
 const signature = (stat) => [stat.dev, stat.ino, stat.mode, stat.size, stat.mtimeNs, stat.ctimeNs].join(':');
 
+// For observation only: whether every existing ancestor is a real directory.
+// A path under a file or symlink ancestor does not exist in the project tree
+// (the ancestor itself is observed instead); it is never followed.
+export async function hasDirectoryAncestors(directory, file) {
+  if (!safeChangePath(file)) throw changeError('unsupported_path');
+  let parent = path.dirname(path.join(directory, file));
+  while (parent !== directory) {
+    const stat = await fs.lstat(parent).catch((error) => { if (['ENOENT', 'ENOTDIR'].includes(error.code)) return null; throw error; });
+    if (stat && (!stat.isDirectory() || stat.isSymbolicLink())) return false;
+    parent = path.dirname(parent);
+  }
+  return true;
+}
+
 export async function verifyAncestors(directory, file) {
   if (!safeChangePath(file)) throw changeError('unsupported_path');
   let parent = path.dirname(path.join(directory, file));

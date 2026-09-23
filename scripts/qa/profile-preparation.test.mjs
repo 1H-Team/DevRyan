@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { test } from 'node:test';
-import { assertQaSelectedProviderAccess, assertQaSelectedProviderDuration, pinQaAgents, prepareQaPluginHomeWrapper, prepareQaProfile, projectQaAuth } from './profile-preparation.mjs';
+import { assertQaSelectedProviderAccess, assertQaSelectedProviderDuration, pinQaAgents, preserveQaOrchestration, prepareQaPluginHomeWrapper, prepareQaProfile, projectQaAuth } from './profile-preparation.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -247,6 +247,12 @@ test('home shim affects only its child and leaves HOME unchanged', async () => {
             `await import(${JSON.stringify(new URL('./isolated-home.mjs', import.meta.url).href)}); const os = await import('node:os'); console.log(JSON.stringify({home:os.homedir(),environment:process.env.HOME}));`],
         { env: { ...process.env, DEVRYAN_QA_HOME: home } });
         assert.deepEqual(JSON.parse(stdout), { home, environment: originalHome });
+        const scratch = path.join(home, 'execution-scratch');
+        await mkdir(scratch);
+        const worker = await promisify(execFile)(process.execPath, ['--input-type=module', '--eval',
+            `await import(${JSON.stringify(new URL('./isolated-home.mjs', import.meta.url).href)}); const os = await import('node:os'); console.log(JSON.stringify({home:os.homedir(),environment:process.env.HOME}));`],
+        { env: { ...process.env, HOME: scratch, DEVRYAN_QA_HOME: home, DEVRYAN_EXECUTION_WORKER: '1' } });
+        assert.deepEqual(JSON.parse(worker.stdout), { home: scratch, environment: scratch });
         assert.equal(process.env.HOME, originalHome);
     } finally { await rm(home, { recursive: true, force: true }); }
 });
@@ -270,4 +276,25 @@ test('private home preload preserves descriptor and named server exports', async
         { env: { ...process.env, DEVRYAN_QA_HOME: home } });
         assert.deepEqual(JSON.parse(stdout), { id: 'synthetic-descriptor', home, sameFactory: true });
     } finally { await rm(home, { recursive: true, force: true }); }
+});
+
+
+test('preserved orchestration retains presets, efforts, model refs and backups without sharing mutable source records', () => {
+    const slim = { preset: 'personal', presets: { personal: {
+        explorer: { model: 'opencode-go/deepseek-v4.1-flash', variant: 'high' },
+    } }, agents: { oracle: { model: 'cursor-acp/muse-spark-1.3', variant: 'high' },
+        council: { modelRefs: ['openai/gpt-5.6-sol'], councillors: ['designer'] } }, fallback: { enabled: true } };
+    const sidecar = { agentOverrides: { designer: { variant: 'high' } },
+        agentBackupModels: { explorer: { model: 'opencode/deepseek-v4.1-flash', variant: null } }, unrelated: 'excluded' };
+    const copy = preserveQaOrchestration(slim, sidecar);
+    assert.deepEqual(copy.slim, slim);
+    assert.deepEqual(copy.sidecar.agentBackupModels, sidecar.agentBackupModels);
+    assert.equal(Object.hasOwn(copy.sidecar, 'unrelated'), false);
+    copy.slim.agents.oracle.variant = 'low';
+    copy.sidecar.agentBackupModels.explorer.model = 'changed';
+    assert.equal(slim.agents.oracle.variant, 'high');
+    assert.equal(sidecar.agentBackupModels.explorer.model, 'opencode/deepseek-v4.1-flash');
+    const auth = { 'opencode-go': { type: 'api', key: 'synthetic-key' } };
+    assert.throws(() => projectQaAuth(auth, 0, ['opencode-go']), /supported providers/);
+    assert.equal(projectQaAuth(auth, 0, ['opencode-go'], { preserveOrchestration: true }).evidence['opencode-go'].state, 'available');
 });

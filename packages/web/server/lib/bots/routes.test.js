@@ -692,6 +692,10 @@ describe('Production Bots capabilities and routes', () => {
     const encryption = { getKey: () => Buffer.alloc(32) };
     await expect(resolveBotCapabilities({ hasSupabase: false, botHost: host('healthy'), encryption }))
       .resolves.toMatchObject({ state: 'supabase_unavailable', available: false });
+    for (const supabaseMode of ['disconnected', 'not_configured']) {
+      await expect(resolveBotCapabilities({ hasSupabase: false, supabaseMode, botHost: host('healthy'), encryption }))
+        .resolves.toMatchObject({ state: `supabase_${supabaseMode}`, code: 'bots_require_supabase', available: false });
+    }
     await expect(resolveBotCapabilities({
       hasSupabase: true,
       botHost: host('healthy'),

@@ -61,6 +61,23 @@ const projectedTask = (...args: Parameters<typeof taskRecord>) => (
   toManagedTaskEvent(taskRecord(...args)).properties.task
 );
 
+test('configuration rejection survives snapshot hydration and keeps recovery actions available', async () => {
+  const failed = taskRecord(1, 'failed', { childSessionId: 'ses_configuration',
+    failureReason: 'Upstream request failed: This Go model requires Global regions. Select Global in your workspace\'s Privacy settings to use it.',
+    transportRecovery: { revision: 1, phase: 'exhausted', kind: 'connection_failure',
+      sameModelAttempts: 1, backupAttempts: 0, failedMessageId: 'msg_failed', failedUserMessageId: 'msg_user',
+      recoveryMessageId: 'msg_user', eventId: null, reservedAt: 3_000, submittedAt: null } });
+  const envelope = createManagedTaskResultEnvelope(failed, { sequence: 1, createdAt: 5_000, resumable: true });
+  const projected = toManagedTaskEvent(failed, envelope).properties.task;
+  const store = createManagedOrchestrationStore({ api: fakeApi({ getSnapshot: async () =>
+    emptySnapshot({ tasks: [projected, projectedTask(2)], resultEnvelopes: [envelope] }) }) });
+  await store.getState().loadSnapshot();
+  expect(store.getState().snapshotError).toBeNull();
+  expect(store.getState().tasksById[failed.taskId].failureKind).toBe('provider_configuration');
+  expect(store.getState().tasksById.dvr_task_2).toBeDefined();
+  expect(store.getState().manualRecoveryTaskIdByChildSessionId.ses_configuration).toBe(failed.taskId);
+});
+
 test('keeps transport receipt revisions monotonic and preserves identical row references', () => {
   const store = createManagedOrchestrationStore({ api: fakeApi() });
   const transportRecovery: ManagedTransportRecovery = {

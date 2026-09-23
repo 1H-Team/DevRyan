@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.10] - 2026-09-23
+
+- Recovery and orchestration: improve provider failure handling, collection of completed sub-agent results, runtime restart reconciliation, and execution admission diagnostics.
+- Chat and context: anchor native compaction summaries to the active objective, render compaction turns clearly, and preserve authoritative activity across reconnects.
+- Concurrent Revert and runtime durability: store immutable captured objects safely, recover interrupted mutations, strengthen host ownership, and update the bundled OpenCode companion to `1.18.31-devryan.12`, and build the macOS spawn adapter for arm64e system tools.
+- Web and desktop: bound event-stream work, improve Git and worktree discovery, refine Supabase connection and Bot-schema reporting, and harden packaged runtime lifecycle checks.
+- Quality and release: expand deterministic coverage across these paths and update DevRyan package and desktop metadata to 1.2.10.
+- macOS releases now ship Apple silicon (arm64) only. Intel Macs no longer receive desktop builds or updates, and the npm package no longer bundles the Intel native runtime.
+- Faster releases: reuse the verified OpenCode companion build, compress handoff archives with zstd, and skip duplicate install-time web builds.
+- OpenCode Zen usage tracking now connects through OpenCode Console sign-in, refreshes credentials automatically, and guides existing cookie-based connections to reconnect.
+
 ## [1.2.9] - 2026-09-21
 
 - Sessions and runtime: add configurable automatic cleanup, improve long-session efficiency, preserve execution ownership through recovery and revert flows, and make failure states actionable across web and Electron.

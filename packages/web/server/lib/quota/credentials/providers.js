@@ -1,3 +1,5 @@
+import { isOpenCodeConsoleOrgId, isOpenCodeConsoleToken } from '@openchamber/shared-runtime';
+
 import {
   QuotaCredentialError,
   canonicalizeManagedQuotaProviderId,
@@ -29,13 +31,38 @@ const normalizeOllamaCloudCredential = (value) => {
   return cookie ? { cookie } : null;
 };
 
+// OpenCode Console device sign-in tokens; only the server ever writes this shape.
 const normalizeOpenCodeZenCredential = (value) => {
-  if (!isRecord(value) || !hasOnlyKeys(value, ['workspaceId', 'authCookie'])) return null;
-  const workspaceId = cleanValue(value.workspaceId);
-  const authCookie = cleanValue(value.authCookie);
-  if (!/^wrk_[0-9A-HJKMNP-TV-Z]{26}$/.test(workspaceId) || !authCookie || /[\s;]/.test(authCookie)) return null;
-  return { workspaceId, authCookie };
+  if (!isRecord(value) || !hasOnlyKeys(value, ['orgId', 'accessToken', 'refreshToken', 'accessTokenExpiresAt'])) {
+    return null;
+  }
+  const orgId = cleanValue(value.orgId);
+  const accessToken = cleanValue(value.accessToken);
+  const refreshToken = cleanValue(value.refreshToken);
+  const { accessTokenExpiresAt } = value;
+  if (
+    !isOpenCodeConsoleOrgId(orgId)
+    || !isOpenCodeConsoleToken(accessToken)
+    || !isOpenCodeConsoleToken(refreshToken)
+    || !Number.isSafeInteger(accessTokenExpiresAt)
+    || accessTokenExpiresAt <= 0
+  ) {
+    return null;
+  }
+  return { orgId, accessToken, refreshToken, accessTokenExpiresAt };
 };
+
+// The retired dashboard form ({ workspaceId, authCookie }) can no longer authenticate.
+// It is detected only so Settings can ask for a reconnect; it is never sent anywhere.
+const detectLegacyOpenCodeZenCredential = (value) => (
+  isRecord(value) && hasOnlyKeys(value, ['workspaceId', 'authCookie']) && typeof value.workspaceId === 'string'
+    ? { legacy: true }
+    : null
+);
+
+export const hasLegacyOpenCodeZenCredential = (options = {}) => Boolean(
+  readQuotaCredential('opencode', detectLegacyOpenCodeZenCredential, options),
+);
 
 const normalizeCursorCredential = (value) => {
   if (!isRecord(value) || !hasOnlyKeys(value, ['sessionToken', 'accessToken', 'refreshToken'])) return null;
@@ -95,7 +122,11 @@ export const deleteManagedQuotaCredential = (providerId, options = {}) => {
 export const getManagedQuotaCredentialStatus = (providerId, options = {}) => {
   const canonical = canonicalizeManagedQuotaProviderId(providerId);
   const credential = readManagedQuotaCredential(canonical, options);
-  if (!credential) return { configured: false };
+  if (!credential) {
+    return canonical === 'opencode' && hasLegacyOpenCodeZenCredential(options)
+      ? { configured: false, reconnectRequired: true }
+      : { configured: false };
+  }
 
   if (canonical === 'cursor-acp') {
     const credentialKind = credential.sessionToken ? 'dashboard' : 'oauth';
@@ -111,7 +142,8 @@ export const getManagedQuotaCredentialStatus = (providerId, options = {}) => {
   if (canonical === 'opencode') {
     return {
       configured: true,
-      credentialKind: 'dashboard',
+      credentialKind: 'oauth',
+      workspaceId: credential.orgId,
       secretMasked: SECRET_MASK,
     };
   }

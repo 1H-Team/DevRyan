@@ -1,0 +1,45 @@
+name: Warm release caches
+
+# Caches saved by a tag-triggered release are visible only to that tag. Saving
+# the verified companion build from the default branch lets every release
+# restore it. The key must match release.yml exactly.
+on:
+  push:
+    branches: [main]
+    paths:
+      - packages/web/server/lib/opencode/companion/**
+      - scripts/build-revert-runtime.mjs
+      - .github/workflows/release-cache.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: warm-release-caches
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-26]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        id: bun
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Restore verified companion build
+        uses: actions/cache@v4
+        with:
+          path: .cache/revert-runtime-companion
+          key: revert-companion-${{ runner.os }}-${{ runner.arch }}-bun${{ steps.bun.outputs.bun-version }}-${{ hashFiles('packages/web/server/lib/opencode/companion/manifest.json', 'packages/web/server/lib/opencode/companion/*.patch') }}
+      - name: Build verified companion
+        env:
+          DEVRYAN_REVERT_COMPANION_ONLY: '1'
+        run: bun run build:revert-runtime

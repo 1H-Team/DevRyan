@@ -105,6 +105,28 @@ describe('duplicate dispatch guard', () => {
     expect(runs).toHaveLength(2);
   });
 
+  test('intentional council fanout retains every model and still deduplicates literal retries', async () => {
+    const { runs, scheduler } = await createHarness();
+    const inputs = ['openai', 'cursor-acp', 'opencode'].map((providerId, index) => submitInput(index, {
+      agent: 'builder', providerId, modelId: `model-${index}`, deadlineClass: 'council',
+    }));
+    const tasks = await Promise.all(inputs.map((input) => scheduler.submit(input)));
+    expect(new Set(tasks.map((task) => task.taskId)).size).toBe(3);
+    expect(runs.map((run) => run.task.providerId).sort()).toEqual(['cursor-acp', 'openai', 'opencode']);
+    const retries = await Promise.all(inputs.map((input) => scheduler.submit(input)));
+    expect(retries.map((task) => task.taskId)).toEqual(tasks.map((task) => task.taskId));
+    expect(runs).toHaveLength(3);
+  });
+
+  test('separately configured council seats retain independent reviews even on the same model', async () => {
+    const { runs, scheduler } = await createHarness();
+    const inputs = [1, 2].map(index => submitInput(index, { agent: 'builder', deadlineClass: 'council' }));
+    const tasks = await Promise.all(inputs.map(input => scheduler.submit(input)));
+    expect(new Set(tasks.map(task => task.taskId)).size).toBe(2);
+    expect((await scheduler.submit(inputs[0])).taskId).toBe(tasks[0].taskId);
+    expect(runs).toHaveLength(2);
+  });
+
   test('the same prompt for a different agent is never collapsed', async () => {
     const { runs, scheduler } = await createHarness();
 

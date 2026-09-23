@@ -3,9 +3,9 @@
   "upstream": "https://github.com/anomalyco/opencode",
   "upstreamVersion": "1.18.31",
   "baseCommit": "014614d35b397775e5d397a490fc72368c894ec2",
-  "runtimeVersion": "1.18.31-devryan.5",
+  "runtimeVersion": "1.18.31-devryan.12",
   "patch": "legacy-conversation-revert.patch",
-  "patchSha256": "854b016cf578e68aa9b3472e86aab7b9a0a81bd1ce37537b79517202a7e1e3d7",
+  "patchSha256": "bbf6e492323681ad7bab9d0dab0d8413678300161bd597cae5303f185aadede3",
   "capability": {
     "legacyConversationRevert": 1,
     "executionBoundary": 1,
@@ -14,8 +14,7 @@
   },
   "rollout": "requires-native-and-real-runtime-acceptance",
   "supportedArtifacts": [
-    "darwin-arm64",
-    "darwin-x64"
+    "darwin-arm64"
   ],
   "files": {
     "packages/client/src/generated/types.ts": "c62816734858b4f8b74927537625c49e5ac1dc4ffa03931f5b52117319d3abb2",
@@ -34,9 +33,9 @@
     "packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts": "9537b8eb6efca292f9e7003a77beb771482b0fa2b7b7dd14dfc96cde455a8c2c",
     "packages/opencode/src/server/routes/instance/httpapi/middleware/error.ts": "f92712ac4d8e55d13a019656fe6156fe53c81e4011f4cc2f4d4c707047da544b",
     "packages/opencode/src/server/shared/workspace-routing.ts": "81bb50498387e937bd2f22e2d219524015ce9bd71ac1f8fdf65da6562b6027a9",
-    "packages/opencode/src/session/devryan-execution.ts": "d5dffb3bc18af8fbb53451d5457346381378f1b36b6c282fdd93aa9b10a3cc50",
-    "packages/opencode/src/session/execution-payload.ts": "4497ce8ac3ac79890c5de85dec17bf12ca2839e8f8eb9774b96fd93831084022",
-    "packages/opencode/src/session/prompt.ts": "a41c1f5ed122dae18a34d011a8b8420b021cb396336f08e9c341a2f48b44550b",
+    "packages/opencode/src/session/devryan-execution.ts": "40f6c77f6f5f60f5bde4e20a577e04faecfbd09443729460caa953d4de45882d",
+    "packages/opencode/src/session/execution-payload.ts": "19ed053f3889515104e07f8d03c64b294145c64cbe7c72b82b61e11ffb37048f",
+    "packages/opencode/src/session/prompt.ts": "0bfbba70eacdcc8a689ef470d84712a19eea1856e3d0f75a5f94b9196d64c64f",
     "packages/opencode/src/session/retention-gate.ts": "b103e281691965d558dc7b80951c92aa3000c9b17ad6882c894b298efd7185c2",
     "packages/opencode/src/session/revert.ts": "819031f750c88145b8c7401de071b51dc0c3841a0cd24fb83e6f4fb63344fdd6",
     "packages/opencode/src/session/session.ts": "6fb9bb58cae853f26f56319311ad6c36ad30605986157a1f15997ad83b1b917e",
@@ -46,12 +45,15 @@
     "packages/opencode/src/tool/task.ts": "f57eb7a4a80854fafb6091e310712a66e93a7221547b6c698571d79f901a69e5",
     "packages/opencode/test/server/httpapi-session.test.ts": "9cbdc2f7796927a8995e0075a8ace787abec430758c34f333d2a51af224647ee",
     "packages/opencode/test/server/workspace-routing.test.ts": "22cefbeb71d7a4f2dfdb8f01307296776ef7a3514e2773b8815a38346a386a35",
-    "packages/opencode/test/session/execution-payload.test.ts": "f6cb8d210ed97fc9f0c99ebe44def570c1445cd2af6fe00c2ceeee35f200f031",
+    "packages/opencode/test/session/execution-payload.test.ts": "e08fb20585b299910c84a11772906d8e1c32b4d974520001d80743e5ca612eec",
     "packages/opencode/test/session/retention-gate.test.ts": "eacbab8a4dc51247a2a8340df850d9511390e0692ae87815f34b936dd4c207a1",
     "packages/opencode/test/session/revert-compact.test.ts": "b5482f90f810f70cca248f517159e7ceb561e9aee752dbd3d9ea8a09df0ea9ce",
     "packages/schema/src/revert.ts": "8a74722f591d1cb6f500a12556f5f9c2dee76b7253393029b3496b0f9b69d4c6",
     "packages/schema/src/v1/session.ts": "15d91d6a19ea4792272ee03fce417d44f56ef82f6b954d219f11c664083842bf",
     "packages/sdk/js/src/v2/gen/sdk.gen.ts": "79aa90cc419f04180968064cd1df7254d2ff42754add24c85d97ea45c745b2f8",
-    "packages/sdk/js/src/v2/gen/types.gen.ts": "a6cedb61c2e2ed9ef133152bcd1b5627d6956ddb5840ad7c4b2968d719abc4f2"
+    "packages/sdk/js/src/v2/gen/types.gen.ts": "a6cedb61c2e2ed9ef133152bcd1b5627d6956ddb5840ad7c4b2968d719abc4f2",
+    "packages/opencode/src/session/execution-browser.ts": "d71476cddb2a8e601ff3ae73929f47b894391ae5ee6f53c13205b32929b5019f",
+    "packages/opencode/test/session/execution-browser.test.ts": "a310975a30fcf3b6e3f79a85152d71784c7e5d02a17ceaa023d9b6a42113f3da",
+    "packages/opencode/src/tool/shell.ts": "c7fa71abe88b90ce5dbc99416725e73e4ff2f12b3ba673842f8207cb55cb1054"
   }
 }

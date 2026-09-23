@@ -120,6 +120,7 @@ const emptyManifest = (sessionID, runtime, rebuilt = false) => ({
   coalescedSessionUpdates: 0,
   coalescedRuntimeSyncs: 0,
   coalescedDiagnostics: 0,
+  trimmedHeartbeats: 0,
   models: [],
   chunkCount: 0,
   bytes: 0,
@@ -370,6 +371,7 @@ export const createDiagnosticJournal = (options = {}) => {
         coalescedSessionUpdates: 0,
         coalescedRuntimeSyncs: 0,
         coalescedDiagnostics: 0,
+        trimmedHeartbeats: 0,
       };
       for (const field of [
         'trimmedDeltas',
@@ -377,6 +379,7 @@ export const createDiagnosticJournal = (options = {}) => {
         'coalescedSessionUpdates',
         'coalescedRuntimeSyncs',
         'coalescedDiagnostics',
+        'trimmedHeartbeats',
       ]) {
         const delta = Math.max(0, (stats[field] ?? 0) - (previous[field] ?? 0));
         if (delta > 0) {
@@ -741,6 +744,7 @@ export const createDiagnosticJournal = (options = {}) => {
         coalescedSessionUpdates: runtimeBucket.manifest.coalescedSessionUpdates,
         coalescedRuntimeSyncs: runtimeBucket.manifest.coalescedRuntimeSyncs,
         coalescedDiagnostics: runtimeBucket.manifest.coalescedDiagnostics,
+        trimmedHeartbeats: runtimeBucket.manifest.trimmedHeartbeats ?? 0,
       };
       const wasRebuilt = runtimeBucket.manifest.rebuilt;
       const referencedBlobs = new Set();

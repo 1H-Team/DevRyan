@@ -21,6 +21,20 @@ describe('OpenCode version comparison', () => {
     expect(compareOpenCodeVersions('invalid', '1.18.10')).toBeNull();
   });
 
+  it('treats the bundled companion runtime as its upstream release', () => {
+    expect(buildOpenCodeUpdateInfo({
+      currentVersion: '1.18.31-devryan.9',
+      latestVersion: '1.18.31',
+      supportedVersion: '1.18.31',
+    })).toMatchObject({ currentVersion: '1.18.31-devryan.9', updateAvailable: false, supportStatus: 'supported' });
+    // Only the exact companion shape; other prereleases still sort below release.
+    expect(buildOpenCodeUpdateInfo({
+      currentVersion: '1.18.31-beta.1',
+      latestVersion: '1.18.31',
+      supportedVersion: '1.18.31',
+    })).toMatchObject({ updateAvailable: true, supportStatus: 'older' });
+  });
+
   it('builds update and supported-version status independently', () => {
     expect(buildOpenCodeUpdateInfo({
       currentVersion: 'v1.18.10',

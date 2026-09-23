@@ -77,7 +77,7 @@ export const deriveTaskCheckpoint = ({ session, anchor, primary, tasks = [], env
     unresolvedWork: todos.filter((entry) => entry?.status !== 'completed' && entry?.status !== 'cancelled').slice(0, 20)
       .map((entry) => ({ id: entry.id ?? null, status: entry.status, content: boundedText(sanitizeText(entry.content ?? ''), 512) })),
     children, childCoverage: { returned: children.length, total: outstanding.length, complete: children.length === outstanding.length },
-    recovery: primary && primary.anchorID === anchor.info.id ? { state: primary.state, reason: primary.reason ?? null,
+    recovery: primary && (primary.objectiveID ?? primary.anchorID) === anchor.info.id ? { state: primary.state, reason: primary.reason ?? null,
       attemptCount: primary.attemptCount, todoContinuationCount: primary.todoContinuationCount ?? 0,
       cancellationGeneration: primary.cancellationGeneration, readOnly: primary.guardedIDs?.length > 0,
       activeUserID: primary.activeUserID ?? primary.recoveryID ?? primary.continuationID ?? primary.anchorID } : null,
@@ -93,6 +93,60 @@ export const deriveTaskCheckpoint = ({ session, anchor, primary, tasks = [], env
   if (!checkpoint.childCoverage.complete && !missingObjective) checkpoint.nextAction = { kind: 'inspect-managed-barrier', rootSessionId: session.id };
   return validateTaskContextRecord(checkpoint);
 };
+
+export const COMPACTION_ANCHOR_TAG = '[devryan-compaction-anchor:v1]';
+const COMPACTION_ANCHOR_MAX_BYTES = 12 * 1024;
+const ANCHOR_RULE = 'Begin your summary with a "## Objective anchor" section. Quote the current objective below verbatim (or its '
+  + 'first part when it is marked truncated), name the approved plan and which of its steps are done or remaining, list the '
+  + 'open todos with their status, list outstanding sub-agent tasks, and state the next action. If an earlier summary already '
+  + 'has an "Objective anchor", carry its original request forward unless a newer real user message superseded it. Newer user '
+  + 'instructions take precedence; do not invent requirements.';
+const CHILD_ANCHOR_RULE = 'Begin your summary with a "## Delegated assignment" section that preserves the assignment below '
+  + 'verbatim (scope, owned targets, exclusions and acceptance checks), then what is done and what remains. It stays '
+  + 'authoritative after this summary.';
+const NEXT_ACTION_TEXT = {
+  'continue-current-objective': 'Continue the current objective from where the work stopped.',
+  'inspect-managed-barrier': 'Inspect the outstanding sub-agent tasks and collect their results before continuing.',
+  'retrieve-objective': 'The objective above is incomplete; re-read the anchored user message before continuing.',
+};
+
+/** Deterministic (no clock values, fixed order) and bounded, so the summary
+ * request stays small and the post-compaction prefix stays cacheable. */
+export const formatCompactionAnchor = (checkpoint, { planPath = null, planOutline = null } = {}) => {
+  const todos = checkpoint.unresolvedWork.map((entry) => `- [${entry.status}] ${boundedText(entry.content, 200)}`);
+  const children = checkpoint.children.map((child) => `- ${child.taskId} ${child.status}${child.action === null ? ' (result not yet collected)' : ''}`);
+  const build = ({ objectiveBytes, outline, childCount, todoCount }) => {
+    const objective = boundedText(checkpoint.anchor.objective, objectiveBytes);
+    const truncated = !checkpoint.anchor.complete || objective !== checkpoint.anchor.objective;
+    const sections = [COMPACTION_ANCHOR_TAG, ANCHOR_RULE, '',
+      `### Current objective (user message ${checkpoint.anchor.messageID}${truncated ? ', truncated' : ''})`, objective];
+    if (planPath || checkpoint.selectedPlan) {
+      sections.push('', '### Approved plan', planPath ? `File: ${planPath}` : `Plan ${checkpoint.selectedPlan.planIndex} from message ${checkpoint.selectedPlan.sourceMessageId}`);
+      if (outline) sections.push(outline);
+    }
+    if (todoCount) sections.push('', '### Open todos', ...todos.slice(0, todoCount));
+    if (childCount) sections.push('', '### Outstanding sub-agent tasks', ...children.slice(0, childCount),
+      ...(childCount < children.length || !checkpoint.childCoverage.complete ? ['- (more tasks outstanding)'] : []));
+    if (checkpoint.recovery?.readOnly) sections.push('', '### Restrictions', 'Recovery is read-only: do not modify files until the user resumes normal work.');
+    sections.push('', '### Next action', NEXT_ACTION_TEXT[checkpoint.nextAction?.kind] ?? NEXT_ACTION_TEXT['continue-current-objective']);
+    return sections.join('\n');
+  };
+  // Drop order when over budget: plan outline, extra children, extra todos,
+  // then shorten the objective (never below 2 KiB).
+  const attempt = { objectiveBytes: 6 * 1024, outline: planOutline ? boundedText(planOutline, 3 * 1024) : null,
+    childCount: Math.min(children.length, 10), todoCount: Math.min(todos.length, 20) };
+  let text = build(attempt);
+  if (Buffer.byteLength(text) > COMPACTION_ANCHOR_MAX_BYTES) { attempt.outline = null; text = build(attempt); }
+  while (Buffer.byteLength(text) > COMPACTION_ANCHOR_MAX_BYTES && attempt.childCount > 3) { attempt.childCount--; text = build(attempt); }
+  while (Buffer.byteLength(text) > COMPACTION_ANCHOR_MAX_BYTES && attempt.todoCount > 5) { attempt.todoCount--; text = build(attempt); }
+  while (Buffer.byteLength(text) > COMPACTION_ANCHOR_MAX_BYTES && attempt.objectiveBytes > 2 * 1024) {
+    attempt.objectiveBytes = Math.max(2 * 1024, attempt.objectiveBytes - 1024); text = build(attempt);
+  }
+  return boundedText(text, COMPACTION_ANCHOR_MAX_BYTES);
+};
+
+export const formatChildCompactionAnchor = (assignmentText) => boundedText(
+  `${COMPACTION_ANCHOR_TAG}\n${CHILD_ANCHOR_RULE}\n\n### Delegated assignment\n${assignmentText}`, COMPACTION_ANCHOR_MAX_BYTES);
 
 export const createTaskContextRuntime = (options) => {
   const now = options.now ?? Date.now;
@@ -196,12 +250,30 @@ export const createTaskContextRuntime = (options) => {
       return decision;
     });
   };
+  // Compaction re-anchoring: read-only (no record write or prune, no decision
+  // fingerprinting) and independent of the contextProjection policy.
+  const compactionAnchor = async ({ sessionID, directory }) => {
+    const context = await scope(sessionID, directory);
+    if (context.session.parentID) {
+      const assignment = await options.readChildAssignment?.({ sessionID, directory });
+      return typeof assignment === 'string' && assignment
+        ? { available: true, kind: 'child', text: formatChildCompactionAnchor(assignment) }
+        : { available: false, reason: 'child_unmanaged' };
+    }
+    const data = await options.readTaskState(context);
+    const checkpoint = deriveTaskCheckpoint({ ...data, session: context.session, projectKey: context.projectKey,
+      now: 0, sanitizeText, decisions: [] });
+    const plan = checkpoint.selectedPlan
+      ? await options.readPlanOutline?.({ plan: checkpoint.selectedPlan, context }).catch(() => null) : null;
+    return { available: true, kind: 'root', text: formatCompactionAnchor(checkpoint, { planPath: plan?.path ?? null, planOutline: plan?.outline ?? null }) };
+  };
   const track = (operation) => {
     operations.add(operation);
     void operation.finally(() => operations.delete(operation)).catch(() => {});
     return operation;
   };
   return { checkpoint: (input) => track(checkpoint(input)), rememberDecision: (input) => track(rememberDecision(input)),
+    compactionAnchor: (input) => track(compactionAnchor(input)),
     decisions: (input) => track(scope(input.sessionID, input.directory).then((context) => readDecisions(context, input.query))),
     async drain() { while (operations.size) await Promise.allSettled([...operations]); await store.drain(); } };
 };

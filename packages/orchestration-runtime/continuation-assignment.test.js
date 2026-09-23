@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { appendManagedAssignment, stripManagedAssignment } from './continuation-assignment.js';
+import { appendManagedAssignment, formatManagedAssignmentContext, stripManagedAssignment } from './continuation-assignment.js';
 import {
   createManagedOpenCodeExecutor,
   isManagedResumeContinuationPrompt,
@@ -79,4 +79,18 @@ describe('managed recovery assignment', () => {
     expect(prompts[0].tools.task).toBe(false);
     expect((method === 'resume' ? isManagedResumeContinuationPrompt : isManagedRetryInPlacePrompt)(prompts[0].prompt)).toBe(true);
   });
+});
+
+test('the compaction assignment context is bounded and keeps the authoritative rule', () => {
+  const task = { taskId: 'dvr_task_1', rootSessionId: 'ses_root', agent: 'fixer', label: 'Fix', prompt: 'é'.repeat(10_000), readOnly: true };
+  const text = formatManagedAssignmentContext(task, { maxPromptBytes: 1024 });
+  const [rule, json] = [text.slice(0, text.lastIndexOf('\n')), text.slice(text.lastIndexOf('\n') + 1)];
+  expect(rule).toContain('Continue only the original delegated assignment below.');
+  expect(rule).toContain('read-only');
+  const value = JSON.parse(json);
+  expect(value).toMatchObject({ taskId: 'dvr_task_1', agent: 'fixer', promptTruncated: true });
+  expect(Buffer.byteLength(value.prompt)).toBeLessThanOrEqual(1024);
+  expect(value.prompt.endsWith('�')).toBe(false);
+  expect(formatManagedAssignmentContext({ ...task, prompt: '' })).toBeNull();
+  expect(formatManagedAssignmentContext({ ...task, prompt: 'Short.' })).not.toContain('promptTruncated');
 });

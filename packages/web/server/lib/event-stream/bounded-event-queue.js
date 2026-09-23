@@ -1,4 +1,5 @@
 import { MESSAGE_STREAM_WS_MAX_BUFFERED_BYTES } from './protocol.js';
+import { eventEntryBytes } from './payload-serialization.js';
 
 export const MESSAGE_STREAM_MAX_PENDING_EVENTS = 5_000;
 
@@ -10,7 +11,7 @@ export const MESSAGE_STREAM_MAX_PENDING_EVENTS = 5_000;
 export function createBoundedEventQueue({ deliver, onClose = () => {},
   getBufferedBytes = () => 0, maxBytes = MESSAGE_STREAM_WS_MAX_BUFFERED_BYTES,
   maxEntries = MESSAGE_STREAM_MAX_PENDING_EVENTS,
-  sizeOf = entry => Buffer.byteLength(JSON.stringify(entry), 'utf8') + 64 } = {}) {
+  sizeOf = eventEntryBytes } = {}) {
   if (typeof deliver !== 'function' || !Number.isSafeInteger(maxBytes) || maxBytes < 1
     || !Number.isSafeInteger(maxEntries) || maxEntries < 1) throw new TypeError('Invalid event queue configuration');
   const controller = new AbortController();

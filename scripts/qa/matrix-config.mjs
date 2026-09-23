@@ -61,7 +61,7 @@ export const validateQaMatrixConfig = (value, { repoRoot = REPO_ROOT } = {}) => 
   const ids = new Set();
   let runCount = 0;
   const cells = value.cells.map((cell) => {
-    objectWithFields(cell, CELL_FIELDS, 'cell', ['projectCompaction', 'agentAssignments', 'allowCrossProviderAssignments', 'windowSize']);
+    objectWithFields(cell, CELL_FIELDS, 'cell', ['projectCompaction', 'agentAssignments', 'allowCrossProviderAssignments', 'windowSize', 'preserveOrchestration']);
     const id = pinned(cell.id, 'cell.id', /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/);
     if (ids.has(id)) fail('cell IDs must be unique');
     ids.add(id);
@@ -79,6 +79,10 @@ export const validateQaMatrixConfig = (value, { repoRoot = REPO_ROOT } = {}) => 
     const agent = oneOf(cell.agent, ['builder', 'orchestrator'], 'agent');
     if (typeof cell.planMode !== 'boolean') fail('planMode must be a boolean');
     const variant = cell.variant === null ? null : pinned(cell.variant, 'variant');
+    if (Object.hasOwn(cell, 'preserveOrchestration') && (typeof cell.preserveOrchestration !== 'boolean'
+      || transport !== 'live' || (cell.preserveOrchestration && (cell.allowCrossProviderAssignments || Object.keys(cell.agentAssignments ?? {}).length)))) {
+      fail('preserveOrchestration requires live transport without agent assignment overrides');
+    }
     const assignments = {};
     if (Object.hasOwn(cell, 'allowCrossProviderAssignments') && typeof cell.allowCrossProviderAssignments !== 'boolean') {
       fail('allowCrossProviderAssignments must be an explicit boolean');
@@ -117,6 +121,7 @@ export const validateQaMatrixConfig = (value, { repoRoot = REPO_ROOT } = {}) => 
     runCount += repetitions * scenarioIds.length;
     return Object.freeze({ id, runtime, transport, providerId, modelId, agent, planMode: cell.planMode,
       variant, scenarioIds: Object.freeze(scenarioIds), repetitions, timeoutMs,
+      ...(Object.hasOwn(cell, 'preserveOrchestration') ? { preserveOrchestration: cell.preserveOrchestration } : {}),
       ...(windowSize ? { windowSize } : {}),
       ...(Object.hasOwn(cell, 'agentAssignments') ? { agentAssignments: Object.freeze(assignments) } : {}),
       ...(Object.hasOwn(cell, 'allowCrossProviderAssignments') ? { allowCrossProviderAssignments: cell.allowCrossProviderAssignments } : {}),

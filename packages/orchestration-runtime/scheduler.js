@@ -770,6 +770,13 @@ export const createManagedTaskScheduler = (options = {}) => {
   };
 
   const createTaskControl = (taskId, leaseToken) => ({
+    // Read-only: an automatic backup follow-up does not copy its source
+    // task's failure, but its recovery class depends on that failure.
+    readPriorFailureReason() {
+      const current = tasks.get(taskId);
+      const prior = current?.priorTaskId ? tasks.get(current.priorTaskId) : null;
+      return typeof prior?.failureReason === 'string' ? prior.failureReason : null;
+    },
     async recordTransportRecovery(recovery, expectedRevision = 0) {
       if (shutDown) return false;
       const normalized = validateManagedTransportRecovery(recovery);
@@ -1876,8 +1883,10 @@ export const createManagedTaskScheduler = (options = {}) => {
       // Content-scoped duplicate guard. Only collapses onto a task that is
       // STILL RUNNING — a finished task never blocks a fresh dispatch, so
       // re-running the same work later is unaffected. `allowDuplicate` is the
-      // deliberate escape hatch for parallel fan-out of one agent.
-      if (input.allowDuplicate !== true && !input.parentTaskId) {
+      // deliberate escape hatch for parallel fan-out of one agent. Council's
+      // existing private dispatch class also denotes independent reviewers;
+      // their per-councillor keys above still deduplicate literal retries.
+      if (input.allowDuplicate !== true && input.deadlineClass !== 'council' && !input.parentTaskId) {
         const fingerprint = dispatchFingerprint(input);
         if (fingerprint) {
           // Must use the injected clock, not Date.now(): the scheduler is
@@ -3186,6 +3195,16 @@ export const createManagedTaskScheduler = (options = {}) => {
           requiredChecks: structuredClone(task.requiredChecks) };
       }
       return null;
+    },
+    // The task owning a child session: an active one first, else the latest.
+    getChildAssignment(childSessionId, directory) {
+      let latest = null;
+      for (const task of tasks.values()) {
+        if (task.childSessionId !== childSessionId || task.directory !== directory) continue;
+        if (ACTIVE_STATUSES.has(task.status)) return cloneTask(task);
+        if (!latest || task.createdAt > latest.createdAt) latest = task;
+      }
+      return latest ? cloneTask(latest) : null;
     },
     recordRequiredChecks,
     recordRequiredCheck: (taskId, leaseToken, receipt, phase) => recordRequiredChecks(taskId, leaseToken, [receipt], phase),

@@ -36,3 +36,29 @@ test('keeper factory preserves single flight, retries reaped failures, and cache
     else { expect(next).toBe(first); await next.catch(() => {}); expect(calls).toBe(1); }
   }
 });
+
+test('a lost keeper is replaced once it is reaped; an unconfirmed reap keeps failing closed', async () => {
+  const owner = (id) => { const controller = new AbortController(); return { id, controller, signal: controller.signal, closes: 0 }; };
+  let created = 0;
+  const retired = [];
+  const get = executionOwnerFactory(async () => ({ owner: owner(`owner-${++created}`) }), {
+    retire: async (value) => { retired.push(value.owner.id); value.owner.closes++; },
+  });
+  const first = await get();
+  expect(await get()).toBe(first);
+  first.owner.controller.abort(new Error('keeper exited'));
+  const replacement = get();
+  expect(get()).toBe(replacement); // Concurrent callers share one replacement.
+  expect((await replacement).owner.id).toBe('owner-2');
+  expect(retired).toEqual(['owner-1']);
+  expect(await get()).toBe(await replacement);
+
+  const blocked = executionOwnerFactory(async () => ({ owner: owner('blocked') }), {
+    retire: async () => { throw Object.assign(new Error('unreaped'), { code: 'execution_owner_termination_unconfirmed' }); },
+  });
+  const lost = await blocked();
+  lost.owner.controller.abort(new Error('keeper exited'));
+  const failed = blocked();
+  await expect(failed).rejects.toMatchObject({ code: 'execution_owner_termination_unconfirmed' });
+  expect(blocked()).toBe(failed);
+});

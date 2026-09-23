@@ -218,8 +218,8 @@ function isManagedOpenCodeProcessCommand(command, record) {
 
   const port = normalizePositiveInteger(record?.port);
   if (!port) return true;
-  return normalized.includes(`--port ${port}`)
-    || normalized.includes(`--port=${port}`);
+  // Whole-number match: `--port 505` must not match `--port 50580`.
+  return new RegExp(`(?:^|\\s)--port(?:\\s+|=)${port}(?:$|\\s)`).test(normalized);
 }
 
 function waitForProcessExit(pid, timeoutMs, processKill = process.kill.bind(process)) {

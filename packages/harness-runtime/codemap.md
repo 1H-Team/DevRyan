@@ -59,7 +59,7 @@ API contracts.
 ## Execution preparation v2
 
 - `lib/execution-io-pool.js` owns four fair per-project preparation slots. `lib/execution-admission.js` separates bounded admission from supervised preparation and cancellation settlement.
-- `lib/session-mutation-files.js` streams file observation/materialization. Text up to 8 MiB retains granular ownership; larger text and binary files retain whole-content ownership with independent modes. Conflicts live outside normal revisions and remain explicit through Revert.
+- `lib/session-mutation-files.js` streams file observation/materialization; observation hashes before copying, so known content is never rewritten. `lib/object-durability.js` defers the objects-directory sync to the next ledger commit (`session-changes-store.js` commit). Text up to 8 MiB retains granular ownership; larger text and binary files retain whole-content ownership with independent modes. Conflicts live outside normal revisions and remain explicit through Revert.
 - `lib/session-mutations.js` reserves before observation, pins the reconciled base durably, shares immutable listings and materializes outside the project lock. Trusted control leases use empty views; they cannot claim a process launcher. `lib/session-changes-receipts.js` streams trusted in-process receipts into Git.
 - `lib/execution-host-owner.js` and the native supervisor prove host lifetime through an OS lock. Cleanup requires terminal state, no consumers and verified writer termination; it preserves receipts, conflicts and live base refs.
 

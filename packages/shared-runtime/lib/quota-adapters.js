@@ -14,10 +14,15 @@ export const XAI_OAUTH_TOKEN_URL = 'https://auth.x.ai/oauth2/token';
 export const XAI_OAUTH_CLIENT_ID = 'b1a00492-073a-47ea-816f-4c329264a828';
 export const DEEPSEEK_BALANCE_URL = 'https://api.deepseek.com/user/balance';
 export const OPENCODE_GO_USAGE_URL = 'https://opencode.ai/zen/go/v1/usage';
-export const OPENCODE_ZEN_BILLING_ORIGIN = 'https://opencode.ai';
-export const OPENCODE_ZEN_MAX_RESPONSE_BYTES = 512 * 1024;
+export const OPENCODE_CONSOLE_ORIGIN = 'https://opencode.ai';
+export const OPENCODE_CONSOLE_BASE_URL = `${OPENCODE_CONSOLE_ORIGIN}/console`;
+export const OPENCODE_CONSOLE_CLIENT_ID = 'devryan';
+export const OPENCODE_ZEN_MAX_RESPONSE_BYTES = 64 * 1024;
 
-const OPENCODE_ZEN_WORKSPACE_PATTERN = /^wrk_[0-9A-HJKMNP-TV-Z]{26}$/;
+// Console workspaces are `org_…`; pre-console workspaces keep their `wrk_…` IDs.
+const OPENCODE_CONSOLE_ORG_PATTERN = /^(?:org|wrk)_[0-9A-Za-z]{1,64}$/;
+// Printable ASCII only, so a token can never inject into the Authorization header.
+const OPENCODE_CONSOLE_TOKEN_PATTERN = /^[\x21-\x7e]{1,255}$/;
 const OPENCODE_ZEN_MICROCENTS_PER_DOLLAR = 100_000_000;
 
 const asObject = (value) => (
@@ -30,20 +35,19 @@ const asNonEmptyString = (value) => {
   return normalized || null;
 };
 
-const isSafeOpenCodeZenCookie = (value) => (
-  typeof value === 'string'
-  && value.trim().length > 0
-  && value.trim().length <= 16 * 1024
-  && !/[\s;\0]/.test(value.trim())
+export const isOpenCodeConsoleOrgId = (value) => (
+  typeof value === 'string' && OPENCODE_CONSOLE_ORG_PATTERN.test(value)
+);
+
+export const isOpenCodeConsoleToken = (value) => (
+  typeof value === 'string' && OPENCODE_CONSOLE_TOKEN_PATTERN.test(value)
 );
 
 export const normalizeOpenCodeZenCredential = (credential) => {
-  const workspaceId = asNonEmptyString(credential?.workspaceId);
-  const authCookie = typeof credential?.authCookie === 'string' ? credential.authCookie.trim() : '';
-  if (!workspaceId || !OPENCODE_ZEN_WORKSPACE_PATTERN.test(workspaceId) || !isSafeOpenCodeZenCookie(authCookie)) {
-    return null;
-  }
-  return { workspaceId, authCookie };
+  const orgId = asNonEmptyString(credential?.orgId);
+  const accessToken = asNonEmptyString(credential?.accessToken);
+  if (!isOpenCodeConsoleOrgId(orgId) || !isOpenCodeConsoleToken(accessToken)) return null;
+  return { orgId, accessToken };
 };
 
 export const toQuotaNumber = (value) => {
@@ -1259,245 +1263,77 @@ const readBoundedText = async (response, maxBytes) => {
   return result;
 };
 
-const collectObjectSpans = (source) => {
-  const stack = [];
-  const spans = [];
-  let quote = null;
-  let escaped = false;
-
-  for (let index = 0; index < source.length; index += 1) {
-    const character = source[index];
-    if (quote) {
-      if (escaped) {
-        escaped = false;
-      } else if (character === '\\') {
-        escaped = true;
-      } else if (character === quote) {
-        quote = null;
-      }
-      continue;
-    }
-    if (character === '"' || character === "'" || character === '`') {
-      quote = character;
-      continue;
-    }
-    if (character === '{') {
-      stack.push(index);
-      continue;
-    }
-    if (character === '}' && stack.length > 0) {
-      spans.push({ start: stack.pop(), end: index + 1 });
-    }
+const readOpenCodeConsoleJson = async (response) => {
+  const contentType = response.headers?.get?.('content-type') ?? '';
+  if (!/^application\/json\b/i.test(contentType)) {
+    const error = new Error('OpenCode Console returned a non-JSON response.');
+    error.code = 'PARSE_ERROR';
+    throw error;
   }
-  return spans;
-};
-
-const fieldPattern = (field, valuePattern) => new RegExp(
-  `(?:^|[,\\{])\\s*(?:"${field}"|${field})\\s*:\\s*(${valuePattern})${valuePattern ? '\\s*(?=[,}])' : ''}`,
-);
-
-const readSolidPrimitive = (source, field) => {
-  const match = source.match(fieldPattern(field, 'null|true|false|!0|!1|-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?'));
-  if (!match) return { found: false, value: null };
-  if (match[1] === 'null') return { found: true, value: null };
-  if (match[1] === 'true' || match[1] === '!0') return { found: true, value: true };
-  if (match[1] === 'false' || match[1] === '!1') return { found: true, value: false };
-  const value = Number(match[1]);
-  return { found: Number.isFinite(value), value: Number.isFinite(value) ? value : null };
-};
-
-const unescapeSolidString = (value) => {
+  const text = await readBoundedText(response, OPENCODE_ZEN_MAX_RESPONSE_BYTES);
   try {
-    return JSON.parse(value);
+    return JSON.parse(text);
   } catch {
-    return null;
+    const error = new Error('OpenCode Console returned malformed JSON.');
+    error.code = 'PARSE_ERROR';
+    throw error;
   }
 };
 
-const readSolidString = (source, field) => {
-  const match = source.match(fieldPattern(field, 'null|"(?:\\\\.|[^"\\\\])*"'));
-  if (!match) return { found: false, value: null };
-  if (match[1] === 'null') return { found: true, value: null };
-  const value = unescapeSolidString(match[1]);
-  return { found: typeof value === 'string', value: typeof value === 'string' ? value : null };
+// Console money fields are bigint micro-cents serialized as decimal strings.
+const parseOpenCodeMicroCents = (value) => {
+  if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+  if (typeof value !== 'string' || !/^-?\d{1,20}$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 };
 
-const readSolidTimestamp = (objectSource, fullSource, field) => {
-  const match = objectSource.match(fieldPattern(
-    field,
-    'null|"(?:\\\\.|[^"\\\\])*"|new Date\\("(?:\\\\.|[^"\\\\])*"\\)|\\$R\\[\\d+\\](?:\\s*=\\s*new Date\\("(?:\\\\.|[^"\\\\])*"\\))?',
-  ));
-  if (!match) return { found: false, value: null };
-  if (match[1] === 'null') return { found: true, value: null };
-  const raw = match[1];
-  if (raw.startsWith('"')) {
-    const value = toQuotaTimestamp(unescapeSolidString(raw));
-    return { found: value !== null, value };
-  }
-  if (raw.startsWith('new Date(')) {
-    const value = toQuotaTimestamp(unescapeSolidString(raw.slice('new Date('.length, -1)));
-    return { found: value !== null, value };
-  }
-  const inlineAssignment = raw.match(/new Date\(("(?:\\.|[^"\\])*")\)$/);
-  if (inlineAssignment) {
-    const value = toQuotaTimestamp(unescapeSolidString(inlineAssignment[1]));
-    return { found: value !== null, value };
-  }
-  const reference = raw.match(/^\$R\[(\d+)\]$/)?.[1];
-  if (!reference) return { found: false, value: null };
-  const assignment = fullSource.match(new RegExp(
-    `\\$R\\[${reference}\\]\\s*=\\s*new Date\\(("(?:\\\\.|[^"\\\\])*")\\)`,
-  ));
-  const value = assignment ? toQuotaTimestamp(unescapeSolidString(assignment[1])) : null;
-  return { found: value !== null, value };
-};
-
-// Read only data expressions reachable from the requested Solid hydration resource.
-// This is a bounded lexical scan, never JavaScript evaluation.
-const readSolidExpressionEnd = (source, start) => {
-  let depth = 0;
-  let quote = null;
-  for (let index = start; index < source.length; index += 1) {
-    const char = source[index];
-    if (quote) {
-      if (char === '\\') index += 1;
-      else if (char === quote) quote = null;
-      continue;
-    }
-    if (char === '"' || char === "'" || char === '`') quote = char;
-    else if ('{[('.includes(char)) depth += 1;
-    else if ('}])'.includes(char)) {
-      if (depth === 0) return index;
-      depth -= 1;
-    } else if (depth === 0 && (char === ',' || char === ';' || char === '<')) return index;
-  }
-  return source.length;
-};
-
-const resolveZenBillingSource = (html, workspaceId) => {
-  const assignments = new Map();
-  const resolutions = new Map();
-  const roots = [];
-  const resourceKey = `billing.get["${workspaceId}"]`;
-  let quote = null;
-  for (let index = 0; index < html.length; index += 1) {
-    const char = html[index];
-    if (quote) {
-      if (char === '\\') index += 1;
-      else if (char === quote) quote = null;
-      continue;
-    }
-    const tail = char === '_' || char === '$' ? html.slice(index) : '';
-    const resource = (char === '_' || char === '$')
-      ? tail.match(/^(?:_)?\$HY\.r\[("(?:\\.|[^"\\])*")\]\s*=\s*(?!=)/)
-      : null;
-    const reference = char === '$' ? tail.match(/^\$R\[(\d+)\]\s*=\s*(?!=)/) : null;
-    const resolution = char === '$' ? tail.match(/^\$R\[(\d+)\]\.resolve\(\s*/) : null;
-    const match = resource ?? reference ?? resolution;
-    if (match) {
-      const start = index + match[0].length;
-      const end = readSolidExpressionEnd(html, start);
-      const expression = { start, end };
-      if (resource && unescapeSolidString(resource[1]) === resourceKey) roots.push(expression);
-      if (reference) {
-        // Reassigned references cannot identify a unique billing snapshot.
-        assignments.set(reference[1], assignments.has(reference[1]) ? null : expression);
-      }
-      if (resolution) {
-        resolutions.set(resolution[1], resolutions.has(resolution[1]) ? null : expression);
-      }
-      index = start - 1;
-      continue;
-    }
-    if (char === '"' || char === "'" || char === '`') quote = char;
-  }
-  if (roots.length !== 1) return null;
-  const visited = new Set();
-  const sources = [];
-  const queue = [roots[0]];
-  while (queue.length > 0) {
-    if (visited.size > 256) return null;
-    const span = queue.pop();
-    if (span === null || span.end - span.start > 64 * 1024) return null;
-    sources.push(span);
-    const source = html.slice(span.start, span.end);
-    // Quoted strings are values, not links to other hydration objects.
-    const references = source.replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`/g, '""')
-      .matchAll(/\$R\[(\d+)\]/g);
-    for (const [, id] of references) {
-      if (visited.has(id)) continue;
-      visited.add(id);
-      const expression = resolutions.has(id) ? resolutions.get(id) : assignments.get(id);
-      if (expression !== undefined) queue.push(expression);
-    }
-  }
-  return sources;
-};
-
-export const parseOpenCodeZenBillingHtml = (html, workspaceId, now = Date.now()) => {
-  if (typeof html !== 'string' || html.length > OPENCODE_ZEN_MAX_RESPONSE_BYTES
-    || !OPENCODE_ZEN_WORKSPACE_PATTERN.test(workspaceId)) return null;
-  const sources = resolveZenBillingSource(html, workspaceId);
-  if (!sources) return null;
-  const requiredFields = ['balance', 'monthlyUsage', 'timeMonthlyUsageUpdated'];
-  const billingSources = new Map();
-  for (const span of sources) {
-    const fragment = html.slice(span.start, span.end);
-    for (const { start, end } of collectObjectSpans(fragment)) {
-      const source = fragment.slice(start, end);
-      if (requiredFields.every((field) => fieldPattern(field, '').test(source))) {
-        // A nested assignment can be reached via both its parent and its reference.
-        billingSources.set(span.start + start, { start: span.start + start, end: span.start + end, source });
-      }
-    }
-  }
-  const objects = [...billingSources.values()];
-  const candidates = objects.filter((candidate) => !objects.some(
-    (other) => other.start > candidate.start && other.end < candidate.end,
-  ));
-  if (candidates.length !== 1) return null;
-  const source = candidates[0].source;
-  const customerID = readSolidString(source, 'customerID');
-  const balance = readSolidPrimitive(source, 'balance');
-  const monthlyLimit = readSolidPrimitive(source, 'monthlyLimit');
-  const monthlyUsage = readSolidPrimitive(source, 'monthlyUsage');
-  const reload = readSolidPrimitive(source, 'reload');
-  const reloadAmount = readSolidPrimitive(source, 'reloadAmount');
-  const reloadTrigger = readSolidPrimitive(source, 'reloadTrigger');
-  if (
-    (customerID.found && customerID.value !== null && !customerID.value.startsWith('cus_'))
-    || !balance.found || typeof balance.value !== 'number' || balance.value < 0
-    || !monthlyUsage.found || (monthlyUsage.value !== null && (typeof monthlyUsage.value !== 'number' || monthlyUsage.value < 0))
-  ) {
-    return null;
-  }
-
-  const parsedUsageUpdatedAt = readSolidTimestamp(source, html, 'timeMonthlyUsageUpdated');
-  if (!parsedUsageUpdatedAt.found) return null;
-  const usageUpdatedAt = parsedUsageUpdatedAt.value;
-  const current = new Date(now);
-  const updated = usageUpdatedAt === null ? null : new Date(usageUpdatedAt);
-  const usageIsCurrentMonth = Boolean(
-    updated
-    && updated.getUTCFullYear() === current.getUTCFullYear()
-    && updated.getUTCMonth() === current.getUTCMonth()
-  );
+export const parseOpenCodeZenBillingStatus = (payload) => {
+  const status = asObject(payload);
+  if (!status) return null;
+  const balanceMicroCents = parseOpenCodeMicroCents(status.balanceMicroCents);
+  const availableMicroCents = parseOpenCodeMicroCents(status.availableMicroCents);
+  if (balanceMicroCents === null || availableMicroCents === null) return null;
   return {
-    balanceMicrocents: balance.value,
-    monthlyLimitDollars: typeof monthlyLimit.value === 'number' ? monthlyLimit.value : null,
-    monthlyUsageMicrocents: usageIsCurrentMonth && typeof monthlyUsage.value === 'number'
-      ? Math.max(0, monthlyUsage.value)
-      : 0,
-    usageUpdatedAt,
-    reloadEnabled: reload.value === true,
-    reloadAmountDollars: typeof reloadAmount.value === 'number' ? reloadAmount.value : 0,
-    reloadTriggerDollars: typeof reloadTrigger.value === 'number' ? reloadTrigger.value : 0,
+    billingMode: asNonEmptyString(status.billingMode),
+    balanceMicroCents,
+    availableMicroCents,
   };
 };
 
+export const parseOpenCodeZenUsageSummary = (payload) => {
+  const summary = asObject(payload);
+  const totalCostMicroCents = parseOpenCodeMicroCents(summary?.totalCostMicroCents);
+  if (totalCostMicroCents === null || totalCostMicroCents < 0) return null;
+  return { totalCostMicroCents };
+};
+
+const startOfUtcMonthIso = (now) => {
+  const current = new Date(now);
+  return new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), 1)).toISOString();
+};
+
+const classifyOpenCodeConsoleResponse = (response) => {
+  if (response.status === 401) return 'AUTHENTICATION_FAILED';
+  // OrgRequired (400), Forbidden (403), and unknown workspaces (404) all mean the
+  // token cannot read this workspace; refreshing the token would not help.
+  if ([400, 403, 404].includes(response.status)) return 'WORKSPACE_INACCESSIBLE';
+  if (response.status >= 300 && response.status < 400) return 'API_ERROR';
+  if (!response.ok) return 'API_ERROR';
+  return null;
+};
+
+const OPENCODE_ZEN_ERROR_MESSAGES = Object.freeze({
+  AUTHENTICATION_FAILED: 'OpenCode Console sign-in expired. Reconnect OpenCode Zen usage tracking.',
+  WORKSPACE_INACCESSIBLE: 'OpenCode Console denied access to this workspace. Reconnect and choose a workspace you can view.',
+  PARSE_ERROR: 'OpenCode Console billing response could not be parsed.',
+  TIMEOUT: 'OpenCode Console billing request timed out. Try again.',
+  API_ERROR: 'OpenCode Console billing request failed.',
+});
+
 const formatOpenCodeZenMoney = (value) => {
-  const formatted = Number(value).toFixed(2);
-  return formatted === '-0.00' ? '0.00' : formatted;
+  const formatted = Math.abs(Number(value)).toFixed(2);
+  return Number(value) < 0 && formatted !== '0.00' ? `-$${formatted}` : `$${formatted}`;
 };
 
 export const fetchOpenCodeZenQuotaAdapter = async ({
@@ -1509,90 +1345,53 @@ export const fetchOpenCodeZenQuotaAdapter = async ({
   const providerName = 'OpenCode Zen';
   const now = nowInput();
   const normalizedCredential = normalizeOpenCodeZenCredential(credential);
-  if (!normalizedCredential) {
-    return buildSharedQuotaResult({
-      providerId,
-      providerName,
-      ok: false,
-      configured: false,
-      error: 'Not configured',
-      errorCode: 'NOT_CONFIGURED',
-      now,
-    });
-  }
+  const failure = (errorCode, configured = true) => buildSharedQuotaResult({
+    providerId,
+    providerName,
+    ok: false,
+    configured,
+    error: configured ? OPENCODE_ZEN_ERROR_MESSAGES[errorCode] : 'Not configured',
+    errorCode,
+    now,
+  });
+  if (!normalizedCredential) return failure('NOT_CONFIGURED', false);
 
-  const billingUrl = `${OPENCODE_ZEN_BILLING_ORIGIN}/workspace/${normalizedCredential.workspaceId}/billing`;
+  const headers = {
+    Accept: 'application/json',
+    Authorization: `Bearer ${normalizedCredential.accessToken}`,
+    'x-org-id': normalizedCredential.orgId,
+  };
+  const request = (path) => fetchImpl(`${OPENCODE_CONSOLE_BASE_URL}${path}`, {
+    method: 'GET',
+    redirect: 'manual',
+    headers,
+    signal: AbortSignal.timeout(15_000),
+  });
+
   try {
-    const response = await fetchImpl(billingUrl, {
-      method: 'GET',
-      redirect: 'manual',
-      headers: {
-        Accept: 'text/html',
-        Cookie: `auth=${normalizedCredential.authCookie}`,
-      },
-      signal: AbortSignal.timeout(15_000),
-    });
+    const [statusResponse, usageResponse] = await Promise.all([
+      request('/api/billing/status'),
+      request(`/api/usage/summary?since=${encodeURIComponent(startOfUtcMonthIso(now))}`),
+    ]);
+    // Report the most actionable failure first: an expired token beats a workspace denial.
+    const failures = [statusResponse, usageResponse].map(classifyOpenCodeConsoleResponse);
+    const errorCode = ['AUTHENTICATION_FAILED', 'WORKSPACE_INACCESSIBLE', 'API_ERROR']
+      .find((code) => failures.includes(code));
+    if (errorCode) return failure(errorCode);
 
-    if ((response.status >= 300 && response.status < 400) || [401, 403, 404].includes(response.status)) {
-      return buildSharedQuotaResult({
-        providerId,
-        providerName,
-        ok: false,
-        configured: true,
-        error: 'OpenCode Zen dashboard authentication failed. Update the workspace session credential.',
-        errorCode: 'AUTHENTICATION_FAILED',
-        now,
-      });
-    }
-    if (!response.ok) {
-      return buildSharedQuotaResult({
-        providerId,
-        providerName,
-        ok: false,
-        configured: true,
-        error: `OpenCode Zen billing request failed: ${response.status}`,
-        errorCode: 'API_ERROR',
-        now,
-      });
-    }
-    if (response.url) {
-      const finalUrl = new URL(response.url);
-      if (finalUrl.origin !== OPENCODE_ZEN_BILLING_ORIGIN || finalUrl.pathname !== new URL(billingUrl).pathname) {
-        return buildSharedQuotaResult({
-          providerId,
-          providerName,
-          ok: false,
-          configured: true,
-          error: 'OpenCode Zen billing response came from an untrusted location.',
-          errorCode: 'AUTHENTICATION_FAILED',
-          now,
-        });
-      }
-    }
+    const billing = parseOpenCodeZenBillingStatus(await readOpenCodeConsoleJson(statusResponse));
+    const usage = parseOpenCodeZenUsageSummary(await readOpenCodeConsoleJson(usageResponse));
+    if (!billing || !usage) return failure('PARSE_ERROR');
 
-    const html = await readBoundedText(response, OPENCODE_ZEN_MAX_RESPONSE_BYTES);
-    const billing = parseOpenCodeZenBillingHtml(html, normalizedCredential.workspaceId, now);
-    if (!billing) {
-      return buildSharedQuotaResult({
-        providerId,
-        providerName,
-        ok: false,
-        configured: true,
-        error: 'OpenCode Zen billing response could not be parsed.',
-        errorCode: 'PARSE_ERROR',
-        now,
-      });
-    }
-
-    const balance = billing.balanceMicrocents / OPENCODE_ZEN_MICROCENTS_PER_DOLLAR;
-    const monthlyUsage = billing.monthlyUsageMicrocents / OPENCODE_ZEN_MICROCENTS_PER_DOLLAR;
-    const creditTotal = monthlyUsage + balance;
+    const available = billing.availableMicroCents / OPENCODE_ZEN_MICROCENTS_PER_DOLLAR;
+    const monthlyUsage = usage.totalCostMicroCents / OPENCODE_ZEN_MICROCENTS_PER_DOLLAR;
+    const creditTotal = monthlyUsage + Math.max(0, available);
     const windows = {
       credits: toSharedUsageWindow({
         usedPercent: creditTotal > 0 ? (monthlyUsage / creditTotal) * 100 : 0,
         windowSeconds: null,
         resetAt: null,
-        valueLabel: `$${formatOpenCodeZenMoney(monthlyUsage)} used / $${formatOpenCodeZenMoney(balance)} available`,
+        valueLabel: `${formatOpenCodeZenMoney(monthlyUsage)} used / ${formatOpenCodeZenMoney(available)} available`,
         now,
       }),
     };
@@ -1602,25 +1401,135 @@ export const fetchOpenCodeZenQuotaAdapter = async ({
       ok: true,
       configured: true,
       usage: { windows },
-      usageUpdatedAt: billing.usageUpdatedAt ?? undefined,
       now,
     });
   } catch (error) {
-    return buildSharedQuotaResult({
-      providerId,
-      providerName,
-      ok: false,
-      configured: true,
-      error: error?.code === 'RESPONSE_TOO_LARGE'
-        ? 'OpenCode Zen billing response was too large to parse.'
-        : error?.name === 'TimeoutError' || error?.name === 'AbortError'
-          ? 'OpenCode Zen billing request timed out. Try again.'
-          : 'OpenCode Zen billing request failed.',
-      errorCode: error?.code === 'RESPONSE_TOO_LARGE' ? 'PARSE_ERROR'
-        : error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 'TIMEOUT' : 'API_ERROR',
-      now,
-    });
+    if (error?.code === 'RESPONSE_TOO_LARGE' || error?.code === 'PARSE_ERROR') return failure('PARSE_ERROR');
+    if (error?.name === 'TimeoutError' || error?.name === 'AbortError') return failure('TIMEOUT');
+    return failure('API_ERROR');
   }
+};
+
+export class OpenCodeConsoleAuthError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = 'OpenCodeConsoleAuthError';
+    this.code = code;
+  }
+}
+
+const postOpenCodeConsoleAuth = async (path, body, fetchImpl) => {
+  let response;
+  try {
+    response = await fetchImpl(`${OPENCODE_CONSOLE_BASE_URL}${path}`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (error) {
+    throw new OpenCodeConsoleAuthError(
+      error?.name === 'TimeoutError' || error?.name === 'AbortError' ? 'TIMEOUT' : 'API_ERROR',
+      'OpenCode Console sign-in request failed.',
+    );
+  }
+  let payload = null;
+  try {
+    payload = await readOpenCodeConsoleJson(response);
+  } catch {
+    // Error responses without JSON are classified by status below.
+  }
+  return { response, payload: asObject(payload) };
+};
+
+const resolveOpenCodeConsoleUrl = (value) => {
+  const raw = asNonEmptyString(value);
+  if (!raw) return null;
+  try {
+    const url = new URL(raw, OPENCODE_CONSOLE_ORIGIN);
+    return url.origin === OPENCODE_CONSOLE_ORIGIN ? url.toString() : null;
+  } catch {
+    return null;
+  }
+};
+
+const parsePositiveSeconds = (value, fallback) => {
+  const parsed = toQuotaNumber(value);
+  return parsed !== null && parsed > 0 && parsed <= 24 * HOUR_SECONDS ? parsed : fallback;
+};
+
+export const startOpenCodeConsoleDeviceAuthorization = async ({ fetchImpl = fetch } = {}) => {
+  const { response, payload } = await postOpenCodeConsoleAuth('/auth/device/code', {
+    client_id: OPENCODE_CONSOLE_CLIENT_ID,
+    supports_org_scope: true,
+  }, fetchImpl);
+  const deviceCode = asNonEmptyString(payload?.device_code);
+  const userCode = asNonEmptyString(payload?.user_code);
+  const verificationUri = resolveOpenCodeConsoleUrl(payload?.verification_uri);
+  const verificationUriComplete = resolveOpenCodeConsoleUrl(payload?.verification_uri_complete);
+  if (!response.ok || !deviceCode || deviceCode.length > 255 || !userCode || userCode.length > 64 || !verificationUri) {
+    throw new OpenCodeConsoleAuthError('API_ERROR', 'OpenCode Console sign-in could not be started.');
+  }
+  return {
+    deviceCode,
+    userCode,
+    verificationUri,
+    verificationUriComplete: verificationUriComplete ?? verificationUri,
+    expiresIn: parsePositiveSeconds(payload.expires_in, 900),
+    interval: parsePositiveSeconds(payload.interval, 5),
+  };
+};
+
+const parseOpenCodeConsoleToken = (payload) => {
+  const accessToken = asNonEmptyString(payload?.access_token);
+  const refreshToken = asNonEmptyString(payload?.refresh_token);
+  const orgId = asNonEmptyString(payload?.org_id);
+  const expiresIn = toQuotaNumber(payload?.expires_in);
+  if (
+    !accessToken || !OPENCODE_CONSOLE_TOKEN_PATTERN.test(accessToken)
+    || !refreshToken || !OPENCODE_CONSOLE_TOKEN_PATTERN.test(refreshToken)
+    || expiresIn === null || expiresIn <= 0
+    || (orgId !== null && !OPENCODE_CONSOLE_ORG_PATTERN.test(orgId))
+  ) {
+    return null;
+  }
+  return { accessToken, refreshToken, expiresIn, orgId };
+};
+
+const exchangeOpenCodeConsoleToken = async (body, fetchImpl) => {
+  const { response, payload } = await postOpenCodeConsoleAuth('/auth/device/token', {
+    ...body,
+    client_id: OPENCODE_CONSOLE_CLIENT_ID,
+  }, fetchImpl);
+  if (response.ok) {
+    const token = parseOpenCodeConsoleToken(payload);
+    if (!token) throw new OpenCodeConsoleAuthError('PARSE_ERROR', 'OpenCode Console returned an invalid token.');
+    return { status: 'approved', token };
+  }
+  const error = asNonEmptyString(payload?.error);
+  if (error === 'authorization_pending') return { status: 'pending' };
+  if (error === 'slow_down') return { status: 'slow_down' };
+  if (error === 'access_denied') return { status: 'denied' };
+  if (error === 'expired_token') return { status: 'expired' };
+  if (response.status === 400 || response.status === 401) return { status: 'invalid' };
+  throw new OpenCodeConsoleAuthError('API_ERROR', 'OpenCode Console sign-in request failed.');
+};
+
+export const exchangeOpenCodeConsoleDeviceCode = async ({ deviceCode, fetchImpl = fetch } = {}) => {
+  if (!asNonEmptyString(deviceCode)) return { status: 'invalid' };
+  return exchangeOpenCodeConsoleToken({
+    grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+    device_code: deviceCode,
+  }, fetchImpl);
+};
+
+export const refreshOpenCodeConsoleToken = async ({ refreshToken, fetchImpl = fetch } = {}) => {
+  if (!asNonEmptyString(refreshToken)) return { status: 'invalid' };
+  return exchangeOpenCodeConsoleToken({
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+  }, fetchImpl);
 };
 
 export const fetchOpenCodeGoQuotaAdapter = async ({

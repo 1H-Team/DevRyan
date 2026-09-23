@@ -6,6 +6,7 @@ import {
   classifyManagedTaskFailure,
   classifyProviderRetryFailure,
   isDefiniteProviderUsageLimit,
+  isProviderConfigurationFailure,
   isManagedTaskModelUnavailable,
   isProviderPromptRejected,
 } from './provider-retry-policy.js';
@@ -298,6 +299,7 @@ const resolveManagedTaskAgentRetryAvailable = (task, failureKind) => (
   && failureKind !== PROVIDER_USAGE_LIMIT_FAILURE_KIND
   && failureKind !== MODEL_UNAVAILABLE_FAILURE_KIND
   && !isProviderAuthenticationFailure(task.failureReason)
+  && !isProviderConfigurationFailure(task.failureReason)
   && !task.transportRecovery
 );
 
@@ -324,6 +326,7 @@ export const requiresManualModelRecovery = (task, resultEnvelope) => Boolean(
     isDefiniteProviderUsageLimit(task.failureReason)
     || isManagedTaskModelUnavailable(task.failureReason)
     || isProviderAuthenticationFailure(task.failureReason)
+    || isProviderConfigurationFailure(task.failureReason)
     || Boolean(task.transportRecovery)
     || (task.mode === 'orchestrator' && task.dispatchGroupId !== null && task.attempt >= 2)
   )

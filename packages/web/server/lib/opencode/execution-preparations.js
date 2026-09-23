@@ -8,7 +8,7 @@ const failure = (code) => Object.assign(new Error(code), { code, status: 409 });
  * until cancellation and all owned I/O have settled. */
 export function createExecutionPreparations({ runtime, onDiagnostic, owner, pollMs = 20_000, ownerTimeoutMs = 60_000 }) {
   const jobs = new Map();
-  const abandon = async (job) => {
+  const abandonOwned = async (job) => {
     if (job.claimed) return;
     clearInterval(job.timer);
     job.controller.abort(failure('execution_poller_lost'));
@@ -19,11 +19,20 @@ export function createExecutionPreparations({ runtime, onDiagnostic, owner, poll
     });
     if (jobs.get(job.lease.token) === job) jobs.delete(job.lease.token);
   };
-  const start = (lease) => {
+  const abandon = (job) => {
+    if (job.claimed) return Promise.resolve();
+    // Single-flight while an attempt runs; a failed cancellation or cleanup
+    // must remain retryable by the next cancel, claim rollback or drain.
+    return job.abandoning ??= abandonOwned(job).catch((error) => {
+      job.abandoning = null;
+      throw error;
+    });
+  };
+  const start = (lease, input) => {
     owner.assert();
     if (jobs.has(lease.token)) return;
     const controller = new AbortController();
-    const job = { controller, touched: Date.now(), lease, error: null, settled: null, done: false };
+    const job = { controller, touched: Date.now(), lease, tool: input?.tool, requestDirectory: input?.directory ?? lease.directory, error: null, settled: null, done: false };
     jobs.set(lease.token, job);
     const timer = setInterval(() => {
       if (Date.now() - job.touched >= ownerTimeoutMs) {
@@ -32,7 +41,8 @@ export function createExecutionPreparations({ runtime, onDiagnostic, owner, poll
     }, Math.min(ownerTimeoutMs, 1000));
     job.timer = timer;
     job.settled = withExecutionPreparation(lease.scope, () => runtime.prepare(lease), {
-      signal: AbortSignal.any([owner.signal, controller.signal]), onDiagnostic,
+      // One summary per preparation, with slow or failed phases journaled as they happen.
+      signal: AbortSignal.any([owner.signal, controller.signal]), onDiagnostic, summary: { minMs: 0 },
     }).then((ready) => { job.lease = ready; }, async (cause) => {
       job.error = cause;
       await executionCleanup(async () => {
@@ -55,7 +65,9 @@ export function createExecutionPreparations({ runtime, onDiagnostic, owner, poll
       let timer;
       // Identity and durable lease lookup already spent part of this request's
       // admission budget. Keep response headroom without ending the producer.
-      const waitMs = Math.max(0, Math.min(pollMs, 20_000, executionRemainingMs() - 1_000));
+      // A poll wait reports no progress itself; stay inside the host's 25 s
+      // idle admission budget as well as its absolute deadline.
+      const waitMs = Math.max(0, Math.min(pollMs, 15_000, executionRemainingMs() - 1_000));
       try {
         await executionPhase('poll_wait', () => Promise.race([job.settled, new Promise((resolve) => {
           timer = setTimeout(resolve, waitMs);
@@ -69,6 +81,20 @@ export function createExecutionPreparations({ runtime, onDiagnostic, owner, poll
     const job = jobs.get(lease.token);
     if (job) await abandon(job);
   };
+  // These jobs were admitted against canonical session/tool state at begin.
+  // Polls only observe progress; claims still revalidate the durable lease.
+  // In particular, polling must not queue behind the reconciliation it observes.
+  const pollAuthenticated = async (input) => {
+    owner.assert();
+    const job = jobs.get(input.token);
+    if (!job || job.claimed || job.abandoning || job.controller.signal.aborted) throw failure('execution_owner_unavailable');
+    const lease = job.lease;
+    if (lease.ownerID !== owner.id || job.requestDirectory !== input.directory || job.tool !== input.tool
+      || ['sessionID', 'messageID', 'callID'].some(key => lease.scope[key] !== input[key])
+      || lease.executionFingerprint !== input.argsDigest || !['control', 'process'].includes(input.kind)
+      || (lease.preparation === 'none') !== (input.kind === 'control')) throw failure('capture_identity_mismatch');
+    return poll(lease);
+  };
   const claim = async (lease, action) => {
     const job = jobs.get(lease.token);
     owner.assert();
@@ -78,7 +104,7 @@ export function createExecutionPreparations({ runtime, onDiagnostic, owner, poll
     try { const result = await action(); jobs.delete(lease.token); return result; }
     catch (cause) { job.claimed = false; await abandon(job).catch(() => {}); throw cause; }
   };
-  return { start, poll, cancel, claim, forget: (token) => { clearInterval(jobs.get(token)?.timer); jobs.delete(token); },
+  return { start, poll, pollAuthenticated, cancel, claim, forget: (token) => { clearInterval(jobs.get(token)?.timer); jobs.delete(token); },
     drain: () => Promise.allSettled([...jobs.values()].map(abandon)) };
 }
 

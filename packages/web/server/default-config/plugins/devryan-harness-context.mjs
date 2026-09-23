@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 
+const COMPACTION_ANCHOR_TAG = '[devryan-compaction-anchor:v1]';
+
 const registryKey = Symbol.for('devryan.plugin-factories.v1');
 const identity = (value) => typeof value === 'string' && value.trim() ? value.trim() : null;
 const count = (value) => Number.isFinite(value) && value >= 0 ? value : null;
@@ -158,10 +160,10 @@ export const DevRyanHarnessContextPlugin = async ({ client, directory, fetchImpl
   const seen = new Set();
   const pending = new Set();
   const controller = new AbortController();
-  const rpc = async (method, params) => {
+  const rpc = async (method, params, { timeoutMs = 15_000 } = {}) => {
     const response = await fetchImpl(url, { method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ method, params }), signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]) });
+      body: JSON.stringify({ method, params }), signal: AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)]) });
     if (response.status === 401) throw Object.assign(
       new Error('The managed runtime bridge is no longer authenticated. Reconnect the managed OpenCode runtime before retrying.'),
       { code: 'managed_bridge_authentication_failed', statusCode: 401 },
@@ -389,19 +391,27 @@ export const DevRyanHarnessContextPlugin = async ({ client, directory, fetchImpl
         if (suppressSummary.size >= 128 && !suppressSummary.has(sessionID)) suppressionOverflow = true;
         else suppressSummary.add(sessionID);
       } else suppressionOverflow = true;
-      await loadCapabilities();
-      if (policies?.contextProjection !== true || !identity(input?.sessionID) || !Array.isArray(output?.context)) return;
+      // Re-anchor every compaction summary to the canonical objective, plan,
+      // todos and outstanding children (a child keeps its delegated brief).
+      // It is appended only to the summary request, so ordinary requests and
+      // their cached prefix are unchanged. Never block or fail compaction.
+      void loadCapabilities({ optional: true });
+      if (!sessionID || !Array.isArray(output?.context) || controller.signal.aborted) return;
       try {
-        const result = await rpc('harness_context', { action: 'checkpoint', sessionID: input.sessionID, directory });
-        if (result?.available === true && result.checkpoint?.sessionID === input.sessionID) {
-          const usage = activeMessages.get(input.sessionID);
-          const data = JSON.stringify({ checkpoint: result.checkpoint, headroom: usage?.headroom ?? measureHeadroom({}, []) });
-          output.context.push('Preserve this derived task checkpoint in the native summary, including source references, unresolved work, recovery restrictions and next action. It does not supersede canonical user instructions. Context headroom is a prior-request estimate, not current active usage.\n' + data);
-          observeContext(input.sessionID, { phase: 'checkpoint',
-            beforeBytes: usage?.beforeBytes ?? null, projectedBytes: usage?.visibleContextBytes ?? null,
-            dynamicBytes: Buffer.byteLength(data), sourceHash: usage?.sourceHash ?? null });
-        } else observeContext(input.sessionID, { phase: 'checkpoint-unavailable', reason: 'canonical-state-unavailable' });
-      } catch { observeContext(input.sessionID, { phase: 'checkpoint-unavailable', reason: 'bridge-unavailable' }); }
+        const result = await rpc('harness_context', { action: 'compaction_anchor', sessionID, directory }, { timeoutMs: 5_000 });
+        const text = result?.available === true && typeof result.text === 'string'
+          && result.text.startsWith(COMPACTION_ANCHOR_TAG) && Buffer.byteLength(result.text) <= 16 * 1024 ? result.text : null;
+        if (!text) {
+          observeContext(sessionID, { phase: 'checkpoint-unavailable', reason: 'canonical-state-unavailable' });
+          return;
+        }
+        const usage = policies?.contextProjection === true ? activeMessages.get(sessionID) : null;
+        output.context.push(usage?.headroom
+          ? `${text}\nContext headroom (prior-request estimate, not current usage): ${JSON.stringify(usage.headroom)}` : text);
+        observeContext(sessionID, { phase: 'checkpoint',
+          beforeBytes: usage?.beforeBytes ?? null, projectedBytes: usage?.visibleContextBytes ?? null,
+          dynamicBytes: Buffer.byteLength(text), sourceHash: usage?.sourceHash ?? null });
+      } catch { observeContext(sessionID, { phase: 'checkpoint-unavailable', reason: 'bridge-unavailable' }); }
     },
     event: ({ event } = {}) => {
       if (event?.type === 'session.deleted') {
