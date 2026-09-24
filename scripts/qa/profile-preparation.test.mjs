@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { test } from 'node:test';
-import { assertQaSelectedProviderAccess, assertQaSelectedProviderDuration, pinQaAgents, preserveQaOrchestration, prepareQaPluginHomeWrapper, prepareQaProfile, projectQaAuth, provisionQaRipgrep } from './profile-preparation.mjs';
+import { assertQaLaunchEnvironmentOwned, assertQaSelectedProviderAccess, assertQaSelectedProviderDuration, createQaLaunchEnvironment, pinQaAgents, qaMeridianClaudePaths, preserveQaOrchestration, prepareQaPluginHomeWrapper, prepareQaProfile, projectQaAuth, provisionQaRipgrep } from './profile-preparation.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -312,5 +312,72 @@ test('private profiles reuse the installed ripgrep so read/grep/skill tools work
         assert.match(copied.sha256, /^[a-f0-9]{64}$/);
         const { stdout } = await promisify(execFile)(path.join(cacheHome, 'opencode/bin/rg'));
         assert.equal(stdout.trim(), 'ripgrep');
+    } finally { await rm(scratch, { recursive: true, force: true }); }
+});
+
+// Mirrors what isolated-host.mjs applies from credentials.env.json.
+const qaCredentialsEnvironment = { MERIDIAN_PROFILES: JSON.stringify([{ id: 'qa', type: 'oauth-token', oauthToken: 'synthetic-access' }]), MERIDIAN_DEFAULT_PROFILE: 'qa' };
+const hostileBaseEnvironment = (realHome) => ({ PATH: process.env.PATH, HOME: realHome, USER: 'synthetic-user',
+    CLAUDE_CONFIG_DIR: path.join(realHome, '.claude'), MERIDIAN_CONFIG_DIR: path.join(realHome, '.config/meridian'),
+    MERIDIAN_SESSION_DIR: path.join(realHome, '.cache/meridian'), MERIDIAN_PLUGIN_DIR: path.join(realHome, '.config/meridian/plugins'),
+    MERIDIAN_DESIGN_TOKEN_PATH: path.join(realHome, '.config/meridian/design-token.json'), CLAUDE_PROXY_SESSION_DIR: path.join(realHome, '.cache/meridian'),
+    MERIDIAN_TELEMETRY_DB: path.join(realHome, '.config/meridian/telemetry.db'), MERIDIAN_DEBUG: '1',
+    MERIDIAN_PROFILES: '[{"id":"qa","type":"claude-max"}]', MERIDIAN_DEFAULT_PROFILE: 'qa', CLAUDE_CODE_OAUTH_TOKEN: 'owner-token' });
+
+test('prepared launch env resolves every Meridian/Claude config path under the owned QA home', () => {
+    const runtimeRoot = path.join(root, '.cache/qa/synthetic-launch-env/runtime');
+    const home = path.join(runtimeRoot, 'home');
+    const realHome = path.join(root, '.cache/qa/synthetic-launch-env/real-home');
+    const base = hostileBaseEnvironment(realHome);
+    const prepared = createQaLaunchEnvironment({ runtimeRoot, home, opencodeBinary: '/synthetic/opencode', baseEnvironment: base });
+    const launch = { ...prepared, ...qaCredentialsEnvironment };
+    assert.equal(launch.HOME, home);
+    assert.equal(launch.CLAUDE_CONFIG_DIR, path.join(home, '.claude'));
+    assert.equal(launch.MERIDIAN_CONFIG_DIR, path.join(home, '.config/meridian'));
+    assert.equal(launch.MERIDIAN_SESSION_DIR, path.join(home, '.cache/meridian'));
+    for (const key of ['MERIDIAN_PLUGIN_DIR', 'MERIDIAN_DESIGN_TOKEN_PATH', 'CLAUDE_PROXY_SESSION_DIR', 'MERIDIAN_TELEMETRY_DB', 'CLAUDE_CODE_OAUTH_TOKEN']) {
+        assert.equal(Object.hasOwn(launch, key), false, key);
+    }
+    assert.equal(launch.MERIDIAN_DEBUG, '1');
+    const paths = qaMeridianClaudePaths(launch);
+    assert.equal(paths['homedir:meridian-profile'], path.join(home, '.config/meridian/profiles/qa'));
+    for (const [name, value] of Object.entries(paths)) {
+        assert.ok(value === home || value.startsWith(`${home}${path.sep}`), `${name} escaped the owned home: ${value}`);
+    }
+    // Any absolute Meridian/Claude value in the launch env, not only known keys.
+    for (const [key, value] of Object.entries(launch)) {
+        if (/MERIDIAN|CLAUDE/.test(key) && path.isAbsolute(value)) assert.ok(value.startsWith(`${home}${path.sep}`), `${key} escaped the owned home`);
+    }
+    assert.doesNotThrow(() => assertQaLaunchEnvironmentOwned(launch, home));
+    // The 2026-09-24 leak: an inherited HOME made Meridian's oauth-token profile
+    // CLAUDE_CONFIG_DIR resolve to the owner's ~/.config/meridian/profiles/qa.
+    assert.throws(() => assertQaLaunchEnvironmentOwned({ ...launch, HOME: realHome }, home), /homedir:meridian-profile|HOME/);
+    assert.throws(() => assertQaLaunchEnvironmentOwned({ ...launch, MERIDIAN_PLUGIN_DIR: path.join(realHome, 'plugins') }, home), /MERIDIAN_PLUGIN_DIR/);
+    assert.equal(base.HOME, realHome);
+});
+
+test('Meridian profile paths stay owned inside the Bun host where the home shim cannot rebind named imports', async () => {
+    const scratch = await mkdtemp(path.join(root, '.cache/qa/meridian-bun-home-'));
+    try {
+        const runtimeRoot = path.join(scratch, 'runtime');
+        const home = path.join(runtimeRoot, 'home');
+        await mkdir(home, { recursive: true });
+        await writeFile(path.join(home, '.devryan-qa-home'), 'owned test\n');
+        // Same derivations as Meridian 1.62.x (named homedir import) and the
+        // later MERIDIAN_CONFIG_DIR resolver, loaded after the QA home shim as
+        // the plugin wrappers do inside the compiled OpenCode (Bun) host.
+        const meridian = path.join(scratch, 'meridian-paths.mjs');
+        await writeFile(meridian, `import { homedir } from 'node:os';\nimport { join } from 'node:path';\n`
+            + `export const paths = (id) => ({ legacyProfile: join(homedir(), '.config', 'meridian', 'profiles', id),\n`
+            + `  configDir: process.env.MERIDIAN_CONFIG_DIR ?? join(homedir(), '.config', 'meridian'), claudeDefault: join(homedir(), '.claude') });\n`);
+        const entry = path.join(scratch, 'entry.mjs');
+        await writeFile(entry, `import ${JSON.stringify(fileURLToPath(new URL('./isolated-home.mjs', import.meta.url)))};\n`
+            + `const { paths } = await import(${JSON.stringify(meridian)});\nconsole.log(JSON.stringify(paths(process.env.MERIDIAN_DEFAULT_PROFILE)));\n`);
+        const launch = { ...createQaLaunchEnvironment({ runtimeRoot, home, opencodeBinary: '/synthetic/opencode',
+            baseEnvironment: hostileBaseEnvironment(path.join(scratch, 'real-home')) }), ...qaCredentialsEnvironment };
+        const bun = process.versions.bun ? process.execPath : 'bun';
+        const { stdout } = await promisify(execFile)(bun, [entry], { env: launch });
+        assert.deepEqual(JSON.parse(stdout), { legacyProfile: path.join(home, '.config/meridian/profiles/qa'),
+            configDir: path.join(home, '.config/meridian'), claudeDefault: path.join(home, '.claude') });
     } finally { await rm(scratch, { recursive: true, force: true }); }
 });

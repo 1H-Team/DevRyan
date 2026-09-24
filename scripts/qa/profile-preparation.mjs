@@ -257,6 +257,69 @@ export const prepareQaPluginHomeWrapper = async (entry) => {
     await writeFile(entry, `import ${JSON.stringify(homeShim)};\nexport * from ${JSON.stringify(`./${path.basename(original)}`)};\n${hasDefault ? `export { default } from ${JSON.stringify(`./${path.basename(original)}`)};\n` : ''}`);
 };
 
+// Inherited overrides that relocate Meridian or Claude state. The owned values
+// below replace the directories; any other relocation would escape the profile.
+const inheritedStatePathKey = key => /^(MERIDIAN|CLAUDE)_(\w+_)?(DIR|PATH|CONFIG|DB|FILE|HOME|INSTANCES)$/.test(key);
+
+// Meridian runs inside the compiled Bun OpenCode host. Bun resolves named
+// `homedir` imports from HOME at process start, so the preload shim cannot
+// redirect them: Meridian 1.62.x derives oauth-token profile directories
+// (CLAUDE_CONFIG_DIR) and its state from homedir(). HOME is therefore owned in
+// this launch environment; the shim still never mutates it inside a process.
+export const createQaLaunchEnvironment = ({ runtimeRoot, home, opencodeBinary, baseEnvironment = process.env }) => {
+    const data = path.join(home, '.config/openchamber');
+    const env = { ...baseEnvironment };
+    for (const key of Object.keys(env)) if (inheritedStatePathKey(key)) delete env[key];
+    Object.assign(env, { DEVRYAN_QA_RUNTIME_ROOT: runtimeRoot, DEVRYAN_QA_HOME: home,
+        HOME: home, OPENCODE_TEST_HOME: home, XDG_CONFIG_HOME: path.join(home, '.config'),
+        XDG_DATA_HOME: path.join(home, '.local/share'), XDG_STATE_HOME: path.join(home, '.local/state'),
+        XDG_CACHE_HOME: path.join(home, '.cache'), TMPDIR: path.join(home, 'tmp'),
+        BUN_INSTALL_CACHE_DIR: path.join(home, '.cache/bun'),
+        OPENCHAMBER_DATA_DIR: data, OPENCHAMBER_ELECTRON_USER_DATA_DIR: path.join(runtimeRoot, 'browser-profile'),
+        OPENCHAMBER_DIST_DIR: path.join(repositoryRoot, 'packages/web/dist'), OPENCHAMBER_ELECTRON_DEV: '1',
+        OPENCODE_BINARY: opencodeBinary, CLAUDE_PROXY_PORT: '0',
+        CLAUDE_CONFIG_DIR: path.join(home, '.claude'),
+        MERIDIAN_CONFIG_DIR: path.join(home, '.config/meridian'), MERIDIAN_SESSION_DIR: path.join(home, '.cache/meridian'),
+        NODE_OPTIONS: `--import=${JSON.stringify(homeShim)}`,
+        NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1' });
+    for (const key of ['OPENCODE_HOST', 'OPENCODE_PORT', 'OPENCODE_CONFIG', 'OPENCODE_CONFIG_DIR', 'OPENCODE_DISABLE_PROJECT_CONFIG', 'OPENCODE_SKIP_START', 'OPENCHAMBER_SKIP_OPENCODE_START', 'OPENCHAMBER_SERVER_URL', 'ELECTRON_RUN_AS_NODE', 'OH_MY_OPENCODE_SLIM_PRESET', 'MERIDIAN_PROFILES', 'MERIDIAN_DEFAULT_PROFILE', 'CLAUDE_CODE_OAUTH_TOKEN']) delete env[key];
+    // Native OpenCode loads inline config after global/project/managed config.
+    // This test-only observer therefore sees final plugin reasoning controls.
+    env.OPENCODE_CONFIG_CONTENT = JSON.stringify({ plugin: [pathToFileURL(providerObserver).href] });
+    return env;
+};
+
+// Every location Meridian or Claude derives from this launch environment,
+// including the HOME-derived defaults Meridian uses without an override.
+export const qaMeridianClaudePaths = (env) => {
+    const profileId = env.MERIDIAN_DEFAULT_PROFILE ?? 'qa';
+    const paths = { HOME: env.HOME,
+        'homedir:.claude': path.join(env.HOME ?? '', '.claude'),
+        'homedir:.claude.json': path.join(env.HOME ?? '', '.claude.json'),
+        'homedir:meridian-config': path.join(env.HOME ?? '', '.config/meridian'),
+        'homedir:meridian-profile': path.join(env.HOME ?? '', '.config/meridian/profiles', profileId),
+        'homedir:meridian-cache': path.join(env.HOME ?? '', '.cache/meridian'),
+        'MERIDIAN_CONFIG_DIR:profile': path.join(env.MERIDIAN_CONFIG_DIR ?? '', 'profiles', profileId) };
+    for (const [key, value] of Object.entries(env)) if (inheritedStatePathKey(key)) paths[key] = value;
+    return paths;
+};
+
+// `executables` names keys that select a program (e.g. MERIDIAN_CLAUDE_PATH),
+// not a state location; they must still be absolute but may live outside.
+export const assertQaLaunchEnvironmentOwned = (env, ownedBase, { executables = [] } = {}) => {
+    const base = path.resolve(ownedBase);
+    for (const [name, value] of Object.entries(qaMeridianClaudePaths(env))) {
+        if (executables.includes(name)) {
+            if (typeof value !== 'string' || !path.isAbsolute(value)) throw new Error(`QA executable ${name} must be an absolute path`);
+            continue;
+        }
+        const resolved = typeof value === 'string' && path.isAbsolute(value) ? path.resolve(value) : null;
+        if (!resolved || (resolved !== base && !isInside(base, resolved))) {
+            throw new Error(`QA Meridian/Claude path ${name} must resolve inside the owned QA root`);
+        }
+    }
+};
+
 export async function prepareQaProfile({ runtimeRoot, workspace, providerId, modelId, variant = null, agentAssignments = {},
     allowCrossProviderAssignments = false, preserveOrchestration = false,
     credentialProviders = allowedProviders,
@@ -282,22 +345,11 @@ export async function prepareQaProfile({ runtimeRoot, workspace, providerId, mod
     const data = path.join(home, '.config/openchamber');
     const authDirectory = path.join(home, '.local/share/opencode');
     const sourceConfig = path.join(sourceHome, '.config/opencode');
-    const env = { ...process.env, DEVRYAN_QA_RUNTIME_ROOT: runtimeRoot, DEVRYAN_QA_HOME: home,
-        OPENCODE_TEST_HOME: home, XDG_CONFIG_HOME: path.join(home, '.config'),
-        XDG_DATA_HOME: path.join(home, '.local/share'), XDG_STATE_HOME: path.join(home, '.local/state'),
-        XDG_CACHE_HOME: path.join(home, '.cache'), TMPDIR: path.join(home, 'tmp'),
-        BUN_INSTALL_CACHE_DIR: path.join(home, '.cache/bun'),
-        OPENCHAMBER_DATA_DIR: data, OPENCHAMBER_ELECTRON_USER_DATA_DIR: path.join(runtimeRoot, 'browser-profile'),
-        OPENCHAMBER_DIST_DIR: path.join(repositoryRoot, 'packages/web/dist'), OPENCHAMBER_ELECTRON_DEV: '1',
-        OPENCODE_BINARY: opencodeBinary, CLAUDE_PROXY_PORT: '0',
-        CLAUDE_CONFIG_DIR: path.join(home, '.claude'),
-        NODE_OPTIONS: `--import=${JSON.stringify(homeShim)}`,
-        NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1' };
-    for (const key of ['OPENCODE_HOST', 'OPENCODE_PORT', 'OPENCODE_CONFIG', 'OPENCODE_CONFIG_DIR', 'OPENCODE_DISABLE_PROJECT_CONFIG', 'OPENCODE_SKIP_START', 'OPENCHAMBER_SKIP_OPENCODE_START', 'OPENCHAMBER_SERVER_URL', 'ELECTRON_RUN_AS_NODE', 'OH_MY_OPENCODE_SLIM_PRESET', 'MERIDIAN_PROFILES', 'MERIDIAN_DEFAULT_PROFILE', 'CLAUDE_CODE_OAUTH_TOKEN']) delete env[key];
-    // Native OpenCode loads inline config after global/project/managed config.
-    // This test-only observer therefore sees final plugin reasoning controls.
-    env.OPENCODE_CONFIG_CONTENT = JSON.stringify({ plugin: [pathToFileURL(providerObserver).href] });
-    await Promise.all([config, data, authDirectory, env.TMPDIR, env.XDG_CACHE_HOME, env.CLAUDE_CONFIG_DIR].map((directory) => mkdir(directory, { recursive: true, mode: 0o700 })));
+    const env = createQaLaunchEnvironment({ runtimeRoot, home, opencodeBinary });
+    assertQaLaunchEnvironmentOwned(env, home);
+    await Promise.all([config, data, authDirectory, env.TMPDIR, env.XDG_CACHE_HOME, env.CLAUDE_CONFIG_DIR, env.MERIDIAN_CONFIG_DIR].map((directory) => mkdir(directory, { recursive: true, mode: 0o700 })));
+    // HOME is private, so host Git would otherwise have no identity.
+    await writeFile(path.join(home, '.gitconfig'), '[user]\n\tname = DevRyan QA\n\temail = qa@devryan.invalid\n', { flag: 'wx', mode: 0o600 });
     await cp(path.join(sourceConfig, 'node_modules'), path.join(config, 'node_modules'), {
         recursive: true, verbatimSymlinks: true, mode: constants.COPYFILE_FICLONE,
         // npm's hidden .bin replacement links are installation scratch, not
@@ -310,6 +362,13 @@ export async function prepareQaProfile({ runtimeRoot, workspace, providerId, mod
         try { await cp(path.join(sourceConfig, lockfile), path.join(config, lockfile)); }
         catch (error) { if (error.code !== 'ENOENT') throw error; }
     }
+    // The provenance marker tells provisioning these Claude runtime fields are
+    // DevRyan-managed. Without it, copied older versions look user-pinned and
+    // the QA profile would silently test a stale tuple instead of the reviewed one.
+    try {
+        await mkdir(path.join(config, '.openchamber'), { recursive: true, mode: 0o700 });
+        await cp(path.join(sourceConfig, '.openchamber/claude-runtime-compatibility.json'), path.join(config, '.openchamber/claude-runtime-compatibility.json'));
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
     const provisioning = await createUserProfileProvisioningRuntime({
         homedir: () => home, configDirectory: config, configRoot: path.join(repositoryRoot, 'packages/web/server/default-config'),
         profileRoot: path.join(repositoryRoot, 'packages/web/server/default-config/user-profile'),

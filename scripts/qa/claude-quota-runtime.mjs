@@ -5,9 +5,48 @@ import { constants } from 'node:fs';
 import path from 'node:path';
 import { repository, studyModel, studyEffort, requireCacheDirectory } from './claude-quota-fixture.mjs';
 import { createUserProfileProvisioningRuntime } from '../../packages/web/server/lib/opencode/user-profile-provisioning.js';
-import { prepareQaPluginHomeWrapper, pinQaAgents } from './profile-preparation.mjs';
+import { assertQaLaunchEnvironmentOwned, prepareQaPluginHomeWrapper, pinQaAgents } from './profile-preparation.mjs';
 import { MERIDIAN_PREFIX_EDITS } from '../../packages/web/server/lib/opencode/meridian-passthrough-hotfix.js';
 import { reservePort, startOwnedProcess } from './process.mjs';
+
+const shim = path.join(repository, 'scripts/qa/isolated-home.mjs');
+
+// The env is built from scratch, so nothing inherited relocates state. Meridian
+// runs inside the compiled Bun OpenCode host, where the home shim cannot rebind
+// named `homedir` imports and Bun reads HOME only at start (an unset HOME falls
+// back to the owner's passwd home). Meridian 1.62.x derives its oauth-token
+// profile CLAUDE_CONFIG_DIR, telemetry, profiles and plugins from homedir(), so
+// HOME must be the owned QA home.
+export function createClaudeQuotaLaunchEnvironment({ runtimeRoot, qaHome, workspace, claudeExecutable }) {
+  const env = {
+    PATH: process.env.PATH, USER: process.env.USER, TERM: process.env.TERM ?? 'xterm-256color',
+    DEVRYAN_QA_RUNTIME_ROOT: runtimeRoot, DEVRYAN_QA_HOME: qaHome, DEVRYAN_QA_RUNTIME: 'web',
+    HOME: qaHome, OPENCODE_TEST_HOME: qaHome, XDG_CONFIG_HOME: path.join(qaHome, '.config'),
+    XDG_DATA_HOME: path.join(qaHome, '.local/share'), XDG_STATE_HOME: path.join(qaHome, '.local/state'),
+    XDG_CACHE_HOME: path.join(qaHome, '.cache'), TMPDIR: path.join(qaHome, 'tmp'),
+    OPENCHAMBER_DATA_DIR: path.join(qaHome, '.config/openchamber'), OPENCHAMBER_DIST_DIR: path.join(repository, 'packages/web/dist'),
+    CLAUDE_CONFIG_DIR: path.join(qaHome, '.claude'), MERIDIAN_CLAUDE_PATH: claudeExecutable,
+    MERIDIAN_CONFIG_DIR: path.join(qaHome, '.config/meridian'), MERIDIAN_SESSION_DIR: path.join(qaHome, '.cache/meridian'),
+    MERIDIAN_WORKDIR: workspace, CLAUDE_PROXY_PORT: '0',
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', DISABLE_AUTOUPDATER: '1',
+    CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: 'false',
+    GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: path.join(qaHome, '.gitconfig'),
+    NODE_OPTIONS: `--import=${JSON.stringify(shim)}`,
+    OPENCODE_DISABLE_DEFAULT_PLUGINS: 'true',
+    NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1',
+  };
+  assertClaudeQuotaLaunchEnvironmentOwned(env, qaHome);
+  return env;
+}
+
+// Profiles saved before HOME was owned fail here instead of launching Meridian
+// against the owner's real ~/.config/meridian.
+export function assertClaudeQuotaLaunchEnvironmentOwned(env, qaHome) {
+  if (typeof qaHome !== 'string' || !path.isAbsolute(qaHome) || env.HOME !== qaHome || env.DEVRYAN_QA_HOME !== qaHome) {
+    throw new Error('Claude quota launch environment must set HOME to its owned QA home');
+  }
+  assertQaLaunchEnvironmentOwned(env, qaHome, { executables: ['MERIDIAN_CLAUDE_PATH'] });
+}
 
 export async function prepareClaudeQuotaRuntime({ fixture, installedModules, opencodeExecutable, claudeExecutable, arm }) {
   if (!['control', 'candidate'].includes(arm) || !path.isAbsolute(opencodeExecutable) || !path.isAbsolute(claudeExecutable)) {
@@ -20,24 +59,7 @@ export async function prepareClaudeQuotaRuntime({ fixture, installedModules, ope
   const config = path.join(qaHome, '.config/opencode');
   const data = path.join(qaHome, '.config/openchamber');
   const claude = path.join(qaHome, '.claude');
-  const shim = path.join(repository, 'scripts/qa/isolated-home.mjs');
-  const env = {
-    PATH: process.env.PATH, USER: process.env.USER, TERM: process.env.TERM ?? 'xterm-256color',
-    DEVRYAN_QA_RUNTIME_ROOT: runtimeRoot, DEVRYAN_QA_HOME: qaHome, DEVRYAN_QA_RUNTIME: 'web',
-    OPENCODE_TEST_HOME: qaHome, XDG_CONFIG_HOME: path.join(qaHome, '.config'),
-    XDG_DATA_HOME: path.join(qaHome, '.local/share'), XDG_STATE_HOME: path.join(qaHome, '.local/state'),
-    XDG_CACHE_HOME: path.join(qaHome, '.cache'), TMPDIR: path.join(qaHome, 'tmp'),
-    OPENCHAMBER_DATA_DIR: data, OPENCHAMBER_DIST_DIR: path.join(repository, 'packages/web/dist'),
-    CLAUDE_CONFIG_DIR: claude, MERIDIAN_CLAUDE_PATH: claudeExecutable,
-    MERIDIAN_CONFIG_DIR: path.join(qaHome, '.config/meridian'), MERIDIAN_SESSION_DIR: path.join(qaHome, '.cache/meridian'),
-    MERIDIAN_WORKDIR: fixture.workspace, CLAUDE_PROXY_PORT: '0',
-    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', DISABLE_AUTOUPDATER: '1',
-    CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: 'false',
-    GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: path.join(qaHome, '.gitconfig'),
-    NODE_OPTIONS: `--import=${JSON.stringify(shim)}`,
-    OPENCODE_DISABLE_DEFAULT_PLUGINS: 'true',
-    NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1',
-  };
+  const env = createClaudeQuotaLaunchEnvironment({ runtimeRoot, qaHome, workspace: fixture.workspace, claudeExecutable });
   for (const directory of [config, data, claude, env.TMPDIR, env.XDG_CACHE_HOME, env.XDG_DATA_HOME, env.MERIDIAN_CONFIG_DIR]) {
     await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   }
@@ -106,6 +128,9 @@ export async function prepareClaudeQuotaRuntime({ fixture, installedModules, ope
 }
 
 export async function startClaudeQuotaRuntime(profile, { oauthToken, signal }) {
+  // Checked on the final env (with the quota profile id) before any process starts.
+  const launch = { ...profile.env, MERIDIAN_PROFILES: JSON.stringify([{ id: 'quota', type: 'oauth-token' }]), MERIDIAN_DEFAULT_PROFILE: 'quota' };
+  assertClaudeQuotaLaunchEnvironmentOwned(launch, profile.qaHome);
   const owned = [];
   const close = async () => {
     const failures = [];
@@ -134,9 +159,7 @@ export async function startClaudeQuotaRuntime(profile, { oauthToken, signal }) {
     const meridianPort = await reservePort();
     const opencodeOrigin = `http://127.0.0.1:${opencodePort}`;
     const origin = `http://127.0.0.1:${webPort}`;
-    const env = { ...profile.env, CLAUDE_CODE_OAUTH_TOKEN: oauthToken,
-      CLAUDE_PROXY_PORT: String(meridianPort),
-      MERIDIAN_PROFILES: JSON.stringify([{ id: 'quota', type: 'oauth-token' }]), MERIDIAN_DEFAULT_PROFILE: 'quota' };
+    const env = { ...launch, CLAUDE_CODE_OAUTH_TOKEN: oauthToken, CLAUDE_PROXY_PORT: String(meridianPort) };
     owned.push(startOwnedProcess(profile.opencodeExecutable, ['serve', '--hostname', '127.0.0.1', '--port', String(opencodePort), '--log-level', profile.logLevel ?? 'WARN'], {
       cwd: profile.env.MERIDIAN_WORKDIR, env,
     }));
