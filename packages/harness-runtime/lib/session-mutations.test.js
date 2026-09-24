@@ -868,3 +868,52 @@ test('a tracked directory replaced by a file is observed as that file, not a blo
   const next = await f.begin('s', 'p1', 'c1');
   expect(await fs.readFile(path.join(next.viewDirectory, 'd'), 'utf8')).toBe('now a file');
 });
+
+test('views clone verified objects and publication reuses only provably untouched files', async () => {
+  const f = await fixture();
+  await f.write('same.txt', 'aaaa'); await f.write('rewrite.txt', 'bbbb'); await f.write('mode.txt', 'cccc');
+  const lease = await f.begin('a', 'pa', 'ca');
+  const view = (name) => path.join(lease.viewDirectory, name);
+  expect(await fs.readFile(view('same.txt'), 'utf8')).toBe('aaaa');
+  // Same size, same second: only ctime/inode can reveal these edits.
+  await fs.writeFile(view('rewrite.txt'), 'BBBB');
+  await fs.chmod(view('mode.txt'), 0o755);
+  const result = await f.finish(lease);
+  expect(result.files.map((file) => file.path).sort()).toEqual(['mode.txt', 'rewrite.txt']);
+  expect(await f.read('rewrite.txt')).toBe('BBBB');
+  expect((await fs.stat(path.join(f.directory, 'mode.txt'))).mode & 0o111).not.toBe(0);
+  expect(await f.read('same.txt')).toBe('aaaa');
+});
+
+test('a corrupted object store entry fails view preparation instead of being cloned', async () => {
+  const f = await fixture();
+  await f.write('x.txt', 'original');
+  const first = await f.begin('a', 'pa', 'ca'); await f.finish(first);
+  const objects = [];
+  const walk = async (directory) => {
+    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+      const full = path.join(directory, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (path.basename(path.dirname(full)) === 'objects' && /^[a-f0-9]{64}$/.test(entry.name)) objects.push(full);
+    }
+  };
+  await walk(f.storage);
+  expect(objects.length).toBeGreaterThan(0);
+  // A fresh process has no verification cache; corrupt every stored object.
+  for (const object of objects) { await fs.chmod(object, 0o600); await fs.writeFile(object, 'corrupted'); }
+  const reopened = createSessionMutationRuntime({ directory: f.storage });
+  await expect(reopened.begin({ directory: f.directory, sessionID: 'b', userMessageID: 'pb', messageID: 'pb-assistant', callID: 'cb' }))
+    .rejects.toMatchObject({ code: 'invalid_change_record' });
+});
+
+test('cached repository resolution notices a nested repository and a replaced .git', async () => {
+  const f = await fixture();
+  const sub = path.join(f.directory, 'pkg'); await fs.mkdir(sub);
+  const real = await fs.realpath(f.directory);
+  expect(await f.runtime.projectDirectory({ directory: sub })).toBe(real);
+  expect(await f.runtime.projectDirectory({ directory: sub })).toBe(real);
+  await git(sub, ['init', '--quiet']);
+  expect(await f.runtime.projectDirectory({ directory: sub })).toBe(await fs.realpath(sub));
+  await fs.rm(path.join(sub, '.git'), { recursive: true, force: true });
+  expect(await f.runtime.projectDirectory({ directory: sub })).toBe(real);
+});

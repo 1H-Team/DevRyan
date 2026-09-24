@@ -805,6 +805,7 @@ export const registerOpenCodeProxy = (app, deps) => {
     scopedRevertTimeoutMs: deps.scopedRevertTimeoutMs,
     scopedRevertSlowOperationMs: deps.scopedRevertSlowOperationMs,
     sessionRevertCoordinator: deps.sessionRevertCoordinator,
+    assertLegacyRevertAllowed: deps.assertLegacyRevertAllowed,
     recordDiagnostic: deps.recordDiagnostic,
   });
 

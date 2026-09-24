@@ -30,9 +30,9 @@ describe('Claude runtime compatibility', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it('selects Claude Code 2.1.251 while preserving the historical control tuple', () => {
+  it('selects Claude Code 2.1.281 while preserving the historical control tuple', () => {
     expect(CLAUDE_RUNTIME_CONTROL.claudeCode).toBe('2.1.215');
-    expect(CLAUDE_RUNTIME_CANDIDATE.claudeCode).toBe('2.1.251');
+    expect(CLAUDE_RUNTIME_CANDIDATE.claudeCode).toBe('2.1.281');
     expect(CLAUDE_RUNTIME_SELECTION).toMatchObject({
       channel: 'candidate',
       compatibilityStatus: 'upstream_blocked',

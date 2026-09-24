@@ -120,7 +120,7 @@ DevRyan is a Bun/Node monorepo that provides web and desktop UI runtimes for int
 
 - **Release compilation, shared web/native handoffs, image caching and package commands** → [docs/RELEASE_PIPELINE.md](docs/RELEASE_PIPELINE.md), `scripts/release-artifacts.mjs`, `scripts/release-ci.mjs`, and `.github/workflows/release.yml`.
 
-- **Concurrent conversation Revert, native execution confinement and companion packaging** → [docs/CONCURRENT_REVERT.md](docs/CONCURRENT_REVERT.md), harness mutation/coordinator modules, web `session-execution-host.js`, and `scripts/build-revert-runtime.mjs`.
+- **Concurrent conversation Revert, native execution confinement and companion packaging** → [docs/CONCURRENT_REVERT.md](docs/CONCURRENT_REVERT.md), harness mutation/coordinator modules, web `session-execution-host.js`, `scripts/build-revert-runtime.mjs`, and the upstream patch check `scripts/companion-upstream-check.mjs` (`.github/workflows/companion-upstream.yml`).
 
 Shared sidebar worktree discovery is owned by `packages/ui/src/lib/worktrees/worktreeDiscovery.ts` (cache, invalidation, stable merge) and `useWorktreeDiscovery.ts` (visible 30-second refresh, focus/reconnect, mutation subscriptions). Both the session sidebar and Electron mini-chat consume this path. Git/worktree mutation APIs invalidate pending discovery; successful discovery replaces branch navigation, while unavailable discovery retains the last successful list subject to current access grants. Detached/branchless/missing worktrees are omitted from branch navigation without deleting chat history or worktree-management records. `/api/git/worktrees` returns 503 for unavailable discovery rather than an ambiguous successful empty list.
 

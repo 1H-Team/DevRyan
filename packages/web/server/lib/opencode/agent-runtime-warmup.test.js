@@ -48,7 +48,7 @@ describe('agent runtime warmup', () => {
       const url = new URL(entry.url);
       return `${entry.method} ${url.pathname}${url.search}`;
     })).toEqual([
-      'GET /health',
+      'GET /global/health',
       'GET /config?directory=%2Fproject',
       'GET /config/providers?directory=%2Fproject',
       'GET /agent?directory=%2Fproject',

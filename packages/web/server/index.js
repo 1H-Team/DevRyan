@@ -644,7 +644,9 @@ const capturedExecutions = capturedExecutionEnvironment.DEVRYAN_EXECUTION_BOUNDA
 
 const sessionActivityGate = createSessionActivityGate();
 const cursorSdkRuntime = createCursorSdkRuntime({
-  ...(executionReadiness.state !== 'not_expected' ? { executionAdapter: { reserveActivity: ({ sessionID }) => sessionActivityGate.enter([sessionID]), start: (input) => sessionExecutionHost.startCursor(input),
+  // A degraded host runs plain OpenCode, so Cursor runs unconfined as in
+  // external mode; a required-but-unavailable runtime still fails closed.
+  ...(['active', 'required_unavailable'].includes(executionReadiness.state) ? { executionAdapter: { reserveActivity: ({ sessionID }) => sessionActivityGate.enter([sessionID]), start: (input) => sessionExecutionHost.startCursor(input),
     startReadOnly: (input) => sessionExecutionHost.startReadOnly(input),
     beforePrompt: (input) => sessionExecutionHost.beforeCursorPrompt(input) },
   onPersistRecord: (input) => sessionExecutionHost.persistCursorRecord(input) } : {}),
@@ -1022,6 +1024,7 @@ const openCodeResolutionRuntime = createOpenCodeResolutionRuntime({
     resolvedOpencodeBinarySource = value;
   },
   getDetectedOpenCodeVersion: () => (openCodePort ? openCodeVersion : null),
+  getCompanionState: () => ({ state: executionReadiness.state, version: executionReadiness.companion?.version ?? null }),
 });
 const getOpenCodeResolutionSnapshot = (...args) =>
   openCodeResolutionRuntime.getOpenCodeResolutionSnapshot(...args);
@@ -1125,6 +1128,9 @@ const openCodeWatcherRuntime = createOpenCodeWatcherRuntime({
 
 const serverUtilsRuntime = createServerUtilsRuntime({
   getSessionRevertCoordinator: () => capturedExecutions ? sessionExecutionHost.coordinator : undefined,
+  // Without the coordinator, the legacy revert path must first prove the
+  // conversation has no ledger-owned history.
+  getLegacyRevertGuard: () => capturedExecutions ? undefined : (input) => sessionExecutionHost.assertLegacyRevertAllowed(input),
   recordDiagnostic: (entry) => harnessRuntime.record(entry),
   fs,
   os,
@@ -1443,6 +1449,7 @@ const harnessTaskContext = createHarnessTaskContextHost({
 harnessRuntime.setTaskContextRuntime(harnessTaskContext);
 const sessionChangeHost = createSessionChangeHost({
   restoreOwned: capturedExecutions ? (input) => sessionExecutionHost.coordinator.restoreFiles(input) : undefined,
+  assertLegacyRestore: capturedExecutions ? undefined : (input) => sessionExecutionHost.assertLegacyRevertAllowed(input),
   dataDirectory: OPENCHAMBER_DATA_DIR,
   onDiagnostic: (event) => {
     harnessRuntime.record({ type: 'log', event: 'session_changes_capture', sessionID: event.sessionID, payload: event });
@@ -1460,7 +1467,13 @@ harnessRuntime.setSessionChangeHost(sessionChangeHost);
 const sessionExecutionHost = createSessionExecutionHost({ assertExecutionReady: executionReadiness.assertReady, dataDirectory: OPENCHAMBER_DATA_DIR, activityGate: sessionActivityGate,
   getLauncher: () => executionArtifacts().launcher, buildOpenCodeUrl, getOpenCodeAuthHeaders,
   recordReceipt: (input) => sessionChangeHost.recordReceipt(input),
+  // Uncaptured change evidence lets Revert adopt conversations that ran while
+  // the companion was unavailable (compare-and-swap, never overwriting).
+  legacyChanges: { history: (input) => sessionChangeHost.legacyHistory(input), blob: (input) => sessionChangeHost.legacyBlob(input) },
   stopCursor: (input) => cursorSdkRuntime.abortAndWait(input.sessionID),
+  // QA baselines set this to 0 so every dispatch's phase summary is journaled.
+  admissionSummaryMinMs: /^\d{1,6}$/.test(process.env.DEVRYAN_EXECUTION_SUMMARY_MIN_MS ?? '')
+    ? Number(process.env.DEVRYAN_EXECUTION_SUMMARY_MIN_MS) : undefined,
   onDiagnostic: (event) => harnessRuntime.record({ type: 'lifecycle', event: event.event === 'session_execution' ? 'session_execution' : 'session_revert',
     sessionID: event.sessionID, payload: event }),
 });
@@ -1957,6 +1970,7 @@ async function main(options = {}) {
         lastOpenCodeError,
         openCodeProbe: openCodeLifecycleState.openCodeProbe ?? null,
         lastOpenCodeLaunchDiagnostics,
+        executionRuntime: { state: executionReadiness.state, code: executionReadiness.diagnostic?.code ?? null },
         opencodeBinaryResolved: resolvedOpencodeBinary || null,
         opencodeBinarySource: resolvedOpencodeBinarySource || null,
         opencodeLaunchBinary: launchSpec?.binary || null,

@@ -235,7 +235,9 @@ function createAgentRuntimeWarmup(dependencies = {}) {
           name: 'health',
           task: createOpenCodeGetTask({
             name: 'health',
-            requestPath: '/health',
+            // OpenCode's health route is /global/health; an unknown path is
+            // proxied to app.opencode.ai, an external request on every start.
+            requestPath: '/global/health',
             directory: null,
             buildOpenCodeUrl,
             getOpenCodeAuthHeaders,

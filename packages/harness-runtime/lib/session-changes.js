@@ -692,6 +692,9 @@ export function createSessionChangeRuntime(options) {
         return { undone: !redo };
       });
     }
+    // Without the ownership ledger, a conversation it owns must not be restored
+    // behind its back (the host supplies this guard when the companion is absent).
+    await options.assertLegacyRestore?.({ directory: requested, sessionID: rootSessionID });
     return serialize(directory, async () => {
       const repo = await load(directory), stored = await repo.db.get(summaryKey(rootSessionID));
       if (!stored || stored.summary.revision !== revision) throw failure('summary_revision_changed');
@@ -778,6 +781,43 @@ export function createSessionChangeRuntime(options) {
         if (legacy.record?.directory) yield legacy.record.directory;
       }
     }
+  };
+  // Uncaptured evidence for adopting Revert of a conversation that ran without
+  // the companion. Per path: the entry the calls from `since` last produced
+  // (expected on disk now) and the entry they first replaced (to restore).
+  // Only exact, whole-file, contiguous evidence qualifies; anything else makes
+  // the whole range unavailable rather than guessing. Blob OIDs stay readable
+  // through `legacyBlob` while their operation records exist.
+  const legacyHistory = async ({ directory: requested, sessionIDs, since }) => {
+    const directory = await resolveDirectory(requested);
+    if (!Array.isArray(sessionIDs) || !sessionIDs.length || !Number.isFinite(since)) throw failure('invalid_change_record', 400);
+    return serialize(directory, async () => {
+      const repo = await load(directory), members = new Set(sessionIDs), ops = [];
+      for await (const { value: op } of repo.db.entries('operations')) {
+        if (members.has(op.sessionID) && op.createdAt >= since && !op.undone) ops.push(op);
+      }
+      ops.sort((a, b) => a.createdAt - b.createdAt || String(a.id).localeCompare(String(b.id)));
+      const files = new Map();
+      for (const op of ops) {
+        if (op.state !== 'complete' || op.receiptConflict || op.receiptComplete === false) throw failure('mutation_history_unavailable');
+        if (!op.hasChanges) continue;
+        if (op.evidence !== 'exact' && !op.historical || op.restoreVerified !== true) throw failure('mutation_history_unavailable');
+        for await (const change of exactSessionChanges(repo, op)) {
+          const previous = files.get(change.file);
+          // Hunk-level receipts and interleaved foreign edits cannot be undone by
+          // whole-file restoration without discarding someone else's bytes.
+          if (change.patchOID || previous && !equal(previous.after, change.before)) throw failure('mutation_history_unavailable');
+          files.set(change.file, { before: previous ? previous.before : change.before, after: change.after });
+        }
+      }
+      return [...files].filter(([, entry]) => !equal(entry.before, entry.after))
+        .map(([file, entry]) => ({ path: file, current: entry.after ?? null, previous: entry.before ?? null }));
+    });
+  };
+  const legacyBlob = async ({ directory: requested, oid }) => {
+    if (typeof oid !== 'string' || !/^[a-f0-9]{40,64}$/.test(oid)) throw failure('invalid_change_record', 400);
+    const directory = await resolveDirectory(requested);
+    return serialize(directory, async () => (await load(directory)).run(['cat-file', 'blob', oid]));
   };
   const deleteSession = async (sessionID) => {
     for await (const directory of repositories()) await serialize(directory, async () => {
@@ -879,6 +919,7 @@ export function createSessionChangeRuntime(options) {
     if (active.has(id)) await finish(input);
   };
   return { begin, finish, recordReceipt, recordExecution, importHistorical, registerSession, summarize, summaryPage, diff, restore, deleteSession, historyState, findCall, unresolvedHistory, settleHistoricalCall,
+    legacyHistory, legacyBlob,
     async drain() { await Promise.all([...tails.values()]); },
     async observe(event, directory) {
       const part = event?.properties?.part;

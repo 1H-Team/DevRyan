@@ -114,7 +114,7 @@ describe('user profile provisioning', () => {
     });
     expect(packageJson.overrides).toEqual({
       '@anthropic-ai/claude-agent-sdk': '0.2.141',
-      '@anthropic-ai/claude-code': '2.1.251',
+      '@anthropic-ai/claude-code': '2.1.281',
     });
     expect(JSON.stringify(slim)).not.toContain('"mcps"');
     expect(fs.existsSync(path.join(configDir, 'agents', 'orchestrator.md'))).toBe(true);
@@ -149,7 +149,7 @@ describe('user profile provisioning', () => {
         opencodeWithClaude: '1.8.0',
         meridian: '1.62.6',
         agentSdk: '0.2.141',
-        claudeCode: '2.1.251',
+        claudeCode: '2.1.281',
       },
       managementSources: {
         opencodeWithClaude: 'managed',
@@ -162,7 +162,7 @@ describe('user profile provisioning', () => {
       'Superpowers skills are not installed; the optional adapter will remain disabled.',
     );
     expect(result.warnings).toContain(
-      'Claude Code 2.1.251 is selected for Meridian compatibility; the broader cross-provider context target remains upstream-blocked.',
+      'Claude Code 2.1.281 is selected for Meridian compatibility; the broader cross-provider context target remains upstream-blocked.',
     );
     expect(commands).toEqual([{
       command: 'bun',
@@ -538,7 +538,7 @@ describe('user profile provisioning', () => {
 
     const result = await runtime.provision();
 
-    expect(readJson(packagePath).overrides['@anthropic-ai/claude-code']).toBe('2.1.251');
+    expect(readJson(packagePath).overrides['@anthropic-ai/claude-code']).toBe('2.1.281');
     expect(result.claudeRuntime).toMatchObject({
       source: 'managed',
       runtimeStatus: 'ready',
@@ -574,7 +574,7 @@ describe('user profile provisioning', () => {
     expect(result.claudeRuntime).toMatchObject({
       source: 'managed',
       runtimeStatus: 'ready',
-      installed: { claudeCode: '2.1.251' },
+      installed: { claudeCode: '2.1.281' },
     });
     expect(commands).toEqual([{
       command: 'bun',
@@ -655,7 +655,7 @@ describe('user profile provisioning', () => {
     });
     expect(upgraded.overrides).toMatchObject({
       '@anthropic-ai/claude-agent-sdk': '0.2.141',
-      '@anthropic-ai/claude-code': '2.1.251',
+      '@anthropic-ai/claude-code': '2.1.281',
     });
     expect(result.claudeRuntime).toMatchObject({
       source: 'managed',

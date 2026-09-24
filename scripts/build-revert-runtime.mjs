@@ -29,7 +29,7 @@ const upstreamPlatform = platform.replace(/^win32-/, 'windows-');
 // typecheck and tests; the DevRyan acceptance fixture below always runs.
 const bunVersion = await run('bun', ['--version'], root, process.env, true);
 const companionKey = hash(JSON.stringify({ version: 1, baseCommit: contract.baseCommit, patchSha256: contract.patchSha256,
-  runtimeVersion: contract.runtimeVersion, platform, bunVersion }));
+  upstreamVersion: contract.upstreamVersion, companionVersion: contract.companionVersion, platform, bunVersion }));
 const companionCache = path.join(root, '.cache/revert-runtime-companion', platform, companionKey);
 const cachedCompanion = async () => {
   if (option('--source')) return null;
@@ -76,7 +76,9 @@ async function buildCompanion() {
     'test/server/httpapi-session.test.ts', 'test/session/retention-gate.test.ts', 'test/session/execution-payload.test.ts',
     'test/session/execution-browser.test.ts', 'test/session/devryan-execution.test.ts'], path.join(source, 'packages/opencode'));
   await run('bun', ['run', 'script/build.ts', '--single', '--skip-install', '--skip-embed-web-ui'], path.join(source, 'packages/opencode'),
-    { ...process.env, OPENCODE_VERSION: contract.runtimeVersion, OPENCODE_CHANNEL: 'devryan' });
+    // Report the plain upstream version: companion identity is a separate
+    // capability-bearing record (companion.json), never a version suffix.
+    { ...process.env, OPENCODE_VERSION: contract.upstreamVersion, OPENCODE_CHANNEL: 'devryan' });
   const built = path.join(source, 'packages/opencode/dist', `opencode-${upstreamPlatform}`, 'bin', `opencode${extension}`);
   if (option('--source')) return built;
   // Publish the cache entry atomically so an interrupted build is never reused.
@@ -109,7 +111,8 @@ try {
 await run(process.execPath, ['scripts/verify-concurrent-revert-execution.mjs'], root, { ...process.env,
   DEVRYAN_TEST_OPENCODE_BINARY: path.join(output, binary),
   DEVRYAN_TEST_EXECUTION_LAUNCHER: path.join(output, `DevRyan-execution-${platform}${extension}`) });
-const manifest = { ...contract.capability, acceptance: true, version: contract.runtimeVersion, baseCommit: contract.baseCommit,
+const manifest = { ...contract.capability, acceptance: true, companionVersion: contract.companionVersion,
+  upstreamVersion: contract.upstreamVersion, baseCommit: contract.baseCommit,
   patchSha256: contract.patchSha256, binary, platform: process.platform, arch: process.arch,
   sha256: hash(await fs.readFile(path.join(output, binary))) };
 await fs.writeFile(path.join(output, 'companion.json'), JSON.stringify(manifest, null, 2) + '\n');

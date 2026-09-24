@@ -38,6 +38,7 @@ export const DEVRYAN_APP_PATTERN = /DevRyan\.app\/Contents\/MacOS\/DevRyan(?:\s|
 const DEVRYAN_BUNDLE_PREFIX = /\/Applications\/DevRyan\.app\/Contents\/(?:Frameworks|MacOS)\//g;
 const ORPHAN_PATTERNS = [
   /\/opencode serve\b/,
+  /DevRyan-opencode-[\w-]+ serve\b/,
   /cursor-agent/,
   /cloudflared tunnel/,
   /agent-browser/,
@@ -289,7 +290,12 @@ export const classifyProcess = (row, { rootPids }) => {
   }
   if (/--type=zygote/.test(command)) return 'zygote';
   if (/crashpad/.test(command)) return 'crashpad';
-  if (/\/opencode serve\b|(^|\s)opencode serve\b/.test(command)) return 'opencode-serve';
+  // The bundled companion runs as DevRyan-opencode-<platform>; its per-call
+  // tool workers and the native execution launcher are attributed separately.
+  if (/DevRyan-execution-[\w-]+(\s|$)/.test(command)) return 'execution-launcher';
+  if (/DevRyan-opencode-[\w-]+ debug devryan-tool\b/.test(command)) return 'companion-worker';
+  if (/\/opencode serve\b|(^|\s)opencode serve\b|DevRyan-opencode-[\w-]+ serve\b/.test(command)) return 'opencode-serve';
+  if (/typescript-language-server|tsserver|(^|\/)(gopls|rust-analyzer|pyright|basedpyright|clangd)(\s|$)|vscode-[\w-]+-language-server/.test(command)) return 'lsp';
   if (/cloudflared/.test(command)) return 'cloudflared';
   if (/cursor-acp|open-cursor/.test(command)) return 'cursor-acp-runner';
   if (/cursor-agent/.test(command)) return 'cursor-agent';

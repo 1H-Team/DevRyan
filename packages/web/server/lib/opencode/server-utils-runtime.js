@@ -157,6 +157,7 @@ export const createServerUtilsRuntime = (dependencies) => {
       getUiNotificationClients,
       recordDiagnostic: dependencies.recordDiagnostic,
       sessionRevertCoordinator: dependencies.getSessionRevertCoordinator?.(),
+      assertLegacyRevertAllowed: dependencies.getLegacyRevertGuard?.(),
     });
   };
 

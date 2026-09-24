@@ -59,6 +59,9 @@ export function sessionExecutionProfile({ viewDirectory, scratchDirectory, auxil
 (deny file-write* (require-all (require-not (subpath ${sbString(viewDirectory)})) (require-not (subpath ${sbString(scratchDirectory)})) ${auxiliaryDirectory ? `(require-not (subpath ${sbString(auxiliaryDirectory)}))` : ''} (require-not (literal "/dev/null"))))
 (deny mach-lookup)
 (deny network-outbound (remote unix-socket))
+; TCP stays available, so name resolution must too: the system resolver socket
+; is the only local daemon a confined process may reach (no mach services).
+(allow network-outbound (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))
 (deny process-info-setcontrol)
 (deny signal)
 (allow signal (target same-sandbox))
@@ -108,7 +111,7 @@ export async function prepareSessionExecution({ launcher, lease }) {
   return { launcher, arguments: [viewDirectory, scratchDirectory, profile, path.join(root, 'termination.json'), '--'],
     cwd: workingDirectory, profile, scratchDirectory,
     environment: { DEVRYAN_EXECUTION_WORKER: '1', HOME: scratchDirectory,
-      DEVRYAN_EXECUTION_CWD: workingDirectory, DEVRYAN_EXECUTION_CANCEL_EVENT: cancelEvent,
+      DEVRYAN_EXECUTION_CWD: lease.logicalWorkingDirectory ?? workingDirectory, DEVRYAN_EXECUTION_CANCEL_EVENT: cancelEvent,
       DEVRYAN_EXECUTION_CACHE: auxiliaryDirectory,
       ...(process.platform === 'darwin' ? { DYLD_INSERT_LIBRARIES: `${launcher}-spawn.dylib`,
         ZDOTDIR: scratchDirectory, BASH_ENV: path.join(scratchDirectory, '.bash-env') } : {}),
@@ -168,11 +171,19 @@ export async function startSessionExecution({ launcher, lease, command, args = [
 
 /** Provider transports and title generation have no file contribution. They
  * still need the same OS boundary: a prompt requesting no tools is not one. */
-export async function startReadOnlySessionExecution({ launcher, storage, environment, auxiliaryDirectory, ...input }) {
+export async function startReadOnlySessionExecution({ launcher, storage, environment, auxiliaryDirectory, logicalDirectory, ...input }) {
   if (!path.isAbsolute(storage ?? '') || !await verifySessionExecutionLauncher({ launcher })) throw error('mutation_runtime_unsupported');
   await fs.mkdir(storage, { recursive: true, mode: 0o700 });
   const root = await fs.mkdtemp(path.join(await fs.realpath(storage), 'provider-'));
-  const lease = { viewDirectory: path.join(root, 'worktree'), workingDirectory: path.join(root, 'worktree'), auxiliaryDirectory };
+  // A read-only transport may run from its real project directory: the profile
+  // still denies every write outside its private view, scratch and state. A
+  // stable, truthful cwd keeps the provider's environment prompt (and its
+  // cached prefix) identical across requests. Linux confinement uses a private
+  // root, where the project is not visible, so it keeps the private view.
+  const logicalWorkingDirectory = process.platform === 'darwin' && path.isAbsolute(logicalDirectory ?? '')
+    ? await fs.realpath(logicalDirectory).catch(() => undefined) : undefined;
+  const lease = { viewDirectory: path.join(root, 'worktree'), workingDirectory: path.join(root, 'worktree'), auxiliaryDirectory,
+    ...(logicalWorkingDirectory ? { logicalWorkingDirectory } : {}) };
   await fs.mkdir(lease.viewDirectory);
   let handle;
   try {

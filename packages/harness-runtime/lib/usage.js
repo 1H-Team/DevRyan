@@ -42,6 +42,44 @@ const summarize = rows => {
       ? Math.max(...completions.map(t => t.at)) - Math.min(...dispatches.map(t => t.at)) : null,
   };
 };
+// Prefix continuity from numeric usage alone, with no request-path hashing.
+// After a request the provider can reuse at most the prefix it cached: reads
+// plus writes when the stream reports explicit writes, otherwise its whole
+// input (implicit caching). A later request in the same stream reading much
+// less lost that prefix. Provider eviction also produces a loss, so the idle
+// gap is reported, and a compaction between requests resets the stream.
+const CONTINUITY_MIN_LOSS = 1024;
+const CONTINUITY_WARM_GAP_MS = 5 * 60 * 1000;
+const at = row => row.timing.completion.at ?? row.observedAt;
+const continuity = rows => {
+  const compactions = groupBy(rows.filter(row => row.purpose === 'compaction' && at(row) !== null), row => row.sessionID);
+  const result = { compared: 0, unknown: 0, breaks: 0, breaksWithinWarmGap: 0, lostPrefixTokensWithinWarmGap: 0,
+    explicitStreams: 0, implicitStreams: 0 };
+  const streams = groupBy(rows.filter(row => row.sessionID && row.purpose !== 'compaction'),
+    row => JSON.stringify([row.sessionID, row.provider, row.route, row.requestedModel]));
+  for (const stream of streams.values()) {
+    if (stream.length < 2) continue;
+    const explicit = stream.some(row => row.tokens.cacheWrite > 0);
+    result[explicit ? 'explicitStreams' : 'implicitStreams']++;
+    const resets = (compactions.get(stream[0].sessionID) ?? []).map(at);
+    for (let index = 1; index < stream.length; index++) {
+      const previous = stream[index - 1], current = stream[index];
+      const expected = explicit ? sumKnown(previous.tokens.cacheRead, previous.tokens.cacheWrite) : previous.tokens.totalInput;
+      if (expected === null || current.tokens.cacheRead === null) { result.unknown++; continue; }
+      const from = at(previous), to = at(current);
+      if (from !== null && to !== null && resets.some(time => time > from && time <= to)) continue;
+      result.compared++;
+      const loss = expected - current.tokens.cacheRead;
+      if (loss <= Math.max(CONTINUITY_MIN_LOSS, expected * 0.05)) continue;
+      result.breaks++;
+      if (from !== null && to !== null && to >= from && to - from <= CONTINUITY_WARM_GAP_MS) {
+        result.breaksWithinWarmGap++; result.lostPrefixTokensWithinWarmGap += loss;
+      }
+    }
+  }
+  return result;
+};
+const sumKnown = (a, b) => a !== null && b !== null ? a + b : null;
 const cohorts = rows => {
   const group = field => Object.fromEntries([...new Set(rows.map(row => row[field] ?? 'unknown'))]
     .map(key => [key, summarize(rows.filter(row => (row[field] ?? 'unknown') === key))]));
@@ -165,6 +203,7 @@ export function createUsageCollector({ maxObservations = 100_000, maxBytes = 32 
       const provider = taskRows.filter(row => row.source === 'provider_request');
       const taskTurns = turnsBySession.get(rootSessionID) ?? [];
       const result = { rootSessionID, runtime: cohorts(runtime), provider: cohorts(provider),
+        continuity: { runtime: continuity(runtime), provider: continuity(provider) },
         observedTaskSpanMs: taskTurns.length > 0 && taskTurns.every(turn => turn.start !== null && turn.end !== null && turn.end >= turn.start)
           ? Math.max(...taskTurns.map(turn => turn.end)) - Math.min(...taskTurns.map(turn => turn.start)) : null,
         // Separate route/model cohorts prevent an identity switch from looking

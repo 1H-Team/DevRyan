@@ -20,7 +20,7 @@ const credentials = path.join(state, '.credentials.json');
 try { await fs.symlink(path.join(account, '.credentials.json'), credentials); }
 catch (cause) { if (cause.code !== 'EEXIST') throw cause; }
 const handle = await startReadOnlySessionExecution({ launcher: process.env.DEVRYAN_EXECUTION_LAUNCHER, storage,
-  auxiliaryDirectory: state, command: input.command, args: input.args, signal: controller.signal, interactive: true,
+  auxiliaryDirectory: state, logicalDirectory: input.directory, command: input.command, args: input.args, signal: controller.signal, interactive: true,
   env: { ...process.env, CLAUDE_CONFIG_DIR: state, DEVRYAN_EXECUTION_WORKER: '1' } });
 process.stdin.pipe(handle.child.stdin); handle.child.stdout.pipe(process.stdout); handle.child.stderr.pipe(process.stderr);
 handle.child.stdin.on('error', () => {});

@@ -9,6 +9,7 @@ const STATE_REF = 'refs/devryan/state';
 const blobs = new Map();
 let blobBytes = 0;
 const listings = new Map();
+const oversizedStores = new Set();
 const lowerBound = (rows, key) => {
   let low = 0, high = rows.length;
   while (low < high) { const middle = (low + high) >>> 1; if (rows[middle].key < key) low = middle + 1; else high = middle; }
@@ -41,13 +42,17 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF } = {}) {
   // read-mostly transaction does not create a Git commit.
   const baseline = new Map();
   const indexed = async (snapshot) => {
+    // Once this store's full listing exceeded the bound, listing each new tree
+    // only to discard it costs O(ledger) per transaction. Stay on the paged
+    // path (always correct) for the rest of this process.
+    if (oversizedStores.has(gitDir)) return null;
     const identity = `${gitDir}:${snapshot}`;
     if (!listings.has(identity)) {
       const work = (async () => {
         const rows = []; let bytes = 0;
         for await (const row of gitTokens(cwd, [...args, 'ls-tree', '-r', '-l', '-z', snapshot])) {
           bytes += Buffer.byteLength(row);
-          if (bytes > 8 * 1024 * 1024) return null; // Larger ledgers stay paged from Git.
+          if (bytes > 1024 * 1024) { oversizedStores.add(gitDir); return null; } // Larger ledgers stay paged from Git.
           const tab = row.indexOf('\t'), fields = row.slice(0, tab).trim().split(/\s+/);
           rows.push({ key: row.slice(tab + 1), oid: fields[2], size: Number(fields[3]) });
         }

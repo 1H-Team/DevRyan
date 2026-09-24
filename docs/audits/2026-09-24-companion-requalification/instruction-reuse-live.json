@@ -1,0 +1,2677 @@
+{
+  "kind": "instruction-reuse-live-supplement",
+  "profile": {
+    "id": "devryan-companion-2.0.0-openai-sol-medium",
+    "runtimeVersion": "1.18.31",
+    "runtimeHash": "dc0954bd4d85e298992971ce3822c40b0af80b180d4fc5248f973d11ce76681f",
+    "providerID": "openai",
+    "modelID": "gpt-5.6-sol",
+    "variant": "medium",
+    "providerHash": "4792784fe46997ae50e9f71f0183179101791d35b522e21c618ae7bc1ec8d4d8",
+    "plugins": [
+      {
+        "name": "index.js",
+        "contentHash": "fab88b553785d6b7ae53238c060f0ea3f003dfda2c88667284b5a35ca623488d"
+      },
+      {
+        "name": "plugin-entry.js",
+        "contentHash": "778514df215d2860e6b074f9569bbd5afb622f097a15edcec0e6a5246309e205"
+      },
+      {
+        "name": "index.js",
+        "contentHash": "b3a32d1f03047f68e39874725bc9ed40fc42b59a773acdb815e8c9b7b4025aad"
+      },
+      {
+        "name": "index.js",
+        "contentHash": "2a94eedd2be1e77fc2a3e50961d79a9a2695eeeb5866732a13f46948553156b4"
+      },
+      {
+        "name": "devryan-oh-my-opencode-slim.mjs",
+        "contentHash": "7dde3de974347911027abc4d1665cf3007b78013410dd6a94688eee57637023b"
+      },
+      {
+        "name": "devryan-superpowers.mjs",
+        "contentHash": "54e0fc722391a1a2399581c977654627d57ac3aadee6bfb529ee88632221de23"
+      },
+      {
+        "name": "devryan-skill-context.mjs",
+        "contentHash": "99929e135c01749b7e8303b35179240f386e53816b9a35ab57e0d3ad372d551c"
+      },
+      {
+        "name": "devryan-document-reader.mjs",
+        "contentHash": "bef4052f50aa08644dd0c2191ee07d6811c9e0cff57f0090afe9613895cf5de4"
+      },
+      {
+        "name": "devryan-browser.mjs",
+        "contentHash": "f8098613e62d7ea31a680bc63e60b417e688f908a20aa4043fe410a2a5224943"
+      },
+      {
+        "name": "devryan-builder-todo-continuation.mjs",
+        "contentHash": "4f6511bd4206f2e747c3205107cdfbb5b2217a81d988ddc74500d4b22e754748"
+      },
+      {
+        "name": "devryan-file-write-metadata.mjs",
+        "contentHash": "83e76ea73e6c42257ddf4c2aa48f2b5a512e64b9cc7afa7772fb14ddbe816988"
+      },
+      {
+        "name": "devryan-harness-context.mjs",
+        "contentHash": "c97893cda4f61c7fdc1f0cad44dd2484c87215fad2d06b38f1855e263d41f9c7"
+      },
+      {
+        "name": "devryan-managed-orchestration.mjs",
+        "contentHash": "61849c3b053d479f91ce1b6ee7ae0c8d74678b42251663740faf2584ea6f10e8"
+      },
+      {
+        "name": "devryan-openai-oauth.mjs",
+        "contentHash": "d57482f361d6f70c35c1e359573fe4810a5a3778c8f1e2e7c67c9bfe954eb739"
+      },
+      {
+        "name": "devryan-primary-recovery.mjs",
+        "contentHash": "68555821e2c5cd52155173e3e1ffb3ca796f05e7779d11efb6a03f6168c9b4d5"
+      },
+      {
+        "name": "devryan-session-changes.mjs",
+        "contentHash": "170dd8989e594ead72d4f4b13b7255bf8de3acf292e557d081f18c1e5156c4a8"
+      },
+      {
+        "name": "devryan-tool-input-guard.mjs",
+        "contentHash": "e485d28adb37b4052df0c3ea3c1556cbaab712690f15da86204ba8e1a1043ebb"
+      },
+      {
+        "name": "github-copilot-models.mjs",
+        "contentHash": "61270a274af4d13024a6014795ab57dc579b30fba508e706b692cbdf8f4750c4"
+      },
+      {
+        "name": "openai-gpt-5-6-models.mjs",
+        "contentHash": "0b918d8333abdf55e6feb42ddd03b538612d8e4af7ca672b33ca0940b5991dc9"
+      },
+      {
+        "name": "openai-tool-schema-sanitizer.mjs",
+        "contentHash": "e824ed4220bc0a26fda7eda34d52248a5320ef48fb866a60621c6db6b63d17ac"
+      },
+      {
+        "name": "council-session.js",
+        "contentHash": "e1ee08ab6945db37f7a4870d9a61406eddf360d43f4b308454e0791226f31bf6"
+      }
+    ],
+    "providerScope": "selected-route",
+    "transport": "openai-chatgpt-managed-responses-v1"
+  },
+  "prefaceHash": "8b2e00f0711cf8d7116a67395e91eeb4e2bf1d00cd9f35c4d3c1b5aa0b107f49",
+  "prefaceBytes": 4357,
+  "trials": 3,
+  "pairs": [
+    {
+      "index": 0,
+      "baseline": {
+        "arm": "baseline",
+        "index": 0,
+        "phase": "instruction",
+        "bodyHash": "4b7f2a9e2db80decbf82a1ebfaac3f4be7fe64fa777194b75a9e3167a4de6bc8",
+        "bytes": 46673,
+        "trialIndex": 0,
+        "userMessages": 3,
+        "fullPrefaceCopies": 3,
+        "instructionReferences": 0,
+        "firstUserHasFullPreface": true
+      },
+      "candidate": {
+        "arm": "candidate",
+        "index": 0,
+        "phase": "instruction",
+        "bodyHash": "5d8f1251d27f99cfbfc91ec7e8d0cd048517fce9d6e1059752705bf27b3fa1a3",
+        "bytes": 38205,
+        "trialIndex": 0,
+        "userMessages": 3,
+        "fullPrefaceCopies": 1,
+        "instructionReferences": 2,
+        "firstUserHasFullPreface": true
+      },
+      "baselineTokens": {
+        "totalInput": 9134,
+        "uncachedInput": 4526,
+        "cacheRead": 4608,
+        "cacheWrite": 0,
+        "cacheWrite5m": null,
+        "cacheWrite1h": null,
+        "cacheWrite30m": null,
+        "output": 883,
+        "reasoning": 469,
+        "totalOutput": 1352
+      },
+      "candidateTokens": {
+        "totalInput": 7416,
+        "uncachedInput": 2808,
+        "cacheRead": 4608,
+        "cacheWrite": 0,
+        "cacheWrite5m": null,
+        "cacheWrite1h": null,
+        "cacheWrite30m": null,
+        "output": 984,
+        "reasoning": 391,
+        "totalOutput": 1375
+      },
+      "baselineGrade": {
+        "arm": "baseline",
+        "index": 0,
+        "duplicateOutputs": false,
+        "sessionID": "ses_f2d5c1517ffeqf5coLjiXZC6C0",
+        "completed": true,
+        "markerExactlyOnce": true,
+        "headingAfterMarker": true,
+        "requiredSections": true,
+        "requirementsPreserved": true,
+        "mutatingToolCalls": 0,
+        "toolCalls": 0,
+        "seedsCreatedWithoutReply": true,
+        "canonicalUnchanged": true,
+        "replyHash": "477640860625ad8ff929540f706d0c5ebab3239efd9319140c4e8e1bb7a26d42",
+        "planBytes": 3914,
+        "passed": true
+      },
+      "candidateGrade": {
+        "arm": "candidate",
+        "index": 0,
+        "duplicateOutputs": true,
+        "sessionID": "ses_f2d5a00cbffeZtMkQUaOHOn1Zk",
+        "completed": true,
+        "markerExactlyOnce": true,
+        "headingAfterMarker": true,
+        "requiredSections": true,
+        "requirementsPreserved": true,
+        "mutatingToolCalls": 0,
+        "toolCalls": 0,
+        "seedsCreatedWithoutReply": true,
+        "canonicalUnchanged": true,
+        "replyHash": "ff5203303eae55a97d80c3b150e28510e1813c5061e8137b4996caf7c8c23812",
+        "planBytes": 4347,
+        "passed": true
+      }
+    },
+    {
+      "index": 1,
+      "baseline": {
+        "arm": "baseline",
+        "index": 1,
+        "phase": "instruction",
+        "bodyHash": "e331a1b20078ef7342b4adaa00dc9fbe083e55260027479bb88a0833214c681a",
+        "bytes": 46673,
+        "trialIndex": 1,
+        "userMessages": 3,
+        "fullPrefaceCopies": 3,
+        "instructionReferences": 0,
+        "firstUserHasFullPreface": true
+      },
+      "candidate": {
+        "arm": "candidate",
+        "index": 1,
+        "phase": "instruction",
+        "bodyHash": "b400fb4b767618a1046d5b4e33cc99d25416abce86e8c8aea9144b4d38cb847a",
+        "bytes": 38205,
+        "trialIndex": 1,
+        "userMessages": 3,
+        "fullPrefaceCopies": 1,
+        "instructionReferences": 2,
+        "firstUserHasFullPreface": true
+      },
+      "baselineTokens": {
+        "totalInput": 9131,
+        "uncachedInput": 4523,
+        "cacheRead": 4608,
+        "cacheWrite": 0,
+        "cacheWrite5m": null,
+        "cacheWrite1h": null,
+        "cacheWrite30m": null,
+        "output": 789,
+        "reasoning": 1063,
+        "totalOutput": 1852
+      },
+      "candidateTokens": {
+        "totalInput": 7413,
+        "uncachedInput": 2805,
+        "cacheRead": 4608,
+        "cacheWrite": 0,
+        "cacheWrite5m": null,
+        "cacheWrite1h": null,
+        "cacheWrite30m": null,
+        "output": 876,
+        "reasoning": 491,
+        "totalOutput": 1367
+      },
+      "baselineGrade": {
+        "arm": "baseline",
+        "index": 1,
+        "duplicateOutputs": false,
+        "sessionID": "ses_f2d5b9f4dffeqYyT7QgaFxFSYr",
+        "completed": true,
+        "markerExactlyOnce": true,
+        "headingAfterMarker": true,
+        "requiredSections": true,
+        "requirementsPreserved": true,
+        "mutatingToolCalls": 0,
+        "toolCalls": 0,
+        "seedsCreatedWithoutReply": true,
+        "canonicalUnchanged": true,
+        "replyHash": "f591afe830c2134c9522a08eeba69b7618de9b00f9f16f198b82b049064d4144",
+        "planBytes": 3458,
+        "passed": true
+      },
+      "candidateGrade": {
+        "arm": "candidate",
+        "index": 1,
+        "duplicateOutputs": true,
+        "sessionID": "ses_f2d597abaffei78btqHD98e5vB",
+        "completed": true,
+        "markerExactlyOnce": true,
+        "headingAfterMarker": true,
+        "requiredSections": true,
+        "requirementsPreserved": true,
+        "mutatingToolCalls": 0,
+        "toolCalls": 0,
+        "seedsCreatedWithoutReply": true,
+        "canonicalUnchanged": true,
+        "replyHash": "d39352fe3300c07a055a6398a87eabe18dcb4a0004b1bcf9ad7c55ca2c80026c",
+        "planBytes": 3796,
+        "passed": true
+      }
+    },
+    {
+      "index": 2,
+      "baseline": {
+        "arm": "baseline",
+        "index": 2,
+        "phase": "instruction",
+        "bodyHash": "ebe9bc3a7d5a05775aba6c158af555b9e993acc6ae603008a611e94cbd019a43",
+        "bytes": 46673,
+        "trialIndex": 2,
+        "userMessages": 3,
+        "fullPrefaceCopies": 3,
+        "instructionReferences": 0,
+        "firstUserHasFullPreface": true
+      },
+      "candidate": {
+        "arm": "candidate",
+        "index": 2,
+        "phase": "instruction",
+        "bodyHash": "4513362e46ff52f1242f44f907121c5ad85e1d98202e5acb39767be34e471f91",
+        "bytes": 38205,
+        "trialIndex": 2,
+        "userMessages": 3,
+        "fullPrefaceCopies": 1,
+        "instructionReferences": 2,
+        "firstUserHasFullPreface": true
+      },
+      "baselineTokens": {
+        "totalInput": 9134,
+        "uncachedInput": 9134,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "cacheWrite5m": null,
+        "cacheWrite1h": null,
+        "cacheWrite30m": null,
+        "output": 760,
+        "reasoning": 456,
+        "totalOutput": 1216
+      },
+      "candidateTokens": {
+        "totalInput": 7416,
+        "uncachedInput": 1272,
+        "cacheRead": 6144,
+        "cacheWrite": 0,
+        "cacheWrite5m": null,
+        "cacheWrite1h": null,
+        "cacheWrite30m": null,
+        "output": 894,
+        "reasoning": 480,
+        "totalOutput": 1374
+      },
+      "baselineGrade": {
+        "arm": "baseline",
+        "index": 2,
+        "duplicateOutputs": false,
+        "sessionID": "ses_f2d5ada32ffeWpCriy9lr8ntUD",
+        "completed": true,
+        "markerExactlyOnce": true,
+        "headingAfterMarker": true,
+        "requiredSections": true,
+        "requirementsPreserved": true,
+        "mutatingToolCalls": 0,
+        "toolCalls": 0,
+        "seedsCreatedWithoutReply": true,
+        "canonicalUnchanged": true,
+        "replyHash": "0f560f3dcdeb2ac29b697ac068f71b98ae7239af37a848d5e63d6991157553f1",
+        "planBytes": 3364,
+        "passed": true
+      },
+      "candidateGrade": {
+        "arm": "candidate",
+        "index": 2,
+        "duplicateOutputs": true,
+        "sessionID": "ses_f2d58ed9affeJucx9uhWkR7AMp",
+        "completed": true,
+        "markerExactlyOnce": true,
+        "headingAfterMarker": true,
+        "requiredSections": true,
+        "requirementsPreserved": true,
+        "mutatingToolCalls": 0,
+        "toolCalls": 0,
+        "seedsCreatedWithoutReply": true,
+        "canonicalUnchanged": true,
+        "replyHash": "e6af59ac13600fbcfa7205fc575506aab76ef08bd1f6bced69cf3b60948683b9",
+        "planBytes": 3941,
+        "passed": true
+      }
+    }
+  ],
+  "checks": {
+    "allTrialsComplete": true,
+    "outcomesPreserved": true,
+    "baselineFull": true,
+    "candidateReferenced": true,
+    "nonIncreasingRequests": true,
+    "noFailures": true,
+    "cleanup": true
+  },
+  "passed": true,
+  "failures": [],
+  "wireFailures": [],
+  "metadataRequests": [
+    {
+      "route": "model-catalog",
+      "statusCode": 200
+    },
+    {
+      "route": "zen-model-catalog",
+      "statusCode": 200
+    },
+    {
+      "route": "antigravity-version",
+      "statusCode": 200
+    },
+    {
+      "route": "model-catalog",
+      "statusCode": 200
+    },
+    {
+      "route": "zen-model-catalog",
+      "statusCode": 200
+    },
+    {
+      "route": "antigravity-version",
+      "statusCode": 200
+    }
+  ],
+  "wire": [
+    {
+      "arm": "baseline",
+      "index": null,
+      "phase": "warmup",
+      "requestIndex": 1,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "975022b079ada3bdbfb6391438ede6a6d249733fe0c5e070d8ca2b01458200a3",
+        "bytes": 32784,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "34cfb849842107cee28df4a93bd9926c8be66621f24ec1acb661c25033371fc9"
+        ],
+        "tools": [
+          "061adc95bc608814d09bd9579c4732cdef0d431c1af7e9b76cf624781f2356e2",
+          "d66bfa1695f1019834738e1ceb7d7c24f8f739bed1c4f49af2339c8c4741544a",
+          "073714fc1b107334a5cb78e603c1ce2855351ce1943147d3b33f2626b80ad570",
+          "0bfd5a4cc11c472fea38bc9fdf04386f99acd6a2b752038d5ed63a1d0ba102c1",
+          "ce944527664994af3420245eaee14af6291ff9d1fa23f46f59edaad035d9d239",
+          "a3b4a1d0f25fdd2ead67ebbab415f6c3a932efafdf087c15b050546c8d52388b",
+          "0b7c126f4dea0c8eb4b350e61083c58a8844798f1d406586597277b366215ae4",
+          "2774a0b4627424b8afa4e28a44cb0d98bc05c86fa2600ca187b42ea72cea553f",
+          "f92b4863ac1e195432384ef53f4a2abbc48924f8d2cbc6e59f5d01f8b96e1277",
+          "5b6715e03b38beb35cddbb508fcc3051b89052ee9553476e8693c2cb50db07df",
+          "1bc00277be51d0ef01160c4e22f794ced438209d9b68c29548852f3cfe29b63d",
+          "66f397fd8bcef7a8f54eddc49d641fc4fccbf36777e306f8c477f8cb19d0c60c",
+          "c3bb683182ca2108308fec5ccfd70f4eb7d6c4acc6e4e3ab96d75a18b45b54b7",
+          "ff0ff20583a5a71bd2cb3f08d5dc2078806263159abddae6efb4183ef2dc1ce2",
+          "c2b10d797bbdd3a645e0ca8fb91df6f1b9c4e8d36962995b34e60bb1626d3fb7",
+          "7d6c9e6a558e7cffc2a1e6eef4f6cc13e2c016fa22ae77d9f827178138fe6a8c",
+          "fe332ac8e06fe114d6c271b1dc07b7c43c6d21e4235800de57f8a5b82dd99e6b",
+          "f6ed684568ddbbcaf882cca59b1f29933f8a89535bd71828a9220de516ec74b3",
+          "669f07b464d2068b4dfa39923e308549032050b47d6d0d37ece8fbc611fabf82"
+        ],
+        "history": [
+          "554df14a516c0bcf042caaeebaf32447433e0485e65377dd275f0f44b22c3791"
+        ],
+        "cacheParametersHash": "78f0d99812929e42ffdbaa998c238267cdc48b4f3be1c1ccceea80551b595e01",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "aa3e5f599c828174aeaf0d736a5ca3b718f239a710e9b9eb7d9e51b88862de7f",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-1",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0bfb3c780aede3da016ab4e65dbf0887d0abc240f30a37bc2a",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": null,
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790240352830,
+        "tokens": {
+          "totalInput": 6331,
+          "uncachedInput": 187,
+          "cacheRead": 6144,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 5,
+          "reasoning": 0,
+          "totalOutput": 5
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790240350368,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790240352458,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790240352830,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790240350368
+    },
+    {
+      "arm": "baseline",
+      "index": null,
+      "phase": "warmup",
+      "requestIndex": 2,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "d51e05c55d7cc01243fd51dd4a89bc04443ca217c10e09a76cf8c8aef216e3ca",
+        "bytes": 2624,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "70485da1da97aa57c5560246c6e1faee312e7f3f525d9294f8d2bd728fa533b5"
+        ],
+        "tools": [],
+        "history": [
+          "17821927c0ebc0fcc040fbb01ebc966e293c4289119de0bbbf755f25b82b3e9f"
+        ],
+        "cacheParametersHash": "75ea4fb1edb7c2509c781bcb82bb1742c73ad0ead1a73133ad3e051ee41ed77a",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "7001dbb29bab49cd7d4b06b23e64c440fb412b36084f0d6e11b5bc832412064f",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-2",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0a530e9a340f0a92016ab4e65d8c3487d0b59533587e3eff63",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": null,
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790240350818,
+        "tokens": {
+          "totalInput": 528,
+          "uncachedInput": 528,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 8,
+          "reasoning": 0,
+          "totalOutput": 8
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790240349943,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790240350527,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790240350818,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790240349943
+    },
+    {
+      "arm": "baseline",
+      "index": 0,
+      "phase": "instruction",
+      "requestIndex": 3,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "a3ce149155dd0d29c084a5a9faf293148b1defe52a10a2eb6f87904066d5f202",
+        "bytes": 2732,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "70485da1da97aa57c5560246c6e1faee312e7f3f525d9294f8d2bd728fa533b5"
+        ],
+        "tools": [],
+        "history": [
+          "2ca624f1bba99f568b78e92c7c968aba6353f8824ab9040cd3e79f1ee7f4edeb"
+        ],
+        "cacheParametersHash": "91d8fbae471a0b5bcb4331255c6449c5d75b8c82d291f2ede2b30de9b67a87af",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "907f6b9ef34107b60a37d1cf98ae6e7e051083f0dd9e95d74fbd28da80465488",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-3",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0ca622ac16c69ba8016ab4e66246e487d0ab9df69a7b706099",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": null,
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790240357042,
+        "tokens": {
+          "totalInput": 557,
+          "uncachedInput": 557,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 9,
+          "reasoning": 0,
+          "totalOutput": 9
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790240354747,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790240356567,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790240357042,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790240354748
+    },
+    {
+      "arm": "baseline",
+      "index": 0,
+      "phase": "instruction",
+      "requestIndex": 4,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "4b7f2a9e2db80decbf82a1ebfaac3f4be7fe64fa777194b75a9e3167a4de6bc8",
+        "bytes": 46673,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "34cfb849842107cee28df4a93bd9926c8be66621f24ec1acb661c25033371fc9"
+        ],
+        "tools": [
+          "061adc95bc608814d09bd9579c4732cdef0d431c1af7e9b76cf624781f2356e2",
+          "d66bfa1695f1019834738e1ceb7d7c24f8f739bed1c4f49af2339c8c4741544a",
+          "073714fc1b107334a5cb78e603c1ce2855351ce1943147d3b33f2626b80ad570",
+          "0bfd5a4cc11c472fea38bc9fdf04386f99acd6a2b752038d5ed63a1d0ba102c1",
+          "ce944527664994af3420245eaee14af6291ff9d1fa23f46f59edaad035d9d239",
+          "a3b4a1d0f25fdd2ead67ebbab415f6c3a932efafdf087c15b050546c8d52388b",
+          "0b7c126f4dea0c8eb4b350e61083c58a8844798f1d406586597277b366215ae4",
+          "2774a0b4627424b8afa4e28a44cb0d98bc05c86fa2600ca187b42ea72cea553f",
+          "f92b4863ac1e195432384ef53f4a2abbc48924f8d2cbc6e59f5d01f8b96e1277",
+          "5b6715e03b38beb35cddbb508fcc3051b89052ee9553476e8693c2cb50db07df",
+          "1bc00277be51d0ef01160c4e22f794ced438209d9b68c29548852f3cfe29b63d",
+          "66f397fd8bcef7a8f54eddc49d641fc4fccbf36777e306f8c477f8cb19d0c60c",
+          "c3bb683182ca2108308fec5ccfd70f4eb7d6c4acc6e4e3ab96d75a18b45b54b7",
+          "ff0ff20583a5a71bd2cb3f08d5dc2078806263159abddae6efb4183ef2dc1ce2",
+          "c2b10d797bbdd3a645e0ca8fb91df6f1b9c4e8d36962995b34e60bb1626d3fb7",
+          "7d6c9e6a558e7cffc2a1e6eef4f6cc13e2c016fa22ae77d9f827178138fe6a8c",
+          "fe332ac8e06fe114d6c271b1dc07b7c43c6d21e4235800de57f8a5b82dd99e6b",
+          "f6ed684568ddbbcaf882cca59b1f29933f8a89535bd71828a9220de516ec74b3",
+          "669f07b464d2068b4dfa39923e308549032050b47d6d0d37ece8fbc611fabf82"
+        ],
+        "history": [
+          "3404657a15264872c81f9f946fd2907ce97f0aafa8550bd21e81f509da131e14",
+          "8fad92430d2b1e2c41f9f164528b46699358508a30ad15100906ad8b36328809",
+          "c92b62b7b62fee1891542e5e84e0ea36b4d6a0a1a419758bf0c16c43b01c8e0e"
+        ],
+        "cacheParametersHash": "020dde1f1813a49b3edbb92e228b8e7abf431dd9a4078926b9f57d9cf2e74c69",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "3894b8e33d56fff220acd9f277cde59dfd89b342693f1d054e021431e48d6cf5",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-4",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0f214b410d226d25016ab4e662763c87d0adfe1473570fc285",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": null,
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790240382078,
+        "tokens": {
+          "totalInput": 9134,
+          "uncachedInput": 4526,
+          "cacheRead": 4608,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 883,
+          "reasoning": 469,
+          "totalOutput": 1352
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790240354977,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790240359339,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790240382078,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790240354977
+    },
+    {
+      "arm": "baseline",
+      "index": 1,
+      "phase": "instruction",
+      "requestIndex": 5,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "9a6f1641777c63e257ffc7ae9511c83b88a7b76d879d37084b966f4f9822e45a",
+        "bytes": 2732,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "70485da1da97aa57c5560246c6e1faee312e7f3f525d9294f8d2bd728fa533b5"
+        ],
+        "tools": [],
+        "history": [
+          "10f6175c82452d08c48a50b035d1f5cee713463d8d45562cf3df745e4ee7e577"
+        ],
+        "cacheParametersHash": "e54e8c4d800e99ee17783741dade1ab986090c2c7d8cfe2bd1e0c4efdc3f6d91",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "1c91b6e735630ad77af740ad0a03756c4ea03c62cf0707db12d55d01a7543303",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-5",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0fe0b7353fcb2eb4016ab4e682c8fc87d088143a3cb391cb90",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": null,
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790240388329,
+        "tokens": {
+          "totalInput": 556,
+          "uncachedInput": 556,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 9,
+          "reasoning": 0,
+          "totalOutput": 9
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790240387269,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790240387867,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790240388329,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790240387269
+    },
+    {
+      "arm": "baseline",
+      "index": 1,
+      "phase": "instruction",
+      "requestIndex": 6,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "e331a1b20078ef7342b4adaa00dc9fbe083e55260027479bb88a0833214c681a",
+        "bytes": 46673,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "34cfb849842107cee28df4a93bd9926c8be66621f24ec1acb661c25033371fc9"
+        ],
+        "tools": [
+          "061adc95bc608814d09bd9579c4732cdef0d431c1af7e9b76cf624781f2356e2",
+          "d66bfa1695f1019834738e1ceb7d7c24f8f739bed1c4f49af2339c8c4741544a",
+          "073714fc1b107334a5cb78e603c1ce2855351ce1943147d3b33f2626b80ad570",
+          "0bfd5a4cc11c472fea38bc9fdf04386f99acd6a2b752038d5ed63a1d0ba102c1",
+          "ce944527664994af3420245eaee14af6291ff9d1fa23f46f59edaad035d9d239",
+          "a3b4a1d0f25fdd2ead67ebbab415f6c3a932efafdf087c15b050546c8d52388b",
+          "0b7c126f4dea0c8eb4b350e61083c58a8844798f1d406586597277b366215ae4",
+          "2774a0b4627424b8afa4e28a44cb0d98bc05c86fa2600ca187b42ea72cea553f",
+          "f92b4863ac1e195432384ef53f4a2abbc48924f8d2cbc6e59f5d01f8b96e1277",
+          "5b6715e03b38beb35cddbb508fcc3051b89052ee9553476e8693c2cb50db07df",
+          "1bc00277be51d0ef01160c4e22f794ced438209d9b68c29548852f3cfe29b63d",
+          "66f397fd8bcef7a8f54eddc49d641fc4fccbf36777e306f8c477f8cb19d0c60c",
+          "c3bb683182ca2108308fec5ccfd70f4eb7d6c4acc6e4e3ab96d75a18b45b54b7",
+          "ff0ff20583a5a71bd2cb3f08d5dc2078806263159abddae6efb4183ef2dc1ce2",
+          "c2b10d797bbdd3a645e0ca8fb91df6f1b9c4e8d36962995b34e60bb1626d3fb7",
+          "7d6c9e6a558e7cffc2a1e6eef4f6cc13e2c016fa22ae77d9f827178138fe6a8c",
+          "fe332ac8e06fe114d6c271b1dc07b7c43c6d21e4235800de57f8a5b82dd99e6b",
+          "f6ed684568ddbbcaf882cca59b1f29933f8a89535bd71828a9220de516ec74b3",
+          "669f07b464d2068b4dfa39923e308549032050b47d6d0d37ece8fbc611fabf82"
+        ],
+        "history": [
+          "3222cca8ab31ae656a9ed47e214f5c54d870dbdb964f1af88261fa3a8c48bbbb",
+          "a4ceae81a79939a426442f7f168b03c043bc86391122d9ab1e23d9cad258d677",
+          "e693ca4da1345af742e23c4da8e5d2c4cc0fc500889b728cc1a5d538144b4efa"
+        ],
+        "cacheParametersHash": "d9ad3ad34ce1b87766d44531b7735d9139f3faec0626bf44365c8dce669f1b7c",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "b2ff0d177ede78452eeb0cfcf3a469a09cfe75a86f501d97290b830dd21ad6eb",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-6",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_05aa62291c2d6125016ab4e6837f2887d09a8395f5606f7bd7",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": null,
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790240432518,
+        "tokens": {
+          "totalInput": 9131,
+          "uncachedInput": 4523,
+          "cacheRead": 4608,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 789,
+          "reasoning": 1063,
+          "totalOutput": 1852
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790240388097,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790240391919,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790240432518,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790240388135
+    },
+    {
+      "arm": "baseline",
+      "index": 2,
+      "phase": "instruction",
+      "requestIndex": 7,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "36bf970d8f4ef13d6cddcb0906599c6f83af5c9abbb2fa69fb992a4a93d13ef8",
+        "bytes": 2732,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "70485da1da97aa57c5560246c6e1faee312e7f3f525d9294f8d2bd728fa533b5"
+        ],
+        "tools": [],
+        "history": [
+          "b82937dadba366d33b78df375cf4a86ea489a7fa5a5b679f46a1acf128d580b1"
+        ],
+        "cacheParametersHash": "3394d74c07cf1449edbd9276aa5ca2f88dfe5668ba72dc3b6e80aec7604ceabc",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "bdf79329cbfc1650cb12d5e0ef7e885cc85913cec6d42e7b5c366a8992709f16",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-7",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_02f03daa2f41feb9016ab4e6b6cc4887d0b6f05205631965ec",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": null,
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790240440158,
+        "tokens": {
+          "totalInput": 557,
+          "uncachedInput": 557,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 8,
+          "reasoning": 0,
+          "totalOutput": 8
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790240439274,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790240439949,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790240440158,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790240439275
+    },
+    {
+      "arm": "baseline",
+      "index": 2,
+      "phase": "instruction",
+      "requestIndex": 8,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "ebe9bc3a7d5a05775aba6c158af555b9e993acc6ae603008a611e94cbd019a43",
+        "bytes": 46673,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "34cfb849842107cee28df4a93bd9926c8be66621f24ec1acb661c25033371fc9"
+        ],
+        "tools": [
+          "061adc95bc608814d09bd9579c4732cdef0d431c1af7e9b76cf624781f2356e2",
+          "d66bfa1695f1019834738e1ceb7d7c24f8f739bed1c4f49af2339c8c4741544a",
+          "073714fc1b107334a5cb78e603c1ce2855351ce1943147d3b33f2626b80ad570",
+          "0bfd5a4cc11c472fea38bc9fdf04386f99acd6a2b752038d5ed63a1d0ba102c1",
+          "ce944527664994af3420245eaee14af6291ff9d1fa23f46f59edaad035d9d239",
+          "a3b4a1d0f25fdd2ead67ebbab415f6c3a932efafdf087c15b050546c8d52388b",
+          "0b7c126f4dea0c8eb4b350e61083c58a8844798f1d406586597277b366215ae4",
+          "2774a0b4627424b8afa4e28a44cb0d98bc05c86fa2600ca187b42ea72cea553f",
+          "f92b4863ac1e195432384ef53f4a2abbc48924f8d2cbc6e59f5d01f8b96e1277",
+          "5b6715e03b38beb35cddbb508fcc3051b89052ee9553476e8693c2cb50db07df",
+          "1bc00277be51d0ef01160c4e22f794ced438209d9b68c29548852f3cfe29b63d",
+          "66f397fd8bcef7a8f54eddc49d641fc4fccbf36777e306f8c477f8cb19d0c60c",
+          "c3bb683182ca2108308fec5ccfd70f4eb7d6c4acc6e4e3ab96d75a18b45b54b7",
+          "ff0ff20583a5a71bd2cb3f08d5dc2078806263159abddae6efb4183ef2dc1ce2",
+          "c2b10d797bbdd3a645e0ca8fb91df6f1b9c4e8d36962995b34e60bb1626d3fb7",
+          "7d6c9e6a558e7cffc2a1e6eef4f6cc13e2c016fa22ae77d9f827178138fe6a8c",
+          "fe332ac8e06fe114d6c271b1dc07b7c43c6d21e4235800de57f8a5b82dd99e6b",
+          "f6ed684568ddbbcaf882cca59b1f29933f8a89535bd71828a9220de516ec74b3",
+          "669f07b464d2068b4dfa39923e308549032050b47d6d0d37ece8fbc611fabf82"
+        ],
+        "history": [
+          "bfba7e2f7c514d118ef2ac41a34f96c53de0b9127d5795a9c32d7c1dd75a1449",
+          "3e0571f5bf1a404f211ebf2a7f2001e5d9e7946d66faa373a6074eb0b172cf38",
+          "d0b9cc3c06fc525663d4e564bfb1ff2d9878c90d3729bccbce822964d692ec76"
+        ],
+        "cacheParametersHash": "4355463da4cb3b7d1206b09e267c7c1185bbf2e59616c1356f693976dfb1eb27",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "fad21bddfc90ce2c0a1becd5475c82df8d8939fee3a288f3f2930e0a036e632f",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-8",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0949517dc75da3d2016ab4e6b6fb9c87d0b460eda582b87dc0",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": null,
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790240463686,
+        "tokens": {
+          "totalInput": 9134,
+          "uncachedInput": 9134,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 760,
+          "reasoning": 456,
+          "totalOutput": 1216
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790240439445,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790240442874,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790240463686,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790240439456
+    },
+    {
+      "arm": "candidate",
+      "index": null,
+      "phase": "warmup",
+      "requestIndex": 9,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "9a236d0342b47487f39094c66a9c91d631b5e6aae1fa3a35ef5dd64ba7fead32",
+        "bytes": 32784,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "34cfb849842107cee28df4a93bd9926c8be66621f24ec1acb661c25033371fc9"
+        ],
+        "tools": [
+          "061adc95bc608814d09bd9579c4732cdef0d431c1af7e9b76cf624781f2356e2",
+          "d66bfa1695f1019834738e1ceb7d7c24f8f739bed1c4f49af2339c8c4741544a",
+          "073714fc1b107334a5cb78e603c1ce2855351ce1943147d3b33f2626b80ad570",
+          "0bfd5a4cc11c472fea38bc9fdf04386f99acd6a2b752038d5ed63a1d0ba102c1",
+          "ce944527664994af3420245eaee14af6291ff9d1fa23f46f59edaad035d9d239",
+          "a3b4a1d0f25fdd2ead67ebbab415f6c3a932efafdf087c15b050546c8d52388b",
+          "0b7c126f4dea0c8eb4b350e61083c58a8844798f1d406586597277b366215ae4",
+          "2774a0b4627424b8afa4e28a44cb0d98bc05c86fa2600ca187b42ea72cea553f",
+          "f92b4863ac1e195432384ef53f4a2abbc48924f8d2cbc6e59f5d01f8b96e1277",
+          "5b6715e03b38beb35cddbb508fcc3051b89052ee9553476e8693c2cb50db07df",
+          "1bc00277be51d0ef01160c4e22f794ced438209d9b68c29548852f3cfe29b63d",
+          "66f397fd8bcef7a8f54eddc49d641fc4fccbf36777e306f8c477f8cb19d0c60c",
+          "c3bb683182ca2108308fec5ccfd70f4eb7d6c4acc6e4e3ab96d75a18b45b54b7",
+          "ff0ff20583a5a71bd2cb3f08d5dc2078806263159abddae6efb4183ef2dc1ce2",
+          "c2b10d797bbdd3a645e0ca8fb91df6f1b9c4e8d36962995b34e60bb1626d3fb7",
+          "7d6c9e6a558e7cffc2a1e6eef4f6cc13e2c016fa22ae77d9f827178138fe6a8c",
+          "fe332ac8e06fe114d6c271b1dc07b7c43c6d21e4235800de57f8a5b82dd99e6b",
+          "f6ed684568ddbbcaf882cca59b1f29933f8a89535bd71828a9220de516ec74b3",
+          "669f07b464d2068b4dfa39923e308549032050b47d6d0d37ece8fbc611fabf82"
+        ],
+        "history": [
+          "554df14a516c0bcf042caaeebaf32447433e0485e65377dd275f0f44b22c3791"
+        ],
+        "cacheParametersHash": "0995572ee14bc674c0fd92f921c38fd4500e311e8b13182e19405e6ad184c374",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "db781dbbc9d14ef620b4d948180ae3dcacd553f0189d1df6e3d33497936d22ad",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-9",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_07f3e8c2074eeb4d016ab4e6e619ec87d0a6faceceabc62f9b",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": null,
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790240489112,
+        "tokens": {
+          "totalInput": 6331,
+          "uncachedInput": 1723,
+          "cacheRead": 4608,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 5,
+          "reasoning": 0,
+          "totalOutput": 5
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790240486612,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790240488811,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790240489112,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790240486613
+    },
+    {
+      "arm": "candidate",
+      "index": null,
+      "phase": "warmup",
+      "requestIndex": 10,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "dd34b2761715a2f97a1446fb8f0f120a24e4d6cd6e2a52e653de7468ccf47952",
+        "bytes": 2624,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "70485da1da97aa57c5560246c6e1faee312e7f3f525d9294f8d2bd728fa533b5"
+        ],
+        "tools": [],
+        "history": [
+          "17821927c0ebc0fcc040fbb01ebc966e293c4289119de0bbbf755f25b82b3e9f"
+        ],
+        "cacheParametersHash": "a4ec75b511923f7e2c982674cdcf4120cf613f7c92228aa107bf8a6e72375ef9",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "c9aa21343f2ff1788b44597026e33b9e1b68702b4fced4125cdf0386120352fc",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-10",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0ed8b1f038c4ffb9016ab4e6e7ee6c87d09c275c69c699314c",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": null,
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790240490605,
+        "tokens": {
+          "totalInput": 528,
+          "uncachedInput": 528,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 9,
+          "reasoning": 32,
+          "totalOutput": 41
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790240488763,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790240490319,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790240490605,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790240488767
+    },
+    {
+      "arm": "candidate",
+      "index": 0,
+      "phase": "instruction",
+      "requestIndex": 11,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "16c9b12dbb3179278c39fbdf4e6bc79273260918b9e07fe8ec92aae17053733b",
+        "bytes": 2732,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "70485da1da97aa57c5560246c6e1faee312e7f3f525d9294f8d2bd728fa533b5"
+        ],
+        "tools": [],
+        "history": [
+          "2ca624f1bba99f568b78e92c7c968aba6353f8824ab9040cd3e79f1ee7f4edeb"
+        ],
+        "cacheParametersHash": "95c21d3e38602c39aa3d492d7c4cc596bdc9b2a10d7daca721c4239300e147e1",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "44796d9a308b52e6a750950417611026a241bc4a94a4479d01b89d3a16d03faa",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-11",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0a476003ff6da3b5016ab4e6eb2e7487d08c2f9c7506c7b1be",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": null,
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790240494150,
+        "tokens": {
+          "totalInput": 557,
+          "uncachedInput": 557,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 9,
+          "reasoning": 0,
+          "totalOutput": 9
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790240491789,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790240492645,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790240494150,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790240491789
+    },
+    {
+      "arm": "candidate",
+      "index": 0,
+      "phase": "instruction",
+      "requestIndex": 12,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "5d8f1251d27f99cfbfc91ec7e8d0cd048517fce9d6e1059752705bf27b3fa1a3",
+        "bytes": 38205,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "34cfb849842107cee28df4a93bd9926c8be66621f24ec1acb661c25033371fc9"
+        ],
+        "tools": [
+          "061adc95bc608814d09bd9579c4732cdef0d431c1af7e9b76cf624781f2356e2",
+          "d66bfa1695f1019834738e1ceb7d7c24f8f739bed1c4f49af2339c8c4741544a",
+          "073714fc1b107334a5cb78e603c1ce2855351ce1943147d3b33f2626b80ad570",
+          "0bfd5a4cc11c472fea38bc9fdf04386f99acd6a2b752038d5ed63a1d0ba102c1",
+          "ce944527664994af3420245eaee14af6291ff9d1fa23f46f59edaad035d9d239",
+          "a3b4a1d0f25fdd2ead67ebbab415f6c3a932efafdf087c15b050546c8d52388b",
+          "0b7c126f4dea0c8eb4b350e61083c58a8844798f1d406586597277b366215ae4",
+          "2774a0b4627424b8afa4e28a44cb0d98bc05c86fa2600ca187b42ea72cea553f",
+          "f92b4863ac1e195432384ef53f4a2abbc48924f8d2cbc6e59f5d01f8b96e1277",
+          "5b6715e03b38beb35cddbb508fcc3051b89052ee9553476e8693c2cb50db07df",
+          "1bc00277be51d0ef01160c4e22f794ced438209d9b68c29548852f3cfe29b63d",
+          "66f397fd8bcef7a8f54eddc49d641fc4fccbf36777e306f8c477f8cb19d0c60c",
+          "c3bb683182ca2108308fec5ccfd70f4eb7d6c4acc6e4e3ab96d75a18b45b54b7",
+          "ff0ff20583a5a71bd2cb3f08d5dc2078806263159abddae6efb4183ef2dc1ce2",
+          "c2b10d797bbdd3a645e0ca8fb91df6f1b9c4e8d36962995b34e60bb1626d3fb7",
+          "7d6c9e6a558e7cffc2a1e6eef4f6cc13e2c016fa22ae77d9f827178138fe6a8c",
+          "fe332ac8e06fe114d6c271b1dc07b7c43c6d21e4235800de57f8a5b82dd99e6b",
+          "f6ed684568ddbbcaf882cca59b1f29933f8a89535bd71828a9220de516ec74b3",
+          "669f07b464d2068b4dfa39923e308549032050b47d6d0d37ece8fbc611fabf82"
+        ],
+        "history": [
+          "3404657a15264872c81f9f946fd2907ce97f0aafa8550bd21e81f509da131e14",
+          "20d2c37f1e6e268ad067414ad2dfd53beefc335142f8113fa03e29d913daaecc",
+          "d0874fa60c7ef372297aba62e6d49ad1898b17662cf2714f478071ddfee5a1fe"
+        ],
+        "cacheParametersHash": "31b657b3227764d5cdfb00037a9126e29f91b1991be092327f2e55840aafba8f",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "dfd9fdf69cdfa8c3deeb7f74f404ab886c4a575d66ae9342b3d914fa64c2ba23",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-12",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_03c8e2e68a554937016ab4e6ebd1d487d0b07ef3da09626aab",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": null,
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790240522913,
+        "tokens": {
+          "totalInput": 7416,
+          "uncachedInput": 2808,
+          "cacheRead": 4608,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 984,
+          "reasoning": 391,
+          "totalOutput": 1375
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790240492363,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790240497595,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790240522913,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790240492363
+    },
+    {
+      "arm": "candidate",
+      "index": 1,
+      "phase": "instruction",
+      "requestIndex": 13,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "5740641b133215774240b4e4607ce1a91a207cecdabfdbc2e31392d1f565fe55",
+        "bytes": 2732,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "70485da1da97aa57c5560246c6e1faee312e7f3f525d9294f8d2bd728fa533b5"
+        ],
+        "tools": [],
+        "history": [
+          "10f6175c82452d08c48a50b035d1f5cee713463d8d45562cf3df745e4ee7e577"
+        ],
+        "cacheParametersHash": "1b4e60dc22c237ca0d4ef5f3bccd17fb8b7f25d08b319750d91babc7e6778c9d",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "8e25f2b32302e7c9b1c810f3eac112c0f636b120c8f0ff949480b059351fa96a",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-13",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0b9a540342223df1016ab4e70dd1e887d0b5387acb1735ed11",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": null,
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790240527178,
+        "tokens": {
+          "totalInput": 556,
+          "uncachedInput": 556,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 9,
+          "reasoning": 0,
+          "totalOutput": 9
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790240526228,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790240526781,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790240527178,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790240526229
+    },
+    {
+      "arm": "candidate",
+      "index": 1,
+      "phase": "instruction",
+      "requestIndex": 14,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "b400fb4b767618a1046d5b4e33cc99d25416abce86e8c8aea9144b4d38cb847a",
+        "bytes": 38205,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "34cfb849842107cee28df4a93bd9926c8be66621f24ec1acb661c25033371fc9"
+        ],
+        "tools": [
+          "061adc95bc608814d09bd9579c4732cdef0d431c1af7e9b76cf624781f2356e2",
+          "d66bfa1695f1019834738e1ceb7d7c24f8f739bed1c4f49af2339c8c4741544a",
+          "073714fc1b107334a5cb78e603c1ce2855351ce1943147d3b33f2626b80ad570",
+          "0bfd5a4cc11c472fea38bc9fdf04386f99acd6a2b752038d5ed63a1d0ba102c1",
+          "ce944527664994af3420245eaee14af6291ff9d1fa23f46f59edaad035d9d239",
+          "a3b4a1d0f25fdd2ead67ebbab415f6c3a932efafdf087c15b050546c8d52388b",
+          "0b7c126f4dea0c8eb4b350e61083c58a8844798f1d406586597277b366215ae4",
+          "2774a0b4627424b8afa4e28a44cb0d98bc05c86fa2600ca187b42ea72cea553f",
+          "f92b4863ac1e195432384ef53f4a2abbc48924f8d2cbc6e59f5d01f8b96e1277",
+          "5b6715e03b38beb35cddbb508fcc3051b89052ee9553476e8693c2cb50db07df",
+          "1bc00277be51d0ef01160c4e22f794ced438209d9b68c29548852f3cfe29b63d",
+          "66f397fd8bcef7a8f54eddc49d641fc4fccbf36777e306f8c477f8cb19d0c60c",
+          "c3bb683182ca2108308fec5ccfd70f4eb7d6c4acc6e4e3ab96d75a18b45b54b7",
+          "ff0ff20583a5a71bd2cb3f08d5dc2078806263159abddae6efb4183ef2dc1ce2",
+          "c2b10d797bbdd3a645e0ca8fb91df6f1b9c4e8d36962995b34e60bb1626d3fb7",
+          "7d6c9e6a558e7cffc2a1e6eef4f6cc13e2c016fa22ae77d9f827178138fe6a8c",
+          "fe332ac8e06fe114d6c271b1dc07b7c43c6d21e4235800de57f8a5b82dd99e6b",
+          "f6ed684568ddbbcaf882cca59b1f29933f8a89535bd71828a9220de516ec74b3",
+          "669f07b464d2068b4dfa39923e308549032050b47d6d0d37ece8fbc611fabf82"
+        ],
+        "history": [
+          "3222cca8ab31ae656a9ed47e214f5c54d870dbdb964f1af88261fa3a8c48bbbb",
+          "f9bfd931879f6d8641f8a73d7216e858beb1c6195c334ab8e073cba9f22e3212",
+          "c7caf0aefb8855dc9d1319676bc8741cb5ff2b1469879c9eda2be940877350ec"
+        ],
+        "cacheParametersHash": "6403ffe3668d07ae8bf75a316f1ae40014e25a1af613b79e43edffd874d66f46",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "bce5bea0e0783c5155a796e7d6d810897806dae1863b66e1807c9e7fa0e7e9dc",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-14",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0bc4fdae760a61f7016ab4e70ee90c87d0ad0e245d2fce5bc4",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": null,
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790240559554,
+        "tokens": {
+          "totalInput": 7413,
+          "uncachedInput": 2805,
+          "cacheRead": 4608,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 876,
+          "reasoning": 491,
+          "totalOutput": 1367
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790240527337,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790240532728,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790240559554,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790240527337
+    },
+    {
+      "arm": "candidate",
+      "index": 2,
+      "phase": "instruction",
+      "requestIndex": 15,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "4db14d46f165c86c2cdb4a5494b27327a868128328d4e1e6929be358e491d6e2",
+        "bytes": 2732,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "70485da1da97aa57c5560246c6e1faee312e7f3f525d9294f8d2bd728fa533b5"
+        ],
+        "tools": [],
+        "history": [
+          "b82937dadba366d33b78df375cf4a86ea489a7fa5a5b679f46a1acf128d580b1"
+        ],
+        "cacheParametersHash": "ad139c4cfa0647ffd18d062c2f54535ef5c656aa795e26c3144475e089f87db5",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "9f8f5abd89871e11fac28034cae08027656ccc5734d4864f172f30142b084f1d",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-15",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_08c5e6c8ddbd0a57016ab4e731e0f087d0ab77dd65a246b981",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": null,
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790240565284,
+        "tokens": {
+          "totalInput": 557,
+          "uncachedInput": 557,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 9,
+          "reasoning": 0,
+          "totalOutput": 9
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790240562471,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790240563840,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790240565284,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790240562471
+    },
+    {
+      "arm": "candidate",
+      "index": 2,
+      "phase": "instruction",
+      "requestIndex": 16,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "4513362e46ff52f1242f44f907121c5ad85e1d98202e5acb39767be34e471f91",
+        "bytes": 38205,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "34cfb849842107cee28df4a93bd9926c8be66621f24ec1acb661c25033371fc9"
+        ],
+        "tools": [
+          "061adc95bc608814d09bd9579c4732cdef0d431c1af7e9b76cf624781f2356e2",
+          "d66bfa1695f1019834738e1ceb7d7c24f8f739bed1c4f49af2339c8c4741544a",
+          "073714fc1b107334a5cb78e603c1ce2855351ce1943147d3b33f2626b80ad570",
+          "0bfd5a4cc11c472fea38bc9fdf04386f99acd6a2b752038d5ed63a1d0ba102c1",
+          "ce944527664994af3420245eaee14af6291ff9d1fa23f46f59edaad035d9d239",
+          "a3b4a1d0f25fdd2ead67ebbab415f6c3a932efafdf087c15b050546c8d52388b",
+          "0b7c126f4dea0c8eb4b350e61083c58a8844798f1d406586597277b366215ae4",
+          "2774a0b4627424b8afa4e28a44cb0d98bc05c86fa2600ca187b42ea72cea553f",
+          "f92b4863ac1e195432384ef53f4a2abbc48924f8d2cbc6e59f5d01f8b96e1277",
+          "5b6715e03b38beb35cddbb508fcc3051b89052ee9553476e8693c2cb50db07df",
+          "1bc00277be51d0ef01160c4e22f794ced438209d9b68c29548852f3cfe29b63d",
+          "66f397fd8bcef7a8f54eddc49d641fc4fccbf36777e306f8c477f8cb19d0c60c",
+          "c3bb683182ca2108308fec5ccfd70f4eb7d6c4acc6e4e3ab96d75a18b45b54b7",
+          "ff0ff20583a5a71bd2cb3f08d5dc2078806263159abddae6efb4183ef2dc1ce2",
+          "c2b10d797bbdd3a645e0ca8fb91df6f1b9c4e8d36962995b34e60bb1626d3fb7",
+          "7d6c9e6a558e7cffc2a1e6eef4f6cc13e2c016fa22ae77d9f827178138fe6a8c",
+          "fe332ac8e06fe114d6c271b1dc07b7c43c6d21e4235800de57f8a5b82dd99e6b",
+          "f6ed684568ddbbcaf882cca59b1f29933f8a89535bd71828a9220de516ec74b3",
+          "669f07b464d2068b4dfa39923e308549032050b47d6d0d37ece8fbc611fabf82"
+        ],
+        "history": [
+          "bfba7e2f7c514d118ef2ac41a34f96c53de0b9127d5795a9c32d7c1dd75a1449",
+          "4cd4695ba1251fe3a07427d9034ade63911d0d9f018133d85686cb787347559d",
+          "7779ba7cba28100b3ee1436b5b04885ab1fc493439764e766a687ffed570f014"
+        ],
+        "cacheParametersHash": "fcaa1c2a1171a6caf286fe786ae72de9531b3ab134675739d9828a5d6c5250f8",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "6009cdc8630b8e68690af7231e7da533b739654fafac3b0c2c9fa7b0298c05c9",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-16",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_096b6d2b1310a9fc016ab4e7324b9887d0a6fca465e30c8b1e",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": null,
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790240594148,
+        "tokens": {
+          "totalInput": 7416,
+          "uncachedInput": 1272,
+          "cacheRead": 6144,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 894,
+          "reasoning": 480,
+          "totalOutput": 1374
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790240562913,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790240568484,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790240594148,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790240562913
+    }
+  ],
+  "cleanups": [
+    {
+      "arm": "baseline",
+      "source": "retained-os-process-ancestry-and-start-identities",
+      "rootPid": 22486,
+      "rootObserved": true,
+      "observationIntervalMs": 500,
+      "observationErrors": [],
+      "observedProcesses": [
+        {
+          "pid": 22486,
+          "parentPid": 22477,
+          "startIdentity": "Thu Sep 24 12:59:03 2026"
+        },
+        {
+          "pid": 22499,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 12:59:04 2026"
+        },
+        {
+          "pid": 22517,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 12:59:05 2026"
+        },
+        {
+          "pid": 22518,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 12:59:05 2026"
+        },
+        {
+          "pid": 22541,
+          "parentPid": 22517,
+          "startIdentity": "Thu Sep 24 12:59:06 2026"
+        },
+        {
+          "pid": 22542,
+          "parentPid": 22517,
+          "startIdentity": "Thu Sep 24 12:59:06 2026"
+        },
+        {
+          "pid": 22557,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 12:59:06 2026"
+        },
+        {
+          "pid": 22558,
+          "parentPid": 22517,
+          "startIdentity": "Thu Sep 24 12:59:06 2026"
+        },
+        {
+          "pid": 22685,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 12:59:08 2026"
+        },
+        {
+          "pid": 22847,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 12:59:13 2026"
+        },
+        {
+          "pid": 22907,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 12:59:13 2026"
+        },
+        {
+          "pid": 24242,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 12:59:42 2026"
+        },
+        {
+          "pid": 24619,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 12:59:43 2026"
+        },
+        {
+          "pid": 25000,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 12:59:43 2026"
+        },
+        {
+          "pid": 25332,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 12:59:44 2026"
+        },
+        {
+          "pid": 25692,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 12:59:44 2026"
+        },
+        {
+          "pid": 25693,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 12:59:44 2026"
+        },
+        {
+          "pid": 26069,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 12:59:45 2026"
+        },
+        {
+          "pid": 26561,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 12:59:45 2026"
+        },
+        {
+          "pid": 27001,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 12:59:46 2026"
+        },
+        {
+          "pid": 28435,
+          "parentPid": 22517,
+          "startIdentity": "Thu Sep 24 12:59:48 2026"
+        },
+        {
+          "pid": 71609,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 13:00:33 2026"
+        },
+        {
+          "pid": 72239,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 13:00:34 2026"
+        },
+        {
+          "pid": 72720,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 13:00:35 2026"
+        },
+        {
+          "pid": 73114,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 13:00:35 2026"
+        },
+        {
+          "pid": 73143,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 13:00:36 2026"
+        },
+        {
+          "pid": 73412,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 13:00:36 2026"
+        },
+        {
+          "pid": 73730,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 13:00:36 2026"
+        },
+        {
+          "pid": 74313,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 13:00:37 2026"
+        },
+        {
+          "pid": 74957,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 13:00:37 2026"
+        },
+        {
+          "pid": 1941,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 13:01:03 2026"
+        },
+        {
+          "pid": 1966,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 13:01:04 2026"
+        },
+        {
+          "pid": 1968,
+          "parentPid": 22486,
+          "startIdentity": "Thu Sep 24 13:01:04 2026"
+        }
+      ],
+      "remainingProcessIds": [],
+      "signals": [],
+      "trackingClosed": true
+    },
+    {
+      "arm": "candidate",
+      "source": "retained-os-process-ancestry-and-start-identities",
+      "rootPid": 3427,
+      "rootObserved": true,
+      "observationIntervalMs": 500,
+      "observationErrors": [],
+      "observedProcesses": [
+        {
+          "pid": 3427,
+          "parentPid": 22477,
+          "startIdentity": "Thu Sep 24 13:01:17 2026"
+        },
+        {
+          "pid": 3439,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:01:17 2026"
+        },
+        {
+          "pid": 3529,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:01:18 2026"
+        },
+        {
+          "pid": 3530,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:01:18 2026"
+        },
+        {
+          "pid": 3603,
+          "parentPid": 3529,
+          "startIdentity": "Thu Sep 24 13:01:19 2026"
+        },
+        {
+          "pid": 3687,
+          "parentPid": 3529,
+          "startIdentity": "Thu Sep 24 13:01:19 2026"
+        },
+        {
+          "pid": 3695,
+          "parentPid": 3529,
+          "startIdentity": "Thu Sep 24 13:01:19 2026"
+        },
+        {
+          "pid": 3725,
+          "parentPid": 3695,
+          "startIdentity": "Thu Sep 24 13:01:20 2026"
+        },
+        {
+          "pid": 3726,
+          "parentPid": 3695,
+          "startIdentity": "Thu Sep 24 13:01:20 2026"
+        },
+        {
+          "pid": 3796,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:01:21 2026"
+        },
+        {
+          "pid": 3836,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:01:21 2026"
+        },
+        {
+          "pid": 3907,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:01:22 2026"
+        },
+        {
+          "pid": 3949,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:01:23 2026"
+        },
+        {
+          "pid": 3950,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:01:23 2026"
+        },
+        {
+          "pid": 4011,
+          "parentPid": 3529,
+          "startIdentity": "Thu Sep 24 13:01:23 2026"
+        },
+        {
+          "pid": 4020,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:01:23 2026"
+        },
+        {
+          "pid": 4202,
+          "parentPid": 3529,
+          "startIdentity": "Thu Sep 24 13:01:25 2026"
+        },
+        {
+          "pid": 4212,
+          "parentPid": 3529,
+          "startIdentity": "Thu Sep 24 13:01:25 2026"
+        },
+        {
+          "pid": 4829,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:01:29 2026"
+        },
+        {
+          "pid": 4836,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:01:29 2026"
+        },
+        {
+          "pid": 4919,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:01:30 2026"
+        },
+        {
+          "pid": 5006,
+          "parentPid": 3529,
+          "startIdentity": "Thu Sep 24 13:01:30 2026"
+        },
+        {
+          "pid": 5075,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:01:31 2026"
+        },
+        {
+          "pid": 5077,
+          "parentPid": 5075,
+          "startIdentity": "Thu Sep 24 13:01:31 2026"
+        },
+        {
+          "pid": 5388,
+          "parentPid": 3529,
+          "startIdentity": "Thu Sep 24 13:01:34 2026"
+        },
+        {
+          "pid": 5389,
+          "parentPid": 3529,
+          "startIdentity": "Thu Sep 24 13:01:34 2026"
+        },
+        {
+          "pid": 8676,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:02:03 2026"
+        },
+        {
+          "pid": 8714,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:02:03 2026"
+        },
+        {
+          "pid": 8715,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:02:03 2026"
+        },
+        {
+          "pid": 8822,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:02:04 2026"
+        },
+        {
+          "pid": 8880,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:02:05 2026"
+        },
+        {
+          "pid": 8881,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:02:05 2026"
+        },
+        {
+          "pid": 8883,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:02:05 2026"
+        },
+        {
+          "pid": 8930,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:02:05 2026"
+        },
+        {
+          "pid": 9081,
+          "parentPid": 3529,
+          "startIdentity": "Thu Sep 24 13:02:07 2026"
+        },
+        {
+          "pid": 12737,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:02:39 2026"
+        },
+        {
+          "pid": 12808,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:02:40 2026"
+        },
+        {
+          "pid": 12886,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:02:40 2026"
+        },
+        {
+          "pid": 12949,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:02:41 2026"
+        },
+        {
+          "pid": 12951,
+          "parentPid": 3529,
+          "startIdentity": "Thu Sep 24 13:02:41 2026"
+        },
+        {
+          "pid": 12952,
+          "parentPid": 3529,
+          "startIdentity": "Thu Sep 24 13:02:41 2026"
+        },
+        {
+          "pid": 13451,
+          "parentPid": 3529,
+          "startIdentity": "Thu Sep 24 13:02:45 2026"
+        },
+        {
+          "pid": 15682,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:03:14 2026"
+        },
+        {
+          "pid": 15711,
+          "parentPid": 3427,
+          "startIdentity": "Thu Sep 24 13:03:14 2026"
+        },
+        {
+          "pid": 15714,
+          "parentPid": 15711,
+          "startIdentity": "Thu Sep 24 13:03:14 2026"
+        }
+      ],
+      "remainingProcessIds": [],
+      "signals": [],
+      "trackingClosed": true
+    }
+  ],
+  "scope": "Live model behavior with the product Plan-mode preface repeated on three user turns (two seeded with noReply); not an accepted() field."
+}

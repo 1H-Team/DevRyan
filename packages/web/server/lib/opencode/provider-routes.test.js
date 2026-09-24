@@ -1512,6 +1512,24 @@ describe('OpenCode provider routes', () => {
     expect(refreshModel).not.toHaveBeenCalled();
   });
 
+  it('keeps a session\'s Grok tool overrides stable when the catalog refreshes mid-session', async () => {
+    let overrides = { mcp__a: false };
+    const getPromptToolOverrides = vi.fn(() => overrides);
+    const { app } = createApp({
+      xaiToolCatalogRuntime: { supportsProvider: () => true, getPromptToolOverrides, refreshModel: vi.fn() },
+    });
+    app.post('/api/session/:sessionID/prompt_async', (req, res) => res.json({ tools: req.body.tools }));
+    const send = (sessionID) => request(app)
+      .post(`/api/session/${sessionID}/prompt_async?directory=%2Ftmp%2Fproject`)
+      .send({ model: { providerID: 'xai', modelID: 'grok-4.6' }, messageID: 'msg_1', parts: [{ type: 'text', text: 'hi' }] })
+      .expect(200);
+    expect((await send('ses_a')).body.tools).toEqual({ mcp__a: false });
+    overrides = { mcp__b: false };
+    // The same session keeps its first set; a new session gets the refreshed one.
+    expect((await send('ses_a')).body.tools).toEqual({ mcp__a: false });
+    expect((await send('ses_b')).body.tools).toEqual({ mcp__b: false });
+  });
+
   it('warms the Grok tool catalog on a cold cache before forwarding the first prompt', async () => {
     const overrides = { mcp__context_mode__ctx_search: false };
     let warmed = false;

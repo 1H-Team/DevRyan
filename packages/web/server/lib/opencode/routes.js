@@ -889,6 +889,8 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     return next();
   });
 
+  // Bounded per-session xAI tool overrides (see the freeze note below).
+  const xaiSessionToolOverrides = new Map();
   app.post('/api/session/:sessionID/prompt_async', async (req, res, next) => {
     const sessionID = req.params.sessionID;
     const providerID = typeof req.body?.model?.providerID === 'string'
@@ -904,9 +906,15 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     try {
       const directory = await resolveRequestDirectory(req);
       const isXaiProvider = xaiToolCatalogRuntime?.supportsProvider?.(providerID) === true;
-      let cachedXaiTools = isXaiProvider
+      // The tool block is part of the cached provider prefix: once a session
+      // has sent reduced overrides, keep that exact set even if the catalog
+      // later refreshes, so the prefix never changes mid-session.
+      const frozenKey = isXaiProvider && process.env.DEVRYAN_XAI_TOOLS_SESSION_FREEZE !== '0'
+        ? `${directory}\0${sessionID}\0${providerID}\0${modelID}` : null;
+      const frozenXaiTools = frozenKey ? xaiSessionToolOverrides.get(frozenKey) : undefined;
+      let cachedXaiTools = frozenXaiTools ?? (isXaiProvider
         ? xaiToolCatalogRuntime?.getPromptToolOverrides?.({ directory, providerID, modelID })
-        : null;
+        : null);
       if (isXaiProvider && cachedXaiTools === null) {
         // Cold start: without this bounded warm, the first xai prompt ships the
         // full duplicated MCP tool catalog (the dedupe overrides only existed
@@ -927,6 +935,10 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
           modelID,
           waitedMs: Date.now() - coldWaitStartedAt,
         });
+      }
+      if (frozenKey && !frozenXaiTools && cachedXaiTools && Object.keys(cachedXaiTools).length > 0) {
+        xaiSessionToolOverrides.set(frozenKey, cachedXaiTools);
+        while (xaiSessionToolOverrides.size > 512) xaiSessionToolOverrides.delete(xaiSessionToolOverrides.keys().next().value);
       }
       if (cachedXaiTools && Object.keys(cachedXaiTools).length > 0) {
         const existingTools = req.body?.tools && typeof req.body.tools === 'object' && !Array.isArray(req.body.tools)

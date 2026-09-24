@@ -9,7 +9,7 @@ import { openChangeStore, changeKey } from './session-changes-store.js';
 import { safeChangePath, verifyAncestors } from './session-changes-snapshot.js';
 import { withCrossProcessFileLock, writeFileAtomic } from './atomic-file.js';
 import { applyMutationText, initialMutationRuns, mutationText, visibleMutationRuns } from './session-mutation-text.js';
-import { inspectMutationFile, copyMutationObject, mutationFileStamp, GRANULAR_TEXT_BYTES } from './session-mutation-files.js';
+import { inspectMutationFile, copyMutationObject, mutationFileStamp, mutationStatStamp, GRANULAR_TEXT_BYTES } from './session-mutation-files.js';
 import { withExecutionIO } from './execution-io-pool.js';
 import { markObjectIfUnsynced } from './object-durability.js';
 import { readSessionExecutionReceipt } from './session-execution.js';
@@ -100,8 +100,30 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     repo.db.remove('materialization.json');
     await repo.db.commit();
   };
+  // Every ledger operation resolves its repository; avoid a git spawn per call.
+  // A cached answer stays valid only while the repository's `.git` entry keeps
+  // its identity and no nested `.git` appears between the directory and it.
+  const repositories = new Map();
+  const gitMarker = async (directory) => {
+    const stat = await fs.lstat(path.join(directory, '.git'), { bigint: true }).catch((cause) => {
+      if (['ENOENT', 'ENOTDIR'].includes(cause.code)) return null; throw cause;
+    });
+    return stat ? `${stat.dev}:${stat.ino}:${stat.ctimeNs}` : null;
+  };
+  const cachedRepository = async (logicalDirectory) => {
+    const cached = repositories.get(logicalDirectory);
+    if (!cached || await gitMarker(cached.directory) !== cached.marker) return null;
+    for (let current = logicalDirectory; current !== cached.directory; current = path.dirname(current)) {
+      if (current === path.dirname(current) || await gitMarker(current) !== null) return null;
+    }
+    return cached;
+  };
   const resolveRepository = async (requested) => {
     const logicalDirectory = await fs.realpath(requested);
+    if (process.env.DEVRYAN_LEDGER_REPOSITORY_CACHE !== '0') {
+      const cached = await cachedRepository(logicalDirectory);
+      if (cached) return { logicalDirectory, directory: cached.directory, vcs: true };
+    }
     let vcs = true;
     const root = await git(logicalDirectory, ['rev-parse', '--show-toplevel'], { limit: 16 * 1024 }).then((value) => value.toString(), (cause) => {
       if (cause.code !== 'capture_not_git') throw cause;
@@ -110,6 +132,11 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     const directory = await fs.realpath(root.endsWith('\n') ? root.slice(0, -1) : root);
     const relative = path.relative(directory, logicalDirectory);
     if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw changeError('session_directory_mismatch');
+    const marker = vcs ? await gitMarker(directory) : null;
+    if (marker) {
+      repositories.delete(logicalDirectory); repositories.set(logicalDirectory, { directory, marker });
+      while (repositories.size > 256) repositories.delete(repositories.keys().next().value);
+    }
     return { logicalDirectory, directory, vcs };
   };
   // Callers queued behind a repository's lock follow its current holder's
@@ -344,7 +371,8 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         if (++attempts > 4) throw changeError('workspace_changing', 503);
         dirty = false;
         const snapshot = { directory: lease.projectDirectory, root, gitDir, db: await openChangeStore(root, gitDir) };
-        const paths = await activePaths(snapshot), names = new Set(paths.keys());
+        // Read-only here: reuse the listing cached by immutable `files` tree identity.
+        const paths = await snapshotPaths(snapshot), names = new Set(paths.keys());
         for await (const file of filesIn(snapshot)) if (safeChangePath(file)) names.add(file);
         let rows = [], rowBytes = 0;
         const install = async () => {
@@ -581,6 +609,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         if (session?.generation !== lease.generation || session.pending) throw changeError('execution_reverted');
         lease.baseSequence = repo.meta.sequence;
         lease.snapshotRef = repo.db.leaseRef(lease.token);
+        // Base runs are recomputed from this pinned, immutable snapshot at
+        // publication, for changed files only, instead of being copied per file.
+        if (process.env.DEVRYAN_LAZY_BASE_RUNS !== '0') lease.lazyBaseRuns = true;
         repo.db.set(key('leases', lease.token), lease);
         // pin commits the identity before installing the ref, closing the
         // crash window between ref creation and its durable association.
@@ -598,12 +629,14 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
             checkExecutionAdmission();
             await write(repo, file, doc.published, lease.viewDirectory, { durable: false });
             const stat = await fs.lstat(path.join(lease.viewDirectory, file), { bigint: true });
-            return `${stat.dev}:${stat.ino}`;
+            // The full stamp lets publication reuse this entry for an untouched file.
+            return { identity: `${stat.dev}:${stat.ino}`, stamp: mutationStatStamp(stat) };
           });
           for (const [index, [file, doc]] of live.slice(start, start + 64).entries()) {
-            if (!disabled.size && doc.runsUnfiltered) await db.importPrefix(db.tree, `runs/${doc.id}`, `bases/${lease.token}/${doc.id}`);
+            if (lease.lazyBaseRuns) { /* derived from the pinned snapshot at publication */ }
+            else if (!disabled.size && doc.runsUnfiltered) await db.importPrefix(db.tree, `runs/${doc.id}`, `bases/${lease.token}/${doc.id}`);
             else await saveRuns(repo, doc.id, visibleMutationRuns(await runsFor(repo, doc.id), disabled), `bases/${lease.token}`);
-            yield { path: file, documentID: doc.id, entry: doc.published, identity: identities[index] };
+            yield { path: file, documentID: doc.id, entry: doc.published, ...identities[index] };
           }
         }
       };
@@ -636,7 +669,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         if ((await current.db.get(key('leases', lease.token)))?.state === 'cancelled') throw changeError('execution_cancelled');
         const session = await current.db.get(key('sessions', lease.scope.sessionID));
         if (session.generation !== lease.generation || session.pending) throw changeError('execution_reverted');
-        await current.db.importPrefix(db.tree, `bases/${lease.token}`);
+        if (!lease.lazyBaseRuns) await current.db.importPrefix(db.tree, `bases/${lease.token}`);
         lease.state = 'ready'; current.db.set(key('leases', lease.token), lease); return lease;
       });
     } catch (error) {
@@ -660,16 +693,38 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     if (captured.state === 'published') return captured.result;
     if (captured.state !== 'ready') throw changeError('execution_not_ready');
     const base = new Map(), identities = new Map(), files = new Map();
+    let snapshot = null, snapshotInactive = null;
+    // Exactly the runs the view was materialized from: the pinned snapshot's
+    // runs filtered by the operations inactive in that same snapshot.
+    const baseRuns = async (repo, documentID) => {
+      if (!captured.lazyBaseRuns) return runsFor(repo, documentID, `bases/${token}`);
+      snapshotInactive ??= await inactive(snapshot);
+      return visibleMutationRuns(await runsFor(snapshot, documentID), snapshotInactive);
+    };
     if (captured.preparation !== 'none') {
       const root = rootFor(captured.projectDirectory), db = await openChangeStore(root, path.join(root, 'git'),
         captured.snapshotRef ? { ref: captured.snapshotRef } : {});
       const repo = { root, directory: captured.projectDirectory };
+      snapshot = { root, directory: captured.projectDirectory, db };
       for await (const file of db.list(`bases/${token}/files`)) { base.set(file.path, file); if (file.identity) identities.set(file.identity, file); }
       // The host has verified native termination before calling finish. Hashing
       // this immutable output does not serialize unrelated project admissions.
       const viewFiles = [];
       for await (const file of filesIn({ directory: captured.viewDirectory })) if (safeChangePath(file)) viewFiles.push(file);
-      const entries = await mapBounded(viewFiles, (file) => inspect(repo, file, captured.viewDirectory));
+      // An untouched view file keeps its materialization stamp (inode, size,
+      // mode and nanosecond mtime/ctime): any write, chmod or replacement moves
+      // ctime or the inode. Whole-second ctimes cannot rule out a same-tick
+      // write (git's racy-clean case), so those files are always re-hashed.
+      const reuse = process.env.DEVRYAN_VIEW_STAT_REUSE !== '0';
+      const precise = (value) => typeof value === 'string' && value.split(':')[4] !== undefined && !value.split(':')[4].endsWith('000000000');
+      const entries = await mapBounded(viewFiles, async (file) => {
+        const row = base.get(file);
+        // The walk descends only real directories and every writer has
+        // terminated, so the file's own lstat is sufficient here.
+        if (reuse && row?.stamp && precise(row.stamp) && mutationStatStamp(await fs.lstat(path.join(captured.viewDirectory, file), { bigint: true })
+          .catch((cause) => { if (['ENOENT', 'ENOTDIR'].includes(cause.code)) return null; throw cause; })) === row.stamp) return row.entry;
+        return inspect(repo, file, captured.viewDirectory);
+      });
       viewFiles.forEach((file, index) => files.set(file, entries[index]));
       for (const file of base.keys()) if (!files.has(file)) files.set(file, null);
     }
@@ -703,7 +758,8 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         promptSequence: lease.promptSequence, origins: lease.origins,
         active: true, origin: 'execution', files: [], baseSequence: lease.baseSequence };
       const changed = new Map(), moved = new Set(), disabled = await inactive(repo), conflicts = [];
-      const published = await activePaths(repo);
+      // Read-only; the tree-identity cache applies only without pending writes.
+      const published = repo.db.pendingCount === 0 ? await snapshotPaths(repo) : await activePaths(repo);
       const conflict = async (file, from, entry, doc) => {
         const before = from?.entry ?? null, current = doc?.published?.deleted ? null : doc?.published ?? null;
         const changesContent = (before?.hash ?? null) !== (entry?.hash ?? null);
@@ -731,7 +787,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         const doc = from ? await repo.db.get(key('files', from.documentID)) : null;
         if (await conflict(file, from, entry, doc ?? published.get(file))) continue;
         const updated = await recordFile(repo, { doc, entry, file, operation, disabled, baseEntry: from?.entry, basePath: from?.path,
-          beforeRuns: from ? await runsFor(repo, from.documentID, `bases/${token}`) : [] });
+          beforeRuns: from ? await baseRuns(repo, from.documentID) : [] });
         changed.set(updated.id, updated);
       }
       for (const [file, from] of base) {
@@ -1096,6 +1152,44 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     repo.db.set(key('transactions', tx.id), tx);
     return tx;
   });
+  // Compare-and-swap restoration of content the ledger does not own (legacy,
+  // uncaptured conversations). Under the publication lock, each path is
+  // written only while its bytes still equal `expected`; a path already at
+  // `target` is done (idempotent recovery); anything else is a conflict and is
+  // left untouched. Results are reconciled as external changes, like any
+  // foreign edit. Entries are { path, expected, target } with each side
+  // { mode, bytes } or null for an absent file.
+  const restoreForeign = (input) => locked(input.directory, async (repo) => {
+    const files = [], conflicts = [], written = [];
+    // Only a target is stored; an expected side is compared by digest.
+    const describeSide = async (side, store) => side ? { hash: store ? await putBytes(repo, side.bytes) : digest(side.bytes), mode: side.mode,
+      ...(side.mode === '120000' ? {} : { permissions: side.mode === '100755' ? 0o755 : 0o644 }) } : null;
+    const same = (current, side) => (current?.hash ?? null) === (side?.hash ?? null) && (current?.mode ?? null) === (side?.mode ?? null);
+    for (const change of input.files ?? []) {
+      if (!safeChangePath(change?.path)) throw changeError('invalid_change_record');
+      checkExecutionAdmission();
+      const expected = await describeSide(change.expected, false), target = await describeSide(change.target, true);
+      const current = await inspect(repo, change.path);
+      if (same(current, target)) { files.push({ path: change.path, status: 'unchanged' }); continue; }
+      if (!same(current, expected)) { conflicts.push({ path: change.path }); continue; }
+      await write(repo, change.path, target);
+      if (!same(await inspect(repo, change.path), target)) throw changeError('mutation_recovery_required', 503);
+      written.push(change.path);
+      files.push({ path: change.path, status: !target ? 'deleted' : !expected ? 'added' : 'modified' });
+    }
+    if (written.length) await reconcile(repo, written);
+    return { files, conflicts };
+  });
+  // Read-only ownership evidence for callers that run without the companion.
+  // A session the ledger has registered, or any prepared transaction in its
+  // project, must never be reverted by a path that bypasses the ledger.
+  const capturedSessionState = (input) => snapshotOrLocked(input.directory, async (repo) => {
+    if (!repo) return { captured: false, pending: false };
+    const session = await repo.db.get(key('sessions', input.sessionID));
+    let pending = Boolean(session?.pending);
+    if (!pending) for await (const { value } of repo.db.entries('transactions')) if (value.state === 'prepared') { pending = true; break; }
+    return { captured: Boolean(session), pending };
+  }, { requireExisting: true });
   const pendingTransactions = (input) => locked(input.directory, async (repo) => {
     const entries = [];
     for await (const { value } of repo.db.entries('transactions')) if (value.state === 'prepared') entries.push(value);
@@ -1147,6 +1241,6 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   };
   return { projectDirectories, projectDirectory: (input) => locked(input.directory, (repo) => repo.directory),
     assertAdmission, registerPrompt, registerChild, reserve, prepare, begin, claimLease, finish, cleanupLease, executionReceipt, aliasCalls, prepareRevert, prepareRedo, prepareFileRestore, settleRevert, leaseForCall,
-    transaction, updateTransaction, pendingTransactions, cancelLease, cancelUnstartedCall, activeLeases, pendingCleanup, executionOutcomes,
+    transaction, updateTransaction, pendingTransactions, capturedSessionState, restoreForeign, cancelLease, cancelUnstartedCall, activeLeases, pendingCleanup, executionOutcomes,
     drain: () => Promise.allSettled([...preparations.values(), ...settlements.values(), ...queues.values()]) };
 }

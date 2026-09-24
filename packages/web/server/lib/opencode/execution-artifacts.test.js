@@ -61,3 +61,19 @@ test('required artifact failures preserve diagnostics and block all mutating exe
     expect((await executionRuntimeState({ runtimeMode: 'external', directory })).state).toBe('not_expected');
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
 });
+
+test('a managed host without a verified companion degrades to plain OpenCode instead of blocking', async () => {
+  const { executionRuntimeState, executionReadinessMiddleware } = await import('./execution-artifacts.js');
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'execution-degraded-'));
+  try {
+    const state = await executionRuntimeState({ runtimeMode: 'managed', directory, pluginDirectory: directory, dataDirectory: directory });
+    // Unsupported platforms never expect the companion; supported ones degrade.
+    expect(['degraded', 'not_expected']).toContain(state.state);
+    expect(state.environment).toEqual({});
+    expect(() => state.assertReady()).not.toThrow();
+    if (state.state === 'degraded') expect(state.diagnostic.code).toBe('execution_artifacts_unavailable');
+    let next = false;
+    executionReadinessMiddleware(state)({ method: 'POST', path: '/api/session/s/prompt_async' }, {}, () => { next = true; });
+    expect(next).toBe(true);
+  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+});

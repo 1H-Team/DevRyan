@@ -16,6 +16,7 @@ export function createSessionChangeHost(options) {
   const runtime = createSessionChangeRuntime({ directory: path.join(options.dataDirectory, 'harness', 'session-changes'),
     onDiagnostic: options.onDiagnostic,
     restoreOwned: options.restoreOwned,
+    assertLegacyRestore: options.assertLegacyRestore,
     onChange: ({ directory, sessionID }) => options.publishEvent?.({ type: 'session.changes.updated', properties: { sessionID } }, { directory }),
   });
   const readPool = createBoundedReadPool();

@@ -548,6 +548,8 @@ export const settingsDict = {
   'settings.openchamber.about.opencode.support.unknown': 'Compatibility with this DevRyan build could not be determined.',
   'settings.openchamber.about.opencode.error.loadFailed': 'OpenCode version details could not be loaded. Check again to retry.',
   'settings.openchamber.about.opencode.error.checkFailed': 'The latest OpenCode version could not be checked. Retry in a moment.',
+  'settings.openchamber.about.opencode.companion.active': 'DevRyan companion {version} is protecting concurrent edits and Revert.',
+  'settings.openchamber.about.opencode.companion.degraded': 'The DevRyan companion is unavailable, so DevRyan is running plain OpenCode. Tools are not confined, and conversations with protected edits cannot be reverted until it is restored.',
   'settings.openchamber.about.diagnostics.title': 'Diagnostic Journal',
   'settings.openchamber.about.diagnostics.collecting': 'Collecting sanitized runtime diagnostics',
   'settings.openchamber.about.diagnostics.health': '{sessions} sessions · {size}',

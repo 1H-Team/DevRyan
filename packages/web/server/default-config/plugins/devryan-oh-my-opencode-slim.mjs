@@ -69,6 +69,17 @@ const loadSlimPlugin = async () => {
   return plugin;
 };
 
+const SLIM_PHASE_REMINDER_KEY = 'oh-my-opencode-slim.phaseReminder';
+// Request-local array only; Slim's parts are synthetic and never persisted.
+const stripSlimPhaseReminders = (messages) => {
+  if (!Array.isArray(messages)) return;
+  for (const message of messages) {
+    if (!Array.isArray(message?.parts)) continue;
+    const kept = message.parts.filter((part) => !(part?.synthetic === true && part.metadata?.[SLIM_PHASE_REMINDER_KEY] === true));
+    if (kept.length !== message.parts.length && kept.length > 0) message.parts = kept;
+  }
+};
+
 export const DevRyanOhMyOpenCodeSlimPlugin = async (context) => {
   const slimPlugin = await loadSlimPlugin();
   const plugin = await slimPlugin(managedSlimContext(context));
@@ -89,6 +100,16 @@ export const DevRyanOhMyOpenCodeSlimPlugin = async (context) => {
   const slimConfigHook = typeof plugin.config === 'function' ? plugin.config : null;
   delete plugin.agent;
   delete plugin['experimental.chat.system.transform'];
+  // Slim appends its own scheduler "phase reminder" to every orchestrator user
+  // turn. It contradicts DevRyan's managed-task guidance and grows each turn,
+  // so drop exactly Slim's tagged parts (DEVRYAN_SLIM_PHASE_REMINDER=1 keeps them).
+  const slimMessagesTransform = plugin['experimental.chat.messages.transform'];
+  if (typeof slimMessagesTransform === 'function' && process.env.DEVRYAN_SLIM_PHASE_REMINDER !== '1') {
+    plugin['experimental.chat.messages.transform'] = async (input, output) => {
+      await slimMessagesTransform(input, output);
+      stripSlimPhaseReminders(output?.messages);
+    };
+  }
 
   return {
     ...plugin,

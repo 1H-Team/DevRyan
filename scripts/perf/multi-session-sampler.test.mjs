@@ -189,6 +189,12 @@ describe('process tree classification', () => {
     assert.equal(roleOf(40003), 'git');
     assert.equal(roleOf(35366), 'cloudflared');
     assert.equal(classifyProcess({ pid: 9, command: '/Applications/DevRyan.app/Contents/MacOS/DevRyan --runtime-service' }, { rootPids: new Set([9]) }), 'runtime-service-main');
+     const companion = '/Applications/DevRyan.app/Contents/Resources/revert-runtime/darwin-arm64/DevRyan-opencode-darwin-arm64';
+    const noRoots = { rootPids: new Set() };
+    assert.equal(classifyProcess({ pid: 10, command: `${companion} serve --hostname 127.0.0.1 --port 0` }, noRoots), 'opencode-serve');
+    assert.equal(classifyProcess({ pid: 11, command: `${companion} debug devryan-tool` }, noRoots), 'companion-worker');
+    assert.equal(classifyProcess({ pid: 12, command: '/x/darwin-arm64/DevRyan-execution-darwin-arm64 --owner-lock /tmp/o' }, noRoots), 'execution-launcher');
+    assert.equal(classifyProcess({ pid: 13, command: '/x/node_modules/.bin/typescript-language-server --stdio' }, noRoots), 'lsp');
   });
 
   it('builds command previews and families', () => {

@@ -36,6 +36,15 @@ export function createSessionRevertCoordinator(options: {
     get(input: MutationSessionReference): Promise<MutationSession>;
     revert(input: MutationSessionReference & { messageID: string; partID?: string; files: false }): Promise<MutationSession>;
     unrevert(input: MutationSessionReference): Promise<MutationSession>;
+    /** Required with `legacy`: direct children and one message for adopted conversations. */
+    children?(input: MutationSessionReference): Promise<Array<{ id: string }>>;
+    message?(input: MutationSessionReference & { messageID: string }): Promise<{ info: { id: string; role: string; time: { created: number } } }>;
+  };
+  /** Uncaptured change evidence for conversations that ran without the companion. */
+  legacy?: {
+    history(input: { directory: string; sessionIDs: string[]; since: number }): Promise<Array<{ path: string;
+      current: { mode: string; oid: string } | null; previous: { mode: string; oid: string } | null }>>;
+    blob(input: { directory: string; oid: string }): Promise<Uint8Array>;
   };
   executions: {
     isConfined(input: { directory: string }): Promise<boolean>;

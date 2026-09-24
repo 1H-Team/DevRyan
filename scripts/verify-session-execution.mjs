@@ -80,6 +80,25 @@ native('the command cannot retain an inherited writable project handle', async (
   } finally { await descriptor.close(); }
 }, 20_000);
 
+native('name resolution is reachable while other local unix sockets stay denied', async () => {
+  const f = await fixture();
+  const net = await import('node:net');
+  // A host-side socket stands in for any local daemon (Docker, ssh-agent).
+  const socketPath = path.join(f.root, 'daemon.sock');
+  const server = net.createServer((socket) => socket.end('reached')).listen(socketPath);
+  await new Promise((resolve) => server.once('listening', resolve));
+  try {
+    const probe = (target) => `new Promise((resolve) => { const s = require('node:net').connect(${JSON.stringify(target)});
+      s.once('connect', () => { s.destroy(); resolve('connected'); }); s.once('error', (e) => resolve(e.code)); })`;
+    const handle = await f.run(`Promise.all([${probe('/private/var/run/mDNSResponder')}, ${probe(socketPath)}])
+      .then(([resolver, daemon]) => require('node:fs').writeFileSync('probe', JSON.stringify({ resolver, daemon })))`);
+    assert.equal((await handle.result).exitCode, 0, handle.output().stderr);
+    const probe_ = JSON.parse(await fs.readFile(path.join(f.viewDirectory, 'probe'), 'utf8'));
+    assert.equal(probe_.resolver, 'connected');
+    assert.notEqual(probe_.daemon, 'connected');
+  } finally { await new Promise((resolve) => server.close(resolve)); }
+}, 20_000);
+
 native('metadata writes cannot change the original project through an absolute path', async () => {
   const f = await fixture(), original = path.join(f.root, 'original');
   await fs.writeFile(original, 'preserved', { mode: 0o600 });
@@ -170,6 +189,9 @@ native('the provider transport streams through native confinement and cannot mut
     const child = spawnConfinedProvider({ command: process.execPath, args: ['-e', `const fs=require('node:fs');
       try { fs.writeFileSync(${JSON.stringify(original)}, 'lost'); process.exit(2); }
       catch (error) { if (!['EPERM','EACCES','EROFS'].includes(error.code)) throw error; }
+      try { fs.writeFileSync('in-project', 'lost'); process.exit(3); }
+      catch (error) { if (!['EPERM','EACCES','EROFS'].includes(error.code)) throw error; }
+      if (process.platform === 'darwin' && fs.realpathSync(process.cwd()) !== ${JSON.stringify(await fs.realpath(f.viewDirectory))}) process.exit(4);
       process.stdin.pipe(process.stdout);`], cwd: f.viewDirectory, env: { PATH: process.env.PATH, HOME: f.root } });
     let output = '', stderr = ''; child.stdout.on('data', (chunk) => output += chunk); child.stderr.on('data', (chunk) => stderr += chunk);
     child.stdin.end('transport-ok');

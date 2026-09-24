@@ -10,6 +10,7 @@ export const createOpenCodeResolutionRuntime = (dependencies) => {
     getResolvedState,
     setResolvedOpencodeBinarySource,
     getDetectedOpenCodeVersion,
+    getCompanionState,
   } = dependencies;
 
   const getOpenCodeResolutionSnapshot = async (settings) => {
@@ -53,6 +54,7 @@ export const createOpenCodeResolutionRuntime = (dependencies) => {
       targetVersion: TARGET_OPENCODE_VERSION,
       installCommand: OPENCODE_TARGET_INSTALL_COMMAND,
       detectedVersion: typeof getDetectedOpenCodeVersion === 'function' ? getDetectedOpenCodeVersion() || null : null,
+      companion: typeof getCompanionState === 'function' ? getCompanionState() : null,
       configured,
       resolved,
       resolvedDir: resolved ? path.dirname(resolved) : null,

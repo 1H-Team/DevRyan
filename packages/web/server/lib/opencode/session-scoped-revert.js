@@ -1798,7 +1798,8 @@ const sendScopedRevertError = (res, error, fallbackMessage) => {
   }
   if (error instanceof ScopedRevertConflictError || ['mutation_runtime_unsupported', 'mutation_platform_unsupported',
     'mutation_history_unavailable', 'mutation_cancellation_failed', 'mutation_termination_unconfirmed',
-    'mutation_recovery_required', 'mutation_recovery_failed', 'session_directory_mismatch', 'session_reverting', 'revert_cancelled'].includes(error?.code)) {
+    'mutation_recovery_required', 'mutation_recovery_failed', 'mutation_history_captured', 'mutation_recovery_pending',
+    'session_directory_mismatch', 'session_reverting', 'revert_cancelled'].includes(error?.code)) {
     const payload = { error: error.message, code: error.code };
     if (Array.isArray(error.files)) payload.files = error.files;
     if (typeof error.file === 'string') payload.file = error.file;
@@ -1809,6 +1810,12 @@ const sendScopedRevertError = (res, error, fallbackMessage) => {
 };
 
 export const registerScopedSessionRevertRoute = (app, deps) => {
+  // Without the ownership ledger's coordinator, the legacy snapshot path must
+  // first prove the conversation has no captured history (see CONCURRENT_REVERT.md).
+  const legacy = (run) => async (options) => {
+    await deps.assertLegacyRevertAllowed?.({ directory: options.directory, sessionID: options.sessionID });
+    return run(options);
+  };
   const diagnostic = (req, requestID, phase, details = {}) => {
     const id = (value) => typeof value === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(value) ? value : undefined;
     try {
@@ -1856,7 +1863,7 @@ export const registerScopedSessionRevertRoute = (app, deps) => {
       }
 
       diagnostic(req, requestID, 'requested');
-      const result = await (deps.sessionRevertCoordinator?.revert ?? runScopedSessionRevert)({
+      const result = await (deps.sessionRevertCoordinator?.revert ?? legacy(runScopedSessionRevert))({
         ...runnerOptions(),
         directory,
         sessionID,
@@ -1891,7 +1898,7 @@ export const registerScopedSessionRevertRoute = (app, deps) => {
       }
 
       diagnostic(req, requestID, 'redo_requested');
-      const result = await (deps.sessionRevertCoordinator?.redo ?? runScopedSessionUnrevert)({
+      const result = await (deps.sessionRevertCoordinator?.redo ?? legacy(runScopedSessionUnrevert))({
         ...runnerOptions(),
         directory,
         sessionID,

@@ -44,6 +44,28 @@ const setup = async (handle, policies = { duplicateOutputs: true, contextProject
 };
 
 describe('conservative duplicate projection', () => {
+  it('keeps the first repeated synthetic instruction and references later identical copies', () => {
+    const preface = 'Plan mode instruction. '.repeat(100);
+    const planUser = (id, extra = []) => ({ info: { id, role: 'user', sessionID: 'ses_root' },
+      parts: [{ type: 'text', synthetic: true, text: preface }, { type: 'text', text: `request ${id}` }, ...extra] });
+    const first = planUser('u1'), second = planUser('u2'), third = planUser('u3');
+    const request = [first, text(), second, third];
+    const stats = projectObservations(request);
+    expect(stats).toMatchObject({ appliedReductions: 2 });
+    expect(request[0]).toBe(first);
+    expect(request[0].parts[0].text).toBe(preface);
+    for (const message of [request[2], request[3]]) {
+      expect(message.parts[0].text).toContain('<devryan_instruction_reuse>');
+      expect(message.parts[1].text).toMatch(/^request u/);
+    }
+    // Canonical records are untouched; a compaction boundary restarts the anchor.
+    expect(second.parts[0].text).toBe(preface);
+    const compacted = [first, { info: { id: 'c', role: 'assistant', sessionID: 'ses_root', summary: true }, parts: [] }, planUser('u4')];
+    projectObservations(compacted);
+    expect(compacted[2].parts[0].text).toBe(preface);
+  });
+
+
   it.each([skill, managed])('mutates the consumed array, clones only changed records and preserves calls/canonical history', factory => {
     const canonical = [factory('a'), factory('b'), text(), factory('c'), factory('d')];
     const copy = structuredClone(canonical), request = [...canonical];

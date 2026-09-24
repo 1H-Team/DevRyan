@@ -26,12 +26,17 @@ const fixture = async () => {
 };
 describe('duplicate output release qualification', () => {
   it('ships only evidence-backed profiles and requires full live acceptance even with environment opt-in', async () => {
-    const f = await fixture(); expect(DUPLICATE_OUTPUT_PROFILES).toHaveLength(1);
+    const f = await fixture(); expect(DUPLICATE_OUTPUT_PROFILES).toHaveLength(2);
     expect(qualifyDuplicateOutputs({ ...f.input, profiles: undefined }).qualified).toBe(false);
     expect(qualifyDuplicateOutputs(f.input).qualified).toBe(true);
-    // The only shipped profile is stale, so the default policy is off.
-    expect(DUPLICATE_OUTPUT_PROFILES.every((profile) => profile.stale)).toBe(true);
-    expect(resolveDuplicateOutputPolicy({})).toBe(false);
+    // The predecessor stays on record as stale; the requalified companion
+    // profile is the only default-enabled one, so the default policy is on.
+    expect(DUPLICATE_OUTPUT_PROFILES.filter((profile) => profile.stale).map((profile) => profile.id))
+      .toEqual(['opencode-1.18.31-openai-sol-medium']);
+    expect(DUPLICATE_OUTPUT_PROFILES.filter((profile) => profile.defaultEnabled && !profile.stale).map((profile) => profile.id))
+      .toEqual(['devryan-companion-2.0.0-openai-sol-medium']);
+    expect(resolveDuplicateOutputPolicy({})).toBe(true);
+    expect(resolveDuplicateOutputPolicy({}, DUPLICATE_OUTPUT_PROFILES.filter((profile) => profile.stale))).toBe(false);
     expect(resolveDuplicateOutputPolicy({}, [{ ...f.profile, defaultEnabled: true, stale: { reason: 'bytes changed', plugins: [] } }])).toBe(false);
     expect(qualifyDuplicateOutputs({ ...f.input, profiles: [{ ...f.profile, stale: { reason: 'bytes changed', plugins: [] } }] }))
       .toEqual({ qualified: false, reason: 'profile-stale' });
@@ -54,7 +59,10 @@ describe('duplicate output release qualification', () => {
       expect(profile.transport).toBe('openai-chatgpt-managed-responses-v1');
       expect(profile.providerScope).toBe('selected-route');
       expect(profile.evidence.livePairs).toBe(10);
-      const report = await fs.readFile(new URL('../../../../../docs/audits/2026-09-20-context-deduplication/live-acceptance.json', import.meta.url));
+      const audit = { 'opencode-1.18.31-openai-sol-medium': '2026-09-20-context-deduplication',
+        'devryan-companion-2.0.0-openai-sol-medium': '2026-09-24-companion-requalification' }[profile.id];
+      expect(audit, profile.id).toBeTruthy();
+      const report = await fs.readFile(new URL(`../../../../../docs/audits/${audit}/live-acceptance.json`, import.meta.url));
       expect(crypto.createHash('sha256').update(report).digest('hex')).toBe(profile.evidence.reportHash);
       expect(JSON.parse(report).qualified).toBe(true);
       // A stale profile must name exactly the bundled plugins whose bytes

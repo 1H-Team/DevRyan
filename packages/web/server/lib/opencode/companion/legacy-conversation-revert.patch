@@ -808,10 +808,10 @@ index de4dc6720..fa274290c 100644
      url.pathname.match(/^\/session\/([^/]+)(?:\/|$)/)?.[1] ??
 diff --git a/packages/opencode/src/session/devryan-execution.ts b/packages/opencode/src/session/devryan-execution.ts
 new file mode 100644
-index 000000000..b877843e4
+index 000000000..d19d01800
 --- /dev/null
 +++ b/packages/opencode/src/session/devryan-execution.ts
-@@ -0,0 +1,551 @@
+@@ -0,0 +1,557 @@
 +import { assertWorkerPayload, prepareWorkerMessages, prepareWorkerPatch } from "./execution-payload"
 +import { startExecutionBrowser } from "./execution-browser"
 +import { RetentionGate } from "./retention-gate"
@@ -1059,7 +1059,10 @@ index 000000000..b877843e4
 +          args: Schema.Unknown, messages: Schema.Unknown, extra: Schema.optional(Schema.Unknown),
 +          config: Record, files: Schema.Array(Schema.String),
 +        }))(JSON.parse(JSON.stringify({
-+          args, messages: prepareWorkerMessages(ctx.messages), extra: ctx.extra,
++          // Only `read` (instruction loading) and plugin tools consume history;
++          // never serialize the conversation for control tools or other built-ins.
++          args, messages: kind === "process" && (source || def.id === "read") ? prepareWorkerMessages(ctx.messages) : [],
++          extra: ctx.extra,
 +          config: { ...cfg, plugin: [...(resolvedPlugins.get(instance.directory) ?? [])].map(([entry, options]) =>
 +            options === undefined ? entry : [entry, options]) },
 +          files: toolFiles.get(instance.directory) ?? [],
@@ -1134,7 +1137,10 @@ index 000000000..b877843e4
 +              ctx,
 +              messages: frozen.messages,
 +              extra: frozen.extra,
-+              config: { ...frozen.config, skills: { paths: skill && skill.source !== "<built-in>" ? [path.dirname(skill.source)] : [], urls: [] } },
++              // Plugin hooks run in the control process; a worker needs plugins
++              // only to resolve a plugin-defined tool. Built-ins boot without them.
++              config: { ...frozen.config, ...(source ? {} : { plugin: [] }),
++                skills: { paths: skill && skill.source !== "<built-in>" ? [path.dirname(skill.source)] : [], urls: [] } },
 +              files: [...frozen.files],
 +              skill,
 +              signal: AbortSignal.any([ctx.abort, controller.signal]),
@@ -2117,7 +2123,7 @@ index 678ed4451..d900620ff 100644
        yield* lsp.touchFile(filepath).pipe(Effect.ignoreCause, Effect.forkIn(scope))
      })
 diff --git a/packages/opencode/src/tool/registry.ts b/packages/opencode/src/tool/registry.ts
-index 9167cb3ea..09eef4519 100644
+index 9167cb3ea..2c1eb2231 100644
 --- a/packages/opencode/src/tool/registry.ts
 +++ b/packages/opencode/src/tool/registry.ts
 @@ -1,6 +1,7 @@
@@ -2257,7 +2263,7 @@ index 9167cb3ea..09eef4519 100644
          if (matches.length) yield* config.waitForDependencies()
          for (const match of matches) {
            const namespace = path.basename(match, path.extname(match))
-@@ -226,6 +243,20 @@ const layer = Layer.effect(
+@@ -226,6 +243,24 @@ const layer = Layer.effect(
            ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),
          })
  
@@ -2265,9 +2271,13 @@ index 9167cb3ea..09eef4519 100644
 +        // the builtin's control-process privileges.
 +        const preludeRead = { ...tool.read }
 +        // Network-only built-ins have no workspace side effects and need the
-+        // host's DNS; file and process tools stay confined.
++        // host's DNS. The built-in read, glob and grep only read the published
++        // project (read's LSP warm-up is disabled in this process; ripgrep is
++        // read-only), so they run here without a private view or worker; the
++        // exemption is by built-in object identity, never by tool name. Writing
++        // and process tools stay confined.
 +        const control = new Set<Tool.Def>([tool.invalid, tool.task, tool.todo, tool.question, tool.plan, tool.fetch,
-+          tool.search])
++          tool.search, ...(process.env.DEVRYAN_NATIVE_READ_TOOLS === "0" ? [] : [tool.read, tool.glob, tool.grep])])
 +        for (const value of Object.values(tool)) {
 +          const wrapped = DevRyanExecution.wrap(value, config, ripgrep.filepath,
 +            control.has(value) ? "control" : "process", undefined,
@@ -2278,7 +2288,7 @@ index 9167cb3ea..09eef4519 100644
          return {
            custom,
            builtin: [
-@@ -248,7 +279,9 @@ const layer = Layer.effect(
+@@ -248,7 +283,9 @@ const layer = Layer.effect(
              ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
            ],
            task: tool.task,
@@ -2289,7 +2299,7 @@ index 9167cb3ea..09eef4519 100644
          }
        }),
      )
-@@ -449,6 +482,7 @@ export const node = LayerNode.make({
+@@ -449,6 +486,7 @@ export const node = LayerNode.make({
      MCP.node,
      Database.node,
      Ripgrep.node,
@@ -2467,6 +2477,274 @@ index 29c22038c..7d728ac7d 100644
    test("unrecognized paths are not local", () => {
      expect(isLocalWorkspaceRoute("GET", "/config")).toBe(false)
      expect(isLocalWorkspaceRoute("POST", "/session/ses_abc/message")).toBe(false)
+diff --git a/packages/opencode/test/session/devryan-execution.test.ts b/packages/opencode/test/session/devryan-execution.test.ts
+new file mode 100644
+index 000000000..74f00c20e
+--- /dev/null
++++ b/packages/opencode/test/session/devryan-execution.test.ts
+@@ -0,0 +1,262 @@
++import { afterEach, describe, expect, test } from "bun:test"
++import { spawn } from "node:child_process"
++import fs from "node:fs/promises"
++import os from "node:os"
++import path from "node:path"
++import { createInterface } from "node:readline"
++import { Effect, Exit, Layer } from "effect"
++import { LayerNode } from "@opencode-ai/core/effect/layer-node"
++import { RipgrepBinary } from "@opencode-ai/core/ripgrep/binary"
++import { Agent } from "@/agent/agent"
++import { Config } from "@/config/config"
++import { InstanceState } from "@/effect/instance-state"
++import { RuntimeFlags } from "@/effect/runtime-flags"
++import { DevRyanExecution } from "@/session/devryan-execution"
++import { MessageID, SessionID } from "@/session/schema"
++import { ToolRegistry } from "@/tool/registry"
++import { disposeAllInstances, TestInstance } from "../fixture/fixture"
++import { TestConfig } from "../fixture/config"
++import { testEffect } from "../lib/effect"
++
++const entry = path.join(import.meta.dir, "../../src/index.ts")
++const sessionID = "ses_0000000000001AAAAAAAAAAAAA"
++const messageID = "msg_0000000000001AAAAAAAAAAAAA"
++
++// A plugin tool that reuses the built-in `read` id with its own `{path}` args.
++const customRead = [
++  "export default {",
++  "  description: 'plugin read',",
++  "  args: { path: { type: 'string' } },",
++  "  async execute(args) {",
++  "    if (typeof args.path !== 'string') throw new TypeError('path must be a string or a file descriptor')",
++  "    return 'custom read ' + args.path",
++  "  },",
++  "}",
++  "",
++].join("\n")
++
++type Frame = { type: string; message?: string; result?: { output: string } }
++
++async function worker(root: string, input: { tool: string; origin: string; ripgrep: string; args: unknown; files?: string[] }) {
++  // Every execution owns a fresh scratch home, as under the native launcher.
++  const view = path.join(root, "view"), scratch = await fs.mkdtemp(path.join(root, "scratch-"))
++  const proc = spawn(process.execPath, [entry, "debug", "devryan-tool"], {
++    cwd: view,
++    stdio: ["pipe", "pipe", "pipe"],
++    // Mirrors the confined worker: no ripgrep on PATH and an empty scratch cache.
++    env: {
++      PATH: "/usr/bin:/bin",
++      HOME: scratch,
++      TMPDIR: scratch,
++      XDG_CONFIG_HOME: path.join(scratch, "config"),
++      XDG_DATA_HOME: path.join(scratch, "data"),
++      XDG_STATE_HOME: path.join(scratch, "state"),
++      XDG_CACHE_HOME: path.join(scratch, "cache"),
++      OPENCODE_TEST_HOME: scratch,
++      OPENCODE_TEST_MANAGED_CONFIG_DIR: path.join(scratch, "managed"),
++      DEVRYAN_EXECUTION_WORKER: "1",
++      OPENCODE_DISABLE_DEFAULT_PLUGINS: "true",
++      OPENCODE_DISABLE_PROJECT_CONFIG: "true",
++      OPENCODE_DISABLE_AUTOUPDATE: "true",
++      OPENCODE_DISABLE_MODELS_FETCH: "true",
++      OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "true",
++    },
++  })
++  const frames: Frame[] = []
++  proc.stderr.resume()
++  proc.stdin.write(JSON.stringify({ config: {}, files: [], messages: [], sessionID, messageID, callID: "call",
++    agent: "build", projectDirectory: view, logicalDirectory: view, ...input }) + "\n")
++  for await (const line of createInterface({ input: proc.stdout, crlfDelay: Infinity })) {
++    if (!line.startsWith(DevRyanExecution.prefix)) continue
++    const frame = JSON.parse(line.slice(DevRyanExecution.prefix.length))
++    if (frame.type === "permission") proc.stdin.write(JSON.stringify({ id: frame.id, approved: true }) + "\n")
++    else frames.push(frame)
++  }
++  return { frames, scratch }
++}
++
++async function workspace() {
++  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "devryan-worker-")))
++  await fs.mkdir(path.join(root, "view"), { recursive: true })
++  await fs.mkdir(path.join(root, "host"), { recursive: true })
++  await fs.writeFile(path.join(root, "view", "a.txt"), "needle\n")
++  // Stands in for the host-resolved executable; it proves the worker used it.
++  const ripgrep = path.join(root, "host", "rg")
++  await fs.writeFile(ripgrep, ["#!/bin/sh", `printf '%s\\n' '${JSON.stringify({ type: "match", data: {
++    path: { text: "./a.txt" }, lines: { text: "needle\n" }, line_number: 1, absolute_offset: 0,
++    submatches: [{ match: { text: "needle" }, start: 0, end: 6 }] } })}'`, ""].join("\n"), { mode: 0o755 })
++  return { root, ripgrep, view: path.join(root, "view") }
++}
++
++describe("confined worker tool identity", () => {
++  test.skipIf(process.platform === "win32")("a custom read tool never captures a built-in read dispatch", async () => {
++    const { root, ripgrep, view } = await workspace()
++    try {
++      const plugin = path.join(root, "host", "read.js"), duplicate = path.join(root, "view", "read.js")
++      await fs.writeFile(plugin, customRead)
++      await fs.writeFile(duplicate, customRead)
++      const [{ frames: builtin }, { frames: custom }] = await Promise.all([
++        worker(root, { tool: "read", origin: "builtin", ripgrep, args: { filePath: path.join(view, "a.txt") }, files: [plugin] }),
++        worker(root, { tool: "read", origin: "custom", ripgrep, args: { path: "a.txt" }, files: [plugin] }),
++      ])
++      expect(builtin).toHaveLength(1)
++      expect(builtin[0].type).toBe("result")
++      expect(builtin[0].result?.output).toContain("needle")
++      expect(custom[0].result?.output).toBe("custom read a.txt")
++      const { frames: ambiguous } = await worker(root, { tool: "read", origin: "custom", ripgrep, args: { path: "a.txt" },
++        files: [plugin, duplicate] })
++      expect(ambiguous).toEqual([{ type: "error", message: "Confined custom tool is ambiguous: read" }])
++    } finally {
++      await fs.rm(root, { recursive: true, force: true })
++    }
++  }, 120_000)
++
++  test.skipIf(process.platform === "win32")("grep uses only the host-resolved ripgrep with an empty scratch cache", async () => {
++    const { root, ripgrep, view } = await workspace()
++    try {
++      const { frames, scratch } = await worker(root, { tool: "grep", origin: "builtin", ripgrep, args: { pattern: "needle", path: view } })
++      expect(frames.map((frame) => frame.type)).toEqual(["result"])
++      expect(frames[0].result?.output).toContain("a.txt")
++      expect(frames[0].result?.output).toContain("needle")
++      const cache = path.join(scratch, "cache", "opencode", "bin")
++      expect(await fs.readlink(path.join(cache, "rg"))).toBe(ripgrep)
++      expect((await fs.readdir(cache)).filter((name) => name !== "rg")).toEqual([])
++      const { frames: missing } = await worker(root, { tool: "grep", origin: "builtin", ripgrep: path.join(root, "host", "missing"),
++        args: { pattern: "needle", path: view } })
++      expect(missing).toEqual([{ type: "error", message: `ripgrep_unavailable: ${path.join(root, "host", "missing")}` }])
++      // Without a host ripgrep, tools that do not need one still run.
++      const { frames: unresolved } = await worker(root, { tool: "read", origin: "builtin", ripgrep: "",
++        args: { filePath: path.join(view, "a.txt") } })
++      expect(unresolved.map((frame) => frame.type)).toEqual(["result"])
++    } finally {
++      await fs.rm(root, { recursive: true, force: true })
++    }
++  }, 120_000)
++
++  test("selects by origin and rejects unknown or ambiguous ids", () => {
++    const builtin = { id: "read" }
++    expect(DevRyanExecution.select([builtin], "read", "builtin")).toBe(builtin)
++    expect(() => DevRyanExecution.select([builtin], "read", "custom")).toThrow("Confined custom tool is unavailable: read")
++    expect(() => DevRyanExecution.select([builtin, { id: "read" }], "read", "builtin")).toThrow(
++      "Confined builtin tool is ambiguous: read",
++    )
++  })
++})
++
++const calls: Array<Record<string, unknown>> = []
++let ripgrep: Effect.Effect<string, Error> = Effect.succeed("/host/bin/rg")
++const it = testEffect(
++  LayerNode.compile(LayerNode.group([ToolRegistry.node, Agent.node]), [
++    [Config.node, TestConfig.layer({
++      directories: () => InstanceState.directory.pipe(Effect.map((dir) => [path.join(dir, ".opencode")])),
++    })],
++    [RuntimeFlags.node, RuntimeFlags.layer()],
++    [RipgrepBinary.node, Layer.succeed(RipgrepBinary.Service, RipgrepBinary.Service.of({
++      filepath: Effect.suspend(() => ripgrep),
++    }))],
++  ]),
++)
++
++// Records the kind the host reserves for each tool; nothing is launched.
++const boundary = <A, E, R>(self: Effect.Effect<A, E, R>) =>
++  Effect.acquireUseRelease(
++    Effect.sync(() => {
++      calls.length = 0
++      const server = Bun.serve({
++        hostname: "127.0.0.1",
++        port: 0,
++        async fetch(request) {
++          const { params } = (await request.json()) as { params: Record<string, unknown> }
++          calls.push(params)
++          // Stop every reservation so no tool body (or network request) runs.
++          if (params.action === "begin")
++            return Response.json({ ok: true, result: { protocol: 2, state: "failed", lease: { token: "lease" },
++              error: { code: "test_stop" } } })
++          return Response.json({ ok: true, result: {} })
++        },
++      })
++      const previous = Object.fromEntries(["DEVRYAN_EXECUTION_BOUNDARY", "DEVRYAN_ORCHESTRATION_URL",
++        "DEVRYAN_ORCHESTRATION_TOKEN"].map((key) => [key, process.env[key]]))
++      process.env.DEVRYAN_EXECUTION_BOUNDARY = "1"
++      process.env.DEVRYAN_ORCHESTRATION_URL = `http://127.0.0.1:${server.port}/rpc`
++      process.env.DEVRYAN_ORCHESTRATION_TOKEN = "test"
++      return { server, previous }
++    }),
++    () => self,
++    ({ server, previous }) =>
++      Effect.promise(async () => {
++        for (const [key, value] of Object.entries(previous))
++          if (value === undefined) delete process.env[key]
++          else process.env[key] = value
++        await server.stop(true)
++      }),
++  )
++
++const ctx = {
++  sessionID: SessionID.make(sessionID),
++  messageID: MessageID.make(messageID),
++  callID: "call",
++  agent: "build",
++  abort: AbortSignal.any([]),
++  messages: [],
++  metadata: () => Effect.void,
++  ask: () => Effect.void,
++}
++
++const kinds = () => calls.filter((call) => call.action === "begin").map((call) => [call.tool, call.kind])
++
++describe("confined tool classification", () => {
++  afterEach(async () => {
++    ripgrep = Effect.succeed("/host/bin/rg")
++    await disposeAllInstances()
++  })
++
++  it.instance("runs network built-ins as control tools and keeps a same-named custom tool confined", () =>
++    boundary(
++      Effect.gen(function* () {
++        const test = yield* TestInstance
++        yield* Effect.promise(async () => {
++          await fs.mkdir(path.join(test.directory, ".opencode", "tool"), { recursive: true })
++          await fs.writeFile(path.join(test.directory, ".opencode", "tool", "webfetch.js"), customRead)
++        })
++        const defs = yield* (yield* ToolRegistry.Service).all()
++        const builtin = DevRyanExecution.select(defs, "webfetch", "builtin")
++        const custom = DevRyanExecution.select(defs, "webfetch", "custom")
++        yield* Effect.exit(builtin.execute({ url: "ftp://invalid", format: "text" }, ctx))
++        yield* Effect.exit(custom.execute({ path: "a.txt" }, ctx))
++        yield* Effect.exit(DevRyanExecution.select(defs, "websearch", "builtin").execute({ query: "" }, ctx))
++        expect(kinds()).toEqual([["webfetch", "control"], ["webfetch", "process"], ["websearch", "control"]])
++      }),
++    ),
++  )
++
++  it.instance("still dispatches a process tool when the host cannot resolve ripgrep", () =>
++    boundary(
++      Effect.gen(function* () {
++        ripgrep = Effect.fail(new Error("download failed"))
++        const defs = yield* (yield* ToolRegistry.Service).all()
++        yield* Effect.exit(DevRyanExecution.select(defs, "write", "builtin").execute({ filePath: "a.txt", content: "x" }, ctx))
++        expect(kinds()).toEqual([["write", "process"]])
++      }),
++    ),
++  )
++
++  it.instance("runs built-in read, glob and grep natively while a same-named custom read stays confined", () =>
++    boundary(
++      Effect.gen(function* () {
++        const test = yield* TestInstance
++        yield* Effect.promise(async () => {
++          await fs.mkdir(path.join(test.directory, ".opencode", "tool"), { recursive: true })
++          await fs.writeFile(path.join(test.directory, ".opencode", "tool", "read.js"), customRead)
++          await fs.writeFile(path.join(test.directory, "a.txt"), "a")
++        })
++        const defs = yield* (yield* ToolRegistry.Service).all()
++        yield* Effect.exit(DevRyanExecution.select(defs, "read", "builtin").execute({ filePath: path.join(test.directory, "a.txt") }, ctx))
++        yield* Effect.exit(DevRyanExecution.select(defs, "glob", "builtin").execute({ pattern: "*.txt" }, ctx))
++        yield* Effect.exit(DevRyanExecution.select(defs, "grep", "builtin").execute({ pattern: "a" }, ctx))
++        yield* Effect.exit(DevRyanExecution.select(defs, "read", "custom").execute({ path: "a.txt" }, ctx))
++        expect(kinds()).toEqual([["read", "control"], ["glob", "control"], ["grep", "control"], ["read", "process"]])
++      }),
++    ),
++  )
++})
 diff --git a/packages/opencode/test/session/execution-browser.test.ts b/packages/opencode/test/session/execution-browser.test.ts
 new file mode 100644
 index 000000000..8674bdedd
@@ -2945,252 +3223,3 @@ index f06c20cc4..3bd67ef6c 100644
    }
    path: {
      sessionID: string
-diff --git a/packages/opencode/test/session/devryan-execution.test.ts b/packages/opencode/test/session/devryan-execution.test.ts
-new file mode 100644
-index 000000000..86c4ade7a
---- /dev/null
-+++ b/packages/opencode/test/session/devryan-execution.test.ts
-@@ -0,0 +1,243 @@
-+import { afterEach, describe, expect, test } from "bun:test"
-+import { spawn } from "node:child_process"
-+import fs from "node:fs/promises"
-+import os from "node:os"
-+import path from "node:path"
-+import { createInterface } from "node:readline"
-+import { Effect, Exit, Layer } from "effect"
-+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-+import { RipgrepBinary } from "@opencode-ai/core/ripgrep/binary"
-+import { Agent } from "@/agent/agent"
-+import { Config } from "@/config/config"
-+import { InstanceState } from "@/effect/instance-state"
-+import { RuntimeFlags } from "@/effect/runtime-flags"
-+import { DevRyanExecution } from "@/session/devryan-execution"
-+import { MessageID, SessionID } from "@/session/schema"
-+import { ToolRegistry } from "@/tool/registry"
-+import { disposeAllInstances, TestInstance } from "../fixture/fixture"
-+import { TestConfig } from "../fixture/config"
-+import { testEffect } from "../lib/effect"
-+
-+const entry = path.join(import.meta.dir, "../../src/index.ts")
-+const sessionID = "ses_0000000000001AAAAAAAAAAAAA"
-+const messageID = "msg_0000000000001AAAAAAAAAAAAA"
-+
-+// A plugin tool that reuses the built-in `read` id with its own `{path}` args.
-+const customRead = [
-+  "export default {",
-+  "  description: 'plugin read',",
-+  "  args: { path: { type: 'string' } },",
-+  "  async execute(args) {",
-+  "    if (typeof args.path !== 'string') throw new TypeError('path must be a string or a file descriptor')",
-+  "    return 'custom read ' + args.path",
-+  "  },",
-+  "}",
-+  "",
-+].join("\n")
-+
-+type Frame = { type: string; message?: string; result?: { output: string } }
-+
-+async function worker(root: string, input: { tool: string; origin: string; ripgrep: string; args: unknown; files?: string[] }) {
-+  // Every execution owns a fresh scratch home, as under the native launcher.
-+  const view = path.join(root, "view"), scratch = await fs.mkdtemp(path.join(root, "scratch-"))
-+  const proc = spawn(process.execPath, [entry, "debug", "devryan-tool"], {
-+    cwd: view,
-+    stdio: ["pipe", "pipe", "pipe"],
-+    // Mirrors the confined worker: no ripgrep on PATH and an empty scratch cache.
-+    env: {
-+      PATH: "/usr/bin:/bin",
-+      HOME: scratch,
-+      TMPDIR: scratch,
-+      XDG_CONFIG_HOME: path.join(scratch, "config"),
-+      XDG_DATA_HOME: path.join(scratch, "data"),
-+      XDG_STATE_HOME: path.join(scratch, "state"),
-+      XDG_CACHE_HOME: path.join(scratch, "cache"),
-+      OPENCODE_TEST_HOME: scratch,
-+      OPENCODE_TEST_MANAGED_CONFIG_DIR: path.join(scratch, "managed"),
-+      DEVRYAN_EXECUTION_WORKER: "1",
-+      OPENCODE_DISABLE_DEFAULT_PLUGINS: "true",
-+      OPENCODE_DISABLE_PROJECT_CONFIG: "true",
-+      OPENCODE_DISABLE_AUTOUPDATE: "true",
-+      OPENCODE_DISABLE_MODELS_FETCH: "true",
-+      OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "true",
-+    },
-+  })
-+  const frames: Frame[] = []
-+  proc.stderr.resume()
-+  proc.stdin.write(JSON.stringify({ config: {}, files: [], messages: [], sessionID, messageID, callID: "call",
-+    agent: "build", projectDirectory: view, logicalDirectory: view, ...input }) + "\n")
-+  for await (const line of createInterface({ input: proc.stdout, crlfDelay: Infinity })) {
-+    if (!line.startsWith(DevRyanExecution.prefix)) continue
-+    const frame = JSON.parse(line.slice(DevRyanExecution.prefix.length))
-+    if (frame.type === "permission") proc.stdin.write(JSON.stringify({ id: frame.id, approved: true }) + "\n")
-+    else frames.push(frame)
-+  }
-+  return { frames, scratch }
-+}
-+
-+async function workspace() {
-+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "devryan-worker-")))
-+  await fs.mkdir(path.join(root, "view"), { recursive: true })
-+  await fs.mkdir(path.join(root, "host"), { recursive: true })
-+  await fs.writeFile(path.join(root, "view", "a.txt"), "needle\n")
-+  // Stands in for the host-resolved executable; it proves the worker used it.
-+  const ripgrep = path.join(root, "host", "rg")
-+  await fs.writeFile(ripgrep, ["#!/bin/sh", `printf '%s\\n' '${JSON.stringify({ type: "match", data: {
-+    path: { text: "./a.txt" }, lines: { text: "needle\n" }, line_number: 1, absolute_offset: 0,
-+    submatches: [{ match: { text: "needle" }, start: 0, end: 6 }] } })}'`, ""].join("\n"), { mode: 0o755 })
-+  return { root, ripgrep, view: path.join(root, "view") }
-+}
-+
-+describe("confined worker tool identity", () => {
-+  test.skipIf(process.platform === "win32")("a custom read tool never captures a built-in read dispatch", async () => {
-+    const { root, ripgrep, view } = await workspace()
-+    try {
-+      const plugin = path.join(root, "host", "read.js"), duplicate = path.join(root, "view", "read.js")
-+      await fs.writeFile(plugin, customRead)
-+      await fs.writeFile(duplicate, customRead)
-+      const [{ frames: builtin }, { frames: custom }] = await Promise.all([
-+        worker(root, { tool: "read", origin: "builtin", ripgrep, args: { filePath: path.join(view, "a.txt") }, files: [plugin] }),
-+        worker(root, { tool: "read", origin: "custom", ripgrep, args: { path: "a.txt" }, files: [plugin] }),
-+      ])
-+      expect(builtin).toHaveLength(1)
-+      expect(builtin[0].type).toBe("result")
-+      expect(builtin[0].result?.output).toContain("needle")
-+      expect(custom[0].result?.output).toBe("custom read a.txt")
-+      const { frames: ambiguous } = await worker(root, { tool: "read", origin: "custom", ripgrep, args: { path: "a.txt" },
-+        files: [plugin, duplicate] })
-+      expect(ambiguous).toEqual([{ type: "error", message: "Confined custom tool is ambiguous: read" }])
-+    } finally {
-+      await fs.rm(root, { recursive: true, force: true })
-+    }
-+  }, 120_000)
-+
-+  test.skipIf(process.platform === "win32")("grep uses only the host-resolved ripgrep with an empty scratch cache", async () => {
-+    const { root, ripgrep, view } = await workspace()
-+    try {
-+      const { frames, scratch } = await worker(root, { tool: "grep", origin: "builtin", ripgrep, args: { pattern: "needle", path: view } })
-+      expect(frames.map((frame) => frame.type)).toEqual(["result"])
-+      expect(frames[0].result?.output).toContain("a.txt")
-+      expect(frames[0].result?.output).toContain("needle")
-+      const cache = path.join(scratch, "cache", "opencode", "bin")
-+      expect(await fs.readlink(path.join(cache, "rg"))).toBe(ripgrep)
-+      expect((await fs.readdir(cache)).filter((name) => name !== "rg")).toEqual([])
-+      const { frames: missing } = await worker(root, { tool: "grep", origin: "builtin", ripgrep: path.join(root, "host", "missing"),
-+        args: { pattern: "needle", path: view } })
-+      expect(missing).toEqual([{ type: "error", message: `ripgrep_unavailable: ${path.join(root, "host", "missing")}` }])
-+      // Without a host ripgrep, tools that do not need one still run.
-+      const { frames: unresolved } = await worker(root, { tool: "read", origin: "builtin", ripgrep: "",
-+        args: { filePath: path.join(view, "a.txt") } })
-+      expect(unresolved.map((frame) => frame.type)).toEqual(["result"])
-+    } finally {
-+      await fs.rm(root, { recursive: true, force: true })
-+    }
-+  }, 120_000)
-+
-+  test("selects by origin and rejects unknown or ambiguous ids", () => {
-+    const builtin = { id: "read" }
-+    expect(DevRyanExecution.select([builtin], "read", "builtin")).toBe(builtin)
-+    expect(() => DevRyanExecution.select([builtin], "read", "custom")).toThrow("Confined custom tool is unavailable: read")
-+    expect(() => DevRyanExecution.select([builtin, { id: "read" }], "read", "builtin")).toThrow(
-+      "Confined builtin tool is ambiguous: read",
-+    )
-+  })
-+})
-+
-+const calls: Array<Record<string, unknown>> = []
-+let ripgrep: Effect.Effect<string, Error> = Effect.succeed("/host/bin/rg")
-+const it = testEffect(
-+  LayerNode.compile(LayerNode.group([ToolRegistry.node, Agent.node]), [
-+    [Config.node, TestConfig.layer({
-+      directories: () => InstanceState.directory.pipe(Effect.map((dir) => [path.join(dir, ".opencode")])),
-+    })],
-+    [RuntimeFlags.node, RuntimeFlags.layer()],
-+    [RipgrepBinary.node, Layer.succeed(RipgrepBinary.Service, RipgrepBinary.Service.of({
-+      filepath: Effect.suspend(() => ripgrep),
-+    }))],
-+  ]),
-+)
-+
-+// Records the kind the host reserves for each tool; nothing is launched.
-+const boundary = <A, E, R>(self: Effect.Effect<A, E, R>) =>
-+  Effect.acquireUseRelease(
-+    Effect.sync(() => {
-+      calls.length = 0
-+      const server = Bun.serve({
-+        hostname: "127.0.0.1",
-+        port: 0,
-+        async fetch(request) {
-+          const { params } = (await request.json()) as { params: Record<string, unknown> }
-+          calls.push(params)
-+          // Stop every reservation so no tool body (or network request) runs.
-+          if (params.action === "begin")
-+            return Response.json({ ok: true, result: { protocol: 2, state: "failed", lease: { token: "lease" },
-+              error: { code: "test_stop" } } })
-+          return Response.json({ ok: true, result: {} })
-+        },
-+      })
-+      const previous = Object.fromEntries(["DEVRYAN_EXECUTION_BOUNDARY", "DEVRYAN_ORCHESTRATION_URL",
-+        "DEVRYAN_ORCHESTRATION_TOKEN"].map((key) => [key, process.env[key]]))
-+      process.env.DEVRYAN_EXECUTION_BOUNDARY = "1"
-+      process.env.DEVRYAN_ORCHESTRATION_URL = `http://127.0.0.1:${server.port}/rpc`
-+      process.env.DEVRYAN_ORCHESTRATION_TOKEN = "test"
-+      return { server, previous }
-+    }),
-+    () => self,
-+    ({ server, previous }) =>
-+      Effect.promise(async () => {
-+        for (const [key, value] of Object.entries(previous))
-+          if (value === undefined) delete process.env[key]
-+          else process.env[key] = value
-+        await server.stop(true)
-+      }),
-+  )
-+
-+const ctx = {
-+  sessionID: SessionID.make(sessionID),
-+  messageID: MessageID.make(messageID),
-+  callID: "call",
-+  agent: "build",
-+  abort: AbortSignal.any([]),
-+  messages: [],
-+  metadata: () => Effect.void,
-+  ask: () => Effect.void,
-+}
-+
-+const kinds = () => calls.filter((call) => call.action === "begin").map((call) => [call.tool, call.kind])
-+
-+describe("confined tool classification", () => {
-+  afterEach(async () => {
-+    ripgrep = Effect.succeed("/host/bin/rg")
-+    await disposeAllInstances()
-+  })
-+
-+  it.instance("runs network built-ins as control tools and keeps a same-named custom tool confined", () =>
-+    boundary(
-+      Effect.gen(function* () {
-+        const test = yield* TestInstance
-+        yield* Effect.promise(async () => {
-+          await fs.mkdir(path.join(test.directory, ".opencode", "tool"), { recursive: true })
-+          await fs.writeFile(path.join(test.directory, ".opencode", "tool", "webfetch.js"), customRead)
-+        })
-+        const defs = yield* (yield* ToolRegistry.Service).all()
-+        const builtin = DevRyanExecution.select(defs, "webfetch", "builtin")
-+        const custom = DevRyanExecution.select(defs, "webfetch", "custom")
-+        yield* Effect.exit(builtin.execute({ url: "ftp://invalid", format: "text" }, ctx))
-+        yield* Effect.exit(custom.execute({ path: "a.txt" }, ctx))
-+        yield* Effect.exit(DevRyanExecution.select(defs, "websearch", "builtin").execute({ query: "" }, ctx))
-+        expect(kinds()).toEqual([["webfetch", "control"], ["webfetch", "process"], ["websearch", "control"]])
-+      }),
-+    ),
-+  )
-+
-+  it.instance("still dispatches a process tool when the host cannot resolve ripgrep", () =>
-+    boundary(
-+      Effect.gen(function* () {
-+        ripgrep = Effect.fail(new Error("download failed"))
-+        const defs = yield* (yield* ToolRegistry.Service).all()
-+        yield* Effect.exit(DevRyanExecution.select(defs, "read", "builtin").execute({ filePath: "a.txt" }, ctx))
-+        expect(kinds()).toEqual([["read", "process"]])
-+      }),
-+    ),
-+  )
-+})

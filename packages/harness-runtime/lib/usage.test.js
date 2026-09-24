@@ -124,3 +124,34 @@ test('copied responses resolve shared roots after late relations and preserve am
     expect(report.observations[0].sessionID).toBeNull();
   }
 });
+test('derives prefix continuity from usage without request hashing', () => {
+  const step = (id, at, cache, input = 100, extra = {}) => event('message.part.updated', { id, messageID: `m-${id}`,
+    type: 'step-finish', time: { end: at }, tokens: { input, output: 10, reasoning: 0, cache }, ...extra }, at);
+  const c = createUsageCollector();
+  // Explicit (write-reporting) stream: reads should cover the previous reads + writes.
+  c.add(step('e1', 1_000, { read: 0, write: 10_000 }));
+  c.add(step('e2', 2_000, { read: 10_000, write: 2_000 }));
+  c.add(step('e3', 3_000, { read: 500, write: 12_000 }));
+  c.add(step('e4', 3_000 + 10 * 60_000, { read: 0, write: 12_600 }));
+  const explicit = c.finish().roots[0].continuity.runtime;
+  expect(explicit).toMatchObject({ compared: 3, breaks: 2, breaksWithinWarmGap: 1,
+    lostPrefixTokensWithinWarmGap: 11_500, explicitStreams: 1, implicitStreams: 0 });
+
+  // Implicit stream: reads should cover the previous whole input; small shortfalls are block rounding.
+  const i = createUsageCollector();
+  i.add(step('i1', 1_000, { read: 0, write: 0 }, 5_000));
+  i.add(step('i2', 2_000, { read: 4_900, write: 0 }, 1_000));
+  i.add(step('i3', 3_000, { read: 0, write: 0 }, 7_000));
+  expect(i.finish().roots[0].continuity.runtime).toMatchObject({ compared: 2, breaks: 1, breaksWithinWarmGap: 1,
+    lostPrefixTokensWithinWarmGap: 5_900, implicitStreams: 1 });
+});
+test('a compaction between requests resets prefix continuity', () => {
+  const c = createUsageCollector();
+  const step = (id, at, cache) => event('message.part.updated', { id, messageID: `m-${id}`, type: 'step-finish',
+    time: { end: at }, tokens: { input: 100, output: 10, reasoning: 0, cache } }, at);
+  c.add(event('message.updated', { id: 'compact', summary: true, tokens }, 1_500));
+  c.add(step('a', 1_000, { read: 0, write: 20_000 }));
+  c.add(step('b', 2_000, { read: 0, write: 3_000 }));
+  c.add(step('c', 3_000, { read: 3_000, write: 100 }));
+  expect(c.finish().roots[0].continuity.runtime).toMatchObject({ compared: 1, breaks: 0 });
+});

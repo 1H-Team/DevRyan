@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -18,19 +19,46 @@ export function executionArtifacts(directory = process.env.DEVRYAN_EXECUTION_ART
 }
 
 /** Keep diagnostics available without interpreting required-but-missing as an
- * opt-out. Callers must enforce assertReady at every execution entrypoint. */
+ * opt-out. Callers must enforce assertReady at every execution entrypoint.
+ * A managed host without a verified companion degrades to plain OpenCode:
+ * execution is unconfined, and ledger-owned conversations keep Revert/Redo
+ * disabled (see session-execution-host assertLegacyRevertAllowed). A host
+ * started with DEVRYAN_EXECUTION_BOUNDARY=1 requires capture and fails closed. */
 export async function executionRuntimeState(options) {
   try {
     const environment = await executionEnvironment(options);
-    return { state: environment.DEVRYAN_EXECUTION_BOUNDARY === '1' ? 'active' : 'not_expected',
-      environment, assertReady() {}, diagnostic: null };
+    const active = environment.DEVRYAN_EXECUTION_BOUNDARY === '1';
+    return { state: active ? 'active' : 'not_expected', environment, assertReady() {}, diagnostic: null,
+      companion: active ? await companionIdentity(options?.directory) : null };
   } catch {
+    if (options?.runtimeMode !== 'captured') {
+      return { state: 'degraded', environment: {}, assertReady() {}, diagnostic: { code: 'execution_artifacts_unavailable',
+        message: 'The DevRyan companion is missing or incompatible, so DevRyan is running plain OpenCode. Tools are not confined and conversation Revert is limited. Repair or update DevRyan, then restart the server.' } };
+    }
     const diagnostic = { code: 'execution_artifacts_unavailable',
       message: 'The verified execution runtime is missing or incompatible. Repair or update DevRyan, then restart the server.' };
     return { state: 'required_unavailable', environment: {}, diagnostic,
       assertReady() { throw Object.assign(new Error(diagnostic.message), { code: diagnostic.code, status: 503 }); } };
   }
 }
+
+/** Display identity of the verified companion; its OpenCode base is reported separately by health. */
+export async function companionIdentity(directory) {
+  try {
+    const manifest = JSON.parse(await fs.readFile(path.join(executionArtifacts(directory).directory, 'companion.json'), 'utf8'));
+    const version = typeof manifest.companionVersion === 'string' ? manifest.companionVersion
+      : typeof manifest.version === 'string' ? manifest.version : null;
+    return version && /^[0-9A-Za-z.+-]{1,64}$/.test(version) ? { version } : null;
+  } catch { return null; }
+}
+
+// Stream the digest: the companion binary is ~100 MiB and must not be buffered
+// in the server process just to verify it at startup.
+const fileDigest = async (file) => {
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(file)) hash.update(chunk);
+  return hash.digest('hex');
+};
 
 export function executionReadinessMiddleware(runtime) {
   return (req, res, next) => {
@@ -57,7 +85,7 @@ export async function executionEnvironment({ pluginDirectory, directory, dataDir
       || manifest.platform !== process.platform || manifest.arch !== process.arch
       || manifest.baseCommit !== contract.baseCommit || manifest.patchSha256 !== contract.patchSha256
       || manifest.binary !== path.basename(artifacts.opencode)
-      || createHash('sha256').update(await fs.readFile(artifacts.opencode)).digest('hex') !== manifest.sha256) throw unavailable();
+      || await fileDigest(artifacts.opencode) !== manifest.sha256) throw unavailable();
     const controls = {};
     // These bundled adapters only issue attributed host RPCs. Native/custom
     // file tools, including a shadowed name, still run inside the private view.

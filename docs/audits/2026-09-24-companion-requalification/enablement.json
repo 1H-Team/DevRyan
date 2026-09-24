@@ -1,0 +1,499 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-24",
+  "proposedProfile": "devryan-companion-2.0.0-openai-sol-medium",
+  "everyGatePassed": true,
+  "defaultEnabled": true,
+  "installedAppModified": false,
+  "trackedSourceModified": false,
+  "liveReportHash": "35462b59b718e7796efb6113820a702085bfc794b210c945be56c0682b8fa197",
+  "frozenCode": {
+    "worktree": ".cache/companion-c4/tree",
+    "head": "f648a4ff",
+    "mainTreeDiffSha256AtFreeze": "7266e6fb90b6e607756fe54c2dd663f7bc4d6fe498ecb44699c57fe7928317b1",
+    "round2Change": "copied main-tree agent-runtime-warmup.js (+ its test): health warmup requestPath /health -> /global/health; frozen tree diff sha256 now e52b517c4e11788f68491220426d010a9b1be19288c6f6d5b999cac5f18e4c6c",
+    "untrackedFilesIncluded": 7,
+    "artifacts": ".cache/companion-c4/artifacts"
+  },
+  "runtime": {
+    "companionVersion": "2.0.0",
+    "upstreamVersion": "1.18.31",
+    "sha256": "dc0954bd4d85e298992971ce3822c40b0af80b180d4fc5248f973d11ce76681f",
+    "used": "DEVRYAN_EXECUTION_ARTIFACTS companion (host log binary path verified)"
+  },
+  "selection": {
+    "providerID": "openai",
+    "modelID": "gpt-5.6-sol",
+    "variant": "medium",
+    "inLiveCatalog": {
+      "id": "gpt-5.6-sol",
+      "name": "GPT-5.6 Sol",
+      "variants": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ]
+    },
+    "note": "gpt-5.6-sol Medium present in the prepared host catalog and accepted by the ChatGPT Responses backend in every trial (HTTP 200)."
+  },
+  "providerRouteHash": {
+    "value": "4792784fe46997ae50e9f71f0183179101791d35b522e21c618ae7bc1ec8d4d8",
+    "sameAsStaleProfile": true
+  },
+  "attempts": [
+    {
+      "round": 1,
+      "artifact": "round1-failed/live-pilot.json",
+      "reportHash": "e10f6792762bb6ad94bd90f12e07e00e6cf12356d969367d49303b1cf6c145b2",
+      "kind": "diagnostic-pilot",
+      "qualified": false,
+      "completedPairs": 2,
+      "collectorFailures": [
+        "unregistered-connect:app.opencode.ai:443",
+        "unregistered-connect:app.opencode.ai:443"
+      ]
+    },
+    {
+      "round": 1,
+      "artifact": "round1-failed/live-acceptance.json",
+      "reportHash": "ee8c9dae8533065dcc266422898325537f28efedaf731a57ae68c3120f7a0888",
+      "kind": "duplicate-live-acceptance",
+      "qualified": false,
+      "completedPairs": 10,
+      "criticalFailures": 0,
+      "providerFailures": [],
+      "collectorFailures": [
+        "unregistered-connect:app.opencode.ai:443",
+        "unregistered-connect:app.opencode.ai:443"
+      ]
+    },
+    {
+      "round": 2,
+      "artifact": "instruction-reuse-live-failed.json",
+      "reportHash": "c177236b738cce44e1a31977d7f930189bafbfb6e211bb9aa828ebe8e631de23",
+      "kind": "instruction-reuse-live-supplement",
+      "passed": false,
+      "collectorFailures": [
+        "transport-failed"
+      ],
+      "note": "baseline trial 2 primary response stream failed mid-stream after HTTP 200; the native runtime retried the identical body and the reply graded correct. Retained as failed; a fresh complete batch passed."
+    },
+    {
+      "round": 2,
+      "artifact": "live-pilot.json",
+      "reportHash": "c22e644bb29527388d3f2a31a74355a404ebdf7b2df2272231d5e0c00307798b",
+      "kind": "diagnostic-pilot",
+      "qualified": false,
+      "completedPairs": 2,
+      "criticalFailures": 0,
+      "providerFailures": [],
+      "collectorFailures": []
+    },
+    {
+      "round": 2,
+      "artifact": "live-acceptance.json",
+      "reportHash": "35462b59b718e7796efb6113820a702085bfc794b210c945be56c0682b8fa197",
+      "kind": "duplicate-live-acceptance",
+      "qualified": true,
+      "completedPairs": 10,
+      "criticalFailures": 0,
+      "providerFailures": [],
+      "collectorFailures": []
+    },
+    {
+      "round": 2,
+      "artifact": "instruction-reuse-live.json",
+      "reportHash": "ef44388ea2c9aa147ed6ed1ddaa4195c2697f9ee2218fc53021f8e610d4c587b",
+      "kind": "instruction-reuse-live-supplement",
+      "passed": true,
+      "checks": {
+        "allTrialsComplete": true,
+        "outcomesPreserved": true,
+        "baselineFull": true,
+        "candidateReferenced": true,
+        "nonIncreasingRequests": true,
+        "noFailures": true,
+        "cleanup": true
+      },
+      "collectorFailures": []
+    }
+  ],
+  "collectorFailureDiagnosis": {
+    "resolvedInRound2": true,
+    "event": [
+      {
+        "t": 2808,
+        "kind": "request",
+        "method": "GET",
+        "host": "app.opencode.ai",
+        "url": "/health",
+        "userAgent": "Bun/1.3.14"
+      }
+    ],
+    "cause": "packages/web/server/lib/opencode/agent-runtime-warmup.js core task \"health\" requests OpenCode path /health (not /global/health); the companion serves unknown paths by proxying to https://app.opencode.ai, so every host start issues GET https://app.opencode.ai/health. The wire proxy refuses it (403) and records unregistered-connect. Independent of duplicateOutputs (both arms, once per host start); request bodies/behavior unaffected.",
+    "upstreamComparison": "not established (no plain 1.18.31 binary available; a standalone comparison attempt hung and was abandoned)"
+  },
+  "usage": {
+    "baseline": {
+      "primary": {
+        "requests": 10,
+        "withUsage": 10,
+        "totalInput": 173494,
+        "uncachedInput": 158134,
+        "cacheRead": 15360,
+        "cacheWrite": 0,
+        "totalOutput": 666,
+        "peakInput": 18246,
+        "peakSerializedBytes": 92940
+      },
+      "auxiliaryAndWarmup": {
+        "requests": 12,
+        "withUsage": 12,
+        "totalInput": 13179,
+        "uncachedInput": 13179,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalOutput": 126,
+        "peakInput": 6331,
+        "peakSerializedBytes": 32784
+      }
+    },
+    "candidate": {
+      "primary": {
+        "requests": 10,
+        "withUsage": 10,
+        "totalInput": 122723,
+        "uncachedInput": 102755,
+        "cacheRead": 19968,
+        "cacheWrite": 0,
+        "totalOutput": 666,
+        "peakInput": 12809,
+        "peakSerializedBytes": 65488
+      },
+      "auxiliaryAndWarmup": {
+        "requests": 12,
+        "withUsage": 12,
+        "totalInput": 13179,
+        "uncachedInput": 13179,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalOutput": 138,
+        "peakInput": 6331,
+        "peakSerializedBytes": 32784
+      }
+    }
+  },
+  "sizes": [
+    {
+      "index": 0,
+      "baseline": 84412,
+      "candidate": 60766
+    },
+    {
+      "index": 1,
+      "baseline": 85000,
+      "candidate": 61060
+    },
+    {
+      "index": 2,
+      "baseline": 85588,
+      "candidate": 61354
+    },
+    {
+      "index": 3,
+      "baseline": 86176,
+      "candidate": 61648
+    },
+    {
+      "index": 4,
+      "baseline": 86764,
+      "candidate": 61942
+    },
+    {
+      "index": 5,
+      "baseline": 90508,
+      "candidate": 64272
+    },
+    {
+      "index": 6,
+      "baseline": 91116,
+      "candidate": 64576
+    },
+    {
+      "index": 7,
+      "baseline": 91724,
+      "candidate": 64880
+    },
+    {
+      "index": 8,
+      "baseline": 92332,
+      "candidate": 65184
+    },
+    {
+      "index": 9,
+      "baseline": 92940,
+      "candidate": 65488
+    }
+  ],
+  "instructionReuse": [
+    {
+      "index": 0,
+      "baselineBytes": 46673,
+      "candidateBytes": 38205,
+      "baselineInputTokens": 9134,
+      "candidateInputTokens": 7416,
+      "baselineReferences": 0,
+      "candidateReferences": 2
+    },
+    {
+      "index": 1,
+      "baselineBytes": 46673,
+      "candidateBytes": 38205,
+      "baselineInputTokens": 9131,
+      "candidateInputTokens": 7413,
+      "baselineReferences": 0,
+      "candidateReferences": 2
+    },
+    {
+      "index": 2,
+      "baselineBytes": 46673,
+      "candidateBytes": 38205,
+      "baselineInputTokens": 9134,
+      "candidateInputTokens": 7416,
+      "baselineReferences": 0,
+      "candidateReferences": 2
+    }
+  ],
+  "hook": {
+    "samples": 10,
+    "medianMs": 0.79472900001565,
+    "maxMs": 15.438416999997571,
+    "measurements": [
+      {
+        "sessionID": "ses_f2d674cbaffe2GAVYBbYM2i254",
+        "beforeBytes": 49244,
+        "projectedBytes": 25548,
+        "dynamicBytes": null,
+        "plannedReductions": 2,
+        "appliedReductions": 2,
+        "savedBytes": 24234,
+        "phase": "hook-applied",
+        "reason": "qualified",
+        "transformDurationMs": 0.7417499999864958,
+        "finalRequestBytes": null,
+        "sourceHash": null
+      },
+      {
+        "sessionID": "ses_f2d62df69ffeUFybt6Udhcn0uD",
+        "beforeBytes": 55448,
+        "projectedBytes": 28988,
+        "dynamicBytes": null,
+        "plannedReductions": 2,
+        "appliedReductions": 2,
+        "savedBytes": 27452,
+        "phase": "hook-applied",
+        "reason": "qualified",
+        "transformDurationMs": 0.9347919999854639,
+        "finalRequestBytes": null,
+        "sourceHash": null
+      },
+      {
+        "sessionID": "ses_f2d65fb80ffeR2CCZA4xzZiGgb",
+        "beforeBytes": 50396,
+        "projectedBytes": 26124,
+        "dynamicBytes": null,
+        "plannedReductions": 2,
+        "appliedReductions": 2,
+        "savedBytes": 24822,
+        "phase": "hook-applied",
+        "reason": "qualified",
+        "transformDurationMs": 0.38920899998629466,
+        "finalRequestBytes": null,
+        "sourceHash": null
+      },
+      {
+        "sessionID": "ses_f2d668778ffe7ppPLPtgFtRtIT",
+        "beforeBytes": 49820,
+        "projectedBytes": 25836,
+        "dynamicBytes": null,
+        "plannedReductions": 2,
+        "appliedReductions": 2,
+        "savedBytes": 24528,
+        "phase": "hook-applied",
+        "reason": "qualified",
+        "transformDurationMs": 0.5965419999847654,
+        "finalRequestBytes": null,
+        "sourceHash": null
+      },
+      {
+        "sessionID": "ses_f2d63a624ffeQYB9wyN0c9L6dN",
+        "beforeBytes": 54860,
+        "projectedBytes": 28694,
+        "dynamicBytes": null,
+        "plannedReductions": 2,
+        "appliedReductions": 2,
+        "savedBytes": 27148,
+        "phase": "hook-applied",
+        "reason": "qualified",
+        "transformDurationMs": 1.3847500000265427,
+        "finalRequestBytes": null,
+        "sourceHash": null
+      },
+      {
+        "sessionID": "ses_f2d680689ffeVPJQiBxz1299Fp",
+        "beforeBytes": 48668,
+        "projectedBytes": 25260,
+        "dynamicBytes": null,
+        "plannedReductions": 2,
+        "appliedReductions": 2,
+        "savedBytes": 23940,
+        "phase": "hook-applied",
+        "reason": "qualified",
+        "transformDurationMs": 0.9182500000024447,
+        "finalRequestBytes": null,
+        "sourceHash": null
+      },
+      {
+        "sessionID": "ses_f2d64681affe8LLYUKs9fmHUV8",
+        "beforeBytes": 54272,
+        "projectedBytes": 28400,
+        "dynamicBytes": null,
+        "plannedReductions": 2,
+        "appliedReductions": 2,
+        "savedBytes": 26844,
+        "phase": "hook-applied",
+        "reason": "qualified",
+        "transformDurationMs": 0.8064580000354908,
+        "finalRequestBytes": null,
+        "sourceHash": null
+      },
+      {
+        "sessionID": "ses_f2d68bebbffe1kg1FOxBH6zpl0",
+        "beforeBytes": 48092,
+        "projectedBytes": 24972,
+        "dynamicBytes": null,
+        "plannedReductions": 2,
+        "appliedReductions": 2,
+        "savedBytes": 23646,
+        "phase": "hook-applied",
+        "reason": "qualified",
+        "transformDurationMs": 15.438416999997571,
+        "finalRequestBytes": null,
+        "sourceHash": null
+      },
+      {
+        "sessionID": "ses_f2d64f31dffeXqYpljcQ3FTVx9",
+        "beforeBytes": 53684,
+        "projectedBytes": 28106,
+        "dynamicBytes": null,
+        "plannedReductions": 2,
+        "appliedReductions": 2,
+        "savedBytes": 26540,
+        "phase": "hook-applied",
+        "reason": "qualified",
+        "transformDurationMs": 0.7287499999511056,
+        "finalRequestBytes": null,
+        "sourceHash": null
+      },
+      {
+        "sessionID": "ses_f2d657878ffehGzmOJwcRl5Sw9",
+        "beforeBytes": 53096,
+        "projectedBytes": 27812,
+        "dynamicBytes": null,
+        "plannedReductions": 2,
+        "appliedReductions": 2,
+        "savedBytes": 26236,
+        "phase": "hook-applied",
+        "reason": "qualified",
+        "transformDurationMs": 0.782999999995809,
+        "finalRequestBytes": null,
+        "sourceHash": null
+      }
+    ]
+  },
+  "compactionFrequency": {
+    "livePrimaryBaseline": 0,
+    "livePrimaryCandidate": 0
+  },
+  "systemAndToolPrefixesMatch": true,
+  "gates": {
+    "deterministicTests": {
+      "passed": true,
+      "files": 21,
+      "tests": 510,
+      "warmupTest": "15/15 agent-runtime-warmup.test.js after the fix",
+      "scope": "packages/web server/default-config/plugins/* + harness-duplicate-qualification + harness-run-fingerprint (vitest), scripts/qa duplicate-live/behavior (node --test, 5)"
+    },
+    "nativeSerializerProbe": {
+      "attempts": [
+        {
+          "attempt": 1,
+          "passed": false,
+          "failures": [
+            "candidate:The operation was aborted due to timeout"
+          ],
+          "output": "/Users/zoubair/Repositories/DevRyan/.cache/companion-c4/tree/.cache/qa/duplicate-serializer-kpvH76"
+        },
+        {
+          "attempt": 2,
+          "passed": true,
+          "failures": [],
+          "output": "/Users/zoubair/Repositories/DevRyan/.cache/companion-c4/tree/.cache/qa/duplicate-serializer-GjVnrg"
+        },
+        {
+          "attempt": 3,
+          "passed": true,
+          "failures": [],
+          "output": "/Users/zoubair/Repositories/DevRyan/.cache/companion-c4/tree/.cache/qa/duplicate-serializer-ypeOdk"
+        }
+      ],
+      "passedCompleteRuns": 2,
+      "retainedFailedRuns": 1
+    },
+    "runnerBehavior": {
+      "passed": true,
+      "reasons": []
+    },
+    "runnerNonIncreasing": true,
+    "runnerHostFailures": [],
+    "runnerCollector": {
+      "passed": true,
+      "wireFailures": []
+    },
+    "runnerQualified": true,
+    "runnerProbePassed": true,
+    "instructionReuseLive": {
+      "outcomeChecksPassed": true,
+      "collectorPassed": true,
+      "checks": {
+        "allTrialsComplete": true,
+        "outcomesPreserved": true,
+        "baselineFull": true,
+        "candidateReferenced": true,
+        "nonIncreasingRequests": true,
+        "noFailures": true,
+        "cleanup": true
+      }
+    },
+    "acceptedFieldsSatisfied": true
+  },
+  "acceptedFields": {
+    "reportHash": "35462b59b718e7796efb6113820a702085bfc794b210c945be56c0682b8fa197",
+    "correctness": true,
+    "finalRequests": true,
+    "compactionLifecycle": true,
+    "nonIncreasingRequests": true,
+    "livePairs": 10,
+    "skillPairs": 5,
+    "managedPairs": 5,
+    "incompleteTrials": 0,
+    "criticalFailures": 0,
+    "repeatedMutations": 0,
+    "repeatCallDelta": 0
+  },
+  "monetarySavings": null,
+  "statisticalReliabilityClaim": false
+}

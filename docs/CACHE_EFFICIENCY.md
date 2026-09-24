@@ -59,6 +59,22 @@ evidence without attaching the CLI's cumulative cost summary to each response.
 output semantics explicitly, and keeps ambiguous defaulted cache-write zeros
 unknown unless the caller supplies capability evidence.
 
+Each root also reports prefix `continuity` for runtime and provider rows. It is
+derived from numeric usage only, so nothing is hashed on the request path.
+Rows form a stream by session, provider, route and requested model.
+- **Expected reuse.** After a request, the reusable prefix is its cache reads
+  plus writes when the stream reports explicit writes, otherwise its total
+  input (implicit caching).
+- **Break.** The next request's cache read falls short of that by more than
+  1,024 tokens and 5%.
+- **Warm-gap breaks.** Breaks whose completion gap is at most five minutes are
+  reported separately, with their lost prefix tokens. Longer gaps can be
+  provider eviction.
+- **Compaction.** A compaction between two requests resets the comparison.
+
+A break shows lost reuse, not its cause. Correlate with wire evidence before
+attributing it to a client change.
+
 The token ratio is summed cache reads divided by summed total input over rows
 where both are known. Request hit rate uses only individual observed provider
 requests with known cache usage. Coverage accompanies both metrics. Known totals
@@ -100,6 +116,15 @@ Read an existing journal without initializing, pruning or modifying it:
 ```sh
 node scripts/qa/cache-usage-report.mjs .cache/qa/OWNED_RUN/journal
 node scripts/qa/cache-usage-report.mjs .cache/qa/OWNED_RUN/journal .cache/qa/OWNED_RUN/cache-wire.ndjson
+```
+
+For a companion execution-cost baseline, run the owned QA server with
+`DEVRYAN_EXECUTION_SUMMARY_MIN_MS=0`, which journals every dispatch's phase
+summary. Add `DEVRYAN_EXECUTION_TRACE=1` to capture companion worker milestones
+in the runtime log. Then run:
+
+```sh
+node scripts/qa/execution-phase-report.mjs .cache/qa/OWNED_RUN/journal --log .cache/qa/OWNED_RUN/opencode.log
 ```
 
 ## QA ownership and request preservation

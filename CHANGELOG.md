@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- DevRyan companion 2.0.0: the companion is versioned on its own and reports plain OpenCode versions.
+  - Built-in read, glob and grep run natively without a sandboxed worker.
+  - Built-in tool workers start without loading plugins.
+  - Workers receive conversation history only when a tool reads it.
+  - A weekly job checks whether the patch still applies to new OpenCode releases.
+- Confined execution:
+  - Copy-on-write views reuse untouched files at publication.
+  - Base history is derived from the pinned snapshot instead of being copied for every project file.
+  - Repository lookups are cached and the ledger index adapts to ledger size.
+  - Confined processes (including the Claude provider transport) can resolve host names again.
+- Claude via Meridian:
+  - The provider transport runs from the real project directory, so the model sees correct paths and the prompt cache is reused across requests.
+  - The managed Claude Code runtime moves to 2.1.281 for Claude Opus 5.5 support.
+- Fallback and Revert:
+  - Without the companion, DevRyan runs plain OpenCode instead of blocking prompts, and protected conversations stay safe from legacy Revert.
+  - Revert can adopt conversations that ran without the companion, using compare-and-swap file restoration.
+- Prompt efficiency:
+  - xAI tool lists stay fixed per session.
+  - Slim's per-turn phase reminder is removed.
+  - Duplicate-output projection is requalified on companion 2.0.0 and re-enabled by default for the verified OpenAI route (−29% input on qualified requests). Repeated Plan-mode instructions share it.
+  - The startup health warmup uses `/global/health`, so it no longer triggers an external request to app.opencode.ai.
+  - Bundled tool definitions have a byte budget.
+- Measurement: report prompt-cache continuity (breaks and lost prefix tokens), per-dispatch execution phases, and companion process memory for performance baselines.
+
 ## [1.2.11] - 2026-09-24
 
 - Managed runtime: remove the bundled Context Mode integration and its worker stack, simplify prompt tool routing, and update agent guidance and QA fixtures for native tools.

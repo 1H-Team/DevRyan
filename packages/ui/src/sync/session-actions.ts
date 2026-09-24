@@ -2303,6 +2303,10 @@ export function describeScopedRevertFailure(error: unknown): string | null {
       return translate("chat.sessionChanges.error.runtimeUnsupported")
     case "mutation_history_unavailable":
       return translate("chat.sessionChanges.error.historyUnavailable")
+    case "mutation_history_captured":
+      return translate("chat.sessionChanges.error.companionOwned")
+    case "mutation_recovery_pending":
+      return translate("chat.sessionChanges.error.companionRecoveryPending")
     case "mutation_cancellation_failed":
     case "mutation_termination_unconfirmed":
       return translate("chat.sessionChanges.error.terminationUnconfirmed")

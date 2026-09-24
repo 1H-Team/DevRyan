@@ -84,6 +84,11 @@ export interface SessionMutationRuntime {
     expectedPhase: MutationTransaction['phase']; phase: MutationTransaction['phase']; boundaries?: MutationBoundary[];
   }): Promise<MutationTransaction>;
   pendingTransactions(input: { directory: string }): Promise<MutationTransaction[]>;
+  /** Read-only: whether the ledger owns this conversation, or any project transaction awaits recovery. Never creates a ledger. */
+  capturedSessionState(input: { directory: string; sessionID: string }): Promise<{ captured: boolean; pending: boolean }>;
+  /** Compare-and-swap restoration of unowned content under the publication lock; mismatched paths are conflicts. */
+  restoreForeign(input: { directory: string; files: Array<{ path: string; expected: { mode: string; bytes: Uint8Array } | null; target: { mode: string; bytes: Uint8Array } | null }> }):
+    Promise<{ files: Array<{ path: string; status: 'unchanged' | 'added' | 'modified' | 'deleted' }>; conflicts: Array<{ path: string }> }>;
   leaseForCall(input: Pick<MutationScope, 'directory' | 'sessionID' | 'callID'>): Promise<MutationLease | null>;
   cancelLease(input: { directory: string; token: string }): Promise<void>;
   cancelUnstartedCall(input: { directory: string; sessionID: string; messageID: string; callID: string; token?: string }): Promise<void>;

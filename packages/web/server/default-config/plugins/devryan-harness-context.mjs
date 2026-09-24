@@ -22,6 +22,7 @@ const stable = (value) => Array.isArray(value) ? value.map(stable) : record(valu
   ? Object.fromEntries(Object.keys(value).sort().map(key => [key, stable(value[key])])) : value;
 const encodedBytes = (value) => Buffer.byteLength(JSON.stringify(value));
 const SKILL_REUSE = '<devryan_skill_reuse>';
+const INSTRUCTION_REUSE = '<devryan_instruction_reuse>';
 const protectedFields = (value) => record(value) && Object.keys(value).some(key =>
   key !== 'providerID' && /provider|signature|opaque|encrypted|reasoning/i.test(key) && value[key] != null);
 const sessionOf = (messages) => {
@@ -46,6 +47,30 @@ const projectObservations = (messages) => {
   for (let i = 0; i < messages.length; i++) {
     const message = messages[i];
     if (message.info.summary === true || message.parts.some(part => part?.type === 'compaction')) { seen.clear(); continue; }
+    if (message.info.role === 'user') {
+      // Repeated synthetic instructions (e.g. the Plan-mode preface on every
+      // revision): the first full copy stays, later byte-identical copies
+      // become references. Earlier messages never change, so the cached prefix
+      // is stable; a compaction boundary restarts with a full copy.
+      let parts = message.parts;
+      for (let j = 0; j < parts.length; j++) {
+        const part = parts[j];
+        if (part?.type !== 'text' || part.synthetic !== true || typeof part.text !== 'string'
+          || Buffer.byteLength(part.text) < 1024 || part.text.includes(INSTRUCTION_REUSE)
+          || protectedFields(part) || protectedFields(part.metadata)) continue;
+        const key = `instruction:${hash(part.text)}`;
+        if (!seen.has(key)) { seen.set(key, { reference: { messageID: message.info.id } }); continue; }
+        const text = `${INSTRUCTION_REUSE}The byte-identical instruction from an earlier user message in this active context still applies in full to this message.</devryan_instruction_reuse>`;
+        const reduction = Buffer.byteLength(part.text) - Buffer.byteLength(text);
+        if (reduction <= 0) continue;
+        stats.plannedReductions++;
+        if (parts === message.parts) parts = [...parts];
+        parts[j] = { ...part, text };
+        stats.appliedReductions++; stats.savedBytes += reduction;
+      }
+      if (parts !== message.parts) messages[i] = { ...message, parts };
+      continue;
+    }
     if (message.info.role !== 'assistant') continue;
     const messageProtected = protectedFields(message.info) || message.parts.some(part => protectedFields(part) || protectedFields(part.metadata));
     let parts = message.parts;

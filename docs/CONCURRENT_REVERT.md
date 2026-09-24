@@ -31,8 +31,22 @@ change the original repository metadata.
 
 Trusted host control operations reserve the same identities and cancellation
 fences in an empty private directory without reconciling or copying the project.
-Their leases cannot claim process execution. Skills and file tools still use
-confined views; there is no exemption based on a tool's name.
+Their leases cannot claim process execution. Skills and writing or process
+tools still use confined views. The exemption is never based on a tool's name.
+
+The built-in `read`, `glob` and `grep` run as control operations in the
+companion process on the published project, with no private view or worker.
+Each implementation was audited to read only (see
+[companion/SEAMS.md](../packages/web/server/lib/opencode/companion/SEAMS.md)):
+- `read` keeps its LSP warm-up disabled there.
+- `grep` and `glob` use read-only ripgrep.
+
+Publication renames each file atomically, so a read never observes a partial
+write. The exemption is keyed by built-in object identity: a plugin or file tool
+reusing one of those ids stays confined. `DEVRYAN_NATIVE_READ_TOOLS=0` confines
+them again. Workers for built-in tools boot without plugins, because plugin
+hooks run in the control process and only plugin-defined tools need their
+plugin inside the worker.
 
 The companion dispatches native and custom file tools in private views. Each
 dispatch names the tool's origin (built-in or custom), so a plugin tool that
@@ -45,7 +59,7 @@ trusted control operations. Native task and managed
 orchestration dispatches register parent call identities before starting children.
 Cursor uses one confined process per turn, mirrors canonical conversation
 records, and awaits publication before completion. Claude through Meridian uses
-passthrough tools and a separate read-only provider transport. Provider API
+passthrough tools and a separate read-only provider transport. On macOS that transport runs from the real project directory, with every write outside its private state still denied. Its environment prompt, and so its cached prefix, stays the same across requests, and the model sees true paths. Confined processes may reach only the system DNS resolver socket (`/private/var/run/mDNSResponder`); every other local unix socket stays denied. Provider API
 credentials are not diagnostic evidence or execution ownership.
 
 Native enforcement, not a working directory convention, prevents writes to the
@@ -91,6 +105,20 @@ Each reconciled execution base has a durable Git ref while preparation, executio
 or recovery consumes it. Cleanup requires a terminal lease, proof that native
 writers have stopped and no active consumers. It removes the private view while
 preserving termination receipts, publication history and conflict objects. Snapshot ref identity commits before pin installation. Terminal leases carry durable pending cleanup; recovery also discovers older uncleaned terminal records and isolates each lease failure. Cleanup failures are reported separately from a successful publication and retried on recovery. Private read-only directories can be removed after these guards pass without following symlinks to project or dependency inputs.
+**Per-call cost.** A view records only its base file list. Publication
+recomputes the "before" runs of the files a call changed from the lease's
+pinned snapshot: the same runs, filtered by the operations inactive in that
+same snapshot. Nothing is copied per project file into the lease or main state
+(`DEVRYAN_LAZY_BASE_RUNS=0` restores the copy; older leases keep it).
+
+View files are copy-on-write clones of objects whose bytes were verified once
+per object identity (`DEVRYAN_VIEW_CLONE=0` byte-copies). Publication reuses
+the base entry of a file whose full stat stamp is unchanged (inode, size, mode,
+nanosecond mtime and ctime); whole-second timestamps are always re-hashed
+(`DEVRYAN_VIEW_STAT_REUSE=0` hashes every file). Repository resolution is
+cached while the repository's `.git` identity is unchanged and no nested `.git`
+appears (`DEVRYAN_LEDGER_REPOSITORY_CACHE=0`).
+
 Captured content is stored as immutable content-addressed objects. An observed
 file is hashed first; content already in the store is not copied or synced
 again. New object data is synced before its hard link, and the objects
@@ -151,9 +179,42 @@ Its release staging restores executable permissions after verifying downloaded
 artifact hashes, so normalized CI download modes cannot make the runtime fail
 to start.
 
-Supported bundled modes require the expected artifacts even when files are
-missing. Startup records `required_unavailable`, keeps the server and `GET /api/diagnostics/execution-runtime` accessible, and returns `execution_artifacts_unavailable` (503) for affected execution. Managed runtime spawn, prompt/command/shell routes, the private tool bridge and Cursor starts enforce this state. There is no uncaptured fallback. Explicitly
-external or unsupported runtime modes retain their documented ordinary behavior.
+If a managed host on a supported platform cannot verify the companion,
+startup records `degraded` and runs plain OpenCode. `GET /api/diagnostics/execution-runtime`
+and health report the state, and Settings shows it.
+- Tools and Cursor run unconfined, as in external mode.
+- Conversation Revert/Redo and change Undo stay available for conversations
+  the ledger does not own.
+- For a conversation the ledger owns, the legacy snapshot path refuses with
+  `mutation_history_captured`, before any message or file changes. The same
+  applies to the whole project while a ledger transaction awaits recovery
+  (`mutation_recovery_pending`). Those require the companion, so pending
+  recovery resumes only when it returns.
+- Edits made while degraded are ordinary foreign changes to the ledger, which
+  already never replaces unexpected newer foreign bytes.
+
+With the companion active, a conversation the ledger never owned can still be
+reverted. This covers one that ran while degraded, or before the companion
+existed. It uses its uncaptured per-call change evidence:
+- The evidence must be exact, whole-file and contiguous per path
+  (`session-changes.js` `legacyHistory`); anything else is
+  `mutation_history_unavailable`.
+- The coordinator stops the tree, moves the conversation marker with the
+  no-file rollback, and then calls `restoreForeign` under the publication lock.
+- Each path is written only while its bytes still equal what that conversation
+  last produced. Newer bytes from anyone else become conflicts (a partial
+  outcome), never overwritten.
+- One durable record per root session (`revert-transactions/<project>/legacy/`)
+  resumes an interrupted file phase and gives Redo its exact inverse.
+- A conversation that continued under the companion is exact only from its
+  first captured prompt. Reverting further back remains
+  `mutation_history_unavailable`.
+
+A host started with `DEVRYAN_EXECUTION_BOUNDARY=1` requires capture. It still
+records `required_unavailable` and returns `execution_artifacts_unavailable`
+(503) for managed spawn, prompt/command/shell routes, the private tool bridge
+and Cursor starts. Explicitly external or unsupported runtime modes retain their
+documented ordinary behavior.
 Deploy or roll back the host and companion together. A preparation rollback must
 retain a host that can read whole-content revisions and retained conflict objects;
 do not point a pre-migration ledger implementation at new history.

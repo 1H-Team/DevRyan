@@ -6,7 +6,10 @@ import { useI18n } from '@/lib/i18n';
 
 type SupportStatus = 'supported' | 'older' | 'newer' | 'unknown';
 
+type CompanionState = { state: string; version: string | null };
+
 type OpenCodeVersionState = {
+  companion: CompanionState | null;
   currentVersion: string | null;
   latestVersion: string | null;
   supportedVersion: string | null;
@@ -28,6 +31,7 @@ type OpenCodeUpdateResponse = {
 const SUPPORT_STATUSES = new Set<SupportStatus>(['supported', 'older', 'newer', 'unknown']);
 
 const initialState: OpenCodeVersionState = {
+  companion: null,
   currentVersion: null,
   latestVersion: null,
   supportedVersion: null,
@@ -45,6 +49,11 @@ const asRecord = (value: unknown): Record<string, unknown> | null =>
 
 const versionOrNull = (value: unknown): string | null =>
   typeof value === 'string' && value.trim() ? value.trim() : null;
+
+const parseCompanion = (value: unknown): CompanionState | null => {
+  const data = asRecord(value);
+  return data && typeof data.state === 'string' ? { state: data.state, version: versionOrNull(data.version) } : null;
+};
 
 const parseUpdateResponse = (value: unknown): OpenCodeUpdateResponse | null => {
   const data = asRecord(value);
@@ -109,6 +118,7 @@ export const OpenCodeVersionSection: React.FC<{ compact?: boolean }> = ({ compac
 
         setState((current) => ({
           ...current,
+          companion: parseCompanion(data.companion),
           currentVersion: versionOrNull(data.detectedVersion),
           supportedVersion: versionOrNull(data.targetVersion),
           error: null,
@@ -143,12 +153,13 @@ export const OpenCodeVersionSection: React.FC<{ compact?: boolean }> = ({ compac
         throw new Error('invalid_update_response');
       }
 
-      setState({
+      setState((current) => ({
         ...updateInfo,
+        companion: current.companion,
         checked: true,
         checking: false,
         error: null,
-      });
+      }));
     } catch {
       setState((current) => ({
         ...current,
@@ -224,6 +235,16 @@ export const OpenCodeVersionSection: React.FC<{ compact?: boolean }> = ({ compac
       <div className="mt-2 flex flex-col gap-0.5">
         {supportText && (
           <p className="typography-micro text-muted-foreground/80">{supportText}</p>
+        )}
+        {state.companion?.state === 'active' && state.companion.version && (
+          <p className="typography-micro text-muted-foreground/80">
+            {t('settings.openchamber.about.opencode.companion.active', { version: state.companion.version })}
+          </p>
+        )}
+        {state.companion?.state === 'degraded' && (
+          <p className="typography-micro text-[var(--status-warning)]" role="status">
+            {t('settings.openchamber.about.opencode.companion.degraded')}
+          </p>
         )}
       </div>
     </section>

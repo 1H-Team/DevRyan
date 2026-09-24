@@ -124,6 +124,35 @@ describe('DevRyan Oh My OpenCode Slim wrapper', () => {
     expect(emptyConfig).toEqual({ marker: true });
   });
 
+  it('drops only Slim\'s tagged phase reminders from outgoing messages', async () => {
+    createInstalledPlugin(`export default async () => ({
+      'experimental.chat.messages.transform': async (_input, output) => {
+        for (const message of output.messages) message.parts.push(
+          { type: 'text', synthetic: true, text: '<system-reminder>phase</system-reminder>', metadata: { 'oh-my-opencode-slim.phaseReminder': true } },
+          { type: 'text', synthetic: true, text: 'job board', metadata: { 'oh-my-opencode-slim.backgroundJobBoard': true } });
+      },
+    });`);
+    const plugin = await DevRyanOhMyOpenCodeSlimPlugin({});
+    const output = { messages: [{ info: { role: 'user', agent: 'orchestrator' }, parts: [{ type: 'text', text: 'do it' }] }] };
+    await plugin['experimental.chat.messages.transform']({}, output);
+    expect(output.messages[0].parts.map((part) => part.text)).toEqual(['do it', 'job board']);
+  });
+
+  it('keeps Slim phase reminders when explicitly requested', async () => {
+    process.env.DEVRYAN_SLIM_PHASE_REMINDER = '1';
+    try {
+      createInstalledPlugin(`export default async () => ({
+        'experimental.chat.messages.transform': async (_input, output) => {
+          output.messages[0].parts.push({ type: 'text', synthetic: true, text: 'phase', metadata: { 'oh-my-opencode-slim.phaseReminder': true } });
+        },
+      });`);
+      const plugin = await DevRyanOhMyOpenCodeSlimPlugin({});
+      const output = { messages: [{ info: { role: 'user' }, parts: [{ type: 'text', text: 'do it' }] }] };
+      await plugin['experimental.chat.messages.transform']({}, output);
+      expect(output.messages[0].parts).toHaveLength(2);
+    } finally { delete process.env.DEVRYAN_SLIM_PHASE_REMINDER; }
+  });
+
   it('rejects an installed descriptor without a callable server', async () => {
     createInstalledPlugin("export default { id: 'oh-my-opencode-slim', server: {} };");
     await expect(DevRyanOhMyOpenCodeSlimPlugin({})).rejects.toThrow('does not export a plugin');

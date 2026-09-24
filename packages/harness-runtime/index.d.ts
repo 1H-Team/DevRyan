@@ -470,10 +470,15 @@ export interface UsageSummary {
   requestDurationMs: UsageMetric; timeToFirstTokenMs: UsageMetric; interRequestGapMs: UsageMetric; observedSpanMs: number | null;
 }
 export interface UsageCohorts { all: UsageSummary; byPurpose: Record<string, UsageSummary>; byUse: Record<string, UsageSummary>; helpers: UsageSummary; helperInputShare: number | null }
+export interface UsageContinuity {
+  compared: number; unknown: number; breaks: number; breaksWithinWarmGap: number; lostPrefixTokensWithinWarmGap: number;
+  explicitStreams: number; implicitStreams: number;
+}
 export interface UsageReportV1 {
   version: 1; source: 'retained-journal'; incomplete: boolean;
   coverage: { retained: number; omitted: number; omittedRoots: number; journalGaps: number; duplicates: number; cumulativeGaps: number; conflicts: number; unsettled: number; attributionConflicts: number };
-  roots: Array<{ rootSessionID: string; runtime: UsageCohorts; provider: UsageCohorts; observedTaskSpanMs: number | null; routes: Array<{ identity: Array<string | null>; bySource: Record<string, UsageSummary> }> }>;
+  roots: Array<{ rootSessionID: string; runtime: UsageCohorts; provider: UsageCohorts;
+    continuity: { runtime: UsageContinuity; provider: UsageContinuity }; observedTaskSpanMs: number | null; routes: Array<{ identity: Array<string | null>; bySource: Record<string, UsageSummary> }> }>;
   limitations: string[]; observations: import('../shared-runtime/lib/usage-observation.js').UsageObservationV1[];
 }
 export function createUsageCollector(options?: { maxObservations?: number; maxBytes?: number }): { add(record: unknown): void; finish(): UsageReportV1 };
@@ -861,9 +866,15 @@ export interface SessionChangeHost {
   getReadDiagnostics(): { active: number; queued: number; scopes: number; activeResponses: number; responseBytes: number; peakResponseBytes: number };
   observe(event: unknown, directory?: string | null): Promise<void>;
   drain(): Promise<void>;
+  /** Exact whole-file uncaptured evidence for a conversation tree from `since`; throws when incomplete. */
+  legacyHistory(input: { directory: string; sessionIDs: string[]; since: number }): Promise<Array<{ path: string;
+    current: { mode: string; oid: string } | null; previous: { mode: string; oid: string } | null }>>;
+  legacyBlob(input: { directory: string; oid: string }): Promise<Uint8Array>;
 }
 export function createSessionChangeHost(options: Pick<PrimaryRecoveryHostOptions, 'dataDirectory' | 'buildOpenCodeUrl' | 'getOpenCodeAuthHeaders' | 'fetchImpl' | 'publishEvent'> & {
   restoreOwned?: (input: SessionOwnedRestoreRequest) => Promise<unknown>;
+  /** Without the ownership ledger, rejects restoring a conversation the ledger owns. */
+  assertLegacyRestore?: (input: { directory: string; sessionID: string }) => Promise<void>;
   onDiagnostic?: (event: SessionChangeDiagnostic) => void | Promise<void>;
   reconcileExecutionReceipts?: (scope: { directory: string; sessionID: string }) => Promise<{ pending: boolean; reasons: string[] }>;
 }): SessionChangeHost;

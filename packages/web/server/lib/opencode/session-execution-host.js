@@ -92,7 +92,7 @@ export function createSessionExecutionHost(options) {
   };
   const rawCoordinator = createScopedRevertCoordinator({ runtime, executions, openchamberDataDir: options.dataDirectory,
     buildOpenCodeUrl: options.buildOpenCodeUrl, getOpenCodeAuthHeaders: options.getOpenCodeAuthHeaders,
-    fetchImpl: options.fetchImpl, onDiagnostic: options.onDiagnostic });
+    fetchImpl: options.fetchImpl, onDiagnostic: options.onDiagnostic, legacy: options.legacyChanges });
   const coordinator = Object.fromEntries(Object.entries(rawCoordinator).map(([name, action]) => [name, typeof action === 'function'
     ? (input) => activity([input?.sessionID], () => action(input)) : action]));
   const persistCursorRecord = async ({ sessionID, directory, record }) => {
@@ -256,10 +256,22 @@ export function createSessionExecutionHost(options) {
     ? withExecutionAdmission(input, () => executionPhase(input.action === 'cancel-before-start' ? 'cleanup' : 'host_request', () => dispatch(input)), {
       timeoutMs: options.admissionTimeoutMs ?? 50_000, idleMs: options.admissionIdleMs ?? 25_000, onDiagnostic: options.onDiagnostic,
       // Healthy host requests are frequent and fast; they are journaled only when slow or failed.
-      summary: { minMs: 250 },
+      // Baseline QA lowers the threshold to journal every request's phase summary.
+      summary: { minMs: options.admissionSummaryMinMs ?? 250 },
     }) : dispatch(input);
   const plugin = (input) => activity([input.sessionID, input.parentID], () => dispatchPlugin(input));
-  return { get retentionReady() { return retentionReady; }, runtime, executions, coordinator, plugin, isConfined, persistCursorRecord, startCursor,
+  // Without the companion, a legacy (OpenCode snapshot) revert would bypass the
+  // ownership ledger. Refuse it for any conversation the ledger owns, and while
+  // any ledger transaction in the project still awaits recovery.
+  const assertLegacyRevertAllowed = async ({ directory, sessionID }) => {
+    if (!identity(sessionID) || !path.isAbsolute(directory ?? '')) throw failure('invalid_capture_identity', 400);
+    const state = await runtime.capturedSessionState({ directory, sessionID });
+    if (state.captured) throw Object.assign(new Error('This conversation\'s changes are owned by the DevRyan companion, which is unavailable. Revert and Redo stay disabled until it is restored.'),
+      { code: 'mutation_history_captured', status: 409 });
+    if (state.pending) throw Object.assign(new Error('An interrupted Revert in this project is waiting for the DevRyan companion to finish recovery. Restore the companion before reverting.'),
+      { code: 'mutation_recovery_pending', status: 409 });
+  };
+  return { get retentionReady() { return retentionReady; }, runtime, executions, coordinator, plugin, isConfined, persistCursorRecord, startCursor, assertLegacyRevertAllowed,
     recover: async () => {
       retentionReady = false; let failed = false;
       const report = (cause) => {

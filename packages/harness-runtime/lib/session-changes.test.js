@@ -34,6 +34,23 @@ describe('session changes', () => {
     expect(result.files).toEqual([{ path: 'a.txt', oldPath: null, status: 'modified', additions: 1, deletions: 0, sessions: ['a'], reviewMode: 'net', segmentCount: 0 }]);
     expect(command('diff', '--cached')).toBe(index); expect(command('rev-parse', 'HEAD')).toBe(head);
   });
+  test('exposes exact uncaptured history for adopted Revert and refuses interleaved foreign edits', async () => {
+    const since = Date.now() - 1;
+    await change(() => write('a.txt', 'one\n'));
+    await change(() => write('a.txt', 'two\n'));
+    await change(() => write('new.txt', 'created\n'));
+    const history = await runtime.legacyHistory({ directory, sessionIDs: ['a'], since });
+    const byPath = Object.fromEntries(history.map((entry) => [entry.path, entry]));
+    expect(Object.keys(byPath).sort()).toEqual(['a.txt', 'new.txt']);
+    expect(String(await runtime.legacyBlob({ directory, oid: byPath['a.txt'].current.oid }))).toBe('two\n');
+    expect(String(await runtime.legacyBlob({ directory, oid: byPath['a.txt'].previous.oid }))).toBe('base\n');
+    expect(byPath['new.txt'].previous).toBeNull();
+    // A later boundary selects only the later calls.
+    expect(await runtime.legacyHistory({ directory, sessionIDs: ['b'], since })).toEqual([]);
+    await write('a.txt', 'foreign\n');
+    await change(() => write('a.txt', 'three\n'));
+    await expect(runtime.legacyHistory({ directory, sessionIDs: ['a'], since })).rejects.toMatchObject({ code: 'mutation_history_unavailable' });
+  });
   test('net edits cancel and add/delete disappears', async () => {
     await change(() => write('new.txt', 'one\n'));
     await change(() => write('new.txt', 'two\n'));

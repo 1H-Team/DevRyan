@@ -1,0 +1,227 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-24",
+  "status": "native-synthetic-probe",
+  "providerRoute": "openai/gpt-5.6-sol via synthetic loopback Responses transport",
+  "runs": [
+    {
+      "attempt": 1,
+      "runtimeVersion": "1.18.31",
+      "runtimeHash": "dc0954bd4d85e298992971ce3822c40b0af80b180d4fc5248f973d11ce76681f",
+      "passed": false,
+      "failures": [
+        "candidate:The operation was aborted due to timeout"
+      ],
+      "checks": {
+        "paired": false,
+        "uniqueEvidence": true,
+        "cleanupComplete": true,
+        "referencesResolve": true,
+        "callPairsIntact": true,
+        "summaryReferencesAbsent": true,
+        "manualBoundaries": false,
+        "automaticBoundary": false,
+        "nativeOrdering": false,
+        "prunedAnchorsRejected": true
+      },
+      "paired": [
+        {
+          "label": "control",
+          "baselineBytes": 43138,
+          "candidateBytes": null,
+          "passed": false
+        },
+        {
+          "label": "duplicates",
+          "baselineBytes": 72397,
+          "candidateBytes": null,
+          "passed": false
+        },
+        {
+          "label": "pruned",
+          "baselineBytes": 63110,
+          "candidateBytes": null,
+          "passed": false
+        }
+      ],
+      "pluginInventory": null,
+      "peakSerializedRequestBytes": 72397,
+      "compactionFrequency": 3,
+      "observedHookDurationMs": null,
+      "nativeEvidenceDirectory": ".cache/companion-c4/tree/.cache/qa/duplicate-serializer-kpvH76",
+      "liveProvider": false,
+      "qualification": "synthetic-fixture-only",
+      "failureNote": "Candidate arm: warmup prompt hit the 60 s probe timeout before any provider request or harness transform/qualification RPC (pluginInventory null, zero candidate observations); opencode log stops after config loading. Baseline arm completed. Retained as failed; two subsequent complete runs passed unchanged."
+    },
+    {
+      "attempt": 2,
+      "runtimeVersion": "1.18.31",
+      "runtimeHash": "dc0954bd4d85e298992971ce3822c40b0af80b180d4fc5248f973d11ce76681f",
+      "passed": true,
+      "failures": [],
+      "checks": {
+        "paired": true,
+        "uniqueEvidence": true,
+        "cleanupComplete": true,
+        "referencesResolve": true,
+        "callPairsIntact": true,
+        "summaryReferencesAbsent": true,
+        "manualBoundaries": true,
+        "automaticBoundary": true,
+        "nativeOrdering": true,
+        "prunedAnchorsRejected": true
+      },
+      "paired": [
+        {
+          "label": "control",
+          "baselineBytes": 43138,
+          "candidateBytes": 43138,
+          "passed": true
+        },
+        {
+          "label": "duplicates",
+          "baselineBytes": 72397,
+          "candidateBytes": 54679,
+          "passed": true
+        },
+        {
+          "label": "pruned",
+          "baselineBytes": 63110,
+          "candidateBytes": 54251,
+          "passed": true
+        }
+      ],
+      "pluginInventory": {
+        "entries": [
+          {
+            "name": "duplicate-serializer-fixture.mjs",
+            "sourceHash": "7decbbfcd42c5ef488b76f4fad83149aebc8a15c12d71c98e6378e0eb0ae1746",
+            "contentHash": "df6af5632ca49deea3f9806c06e055ca15543e4a45728feb4ef5ef13ec180b39"
+          },
+          {
+            "name": "devryan-harness-context.mjs",
+            "sourceHash": "8756d6a4e1ee467f20bb5f88b8235af250879f8fbd2358d76902a65e127caf1a",
+            "contentHash": "c97893cda4f61c7fdc1f0cad44dd2484c87215fad2d06b38f1855e263d41f9c7"
+          },
+          {
+            "name": "devryan-skill-context.mjs",
+            "sourceHash": "8dcfc2387fea0b8a2bb93bab8aa95a32e0baeb0491bfdcd6e255f68a7c87b4aa",
+            "contentHash": "99929e135c01749b7e8303b35179240f386e53816b9a35ab57e0d3ad372d551c"
+          },
+          {
+            "name": "devryan-document-reader.mjs",
+            "sourceHash": "6f80ce7e67bead38984882fa1089470cb515b7e775200713feddd29358b1d7a5",
+            "contentHash": "bef4052f50aa08644dd0c2191ee07d6811c9e0cff57f0090afe9613895cf5de4"
+          },
+          {
+            "name": "devryan-tool-input-guard.mjs",
+            "sourceHash": "358011dd341f7aba8fecba4379b0663eca0f190f2ded1682ef901b7eada705f5",
+            "contentHash": "e485d28adb37b4052df0c3ea3c1556cbaab712690f15da86204ba8e1a1043ebb"
+          }
+        ],
+        "providerHash": "ff0b9a460bbed5e11e53d6e7d88863e747fa867f6e0f4ae88f9d1a888ad062ad",
+        "configurationHash": "44ad4948362ffe977acb0f914077cbb29edfc0af55a29ffce8a8155cc122e12c",
+        "contentHash": "1daaaa9d8feee2c1aee119afd74964c2d7e567ce93a2255ed787141ea2fbc87b"
+      },
+      "peakSerializedRequestBytes": 72397,
+      "compactionFrequency": 6,
+      "observedHookDurationMs": {
+        "count": 10,
+        "mean": 0.3116166999999678,
+        "maximum": 0.49245799999994233
+      },
+      "nativeEvidenceDirectory": ".cache/companion-c4/tree/.cache/qa/duplicate-serializer-GjVnrg",
+      "liveProvider": false,
+      "qualification": "synthetic-fixture-only"
+    },
+    {
+      "attempt": 3,
+      "runtimeVersion": "1.18.31",
+      "runtimeHash": "dc0954bd4d85e298992971ce3822c40b0af80b180d4fc5248f973d11ce76681f",
+      "passed": true,
+      "failures": [],
+      "checks": {
+        "paired": true,
+        "uniqueEvidence": true,
+        "cleanupComplete": true,
+        "referencesResolve": true,
+        "callPairsIntact": true,
+        "summaryReferencesAbsent": true,
+        "manualBoundaries": true,
+        "automaticBoundary": true,
+        "nativeOrdering": true,
+        "prunedAnchorsRejected": true
+      },
+      "paired": [
+        {
+          "label": "control",
+          "baselineBytes": 43138,
+          "candidateBytes": 43138,
+          "passed": true
+        },
+        {
+          "label": "duplicates",
+          "baselineBytes": 72397,
+          "candidateBytes": 54679,
+          "passed": true
+        },
+        {
+          "label": "pruned",
+          "baselineBytes": 63110,
+          "candidateBytes": 54251,
+          "passed": true
+        }
+      ],
+      "pluginInventory": {
+        "entries": [
+          {
+            "name": "duplicate-serializer-fixture.mjs",
+            "sourceHash": "7decbbfcd42c5ef488b76f4fad83149aebc8a15c12d71c98e6378e0eb0ae1746",
+            "contentHash": "df6af5632ca49deea3f9806c06e055ca15543e4a45728feb4ef5ef13ec180b39"
+          },
+          {
+            "name": "devryan-harness-context.mjs",
+            "sourceHash": "8756d6a4e1ee467f20bb5f88b8235af250879f8fbd2358d76902a65e127caf1a",
+            "contentHash": "c97893cda4f61c7fdc1f0cad44dd2484c87215fad2d06b38f1855e263d41f9c7"
+          },
+          {
+            "name": "devryan-skill-context.mjs",
+            "sourceHash": "8dcfc2387fea0b8a2bb93bab8aa95a32e0baeb0491bfdcd6e255f68a7c87b4aa",
+            "contentHash": "99929e135c01749b7e8303b35179240f386e53816b9a35ab57e0d3ad372d551c"
+          },
+          {
+            "name": "devryan-document-reader.mjs",
+            "sourceHash": "6f80ce7e67bead38984882fa1089470cb515b7e775200713feddd29358b1d7a5",
+            "contentHash": "bef4052f50aa08644dd0c2191ee07d6811c9e0cff57f0090afe9613895cf5de4"
+          },
+          {
+            "name": "devryan-tool-input-guard.mjs",
+            "sourceHash": "358011dd341f7aba8fecba4379b0663eca0f190f2ded1682ef901b7eada705f5",
+            "contentHash": "e485d28adb37b4052df0c3ea3c1556cbaab712690f15da86204ba8e1a1043ebb"
+          }
+        ],
+        "providerHash": "be1055412339afd3f69de29892d77e96551fe4a467def604135ce779f6d16164",
+        "configurationHash": "44ad4948362ffe977acb0f914077cbb29edfc0af55a29ffce8a8155cc122e12c",
+        "contentHash": "1daaaa9d8feee2c1aee119afd74964c2d7e567ce93a2255ed787141ea2fbc87b"
+      },
+      "peakSerializedRequestBytes": 72397,
+      "compactionFrequency": 6,
+      "observedHookDurationMs": {
+        "count": 10,
+        "mean": 0.31327900000012504,
+        "maximum": 0.49891600000000835
+      },
+      "nativeEvidenceDirectory": ".cache/companion-c4/tree/.cache/qa/duplicate-serializer-ypeOdk",
+      "liveProvider": false,
+      "qualification": "synthetic-fixture-only"
+    }
+  ],
+  "deterministicTests": {
+    "passed": true,
+    "files": 21,
+    "tests": 510,
+    "warmupTest": "15/15 agent-runtime-warmup.test.js after the fix",
+    "scope": "packages/web server/default-config/plugins/* + harness-duplicate-qualification + harness-run-fingerprint (vitest), scripts/qa duplicate-live/behavior (node --test, 5)"
+  },
+  "rolloutSupersededBy": "enablement.json"
+}

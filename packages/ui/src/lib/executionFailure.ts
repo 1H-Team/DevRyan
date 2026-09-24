@@ -12,6 +12,8 @@ const explanations: Record<string, string> = {
   mutation_runtime_missing: 'The paired execution runtime is missing. Repair or update the installation before retrying.',
   mutation_runtime_unsupported: 'This runtime cannot provide the required execution protection. Use a supported runtime.',
   session_retention_in_progress: 'Session cleanup is in progress. Retry after it finishes.',
+  mutation_history_captured: 'This conversation\'s changes are owned by the DevRyan companion, which is unavailable. Restore it to Revert or Redo.',
+  mutation_recovery_pending: 'An interrupted Revert in this project is waiting for the DevRyan companion to finish recovery. Restore it before reverting.',
 };
 
 /** Add actionable detail for known execution codes without exposing inputs or stacks. */

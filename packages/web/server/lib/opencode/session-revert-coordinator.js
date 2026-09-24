@@ -5,7 +5,7 @@ import { createSessionRevertCoordinator } from '@openchamber/harness-runtime';
  * this directory is captured and confined. Runtime version alone is not proof.
  */
 export function createScopedRevertCoordinator({ runtime, executions, openchamberDataDir,
-  buildOpenCodeUrl, getOpenCodeAuthHeaders, fetchImpl = fetch, onDiagnostic, onConversationChange }) {
+  buildOpenCodeUrl, getOpenCodeAuthHeaders, fetchImpl = fetch, onDiagnostic, onConversationChange, legacy }) {
   const request = async (pathname, directory, body) => {
     const url = new URL(buildOpenCodeUrl(pathname, ''));
     url.searchParams.set('directory', directory);
@@ -21,12 +21,18 @@ export function createScopedRevertCoordinator({ runtime, executions, openchamber
   };
   const endpoint = (id, action = '') => `/session/${encodeURIComponent(id)}${action}`;
   return createSessionRevertCoordinator({ directory: path.join(openchamberDataDir, 'harness', 'revert-transactions'), runtime, executions,
-    onDiagnostic, conversation: {
+    onDiagnostic, legacy, conversation: {
       capabilities: async ({ directory }) => {
         try { return await request('/session/revert-capabilities', directory); }
         catch { return {}; }
       },
       get: ({ directory, sessionID }) => request(endpoint(sessionID), directory),
+      children: async ({ directory, sessionID }) => {
+        const children = await request(endpoint(sessionID, '/children'), directory);
+        if (!Array.isArray(children)) throw Object.assign(new Error('Invalid session tree'), { code: 'invalid_session_tree', status: 503 });
+        return children;
+      },
+      message: ({ directory, sessionID, messageID }) => request(endpoint(sessionID, `/message/${encodeURIComponent(messageID)}`), directory),
       revert: ({ directory, sessionID, messageID, partID, files }) => request(endpoint(sessionID, '/revert'), directory, { messageID, partID, files }),
       unrevert: ({ directory, sessionID }) => request(endpoint(sessionID, '/unrevert'), directory, {}),
     } });
