@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.12] - 2026-09-24
+
 - DevRyan companion 2.0.0: the companion is versioned on its own and reports plain OpenCode versions.
   - Built-in read, glob and grep run natively without a sandboxed worker.
   - Built-in tool workers start without loading plugins.
@@ -27,6 +29,8 @@ All notable changes to this project will be documented in this file.
   - The startup health warmup uses `/global/health`, so it no longer triggers an external request to app.opencode.ai.
   - Bundled tool definitions have a byte budget.
 - Measurement: report prompt-cache continuity (breaks and lost prefix tokens), per-dispatch execution phases, and companion process memory for performance baselines.
+- QA: isolate HOME, Meridian, and Claude state in test profiles so quota checks cannot read the user's installed runtime state.
+- Database: apply any pending repository migrations and verify the Production Bots schema marker before release publication.
 
 ## [1.2.11] - 2026-09-24
 
