@@ -14,7 +14,7 @@ Managed ownership applies independently of the optional switches. A root without
 
 ## Independent rollout switches
 
-Duplicate outputs default on only for a non-stale qualified profile: a verified executable, managed transport, route and ordered managed plugin content inventory. The current release profile is `devryan-companion-2.0.0-openai-sol-medium`: the DevRyan companion 2.0.0 executable on macOS arm64, OpenAI ChatGPT Responses, `gpt-5.6-sol` / Medium ([requalification audit](audits/2026-09-24-companion-requalification/README.md), −29% primary-request input). The earlier `opencode-1.18.31-openai-sol-medium` profile ([qualification audit](audits/2026-09-20-context-deduplication/README.md)) stays on record as `stale`: its plugin bytes changed and it pinned the unpatched executable. A stale profile keeps its evidence on record but never qualifies. Other optimization defaults remain off. Set a switch to exactly `1` in the owned managed host environment and restart that host to request its behavior; duplicate outputs still require a qualified profile. Set it to `0` and restart to roll back; durable tasks, envelopes, history, receipts and decision provenance remain valid. Installed apps acquire these release defaults through their normal update and managed-runtime restart, not an in-place experiment.
+Duplicate outputs default on only for a non-stale qualified profile: a verified executable, managed transport, route and ordered managed plugin content inventory. The current release profiles match the DevRyan companion 2.1.0 build of OpenCode 1.18.32 by build identity (upstream version, base commit, patch and build inputs) and the policy vector: xAI OAuth Responses `grok-4.7` / Medium and `grok-4.6` / High, and OpenAI ChatGPT Responses `gpt-6-astra` / Medium and `gpt-5.6-sol` / Medium ([route audit](audits/2026-09-24-duplicate-routes/README.md), −26% primary-request input on xAI, −29% on OpenAI). `devryan-companion-2.0.0-openai-sol-medium` ([requalification audit](audits/2026-09-24-companion-requalification/README.md)) and `opencode-1.18.31-openai-sol-medium` ([qualification audit](audits/2026-09-20-context-deduplication/README.md)) stay on record as `stale`: their plugin bytes changed, and they pinned executable hashes. A stale profile keeps its evidence on record but never qualifies. Other optimization defaults remain off. Set a switch to exactly `1` in the owned managed host environment and restart that host to request its behavior; duplicate outputs still require a qualified profile. Set it to `0` and restart to roll back; durable tasks, envelopes, history, receipts and decision provenance remain valid. Installed apps acquire these release defaults through their normal update and managed-runtime restart, not an in-place experiment.
 
 | Environment switch | Negotiated capability | Behavior |
 | --- | --- | --- |
@@ -80,7 +80,7 @@ PRs run `bun run perf:harness --baseline <checkout> --output <report.json>` agai
 
 For a release decision, `bun run perf:compare --config <config.json>` combines matching deterministic report files with optional live paired agent report files. Config schema version 1 requires `baseline`, `candidate`, and `output` paths (relative to the config), and accepts `agentPairs: [{ baseline, candidate }]`, `factor`, and `targetMetric`. Supply three pairs, or ten after outcome disagreement. Fixture/protocol/runtime identities and case membership must match; native reports additionally use the existing fingerprint/outcome comparator. The numeric projection covers success, input/output tokens, retries, latency, CPU and retained bytes. Unobserved provider retries or CPU remain null; managed retry dispositions are not relabelled as total provider retries. Passing local checks cannot enable a policy or replace the required manual/natural native journeys.
 
-Generate the optional Orchestrator candidate with `node scripts/agent-evals/compact-orchestrator.mjs --output .cache/qa/role-candidate`. It moves templates and duplicated workflow text to `skills/devryan-orchestration-guidance/SKILL.md`, retaining persistent routing, permissions, recovery and implementation-start admission. Provision the guidance identically in both isolated arms, copy only the candidate role into the candidate arm, and compare with `pairing.factor: "role"` and target `input`. The packaged default stays unchanged until those trials pass; fewer prompt bytes alone are not an outcome or token-efficiency result.
+Generate the optional Orchestrator candidate with `node scripts/agent-evals/compact-orchestrator.mjs --output .cache/qa/role-candidate`. It moves templates and duplicated workflow text to `skills/devryan-orchestration-guidance/SKILL.md`, retaining persistent routing, permissions, recovery and implementation-start admission. Provision the guidance identically in both isolated arms, copy only the candidate role into the candidate arm, and compare with `pairing.factor: "role"` and target `input`. The packaged default stays unchanged until those trials pass; fewer prompt bytes alone are not an outcome or token-efficiency result. Result (2026-09-23, OpenAI gpt-6-astra medium, 3 alternating pairs over the five routing and managed cases): every case passed in both arms, and candidate input totalled 656.6k tokens against 651.7k for the baseline (+0.7%, with large per-case variance). The verdict was `inconclusive` (`target_waste_not_reduced`): loading the guidance skill on demand offsets the smaller role, so the packaged role stays.
 
 The optional [cache accounting contract and QA workflow](CACHE_EFFICIENCY.md)
 adds `DevRyan-usage.json` to the existing ZIP. It reconciles runtime steps and
@@ -133,6 +133,35 @@ node scripts/qa/cache-serializer-probe.mjs /absolute/path/to/opencode --duplicat
 The probe uses the existing repository SDK, private homes and synthetic requests; it never reads installed-app history or provider credentials. It verifies off/on request sizes, no-duplicate controls, native-pruned anchors, later bundled hooks, canonical history, two manual summaries, automatic compaction and hook ordering. Raw bodies are inspected only in memory; the retained report contains sizes, fixture identities and checks. Synthetic token usage exercises native compaction and is not provider usage or cost evidence. Unit tests additionally exercise cancellation/failure, concurrent sessions, model switches, capability backoff and ordinary headroom preservation.
 
 Live behavior is a separate gate in `scripts/qa/duplicate-behavior.mjs`. Supply ten distinct matched live trials per proposed profile, five skill-reuse and five managed-result-continuity pairs, with independent grading and report hashes. Require no critical continuity failures, repeated mutations, or increase in same-key repeat-call rate. Missing/incomplete trials fail qualification. Retain failed trials; do not replace them with successful retries. This gate does not alter the existing performance comparator or claim statistical reliability. Store the reviewed acceptance report hash with the exact release profile only after correctness, final-request and live behavior checks all pass.
+
+### Live routes
+
+`scripts/qa/duplicate-live.mjs` picks its wire route from the proposal's `profile.providerID`. The proposal's `profile.transport` must be that route's host-attested transport. Otherwise the runner stops before it creates output, a certificate or a host.
+
+| Provider | Forwarded request | Host-attested `transport` |
+| --- | --- | --- |
+| `openai` | `POST chatgpt.com/backend-api/codex/responses`, ChatGPT OAuth | `openai-chatgpt-managed-responses-v1` |
+| `xai` | `POST api.x.ai/v1/responses`, xAI OAuth | `xai-oauth-responses-v1` |
+| `anthropic` | Loopback Meridian | None; fails with `unsupported-route:anthropic-meridian` |
+
+The host names the transport in `packages/web/server/lib/opencode/duplicate-provider-route.js`. OpenAI uses the OpenAI OAuth coordinator. xAI reads only the `type` of the `xai` record in OpenCode's `auth.json`, the record OpenCode's xAI plugin uses. API-key xAI names no transport, so its candidate arm cannot qualify. The selected-route `providerHash` covers endpoint overrides.
+
+The wire proxy forwards only the registered route and the proposal's model. The runner waits (bounded) until no forwarded request is in flight before it deletes a trial session or stops an arm: deleting a session aborts its background title request, which on xAI can still be streaming after the reply and would otherwise be recorded as a transport failure. It also forwards the reviewed metadata GETs. It refuses every other CONNECT, including the xAI token endpoint. The copied access-only token must therefore outlive the run. OpenCode's xAI plugin refreshes two minutes before expiry, so admit the credential with a duration check covering the whole run. Run the pilot, then the acceptance, then default verification after promotion:
+
+```sh
+node scripts/qa/duplicate-live.mjs PREPARED_ROOT BOOTSTRAP --pilot
+node scripts/qa/duplicate-live.mjs PREPARED_ROOT BOOTSTRAP
+node scripts/qa/duplicate-live.mjs PREPARED_ROOT BOOTSTRAP --verify-default
+```
+
+`PREPARED_ROOT/proposal.json` holds `{ "profile": { ... } }`: the candidate release profile, including `providerID`, `modelID`, `variant`, `providerHash`, `providerScope: "selected-route"`, `transport`, the runtime identity and the ordered `plugins`. Stage it in the prepared host's private source copy before either arm runs. The result's `wireRoute` records the route used.
+
+Claude through Meridian is not captured. OpenCode sends Anthropic Messages to Meridian on loopback, which `HTTPS_PROXY` never sees, and Meridian's Claude Code child rewrites the upstream request. Qualification would need:
+
+- A loopback capture of the OpenCode-to-Meridian `POST /v1/messages` that forwards bytes unchanged. It must not change the selected provider's configuration, which is part of `providerHash`.
+- A Messages projection that pairs `tool_use` and `tool_result` blocks by `tool_use_id`, not Responses `input` items.
+- Anthropic usage parsing, which `createWireUsageParser` already supports for `anthropic`.
+- A host-attested `anthropic` transport that also binds the Meridian and Claude Code versions.
 
 Report serialized sizes/peak size, transform overhead, compaction count, actual provider input/cache tokens and peak input separately. Unobserved provider metrics remain unknown. Do not infer monetary savings. Historical replacement-array estimates do not establish provider savings; see the correction in the [original audit](audits/2026-09-10-harness-optimization.md).
 

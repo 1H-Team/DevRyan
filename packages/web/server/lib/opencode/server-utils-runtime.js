@@ -1,4 +1,5 @@
 import { registerOpenCodeProxy } from './proxy.js';
+import { openCodeFetch } from './opencode-routes.js';
 import { pathLooksUserConfigured, mergePathValues } from './path-utils.js';
 
 export const createServerUtilsRuntime = (dependencies) => {
@@ -122,7 +123,7 @@ export const createServerUtilsRuntime = (dependencies) => {
       throw new Error('OpenCode port is not available');
     }
 
-    const response = await fetch(buildOpenCodeUrl(route), {
+    const response = await openCodeFetch(buildOpenCodeUrl(route), {
       method: 'GET',
       headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
     });
@@ -140,7 +141,6 @@ export const createServerUtilsRuntime = (dependencies) => {
 
   const fetchAgentsSnapshot = () => fetchArraySnapshot('/agent', 'agents snapshot');
   const fetchProvidersSnapshot = () => fetchArraySnapshot('/provider', 'providers snapshot');
-  const fetchModelsSnapshot = () => fetchArraySnapshot('/model', 'models snapshot');
 
   const setupProxy = (app) => {
     registerOpenCodeProxy(app, {
@@ -169,7 +169,6 @@ export const createServerUtilsRuntime = (dependencies) => {
     parseSseDataPayload,
     fetchAgentsSnapshot,
     fetchProvidersSnapshot,
-    fetchModelsSnapshot,
     setupProxy,
   };
 };

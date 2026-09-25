@@ -756,7 +756,9 @@ export const createSettingsRuntime = (deps) => {
 
   const persistSettings = async (changes) => {
     persistSettingsLock = persistSettingsLock.then(async () => {
-      console.log('[persistSettings] Called with changes:', JSON.stringify(changes, null, 2));
+      // Key names only: the full body can be large (model lists, projects), and
+      // in Electron every log line is a synchronous write on the main thread.
+      console.log('[persistSettings] Called with changes:', Object.keys(changes ?? {}).join(', '));
       const current = await readSettingsFromDisk();
       console.log('[persistSettings] Current projects count:', Array.isArray(current.projects) ? current.projects.length : 'N/A');
       const sanitized = sanitizeSettingsUpdate(changes);

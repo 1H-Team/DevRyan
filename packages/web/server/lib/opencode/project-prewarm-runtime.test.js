@@ -31,6 +31,24 @@ describe('project prewarm runtime', () => {
     ]);
   });
 
+  it('asks for a background ledger build only for the most recent project', async () => {
+    const warm = vi.fn(async () => {});
+    const runtime = createProjectPrewarmRuntime({
+      waitForOpenCodeReady: vi.fn(async () => {}),
+      listProjectDirectories: vi.fn(async () => ['/recent', '/b', '/c']),
+      warm,
+      logger: { log: vi.fn(), warn: vi.fn() },
+    });
+
+    await runtime.run('startup');
+
+    expect(warm.mock.calls.map(([options]) => options)).toEqual([
+      { directory: '/recent', ledger: true },
+      { directory: '/b', ledger: false },
+      { directory: '/c', ledger: false },
+    ]);
+  });
+
   it('continues after one directory fails', async () => {
     const warmed = [];
     const logger = { log: vi.fn(), warn: vi.fn() };
@@ -66,7 +84,7 @@ describe('project prewarm runtime', () => {
     await runtime.run('startup');
 
     expect(warm).toHaveBeenCalledTimes(1);
-    expect(warm).toHaveBeenCalledWith({ directory: '/a' });
+    expect(warm).toHaveBeenCalledWith({ directory: '/a', ledger: true });
   });
 
   it('supersedes an older directory loop with the newest run', async () => {

@@ -9,6 +9,12 @@ export const GITHUB_COPILOT_PROVIDER_NAME = 'GitHub Copilot';
 export const GITHUB_COPILOT_PROVIDER_ALIASES = [GITHUB_COPILOT_PROVIDER_ID, GITHUB_COPILOT_UPSTREAM_PROVIDER_ID];
 export const GOOGLE_PROVIDER_ID = 'google';
 export const GOOGLE_PROVIDER_AUTH_ALIASES = [GOOGLE_PROVIDER_ID, 'google.oauth'];
+// Environment variables OpenCode accepts as credentials for a provider (its
+// models.dev `env` list). A provider supplied this way cannot be removed from
+// config, so disconnect reports these names (never values) back to the user.
+const PROVIDER_CREDENTIAL_ENV_KEYS = Object.freeze({
+  [GOOGLE_PROVIDER_ID]: Object.freeze(['GOOGLE_GENERATIVE_AI_API_KEY', 'GEMINI_API_KEY']),
+});
 
 const isPlainObject = (value) => (
   value !== null
@@ -127,3 +133,9 @@ export const mergeGitHubCopilotProvider = (payload, { configured = false, models
     default: nextDefaults,
   };
 };
+
+export const listProviderCredentialEnvKeys = (providerId, environment = {}) => (
+  (PROVIDER_CREDENTIAL_ENV_KEYS[normalizeProviderId(providerId)] || []).filter((key) => (
+    typeof environment?.[key] === 'string' && environment[key].trim().length > 0
+  ))
+);

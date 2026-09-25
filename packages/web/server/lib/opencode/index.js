@@ -22,6 +22,7 @@ export {
   getAgentSources,
   getAgentConfig,
   listAgentModelOverrides,
+  listShadowedAgentModelOverrides,
   listStaleAgentModelOverrides,
   writeAgentModelOverride,
   deleteAgentModelOverride,
@@ -79,6 +80,7 @@ export {
   CURSOR_ACP_PROVIDER_ID,
   ensureAnthropicOAuthProviderConfig,
   getProviderSources,
+  listProviderConfigFiles,
   removeAntigravityProviderConfig,
   removeProviderConfig,
 } from './providers.js';

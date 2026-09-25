@@ -1,6 +1,6 @@
 # DevRyan OpenCode companion
 
-`manifest.json` pins OpenCode 1.18.31, the complete patch digest and every changed
+`manifest.json` pins OpenCode 1.18.32, the complete patch digest and every changed
 file. The patch includes legacy `files: false` rollback, durable no-file markers,
 execution capture, prompt admission, confined native/custom tools, descendant
 identities, external Cursor message persistence, generated clients and tests.
@@ -14,7 +14,7 @@ node scripts/build-revert-runtime.mjs --source /absolute/path/to/opencode
 ```
 
 The builder never resets an existing checkout and refuses unreviewed changes.
-It stages DevRyan companion `2.0.0` (reporting plain OpenCode `1.18.31`; its
+It stages DevRyan companion `2.1.1` (reporting plain OpenCode `1.18.32`; its
 identity is `companionVersion` in `companion.json`) and its native supervisor under
 `packages/web/runtime/<platform>-<arch>`. Acceptance includes real OpenCode
 execution, a command held across Revert, native and managed descendants,

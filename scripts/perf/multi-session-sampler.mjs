@@ -20,9 +20,17 @@
 // busy session count) need the UI session cookie: --cookie <oc_ui_session_PORT=value> or
 // DEVRYAN_UI_SESSION_COOKIE. Without it the sampler still records everything
 // visible from the OS plus the unauthenticated /api/health probe.
+//
+// Other targets than the installed app (e.g. isolated QA hosts):
+//   --pid <hostPid>          the process tree rooted at that pid; stops when it exits
+//   --runtime-root <dir>     every process whose command line names <dir>, with
+//                            log defaults under <dir> (QA runtime roots in .cache/qa)
+// Each sample also lists LSP server processes with their spawn chain up to the
+// root (sanitized command previews only) so a run shows what launches them.
 
 import { execFile } from 'node:child_process';
 import { uiSessionCookieHeader } from './ui-session-cookie.mjs';
+import { classifyProcessCommand } from '../../packages/web/server/lib/processes/runtime.js';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
@@ -35,7 +43,9 @@ const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, '../..');
 
 export const DEVRYAN_APP_PATTERN = /DevRyan\.app\/Contents\/MacOS\/DevRyan(?:\s|$)/;
-const DEVRYAN_BUNDLE_PREFIX = /\/Applications\/DevRyan\.app\/Contents\/(?:Frameworks|MacOS)\//g;
+// Installed or packaged (e.g. .cache/qa/packaged-electron-*) app bundles.
+const DEVRYAN_BUNDLE_PREFIX = /(?:\/[^\s/]+)*\/DevRyan\.app\/Contents\/(?:Frameworks|MacOS)\//g;
+const INSTALLED_APP_INFO_PLIST = '/Applications/DevRyan.app/Contents/Info.plist';
 const ORPHAN_PATTERNS = [
   /\/opencode serve\b/,
   /DevRyan-opencode-[\w-]+ serve\b/,
@@ -46,6 +56,8 @@ const ORPHAN_PATTERNS = [
 const SYSTEM_TOP_COUNT = 10;
 const MAX_FOOTPRINT_PIDS = 80;
 const COMMAND_PREVIEW_LENGTH = 160;
+const MAX_SPAWN_CHAIN_DEPTH = 32;
+const MAX_LSP_DETAILS = 64;
 
 
 // ---------------------------------------------------------------------------
@@ -70,8 +82,10 @@ export const parseSamplerArguments = (argv, env = process.env) => {
     server: 'http://127.0.0.1:3000',
     cookie: env.DEVRYAN_UI_SESSION_COOKIE || null,
     outRoot: path.join(repositoryRoot, '.cache/perf/multi-session'),
-    opencodeLog: path.join(os.homedir(), '.local/share/opencode/log/opencode.log'),
-    mainLog: path.join(os.homedir(), 'Library/Logs/DevRyan/main.log'),
+    opencodeLog: null,
+    mainLog: null,
+    rootPid: null,
+    runtimeRoot: null,
     quiet: false,
     help: false,
   };
@@ -94,6 +108,17 @@ export const parseSamplerArguments = (argv, env = process.env) => {
       case '--server': options.server = takeValue().replace(/\/+$/, ''); break;
       case '--cookie': options.cookie = takeValue(); break;
       case '--out': options.outRoot = path.resolve(takeValue()); break;
+      case '--pid': {
+        const raw = takeValue();
+        if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw)) || Number(raw) < 2) {
+          throw new Error('--pid requires a process id greater than 1');
+        }
+        options.rootPid = Number(raw);
+        break;
+      }
+      case '--runtime-root': options.runtimeRoot = path.resolve(takeValue()); break;
+      case '--opencode-log': options.opencodeLog = path.resolve(takeValue()); break;
+      case '--main-log': options.mainLog = path.resolve(takeValue()); break;
       case '--quiet': options.quiet = true; break;
       case '--help': case '-h': options.help = true; break;
       default: throw new Error(`Unknown flag ${flag}`);
@@ -101,8 +126,28 @@ export const parseSamplerArguments = (argv, env = process.env) => {
   }
   if (!/^[A-Za-z0-9._-]+$/.test(options.label)) throw new Error('--label may only contain letters, digits, ., _ and -');
   if (options.cookie) uiSessionCookieHeader(options.cookie);
+  if (options.rootPid !== null && options.runtimeRoot !== null) throw new Error('--pid and --runtime-root are mutually exclusive');
+  if (options.runtimeRoot !== null && options.runtimeRoot === path.parse(options.runtimeRoot).root) {
+    throw new Error('--runtime-root must not be the filesystem root');
+  }
+  options.targetMode = options.rootPid !== null ? 'pid' : options.runtimeRoot !== null ? 'runtime-root' : 'app';
+  const logDefaults = options.runtimeRoot !== null
+    ? runtimeRootLogPaths(options.runtimeRoot)
+    : {
+      opencodeLog: path.join(os.homedir(), '.local/share/opencode/log/opencode.log'),
+      mainLog: path.join(os.homedir(), 'Library/Logs/DevRyan/main.log'),
+    };
+  options.opencodeLog ??= logDefaults.opencodeLog;
+  options.mainLog ??= logDefaults.mainLog;
   return options;
 };
+
+// Isolated QA runtimes own HOME under <root>/home (so OpenCode logs under its
+// XDG data home) and point Electron's logs directory at <root>/logs.
+export const runtimeRootLogPaths = (runtimeRoot) => ({
+  opencodeLog: path.join(runtimeRoot, 'home', '.local', 'share', 'opencode', 'log', 'opencode.log'),
+  mainLog: path.join(runtimeRoot, 'logs', 'main.log'),
+});
 
 const HELP = `Usage: node scripts/perf/multi-session-sampler.mjs [options]
 
@@ -115,7 +160,17 @@ const HELP = `Usage: node scripts/perf/multi-session-sampler.mjs [options]
   --server <origin>       DevRyan web server origin (default http://127.0.0.1:3000)
   --cookie <name=value>        full instance cookie name=value for authenticated server metrics
   --out <dir>             output root (default .cache/perf/multi-session)
+  --pid <hostPid>         sample the tree rooted at this pid instead of DevRyan.app
+                          (e.g. an isolated QA host); stops when that process exits
+  --runtime-root <dir>    roots are processes whose command line names <dir>; log
+                          defaults become <dir>/home/.local/share/opencode/log/opencode.log
+                          and <dir>/logs/main.log (for .cache/qa/*/runtime roots)
+  --opencode-log <file>   OpenCode log whose size is tracked (default derived from the target)
+  --main-log <file>       DevRyan main log whose size is tracked (default derived from the target)
   --quiet                 no per-tick console line
+
+Launchd-parented orphans are only tracked for the default DevRyan.app target.
+Every sample lists LSP processes with their spawn chain up to the root.
 
 Add a marker at any time:  echo "sent 12 drafts" >> <run dir>/marks.txt
 `;
@@ -277,11 +332,25 @@ export const commandFamily = (command) => {
   return `${executable} ${path.basename(argument)}`;
 };
 
-export const classifyProcess = (row, { rootPids }) => {
+// Roles that say nothing more specific than "some process"; a root of a --pid
+// or --runtime-root target with one of these is the host main process.
+const GENERIC_ROLES = new Set(['shell', 'js-child', 'python-child', 'other-child']);
+
+export const classifyProcess = (row, { rootPids, rootMode = 'app' }) => {
   const command = row.command;
   if (rootPids.has(row.pid)) {
-    return /--runtime-service/.test(command) ? 'runtime-service-main' : 'electron-main+server';
+    if (/--runtime-service/.test(command)) return 'runtime-service-main';
+    if (rootMode === 'app') return 'electron-main+server';
+    // Any process can root a pid or runtime-root target: keep a specific role
+    // (e.g. a Chromium helper naming the runtime profile) and label only the
+    // generic host process as the main server.
+    const role = classifyChildProcess(command);
+    return GENERIC_ROLES.has(role) ? 'electron-main+server' : role;
   }
+  return classifyChildProcess(command);
+};
+
+const classifyChildProcess = (command) => {
   if (/--type=renderer/.test(command)) return 'renderer';
   if (/--type=gpu-process/.test(command)) return 'gpu';
   if (/--type=utility/.test(command)) {
@@ -295,7 +364,8 @@ export const classifyProcess = (row, { rootPids }) => {
   if (/DevRyan-execution-[\w-]+(\s|$)/.test(command)) return 'execution-launcher';
   if (/DevRyan-opencode-[\w-]+ debug devryan-tool\b/.test(command)) return 'companion-worker';
   if (/\/opencode serve\b|(^|\s)opencode serve\b|DevRyan-opencode-[\w-]+ serve\b/.test(command)) return 'opencode-serve';
-  if (/typescript-language-server|tsserver|(^|\/)(gopls|rust-analyzer|pyright|basedpyright|clangd)(\s|$)|vscode-[\w-]+-language-server/.test(command)) return 'lsp';
+  // Same LSP classification as the app's process runtime (Settings > Processes).
+  if (classifyProcessCommand(command) === 'lsp') return 'lsp';
   if (/cloudflared/.test(command)) return 'cloudflared';
   if (/cursor-acp|open-cursor/.test(command)) return 'cursor-acp-runner';
   if (/cursor-agent/.test(command)) return 'cursor-agent';
@@ -309,28 +379,106 @@ export const classifyProcess = (row, { rootPids }) => {
   return 'other-child';
 };
 
-export const buildProcessTree = (rows) => {
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// True when the command line names one of the directories (or a path inside
+// it) as a whole path, e.g. `--user-data-dir=<dir>/profile`, never a sibling
+// such as `<dir>-other`.
+export const commandReferencesDirectory = (command, directories) => directories.some((directory) => (
+  new RegExp(`(?:^|[\\s='":/])${escapeRegExp(directory)}(?=$|[\\s/'":])`).test(command)
+));
+
+export const APP_TARGET = Object.freeze({ mode: 'app' });
+
+const selectRootPids = (rows, byPid, target) => {
+  if (target.mode === 'pid') return new Set(byPid.has(target.pid) ? [target.pid] : []);
+  if (target.mode === 'runtime-root') {
+    // The sampler names the directory in its own arguments, and so may the
+    // shell that launched it; neither is part of the sampled runtime.
+    const samplerLineage = new Set();
+    for (let row = byPid.get(target.samplerPid); row && !samplerLineage.has(row.pid); row = byPid.get(row.ppid)) {
+      samplerLineage.add(row.pid);
+    }
+    const matches = (row) => !samplerLineage.has(row.pid) && commandReferencesDirectory(row.command, target.directories);
+    // The topmost matching process of each chain is the root; matching
+    // descendants belong to its tree.
+    const hasMatchingAncestor = (row) => {
+      const seen = new Set([row.pid]);
+      for (let parent = byPid.get(row.ppid); parent && !seen.has(parent.pid); parent = byPid.get(parent.ppid)) {
+        if (matches(parent)) return true;
+        seen.add(parent.pid);
+      }
+      return false;
+    };
+    return new Set(rows.filter((row) => matches(row) && !hasMatchingAncestor(row)).map((row) => row.pid));
+  }
+  return new Set(rows
+    .filter((row) => DEVRYAN_APP_PATTERN.test(row.command)
+      && !DEVRYAN_APP_PATTERN.test(byPid.get(row.ppid)?.command || ''))
+    .map((row) => row.pid));
+};
+
+export const buildProcessTree = (rows, target = APP_TARGET) => {
   const byPid = new Map(rows.map((row) => [row.pid, row]));
   const children = new Map();
   for (const row of rows) {
     if (!children.has(row.ppid)) children.set(row.ppid, []);
     children.get(row.ppid).push(row.pid);
   }
-  const rootPids = new Set(rows
-    .filter((row) => DEVRYAN_APP_PATTERN.test(row.command)
-      && !DEVRYAN_APP_PATTERN.test(byPid.get(row.ppid)?.command || ''))
-    .map((row) => row.pid));
+  const rootPids = selectRootPids(rows, byPid, target);
   const members = new Map();
   const walk = (pid, root) => {
-    if (members.has(pid)) return;
+    // A pid or runtime-root target never samples the sampler's own subtree.
+    if (members.has(pid) || pid === target.samplerPid) return;
     members.set(pid, root);
     for (const child of children.get(pid) || []) walk(child, root);
   };
   for (const root of rootPids) walk(root, root);
-  const orphans = rows.filter((row) => row.ppid === 1
+  // Orphans are attributable only to the installed app: any launchd-parented
+  // `opencode serve` on the machine would otherwise count against a QA target.
+  const orphans = target.mode !== 'app' ? [] : rows.filter((row) => row.ppid === 1
     && !members.has(row.pid)
     && ORPHAN_PATTERNS.some((pattern) => pattern.test(row.command)));
-  return { rootPids, members, orphans, byPid };
+  return { mode: target.mode, rootPids, members, orphans, byPid };
+};
+
+// LSP servers with the chain of processes that spawned them, nearest parent
+// first and ending at the root. Only sanitized command previews are recorded
+// (ps never reports environments), so the dump carries no env or secrets.
+export const describeLspProcesses = (procs) => {
+  const byPid = new Map(procs.map((proc) => [proc.pid, proc]));
+  return procs
+    .filter((proc) => proc.role === 'lsp')
+    .sort((left, right) => left.pid - right.pid)
+    .slice(0, MAX_LSP_DETAILS)
+    .map((proc) => {
+      const spawnChain = [];
+      const seen = new Set([proc.pid]);
+      let parent = byPid.get(proc.ppid);
+      while (parent && !seen.has(parent.pid) && spawnChain.length < MAX_SPAWN_CHAIN_DEPTH) {
+        seen.add(parent.pid);
+        spawnChain.push({ pid: parent.pid, role: parent.role, family: parent.family, cmd: parent.cmd });
+        if (parent.pid === proc.root) break;
+        parent = byPid.get(parent.ppid);
+      }
+      return {
+        pid: proc.pid,
+        ppid: proc.ppid,
+        root: proc.root,
+        etime: proc.etime,
+        footprint: proc.footprint,
+        family: proc.family,
+        cmd: proc.cmd,
+        spawnChain,
+      };
+    });
+};
+
+// Info.plist of the DevRyan.app bundle (installed or packaged for QA) that a
+// root process runs from, including its helpers; null for any other binary.
+export const appInfoPlistFromCommand = (command) => {
+  const match = /^(\/.*?\/DevRyan\.app)\/Contents\//.exec(String(command || ''));
+  return match ? `${match[1]}/Contents/Info.plist` : null;
 };
 
 // ---------------------------------------------------------------------------
@@ -453,12 +601,12 @@ const fileSize = async (filePath) => {
 // Tick
 // ---------------------------------------------------------------------------
 
-export const buildTrackedProcesses = ({ psRows, topRows, footprints }) => {
-  const tree = buildProcessTree(psRows);
+export const buildTrackedProcesses = ({ psRows, topRows, footprints, target = APP_TARGET }) => {
+  const tree = buildProcessTree(psRows, target);
   const describe = (row, kind) => {
     const top = topRows.get(row.pid);
     const fp = footprints.get(row.pid);
-    const role = classifyProcess(row, { rootPids: tree.rootPids });
+    const role = classifyProcess(row, { rootPids: tree.rootPids, rootMode: tree.mode });
     return {
       pid: row.pid,
       ppid: row.ppid,
@@ -535,10 +683,10 @@ const collectTick = async (options, state, paths) => {
 
   const psRows = parsePsTable(psText);
   const topRows = parseTopOutput(topText);
-  const tree = buildProcessTree(psRows);
+  const tree = buildProcessTree(psRows, state.target);
   const trackedPids = [...tree.members.keys(), ...tree.orphans.map((row) => row.pid)];
   const footprints = await collectFootprint(trackedPids, paths.footprintJson);
-  const { procs, orphans } = buildTrackedProcesses({ psRows, topRows, footprints });
+  const { procs, orphans } = buildTrackedProcesses({ psRows, topRows, footprints, target: state.target });
   if (!(options.categoriesEvery > 0 && tick % options.categoriesEvery === 0)) {
     for (const proc of [...procs, ...orphans]) delete proc.categories;
   }
@@ -586,6 +734,7 @@ const collectTick = async (options, state, paths) => {
     },
     procs,
     orphans,
+    lsp: describeLspProcesses(procs),
     docker,
     fds: fdsDue ? fds : null,
     logs: {
@@ -627,7 +776,8 @@ const collectTick = async (options, state, paths) => {
   }
   for (const mark of marks) events.push({ t: sample.t, elapsedS: sample.elapsedS, type: 'mark', text: mark });
 
-  return { sample, events };
+  const rootExited = state.target.mode === 'pid' && tree.rootPids.size === 0;
+  return { sample, events, rootExited };
 };
 
 // ---------------------------------------------------------------------------
@@ -665,6 +815,7 @@ const liveLine = (sample) => {
   if (sample.server.openCodeProbeMs !== null) parts.push(`probe ${sample.server.openCodeProbeMs}ms`);
   if (sample.server.sessions) parts.push(`busy ${sample.server.sessions.busy}/${sample.server.sessions.tracked}`);
   if (sample.orphans.length > 0) parts.push(`orphans ${sample.orphans.length}`);
+  if (sample.lsp?.length > 0) parts.push(`lsp ${sample.lsp.length}`);
   if (sample.marks.length > 0) parts.push(`MARK ${sample.marks.join(' | ')}`);
   return parts.join(' ');
 };
@@ -683,13 +834,21 @@ const readDockerSettings = async () => {
   }
 };
 
-const collectMeta = async (options) => {
+const collectMeta = async (options, { target, initialRows }) => {
+  // A --pid or --runtime-root target reports the version of the bundle its
+  // root runs from, never the separately installed app.
+  const initialTree = buildProcessTree(initialRows, target);
+  const infoPlist = target.mode === 'app'
+    ? INSTALLED_APP_INFO_PLIST
+    : [...initialTree.rootPids]
+      .map((pid) => appInfoPlistFromCommand(initialTree.byPid.get(pid)?.command))
+      .find(Boolean) ?? null;
   const [productVersion, memsize, ncpu, brand, appVersion, health, dockerSettings] = await Promise.all([
     runOptional('sw_vers', ['-productVersion']),
     runOptional('sysctl', ['-n', 'hw.memsize']),
     runOptional('sysctl', ['-n', 'hw.ncpu']),
     runOptional('sysctl', ['-n', 'machdep.cpu.brand_string']),
-    runOptional('defaults', ['read', '/Applications/DevRyan.app/Contents/Info.plist', 'CFBundleShortVersionString']),
+    infoPlist ? runOptional('defaults', ['read', infoPlist, 'CFBundleShortVersionString']) : Promise.resolve(''),
     fetchJson(`${options.server}/api/health`),
     readDockerSettings(),
   ]);
@@ -697,6 +856,16 @@ const collectMeta = async (options) => {
     label: options.label,
     startedAt: new Date().toISOString(),
     options: { ...options, cookie: options.cookie ? '<provided>' : null },
+    target: {
+      mode: target.mode,
+      rootPid: target.pid ?? null,
+      runtimeRootDirectories: target.directories ?? null,
+      roots: [...initialTree.rootPids].map((pid) => ({
+        pid,
+        cmd: commandPreview(initialTree.byPid.get(pid)?.command || ''),
+      })),
+      infoPlist,
+    },
     machine: {
       macos: productVersion.trim() || null,
       memoryBytes: Number(memsize.trim()) || null,
@@ -710,6 +879,23 @@ const collectMeta = async (options) => {
   };
 };
 
+const resolveTarget = async (options) => {
+  if (options.targetMode === 'pid') return { mode: 'pid', pid: options.rootPid, samplerPid: process.pid };
+  if (options.targetMode !== 'runtime-root') return APP_TARGET;
+  let stats;
+  try { stats = await fsp.stat(options.runtimeRoot); } catch { stats = null; }
+  if (!stats?.isDirectory()) throw new Error(`--runtime-root ${options.runtimeRoot}: not a directory`);
+  // Command lines may carry either spelling (e.g. /tmp vs /private/tmp).
+  const directories = [...new Set([options.runtimeRoot, await fsp.realpath(options.runtimeRoot)])];
+  return { mode: 'runtime-root', directories, samplerPid: process.pid };
+};
+
+const describeTarget = (target) => {
+  if (target.mode === 'pid') return `process tree of pid ${target.pid}`;
+  if (target.mode === 'runtime-root') return `processes naming ${target.directories[0]}`;
+  return 'running DevRyan.app';
+};
+
 const main = async () => {
   const options = parseSamplerArguments(process.argv.slice(2));
   if (options.help) {
@@ -717,6 +903,11 @@ const main = async () => {
     return;
   }
   if (process.platform !== 'darwin') throw new Error('This sampler relies on macOS footprint/top/vm_stat');
+  const target = await resolveTarget(options);
+  const initialRows = parsePsTable(await run('ps', ['-axww', '-o', 'pid,ppid,pcpu,rss,etime,command']));
+  if (target.mode === 'pid' && !initialRows.some((row) => row.pid === target.pid)) {
+    throw new Error(`--pid ${target.pid}: no running process with that pid`);
+  }
 
   const runDir = path.join(options.outRoot, options.label);
   await fsp.mkdir(runDir, { recursive: true });
@@ -730,14 +921,15 @@ const main = async () => {
   };
   const samplesStream = fs.createWriteStream(paths.samples, { flags: 'a' });
   const eventsStream = fs.createWriteStream(paths.events, { flags: 'a' });
-  const meta = await collectMeta(options);
+  const meta = await collectMeta(options, { target, initialRows });
   meta.samplerPid = process.pid;
   await fsp.writeFile(paths.meta, JSON.stringify(meta, null, 2));
   await fsp.writeFile(paths.pid, `${process.pid}\n`);
   try { await fsp.access(paths.marks); } catch { await fsp.writeFile(paths.marks, ''); }
 
-  const state = { tick: 0, startedAt: Date.now(), known: new Map(), marksOffset: 0, cookieRejected: false, stopping: false };
+  const state = { tick: 0, startedAt: Date.now(), known: new Map(), marksOffset: 0, cookieRejected: false, stopping: false, target };
   console.log(`[sampler] run dir: ${runDir}`);
+  console.log(`[sampler] target: ${describeTarget(target)}`);
   console.log(`[sampler] DevRyan ${meta.devryanVersion ?? '?'} / opencode ${meta.opencodeVersion ?? '?'} / ${meta.machine.cpu ?? '?'} ${formatBytes(meta.machine.memoryBytes)} / Docker VM ${meta.dockerSettings?.memoryMiB ?? '?'} MiB`);
   console.log(`[sampler] interval ${options.intervalMs / 1000}s, docker every ${options.dockerEvery} ticks, fds every ${options.fdsEvery} ticks, auth ${options.cookie ? 'cookie' : 'none (health only)'}`);
   console.log(`[sampler] add a marker with: echo "text" >> ${paths.marks}`);
@@ -751,7 +943,7 @@ const main = async () => {
   while (!state.stopping) {
     const tickStartedAt = Date.now();
     try {
-      const { sample, events } = await collectTick(options, state, paths);
+      const { sample, events, rootExited } = await collectTick(options, state, paths);
       samplesStream.write(`${JSON.stringify(sample)}\n`);
       for (const event of events) eventsStream.write(`${JSON.stringify(event)}\n`);
       if (!options.quiet) {
@@ -760,13 +952,18 @@ const main = async () => {
           if (event.type === 'spawn') console.log(`   + spawn pid ${event.pid} ${event.role} ${event.cmd.slice(0, 90)}`);
           if (event.type === 'exit') console.log(`   - exit  pid ${event.pid} ${event.role} after ${event.lifetimeS}s peak ${formatBytes(event.peakFootprint)}`);
         }
-        if (sample.devryan.rootPids.length === 0) console.log('   ! no running DevRyan.app process found');
+        if (sample.devryan.rootPids.length === 0 && !rootExited) console.log(`   ! no process found for ${describeTarget(target)}`);
+      }
+      if (rootExited) {
+        console.log(`[sampler] root pid ${target.pid} exited; stopping`);
+        meta.rootExitedAt = sample.t;
+        state.stopping = true;
       }
     } catch (error) {
       console.error(`[sampler] tick ${state.tick} failed: ${error?.stack || error}`);
     }
     state.tick += 1;
-    if (deadline && Date.now() >= deadline) break;
+    if (state.stopping || (deadline && Date.now() >= deadline)) break;
     const wait = Math.max(250, options.intervalMs - (Date.now() - tickStartedAt));
     await new Promise((resolve) => {
       const timer = setTimeout(resolve, wait);

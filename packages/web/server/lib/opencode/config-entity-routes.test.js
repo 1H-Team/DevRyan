@@ -11,9 +11,12 @@ import {
   getAgentConfig,
   listAgentModelOverrides,
   listConfigAgents,
+  listShadowedAgentModelOverrides,
+  listStaleAgentModelOverrides,
   writeAgentBackupModel,
   writeAgentModelOverride,
 } from './agents.js';
+import { DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC } from './slim-config.js';
 import { registerConfigEntityRoutes, sanitizeAgentRuntimeMetadata } from './config-entity-routes.js';
 import {
   clearAgentRuntimeSettingsCache,
@@ -411,5 +414,130 @@ describe('agent runtime settings routes', () => {
       .expect((res) => {
         expect(res.body.restartRequired).toBe(true);
       });
+  });
+});
+
+describe('agent overrides listing route', () => {
+  let tempRoot;
+  let projectDirectory;
+  let userConfigPath;
+  let slimConfigPath;
+  let options;
+  let warnSpy;
+
+  const writeJson = async (filePath, data) => {
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+  };
+
+  const createApp = ({ directory = projectDirectory, ...overrides } = {}) => {
+    const app = express();
+    app.use(express.json());
+    registerConfigEntityRoutes(app, {
+      resolveProjectDirectory: async () => ({ directory }),
+      resolveOptionalProjectDirectory: async () => ({ directory }),
+      markConfigChange: vi.fn(),
+      clientReloadDelayMs: 0,
+      listAgentModelOverrides: () => listAgentModelOverrides(options),
+      listStaleAgentModelOverrides: (dir) => listStaleAgentModelOverrides(dir, options),
+      listShadowedAgentModelOverrides: (dir) => listShadowedAgentModelOverrides(dir, options),
+      listConfigAgents: (dir) => listConfigAgents(dir, options),
+      getCommandSources: () => ({ md: { exists: false }, json: { exists: false } }),
+      listMcpConfigs: () => [],
+      getMcpConfig: () => null,
+      ...overrides,
+    });
+    return app;
+  };
+
+  beforeEach(async () => {
+    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-agent-overrides-route-'));
+    projectDirectory = path.join(tempRoot, 'project');
+    userConfigPath = path.join(tempRoot, 'opencode-config', 'config.json');
+    slimConfigPath = path.join(path.dirname(userConfigPath), 'oh-my-opencode-slim.json');
+    await fs.mkdir(projectDirectory, { recursive: true });
+    // Plugin detection is injected so the route never reads the real OpenCode config.
+    options = {
+      userConfigPath,
+      slimConfigDirectory: path.dirname(userConfigPath),
+      readOpenCodeConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
+      env: {},
+    };
+    await writeJson(path.join(path.dirname(userConfigPath), '.openchamber', 'config.json'), {
+      agentOverrides: {
+        fixer: { model: 'openai/gpt-5.5', variant: 'medium' },
+        ghost: { model: 'openai/gpt-5.5' },
+      },
+    });
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(async () => {
+    warnSpy?.mockRestore();
+    if (tempRoot) {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+    tempRoot = undefined;
+  });
+
+  it('adds shadowed sidecar fields for the directory while keeping the existing fields', async () => {
+    await writeJson(slimConfigPath, { agents: { fixer: { model: 'xai/grok-4.6', variant: 'high' } } });
+
+    await request(createApp())
+      .get('/api/config/agent-overrides')
+      .expect(200)
+      .expect((res) => {
+        expect(res.body.overrides).toEqual({
+          fixer: { model: 'openai/gpt-5.5', variant: 'medium' },
+          ghost: { model: 'openai/gpt-5.5' },
+        });
+        expect(res.body.staleOverrides).toEqual(['ghost']);
+        expect(res.body.shadowedOverrides).toEqual({
+          fixer: {
+            fields: {
+              model: { saved: 'openai/gpt-5.5', effective: 'xai/grok-4.6', shadowedBy: 'slim-root' },
+              variant: { saved: 'medium', effective: 'high', shadowedBy: 'slim-root' },
+            },
+            effective: { model: 'xai/grok-4.6', variant: 'high' },
+            presetName: null,
+          },
+        });
+      });
+  });
+
+  it('reports nothing shadowed without a directory or a host diagnostic', async () => {
+    const shadowSpy = vi.fn(() => ({ fixer: {} }));
+    await request(createApp({ directory: null, listShadowedAgentModelOverrides: shadowSpy }))
+      .get('/api/config/agent-overrides')
+      .expect(200)
+      .expect((res) => {
+        expect(res.body.staleOverrides).toEqual([]);
+        expect(res.body.shadowedOverrides).toEqual({});
+      });
+    expect(shadowSpy).not.toHaveBeenCalled();
+
+    await request(createApp({ listShadowedAgentModelOverrides: undefined }))
+      .get('/api/config/agent-overrides')
+      .expect(200)
+      .expect((res) => {
+        expect(res.body.shadowedOverrides).toEqual({});
+      });
+  });
+
+  it('reports nothing shadowed instead of failing when the Slim config cannot be read', async () => {
+    await fs.mkdir(path.dirname(slimConfigPath), { recursive: true });
+    await fs.writeFile(slimConfigPath, '{ "agents": { "fixer": ', 'utf8');
+
+    await request(createApp({ listStaleAgentModelOverrides: undefined }))
+      .get('/api/config/agent-overrides')
+      .expect(200)
+      .expect((res) => {
+        expect(res.body.overrides.fixer).toEqual({ model: 'openai/gpt-5.5', variant: 'medium' });
+        expect(res.body.shadowedOverrides).toEqual({});
+      });
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[API:Agent overrides] Shadowed override diagnostic unavailable:',
+      expect.any(String),
+    );
   });
 });

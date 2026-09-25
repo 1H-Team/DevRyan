@@ -1,0 +1,16 @@
+{
+  "legacyConversationRevert": 1,
+  "executionBoundary": 1,
+  "executionPreparation": 3,
+  "sessionRetention": 1,
+  "acceptance": true,
+  "companionVersion": "2.1.1",
+  "upstreamVersion": "1.18.32",
+  "baseCommit": "545f51d26cc39a907d2867492d498d9607ea5fa4",
+  "patchSha256": "64bfc9d7d0b86c7fc518edaede252248cf64bae36b7dc018f8377c3f04646bc1",
+  "buildInputsSha256": "589475194cfe2ac81d03e47a30fa63d15c0a8b2ca02e5b237dd6db4b31b49266",
+  "binary": "DevRyan-opencode-darwin-arm64",
+  "platform": "darwin",
+  "arch": "arm64",
+  "sha256": "cdc3cd56ec094f5e1aa3428fade52bc142957303ee7011fbe4a22945a4be9db9"
+}

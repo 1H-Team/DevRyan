@@ -92,25 +92,28 @@ describe('failure classification', () => {
     expect(classifyPrimaryTransportError(timeout, '1.18.29')?.source).toBe('opencode_1.18.29_compatibility');
     expect(classifyPrimaryTransportError(timeout, '1.18.30')?.source).toBe('opencode_1.18.30_compatibility');
     expect(classifyPrimaryTransportError(timeout, '1.18.31')?.source).toBe('opencode_1.18.31_compatibility');
-    expect(classifyPrimaryTransportError(timeout, '1.18.32')).toBeNull();
+    expect(classifyPrimaryTransportError(timeout, '1.18.32')?.source).toBe('opencode_1.18.32_compatibility');
+    expect(classifyPrimaryTransportError(timeout, '1.18.33')).toBeNull();
     expect(classifyPrimaryTransportError(timeout, undefined)).toBeNull();
     // The bundled companion is its upstream base; nothing else borrows it.
     expect(classifyPrimaryTransportError(timeout, '1.18.31-devryan.9')?.source).toBe('opencode_1.18.31_compatibility');
-    for (const version of ['1.18.32-devryan.1', '1.18.31-devryan', '1.18.31-beta.1', '1.18.31-devryan.9-x', 'x1.18.31-devryan.9']) {
+    expect(classifyPrimaryTransportError(timeout, '1.18.32-devryan.1')?.source).toBe('opencode_1.18.32_compatibility');
+    for (const version of ['1.18.33-devryan.1', '1.18.31-devryan', '1.18.31-beta.1', '1.18.31-devryan.9-x', 'x1.18.31-devryan.9']) {
       expect(classifyPrimaryTransportError(timeout, version)).toBeNull();
     }
     expect(classifyPrimaryTransportError({ name: 'UnknownError', message: 'request timeout' }, '1.18.25')).toBeNull();
     expect(classifyPrimaryTransportError({ name: 'UnknownError', message: 'request timeout' }, '1.18.26')).toBeNull();
   });
   test('allow-lists only verified OpenCode versions for enforcement', async () => {
-    expect([...PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS]).toEqual(['1.18.25', '1.18.26', '1.18.27', '1.18.29', '1.18.30', '1.18.31']);
+    expect([...PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS]).toEqual(['1.18.25', '1.18.26', '1.18.27', '1.18.29', '1.18.30', '1.18.31', '1.18.32']);
     const f = await fixture();
     const hello = (version) => f.controller.plugin({ action: 'hello', instanceID: identity.instanceID, policyVersion: 1, version });
     expect((await hello('1.18.26')).supported).toBe(true);
     expect((await hello('1.18.27')).supported).toBe(true);
     expect((await hello('1.18.30')).supported).toBe(true);
     expect((await hello('1.18.31')).supported).toBe(true);
-    expect((await hello('1.18.32')).supported).toBe(false);
+    expect((await hello('1.18.32')).supported).toBe(true);
+    expect((await hello('1.18.33')).supported).toBe(false);
     expect((await hello('1.18.25')).supported).toBe(true);
   });
   test.each(['AuthenticationError', 'QuotaError', 'CertificateError', 'ModelNotFoundError', 'AbortError', 'PolicyError'])(
@@ -750,7 +753,8 @@ test('Claude exact envelope requires a verified runtime and excludes ambiguous e
     expect(classifyPrimaryTransportError({ name: 'UnknownError', data: { message } }, '1.18.29')).toBeNull();
   }
   expect(classifyPrimaryTransportError(upstreamTimeout, '1.18.31')).toEqual({ kind: 'chunk_timeout', source: 'upstream_timeout_envelope' });
-  expect(classifyPrimaryTransportError(upstreamTimeout, '1.18.32')).toBeNull();
+  expect(classifyPrimaryTransportError(upstreamTimeout, '1.18.32')).toEqual({ kind: 'chunk_timeout', source: 'upstream_timeout_envelope' });
+  expect(classifyPrimaryTransportError(upstreamTimeout, '1.18.33')).toBeNull();
   expect(classifyPrimaryTransportError({ ...upstreamTimeout, statusCode: 401 }, '1.18.29')).toBeNull();
 });
 

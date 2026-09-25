@@ -1,0 +1,40 @@
+{
+  "route": "xai-47",
+  "reportHash": "55c26bdedda663f3821ae7c8e67a813adbf27dc802a4b3576c92f58bb6bbbdc3",
+  "qualified": true,
+  "evidence": {
+    "reportHash": "55c26bdedda663f3821ae7c8e67a813adbf27dc802a4b3576c92f58bb6bbbdc3",
+    "correctness": true,
+    "finalRequests": true,
+    "compactionLifecycle": true,
+    "nonIncreasingRequests": true,
+    "livePairs": 10,
+    "skillPairs": 5,
+    "managedPairs": 5,
+    "incompleteTrials": 0,
+    "criticalFailures": 0,
+    "repeatedMutations": 0,
+    "repeatCallDelta": 0
+  },
+  "serialized": {
+    "baseline": [
+      87631,
+      96159
+    ],
+    "candidate": [
+      63985,
+      68707
+    ]
+  },
+  "providerInput": {
+    "baseline": {
+      "input": 208040,
+      "cacheRead": 19712
+    },
+    "candidate": {
+      "input": 154619,
+      "cacheRead": 27904
+    }
+  },
+  "failedAttempts": 2
+}

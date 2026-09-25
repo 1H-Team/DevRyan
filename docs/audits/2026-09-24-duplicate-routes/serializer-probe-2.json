@@ -1,0 +1,379 @@
+{
+  "kind": "duplicate-outputs",
+  "runtimeVersion": "1.18.32",
+  "runtimeHash": "d1f46380f028efb9a46bd10c9866231acbab4e31b43afcf1f1ee179868a40882",
+  "pluginInventory": null,
+  "liveProvider": false,
+  "qualification": "synthetic-fixture-only",
+  "passed": false,
+  "checks": {
+    "paired": false,
+    "uniqueEvidence": true,
+    "cleanupComplete": true,
+    "referencesResolve": true,
+    "callPairsIntact": true,
+    "summaryReferencesAbsent": true,
+    "manualBoundaries": false,
+    "automaticBoundary": false,
+    "nativeOrdering": false,
+    "prunedAnchorsRejected": true
+  },
+  "paired": [
+    {
+      "label": "control",
+      "baselineBytes": 43088,
+      "candidateBytes": null,
+      "passed": false
+    },
+    {
+      "label": "duplicates",
+      "baselineBytes": 72347,
+      "candidateBytes": null,
+      "passed": false
+    },
+    {
+      "label": "pruned",
+      "baselineBytes": 63060,
+      "candidateBytes": null,
+      "passed": false
+    }
+  ],
+  "failures": [
+    "candidate:The operation was aborted due to timeout"
+  ],
+  "cleanup": [
+    {
+      "source": "retained-os-process-ancestry-and-start-identities",
+      "rootPid": 48060,
+      "rootObserved": true,
+      "observationIntervalMs": 500,
+      "observationErrors": [],
+      "observedProcesses": [
+        {
+          "pid": 48060,
+          "parentPid": 47985,
+          "startIdentity": "Thu Sep 24 19:35:02 2026"
+        },
+        {
+          "pid": 48412,
+          "parentPid": 48060,
+          "startIdentity": "Thu Sep 24 19:35:04 2026"
+        },
+        {
+          "pid": 48531,
+          "parentPid": 48060,
+          "startIdentity": "Thu Sep 24 19:35:05 2026"
+        },
+        {
+          "pid": 48636,
+          "parentPid": 48060,
+          "startIdentity": "Thu Sep 24 19:35:05 2026"
+        },
+        {
+          "pid": 48890,
+          "parentPid": 48060,
+          "startIdentity": "Thu Sep 24 19:35:06 2026"
+        },
+        {
+          "pid": 48978,
+          "parentPid": 48060,
+          "startIdentity": "Thu Sep 24 19:35:07 2026"
+        }
+      ],
+      "remainingProcessIds": [],
+      "signals": [],
+      "trackingClosed": true
+    },
+    {
+      "source": "retained-os-process-ancestry-and-start-identities",
+      "rootPid": 49015,
+      "rootObserved": true,
+      "observationIntervalMs": 500,
+      "observationErrors": [],
+      "observedProcesses": [
+        {
+          "pid": 49015,
+          "parentPid": 47985,
+          "startIdentity": "Thu Sep 24 19:35:07 2026"
+        }
+      ],
+      "remainingProcessIds": [],
+      "signals": [],
+      "trackingClosed": true
+    }
+  ],
+  "compactionFrequency": 3,
+  "lifecycle": [
+    {
+      "arm": "baseline",
+      "syntheticPressureTokens": {
+        "total": 10010,
+        "input": 1000,
+        "output": 8,
+        "reasoning": 2,
+        "cache": {
+          "write": 3000,
+          "read": 6000
+        }
+      }
+    },
+    {
+      "arm": "baseline",
+      "order": [
+        {
+          "phase": "ordinary"
+        },
+        {
+          "phase": "ordinary"
+        },
+        {
+          "phase": "ordinary"
+        },
+        {
+          "phase": "ordinary"
+        },
+        {
+          "phase": "ordinary"
+        },
+        {
+          "phase": "compacting"
+        },
+        {
+          "phase": "summary"
+        },
+        {
+          "phase": "ordinary"
+        },
+        {
+          "phase": "compacting"
+        },
+        {
+          "phase": "summary"
+        },
+        {
+          "phase": "ordinary"
+        },
+        {
+          "phase": "ordinary"
+        },
+        {
+          "phase": "compacting"
+        },
+        {
+          "phase": "summary"
+        },
+        {
+          "phase": "ordinary"
+        },
+        {
+          "phase": "ordinary"
+        }
+      ],
+      "valid": true
+    }
+  ],
+  "providerInputTokens": null,
+  "providerCacheTokens": null,
+  "peakInputTokens": null,
+  "peakSerializedRequestBytes": 72347,
+  "hookObservations": [],
+  "transformTimingScope": "observed hook only; concurrent test workload; not provider or end-to-end latency",
+  "observations": [
+    {
+      "arm": "baseline",
+      "label": "warmup",
+      "phase": "ordinary",
+      "mode": "duplicates",
+      "bytes": 72347,
+      "skillReferences": 0,
+      "managedReferences": 0,
+      "skillEvidence": true,
+      "managedEvidence": true,
+      "uniqueEvidence": true,
+      "callPairsIntact": true,
+      "referencesResolve": true,
+      "references": []
+    },
+    {
+      "arm": "baseline",
+      "label": "control",
+      "phase": "ordinary",
+      "mode": "control",
+      "bytes": 43088,
+      "skillReferences": 0,
+      "managedReferences": 0,
+      "skillEvidence": true,
+      "managedEvidence": true,
+      "uniqueEvidence": true,
+      "callPairsIntact": true,
+      "referencesResolve": true,
+      "references": []
+    },
+    {
+      "arm": "baseline",
+      "label": "duplicates",
+      "phase": "ordinary",
+      "mode": "duplicates",
+      "bytes": 72347,
+      "skillReferences": 0,
+      "managedReferences": 0,
+      "skillEvidence": true,
+      "managedEvidence": true,
+      "uniqueEvidence": true,
+      "callPairsIntact": true,
+      "referencesResolve": true,
+      "references": []
+    },
+    {
+      "arm": "baseline",
+      "label": "pruned",
+      "phase": "ordinary",
+      "mode": "pruned",
+      "bytes": 63060,
+      "skillReferences": 0,
+      "managedReferences": 0,
+      "skillEvidence": true,
+      "managedEvidence": true,
+      "uniqueEvidence": true,
+      "callPairsIntact": true,
+      "referencesResolve": true,
+      "references": []
+    },
+    {
+      "arm": "baseline",
+      "label": "manual",
+      "phase": "ordinary",
+      "mode": "duplicates",
+      "bytes": 72347,
+      "skillReferences": 0,
+      "managedReferences": 0,
+      "skillEvidence": true,
+      "managedEvidence": true,
+      "uniqueEvidence": true,
+      "callPairsIntact": true,
+      "referencesResolve": true,
+      "references": []
+    },
+    {
+      "arm": "baseline",
+      "label": "manual",
+      "phase": "summary",
+      "mode": "duplicates",
+      "bytes": 20201,
+      "skillReferences": 0,
+      "managedReferences": 0,
+      "skillEvidence": true,
+      "managedEvidence": true,
+      "uniqueEvidence": true,
+      "callPairsIntact": true,
+      "referencesResolve": true,
+      "references": []
+    },
+    {
+      "arm": "baseline",
+      "label": "manual",
+      "phase": "ordinary",
+      "mode": "duplicates",
+      "bytes": 72347,
+      "skillReferences": 0,
+      "managedReferences": 0,
+      "skillEvidence": true,
+      "managedEvidence": true,
+      "uniqueEvidence": true,
+      "callPairsIntact": true,
+      "referencesResolve": true,
+      "references": []
+    },
+    {
+      "arm": "baseline",
+      "label": "manual",
+      "phase": "summary",
+      "mode": "duplicates",
+      "bytes": 21149,
+      "skillReferences": 0,
+      "managedReferences": 0,
+      "skillEvidence": true,
+      "managedEvidence": true,
+      "uniqueEvidence": true,
+      "callPairsIntact": true,
+      "referencesResolve": true,
+      "references": []
+    },
+    {
+      "arm": "baseline",
+      "label": "manual",
+      "phase": "ordinary",
+      "mode": "duplicates",
+      "bytes": 72347,
+      "skillReferences": 0,
+      "managedReferences": 0,
+      "skillEvidence": true,
+      "managedEvidence": true,
+      "uniqueEvidence": true,
+      "callPairsIntact": true,
+      "referencesResolve": true,
+      "references": []
+    },
+    {
+      "arm": "baseline",
+      "label": "automatic",
+      "phase": "ordinary",
+      "mode": "duplicates",
+      "bytes": 72347,
+      "skillReferences": 0,
+      "managedReferences": 0,
+      "skillEvidence": true,
+      "managedEvidence": true,
+      "uniqueEvidence": true,
+      "callPairsIntact": true,
+      "referencesResolve": true,
+      "references": []
+    },
+    {
+      "arm": "baseline",
+      "label": "automatic",
+      "phase": "summary",
+      "mode": "duplicates",
+      "bytes": 20201,
+      "skillReferences": 0,
+      "managedReferences": 0,
+      "skillEvidence": true,
+      "managedEvidence": true,
+      "uniqueEvidence": true,
+      "callPairsIntact": true,
+      "referencesResolve": true,
+      "references": []
+    },
+    {
+      "arm": "baseline",
+      "label": "automatic",
+      "phase": "ordinary",
+      "mode": "duplicates",
+      "bytes": 72347,
+      "skillReferences": 0,
+      "managedReferences": 0,
+      "skillEvidence": true,
+      "managedEvidence": true,
+      "uniqueEvidence": true,
+      "callPairsIntact": true,
+      "referencesResolve": true,
+      "references": []
+    },
+    {
+      "arm": "baseline",
+      "label": "automatic",
+      "phase": "ordinary",
+      "mode": "duplicates",
+      "bytes": 72347,
+      "skillReferences": 0,
+      "managedReferences": 0,
+      "skillEvidence": true,
+      "managedEvidence": true,
+      "uniqueEvidence": true,
+      "callPairsIntact": true,
+      "referencesResolve": true,
+      "references": []
+    }
+  ],
+  "output": ".cache/qa/duplicate-serializer-Ms5cUk"
+}

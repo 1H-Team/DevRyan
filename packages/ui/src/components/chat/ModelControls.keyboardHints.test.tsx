@@ -12,6 +12,7 @@ describe('ModelControls keyboard hints', () => {
         expect(dict['chat.modelControls.keyboardHintNavigate']).toBe('↑↓ Navigate');
         expect(dict['chat.modelControls.keyboardHintSwitchAgent']).toBe('Tab Switch Agent');
         expect(dict['chat.modelControls.keyboardHintThinking']).toBe('←→ Thinking');
+        expect(dict['chat.modelControls.keyboardHintSelect']).toBe('{modifier}1–9 Select');
     });
 
     test('renders decorative separators and hides the Thinking separator with its hint', () => {
@@ -22,22 +23,27 @@ describe('ModelControls keyboard hints', () => {
 
         expect(footerStart).toBeGreaterThan(-1);
         expect(footerEnd).toBeGreaterThan(footerStart);
-        expect(footer.match(/<span aria-hidden="true">\|<\/span>/g)).toHaveLength(2);
+        expect(footer.match(/<span aria-hidden="true">\|<\/span>/g)).toHaveLength(3);
         expect(footer).toContain(
             "className={cn('inline-flex items-center gap-x-2', !highlightedSupportsThinking && 'invisible')}",
         );
 
+        const separator = '<span aria-hidden="true">|</span>';
         const navigateIndex = footer.indexOf("t('chat.modelControls.keyboardHintNavigate')");
-        const firstSeparatorIndex = footer.indexOf('<span aria-hidden="true">|</span>');
+        const firstSeparatorIndex = footer.indexOf(separator);
+        const selectIndex = footer.indexOf("t('chat.modelControls.keyboardHintSelect'");
+        const secondSeparatorIndex = footer.indexOf(separator, firstSeparatorIndex + 1);
         const switchAgentIndex = footer.indexOf("t('chat.modelControls.keyboardHintSwitchAgent')");
         const conditionalGroupIndex = footer.indexOf("!highlightedSupportsThinking && 'invisible'");
-        const secondSeparatorIndex = footer.indexOf('<span aria-hidden="true">|</span>', firstSeparatorIndex + 1);
+        const thirdSeparatorIndex = footer.indexOf(separator, secondSeparatorIndex + 1);
         const thinkingIndex = footer.indexOf("t('chat.modelControls.keyboardHintThinking')");
 
         expect(navigateIndex).toBeLessThan(firstSeparatorIndex);
-        expect(firstSeparatorIndex).toBeLessThan(switchAgentIndex);
+        expect(firstSeparatorIndex).toBeLessThan(selectIndex);
+        expect(selectIndex).toBeLessThan(secondSeparatorIndex);
+        expect(secondSeparatorIndex).toBeLessThan(switchAgentIndex);
         expect(switchAgentIndex).toBeLessThan(conditionalGroupIndex);
-        expect(conditionalGroupIndex).toBeLessThan(secondSeparatorIndex);
-        expect(secondSeparatorIndex).toBeLessThan(thinkingIndex);
+        expect(conditionalGroupIndex).toBeLessThan(thirdSeparatorIndex);
+        expect(thirdSeparatorIndex).toBeLessThan(thinkingIndex);
     });
 });

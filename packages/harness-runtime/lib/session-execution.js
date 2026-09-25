@@ -116,8 +116,16 @@ export async function prepareSessionExecution({ launcher, lease }) {
       ...(process.platform === 'darwin' ? { DYLD_INSERT_LIBRARIES: `${launcher}-spawn.dylib`,
         ZDOTDIR: scratchDirectory, BASH_ENV: path.join(scratchDirectory, '.bash-env') } : {}),
       TMPDIR: scratchDirectory, TMP: scratchDirectory, TEMP: scratchDirectory,
-      TMPPREFIX: path.join(scratchDirectory, 'zsh') } };
+      TMPPREFIX: path.join(scratchDirectory, 'zsh'), ...workerLanguageServerEnvironment() } };
 }
+
+// Every worker has an empty scratch cache. OpenCode's download-backed language
+// servers (ESLint fetches and compiles vscode-eslint from GitHub) would then
+// rebuild on each edit: 10+ s and unpinned install scripts per call. Servers
+// the project already provides and TypeScript diagnostics keep working.
+// DEVRYAN_WORKER_LSP_DOWNLOAD=1 restores per-call downloads.
+const workerLanguageServerEnvironment = () => process.env.DEVRYAN_WORKER_LSP_DOWNLOAD === '1' ? {}
+  : { OPENCODE_DISABLE_LSP_DOWNLOAD: 'true' };
 
 /** Starts only the reviewed native launcher. Commands never inherit host fds
  * or gain write access to the ledger, original project, or dependencies. */
@@ -178,8 +186,10 @@ export async function startReadOnlySessionExecution({ launcher, storage, environ
   // A read-only transport may run from its real project directory: the profile
   // still denies every write outside its private view, scratch and state. A
   // stable, truthful cwd keeps the provider's environment prompt (and its
-  // cached prefix) identical across requests. Linux confinement uses a private
-  // root, where the project is not visible, so it keeps the private view.
+  // cached prefix) identical across requests. Linux confinement clones the
+  // whole host tree read-only as its private root, so the real path would be
+  // visible there too, but that launcher is unverified (Landlock ABI 9 is
+  // unavailable on the tested kernels) and keeps the private view.
   const logicalWorkingDirectory = process.platform === 'darwin' && path.isAbsolute(logicalDirectory ?? '')
     ? await fs.realpath(logicalDirectory).catch(() => undefined) : undefined;
   const lease = { viewDirectory: path.join(root, 'worktree'), workingDirectory: path.join(root, 'worktree'), auxiliaryDirectory,

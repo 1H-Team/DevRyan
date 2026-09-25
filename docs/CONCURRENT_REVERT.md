@@ -23,9 +23,17 @@ conversation Revert/Redo report a partial outcome with the conflicting paths.
 `packages/harness-runtime/lib/session-mutations.js` owns immutable file versions,
 execution bases, operation identities, publication order and projection. Git
 subdirectories share one canonical worktree ledger; separate worktrees remain
-separate. Non-Git projects use their canonical directory. Git ignore rules do
-not hide project file contributions. Dependency directories and Git metadata
-are inputs rather than published mutations. Private views preserve HEAD and the
+separate. Non-Git projects use their canonical directory. Git metadata and
+dependency inputs are never published mutations. Dependency inputs are the
+`node_modules`, `.venv` and `__pycache__` names anywhere and, in Git projects,
+every directory Git ignores that holds no tracked path (classified with
+`git check-ignore` per tree level, from the project, never from the view). They
+are linked read-only into views and never ingested, so confined writes into
+them fail and outputs written there are not published (a replaced link is
+reported as `ignoredInputs`). Ignored standalone files such as `.env` are still
+ingested. Records ingested before a directory became an input are no longer
+observed; Revert, Redo and file restore leave those paths untouched and report
+an `ignored_input` conflict. Private views preserve HEAD and the
 index for inspection; commits and branch changes inside those views do not
 change the original repository metadata.
 
@@ -68,7 +76,13 @@ supervised process group; a spawn adapter preserves that group for Bun. On
 Apple silicon the adapter is universal `arm64`/`arm64e`, so arm64e system
 tools such as `/bin/cat` can load it. Linux
 requires [Landlock ABI 9](https://docs.kernel.org/userspace-api/landlock.html), private user/mount/PID/IPC namespaces, read-only mounts
-and seccomp. Windows uses restricted tokens, private ACLs, an isolated desktop
+and seccomp. Its private root is a recursive read-only clone of the host tree
+with only the view, scratch and cache bound writable, so the real project path
+is visible there read-only. A read-only provider transport could therefore use
+the real path as its working directory on Linux, as macOS does, for a stable
+environment prompt and cached prefix; it keeps the private view because the
+Linux launcher is unverified (2026-09-24: Docker Desktop's 6.12 kernel predates
+Landlock ABI 9, and the companion ships only for darwin-arm64). Windows uses restricted tokens, private ACLs, an isolated desktop
 and an owned job object. Commands inherit only their explicit standard handles.
 The supervisor acknowledges completion after all descendants stop, including
 background children. Long-running unrelated executions keep their immutable
@@ -144,7 +158,7 @@ message, phase and error identifiers without file contents or tool arguments.
 ## Build and rollout
 
 The [companion manifest](../packages/web/server/lib/opencode/companion/manifest.json)
-pins OpenCode 1.18.31 at `014614d35b397775e5d397a490fc72368c894ec2`, the full patch
+pins OpenCode 1.18.32 at `545f51d26cc39a907d2867492d498d9607ea5fa4`, the full patch
 digest and every changed source file. `bun run build:revert-runtime` prepares the
 pinned checkout inside `.cache`, verifies source, checks types and regression
 tests, builds the companion and native supervisor, and runs real execution
@@ -161,8 +175,8 @@ the companion step; the `Warm release caches` workflow uses this on `main`,
 because caches saved by a tag-triggered release are visible only to that tag.
 
 Only successful acceptance writes the runtime manifest. The current paired
-companion is `1.18.31-devryan.13`, with execution preparation protocol 2 and
-retention protocol 1. The host verifies the required
+companion is 2.1.0 on OpenCode 1.18.32, with execution preparation protocol 3
+(direct receipts for built-in read, glob and grep) and retention protocol 1. The host verifies the required
 capability versions, platform, architecture and artifact digests before enabling
 capture. Artifacts live under `packages/web/runtime/<platform>-<arch>`; Electron
 ships them under `Resources/revert-runtime`. An explicit

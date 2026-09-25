@@ -472,10 +472,30 @@ function getDevRyanBaseConfigAgents(workingDirectory) {
   return Array.from(agentsByName.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// Wrapper-mode Slim layering applies only when the DevRyan wrapper plugin is
+// active and raw Slim does not own the agent catalog.
+function isSlimWrapperLayeringActive(slim) {
+  return Boolean(slim.wrapperPluginEnabled && !slim.slimAgentCatalogEnabled);
+}
+
+// The Slim values layered over a DevRyan agent's sidecar override: `model` only
+// when Slim supplies a model ref, `variant` always (string or null). Shared by
+// the runtime map and the shadowed-override diagnostic so they cannot drift.
+function getSlimWrapperRuntimeLayer(slimAgent) {
+  const modelRef = normalizeModelRefs(slimAgent.modelRefs)[0]
+    || modelValueToRef(slimAgent.model);
+  return {
+    model: modelRef || null,
+    variant: typeof slimAgent.variant === 'string' && slimAgent.variant.trim()
+      ? slimAgent.variant.trim()
+      : null,
+  };
+}
+
 function listManagedRuntimeAgentModelOverrides(workingDirectory, options = {}) {
   const overrides = { ...listAgentModelOverrides(options) };
   const slim = resolveSlimConfig(workingDirectory, options);
-  if (!slim.wrapperPluginEnabled || slim.slimAgentCatalogEnabled) {
+  if (!isSlimWrapperLayeringActive(slim)) {
     return overrides;
   }
 
@@ -487,19 +507,105 @@ function listManagedRuntimeAgentModelOverrides(workingDirectory, options = {}) {
       continue;
     }
 
-    const modelRef = normalizeModelRefs(slimAgent.modelRefs)[0]
-      || modelValueToRef(slimAgent.model);
+    const layer = getSlimWrapperRuntimeLayer(slimAgent);
     const runtimeOverride = {
       ...(overrides[agentName] || {}),
-      ...(modelRef ? { model: modelRef } : {}),
-      variant: typeof slimAgent.variant === 'string' && slimAgent.variant.trim()
-        ? slimAgent.variant.trim()
-        : null,
+      ...(layer.model ? { model: layer.model } : {}),
+      variant: layer.variant,
     };
     overrides[agentName] = runtimeOverride;
   }
 
   return overrides;
+}
+
+// Which Slim layer decides a field. `overrides.model` is the root-`model` flag
+// normalizeSlimAgent records beside `modelResolution`; without it the model
+// can only have come from the active preset. The variant belongs to the preset
+// only when `modelResolution.source` is 'preset'; a root entry (explicit
+// variant, a root model that clears the preset variant, or a bare root entry)
+// decides it otherwise.
+function getSlimFieldShadowSource(slimAgent, field) {
+  if (field === 'model') {
+    return slimAgent.overrides?.model ? 'slim-root' : 'slim-preset';
+  }
+  return slimAgent.modelResolution?.source === 'preset' ? 'slim-preset' : 'slim-root';
+}
+
+/**
+ * Read-only diagnostic: for each sidecar `openchamber.agentOverrides` entry,
+ * reports the fields that wrapper-mode Slim layering shadows at runtime in
+ * `workingDirectory`, mirroring listManagedRuntimeAgentModelOverrides exactly.
+ * Only DevRyan packaged/project agents with a Slim entry are affected; `model`
+ * is shadowed only when Slim supplies a model ref, `variant` whenever layering
+ * applies, and `councillors` never. Entries with no shadowed field are
+ * omitted. Nothing is pruned or written.
+ *
+ * @returns {Record<string, {
+ *   fields: {
+ *     model?: { saved: string, effective: string, shadowedBy: 'slim-root' | 'slim-preset' },
+ *     variant?: { saved: string | null, effective: string | null, shadowedBy: 'slim-root' | 'slim-preset' },
+ *   },
+ *   effective: { model: string | null, variant: string | null },
+ *   presetName: string | null,
+ * }>}
+ */
+function listShadowedAgentModelOverrides(workingDirectory, options = {}) {
+  const sidecarOverrides = listAgentModelOverrides(options);
+  if (Object.keys(sidecarOverrides).length === 0) {
+    return {};
+  }
+
+  const slim = resolveSlimConfig(workingDirectory, options);
+  if (!isSlimWrapperLayeringActive(slim)) {
+    return {};
+  }
+
+  const devRyanAgentsByName = new Map(
+    getDevRyanBaseConfigAgents(workingDirectory).map((agent) => [agent.name, agent]),
+  );
+  const shadowed = {};
+  for (const [agentName, saved] of Object.entries(sidecarOverrides)) {
+    if (!devRyanAgentsByName.has(agentName) || !Object.prototype.hasOwnProperty.call(slim.agents, agentName)) {
+      continue;
+    }
+
+    const slimAgent = slim.agents[agentName];
+    const layer = getSlimWrapperRuntimeLayer(slimAgent);
+    const fields = {};
+    if (Object.prototype.hasOwnProperty.call(saved, 'model') && layer.model) {
+      fields.model = {
+        saved: saved.model,
+        effective: layer.model,
+        shadowedBy: getSlimFieldShadowSource(slimAgent, 'model'),
+      };
+    }
+    if (Object.prototype.hasOwnProperty.call(saved, 'variant')) {
+      fields.variant = {
+        saved: saved.variant,
+        effective: layer.variant,
+        shadowedBy: getSlimFieldShadowSource(slimAgent, 'variant'),
+      };
+    }
+    if (Object.keys(fields).length === 0) {
+      continue;
+    }
+
+    shadowed[agentName] = {
+      fields,
+      effective: {
+        model: layer.model
+          || saved.model
+          || getAgentPrimaryModelRef(devRyanAgentsByName.get(agentName)),
+        variant: layer.variant,
+      },
+      presetName: typeof slimAgent.modelResolution?.presetName === 'string'
+        ? slimAgent.modelResolution.presetName
+        : null,
+    };
+  }
+
+  return shadowed;
 }
 
 function applySlimModelMetadata(agent, slimAgent) {
@@ -512,6 +618,9 @@ function applySlimModelMetadata(agent, slimAgent) {
       councillors: false,
     },
     slimRuntimeModel: true,
+    // Whether wrapper layering takes the model from Slim; without one the
+    // runtime keeps a saved sidecar model (listManagedRuntimeAgentModelOverrides).
+    slimModelSupplied: Boolean(getSlimWrapperRuntimeLayer(slimAgent).model),
   };
   if (slimAgent.model) {
     next.model = slimAgent.model;
@@ -856,9 +965,17 @@ function listConfigAgents(workingDirectory, options = {}) {
   const overrides = listAgentModelOverrides(options);
   const backupModels = listAgentBackupModels(options);
   return getBaseConfigAgents(workingDirectory, options)
-    .map((agent) => (agent.source === SLIM_SCOPE || agent.slimRuntimeModel
-      ? agent
-      : applyAgentModelOverride(agent, overrides[agent.name])))
+    .map((agent) => {
+      if (agent.source === SLIM_SCOPE) return agent;
+      if (!agent.slimRuntimeModel) return applyAgentModelOverride(agent, overrides[agent.name]);
+      // Show the model that actually runs: a Slim entry without a model keeps
+      // the saved sidecar model at runtime, so Settings must show it too.
+      const saved = overrides[agent.name]?.model;
+      if (agent.slimModelSupplied || !saved) return agent;
+      const next = { ...agent, overrides: { ...agent.overrides, model: true } };
+      applyOverrideModelFields(next, saved);
+      return next;
+    })
     .map((agent) => attachAgentBackupModel(agent, backupModels))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -1112,6 +1229,7 @@ export {
   getEffectivePackagedAgentRuntimeFrontmatter,
   listAgentModelOverrides,
   listManagedRuntimeAgentModelOverrides,
+  listShadowedAgentModelOverrides,
   listStaleAgentModelOverrides,
   writeAgentModelOverride,
   deleteAgentModelOverride,

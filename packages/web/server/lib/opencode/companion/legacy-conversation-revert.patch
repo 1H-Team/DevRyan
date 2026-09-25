@@ -200,10 +200,10 @@ index 9999d5da5..d70a1b94a 100644
      })
 diff --git a/packages/opencode/src/cli/cmd/debug/devryan-tool.handler.ts b/packages/opencode/src/cli/cmd/debug/devryan-tool.handler.ts
 new file mode 100644
-index 000000000..87a8abaec
+index 000000000..2d19e9253
 --- /dev/null
 +++ b/packages/opencode/src/cli/cmd/debug/devryan-tool.handler.ts
-@@ -0,0 +1,142 @@
+@@ -0,0 +1,153 @@
 +import { createInterface } from "node:readline"
 +import { randomUUID, createHash } from "node:crypto"
 +import { mkdir, readFile, realpath, rm, stat, symlink } from "node:fs/promises"
@@ -217,6 +217,7 @@ index 000000000..87a8abaec
 +  tool: Schema.String,
 +  origin: DevRyanExecution.Origin,
 +  ripgrep: Schema.String,
++  languageServer: Schema.optional(Schema.String),
 +  skill: Schema.optional(DevRyanExecution.SkillBinding),
 +  args: Schema.Unknown,
 +  config: Schema.Unknown,
@@ -287,6 +288,16 @@ index 000000000..87a8abaec
 +      await mkdir(Global.Path.bin, { recursive: true })
 +      await rm(ripgrep, { force: true })
 +      await symlink(input.ripgrep, ripgrep)
++    }
++    // Link the host-installed TypeScript language server where npm resolution
++    // looks, so this edit does not reinstall it. Anything unexpected is
++    // ignored: the worker then resolves the server itself, as before.
++    if (input.languageServer && path.isAbsolute(input.languageServer)
++      && path.basename(input.languageServer) === DevRyanExecution.WORKER_LANGUAGE_SERVER
++      && (await stat(input.languageServer).then((info) => info.isDirectory(), () => false))) {
++      const packages = path.join(Global.Path.cache, "packages")
++      await mkdir(packages, { recursive: true })
++      await symlink(input.languageServer, path.join(packages, DevRyanExecution.WORKER_LANGUAGE_SERVER), "dir").catch(() => {})
 +    }
 +    const result = await AppRuntime.runPromise(
 +      Effect.gen(function* () {
@@ -784,6 +795,21 @@ index 3bedd1970..7d3365eea 100644
        if (
          ConfigErrorV1.JsonError.isInstance(error) ||
          ConfigErrorV1.InvalidError.isInstance(error) ||
+diff --git a/packages/opencode/src/server/shared/ui.ts b/packages/opencode/src/server/shared/ui.ts
+index d3f2c4511..132966718 100644
+--- a/packages/opencode/src/server/shared/ui.ts
++++ b/packages/opencode/src/server/shared/ui.ts
+@@ -80,6 +80,10 @@ export function serveUIEffect(
+   services: { fs: FSUtil.Interface; client: HttpClient.HttpClient; disableEmbeddedWebUi: boolean },
+ ) {
+   return Effect.gen(function* () {
++    // A DevRyan-managed server has no web UI. Unmatched paths are client bugs:
++    // answer 404 locally instead of proxying them to app.opencode.ai or
++    // returning index.html with status 200.
++    if (process.env.DEVRYAN_OPENCODE_UI_DISABLED === "1") return notFound()
+     const embeddedWebUI = yield* Effect.promise(() => embeddedUI(services.disableEmbeddedWebUi))
+     const path = new URL(request.url, "http://localhost").pathname
+ 
 diff --git a/packages/opencode/src/server/shared/workspace-routing.ts b/packages/opencode/src/server/shared/workspace-routing.ts
 index de4dc6720..fa274290c 100644
 --- a/packages/opencode/src/server/shared/workspace-routing.ts
@@ -808,10 +834,10 @@ index de4dc6720..fa274290c 100644
      url.pathname.match(/^\/session\/([^/]+)(?:\/|$)/)?.[1] ??
 diff --git a/packages/opencode/src/session/devryan-execution.ts b/packages/opencode/src/session/devryan-execution.ts
 new file mode 100644
-index 000000000..d19d01800
+index 000000000..60138a3be
 --- /dev/null
 +++ b/packages/opencode/src/session/devryan-execution.ts
-@@ -0,0 +1,557 @@
+@@ -0,0 +1,654 @@
 +import { assertWorkerPayload, prepareWorkerMessages, prepareWorkerPatch } from "./execution-payload"
 +import { startExecutionBrowser } from "./execution-browser"
 +import { RetentionGate } from "./retention-gate"
@@ -827,12 +853,25 @@ index 000000000..d19d01800
 +import { EffectBridge } from "@/effect/bridge"
 +import { InstanceState } from "@/effect/instance-state"
 +import { Tool } from "@/tool/tool"
++import { Npm } from "@opencode-ai/core/npm"
 +import type { Hooks } from "@opencode-ai/plugin"
 +
 +const controls = new WeakSet<object>()
++// Built-in read-only tools (read, glob, grep; audited in SEAMS.md) that may use
++// a direct receipt: one lock-free admission and one receipt commit instead of
++// the reserved-lease protocol. Selected by object identity, never by name.
++const directs = new WeakSet<object>()
++export function direct(...defs: object[]) {
++  for (const def of defs) directs.add(def)
++}
 +const customs = new WeakSet<object>()
 +const browsers = new WeakSet<object>()
 +const resolvedPlugins = new Map<string, Map<string, unknown>>()
++// Which plugin entry defined each plugin tool, and which entries register a
++// hook that runs inside a worker (shell environment or provider auth). A
++// plugin-tool worker loads only these instead of every plugin.
++const owners = new WeakMap<object, string>()
++const workerHookPlugins = new Map<string, Set<string>>()
 +const toolFiles = new Map<string, string[]>()
 +export function files(directory: string, entries: string[]) {
 +  toolFiles.set(directory, entries)
@@ -863,6 +902,34 @@ index 000000000..d19d01800
 +    Effect.catchCause((cause) => (Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : Effect.succeed(""))),
 +    Effect.orDie,
 +  )
++// A worker's scratch cache is empty, so the TypeScript language server would be
++// reinstalled from npm for every edit. Install it once here, where npm runs
++// with scripts disabled (nothing downloaded executes in this process), and let
++// the worker link that copy; the sandbox keeps it read-only. Best effort: ""
++// leaves the worker's own resolution unchanged. DEVRYAN_WORKER_LSP_SHARED=0.
++export const WORKER_LANGUAGE_SERVER = "typescript-language-server"
++const languageServerTools = new Set(["edit", "write", "apply_patch", "lsp"])
++const languageServerFile = /\.[cm]?[jt]sx?$/i
++export const wantsLanguageServer = (tool: string, args: unknown, lsp: unknown) => {
++  if (process.env.DEVRYAN_WORKER_LSP_SHARED === "0" || !languageServerTools.has(tool)) return false
++  // A configured `typescript` entry replaces the npm-resolved server.
++  if (lsp !== true && (!lsp || typeof lsp !== "object" || "typescript" in lsp)) return false
++  if (tool !== "edit" && tool !== "write") return true
++  const file = args && typeof args === "object" && "filePath" in args ? args.filePath : undefined
++  return typeof file === "string" && languageServerFile.test(file)
++}
++// A slow first install must not hold the edit: it keeps running and later
++// calls find it.
++const hostLanguageServer = Effect.promise(() => Promise.race([
++  Npm.which(WORKER_LANGUAGE_SERVER).catch(() => undefined),
++  new Promise<undefined>((resolve) => setTimeout(resolve, 20_000)),
++])).pipe(
++  Effect.map((bin) => {
++    if (!bin || !path.isAbsolute(bin)) return ""
++    const directory = path.resolve(bin, "..", "..", "..")
++    return path.basename(directory) === WORKER_LANGUAGE_SERVER ? directory : ""
++  }),
++)
 +export const SkillBinding = Schema.Struct({ name: Schema.String, source: Schema.String, digest: Schema.String })
 +const Publication = Schema.Struct({
 +  outcome: Schema.optional(Schema.Literal("partial")),
@@ -882,6 +949,8 @@ index 000000000..d19d01800
 +    }),
 +  ),
 +})
++const DirectAdmission = Schema.Struct({ token: Schema.String, generation: Schema.Number })
++
 +export const Result = Schema.Struct({
 +  title: Schema.String,
 +  output: Schema.String,
@@ -997,6 +1066,12 @@ index 000000000..d19d01800
 +  const plugins = resolvedPlugins.get(directory) ?? new Map<string, unknown>()
 +  plugins.set(entry, options)
 +  resolvedPlugins.set(directory, plugins)
++  for (const def of Object.values(hooks.tool ?? {})) owners.set(def, entry)
++  if (hooks["shell.env"] || hooks.auth) {
++    const entries = workerHookPlugins.get(directory) ?? new Set<string>()
++    entries.add(entry)
++    workerHookPlugins.set(directory, entries)
++  }
 +  if (!enabled()) return
 +  const pins = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.String))(
 +    JSON.parse(process.env.DEVRYAN_EXECUTION_CONTROL_PLUGINS ?? "{}"),
@@ -1009,6 +1084,17 @@ index 000000000..d19d01800
 +    for (const def of Object.values(hooks.tool ?? {})) controls.add(def)
 +  if (hash === process.env.DEVRYAN_EXECUTION_BROWSER_PLUGIN)
 +    for (const def of Object.values(hooks.tool ?? {})) browsers.add(def)
++}
++
++// Plugins a worker must load for a custom tool: its owner (none for a tool
++// file) plus plugins with worker-side hooks, in their resolved order.
++// DEVRYAN_WORKER_OWNING_PLUGIN=0 restores loading every plugin.
++export function workerPlugins(directory: string, source: object, configured: readonly unknown[]) {
++  if (process.env.DEVRYAN_WORKER_OWNING_PLUGIN === "0") return [...configured]
++  const keep = new Set(workerHookPlugins.get(directory) ?? [])
++  const owner = owners.get(source)
++  if (owner) keep.add(owner)
++  return configured.filter((entry) => keep.has(Array.isArray(entry) ? String(entry[0]) : String(entry)))
 +}
 +
 +export const prompt = (sessionID: string, userMessageID: string) =>
@@ -1055,6 +1141,8 @@ index 000000000..d19d01800
 +          tool: def.id,
 +        }
 +        const cfg = yield* config.get()
++        const languageServer = kind === "process" && !source && wantsLanguageServer(def.id, args, cfg.lsp)
++          ? yield* hostLanguageServer : ""
 +        const frozen = Schema.decodeUnknownSync(Schema.Struct({
 +          args: Schema.Unknown, messages: Schema.Unknown, extra: Schema.optional(Schema.Unknown),
 +          config: Record, files: Schema.Array(Schema.String),
@@ -1067,7 +1155,7 @@ index 000000000..d19d01800
 +            options === undefined ? entry : [entry, options]) },
 +          files: toolFiles.get(instance.directory) ?? [],
 +        })))
-+        const selected = skillFor
++        const selected = kind === "process" && skillFor
 +          ? yield* skillFor(Schema.decodeUnknownSync(Schema.Struct({ name: Schema.String }))(args).name)
 +          : undefined
 +        const selectedSource = selected && selected.location !== "<built-in>"
@@ -1081,6 +1169,37 @@ index 000000000..d19d01800
 +            const argsDigest = createHash("sha256")
 +              .update(JSON.stringify([def.id, frozen.args, kind]))
 +              .digest("hex")
++            if (kind === "control" && directs.has(def)) {
++              // Any admission error falls back to the reserved-lease protocol,
++              // which remains the authority for every refusal.
++              const admission = yield* Effect.promise(async () => {
++                try {
++                  return Schema.decodeUnknownSync(DirectAdmission)(
++                    await rpc({ ...scope, protocol: 3, action: "direct-admit", argsDigest }, ctx.abort),
++                  )
++                } catch {
++                  return undefined
++                }
++              })
++              if (admission) {
++                // The result is withheld until the host records the receipt; a
++                // fenced receipt (revert or cancellation) discards it. The
++                // receipt is idempotent, so a lost response is retried.
++                const outcome = yield* Effect.exit(restore(original(args, ctx)))
++                yield* Effect.promise(async () => {
++                  const finish = { ...scope, action: "direct-finish", argsDigest, token: admission.token, generation: admission.generation }
++                  for (let attempt = 1; ; attempt++) {
++                    try {
++                      return await rpc(finish)
++                    } catch (cause) {
++                      const code = cause instanceof Error ? cause.message : ""
++                      if (attempt >= 3 || ["execution_reverted", "execution_cancelled", "session_reverting", "capture_identity_mismatch"].includes(code)) throw cause
++                    }
++                  }
++                })
++                return yield* outcome
++              }
++            }
 +            const started = Schema.decodeUnknownSync(Launch)(
 +              yield* Effect.promise(async () => {
 +                try {
@@ -1134,12 +1253,14 @@ index 000000000..d19d01800
 +              tool: def.id,
 +              origin: source ? "custom" : "builtin",
 +              ripgrep: ripgrepPath,
++              languageServer,
 +              ctx,
 +              messages: frozen.messages,
 +              extra: frozen.extra,
 +              // Plugin hooks run in the control process; a worker needs plugins
 +              // only to resolve a plugin-defined tool. Built-ins boot without them.
-+              config: { ...frozen.config, ...(source ? {} : { plugin: [] }),
++              config: { ...frozen.config,
++                plugin: source ? workerPlugins(instance.directory, source, (frozen.config.plugin ?? []) as unknown[]) : [],
 +                skills: { paths: skill && skill.source !== "<built-in>" ? [path.dirname(skill.source)] : [], urls: [] } },
 +              files: [...frozen.files],
 +              skill,
@@ -1177,6 +1298,7 @@ index 000000000..d19d01800
 +  tool: string
 +  origin: typeof Origin.Type
 +  ripgrep: string
++  languageServer: string
 +  ctx: Tool.Context
 +  messages: unknown
 +  extra: unknown
@@ -1243,6 +1365,7 @@ index 000000000..d19d01800
 +        tool: input.tool,
 +        origin: input.origin,
 +        ripgrep: input.ripgrep,
++        languageServer: input.languageServer,
 +        skill: input.skill,
 +        args,
 +        sessionID: input.ctx.sessionID,
@@ -2123,7 +2246,7 @@ index 678ed4451..d900620ff 100644
        yield* lsp.touchFile(filepath).pipe(Effect.ignoreCause, Effect.forkIn(scope))
      })
 diff --git a/packages/opencode/src/tool/registry.ts b/packages/opencode/src/tool/registry.ts
-index 9167cb3ea..2c1eb2231 100644
+index 9167cb3ea..5a8303c0d 100644
 --- a/packages/opencode/src/tool/registry.ts
 +++ b/packages/opencode/src/tool/registry.ts
 @@ -1,6 +1,7 @@
@@ -2263,7 +2386,7 @@ index 9167cb3ea..2c1eb2231 100644
          if (matches.length) yield* config.waitForDependencies()
          for (const match of matches) {
            const namespace = path.basename(match, path.extname(match))
-@@ -226,6 +243,24 @@ const layer = Layer.effect(
+@@ -226,6 +243,26 @@ const layer = Layer.effect(
            ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),
          })
  
@@ -2274,10 +2397,12 @@ index 9167cb3ea..2c1eb2231 100644
 +        // host's DNS. The built-in read, glob and grep only read the published
 +        // project (read's LSP warm-up is disabled in this process; ripgrep is
 +        // read-only), so they run here without a private view or worker; the
-+        // exemption is by built-in object identity, never by tool name. Writing
++        // skill only returns catalog text and lists support files; it never runs
++        // their scripts. Selection is by built-in object identity, never name. Writing
 +        // and process tools stay confined.
 +        const control = new Set<Tool.Def>([tool.invalid, tool.task, tool.todo, tool.question, tool.plan, tool.fetch,
-+          tool.search, ...(process.env.DEVRYAN_NATIVE_READ_TOOLS === "0" ? [] : [tool.read, tool.glob, tool.grep])])
++          tool.search, ...(process.env.DEVRYAN_NATIVE_READ_TOOLS === "0" ? [] : [tool.read, tool.glob, tool.grep, tool.skill])])
++        if (process.env.DEVRYAN_NATIVE_READ_TOOLS !== "0") DevRyanExecution.direct(tool.read, tool.glob, tool.grep, tool.skill)
 +        for (const value of Object.values(tool)) {
 +          const wrapped = DevRyanExecution.wrap(value, config, ripgrep.filepath,
 +            control.has(value) ? "control" : "process", undefined,
@@ -2288,7 +2413,7 @@ index 9167cb3ea..2c1eb2231 100644
          return {
            custom,
            builtin: [
-@@ -248,7 +283,9 @@ const layer = Layer.effect(
+@@ -248,7 +285,9 @@ const layer = Layer.effect(
              ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
            ],
            task: tool.task,
@@ -2299,7 +2424,7 @@ index 9167cb3ea..2c1eb2231 100644
          }
        }),
      )
-@@ -449,6 +486,7 @@ export const node = LayerNode.make({
+@@ -449,6 +488,7 @@ export const node = LayerNode.make({
      MCP.node,
      Database.node,
      Ripgrep.node,
@@ -2422,6 +2547,46 @@ index 1e4423e01..da662c151 100644
                return yield* run(
                  {
                    shell,
+diff --git a/packages/opencode/src/tool/skill.ts b/packages/opencode/src/tool/skill.ts
+index 9149bcc5f..59cbd941a 100644
+--- a/packages/opencode/src/tool/skill.ts
++++ b/packages/opencode/src/tool/skill.ts
+@@ -3,6 +3,7 @@ import { Effect, Schema } from "effect"
+ import { Ripgrep } from "@opencode-ai/core/ripgrep"
+ import { Skill } from "../skill"
+ import * as Tool from "./tool"
++import { ConfigMarkdown } from "@/config/markdown"
+ import DESCRIPTION from "./skill.txt"
+ 
+ export const Parameters = Schema.Struct({
+@@ -31,6 +32,18 @@ export const SkillTool = Tool.define(
+             metadata: {},
+           })
+ 
++          // Confined workers rediscover the selected file on each invocation.
++          // Preserve explicit refreshes on the native path without rescanning
++          // the catalog or executing anything mentioned in the skill body.
++          const content = process.env.DEVRYAN_EXECUTION_BOUNDARY === "1"
++            && process.env.DEVRYAN_EXECUTION_WORKER !== "1" && info.location !== "<built-in>"
++            ? yield* Effect.promise(async () => {
++                const current = await ConfigMarkdown.parse(info.location)
++                if (current.data.name !== info.name) throw new Error("skill_source_mismatch")
++                return current.content
++              })
++            : info.content
++
+           const dir = path.dirname(info.location)
+           const base = dir
+           const files = yield* ripgrep.find({
+@@ -48,7 +61,7 @@ export const SkillTool = Tool.define(
+               `<skill_content name="${info.name}">`,
+               `# Skill: ${info.name}`,
+               "",
+-              info.content.trim(),
++              content.trim(),
+               "",
+               `Base directory for this skill: ${base}`,
+               "Relative paths in this skill (e.g., scripts/, reference/) are relative to this base directory.",
 diff --git a/packages/opencode/src/tool/task.ts b/packages/opencode/src/tool/task.ts
 index d8ca640cf..36225bc3b 100644
 --- a/packages/opencode/src/tool/task.ts
@@ -2456,6 +2621,33 @@ index 9d7643cb3..bb6f1998d 100644
  
          expect(
            yield* requestJson<Session.Info>(pathFor(SessionPaths.get, { sessionID: parent.id }), { headers }),
+diff --git a/packages/opencode/test/server/httpapi-ui.test.ts b/packages/opencode/test/server/httpapi-ui.test.ts
+index 1a7ccc60d..5475db3bf 100644
+--- a/packages/opencode/test/server/httpapi-ui.test.ts
++++ b/packages/opencode/test/server/httpapi-ui.test.ts
+@@ -366,6 +366,22 @@ describe("HttpApi UI fallback", () => {
+     }),
+   )
+ 
++  it.live("answers unmatched paths locally when DevRyan disables the web UI fallback", () =>
++    Effect.gen(function* () {
++      const server = routeOrderingApp()
++      process.env.DEVRYAN_OPENCODE_UI_DISABLED = "1"
++      try {
++        const response = yield* server.request("/health")
++        expect(response.status).toBe(404)
++        expect(server.proxiedUrl()).toBeUndefined()
++      } finally {
++        delete process.env.DEVRYAN_OPENCODE_UI_DISABLED
++      }
++      yield* server.request("/health")
++      expect(server.proxiedUrl()).toContain("app.opencode.ai")
++    }),
++  )
++
+   it.live("requires server password for the web UI", () =>
+     Effect.gen(function* () {
+       const response = yield* uiApp({
 diff --git a/packages/opencode/test/server/workspace-routing.test.ts b/packages/opencode/test/server/workspace-routing.test.ts
 index 29c22038c..7d728ac7d 100644
 --- a/packages/opencode/test/server/workspace-routing.test.ts
@@ -2479,10 +2671,10 @@ index 29c22038c..7d728ac7d 100644
      expect(isLocalWorkspaceRoute("POST", "/session/ses_abc/message")).toBe(false)
 diff --git a/packages/opencode/test/session/devryan-execution.test.ts b/packages/opencode/test/session/devryan-execution.test.ts
 new file mode 100644
-index 000000000..74f00c20e
+index 000000000..642e73c5c
 --- /dev/null
 +++ b/packages/opencode/test/session/devryan-execution.test.ts
-@@ -0,0 +1,262 @@
+@@ -0,0 +1,496 @@
 +import { afterEach, describe, expect, test } from "bun:test"
 +import { spawn } from "node:child_process"
 +import fs from "node:fs/promises"
@@ -2491,6 +2683,7 @@ index 000000000..74f00c20e
 +import { createInterface } from "node:readline"
 +import { Effect, Exit, Layer } from "effect"
 +import { LayerNode } from "@opencode-ai/core/effect/layer-node"
++import { Ripgrep } from "@opencode-ai/core/ripgrep"
 +import { RipgrepBinary } from "@opencode-ai/core/ripgrep/binary"
 +import { Agent } from "@/agent/agent"
 +import { Config } from "@/config/config"
@@ -2629,6 +2822,7 @@ index 000000000..74f00c20e
 +})
 +
 +const calls: Array<Record<string, unknown>> = []
++const skillListings: Ripgrep.FindInput[] = []
 +let ripgrep: Effect.Effect<string, Error> = Effect.succeed("/host/bin/rg")
 +const it = testEffect(
 +  LayerNode.compile(LayerNode.group([ToolRegistry.node, Agent.node]), [
@@ -2636,14 +2830,21 @@ index 000000000..74f00c20e
 +      directories: () => InstanceState.directory.pipe(Effect.map((dir) => [path.join(dir, ".opencode")])),
 +    })],
 +    [RuntimeFlags.node, RuntimeFlags.layer()],
++    [Ripgrep.node, Layer.succeed(Ripgrep.Service, Ripgrep.Service.of({
++      find: (input) => { skillListings.push(input); return Effect.succeed([]) },
++      glob: () => Effect.succeed([]),
++      grep: () => Effect.succeed([]),
++    }))],
 +    [RipgrepBinary.node, Layer.succeed(RipgrepBinary.Service, RipgrepBinary.Service.of({
 +      filepath: Effect.suspend(() => ripgrep),
 +    }))],
 +  ]),
 +)
 +
++type Responder = (params: Record<string, unknown>) => unknown
++
 +// Records the kind the host reserves for each tool; nothing is launched.
-+const boundary = <A, E, R>(self: Effect.Effect<A, E, R>) =>
++const boundary = <A, E, R>(self: Effect.Effect<A, E, R>, respond?: Responder) =>
 +  Effect.acquireUseRelease(
 +    Effect.sync(() => {
 +      calls.length = 0
@@ -2653,6 +2854,8 @@ index 000000000..74f00c20e
 +        async fetch(request) {
 +          const { params } = (await request.json()) as { params: Record<string, unknown> }
 +          calls.push(params)
++          const custom = respond?.(params)
++          if (custom !== undefined) return Response.json(custom)
 +          // Stop every reservation so no tool body (or network request) runs.
 +          if (params.action === "begin")
 +            return Response.json({ ok: true, result: { protocol: 2, state: "failed", lease: { token: "lease" },
@@ -2744,6 +2947,229 @@ index 000000000..74f00c20e
 +      }),
 +    ),
 +  )
++})
++
++describe("worker plugin selection", () => {
++  test("a plugin tool's worker loads its owner and worker-hook plugins only; tool files load worker-hook plugins", async () => {
++    const directory = path.join(os.tmpdir(), "devryan-worker-plugins")
++    const tool = { description: "owned", args: {}, execute: async () => "" }
++    await DevRyanExecution.plugin("file:///owner.mjs", { tool: { owned: tool } } as never, undefined, directory)
++    await DevRyanExecution.plugin("file:///auth.mjs", { auth: { provider: "x", methods: [] } } as never, undefined, directory)
++    await DevRyanExecution.plugin("file:///shell.mjs", { "shell.env": async () => {} } as never, undefined, directory)
++    await DevRyanExecution.plugin("file:///events.mjs", { event: async () => {} } as never, undefined, directory)
++    const configured = ["file:///owner.mjs", ["file:///auth.mjs", { key: 1 }], "file:///shell.mjs", "file:///events.mjs"]
++    expect(DevRyanExecution.workerPlugins(directory, tool, configured))
++      .toEqual(["file:///owner.mjs", ["file:///auth.mjs", { key: 1 }], "file:///shell.mjs"])
++    expect(DevRyanExecution.workerPlugins(directory, {}, configured)).toEqual([["file:///auth.mjs", { key: 1 }], "file:///shell.mjs"])
++    process.env.DEVRYAN_WORKER_OWNING_PLUGIN = "0"
++    try {
++      expect(DevRyanExecution.workerPlugins(directory, tool, configured)).toEqual(configured)
++    } finally {
++      delete process.env.DEVRYAN_WORKER_OWNING_PLUGIN
++    }
++  })
++})
++
++describe("worker language server handoff", () => {
++  test("only built-in edits of TypeScript/JavaScript files with the default server request the host copy", () => {
++    const wants = DevRyanExecution.wantsLanguageServer
++    expect(wants("edit", { filePath: "/p/src/a.ts" }, true)).toBe(true)
++    expect(wants("write", { filePath: "/p/src/a.MJS" }, {})).toBe(true)
++    expect(wants("apply_patch", { patchText: "" }, true)).toBe(true)
++    expect(wants("lsp", {}, true)).toBe(true)
++    expect(wants("edit", { filePath: "/p/README.md" }, true)).toBe(false)
++    expect(wants("edit", { filePath: "/p/src/a.ts" }, false)).toBe(false)
++    expect(wants("edit", { filePath: "/p/src/a.ts" }, undefined)).toBe(false)
++    // A configured `typescript` server (custom command or disabled) is not npm-resolved.
++    expect(wants("edit", { filePath: "/p/src/a.ts" }, { typescript: { disabled: true } })).toBe(false)
++    expect(wants("shell", { command: "tsc" }, true)).toBe(false)
++    expect(wants("read", { filePath: "/p/src/a.ts" }, true)).toBe(false)
++    process.env.DEVRYAN_WORKER_LSP_SHARED = "0"
++    try {
++      expect(wants("edit", { filePath: "/p/src/a.ts" }, true)).toBe(false)
++    } finally {
++      delete process.env.DEVRYAN_WORKER_LSP_SHARED
++    }
++  })
++})
++
++describe("direct receipts for native read-only tools", () => {
++  afterEach(async () => {
++    await disposeAllInstances()
++  })
++  const actions = () => calls.map((call) => call.action)
++  const token = "00000000-0000-4000-8000-000000000000"
++
++  it.instance("records one direct receipt around a native read and returns its result", () =>
++    boundary(
++      Effect.gen(function* () {
++        const test = yield* TestInstance
++        yield* Effect.promise(() => fs.writeFile(path.join(test.directory, "a.txt"), "direct content"))
++        const defs = yield* (yield* ToolRegistry.Service).all()
++        const result = yield* DevRyanExecution.select(defs, "read", "builtin").execute({ filePath: path.join(test.directory, "a.txt") }, ctx)
++        expect(result.output).toContain("direct content")
++        expect(actions()).toEqual(["direct-admit", "direct-finish"])
++        expect(calls[1]).toMatchObject({ token, generation: 3, tool: "read", argsDigest: calls[0]!.argsDigest })
++      }),
++      (params) => params.action === "direct-admit" ? { ok: true, result: { token, generation: 3 } }
++        : params.action === "direct-finish" ? { ok: true, result: { files: [] } } : undefined,
++    ),
++  )
++
++  it.instance("withholds a read result whose receipt is fenced by a revert", () =>
++    boundary(
++      Effect.gen(function* () {
++        const test = yield* TestInstance
++        yield* Effect.promise(() => fs.writeFile(path.join(test.directory, "a.txt"), "secret"))
++        const defs = yield* (yield* ToolRegistry.Service).all()
++        const exit = yield* Effect.exit(DevRyanExecution.select(defs, "read", "builtin").execute({ filePath: path.join(test.directory, "a.txt") }, ctx))
++        expect(Exit.isSuccess(exit)).toBe(false)
++        expect(actions()).toEqual(["direct-admit", "direct-finish"])
++      }),
++      (params) => params.action === "direct-admit" ? { ok: true, result: { token, generation: 0 } }
++        : params.action === "direct-finish" ? { ok: false, error: { code: "execution_reverted" } } : undefined,
++    ),
++  )
++
++  it.instance("falls back to the reserved-lease protocol when direct admission is refused", () =>
++    boundary(
++      Effect.gen(function* () {
++        const test = yield* TestInstance
++        yield* Effect.promise(() => fs.writeFile(path.join(test.directory, "a.txt"), "a"))
++        const defs = yield* (yield* ToolRegistry.Service).all()
++        yield* Effect.exit(DevRyanExecution.select(defs, "grep", "builtin").execute({ pattern: "a" }, ctx))
++        expect(actions().slice(0, 2)).toEqual(["direct-admit", "begin"])
++        expect(kinds()).toEqual([["grep", "control"]])
++      }),
++      (params) => params.action === "direct-admit" ? { ok: false, error: { code: "direct_receipts_disabled" } } : undefined,
++    ),
++  )
++})
++
++
++describe("native skill loading", () => {
++  const token = "22222222-2222-4222-8222-222222222222"
++  const actions = () => calls.map((call) => call.action)
++  const admitted: Responder = (params) => params.action === "direct-admit"
++    ? { ok: true, result: { token, generation: 2 } }
++    : params.action === "direct-finish" ? { ok: true, result: { files: [] } } : undefined
++  const setup = Effect.gen(function* () {
++    const test = yield* TestInstance
++    const dir = path.join(test.directory, ".opencode", "skills", "fixture")
++    yield* Effect.promise(async () => {
++      await fs.mkdir(dir, { recursive: true })
++      await fs.writeFile(path.join(dir, "SKILL.md"), "---\nname: Fixture Skill\ndescription: test\n---\nRead reference.txt; never run scripts while loading.\n")
++      await fs.mkdir(path.join(test.directory, ".opencode", "tool"), { recursive: true })
++      await fs.writeFile(path.join(test.directory, ".opencode", "tool", "skill.js"), customRead)
++    })
++    const defs = yield* (yield* ToolRegistry.Service).all()
++    return { dir, defs, tool: DevRyanExecution.select(defs, "skill", "builtin") }
++  })
++  afterEach(async () => {
++    skillListings.length = 0
++    await disposeAllInstances()
++  })
++
++  it.instance("returns full native content and logical paths after permission and one receipt, including repeat loads", () => boundary(
++    Effect.gen(function* () {
++      const { dir, tool } = yield* setup
++      const permissions: unknown[] = []
++      for (let i = 0; i < 2; i++) {
++        const result = yield* tool.execute({ name: "Fixture Skill" }, { ...ctx,
++          ask: (request) => Effect.sync(() => { permissions.push(request) }),
++        })
++        expect(result.output).toContain("Read reference.txt; never run scripts while loading.")
++        expect(result.output).toContain(`Base directory for this skill: ${dir}`)
++        expect(result.metadata).toMatchObject({ name: "Fixture Skill", dir })
++      }
++      expect(permissions).toEqual(Array(2).fill({ permission: "skill", patterns: ["Fixture Skill"], always: ["Fixture Skill"], metadata: {} }))
++      expect(skillListings.map(({ cwd, follow, limit }) => ({ cwd, follow, limit })))
++        .toEqual(Array(2).fill({ cwd: dir, follow: false, limit: 10 }))
++      expect(actions()).toEqual(["direct-admit", "direct-finish", "direct-admit", "direct-finish"])
++      expect(calls[1]).toMatchObject({ tool: "skill", token, generation: 2, argsDigest: calls[0]!.argsDigest })
++    }), admitted,
++  ))
++
++  it.instance("an explicit reload reads changed content and fails closed if the selected name changes", () => boundary(
++    Effect.gen(function* () {
++      const { dir, tool } = yield* setup
++      yield* tool.execute({ name: "Fixture Skill" }, ctx)
++      yield* Effect.promise(() => fs.writeFile(path.join(dir, "SKILL.md"), "---\nname: Fixture Skill\n---\nUpdated skill instructions.\n"))
++      expect((yield* tool.execute({ name: "Fixture Skill" }, ctx)).output).toContain("Updated skill instructions.")
++      yield* Effect.promise(() => fs.writeFile(path.join(dir, "SKILL.md"), "---\nname: Replacement\n---\nWrong identity.\n"))
++      const exit = yield* Effect.exit(tool.execute({ name: "Fixture Skill" }, ctx))
++      expect(Exit.isSuccess(exit)).toBe(false)
++      expect(String(exit)).toContain("skill_source_mismatch")
++    }), admitted,
++  ))
++
++  it.instance("permission denial exposes no content and does not list supporting files", () => boundary(
++    Effect.gen(function* () {
++      const { tool } = yield* setup
++      const exit = yield* Effect.exit(tool.execute({ name: "Fixture Skill" }, { ...ctx, ask: () => Effect.die(new Error("denied")) }))
++      expect(Exit.isSuccess(exit)).toBe(false)
++      expect(skillListings).toHaveLength(0)
++      expect(actions()).toEqual(["direct-admit", "direct-finish"])
++    }), admitted,
++  ))
++
++  it.instance("missing skills retain the native not-found failure without starting a worker", () => boundary(
++    Effect.gen(function* () {
++      const { tool } = yield* setup
++      const exit = yield* Effect.exit(tool.execute({ name: "missing" }, ctx))
++      expect(Exit.isSuccess(exit)).toBe(false)
++      expect(String(exit)).toContain('Skill \"missing\" not found')
++      expect(skillListings).toHaveLength(0)
++      expect(actions()).toEqual(["direct-admit", "direct-finish"])
++    }), admitted,
++  ))
++
++  for (const code of ["execution_reverted", "execution_cancelled"]) {
++    it.instance(`withholds skill content when completion is fenced by ${code}`, () => boundary(
++      Effect.gen(function* () {
++        const { tool } = yield* setup
++        expect(Exit.isSuccess(yield* Effect.exit(tool.execute({ name: "Fixture Skill" }, ctx)))).toBe(false)
++        expect(actions()).toEqual(["direct-admit", "direct-finish"])
++      }), (params) => params.action === "direct-finish" ? { ok: false, error: { code } } : admitted(params),
++    ))
++  }
++
++  it.instance("retries a lost completion receipt without loading the skill twice", () => boundary(
++    Effect.gen(function* () {
++      const { tool } = yield* setup
++      expect((yield* tool.execute({ name: "Fixture Skill" }, ctx)).output).toContain("Read reference.txt")
++      expect(actions()).toEqual(["direct-admit", "direct-finish", "direct-finish"])
++      expect(calls[1]).toEqual(calls[2])
++      expect(skillListings).toHaveLength(1)
++    }), (params) => params.action === "direct-finish" && calls.length === 2
++      ? { ok: false, error: { code: "receipt_response_lost" } } : admitted(params),
++  ))
++
++  it.instance("custom skill tools stay confined and disabled direct receipts fall back to a control lease", () => boundary(
++    Effect.gen(function* () {
++      const { tool, defs } = yield* setup
++      yield* Effect.exit(DevRyanExecution.select(defs, "skill", "custom").execute({ path: "a.txt" }, ctx))
++      yield* Effect.exit(tool.execute({ name: "Fixture Skill" }, ctx))
++      expect(kinds()).toEqual([["skill", "process"], ["skill", "control"]])
++      expect(actions()).toContain("direct-admit")
++    }), (params) => params.action === "direct-admit" ? { ok: false, error: { code: "direct_receipts_disabled" } } : undefined,
++  ))
++
++  it.instance("disabling native read tools restores confined skill loading", () => boundary(
++    Effect.gen(function* () {
++      const previous = process.env.DEVRYAN_NATIVE_READ_TOOLS
++      process.env.DEVRYAN_NATIVE_READ_TOOLS = "0"
++      try {
++        const { tool } = yield* setup
++        yield* Effect.exit(tool.execute({ name: "Fixture Skill" }, ctx))
++        expect(kinds()).toEqual([["skill", "process"]])
++        expect(actions()).not.toContain("direct-admit")
++      } finally {
++        if (previous === undefined) delete process.env.DEVRYAN_NATIVE_READ_TOOLS
++        else process.env.DEVRYAN_NATIVE_READ_TOOLS = previous
++      }
++    }),
++  ))
 +})
 diff --git a/packages/opencode/test/session/execution-browser.test.ts b/packages/opencode/test/session/execution-browser.test.ts
 new file mode 100644

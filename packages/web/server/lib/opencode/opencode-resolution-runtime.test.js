@@ -31,9 +31,9 @@ describe('OpenCode resolution runtime', () => {
     const snapshot = await runtime.getOpenCodeResolutionSnapshot({});
 
     expect(snapshot).toMatchObject({
-      targetVersion: '1.18.31',
+      targetVersion: '1.18.32',
       detectedVersion: '1.18.31',
-      installCommand: 'curl -fsSL https://opencode.ai/install | bash -s -- --version 1.18.31 --no-modify-path',
+      installCommand: 'curl -fsSL https://opencode.ai/install | bash -s -- --version 1.18.32 --no-modify-path',
     });
   });
 });

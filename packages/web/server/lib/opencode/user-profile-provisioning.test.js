@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { DEFAULT_PROFILE_ROOT, createUserProfileProvisioningRuntime } from './user-profile-provisioning.js';
 import { listDefaultConfigAssets } from './default-config-assets.js';
+import { CLAUDE_RUNTIME_CANDIDATE, CLAUDE_RUNTIME_SELECTION } from './claude-runtime-compatibility.js';
 import {
   DEVRYAN_MANAGED_PLUGINS,
   DEVRYAN_MANAGED_PROFILE_PLUGIN_FILES,
@@ -89,8 +90,7 @@ describe('user profile provisioning', () => {
 
     expect(result.ok).toBe(true);
     expect(config.plugin).toEqual([
-      './node_modules/opencode-antigravity-auth/dist/index.js',
-      './node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js',
+      './plugins/devryan-open-cursor.mjs',
       './node_modules/opencode-with-claude/dist/index.js',
       './node_modules/opencode-gpt-imagegen/dist/index.js',
       './plugins/devryan-oh-my-opencode-slim.mjs',
@@ -101,13 +101,12 @@ describe('user profile provisioning', () => {
     expect(config).not.toHaveProperty('mcp');
     expect(packageJson.dependencies).toMatchObject({
       '@ai-sdk/openai-compatible': '^2.0.47',
-      '@opencode-ai/plugin': '1.18.31',
+      '@opencode-ai/plugin': '1.18.32',
       '@rama_nigg/open-cursor': '2.5.8',
       '@rynfar/meridian': '1.62.6',
       'adm-zip': '0.6.0',
       'mammoth': '1.12.1',
       'oh-my-opencode-slim': '2.2.18',
-      'opencode-antigravity-auth': '1.6.0',
       'opencode-gpt-imagegen': '0.1.12',
       'opencode-with-claude': '1.8.0',
       'unpdf': '1.8.0',
@@ -127,6 +126,7 @@ describe('user profile provisioning', () => {
     expect(fs.existsSync(path.join(configDir, 'node_modules', 'opencode-gpt-imagegen'))).toBe(true);
     expect(packageJson.dependencies).not.toHaveProperty('context-mode');
     expect(fs.existsSync(path.join(configDir, 'node_modules', 'context-mode'))).toBe(false);
+    expect(packageJson.dependencies).not.toHaveProperty('opencode-antigravity-auth');
     expect(fs.existsSync(path.join(configDir, 'node_modules', '@rynfar', 'meridian'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'skills'))).toBe(false);
     expect(fs.existsSync(path.join(configDir, '.openchamber', 'user-profile-manifest.json'))).toBe(true);
@@ -315,8 +315,7 @@ describe('user profile provisioning', () => {
     expect(reconciled.theme).toBe('user-theme');
     expect(reconciled.plugin).toEqual([
       'user-plugin@4.2.0',
-      './node_modules/opencode-antigravity-auth/dist/index.js',
-      './node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js',
+      './plugins/devryan-open-cursor.mjs',
       './node_modules/opencode-with-claude/dist/index.js',
       './node_modules/opencode-gpt-imagegen/dist/index.js',
       './plugins/devryan-superpowers.mjs',
@@ -548,6 +547,121 @@ describe('user profile provisioning', () => {
       args: ['install', '--ignore-scripts'],
       cwd: path.join(home, '.config', 'opencode'),
     }]);
+  });
+
+  describe('in-place upgrade from a managed Claude Code 2.1.251 profile', () => {
+    // Profiles provisioned while DevRyan selected Claude Code 2.1.251 carry that
+    // exact managed pin in package.json, in the compatibility marker and on disk.
+    const LEGACY_CLAUDE_CODE = '2.1.251';
+    const selectedClaudeCode = CLAUDE_RUNTIME_CANDIDATE.claudeCode;
+    const CLAUDE_CODE_PACKAGE = '@anthropic-ai/claude-code';
+    const bunInstall = (cwd) => ({ command: 'bun', args: ['install', '--ignore-scripts'], cwd });
+
+    const paths = () => {
+      const configDirectory = path.join(home, '.config', 'opencode');
+      return {
+        configDirectory,
+        packagePath: path.join(configDirectory, 'package.json'),
+        markerPath: path.join(configDirectory, '.openchamber', 'claude-runtime-compatibility.json'),
+        installedClaudeCodePath: path.join(configDirectory, 'node_modules', '@anthropic-ai', 'claude-code', 'package.json'),
+      };
+    };
+
+    const provisionLegacyProfile = async () => {
+      await createRuntime().provision();
+      commands = [];
+      const { packagePath, markerPath, installedClaudeCodePath } = paths();
+      const packageJson = readJson(packagePath);
+      packageJson.overrides[CLAUDE_CODE_PACKAGE] = LEGACY_CLAUDE_CODE;
+      writeJson(packagePath, packageJson);
+      const marker = readJson(markerPath);
+      expect(marker.sources[CLAUDE_CODE_PACKAGE]).toBe('managed');
+      marker.managedOverrides[CLAUDE_CODE_PACKAGE] = LEGACY_CLAUDE_CODE;
+      marker.installed.claudeCode = LEGACY_CLAUDE_CODE;
+      writeJson(markerPath, marker);
+      writeJson(installedClaudeCodePath, { name: CLAUDE_CODE_PACKAGE, version: LEGACY_CLAUDE_CODE });
+    };
+
+    it('targets the candidate release that differs from the legacy pin', () => {
+      expect(CLAUDE_RUNTIME_SELECTION.versions).toBe(CLAUDE_RUNTIME_CANDIDATE);
+      expect(selectedClaudeCode).not.toBe(LEGACY_CLAUDE_CODE);
+    });
+
+    it('upgrades the marker-recorded override to the selected release and installs it', async () => {
+      await provisionLegacyProfile();
+      const { configDirectory, packagePath, markerPath, installedClaudeCodePath } = paths();
+
+      const result = await createRuntime().provision();
+
+      expect(result.ok).toBe(true);
+      expect(readJson(packagePath).overrides[CLAUDE_CODE_PACKAGE]).toBe(selectedClaudeCode);
+      expect(commands).toEqual([bunInstall(configDirectory)]);
+      expect(readJson(installedClaudeCodePath).version).toBe(selectedClaudeCode);
+      expect(result.claudeRuntime).toMatchObject({
+        source: 'managed',
+        runtimeStatus: 'ready',
+        expected: { claudeCode: selectedClaudeCode },
+        installed: { claudeCode: selectedClaudeCode },
+        versionMismatches: [],
+      });
+      expect(readJson(markerPath)).toMatchObject({
+        managedOverrides: { [CLAUDE_CODE_PACKAGE]: selectedClaudeCode },
+        sources: { [CLAUDE_CODE_PACKAGE]: 'managed' },
+        installed: { claudeCode: selectedClaudeCode },
+      });
+    });
+
+    it('repairs a 2.1.251 install left drifting after a degraded override upgrade', async () => {
+      await provisionLegacyProfile();
+      const { configDirectory, packagePath, markerPath, installedClaudeCodePath } = paths();
+      const offlineRuntime = createRuntime({
+        runCommand: async (command, args, options) => {
+          commands.push({ command, args, cwd: options.cwd });
+          return { ok: false, exitCode: 1, stdout: '', stderr: 'registry unavailable' };
+        },
+      });
+
+      // Offline: the override moves to the selected release, but the install
+      // cannot, so the previously installed 2.1.251 stays on disk.
+      const degraded = await offlineRuntime.provision();
+
+      expect(degraded.ok).toBe(true);
+      expect(degraded.installDegraded).toBe(true);
+      expect(commands).toEqual([bunInstall(configDirectory)]);
+      expect(readJson(packagePath).overrides[CLAUDE_CODE_PACKAGE]).toBe(selectedClaudeCode);
+      expect(readJson(installedClaudeCodePath).version).toBe(LEGACY_CLAUDE_CODE);
+      expect(degraded.claudeRuntime).toMatchObject({
+        source: 'managed',
+        runtimeStatus: 'drifted',
+        installed: { claudeCode: LEGACY_CLAUDE_CODE },
+        versionMismatches: ['claudeCode'],
+      });
+      expect(degraded.warnings).toEqual(expect.arrayContaining([
+        expect.stringContaining('Claude runtime compatibility is drifted'),
+      ]));
+      expect(readJson(markerPath)).toMatchObject({
+        managedOverrides: { [CLAUDE_CODE_PACKAGE]: selectedClaudeCode },
+        sources: { [CLAUDE_CODE_PACKAGE]: 'managed' },
+        installed: { claudeCode: LEGACY_CLAUDE_CODE },
+      });
+
+      // Back online: package.json is already current, so only the recorded
+      // drift can trigger the install that repairs node_modules.
+      commands = [];
+      const repaired = await createRuntime().provision();
+
+      expect(repaired.ok).toBe(true);
+      expect(repaired.installDegraded).toBeFalsy();
+      expect(commands).toEqual([bunInstall(configDirectory)]);
+      expect(readJson(installedClaudeCodePath).version).toBe(selectedClaudeCode);
+      expect(repaired.claudeRuntime).toMatchObject({
+        source: 'managed',
+        runtimeStatus: 'ready',
+        installed: { claudeCode: selectedClaudeCode },
+        versionMismatches: [],
+      });
+      expect(readJson(markerPath).installed.claudeCode).toBe(selectedClaudeCode);
+    });
   });
 
   it('repairs stale installed Claude packages when the managed manifest is already current', async () => {
@@ -891,6 +1005,73 @@ describe('user profile provisioning', () => {
     expect(fs.existsSync(dataDirectory)).toBe(true);
   });
 
+  it('retires the DevRyan-pinned Antigravity plugin and the Google models it wrote', async () => {
+    const runtime = createRuntime();
+    await runtime.provision();
+    const configDirectory = path.join(home, '.config', 'opencode');
+    const configPath = path.join(configDirectory, 'opencode.json');
+    const packagePath = path.join(configDirectory, 'package.json');
+    const legacyConfigPath = path.join(configDirectory, 'config.json');
+    const config = readJson(configPath);
+    config.plugin = [...config.plugin, './node_modules/opencode-antigravity-auth/dist/index.js'];
+    config.provider = {
+      google: {
+        options: { timeout: 1000 },
+        models: {
+          'antigravity-gemini-3-pro': { name: 'Gemini 3 Pro (Antigravity)' },
+          'gemini-2.5-pro': { name: 'Gemini 2.5 Pro (Gemini CLI)' },
+          'my-gemini': { name: 'My Gemini' },
+        },
+      },
+    };
+    writeJson(configPath, config);
+    const packageJson = readJson(packagePath);
+    packageJson.dependencies = { ...packageJson.dependencies, 'opencode-antigravity-auth': '1.6.0' };
+    writeJson(packagePath, packageJson);
+    fs.writeFileSync(
+      legacyConfigPath,
+      '{\n  // keep this comment\n  "provider": {\n    "google": { "models": { "gemini-3-pro-preview": { "name": "Gemini 3 Pro Preview (Gemini CLI)" } } },\n    "anthropic": { "options": {} }\n  }\n}\n',
+      'utf8',
+    );
+    commands = [];
+
+    const result = await runtime.provision();
+
+    expect(result.ok).toBe(true);
+    const retired = readJson(configPath);
+    expect(JSON.stringify(retired.plugin)).not.toContain('antigravity');
+    // User-authored Google models and options survive; only plugin-written ones go.
+    expect(retired.provider).toEqual({
+      google: { options: { timeout: 1000 }, models: { 'my-gemini': { name: 'My Gemini' } } },
+    });
+    expect(readJson(packagePath).dependencies).not.toHaveProperty('opencode-antigravity-auth');
+    expect(commands.map(({ args }) => args)).toEqual([['install', '--ignore-scripts']]);
+    const legacySource = fs.readFileSync(legacyConfigPath, 'utf8');
+    expect(legacySource).toContain('// keep this comment');
+    expect(legacySource).not.toContain('google');
+    expect(legacySource).toContain('anthropic');
+
+    commands = [];
+    const second = await runtime.provision();
+    expect(second.ok).toBe(true);
+    expect(JSON.stringify(readJson(configPath).plugin)).not.toContain('antigravity');
+    expect(commands).toEqual([]);
+  });
+
+  it('keeps a user-owned Antigravity dependency at a version DevRyan never pinned', async () => {
+    const runtime = createRuntime();
+    await runtime.provision();
+    const packagePath = path.join(home, '.config', 'opencode', 'package.json');
+    const packageJson = readJson(packagePath);
+    packageJson.dependencies = { ...packageJson.dependencies, 'opencode-antigravity-auth': '2.0.0' };
+    writeJson(packagePath, packageJson);
+
+    const result = await runtime.provision();
+
+    expect(result.ok).toBe(true);
+    expect(readJson(packagePath).dependencies['opencode-antigravity-auth']).toBe('2.0.0');
+  });
+
   it('keeps a user-owned Context Mode dependency at a version DevRyan never pinned', async () => {
     const runtime = createRuntime();
     await runtime.provision();
@@ -916,7 +1097,7 @@ describe('user profile provisioning', () => {
     expect(result.install).toMatchObject({ ok: true, exitCode: 0 });
     expect(result.managedPluginIssues).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        pluginId: 'opencode-antigravity-auth',
+        pluginId: 'opencode-gpt-imagegen',
         kind: 'missing-package',
       }),
       expect.objectContaining({

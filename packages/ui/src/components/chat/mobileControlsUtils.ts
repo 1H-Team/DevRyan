@@ -1,6 +1,6 @@
 import { getChatThinkingState } from '@/lib/providers/chatThinking';
 import type { Agent } from '@opencode-ai/sdk/v2';
-import { getModelDisplayName as getSharedModelDisplayName } from '@/lib/providers/antigravity';
+import { getModelDisplayName as getSharedModelDisplayName } from '@/lib/providers/modelIdentity';
 import { getModelDefaultThinkingLevel, resolveThinkingVariant, type ProviderModelLike } from '@/lib/providers/variantControls';
 
 import { parseCursorAcpVariantKey, type CursorAcpVariantState } from '@/lib/providers/cursorThinking';

@@ -91,10 +91,12 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       resolveManagedProject,
       ownsSession,
       resolveOwnedSessionPlanContext,
+      getLoginShellEnvSnapshot,
     } = routeDependencies;
 
     const {
       getProviderSources,
+      listProviderConfigFiles,
       removeAntigravityProviderConfig,
       removeProviderConfig,
       ensureAnthropicOAuthProviderConfig,
@@ -128,6 +130,8 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       validateDirectoryPath,
       resolveProjectDirectory,
       getProviderSources,
+      listProviderConfigFiles,
+      getProviderEnvironmentSnapshot: getLoginShellEnvSnapshot,
       removeAntigravityProviderConfig,
       removeProviderConfig,
       ensureAnthropicOAuthProviderConfig,
@@ -195,6 +199,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getAgentConfig,
       listAgentModelOverrides,
       listStaleAgentModelOverrides,
+      listShadowedAgentModelOverrides,
       writeAgentModelOverride,
       deleteAgentModelOverride,
       writeAgentBackupModel,
@@ -223,6 +228,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getAgentConfig,
       listAgentModelOverrides,
       listStaleAgentModelOverrides,
+      listShadowedAgentModelOverrides,
       writeAgentModelOverride,
       deleteAgentModelOverride,
       writeAgentBackupModel,

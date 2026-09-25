@@ -56,12 +56,13 @@ function createProjectPrewarmRuntime(dependencies = {}) {
           directories.push(directory);
         }
 
-        for (const directory of directories) {
+        for (const [index, directory] of directories.entries()) {
           if (hasStopped(runGeneration)) return;
 
           const startedAt = Date.now();
           try {
-            await warm({ directory });
+            // Only the most recent project gets a background ledger build.
+            await warm({ directory, ledger: index === 0 });
             log('log', `[Prewarm] warmed ${directory} in ${Math.max(0, Date.now() - startedAt)}ms (${label})`);
           } catch (error) {
             log('warn', `[Prewarm] failed ${directory} after ${Math.max(0, Date.now() - startedAt)}ms (${label}): ${formatError(error)}`);

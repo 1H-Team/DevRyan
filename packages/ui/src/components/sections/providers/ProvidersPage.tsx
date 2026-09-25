@@ -23,7 +23,6 @@ import { recordConfigMutationResponse, useConfigApplyStore } from '@/stores/useC
 import { cn } from '@/lib/utils';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { openExternalUrl } from '@/lib/url';
-import { splitAntigravityProviderForDisplay } from '@/lib/providers/antigravity';
 import { CURSOR_ACP_PROVIDER_ID } from '@/lib/providers/cursorAcp';
 import { getProviderDisplayName, isAnthropicOAuthProviderId } from '@/lib/providers/display';
 import {
@@ -31,6 +30,7 @@ import {
   isHiddenProviderModelRef,
 } from '@/lib/providers/modelVisibility';
 import { parseProvidersPayload, type ProviderOption } from './providerOptions';
+import { isRetiredProviderId, withRetiredProviderEntries } from './retiredProviders';
 import { getProviderModelsForDisplay } from './providerSorting';
 import {
   getProviderOAuthErrorMessage,
@@ -57,6 +57,7 @@ import {
 } from '@/lib/claudePromptModeApi';
 import {
   disconnectProvider,
+  getProviderDisconnectOutcome,
   getProviderConnectionState,
   hasActiveProviderSource,
   shouldShowConnectedProvider,
@@ -65,12 +66,8 @@ import {
 } from './providerConnectionState';
 
 const ADD_PROVIDER_ID = '__add_provider__';
-const ANTIGRAVITY_PROVIDER_ID = 'antigravity';
-const GOOGLE_PROVIDER_ID = 'google';
 const OLLAMA_CLOUD_PROVIDER_ID = 'ollama-cloud';
 const OPENCODE_ZEN_PROVIDER_ID = 'opencode';
-const AUTH_PROVIDER_ID_KEY = '__authProviderId';
-const AUTH_METHOD_INDEX_KEY = '__authMethodIndex';
 
 interface AuthMethod {
   type?: string;
@@ -137,27 +134,11 @@ const parseAuthPayload = (payload: unknown): Record<string, AuthMethod[]> => {
       result[providerId] = value.filter((entry) => isRecord(entry)) as AuthMethod[];
     }
   }
-  const googleMethods = result[GOOGLE_PROVIDER_ID] ?? [];
-  const antigravityMethods = googleMethods
-    .map((method, index) => ({ method, index }))
-    .filter(({ method }) => {
-      const label = `${method.label ?? ''} ${method.name ?? ''}`.toLowerCase();
-      return normalizeAuthType(method) === 'oauth' && label.includes('antigravity');
-    })
-    .map(({ method, index }) => ({
-      ...method,
-      label: 'Login with Antigravity',
-      [AUTH_PROVIDER_ID_KEY]: GOOGLE_PROVIDER_ID,
-      [AUTH_METHOD_INDEX_KEY]: index,
-    }));
-  if (antigravityMethods.length > 0) {
-    result[ANTIGRAVITY_PROVIDER_ID] = antigravityMethods;
-  }
   return result;
 };
 
 const providerSupportsApiKey = (providerId: string) => (
-  providerId !== ANTIGRAVITY_PROVIDER_ID
+  !isRetiredProviderId(providerId)
   && !isAnthropicOAuthProviderId(providerId)
 );
 
@@ -166,7 +147,7 @@ export const ProvidersPage: React.FC = () => {
   const { terminal } = useRuntimeAPIs();
   const rawProviders = useConfigStore((state) => state.directoryScoped.__global__?.providers ?? state.providers);
   const discoveredProviders = React.useMemo(
-    () => splitAntigravityProviderForDisplay(rawProviders),
+    () => withRetiredProviderEntries(rawProviders),
     [rawProviders]
   );
   const selectedProviderId = useConfigStore((state) => state.selectedProviderId);
@@ -516,20 +497,6 @@ export const ProvidersPage: React.FC = () => {
     ? getProviderConnectionState(selectedProvider.id, selectedSources, selectedDisconnectPending)
     : 'loading';
 
-  const resolveAuthMethodTarget = React.useCallback((providerId: string, methodIndex: number) => {
-    const method = authMethodsByProvider[providerId]?.[methodIndex];
-    const authProviderId = typeof method?.[AUTH_PROVIDER_ID_KEY] === 'string'
-      ? method[AUTH_PROVIDER_ID_KEY]
-      : providerId;
-    const authMethodIndex = typeof method?.[AUTH_METHOD_INDEX_KEY] === 'number'
-      ? method[AUTH_METHOD_INDEX_KEY]
-      : methodIndex;
-    return {
-      providerId: authProviderId,
-      methodIndex: authMethodIndex,
-    };
-  }, [authMethodsByProvider]);
-
   const waitForProviderCatalog = React.useCallback(async (
     providerId: string,
     options?: { onStalled?: () => Promise<boolean> },
@@ -663,10 +630,9 @@ export const ProvidersPage: React.FC = () => {
     // Only the callback itself can fail the sign-in. Once it resolves the credentials are
     // persisted upstream, so nothing after this point may report failure to the user.
     try {
-      const target = resolveAuthMethodTarget(providerId, methodIndex);
       await requestProviderOAuthCallback({
-        providerId: target.providerId,
-        methodIndex: target.methodIndex,
+        providerId,
+        methodIndex,
         code,
         fallbackError: t('settings.providers.page.toast.oauthCompleteFailed'),
       });
@@ -721,11 +687,10 @@ export const ProvidersPage: React.FC = () => {
     setAuthBusyKey(busyKey);
 
     try {
-      const target = resolveAuthMethodTarget(providerId, methodIndex);
-      const response = await fetch(`/api/provider/${encodeURIComponent(target.providerId)}/oauth/authorize`, {
+      const response = await fetch(`/api/provider/${encodeURIComponent(providerId)}/oauth/authorize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ method: target.methodIndex }),
+        body: JSON.stringify({ method: methodIndex }),
       });
 
       const payload = await response.json().catch(() => null);
@@ -1033,9 +998,14 @@ export const ProvidersPage: React.FC = () => {
       const applyStatus = recordConfigMutationResponse(payload);
       markDisconnectRequested(providerId, payload);
       useProviderConnectionStore.getState().clear(providerId);
-      toast.success(applyStatus?.pending
-        ? t('settings.providers.page.toast.providerDisconnectQueued')
-        : t('settings.providers.page.toast.providerDisconnected'));
+      const outcome = getProviderDisconnectOutcome(payload);
+      if (outcome.kind === 'still_provided') {
+        toast.error(t('settings.providers.page.toast.providerStillProvided', { sources: outcome.sources.join(', ') }));
+      } else {
+        toast.success(applyStatus?.pending
+          ? t('settings.providers.page.toast.providerDisconnectQueued')
+          : t('settings.providers.page.toast.providerDisconnected'));
+      }
       if (!applyStatus?.pending) await loadProviders({ directory: null, force: true });
       quotaRefreshCoordinator.settingsChanged();
     } catch (error) {

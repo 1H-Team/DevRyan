@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   ensureAnthropicOAuthProviderConfig,
   getProviderSources,
+  listProviderConfigFiles,
   removeAntigravityProviderConfig,
   removeProviderConfig,
 } from './providers.js';
@@ -154,6 +155,56 @@ describe('provider config helpers', () => {
         'gemini-2.5-pro': { name: 'Gemini 2.5 Pro' },
       },
     });
+  });
+
+  it('removes a provider from every config file of the scope, not only the first one that exists', () => {
+    const projectDir = makeProjectDir();
+    const rootConfigPath = join(projectDir, 'opencode.json');
+    const nestedConfigPath = join(projectDir, '.opencode', 'opencode.jsonc');
+    writeFileSync(rootConfigPath, JSON.stringify({ theme: 'keep' }), 'utf8');
+    mkdirSync(join(projectDir, '.opencode'), { recursive: true });
+    writeFileSync(
+      nestedConfigPath,
+      '{\n  // keep this comment\n  "provider": {\n    "google": { "options": {} },\n    "openai": { "options": {} }\n  }\n}\n',
+      'utf8',
+    );
+
+    expect(listProviderConfigFiles('google', projectDir)).toContain(nestedConfigPath);
+    expect(getProviderSources('google', projectDir).sources.project).toEqual({
+      exists: true,
+      path: nestedConfigPath,
+    });
+
+    expect(removeProviderConfig('google', projectDir, 'project')).toBe(true);
+
+    const nestedSource = readFileSync(nestedConfigPath, 'utf8');
+    expect(nestedSource).toContain('// keep this comment');
+    expect(nestedSource).not.toContain('google');
+    expect(nestedSource).toContain('openai');
+    expect(JSON.parse(readFileSync(rootConfigPath, 'utf8'))).toEqual({ theme: 'keep' });
+    expect(listProviderConfigFiles('google', projectDir)).not.toContain(nestedConfigPath);
+    expect(removeProviderConfig('google', projectDir, 'project')).toBe(false);
+  });
+
+  it('removes every Antigravity plugin model and the Google block it leaves empty', () => {
+    const projectDir = makeProjectDir();
+    const configPath = join(projectDir, '.opencode', 'opencode.json');
+    mkdirSync(join(projectDir, '.opencode'), { recursive: true });
+    writeFileSync(configPath, JSON.stringify({
+      theme: 'keep',
+      provider: {
+        google: {
+          models: {
+            'antigravity-gemini-3-pro': { name: 'Gemini 3 Pro (Antigravity)' },
+            'gemini-2.5-flash': { name: 'Gemini 2.5 Flash (Gemini CLI)' },
+          },
+        },
+      },
+    }), 'utf8');
+
+    expect(removeAntigravityProviderConfig(projectDir, 'project')).toBe(true);
+
+    expect(JSON.parse(readFileSync(configPath, 'utf8'))).toEqual({ theme: 'keep' });
   });
 
   it('reports nested Antigravity models as an active provider source', () => {

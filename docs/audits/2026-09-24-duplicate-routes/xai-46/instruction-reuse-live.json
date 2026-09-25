@@ -1,0 +1,2507 @@
+{
+  "kind": "instruction-reuse-live-supplement",
+  "profile": {
+    "id": "devryan-companion-2.1.0-xai-grok-4.6-high",
+    "runtimeVersion": "1.18.32",
+    "runtimeHash": "d1f46380f028efb9a46bd10c9866231acbab4e31b43afcf1f1ee179868a40882",
+    "runtimeIdentity": {
+      "kind": "companion-build",
+      "upstreamVersion": "1.18.32",
+      "baseCommit": "545f51d26cc39a907d2867492d498d9607ea5fa4",
+      "patchSha256": "059919cce6c7d77c3db80ff06acc178adf59f8e65293c20ce1857c5777f4710e",
+      "buildInputsSha256": "589475194cfe2ac81d03e47a30fa63d15c0a8b2ca02e5b237dd6db4b31b49266"
+    },
+    "policyVector": {
+      "waitAny": false,
+      "capabilityToolSchema": true
+    },
+    "providerID": "xai",
+    "modelID": "grok-4.6",
+    "variant": "high",
+    "providerHash": null,
+    "providerScope": "selected-route",
+    "transport": "xai-oauth-responses-v1",
+    "plugins": [
+      {
+        "name": "index.js",
+        "contentHash": "fab88b553785d6b7ae53238c060f0ea3f003dfda2c88667284b5a35ca623488d"
+      },
+      {
+        "name": "devryan-open-cursor.mjs",
+        "contentHash": "75febd08825ee5946200d57d4b710ec6321e2bd7431115fe2dd27e5c736a595e"
+      },
+      {
+        "name": "index.js",
+        "contentHash": "b3a32d1f03047f68e39874725bc9ed40fc42b59a773acdb815e8c9b7b4025aad"
+      },
+      {
+        "name": "index.js",
+        "contentHash": "2a94eedd2be1e77fc2a3e50961d79a9a2695eeeb5866732a13f46948553156b4"
+      },
+      {
+        "name": "devryan-oh-my-opencode-slim.mjs",
+        "contentHash": "7dde3de974347911027abc4d1665cf3007b78013410dd6a94688eee57637023b"
+      },
+      {
+        "name": "devryan-superpowers.mjs",
+        "contentHash": "54e0fc722391a1a2399581c977654627d57ac3aadee6bfb529ee88632221de23"
+      },
+      {
+        "name": "devryan-skill-context.mjs",
+        "contentHash": "99929e135c01749b7e8303b35179240f386e53816b9a35ab57e0d3ad372d551c"
+      },
+      {
+        "name": "devryan-document-reader.mjs",
+        "contentHash": "bef4052f50aa08644dd0c2191ee07d6811c9e0cff57f0090afe9613895cf5de4"
+      },
+      {
+        "name": "devryan-browser.mjs",
+        "contentHash": "f8098613e62d7ea31a680bc63e60b417e688f908a20aa4043fe410a2a5224943"
+      },
+      {
+        "name": "devryan-builder-todo-continuation.mjs",
+        "contentHash": "4f6511bd4206f2e747c3205107cdfbb5b2217a81d988ddc74500d4b22e754748"
+      },
+      {
+        "name": "devryan-file-write-metadata.mjs",
+        "contentHash": "83e76ea73e6c42257ddf4c2aa48f2b5a512e64b9cc7afa7772fb14ddbe816988"
+      },
+      {
+        "name": "devryan-harness-context.mjs",
+        "contentHash": "c97893cda4f61c7fdc1f0cad44dd2484c87215fad2d06b38f1855e263d41f9c7"
+      },
+      {
+        "name": "devryan-managed-orchestration.mjs",
+        "contentHash": "519979b9436a3df4a4ffcee3cd549f3b101f6cf42259fc061170db0e449e3f10"
+      },
+      {
+        "name": "devryan-openai-oauth.mjs",
+        "contentHash": "d57482f361d6f70c35c1e359573fe4810a5a3778c8f1e2e7c67c9bfe954eb739"
+      },
+      {
+        "name": "devryan-primary-recovery.mjs",
+        "contentHash": "68555821e2c5cd52155173e3e1ffb3ca796f05e7779d11efb6a03f6168c9b4d5"
+      },
+      {
+        "name": "devryan-session-changes.mjs",
+        "contentHash": "170dd8989e594ead72d4f4b13b7255bf8de3acf292e557d081f18c1e5156c4a8"
+      },
+      {
+        "name": "devryan-tool-input-guard.mjs",
+        "contentHash": "e485d28adb37b4052df0c3ea3c1556cbaab712690f15da86204ba8e1a1043ebb"
+      },
+      {
+        "name": "github-copilot-models.mjs",
+        "contentHash": "61270a274af4d13024a6014795ab57dc579b30fba508e706b692cbdf8f4750c4"
+      },
+      {
+        "name": "openai-gpt-5-6-models.mjs",
+        "contentHash": "0b918d8333abdf55e6feb42ddd03b538612d8e4af7ca672b33ca0940b5991dc9"
+      },
+      {
+        "name": "openai-tool-schema-sanitizer.mjs",
+        "contentHash": "e824ed4220bc0a26fda7eda34d52248a5320ef48fb866a60621c6db6b63d17ac"
+      },
+      {
+        "name": "council-session.js",
+        "contentHash": "e1ee08ab6945db37f7a4870d9a61406eddf360d43f4b308454e0791226f31bf6"
+      }
+    ]
+  },
+  "prefaceHash": "8b2e00f0711cf8d7116a67395e91eeb4e2bf1d00cd9f35c4d3c1b5aa0b107f49",
+  "prefaceBytes": 4357,
+  "trials": 3,
+  "pairs": [
+    {
+      "index": 0,
+      "baseline": {
+        "arm": "baseline",
+        "index": 0,
+        "phase": "instruction",
+        "bodyHash": "3171569d4ff3c6514881acf44bafeddc25e4da919724a944caa28fa246d09fbb",
+        "bytes": 49395,
+        "trialIndex": 0,
+        "userMessages": 3,
+        "fullPrefaceCopies": 3,
+        "instructionReferences": 0,
+        "firstUserHasFullPreface": true
+      },
+      "candidate": {
+        "arm": "candidate",
+        "index": 0,
+        "phase": "instruction",
+        "bodyHash": "24a5ca7870eabff342dda47d421fd45b3ff73be2a1b7c69e267acc1c2d558aff",
+        "bytes": 40927,
+        "trialIndex": 0,
+        "userMessages": 3,
+        "fullPrefaceCopies": 1,
+        "instructionReferences": 2,
+        "firstUserHasFullPreface": true
+      },
+      "baselineTokens": {
+        "totalInput": 11618,
+        "uncachedInput": null,
+        "cacheRead": 512,
+        "cacheWrite": null,
+        "cacheWrite5m": null,
+        "cacheWrite1h": null,
+        "cacheWrite30m": null,
+        "output": 1142,
+        "reasoning": 1097,
+        "totalOutput": 2239
+      },
+      "candidateTokens": {
+        "totalInput": 9868,
+        "uncachedInput": null,
+        "cacheRead": 512,
+        "cacheWrite": null,
+        "cacheWrite5m": null,
+        "cacheWrite1h": null,
+        "cacheWrite30m": null,
+        "output": 1311,
+        "reasoning": 1462,
+        "totalOutput": 2773
+      },
+      "baselineGrade": {
+        "arm": "baseline",
+        "index": 0,
+        "duplicateOutputs": false,
+        "sessionID": "ses_f2be28a67ffeKh4CM5c6h9E2Rq",
+        "completed": true,
+        "markerExactlyOnce": true,
+        "headingAfterMarker": true,
+        "requiredSections": true,
+        "requirementsPreserved": true,
+        "mutatingToolCalls": 0,
+        "toolCalls": 0,
+        "seedsCreatedWithoutReply": true,
+        "canonicalUnchanged": true,
+        "replyHash": "306df765b032d4dbe654b59fe5c87572951946b55e863276c50691d89d38847c",
+        "planBytes": 4365,
+        "passed": true
+      },
+      "candidateGrade": {
+        "arm": "candidate",
+        "index": 0,
+        "duplicateOutputs": true,
+        "sessionID": "ses_f2be015d4ffeftedSMdM6rLXNm",
+        "completed": true,
+        "markerExactlyOnce": true,
+        "headingAfterMarker": true,
+        "requiredSections": true,
+        "requirementsPreserved": true,
+        "mutatingToolCalls": 0,
+        "toolCalls": 0,
+        "seedsCreatedWithoutReply": true,
+        "canonicalUnchanged": true,
+        "replyHash": "cc30f425d35987fdb6287dd65822170ce5844c51452503c6b896bc67db0d1760",
+        "planBytes": 4746,
+        "passed": true
+      }
+    },
+    {
+      "index": 1,
+      "baseline": {
+        "arm": "baseline",
+        "index": 1,
+        "phase": "instruction",
+        "bodyHash": "335d6e92810d60c40e6a38ed0d09e90128f0a5393eb8bc76d080c87da2764f11",
+        "bytes": 49395,
+        "trialIndex": 1,
+        "userMessages": 3,
+        "fullPrefaceCopies": 3,
+        "instructionReferences": 0,
+        "firstUserHasFullPreface": true
+      },
+      "candidate": {
+        "arm": "candidate",
+        "index": 1,
+        "phase": "instruction",
+        "bodyHash": "172db557c6b12ce41fc0f33dd7cad11ed06b2606cc060bc87c8d4756bf666ecc",
+        "bytes": 40927,
+        "trialIndex": 1,
+        "userMessages": 3,
+        "fullPrefaceCopies": 1,
+        "instructionReferences": 2,
+        "firstUserHasFullPreface": true
+      },
+      "baselineTokens": {
+        "totalInput": 11617,
+        "uncachedInput": null,
+        "cacheRead": 512,
+        "cacheWrite": null,
+        "cacheWrite5m": null,
+        "cacheWrite1h": null,
+        "cacheWrite30m": null,
+        "output": 1288,
+        "reasoning": 1778,
+        "totalOutput": 3066
+      },
+      "candidateTokens": {
+        "totalInput": 9867,
+        "uncachedInput": null,
+        "cacheRead": 8704,
+        "cacheWrite": null,
+        "cacheWrite5m": null,
+        "cacheWrite1h": null,
+        "cacheWrite30m": null,
+        "output": 1360,
+        "reasoning": 1480,
+        "totalOutput": 2840
+      },
+      "baselineGrade": {
+        "arm": "baseline",
+        "index": 1,
+        "duplicateOutputs": false,
+        "sessionID": "ses_f2be1ea0dffeiyXYKlduoPyYKS",
+        "completed": true,
+        "markerExactlyOnce": true,
+        "headingAfterMarker": true,
+        "requiredSections": true,
+        "requirementsPreserved": true,
+        "mutatingToolCalls": 0,
+        "toolCalls": 0,
+        "seedsCreatedWithoutReply": true,
+        "canonicalUnchanged": true,
+        "replyHash": "7b316551669c96891e27f74acb24af6595359d5e8077117a173b8bdc4a276eaa",
+        "planBytes": 4787,
+        "passed": true
+      },
+      "candidateGrade": {
+        "arm": "candidate",
+        "index": 1,
+        "duplicateOutputs": true,
+        "sessionID": "ses_f2bdf5605ffeg6JuRUlAx5BA69",
+        "completed": true,
+        "markerExactlyOnce": true,
+        "headingAfterMarker": true,
+        "requiredSections": true,
+        "requirementsPreserved": true,
+        "mutatingToolCalls": 0,
+        "toolCalls": 0,
+        "seedsCreatedWithoutReply": true,
+        "canonicalUnchanged": true,
+        "replyHash": "e7a0c19446f8c03072f42a9685ca5fdac5a1dac2052dfc2d9e900ce90ef100b7",
+        "planBytes": 5276,
+        "passed": true
+      }
+    },
+    {
+      "index": 2,
+      "baseline": {
+        "arm": "baseline",
+        "index": 2,
+        "phase": "instruction",
+        "bodyHash": "f9b02b59edb3112dbd1db19cc202f9cd8e70999784c08a6f2cdaa71d0629310a",
+        "bytes": 49395,
+        "trialIndex": 2,
+        "userMessages": 3,
+        "fullPrefaceCopies": 3,
+        "instructionReferences": 0,
+        "firstUserHasFullPreface": true
+      },
+      "candidate": {
+        "arm": "candidate",
+        "index": 2,
+        "phase": "instruction",
+        "bodyHash": "8c1639ceb702a9837385dfb8ed7c55185cc1e10d284cfb8f1ee949f4908e7457",
+        "bytes": 40927,
+        "trialIndex": 2,
+        "userMessages": 3,
+        "fullPrefaceCopies": 1,
+        "instructionReferences": 2,
+        "firstUserHasFullPreface": true
+      },
+      "baselineTokens": {
+        "totalInput": 11618,
+        "uncachedInput": null,
+        "cacheRead": 512,
+        "cacheWrite": null,
+        "cacheWrite5m": null,
+        "cacheWrite1h": null,
+        "cacheWrite30m": null,
+        "output": 1141,
+        "reasoning": 2164,
+        "totalOutput": 3305
+      },
+      "candidateTokens": {
+        "totalInput": 9868,
+        "uncachedInput": null,
+        "cacheRead": 8704,
+        "cacheWrite": null,
+        "cacheWrite5m": null,
+        "cacheWrite1h": null,
+        "cacheWrite30m": null,
+        "output": 1175,
+        "reasoning": 1845,
+        "totalOutput": 3020
+      },
+      "baselineGrade": {
+        "arm": "baseline",
+        "index": 2,
+        "duplicateOutputs": false,
+        "sessionID": "ses_f2be129f6ffeWCdq0Fo5hljeqa",
+        "completed": true,
+        "markerExactlyOnce": true,
+        "headingAfterMarker": true,
+        "requiredSections": true,
+        "requirementsPreserved": true,
+        "mutatingToolCalls": 0,
+        "toolCalls": 0,
+        "seedsCreatedWithoutReply": true,
+        "canonicalUnchanged": true,
+        "replyHash": "e70b6e8e7e3b40d63a1ccff76163db508dfbef8fc80a6615117dd6abd68a2034",
+        "planBytes": 4401,
+        "passed": true
+      },
+      "candidateGrade": {
+        "arm": "candidate",
+        "index": 2,
+        "duplicateOutputs": true,
+        "sessionID": "ses_f2bde9856ffeUCH0AUHq8gjrn5",
+        "completed": true,
+        "markerExactlyOnce": true,
+        "headingAfterMarker": true,
+        "requiredSections": true,
+        "requirementsPreserved": true,
+        "mutatingToolCalls": 0,
+        "toolCalls": 0,
+        "seedsCreatedWithoutReply": true,
+        "canonicalUnchanged": true,
+        "replyHash": "3641244b19fb625639366993998ec38b0a5821ac8a60b9b45149a1c8d4475dfc",
+        "planBytes": 4151,
+        "passed": true
+      }
+    }
+  ],
+  "checks": {
+    "allTrialsComplete": true,
+    "outcomesPreserved": true,
+    "baselineFull": true,
+    "candidateReferenced": true,
+    "nonIncreasingRequests": true,
+    "noFailures": true,
+    "cleanup": true
+  },
+  "passed": true,
+  "failures": [],
+  "wireFailures": [],
+  "metadataRequests": [
+    {
+      "route": "zen-model-catalog",
+      "statusCode": 200
+    },
+    {
+      "route": "model-catalog",
+      "statusCode": 200
+    },
+    {
+      "route": "antigravity-version",
+      "statusCode": 200
+    },
+    {
+      "route": "zen-model-catalog",
+      "statusCode": 200
+    },
+    {
+      "route": "model-catalog",
+      "statusCode": 200
+    },
+    {
+      "route": "antigravity-version",
+      "statusCode": 200
+    }
+  ],
+  "wire": [
+    {
+      "arm": "baseline",
+      "index": null,
+      "phase": "warmup",
+      "requestIndex": 1,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "9f2906cd03183e2a7598a45f6ed7a6ab8a59830a742c8442642846f4ff79150c",
+        "bytes": 35506,
+        "model": "grok-4.6",
+        "instructions": [
+          "e464bf0c71da797f6aecfd5d542a6e9c37ba7f551619c83044b6d224dc347078"
+        ],
+        "tools": [
+          "0d292a133a6da50e8086fe0644ce1d36f2a47bbba131cc818d794bdc83d1bd00",
+          "065b650a23a67410e93c3a50008f30b2267efa68ba3ef942af0e30e9fa204a39",
+          "4f93b1a39cbe55504f842a941af47bb7c9a5541129b740c5c213e88b77c9283e",
+          "1b3dc477874be3ba42cb09cd02e268a3bc5648329385ac8bc6e0ced559d2183e",
+          "56b0d4137baeb335c9338bebbfc26326c90b3668aa087af078bb21cc6b519d67",
+          "709ae871e068b6930ca04085257a6e49766b8ea828f8499a6f0aa9d05e6d6d8a",
+          "21bf6317ba034f0d1f3bae6dd343e34d1bf537716936217a9a885234323e0374",
+          "8b86d2fd329e33535a07195a2c6bbef9b3daa6fc3bfd0c6895d7f26df8270934",
+          "7cd5f3cf85fb9db2047076eb5f2115b0f66a084e23532ce6ffe817e02e1ca086",
+          "ee5b0660a9edd3b508b883b9ffe4f2e5f7939a7e8487eaea30cfedfe893a4eb0",
+          "84a971cc0e3a6e599fae7e2b35f39416728e84fdcb5bdcb0398eb88e9362dd4f",
+          "cd3c80a6f84e1d6bd490e9ac43c00a3bd6566b72eb277e5e2bd2e08540230bfa",
+          "6d22c0e4dfa8c16ebcf271218ea48ba3d75ebd5da4ae22e97166ded7de60be6a",
+          "cc90621c7fd380b7fc40ac33ae572a0e0105673d3417d49de84b314178770877",
+          "6b98bf00e5f87470e80e874ed737bb4f5684e6335f106a6fffa5e6cfebd89522",
+          "72b6944b745521d4fbe7a94cf0a8d0c810332f3510c6a616e06bf7cdaf077507",
+          "047b24684c98025c32b9f5c41ec64eacd9433ed1d56c1462046ded6c4534c5b8",
+          "fccf7ca29ea3994bd73e62a7127f893ee7dc306a162e0aea5a51a27455f1ab1d",
+          "bc801ebeba3a1925806db02ea0e255fad0c5e36b5acd21972267b43ebe01b50e",
+          "d29fffb54e7884c0c48cf0f5e6955c01adfa8035e531f8fee46f09550c9e8d6e"
+        ],
+        "history": [
+          "e464bf0c71da797f6aecfd5d542a6e9c37ba7f551619c83044b6d224dc347078",
+          "554df14a516c0bcf042caaeebaf32447433e0485e65377dd275f0f44b22c3791"
+        ],
+        "cacheParametersHash": "551aa58b92ddecc4fdfdd6128c3a66929df660f34942eba8844872c27304b67e",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "aea8badb623b07f2ec9581c4ee7b8ff68fc2ea509f69c97a66bae955e5ac4025",
+        "reasoningEffort": "high",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-1",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "6a0018ca-bdff-9593-b658-fadc9a4a61de",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.6",
+        "responseModel": "grok-4.6",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265095460,
+        "tokens": {
+          "totalInput": 8766,
+          "uncachedInput": null,
+          "cacheRead": 512,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 1,
+          "reasoning": 23,
+          "totalOutput": 24
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.00574872,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265094343,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265095372,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265095460,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265095250
+    },
+    {
+      "arm": "baseline",
+      "index": null,
+      "phase": "warmup",
+      "requestIndex": 2,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "ab0668fe00e40b95dcf1415ea735eb0ea668d16e34f0d7af655ac8bfe2121bad",
+        "bytes": 2517,
+        "model": "grok-4.6",
+        "instructions": [
+          "4b8cafb41b148a46c162a37012eacad02928f728f9406b9d013614e24b633de3"
+        ],
+        "tools": [],
+        "history": [
+          "4b8cafb41b148a46c162a37012eacad02928f728f9406b9d013614e24b633de3",
+          "17821927c0ebc0fcc040fbb01ebc966e293c4289119de0bbbf755f25b82b3e9f"
+        ],
+        "cacheParametersHash": "725fd676190a8544e2447889d4a20739f9b800188b64048f5b51a0002b3e5da9",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "10655b49f04a6c6d4352a6754d0c4ab73dede743e058984237a371a76105ac97",
+        "reasoningEffort": null,
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-2",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "bb6fe06d-4b2d-95ac-adae-070c6da7fe78",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.6",
+        "responseModel": "grok-4.6",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265107944,
+        "tokens": {
+          "totalInput": 1150,
+          "uncachedInput": null,
+          "cacheRead": 512,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 4,
+          "reasoning": 815,
+          "totalOutput": 819
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.00219164,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265094341,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265094580,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265107944,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265094579
+    },
+    {
+      "arm": "baseline",
+      "index": 0,
+      "phase": "instruction",
+      "requestIndex": 3,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "7e5961fd5d98816bf87cf420225f2a752fe43bbdd9c402096d45dc0ad84d4eed",
+        "bytes": 2625,
+        "model": "grok-4.6",
+        "instructions": [
+          "4b8cafb41b148a46c162a37012eacad02928f728f9406b9d013614e24b633de3"
+        ],
+        "tools": [],
+        "history": [
+          "4b8cafb41b148a46c162a37012eacad02928f728f9406b9d013614e24b633de3",
+          "2ca624f1bba99f568b78e92c7c968aba6353f8824ab9040cd3e79f1ee7f4edeb"
+        ],
+        "cacheParametersHash": "bbd96b4513c1791938f590ae84598345ae67554dc2f50c48adeac350cd280734",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "83d1d0963a60e3cca4f8614c5c06e5aa91cd533dfb08ca6b126f7c519b348b8b",
+        "reasoningEffort": null,
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-3",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "df7c0ce8-ae98-9f72-b73a-eab31a3dc6c5",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.6",
+        "responseModel": "grok-4.6",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265104782,
+        "tokens": {
+          "totalInput": 1180,
+          "uncachedInput": null,
+          "cacheRead": 512,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 6,
+          "reasoning": 574,
+          "totalOutput": 580
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.00172448,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265096763,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265096869,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265104782,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265096869
+    },
+    {
+      "arm": "baseline",
+      "index": 0,
+      "phase": "instruction",
+      "requestIndex": 4,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "3171569d4ff3c6514881acf44bafeddc25e4da919724a944caa28fa246d09fbb",
+        "bytes": 49395,
+        "model": "grok-4.6",
+        "instructions": [
+          "e464bf0c71da797f6aecfd5d542a6e9c37ba7f551619c83044b6d224dc347078"
+        ],
+        "tools": [
+          "0d292a133a6da50e8086fe0644ce1d36f2a47bbba131cc818d794bdc83d1bd00",
+          "065b650a23a67410e93c3a50008f30b2267efa68ba3ef942af0e30e9fa204a39",
+          "4f93b1a39cbe55504f842a941af47bb7c9a5541129b740c5c213e88b77c9283e",
+          "1b3dc477874be3ba42cb09cd02e268a3bc5648329385ac8bc6e0ced559d2183e",
+          "56b0d4137baeb335c9338bebbfc26326c90b3668aa087af078bb21cc6b519d67",
+          "709ae871e068b6930ca04085257a6e49766b8ea828f8499a6f0aa9d05e6d6d8a",
+          "21bf6317ba034f0d1f3bae6dd343e34d1bf537716936217a9a885234323e0374",
+          "8b86d2fd329e33535a07195a2c6bbef9b3daa6fc3bfd0c6895d7f26df8270934",
+          "7cd5f3cf85fb9db2047076eb5f2115b0f66a084e23532ce6ffe817e02e1ca086",
+          "ee5b0660a9edd3b508b883b9ffe4f2e5f7939a7e8487eaea30cfedfe893a4eb0",
+          "84a971cc0e3a6e599fae7e2b35f39416728e84fdcb5bdcb0398eb88e9362dd4f",
+          "cd3c80a6f84e1d6bd490e9ac43c00a3bd6566b72eb277e5e2bd2e08540230bfa",
+          "6d22c0e4dfa8c16ebcf271218ea48ba3d75ebd5da4ae22e97166ded7de60be6a",
+          "cc90621c7fd380b7fc40ac33ae572a0e0105673d3417d49de84b314178770877",
+          "6b98bf00e5f87470e80e874ed737bb4f5684e6335f106a6fffa5e6cfebd89522",
+          "72b6944b745521d4fbe7a94cf0a8d0c810332f3510c6a616e06bf7cdaf077507",
+          "047b24684c98025c32b9f5c41ec64eacd9433ed1d56c1462046ded6c4534c5b8",
+          "fccf7ca29ea3994bd73e62a7127f893ee7dc306a162e0aea5a51a27455f1ab1d",
+          "bc801ebeba3a1925806db02ea0e255fad0c5e36b5acd21972267b43ebe01b50e",
+          "d29fffb54e7884c0c48cf0f5e6955c01adfa8035e531f8fee46f09550c9e8d6e"
+        ],
+        "history": [
+          "e464bf0c71da797f6aecfd5d542a6e9c37ba7f551619c83044b6d224dc347078",
+          "3404657a15264872c81f9f946fd2907ce97f0aafa8550bd21e81f509da131e14",
+          "8fad92430d2b1e2c41f9f164528b46699358508a30ad15100906ad8b36328809",
+          "c92b62b7b62fee1891542e5e84e0ea36b4d6a0a1a419758bf0c16c43b01c8e0e"
+        ],
+        "cacheParametersHash": "36c922f9f86eb7d6606772a8b704a98ece2a69646a2256ac88720c511945e977",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "95d38805c49591b2dcd829dbcda53ff1f8e6201903243e69016b1dc3139695e3",
+        "reasoningEffort": "high",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-4",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "4224c5cc-ec31-9ae8-b399-bc86bc2f2464",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.6",
+        "responseModel": "grok-4.6",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265136445,
+        "tokens": {
+          "totalInput": 11618,
+          "uncachedInput": null,
+          "cacheRead": 512,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 1142,
+          "reasoning": 1097,
+          "totalOutput": 2239
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.01220668,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265097805,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265098592,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265136445,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265098474
+    },
+    {
+      "arm": "baseline",
+      "index": 1,
+      "phase": "instruction",
+      "requestIndex": 5,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "a5cacc03188eb87075b902162a6976e0cb7d083e34cf7082fe589efae534ffdd",
+        "bytes": 2625,
+        "model": "grok-4.6",
+        "instructions": [
+          "4b8cafb41b148a46c162a37012eacad02928f728f9406b9d013614e24b633de3"
+        ],
+        "tools": [],
+        "history": [
+          "4b8cafb41b148a46c162a37012eacad02928f728f9406b9d013614e24b633de3",
+          "10f6175c82452d08c48a50b035d1f5cee713463d8d45562cf3df745e4ee7e577"
+        ],
+        "cacheParametersHash": "de7aa03ecacb1b4f39280948fdfd83c7f73ce9aac24c5403b62cb2e1cca897ab",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "d96e1251a442e7fcaac489fd0f53ae0acf603d8b9d26ecc5a985cd9333c15433",
+        "reasoningEffort": null,
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-5",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "b93fd6ff-0fe9-9ef9-8c10-91a85e53b930",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.6",
+        "responseModel": "grok-4.6",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265146168,
+        "tokens": {
+          "totalInput": 1180,
+          "uncachedInput": null,
+          "cacheRead": 512,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 13,
+          "reasoning": 548,
+          "totalOutput": 561
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.00168572,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265137903,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265138014,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265146168,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265138010
+    },
+    {
+      "arm": "baseline",
+      "index": 1,
+      "phase": "instruction",
+      "requestIndex": 6,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "335d6e92810d60c40e6a38ed0d09e90128f0a5393eb8bc76d080c87da2764f11",
+        "bytes": 49395,
+        "model": "grok-4.6",
+        "instructions": [
+          "e464bf0c71da797f6aecfd5d542a6e9c37ba7f551619c83044b6d224dc347078"
+        ],
+        "tools": [
+          "0d292a133a6da50e8086fe0644ce1d36f2a47bbba131cc818d794bdc83d1bd00",
+          "065b650a23a67410e93c3a50008f30b2267efa68ba3ef942af0e30e9fa204a39",
+          "4f93b1a39cbe55504f842a941af47bb7c9a5541129b740c5c213e88b77c9283e",
+          "1b3dc477874be3ba42cb09cd02e268a3bc5648329385ac8bc6e0ced559d2183e",
+          "56b0d4137baeb335c9338bebbfc26326c90b3668aa087af078bb21cc6b519d67",
+          "709ae871e068b6930ca04085257a6e49766b8ea828f8499a6f0aa9d05e6d6d8a",
+          "21bf6317ba034f0d1f3bae6dd343e34d1bf537716936217a9a885234323e0374",
+          "8b86d2fd329e33535a07195a2c6bbef9b3daa6fc3bfd0c6895d7f26df8270934",
+          "7cd5f3cf85fb9db2047076eb5f2115b0f66a084e23532ce6ffe817e02e1ca086",
+          "ee5b0660a9edd3b508b883b9ffe4f2e5f7939a7e8487eaea30cfedfe893a4eb0",
+          "84a971cc0e3a6e599fae7e2b35f39416728e84fdcb5bdcb0398eb88e9362dd4f",
+          "cd3c80a6f84e1d6bd490e9ac43c00a3bd6566b72eb277e5e2bd2e08540230bfa",
+          "6d22c0e4dfa8c16ebcf271218ea48ba3d75ebd5da4ae22e97166ded7de60be6a",
+          "cc90621c7fd380b7fc40ac33ae572a0e0105673d3417d49de84b314178770877",
+          "6b98bf00e5f87470e80e874ed737bb4f5684e6335f106a6fffa5e6cfebd89522",
+          "72b6944b745521d4fbe7a94cf0a8d0c810332f3510c6a616e06bf7cdaf077507",
+          "047b24684c98025c32b9f5c41ec64eacd9433ed1d56c1462046ded6c4534c5b8",
+          "fccf7ca29ea3994bd73e62a7127f893ee7dc306a162e0aea5a51a27455f1ab1d",
+          "bc801ebeba3a1925806db02ea0e255fad0c5e36b5acd21972267b43ebe01b50e",
+          "d29fffb54e7884c0c48cf0f5e6955c01adfa8035e531f8fee46f09550c9e8d6e"
+        ],
+        "history": [
+          "e464bf0c71da797f6aecfd5d542a6e9c37ba7f551619c83044b6d224dc347078",
+          "3222cca8ab31ae656a9ed47e214f5c54d870dbdb964f1af88261fa3a8c48bbbb",
+          "a4ceae81a79939a426442f7f168b03c043bc86391122d9ab1e23d9cad258d677",
+          "e693ca4da1345af742e23c4da8e5d2c4cc0fc500889b728cc1a5d538144b4efa"
+        ],
+        "cacheParametersHash": "efb99eac05bdf75f42954f4b759b242b386c08bf1f16335ff2b0842fb8da3003",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "0035bbb547aaea4e403aa81d06e17545f1cbf6e11a6e38b6cf12d9345edc683c",
+        "reasoningEffort": "high",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-6",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "3a135228-d06f-92db-a056-a7e72e9152a7",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.6",
+        "responseModel": "grok-4.6",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265185682,
+        "tokens": {
+          "totalInput": 11617,
+          "uncachedInput": null,
+          "cacheRead": 512,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 1288,
+          "reasoning": 1778,
+          "totalOutput": 3066
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.01389308,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265138219,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265139560,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265185682,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265139375
+    },
+    {
+      "arm": "baseline",
+      "index": 2,
+      "phase": "instruction",
+      "requestIndex": 7,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "8251a477a0a250bab3dfaa296657e93c127094d0b8cb9f7122709572e2280b87",
+        "bytes": 2625,
+        "model": "grok-4.6",
+        "instructions": [
+          "4b8cafb41b148a46c162a37012eacad02928f728f9406b9d013614e24b633de3"
+        ],
+        "tools": [],
+        "history": [
+          "4b8cafb41b148a46c162a37012eacad02928f728f9406b9d013614e24b633de3",
+          "b82937dadba366d33b78df375cf4a86ea489a7fa5a5b679f46a1acf128d580b1"
+        ],
+        "cacheParametersHash": "f0d6600614138d677d3d6410b86ddb2fd6aa6a5a2d9078abb4d7c8dd9841e725",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "903af652d4e2da380881504dd990ac8d701fe027680743f490e98d870a8939f2",
+        "reasoningEffort": null,
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-7",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "084e4a52-fbca-93af-81af-038f151231d6",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.6",
+        "responseModel": "grok-4.6",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265197434,
+        "tokens": {
+          "totalInput": 1180,
+          "uncachedInput": null,
+          "cacheRead": 512,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 13,
+          "reasoning": 791,
+          "totalOutput": 804
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.00218144,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265187307,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265187394,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265197434,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265187394
+    },
+    {
+      "arm": "baseline",
+      "index": 2,
+      "phase": "instruction",
+      "requestIndex": 8,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "f9b02b59edb3112dbd1db19cc202f9cd8e70999784c08a6f2cdaa71d0629310a",
+        "bytes": 49395,
+        "model": "grok-4.6",
+        "instructions": [
+          "e464bf0c71da797f6aecfd5d542a6e9c37ba7f551619c83044b6d224dc347078"
+        ],
+        "tools": [
+          "0d292a133a6da50e8086fe0644ce1d36f2a47bbba131cc818d794bdc83d1bd00",
+          "065b650a23a67410e93c3a50008f30b2267efa68ba3ef942af0e30e9fa204a39",
+          "4f93b1a39cbe55504f842a941af47bb7c9a5541129b740c5c213e88b77c9283e",
+          "1b3dc477874be3ba42cb09cd02e268a3bc5648329385ac8bc6e0ced559d2183e",
+          "56b0d4137baeb335c9338bebbfc26326c90b3668aa087af078bb21cc6b519d67",
+          "709ae871e068b6930ca04085257a6e49766b8ea828f8499a6f0aa9d05e6d6d8a",
+          "21bf6317ba034f0d1f3bae6dd343e34d1bf537716936217a9a885234323e0374",
+          "8b86d2fd329e33535a07195a2c6bbef9b3daa6fc3bfd0c6895d7f26df8270934",
+          "7cd5f3cf85fb9db2047076eb5f2115b0f66a084e23532ce6ffe817e02e1ca086",
+          "ee5b0660a9edd3b508b883b9ffe4f2e5f7939a7e8487eaea30cfedfe893a4eb0",
+          "84a971cc0e3a6e599fae7e2b35f39416728e84fdcb5bdcb0398eb88e9362dd4f",
+          "cd3c80a6f84e1d6bd490e9ac43c00a3bd6566b72eb277e5e2bd2e08540230bfa",
+          "6d22c0e4dfa8c16ebcf271218ea48ba3d75ebd5da4ae22e97166ded7de60be6a",
+          "cc90621c7fd380b7fc40ac33ae572a0e0105673d3417d49de84b314178770877",
+          "6b98bf00e5f87470e80e874ed737bb4f5684e6335f106a6fffa5e6cfebd89522",
+          "72b6944b745521d4fbe7a94cf0a8d0c810332f3510c6a616e06bf7cdaf077507",
+          "047b24684c98025c32b9f5c41ec64eacd9433ed1d56c1462046ded6c4534c5b8",
+          "fccf7ca29ea3994bd73e62a7127f893ee7dc306a162e0aea5a51a27455f1ab1d",
+          "bc801ebeba3a1925806db02ea0e255fad0c5e36b5acd21972267b43ebe01b50e",
+          "d29fffb54e7884c0c48cf0f5e6955c01adfa8035e531f8fee46f09550c9e8d6e"
+        ],
+        "history": [
+          "e464bf0c71da797f6aecfd5d542a6e9c37ba7f551619c83044b6d224dc347078",
+          "bfba7e2f7c514d118ef2ac41a34f96c53de0b9127d5795a9c32d7c1dd75a1449",
+          "3e0571f5bf1a404f211ebf2a7f2001e5d9e7946d66faa373a6074eb0b172cf38",
+          "d0b9cc3c06fc525663d4e564bfb1ff2d9878c90d3729bccbce822964d692ec76"
+        ],
+        "cacheParametersHash": "7313837face6335e16552d357f6aca5901185d9d7c39ff6436629154131af678",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "d4502513bc1f263f609bf9bd78d3056670aeedff6a49a37cededa9693ca09e60",
+        "reasoningEffort": "high",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-8",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "d9a76704-569d-9b2b-90d9-0bf187ac964d",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.6",
+        "responseModel": "grok-4.6",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265236393,
+        "tokens": {
+          "totalInput": 11618,
+          "uncachedInput": null,
+          "cacheRead": 512,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 1141,
+          "reasoning": 2164,
+          "totalOutput": 3305
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.01438132,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265187608,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265189088,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265236393,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265188843
+    },
+    {
+      "arm": "candidate",
+      "index": null,
+      "phase": "warmup",
+      "requestIndex": 9,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "897421d808c8ac7ed081d8900a58c3e33f0889be5808da9323144f895f84871c",
+        "bytes": 35506,
+        "model": "grok-4.6",
+        "instructions": [
+          "e464bf0c71da797f6aecfd5d542a6e9c37ba7f551619c83044b6d224dc347078"
+        ],
+        "tools": [
+          "0d292a133a6da50e8086fe0644ce1d36f2a47bbba131cc818d794bdc83d1bd00",
+          "065b650a23a67410e93c3a50008f30b2267efa68ba3ef942af0e30e9fa204a39",
+          "4f93b1a39cbe55504f842a941af47bb7c9a5541129b740c5c213e88b77c9283e",
+          "1b3dc477874be3ba42cb09cd02e268a3bc5648329385ac8bc6e0ced559d2183e",
+          "56b0d4137baeb335c9338bebbfc26326c90b3668aa087af078bb21cc6b519d67",
+          "709ae871e068b6930ca04085257a6e49766b8ea828f8499a6f0aa9d05e6d6d8a",
+          "21bf6317ba034f0d1f3bae6dd343e34d1bf537716936217a9a885234323e0374",
+          "8b86d2fd329e33535a07195a2c6bbef9b3daa6fc3bfd0c6895d7f26df8270934",
+          "7cd5f3cf85fb9db2047076eb5f2115b0f66a084e23532ce6ffe817e02e1ca086",
+          "ee5b0660a9edd3b508b883b9ffe4f2e5f7939a7e8487eaea30cfedfe893a4eb0",
+          "84a971cc0e3a6e599fae7e2b35f39416728e84fdcb5bdcb0398eb88e9362dd4f",
+          "cd3c80a6f84e1d6bd490e9ac43c00a3bd6566b72eb277e5e2bd2e08540230bfa",
+          "6d22c0e4dfa8c16ebcf271218ea48ba3d75ebd5da4ae22e97166ded7de60be6a",
+          "cc90621c7fd380b7fc40ac33ae572a0e0105673d3417d49de84b314178770877",
+          "6b98bf00e5f87470e80e874ed737bb4f5684e6335f106a6fffa5e6cfebd89522",
+          "72b6944b745521d4fbe7a94cf0a8d0c810332f3510c6a616e06bf7cdaf077507",
+          "047b24684c98025c32b9f5c41ec64eacd9433ed1d56c1462046ded6c4534c5b8",
+          "fccf7ca29ea3994bd73e62a7127f893ee7dc306a162e0aea5a51a27455f1ab1d",
+          "bc801ebeba3a1925806db02ea0e255fad0c5e36b5acd21972267b43ebe01b50e",
+          "d29fffb54e7884c0c48cf0f5e6955c01adfa8035e531f8fee46f09550c9e8d6e"
+        ],
+        "history": [
+          "e464bf0c71da797f6aecfd5d542a6e9c37ba7f551619c83044b6d224dc347078",
+          "554df14a516c0bcf042caaeebaf32447433e0485e65377dd275f0f44b22c3791"
+        ],
+        "cacheParametersHash": "6b5d3eeb0c720e91456ba22513ba4ef95337f8b3bb4efb74397c4ce72988e201",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "eef00303a87fdd0cc44a4b111937bb95da58c2ac91b7e013011198e35400a70f",
+        "reasoningEffort": "high",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-9",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "c554fab3-7c75-952e-aafd-bb24a127d0ee",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.6",
+        "responseModel": "grok-4.6",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265256353,
+        "tokens": {
+          "totalInput": 8766,
+          "uncachedInput": null,
+          "cacheRead": 512,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 1,
+          "reasoning": 23,
+          "totalOutput": 24
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.00574872,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265255282,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265256336,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265256353,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265256334
+    },
+    {
+      "arm": "candidate",
+      "index": null,
+      "phase": "warmup",
+      "requestIndex": 10,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "3f931078927eb40e226b4f2ffa1dc4ec778d6e51cdca831779d2f66ced519dae",
+        "bytes": 2517,
+        "model": "grok-4.6",
+        "instructions": [
+          "4b8cafb41b148a46c162a37012eacad02928f728f9406b9d013614e24b633de3"
+        ],
+        "tools": [],
+        "history": [
+          "4b8cafb41b148a46c162a37012eacad02928f728f9406b9d013614e24b633de3",
+          "17821927c0ebc0fcc040fbb01ebc966e293c4289119de0bbbf755f25b82b3e9f"
+        ],
+        "cacheParametersHash": "8d392822f72bd3d5f5ad5117b3fc7157c90760300919b8b7cc5bff6f827b8508",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "41e6ef99c4807455cf6f79da45c1c296b9b42582478e44d1eba242bbc43a324f",
+        "reasoningEffort": null,
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-10",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "32c8b43e-2fde-91ee-9e92-4b491652b78d",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.6",
+        "responseModel": "grok-4.6",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265265990,
+        "tokens": {
+          "totalInput": 1150,
+          "uncachedInput": null,
+          "cacheRead": 512,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 4,
+          "reasoning": 712,
+          "totalOutput": 716
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.00198152,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265255404,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265255688,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265265990,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265255688
+    },
+    {
+      "arm": "candidate",
+      "index": 0,
+      "phase": "instruction",
+      "requestIndex": 11,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "bb6436bde1d5f96cdcac63cab5a0a1cba71ab8e46eda19eccc5885b5aae1dea4",
+        "bytes": 2625,
+        "model": "grok-4.6",
+        "instructions": [
+          "4b8cafb41b148a46c162a37012eacad02928f728f9406b9d013614e24b633de3"
+        ],
+        "tools": [],
+        "history": [
+          "4b8cafb41b148a46c162a37012eacad02928f728f9406b9d013614e24b633de3",
+          "2ca624f1bba99f568b78e92c7c968aba6353f8824ab9040cd3e79f1ee7f4edeb"
+        ],
+        "cacheParametersHash": "1f246694272c26f7f3d2c381f9d6f764293f8d7942242a0fca867c2c77c0b17d",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "182fbdbf38dfe4c19aa3fb8a87f97005b54cac42462c5843419e734b2a78cf43",
+        "reasoningEffort": null,
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-11",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "117e067b-0f8e-9e32-8724-9c617f4e9bed",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.6",
+        "responseModel": "grok-4.6",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265266013,
+        "tokens": {
+          "totalInput": 1180,
+          "uncachedInput": null,
+          "cacheRead": 512,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 6,
+          "reasoning": 555,
+          "totalOutput": 561
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.00168572,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265257468,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265257865,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265266013,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265257865
+    },
+    {
+      "arm": "candidate",
+      "index": 0,
+      "phase": "instruction",
+      "requestIndex": 12,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "24a5ca7870eabff342dda47d421fd45b3ff73be2a1b7c69e267acc1c2d558aff",
+        "bytes": 40927,
+        "model": "grok-4.6",
+        "instructions": [
+          "e464bf0c71da797f6aecfd5d542a6e9c37ba7f551619c83044b6d224dc347078"
+        ],
+        "tools": [
+          "0d292a133a6da50e8086fe0644ce1d36f2a47bbba131cc818d794bdc83d1bd00",
+          "065b650a23a67410e93c3a50008f30b2267efa68ba3ef942af0e30e9fa204a39",
+          "4f93b1a39cbe55504f842a941af47bb7c9a5541129b740c5c213e88b77c9283e",
+          "1b3dc477874be3ba42cb09cd02e268a3bc5648329385ac8bc6e0ced559d2183e",
+          "56b0d4137baeb335c9338bebbfc26326c90b3668aa087af078bb21cc6b519d67",
+          "709ae871e068b6930ca04085257a6e49766b8ea828f8499a6f0aa9d05e6d6d8a",
+          "21bf6317ba034f0d1f3bae6dd343e34d1bf537716936217a9a885234323e0374",
+          "8b86d2fd329e33535a07195a2c6bbef9b3daa6fc3bfd0c6895d7f26df8270934",
+          "7cd5f3cf85fb9db2047076eb5f2115b0f66a084e23532ce6ffe817e02e1ca086",
+          "ee5b0660a9edd3b508b883b9ffe4f2e5f7939a7e8487eaea30cfedfe893a4eb0",
+          "84a971cc0e3a6e599fae7e2b35f39416728e84fdcb5bdcb0398eb88e9362dd4f",
+          "cd3c80a6f84e1d6bd490e9ac43c00a3bd6566b72eb277e5e2bd2e08540230bfa",
+          "6d22c0e4dfa8c16ebcf271218ea48ba3d75ebd5da4ae22e97166ded7de60be6a",
+          "cc90621c7fd380b7fc40ac33ae572a0e0105673d3417d49de84b314178770877",
+          "6b98bf00e5f87470e80e874ed737bb4f5684e6335f106a6fffa5e6cfebd89522",
+          "72b6944b745521d4fbe7a94cf0a8d0c810332f3510c6a616e06bf7cdaf077507",
+          "047b24684c98025c32b9f5c41ec64eacd9433ed1d56c1462046ded6c4534c5b8",
+          "fccf7ca29ea3994bd73e62a7127f893ee7dc306a162e0aea5a51a27455f1ab1d",
+          "bc801ebeba3a1925806db02ea0e255fad0c5e36b5acd21972267b43ebe01b50e",
+          "d29fffb54e7884c0c48cf0f5e6955c01adfa8035e531f8fee46f09550c9e8d6e"
+        ],
+        "history": [
+          "e464bf0c71da797f6aecfd5d542a6e9c37ba7f551619c83044b6d224dc347078",
+          "3404657a15264872c81f9f946fd2907ce97f0aafa8550bd21e81f509da131e14",
+          "20d2c37f1e6e268ad067414ad2dfd53beefc335142f8113fa03e29d913daaecc",
+          "d0874fa60c7ef372297aba62e6d49ad1898b17662cf2714f478071ddfee5a1fe"
+        ],
+        "cacheParametersHash": "f381ceb36f5a7082909cc6f5263fd80af4bdd439ab22cffcdab8acde0ac9fb2a",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "c45e718f799bed4dca4d6717dfd6bc0d0b1b6bd34d9426d08343183832ab4854",
+        "reasoningEffort": "high",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-12",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "37c52981-9e73-92c9-bbfd-ac2b96a709f6",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.6",
+        "responseModel": "grok-4.6",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265305427,
+        "tokens": {
+          "totalInput": 9868,
+          "uncachedInput": null,
+          "cacheRead": 512,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 1311,
+          "reasoning": 1462,
+          "totalOutput": 2773
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.01210604,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265258292,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265258693,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265305427,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265258583
+    },
+    {
+      "arm": "candidate",
+      "index": 1,
+      "phase": "instruction",
+      "requestIndex": 13,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "65f2c701f1a1bf667507c23d447a6ddacf4a029b6879524c378ecf7a40969601",
+        "bytes": 2625,
+        "model": "grok-4.6",
+        "instructions": [
+          "4b8cafb41b148a46c162a37012eacad02928f728f9406b9d013614e24b633de3"
+        ],
+        "tools": [],
+        "history": [
+          "4b8cafb41b148a46c162a37012eacad02928f728f9406b9d013614e24b633de3",
+          "10f6175c82452d08c48a50b035d1f5cee713463d8d45562cf3df745e4ee7e577"
+        ],
+        "cacheParametersHash": "4b1a83a7341bc919edce2a073e9368585da57971eebbab98217474aa789dc2df",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "2e4ebfb98541adaf4bec16eaccc46ddfdf5f8cc3d273f7ca3336f07aa3f4fc9a",
+        "reasoningEffort": null,
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-13",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "a2d2e12d-18e4-9bf0-958f-778f65a02179",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.6",
+        "responseModel": "grok-4.6",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265314159,
+        "tokens": {
+          "totalInput": 1180,
+          "uncachedInput": null,
+          "cacheRead": 512,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 13,
+          "reasoning": 579,
+          "totalOutput": 592
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.00174896,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265307217,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265307218,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265314159,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265307218
+    },
+    {
+      "arm": "candidate",
+      "index": 1,
+      "phase": "instruction",
+      "requestIndex": 14,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "172db557c6b12ce41fc0f33dd7cad11ed06b2606cc060bc87c8d4756bf666ecc",
+        "bytes": 40927,
+        "model": "grok-4.6",
+        "instructions": [
+          "e464bf0c71da797f6aecfd5d542a6e9c37ba7f551619c83044b6d224dc347078"
+        ],
+        "tools": [
+          "0d292a133a6da50e8086fe0644ce1d36f2a47bbba131cc818d794bdc83d1bd00",
+          "065b650a23a67410e93c3a50008f30b2267efa68ba3ef942af0e30e9fa204a39",
+          "4f93b1a39cbe55504f842a941af47bb7c9a5541129b740c5c213e88b77c9283e",
+          "1b3dc477874be3ba42cb09cd02e268a3bc5648329385ac8bc6e0ced559d2183e",
+          "56b0d4137baeb335c9338bebbfc26326c90b3668aa087af078bb21cc6b519d67",
+          "709ae871e068b6930ca04085257a6e49766b8ea828f8499a6f0aa9d05e6d6d8a",
+          "21bf6317ba034f0d1f3bae6dd343e34d1bf537716936217a9a885234323e0374",
+          "8b86d2fd329e33535a07195a2c6bbef9b3daa6fc3bfd0c6895d7f26df8270934",
+          "7cd5f3cf85fb9db2047076eb5f2115b0f66a084e23532ce6ffe817e02e1ca086",
+          "ee5b0660a9edd3b508b883b9ffe4f2e5f7939a7e8487eaea30cfedfe893a4eb0",
+          "84a971cc0e3a6e599fae7e2b35f39416728e84fdcb5bdcb0398eb88e9362dd4f",
+          "cd3c80a6f84e1d6bd490e9ac43c00a3bd6566b72eb277e5e2bd2e08540230bfa",
+          "6d22c0e4dfa8c16ebcf271218ea48ba3d75ebd5da4ae22e97166ded7de60be6a",
+          "cc90621c7fd380b7fc40ac33ae572a0e0105673d3417d49de84b314178770877",
+          "6b98bf00e5f87470e80e874ed737bb4f5684e6335f106a6fffa5e6cfebd89522",
+          "72b6944b745521d4fbe7a94cf0a8d0c810332f3510c6a616e06bf7cdaf077507",
+          "047b24684c98025c32b9f5c41ec64eacd9433ed1d56c1462046ded6c4534c5b8",
+          "fccf7ca29ea3994bd73e62a7127f893ee7dc306a162e0aea5a51a27455f1ab1d",
+          "bc801ebeba3a1925806db02ea0e255fad0c5e36b5acd21972267b43ebe01b50e",
+          "d29fffb54e7884c0c48cf0f5e6955c01adfa8035e531f8fee46f09550c9e8d6e"
+        ],
+        "history": [
+          "e464bf0c71da797f6aecfd5d542a6e9c37ba7f551619c83044b6d224dc347078",
+          "3222cca8ab31ae656a9ed47e214f5c54d870dbdb964f1af88261fa3a8c48bbbb",
+          "f9bfd931879f6d8641f8a73d7216e858beb1c6195c334ab8e073cba9f22e3212",
+          "c7caf0aefb8855dc9d1319676bc8741cb5ff2b1469879c9eda2be940877350ec"
+        ],
+        "cacheParametersHash": "cec07d1ce2a70ce3ad63d12c619677b8651864704bbcca0150d2626b05e94b5c",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "149d4541cd700a2dacda3277980f92e19b348b1043e0ee6a4231ca26084dcce5",
+        "reasoningEffort": "high",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-14",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "36ef9cb2-ebed-9213-adb8-40b78579aa3f",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.6",
+        "responseModel": "grok-4.6",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265353988,
+        "tokens": {
+          "totalInput": 9867,
+          "uncachedInput": null,
+          "cacheRead": 8704,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 1360,
+          "reasoning": 1480,
+          "totalOutput": 2840
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.00806412,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265307532,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265308347,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265353988,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265308148
+    },
+    {
+      "arm": "candidate",
+      "index": 2,
+      "phase": "instruction",
+      "requestIndex": 15,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "4c68d5447241c708ccc75469315ed43cac97c4f515f4a6f0b242426e5069fdba",
+        "bytes": 2625,
+        "model": "grok-4.6",
+        "instructions": [
+          "4b8cafb41b148a46c162a37012eacad02928f728f9406b9d013614e24b633de3"
+        ],
+        "tools": [],
+        "history": [
+          "4b8cafb41b148a46c162a37012eacad02928f728f9406b9d013614e24b633de3",
+          "b82937dadba366d33b78df375cf4a86ea489a7fa5a5b679f46a1acf128d580b1"
+        ],
+        "cacheParametersHash": "fd7ea363d21b753c57b38b2266dc3551921a6ede0fd4631ef6f77ce32d86d626",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "a0d4a37843b7b11be4e05f6230e2284344dc9563e172ba3aa228a65af0769477",
+        "reasoningEffort": null,
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-15",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "b9b86781-2eb7-945b-b426-d60f852a2d46",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.6",
+        "responseModel": "grok-4.6",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265367464,
+        "tokens": {
+          "totalInput": 1180,
+          "uncachedInput": null,
+          "cacheRead": 512,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 6,
+          "reasoning": 714,
+          "totalOutput": 720
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.00201008,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265355374,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265355762,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265367464,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265355762
+    },
+    {
+      "arm": "candidate",
+      "index": 2,
+      "phase": "instruction",
+      "requestIndex": 16,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "8c1639ceb702a9837385dfb8ed7c55185cc1e10d284cfb8f1ee949f4908e7457",
+        "bytes": 40927,
+        "model": "grok-4.6",
+        "instructions": [
+          "e464bf0c71da797f6aecfd5d542a6e9c37ba7f551619c83044b6d224dc347078"
+        ],
+        "tools": [
+          "0d292a133a6da50e8086fe0644ce1d36f2a47bbba131cc818d794bdc83d1bd00",
+          "065b650a23a67410e93c3a50008f30b2267efa68ba3ef942af0e30e9fa204a39",
+          "4f93b1a39cbe55504f842a941af47bb7c9a5541129b740c5c213e88b77c9283e",
+          "1b3dc477874be3ba42cb09cd02e268a3bc5648329385ac8bc6e0ced559d2183e",
+          "56b0d4137baeb335c9338bebbfc26326c90b3668aa087af078bb21cc6b519d67",
+          "709ae871e068b6930ca04085257a6e49766b8ea828f8499a6f0aa9d05e6d6d8a",
+          "21bf6317ba034f0d1f3bae6dd343e34d1bf537716936217a9a885234323e0374",
+          "8b86d2fd329e33535a07195a2c6bbef9b3daa6fc3bfd0c6895d7f26df8270934",
+          "7cd5f3cf85fb9db2047076eb5f2115b0f66a084e23532ce6ffe817e02e1ca086",
+          "ee5b0660a9edd3b508b883b9ffe4f2e5f7939a7e8487eaea30cfedfe893a4eb0",
+          "84a971cc0e3a6e599fae7e2b35f39416728e84fdcb5bdcb0398eb88e9362dd4f",
+          "cd3c80a6f84e1d6bd490e9ac43c00a3bd6566b72eb277e5e2bd2e08540230bfa",
+          "6d22c0e4dfa8c16ebcf271218ea48ba3d75ebd5da4ae22e97166ded7de60be6a",
+          "cc90621c7fd380b7fc40ac33ae572a0e0105673d3417d49de84b314178770877",
+          "6b98bf00e5f87470e80e874ed737bb4f5684e6335f106a6fffa5e6cfebd89522",
+          "72b6944b745521d4fbe7a94cf0a8d0c810332f3510c6a616e06bf7cdaf077507",
+          "047b24684c98025c32b9f5c41ec64eacd9433ed1d56c1462046ded6c4534c5b8",
+          "fccf7ca29ea3994bd73e62a7127f893ee7dc306a162e0aea5a51a27455f1ab1d",
+          "bc801ebeba3a1925806db02ea0e255fad0c5e36b5acd21972267b43ebe01b50e",
+          "d29fffb54e7884c0c48cf0f5e6955c01adfa8035e531f8fee46f09550c9e8d6e"
+        ],
+        "history": [
+          "e464bf0c71da797f6aecfd5d542a6e9c37ba7f551619c83044b6d224dc347078",
+          "bfba7e2f7c514d118ef2ac41a34f96c53de0b9127d5795a9c32d7c1dd75a1449",
+          "4cd4695ba1251fe3a07427d9034ade63911d0d9f018133d85686cb787347559d",
+          "7779ba7cba28100b3ee1436b5b04885ab1fc493439764e766a687ffed570f014"
+        ],
+        "cacheParametersHash": "963970adfa83714da017340a57cfd19e34b454b253d371162090d1658339d5d2",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "af9c011c54b1c1959a4047034a0cd76a355f74d0841039f86a4fce408d556d37",
+        "reasoningEffort": "high",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-16",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "d7365ea0-9ffc-9a36-adc7-37b7cb35cfdc",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.6",
+        "responseModel": "grok-4.6",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265401504,
+        "tokens": {
+          "totalInput": 9868,
+          "uncachedInput": null,
+          "cacheRead": 8704,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 1175,
+          "reasoning": 1845,
+          "totalOutput": 3020
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.008432,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265355973,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265357198,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265401504,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265357198
+    }
+  ],
+  "cleanups": [
+    {
+      "arm": "baseline",
+      "source": "retained-os-process-ancestry-and-start-identities",
+      "rootPid": 31085,
+      "rootObserved": true,
+      "observationIntervalMs": 500,
+      "observationErrors": [],
+      "observedProcesses": [
+        {
+          "pid": 31085,
+          "parentPid": 31072,
+          "startIdentity": "Thu Sep 24 19:51:27 2026"
+        },
+        {
+          "pid": 31105,
+          "parentPid": 31085,
+          "startIdentity": "Thu Sep 24 19:51:28 2026"
+        },
+        {
+          "pid": 31134,
+          "parentPid": 31085,
+          "startIdentity": "Thu Sep 24 19:51:28 2026"
+        },
+        {
+          "pid": 31135,
+          "parentPid": 31085,
+          "startIdentity": "Thu Sep 24 19:51:28 2026"
+        },
+        {
+          "pid": 31257,
+          "parentPid": 31134,
+          "startIdentity": "Thu Sep 24 19:51:30 2026"
+        },
+        {
+          "pid": 31259,
+          "parentPid": 31134,
+          "startIdentity": "Thu Sep 24 19:51:30 2026"
+        },
+        {
+          "pid": 31315,
+          "parentPid": 31134,
+          "startIdentity": "Thu Sep 24 19:51:31 2026"
+        },
+        {
+          "pid": 31316,
+          "parentPid": 31085,
+          "startIdentity": "Thu Sep 24 19:51:31 2026"
+        },
+        {
+          "pid": 31454,
+          "parentPid": 31134,
+          "startIdentity": "Thu Sep 24 19:51:33 2026"
+        },
+        {
+          "pid": 31455,
+          "parentPid": 31085,
+          "startIdentity": "Thu Sep 24 19:51:33 2026"
+        },
+        {
+          "pid": 31456,
+          "parentPid": 31134,
+          "startIdentity": "Thu Sep 24 19:51:33 2026"
+        },
+        {
+          "pid": 31578,
+          "parentPid": 31085,
+          "startIdentity": "Thu Sep 24 19:51:35 2026"
+        },
+        {
+          "pid": 31661,
+          "parentPid": 31085,
+          "startIdentity": "Thu Sep 24 19:51:36 2026"
+        },
+        {
+          "pid": 35714,
+          "parentPid": 31085,
+          "startIdentity": "Thu Sep 24 19:52:16 2026"
+        },
+        {
+          "pid": 35790,
+          "parentPid": 31085,
+          "startIdentity": "Thu Sep 24 19:52:17 2026"
+        },
+        {
+          "pid": 36131,
+          "parentPid": 31085,
+          "startIdentity": "Thu Sep 24 19:52:26 2026"
+        },
+        {
+          "pid": 39763,
+          "parentPid": 31134,
+          "startIdentity": "Thu Sep 24 19:53:06 2026"
+        },
+        {
+          "pid": 40691,
+          "parentPid": 31134,
+          "startIdentity": "Thu Sep 24 19:53:17 2026"
+        },
+        {
+          "pid": 43469,
+          "parentPid": 31085,
+          "startIdentity": "Thu Sep 24 19:53:56 2026"
+        },
+        {
+          "pid": 43470,
+          "parentPid": 31085,
+          "startIdentity": "Thu Sep 24 19:53:56 2026"
+        },
+        {
+          "pid": 43481,
+          "parentPid": 31085,
+          "startIdentity": "Thu Sep 24 19:53:56 2026"
+        }
+      ],
+      "remainingProcessIds": [],
+      "signals": [],
+      "trackingClosed": true
+    },
+    {
+      "arm": "candidate",
+      "source": "retained-os-process-ancestry-and-start-identities",
+      "rootPid": 44843,
+      "rootObserved": true,
+      "observationIntervalMs": 500,
+      "observationErrors": [],
+      "observedProcesses": [
+        {
+          "pid": 44843,
+          "parentPid": 31072,
+          "startIdentity": "Thu Sep 24 19:54:09 2026"
+        },
+        {
+          "pid": 44881,
+          "parentPid": 44843,
+          "startIdentity": "Thu Sep 24 19:54:09 2026"
+        },
+        {
+          "pid": 44943,
+          "parentPid": 44843,
+          "startIdentity": "Thu Sep 24 19:54:10 2026"
+        },
+        {
+          "pid": 44944,
+          "parentPid": 44843,
+          "startIdentity": "Thu Sep 24 19:54:10 2026"
+        },
+        {
+          "pid": 45076,
+          "parentPid": 44943,
+          "startIdentity": "Thu Sep 24 19:54:11 2026"
+        },
+        {
+          "pid": 45110,
+          "parentPid": 44943,
+          "startIdentity": "Thu Sep 24 19:54:12 2026"
+        },
+        {
+          "pid": 45661,
+          "parentPid": 44843,
+          "startIdentity": "Thu Sep 24 19:54:16 2026"
+        },
+        {
+          "pid": 46410,
+          "parentPid": 44943,
+          "startIdentity": "Thu Sep 24 19:54:25 2026"
+        },
+        {
+          "pid": 50340,
+          "parentPid": 44843,
+          "startIdentity": "Thu Sep 24 19:55:05 2026"
+        },
+        {
+          "pid": 50444,
+          "parentPid": 44843,
+          "startIdentity": "Thu Sep 24 19:55:06 2026"
+        },
+        {
+          "pid": 50445,
+          "parentPid": 44843,
+          "startIdentity": "Thu Sep 24 19:55:06 2026"
+        },
+        {
+          "pid": 55272,
+          "parentPid": 44843,
+          "startIdentity": "Thu Sep 24 19:55:54 2026"
+        },
+        {
+          "pid": 55373,
+          "parentPid": 44843,
+          "startIdentity": "Thu Sep 24 19:55:54 2026"
+        },
+        {
+          "pid": 59817,
+          "parentPid": 44843,
+          "startIdentity": "Thu Sep 24 19:56:41 2026"
+        },
+        {
+          "pid": 59818,
+          "parentPid": 44843,
+          "startIdentity": "Thu Sep 24 19:56:41 2026"
+        },
+        {
+          "pid": 59848,
+          "parentPid": 44843,
+          "startIdentity": "Thu Sep 24 19:56:41 2026"
+        }
+      ],
+      "remainingProcessIds": [],
+      "signals": [],
+      "trackingClosed": true
+    }
+  ],
+  "scope": "Live model behavior with the product Plan-mode preface repeated on three user turns (two seeded with noReply); not an accepted() field."
+}

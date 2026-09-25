@@ -11,16 +11,17 @@ import { RiAddLine, RiDeleteBinLine, RiStackLine } from '@remixicon/react';
 import { cn } from '@/lib/utils';
 import { recordConfigMutationResponse, useConfigApplyStore } from '@/stores/useConfigApplyStore';
 import { useI18n } from '@/lib/i18n';
-import { splitAntigravityProviderForDisplay } from '@/lib/providers/antigravity';
 import { getProviderDisplayName } from '@/lib/providers/display';
 import { getProviderModelsForDisplay, sortProvidersByDisplayName } from './providerSorting';
 import {
   disconnectProvider,
+  getProviderDisconnectOutcome,
   hasActiveProviderSource,
   shouldShowConnectedProvider,
   useProviderDisconnectStore,
   type ProviderSources,
 } from './providerConnectionState';
+import { withRetiredProviderEntries } from './retiredProviders';
 
 const ADD_PROVIDER_ID = '__add_provider__';
 
@@ -33,7 +34,7 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
   const pendingConnections = useProviderConnectionStore((state) => state.pending);
   const rawProviders = useConfigStore((state) => state.directoryScoped.__global__?.providers ?? state.providers);
   const discoveredProviders = React.useMemo(
-    () => splitAntigravityProviderForDisplay(rawProviders),
+    () => withRetiredProviderEntries(rawProviders),
     [rawProviders]
   );
   const selectedProviderId = useConfigStore((state) => state.selectedProviderId);
@@ -131,9 +132,14 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
         const applyStatus = recordConfigMutationResponse(payload);
         markDisconnectRequested(providerId, payload);
         useProviderConnectionStore.getState().clear(providerId);
-        toast.success(applyStatus?.pending
-          ? t('settings.providers.page.toast.providerDisconnectQueued')
-          : t('settings.providers.page.toast.providerDisconnected'));
+        const outcome = getProviderDisconnectOutcome(payload);
+        if (outcome.kind === 'still_provided') {
+          toast.error(t('settings.providers.page.toast.providerStillProvided', { sources: outcome.sources.join(', ') }));
+        } else {
+          toast.success(applyStatus?.pending
+            ? t('settings.providers.page.toast.providerDisconnectQueued')
+            : t('settings.providers.page.toast.providerDisconnected'));
+        }
         if (!applyStatus?.pending) await loadProviders({ directory: null, force: true });
         quotaRefreshCoordinator.settingsChanged();
       } catch (error) {

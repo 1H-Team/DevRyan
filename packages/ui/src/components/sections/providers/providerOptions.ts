@@ -7,7 +7,6 @@ export interface ProviderOption {
 }
 
 const ANTHROPIC_PROVIDER_OPTION: ProviderOption = { id: 'anthropic', name: 'Claude' };
-const ANTIGRAVITY_PROVIDER_OPTION: ProviderOption = { id: 'antigravity', name: 'Antigravity' };
 const CURSOR_ACP_PROVIDER_OPTION: ProviderOption = { id: CURSOR_ACP_PROVIDER_ID, name: 'Cursor' };
 const GITHUB_COPILOT_PROVIDER_OPTION: ProviderOption = { id: 'github-copilot', name: 'GitHub Copilot' };
 
@@ -63,7 +62,6 @@ export const parseProvidersPayload = (payload: unknown): ProviderOption[] => {
 
   for (const provider of [
     ANTHROPIC_PROVIDER_OPTION,
-    ANTIGRAVITY_PROVIDER_OPTION,
     CURSOR_ACP_PROVIDER_OPTION,
     GITHUB_COPILOT_PROVIDER_OPTION,
   ]) {

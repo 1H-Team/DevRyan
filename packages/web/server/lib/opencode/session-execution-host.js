@@ -1,5 +1,6 @@
-import { executionSignal, checkExecutionAdmission, executionPhase, withExecutionAdmission } from '@openchamber/harness-runtime/lib/execution-admission.js';
+import { executionSignal, checkExecutionAdmission, executionPhase, withExecutionAdmission, withExecutionPreparation } from '@openchamber/harness-runtime/lib/execution-admission.js';
 import { cleanupExecutionLease } from '@openchamber/harness-runtime/lib/execution-cleanup.js';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createSessionMutationRuntime } from '@openchamber/harness-runtime';
@@ -11,6 +12,10 @@ import { createExecutionHostOwner, executionHostOwnerLost, executionOwnerFactory
 import { createExecutionPreparations, recoverExecutionLeases } from './execution-preparations.js';
 
 const failure = (code, status = 409) => Object.assign(new Error(code), { code, status });
+// Built-in tools the companion may run with a direct receipt: audited
+// read-only (companion/SEAMS.md). The companion selects them by object
+// identity; the name check here is defense in depth.
+const DIRECT_RECEIPT_TOOLS = new Set(['read', 'glob', 'grep', 'skill']);
 const identity = (value) => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,512}$/.test(value);
 
 /** Private bridge for the pinned companion. Its bearer credential belongs to
@@ -19,7 +24,9 @@ const identity = (value) => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,512}$
  * before publication. Legacy observations never become ownership evidence.
  */
 export function createSessionExecutionHost(options) {
-  const runtime = createSessionMutationRuntime({ directory: path.join(options.dataDirectory, 'harness', 'session-mutations') });
+  const runtime = createSessionMutationRuntime({ directory: path.join(options.dataDirectory, 'harness', 'session-mutations'),
+    // Ledger maintenance and input-classification failures reach the journal.
+    onDiagnostic: (record) => { try { options.onDiagnostic?.({ event: 'session_execution', ...record }); } catch { /* Observer only. */ } } });
   const request = async (pathname, directory, body) => {
     const url = new URL(options.buildOpenCodeUrl(pathname, '')); url.searchParams.set('directory', directory);
     const response = await (options.fetchImpl ?? fetch)(url, { method: body === undefined ? 'GET' : 'POST',
@@ -181,6 +188,19 @@ export function createSessionExecutionHost(options) {
     if (record?.info?.role !== 'assistant' || record.info.sessionID !== input.sessionID || !call || call.tool !== input.tool) {
       throw failure('capture_identity_mismatch');
     }
+    if (input.action === 'direct-admit' || input.action === 'direct-finish') {
+      // Kill switch: the companion falls back to the reserved-lease protocol.
+      if (process.env.DEVRYAN_DIRECT_CONTROL_RECEIPTS === '0') throw failure('direct_receipts_disabled');
+      if (!DIRECT_RECEIPT_TOOLS.has(input.tool) || !/^[a-f0-9]{64}$/.test(input.argsDigest ?? '')) throw failure('invalid_capture_identity', 400);
+      const identity = { ...input, userMessageID: record.info.parentID, parentID: current.parentID };
+      if (input.action === 'direct-admit') {
+        const admitted = await executionPhase('direct_admission', () => runtime.admitDirect(identity));
+        return { ...admitted, token: randomUUID() };
+      }
+      const result = await executionPhase('direct_receipt', () => runtime.finishDirect({ ...identity, executionFingerprint: input.argsDigest }));
+      await options.recordReceipt?.({ ...await runtime.executionReceipt({ directory: input.directory, token: input.token }), tool: input.tool });
+      return result;
+    }
     if (input.action === 'begin') {
       if (!/^[a-f0-9]{64}$/.test(input.argsDigest ?? '')) throw failure('invalid_capture_identity', 400);
       const executionFingerprint = input.argsDigest;
@@ -249,7 +269,7 @@ export function createSessionExecutionHost(options) {
     await cleanup({ directory: input.directory, token: lease.token });
     return result;
   };
-  const dispatchPlugin = (input) => ['admit', 'prompt', 'begin', 'child', 'cancel-before-start', 'prepare-poll', 'claim'].includes(input.action)
+  const dispatchPlugin = (input) => ['admit', 'prompt', 'begin', 'child', 'cancel-before-start', 'prepare-poll', 'claim', 'direct-admit'].includes(input.action)
     // Fail after 25 s without progress (this request's own work or the lock
     // holder it queues behind), never later than 50 s: the companion's RPC
     // limit is 60 s, and deadline-free commits may run past the abort.
@@ -260,6 +280,32 @@ export function createSessionExecutionHost(options) {
       summary: { minMs: options.admissionSummaryMinMs ?? 250 },
     }) : dispatch(input);
   const plugin = (input) => activity([input.sessionID, input.parentID], () => dispatchPlugin(input));
+  // Background first build of a project's ledger, so its first confined call
+  // does not stall. One build at a time per host: opening another project
+  // cancels the current one (committed batches are kept and resumed by the
+  // next observation), and host drain cancels it. A real call arriving
+  // meanwhile joins the in-flight pass. Kill switch: DEVRYAN_LEDGER_PREWARM=0.
+  let ledgerWarm = null;
+  const warmLedger = ({ directory } = {}) => {
+    if (process.env.DEVRYAN_LEDGER_PREWARM === '0' || typeof directory !== 'string' || !path.isAbsolute(directory)) {
+      return Promise.resolve({ skipped: 'disabled' });
+    }
+    if (ledgerWarm?.directory === directory) return ledgerWarm.work;
+    ledgerWarm?.controller.abort(Object.assign(new Error('ledger_warm_superseded'), { code: 'ledger_warm_superseded' }));
+    const previous = ledgerWarm?.work ?? Promise.resolve();
+    const entry = { directory, controller: new AbortController() };
+    entry.work = previous.then(async () => {
+      entry.controller.signal.throwIfAborted();
+      if (!await isConfined({ directory })) return { skipped: 'not-confined' };
+      const result = await withExecutionPreparation({}, () => runtime.warm({ directory }),
+        { signal: entry.controller.signal, onDiagnostic: options.onDiagnostic });
+      try { options.onDiagnostic?.({ event: 'session_execution', phase: 'ledger_warm', state: 'completed', ...result }); } catch { /* Observer only. */ }
+      return result;
+    }).catch((cause) => ({ failed: cause?.code ?? 'ledger_warm_failed' }))
+      .finally(() => { if (ledgerWarm === entry) ledgerWarm = null; });
+    ledgerWarm = entry;
+    return entry.work;
+  };
   // Without the companion, a legacy (OpenCode snapshot) revert would bypass the
   // ownership ledger. Refuse it for any conversation the ledger owns, and while
   // any ledger transaction in the project still awaits recovery.
@@ -271,7 +317,7 @@ export function createSessionExecutionHost(options) {
     if (state.pending) throw Object.assign(new Error('An interrupted Revert in this project is waiting for the DevRyan companion to finish recovery. Restore the companion before reverting.'),
       { code: 'mutation_recovery_pending', status: 409 });
   };
-  return { get retentionReady() { return retentionReady; }, runtime, executions, coordinator, plugin, isConfined, persistCursorRecord, startCursor, assertLegacyRevertAllowed,
+  return { get retentionReady() { return retentionReady; }, runtime, executions, coordinator, plugin, isConfined, persistCursorRecord, startCursor, assertLegacyRevertAllowed, warmLedger,
     recover: async () => {
       retentionReady = false; let failed = false;
       const report = (cause) => {
@@ -292,8 +338,11 @@ export function createSessionExecutionHost(options) {
       storage: path.join(options.dataDirectory, 'harness', 'provider-executions'), interactive: true }); },
     beforeCursorPrompt: async (input) => { options.assertExecutionReady?.(); await runtime.assertAdmission(input); return (await session(input)).revert ?? null; },
     drain: async () => {
+      const warming = ledgerWarm;
+      warming?.controller.abort(Object.assign(new Error('ledger_warm_stopped'), { code: 'ledger_warm_stopped' }));
       // A failed keeper must not prevent independent owners and I/O draining.
       const results = await Promise.allSettled([
+        warming?.work,
         // A keeper that never started owns nothing to drain; only an
         // unconfirmed termination remains a shutdown failure.
         preparationHost?.then(async (host) => { try { await host.jobs.drain(); } finally { await host.owner.close(); } },

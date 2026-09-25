@@ -6,10 +6,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createAuditOutbox } from './audit-outbox.js';
 
 const temporaryDirectories = [];
+// The bounded time one enqueue caller may wait for its own delivery.
+const ENQUEUE_DELIVERY_WAIT_MS = 2_000;
 
 afterEach(async () => {
+  vi.useRealTimers();
   await Promise.all(temporaryDirectories.splice(0).map((directory) => fs.rm(directory, { recursive: true, force: true })));
 });
+
+// Waits on real I/O (never on time) until the outbox has armed a fake timer.
+const waitForArmedTimer = async () => {
+  while (vi.getTimerCount() === 0) await new Promise((resolve) => setImmediate(resolve));
+};
 
 describe('durable activity outbox', () => {
   it('preserves only constrained top-level diagnostic classification fields', async () => {
@@ -306,15 +314,28 @@ describe('durable activity outbox', () => {
         : new Promise((resolve, reject) => pending.push({ resolve, reject, request }));
       return answer.finally(() => { inFlight -= 1; });
     });
+    // Virtual time: the delivery wait is a fake timer, so the bound is asserted
+    // exactly rather than against the wall clock of a loaded host. File I/O
+    // stays real.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     const outbox = await createAuditOutbox({ dataDirectory: directory, supabase: { rest }, logger: { warn() {} }, flushIntervalMs: 60_000 });
     const started = Date.now();
-    await outbox.enqueue('c0000000-0000-4000-8000-000000000000', { action: 'git.commit', metadata: {} });
+    let firstSettled = false;
+    const firstEnqueue = outbox.enqueue('c0000000-0000-4000-8000-000000000000', { action: 'git.commit', metadata: {} })
+      .then(() => { firstSettled = true; });
+    await waitForArmedTimer();
+    await vi.advanceTimersByTimeAsync(ENQUEUE_DELIVERY_WAIT_MS - 1);
+    expect(firstSettled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await firstEnqueue;
+    // Virtual time stays frozen from here on, so any later caller that waited
+    // on the backend would hang this test instead of passing slowly.
     for (let index = 1; index <= 20; index += 1) {
       await outbox.enqueue(`c0000000-0000-4000-8000-${String(index).padStart(12, '0')}`, { action: 'git.commit', metadata: {} });
       await outbox.enqueueDeferred(`d0000000-0000-4000-8000-${String(index).padStart(12, '0')}`, { action: 'prompt', metadata: {} });
     }
-    // The first caller waits at most the bounded delivery window; the rest do not wait.
-    expect(Date.now() - started).toBeLessThan(4_000);
+    // The first caller waited exactly the bounded delivery window; the rest did not wait.
+    expect(Date.now() - started).toBe(ENQUEUE_DELIVERY_WAIT_MS);
     expect(maxInFlight).toBe(1);
     expect(await outbox.getStatus()).toMatchObject({ backlog: 41 });
     // The backend recovers: the in-flight request completes and a coalesced
@@ -336,16 +357,22 @@ describe('durable activity outbox', () => {
       if (request.body.action === 'bad.record') throw Object.assign(new Error('violates check constraint'), { status: 400 });
       return request.body;
     });
+    // Frozen time: the shared backoff cannot decay between the flush and the read.
+    vi.useFakeTimers({ toFake: ['Date'] });
     const outbox = await createAuditOutbox({ dataDirectory: directory, supabase: { rest }, logger: { warn() {} }, flushIntervalMs: 60_000 });
     for (const [id, action] of [['e0000000-0000-4000-8000-000000000001', 'bad.record'], ['e0000000-0000-4000-8000-000000000002', 'ok'], ['e0000000-0000-4000-8000-000000000003', 'ok']]) {
       await outbox.enqueueDeferred(id, { action, metadata: {} });
     }
+    // Let every deferred enqueue request its background pass before settling,
+    // so none of those passes can start after the measured flush below.
+    await new Promise((resolve) => setImmediate(resolve));
     await outbox.flush(); // Settles the background pass the enqueues requested.
     rest.mockClear();
     await outbox.flush();
     // The first failure and one probe of the next record, never the whole backlog.
     expect(rest).toHaveBeenCalledTimes(2);
-    expect((await outbox.getStatus()).retryAfterMs).toBeGreaterThan(0);
+    // Backing off for at least one flush interval.
+    expect((await outbox.getStatus()).retryAfterMs).toBeGreaterThanOrEqual(60_000);
     mode = 'up';
     await outbox.flush();
     expect((await outbox.getStatus()).backlog).toBe(1);
@@ -379,11 +406,14 @@ describe('durable activity outbox', () => {
       if (request.body.action === 'poison') throw Object.assign(new Error('statement timeout'), { status: 500 });
       return request.body;
     });
+    // Frozen time: the backoff read below is exact instead of decaying.
+    vi.useFakeTimers({ toFake: ['Date'] });
     const outbox = await createAuditOutbox({ dataDirectory: directory, supabase: { rest }, logger: { warn() {} }, flushIntervalMs: 60_000 });
     await outbox.enqueueDeferred('d0000000-0000-4000-8000-000000000001', { action: 'poison', metadata: {} });
     for (let pass = 0; pass < 6; pass += 1) await outbox.flush();
-    // Only the first (fresh) failure may start a short shared backoff.
-    expect((await outbox.getStatus()).retryAfterMs).toBeLessThan(61_000);
+    // Only the first (fresh) failure may start a short shared backoff: one
+    // flush interval, never doubled by the record's later failures.
+    expect((await outbox.getStatus()).retryAfterMs).toBe(60_000);
     await outbox.enqueueDeferred('d0000000-0000-4000-8000-000000000002', { action: 'healthy', metadata: {} });
     await outbox.flush();
     expect(rest.mock.calls.filter(([, request]) => request.body.action === 'healthy')).toHaveLength(1);
@@ -394,25 +424,47 @@ describe('durable activity outbox', () => {
   it('runs a delivery barrier and an explicit flush while steady traffic keeps arriving', async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-audit-traffic-'));
     temporaryDirectories.push(directory);
-    const rest = vi.fn(async (_table, request) => { await new Promise((resolve) => setTimeout(resolve, 10)); return request.body; });
-    const outbox = await createAuditOutbox({ dataDirectory: directory, supabase: { rest }, logger: { warn() {} }, flushIntervalMs: 60_000 });
-    let traffic = true, sent = 0;
-    const pump = (async () => {
-      const until = Date.now() + 1_500;
-      while (Date.now() < until) {
-        sent += 1;
-        void outbox.enqueueDeferred(`c0000000-0000-4000-8000-${String(sent).padStart(12, '0')}`, { action: 'fixture.event', metadata: {} });
-        await new Promise((resolve) => setTimeout(resolve, 8));
+    // Traffic is driven by deliveries, not by the wall clock: while it is on,
+    // every delivery appends another record, so background flushing never runs
+    // out of work by itself. The barrier and the explicit flush can only finish
+    // by making it yield, however slow the host is.
+    let traffic = true, sent = 0, deliveries = 0;
+    const appends = [];
+    const deliveryWaiters = [];
+    let outbox;
+    const append = () => {
+      sent += 1;
+      appends.push(outbox.enqueueDeferred(`c0000000-0000-4000-8000-${String(sent).padStart(12, '0')}`, { action: 'fixture.event', metadata: {} }));
+    };
+    const waitForDeliveries = (count) => new Promise((resolve) => {
+      if (deliveries >= count) resolve();
+      else deliveryWaiters.push({ count, resolve });
+    });
+    const rest = vi.fn(async (_table, request) => {
+      deliveries += 1;
+      if (traffic) append();
+      for (const waiter of deliveryWaiters.filter((entry) => deliveries >= entry.count)) {
+        deliveryWaiters.splice(deliveryWaiters.indexOf(waiter), 1);
+        waiter.resolve();
       }
-      traffic = false;
-    })();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+      // Yield so new appends land while this pass is still delivering.
+      await new Promise((resolve) => setImmediate(resolve));
+      return request.body;
+    });
+    outbox = await createAuditOutbox({ dataDirectory: directory, supabase: { rest }, logger: { warn() {} }, flushIntervalMs: 60_000 });
+    append();
+    await waitForDeliveries(5);
+
     await expect(outbox.withFlushedDeliveryBarrier(() => traffic)).resolves.toBe(true);
     await outbox.flush();
-    expect(traffic).toBe(true);
-    await pump;
+    // Yielded background delivery resumes after the barrier and the flush.
+    await waitForDeliveries(deliveries + 3);
+
+    traffic = false;
+    await Promise.all(appends);
     await outbox.flush();
     expect((await outbox.getStatus()).backlog).toBe(0);
+    // Every appended record was delivered exactly once.
     expect(rest).toHaveBeenCalledTimes(sent);
     await outbox.drain();
   });

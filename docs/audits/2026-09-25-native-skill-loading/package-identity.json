@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "purpose": "actual packaged Electron Coding Agents QA with isolated test bootstrap",
+  "electronVersion": "41.2.1",
+  "platform": "darwin",
+  "arch": "arm64",
+  "mainSha256": "57bf632e249cb3201a7d9914710b6e2dede1b3e9780ae57b282a159e74fec05e",
+  "preloadSha256": "4becddc33e16b6207dbd044c6c7edfa580b8df78e0feabaf6a4468dd5e56689e",
+  "archiveSha256": "572bb0c42e4980ffd4a8c769467ff575ad89453ed1e4b687d15b8fb2436f3525",
+  "bootstrapSha256": "c40501006a224845b5f25637f220ddb31f67b3a05a1f0a22e5a2d9130e2b7a10",
+  "bootstrapPolicySha256": "1a85d9c11c301998f617687f1ca9fd4e2f3e469774df21633f9e71ea193ab88d",
+  "packagerSha256": "785a6e1a43581b402d995169b968569db50dc5d693dce5035d879728c65229ed",
+  "nativeSmoke": {
+    "electron": "41.2.1",
+    "nodeModuleAbi": "145",
+    "sqlite": "passed",
+    "pty": "passed"
+  },
+  "signing": "disabled",
+  "publication": "disabled",
+  "nativeRebuild": "not-run; matched local packaged binaries copied into owned output",
+  "excludedAcceptance": [
+    "signing/notarization",
+    "updater installation",
+    "global protocol registration",
+    "OS keychain integration",
+    "background Bot service",
+    "legacy Tauri"
+  ]
+}

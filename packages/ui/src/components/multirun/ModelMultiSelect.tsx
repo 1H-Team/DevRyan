@@ -11,11 +11,9 @@ import { isIMECompositionEvent } from '@/lib/ime';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useModelLists } from '@/hooks/useModelLists';
 import {
-  getDisplayProviderId,
   getExecutionProviderId,
   getModelDisplayName,
-  splitAntigravityProviderForDisplay,
-} from '@/lib/providers/antigravity';
+} from '@/lib/providers/modelIdentity';
 import { sortProviderTreeForPicker } from '@/lib/providers/sorting';
 import { isProviderModelAvailable } from '@/lib/providers/modelAvailability';
 import type { ModelMetadata } from '@/types';
@@ -76,19 +74,12 @@ export const ModelChip: React.FC<{
   totalSameModel: number;
   onRemove: () => void;
 }> = ({ model, instanceIndex, totalSameModel, onRemove }) => {
-  const displayName = model.displayName
-    ? getModelDisplayName({ id: model.modelID, providerID: model.providerID, name: model.displayName })
-    : `${model.providerID}/${model.modelID}`;
+  const displayName = model.displayName || `${model.providerID}/${model.modelID}`;
   const label = totalSameModel > 1 ? `${displayName} (${instanceIndex})` : displayName;
-  const displayProviderId = getDisplayProviderId(model.providerID, {
-    id: model.modelID,
-    providerID: model.providerID,
-    name: displayName,
-  });
 
   return (
     <div className={cn('flex items-center gap-1.5 px-2 rounded-md bg-interactive-selection/20 border border-border/30', CHIP_HEIGHT_CLASS)}>
-      <ProviderLogo providerId={displayProviderId} className="h-3.5 w-3.5" />
+      <ProviderLogo providerId={model.providerID} className="h-3.5 w-3.5" />
       <span className="typography-meta font-medium truncate max-w-[140px]">
         {label}
       </span>
@@ -206,10 +197,7 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
   const filteredFavorites = React.useMemo(() => {
     return favoriteModelsList.filter(({ model, providerID }) => {
       const provider = providers.find(p => p.id === providerID);
-      const displayProviderId = getDisplayProviderId(providerID, model);
-      const providerName = displayProviderId === 'antigravity'
-        ? 'Antigravity'
-        : getProviderDisplayName({ id: providerID, name: provider?.name });
+      const providerName = getProviderDisplayName({ id: providerID, name: provider?.name });
       const modelName = getTruncatedModelDisplayName(model);
       return filterByQuery(modelName, providerName);
     });
@@ -232,7 +220,7 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
         };
       })
       .filter((provider) => provider.models.length > 0);
-    return sortProviderTreeForPicker(splitAntigravityProviderForDisplay(filtered));
+    return sortProviderTreeForPicker(filtered);
   }, [providers, filterByQuery]);
 
   const hasResults = filteredFavorites.length > 0 || filteredProviders.length > 0;
@@ -311,7 +299,6 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
     const selectionCount = modelCounts.get(key) || 0;
     const metadata = getModelMetadata(providerID, modelID);
     const contextTokens = formatTokens(metadata?.limit?.context);
-    const displayProviderId = getDisplayProviderId(providerID, model);
 
     const showProviderLogo = keyPrefix === 'fav';
 
@@ -340,7 +327,7 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
       >
         <div className="flex items-center gap-1.5 flex-1 min-w-0">
           {showProviderLogo && (
-            <ProviderLogo providerId={displayProviderId} className="h-3.5 w-3.5 flex-shrink-0" />
+            <ProviderLogo providerId={providerID} className="h-3.5 w-3.5 flex-shrink-0" />
           )}
           <span className="font-medium truncate">
             {getTruncatedModelDisplayName(model)}

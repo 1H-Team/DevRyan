@@ -959,6 +959,10 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       // surfaces. The generated runtime overlay is the plugin allowlist owner.
       OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: process.env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS || 'true',
       OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: '1',
+      // DevRyan never uses OpenCode's web UI: the companion answers unmatched
+      // paths with 404 instead of proxying them to app.opencode.ai.
+      // DEVRYAN_OPENCODE_UI_BLOCK=0 restores the upstream fallback.
+      ...(process.env.DEVRYAN_OPENCODE_UI_BLOCK === '0' ? {} : { DEVRYAN_OPENCODE_UI_DISABLED: '1' }),
       ...(agentRuntimeConfig?.slimPreset
         ? { OH_MY_OPENCODE_SLIM_PRESET: agentRuntimeConfig.slimPreset }
         : {}),

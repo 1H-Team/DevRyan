@@ -1,0 +1,2835 @@
+{
+  "kind": "diagnostic-pilot",
+  "profile": {
+    "id": "devryan-companion-2.1.0-openai-gpt-5.6-sol-medium",
+    "runtimeVersion": "1.18.32",
+    "runtimeHash": "d1f46380f028efb9a46bd10c9866231acbab4e31b43afcf1f1ee179868a40882",
+    "runtimeIdentity": {
+      "kind": "companion-build",
+      "upstreamVersion": "1.18.32",
+      "baseCommit": "545f51d26cc39a907d2867492d498d9607ea5fa4",
+      "patchSha256": "059919cce6c7d77c3db80ff06acc178adf59f8e65293c20ce1857c5777f4710e",
+      "buildInputsSha256": "589475194cfe2ac81d03e47a30fa63d15c0a8b2ca02e5b237dd6db4b31b49266"
+    },
+    "policyVector": {
+      "waitAny": false,
+      "capabilityToolSchema": true
+    },
+    "providerID": "openai",
+    "modelID": "gpt-5.6-sol",
+    "variant": "medium",
+    "providerHash": "4792784fe46997ae50e9f71f0183179101791d35b522e21c618ae7bc1ec8d4d8",
+    "providerScope": "selected-route",
+    "transport": "openai-chatgpt-managed-responses-v1",
+    "plugins": [
+      {
+        "name": "index.js",
+        "contentHash": "fab88b553785d6b7ae53238c060f0ea3f003dfda2c88667284b5a35ca623488d"
+      },
+      {
+        "name": "devryan-open-cursor.mjs",
+        "contentHash": "75febd08825ee5946200d57d4b710ec6321e2bd7431115fe2dd27e5c736a595e"
+      },
+      {
+        "name": "index.js",
+        "contentHash": "b3a32d1f03047f68e39874725bc9ed40fc42b59a773acdb815e8c9b7b4025aad"
+      },
+      {
+        "name": "index.js",
+        "contentHash": "2a94eedd2be1e77fc2a3e50961d79a9a2695eeeb5866732a13f46948553156b4"
+      },
+      {
+        "name": "devryan-oh-my-opencode-slim.mjs",
+        "contentHash": "7dde3de974347911027abc4d1665cf3007b78013410dd6a94688eee57637023b"
+      },
+      {
+        "name": "devryan-superpowers.mjs",
+        "contentHash": "54e0fc722391a1a2399581c977654627d57ac3aadee6bfb529ee88632221de23"
+      },
+      {
+        "name": "devryan-skill-context.mjs",
+        "contentHash": "99929e135c01749b7e8303b35179240f386e53816b9a35ab57e0d3ad372d551c"
+      },
+      {
+        "name": "devryan-document-reader.mjs",
+        "contentHash": "bef4052f50aa08644dd0c2191ee07d6811c9e0cff57f0090afe9613895cf5de4"
+      },
+      {
+        "name": "devryan-browser.mjs",
+        "contentHash": "f8098613e62d7ea31a680bc63e60b417e688f908a20aa4043fe410a2a5224943"
+      },
+      {
+        "name": "devryan-builder-todo-continuation.mjs",
+        "contentHash": "4f6511bd4206f2e747c3205107cdfbb5b2217a81d988ddc74500d4b22e754748"
+      },
+      {
+        "name": "devryan-file-write-metadata.mjs",
+        "contentHash": "83e76ea73e6c42257ddf4c2aa48f2b5a512e64b9cc7afa7772fb14ddbe816988"
+      },
+      {
+        "name": "devryan-harness-context.mjs",
+        "contentHash": "c97893cda4f61c7fdc1f0cad44dd2484c87215fad2d06b38f1855e263d41f9c7"
+      },
+      {
+        "name": "devryan-managed-orchestration.mjs",
+        "contentHash": "519979b9436a3df4a4ffcee3cd549f3b101f6cf42259fc061170db0e449e3f10"
+      },
+      {
+        "name": "devryan-openai-oauth.mjs",
+        "contentHash": "d57482f361d6f70c35c1e359573fe4810a5a3778c8f1e2e7c67c9bfe954eb739"
+      },
+      {
+        "name": "devryan-primary-recovery.mjs",
+        "contentHash": "68555821e2c5cd52155173e3e1ffb3ca796f05e7779d11efb6a03f6168c9b4d5"
+      },
+      {
+        "name": "devryan-session-changes.mjs",
+        "contentHash": "170dd8989e594ead72d4f4b13b7255bf8de3acf292e557d081f18c1e5156c4a8"
+      },
+      {
+        "name": "devryan-tool-input-guard.mjs",
+        "contentHash": "e485d28adb37b4052df0c3ea3c1556cbaab712690f15da86204ba8e1a1043ebb"
+      },
+      {
+        "name": "github-copilot-models.mjs",
+        "contentHash": "61270a274af4d13024a6014795ab57dc579b30fba508e706b692cbdf8f4750c4"
+      },
+      {
+        "name": "openai-gpt-5-6-models.mjs",
+        "contentHash": "0b918d8333abdf55e6feb42ddd03b538612d8e4af7ca672b33ca0940b5991dc9"
+      },
+      {
+        "name": "openai-tool-schema-sanitizer.mjs",
+        "contentHash": "e824ed4220bc0a26fda7eda34d52248a5320ef48fb866a60621c6db6b63d17ac"
+      },
+      {
+        "name": "council-session.js",
+        "contentHash": "e1ee08ab6945db37f7a4870d9a61406eddf360d43f4b308454e0791226f31bf6"
+      }
+    ]
+  },
+  "wireRoute": {
+    "provider": "openai",
+    "host": "chatgpt.com",
+    "path": "/backend-api/codex/responses",
+    "transport": "responses",
+    "auth": "oauth",
+    "transportIdentity": "openai-chatgpt-managed-responses-v1"
+  },
+  "pairs": [
+    {
+      "index": 0,
+      "kind": "skill",
+      "baseline": {
+        "fixtureHash": "6f256716008448b554d346b4d0ea578410f5763fcab53fd6ef5f55a6655c80a7",
+        "environmentHash": "51220f4c23d7a1e851738b16c24b7f60e0e3485427b42723f85e389eee80862d",
+        "configurationHash": "f742247454f8ed3f0fa0b033c60802839ca657712fa0dd6e6493c1817f4f2016",
+        "duplicateOutputs": false,
+        "executionMode": "live",
+        "completed": true,
+        "factsIntact": true,
+        "criticalFailures": 0,
+        "repeatedMutations": 0,
+        "sameKeyRepeatCalls": 0,
+        "eligibleCalls": 4,
+        "generatedToolCalls": 0,
+        "replyHash": "4c07da8fefe68fefa9022ee9faf73ffbc831e448e8ae0a542f7592489c3f4dbb",
+        "expectedHash": "ac3a4ea2957d2c0cfcb1dc8891bc22e5f19348f80e39bda7bd0b84a68049d3cb",
+        "cleanupComplete": true,
+        "appliedReductions": 0,
+        "canonicalUnchanged": true,
+        "validWire": true,
+        "sessionID": "ses_f2be286abffeolnO2oNOAxzBry",
+        "requestCount": 1,
+        "serializedBytes": [
+          84319
+        ],
+        "compactionFrequency": 0,
+        "reportHash": "27ede5b0684858315485b7c6be872e2bc771b47a7fddcad75e508f9fd629bf04"
+      },
+      "candidate": {
+        "fixtureHash": "6f256716008448b554d346b4d0ea578410f5763fcab53fd6ef5f55a6655c80a7",
+        "environmentHash": "51220f4c23d7a1e851738b16c24b7f60e0e3485427b42723f85e389eee80862d",
+        "configurationHash": "f742247454f8ed3f0fa0b033c60802839ca657712fa0dd6e6493c1817f4f2016",
+        "duplicateOutputs": true,
+        "executionMode": "live",
+        "completed": true,
+        "factsIntact": true,
+        "criticalFailures": 0,
+        "repeatedMutations": 0,
+        "sameKeyRepeatCalls": 0,
+        "eligibleCalls": 4,
+        "generatedToolCalls": 0,
+        "replyHash": "4c07da8fefe68fefa9022ee9faf73ffbc831e448e8ae0a542f7592489c3f4dbb",
+        "expectedHash": "ac3a4ea2957d2c0cfcb1dc8891bc22e5f19348f80e39bda7bd0b84a68049d3cb",
+        "cleanupComplete": true,
+        "appliedReductions": 2,
+        "canonicalUnchanged": true,
+        "validWire": true,
+        "sessionID": "ses_f2be19dd0ffexTHcrMYRAdJUwV",
+        "requestCount": 1,
+        "serializedBytes": [
+          60673
+        ],
+        "compactionFrequency": 0,
+        "reportHash": "674b041f4f70e1bfe18c6f7480c5bdd6c3422ce2d368c11c73d15f890cc0a7f2"
+      }
+    },
+    {
+      "index": 5,
+      "kind": "managed",
+      "baseline": {
+        "fixtureHash": "8efc669af96beb8dffa620ee96b65770e1ea9124ea2d6e5bc6998c3630f00593",
+        "environmentHash": "51220f4c23d7a1e851738b16c24b7f60e0e3485427b42723f85e389eee80862d",
+        "configurationHash": "f742247454f8ed3f0fa0b033c60802839ca657712fa0dd6e6493c1817f4f2016",
+        "duplicateOutputs": false,
+        "executionMode": "live",
+        "completed": true,
+        "factsIntact": true,
+        "criticalFailures": 0,
+        "repeatedMutations": 0,
+        "sameKeyRepeatCalls": 0,
+        "eligibleCalls": 4,
+        "generatedToolCalls": 0,
+        "replyHash": "f1477fa02e6dea1e855d9097e87de1c06b5ec6bd83e6d9363b5e13f75d3a6315",
+        "expectedHash": "27b27ec4993ccff35fbd3f40b1d125a8549a2fb05e7b94666d703ddd964c489d",
+        "cleanupComplete": true,
+        "appliedReductions": 0,
+        "canonicalUnchanged": true,
+        "validWire": true,
+        "sessionID": "ses_f2be23c79ffeT72dZbVp936Dnm",
+        "requestCount": 1,
+        "serializedBytes": [
+          90415
+        ],
+        "compactionFrequency": 0,
+        "reportHash": "0f9aa3744c969085650a624a65cb04c627873129e217e227fccb017fb4f9cbe5"
+      },
+      "candidate": {
+        "fixtureHash": "8efc669af96beb8dffa620ee96b65770e1ea9124ea2d6e5bc6998c3630f00593",
+        "environmentHash": "51220f4c23d7a1e851738b16c24b7f60e0e3485427b42723f85e389eee80862d",
+        "configurationHash": "f742247454f8ed3f0fa0b033c60802839ca657712fa0dd6e6493c1817f4f2016",
+        "duplicateOutputs": true,
+        "executionMode": "live",
+        "completed": true,
+        "factsIntact": true,
+        "criticalFailures": 0,
+        "repeatedMutations": 0,
+        "sameKeyRepeatCalls": 0,
+        "eligibleCalls": 4,
+        "generatedToolCalls": 0,
+        "replyHash": "f1477fa02e6dea1e855d9097e87de1c06b5ec6bd83e6d9363b5e13f75d3a6315",
+        "expectedHash": "27b27ec4993ccff35fbd3f40b1d125a8549a2fb05e7b94666d703ddd964c489d",
+        "cleanupComplete": true,
+        "appliedReductions": 2,
+        "canonicalUnchanged": true,
+        "validWire": true,
+        "sessionID": "ses_f2be14f7affeJlvC5pnqNlSuxE",
+        "requestCount": 1,
+        "serializedBytes": [
+          64179
+        ],
+        "compactionFrequency": 0,
+        "reportHash": "a006333d5f2e22e8d50f277c566eb94f601f27ed49cde49ef5fd0812ff944c39"
+      }
+    }
+  ],
+  "sizes": [
+    {
+      "index": 0,
+      "baseline": 84319,
+      "candidate": 60673
+    },
+    {
+      "index": 5,
+      "baseline": 90415,
+      "candidate": 64179
+    }
+  ],
+  "nonIncreasingRequests": true,
+  "behavior": {
+    "factor": "duplicateOutputs",
+    "kind": "behavior-smoke",
+    "qualified": false,
+    "completedPairs": 2,
+    "counts": {
+      "skill": 1,
+      "managed": 1
+    },
+    "sameKeyRepeatRate": {
+      "baseline": 0,
+      "candidate": 0
+    },
+    "reasons": [
+      "ten-matched-pairs-required"
+    ],
+    "statisticalReliabilityClaim": false
+  },
+  "cleanups": [
+    {
+      "arm": "baseline",
+      "source": "retained-os-process-ancestry-and-start-identities",
+      "rootPid": 31028,
+      "rootObserved": true,
+      "observationIntervalMs": 500,
+      "observationErrors": [],
+      "observedProcesses": [
+        {
+          "pid": 31028,
+          "parentPid": 31018,
+          "startIdentity": "Thu Sep 24 19:51:25 2026"
+        },
+        {
+          "pid": 31040,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:26 2026"
+        },
+        {
+          "pid": 31058,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:27 2026"
+        },
+        {
+          "pid": 31059,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:27 2026"
+        },
+        {
+          "pid": 31124,
+          "parentPid": 31058,
+          "startIdentity": "Thu Sep 24 19:51:28 2026"
+        },
+        {
+          "pid": 31145,
+          "parentPid": 31058,
+          "startIdentity": "Thu Sep 24 19:51:29 2026"
+        },
+        {
+          "pid": 31232,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:30 2026"
+        },
+        {
+          "pid": 31237,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:30 2026"
+        },
+        {
+          "pid": 31301,
+          "parentPid": 31058,
+          "startIdentity": "Thu Sep 24 19:51:30 2026"
+        },
+        {
+          "pid": 31706,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:36 2026"
+        },
+        {
+          "pid": 31754,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:37 2026"
+        },
+        {
+          "pid": 31778,
+          "parentPid": 31058,
+          "startIdentity": "Thu Sep 24 19:51:37 2026"
+        },
+        {
+          "pid": 31779,
+          "parentPid": 31778,
+          "startIdentity": "Thu Sep 24 19:51:37 2026"
+        },
+        {
+          "pid": 31999,
+          "parentPid": 31058,
+          "startIdentity": "Thu Sep 24 19:51:39 2026"
+        },
+        {
+          "pid": 32008,
+          "parentPid": 31999,
+          "startIdentity": "Thu Sep 24 19:51:39 2026"
+        },
+        {
+          "pid": 32021,
+          "parentPid": 32008,
+          "startIdentity": "Thu Sep 24 19:51:39 2026"
+        },
+        {
+          "pid": 32094,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:40 2026"
+        },
+        {
+          "pid": 32157,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:40 2026"
+        },
+        {
+          "pid": 32180,
+          "parentPid": 31058,
+          "startIdentity": "Thu Sep 24 19:51:40 2026"
+        },
+        {
+          "pid": 32181,
+          "parentPid": 32180,
+          "startIdentity": "Thu Sep 24 19:51:40 2026"
+        },
+        {
+          "pid": 32239,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:41 2026"
+        },
+        {
+          "pid": 32312,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:42 2026"
+        },
+        {
+          "pid": 32361,
+          "parentPid": 31058,
+          "startIdentity": "Thu Sep 24 19:51:42 2026"
+        },
+        {
+          "pid": 32362,
+          "parentPid": 32361,
+          "startIdentity": "Thu Sep 24 19:51:42 2026"
+        },
+        {
+          "pid": 32396,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:43 2026"
+        },
+        {
+          "pid": 32469,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:43 2026"
+        },
+        {
+          "pid": 32535,
+          "parentPid": 31058,
+          "startIdentity": "Thu Sep 24 19:51:43 2026"
+        },
+        {
+          "pid": 32536,
+          "parentPid": 32535,
+          "startIdentity": "Thu Sep 24 19:51:43 2026"
+        },
+        {
+          "pid": 32557,
+          "parentPid": 32536,
+          "startIdentity": "Thu Sep 24 19:51:44 2026"
+        },
+        {
+          "pid": 32645,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:45 2026"
+        },
+        {
+          "pid": 32726,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:45 2026"
+        },
+        {
+          "pid": 32756,
+          "parentPid": 31058,
+          "startIdentity": "Thu Sep 24 19:51:45 2026"
+        },
+        {
+          "pid": 32757,
+          "parentPid": 32756,
+          "startIdentity": "Thu Sep 24 19:51:45 2026"
+        },
+        {
+          "pid": 32801,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:46 2026"
+        },
+        {
+          "pid": 32874,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:47 2026"
+        },
+        {
+          "pid": 32930,
+          "parentPid": 31058,
+          "startIdentity": "Thu Sep 24 19:51:47 2026"
+        },
+        {
+          "pid": 32931,
+          "parentPid": 32930,
+          "startIdentity": "Thu Sep 24 19:51:47 2026"
+        },
+        {
+          "pid": 32976,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:48 2026"
+        },
+        {
+          "pid": 33062,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:48 2026"
+        },
+        {
+          "pid": 33133,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:49 2026"
+        },
+        {
+          "pid": 33146,
+          "parentPid": 31058,
+          "startIdentity": "Thu Sep 24 19:51:49 2026"
+        },
+        {
+          "pid": 33147,
+          "parentPid": 33146,
+          "startIdentity": "Thu Sep 24 19:51:49 2026"
+        },
+        {
+          "pid": 33214,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:50 2026"
+        },
+        {
+          "pid": 33283,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:50 2026"
+        },
+        {
+          "pid": 33350,
+          "parentPid": 31058,
+          "startIdentity": "Thu Sep 24 19:51:51 2026"
+        },
+        {
+          "pid": 33351,
+          "parentPid": 33350,
+          "startIdentity": "Thu Sep 24 19:51:51 2026"
+        },
+        {
+          "pid": 33447,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:52 2026"
+        },
+        {
+          "pid": 33661,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:55 2026"
+        },
+        {
+          "pid": 33750,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:56 2026"
+        },
+        {
+          "pid": 33776,
+          "parentPid": 31058,
+          "startIdentity": "Thu Sep 24 19:51:56 2026"
+        },
+        {
+          "pid": 33777,
+          "parentPid": 33776,
+          "startIdentity": "Thu Sep 24 19:51:56 2026"
+        },
+        {
+          "pid": 33896,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:57 2026"
+        },
+        {
+          "pid": 33897,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:57 2026"
+        },
+        {
+          "pid": 33960,
+          "parentPid": 31058,
+          "startIdentity": "Thu Sep 24 19:51:58 2026"
+        },
+        {
+          "pid": 33961,
+          "parentPid": 33960,
+          "startIdentity": "Thu Sep 24 19:51:58 2026"
+        },
+        {
+          "pid": 34047,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:59 2026"
+        },
+        {
+          "pid": 34122,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:51:59 2026"
+        },
+        {
+          "pid": 34151,
+          "parentPid": 31058,
+          "startIdentity": "Thu Sep 24 19:51:59 2026"
+        },
+        {
+          "pid": 34152,
+          "parentPid": 34151,
+          "startIdentity": "Thu Sep 24 19:51:59 2026"
+        },
+        {
+          "pid": 34189,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:52:00 2026"
+        },
+        {
+          "pid": 34258,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:52:01 2026"
+        },
+        {
+          "pid": 34324,
+          "parentPid": 31058,
+          "startIdentity": "Thu Sep 24 19:52:01 2026"
+        },
+        {
+          "pid": 34325,
+          "parentPid": 34324,
+          "startIdentity": "Thu Sep 24 19:52:01 2026"
+        },
+        {
+          "pid": 34414,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:52:02 2026"
+        },
+        {
+          "pid": 34473,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:52:03 2026"
+        },
+        {
+          "pid": 34513,
+          "parentPid": 31058,
+          "startIdentity": "Thu Sep 24 19:52:03 2026"
+        },
+        {
+          "pid": 34514,
+          "parentPid": 34513,
+          "startIdentity": "Thu Sep 24 19:52:03 2026"
+        },
+        {
+          "pid": 34551,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:52:04 2026"
+        },
+        {
+          "pid": 34618,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:52:04 2026"
+        },
+        {
+          "pid": 34686,
+          "parentPid": 31058,
+          "startIdentity": "Thu Sep 24 19:52:05 2026"
+        },
+        {
+          "pid": 34687,
+          "parentPid": 34686,
+          "startIdentity": "Thu Sep 24 19:52:05 2026"
+        },
+        {
+          "pid": 34830,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:52:06 2026"
+        },
+        {
+          "pid": 34875,
+          "parentPid": 31058,
+          "startIdentity": "Thu Sep 24 19:52:06 2026"
+        },
+        {
+          "pid": 34876,
+          "parentPid": 34875,
+          "startIdentity": "Thu Sep 24 19:52:06 2026"
+        },
+        {
+          "pid": 34907,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:52:07 2026"
+        },
+        {
+          "pid": 34982,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:52:08 2026"
+        },
+        {
+          "pid": 35060,
+          "parentPid": 31058,
+          "startIdentity": "Thu Sep 24 19:52:08 2026"
+        },
+        {
+          "pid": 35061,
+          "parentPid": 35060,
+          "startIdentity": "Thu Sep 24 19:52:08 2026"
+        },
+        {
+          "pid": 35119,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:52:09 2026"
+        },
+        {
+          "pid": 35195,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:52:10 2026"
+        },
+        {
+          "pid": 35258,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:52:10 2026"
+        },
+        {
+          "pid": 35271,
+          "parentPid": 31058,
+          "startIdentity": "Thu Sep 24 19:52:10 2026"
+        },
+        {
+          "pid": 35272,
+          "parentPid": 35271,
+          "startIdentity": "Thu Sep 24 19:52:10 2026"
+        },
+        {
+          "pid": 35337,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:52:11 2026"
+        },
+        {
+          "pid": 35411,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:52:12 2026"
+        },
+        {
+          "pid": 35412,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:52:12 2026"
+        },
+        {
+          "pid": 35615,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:52:15 2026"
+        },
+        {
+          "pid": 35616,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:52:15 2026"
+        },
+        {
+          "pid": 35646,
+          "parentPid": 31028,
+          "startIdentity": "Thu Sep 24 19:52:16 2026"
+        }
+      ],
+      "remainingProcessIds": [],
+      "signals": [],
+      "trackingClosed": true
+    },
+    {
+      "arm": "candidate",
+      "source": "retained-os-process-ancestry-and-start-identities",
+      "rootPid": 36250,
+      "rootObserved": true,
+      "observationIntervalMs": 500,
+      "observationErrors": [],
+      "observedProcesses": [
+        {
+          "pid": 36250,
+          "parentPid": 31018,
+          "startIdentity": "Thu Sep 24 19:52:28 2026"
+        },
+        {
+          "pid": 36270,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:29 2026"
+        },
+        {
+          "pid": 36303,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:29 2026"
+        },
+        {
+          "pid": 36304,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:29 2026"
+        },
+        {
+          "pid": 36342,
+          "parentPid": 36303,
+          "startIdentity": "Thu Sep 24 19:52:30 2026"
+        },
+        {
+          "pid": 36360,
+          "parentPid": 36303,
+          "startIdentity": "Thu Sep 24 19:52:31 2026"
+        },
+        {
+          "pid": 36471,
+          "parentPid": 36303,
+          "startIdentity": "Thu Sep 24 19:52:32 2026"
+        },
+        {
+          "pid": 36472,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:32 2026"
+        },
+        {
+          "pid": 36473,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:32 2026"
+        },
+        {
+          "pid": 36628,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:36 2026"
+        },
+        {
+          "pid": 36632,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:36 2026"
+        },
+        {
+          "pid": 36730,
+          "parentPid": 36303,
+          "startIdentity": "Thu Sep 24 19:52:36 2026"
+        },
+        {
+          "pid": 36731,
+          "parentPid": 36730,
+          "startIdentity": "Thu Sep 24 19:52:36 2026"
+        },
+        {
+          "pid": 36792,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:37 2026"
+        },
+        {
+          "pid": 36859,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:38 2026"
+        },
+        {
+          "pid": 36939,
+          "parentPid": 36303,
+          "startIdentity": "Thu Sep 24 19:52:38 2026"
+        },
+        {
+          "pid": 36941,
+          "parentPid": 36939,
+          "startIdentity": "Thu Sep 24 19:52:38 2026"
+        },
+        {
+          "pid": 36947,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:38 2026"
+        },
+        {
+          "pid": 37050,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:39 2026"
+        },
+        {
+          "pid": 37052,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:39 2026"
+        },
+        {
+          "pid": 37121,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:40 2026"
+        },
+        {
+          "pid": 37140,
+          "parentPid": 36303,
+          "startIdentity": "Thu Sep 24 19:52:40 2026"
+        },
+        {
+          "pid": 37141,
+          "parentPid": 37140,
+          "startIdentity": "Thu Sep 24 19:52:40 2026"
+        },
+        {
+          "pid": 37196,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:41 2026"
+        },
+        {
+          "pid": 37264,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:41 2026"
+        },
+        {
+          "pid": 37313,
+          "parentPid": 36303,
+          "startIdentity": "Thu Sep 24 19:52:42 2026"
+        },
+        {
+          "pid": 37314,
+          "parentPid": 37313,
+          "startIdentity": "Thu Sep 24 19:52:42 2026"
+        },
+        {
+          "pid": 37347,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:42 2026"
+        },
+        {
+          "pid": 37418,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:43 2026"
+        },
+        {
+          "pid": 37487,
+          "parentPid": 36303,
+          "startIdentity": "Thu Sep 24 19:52:43 2026"
+        },
+        {
+          "pid": 37488,
+          "parentPid": 37487,
+          "startIdentity": "Thu Sep 24 19:52:43 2026"
+        },
+        {
+          "pid": 37579,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:44 2026"
+        },
+        {
+          "pid": 37651,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:45 2026"
+        },
+        {
+          "pid": 37685,
+          "parentPid": 36303,
+          "startIdentity": "Thu Sep 24 19:52:45 2026"
+        },
+        {
+          "pid": 37686,
+          "parentPid": 37685,
+          "startIdentity": "Thu Sep 24 19:52:45 2026"
+        },
+        {
+          "pid": 37732,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:46 2026"
+        },
+        {
+          "pid": 37800,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:46 2026"
+        },
+        {
+          "pid": 37860,
+          "parentPid": 36303,
+          "startIdentity": "Thu Sep 24 19:52:47 2026"
+        },
+        {
+          "pid": 37861,
+          "parentPid": 37860,
+          "startIdentity": "Thu Sep 24 19:52:47 2026"
+        },
+        {
+          "pid": 37883,
+          "parentPid": 37861,
+          "startIdentity": "Thu Sep 24 19:52:47 2026"
+        },
+        {
+          "pid": 37950,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:48 2026"
+        },
+        {
+          "pid": 38017,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:48 2026"
+        },
+        {
+          "pid": 38057,
+          "parentPid": 36303,
+          "startIdentity": "Thu Sep 24 19:52:49 2026"
+        },
+        {
+          "pid": 38058,
+          "parentPid": 38057,
+          "startIdentity": "Thu Sep 24 19:52:49 2026"
+        },
+        {
+          "pid": 38096,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:49 2026"
+        },
+        {
+          "pid": 38165,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:50 2026"
+        },
+        {
+          "pid": 38232,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:50 2026"
+        },
+        {
+          "pid": 38269,
+          "parentPid": 36303,
+          "startIdentity": "Thu Sep 24 19:52:51 2026"
+        },
+        {
+          "pid": 38270,
+          "parentPid": 38269,
+          "startIdentity": "Thu Sep 24 19:52:51 2026"
+        },
+        {
+          "pid": 38313,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:51 2026"
+        },
+        {
+          "pid": 38379,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:52 2026"
+        },
+        {
+          "pid": 38528,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:54 2026"
+        },
+        {
+          "pid": 38531,
+          "parentPid": 38528,
+          "startIdentity": "Thu Sep 24 19:52:54 2026"
+        },
+        {
+          "pid": 38532,
+          "parentPid": 38531,
+          "startIdentity": "Thu Sep 24 19:52:54 2026"
+        },
+        {
+          "pid": 38637,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:56 2026"
+        },
+        {
+          "pid": 38705,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:56 2026"
+        },
+        {
+          "pid": 38718,
+          "parentPid": 36303,
+          "startIdentity": "Thu Sep 24 19:52:56 2026"
+        },
+        {
+          "pid": 38719,
+          "parentPid": 38718,
+          "startIdentity": "Thu Sep 24 19:52:56 2026"
+        },
+        {
+          "pid": 38730,
+          "parentPid": 38719,
+          "startIdentity": "Thu Sep 24 19:52:57 2026"
+        },
+        {
+          "pid": 38783,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:57 2026"
+        },
+        {
+          "pid": 38849,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:58 2026"
+        },
+        {
+          "pid": 38850,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:58 2026"
+        },
+        {
+          "pid": 38907,
+          "parentPid": 36303,
+          "startIdentity": "Thu Sep 24 19:52:58 2026"
+        },
+        {
+          "pid": 38908,
+          "parentPid": 38907,
+          "startIdentity": "Thu Sep 24 19:52:58 2026"
+        },
+        {
+          "pid": 38931,
+          "parentPid": 38908,
+          "startIdentity": "Thu Sep 24 19:52:59 2026"
+        },
+        {
+          "pid": 38932,
+          "parentPid": 38908,
+          "startIdentity": "Thu Sep 24 19:52:59 2026"
+        },
+        {
+          "pid": 39001,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:52:59 2026"
+        },
+        {
+          "pid": 39067,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:53:00 2026"
+        },
+        {
+          "pid": 39098,
+          "parentPid": 36303,
+          "startIdentity": "Thu Sep 24 19:53:00 2026"
+        },
+        {
+          "pid": 39099,
+          "parentPid": 39098,
+          "startIdentity": "Thu Sep 24 19:53:00 2026"
+        },
+        {
+          "pid": 39144,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:53:01 2026"
+        },
+        {
+          "pid": 39221,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:53:01 2026"
+        },
+        {
+          "pid": 39271,
+          "parentPid": 36303,
+          "startIdentity": "Thu Sep 24 19:53:02 2026"
+        },
+        {
+          "pid": 39272,
+          "parentPid": 39271,
+          "startIdentity": "Thu Sep 24 19:53:02 2026"
+        },
+        {
+          "pid": 39294,
+          "parentPid": 39272,
+          "startIdentity": "Thu Sep 24 19:53:02 2026"
+        },
+        {
+          "pid": 39295,
+          "parentPid": 39272,
+          "startIdentity": "Thu Sep 24 19:53:02 2026"
+        },
+        {
+          "pid": 39363,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:53:03 2026"
+        },
+        {
+          "pid": 39437,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:53:03 2026"
+        },
+        {
+          "pid": 39461,
+          "parentPid": 36303,
+          "startIdentity": "Thu Sep 24 19:53:04 2026"
+        },
+        {
+          "pid": 39462,
+          "parentPid": 39461,
+          "startIdentity": "Thu Sep 24 19:53:04 2026"
+        },
+        {
+          "pid": 39515,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:53:04 2026"
+        },
+        {
+          "pid": 39571,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:53:05 2026"
+        },
+        {
+          "pid": 39656,
+          "parentPid": 36303,
+          "startIdentity": "Thu Sep 24 19:53:05 2026"
+        },
+        {
+          "pid": 39657,
+          "parentPid": 39656,
+          "startIdentity": "Thu Sep 24 19:53:05 2026"
+        },
+        {
+          "pid": 39823,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:53:06 2026"
+        },
+        {
+          "pid": 39891,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:53:07 2026"
+        },
+        {
+          "pid": 39935,
+          "parentPid": 36303,
+          "startIdentity": "Thu Sep 24 19:53:07 2026"
+        },
+        {
+          "pid": 39936,
+          "parentPid": 39935,
+          "startIdentity": "Thu Sep 24 19:53:07 2026"
+        },
+        {
+          "pid": 39977,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:53:08 2026"
+        },
+        {
+          "pid": 40041,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:53:08 2026"
+        },
+        {
+          "pid": 40042,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:53:08 2026"
+        },
+        {
+          "pid": 40108,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:53:09 2026"
+        },
+        {
+          "pid": 40121,
+          "parentPid": 36303,
+          "startIdentity": "Thu Sep 24 19:53:09 2026"
+        },
+        {
+          "pid": 40122,
+          "parentPid": 40121,
+          "startIdentity": "Thu Sep 24 19:53:09 2026"
+        },
+        {
+          "pid": 40188,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:53:10 2026"
+        },
+        {
+          "pid": 40256,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:53:10 2026"
+        },
+        {
+          "pid": 40257,
+          "parentPid": 40256,
+          "startIdentity": "Thu Sep 24 19:53:10 2026"
+        },
+        {
+          "pid": 40259,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:53:10 2026"
+        },
+        {
+          "pid": 40327,
+          "parentPid": 36303,
+          "startIdentity": "Thu Sep 24 19:53:11 2026"
+        },
+        {
+          "pid": 40329,
+          "parentPid": 40327,
+          "startIdentity": "Thu Sep 24 19:53:11 2026"
+        },
+        {
+          "pid": 40420,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:53:12 2026"
+        },
+        {
+          "pid": 40421,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:53:12 2026"
+        },
+        {
+          "pid": 40583,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:53:14 2026"
+        },
+        {
+          "pid": 40586,
+          "parentPid": 40583,
+          "startIdentity": "Thu Sep 24 19:53:14 2026"
+        },
+        {
+          "pid": 40595,
+          "parentPid": 40586,
+          "startIdentity": "Thu Sep 24 19:53:14 2026"
+        },
+        {
+          "pid": 40757,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:53:18 2026"
+        },
+        {
+          "pid": 40758,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:53:18 2026"
+        },
+        {
+          "pid": 40790,
+          "parentPid": 36250,
+          "startIdentity": "Thu Sep 24 19:53:18 2026"
+        }
+      ],
+      "remainingProcessIds": [],
+      "signals": [],
+      "trackingClosed": true
+    }
+  ],
+  "failures": [],
+  "wireFailures": [],
+  "metadataRequests": [
+    {
+      "route": "zen-model-catalog",
+      "statusCode": 200
+    },
+    {
+      "route": "model-catalog",
+      "statusCode": 200
+    },
+    {
+      "route": "antigravity-version",
+      "statusCode": 200
+    },
+    {
+      "route": "model-catalog",
+      "statusCode": 200
+    },
+    {
+      "route": "zen-model-catalog",
+      "statusCode": 200
+    },
+    {
+      "route": "antigravity-version",
+      "statusCode": 200
+    }
+  ],
+  "wire": [
+    {
+      "arm": "baseline",
+      "index": null,
+      "phase": "warmup",
+      "requestIndex": 1,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "21b66e2f2f6b2aceafb23eaefad2489b2c73a01c7a7cd776ef4322736ca3b387",
+        "bytes": 32691,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "fc7fa41c1f3a621b7fff88a60cf86c4d70aa8a7b4718a9abfbde838facfb5028"
+        ],
+        "tools": [
+          "061adc95bc608814d09bd9579c4732cdef0d431c1af7e9b76cf624781f2356e2",
+          "d66bfa1695f1019834738e1ceb7d7c24f8f739bed1c4f49af2339c8c4741544a",
+          "073714fc1b107334a5cb78e603c1ce2855351ce1943147d3b33f2626b80ad570",
+          "868019fd4728b39887bdf9d2de370d8f78c37b5c96d376bde597e9db61d59fce",
+          "ce944527664994af3420245eaee14af6291ff9d1fa23f46f59edaad035d9d239",
+          "a3b4a1d0f25fdd2ead67ebbab415f6c3a932efafdf087c15b050546c8d52388b",
+          "0b7c126f4dea0c8eb4b350e61083c58a8844798f1d406586597277b366215ae4",
+          "2774a0b4627424b8afa4e28a44cb0d98bc05c86fa2600ca187b42ea72cea553f",
+          "f92b4863ac1e195432384ef53f4a2abbc48924f8d2cbc6e59f5d01f8b96e1277",
+          "5b6715e03b38beb35cddbb508fcc3051b89052ee9553476e8693c2cb50db07df",
+          "1bc00277be51d0ef01160c4e22f794ced438209d9b68c29548852f3cfe29b63d",
+          "66f397fd8bcef7a8f54eddc49d641fc4fccbf36777e306f8c477f8cb19d0c60c",
+          "c3bb683182ca2108308fec5ccfd70f4eb7d6c4acc6e4e3ab96d75a18b45b54b7",
+          "ff0ff20583a5a71bd2cb3f08d5dc2078806263159abddae6efb4183ef2dc1ce2",
+          "c2b10d797bbdd3a645e0ca8fb91df6f1b9c4e8d36962995b34e60bb1626d3fb7",
+          "7d6c9e6a558e7cffc2a1e6eef4f6cc13e2c016fa22ae77d9f827178138fe6a8c",
+          "fe332ac8e06fe114d6c271b1dc07b7c43c6d21e4235800de57f8a5b82dd99e6b",
+          "f6ed684568ddbbcaf882cca59b1f29933f8a89535bd71828a9220de516ec74b3",
+          "669f07b464d2068b4dfa39923e308549032050b47d6d0d37ece8fbc611fabf82"
+        ],
+        "history": [
+          "554df14a516c0bcf042caaeebaf32447433e0485e65377dd275f0f44b22c3791"
+        ],
+        "cacheParametersHash": "ff4ddd1bf62bdf91e712651818ef6f8213bafa02ae7f7737716fc4def0b307f0",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "d0bd0a67ffd6b030c1ada7b9d5b57df79125a663102e765535e6aaf622028fdb",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-1",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0f3fbdb6f5399535016ab5470620e087d0af069b5dbc871887",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265096438,
+        "tokens": {
+          "totalInput": 6298,
+          "uncachedInput": 6298,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 5,
+          "reasoning": 0,
+          "totalOutput": 5
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265094779,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265095839,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265096438,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265094816
+    },
+    {
+      "arm": "baseline",
+      "index": null,
+      "phase": "warmup",
+      "requestIndex": 2,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "4a3e21616d7ccbc9029893d334fb70badd85258f5e0d510d89ac8dc7e8b318dd",
+        "bytes": 2562,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "a92cd5976b3612c75d68904ddd2e1a7cd3c74cde87669aebf14bf728a4c039f8"
+        ],
+        "tools": [],
+        "history": [
+          "17821927c0ebc0fcc040fbb01ebc966e293c4289119de0bbbf755f25b82b3e9f"
+        ],
+        "cacheParametersHash": "9bf5bb77b1c4669f67d3c18aac65ae509de27624763318f621149f3fddbe4a82",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "76f1e0804114a857f8a9b0979063b50db30ab93d7dd704731f892842ddcdc0ee",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-2",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0b52ca1661b9bd5c016ab547062f2887d0914ba82901b30ffc",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265098368,
+        "tokens": {
+          "totalInput": 506,
+          "uncachedInput": 506,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 9,
+          "reasoning": 24,
+          "totalOutput": 33
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265094746,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265098172,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265098368,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265094747
+    },
+    {
+      "arm": "baseline",
+      "index": 0,
+      "phase": "continuity",
+      "requestIndex": 3,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "bb65eb34a26f96575541161b359d0750f38ae1b8898a03e04cf3ff1cfc20aab7",
+        "bytes": 84319,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "fc7fa41c1f3a621b7fff88a60cf86c4d70aa8a7b4718a9abfbde838facfb5028"
+        ],
+        "tools": [
+          "061adc95bc608814d09bd9579c4732cdef0d431c1af7e9b76cf624781f2356e2",
+          "d66bfa1695f1019834738e1ceb7d7c24f8f739bed1c4f49af2339c8c4741544a",
+          "073714fc1b107334a5cb78e603c1ce2855351ce1943147d3b33f2626b80ad570",
+          "868019fd4728b39887bdf9d2de370d8f78c37b5c96d376bde597e9db61d59fce",
+          "ce944527664994af3420245eaee14af6291ff9d1fa23f46f59edaad035d9d239",
+          "a3b4a1d0f25fdd2ead67ebbab415f6c3a932efafdf087c15b050546c8d52388b",
+          "0b7c126f4dea0c8eb4b350e61083c58a8844798f1d406586597277b366215ae4",
+          "2774a0b4627424b8afa4e28a44cb0d98bc05c86fa2600ca187b42ea72cea553f",
+          "f92b4863ac1e195432384ef53f4a2abbc48924f8d2cbc6e59f5d01f8b96e1277",
+          "5b6715e03b38beb35cddbb508fcc3051b89052ee9553476e8693c2cb50db07df",
+          "1bc00277be51d0ef01160c4e22f794ced438209d9b68c29548852f3cfe29b63d",
+          "66f397fd8bcef7a8f54eddc49d641fc4fccbf36777e306f8c477f8cb19d0c60c",
+          "c3bb683182ca2108308fec5ccfd70f4eb7d6c4acc6e4e3ab96d75a18b45b54b7",
+          "ff0ff20583a5a71bd2cb3f08d5dc2078806263159abddae6efb4183ef2dc1ce2",
+          "c2b10d797bbdd3a645e0ca8fb91df6f1b9c4e8d36962995b34e60bb1626d3fb7",
+          "7d6c9e6a558e7cffc2a1e6eef4f6cc13e2c016fa22ae77d9f827178138fe6a8c",
+          "fe332ac8e06fe114d6c271b1dc07b7c43c6d21e4235800de57f8a5b82dd99e6b",
+          "f6ed684568ddbbcaf882cca59b1f29933f8a89535bd71828a9220de516ec74b3",
+          "669f07b464d2068b4dfa39923e308549032050b47d6d0d37ece8fbc611fabf82"
+        ],
+        "history": [
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "84a5e191ad8f361082a2765c7ba3b314ed7fec3fa23c60937b5c3bb8dbfd107b",
+          "1aae433fcce91d6607f6f4203b25f094832b1bb81934b82fd76f9472607e12ce",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "5cb9648952729c4faa1ec55148270fdbc2ac8866cddaa8ccfa77d39b837cfbf1",
+          "cd5259cb553926fa9324aeb5bf7f1a8d1ab8fc3e5858b6c5c648735a6e00a202",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "02b1c2ba7c77e2e935de27d88d5dbe81dead28c0942658f099ab144a09603cfe",
+          "09ced737ed0ae71b6417d55becef0d83c348a6c3c762947411847d7e75f0f6e1",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "0c5f82547553eee197c78862cf185cdb6667b6f25d1fa2144db5d3f3985e42c7",
+          "485302916c36a3eb23d806e0eb375f04f1d1936f5ef9a3613feabc1a94bd0811",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "a4128478f0ec5073cacd38c9f3a2ae14d84dc7222cc659ad8d0db3d87f326827",
+          "2ff0e9a53926dbb907f4c8609cd2b57788a6d1e95be024cf73a18d41548bc69a",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "c3d0cf24f48e4f3cc5d3ddad2dc06cf4eccf051b8b309a6f43136b18db2bc88a",
+          "b3ce4aaa3877bbff0dbd524fac1ebe368537b735eb281c17b474b27c9bcedb02",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "61d8874e4785a5dd51b4df4ce2fe333c979157ecf09f52a73bd64695cff8f440",
+          "e631a6cc90632badfc67affb6d574d0d68930494b6f13627cb49f1bdf8cc94f7",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "83d5a59500b9e88e3a706bb976e241ed17a63e155fbf25b2a295d92c7e186f54",
+          "35a1dd6da3636b966e253418ee2c5f55aa5c07ebc927aa8fd7f00e546318552c",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "827c1045705c97158bba847d7ae469311afa185615730c0059f3deaf7188eefe",
+          "65f4fbd83f7478ada48dabfd6cd52ad0241cea4ab8abc54a55e5ea9a3181cd30",
+          "57587159f2651d051b0a45633b25ad1347ddc70188daf1ac7d8e3e0a38a9a5af"
+        ],
+        "cacheParametersHash": "8938b65d39b99cf747e6cbda97c676886254f4f54506f22f7f9523721cacf8ca",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "20a51a46ee9eb398f800855d36b0a7dfe53804dd4f29cbb35ef8c69fa57ead2c",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": 0,
+        "factHashes": [
+          "c127b0e9be113338e5e4c3d57e44f73619a4cc2dad78892baac698610da5746a"
+        ],
+        "uniqueProofHashes": [
+          "f508255f58a9e60cc29b899c89cb6e9bdaa3807b9a2c855bbc08df7a022f918c"
+        ],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": [
+          "bc1c9ce7e9a7df11e917e26bf1ef2ddda5eee6e923fbc18da5cf11fbc00f682e",
+          "bc1c9ce7e9a7df11e917e26bf1ef2ddda5eee6e923fbc18da5cf11fbc00f682e",
+          "bc1c9ce7e9a7df11e917e26bf1ef2ddda5eee6e923fbc18da5cf11fbc00f682e",
+          "bc1c9ce7e9a7df11e917e26bf1ef2ddda5eee6e923fbc18da5cf11fbc00f682e"
+        ]
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-3",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0654edfa5ff07c27016ab54718dfa487d0b06cdbc7b1c79509",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "main",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265115373,
+        "tokens": {
+          "totalInput": 16415,
+          "uncachedInput": 16415,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 67,
+          "reasoning": 0,
+          "totalOutput": 67
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265113375,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265113973,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265115373,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265113376
+    },
+    {
+      "arm": "baseline",
+      "index": 0,
+      "phase": "continuity",
+      "requestIndex": 4,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "07abe28c28b3542c24276a0337d416b6b91a53987257aded544d702e611f0942",
+        "bytes": 3084,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "a92cd5976b3612c75d68904ddd2e1a7cd3c74cde87669aebf14bf728a4c039f8"
+        ],
+        "tools": [],
+        "history": [
+          "c3528f629ba762ef36c781c38968c75ef59f24e95ced616f1e2f54f7d0f52151"
+        ],
+        "cacheParametersHash": "73135ae13276282847a8613c9d90d3517c6daf02c1b90ed502579567f3f45b2a",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "4e8951cff35475902c313d8e42c0279aa9a1f9fbc9cfb3a6300efd8a78ad2a24",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-4",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_019382805d8de2d6016ab5471902f887d0a1b7e58589602520",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265114664,
+        "tokens": {
+          "totalInput": 610,
+          "uncachedInput": 610,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 8,
+          "reasoning": 0,
+          "totalOutput": 8
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265113434,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265114416,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265114664,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265113441
+    },
+    {
+      "arm": "baseline",
+      "index": 5,
+      "phase": "continuity",
+      "requestIndex": 5,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "3e7315fca01f8a095a262e8ad084a1c6316bfedd52d8209e31fe06cf6991c980",
+        "bytes": 90415,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "fc7fa41c1f3a621b7fff88a60cf86c4d70aa8a7b4718a9abfbde838facfb5028"
+        ],
+        "tools": [
+          "061adc95bc608814d09bd9579c4732cdef0d431c1af7e9b76cf624781f2356e2",
+          "d66bfa1695f1019834738e1ceb7d7c24f8f739bed1c4f49af2339c8c4741544a",
+          "073714fc1b107334a5cb78e603c1ce2855351ce1943147d3b33f2626b80ad570",
+          "868019fd4728b39887bdf9d2de370d8f78c37b5c96d376bde597e9db61d59fce",
+          "ce944527664994af3420245eaee14af6291ff9d1fa23f46f59edaad035d9d239",
+          "a3b4a1d0f25fdd2ead67ebbab415f6c3a932efafdf087c15b050546c8d52388b",
+          "0b7c126f4dea0c8eb4b350e61083c58a8844798f1d406586597277b366215ae4",
+          "2774a0b4627424b8afa4e28a44cb0d98bc05c86fa2600ca187b42ea72cea553f",
+          "f92b4863ac1e195432384ef53f4a2abbc48924f8d2cbc6e59f5d01f8b96e1277",
+          "5b6715e03b38beb35cddbb508fcc3051b89052ee9553476e8693c2cb50db07df",
+          "1bc00277be51d0ef01160c4e22f794ced438209d9b68c29548852f3cfe29b63d",
+          "66f397fd8bcef7a8f54eddc49d641fc4fccbf36777e306f8c477f8cb19d0c60c",
+          "c3bb683182ca2108308fec5ccfd70f4eb7d6c4acc6e4e3ab96d75a18b45b54b7",
+          "ff0ff20583a5a71bd2cb3f08d5dc2078806263159abddae6efb4183ef2dc1ce2",
+          "c2b10d797bbdd3a645e0ca8fb91df6f1b9c4e8d36962995b34e60bb1626d3fb7",
+          "7d6c9e6a558e7cffc2a1e6eef4f6cc13e2c016fa22ae77d9f827178138fe6a8c",
+          "fe332ac8e06fe114d6c271b1dc07b7c43c6d21e4235800de57f8a5b82dd99e6b",
+          "f6ed684568ddbbcaf882cca59b1f29933f8a89535bd71828a9220de516ec74b3",
+          "669f07b464d2068b4dfa39923e308549032050b47d6d0d37ece8fbc611fabf82"
+        ],
+        "history": [
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "b2126774d720bcb9eb867a472ba9a7e769b3bf51e1eed0f549b5eae7a6ea1c41",
+          "5d763ba2b8da3e0ea798251e6e17de912a1dc1ebc746e982c7dfcd60269299a2",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "2479110c5230690574348b38b69646c2aa59af6a017bc391e8c2caded294d2d6",
+          "8b0ee2f853d2ea907fb64376d4df5a1d7ca54b03204c85ef5e598b422064cc2e",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "cf8420507c2f2b02e718b919a486e85aba10c60a7e731a196c7c739312840c8c",
+          "ef477f3505435631603fdd23d6c265b42219fd51d33393f49f2e4f01e25c52b4",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "8c817a8f0d03d8ca5c646b1dedbde2a280be168d153833c5fc266aea599bb85c",
+          "50169839409bd9908ab103bc18fcf73a2ea5236ec6c62e9de4221271f604851b",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "ddb98bd200071154db7f89b65d39fe6093bd6570d7af2a3b437e4b83ed1148dc",
+          "5b6d35fc63ac18e745e4d8e0854ece36b554ff2365e245da017c4f6df0edcab5",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "d3a8e7d56578c060b11fd939b0bdc89de29028d4f578460aaf240378b6d2d3c5",
+          "f9abbc30edc5ffd2d7113045601c7d8e5639942580fad5cf9ee711d1f156e51d",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "01176308f05b06432dcf3f961a0a437142bc4a3d6476ade3bcd2f416c476ac61",
+          "9a5d4cc840037510db76384127814d032b142ae603089c1853b15da6fe5d19a8",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "3d81bf2395e52c7eb90fc81930beabdb6a847088d0ab42d8e89424c102d0b5a4",
+          "380a561df43fa102fcb98855e4cd7adfbeaf4f484289b9ad95f06e3fbe031603",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "bfcc272f15c8dea7e258cef9d639f89c8a5b3bd4c13ee0a200fb19c557d41b3b",
+          "e974983bc04b6a10bf76b4016739c27816f28f8c1e7b509573673b7be0e4a6d9",
+          "e4978356c6e8fc430641c5a5d021d6bd14ae769cc2cef283c30dfa37ff9a1944"
+        ],
+        "cacheParametersHash": "a722b0d71c4e95de3e6453220bd9330df83b08512dc7284fd5da23b2d5774a37",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "b0e219c97dbe7b1f4b5b5b9a38a85f125b0fe57f8bfdc7638c75c93da7e1b42e",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": 5,
+        "factHashes": [
+          "889d61d94c09cab253ff11de1ea744d65f04b2b35ea7fb4b8beb7b874e9fb8f2"
+        ],
+        "uniqueProofHashes": [
+          "b49d5f11335597f9eb114137d0c3341f7baa3d7643b6643b4d8ff0c29df29daa"
+        ],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": [
+          "17dd11863b7cde543f9e173421c93a4e1ada3258d8f2510f1c6e5004abae216a",
+          "17dd11863b7cde543f9e173421c93a4e1ada3258d8f2510f1c6e5004abae216a",
+          "17dd11863b7cde543f9e173421c93a4e1ada3258d8f2510f1c6e5004abae216a",
+          "17dd11863b7cde543f9e173421c93a4e1ada3258d8f2510f1c6e5004abae216a"
+        ]
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-5",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_013ff8380015acab016ab5472c96b487d0aef92dbdbf88a3b4",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "main",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265135796,
+        "tokens": {
+          "totalInput": 17742,
+          "uncachedInput": 13134,
+          "cacheRead": 4608,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 65,
+          "reasoning": 0,
+          "totalOutput": 65
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265133079,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265134379,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265135796,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265133079
+    },
+    {
+      "arm": "baseline",
+      "index": 5,
+      "phase": "continuity",
+      "requestIndex": 6,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "8853107163b3cf722f0315837b43162036a9aaa746daf1b6024270dbe1dc514c",
+        "bytes": 3084,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "a92cd5976b3612c75d68904ddd2e1a7cd3c74cde87669aebf14bf728a4c039f8"
+        ],
+        "tools": [],
+        "history": [
+          "2bc7f9127dcd16067d833f2e66d3268cf8c3ea2f9cce34aaa2091cf767ac8776"
+        ],
+        "cacheParametersHash": "781ed71a8a7ac8dfa22d2a467ba12ae7264af615f48d9352e9c5019222efb57c",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "021a988d06f7f1b538a09398dc2367b921cb129bdaba4a9f04ed8eaaf1b0e11f",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-6",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_08489de45f777f00016ab5472ca9d087d08fb538a3c4f28728",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265134218,
+        "tokens": {
+          "totalInput": 610,
+          "uncachedInput": 610,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 8,
+          "reasoning": 0,
+          "totalOutput": 8
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265133055,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265134151,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265134218,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265133056
+    },
+    {
+      "arm": "candidate",
+      "index": null,
+      "phase": "warmup",
+      "requestIndex": 7,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "9e0db27a458540a913835fedddfac8a153cd25396707a0a30b3a7bbca02b909d",
+        "bytes": 32691,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "fc7fa41c1f3a621b7fff88a60cf86c4d70aa8a7b4718a9abfbde838facfb5028"
+        ],
+        "tools": [
+          "061adc95bc608814d09bd9579c4732cdef0d431c1af7e9b76cf624781f2356e2",
+          "d66bfa1695f1019834738e1ceb7d7c24f8f739bed1c4f49af2339c8c4741544a",
+          "073714fc1b107334a5cb78e603c1ce2855351ce1943147d3b33f2626b80ad570",
+          "868019fd4728b39887bdf9d2de370d8f78c37b5c96d376bde597e9db61d59fce",
+          "ce944527664994af3420245eaee14af6291ff9d1fa23f46f59edaad035d9d239",
+          "a3b4a1d0f25fdd2ead67ebbab415f6c3a932efafdf087c15b050546c8d52388b",
+          "0b7c126f4dea0c8eb4b350e61083c58a8844798f1d406586597277b366215ae4",
+          "2774a0b4627424b8afa4e28a44cb0d98bc05c86fa2600ca187b42ea72cea553f",
+          "f92b4863ac1e195432384ef53f4a2abbc48924f8d2cbc6e59f5d01f8b96e1277",
+          "5b6715e03b38beb35cddbb508fcc3051b89052ee9553476e8693c2cb50db07df",
+          "1bc00277be51d0ef01160c4e22f794ced438209d9b68c29548852f3cfe29b63d",
+          "66f397fd8bcef7a8f54eddc49d641fc4fccbf36777e306f8c477f8cb19d0c60c",
+          "c3bb683182ca2108308fec5ccfd70f4eb7d6c4acc6e4e3ab96d75a18b45b54b7",
+          "ff0ff20583a5a71bd2cb3f08d5dc2078806263159abddae6efb4183ef2dc1ce2",
+          "c2b10d797bbdd3a645e0ca8fb91df6f1b9c4e8d36962995b34e60bb1626d3fb7",
+          "7d6c9e6a558e7cffc2a1e6eef4f6cc13e2c016fa22ae77d9f827178138fe6a8c",
+          "fe332ac8e06fe114d6c271b1dc07b7c43c6d21e4235800de57f8a5b82dd99e6b",
+          "f6ed684568ddbbcaf882cca59b1f29933f8a89535bd71828a9220de516ec74b3",
+          "669f07b464d2068b4dfa39923e308549032050b47d6d0d37ece8fbc611fabf82"
+        ],
+        "history": [
+          "554df14a516c0bcf042caaeebaf32447433e0485e65377dd275f0f44b22c3791"
+        ],
+        "cacheParametersHash": "5772ce909f35879c3a990b229b681d42327dddd67da1357189b69df5a4b611b0",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "f2d62fd8e7d8f19ae0e48673c076c809aedc58c87572adee13269d52b500e5c1",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-7",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0e06beb99cdf9a0e016ab547426e3887d09937de3da4508517",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265156022,
+        "tokens": {
+          "totalInput": 6298,
+          "uncachedInput": 6298,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 5,
+          "reasoning": 0,
+          "totalOutput": 5
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265155157,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265155816,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265156022,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265155207
+    },
+    {
+      "arm": "candidate",
+      "index": null,
+      "phase": "warmup",
+      "requestIndex": 8,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "a72455f83699247564cbc3c86acc36497ebaa6b5bbb1f4f6409ade7737470a88",
+        "bytes": 2562,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "a92cd5976b3612c75d68904ddd2e1a7cd3c74cde87669aebf14bf728a4c039f8"
+        ],
+        "tools": [],
+        "history": [
+          "17821927c0ebc0fcc040fbb01ebc966e293c4289119de0bbbf755f25b82b3e9f"
+        ],
+        "cacheParametersHash": "37ef233e6d1492132fe537b3b396155af4fb7cb98d8cf9bb17c7933cebc27b1a",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "69ee3e6716cc2fc4a2484eec401183ad1012ffe297067c79366bad2c945c9654",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-8",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0bfb4bccc810a626016ab54742858087d09d6c42926f84e8f9",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265158491,
+        "tokens": {
+          "totalInput": 506,
+          "uncachedInput": 506,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 9,
+          "reasoning": 34,
+          "totalOutput": 43
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265155248,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265158344,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265158491,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265155253
+    },
+    {
+      "arm": "candidate",
+      "index": 0,
+      "phase": "continuity",
+      "requestIndex": 9,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "176d46b40d3e3348ee7e5c39701d5f61f166ebcb2f527343afe5c66c9ed65a37",
+        "bytes": 60673,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "fc7fa41c1f3a621b7fff88a60cf86c4d70aa8a7b4718a9abfbde838facfb5028"
+        ],
+        "tools": [
+          "061adc95bc608814d09bd9579c4732cdef0d431c1af7e9b76cf624781f2356e2",
+          "d66bfa1695f1019834738e1ceb7d7c24f8f739bed1c4f49af2339c8c4741544a",
+          "073714fc1b107334a5cb78e603c1ce2855351ce1943147d3b33f2626b80ad570",
+          "868019fd4728b39887bdf9d2de370d8f78c37b5c96d376bde597e9db61d59fce",
+          "ce944527664994af3420245eaee14af6291ff9d1fa23f46f59edaad035d9d239",
+          "a3b4a1d0f25fdd2ead67ebbab415f6c3a932efafdf087c15b050546c8d52388b",
+          "0b7c126f4dea0c8eb4b350e61083c58a8844798f1d406586597277b366215ae4",
+          "2774a0b4627424b8afa4e28a44cb0d98bc05c86fa2600ca187b42ea72cea553f",
+          "f92b4863ac1e195432384ef53f4a2abbc48924f8d2cbc6e59f5d01f8b96e1277",
+          "5b6715e03b38beb35cddbb508fcc3051b89052ee9553476e8693c2cb50db07df",
+          "1bc00277be51d0ef01160c4e22f794ced438209d9b68c29548852f3cfe29b63d",
+          "66f397fd8bcef7a8f54eddc49d641fc4fccbf36777e306f8c477f8cb19d0c60c",
+          "c3bb683182ca2108308fec5ccfd70f4eb7d6c4acc6e4e3ab96d75a18b45b54b7",
+          "ff0ff20583a5a71bd2cb3f08d5dc2078806263159abddae6efb4183ef2dc1ce2",
+          "c2b10d797bbdd3a645e0ca8fb91df6f1b9c4e8d36962995b34e60bb1626d3fb7",
+          "7d6c9e6a558e7cffc2a1e6eef4f6cc13e2c016fa22ae77d9f827178138fe6a8c",
+          "fe332ac8e06fe114d6c271b1dc07b7c43c6d21e4235800de57f8a5b82dd99e6b",
+          "f6ed684568ddbbcaf882cca59b1f29933f8a89535bd71828a9220de516ec74b3",
+          "669f07b464d2068b4dfa39923e308549032050b47d6d0d37ece8fbc611fabf82"
+        ],
+        "history": [
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "3bbe1b9db8121ebb67e0503f37f6a19cf8afaac8d6e96b2734cacfd136ff73b4",
+          "5a4d254863744edf599bfbdd1ae5126e6e876bf02eecf960cd29d3e61db92140",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "cfe9d7b8157b448dc23ba3f45bf28ea90f08d4eb01dab3e2c39982662761f8f3",
+          "04824f2645316165f78646c411a3d9ed771a4a2e1e5ce158c10b5b6edcdeb16e",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "9abf08d4123d44ee9bd09bb4e244564d9555558cf9974988411277250e800ec9",
+          "b83bf44a6d0ef7623c86cf22dfbc7538896306dd4ccad8f985d0ab6b8bb3a30b",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "9a6b9cd2c5d50829cabe9697d57fe6403b5639d76cd951f082268a7bd01717c0",
+          "ee78dffeb9ac22a84f82889e23ebd1c5ac27a30a66d099cfa2e02e0133cd27e1",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "4ef01587b6bf2bb566013a69ef5ce6269706518f53edc9ecf05416d7589f2400",
+          "ad4ce855e7eaa019897a57a9f8b7e276879147d8814d259bb45b3fc7588047e5",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "66e96f776887e444c9d7853bbbe5c03c9a7d4d98df7cfb2ae4f4db876d789956",
+          "0a36340ed6fcd35effec41a30633577711c6d97ffdea003d0111fd8f21034bae",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "b05e6e54f7a5cfe0303c21b820f0ef291a8335f5560e9d23adee3a758d27c695",
+          "d92d3dbb8199b4953f107c79c49634284732745cb28ba8fad5a99661003b211d",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "0c0f8931f8e75d896f8fe830dc08eb7746d61144f43e34b122ae5815bf3cf7d5",
+          "fde1c630b8ffa43302628a82386bdf198f7abf81415c51b0bab9bb7842d99710",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "f61212eb5b2754478093d9f9032f37738772a20575f1215c66bf5c9b52db421c",
+          "58c2e7d443e22026ddf29e47c4bf6760d2103ef1c88ed8b20cd82c40bf596f15",
+          "57587159f2651d051b0a45633b25ad1347ddc70188daf1ac7d8e3e0a38a9a5af"
+        ],
+        "cacheParametersHash": "1548f6357b2bf0c216ffe1c6e97c0a7b041b0557320ec750f1498d334d7535da",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "bd7cb4ca11805572d7d544849e8475c18ea2dde25fcfccf91f5191c18a05f11b",
+        "reasoningEffort": "medium",
+        "skillReferences": 2,
+        "managedReferences": 0,
+        "trialIndex": 0,
+        "factHashes": [
+          "c127b0e9be113338e5e4c3d57e44f73619a4cc2dad78892baac698610da5746a"
+        ],
+        "uniqueProofHashes": [
+          "f508255f58a9e60cc29b899c89cb6e9bdaa3807b9a2c855bbc08df7a022f918c"
+        ],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": [
+          "bc1c9ce7e9a7df11e917e26bf1ef2ddda5eee6e923fbc18da5cf11fbc00f682e",
+          "bc1c9ce7e9a7df11e917e26bf1ef2ddda5eee6e923fbc18da5cf11fbc00f682e"
+        ]
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-9",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0e6ce85395149b71016ab5475508a887d0adda0b6da6c6cde9",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "main",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265176031,
+        "tokens": {
+          "totalInput": 11705,
+          "uncachedInput": 11705,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 67,
+          "reasoning": 0,
+          "totalOutput": 67
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265173641,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265174687,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265176031,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265173676
+    },
+    {
+      "arm": "candidate",
+      "index": 0,
+      "phase": "continuity",
+      "requestIndex": 10,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "30f5622abf38f03e3fd13eefee8c2c7dad0e4df1ca28cddcbf4967e0bd6e02fa",
+        "bytes": 3084,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "a92cd5976b3612c75d68904ddd2e1a7cd3c74cde87669aebf14bf728a4c039f8"
+        ],
+        "tools": [],
+        "history": [
+          "c3528f629ba762ef36c781c38968c75ef59f24e95ced616f1e2f54f7d0f52151"
+        ],
+        "cacheParametersHash": "a92f725a4613447cab26b6ae31ff388a54ad013a0d286e3c0e063ee4fd7e5cd9",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "7618991f7aa05c5a1a0283546b972fe89a9749bb9a1a9c6bc9c4aa803019ff95",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-10",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_04ede1d2d9cbbf47016ab5475517a887d0a249295d08037472",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265174563,
+        "tokens": {
+          "totalInput": 610,
+          "uncachedInput": 610,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 8,
+          "reasoning": 0,
+          "totalOutput": 8
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265173601,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265174336,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265174563,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265173603
+    },
+    {
+      "arm": "candidate",
+      "index": 5,
+      "phase": "continuity",
+      "requestIndex": 11,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "dae1686f24c4b583fe61956ba2c6388119ae98e33ec82a5155f341da7b4ca3c8",
+        "bytes": 64179,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "fc7fa41c1f3a621b7fff88a60cf86c4d70aa8a7b4718a9abfbde838facfb5028"
+        ],
+        "tools": [
+          "061adc95bc608814d09bd9579c4732cdef0d431c1af7e9b76cf624781f2356e2",
+          "d66bfa1695f1019834738e1ceb7d7c24f8f739bed1c4f49af2339c8c4741544a",
+          "073714fc1b107334a5cb78e603c1ce2855351ce1943147d3b33f2626b80ad570",
+          "868019fd4728b39887bdf9d2de370d8f78c37b5c96d376bde597e9db61d59fce",
+          "ce944527664994af3420245eaee14af6291ff9d1fa23f46f59edaad035d9d239",
+          "a3b4a1d0f25fdd2ead67ebbab415f6c3a932efafdf087c15b050546c8d52388b",
+          "0b7c126f4dea0c8eb4b350e61083c58a8844798f1d406586597277b366215ae4",
+          "2774a0b4627424b8afa4e28a44cb0d98bc05c86fa2600ca187b42ea72cea553f",
+          "f92b4863ac1e195432384ef53f4a2abbc48924f8d2cbc6e59f5d01f8b96e1277",
+          "5b6715e03b38beb35cddbb508fcc3051b89052ee9553476e8693c2cb50db07df",
+          "1bc00277be51d0ef01160c4e22f794ced438209d9b68c29548852f3cfe29b63d",
+          "66f397fd8bcef7a8f54eddc49d641fc4fccbf36777e306f8c477f8cb19d0c60c",
+          "c3bb683182ca2108308fec5ccfd70f4eb7d6c4acc6e4e3ab96d75a18b45b54b7",
+          "ff0ff20583a5a71bd2cb3f08d5dc2078806263159abddae6efb4183ef2dc1ce2",
+          "c2b10d797bbdd3a645e0ca8fb91df6f1b9c4e8d36962995b34e60bb1626d3fb7",
+          "7d6c9e6a558e7cffc2a1e6eef4f6cc13e2c016fa22ae77d9f827178138fe6a8c",
+          "fe332ac8e06fe114d6c271b1dc07b7c43c6d21e4235800de57f8a5b82dd99e6b",
+          "f6ed684568ddbbcaf882cca59b1f29933f8a89535bd71828a9220de516ec74b3",
+          "669f07b464d2068b4dfa39923e308549032050b47d6d0d37ece8fbc611fabf82"
+        ],
+        "history": [
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "aebf6a17ab9a56477f35dbad5936f0380b208b466af2c2bb15e2c2d0cee55aa8",
+          "733df54166e376a37531b142062935e32221ca7309d5403e1c76477ef0fb7438",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "abfe0c85c103ec9fcc1e31dfd272afbb4f07d1123a16d4b92656cfc0c0bb18d0",
+          "7fc630b878f23805de10cd997c7608215b8b83df9001e1d9da617d72c8a9042d",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "7dc50a77b012c02a6c6bf2c3510c7c6ba11dcf8a25dcea3c9539384cf9b04de8",
+          "942b5d676e3058823f0bdb122b168dfc599e9f65548f2702677960c5e74b64da",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "fb513e3ed65f5dbc794dcefa5ab1d91ab7943b26002cdba72a24a9ca2da6553e",
+          "a3ceb8c35051295a92e58680274079de0c18bf6f63a10c731525361e94a25bdd",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "ce149412f202b22bb7abbe92a40c3781a7705fa2c796d8343eeeddccbcac9f9a",
+          "a01864bed8cde86dc1974d77a1f87c6c0ed6bba41a19a51dd0d2baa0a4fd024f",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "1a60be2afd493694ed086a79ea220e9e2e241c03c00e34f4408ae3b7eb8ff54b",
+          "413eb60cca0a9498fe6e671917879a9e28923d66674ef9ebd33b5cfeb5cd50f2",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "1edc3af2935c5dc1daae2640e3329f840ac412ef7d1e72490faa01a042dd2c92",
+          "30467c19ad8e276a6aab488f27831be0f95181c8a77d6401cb7a8a518f50d864",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "70f71a3f056974cad548fe8ec2aceeac3216425913367625190a3bf13f7908ea",
+          "5b8484ef0094ce5bb176f19cbfb7dd69921b1ec88e5002e1128617b9d140ff8f",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "87c31d3323ea739e971814a63c7e17c1a76ff7892f09402dc4c0e3bdbf1353fc",
+          "f0c79c0389e4a91aaffffdd7940b483b050463a8a19f1399fcce4974b1905154",
+          "e4978356c6e8fc430641c5a5d021d6bd14ae769cc2cef283c30dfa37ff9a1944"
+        ],
+        "cacheParametersHash": "ceae8cd60e40fe8df6b9f5944914fd05924b348d5469dfe3ad3609c86bfa5bc6",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "d4179511729fdfe86b4ec80a7a355ed2f5583d63151787afa7cad7000233dbd7",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 2,
+        "trialIndex": 5,
+        "factHashes": [
+          "889d61d94c09cab253ff11de1ea744d65f04b2b35ea7fb4b8beb7b874e9fb8f2"
+        ],
+        "uniqueProofHashes": [
+          "b49d5f11335597f9eb114137d0c3341f7baa3d7643b6643b4d8ff0c29df29daa"
+        ],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": [
+          "879e8537f1fdee47da97ebde189d34b584ed6e4435d4cb8d1858871b52ce59ea",
+          "879e8537f1fdee47da97ebde189d34b584ed6e4435d4cb8d1858871b52ce59ea"
+        ]
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-11",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_045af9817bc17811016ab547693f6c87d0b816b597c57854b1",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "main",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265198095,
+        "tokens": {
+          "totalInput": 12536,
+          "uncachedInput": 12536,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 65,
+          "reasoning": 0,
+          "totalOutput": 65
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265193813,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265195617,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265198095,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265193813
+    },
+    {
+      "arm": "candidate",
+      "index": 5,
+      "phase": "continuity",
+      "requestIndex": 12,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "54be7aaed8c97d9581a2120c792a21ca05d6226f5e4bbfd22191617d866c007e",
+        "bytes": 3084,
+        "model": "gpt-5.6-sol",
+        "instructions": [
+          "a92cd5976b3612c75d68904ddd2e1a7cd3c74cde87669aebf14bf728a4c039f8"
+        ],
+        "tools": [],
+        "history": [
+          "2bc7f9127dcd16067d833f2e66d3268cf8c3ea2f9cce34aaa2091cf767ac8776"
+        ],
+        "cacheParametersHash": "75e32d3ca1f7a8866b088a1b815a8a53cf98a0da031b4aee2732d4287894c21b",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "8ccc9c893946ad307a81715724a94cef4b9687169665d295ac7c9a9895655598",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-12",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0a1b38fcd5388f7c016ab547698be887d09fbc39f424afa25d",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-5.6-sol",
+        "responseModel": "gpt-5.6-sol",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790265194691,
+        "tokens": {
+          "totalInput": 610,
+          "uncachedInput": 610,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 8,
+          "reasoning": 0,
+          "totalOutput": 8
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790265193959,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790265194383,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790265194691,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790265193960
+    }
+  ],
+  "probePassed": true,
+  "verifiedDefault": false,
+  "qualified": false,
+  "scope": "Live model behavior over seeded skill/managed observations; actual native runtime and managed plugin configuration. Synthetic observations do not claim managed child execution."
+}

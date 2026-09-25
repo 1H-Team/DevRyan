@@ -10,7 +10,6 @@ export type QuotaProviderId =
   | 'github-copilot'
   | 'github-copilot-addon'
   | 'google'
-  | 'antigravity'
   | 'kimi-for-coding'
   | 'nano-gpt'
   | 'openrouter'

@@ -60,12 +60,6 @@ describe('UsagePage model rows', () => {
     expect(cardSource).toContain('tone={progressTone}');
   });
 
-  test('hides provider-level summary windows for Antigravity usage', () => {
-    const pageSource = source('UsagePage.tsx');
-
-    expect(pageSource).toContain("selectedProviderId !== 'antigravity'");
-  });
-
   test('keeps Cursor selectable in Usage while its usage token is missing', () => {
     const pageSource = source('UsagePage.tsx');
     const visibilitySource = source('usage-provider-visibility.ts');
@@ -75,12 +69,11 @@ describe('UsagePage model rows', () => {
     expect(visibilitySource).toContain('configuredByProviderId.has(provider.id)');
   });
 
-  test('renders Antigravity model rows as a flat selected model list', () => {
+  test('renders every provider through model families without a retired flat-row path', () => {
     const pageSource = source('UsagePage.tsx');
 
-    expect(pageSource).toContain("selectedProviderId === 'antigravity'");
     expect(pageSource).toContain('renderModelCard(model)');
-    expect(pageSource).toContain('providerModels.map((model) => renderModelCard(model))');
+    expect(pageSource).not.toContain("'antigravity'");
   });
 
   test('Usage card source gates PaceIndicator on prediction visibility', () => {

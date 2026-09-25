@@ -42,11 +42,11 @@ export async function runDuplicateSerializerProbe({ binary, respond }) {
     await fs.mkdir(home, { recursive: true }); await fs.mkdir(workspace);
     for (const directory of [path.join(home, 'config/opencode'), path.join(home, 'overlay')]) {
       await fs.mkdir(directory, { recursive: true });
-      await fs.writeFile(path.join(directory, 'package.json'), JSON.stringify({ dependencies: { '@opencode-ai/plugin': '1.18.31' } }));
+      await fs.writeFile(path.join(directory, 'package.json'), JSON.stringify({ dependencies: { '@opencode-ai/plugin': '1.18.32' } }));
       await fs.mkdir(path.join(directory, 'node_modules/@opencode-ai'), { recursive: true });
       const installed = fileURLToPath(new URL('../../packages/web/node_modules/@opencode-ai/plugin', import.meta.url));
       const manifest = JSON.parse(await fs.readFile(path.join(installed, 'package.json'), 'utf8'));
-      if (manifest.version !== '1.18.31') throw new Error('Existing fixture plugin SDK version mismatch');
+      if (manifest.version !== '1.18.32') throw new Error('Existing fixture plugin SDK version mismatch');
       await fs.symlink(installed, path.join(directory, 'node_modules/@opencode-ai/plugin'), 'dir');
       await fs.writeFile(path.join(directory, 'package-lock.json'), JSON.stringify({ lockfileVersion: 3,
         packages: { '': { dependencies: { '@opencode-ai/plugin': manifest.version } } } }));

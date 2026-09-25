@@ -1,7 +1,3 @@
-import {
-  getDisplayProviderId,
-  splitAntigravityProviderForDisplay,
-} from './antigravity';
 import { isProviderModelAvailable } from './modelAvailability';
 
 export type HiddenModelRef = {
@@ -69,10 +65,7 @@ export const getHiddenModelRefsForProviderModel = (
   const requestedProviderID = normalizeID(providerID);
   const modelProviderID = getModelProviderID(model);
   const executionProviderID = modelProviderID || requestedProviderID;
-  const displayProviderID = requestedProviderID
-    ? getDisplayProviderId(requestedProviderID, model)
-    : (executionProviderID ? getDisplayProviderId(executionProviderID, model) : '');
-  const canonicalProviderID = displayProviderID || requestedProviderID || executionProviderID;
+  const canonicalProviderID = requestedProviderID || executionProviderID;
 
   const aliases: HiddenModelRef[] = [];
   const seen = new Set<string>();
@@ -80,7 +73,6 @@ export const getHiddenModelRefsForProviderModel = (
   addHiddenModelRef(aliases, seen, requestedProviderID, modelID);
   addHiddenModelRef(aliases, seen, executionProviderID, modelID);
   addHiddenModelRef(aliases, seen, modelProviderID, modelID);
-  addHiddenModelRef(aliases, seen, displayProviderID, modelID);
 
   return {
     canonical: canonicalProviderID ? { providerID: canonicalProviderID, modelID } : null,
@@ -143,7 +135,7 @@ export const filterVisibleProviderModelsForPicker = <
   hiddenModels: HiddenModelRef[],
   shouldKeepModel?: (provider: TProvider, model: TModel, modelID: string) => boolean,
 ): TProvider[] => filterHiddenProviderModels<TModel, TProvider>(
-  splitAntigravityProviderForDisplay<TModel, TProvider>(providers),
+  providers,
   hiddenModels,
   (provider, model, modelID) => (
     isProviderModelAvailable(model)

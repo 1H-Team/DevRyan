@@ -90,8 +90,7 @@ const normalizePluginEntry = (value: unknown): PluginEntry | null => {
 };
 
 const normalizeDefaultPluginId = (value: unknown): DevRyanDefaultPluginId | null => (
-  value === "opencode-antigravity-auth"
-    || value === "@rama_nigg/open-cursor"
+  value === "@rama_nigg/open-cursor"
     || value === "oh-my-opencode-slim"
     || value === "opencode-with-claude"
     || value === "superpowers"

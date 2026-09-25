@@ -32,6 +32,9 @@ it.each(['completed', 'failed', 'unavailable'])('routes live disconnects through
     getOpenCodeAuthHeaders: () => ({}),
     fetchImpl: async (url, init) => {
       const pathname = new URL(url).pathname;
+      if (pathname === '/agent' && new URL(url).searchParams.get('directory') === '/workspace') {
+        return Response.json([{ name: 'designer', mode: 'subagent' }]);
+      }
       if (pathname === '/session' && init.method === 'POST') { creates++; return Response.json({ id: 'ses_transport' }); }
       if (pathname.endsWith('/prompt_async')) {
         const body = JSON.parse(init.body);

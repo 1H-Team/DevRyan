@@ -108,6 +108,7 @@ import { createHarnessPreflight, registerHarnessPreflightRoute } from './lib/ope
 import { readConfigCredentialScan } from './lib/opencode/config-credential-scan.js';
 import { resolveDuplicateOutputPolicy } from './lib/opencode/harness-duplicate-qualification.js';
 import { createHarnessRunFingerprintReader } from './lib/opencode/harness-run-fingerprint.js';
+import { createDuplicateProviderRouteResolver } from './lib/opencode/duplicate-provider-route.js';
 import { inspectClaudeRuntimeCompatibility } from './lib/opencode/claude-runtime-compatibility.js';
 import { resolveApprovedSkills } from './lib/opencode/skill-policy.js';
 import {
@@ -1141,6 +1142,7 @@ const serverUtilsRuntime = createServerUtilsRuntime({
   getRuntime: () => ({
     openCodePort,
     openCodeBaseUrl,
+    openCodeVersion,
     openCodeNotReadySince,
     isOpenCodeReady,
     isRestartingOpenCode,
@@ -1426,8 +1428,7 @@ const primaryRecoveryRuntime = createWebPrimaryRecoveryRuntime({
 });
 harnessRuntime.setPrimaryRecoveryRuntime(primaryRecoveryRuntime);
 const harnessFingerprintReader = createHarnessRunFingerprintReader({
-  getDuplicateProviderRoute: (providerID) => providerID === 'openai' && openAiOAuthCoordinator.usesOAuth()
-    ? 'openai-chatgpt-managed-responses-v1' : null,
+  getDuplicateProviderRoute: createDuplicateProviderRouteResolver({ openAiUsesOAuth: () => openAiOAuthCoordinator.usesOAuth() }),
   getRuntimeBinary: () => useWslForOpencode || executionReadiness.state === 'required_unavailable' ? null : capturedExecutions
     ? capturedExecutionEnvironment.DEVRYAN_OPENCODE_ARTIFACT : resolvedOpencodeBinary,
   isManaged: () => !(isExternalOpenCode || ENV_SKIP_OPENCODE_START || ENV_CONFIGURED_OPENCODE_HOST),
@@ -1591,7 +1592,6 @@ const waitForPortRelease = (...args) => openCodeLifecycleRuntime.waitForPortRele
 
 const fetchAgentsSnapshot = (...args) => serverUtilsRuntime.fetchAgentsSnapshot(...args);
 const fetchProvidersSnapshot = (...args) => serverUtilsRuntime.fetchProvidersSnapshot(...args);
-const fetchModelsSnapshot = (...args) => serverUtilsRuntime.fetchModelsSnapshot(...args);
 const fetchBotModelCatalog = createBotModelCatalogLoader({
   fetchImpl: fetch,
   buildUrl: () => buildOpenCodeUrl('/config/providers', ''),
@@ -2289,6 +2289,7 @@ async function main(options = {}) {
     },
     resolveApprovedSkills,
     warmXaiToolCatalog: ({ directory, signal }) => xaiToolCatalogRuntime.refreshDirectory({ directory, signal }),
+    ...(capturedExecutions ? { warmLedger: ({ directory }) => sessionExecutionHost.warmLedger({ directory }) } : {}),
   });
   projectPrewarmRuntime = createProjectPrewarmRuntime({
     warm: (warmupOptions) => agentRuntimeWarmup.warm(warmupOptions),
@@ -2358,6 +2359,7 @@ async function main(options = {}) {
     isManaged: () => Boolean(openCodeLifecycleState.openCodeProcess && !openCodeLifecycleState.isExternalOpenCode) });
   await featureRoutesRuntime.registerRoutes(app, {
     crypto,
+    getLoginShellEnvSnapshot,
     fs,
     os,
     path,

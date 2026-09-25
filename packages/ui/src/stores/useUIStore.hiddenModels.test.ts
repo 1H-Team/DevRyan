@@ -18,8 +18,8 @@ describe('useUIStore hidden model ref actions', () => {
 
   test('hides canonical refs without duplicating existing aliases', () => {
     const refs = [
-      { providerID: 'antigravity', modelID: 'antigravity-claude-sonnet-4-6' },
-      { providerID: 'google', modelID: 'antigravity-claude-sonnet-4-6' },
+      { providerID: 'custom-display', modelID: 'gemini-3-pro' },
+      { providerID: 'google', modelID: 'gemini-3-pro' },
     ];
 
     useUIStore.setState({ hiddenModels: [refs[1]!] });
@@ -31,8 +31,8 @@ describe('useUIStore hidden model ref actions', () => {
 
   test('removes every alias when showing model refs', () => {
     const refs = [
-      { providerID: 'antigravity', modelID: 'antigravity-claude-sonnet-4-6' },
-      { providerID: 'google', modelID: 'antigravity-claude-sonnet-4-6' },
+      { providerID: 'custom-display', modelID: 'gemini-3-pro' },
+      { providerID: 'google', modelID: 'gemini-3-pro' },
     ];
 
     useUIStore.setState({

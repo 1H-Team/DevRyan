@@ -19,14 +19,6 @@ describe('Header usage dropdown', () => {
     expect(source).toContain('<UsageProviderPanel');
   });
 
-  test('preserves Antigravity as model-only usage rows before rendering the selected provider', () => {
-    const source = headerSource();
-
-    expect(source).toContain("const isAntigravityProvider = provider.id === 'antigravity'");
-    expect(source).toContain('const entries = isAntigravityProvider ? [] : Object.entries(windows)');
-    expect(source).toContain('group.modelRows = [...(group.modelRows ?? []), ...familyModels]');
-  });
-
   test('surfaces refresh failures without removing retained usage rows', () => {
     const source = headerSource();
     const desktopSource = readFileSync(resolve(testDir, 'DesktopRightChromeActions.tsx'), 'utf8');

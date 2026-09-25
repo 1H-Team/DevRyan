@@ -3,12 +3,24 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { reservePort, startOwnedProcess } from './process.mjs';
-import { createDuplicateWireProxy } from './duplicate-wire-proxy.mjs';
+import { createDuplicateWireProxy, resolveDuplicateWireRoute } from './duplicate-wire-proxy.mjs';
 import { duplicateLiveFixture, seedDuplicateLiveFixture, gradeDuplicateLiveReply } from './duplicate-live-fixture.mjs';
 import { gradeDuplicateBehaviorPairs } from './duplicate-behavior.mjs';
 
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const repository = fileURLToPath(new URL('../../', import.meta.url));
+
+// The proposal's provider selects the only wire route the proxy will forward,
+// and the proposal must be admitted under that route's host-attested transport,
+// or its candidate arm could never qualify. Fails before any output exists.
+export function resolveDuplicateLiveRoute(proposal) {
+  const profile = proposal?.profile;
+  if (!profile || typeof profile !== 'object') throw new Error('invalid-proposal');
+  const route = resolveDuplicateWireRoute(profile.providerID);
+  if (profile.transport !== route.transportIdentity) throw new Error(`proposal-transport-mismatch:${route.transportIdentity}`);
+  if (typeof profile.modelID !== 'string' || !/^[a-zA-Z0-9_.:/-]{1,200}$/.test(profile.modelID)) throw new Error('invalid-proposal-model');
+  return route;
+}
 
 // This explicit live runner accepts only an already prepared, repository-owned
 // profile. Candidate admission is staged in that private source copy, never in
@@ -27,9 +39,11 @@ export async function runDuplicateLive({ base, bootstrap, pilot = false, verifyD
   if (!bootstrap.startsWith(path.join(repository, '.cache/qa/'))) throw new Error('Reviewed repository QA bootstrap required');
   if (launch.base !== base || await fs.readFile(path.join(launch.env.DEVRYAN_QA_HOME, '.devryan-qa-home'), 'utf8') !== 'owned QA home\n') throw new Error('QA ownership mismatch');
   const proposal = JSON.parse(await fs.readFile(path.join(base, 'proposal.json'), 'utf8'));
+  const wireRoute = resolveDuplicateLiveRoute(proposal);
   const output = await fs.mkdtemp(path.join(base, pilot ? 'pilot-' : 'acceptance-'));
   let current = { arm: 'none', index: null, phase: 'bootstrap' };
-  const wire = await createDuplicateWireProxy({ root: output, context: () => current, model: proposal.profile.modelID, maximumRequests: pilot ? 12 : 64 });
+  const wire = await createDuplicateWireProxy({ root: output, context: () => current, providerID: wireRoute.provider,
+    model: proposal.profile.modelID, maximumRequests: pilot ? 12 : 64 });
   const pairs = Array.from({ length: pilot ? 2 : 10 }, (_, n) => { const index = pilot ? n * 5 : n; return { index, kind: duplicateLiveFixture(index).kind }; });
   const cleanups = [], failures = [];
   const selection = { providerID: proposal.profile.providerID, modelID: proposal.profile.modelID };
@@ -89,10 +103,14 @@ export async function runDuplicateLive({ base, bootstrap, pilot = false, verifyD
           pair[arm] = result;
           console.log(JSON.stringify({ arm, index: pair.index, kind: pair.kind, completed: result.completed,
             factsIntact: result.factsIntact, reductions, repeatedCalls: result.sameKeyRepeatCalls, mutations: result.repeatedMutations, requests: requests.length }));
+          // Deleting a session aborts its background requests (its title), so
+          // let every forwarded request finish first; a stuck one still fails.
+          await wire.idle(60_000);
           await request(`/session/${session.id}`, 'DELETE'); sessions.splice(sessions.indexOf(session.id), 1);
         }
       } catch (error) { failures.push({ arm, reason: error.message }); }
       finally {
+        await wire.idle(30_000);
         for (const id of sessions) {
           try { await request?.(`/session/${id}/abort`, 'POST'); await request?.(`/session/${id}`, 'DELETE'); }
           catch { failures.push({ arm, reason: 'session-cleanup-failed' }); }
@@ -112,7 +130,7 @@ export async function runDuplicateLive({ base, bootstrap, pilot = false, verifyD
   const probePassed = nonIncreasingRequests && !failures.length && !wire.failures.length && pairs.every(pair => [pair.baseline, pair.candidate]
     .every(trial => trial?.completed && trial.cleanupComplete && trial.criticalFailures === 0 && trial.repeatedMutations === 0)
     && pair.candidate.appliedReductions > 0 && pair.baseline.appliedReductions === 0 && pair.candidate.sameKeyRepeatCalls <= pair.baseline.sameKeyRepeatCalls);
-  const result = { kind: verifyDefault ? 'release-default-verification' : pilot ? 'diagnostic-pilot' : 'duplicate-live-acceptance', profile: proposal.profile, pairs, sizes,
+  const result = { kind: verifyDefault ? 'release-default-verification' : pilot ? 'diagnostic-pilot' : 'duplicate-live-acceptance', profile: proposal.profile, wireRoute, pairs, sizes,
     nonIncreasingRequests, behavior, cleanups, failures, wireFailures: wire.failures, metadataRequests: wire.metadata, wire: wire.evidence,
     probePassed, verifiedDefault: verifyDefault && probePassed,
     qualified: !pilot && behavior.qualified && nonIncreasingRequests && !failures.length && !wire.failures.length,

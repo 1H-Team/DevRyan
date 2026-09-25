@@ -6,12 +6,10 @@ import { useProviderLogo } from '@/hooks/useProviderLogo';
 import { shouldPreserveProviderLogoColor } from '@/lib/providers/logoPresentation';
 import { ChatMetadataBadge } from '../ChatMetadataBadge';
 import { formatAgentLabel, formatEffortLabel } from '../mobileControlsUtils';
-import { getMessageHeaderDisplay } from './messageHeaderDisplay';
 
 interface MessageHeaderProps {
     isUser: boolean;
     providerID: string | null;
-    modelID?: string | null;
     agentName: string | undefined;
     modelName: string | undefined;
     variant?: string;
@@ -19,13 +17,9 @@ interface MessageHeaderProps {
     isDarkTheme: boolean;
 }
 
-const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, providerID, modelID, agentName, modelName, variant, fastEnabled = false, isDarkTheme }) => {
-    const { providerID: displayProviderID, modelName: displayModelName } = React.useMemo(
-        () => getMessageHeaderDisplay({ providerID, modelID, modelName }),
-        [modelID, modelName, providerID],
-    );
-    const { src: logoSrc, onError: handleLogoError, hasLogo } = useProviderLogo(displayProviderID);
-    const preservesBrandColor = shouldPreserveProviderLogoColor(displayProviderID);
+const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, providerID, agentName, modelName, variant, fastEnabled = false, isDarkTheme }) => {
+    const { src: logoSrc, onError: handleLogoError, hasLogo } = useProviderLogo(providerID);
+    const preservesBrandColor = shouldPreserveProviderLogoColor(providerID);
     let logoFilter = isDarkTheme ? 'brightness(0.9) contrast(1.1) invert(1)' : 'brightness(0.9) contrast(1.1)';
     if (preservesBrandColor) {
         logoFilter = 'none';
@@ -38,7 +32,7 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, providerID, model
     const modelBadgeIcon = hasLogo && logoSrc ? (
         <img
             src={logoSrc}
-            alt={`${displayProviderID} logo`}
+            alt={`${providerID} logo`}
             className="h-4 w-4 flex-shrink-0"
             style={{ filter: logoFilter }}
             onError={handleLogoError}
@@ -79,7 +73,7 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, providerID, model
                                 ) : null}
                                 <ChatMetadataBadge
                                     kind="model"
-                                    label={displayModelName || 'Assistant'}
+                                    label={modelName || 'Assistant'}
                                     thinkingLabel={thinkingLabel}
                                     isDefaultThinking={thinkingLabel === 'Default'}
                                     icon={modelBadgeIcon}

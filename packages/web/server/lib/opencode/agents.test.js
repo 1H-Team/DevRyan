@@ -9,6 +9,8 @@ import {
   getAgentConfig,
   listAgentBackupModels,
   listConfigAgents,
+  listManagedRuntimeAgentModelOverrides,
+  listShadowedAgentModelOverrides,
   normalizeAgentBackupModel,
   resolveLocalAgentBackupExecution,
   writeAgentBackupModel,
@@ -612,5 +614,225 @@ describe('agent backup models', () => {
 
     expect(deleteAgentBackupModel('orchestrator', options)).toBe(true);
     expect(getAgentConfig('orchestrator', projectDirectory, options).config.backupModel).toBeNull();
+  });
+});
+
+describe('shadowed sidecar agent overrides', () => {
+  let tempRoot;
+  let projectDirectory;
+  let userConfigPath;
+  let slimConfigDirectory;
+  let sidecarPath;
+  let plugins;
+  let options;
+
+  const writeSidecarOverrides = (agentOverrides) => writeJson(sidecarPath, { agentOverrides });
+  const writeSlimConfig = (config) => writeJson(path.join(slimConfigDirectory, 'oh-my-opencode-slim.json'), config);
+  const writeProjectSlimConfig = (config) => writeJson(path.join(projectDirectory, '.opencode', 'oh-my-opencode-slim.json'), config);
+
+  // Every shadowed entry must describe what the managed runtime actually runs.
+  const expectMirrorsRuntime = (shadowed) => {
+    const runtime = listManagedRuntimeAgentModelOverrides(projectDirectory, options);
+    for (const [agentName, entry] of Object.entries(shadowed)) {
+      expect(runtime[agentName].variant).toBe(entry.effective.variant);
+      if (runtime[agentName].model) {
+        expect(runtime[agentName].model).toBe(entry.effective.model);
+      }
+    }
+  };
+
+  beforeEach(async () => {
+    await fs.mkdir(path.join(repoRoot, '.cache'), { recursive: true });
+    tempRoot = await fs.mkdtemp(path.join(repoRoot, '.cache', 'agent-shadowed-overrides-'));
+    projectDirectory = path.join(tempRoot, 'project');
+    userConfigPath = path.join(tempRoot, 'opencode-config', 'config.json');
+    slimConfigDirectory = path.dirname(userConfigPath);
+    sidecarPath = path.join(slimConfigDirectory, '.openchamber', 'config.json');
+    await fs.mkdir(projectDirectory, { recursive: true });
+    plugins = [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC];
+    // Plugin detection is injected so no test reads the real OpenCode config.
+    options = {
+      userConfigPath,
+      slimConfigDirectory,
+      readOpenCodeConfig: () => ({ plugin: plugins }),
+      env: {},
+    };
+  });
+
+  afterEach(async () => {
+    if (tempRoot) {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+    tempRoot = undefined;
+  });
+
+  it('shows the model that actually runs when a Slim entry sets only a variant', async () => {
+    await writeSidecarOverrides({ oracle: { model: 'test/sidecar-model', variant: 'low' }, fixer: { model: 'openai/gpt-5.5' } });
+    await writeSlimConfig({ agents: { oracle: { variant: 'high' }, fixer: { model: 'xai/grok-4.6', variant: 'high' } } });
+
+    const runtime = listManagedRuntimeAgentModelOverrides(projectDirectory, options);
+    const agents = Object.fromEntries(listConfigAgents(projectDirectory, options).map((agent) => [agent.name, agent]));
+    const shown = (agent) => (typeof agent.model === 'string' ? agent.model : `${agent.model?.providerID}/${agent.model?.modelID}`);
+
+    // No Slim model: the saved sidecar model runs, and Settings shows it.
+    expect(runtime.oracle).toMatchObject({ model: 'test/sidecar-model', variant: 'high' });
+    expect(shown(agents.oracle)).toBe('test/sidecar-model');
+    expect(agents.oracle.variant).toBe('high');
+    // A Slim model wins at runtime and in Settings.
+    expect(runtime.fixer.model).toBe('xai/grok-4.6');
+    expect(shown(agents.fixer)).toBe('xai/grok-4.6');
+  });
+
+  it('reports sidecar model and variant shadowed by a Slim root override without touching config', async () => {
+    await writeSidecarOverrides({ fixer: { model: 'openai/gpt-5.5', variant: 'medium' } });
+    await writeSlimConfig({ agents: { fixer: { model: 'xai/grok-4.6', variant: 'high' } } });
+    const sidecarBefore = await fs.readFile(sidecarPath, 'utf8');
+
+    const shadowed = listShadowedAgentModelOverrides(projectDirectory, options);
+
+    expect(shadowed).toEqual({
+      fixer: {
+        fields: {
+          model: { saved: 'openai/gpt-5.5', effective: 'xai/grok-4.6', shadowedBy: 'slim-root' },
+          variant: { saved: 'medium', effective: 'high', shadowedBy: 'slim-root' },
+        },
+        effective: { model: 'xai/grok-4.6', variant: 'high' },
+        presetName: null,
+      },
+    });
+    expectMirrorsRuntime(shadowed);
+    expect(await fs.readFile(sidecarPath, 'utf8')).toBe(sidecarBefore);
+    // The Settings read model already shows the effective Slim value, not the sidecar.
+    expect(listConfigAgents(projectDirectory, options).find((agent) => agent.name === 'fixer')).toMatchObject({
+      model: { providerID: 'xai', modelID: 'grok-4.6' },
+      variant: 'high',
+    });
+  });
+
+  it('attributes preset-only values to the preset and splits root variant from preset model', async () => {
+    await writeSidecarOverrides({
+      fixer: { model: 'openai/gpt-5.5', variant: 'medium' },
+      oracle: { model: 'openai/gpt-5.5', variant: 'medium' },
+    });
+    await writeSlimConfig({
+      preset: 'team',
+      presets: {
+        team: {
+          fixer: { model: 'xai/grok-4.6', variant: 'low', skills: [] },
+          oracle: { model: 'xai/grok-4.6', variant: 'low' },
+        },
+      },
+      agents: { oracle: { variant: 'xhigh' } },
+    });
+
+    const shadowed = listShadowedAgentModelOverrides(projectDirectory, options);
+
+    expect(shadowed.fixer).toEqual({
+      fields: {
+        model: { saved: 'openai/gpt-5.5', effective: 'xai/grok-4.6', shadowedBy: 'slim-preset' },
+        variant: { saved: 'medium', effective: 'low', shadowedBy: 'slim-preset' },
+      },
+      effective: { model: 'xai/grok-4.6', variant: 'low' },
+      presetName: 'team',
+    });
+    expect(shadowed.oracle.fields).toEqual({
+      model: { saved: 'openai/gpt-5.5', effective: 'xai/grok-4.6', shadowedBy: 'slim-preset' },
+      variant: { saved: 'medium', effective: 'xhigh', shadowedBy: 'slim-root' },
+    });
+    expectMirrorsRuntime(shadowed);
+  });
+
+  it('keeps the sidecar model in effect when the Slim entry supplies no model', async () => {
+    await writeSidecarOverrides({
+      oracle: { model: 'test/sidecar-model', variant: 'medium' },
+      explorer: { variant: 'low' },
+      fixer: { variant: 'medium' },
+    });
+    await writeSlimConfig({
+      preset: 'team',
+      presets: { team: { fixer: { model: 'xai/grok-4.6' } } },
+      agents: {
+        oracle: { variant: 'high' },
+        explorer: { skills: ['*'] },
+      },
+    });
+
+    const shadowed = listShadowedAgentModelOverrides(projectDirectory, options);
+
+    expect(shadowed.oracle).toEqual({
+      fields: {
+        variant: { saved: 'medium', effective: 'high', shadowedBy: 'slim-root' },
+      },
+      effective: { model: 'test/sidecar-model', variant: 'high' },
+      presetName: 'team',
+    });
+    // A bare Slim entry still replaces the variant, falling back to the packaged model.
+    expect(shadowed.explorer.fields).toEqual({
+      variant: { saved: 'low', effective: null, shadowedBy: 'slim-root' },
+    });
+    expect(shadowed.explorer.effective.variant).toBeNull();
+    expect(typeof shadowed.explorer.effective.model).toBe('string');
+    // A preset entry without a variant clears the saved variant.
+    expect(shadowed.fixer).toEqual({
+      fields: {
+        variant: { saved: 'medium', effective: null, shadowedBy: 'slim-preset' },
+      },
+      effective: { model: 'xai/grok-4.6', variant: null },
+      presetName: 'team',
+    });
+    expectMirrorsRuntime(shadowed);
+  });
+
+  it('reports nothing when wrapper layering does not apply', async () => {
+    await writeSidecarOverrides({ fixer: { model: 'openai/gpt-5.5', variant: 'medium' } });
+    await writeSlimConfig({ agents: { fixer: { model: 'xai/grok-4.6', variant: 'high' } } });
+
+    plugins = [];
+    expect(listShadowedAgentModelOverrides(projectDirectory, options)).toEqual({});
+    expect(listManagedRuntimeAgentModelOverrides(projectDirectory, options).fixer)
+      .toEqual({ model: 'openai/gpt-5.5', variant: 'medium' });
+
+    // Raw Slim owns the catalog: the sidecar is not layered under Slim values.
+    plugins = ['oh-my-opencode-slim'];
+    expect(listShadowedAgentModelOverrides(projectDirectory, options)).toEqual({});
+  });
+
+  it('honors project-level Slim config over user Slim config', async () => {
+    await writeSidecarOverrides({ fixer: { model: 'openai/gpt-5.5', variant: 'medium' } });
+    await writeSlimConfig({ agents: { fixer: { model: 'anthropic/claude-sonnet-4-6', variant: 'low' } } });
+    await writeProjectSlimConfig({ agents: { fixer: { model: 'xai/grok-4.6', variant: 'high' } } });
+
+    const shadowed = listShadowedAgentModelOverrides(projectDirectory, options);
+
+    expect(shadowed.fixer.fields).toEqual({
+      model: { saved: 'openai/gpt-5.5', effective: 'xai/grok-4.6', shadowedBy: 'slim-root' },
+      variant: { saved: 'medium', effective: 'high', shadowedBy: 'slim-root' },
+    });
+    expectMirrorsRuntime(shadowed);
+  });
+
+  it('never shadows councillors and skips agents Slim does not layer', async () => {
+    await writeSidecarOverrides({
+      council: { model: 'openai/gpt-5.5', councillors: [{ model: 'openai/gpt-5.5' }, { model: 'xai/grok-4.6', variant: 'high' }] },
+      librarian: { councillors: [{ model: 'openai/gpt-5.5' }] },
+      builder: { model: 'openai/gpt-5.5', variant: 'medium' },
+      'slim-only': { model: 'openai/gpt-5.5', variant: 'medium' },
+    });
+    await writeSlimConfig({
+      agents: {
+        council: { model: 'xai/grok-4.6', variant: 'high' },
+        librarian: { model: 'xai/grok-4.6' },
+        'slim-only': { model: 'xai/grok-4.6', variant: 'high' },
+      },
+    });
+
+    const shadowed = listShadowedAgentModelOverrides(projectDirectory, options);
+
+    expect(Object.keys(shadowed)).toEqual(['council']);
+    expect(shadowed.council.fields).toEqual({
+      model: { saved: 'openai/gpt-5.5', effective: 'xai/grok-4.6', shadowedBy: 'slim-root' },
+    });
+    expect(listManagedRuntimeAgentModelOverrides(projectDirectory, options).council.councillors).toHaveLength(2);
+    expectMirrorsRuntime(shadowed);
   });
 });

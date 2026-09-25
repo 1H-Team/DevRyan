@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+import { isRetiredProviderId } from './retiredProviders';
+
 export interface ProviderSourceInfo {
   exists: boolean;
   path?: string | null;
@@ -13,6 +15,11 @@ export interface ProviderSources {
   anthropicOAuth?: ProviderSourceInfo;
 }
 
+export type ProviderRemainingSource =
+  | { type: 'config'; path: string }
+  | { type: 'auth'; path: string | null }
+  | { type: 'env'; name: string };
+
 export interface ProviderDisconnectResponse {
   success: boolean;
   removed: boolean;
@@ -23,6 +30,7 @@ export interface ProviderDisconnectResponse {
     custom?: boolean;
   };
   sources?: ProviderSources;
+  stillProvidedBy?: ProviderRemainingSource[];
   requiresApply?: boolean;
   applyRevision?: number;
   applyStatus?: {
@@ -34,6 +42,29 @@ export interface ProviderDisconnectResponse {
   message?: string;
   [key: string]: unknown;
 }
+
+export type ProviderDisconnectOutcome =
+  | { kind: 'disconnected' }
+  | { kind: 'still_provided'; sources: string[] };
+
+const describeRemainingSource = (source: ProviderRemainingSource): string => {
+  if (source.type === 'env') return source.name;
+  if (source.type === 'auth') return source.path ?? 'auth.json';
+  return source.path;
+};
+
+const getRemainingSources = (response: ProviderDisconnectResponse): ProviderRemainingSource[] => (
+  Array.isArray(response.stillProvidedBy) ? response.stillProvidedBy : []
+);
+
+// A disconnect only counts as done when nothing still supplies the provider.
+export const getProviderDisconnectOutcome = (response: ProviderDisconnectResponse): ProviderDisconnectOutcome => {
+  const remaining = getRemainingSources(response);
+  if (remaining.length > 0) {
+    return { kind: 'still_provided', sources: remaining.map(describeRemainingSource) };
+  }
+  return { kind: 'disconnected' };
+};
 
 export type ProviderConnectionState = 'loading' | 'connected' | 'disconnect_pending' | 'not_connected';
 
@@ -62,7 +93,11 @@ export const shouldShowConnectedProvider = (
   providerId: string,
   sources: ProviderSources | undefined,
   disconnectPending: boolean,
-): boolean => getProviderConnectionState(providerId, sources, disconnectPending) !== 'not_connected';
+): boolean => {
+  // A retired provider appears only once its sources prove something is left to remove.
+  if (isRetiredProviderId(providerId) && !sources && !disconnectPending) return false;
+  return getProviderConnectionState(providerId, sources, disconnectPending) !== 'not_connected';
+};
 
 export const disconnectProvider = async (
   providerId: string,
@@ -104,7 +139,8 @@ export const useProviderDisconnectStore = create<ProviderDisconnectStore>((set) 
       ? response.applyStatus.pending
       : response.requiresApply === true;
     const nextPending = { ...state.pendingRevisionByProvider };
-    if (pending) nextPending[providerId] = revision;
+    // A provider something else still supplies must stay visible as connected.
+    if (pending && getRemainingSources(response).length === 0) nextPending[providerId] = revision;
     else delete nextPending[providerId];
     return {
       pendingRevisionByProvider: nextPending,

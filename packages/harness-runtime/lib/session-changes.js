@@ -286,6 +286,18 @@ export function createSessionChangeRuntime(options) {
         }
         const inputFingerprint = receiptInputFingerprint(input);
         if (inputFingerprint && existing?.evidence === 'exact' && existing.receiptInputFingerprint === inputFingerprint) continue;
+        // A confined publication records the call's exact bytes and is the
+        // authority for it. Receipts derived from tool metadata (the plugin's
+        // after hook, canonical part events, history replay) carry a patch
+        // without bytes for OpenCode 1.18 edits, so they never match it: they
+        // may fill a gap but never override or conflict with a confined
+        // receipt, and a confined receipt replaces them.
+        // DEVRYAN_CONFINED_RECEIPT_AUTHORITY=0 compares them as before.
+        const confinedAuthority = process.env.DEVRYAN_CONFINED_RECEIPT_AUTHORITY !== '0';
+        const confined = input.source === 'confined-execution';
+        if (confinedAuthority && !confined && existing?.evidence === 'exact' && existing.source === 'confined-execution') continue;
+        const prior = confinedAuthority && confined && existing?.evidence === 'exact' && existing.source !== 'confined-execution'
+          ? { ...existing, evidence: null } : existing;
         // Textual historical receipts are immutable inputs. An unchanged failed
         // read must not publish another update that asks the UI to read again.
         // Object receipts can become valid when their referenced blobs arrive.
@@ -295,7 +307,7 @@ export function createSessionChangeRuntime(options) {
         if (rejectedFingerprint && existing?.rejectedReceiptFingerprint === rejectedFingerprint
           && existing.state === 'unavailable' && existing.errorCode === 'invalid_change_receipt') continue;
         try {
-          const op = await storeSessionChangeReceipt(repo, { ...input, historical, receiptInputFingerprint: inputFingerprint }, existing, inputDirectory);
+          const op = await storeSessionChangeReceipt(repo, { ...input, historical, receiptInputFingerprint: inputFingerprint }, prior, inputDirectory);
           if (!op) continue;
           active.delete(id); nativeActive.delete(id); putOperation(repo, op); changed.add(input.sessionID);
           diagnostics.push({ code: 'exact_tool_receipt', phase: historical ? 'history' : 'receipt',

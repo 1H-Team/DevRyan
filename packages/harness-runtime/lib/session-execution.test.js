@@ -17,6 +17,23 @@ test('all confined workers use their scratch home and temporary paths, including
     TMPPREFIX: path.join(prepared.scratchDirectory, 'zsh') });
 });
 
+test('confined workers skip per-call language-server downloads unless the kill switch restores them', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-execution-lsp-')); roots.push(root);
+  const viewDirectory = path.join(root, 'view'); await fs.mkdir(viewDirectory);
+  const previous = process.env.DEVRYAN_WORKER_LSP_DOWNLOAD;
+  try {
+    delete process.env.DEVRYAN_WORKER_LSP_DOWNLOAD;
+    const prepared = await prepareSessionExecution({ launcher: path.join(root, 'launcher'), lease: { viewDirectory } });
+    expect(prepared.environment.OPENCODE_DISABLE_LSP_DOWNLOAD).toBe('true');
+    process.env.DEVRYAN_WORKER_LSP_DOWNLOAD = '1';
+    const restored = await prepareSessionExecution({ launcher: path.join(root, 'launcher'), lease: { viewDirectory } });
+    expect('OPENCODE_DISABLE_LSP_DOWNLOAD' in restored.environment).toBe(false);
+  } finally {
+    if (previous === undefined) delete process.env.DEVRYAN_WORKER_LSP_DOWNLOAD;
+    else process.env.DEVRYAN_WORKER_LSP_DOWNLOAD = previous;
+  }
+});
+
 test('an intact artifact without native acceptance cannot attest complete confinement', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-execution-manifest-')); roots.push(root);
   const launcher = path.join(root, 'DevRyan-execution-linux');

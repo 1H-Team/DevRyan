@@ -12,6 +12,12 @@ const SUCCESS_STATUS = 'idle';
 const FAILURE_STATUSES = new Set(['error', 'failed', 'aborted', 'cancelled', 'canceled']);
 const FAILURE_FINISHES = new Set(['error', 'failed', 'abort', 'aborted', 'cancelled', 'canceled']);
 const FINAL_TOOL_STATUSES = new Set(['completed', 'error', 'failed', 'aborted', 'cancelled', 'canceled']);
+// Turn-deadline timer seam: tests inject a manual timer to fire the deadline at
+// a chosen point; evaluations always use the host timers.
+const HOST_TIMERS = Object.freeze({
+  setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
+  clearTimeout: (handle) => clearTimeout(handle),
+});
 
 const normalizeString = (value) => (
   typeof value === 'string' && value.trim() ? value.trim() : ''
@@ -940,7 +946,8 @@ export const runSessionTurn = async (options = {}) => {
   const startedAt = Date.now();
   const timeoutError = new EvaluationTimeoutError(timeoutMs);
   const timeoutController = new AbortController();
-  const timeout = setTimeout(() => timeoutController.abort(timeoutError), timeoutMs);
+  const timers = options.timers ?? HOST_TIMERS;
+  const timeout = timers.setTimeout(() => timeoutController.abort(timeoutError), timeoutMs);
   const signal = combineSignals(options.signal, timeoutController.signal);
   const statuses = [];
   const knownSessionIds = new Set();
@@ -1031,6 +1038,6 @@ export const runSessionTurn = async (options = {}) => {
     }
     throw normalizedError;
   } finally {
-    clearTimeout(timeout);
+    timers.clearTimeout(timeout);
   }
 };

@@ -8,7 +8,7 @@ export const changeError = (code, status = 409) => Object.assign(new Error(code)
 
 // Never inherit a caller's index or object-store overrides. All mutation callers
 // supply the private repository explicitly; checkout commands are read-only.
-const start = (cwd, args, { env, input, timeoutMs = 30_000, stdout = 'pipe' } = {}) => {
+const start = (cwd, args, { env, input, timeoutMs = 30_000, stdout = 'pipe', acceptExitCodes = [] } = {}) => {
   const signal = executionSignal();
   signal?.throwIfAborted();
   const child = spawn('git', args, { cwd, env: { ...process.env,
@@ -34,8 +34,9 @@ const start = (cwd, args, { env, input, timeoutMs = 30_000, stdout = 'pipe' } = 
       if (signal?.aborted) reject(signal.reason);
       else if (timedOut) reject(changeError('capture_timeout', 503));
       else if (diskFull) reject(changeError('storage_unavailable', 503));
-      else if (code !== 0 && notRepository) reject(changeError('capture_not_git', 409));
-      else if (code !== 0) reject(changeError('capture_git_failed', 503));
+      // Some commands report an answer by status, e.g. check-ignore's 1 for "none ignored".
+      else if (code !== 0 && !acceptExitCodes.includes(code) && notRepository) reject(changeError('capture_not_git', 409));
+      else if (code !== 0 && !acceptExitCodes.includes(code)) reject(changeError('capture_git_failed', 503));
       else { executionProgress(); resolve(); }
     });
   }).finally(() => { clearTimeout(timer); signal?.removeEventListener('abort', abort); });
@@ -131,7 +132,8 @@ export async function* gitRecords(cwd, args, rows) {
   };
   for await (const row of rows) {
     if (!Number.isSafeInteger(row.size) || row.size < 0 || row.size > 512 * 1024) throw changeError('invalid_change_record', 503);
-    if (batch.length && (batch.length >= 256 || bytes + row.size > 4 * 1024 * 1024)) {
+    // The byte bound caps each read; the count bound only limits spawns.
+    if (batch.length && (batch.length >= 4096 || bytes + row.size > 4 * 1024 * 1024)) {
       yield* await read(batch); batch = []; bytes = 0;
     }
     batch.push(row); bytes += row.size;

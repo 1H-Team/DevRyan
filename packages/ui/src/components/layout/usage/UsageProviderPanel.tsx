@@ -110,7 +110,6 @@ export const UsageProviderPanel = React.memo(function UsageProviderPanel({
   const hasRows = Boolean(group) && (
     entries.length > 0
     || Boolean(group?.resetCredits)
-    || Boolean(group?.modelRows?.length)
     || Boolean(group?.modelFamilies?.length)
     || Boolean(group?.warnings?.length)
   );
@@ -179,24 +178,6 @@ export const UsageProviderPanel = React.memo(function UsageProviderPanel({
               quotaTrendHistory={quotaTrendHistory}
             />
           ))}
-
-          {group.modelRows && group.modelRows.length > 0 ? (
-            <div className="space-y-2.5">
-              {group.modelRows.map(({ modelName, label, window, displayLabel }) => (
-                <UsageMetricRow
-                  key={`${group.providerId}-${modelName}`}
-                  providerId={group.providerId}
-                  scope="model"
-                  scopeId={modelName}
-                  label={label}
-                  window={window}
-                  displayLabel={displayLabel}
-                  quotaTrendHistory={quotaTrendHistory}
-                  mutedTitle
-                />
-              ))}
-            </div>
-          ) : null}
 
           {group.modelFamilies && group.modelFamilies.length > 0 ? (
             <div className="space-y-0.5">

@@ -48,7 +48,8 @@ export const findQaSeededInvestigationStarts = (rows, knownCallIds = new Set()) 
   .map(part => part.callID);
 
 // OpenCode 1.18.31's native Is/Dl and maxOutputTokens functions, verified
-// against the pinned executable. Input limits take precedence over context.
+// against the pinned executable; 1.18.32 leaves overflow.ts, compaction.ts,
+// transform.ts and the LLM request paths unchanged. Input limits take precedence over context.
 // This projects the existing policy; it never writes config or model limits.
 export function deriveQaNativeCompactionPolicy({ version, modelLimits, compaction, outputTokenMax }) {
   assert.equal(openCodeBaseVersion(version), TARGET_OPENCODE_VERSION, 'Natural threshold evidence requires the verified OpenCode version');

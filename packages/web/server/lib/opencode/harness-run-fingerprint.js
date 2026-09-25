@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { resolveHarnessPolicies } from '@openchamber/orchestration-runtime';
-import { readDuplicatePluginInventory, qualifyDuplicateOutputs, resolveDuplicateOutputPolicy, createRuntimeDigestReader } from './harness-duplicate-qualification.js';
+import { readDuplicatePluginInventory, qualifyDuplicateOutputs, resolveDuplicateOutputPolicy, createRuntimeDigestReader, createRuntimeIdentityReader, duplicatePolicyVector } from './harness-duplicate-qualification.js';
 import { createHarnessToolManifestReader } from './harness-tool-manifest.js';
 
 const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -52,6 +52,7 @@ export const createHarnessRunFingerprintReader = (options) => {
   const duplicateOutputs = resolveDuplicateOutputPolicy(options.environment ?? process.env, options.duplicateProfiles);
   const observations = new Map();
   const readRuntimeHash = createRuntimeDigestReader(options.getRuntimeBinary);
+  const readRuntimeIdentity = createRuntimeIdentityReader(options.getRuntimeBinary, readRuntimeHash);
   let runtimeHash = null;
   let qualifiedRuntimeVersion = null;
   const pending = new Map();
@@ -105,8 +106,8 @@ export const createHarnessRunFingerprintReader = (options) => {
       const enabled = duplicateOutputs;
       const managed = options.isManaged?.() === true;
       if (!enabled || !managed || typeof context.directory !== 'string') return { qualified: false, reason: 'policy-or-runtime-unqualified' };
-      const [health, config, binaryHash] = await Promise.all([request('/global/health'), request('/config', context.directory), readRuntimeHash()]);
-      runtimeHash = binaryHash;
+      const [health, config, runtime] = await Promise.all([request('/global/health'), request('/config', context.directory), readRuntimeIdentity()]);
+      runtimeHash = runtime.runtimeHash;
       qualifiedRuntimeVersion = health?.version ?? null;
       const inventory = await readDuplicatePluginInventory(config?.plugin, config?.provider);
       if (inventory) inventories.set(context.directory, inventory);
@@ -114,7 +115,9 @@ export const createHarnessRunFingerprintReader = (options) => {
       while (inventories.size > 64) inventories.delete(inventories.keys().next().value);
       let providerRoute;
       try { providerRoute = options.getDuplicateProviderRoute?.(context.providerID); } catch { /* Unavailable route cannot qualify. */ }
-      return qualifyDuplicateOutputs({ managed, enabled, runtimeVersion: health?.version, runtimeHash,
+      const environment = options.environment ?? process.env;
+      return qualifyDuplicateOutputs({ managed, enabled, runtimeVersion: health?.version, runtimeHash, companion: runtime.companion,
+        policyVector: duplicatePolicyVector(environment), environment,
         providerRoute,
         selection: { providerID: context.providerID, modelID: context.modelID, variant: context.variant ?? null },
         // Route qualification includes all configured options/models for the

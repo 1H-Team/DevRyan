@@ -134,8 +134,8 @@ describe("usePluginsStore", () => {
     expect(usePluginsStore.getState().entries).toBe(firstEntries);
     expect(usePluginsStore.getState().files).toBe(firstFiles);
     expect(usePluginsStore.getState().defaults).toBe(firstDefaults);
+    // A retired plugin id from an older server is dropped rather than rendered.
     expect(firstDefaults.map((plugin) => plugin.pluginId)).toEqual([
-      "opencode-antigravity-auth",
       "@rama_nigg/open-cursor",
       "opencode-with-claude",
       "oh-my-opencode-slim",

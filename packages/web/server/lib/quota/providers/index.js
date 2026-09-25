@@ -63,12 +63,6 @@ const registry = {
     isConfigured: () => google.resolveGoogleAuthSources().some((source) => source.sourceId === 'gemini'),
     fetchQuota: google.fetchGoogleQuota
   },
-  antigravity: {
-    providerId: 'antigravity',
-    providerName: 'Antigravity',
-    isConfigured: () => google.resolveGoogleAuthSources().some((source) => source.sourceId === 'antigravity'),
-    fetchQuota: google.fetchAntigravityQuota
-  },
   'zai-coding-plan': {
     providerId: zai.providerId,
     providerName: zai.providerName,
@@ -204,7 +198,6 @@ export const fetchQuotaForProvider = async (providerId, options = {}) => {
 export const fetchClaudeQuota = claude.fetchQuota;
 export const fetchOpenaiQuota = openai.fetchQuota;
 export const fetchGoogleQuota = google.fetchGoogleQuota;
-export const fetchAntigravityQuota = google.fetchAntigravityQuota;
 export const fetchCodexQuota = codex.fetchQuota;
 export const fetchXaiQuota = xai.fetchQuota;
 export const fetchDeepSeekQuota = deepseek.fetchQuota;

@@ -1637,6 +1637,7 @@ export const settingsDict = {
   'settings.providers.page.toast.providerDisconnected': 'Provider disconnected',
   'settings.providers.page.toast.providerDisconnectQueued': 'Provider disconnect queued',
   'settings.providers.page.toast.providerDisconnectFailed': 'Failed to disconnect provider',
+  'settings.providers.page.toast.providerStillProvided': 'Provider is still configured in {sources}',
   'settings.mcp.page.empty.selectServer': 'Select an MCP server from the sidebar',
   'settings.mcp.page.empty.addNewOne': 'or add a new one',
   'settings.mcp.page.header.newServer': 'New MCP Server',

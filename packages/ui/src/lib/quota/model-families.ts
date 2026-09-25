@@ -11,15 +11,14 @@ export interface ModelFamily {
 /**
  * Strip auth source prefix from model name for display.
  * e.g., "gemini/gemini-2.5-flash" -> "gemini-2.5-flash"
- *       "antigravity/claude-sonnet" -> "claude-sonnet"
  */
 export function getDisplayModelName(modelName: string): string {
-  // Handle prefixes like "gemini/", "antigravity/"
+  // Handle auth source prefixes like "gemini/"
   const slashIndex = modelName.indexOf('/');
   if (slashIndex !== -1) {
     const prefix = modelName.substring(0, slashIndex);
     // Check if it's an auth source prefix
-    if (prefix === 'gemini' || prefix === 'antigravity') {
+    if (prefix === 'gemini') {
       return modelName.substring(slashIndex + 1);
     }
   }
@@ -43,7 +42,6 @@ export function getUsageModelDisplayInfo(
 /**
  * Get the auth source label from a model name prefix.
  * e.g., "gemini/..." -> "Gemini"
- *       "antigravity/..." -> "Antigravity"
  */
 export function getAuthSourceLabel(modelName: string): string | null {
   const slashIndex = modelName.indexOf('/');
@@ -51,7 +49,6 @@ export function getAuthSourceLabel(modelName: string): string | null {
   
   const prefix = modelName.substring(0, slashIndex);
   if (prefix === 'gemini') return 'Gemini';
-  if (prefix === 'antigravity') return 'Antigravity';
   return null;
 }
 
@@ -64,18 +61,8 @@ const GOOGLE_MODEL_FAMILIES: ModelFamily[] = [
   },
 ];
 
-const ANTIGRAVITY_MODEL_FAMILIES: ModelFamily[] = [
-  {
-    id: 'antigravity-auth',
-    label: 'Antigravity',
-    matcher: (modelName) => modelName.startsWith('antigravity/'),
-    order: 1,
-  },
-];
-
 export const PROVIDER_MODEL_FAMILIES: Record<string, ModelFamily[]> = {
   google: GOOGLE_MODEL_FAMILIES,
-  antigravity: ANTIGRAVITY_MODEL_FAMILIES,
 };
 
 export function getModelFamily(modelName: string, providerId: QuotaProviderId): ModelFamily | null {
@@ -144,7 +131,7 @@ export function groupModelsByFamilyWithGetter<T>(
 
 /**
  * Get default models for a provider based on simple patterns.
- * For Google provider with gemini/ and antigravity/ prefixes:
+ * For Google provider with gemini/ prefixes:
  * - Gemini 3.x models
  * - All Claude models
  */
@@ -155,7 +142,7 @@ export function getDefaultModels(
   void _providerId;
   return availableModels.filter((model) => {
     const lower = model.toLowerCase();
-    // Handle gemini/ and antigravity/ prefixes
+    // Handle gemini/ prefixes
     const modelName = lower.includes('/') ? lower.split('/')[1] : lower;
     // Gemini 3.x
     if (/^gemini-3(?:\.\d+)?-/.test(modelName)) return true;

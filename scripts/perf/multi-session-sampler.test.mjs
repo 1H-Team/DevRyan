@@ -1,12 +1,18 @@
 import assert from 'node:assert/strict';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, it } from 'node:test';
 
+import { classifyProcessCommand } from '../../packages/web/server/lib/processes/runtime.js';
 import {
+  appInfoPlistFromCommand,
   buildProcessTree,
   buildTrackedProcesses,
   classifyProcess,
   commandFamily,
   commandPreview,
+  commandReferencesDirectory,
+  describeLspProcesses,
   parseDockerStats,
   parseDuration,
   parseFootprintJson,
@@ -17,6 +23,7 @@ import {
   parseSysctl,
   parseTopOutput,
   parseVmStat,
+  runtimeRootLogPaths,
   summarizeRoles,
 } from './multi-session-sampler.mjs';
 import {
@@ -102,6 +109,48 @@ describe('size and duration parsing', () => {
     assert.throws(() => parseSamplerArguments(['--label', '../escape'], {}));
     assert.throws(() => parseSamplerArguments(['--bogus'], {}));
     assert.equal(parseSamplerArguments([], { DEVRYAN_UI_SESSION_COOKIE: 'oc_ui_session_3000=env' }).cookie, 'oc_ui_session_3000=env');
+  });
+
+  it('defaults to the installed app target and its home-directory logs', () => {
+    const options = parseSamplerArguments([], {});
+    assert.equal(options.targetMode, 'app');
+    assert.equal(options.rootPid, null);
+    assert.equal(options.runtimeRoot, null);
+    assert.equal(options.opencodeLog, path.join(os.homedir(), '.local/share/opencode/log/opencode.log'));
+    assert.equal(options.mainLog, path.join(os.homedir(), 'Library/Logs/DevRyan/main.log'));
+  });
+
+  it('parses a pid target and rejects malformed or system pids', () => {
+    const options = parseSamplerArguments(['--pid', '4242'], {});
+    assert.equal(options.targetMode, 'pid');
+    assert.equal(options.rootPid, 4242);
+    for (const raw of ['0', '1', '-5', '12abc', '1.5', '99999999999999999999']) {
+      assert.throws(() => parseSamplerArguments(['--pid', raw], {}), /--pid requires a process id greater than 1/, raw);
+    }
+    assert.throws(() => parseSamplerArguments(['--pid'], {}), /--pid requires a value/);
+  });
+
+  it('derives runtime-root log defaults and keeps explicit log overrides', () => {
+    const runtimeRoot = '/work/DevRyan/.cache/qa/web-smoke-abc/runtime';
+    const options = parseSamplerArguments(['--runtime-root', runtimeRoot], {});
+    assert.equal(options.targetMode, 'runtime-root');
+    assert.equal(options.runtimeRoot, runtimeRoot);
+    assert.deepEqual(runtimeRootLogPaths(runtimeRoot), {
+      opencodeLog: `${runtimeRoot}/home/.local/share/opencode/log/opencode.log`,
+      mainLog: `${runtimeRoot}/logs/main.log`,
+    });
+    assert.equal(options.opencodeLog, `${runtimeRoot}/home/.local/share/opencode/log/opencode.log`);
+    assert.equal(options.mainLog, `${runtimeRoot}/logs/main.log`);
+
+    const overridden = parseSamplerArguments(['--runtime-root', runtimeRoot, '--opencode-log', '/logs/oc.log', '--main-log', '/logs/main.log'], {});
+    assert.equal(overridden.opencodeLog, '/logs/oc.log');
+    assert.equal(overridden.mainLog, '/logs/main.log');
+    assert.equal(parseSamplerArguments(['--runtime-root', 'relative/runtime'], {}).runtimeRoot, path.resolve('relative/runtime'));
+  });
+
+  it('rejects combined or unbounded targets', () => {
+    assert.throws(() => parseSamplerArguments(['--pid', '4242', '--runtime-root', '/tmp/runtime'], {}), /mutually exclusive/);
+    assert.throws(() => parseSamplerArguments(['--runtime-root', '/'], {}), /filesystem root/);
   });
 });
 
@@ -227,6 +276,200 @@ describe('process tree classification', () => {
     const roles = summarizeRoles(procs);
     assert.equal(roles['opencode-serve'].count, 1);
     assert.equal(roles['electron-main+server'].cpu, 9.2);
+  });
+});
+
+describe('pid and runtime-root targets', () => {
+  const RUNTIME_ROOT = '/Users/x/DevRyan/.cache/qa/web-smoke-abc/runtime';
+  const QA_PS_FIXTURE = `  PID  PPID %CPU    RSS     ELAPSED COMMAND
+    1     0  0.0   6640 02-20:13:26 /sbin/launchd
+  700     1  0.1  20480    10:00 /bin/zsh -l
+  701   700  0.5 204800    09:59 /opt/homebrew/bin/node scripts/qa/isolated-host.mjs
+  702   701  2.0 409600    09:58 /Users/x/DevRyan/.cache/qa/opencode-1.18.31/package/bin/opencode serve --hostname 127.0.0.1 --port 0
+  703   702  1.0 102400    05:00 /opt/homebrew/bin/bun x typescript-language-server --stdio
+  704   703  3.0 307200    04:59 /opt/homebrew/bin/node /Users/x/.cache/opencode/node_modules/typescript/lib/tsserver.js --useInferredProjectPerProjectRoot
+  705   702  0.0   4096    00:01 /usr/bin/git -C ${RUNTIME_ROOT}/workspace status --porcelain
+  706     1  1.0 409600    30:00 /Users/x/.opencode/bin/opencode serve --hostname 127.0.0.1 --port 4096
+  800     1  0.3 148480    08:00 /Users/x/electron/dist/Electron.app/Contents/MacOS/Electron scripts/qa/isolated-host.mjs
+  801   800  0.0  46080    08:00 /Users/x/electron/dist/Electron.app/Contents/Frameworks/Electron Helper.app/Contents/MacOS/Electron Helper --type=gpu-process --user-data-dir=${RUNTIME_ROOT}/browser-profile
+  802   800  0.0  80896    07:59 /Users/x/electron/dist/Electron.app/Contents/Frameworks/Electron Helper (Renderer).app/Contents/MacOS/Electron Helper (Renderer) --type=renderer --user-data-dir=${RUNTIME_ROOT}/browser-profile
+  803   801  0.0   1024    07:58 /Users/x/electron/crashpad_handler --database=${RUNTIME_ROOT}/browser-profile/Crashpad
+  900     1  0.0   2048    01:00 /opt/homebrew/bin/node ${RUNTIME_ROOT}-other/tool.mjs
+  901     1  0.0   2048    01:00 /opt/homebrew/bin/node /elsewhere${RUNTIME_ROOT}/tool.mjs
+`;
+  const rows = parsePsTable(QA_PS_FIXTURE);
+
+  it('roots the tree at the given pid and walks only its descendants', () => {
+    const tree = buildProcessTree(rows, { mode: 'pid', pid: 701 });
+    assert.equal(tree.mode, 'pid');
+    assert.deepEqual([...tree.rootPids], [701]);
+    assert.deepEqual([...tree.members.keys()].sort((a, b) => a - b), [701, 702, 703, 704, 705]);
+    assert.equal(tree.members.get(704), 701);
+    // A launchd-parented opencode elsewhere on the machine is not this target's orphan.
+    assert.deepEqual(tree.orphans, []);
+    assert.deepEqual([...buildProcessTree(rows).rootPids], [], 'no DevRyan.app runs in this listing');
+  });
+
+  it('reports an exited pid root as an empty tree', () => {
+    const exited = rows.filter((row) => row.pid !== 701);
+    const tree = buildProcessTree(exited, { mode: 'pid', pid: 701 });
+    assert.equal(tree.rootPids.size, 0);
+    assert.equal(tree.members.size, 0);
+  });
+
+  it('labels a generic pid root as the host main process and keeps child roles', () => {
+    const { procs } = buildTrackedProcesses({ psRows: rows, topRows: new Map(), footprints: new Map(), target: { mode: 'pid', pid: 701 } });
+    const roleOf = new Map(procs.map((proc) => [proc.pid, proc.role]));
+    assert.equal(roleOf.get(701), 'electron-main+server');
+    assert.equal(roleOf.get(702), 'opencode-serve');
+    assert.equal(roleOf.get(703), 'lsp');
+    assert.equal(roleOf.get(704), 'lsp');
+    assert.equal(roleOf.get(705), 'git');
+  });
+
+  it('matches only whole-path references to the runtime root', () => {
+    const directories = [RUNTIME_ROOT];
+    assert.equal(commandReferencesDirectory(`node --user-data-dir=${RUNTIME_ROOT}/browser-profile`, directories), true);
+    assert.equal(commandReferencesDirectory(`git -C ${RUNTIME_ROOT} status`, directories), true);
+    assert.equal(commandReferencesDirectory(`node ${RUNTIME_ROOT}`, directories), true);
+    assert.equal(commandReferencesDirectory(`node "${RUNTIME_ROOT}/x"`, directories), true);
+    assert.equal(commandReferencesDirectory(`node file://${RUNTIME_ROOT}/x.mjs`, directories), true);
+    assert.equal(commandReferencesDirectory(`node ${RUNTIME_ROOT}-other/tool.mjs`, directories), false);
+    assert.equal(commandReferencesDirectory(`node /elsewhere${RUNTIME_ROOT}/tool.mjs`, directories), false);
+    assert.equal(commandReferencesDirectory('node /Users/x/DevRyan/.cache/qa/web-smoke-abc/runtime2', directories), false);
+    // Either spelling of a symlinked root (e.g. /tmp and /private/tmp) matches.
+    assert.equal(commandReferencesDirectory('node /private/tmp/qa/runtime/x', ['/tmp/qa/runtime', '/private/tmp/qa/runtime']), true);
+  });
+
+  it('roots a runtime-root target at the topmost processes naming the directory', () => {
+    const target = { mode: 'runtime-root', directories: [RUNTIME_ROOT] };
+    const tree = buildProcessTree(rows, target);
+    // 803 names the root too, but its parent 801 already does.
+    assert.deepEqual([...tree.rootPids].sort((a, b) => a - b), [705, 801, 802]);
+    assert.equal(tree.members.get(803), 801);
+    assert.equal(tree.members.has(900), false);
+    assert.equal(tree.members.has(901), false);
+    assert.deepEqual(tree.orphans, []);
+
+    const { procs } = buildTrackedProcesses({ psRows: rows, topRows: new Map(), footprints: new Map(), target });
+    const roleOf = new Map(procs.map((proc) => [proc.pid, proc.role]));
+    // Specific roots keep their own role; nothing is mislabelled as the main process.
+    assert.equal(roleOf.get(801), 'gpu');
+    assert.equal(roleOf.get(802), 'renderer');
+    assert.equal(roleOf.get(705), 'git');
+    assert.equal(roleOf.get(803), 'crashpad');
+  });
+
+  it('never samples the sampler, its launching shell, or its own children', () => {
+    const samplerRows = parsePsTable(`  PID  PPID %CPU    RSS     ELAPSED COMMAND
+    1     0  0.0   6640 02-20:13:26 /sbin/launchd
+  600     1  0.0  20480    10:00 /bin/zsh -c node scripts/perf/multi-session-sampler.mjs --runtime-root ${RUNTIME_ROOT}
+  601   600  0.5  40960    09:59 node scripts/perf/multi-session-sampler.mjs --runtime-root ${RUNTIME_ROOT}
+  602   601  0.0   2048    00:01 ps -axww -o pid,ppid,pcpu,rss,etime,command
+  801     1  0.0  46080    08:00 /x/Electron Helper --type=gpu-process --user-data-dir=${RUNTIME_ROOT}/browser-profile
+`);
+    const runtimeTree = buildProcessTree(samplerRows, { mode: 'runtime-root', directories: [RUNTIME_ROOT], samplerPid: 601 });
+    assert.deepEqual([...runtimeTree.rootPids], [801]);
+    assert.deepEqual([...runtimeTree.members.keys()], [801]);
+
+    // A pid target that happens to contain the sampler skips its subtree.
+    const pidTree = buildProcessTree(samplerRows, { mode: 'pid', pid: 600, samplerPid: 601 });
+    assert.deepEqual([...pidTree.members.keys()], [600]);
+  });
+
+  it('derives the app version plist only from DevRyan.app bundles', () => {
+    assert.equal(appInfoPlistFromCommand('/Applications/DevRyan.app/Contents/MacOS/DevRyan'), '/Applications/DevRyan.app/Contents/Info.plist');
+    assert.equal(
+      appInfoPlistFromCommand('/Users/x/DevRyan/.cache/qa/packaged-electron-1/mac-arm64/DevRyan.app/Contents/Frameworks/DevRyan Helper.app/Contents/MacOS/DevRyan Helper --type=gpu-process'),
+      '/Users/x/DevRyan/.cache/qa/packaged-electron-1/mac-arm64/DevRyan.app/Contents/Info.plist',
+    );
+    assert.equal(appInfoPlistFromCommand('/Users/x/electron/dist/Electron.app/Contents/MacOS/Electron scripts/qa/isolated-host.mjs'), null);
+    assert.equal(appInfoPlistFromCommand('/opt/homebrew/bin/node scripts/qa/isolated-host.mjs'), null);
+    assert.equal(appInfoPlistFromCommand(undefined), null);
+  });
+
+  it('strips packaged QA bundle prefixes from command previews', () => {
+    assert.equal(
+      commandPreview('/Users/x/DevRyan/.cache/qa/packaged-electron-1/mac-arm64/DevRyan.app/Contents/MacOS/DevRyan --inspect'),
+      'DevRyan --inspect',
+    );
+  });
+});
+
+describe('LSP classification and spawn chains', () => {
+  it('classifies LSP servers exactly as the app process runtime does', () => {
+    const noRoots = { rootPids: new Set() };
+    const commands = [
+      '/opt/homebrew/bin/bun x typescript-language-server --stdio',
+      '/x/node_modules/.bin/typescript-language-server --stdio',
+      '/opt/homebrew/bin/node /x/node_modules/typescript/lib/tsserver.js --serverMode partialSemantic',
+      '/x/bin/pyright-langserver --stdio',
+      '/usr/local/bin/pylsp',
+      '/x/bin/gopls serve',
+      '/x/bin/rust-analyzer',
+      '/usr/bin/clangd --background-index',
+      '/x/bin/lua-language-server',
+      '/x/node_modules/.bin/vscode-json-language-server --stdio',
+      '/x/bin/bash-language-server start',
+      '/x/bin/yaml-language-server --stdio',
+      '/x/bin/ruby-lsp',
+      '/x/bin/elixir-ls',
+      '/usr/bin/git status --porcelain',
+      '/opt/homebrew/bin/node /x/runner.js',
+      '/x/bin/lspconfig-helper --stdio',
+      '/x/pyright/dist/pyright.js --outputjson',
+    ];
+    for (const command of commands) {
+      const appSaysLsp = classifyProcessCommand(command) === 'lsp';
+      const samplerSaysLsp = classifyProcess({ pid: 99, command }, noRoots) === 'lsp';
+      assert.equal(samplerSaysLsp, appSaysLsp, command);
+    }
+    // The corpus exercises both outcomes, including servers the old sampler regex missed.
+    assert.equal(classifyProcess({ pid: 99, command: '/x/bin/pyright-langserver --stdio' }, noRoots), 'lsp');
+    assert.equal(classifyProcess({ pid: 99, command: '/usr/local/bin/pylsp' }, noRoots), 'lsp');
+    assert.equal(classifyProcess({ pid: 99, command: '/x/bin/lua-language-server' }, noRoots), 'lsp');
+    assert.notEqual(classifyProcess({ pid: 99, command: '/opt/homebrew/bin/node /x/runner.js' }, noRoots), 'lsp');
+  });
+
+  it('dumps each LSP server with its sanitized spawn chain up to the root', () => {
+    const psText = `  PID  PPID %CPU    RSS     ELAPSED COMMAND
+    1     0  0.0   6640 02-20:13:26 /sbin/launchd
+  500     1  0.9 148480    46:32 /Applications/DevRyan.app/Contents/MacOS/DevRyan
+  510   500  2.9 593920    46:06 /Users/x/.opencode/bin/opencode serve --hostname 127.0.0.1 --port 53961 --password=hunter2
+  520   510  1.0 102400    05:00 /opt/homebrew/bin/bun x typescript-language-server --stdio --api-key sk-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOP
+  521   520  3.0 307200    04:59 /opt/homebrew/bin/node /Users/x/.cache/opencode/node_modules/typescript/lib/tsserver.js ${'--flag '.repeat(40)}
+  530   510  0.1  20480    00:30 /bin/zsh -c ls
+`;
+    const psRows = parsePsTable(psText);
+    const { procs } = buildTrackedProcesses({ psRows, topRows: new Map(), footprints: new Map() });
+    const details = describeLspProcesses(procs);
+
+    assert.deepEqual(details.map((entry) => entry.pid), [520, 521]);
+    const [languageServer, tsserver] = details;
+    assert.equal(languageServer.root, 500);
+    assert.deepEqual(languageServer.spawnChain.map((link) => [link.pid, link.role]), [
+      [510, 'opencode-serve'],
+      [500, 'electron-main+server'],
+    ]);
+    assert.deepEqual(tsserver.spawnChain.map((link) => link.pid), [520, 510, 500]);
+    assert.equal(tsserver.spawnChain[0].role, 'lsp');
+    assert.equal(tsserver.ppid, 520);
+    assert.ok(tsserver.cmd.length <= 160);
+
+    const serialized = JSON.stringify(details);
+    assert.equal(serialized.includes('hunter2'), false);
+    assert.equal(serialized.includes('sk-abcdefghijklmnopqrstuvwxyz'), false);
+    assert.match(serialized, /--password=<redacted>/);
+    assert.match(serialized, /--api-key <redacted>/);
+    assert.equal(serialized.includes('/Applications/DevRyan.app'), false);
+  });
+
+  it('stops a spawn chain at a missing parent or a cycle', () => {
+    const proc = (pid, ppid, role, root = 1) => ({ pid, ppid, role, root, family: role, cmd: role, etime: '00:01', footprint: 1 });
+    const detached = describeLspProcesses([proc(10, 9, 'lsp')]);
+    assert.deepEqual(detached[0].spawnChain, []);
+    const cyclic = describeLspProcesses([proc(10, 11, 'lsp'), proc(11, 12, 'js-child'), proc(12, 11, 'shell')]);
+    assert.deepEqual(cyclic[0].spawnChain.map((link) => link.pid), [11, 12]);
   });
 });
 

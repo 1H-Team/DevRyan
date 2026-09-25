@@ -40,19 +40,17 @@ afterEach(() => {
 describe('managed plugin manifest', () => {
   it('pins every dependency plugin and registers managed defaults by local path', () => {
     expect(DEVRYAN_MANAGED_PROFILE_DEPENDENCIES).toEqual({
-      '@opencode-ai/plugin': '1.18.31',
+      '@opencode-ai/plugin': '1.18.32',
       'adm-zip': '0.6.0',
       'mammoth': '1.12.1',
       'unpdf': '1.8.0',
-      'opencode-antigravity-auth': '1.6.0',
       '@rama_nigg/open-cursor': '2.5.8',
       'opencode-with-claude': '1.8.0',
       'opencode-gpt-imagegen': '0.1.12',
       'oh-my-opencode-slim': '2.2.18',
     });
     expect(DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS).toEqual([
-      './node_modules/opencode-antigravity-auth/dist/index.js',
-      './node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js',
+      './plugins/devryan-open-cursor.mjs',
       './node_modules/opencode-with-claude/dist/index.js',
       './node_modules/opencode-gpt-imagegen/dist/index.js',
       './plugins/devryan-oh-my-opencode-slim.mjs',
@@ -142,8 +140,7 @@ describe('managed plugin manifest', () => {
       './plugins/devryan-oh-my-opencode-slim.mjs',
     ])).toEqual([
       'custom-plugin@4.2.0',
-      './node_modules/opencode-antigravity-auth/dist/index.js',
-      './node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js',
+      './plugins/devryan-open-cursor.mjs',
       ['./node_modules/opencode-with-claude/dist/index.js', { enabled: true }],
       './node_modules/opencode-gpt-imagegen/dist/index.js',
       './plugins/devryan-oh-my-opencode-slim.mjs',
@@ -151,6 +148,22 @@ describe('managed plugin manifest', () => {
       './plugins/devryan-skill-context.mjs',
       './plugins/devryan-document-reader.mjs',
     ]);
+  });
+
+  it('moves Open Cursor registrations from the installed entrypoint to its adapter, relative or absolute', () => {
+    const reconciled = reconcileDevRyanManagedPluginSpecs([
+      'user-plugin@1.0.0',
+      ['./node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js', { note: 'kept' }],
+      'file:///Users/example/.config/opencode/node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js',
+    ]);
+    expect(reconciled.filter((entry) => JSON.stringify(entry).includes('cursor'))).toEqual([
+      ['./plugins/devryan-open-cursor.mjs', { note: 'kept' }],
+    ]);
+    expect(reconciled[0]).toBe('user-plugin@1.0.0');
+    expect(removeDevRyanManagedLegacyPluginSpecs([
+      'user-plugin@1.0.0',
+      'file:///Users/example/.config/opencode/node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js',
+    ])).toEqual(['user-plugin@1.0.0']);
   });
 
   it('retires every DevRyan-provisioned Context Mode registration but keeps user-owned pins', () => {
@@ -167,7 +180,27 @@ describe('managed plugin manifest', () => {
     expect(reconciled.filter((entry) => JSON.stringify(entry).includes('context-mode'))).toEqual([
       'context-mode@1.0.168',
     ]);
-    expect(RETIRED_DEVRYAN_PROFILE_DEPENDENCIES).toEqual({ 'context-mode': '1.0.169' });
+    expect(RETIRED_DEVRYAN_PROFILE_DEPENDENCIES).toEqual({
+      'context-mode': '1.0.169',
+      'opencode-antigravity-auth': '1.6.0',
+    });
+  });
+
+  it('retires every DevRyan-provisioned Antigravity registration and never re-adds it', () => {
+    const reconciled = reconcileDevRyanManagedPluginSpecs([
+      'user-plugin@1.0.0',
+      'opencode-antigravity-auth',
+      'opencode-antigravity-auth@latest',
+      './node_modules/opencode-antigravity-auth/dist/index.js',
+      ['./node_modules/opencode-antigravity-auth/dist/index.js', { enabled: true }],
+      'file:///Users/test/.config/opencode/node_modules/opencode-antigravity-auth/dist/index.js',
+      'opencode-antigravity-auth@2.0.0',
+    ]);
+    expect(reconciled.filter((entry) => JSON.stringify(entry).includes('antigravity'))).toEqual([
+      'opencode-antigravity-auth@2.0.0',
+    ]);
+    expect(reconcileDevRyanManagedPluginSpecs(['user-plugin@1.0.0'])
+      .some((entry) => JSON.stringify(entry).includes('antigravity'))).toBe(false);
   });
 
   it('removes only DevRyan-owned legacy specs from older user config layers', () => {
@@ -197,14 +230,14 @@ describe('managed plugin manifest', () => {
 
   it('reports missing, mismatched, and incomplete installed packages', () => {
     temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-managed-plugins-'));
-    const antigravity = DEVRYAN_MANAGED_PLUGINS.find(
-      (plugin) => plugin.id === DEVRYAN_MANAGED_PLUGIN_IDS.ANTIGRAVITY,
+    const imagegen = DEVRYAN_MANAGED_PLUGINS.find(
+      (plugin) => plugin.id === DEVRYAN_MANAGED_PLUGIN_IDS.GPT_IMAGEGEN,
     );
-    const packageRoot = path.join(temporaryRoot, 'node_modules', antigravity.packageName);
+    const packageRoot = path.join(temporaryRoot, 'node_modules', imagegen.packageName);
     fs.mkdirSync(packageRoot, { recursive: true });
     fs.writeFileSync(
       path.join(packageRoot, 'package.json'),
-      JSON.stringify({ name: antigravity.packageName, version: '0.0.1' }),
+      JSON.stringify({ name: imagegen.packageName, version: '0.0.1' }),
       'utf8',
     );
 
@@ -216,11 +249,11 @@ describe('managed plugin manifest', () => {
 
     expect(issues).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        pluginId: DEVRYAN_MANAGED_PLUGIN_IDS.ANTIGRAVITY,
+        pluginId: DEVRYAN_MANAGED_PLUGIN_IDS.GPT_IMAGEGEN,
         kind: 'version-mismatch',
       }),
       expect.objectContaining({
-        pluginId: DEVRYAN_MANAGED_PLUGIN_IDS.ANTIGRAVITY,
+        pluginId: DEVRYAN_MANAGED_PLUGIN_IDS.GPT_IMAGEGEN,
         kind: 'missing-entrypoint',
       }),
       expect.objectContaining({

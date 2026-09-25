@@ -12,7 +12,9 @@ export interface MutationScope {
   ownerID?: string;
 }
 export interface MutationFile { path: string; status: 'added' | 'modified' | 'deleted' }
-export interface MutationPublication { operationID: string; sequence: number; files: MutationFile[]; outcome?: 'partial'; conflicts?: Array<{ path: string; source?: string }> }
+export interface MutationPublication { operationID: string; sequence: number; files: MutationFile[]; outcome?: 'partial'; conflicts?: Array<{ path: string; source?: string }>;
+  /** Dependency-input paths the call replaced in its view; never published. */
+  ignoredInputs?: string[] }
 export interface MutationLease {
   token: string;
   scope: Pick<MutationScope, 'sessionID' | 'userMessageID' | 'messageID' | 'callID'>;
@@ -33,13 +35,17 @@ export interface MutationLease {
   preparation?: 'none';
   reservedAt?: number;
   snapshotRef?: string;
+  /** Dependency inputs linked read-only into the view (relative paths), classified from the project at preparation. */
+  inputs?: string[];
   ownerID?: string;
   result?: MutationPublication;
   cleanupPending?: boolean;
   cleaned?: boolean;
 }
 export interface MutationTarget { id: string; targetMessageID: string; callID?: string }
-export interface MutationRevertResult { files: MutationFile[]; sessions: MutationTarget[]; redoAvailable: boolean }
+export interface MutationRevertResult { files: MutationFile[]; sessions: MutationTarget[]; redoAvailable: boolean; outcome?: 'partial';
+  /** `ignored_input`: the path is inside a dependency input and was left untouched. */
+  conflicts?: Array<{ path: string; code?: 'ignored_input' }> }
 export interface MutationBoundary {
   id: string;
   revert: { messageID: string; partID?: string; fileRestore: false } | null;
@@ -100,4 +106,6 @@ export function createSessionMutationRuntime(options: {
   directory: string;
   onChange?(input: MutationPublication & { directory: string }): void | Promise<void>;
   onMaterialize?(row: { path: string; before: unknown; after: unknown }): void | Promise<void>;
+  /** Background failures (ledger maintenance, input classification); codes only. */
+  onDiagnostic?(record: { phase: string; state: 'failed'; code: string }): void;
 }): SessionMutationRuntime;

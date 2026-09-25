@@ -1,7 +1,7 @@
 // Explicit live-QA instrumentation, never imported by a shipped runtime. The
 // caller trusts this short-lived certificate only in its owned child process.
-// Requests are forwarded byte-for-byte to the fixed OpenAI origin; credentials
-// and conversation bodies never enter the returned evidence or files.
+// Requests are forwarded byte-for-byte to the selected route's fixed origin;
+// credentials and conversation bodies never enter the returned evidence or files.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import http from 'node:http';
@@ -18,7 +18,29 @@ const metadataRoutes = new Map([
   ['antigravity-auto-updater-974169037036.us-central1.run.app/', 'antigravity-version'],
   ['antigravity.google/changelog', 'antigravity-changelog'],
 ]);
-const hosts = ['chatgpt.com', ...new Set([...metadataRoutes.keys()].map(route => route.split('/')[0]))];
+const metadataHosts = [...new Set([...metadataRoutes.keys()].map(route => route.split('/')[0]))];
+
+// One registered inference route per provider, selected by the proposal's
+// providerID. Both are Responses bodies (`input` items with function_call /
+// function_call_output pairs). `transportIdentity` is the host-attested route a
+// release profile's `transport` must equal (lib/opencode/duplicate-provider-route.js).
+export const DUPLICATE_WIRE_ROUTES = Object.freeze({
+  openai: Object.freeze({ provider: 'openai', host: 'chatgpt.com', path: '/backend-api/codex/responses',
+    transport: 'responses', auth: 'oauth', transportIdentity: 'openai-chatgpt-managed-responses-v1' }),
+  // OpenCode's xAI loader selects @ai-sdk/xai Responses; its OAuth plugin keeps
+  // the SDK default origin and injects the bearer token.
+  xai: Object.freeze({ provider: 'xai', host: 'api.x.ai', path: '/v1/responses',
+    transport: 'responses', auth: 'oauth', transportIdentity: 'xai-oauth-responses-v1' }),
+});
+// Claude runs behind a loopback Meridian proxy: OpenCode sends Anthropic
+// Messages to 127.0.0.1 (never through HTTPS_PROXY), and Meridian's Claude Code
+// child owns the Anthropic request. This proxy cannot observe the projected body.
+const unsupportedRoutes = new Map([['anthropic', 'unsupported-route:anthropic-meridian']]);
+export const resolveDuplicateWireRoute = providerID => {
+  if (typeof providerID === 'string' && Object.hasOwn(DUPLICATE_WIRE_ROUTES, providerID)) return DUPLICATE_WIRE_ROUTES[providerID];
+  throw new Error(unsupportedRoutes.get(providerID)
+    ?? `unsupported-route:${typeof providerID === 'string' && /^[a-z0-9._-]{1,64}$/.test(providerID) ? providerID : 'unknown'}`);
+};
 
 export const projectDuplicateWire = raw => {
   const body = JSON.parse(raw);
@@ -53,15 +75,20 @@ export const projectDuplicateWire = raw => {
       .map(item => createHash('sha256').update(item.output).digest('hex')) };
 };
 
-export async function createDuplicateWireProxy({ root, context, model = 'gpt-5.6-sol', maximumRequests = 100, fetchImpl = fetch }) {
+export async function createDuplicateWireProxy({ root, context, providerID, model, maximumRequests = 100, fetchImpl = fetch }) {
+  const route = resolveDuplicateWireRoute(providerID);
+  if (typeof model !== 'string' || !/^[a-zA-Z0-9_.:/-]{1,200}$/.test(model)) throw new Error('unregistered-model');
+  const hosts = [route.host, ...metadataHosts], upstream = `https://${route.host}${route.path}`;
   const cert = path.join(root, 'wire-cert.pem'), key = path.join(root, 'wire-key.pem');
   const config = path.join(root, 'wire-cert.cnf');
-  await fs.writeFile(config, `[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n[dn]\nCN=chatgpt.com\n[ext]\nsubjectAltName=${hosts.map(host => `DNS:${host}`).join(',')}\nbasicConstraints=critical,CA:TRUE\n`, { mode: 0o600 });
+  await fs.writeFile(config, `[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n[dn]\nCN=${route.host}\n[ext]\nsubjectAltName=${hosts.map(host => `DNS:${host}`).join(',')}\nbasicConstraints=critical,CA:TRUE\n`, { mode: 0o600 });
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-config', config, '-keyout', key, '-out', cert], { stdio: 'ignore' });
   await fs.chmod(key, 0o600);
   const evidence = [], failures = [], metadata = [], sockets = new Set();
   const track = socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); socket.on('error', () => {}); };
-  let count = 0;
+  let count = 0, inflight = 0;
+  const idleWaiters = new Set();
+  const settle = () => { if (inflight === 0) for (const resolve of idleWaiters) resolve(true); };
   const tls = https.createServer({ key: await fs.readFile(key), cert: await fs.readFile(cert) }, async (req, res) => {
     const metadataRoute = metadataRoutes.get(req.headers.host + req.url);
     if (req.method === 'GET' && metadataRoute) {
@@ -71,26 +98,37 @@ export async function createDuplicateWireProxy({ root, context, model = 'gpt-5.6
         res.writeHead(response.status, { 'content-type': response.headers.get('content-type') ?? 'application/octet-stream' });
         for await (const chunk of response.body) if (!res.write(chunk)) await once(res, 'drain');
         res.end();
-      } catch { metadata.push({ route: metadataRoute, statusCode: null }); res.writeHead(502); res.end(); }
+      } catch {
+        // A catalog can fail after its headers were forwarded (upstream cut or
+        // client gone): end or destroy the response instead of throwing.
+        metadata.push({ route: metadataRoute, statusCode: null });
+        if (!res.headersSent) { res.writeHead(502); res.end(); } else res.destroy();
+      }
       return;
     }
     const row = { ...context(), requestIndex: ++count, status: 'incomplete' }; evidence.push(row);
+    inflight++;
     const abort = new AbortController();
     res.on('close', () => { if (!res.writableEnded) abort.abort(); });
     try {
-      if (count > maximumRequests || req.method !== 'POST' || req.headers.host !== 'chatgpt.com'
-        || req.url !== '/backend-api/codex/responses') throw new Error('unregistered-request');
-      let raw = ''; for await (const chunk of req) { raw += chunk; if (Buffer.byteLength(raw) > 2 * 1024 * 1024) throw new Error('oversized-request'); }
+      if (count > maximumRequests || req.method !== 'POST' || req.headers.host !== route.host
+        || req.url !== route.path) throw new Error('unregistered-request');
+      // Buffer whole chunks: decoding each chunk alone would corrupt a UTF-8
+      // sequence split across chunks, and the forwarded bytes must be the client's.
+      const chunks = []; let size = 0;
+      for await (const chunk of req) { size += chunk.length; if (size > 2 * 1024 * 1024) throw new Error('oversized-request'); chunks.push(chunk); }
+      const bytes = Buffer.concat(chunks), raw = bytes.toString('utf8');
       const body = JSON.parse(raw);
       if (body.model !== model) throw new Error('unregistered-model');
       row.request = projectDuplicateWire(raw);
       const headers = { ...req.headers }; delete headers.host; delete headers.connection;
-      const response = await fetchImpl('https://chatgpt.com/backend-api/codex/responses', {
-        method: 'POST', body: raw, headers, redirect: 'error', signal: AbortSignal.any([abort.signal, AbortSignal.timeout(180000)]),
+      const response = await fetchImpl(upstream, {
+        method: 'POST', body: bytes, headers, redirect: 'error', signal: AbortSignal.any([abort.signal, AbortSignal.timeout(180000)]),
       });
       row.statusCode = response.status;
-      const parser = createWireUsageParser({ route: { provider: 'openai', transport: 'responses', auth: 'oauth' },
-        metadata: { observationID: `duplicate-wire-${row.requestIndex}`, provider: 'openai', transport: 'responses', auth: 'oauth', requestedModel: model,
+      const { provider, transport, auth } = route;
+      const parser = createWireUsageParser({ route: { provider, transport, auth },
+        metadata: { observationID: `duplicate-wire-${row.requestIndex}`, provider, transport, auth, route: route.transportIdentity, requestedModel: model,
           purpose: row.request.trialIndex === null ? 'unknown' : 'main', timing: { dispatch: { at: Date.now(), origin: 'client_wire' } } },
         sse: response.headers.get('content-type')?.includes('text/event-stream') });
       res.writeHead(response.status, { 'content-type': response.headers.get('content-type') ?? 'application/octet-stream' });
@@ -101,7 +139,7 @@ export async function createDuplicateWireProxy({ root, context, model = 'gpt-5.6
     } catch (error) {
       row.status = 'failed'; row.failure = ['unregistered-request', 'oversized-request', 'unregistered-model'].includes(error.message) ? error.message : 'transport-failed';
       failures.push(row.failure); if (!res.headersSent) res.writeHead(502); res.end();
-    }
+    } finally { inflight--; settle(); }
   });
   const proxy = http.createServer((_req, res) => { res.writeHead(403); res.end(); });
   proxy.on('connection', track);
@@ -115,6 +153,16 @@ export async function createDuplicateWireProxy({ root, context, model = 'gpt-5.6
     tls.emit('connection', socket);
   });
   await new Promise(resolve => proxy.listen(0, '127.0.0.1', resolve));
-  return { evidence, failures, metadata, cert, origin: `http://127.0.0.1:${proxy.address().port}`,
+  return { route, evidence, failures, metadata, cert, origin: `http://127.0.0.1:${proxy.address().port}`,
+    // Resolves true once no forwarded request is in flight (a session's
+    // background title request can outlive its reply), false on timeout.
+    idle(timeoutMs) {
+      if (inflight === 0) return Promise.resolve(true);
+      return new Promise((resolve) => {
+        const done = (value) => { clearTimeout(timer); idleWaiters.delete(done); resolve(value); };
+        const timer = setTimeout(() => done(false), timeoutMs);
+        idleWaiters.add(done);
+      });
+    },
     async close() { for (const socket of sockets) socket.destroy(); await new Promise(resolve => proxy.close(resolve)); await fs.rm(key, { force: true }); } };
 }

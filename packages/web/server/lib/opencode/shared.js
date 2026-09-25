@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import yaml from 'yaml';
-import { isInvalidJsoncError, parseConfigJsonc } from './jsonc-config.js';
+import { isInvalidJsoncError, parseConfigJsonc, removeJsoncKeyPaths } from './jsonc-config.js';
 
 // ============== PATH CONSTANTS ==============
 
@@ -142,6 +142,18 @@ function getConfigPaths(workingDirectory) {
   };
 }
 
+// Every existing config file OpenCode merges for a scope. OpenCode loads all of
+// them, so anything that removes config must visit each file, not only the
+// first one that exists.
+function listExistingConfigFiles(workingDirectory, scope = 'user') {
+  const candidates = scope === 'project'
+    ? getProjectConfigCandidates(workingDirectory)
+    : scope === 'custom'
+      ? (CUSTOM_CONFIG_FILE ? [CUSTOM_CONFIG_FILE] : [])
+      : getConfigPaths(workingDirectory).userPaths;
+  return candidates.filter((candidate) => fs.existsSync(candidate));
+}
+
 function getPrimaryUserConfigPath(userPaths) {
   for (const userPath of userPaths) {
     if (fs.existsSync(userPath)) {
@@ -253,6 +265,19 @@ function writeConfig(config, filePath = CONFIG_FILE) {
     console.error('Failed to write OpenCode configuration', error);
     throw new Error('Failed to write OpenCode configuration');
   }
+}
+
+// Removes key paths from one config file in place (comments and unrelated
+// formatting survive) after keeping the usual backup.
+function removeConfigKeyPaths(filePath, keyPaths) {
+  if (keyPaths.length === 0) return false;
+  const source = fs.readFileSync(filePath, 'utf8');
+  parseConfigJsonc(source, filePath);
+  const next = removeJsoncKeyPaths(source, keyPaths);
+  if (next === source) return false;
+  fs.copyFileSync(filePath, `${filePath}.openchamber.backup`);
+  fs.writeFileSync(filePath, next, 'utf8');
+  return true;
 }
 
 function getJsonEntrySource(layers, sectionKey, entryName) {
@@ -560,6 +585,7 @@ export {
   getProjectConfigCandidates,
   getProjectConfigPath,
   getConfigPaths,
+  listExistingConfigFiles,
   readConfigFile,
   isPlainObject,
   mergeConfigs,
@@ -567,6 +593,7 @@ export {
   readConfig,
   getConfigForPath,
   writeConfig,
+  removeConfigKeyPaths,
   getJsonEntrySource,
   getJsonWriteTarget,
   getAncestors,

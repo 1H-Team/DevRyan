@@ -69,6 +69,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     getAgentConfig,
     listAgentModelOverrides,
     listStaleAgentModelOverrides,
+    listShadowedAgentModelOverrides,
     writeAgentModelOverride,
     deleteAgentModelOverride,
     writeAgentBackupModel,
@@ -95,6 +96,20 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
   const formatErrorMessage = (error, fallback) => (
     error instanceof Error && error.message ? error.message : fallback
   );
+  // Read-only diagnostic: an unreadable Slim config reports nothing shadowed
+  // instead of failing the overrides listing.
+  const listShadowedOverrides = (directory) => {
+    if (!directory || typeof listShadowedAgentModelOverrides !== 'function') {
+      return {};
+    }
+    try {
+      const shadowed = listShadowedAgentModelOverrides(directory);
+      return shadowed && typeof shadowed === 'object' && !Array.isArray(shadowed) ? shadowed : {};
+    } catch (error) {
+      console.warn('[API:Agent overrides] Shadowed override diagnostic unavailable:', formatErrorMessage(error, 'unknown error'));
+      return {};
+    }
+  };
   const getAgentModelRef = (agentConfig) => {
     const modelRefs = Array.isArray(agentConfig?.modelRefs) ? agentConfig.modelRefs : [];
     const firstModelRef = modelRefs.find((entry) => typeof entry === 'string' && entry.trim());
@@ -184,6 +199,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       res.json({
         overrides: listAgentModelOverrides(),
         staleOverrides: directory ? listStaleOverrides(directory) : [],
+        shadowedOverrides: listShadowedOverrides(directory),
       });
     } catch (error) {
       console.error('Failed to list agent model overrides:', error);

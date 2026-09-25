@@ -132,8 +132,10 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF } = {}) {
       yield* value;
     }
   };
-  const setList = async (prefix, values) => {
-    for await (const { key } of entries(prefix)) remove(key);
+  // `absent`: the caller knows the prefix is new (a just-generated id), so
+  // there is nothing to replace and no listing to read.
+  const setList = async (prefix, values, { absent = false } = {}) => {
+    if (!absent) for await (const { key } of entries(prefix)) remove(key);
     let page = [], bytes = 0, index = 0;
     const flush = () => { if (page.length) set(`${prefix}/${String(index++).padStart(10, '0')}.json`, page); page = []; bytes = 0; };
     for await (const value of values) {

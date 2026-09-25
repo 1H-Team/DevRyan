@@ -48,6 +48,48 @@ test('completion strengthens identical edits, stale repeats cannot downgrade, co
   expect(await summary()).toMatchObject({ coverage: 'partial', reasons: ['receipt_conflict'], restoreAvailable: false });
 });
 
+// OpenCode 1.18 edit metadata carries a patch but no bytes, while a confined
+// publication records bytes: the same edit, in two forms.
+test('metadata receipts never conflict with the confined receipt for the same call, in either order', async () => {
+  const patch = (file, before, after) => `--- a/${file}\n+++ b/${file}\n@@ -1 +1 @@\n-${before}\n+${after}\n`;
+  const confined = (callID, file, before, after) => runtime.recordReceipt({ ...scope(callID), source: 'confined-execution',
+    files: [{ path: file, before, after }] });
+  await fs.writeFile(path.join(directory, 'edit.txt'), 'b\n');
+  await confined('edit', 'edit.txt', 'a\n', 'b\n');
+  const metadata = { ...scope('edit'), files: [{ path: 'edit.txt', patch: patch('edit.txt', 'a', 'b') }] };
+  await runtime.recordReceipt({ ...metadata, source: 'opencode' });
+  await runtime.recordReceipt({ ...metadata, source: 'canonical-event' });
+  await runtime.importHistorical([{ ...metadata, createdAt: 1, source: 'opencode' }]);
+  const settled = await summary();
+  expect(settled).toMatchObject({ coverage: 'complete', reasons: [] });
+  const notified = events.length;
+  await runtime.importHistorical([{ ...metadata, createdAt: 1, source: 'opencode' }]);
+  expect(events.length).toBe(notified);
+  expect((await summary()).revision).toBe(settled.revision);
+
+  // Metadata recorded first (the hook can land before publication) is replaced by the bytes.
+  await runtime.recordReceipt({ ...scope('later'), source: 'canonical-event', files: [{ path: 'later.txt', patch: patch('later.txt', 'x', 'y') }] });
+  await confined('later', 'later.txt', 'x\n', 'y\n');
+  expect(await summary()).toMatchObject({ coverage: 'complete', reasons: [] });
+  expect((await runtime.diff({ directory, rootSessionID: 'ses_root', revision: (await summary()).revision, file: 'later.txt' })).patch).toContain('+y');
+
+  // Conflicting confined bytes for one call stay explicit.
+  await confined('later', 'later.txt', 'x\n', 'z\n');
+  expect((await summary()).reasons).toContain('receipt_conflict');
+});
+
+test('the confined receipt authority kill switch compares metadata receipts as before', async () => {
+  process.env.DEVRYAN_CONFINED_RECEIPT_AUTHORITY = '0';
+  try {
+    await runtime.recordReceipt({ ...scope('legacy'), source: 'confined-execution', files: [{ path: 'legacy.txt', before: 'p\n', after: 'q\n' }] });
+    await runtime.recordReceipt({ ...scope('legacy'), source: 'opencode',
+      files: [{ path: 'legacy.txt', patch: '--- a/legacy.txt\n+++ b/legacy.txt\n@@ -1 +1 @@\n-p\n+q\n' }] });
+    expect((await summary()).reasons).toContain('receipt_conflict');
+  } finally {
+    delete process.env.DEVRYAN_CONFINED_RECEIPT_AUTHORITY;
+  }
+});
+
 test('legacy missing flags require a complete history with every call accounted for', async () => {
   await runtime.recordReceipt(receipt('one'));
   const db = await openChangeStore(storage, path.join(storage, changeKey(directory), 'git'));

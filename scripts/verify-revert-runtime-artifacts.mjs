@@ -34,6 +34,7 @@ export async function verifyRevertRuntimeArtifacts({ directory = path.join(root,
   if (runtime.acceptance !== true || Object.entries(contract.capability).some(([name, value]) => runtime[name] !== value)
     || runtime.platform !== platform || runtime.arch !== arch || runtime.binary !== companion
     || runtime.patchSha256 !== contract.patchSha256 || runtime.baseCommit !== contract.baseCommit
+    || runtime.upstreamVersion !== contract.upstreamVersion || !/^[a-f0-9]{64}$/.test(runtime.buildInputsSha256 ?? '')
     || runtime.sha256 !== await digest(path.join(location, companion))) throw new Error('Revert companion artifact is missing, changed, or unverified');
   return { location, native, runtime };
 }

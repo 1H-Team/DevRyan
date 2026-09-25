@@ -1,3 +1,8 @@
+// Each hidden model stores up to three alias refs (see ui modelVisibility.ts),
+// so 64 refs dropped toggles after roughly 20 models. Keep in sync with
+// HIDDEN_MODEL_REFS_LIMIT in packages/ui/src/lib/persistence.ts.
+export const HIDDEN_MODEL_REFS_LIMIT = 2048;
+
 export const createSettingsHelpers = (dependencies) => {
   const {
     normalizePathForPersistence,
@@ -468,7 +473,7 @@ export const createSettingsHelpers = (dependencies) => {
       result.favoriteModelsUpdatedAt = candidate.favoriteModelsUpdatedAt;
     }
 
-    const hiddenModels = sanitizeModelRefs(candidate.hiddenModels, 64);
+    const hiddenModels = sanitizeModelRefs(candidate.hiddenModels, HIDDEN_MODEL_REFS_LIMIT);
     if (hiddenModels) {
       result.hiddenModels = hiddenModels;
     }

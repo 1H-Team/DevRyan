@@ -199,23 +199,11 @@ const parseSettings = (data: Record<string, unknown> | null): QuotaSettingsState
   const rawDropdownProviders = Array.isArray(data?.usageDropdownProviders)
     ? data?.usageDropdownProviders
     : null;
-  let dropdownProviderIds = rawDropdownProviders
+  const dropdownProviderIds = rawDropdownProviders
     ? rawDropdownProviders.filter((entry): entry is QuotaProviderId =>
         typeof entry === 'string' && allProviderIds.includes(entry as QuotaProviderId)
       )
     : allProviderIds;
-  if (
-    dropdownProviderIds.includes('google')
-    && !dropdownProviderIds.includes('antigravity')
-    && allProviderIds.includes('antigravity')
-  ) {
-    const googleIndex = dropdownProviderIds.indexOf('google');
-    dropdownProviderIds = [
-      ...dropdownProviderIds.slice(0, googleIndex + 1),
-      'antigravity',
-      ...dropdownProviderIds.slice(googleIndex + 1),
-    ];
-  }
 
   // Parse selected models (providerId -> array of model names)
   const selectedModels: Record<string, string[]> = {};
@@ -226,14 +214,6 @@ const parseSettings = (data: Record<string, unknown> | null): QuotaSettingsState
         selectedModels[providerId] = models.filter((m): m is string => typeof m === 'string');
       }
     }
-  }
-  const googleSelectedModels = selectedModels.google ?? [];
-  const googleAntigravityModels = googleSelectedModels.filter((modelName) => modelName.startsWith('antigravity/'));
-  if (googleAntigravityModels.length > 0) {
-    selectedModels.google = googleSelectedModels.filter((modelName) => !modelName.startsWith('antigravity/'));
-    selectedModels.antigravity = selectedModels.antigravity?.length
-      ? selectedModels.antigravity
-      : googleAntigravityModels;
   }
 
   // Parse expanded families (inverted collapsed logic for header dropdown)

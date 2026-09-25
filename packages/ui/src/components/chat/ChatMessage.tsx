@@ -1140,7 +1140,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                 <MessageHeader
                                     isUser={isUser}
                                     providerID={headerProviderID}
-                                    modelID={headerModelID}
                                     agentName={headerAgentName}
                                     modelName={headerModelName}
                                     variant={headerVariantDisplay.variant}

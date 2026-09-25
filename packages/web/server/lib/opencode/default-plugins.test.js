@@ -20,14 +20,8 @@ describe('DevRyan default plugin catalog', () => {
       delivery: plugin.delivery,
     }))).toEqual([
       {
-        pluginId: 'opencode-antigravity-auth',
-        shippedSpec: './node_modules/opencode-antigravity-auth/dist/index.js',
-        version: '1.6.0',
-        delivery: 'installed-local',
-      },
-      {
         pluginId: '@rama_nigg/open-cursor',
-        shippedSpec: './node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js',
+        shippedSpec: './plugins/devryan-open-cursor.mjs',
         version: '2.5.8',
         delivery: 'installed-local',
       },
@@ -86,6 +80,7 @@ describe('DevRyan default plugin catalog', () => {
     expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-document-reader.mjs')).toBe('devryan-document-reader');
     expect(getDevRyanDefaultPluginIdForSpec('./node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js'))
       .toBe('@rama_nigg/open-cursor');
+    expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-open-cursor.mjs')).toBe('@rama_nigg/open-cursor');
     expect(getDevRyanDefaultPluginIdForFile('openai-tool-schema-sanitizer.mjs')).toBe('openai-tool-schema-sanitizer');
     expect(getDevRyanDefaultPluginIdForFile('devryan-skill-context.mjs')).toBe('devryan-skill-context');
     expect(getDevRyanDefaultPluginIdForFile('devryan-managed-orchestration.mjs')).toBeNull();

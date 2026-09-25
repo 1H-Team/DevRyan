@@ -47,12 +47,19 @@ const originalUrl = process.env.DEVRYAN_ORCHESTRATION_URL;
 const originalToken = process.env.DEVRYAN_ORCHESTRATION_TOKEN;
 const originalAccountDefaults = process.env.DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS;
 const originalResultMode = process.env.DEVRYAN_MANAGED_RESULT_MODE;
+const POLICY_ENV_KEYS = ['DEVRYAN_TASK_AGENT_VALIDATION', 'DEVRYAN_MANAGED_WAIT_ANY', 'DEVRYAN_CAPABILITY_TOOL_SCHEMA'];
+const originalPolicyEnvironment = Object.fromEntries(POLICY_ENV_KEYS.map((key) => [key, process.env[key]]));
+
+// Fixtures without an agent catalog model the provider_id/model_id compatibility
+// path that agent-name validation keeps only behind its kill switch.
+const useLegacyAgentFallback = () => { process.env.DEVRYAN_TASK_AGENT_VALIDATION = '0'; };
 
 beforeEach(() => {
   process.env.DEVRYAN_ORCHESTRATION_URL = 'http://127.0.0.1:43210/rpc';
   process.env.DEVRYAN_ORCHESTRATION_TOKEN = 'private-token';
   delete process.env.DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS;
   delete process.env.DEVRYAN_MANAGED_RESULT_MODE;
+  for (const key of POLICY_ENV_KEYS) delete process.env[key];
 });
 
 afterEach(() => {
@@ -65,6 +72,10 @@ afterEach(() => {
   else process.env.DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS = originalAccountDefaults;
   if (originalResultMode === undefined) delete process.env.DEVRYAN_MANAGED_RESULT_MODE;
   else process.env.DEVRYAN_MANAGED_RESULT_MODE = originalResultMode;
+  for (const key of POLICY_ENV_KEYS) {
+    if (originalPolicyEnvironment[key] === undefined) delete process.env[key];
+    else process.env[key] = originalPolicyEnvironment[key];
+  }
 });
 
 const context = (overrides = {}) => ({
@@ -205,6 +216,37 @@ describe('wait-any collection protocol', () => {
     const result = JSON.parse(await plugin.tool.devryan_task.execute({ action: 'wait_any', task_ids: [taskIds[0]], after_cursor: 'fixture_cursor' }, context()));
     expect(result.instruction).toContain('do not repeat wait_any');
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('wait_any advertisement', () => {
+  const blockedRead = async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => rpcResponse({ state: 'active', taskIds: ['dvr_task_live'],
+      capabilities: { policies: { waitAny: true } } })));
+    const plugin = await DevRyanManagedOrchestrationPlugin({
+      client: createToolOwnerClient([toolCallRecord('call_read', 'orchestrator')]), directory: '/workspace',
+    });
+    return plugin['tool.execute.before']({ sessionID: 'ses_root', tool: 'read', callID: 'call_read' }, { args: {} });
+  };
+
+  it('points the barrier at wait when the tool schema does not advertise wait_any', async () => {
+    const operation = blockedRead();
+    await expect(operation).rejects.toThrow('devryan_task with action "wait" and task_id "dvr_task_live"');
+    await expect(operation).rejects.not.toThrow('wait_any');
+  });
+
+  it('points the barrier at wait_any when both the host and the tool schema enable it', async () => {
+    process.env.DEVRYAN_MANAGED_WAIT_ANY = '1';
+    await expect(blockedRead()).rejects.toThrow('devryan_task with action "wait_any" and task_ids ["dvr_task_live"]');
+  });
+
+  it('surfaces the host policy rejection when wait_any is called while disabled', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => rpcResponse({
+      code: 'harness_policy_disabled', message: 'wait_any is disabled; use wait for an individual task',
+    }, 409)));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+    await expect(plugin.tool.devryan_task.execute({ action: 'wait_any', task_ids: ['dvr_task_live'] }, context()))
+      .rejects.toMatchObject({ code: 'harness_policy_disabled', statusCode: 409, message: 'wait_any is disabled; use wait for an individual task' });
   });
 });
 
@@ -511,6 +553,10 @@ describe('approved-plan implementation startup', () => {
 });
 
 describe('Plan authority across managed maintenance', () => {
+  // These wake/dispatch fixtures have no agent catalog and exercise the plan-safe
+  // provider_id/model_id fallback, which validation keeps only behind its kill switch.
+  beforeEach(useLegacyAgentFallback);
+
   // Use the installed legacy SDK injected into native plugins. Its generated
   // method accepts path.id and passes query.before through, despite the older
   // declaration omitting it. The fetch adapter never makes network requests.
@@ -961,6 +1007,7 @@ describe('DevRyan managed orchestration plugin', () => {
   });
 
   it('uses the adjacent persisted same-turn assistant when the in-flight assistant is not visible yet', async () => {
+    useLegacyAgentFallback();
     const requests = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
       requests.push(JSON.parse(init.body));
@@ -1010,6 +1057,7 @@ describe('DevRyan managed orchestration plugin', () => {
   });
 
   it.each(['fixer', 'oracle'])('resolves %s policy by exact message ids after the parent leaves the list window', async (agent) => {
+    useLegacyAgentFallback();
     const requests = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
       requests.push(JSON.parse(init.body));
@@ -1076,6 +1124,7 @@ describe('DevRyan managed orchestration plugin', () => {
   });
 
   it('uses the bounded adjacent-assistant fallback only when the exact assistant is not persisted', async () => {
+    useLegacyAgentFallback();
     const requests = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
       requests.push(JSON.parse(init.body));
@@ -1233,6 +1282,7 @@ describe('DevRyan managed orchestration plugin', () => {
   });
 
   it('still submits Designer implementation work from a normal parent turn', async () => {
+    useLegacyAgentFallback();
     const requests = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
       requests.push(JSON.parse(init.body));
@@ -1497,6 +1547,7 @@ describe('DevRyan managed orchestration plugin', () => {
   });
 
   it('exposes one tool and derives root scope plus stable idempotency from context', async () => {
+    useLegacyAgentFallback();
     const requests = [];
     vi.stubGlobal('fetch', vi.fn(async (url, init) => {
       requests.push({ url, init, body: JSON.parse(init.body) });
@@ -1586,6 +1637,7 @@ describe('DevRyan managed orchestration plugin', () => {
   });
 
   it('defaults Oracle to 15 minutes, accepts 30-minute deep review, preserves other floors, and caps at 24 hours', async () => {
+    useLegacyAgentFallback();
     const requests = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
       requests.push(JSON.parse(init.body));
@@ -1659,6 +1711,7 @@ describe('DevRyan managed orchestration plugin', () => {
   });
 
   it.each(['designer', 'fixer'])('clamps an explicit %s recovery window to 60 minutes', async (agent) => {
+    useLegacyAgentFallback();
     const requests = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
       const request = JSON.parse(init.body);
@@ -2664,6 +2717,7 @@ describe('DevRyan managed orchestration plugin', () => {
   });
 
   it('blocks same-response work until start is submitted, then rejects it while acknowledgement is pending', async () => {
+    useLegacyAgentFallback();
     let resolveSubmit;
     const submitResponse = new Promise((resolve) => { resolveSubmit = resolve; });
     const requests = [];
@@ -2714,6 +2768,7 @@ describe('DevRyan managed orchestration plugin', () => {
   });
 
   it('correlates parallel starts to their exact call ids even when execution order reverses', async () => {
+    useLegacyAgentFallback();
     const requests = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
       const request = JSON.parse(init.body);
@@ -2938,6 +2993,7 @@ describe('DevRyan managed orchestration plugin', () => {
   });
 
   it('allows direct work when no dispatch is known, but fails closed after a local barrier is known', async () => {
+    useLegacyAgentFallback();
     const plugin = await DevRyanManagedOrchestrationPlugin();
     delete process.env.DEVRYAN_ORCHESTRATION_URL;
     delete process.env.DEVRYAN_ORCHESTRATION_TOKEN;
@@ -3077,10 +3133,11 @@ describe('DevRyan managed orchestration plugin', () => {
     }, context());
 
     expect(requests.map((request) => request.method)).toEqual(['resolve_agent_execution', 'submit']);
+    // The unique case-insensitive match is canonicalized to the catalog name.
     expect(requests[0].params).toMatchObject({
       rootSessionId: 'ses_root',
       directory: '/workspace',
-      agent: 'orchestrator',
+      agent: 'Orchestrator',
       fallbackExecution: {
         providerId: 'openai',
         modelId: 'gpt-5.6-sol',
@@ -3090,6 +3147,7 @@ describe('DevRyan managed orchestration plugin', () => {
     expect(requests[1].params).toMatchObject({
       providerId: 'anthropic',
       modelId: 'claude-sonnet-4-6',
+      agent: 'Orchestrator',
       variant: 'high',
     });
   });
@@ -3197,6 +3255,7 @@ describe('DevRyan managed orchestration plugin', () => {
   });
 
   it('requires paired compatibility fallback IDs only when the agent catalog is unavailable', async () => {
+    useLegacyAgentFallback();
     const requests = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
       requests.push(JSON.parse(init.body));
@@ -3257,6 +3316,186 @@ describe('DevRyan managed orchestration plugin', () => {
       model_id: 'gpt-5.4',
     }, context())).rejects.toThrow('Managed agent designer has no executable model');
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  describe('agent name admission', () => {
+    const catalogAgent = (name, overrides = {}) => ({
+      name,
+      mode: 'subagent',
+      model: { providerID: 'anthropic', modelID: `${name.toLowerCase()}-model` },
+      ...overrides,
+    });
+    const catalogClient = (agents) => ({ app: { agents: vi.fn(async () => ({ data: agents })) } });
+    const recordRpc = (respond = () => ({ task: { taskId: 'dvr_task_agent' } })) => {
+      const requests = [];
+      vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+        const request = JSON.parse(init.body);
+        requests.push(request);
+        return rpcResponse(respond(request));
+      }));
+      return requests;
+    };
+    const startArgs = (agent, overrides = {}) => ({
+      action: 'start', agent, prompt: 'Implement the bounded fix.', ...overrides,
+    });
+
+    it('canonicalizes a unique case-insensitive match before submission and fingerprinting', async () => {
+      const requests = recordRpc();
+      const plugin = await DevRyanManagedOrchestrationPlugin({
+        client: catalogClient([catalogAgent('fixer'), catalogAgent('explorer')]),
+      });
+
+      await plugin.tool.devryan_task.execute(startArgs('Fixer'), context({ callID: 'call_same' }));
+      await plugin.tool.devryan_task.execute(startArgs('fixer'), context({ callID: 'call_same' }));
+
+      expect(requests.map((request) => request.method)).toEqual(['submit', 'submit']);
+      expect(requests[0].params).toMatchObject({
+        agent: 'fixer',
+        label: 'Managed fixer task',
+        providerId: 'anthropic',
+        modelId: 'fixer-model',
+      });
+      // Same call, same canonical agent: the literal-retry idempotency key matches.
+      expect(requests[0].params.idempotencyKey).toBe(requests[1].params.idempotencyKey);
+    });
+
+    it('prefers an exact name over a differently cased catalog entry', async () => {
+      const requests = recordRpc();
+      const plugin = await DevRyanManagedOrchestrationPlugin({
+        client: catalogClient([catalogAgent('fixer'), catalogAgent('Fixer', { model: { providerID: 'openai', modelID: 'exact' } })]),
+      });
+
+      await plugin.tool.devryan_task.execute(startArgs('Fixer'), context());
+
+      expect(requests[0].params).toMatchObject({ agent: 'Fixer', providerId: 'openai', modelId: 'exact' });
+    });
+
+    it('rejects an ambiguous case-insensitive name before any RPC', async () => {
+      const requests = recordRpc();
+      const plugin = await DevRyanManagedOrchestrationPlugin({
+        client: catalogClient([catalogAgent('fixer'), catalogAgent('Fixer')]),
+      });
+
+      const operation = plugin.tool.devryan_task.execute(startArgs('FIXER'), context());
+      await expect(operation).rejects.toMatchObject({
+        code: 'managed_agent_unknown',
+        statusCode: 400,
+        details: { agent: 'FIXER', matches: ['fixer', 'Fixer'] },
+      });
+      await expect(operation).rejects.toThrow('ambiguous');
+      expect(requests).toEqual([]);
+    });
+
+    it('rejects an unknown name and lists only dispatchable subagents', async () => {
+      const requests = recordRpc();
+      const plugin = await DevRyanManagedOrchestrationPlugin({
+        client: catalogClient([
+          catalogAgent('orchestrator', { mode: 'primary' }),
+          catalogAgent('oracle'),
+          catalogAgent('explorer'),
+          catalogAgent('council', { mode: 'all' }),
+          catalogAgent('councillor', { hidden: true }),
+          catalogAgent('title', { options: { hidden: true } }),
+          { name: 'modeless', model: { providerID: 'anthropic', modelID: 'x' } },
+        ]),
+      });
+
+      const operation = plugin.tool.devryan_task.execute(startArgs('Fixr'), context());
+      await expect(operation).rejects.toMatchObject({
+        code: 'managed_agent_unknown',
+        details: { agent: 'Fixr', available: ['council', 'explorer', 'oracle'], matches: [] },
+      });
+      await expect(operation).rejects.toThrow(
+        'managed_agent_unknown: Unknown agent "Fixr"; no managed task was started. Available subagents: council, explorer, oracle.',
+      );
+      expect(requests).toEqual([]);
+    });
+
+    it('still dispatches a catalog agent that is not listed as a subagent', async () => {
+      const requests = recordRpc();
+      const plugin = await DevRyanManagedOrchestrationPlugin({
+        client: catalogClient([catalogAgent('builder', { mode: 'primary' })]),
+      });
+
+      await plugin.tool.devryan_task.execute(startArgs('Builder'), context());
+
+      expect(requests[0].params.agent).toBe('builder');
+    });
+
+    it('keeps a known agent without a model distinct from an unknown agent', async () => {
+      const requests = recordRpc();
+      const plugin = await DevRyanManagedOrchestrationPlugin({
+        client: catalogClient([catalogAgent('designer', { model: { providerID: 'anthropic' } })]),
+      });
+
+      await expect(plugin.tool.devryan_task.execute(startArgs('Designer'), context())).rejects.toMatchObject({
+        code: 'managed_agent_model_unavailable',
+        statusCode: 409,
+        message: 'Managed agent designer has no executable model',
+      });
+      expect(requests).toEqual([]);
+    });
+
+    it.each([
+      ['a runtime without the catalog API', () => ({})],
+      ['a catalog error response', () => ({ app: { agents: vi.fn(async () => ({ error: { name: 'UnknownError' } })) } })],
+      ['a malformed catalog payload', () => ({ app: { agents: vi.fn(async () => ({ data: { fixer: {} } })) } })],
+      ['a thrown catalog request', () => ({ app: { agents: vi.fn(async () => { throw new Error('socket closed'); }) } })],
+    ])('fails closed and retryable for %s, ignoring compatibility model IDs', async (_label, createClient) => {
+      const requests = recordRpc();
+      const plugin = await DevRyanManagedOrchestrationPlugin({ client: createClient() });
+
+      const operation = plugin.tool.devryan_task.execute(
+        startArgs('fixer', { provider_id: 'anthropic', model_id: 'claude-opus-5' }),
+        context(),
+      );
+      await expect(operation).rejects.toMatchObject({ code: 'managed_agent_catalog_unavailable', statusCode: 503 });
+      await expect(operation).rejects.toThrow('Retry the same call');
+      expect(requests).toEqual([]);
+    });
+
+    it('canonicalizes and validates a retry agent override before acknowledgement', async () => {
+      const requests = recordRpc((request) => (request.method === 'wait'
+        ? { task: { taskId: 'dvr_task_1', status: 'failed' } }
+        : { accepted: true }));
+      const plugin = await DevRyanManagedOrchestrationPlugin({
+        client: catalogClient([catalogAgent('fixer'), catalogAgent('oracle')]),
+      });
+      await plugin.tool.devryan_task.execute({ action: 'wait', task_id: 'dvr_task_1' }, context());
+
+      await expect(plugin.tool.devryan_task.execute(
+        { action: 'retry', task_id: 'dvr_task_1', agent: 'Fixr' },
+        context(),
+      )).rejects.toMatchObject({ code: 'managed_agent_unknown' });
+      expect(requests.map((request) => request.method)).toEqual(['wait']);
+
+      await plugin.tool.devryan_task.execute({ action: 'retry', task_id: 'dvr_task_1', agent: 'FIXER' }, context());
+      expect(requests.at(-1)).toMatchObject({
+        method: 'acknowledge',
+        params: { action: 'retry', agent: 'fixer', providerId: 'anthropic', modelId: 'fixer-model' },
+      });
+    });
+
+    it('restores the unvalidated agent handling when DEVRYAN_TASK_AGENT_VALIDATION is 0', async () => {
+      process.env.DEVRYAN_TASK_AGENT_VALIDATION = '0';
+      const requests = recordRpc();
+      const catalogPlugin = await DevRyanManagedOrchestrationPlugin({
+        client: catalogClient([catalogAgent('fixer')]),
+      });
+
+      await catalogPlugin.tool.devryan_task.execute(startArgs('Fixer'), context());
+      expect(requests[0].params).toMatchObject({ agent: 'Fixer', modelId: 'fixer-model' });
+      const unknown = catalogPlugin.tool.devryan_task.execute(startArgs('Fixr'), context({ messageID: 'msg_unknown' }));
+      await expect(unknown).rejects.toThrow('Managed agent Fixr has no executable model');
+      await expect(unknown).rejects.not.toMatchObject({ code: 'managed_agent_unknown' });
+
+      const legacyPlugin = await DevRyanManagedOrchestrationPlugin();
+      await legacyPlugin.tool.devryan_task.execute(
+        startArgs('Fixr', { provider_id: 'anthropic', model_id: 'claude-opus-5' }),
+        context({ messageID: 'msg_legacy' }),
+      );
+      expect(requests.at(-1).params).toMatchObject({ agent: 'Fixr', providerId: 'anthropic', modelId: 'claude-opus-5' });
+    });
   });
 
   it('returns provider Model Recovery immediately without holding the parent tool call', async () => {
@@ -4329,6 +4568,11 @@ describe('DevRyan managed orchestration plugin', () => {
 
 describe('dispatch result wording', () => {
   const clientWithTurn = () => ({
+    app: {
+      agents: vi.fn(async () => ({ data: [{
+        name: 'explorer', mode: 'subagent', model: { providerID: 'xai', modelID: 'grok-4.6' },
+      }] })),
+    },
     session: {
       messages: vi.fn(async () => ({ data: [
         { info: { id: 'msg_001', role: 'user' }, parts: [{ type: 'text', text: 'Map the routing flow.' }] },

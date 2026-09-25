@@ -1,4 +1,4 @@
-import { parse as parseJsonc, stripComments } from 'jsonc-parser';
+import { applyEdits, modify, parse as parseJsonc, stripComments } from 'jsonc-parser';
 
 const INVALID_JSONC_CODE = 'INVALID_JSONC';
 
@@ -56,6 +56,45 @@ export const parseConfigJsonc = (content, file = 'configuration') => {
   }
 
   return parsed;
+};
+
+const getAtKeyPath = (root, keyPath) => keyPath.reduce(
+  (value, key) => (isPlainObject(value) ? value[key] : undefined),
+  root,
+);
+
+// Key paths that remove `keys` from the object at `parentPath`. A parent that
+// would be left empty is removed instead, up to (never including) the root.
+export const collapseRemovalKeyPaths = (root, parentPath, keys) => {
+  const parent = getAtKeyPath(root, parentPath);
+  if (!isPlainObject(parent)) return [];
+  const present = keys.filter((key) => Object.prototype.hasOwnProperty.call(parent, key));
+  if (present.length === 0) return [];
+  const remaining = Object.keys(parent).filter((key) => !present.includes(key));
+  if (remaining.length === 0 && parentPath.length > 0) {
+    return collapseRemovalKeyPaths(root, parentPath.slice(0, -1), [parentPath.at(-1)]);
+  }
+  return present.map((key) => [...parentPath, key]);
+};
+
+// Pure: returns a copy of `config` without the given key paths.
+export const removeKeyPathsFromObject = (config, keyPaths) => {
+  const next = structuredClone(config);
+  for (const keyPath of keyPaths) {
+    const parent = getAtKeyPath(next, keyPath.slice(0, -1));
+    if (isPlainObject(parent)) delete parent[keyPath.at(-1)];
+  }
+  return next;
+};
+
+// Removes key paths from JSON/JSONC text in place, keeping comments and the
+// formatting of everything that is not removed.
+export const removeJsoncKeyPaths = (source, keyPaths) => {
+  const eol = source.includes('\r\n') ? '\r\n' : '\n';
+  return keyPaths.reduce((text, keyPath) => applyEdits(
+    text,
+    modify(text, keyPath, undefined, { formattingOptions: { insertSpaces: true, tabSize: 2, eol } }),
+  ), source);
 };
 
 export { INVALID_JSONC_CODE };

@@ -1,0 +1,40 @@
+{
+  "route": "openai-sol",
+  "reportHash": "f8353996785016900af836b7fae0d9f2d08bde77e5811dfa89da0d330a609917",
+  "qualified": true,
+  "evidence": {
+    "reportHash": "f8353996785016900af836b7fae0d9f2d08bde77e5811dfa89da0d330a609917",
+    "correctness": true,
+    "finalRequests": true,
+    "compactionLifecycle": true,
+    "nonIncreasingRequests": true,
+    "livePairs": 10,
+    "skillPairs": 5,
+    "managedPairs": 5,
+    "incompleteTrials": 0,
+    "criticalFailures": 0,
+    "repeatedMutations": 0,
+    "repeatCallDelta": 0
+  },
+  "serialized": {
+    "baseline": [
+      84319,
+      92847
+    ],
+    "candidate": [
+      60673,
+      65395
+    ]
+  },
+  "providerInput": {
+    "baseline": {
+      "input": 173160,
+      "cacheRead": 13824
+    },
+    "candidate": {
+      "input": 122388,
+      "cacheRead": 27648
+    }
+  },
+  "failedAttempts": 0
+}

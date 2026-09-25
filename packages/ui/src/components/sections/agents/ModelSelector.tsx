@@ -18,10 +18,9 @@ import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { useModelLists } from '@/hooks/useModelLists';
 import {
-    getDisplayProviderId,
     getExecutionProviderId,
     getModelDisplayName,
-} from '@/lib/providers/antigravity';
+} from '@/lib/providers/modelIdentity';
 import { filterVisibleProviderModelsForPicker } from '@/lib/providers/modelVisibility';
 import { shouldHidePairedFastModel } from '@/lib/providers/variantControls';
 import { sortProviderTreeForPicker } from '@/lib/providers/sorting';
@@ -173,9 +172,6 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         return undefined;
     }, [modelId, providerId, visibleProviders]);
 
-    const selectedDisplayProviderId = selectedModel
-        ? getDisplayProviderId(providerId, selectedModel)
-        : providerId;
     const selectedDisplayLabel = selectedModel
         ? getModelDisplayName(selectedModel)
         : (providerId && modelId ? `${providerId}/${modelId}` : '');
@@ -208,7 +204,6 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         flatIndex: number,
         isHighlighted: boolean
     ) => {
-        const displayProviderId = getDisplayProviderId(provID, model);
         const metadata = getModelMetadata(provID, modID);
         const contextTokens = formatTokens(metadata?.limit?.context);
         const isSelected = providerId === provID && modelId === modID;
@@ -233,7 +228,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
             >
                 <div className="flex items-center gap-1.5 flex-1 min-w-0">
                     {showProviderLogo && (
-                        <ProviderLogo providerId={displayProviderId} className="h-3.5 w-3.5 flex-shrink-0" />
+                        <ProviderLogo providerId={provID} className="h-3.5 w-3.5 flex-shrink-0" />
                     )}
                     <span className="font-medium truncate">
                         {getTruncatedModelDisplayName(model)}
@@ -366,7 +361,6 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                             <div className="border-t border-border/20">
                                 {favoriteModelsList.map(({ model, providerID, modelID }) => {
                                     const isSelectedModel = providerID === providerId && modelID === modelId;
-                                    const favoriteDisplayProviderId = getDisplayProviderId(providerID, model);
 
                                     return (
                                         <div
@@ -387,7 +381,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                                             >
                                                 <div className="flex items-center gap-2">
                                                     <ProviderLogo
-                                                        providerId={favoriteDisplayProviderId}
+                                                        providerId={providerID}
                                                         className="h-3 w-3 flex-shrink-0"
                                                     />
                                                     <span className="font-medium truncate">{getTruncatedModelDisplayName(model)}</span>
@@ -554,7 +548,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                             </>
                         ) : providerId ? (
                             <ProviderLogo
-                                providerId={selectedDisplayProviderId}
+                                providerId={providerId}
                                 className="h-3.5 w-3.5"
                             />
                         ) : (
@@ -591,7 +585,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                                     {providerId ? (
                                         <>
                                             <ProviderLogo
-                                                providerId={selectedDisplayProviderId}
+                                                providerId={providerId}
                                                 className="h-3.5 w-3.5 flex-shrink-0"
                                             />
                                             <RiPencilAiLine className="h-3 w-3 text-primary/60 hidden" />

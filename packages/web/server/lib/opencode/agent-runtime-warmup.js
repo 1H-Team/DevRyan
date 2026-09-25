@@ -129,6 +129,9 @@ function createAgentRuntimeWarmup(dependencies = {}) {
   const warmXaiToolCatalog = typeof dependencies.warmXaiToolCatalog === 'function'
     ? dependencies.warmXaiToolCatalog
     : null;
+  // Fire-and-forget: a first ledger build can outlast every warmup budget, and
+  // it bounds and cancels itself.
+  const warmLedger = typeof dependencies.warmLedger === 'function' ? dependencies.warmLedger : null;
   const now = typeof dependencies.now === 'function' ? dependencies.now : () => Date.now();
   const inflightByDirectory = new Map();
   let latestResult = null;
@@ -210,6 +213,9 @@ function createAgentRuntimeWarmup(dependencies = {}) {
     warm(options = {}) {
       const directory = normalizeDirectory(options.directory);
       const directoryKey = directory ?? '';
+      if (warmLedger && directory && options.ledger !== false) {
+        try { void Promise.resolve(warmLedger({ directory })).catch(() => {}); } catch { /* Best effort only. */ }
+      }
       const existing = inflightByDirectory.get(directoryKey);
       if (existing) {
         // Joiners intentionally inherit the first caller's timeout configuration.

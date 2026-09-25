@@ -1,0 +1,2885 @@
+{
+  "kind": "release-default-verification",
+  "profile": {
+    "id": "devryan-companion-2.1.0-openai-gpt-6-astra-medium",
+    "runtimeVersion": "1.18.32",
+    "runtimeHash": "d1f46380f028efb9a46bd10c9866231acbab4e31b43afcf1f1ee179868a40882",
+    "runtimeIdentity": {
+      "kind": "companion-build",
+      "upstreamVersion": "1.18.32",
+      "baseCommit": "545f51d26cc39a907d2867492d498d9607ea5fa4",
+      "patchSha256": "059919cce6c7d77c3db80ff06acc178adf59f8e65293c20ce1857c5777f4710e",
+      "buildInputsSha256": "589475194cfe2ac81d03e47a30fa63d15c0a8b2ca02e5b237dd6db4b31b49266"
+    },
+    "policyVector": {
+      "waitAny": false,
+      "capabilityToolSchema": true
+    },
+    "providerID": "openai",
+    "modelID": "gpt-6-astra",
+    "variant": "medium",
+    "providerHash": "4792784fe46997ae50e9f71f0183179101791d35b522e21c618ae7bc1ec8d4d8",
+    "providerScope": "selected-route",
+    "transport": "openai-chatgpt-managed-responses-v1",
+    "plugins": [
+      {
+        "name": "index.js",
+        "contentHash": "fab88b553785d6b7ae53238c060f0ea3f003dfda2c88667284b5a35ca623488d"
+      },
+      {
+        "name": "devryan-open-cursor.mjs",
+        "contentHash": "75febd08825ee5946200d57d4b710ec6321e2bd7431115fe2dd27e5c736a595e"
+      },
+      {
+        "name": "index.js",
+        "contentHash": "b3a32d1f03047f68e39874725bc9ed40fc42b59a773acdb815e8c9b7b4025aad"
+      },
+      {
+        "name": "index.js",
+        "contentHash": "2a94eedd2be1e77fc2a3e50961d79a9a2695eeeb5866732a13f46948553156b4"
+      },
+      {
+        "name": "devryan-oh-my-opencode-slim.mjs",
+        "contentHash": "7dde3de974347911027abc4d1665cf3007b78013410dd6a94688eee57637023b"
+      },
+      {
+        "name": "devryan-superpowers.mjs",
+        "contentHash": "54e0fc722391a1a2399581c977654627d57ac3aadee6bfb529ee88632221de23"
+      },
+      {
+        "name": "devryan-skill-context.mjs",
+        "contentHash": "99929e135c01749b7e8303b35179240f386e53816b9a35ab57e0d3ad372d551c"
+      },
+      {
+        "name": "devryan-document-reader.mjs",
+        "contentHash": "bef4052f50aa08644dd0c2191ee07d6811c9e0cff57f0090afe9613895cf5de4"
+      },
+      {
+        "name": "devryan-browser.mjs",
+        "contentHash": "f8098613e62d7ea31a680bc63e60b417e688f908a20aa4043fe410a2a5224943"
+      },
+      {
+        "name": "devryan-builder-todo-continuation.mjs",
+        "contentHash": "4f6511bd4206f2e747c3205107cdfbb5b2217a81d988ddc74500d4b22e754748"
+      },
+      {
+        "name": "devryan-file-write-metadata.mjs",
+        "contentHash": "83e76ea73e6c42257ddf4c2aa48f2b5a512e64b9cc7afa7772fb14ddbe816988"
+      },
+      {
+        "name": "devryan-harness-context.mjs",
+        "contentHash": "c97893cda4f61c7fdc1f0cad44dd2484c87215fad2d06b38f1855e263d41f9c7"
+      },
+      {
+        "name": "devryan-managed-orchestration.mjs",
+        "contentHash": "519979b9436a3df4a4ffcee3cd549f3b101f6cf42259fc061170db0e449e3f10"
+      },
+      {
+        "name": "devryan-openai-oauth.mjs",
+        "contentHash": "d57482f361d6f70c35c1e359573fe4810a5a3778c8f1e2e7c67c9bfe954eb739"
+      },
+      {
+        "name": "devryan-primary-recovery.mjs",
+        "contentHash": "68555821e2c5cd52155173e3e1ffb3ca796f05e7779d11efb6a03f6168c9b4d5"
+      },
+      {
+        "name": "devryan-session-changes.mjs",
+        "contentHash": "170dd8989e594ead72d4f4b13b7255bf8de3acf292e557d081f18c1e5156c4a8"
+      },
+      {
+        "name": "devryan-tool-input-guard.mjs",
+        "contentHash": "e485d28adb37b4052df0c3ea3c1556cbaab712690f15da86204ba8e1a1043ebb"
+      },
+      {
+        "name": "github-copilot-models.mjs",
+        "contentHash": "61270a274af4d13024a6014795ab57dc579b30fba508e706b692cbdf8f4750c4"
+      },
+      {
+        "name": "openai-gpt-5-6-models.mjs",
+        "contentHash": "0b918d8333abdf55e6feb42ddd03b538612d8e4af7ca672b33ca0940b5991dc9"
+      },
+      {
+        "name": "openai-tool-schema-sanitizer.mjs",
+        "contentHash": "e824ed4220bc0a26fda7eda34d52248a5320ef48fb866a60621c6db6b63d17ac"
+      },
+      {
+        "name": "council-session.js",
+        "contentHash": "e1ee08ab6945db37f7a4870d9a61406eddf360d43f4b308454e0791226f31bf6"
+      }
+    ]
+  },
+  "wireRoute": {
+    "provider": "openai",
+    "host": "chatgpt.com",
+    "path": "/backend-api/codex/responses",
+    "transport": "responses",
+    "auth": "oauth",
+    "transportIdentity": "openai-chatgpt-managed-responses-v1"
+  },
+  "pairs": [
+    {
+      "index": 0,
+      "kind": "skill",
+      "baseline": {
+        "fixtureHash": "6f256716008448b554d346b4d0ea578410f5763fcab53fd6ef5f55a6655c80a7",
+        "environmentHash": "51220f4c23d7a1e851738b16c24b7f60e0e3485427b42723f85e389eee80862d",
+        "configurationHash": "e59bdcc0932eecb08daa4fe5c555facae16f5e4717084ca057f5ceaa3459e5a4",
+        "duplicateOutputs": false,
+        "executionMode": "live",
+        "completed": true,
+        "factsIntact": true,
+        "criticalFailures": 0,
+        "repeatedMutations": 0,
+        "sameKeyRepeatCalls": 0,
+        "eligibleCalls": 4,
+        "generatedToolCalls": 0,
+        "replyHash": "4c07da8fefe68fefa9022ee9faf73ffbc831e448e8ae0a542f7592489c3f4dbb",
+        "expectedHash": "ac3a4ea2957d2c0cfcb1dc8891bc22e5f19348f80e39bda7bd0b84a68049d3cb",
+        "cleanupComplete": true,
+        "appliedReductions": 0,
+        "canonicalUnchanged": true,
+        "validWire": true,
+        "sessionID": "ses_f2bd417a3ffeM83jJxLLL13gJ2",
+        "requestCount": 1,
+        "serializedBytes": [
+          84298
+        ],
+        "compactionFrequency": 0,
+        "reportHash": "8a372fb42d7d7b98a1f65a14a809f1fb5ebd7d8fed19f7416145d338aff17072"
+      },
+      "candidate": {
+        "fixtureHash": "6f256716008448b554d346b4d0ea578410f5763fcab53fd6ef5f55a6655c80a7",
+        "environmentHash": "51220f4c23d7a1e851738b16c24b7f60e0e3485427b42723f85e389eee80862d",
+        "configurationHash": "e59bdcc0932eecb08daa4fe5c555facae16f5e4717084ca057f5ceaa3459e5a4",
+        "duplicateOutputs": true,
+        "executionMode": "live",
+        "completed": true,
+        "factsIntact": true,
+        "criticalFailures": 0,
+        "repeatedMutations": 0,
+        "sameKeyRepeatCalls": 0,
+        "eligibleCalls": 4,
+        "generatedToolCalls": 0,
+        "replyHash": "4c07da8fefe68fefa9022ee9faf73ffbc831e448e8ae0a542f7592489c3f4dbb",
+        "expectedHash": "ac3a4ea2957d2c0cfcb1dc8891bc22e5f19348f80e39bda7bd0b84a68049d3cb",
+        "cleanupComplete": true,
+        "appliedReductions": 2,
+        "canonicalUnchanged": true,
+        "validWire": true,
+        "sessionID": "ses_f2bd30c44ffe3sVOpuiaHaJgHN",
+        "requestCount": 1,
+        "serializedBytes": [
+          60652
+        ],
+        "compactionFrequency": 0,
+        "reportHash": "6b58bd3a67fc6ed60531ab7464c3ddb6c928ccc794fd43178fcd648063994939"
+      }
+    },
+    {
+      "index": 5,
+      "kind": "managed",
+      "baseline": {
+        "fixtureHash": "8efc669af96beb8dffa620ee96b65770e1ea9124ea2d6e5bc6998c3630f00593",
+        "environmentHash": "51220f4c23d7a1e851738b16c24b7f60e0e3485427b42723f85e389eee80862d",
+        "configurationHash": "e59bdcc0932eecb08daa4fe5c555facae16f5e4717084ca057f5ceaa3459e5a4",
+        "duplicateOutputs": false,
+        "executionMode": "live",
+        "completed": true,
+        "factsIntact": true,
+        "criticalFailures": 0,
+        "repeatedMutations": 0,
+        "sameKeyRepeatCalls": 0,
+        "eligibleCalls": 4,
+        "generatedToolCalls": 0,
+        "replyHash": "f1477fa02e6dea1e855d9097e87de1c06b5ec6bd83e6d9363b5e13f75d3a6315",
+        "expectedHash": "27b27ec4993ccff35fbd3f40b1d125a8549a2fb05e7b94666d703ddd964c489d",
+        "cleanupComplete": true,
+        "appliedReductions": 0,
+        "canonicalUnchanged": true,
+        "validWire": true,
+        "sessionID": "ses_f2bd3ba9fffe34tW76v8QtBN3w",
+        "requestCount": 1,
+        "serializedBytes": [
+          90394
+        ],
+        "compactionFrequency": 0,
+        "reportHash": "ca35634db584d79e86417634e560c50dba53b3ddd7b537a58eb94156e252b02c"
+      },
+      "candidate": {
+        "fixtureHash": "8efc669af96beb8dffa620ee96b65770e1ea9124ea2d6e5bc6998c3630f00593",
+        "environmentHash": "51220f4c23d7a1e851738b16c24b7f60e0e3485427b42723f85e389eee80862d",
+        "configurationHash": "e59bdcc0932eecb08daa4fe5c555facae16f5e4717084ca057f5ceaa3459e5a4",
+        "duplicateOutputs": true,
+        "executionMode": "live",
+        "completed": true,
+        "factsIntact": true,
+        "criticalFailures": 0,
+        "repeatedMutations": 0,
+        "sameKeyRepeatCalls": 0,
+        "eligibleCalls": 4,
+        "generatedToolCalls": 0,
+        "replyHash": "f1477fa02e6dea1e855d9097e87de1c06b5ec6bd83e6d9363b5e13f75d3a6315",
+        "expectedHash": "27b27ec4993ccff35fbd3f40b1d125a8549a2fb05e7b94666d703ddd964c489d",
+        "cleanupComplete": true,
+        "appliedReductions": 2,
+        "canonicalUnchanged": true,
+        "validWire": true,
+        "sessionID": "ses_f2bd2ad65ffeXzlTTqsig2Uywo",
+        "requestCount": 1,
+        "serializedBytes": [
+          64158
+        ],
+        "compactionFrequency": 0,
+        "reportHash": "00675e1e5088522b1906a959f979a8cdf288f0491857c6f665c5a54dc7142c19"
+      }
+    }
+  ],
+  "sizes": [
+    {
+      "index": 0,
+      "baseline": 84298,
+      "candidate": 60652
+    },
+    {
+      "index": 5,
+      "baseline": 90394,
+      "candidate": 64158
+    }
+  ],
+  "nonIncreasingRequests": true,
+  "behavior": {
+    "factor": "duplicateOutputs",
+    "kind": "behavior-smoke",
+    "qualified": false,
+    "completedPairs": 2,
+    "counts": {
+      "skill": 1,
+      "managed": 1
+    },
+    "sameKeyRepeatRate": {
+      "baseline": 0,
+      "candidate": 0
+    },
+    "reasons": [
+      "ten-matched-pairs-required"
+    ],
+    "statisticalReliabilityClaim": false
+  },
+  "cleanups": [
+    {
+      "arm": "baseline",
+      "source": "retained-os-process-ancestry-and-start-identities",
+      "rootPid": 92221,
+      "rootObserved": true,
+      "observationIntervalMs": 500,
+      "observationErrors": [],
+      "observedProcesses": [
+        {
+          "pid": 92221,
+          "parentPid": 92195,
+          "startIdentity": "Thu Sep 24 20:07:12 2026"
+        },
+        {
+          "pid": 92256,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:13 2026"
+        },
+        {
+          "pid": 92295,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:14 2026"
+        },
+        {
+          "pid": 92298,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:14 2026"
+        },
+        {
+          "pid": 92358,
+          "parentPid": 92295,
+          "startIdentity": "Thu Sep 24 20:07:15 2026"
+        },
+        {
+          "pid": 92377,
+          "parentPid": 92295,
+          "startIdentity": "Thu Sep 24 20:07:16 2026"
+        },
+        {
+          "pid": 92391,
+          "parentPid": 92377,
+          "startIdentity": "Thu Sep 24 20:07:16 2026"
+        },
+        {
+          "pid": 92392,
+          "parentPid": 92377,
+          "startIdentity": "Thu Sep 24 20:07:16 2026"
+        },
+        {
+          "pid": 92568,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:18 2026"
+        },
+        {
+          "pid": 92871,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:22 2026"
+        },
+        {
+          "pid": 92889,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:22 2026"
+        },
+        {
+          "pid": 92977,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:23 2026"
+        },
+        {
+          "pid": 93046,
+          "parentPid": 92295,
+          "startIdentity": "Thu Sep 24 20:07:23 2026"
+        },
+        {
+          "pid": 93047,
+          "parentPid": 93046,
+          "startIdentity": "Thu Sep 24 20:07:23 2026"
+        },
+        {
+          "pid": 93122,
+          "parentPid": 93047,
+          "startIdentity": "Thu Sep 24 20:07:23 2026"
+        },
+        {
+          "pid": 93123,
+          "parentPid": 93047,
+          "startIdentity": "Thu Sep 24 20:07:24 2026"
+        },
+        {
+          "pid": 93183,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:24 2026"
+        },
+        {
+          "pid": 93324,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:25 2026"
+        },
+        {
+          "pid": 93412,
+          "parentPid": 92295,
+          "startIdentity": "Thu Sep 24 20:07:25 2026"
+        },
+        {
+          "pid": 93413,
+          "parentPid": 93412,
+          "startIdentity": "Thu Sep 24 20:07:25 2026"
+        },
+        {
+          "pid": 93485,
+          "parentPid": 93413,
+          "startIdentity": "Thu Sep 24 20:07:26 2026"
+        },
+        {
+          "pid": 93538,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:26 2026"
+        },
+        {
+          "pid": 93640,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:27 2026"
+        },
+        {
+          "pid": 93729,
+          "parentPid": 92295,
+          "startIdentity": "Thu Sep 24 20:07:27 2026"
+        },
+        {
+          "pid": 93730,
+          "parentPid": 93729,
+          "startIdentity": "Thu Sep 24 20:07:27 2026"
+        },
+        {
+          "pid": 93801,
+          "parentPid": 93730,
+          "startIdentity": "Thu Sep 24 20:07:28 2026"
+        },
+        {
+          "pid": 93860,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:28 2026"
+        },
+        {
+          "pid": 93953,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:29 2026"
+        },
+        {
+          "pid": 93955,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:29 2026"
+        },
+        {
+          "pid": 94060,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:29 2026"
+        },
+        {
+          "pid": 94071,
+          "parentPid": 92295,
+          "startIdentity": "Thu Sep 24 20:07:29 2026"
+        },
+        {
+          "pid": 94072,
+          "parentPid": 94071,
+          "startIdentity": "Thu Sep 24 20:07:29 2026"
+        },
+        {
+          "pid": 94163,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:30 2026"
+        },
+        {
+          "pid": 94274,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:31 2026"
+        },
+        {
+          "pid": 94377,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:31 2026"
+        },
+        {
+          "pid": 94415,
+          "parentPid": 92295,
+          "startIdentity": "Thu Sep 24 20:07:31 2026"
+        },
+        {
+          "pid": 94416,
+          "parentPid": 94415,
+          "startIdentity": "Thu Sep 24 20:07:31 2026"
+        },
+        {
+          "pid": 94501,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:32 2026"
+        },
+        {
+          "pid": 94722,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:33 2026"
+        },
+        {
+          "pid": 94783,
+          "parentPid": 92295,
+          "startIdentity": "Thu Sep 24 20:07:33 2026"
+        },
+        {
+          "pid": 94784,
+          "parentPid": 94783,
+          "startIdentity": "Thu Sep 24 20:07:33 2026"
+        },
+        {
+          "pid": 94854,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:34 2026"
+        },
+        {
+          "pid": 94959,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:35 2026"
+        },
+        {
+          "pid": 95074,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:35 2026"
+        },
+        {
+          "pid": 95105,
+          "parentPid": 92295,
+          "startIdentity": "Thu Sep 24 20:07:35 2026"
+        },
+        {
+          "pid": 95106,
+          "parentPid": 95105,
+          "startIdentity": "Thu Sep 24 20:07:35 2026"
+        },
+        {
+          "pid": 95168,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:36 2026"
+        },
+        {
+          "pid": 95296,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:37 2026"
+        },
+        {
+          "pid": 95413,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:37 2026"
+        },
+        {
+          "pid": 95452,
+          "parentPid": 92295,
+          "startIdentity": "Thu Sep 24 20:07:37 2026"
+        },
+        {
+          "pid": 95453,
+          "parentPid": 95452,
+          "startIdentity": "Thu Sep 24 20:07:37 2026"
+        },
+        {
+          "pid": 95529,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:38 2026"
+        },
+        {
+          "pid": 95621,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:39 2026"
+        },
+        {
+          "pid": 95728,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:39 2026"
+        },
+        {
+          "pid": 95819,
+          "parentPid": 92295,
+          "startIdentity": "Thu Sep 24 20:07:40 2026"
+        },
+        {
+          "pid": 95820,
+          "parentPid": 95819,
+          "startIdentity": "Thu Sep 24 20:07:40 2026"
+        },
+        {
+          "pid": 95821,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:40 2026"
+        },
+        {
+          "pid": 95833,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:40 2026"
+        },
+        {
+          "pid": 95906,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:41 2026"
+        },
+        {
+          "pid": 95971,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:41 2026"
+        },
+        {
+          "pid": 95972,
+          "parentPid": 92295,
+          "startIdentity": "Thu Sep 24 20:07:41 2026"
+        },
+        {
+          "pid": 96136,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:45 2026"
+        },
+        {
+          "pid": 96182,
+          "parentPid": 92295,
+          "startIdentity": "Thu Sep 24 20:07:46 2026"
+        },
+        {
+          "pid": 96263,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:46 2026"
+        },
+        {
+          "pid": 96367,
+          "parentPid": 92295,
+          "startIdentity": "Thu Sep 24 20:07:47 2026"
+        },
+        {
+          "pid": 96369,
+          "parentPid": 96367,
+          "startIdentity": "Thu Sep 24 20:07:47 2026"
+        },
+        {
+          "pid": 96461,
+          "parentPid": 96369,
+          "startIdentity": "Thu Sep 24 20:07:47 2026"
+        },
+        {
+          "pid": 96538,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:48 2026"
+        },
+        {
+          "pid": 96606,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:48 2026"
+        },
+        {
+          "pid": 96720,
+          "parentPid": 92295,
+          "startIdentity": "Thu Sep 24 20:07:49 2026"
+        },
+        {
+          "pid": 96721,
+          "parentPid": 96720,
+          "startIdentity": "Thu Sep 24 20:07:49 2026"
+        },
+        {
+          "pid": 96855,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:50 2026"
+        },
+        {
+          "pid": 96946,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:50 2026"
+        },
+        {
+          "pid": 97020,
+          "parentPid": 92295,
+          "startIdentity": "Thu Sep 24 20:07:50 2026"
+        },
+        {
+          "pid": 97021,
+          "parentPid": 97020,
+          "startIdentity": "Thu Sep 24 20:07:50 2026"
+        },
+        {
+          "pid": 97113,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:51 2026"
+        },
+        {
+          "pid": 97184,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:52 2026"
+        },
+        {
+          "pid": 97185,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:52 2026"
+        },
+        {
+          "pid": 97284,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:52 2026"
+        },
+        {
+          "pid": 97330,
+          "parentPid": 92295,
+          "startIdentity": "Thu Sep 24 20:07:52 2026"
+        },
+        {
+          "pid": 97331,
+          "parentPid": 97330,
+          "startIdentity": "Thu Sep 24 20:07:52 2026"
+        },
+        {
+          "pid": 97446,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:53 2026"
+        },
+        {
+          "pid": 97512,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:54 2026"
+        },
+        {
+          "pid": 97628,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:54 2026"
+        },
+        {
+          "pid": 97640,
+          "parentPid": 92295,
+          "startIdentity": "Thu Sep 24 20:07:54 2026"
+        },
+        {
+          "pid": 97641,
+          "parentPid": 97640,
+          "startIdentity": "Thu Sep 24 20:07:54 2026"
+        },
+        {
+          "pid": 97770,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:55 2026"
+        },
+        {
+          "pid": 97837,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:56 2026"
+        },
+        {
+          "pid": 97941,
+          "parentPid": 92295,
+          "startIdentity": "Thu Sep 24 20:07:56 2026"
+        },
+        {
+          "pid": 97942,
+          "parentPid": 97941,
+          "startIdentity": "Thu Sep 24 20:07:56 2026"
+        },
+        {
+          "pid": 98008,
+          "parentPid": 97942,
+          "startIdentity": "Thu Sep 24 20:07:57 2026"
+        },
+        {
+          "pid": 98091,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:57 2026"
+        },
+        {
+          "pid": 98178,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:58 2026"
+        },
+        {
+          "pid": 98243,
+          "parentPid": 92295,
+          "startIdentity": "Thu Sep 24 20:07:58 2026"
+        },
+        {
+          "pid": 98245,
+          "parentPid": 98243,
+          "startIdentity": "Thu Sep 24 20:07:58 2026"
+        },
+        {
+          "pid": 98333,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:59 2026"
+        },
+        {
+          "pid": 98415,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:07:59 2026"
+        },
+        {
+          "pid": 98501,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:08:00 2026"
+        },
+        {
+          "pid": 98555,
+          "parentPid": 92295,
+          "startIdentity": "Thu Sep 24 20:08:00 2026"
+        },
+        {
+          "pid": 98556,
+          "parentPid": 98555,
+          "startIdentity": "Thu Sep 24 20:08:00 2026"
+        },
+        {
+          "pid": 98736,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:08:01 2026"
+        },
+        {
+          "pid": 98837,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:08:02 2026"
+        },
+        {
+          "pid": 98906,
+          "parentPid": 92295,
+          "startIdentity": "Thu Sep 24 20:08:02 2026"
+        },
+        {
+          "pid": 98907,
+          "parentPid": 98906,
+          "startIdentity": "Thu Sep 24 20:08:02 2026"
+        },
+        {
+          "pid": 99006,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:08:03 2026"
+        },
+        {
+          "pid": 99088,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:08:03 2026"
+        },
+        {
+          "pid": 99443,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:08:07 2026"
+        },
+        {
+          "pid": 99539,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:08:10 2026"
+        },
+        {
+          "pid": 99540,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:08:10 2026"
+        },
+        {
+          "pid": 99568,
+          "parentPid": 92221,
+          "startIdentity": "Thu Sep 24 20:08:10 2026"
+        }
+      ],
+      "remainingProcessIds": [],
+      "signals": [],
+      "trackingClosed": true
+    },
+    {
+      "arm": "candidate",
+      "source": "retained-os-process-ancestry-and-start-identities",
+      "rootPid": 221,
+      "rootObserved": true,
+      "observationIntervalMs": 500,
+      "observationErrors": [],
+      "observedProcesses": [
+        {
+          "pid": 221,
+          "parentPid": 92195,
+          "startIdentity": "Thu Sep 24 20:08:23 2026"
+        },
+        {
+          "pid": 241,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:23 2026"
+        },
+        {
+          "pid": 274,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:24 2026"
+        },
+        {
+          "pid": 275,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:24 2026"
+        },
+        {
+          "pid": 313,
+          "parentPid": 274,
+          "startIdentity": "Thu Sep 24 20:08:25 2026"
+        },
+        {
+          "pid": 334,
+          "parentPid": 274,
+          "startIdentity": "Thu Sep 24 20:08:25 2026"
+        },
+        {
+          "pid": 357,
+          "parentPid": 334,
+          "startIdentity": "Thu Sep 24 20:08:26 2026"
+        },
+        {
+          "pid": 360,
+          "parentPid": 334,
+          "startIdentity": "Thu Sep 24 20:08:26 2026"
+        },
+        {
+          "pid": 567,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:28 2026"
+        },
+        {
+          "pid": 850,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:31 2026"
+        },
+        {
+          "pid": 864,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:31 2026"
+        },
+        {
+          "pid": 960,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:31 2026"
+        },
+        {
+          "pid": 996,
+          "parentPid": 274,
+          "startIdentity": "Thu Sep 24 20:08:31 2026"
+        },
+        {
+          "pid": 997,
+          "parentPid": 996,
+          "startIdentity": "Thu Sep 24 20:08:31 2026"
+        },
+        {
+          "pid": 1044,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:32 2026"
+        },
+        {
+          "pid": 1112,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:33 2026"
+        },
+        {
+          "pid": 1233,
+          "parentPid": 274,
+          "startIdentity": "Thu Sep 24 20:08:33 2026"
+        },
+        {
+          "pid": 1242,
+          "parentPid": 1233,
+          "startIdentity": "Thu Sep 24 20:08:33 2026"
+        },
+        {
+          "pid": 1396,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:34 2026"
+        },
+        {
+          "pid": 1490,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:35 2026"
+        },
+        {
+          "pid": 1550,
+          "parentPid": 274,
+          "startIdentity": "Thu Sep 24 20:08:35 2026"
+        },
+        {
+          "pid": 1551,
+          "parentPid": 1550,
+          "startIdentity": "Thu Sep 24 20:08:35 2026"
+        },
+        {
+          "pid": 1726,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:36 2026"
+        },
+        {
+          "pid": 1735,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:36 2026"
+        },
+        {
+          "pid": 1814,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:37 2026"
+        },
+        {
+          "pid": 1863,
+          "parentPid": 274,
+          "startIdentity": "Thu Sep 24 20:08:37 2026"
+        },
+        {
+          "pid": 1864,
+          "parentPid": 1863,
+          "startIdentity": "Thu Sep 24 20:08:37 2026"
+        },
+        {
+          "pid": 1946,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:38 2026"
+        },
+        {
+          "pid": 2063,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:38 2026"
+        },
+        {
+          "pid": 2145,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:39 2026"
+        },
+        {
+          "pid": 2187,
+          "parentPid": 274,
+          "startIdentity": "Thu Sep 24 20:08:39 2026"
+        },
+        {
+          "pid": 2188,
+          "parentPid": 2187,
+          "startIdentity": "Thu Sep 24 20:08:39 2026"
+        },
+        {
+          "pid": 2281,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:40 2026"
+        },
+        {
+          "pid": 2393,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:40 2026"
+        },
+        {
+          "pid": 2483,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:41 2026"
+        },
+        {
+          "pid": 2508,
+          "parentPid": 274,
+          "startIdentity": "Thu Sep 24 20:08:41 2026"
+        },
+        {
+          "pid": 2509,
+          "parentPid": 2508,
+          "startIdentity": "Thu Sep 24 20:08:41 2026"
+        },
+        {
+          "pid": 2629,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:42 2026"
+        },
+        {
+          "pid": 2748,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:42 2026"
+        },
+        {
+          "pid": 2806,
+          "parentPid": 274,
+          "startIdentity": "Thu Sep 24 20:08:43 2026"
+        },
+        {
+          "pid": 2807,
+          "parentPid": 2806,
+          "startIdentity": "Thu Sep 24 20:08:43 2026"
+        },
+        {
+          "pid": 2974,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:44 2026"
+        },
+        {
+          "pid": 3078,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:44 2026"
+        },
+        {
+          "pid": 3130,
+          "parentPid": 274,
+          "startIdentity": "Thu Sep 24 20:08:45 2026"
+        },
+        {
+          "pid": 3131,
+          "parentPid": 3130,
+          "startIdentity": "Thu Sep 24 20:08:45 2026"
+        },
+        {
+          "pid": 3332,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:46 2026"
+        },
+        {
+          "pid": 3442,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:46 2026"
+        },
+        {
+          "pid": 3506,
+          "parentPid": 274,
+          "startIdentity": "Thu Sep 24 20:08:47 2026"
+        },
+        {
+          "pid": 3507,
+          "parentPid": 3506,
+          "startIdentity": "Thu Sep 24 20:08:47 2026"
+        },
+        {
+          "pid": 3668,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:48 2026"
+        },
+        {
+          "pid": 3777,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:48 2026"
+        },
+        {
+          "pid": 3778,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:48 2026"
+        },
+        {
+          "pid": 4094,
+          "parentPid": 274,
+          "startIdentity": "Thu Sep 24 20:08:51 2026"
+        },
+        {
+          "pid": 4095,
+          "parentPid": 274,
+          "startIdentity": "Thu Sep 24 20:08:51 2026"
+        },
+        {
+          "pid": 4311,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:55 2026"
+        },
+        {
+          "pid": 4396,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:55 2026"
+        },
+        {
+          "pid": 4435,
+          "parentPid": 274,
+          "startIdentity": "Thu Sep 24 20:08:55 2026"
+        },
+        {
+          "pid": 4436,
+          "parentPid": 4435,
+          "startIdentity": "Thu Sep 24 20:08:55 2026"
+        },
+        {
+          "pid": 4474,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:56 2026"
+        },
+        {
+          "pid": 4540,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:57 2026"
+        },
+        {
+          "pid": 4609,
+          "parentPid": 274,
+          "startIdentity": "Thu Sep 24 20:08:57 2026"
+        },
+        {
+          "pid": 4610,
+          "parentPid": 4609,
+          "startIdentity": "Thu Sep 24 20:08:57 2026"
+        },
+        {
+          "pid": 4631,
+          "parentPid": 4610,
+          "startIdentity": "Thu Sep 24 20:08:58 2026"
+        },
+        {
+          "pid": 4687,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:58 2026"
+        },
+        {
+          "pid": 4744,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:08:59 2026"
+        },
+        {
+          "pid": 4800,
+          "parentPid": 274,
+          "startIdentity": "Thu Sep 24 20:08:59 2026"
+        },
+        {
+          "pid": 4801,
+          "parentPid": 4800,
+          "startIdentity": "Thu Sep 24 20:08:59 2026"
+        },
+        {
+          "pid": 4825,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:09:00 2026"
+        },
+        {
+          "pid": 4927,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:09:00 2026"
+        },
+        {
+          "pid": 4994,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:09:01 2026"
+        },
+        {
+          "pid": 5021,
+          "parentPid": 274,
+          "startIdentity": "Thu Sep 24 20:09:01 2026"
+        },
+        {
+          "pid": 5022,
+          "parentPid": 5021,
+          "startIdentity": "Thu Sep 24 20:09:01 2026"
+        },
+        {
+          "pid": 5145,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:09:02 2026"
+        },
+        {
+          "pid": 5196,
+          "parentPid": 274,
+          "startIdentity": "Thu Sep 24 20:09:03 2026"
+        },
+        {
+          "pid": 5197,
+          "parentPid": 5196,
+          "startIdentity": "Thu Sep 24 20:09:03 2026"
+        },
+        {
+          "pid": 5225,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:09:03 2026"
+        },
+        {
+          "pid": 5363,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:09:04 2026"
+        },
+        {
+          "pid": 5386,
+          "parentPid": 274,
+          "startIdentity": "Thu Sep 24 20:09:04 2026"
+        },
+        {
+          "pid": 5387,
+          "parentPid": 5386,
+          "startIdentity": "Thu Sep 24 20:09:04 2026"
+        },
+        {
+          "pid": 5388,
+          "parentPid": 5387,
+          "startIdentity": "Thu Sep 24 20:09:05 2026"
+        },
+        {
+          "pid": 5443,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:09:05 2026"
+        },
+        {
+          "pid": 5527,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:09:06 2026"
+        },
+        {
+          "pid": 5559,
+          "parentPid": 274,
+          "startIdentity": "Thu Sep 24 20:09:06 2026"
+        },
+        {
+          "pid": 5560,
+          "parentPid": 5559,
+          "startIdentity": "Thu Sep 24 20:09:06 2026"
+        },
+        {
+          "pid": 5617,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:09:07 2026"
+        },
+        {
+          "pid": 5745,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:09:07 2026"
+        },
+        {
+          "pid": 5827,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:09:08 2026"
+        },
+        {
+          "pid": 5828,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:09:08 2026"
+        },
+        {
+          "pid": 5865,
+          "parentPid": 274,
+          "startIdentity": "Thu Sep 24 20:09:08 2026"
+        },
+        {
+          "pid": 5866,
+          "parentPid": 5865,
+          "startIdentity": "Thu Sep 24 20:09:08 2026"
+        },
+        {
+          "pid": 5964,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:09:09 2026"
+        },
+        {
+          "pid": 6084,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:09:09 2026"
+        },
+        {
+          "pid": 6177,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:09:10 2026"
+        },
+        {
+          "pid": 6210,
+          "parentPid": 274,
+          "startIdentity": "Thu Sep 24 20:09:10 2026"
+        },
+        {
+          "pid": 6211,
+          "parentPid": 6210,
+          "startIdentity": "Thu Sep 24 20:09:10 2026"
+        },
+        {
+          "pid": 7079,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:09:17 2026"
+        },
+        {
+          "pid": 7080,
+          "parentPid": 221,
+          "startIdentity": "Thu Sep 24 20:09:17 2026"
+        }
+      ],
+      "remainingProcessIds": [],
+      "signals": [],
+      "trackingClosed": true
+    }
+  ],
+  "failures": [],
+  "wireFailures": [],
+  "metadataRequests": [
+    {
+      "route": "model-catalog",
+      "statusCode": 200
+    },
+    {
+      "route": "zen-model-catalog",
+      "statusCode": 200
+    },
+    {
+      "route": "antigravity-version",
+      "statusCode": 200
+    },
+    {
+      "route": "zen-model-catalog",
+      "statusCode": 200
+    },
+    {
+      "route": "model-catalog",
+      "statusCode": 200
+    },
+    {
+      "route": "antigravity-version",
+      "statusCode": 200
+    }
+  ],
+  "wire": [
+    {
+      "arm": "baseline",
+      "index": null,
+      "phase": "warmup",
+      "requestIndex": 1,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "e1a220b41da581082edda750aee37aff910198df2fa88df66ae1d0d984ecbf7c",
+        "bytes": 32670,
+        "model": "gpt-6-astra",
+        "instructions": [
+          "5750e26914afe404330633e755fb96dd4e4d415d8e6512e9a457d80f95bd743b"
+        ],
+        "tools": [
+          "061adc95bc608814d09bd9579c4732cdef0d431c1af7e9b76cf624781f2356e2",
+          "d66bfa1695f1019834738e1ceb7d7c24f8f739bed1c4f49af2339c8c4741544a",
+          "073714fc1b107334a5cb78e603c1ce2855351ce1943147d3b33f2626b80ad570",
+          "9bb44fe10fbd44fa8ccf2f40e5b5743258f365991e8d12087ed0952406e32557",
+          "ce944527664994af3420245eaee14af6291ff9d1fa23f46f59edaad035d9d239",
+          "a3b4a1d0f25fdd2ead67ebbab415f6c3a932efafdf087c15b050546c8d52388b",
+          "0b7c126f4dea0c8eb4b350e61083c58a8844798f1d406586597277b366215ae4",
+          "2774a0b4627424b8afa4e28a44cb0d98bc05c86fa2600ca187b42ea72cea553f",
+          "f92b4863ac1e195432384ef53f4a2abbc48924f8d2cbc6e59f5d01f8b96e1277",
+          "5b6715e03b38beb35cddbb508fcc3051b89052ee9553476e8693c2cb50db07df",
+          "1bc00277be51d0ef01160c4e22f794ced438209d9b68c29548852f3cfe29b63d",
+          "66f397fd8bcef7a8f54eddc49d641fc4fccbf36777e306f8c477f8cb19d0c60c",
+          "c3bb683182ca2108308fec5ccfd70f4eb7d6c4acc6e4e3ab96d75a18b45b54b7",
+          "ff0ff20583a5a71bd2cb3f08d5dc2078806263159abddae6efb4183ef2dc1ce2",
+          "c2b10d797bbdd3a645e0ca8fb91df6f1b9c4e8d36962995b34e60bb1626d3fb7",
+          "7d6c9e6a558e7cffc2a1e6eef4f6cc13e2c016fa22ae77d9f827178138fe6a8c",
+          "fe332ac8e06fe114d6c271b1dc07b7c43c6d21e4235800de57f8a5b82dd99e6b",
+          "f6ed684568ddbbcaf882cca59b1f29933f8a89535bd71828a9220de516ec74b3",
+          "669f07b464d2068b4dfa39923e308549032050b47d6d0d37ece8fbc611fabf82"
+        ],
+        "history": [
+          "554df14a516c0bcf042caaeebaf32447433e0485e65377dd275f0f44b22c3791"
+        ],
+        "cacheParametersHash": "449b523e4103c4b7031bf92f8fa9cd241feb72942df9e6bb807a9eb962f33e13",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "c222675f0ef764fec5a9a54fdfc4c7f17a546374856a73cd2c1bbad20534e2e9",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-1",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_00e87c28eca6864a016ab54ab7a3d087d0830a9688945f0364",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-6-astra",
+        "responseModel": "gpt-6-astra",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266042328,
+        "tokens": {
+          "totalInput": 6299,
+          "uncachedInput": 1691,
+          "cacheRead": 4608,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 5,
+          "reasoning": 0,
+          "totalOutput": 5
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266040396,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266042084,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266042328,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266040397
+    },
+    {
+      "arm": "baseline",
+      "index": null,
+      "phase": "warmup",
+      "requestIndex": 2,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "c8e885911f57db20ba03c8de22f4b4d2dda09345e988c2ab7d8e8c7a93628c47",
+        "bytes": 2521,
+        "model": "gpt-6-astra",
+        "instructions": [
+          "dcab81984540e2e4984b74665fc3dcd58eca8524536ab999f00b311171efcce6"
+        ],
+        "tools": [],
+        "history": [
+          "17821927c0ebc0fcc040fbb01ebc966e293c4289119de0bbbf755f25b82b3e9f"
+        ],
+        "cacheParametersHash": "9103fc3e17a876e998ec0d6ee6f3199c0fe38dc735705169342e388a2bbb83af",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "0e132f294f97810e335e550aa3c57ed5a5f9730f04362e8448cc1f1031af8819",
+        "reasoningEffort": null,
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-2",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_045392680ab79247016ab54ab8513887d09114380fe788a687",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-6-astra",
+        "responseModel": "gpt-6-astra",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266044593,
+        "tokens": {
+          "totalInput": 506,
+          "uncachedInput": 506,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 10,
+          "reasoning": 24,
+          "totalOutput": 34
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266041411,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266044186,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266044593,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266041449
+    },
+    {
+      "arm": "baseline",
+      "index": 0,
+      "phase": "continuity",
+      "requestIndex": 3,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "605e69e6eab0148d850123a548296374ce188c58d92aa7bc4429f6f5407eb8ec",
+        "bytes": 84298,
+        "model": "gpt-6-astra",
+        "instructions": [
+          "5750e26914afe404330633e755fb96dd4e4d415d8e6512e9a457d80f95bd743b"
+        ],
+        "tools": [
+          "061adc95bc608814d09bd9579c4732cdef0d431c1af7e9b76cf624781f2356e2",
+          "d66bfa1695f1019834738e1ceb7d7c24f8f739bed1c4f49af2339c8c4741544a",
+          "073714fc1b107334a5cb78e603c1ce2855351ce1943147d3b33f2626b80ad570",
+          "9bb44fe10fbd44fa8ccf2f40e5b5743258f365991e8d12087ed0952406e32557",
+          "ce944527664994af3420245eaee14af6291ff9d1fa23f46f59edaad035d9d239",
+          "a3b4a1d0f25fdd2ead67ebbab415f6c3a932efafdf087c15b050546c8d52388b",
+          "0b7c126f4dea0c8eb4b350e61083c58a8844798f1d406586597277b366215ae4",
+          "2774a0b4627424b8afa4e28a44cb0d98bc05c86fa2600ca187b42ea72cea553f",
+          "f92b4863ac1e195432384ef53f4a2abbc48924f8d2cbc6e59f5d01f8b96e1277",
+          "5b6715e03b38beb35cddbb508fcc3051b89052ee9553476e8693c2cb50db07df",
+          "1bc00277be51d0ef01160c4e22f794ced438209d9b68c29548852f3cfe29b63d",
+          "66f397fd8bcef7a8f54eddc49d641fc4fccbf36777e306f8c477f8cb19d0c60c",
+          "c3bb683182ca2108308fec5ccfd70f4eb7d6c4acc6e4e3ab96d75a18b45b54b7",
+          "ff0ff20583a5a71bd2cb3f08d5dc2078806263159abddae6efb4183ef2dc1ce2",
+          "c2b10d797bbdd3a645e0ca8fb91df6f1b9c4e8d36962995b34e60bb1626d3fb7",
+          "7d6c9e6a558e7cffc2a1e6eef4f6cc13e2c016fa22ae77d9f827178138fe6a8c",
+          "fe332ac8e06fe114d6c271b1dc07b7c43c6d21e4235800de57f8a5b82dd99e6b",
+          "f6ed684568ddbbcaf882cca59b1f29933f8a89535bd71828a9220de516ec74b3",
+          "669f07b464d2068b4dfa39923e308549032050b47d6d0d37ece8fbc611fabf82"
+        ],
+        "history": [
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "ab7ed430caecfab2c92bd5d2a3dd1ee6aaecd8b1ad4cc4741171f8fb94547f86",
+          "632478ec9cc785aeadd12ec60cdaea196ded0dae221d745b21fb1cab268c7481",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "3b159b90cec2058b337ad92cb4457c233ac68ab12bd40e3bca18961fc06bf567",
+          "60852df74849991e393027026340a2e6994f9d8f8c5b2d771c35a4c399616efa",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "0f47e5855f87fd11f1b142472f11ddb34b9f7845af901eb04be869d7f1245d25",
+          "8b9ef515e97bdb4e065aa9f7c62de258366cca0fd4b7744abd2584b976fc86ad",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "27a7a304f8018c559e1daecb82466cbdfa723e338d86875b3e2fdf4e7470c9c7",
+          "cadf28d66aa913737a82292f90f21cb0567e66c8190cff1dacae28c8e1f9943b",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "a25ac55355d68e65e4bf99848b133b863d84230d8b62e54783992b70031b5966",
+          "6eddd833b9caedcf1a84d83900b3bae641d23ad6323de31e455bab55ef4cf0df",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "4ba89f3dc95cc4b083d56f60dc1ae35706f6ec89dc19d64bd685b22945febd4a",
+          "2db847b9c4a7e94f50817dcd83ffd84d9eaf28453b5ff4c7ce75d2055918e692",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "fb6da84fe982e9359627cf1bfa120ca6668b76012c6858a8089a4d28e2b4d946",
+          "b55056cdbdc3e3d8550604704353f35856a03cf600d5e38a8445faca0d22ad28",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "7c6fd853097e7fe1d7df31198b07dc18c7e3a361d9861ec6b96dd39f784382f4",
+          "d78616842c9abd15fb014477157e132d8826a80bd3af87c25af23e5dd4dcae6f",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "6573e63a5e2bca6c768d049a83f51c81d5fc4ef82e59ede59899aeefce0b24e7",
+          "ac228f519ac6c1ead242027eef332acc506b774f800ddd8d87038c103d0516bc",
+          "57587159f2651d051b0a45633b25ad1347ddc70188daf1ac7d8e3e0a38a9a5af"
+        ],
+        "cacheParametersHash": "201f91868a1b758aa02e83dc0c21cf7705650921df6f80c182dc51d441cfb69a",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "b0cb4123ab4ec9090f2c863f8d6ec1d461e967966cbcc3afe530affa724a0752",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": 0,
+        "factHashes": [
+          "c127b0e9be113338e5e4c3d57e44f73619a4cc2dad78892baac698610da5746a"
+        ],
+        "uniqueProofHashes": [
+          "f508255f58a9e60cc29b899c89cb6e9bdaa3807b9a2c855bbc08df7a022f918c"
+        ],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": [
+          "bc1c9ce7e9a7df11e917e26bf1ef2ddda5eee6e923fbc18da5cf11fbc00f682e",
+          "bc1c9ce7e9a7df11e917e26bf1ef2ddda5eee6e923fbc18da5cf11fbc00f682e",
+          "bc1c9ce7e9a7df11e917e26bf1ef2ddda5eee6e923fbc18da5cf11fbc00f682e",
+          "bc1c9ce7e9a7df11e917e26bf1ef2ddda5eee6e923fbc18da5cf11fbc00f682e"
+        ]
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-3",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0859e49752a76c2a016ab54ace5fe887d089fb1518ed28e631",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-6-astra",
+        "responseModel": "gpt-6-astra",
+        "purpose": "main",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266066101,
+        "tokens": {
+          "totalInput": 16416,
+          "uncachedInput": 16416,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 67,
+          "reasoning": 0,
+          "totalOutput": 67
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266062921,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266063863,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266066101,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266062923
+    },
+    {
+      "arm": "baseline",
+      "index": 0,
+      "phase": "continuity",
+      "requestIndex": 4,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "d1e2faa3fcb20392c5b37d1ce31cd75e6552c6ab1c419706fe0326f92b666a4d",
+        "bytes": 3043,
+        "model": "gpt-6-astra",
+        "instructions": [
+          "dcab81984540e2e4984b74665fc3dcd58eca8524536ab999f00b311171efcce6"
+        ],
+        "tools": [],
+        "history": [
+          "c3528f629ba762ef36c781c38968c75ef59f24e95ced616f1e2f54f7d0f52151"
+        ],
+        "cacheParametersHash": "56564e9f4545ece160a906141467296518e828bc55beab7fdc89ed0b95a7bb35",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "ad6b8089d273972945e9f76c51ed268e359a93f17a09f8b3e1e7a94870e41e8f",
+        "reasoningEffort": null,
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-4",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_07a1bd760924cbb1016ab54ace36f887d0bca32399295d7866",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-6-astra",
+        "responseModel": "gpt-6-astra",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266064863,
+        "tokens": {
+          "totalInput": 610,
+          "uncachedInput": 610,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 9,
+          "reasoning": 0,
+          "totalOutput": 9
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266062735,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266064463,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266064863,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266062735
+    },
+    {
+      "arm": "baseline",
+      "index": 5,
+      "phase": "continuity",
+      "requestIndex": 5,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "81d38f621e0e139e253d805c7b59406407f534344142be91dc427701efd4a9fb",
+        "bytes": 90394,
+        "model": "gpt-6-astra",
+        "instructions": [
+          "5750e26914afe404330633e755fb96dd4e4d415d8e6512e9a457d80f95bd743b"
+        ],
+        "tools": [
+          "061adc95bc608814d09bd9579c4732cdef0d431c1af7e9b76cf624781f2356e2",
+          "d66bfa1695f1019834738e1ceb7d7c24f8f739bed1c4f49af2339c8c4741544a",
+          "073714fc1b107334a5cb78e603c1ce2855351ce1943147d3b33f2626b80ad570",
+          "9bb44fe10fbd44fa8ccf2f40e5b5743258f365991e8d12087ed0952406e32557",
+          "ce944527664994af3420245eaee14af6291ff9d1fa23f46f59edaad035d9d239",
+          "a3b4a1d0f25fdd2ead67ebbab415f6c3a932efafdf087c15b050546c8d52388b",
+          "0b7c126f4dea0c8eb4b350e61083c58a8844798f1d406586597277b366215ae4",
+          "2774a0b4627424b8afa4e28a44cb0d98bc05c86fa2600ca187b42ea72cea553f",
+          "f92b4863ac1e195432384ef53f4a2abbc48924f8d2cbc6e59f5d01f8b96e1277",
+          "5b6715e03b38beb35cddbb508fcc3051b89052ee9553476e8693c2cb50db07df",
+          "1bc00277be51d0ef01160c4e22f794ced438209d9b68c29548852f3cfe29b63d",
+          "66f397fd8bcef7a8f54eddc49d641fc4fccbf36777e306f8c477f8cb19d0c60c",
+          "c3bb683182ca2108308fec5ccfd70f4eb7d6c4acc6e4e3ab96d75a18b45b54b7",
+          "ff0ff20583a5a71bd2cb3f08d5dc2078806263159abddae6efb4183ef2dc1ce2",
+          "c2b10d797bbdd3a645e0ca8fb91df6f1b9c4e8d36962995b34e60bb1626d3fb7",
+          "7d6c9e6a558e7cffc2a1e6eef4f6cc13e2c016fa22ae77d9f827178138fe6a8c",
+          "fe332ac8e06fe114d6c271b1dc07b7c43c6d21e4235800de57f8a5b82dd99e6b",
+          "f6ed684568ddbbcaf882cca59b1f29933f8a89535bd71828a9220de516ec74b3",
+          "669f07b464d2068b4dfa39923e308549032050b47d6d0d37ece8fbc611fabf82"
+        ],
+        "history": [
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "9a577c78f3b141c404f851fcc107dc0f2d72a04f9d3b9dd2382e6f9d268a6852",
+          "918a8efb5e1e7cef4833f56f23ae2a790b6695df6f98790a273fa026b06eced2",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "52645ccc6b553e5ecb1dbb1957e18c47a28ab0db27fb484b693b355fcff494aa",
+          "1ab68db7fa45789f6e9f799042cc1eb029818ab4371d10880c3cf26942e891a2",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "250c1fb7efa9c24b9101166f13572663881327bb9a1ad88c38410bce34551a32",
+          "aa95f3f0985352bf7ed4b7a6f5591ffa44a6ef88887e64886df049da84bd6800",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "f224e5afe3d8c68cb12d67d92c377bb82b09c6ccc3ec27b663dcc70d15c1f9d0",
+          "d4b43a6d26ae80c4010028f90f2997fac1c4df2481fae523fe4d239a4bc3b876",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "3fa41917c66ba0c6dad330c8e425d313e5ea8a182ac5f4aeb54393efcea3700d",
+          "6b162c42bd82b457e305fef2d2ced22349b08213adcc3fd88fe4b917cd903117",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "ea0b51f5b759bf512dc6dec054c132717e46d87418de475648d10152e54be42d",
+          "0418c002397a9f3b3f7ba46954219ba94216dbb01b886607a235d174be72b537",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "7edeaf3c94ef18bce0635dc470be7e11b50a0df22d0afc53a11a7f3e5939b57f",
+          "60175703994ff821294bcb2ca6738ded74e3f3491646e939da71bee95ebe9d54",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "2ee3adaa2e71e746c2d7ab8fc30510d16b5262e7e2569218afc6ca0475b32fcf",
+          "cbd36d5cd217ef45b447d5288eb748b03edbbb194ae65ed81778fd70baf08562",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "26e8dd911f5a86ab893c3c905b6b9aa860f06cc30ad5ec0a93c66496f961adb0",
+          "3a5fbc8f5e00676df452565fc31cf78f25ea65fbe89ecf420e9e2f99b4c29224",
+          "e4978356c6e8fc430641c5a5d021d6bd14ae769cc2cef283c30dfa37ff9a1944"
+        ],
+        "cacheParametersHash": "cda2fed567847dcd401595a1a78f7435e04bdb1a15ed35e6c598a9387f353e16",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "485568e4b2354bdbab6cf071a3008c8b5b0d0cb3422f52b21746217ea4ffdbd4",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": 5,
+        "factHashes": [
+          "889d61d94c09cab253ff11de1ea744d65f04b2b35ea7fb4b8beb7b874e9fb8f2"
+        ],
+        "uniqueProofHashes": [
+          "b49d5f11335597f9eb114137d0c3341f7baa3d7643b6643b4d8ff0c29df29daa"
+        ],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": [
+          "f9df1a2e2240f1c47d7b6c61bf5e1162c7e82b0db9754e7ea3f8403a528817ad",
+          "f9df1a2e2240f1c47d7b6c61bf5e1162c7e82b0db9754e7ea3f8403a528817ad",
+          "f9df1a2e2240f1c47d7b6c61bf5e1162c7e82b0db9754e7ea3f8403a528817ad",
+          "f9df1a2e2240f1c47d7b6c61bf5e1162c7e82b0db9754e7ea3f8403a528817ad"
+        ]
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-5",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0892a9a196c88c4b016ab54ae5673c87d0bb0a695747c15fb9",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-6-astra",
+        "responseModel": "gpt-6-astra",
+        "purpose": "main",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266089936,
+        "tokens": {
+          "totalInput": 17751,
+          "uncachedInput": 17751,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 65,
+          "reasoning": 0,
+          "totalOutput": 65
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266086114,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266087990,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266089936,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266086115
+    },
+    {
+      "arm": "baseline",
+      "index": 5,
+      "phase": "continuity",
+      "requestIndex": 6,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "014edb619222d442ff64510b724b9d76df0abf0fd3377e6d6dad6c481143a6c7",
+        "bytes": 3043,
+        "model": "gpt-6-astra",
+        "instructions": [
+          "dcab81984540e2e4984b74665fc3dcd58eca8524536ab999f00b311171efcce6"
+        ],
+        "tools": [],
+        "history": [
+          "2bc7f9127dcd16067d833f2e66d3268cf8c3ea2f9cce34aaa2091cf767ac8776"
+        ],
+        "cacheParametersHash": "388d4f0ba3fa6e3cd4de167f9f2e8a70c7bc80ce2fc0fe1eebbf58dd6a10e774",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "8f83e0d946a6b581045b68545370deead9f52e0decad925a053b10a14c025ac1",
+        "reasoningEffort": null,
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-6",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0c362a7e99ece96f016ab54ae54ffc87d0967f625eceb41b68",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-6-astra",
+        "responseModel": "gpt-6-astra",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266087416,
+        "tokens": {
+          "totalInput": 610,
+          "uncachedInput": 610,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 10,
+          "reasoning": 0,
+          "totalOutput": 10
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266086126,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266086974,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266087416,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266086126
+    },
+    {
+      "arm": "candidate",
+      "index": null,
+      "phase": "warmup",
+      "requestIndex": 7,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "418943a5ea3c639bd59f9076748be0cd9695273dca69c631faaa9e6160f322ae",
+        "bytes": 32670,
+        "model": "gpt-6-astra",
+        "instructions": [
+          "5750e26914afe404330633e755fb96dd4e4d415d8e6512e9a457d80f95bd743b"
+        ],
+        "tools": [
+          "061adc95bc608814d09bd9579c4732cdef0d431c1af7e9b76cf624781f2356e2",
+          "d66bfa1695f1019834738e1ceb7d7c24f8f739bed1c4f49af2339c8c4741544a",
+          "073714fc1b107334a5cb78e603c1ce2855351ce1943147d3b33f2626b80ad570",
+          "9bb44fe10fbd44fa8ccf2f40e5b5743258f365991e8d12087ed0952406e32557",
+          "ce944527664994af3420245eaee14af6291ff9d1fa23f46f59edaad035d9d239",
+          "a3b4a1d0f25fdd2ead67ebbab415f6c3a932efafdf087c15b050546c8d52388b",
+          "0b7c126f4dea0c8eb4b350e61083c58a8844798f1d406586597277b366215ae4",
+          "2774a0b4627424b8afa4e28a44cb0d98bc05c86fa2600ca187b42ea72cea553f",
+          "f92b4863ac1e195432384ef53f4a2abbc48924f8d2cbc6e59f5d01f8b96e1277",
+          "5b6715e03b38beb35cddbb508fcc3051b89052ee9553476e8693c2cb50db07df",
+          "1bc00277be51d0ef01160c4e22f794ced438209d9b68c29548852f3cfe29b63d",
+          "66f397fd8bcef7a8f54eddc49d641fc4fccbf36777e306f8c477f8cb19d0c60c",
+          "c3bb683182ca2108308fec5ccfd70f4eb7d6c4acc6e4e3ab96d75a18b45b54b7",
+          "ff0ff20583a5a71bd2cb3f08d5dc2078806263159abddae6efb4183ef2dc1ce2",
+          "c2b10d797bbdd3a645e0ca8fb91df6f1b9c4e8d36962995b34e60bb1626d3fb7",
+          "7d6c9e6a558e7cffc2a1e6eef4f6cc13e2c016fa22ae77d9f827178138fe6a8c",
+          "fe332ac8e06fe114d6c271b1dc07b7c43c6d21e4235800de57f8a5b82dd99e6b",
+          "f6ed684568ddbbcaf882cca59b1f29933f8a89535bd71828a9220de516ec74b3",
+          "669f07b464d2068b4dfa39923e308549032050b47d6d0d37ece8fbc611fabf82"
+        ],
+        "history": [
+          "554df14a516c0bcf042caaeebaf32447433e0485e65377dd275f0f44b22c3791"
+        ],
+        "cacheParametersHash": "843a143269d163b32e78db1f6cb23ff9e59268bd5ad6ee532fa94eec1643ba85",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "d07e73a54159ed1121e8c73b5f026c32a2069f40acc6be3484d6f0b169b04a7e",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-7",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_01487eff987c6628016ab54afce81487d09c9d5b8e864ae803",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-6-astra",
+        "responseModel": "gpt-6-astra",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266110773,
+        "tokens": {
+          "totalInput": 6299,
+          "uncachedInput": 6299,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 5,
+          "reasoning": 0,
+          "totalOutput": 5
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266109503,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266110435,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266110773,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266109534
+    },
+    {
+      "arm": "candidate",
+      "index": null,
+      "phase": "warmup",
+      "requestIndex": 8,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "1b8b5f2ae573bd94473a095d6b9e2fcc8964d3bb2686197ecc7c2a90e7397fdb",
+        "bytes": 2521,
+        "model": "gpt-6-astra",
+        "instructions": [
+          "dcab81984540e2e4984b74665fc3dcd58eca8524536ab999f00b311171efcce6"
+        ],
+        "tools": [],
+        "history": [
+          "17821927c0ebc0fcc040fbb01ebc966e293c4289119de0bbbf755f25b82b3e9f"
+        ],
+        "cacheParametersHash": "953390662f1230dfa4a2aabbdc8778d7e7a8e9bff1969277f4b36d9cc7559587",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "ca825da50a13b52edf72ed066279f301e9f3aca537277d150057c3c1b55bed0f",
+        "reasoningEffort": null,
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-8",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0da21c5f1ff100fd016ab54afcdbd087d081fd4e65da6fb606",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-6-astra",
+        "responseModel": "gpt-6-astra",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266113243,
+        "tokens": {
+          "totalInput": 506,
+          "uncachedInput": 506,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 9,
+          "reasoning": 45,
+          "totalOutput": 54
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266109250,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266113148,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266113243,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266109258
+    },
+    {
+      "arm": "candidate",
+      "index": 0,
+      "phase": "continuity",
+      "requestIndex": 9,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "336727826f172452a7da7b149fe1f2da1f796f86c27cc25d8ca080e02b49d36d",
+        "bytes": 60652,
+        "model": "gpt-6-astra",
+        "instructions": [
+          "5750e26914afe404330633e755fb96dd4e4d415d8e6512e9a457d80f95bd743b"
+        ],
+        "tools": [
+          "061adc95bc608814d09bd9579c4732cdef0d431c1af7e9b76cf624781f2356e2",
+          "d66bfa1695f1019834738e1ceb7d7c24f8f739bed1c4f49af2339c8c4741544a",
+          "073714fc1b107334a5cb78e603c1ce2855351ce1943147d3b33f2626b80ad570",
+          "9bb44fe10fbd44fa8ccf2f40e5b5743258f365991e8d12087ed0952406e32557",
+          "ce944527664994af3420245eaee14af6291ff9d1fa23f46f59edaad035d9d239",
+          "a3b4a1d0f25fdd2ead67ebbab415f6c3a932efafdf087c15b050546c8d52388b",
+          "0b7c126f4dea0c8eb4b350e61083c58a8844798f1d406586597277b366215ae4",
+          "2774a0b4627424b8afa4e28a44cb0d98bc05c86fa2600ca187b42ea72cea553f",
+          "f92b4863ac1e195432384ef53f4a2abbc48924f8d2cbc6e59f5d01f8b96e1277",
+          "5b6715e03b38beb35cddbb508fcc3051b89052ee9553476e8693c2cb50db07df",
+          "1bc00277be51d0ef01160c4e22f794ced438209d9b68c29548852f3cfe29b63d",
+          "66f397fd8bcef7a8f54eddc49d641fc4fccbf36777e306f8c477f8cb19d0c60c",
+          "c3bb683182ca2108308fec5ccfd70f4eb7d6c4acc6e4e3ab96d75a18b45b54b7",
+          "ff0ff20583a5a71bd2cb3f08d5dc2078806263159abddae6efb4183ef2dc1ce2",
+          "c2b10d797bbdd3a645e0ca8fb91df6f1b9c4e8d36962995b34e60bb1626d3fb7",
+          "7d6c9e6a558e7cffc2a1e6eef4f6cc13e2c016fa22ae77d9f827178138fe6a8c",
+          "fe332ac8e06fe114d6c271b1dc07b7c43c6d21e4235800de57f8a5b82dd99e6b",
+          "f6ed684568ddbbcaf882cca59b1f29933f8a89535bd71828a9220de516ec74b3",
+          "669f07b464d2068b4dfa39923e308549032050b47d6d0d37ece8fbc611fabf82"
+        ],
+        "history": [
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "bfe0620cd4cd002dda5fdd1b09fe520a6f69a5505b273c829746f1acd4fe5add",
+          "41d902102ba3c2f84be23e5fb5da7360ed805e97a29f578ed21f4969370cb19b",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "93493a9117f44785194e23ee10909cbb2712058fa6272ccbfe44aff060b1487d",
+          "454e04056bfbeaa6560a49433ffe1fb3ea6f3d4ef03e6faf8fab02473fa200cf",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "14b12cd233f12d1eff3848593914a38873045ba2a1646922f3af2c4069bb4b26",
+          "6182ea067db45c9c475e334b3ee3cb525711c492e7c6f7723f038070e527c4ef",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "bc0f1b053133b83d1d7085bed57f27ee72bed467e264f2d969b9428cb1e848d8",
+          "34c8c3ecab2e6359dba530c95153bb2a800994decc05646abb412cf6d6b3ae1e",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "db29878d0521b7d4c31b29a63d0263819b1943de37bb57d8881c9143c6b5d762",
+          "d848c6bb2f0764c9e0bed6f56764cb0195656c2e7a9388350185f0c0ca253264",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "5c33a3d8bf96373a9e8a743820f3a610cc7bec03c04781436e6de821892b7a76",
+          "4a81493d80d1c919c1d727afe85ef6f0ca103ac10556c3bf5a457be38dbc50d9",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "0e3a32b20fc4925988a5a9158a2b6eb7c8473f819900130e7c918bd7f9758bc1",
+          "f2d20eb3701c69c93def06f29dccb65888354b9c20d39a766096166b7404317c",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "aa3e8e81359d14d95c461c3580f1c219695d0dec3daff2a4f29532dcd9d6ad39",
+          "8d01cb7e76a31cf7d9b2b6563f9dd6efe15611cf2a15f7280121490de53ab1d5",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "e9782eaa5c6b26a2f3f3da389485650bd4e6f9acfd160a7529d747ed7dfb3e2a",
+          "b8b59c7739735410fcd09a38b9fa05200e3a3a0ea36a178c3ced7b322429cece",
+          "57587159f2651d051b0a45633b25ad1347ddc70188daf1ac7d8e3e0a38a9a5af"
+        ],
+        "cacheParametersHash": "878826b7b1e692f75cce3ca2a24f0bd9f0052553b11d3db19cd270e9c218dd09",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "cf1cc395954b3a747a770b80e0ac611ce85d25cf43159174363d65b4df785835",
+        "reasoningEffort": "medium",
+        "skillReferences": 2,
+        "managedReferences": 0,
+        "trialIndex": 0,
+        "factHashes": [
+          "c127b0e9be113338e5e4c3d57e44f73619a4cc2dad78892baac698610da5746a"
+        ],
+        "uniqueProofHashes": [
+          "f508255f58a9e60cc29b899c89cb6e9bdaa3807b9a2c855bbc08df7a022f918c"
+        ],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": [
+          "bc1c9ce7e9a7df11e917e26bf1ef2ddda5eee6e923fbc18da5cf11fbc00f682e",
+          "bc1c9ce7e9a7df11e917e26bf1ef2ddda5eee6e923fbc18da5cf11fbc00f682e"
+        ]
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-9",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_058426f27f83a4af016ab54b11abac87d0a13eb534eed16bc8",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-6-astra",
+        "responseModel": "gpt-6-astra",
+        "purpose": "main",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266135020,
+        "tokens": {
+          "totalInput": 11706,
+          "uncachedInput": 11706,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 67,
+          "reasoning": 0,
+          "totalOutput": 67
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266130505,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266132743,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266135020,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266130505
+    },
+    {
+      "arm": "candidate",
+      "index": 0,
+      "phase": "continuity",
+      "requestIndex": 10,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "b54519b4b867d6172c6156708aef222adfe10708897f1967340576a065946dd1",
+        "bytes": 3043,
+        "model": "gpt-6-astra",
+        "instructions": [
+          "dcab81984540e2e4984b74665fc3dcd58eca8524536ab999f00b311171efcce6"
+        ],
+        "tools": [],
+        "history": [
+          "c3528f629ba762ef36c781c38968c75ef59f24e95ced616f1e2f54f7d0f52151"
+        ],
+        "cacheParametersHash": "41fc1f07338daa874ce25d33e11adacdd18e72733876ed0e611ccea1e6b2efa5",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "2ac046a61156a115102ccba2cff4ac3c98d95b88f73de31e3d0529d892aa35ee",
+        "reasoningEffort": null,
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-10",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_00d008c20ee5161e016ab54b11a1b087d08b246673f5959635",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-6-astra",
+        "responseModel": "gpt-6-astra",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266131723,
+        "tokens": {
+          "totalInput": 610,
+          "uncachedInput": 610,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 9,
+          "reasoning": 0,
+          "totalOutput": 9
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266130425,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266131358,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266131723,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266130426
+    },
+    {
+      "arm": "candidate",
+      "index": 5,
+      "phase": "continuity",
+      "requestIndex": 11,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "8b97a749a866e6128cdb11349b9e7161609a50d8afbc37b9e3fe75e8426f597d",
+        "bytes": 64158,
+        "model": "gpt-6-astra",
+        "instructions": [
+          "5750e26914afe404330633e755fb96dd4e4d415d8e6512e9a457d80f95bd743b"
+        ],
+        "tools": [
+          "061adc95bc608814d09bd9579c4732cdef0d431c1af7e9b76cf624781f2356e2",
+          "d66bfa1695f1019834738e1ceb7d7c24f8f739bed1c4f49af2339c8c4741544a",
+          "073714fc1b107334a5cb78e603c1ce2855351ce1943147d3b33f2626b80ad570",
+          "9bb44fe10fbd44fa8ccf2f40e5b5743258f365991e8d12087ed0952406e32557",
+          "ce944527664994af3420245eaee14af6291ff9d1fa23f46f59edaad035d9d239",
+          "a3b4a1d0f25fdd2ead67ebbab415f6c3a932efafdf087c15b050546c8d52388b",
+          "0b7c126f4dea0c8eb4b350e61083c58a8844798f1d406586597277b366215ae4",
+          "2774a0b4627424b8afa4e28a44cb0d98bc05c86fa2600ca187b42ea72cea553f",
+          "f92b4863ac1e195432384ef53f4a2abbc48924f8d2cbc6e59f5d01f8b96e1277",
+          "5b6715e03b38beb35cddbb508fcc3051b89052ee9553476e8693c2cb50db07df",
+          "1bc00277be51d0ef01160c4e22f794ced438209d9b68c29548852f3cfe29b63d",
+          "66f397fd8bcef7a8f54eddc49d641fc4fccbf36777e306f8c477f8cb19d0c60c",
+          "c3bb683182ca2108308fec5ccfd70f4eb7d6c4acc6e4e3ab96d75a18b45b54b7",
+          "ff0ff20583a5a71bd2cb3f08d5dc2078806263159abddae6efb4183ef2dc1ce2",
+          "c2b10d797bbdd3a645e0ca8fb91df6f1b9c4e8d36962995b34e60bb1626d3fb7",
+          "7d6c9e6a558e7cffc2a1e6eef4f6cc13e2c016fa22ae77d9f827178138fe6a8c",
+          "fe332ac8e06fe114d6c271b1dc07b7c43c6d21e4235800de57f8a5b82dd99e6b",
+          "f6ed684568ddbbcaf882cca59b1f29933f8a89535bd71828a9220de516ec74b3",
+          "669f07b464d2068b4dfa39923e308549032050b47d6d0d37ece8fbc611fabf82"
+        ],
+        "history": [
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "faf37356f9f883fb3a49d63964d338955dc50f5167b659e3732bee97dfa27391",
+          "08f00d55d1796312d61da6a0e606dbd09424a162cf0fb98c0d1fae42aad3d0ee",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "f67de9cdf6239263c9f54adb9c9aa734aec05364812df931252951c3d712a635",
+          "194947e2abab9c1dfd103ca7822f151cfe5855474c10e1808d598cbfea4ba081",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "90a5fe26f97ae766187f5805af01873757c9a7df049f7a1cb7e2864fc694adef",
+          "422cf6c98cef7244fa6eed7137adc44b949c6e030a2d736120bec759d63d9e26",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "3868ee703643e2736d5a9a517e29c5dd5d4a449c716fc980b4c1638bd0b95075",
+          "4b5b42f0f5c3c69d0f93d38e13e06ecbb6647fae21761e77d0660270afc5d9bf",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "52ff57ce322174a705dfe1ac394feb760c8d1d5a9243c82c3034eb8a7f90d508",
+          "ee921bb60d2801b90872e7812356486c4d8cc3e607d510d7b9e12d09eb3998b3",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "f558b0588856c84f3b805b9f0f3cb77fddf2cabe7735909f8772fcbe09edb759",
+          "b2bcc7e67e048d446ee92cc43c7c04737c496efbb61c5e71e0c915b019b6ca67",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "a1667cdddffdfb869f76765f59f26c80b1362b8e44cc14e8ee47c1d46785e77c",
+          "3f56182caf2accab695e350a04424f120763b68c5074f29a6529c198603a2c20",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "73d283345d1a0f3ceebbc085790fb93ca15982a87db20612487c1074cfbd2adf",
+          "499e22c05289612a6cca324eaaaccf5c762757ab02e50ae893ad5f827ef2e374",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "e31ec58272c2bbeafa54cd26fc8789b0d6682390376c7807403ecf4c77485da4",
+          "3efbb69b93d9fd339de3b344fbf251c4842f37ef6b701ef82279903977d26ddf",
+          "e4978356c6e8fc430641c5a5d021d6bd14ae769cc2cef283c30dfa37ff9a1944"
+        ],
+        "cacheParametersHash": "2f76185c7815380cf8a93b2f71e313f86ece7e33bd1dc934f8ba1833dd9cd45a",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "d5402ceef89b8dde5346bc53e5111961dd80f1a32fec07335426e830bf85a052",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 2,
+        "trialIndex": 5,
+        "factHashes": [
+          "889d61d94c09cab253ff11de1ea744d65f04b2b35ea7fb4b8beb7b874e9fb8f2"
+        ],
+        "uniqueProofHashes": [
+          "b49d5f11335597f9eb114137d0c3341f7baa3d7643b6643b4d8ff0c29df29daa"
+        ],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": [
+          "fb50074e1c34c5d4c8f40f3e589011731836975621a561ffa49077caa2e077c5",
+          "fb50074e1c34c5d4c8f40f3e589011731836975621a561ffa49077caa2e077c5"
+        ]
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-11",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0a152437f722fc98016ab54b28fe8c87d0a2ecab3264be7263",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-6-astra",
+        "responseModel": "gpt-6-astra",
+        "purpose": "main",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266157195,
+        "tokens": {
+          "totalInput": 12532,
+          "uncachedInput": 7924,
+          "cacheRead": 4608,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 65,
+          "reasoning": 0,
+          "totalOutput": 65
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266153770,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266155048,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266157195,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266153807
+    },
+    {
+      "arm": "candidate",
+      "index": 5,
+      "phase": "continuity",
+      "requestIndex": 12,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "53886176d5b6cd7fc8df29ac1f280dc830bd12a9740b7bf7a1cf5707f9caf43a",
+        "bytes": 3043,
+        "model": "gpt-6-astra",
+        "instructions": [
+          "dcab81984540e2e4984b74665fc3dcd58eca8524536ab999f00b311171efcce6"
+        ],
+        "tools": [],
+        "history": [
+          "2bc7f9127dcd16067d833f2e66d3268cf8c3ea2f9cce34aaa2091cf767ac8776"
+        ],
+        "cacheParametersHash": "5735eaf421f4c26a13d46855992f33988116fccb8a3d1320bf046124a6cbc089",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "ef1338270667f2e4f490d964d1f659a583f668578359142010766aff66e22ebe",
+        "reasoningEffort": null,
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-12",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "resp_0bb0f54a7f2a46bd016ab54b2929d087d09db652b65bd8a8ae",
+        "counterScopeID": null,
+        "provider": "openai",
+        "route": "openai-chatgpt-managed-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "gpt-6-astra",
+        "responseModel": "gpt-6-astra",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266154966,
+        "tokens": {
+          "totalInput": 610,
+          "uncachedInput": 610,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 9,
+          "reasoning": 0,
+          "totalOutput": 9
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": null,
+          "currency": null,
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266153648,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266154588,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266154966,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266153648
+    }
+  ],
+  "probePassed": true,
+  "verifiedDefault": true,
+  "qualified": false,
+  "scope": "Live model behavior over seeded skill/managed observations; actual native runtime and managed plugin configuration. Synthetic observations do not claim managed child execution."
+}

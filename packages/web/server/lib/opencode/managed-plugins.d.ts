@@ -1,5 +1,4 @@
 export type DevRyanManagedPluginId =
-  | 'opencode-antigravity-auth'
   | '@rama_nigg/open-cursor'
   | 'opencode-with-claude'
   | 'opencode-gpt-imagegen'
@@ -19,6 +18,7 @@ export type DevRyanManagedPlugin = {
   entrypoint: string | null;
   registrationPath: string;
   legacySpecs: readonly string[];
+  legacyRegistrationPaths: readonly string[];
   delivery: DevRyanManagedPluginDelivery;
   sourcePath: string;
   profileRegistration: boolean;

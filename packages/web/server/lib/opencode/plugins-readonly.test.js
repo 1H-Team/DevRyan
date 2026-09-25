@@ -49,7 +49,6 @@ describe('read-only plugin config model', () => {
       const result = model.listPlugins(project);
 
       expect(result.defaults.map((plugin) => plugin.pluginId)).toEqual([
-        'opencode-antigravity-auth',
         '@rama_nigg/open-cursor',
         'opencode-with-claude',
         'opencode-gpt-imagegen',

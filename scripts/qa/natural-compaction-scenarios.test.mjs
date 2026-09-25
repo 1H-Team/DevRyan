@@ -8,7 +8,7 @@ import { findQaSeededInvestigationStarts, createQaNaturalWorkload, createQaNatur
 import { readQaSavedPlanRevision } from './compaction-approval.mjs';
 import { createQaProjectFixture, removeQaProjectFixture } from './project-fixture.mjs';
 
-const nativePolicy = overrides => deriveQaNativeCompactionPolicy({ version: '1.18.31',
+const nativePolicy = overrides => deriveQaNativeCompactionPolicy({ version: '1.18.32',
   modelLimits: { context: 1050000, input: 276000, output: 128000 }, ...overrides });
 const rows = () => [
   { info: { id: 'msg_usage', role: 'assistant', time: { created: 50, completed: 90 },
@@ -40,8 +40,8 @@ test('native input reserve controls the pinned OpenAI threshold, including effec
   assert.equal(nativePolicy({ modelLimits: { context: 200000, input: 0, output: 4000 } }).threshold, 196000);
   assert.equal(nativePolicy({ modelLimits: { context: 200000, output: 0 } }).maximumOutput, 32000);
   // The shipped companion runtime is the pinned release plus DevRyan's execution patch.
-  assert.equal(nativePolicy({ version: '1.18.31-devryan.13' }).threshold, policy.threshold);
-  for (const override of [{ version: '1.18.27' }, { version: '1.18.27-devryan.3' }, { version: '1.18.31-beta.1' }, { compaction: { auto: false } }, { modelLimits: undefined },
+  assert.equal(nativePolicy({ version: '1.18.32-devryan.1' }).threshold, policy.threshold);
+  for (const override of [{ version: '1.18.27' }, { version: '1.18.27-devryan.3' }, { version: '1.18.32-beta.1' }, { compaction: { auto: false } }, { modelLimits: undefined },
     { modelLimits: { context: 0, output: 1000 } }, { outputTokenMax: 'not-a-number' }, { compaction: { reserved: -1 } }]) {
     assert.throws(() => nativePolicy(override));
   }
@@ -162,7 +162,7 @@ test('natural Plan captures bind both revisions to exact newly submitted human m
     }
     const api = async (route, options) => {
       requests.push(route);
-      if (route === '/api/health') return { openCodeVersion: '1.18.31' };
+      if (route === '/api/health') return { openCodeVersion: '1.18.32' };
       if (route === `/api/config?directory=${encodeURIComponent(fixture.fixtureRoot)}`) return { compaction: { auto: true } };
       const url = new URL(route, 'http://qa.invalid');
       const index = savedPlans.findIndex(saved => url.pathname === `/api/session/${sessionID}/plan-revisions/${saved.sourceMessageID}`);

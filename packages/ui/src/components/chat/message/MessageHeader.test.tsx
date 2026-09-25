@@ -32,7 +32,7 @@ describe('MessageHeader', () => {
     test('preserves the Claude logo brand color in every theme', () => {
         const code = source();
 
-        expect(code).toContain('shouldPreserveProviderLogoColor(displayProviderID)');
+        expect(code).toContain('shouldPreserveProviderLogoColor(providerID)');
         expect(code).toContain("if (preservesBrandColor) {\n        logoFilter = 'none';");
     });
 });

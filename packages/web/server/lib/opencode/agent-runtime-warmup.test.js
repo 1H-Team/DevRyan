@@ -83,6 +83,37 @@ describe('agent runtime warmup', () => {
     }));
   });
 
+  it('starts a background ledger build without waiting for it, unless the caller opts out', async () => {
+    let finish;
+    const warmLedger = vi.fn(() => new Promise((resolve) => { finish = resolve; }));
+    const create = () => createAgentRuntimeWarmup({
+      buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      fetchImpl: vi.fn(async () => Response.json({})),
+      discoverSkills: () => [],
+      readSkillFile: vi.fn(),
+      warmLedger,
+      now: () => 1_000,
+    });
+
+    const result = await create().warm({ directory: '/project', timeoutMs: 1_000 });
+    expect(warmLedger).toHaveBeenCalledWith({ directory: '/project' });
+    // The warmup finished while the ledger build is still pending.
+    expect(result.tasks.some((task) => task.name === 'ledger')).toBe(false);
+    finish({ built: true });
+
+    await create().warm({ directory: '/other', ledger: false, timeoutMs: 1_000 });
+    expect(warmLedger).toHaveBeenCalledTimes(1);
+
+    const failing = createAgentRuntimeWarmup({
+      buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
+      fetchImpl: vi.fn(async () => Response.json({})),
+      warmLedger: () => { throw new Error('boom'); },
+      now: () => 1_000,
+    });
+    await expect(failing.warm({ directory: '/project', timeoutMs: 1_000 })).resolves.toBeTruthy();
+  });
+
   it('prewarms the Grok tool catalog without creating a prompt', async () => {
     const warmXaiToolCatalog = vi.fn(async () => true);
     const warmup = createAgentRuntimeWarmup({

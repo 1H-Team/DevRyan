@@ -9,7 +9,7 @@ import { reservePort, startOwnedProcess } from './process.mjs';
 const repository = path.resolve(import.meta.dirname, '../..');
 const electron = createRequire(new URL('../../packages/electron/package.json', import.meta.url))('electron');
 
-export async function verifyRevertUi({ mode, root, dataDirectory, directory, upstream, environment, request, invoke, shell, node, until }) {
+export async function verifyRevertUi({ mode, root, dataDirectory, directory, upstream, environment, request, invoke, shell, node, until, holdSkillCompletion }) {
   const packagedElectron = process.env.DEVRYAN_TEST_ELECTRON_BINARY;
   if (mode === 'electron' && !path.isAbsolute(packagedElectron ?? '')) {
     throw new Error('Set DEVRYAN_TEST_ELECTRON_BINARY to the isolated packaged QA application');
@@ -91,9 +91,29 @@ export async function verifyRevertUi({ mode, root, dataDirectory, directory, ups
     assert.equal(await fs.readFile(path.join(directory, file), 'utf8'), 'a=1; b=4');
     assert.equal((await fs.stat(path.join(directory, file))).mode & 0o777, 0o600);
     const output = path.join(repository, '.cache/concurrent-revert', `revert-${mode}.png`);
+    await fs.mkdir(path.dirname(output), { recursive: true });
     const screenshot = await cdp.send('Page.captureScreenshot', { format: 'png' });
     await fs.writeFile(output, Buffer.from(screenshot.data, 'base64'));
     console.log(`PASS: ${mode} UI Revert, composer restoration, unrelated active command and late publication (${output})`);
+
+    // Hold the existing completion receipt so this tests an actual native
+    // skill call, SSE status and the rendered transition without timing races.
+    const releaseSkill = holdSkillCompletion();
+    const loading = invoke(a.id, 'skill', { name: 'project-fixture' });
+    void loading.catch(() => {});
+    try {
+      await ui.waitFor('Learning Skill visible during native skill call', () => evaluate(cdp,
+        "document.body.innerText.toLowerCase().includes('learning skill')"));
+      const screenshot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+      await fs.writeFile(path.join(repository, '.cache/concurrent-revert', `skill-${mode}-loading.png`), Buffer.from(screenshot.data, 'base64'));
+    } finally { releaseSkill(); }
+    const loaded = await loading;
+    assert.equal(loaded.call.state.status, 'completed');
+    await ui.waitFor('Learning Skill clears after its completion receipt', () => evaluate(cdp,
+      "!document.body.innerText.toLowerCase().includes('learning skill')"));
+    const skillCompletedScreenshot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+    await fs.writeFile(path.join(repository, '.cache/concurrent-revert', `skill-${mode}-completed.png`), Buffer.from(skillCompletedScreenshot.data, 'base64'));
+    console.log(`PASS: ${mode} native Learning Skill status clears after completion`);
   } catch (cause) {
     for (const child of processes) console.error(child.getLog());
     if (cdp) console.error(await evaluate(cdp, 'document.body.innerText').catch(() => 'UI unavailable'));

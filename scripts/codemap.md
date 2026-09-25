@@ -64,3 +64,5 @@ Repository automation entrypoint for developer workflows: validation planning, l
 - `build-revert-runtime.mjs` reproduces the pinned companion and native supervisor, runs acceptance, and stages manifests. `verify-revert-runtime-artifacts.mjs` validates packaging; `verify-concurrent-revert-execution.mjs` exercises real dispatch, native and managed descendants, Cursor and optional web/Electron journeys.
 
 - `pack-web-release.mjs` gates source and staged runtime artifacts for every architecture declared by the companion contract. `verify-revert-runtime-artifacts.mjs` checks all paired capability versions in addition to native acceptance and digests.
+
+- `perf/skill-loading-benchmark.mjs` compares two real companion artifacts with isolated loopback-model skill calls on small and repository-sized fixtures, records cold/warm timing and receipt actions, and requires the candidate warm median to improve by at least 80%. `qa/revert-ui.mjs` also verifies Learning Skill appears during a held receipt and clears on completion in web and packaged Electron.

@@ -340,6 +340,11 @@ const sanitizeManagedRemoteTunnelPresetTokens = (value: unknown): DesktopSetting
   return Object.keys(result).length > 0 ? result : undefined;
 };
 
+// Each hidden model stores up to three alias refs (modelVisibility.ts), so 64
+// refs dropped toggles on reload after roughly 20 models. Keep in sync with
+// HIDDEN_MODEL_REFS_LIMIT in packages/web/server/lib/opencode/settings-helpers.js.
+export const HIDDEN_MODEL_REFS_LIMIT = 2048;
+
 const sanitizeModelRefs = (value: unknown, limit: number): Array<{ providerID: string; modelID: string }> | undefined => {
   if (!Array.isArray(value)) {
     return undefined;
@@ -671,7 +676,8 @@ const applyDesktopUiPreferences = (
   }
 };
 
-const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
+/** Exported for tests: the settings-load boundary for both the runtime API and HTTP. */
+export const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   if (!payload || typeof payload !== 'object') {
     return null;
   }
@@ -1073,7 +1079,7 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
     result.favoriteModelsUpdatedAt = candidate.favoriteModelsUpdatedAt;
   }
 
-  const hiddenModels = sanitizeModelRefs(candidate.hiddenModels, 64);
+  const hiddenModels = sanitizeModelRefs(candidate.hiddenModels, HIDDEN_MODEL_REFS_LIMIT);
   if (hiddenModels) {
     result.hiddenModels = hiddenModels;
   }

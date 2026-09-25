@@ -12,8 +12,8 @@ const stamp = (stat) => stat ? [stat.dev, stat.ino, stat.size, stat.mtimeNs, sta
 /** Stamp of an lstat result the caller already holds (bigint). */
 export const mutationStatStamp = stamp;
 const absent = (cause) => { if (['ENOENT', 'ENOTDIR'].includes(cause.code)) return null; throw cause; };
-export async function mutationFileStamp(directory, file) {
-  if (!await hasDirectoryAncestors(directory, file)) return null;
+export async function mutationFileStamp(directory, file, verifiedAncestors) {
+  if (!await hasDirectoryAncestors(directory, file, verifiedAncestors)) return null;
   return stamp(await fs.lstat(path.join(directory, file), { bigint: true }).catch(absent));
 }
 

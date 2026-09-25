@@ -177,8 +177,7 @@ export const UsagePage: React.FC = () => {
     () => selectedProviderId ? (selectedModels[selectedProviderId] ?? []) : [],
     [selectedModels, selectedProviderId],
   );
-  const showOverallUsageWindows = selectedProviderId !== 'antigravity' &&
-    Boolean(usage?.windows && Object.keys(usage.windows).length > 0);
+  const showOverallUsageWindows = Boolean(usage?.windows && Object.keys(usage.windows).length > 0);
   const overallUsageEntries = React.useMemo(() => (
     sortUsageEntries(selectedProviderId ?? '', Object.entries(usage?.windows ?? {}))
   ), [selectedProviderId, usage?.windows]);
@@ -378,16 +377,8 @@ export const UsagePage: React.FC = () => {
             </div>
 
             <div className="space-y-3">
-              {selectedProviderId === 'antigravity' && (
-                <section className="p-2">
-                  <div className="divide-y divide-[var(--surface-subtle)] mt-1">
-                    {providerModels.map((model) => renderModelCard(model))}
-                  </div>
-                </section>
-              )}
-
               {/* Predefined families */}
-              {selectedProviderId !== 'antigravity' && sortedFamilies.map((family) => {
+              {sortedFamilies.map((family) => {
                 const familyModels = modelsByFamily.get(family.id) ?? [];
                 if (familyModels.length === 0) return null;
 
@@ -423,7 +414,7 @@ export const UsagePage: React.FC = () => {
               })}
 
               {/* Other family */}
-              {selectedProviderId !== 'antigravity' && (() => {
+              {(() => {
                 const otherModels = modelsByFamily.get(null) ?? [];
                 if (otherModels.length === 0) return null;
 

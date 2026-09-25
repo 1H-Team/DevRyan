@@ -1,10 +1,11 @@
 import { executionCleanup, executionDiagnostic, checkExecutionAdmission, executionPhase, quietExecutionPhase, executionSignal, executionProgressMeter, executionProgress, withExecutionMeter, withoutExecutionDeadline, waitForExecutionQueue } from './execution-admission.js';
 import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { isUtf8 } from 'node:buffer';
 import { randomUUID, createHash } from 'node:crypto';
-import { git, changeError } from './session-changes-git.js';
+import { git, gitTokens, changeError } from './session-changes-git.js';
 import { openChangeStore, changeKey } from './session-changes-store.js';
 import { safeChangePath, verifyAncestors } from './session-changes-snapshot.js';
 import { withCrossProcessFileLock, writeFileAtomic } from './atomic-file.js';
@@ -23,7 +24,19 @@ const equal = (a, b) => (a?.hash ?? null) === (b?.hash ?? null) && (a?.mode ?? n
 const validID = (id) => typeof id === 'string' && id.length > 0 && id.length <= 1024 && !id.includes('\0');
 const scopeFields = ['sessionID', 'messageID', 'userMessageID', 'callID'];
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
+// Dependency inputs are linked read-only into views and never ingested: these
+// names anywhere, plus (in Git projects) every directory Git ignores that holds
+// no tracked path. An ignored standalone file such as `.env` is still ingested.
 const inputDirectories = new Set(['node_modules', '.venv', '__pycache__']);
+const underInput = (file, inputs) => {
+  if (inputs.has(file)) return true;
+  for (let parent = path.posix.dirname(file); parent !== '.'; parent = path.posix.dirname(parent)) if (inputs.has(parent)) return true;
+  return false;
+};
+// Ledger work runs on the host event loop (in Electron, the window's main
+// thread). Walks and batches yield between units so requests and input are
+// served in between.
+const yieldToEventLoop = () => new Promise((resolve) => setImmediate(resolve));
 // Per-file filesystem work overlaps its I/O latency (the per-root I/O pool
 // still bounds heavy work); results keep input order and the first failure
 // stops new work.
@@ -32,8 +45,25 @@ const FILE_CONCURRENCY = 8;
 // active paths and commits, so tiny batches make a first reconciliation
 // quadratic, while the lock is held for one batch at a time.
 const INSTALL_BATCH = 128;
+// A first build has no records to contend with, so larger batches mean fewer
+// commits; the byte bound below still caps the staged text.
+const INITIAL_INSTALL_BATCH = 1024;
 // Staged text runs are held in memory until the batch commits.
 const INSTALL_BATCH_BYTES = 32 * 1024 * 1024;
+// A background first build skips repositories with more eligible files, or
+// stops after ingesting more bytes, than this; their first confined call
+// builds the rest as before. At about 100 s per 5.6k files, 200k files meant
+// an hour of main-thread churn. The idle gap lets a busy host breathe.
+const WARM_MAX_FILES = 20_000;
+const WARM_MAX_BYTES = 512 * 1024 * 1024;
+const WARM_BATCH_GAP_MS = 25;
+// Kill switches: set to exactly '0' to restore the previous behaviour.
+const fastIngest = () => process.env.DEVRYAN_LEDGER_FAST_INGEST !== '0';
+// Ledger commits write loose Git objects and plumbing never packs them. Tens
+// of thousands of loose objects make every read-tree, ls-tree -l and cat-file
+// pay a filesystem lookup per object: 0.6 s per commit, about ten commits per
+// call, on a 5.6k-file project (a packed store answers in about 40 ms).
+const LEDGER_MAINTENANCE = Object.freeze({ looseObjects: 1_000, packs: 12, commits: 64, pruneExpiry: '2.hours.ago' });
 const mapBounded = async (items, fn, limit = FILE_CONCURRENCY) => {
   const results = new Array(items.length);
   let next = 0, failed = false;
@@ -54,9 +84,47 @@ const mapBounded = async (items, fn, limit = FILE_CONCURRENCY) => {
  * Adapters must enforce write confinement and stop every writer before finish.
  * The private Git metadata store pages histories and commits accepted intent
  * with an atomic ref update before the publication transaction writes files. */
-export function createSessionMutationRuntime({ directory: storage, onChange = () => {}, onMaterialize } = {}) {
+export function createSessionMutationRuntime({ directory: storage, onChange = () => {}, onMaterialize, onDiagnostic = () => {}, maintenance: maintenanceOptions } = {}) {
   if (!path.isAbsolute(storage ?? '')) throw new TypeError('Absolute mutation storage directory is required');
+  // Background failures outside any admission context (codes only).
+  const diagnostic = (record) => { try { onDiagnostic(record); } catch { /* Observer only. */ } };
   const queues = new Map();
+  // Packs a ledger's Git objects in the background, never under the ledger
+  // lock: Git keeps concurrent readers and writers safe while it repacks, and
+  // objects of in-flight transactions stay loose until their ref update.
+  // Unreachable objects older than the prune grace are dropped only after a
+  // consolidating repack. One run per ledger at a time; best effort.
+  // Kill switch: DEVRYAN_LEDGER_PACK=0.
+  const maintenanceLimits = { ...LEDGER_MAINTENANCE, ...maintenanceOptions };
+  const maintenanceStates = new Map();
+  const maintainLedger = (root) => {
+    if (process.env.DEVRYAN_LEDGER_PACK === '0') return null;
+    const state = maintenanceStates.get(root) ?? { commits: 0, running: null };
+    maintenanceStates.set(root, state);
+    if (state.running) return state.running;
+    state.commits = 0;
+    state.running = withoutExecutionDeadline(async () => {
+      const gitDir = path.join(root, 'git');
+      const run = (args) => git(root, ['--git-dir', gitDir, ...args], { timeoutMs: 10 * 60_000 });
+      const stats = Object.fromEntries((await run(['count-objects', '-v'])).toString().trim().split('\n')
+        .map((line) => line.split(': ')).map(([name, value]) => [name, Number(value)]));
+      if (stats.count >= maintenanceLimits.looseObjects) await run(['repack', '-d', '-q', '--no-write-bitmap-index']);
+      if ((stats.packs ?? 0) + 1 >= maintenanceLimits.packs) {
+        await run(['repack', '-a', '-d', '-q', '--no-write-bitmap-index']);
+        await run(['prune', `--expire=${maintenanceLimits.pruneExpiry}`]);
+      }
+    }).catch((cause) => {
+      // Still best effort (an unpacked ledger is only slower), but visible.
+      diagnostic({ phase: 'ledger_maintenance', state: 'failed', code: cause?.code ?? 'ledger_maintenance_failed' });
+    })
+      .finally(() => { state.running = null; });
+    return state.running;
+  };
+  const noteLedgerCommit = (root) => {
+    const state = maintenanceStates.get(root) ?? { commits: 0, running: null };
+    maintenanceStates.set(root, state);
+    if (++state.commits >= maintenanceLimits.commits && !state.running) setImmediate(() => maintainLedger(root));
+  };
   const rootFor = (directory) => path.join(storage, changeKey(directory));
   const bytesFor = async (repo, hash) => {
     if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) throw changeError('invalid_change_record');
@@ -191,7 +259,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         // A lease lookup must not stage an unchanged blob and rebuild Git's
         // index under the owner lock. Mutations still commit atomically.
         if (JSON.stringify(meta) !== originalMeta) db.set('meta.json', meta);
+        const wrote = db.pendingCount > 0;
         await withoutExecutionDeadline(() => quietExecutionPhase('ledger_commit', () => db.commit()));
+        if (wrote) noteLedgerCommit(root);
         return result;
       }
     });
@@ -234,17 +304,37 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     return result === SNAPSHOT_MISS ? locked(requested, fn, options) : result;
   };
   const next = (repo) => ++repo.meta.sequence;
-  const inactive = async (repo) => {
+  // Parsed records keyed by the immutable subtree identity they were read
+  // from, so an unchanged ledger is not re-read and re-parsed on every
+  // transaction. Callers mutate records, so every answer is a private copy.
+  const recordCache = new Map();
+  const cachedRecords = async (repo, prefix, read, copy) => {
+    if (process.env.DEVRYAN_LEDGER_RECORD_CACHE === '0' || repo.db.pendingCount !== 0) return read(repo);
+    const identity = await repo.db.prefixIdentity(prefix);
+    if (!identity) return read(repo);
+    const cacheKey = `${repo.root}\0${prefix}\0${identity}`;
+    let entry = recordCache.get(cacheKey);
+    if (entry) recordCache.delete(cacheKey);
+    else {
+      entry = read(repo);
+      void entry.catch(() => { if (recordCache.get(cacheKey) === entry) recordCache.delete(cacheKey); });
+    }
+    recordCache.set(cacheKey, entry);
+    while (recordCache.size > 8) recordCache.delete(recordCache.keys().next().value);
+    return copy(await entry);
+  };
+  const readInactive = async (repo) => {
     const ids = new Set();
     for await (const { value } of repo.db.entries('operations')) if (!value.active || value.fileUndone) ids.add(value.id);
     return ids;
   };
+  const inactive = (repo) => cachedRecords(repo, 'operations', readInactive, (ids) => new Set(ids));
   const runsFor = async (repo, id, prefix = 'runs') => {
     const runs = [];
     for await (const run of repo.db.list(`${prefix}/${id}`)) runs.push({ ...run, text: Buffer.from(run.bytes, 'base64').toString('latin1') });
     return runs;
   };
-  const saveRuns = async (repo, id, runs, prefix = 'runs') => {
+  const saveRuns = async (repo, id, runs, prefix = 'runs', options) => {
     const rows = function* () {
       for (const run of runs) {
         for (let offset = 0; offset < run.text.length; offset += 32_768) {
@@ -253,7 +343,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         }
       }
     };
-    await repo.db.setList(`${prefix}/${id}`, rows());
+    await repo.db.setList(`${prefix}/${id}`, rows(), options);
   };
   const revisionsFor = async (repo, id) => {
     const revisions = [];
@@ -274,7 +364,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     return { path: name, mode, ...(access === undefined ? {} : { permissions: access }),
       hash, sequence: latest.sequence };
   };
-  const activePaths = async (repo) => {
+  const readActivePaths = async (repo) => {
     const paths = new Map();
     for await (const { value } of repo.db.entries('files')) {
       if (value.published && (!paths.has(value.published.path)
@@ -282,9 +372,15 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     }
     return paths;
   };
+  const activePaths = (repo) => cachedRecords(repo, 'files', readActivePaths,
+    (paths) => new Map([...paths].map(([file, doc]) => [file, structuredClone(doc)])));
   const recordFile = async (repo, { doc, beforeRuns, baseEntry, basePath, entry, file, operation, disabled }) => {
+    // A new document's id was just generated, so it has no stored revisions
+    // or runs. Skip their listings: on a large ledger each one is a Git spawn,
+    // about three per file in a first build.
+    const fresh = !doc && fastIngest();
     doc ??= { id: randomUUID(), published: null };
-    const revisions = await revisionsFor(repo, doc.id);
+    const revisions = fresh ? [] : await revisionsFor(repo, doc.id);
     if (entry) {
       // Keep whole-content ancestry once a document crosses the threshold.
       // Earlier granular revisions retain their runs for old-reader Revert.
@@ -296,7 +392,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         const runs = operation === null ? initialMutationRuns(bytes.toString('latin1'), `${doc.id}:baseline`)
           : applyMutationText(before, beforeRuns ?? visibleMutationRuns(before, disabled), bytes.toString('latin1'), operation.id);
         doc.runsUnfiltered = runs.every((run) => run.deletedBy.length === 0);
-        await saveRuns(repo, doc.id, runs);
+        await saveRuns(repo, doc.id, runs, 'runs', { absent: fresh });
       }
       revisions.push({ owner: operation?.id ?? null, sequence: operation?.sequence ?? 0,
         ...(file !== (basePath ?? doc.published?.path) ? { path: file } : {}),
@@ -304,40 +400,100 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         ...(permissions(entry) !== permissions(baseEntry ?? doc.published) ? { permissions: permissions(entry) } : {}),
         ...(entry.hash !== (baseEntry ?? doc.published)?.hash ? { hash: entry.hash, binary } : {}), deleted: false });
     } else revisions.push({ owner: operation.id, sequence: operation.sequence, deleted: true });
-    await repo.db.setList(`revisions/${doc.id}`, revisions);
+    await repo.db.setList(`revisions/${doc.id}`, revisions, { absent: fresh });
     repo.db.set(key('files', doc.id), doc);
     return doc;
   };
+  // Directories holding a tracked path are never inputs, whatever Git's ignore
+  // rules say: their tracked files must stay observable and publishable.
+  const inputClassifier = async (directory, vcs) => {
+    if (!vcs) return null;
+    const tracked = new Set();
+    for await (const file of gitTokens(directory, ['ls-files', '-z', '--cached'])) {
+      checkExecutionAdmission();
+      for (let parent = path.posix.dirname(file); parent !== '.' && !tracked.has(parent); parent = path.posix.dirname(parent)) tracked.add(parent);
+    }
+    return { directory, tracked };
+  };
+  // One `git check-ignore` per tree level. Bare paths (no trailing slash) let
+  // Git lstat each directory, so directory-only patterns and negations resolve
+  // exactly as Git would; a trailing slash made `dir/*` match `dir/` itself.
+  const ignoredAmong = async (classifier, directories) => {
+    const candidates = directories.filter((directory) => !classifier.tracked.has(directory));
+    if (!candidates.length) return new Set();
+    const output = await git(classifier.directory, ['check-ignore', '-z', '--stdin'],
+      { input: `${candidates.join('\0')}\0`, limit: 64 * 1024 * 1024, acceptExitCodes: [1] });
+    return new Set(output.toString().split('\0').filter(Boolean));
+  };
+  // A classification failure fails a background warm; a real call falls back
+  // to walking ignored directories as before (slow but complete).
+  const classifierFor = async (directory, vcs, strict) => {
+    try { return await inputClassifier(directory, vcs); }
+    catch (cause) {
+      checkExecutionAdmission();
+      if (strict) throw cause;
+      diagnostic({ phase: 'ledger_inputs', state: 'failed', code: cause?.code ?? 'ledger_inputs_failed' });
+      return null;
+    }
+  };
   // External edits are their own origin. They cannot be attributed to whichever
-  // agent happens to be active when a snapshot is observed.
-  async function* filesIn(repo, relative = '') {
-    const entries = await fs.readdir(path.join(repo.directory, relative), { withFileTypes: true });
-    executionProgress();
-    for (const entry of entries) {
-      checkExecutionAdmission();
-      if (entry.name === '.git' || inputDirectories.has(entry.name)) continue;
-      if (path.resolve(repo.directory, relative, entry.name) === storage) continue;
-      const file = path.posix.join(relative, entry.name);
-      if (entry.isDirectory()) yield* filesIn(repo, file);
-      else yield file;
+  // agent happens to be active when a snapshot is observed. Breadth-first, so
+  // each tree level classifies its directories in one Git call. `walk.inputs`
+  // collects the dependency inputs found; `walk.excluded` (a view's persisted
+  // inputs) is skipped without classification.
+  async function* walkFiles(root, walk = {}) {
+    walk.inputs ??= new Set();
+    for (let level = ['']; level.length;) {
+      const directories = [];
+      for (const relative of level) {
+        for (const entry of await fs.readdir(path.join(root, relative), { withFileTypes: true })) {
+          checkExecutionAdmission();
+          if (entry.name === '.git' || path.resolve(root, relative, entry.name) === storage) continue;
+          const file = path.posix.join(relative, entry.name);
+          if (walk.excluded?.has(file)) continue;
+          if (inputDirectories.has(entry.name)) { walk.inputs.add(file); continue; }
+          if (entry.isDirectory()) directories.push(file);
+          else yield file;
+        }
+        executionProgress();
+      }
+      let ignored = new Set();
+      if (walk.classifier && directories.length) {
+        try { ignored = await ignoredAmong(walk.classifier, directories); }
+        catch (cause) {
+          checkExecutionAdmission();
+          if (walk.strict) throw cause;
+          diagnostic({ phase: 'ledger_inputs', state: 'failed', code: cause?.code ?? 'ledger_inputs_failed' });
+          walk.classifier = null;
+        }
+      }
+      for (const directory of ignored) walk.inputs.add(directory);
+      level = ignored.size ? directories.filter((directory) => !ignored.has(directory)) : directories;
+      await yieldToEventLoop();
     }
   }
-  async function* dependencyInputs(directory, relative = '') {
-    for (const entry of await fs.readdir(path.join(directory, relative), { withFileTypes: true })) {
-      checkExecutionAdmission();
-      if (entry.name === '.git' || path.resolve(directory, relative, entry.name) === storage) continue;
-      const file = path.posix.join(relative, entry.name);
-      if (inputDirectories.has(entry.name)) yield file;
-      else if (entry.isDirectory()) yield* dependencyInputs(directory, file);
-    }
-  }
+  // Ledger paths plus everything the walk found, minus anything now inside a
+  // dependency input: records ingested before a directory became an input are
+  // neither inspected nor installed.
+  const observedNames = async (directory, paths, walk) => {
+    const found = [];
+    for await (const file of walkFiles(directory, walk)) if (safeChangePath(file)) found.push(file);
+    const names = new Set();
+    for (const file of paths.keys()) if (!underInput(file, walk.inputs)) names.add(file);
+    for (const file of found) names.add(file);
+    return names;
+  };
   const reconcile = async (repo, selected) => {
-    const paths = await activePaths(repo), names = new Set(selected ?? paths.keys()), disabled = await inactive(repo);
-    if (!selected) for await (const file of filesIn(repo)) {
-      if (safeChangePath(file)) names.add(file);
+    const paths = await activePaths(repo), disabled = await inactive(repo), walk = { inputs: new Set() };
+    let names = new Set(selected ?? []);
+    if (!selected) {
+      walk.classifier = await classifierFor(repo.directory, repo.vcs, false);
+      names = await observedNames(repo.directory, paths, walk);
     }
+    let visited = 0;
     for (const file of names) {
       checkExecutionAdmission();
+      if (++visited % 64 === 0) await yieldToEventLoop();
       const doc = paths.get(file), entry = await inspect(repo, file);
       if (!doc && !entry) continue;
       if (equal(doc?.published, entry)) continue;
@@ -347,11 +503,17 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       repo.db.set(key('files', changed.id), changed);
       if (operation) { operation.files = [changed.id]; repo.db.set(key('operations', operation.id), operation); }
     }
+    return { inputs: walk.inputs };
   };
   const observations = new Map();
-  const observe = async (lease) => {
+  // A warm pass is a best-effort background build: one pass, budgeted, and it
+  // skips files that change mid-pass. It never certifies a real call's
+  // observation; a real call may wait for it, then runs or joins an
+  // authoritative pass that started after its reservation.
+  const observe = async (lease, { warm = false, maxFiles = Infinity, maxBytes = Infinity } = {}) => {
+    const joinable = (pass) => pass && (warm || (pass.authoritative && pass.started >= lease.reservedAt));
     const previous = observations.get(lease.projectDirectory);
-    if (previous?.started >= lease.reservedAt) {
+    if (joinable(previous)) {
       try { return await waitForExecutionQueue(previous.work, previous.progress); }
       catch { checkExecutionAdmission(); } // The observing caller may have been cancelled independently.
     }
@@ -359,26 +521,39 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     // Recheck after waiting: another reservation may have installed the next
     // sufficiently fresh pass while this caller was queued.
     const current = observations.get(lease.projectDirectory);
-    if (current && current !== previous && current.started >= lease.reservedAt) {
+    if (current && current !== previous && joinable(current)) {
       try { return await waitForExecutionQueue(current.work, current.progress); }
       catch { checkExecutionAdmission(); }
     }
-    const pass = { started: Date.now(), work: null, progress: executionProgressMeter() };
+    const pass = { started: Date.now(), work: null, progress: executionProgressMeter(), authoritative: !warm };
     pass.work = (async () => {
       const root = rootFor(lease.projectDirectory), gitDir = path.join(root, 'git');
-      let dirty, attempts = 0;
+      let dirty, attempts = 0, installed = 0, ingestedBytes = 0, skipped = null, inputs = new Set();
       do {
         if (++attempts > 4) throw changeError('workspace_changing', 503);
         dirty = false;
         const snapshot = { directory: lease.projectDirectory, root, gitDir, db: await openChangeStore(root, gitDir) };
         // Read-only here: reuse the listing cached by immutable `files` tree identity.
-        const paths = await snapshotPaths(snapshot), names = new Set(paths.keys());
-        for await (const file of filesIn(snapshot)) if (safeChangePath(file)) names.add(file);
-        let rows = [], rowBytes = 0;
+        const paths = await snapshotPaths(snapshot);
+        const walk = { classifier: await classifierFor(snapshot.directory, lease.vcs !== false, warm), strict: warm, inputs: new Set() };
+        const names = await observedNames(snapshot.directory, paths, walk);
+        inputs = walk.inputs;
+        if (names.size > maxFiles) { skipped = 'too-large'; break; }
+        const fast = fastIngest(), batchRows = fast && paths.size === 0 ? INITIAL_INSTALL_BATCH : INSTALL_BATCH;
+        // The walk just listed these directories; each is checked for symlinks
+        // once per pass instead of once per file below it. Advisory only: the
+        // install below re-stamps every changed file without this memo.
+        const ancestors = process.env.DEVRYAN_LEDGER_ANCESTOR_MEMO === '0' ? undefined : new Set();
+        let rows = [], rowBytes = 0, carried = null;
         const install = async () => {
           if (!rows.length) return;
+          let written = null;
           await locked(lease.directory, async (repo) => {
-            const latest = await activePaths(repo), disabled = await inactive(repo);
+            // While no other writer has committed since this pass's previous
+            // batch, its parsed state is still exact; re-reading every record
+            // per batch made a first build quadratic.
+            const reuse = carried && repo.db.tree === carried.tree;
+            const latest = reuse ? carried.latest : await activePaths(repo), disabled = reuse ? carried.disabled : await inactive(repo);
             for (const row of rows) {
               const doc = latest.get(row.file);
               if (JSON.stringify(doc?.published ?? null) !== JSON.stringify(row.published)
@@ -391,21 +566,29 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
               const changed = await recordFile(repo, { doc, entry: row.entry, file: row.file, operation, disabled });
               changed.published = row.entry ? { ...row.entry, path: row.file, sequence: operation?.sequence ?? 0 } : null;
               repo.db.set(key('files', changed.id), changed);
+              if (changed.published) latest.set(row.file, changed); else latest.delete(row.file);
               if (operation) { operation.files = [changed.id]; repo.db.set(key('operations', operation.id), operation); }
               executionProgress();
             }
+            written = { db: repo.db, latest, disabled };
           });
+          // The store's tree is the one this batch committed (or read, if it
+          // changed nothing); the next batch reuses state only from that tree.
+          carried = fast && written ? { tree: written.db.tree, latest: written.latest, disabled: written.disabled } : null;
           executionProgress();
+          installed += rows.length;
           rows = []; rowBytes = 0;
+          if (warm) await new Promise((resolve) => setTimeout(resolve, WARM_BATCH_GAP_MS));
         };
         const ordered = [...names];
-        for (let start = 0; start < ordered.length; start += 64) {
+        for (let start = 0; start < ordered.length && !skipped; start += 64) {
+          await yieldToEventLoop();
           const observed = await mapBounded(ordered.slice(start, start + 64), async (file) => {
             checkExecutionAdmission();
             const published = paths.get(file)?.published ?? null;
             // Advisory only. Publication and projection always inspect affected
             // current bytes again; legacy records have no observation and rehash.
-            if (published?.observation && await mutationFileStamp(snapshot.directory, file) === published.observation) {
+            if (published?.observation && await mutationFileStamp(snapshot.directory, file, ancestors) === published.observation) {
               executionProgress();
               return null;
             }
@@ -417,20 +600,33 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
             rows.push(row);
             // Only granular text is staged in memory; whole-content files are not.
             rowBytes += row.entry && !row.entry.whole ? row.entry.size : 0;
-            if (rows.length >= INSTALL_BATCH || rowBytes >= INSTALL_BATCH_BYTES) await install();
+            ingestedBytes += row.entry?.size ?? 0;
+            if (rows.length >= batchRows || rowBytes >= INSTALL_BATCH_BYTES) await install();
+            if (ingestedBytes > maxBytes) { skipped = 'too-large'; break; }
           }
         }
         await install();
-      } while (dirty);
+      } while (dirty && !warm && !skipped);
+      // Marks that a background build is not to be repeated: a completed pass,
+      // or one that met the warm budget (the first real call builds the rest).
+      await fs.writeFile(path.join(root, 'observed'), '');
+      // A large first build leaves one loose object per record: pack now.
+      if (installed >= maintenanceLimits.looseObjects) void maintainLedger(root);
+      return { inputs: [...inputs].sort(), ...(skipped ? { skipped } : {}) };
     })();
     observations.set(lease.projectDirectory, pass);
     try { return await pass.work; }
     finally { if (observations.get(lease.projectDirectory) === pass) observations.delete(lease.projectDirectory); }
   };
-  const materialize = async (repo, documents, accept) => {
+  // `fence(path)` withholds documents inside dependency inputs from history
+  // replay: the ledger no longer observes those paths, so writing old content
+  // there could overwrite an unrecorded edit. Their records stay unchanged.
+  const materialize = async (repo, documents, accept, { fence } = {}) => {
     const disabled = await inactive(repo), paths = new Set();
     for (const doc of documents) {
+      if (fence && doc.published && fence(doc.published.path)) continue;
       const after = await projection(repo, doc, disabled);
+      if (fence && after && fence(after.path)) continue;
       if (doc.published) paths.add(doc.published.path);
       if (after) paths.add(after.path);
       doc.published = after;
@@ -563,19 +759,67 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       return result;
     });
   };
-  const snapshotPathListings = new Map();
-  const snapshotPaths = async (repo) => {
-    const identity = await repo.db.prefixIdentity('files');
-    if (!identity) return new Map();
-    const cacheKey = `${repo.root}:${identity}`;
-    if (!snapshotPathListings.has(cacheKey)) {
-      const work = activePaths(repo);
-      snapshotPathListings.set(cacheKey, work);
-      while (snapshotPathListings.size > 4) snapshotPathListings.delete(snapshotPathListings.keys().next().value);
-      void work.catch(() => { if (snapshotPathListings.get(cacheKey) === work) snapshotPathListings.delete(cacheKey); });
+  // Read-only callers share one parsed listing per immutable `files` tree;
+  // they never mutate these records, so no copy is made.
+  // Direct receipts for built-in read, glob, grep and skill (read-only by audit;
+  // see companion/SEAMS.md). Admission is a snapshot read with no commit, the
+  // tool runs in the control process, and `finishDirect` then records the
+  // reservation and its publication in one locked commit, fenced by the
+  // admitted generation and by cancellation, idempotent per (session, call).
+  // Nothing is recorded before the read: a crash in between leaves the call
+  // `uncertain`, exactly as a missing lease does today.
+  const admitDirect = (input) => snapshotOrLocked(input.directory, async (repo) => {
+    if (!scopeFields.every((field) => validID(input[field]))) throw changeError('invalid_capture_identity', 400);
+    let session = await repo.db.get(key('sessions', input.sessionID));
+    if (session?.directory && session.directory !== repo.logicalDirectory) throw changeError('session_directory_mismatch');
+    const generation = session?.generation ?? 0;
+    for (const seen = new Set(); session; session = session.parentID ? await repo.db.get(key('sessions', session.parentID)) : null) {
+      if (seen.has(session.id)) throw changeError('invalid_session_lineage');
+      seen.add(session.id);
+      if (session.pending) throw changeError('session_reverting');
     }
-    return snapshotPathListings.get(cacheKey);
+    const scopeKey = `${input.sessionID}\0${input.callID}`;
+    if (await repo.db.get(key('cancelled-calls', scopeKey))) throw changeError('execution_cancelled');
+    if (await repo.db.get(key('calls', scopeKey))) throw changeError('execution_already_started');
+    return { generation };
+  });
+  const finishDirect = (input) => {
+    if (!scopeFields.every((field) => validID(input[field])) || !/^[a-f0-9-]{36}$/.test(input.token ?? '')
+      || !Number.isSafeInteger(input.generation) || !/^[a-f0-9]{64}$/.test(input.executionFingerprint ?? '')) {
+      return Promise.reject(changeError('invalid_capture_identity', 400));
+    }
+    return locked(input.directory, async (repo) => {
+      const scopeKey = `${input.sessionID}\0${input.callID}`;
+      const existing = await repo.db.get(key('calls', scopeKey));
+      if (existing) {
+        const lease = await repo.db.get(key('leases', existing.token));
+        // A retried finish after a lost response returns the same receipt.
+        if (lease?.direct && lease.token === input.token && lease.executionFingerprint === input.executionFingerprint
+          && scopeFields.every((field) => lease.scope[field] === input[field])) return lease.result;
+        throw changeError('capture_identity_mismatch');
+      }
+      if (await repo.db.get(key('cancelled-calls', scopeKey))) throw changeError('execution_cancelled');
+      const { session, prompt } = await register(repo, input);
+      if (session.pending) throw changeError('session_reverting');
+      if (session.generation !== input.generation) throw changeError('execution_reverted');
+      const baseSequence = repo.meta.sequence;
+      const scope = Object.fromEntries(scopeFields.map((field) => [field, input[field]]));
+      const operation = { id: randomUUID(), sequence: next(repo), scope, parentCallID: input.parentCallID ?? null,
+        promptSequence: prompt.sequence, origins: prompt.origins, active: true, origin: 'execution', files: [], baseSequence };
+      repo.db.set(key('operations', operation.id), operation);
+      const lease = { token: input.token, scope, directory: repo.logicalDirectory, projectDirectory: repo.directory,
+        generation: session.generation, baseSequence, vcs: repo.vcs, origins: prompt.origins, promptSequence: prompt.sequence,
+        state: 'published', parentCallID: input.parentCallID ?? null, executionFingerprint: input.executionFingerprint,
+        reservedAt: Date.now(), preparation: 'none', executionKind: 'control', direct: true, cleaned: true, cleanupPending: false,
+        ...(input.ownerID ? { ownerID: input.ownerID } : {}),
+        result: { operationID: operation.id, sequence: operation.sequence, files: [] } };
+      repo.db.set(key('leases', lease.token), lease);
+      repo.db.set(key('calls', scopeKey), { token: lease.token });
+      return lease.result;
+    });
   };
+  const snapshotPaths = (repo) => process.env.DEVRYAN_LEDGER_SNAPSHOT_REUSE === '0'
+    ? readActivePaths(repo) : cachedRecords(repo, 'files', readActivePaths, (paths) => paths);
   const preparations = new Map();
   const prepare = (lease) => {
     if (lease.state === 'ready' || lease.state === 'published') return Promise.resolve(lease);
@@ -601,13 +845,16 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
           lease.state = 'ready'; repo.db.set(key('leases', lease.token), lease); return lease;
         });
       }
-      await executionPhase('reconciliation', () => observe(lease));
+      const { inputs } = await executionPhase('reconciliation', () => observe(lease));
       await locked(lease.directory, async (repo) => {
         const current = await repo.db.get(key('leases', lease.token));
         const session = await repo.db.get(key('sessions', lease.scope.sessionID));
         if (current?.state !== 'preparing') throw changeError('execution_cancelled');
         if (session?.generation !== lease.generation || session.pending) throw changeError('execution_reverted');
         lease.baseSequence = repo.meta.sequence;
+        // Classified from the project, never from the agent-editable view:
+        // publication skips exactly these paths.
+        lease.inputs = inputs;
         lease.snapshotRef = repo.db.leaseRef(lease.token);
         // Base runs are recomputed from this pinned, immutable snapshot at
         // publication, for changed files only, instead of being copied per file.
@@ -621,8 +868,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       // lock; commands and copying do not hold that lock.
       const root = rootFor(lease.projectDirectory), db = await openChangeStore(root, path.join(root, 'git'), { ref: lease.snapshotRef });
       const repo = { root, directory: lease.projectDirectory, db }, disabled = await inactive(repo);
+      const inputSet = new Set(lease.inputs);
       const base = async function* () {
-        const live = [...await snapshotPaths(repo)].filter(([, doc]) => !doc.published.deleted);
+        const live = [...await snapshotPaths(repo)].filter(([file, doc]) => !doc.published.deleted && !underInput(file, inputSet));
         for (let start = 0; start < live.length; start += 64) {
           // Copies overlap; ledger rows stay sequential and ordered.
           const identities = await mapBounded(live.slice(start, start + 64), async ([file, doc]) => {
@@ -642,6 +890,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       };
       await db.setList(`bases/${lease.token}/files`, base());
       await db.commit();
+      noteLedgerCommit(root);
       await git(lease.viewDirectory, ['init', '--quiet']);
       if (lease.vcs) {
         // Git commands can inspect the real revision and staged state without
@@ -658,7 +907,8 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       }
       // The execution launcher must enforce read-only access to this input.
       // A symlink and a private cwd alone do not provide write confinement.
-      for await (const file of dependencyInputs(lease.projectDirectory)) {
+      for (const file of lease.inputs) {
+        checkExecutionAdmission();
         await verifyAncestors(lease.viewDirectory, file);
         const target = path.join(lease.viewDirectory, file);
         await fs.mkdir(path.dirname(target), { recursive: true });
@@ -682,6 +932,32 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       throw error;
     }
   };
+  // Builds a missing ledger ahead of the first confined call (95-105 s on a
+  // 5.6k-file repository). The caller bounds it (one build at a time, cancelled
+  // with its signal); batches already committed are kept and resumed. A real
+  // call arriving meanwhile queues behind this pass and then stamps quickly.
+  // Ownership is unchanged: every observation outside a lease stays external.
+  const warm = async ({ directory, maxFiles = WARM_MAX_FILES, maxBytes = WARM_MAX_BYTES }) => {
+    checkExecutionAdmission();
+    const { logicalDirectory, directory: projectDirectory, vcs } = await resolveRepository(directory);
+    if (!vcs) return { skipped: 'not-git' };
+    if (projectDirectory === await fs.realpath(os.homedir()).catch(() => os.homedir())) return { skipped: 'home-directory' };
+    try { await fs.access(path.join(rootFor(projectDirectory), 'observed')); return { skipped: 'already-built' }; }
+    catch (cause) { if (cause.code !== 'ENOENT') throw cause; }
+    // A cheap lower bound (tracked plus untracked, non-ignored files) before
+    // walking; the pass enforces the exact eligible count. A budget that
+    // cannot be established skips the background build.
+    const listing = await git(projectDirectory, ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { limit: 64 * 1024 * 1024 }).catch(() => null);
+    if (!listing) return { skipped: 'listing-unavailable' };
+    let files = 0;
+    for (const byte of listing) if (byte === 0 && ++files > maxFiles) return { skipped: 'too-large' };
+    // Creates the ledger root and store exactly as a reservation would.
+    await locked(logicalDirectory, async () => {});
+    const started = Date.now();
+    const result = await observe({ directory: logicalDirectory, projectDirectory, vcs, reservedAt: Date.now() }, { warm: true, maxFiles, maxBytes });
+    if (result.skipped) return { skipped: result.skipped };
+    return { built: true, files, elapsedMs: Date.now() - started };
+  };
   const begin = async (input) => {
     const lease = await reserve(input);
     if (lease.state === 'preparing' && preparations.has(lease.token)) throw changeError('execution_already_started');
@@ -692,7 +968,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     if (!captured) throw changeError('execution_unavailable');
     if (captured.state === 'published') return captured.result;
     if (captured.state !== 'ready') throw changeError('execution_not_ready');
-    const base = new Map(), identities = new Map(), files = new Map();
+    const base = new Map(), identities = new Map(), files = new Map(), ignoredInputs = [];
     let snapshot = null, snapshotInactive = null;
     // Exactly the runs the view was materialized from: the pinned snapshot's
     // runs filtered by the operations inactive in that same snapshot.
@@ -710,7 +986,17 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       // The host has verified native termination before calling finish. Hashing
       // this immutable output does not serialize unrelated project admissions.
       const viewFiles = [];
-      for await (const file of filesIn({ directory: captured.viewDirectory })) if (safeChangePath(file)) viewFiles.push(file);
+      // Dependency inputs persisted at preparation are never outputs, even if
+      // the agent replaced the read-only link. Leases prepared before inputs
+      // were persisted keep the name-only rule.
+      const excluded = Array.isArray(captured.inputs) ? new Set(captured.inputs) : null;
+      for await (const file of walkFiles(captured.viewDirectory, { excluded })) if (safeChangePath(file)) viewFiles.push(file);
+      for (const file of excluded ?? []) {
+        const stat = await fs.lstat(path.join(captured.viewDirectory, file)).catch((cause) => {
+          if (['ENOENT', 'ENOTDIR'].includes(cause.code)) return null; throw cause;
+        });
+        if (stat && !stat.isSymbolicLink()) ignoredInputs.push(file);
+      }
       // An untouched view file keeps its materialization stamp (inode, size,
       // mode and nanosecond mtime/ctime): any write, chmod or replacement moves
       // ctime or the inode. Whole-second ctimes cannot rule out a same-tick
@@ -814,7 +1100,8 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       repo.db.set(key('operations', operation.id), operation);
       await materialize(repo, [...changed.values()], (files) => {
         lease.state = 'published'; lease.cleanupPending = true; lease.result = { operationID: operation.id, sequence: operation.sequence, files,
-          ...(conflicts.length ? { outcome: 'partial', conflicts: conflicts.map(({ path, source }) => ({ path, ...(source ? { source } : {}) })) } : {}) };
+          ...(conflicts.length ? { outcome: 'partial', conflicts: conflicts.map(({ path, source }) => ({ path, ...(source ? { source } : {}) })) } : {}),
+          ...(ignoredInputs.length ? { ignoredInputs } : {}) };
         repo.db.set(key('leases', token), lease);
       });
       return lease.result;
@@ -918,9 +1205,10 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     if (!tx) throw changeError('revert_unavailable');
     if (tx.state === 'committed') return tx.result;
     if (tx.state !== 'prepared') throw changeError('revert_unavailable');
-    const documents = new Map(), conflicts = [];
+    const documents = new Map(), conflicts = [], fenced = new Set();
+    let inputs = new Set();
     if (input.commit) {
-      await reconcile(repo);
+      ({ inputs } = await reconcile(repo));
       for await (const id of repo.db.list(`transactions/${tx.id}/operations`)) {
         const op = await repo.db.get(key('operations', id));
         if (!op) throw changeError('invalid_change_record');
@@ -956,7 +1244,12 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         repo.db.set(key('last-redos', tx.rootSessionID), { id: tx.id });
       }
     };
-    if (input.commit) await materialize(repo, [...documents.values()], accept);
+    const fence = (file) => {
+      if (!underInput(file, inputs)) return false;
+      if (!fenced.has(file)) { fenced.add(file); conflicts.push({ path: file, code: 'ignored_input' }); }
+      return true;
+    };
+    if (input.commit) await materialize(repo, [...documents.values()], accept, { fence });
     else await accept([]);
     return tx.result;
   });
@@ -1240,7 +1533,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     return directories;
   };
   return { projectDirectories, projectDirectory: (input) => locked(input.directory, (repo) => repo.directory),
-    assertAdmission, registerPrompt, registerChild, reserve, prepare, begin, claimLease, finish, cleanupLease, executionReceipt, aliasCalls, prepareRevert, prepareRedo, prepareFileRestore, settleRevert, leaseForCall,
+    assertAdmission, registerPrompt, registerChild, reserve, prepare, warm, begin, admitDirect, finishDirect, claimLease, finish, cleanupLease, executionReceipt, aliasCalls, prepareRevert, prepareRedo, prepareFileRestore, settleRevert, leaseForCall,
     transaction, updateTransaction, pendingTransactions, capturedSessionState, restoreForeign, cancelLease, cancelUnstartedCall, activeLeases, pendingCleanup, executionOutcomes,
-    drain: () => Promise.allSettled([...preparations.values(), ...settlements.values(), ...queues.values()]) };
+    maintainLedger: ({ directory }) => resolveRepository(directory).then(({ directory: project }) => maintainLedger(rootFor(project))),
+    drain: () => Promise.allSettled([...preparations.values(), ...settlements.values(), ...queues.values(),
+      ...[...maintenanceStates.values()].map((state) => state.running).filter(Boolean)]) };
 }

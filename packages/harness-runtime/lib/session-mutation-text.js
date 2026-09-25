@@ -18,13 +18,19 @@ const units = (text) => {
   return result;
 };
 
+// A diff runs synchronously on the host event loop (in Electron, the window's
+// main thread). Myers is O((N+M)·D): two unrelated 16 KiB texts took seconds.
+// Past this many diagonal/snake steps the remaining ranges become one
+// replacement each. The text stays exact; only ownership gets coarser.
+export const MUTATION_DIFF_WORK_BUDGET = 4_000_000;
+
 /** Myers' bisect diff uses linear auxiliary space, including for large rewrites. */
-export function mutationDiff(before, after) {
+export function mutationDiff(before, after, { budget = MUTATION_DIFF_WORK_BUDGET } = {}) {
   if (before === after) return before ? [{ kind: 'equal', text: before }] : [];
   if ([before, after].some((text) => text.includes('\0') || !isUtf8(Buffer.from(text, 'latin1')))) {
     return [...(before ? [{ kind: 'delete', text: before }] : []), ...(after ? [{ kind: 'insert', text: after }] : [])];
   }
-  const result = [];
+  const result = [], work = { remaining: budget };
   const push = (kind, value) => {
     const text = typeof value === 'string' ? value : value.join('');
     if (!text) return;
@@ -43,7 +49,7 @@ export function mutationDiff(before, after) {
     if (!a.length) push('insert', b);
     else if (!b.length) push('delete', a);
     else {
-      const split = bisect(a, b);
+      const split = work.remaining > 0 ? bisect(a, b, work) : null;
       if (!split || (split[0] === 0 && split[1] === 0) || (split[0] === a.length && split[1] === b.length)) {
         push('delete', a); push('insert', b);
       } else {
@@ -57,7 +63,7 @@ export function mutationDiff(before, after) {
   return result;
 }
 
-function bisect(a, b) {
+function bisect(a, b, work) {
   // Disjoint alphabets are common for generated/binary replacements. Avoid a
   // quadratic search when there cannot be an equal run.
   const alphabet = new Set(a);
@@ -73,7 +79,9 @@ function bisect(a, b) {
       const p = offset + k;
       let x = k === -d || (k !== d && forward[p - 1] < forward[p + 1]) ? forward[p + 1] : forward[p - 1] + 1;
       let y = x - k;
+      const start = x;
       while (x < a.length && y < b.length && a[x] === b[y]) { x++; y++; }
+      if ((work.remaining -= 1 + x - start) <= 0) return null;
       forward[p] = x;
       if (x > a.length) fEnd += 2;
       else if (y > b.length) fStart += 2;
@@ -86,7 +94,9 @@ function bisect(a, b) {
       const p = offset + k;
       let x = k === -d || (k !== d && reverse[p - 1] < reverse[p + 1]) ? reverse[p + 1] : reverse[p - 1] + 1;
       let y = x - k;
+      const start = x;
       while (x < a.length && y < b.length && a[a.length - x - 1] === b[b.length - y - 1]) { x++; y++; }
+      if ((work.remaining -= 1 + x - start) <= 0) return null;
       reverse[p] = x;
       if (x > a.length) rEnd += 2;
       else if (y > b.length) rStart += 2;
@@ -143,9 +153,27 @@ function anchorAt(base, offset) {
 /** Record changes from a private base, including when that base has since been
  * reverted. Tombstones and replacement ancestry remain addressable forever
  * while any execution or undo record references them. */
-export function applyMutationText(runs, base, after, operationID) {
+// Each hunk scans the run list (split, anchor, ownership). Past this many
+// hunk × run steps, every hunk merges into one replacement spanning the first
+// to the last change: the same text, with coarser ownership.
+export const MUTATION_HUNK_WORK_BUDGET = 2_000_000;
+const coalesceChanges = (changes) => {
+  const first = changes.findIndex((change) => change.kind !== 'equal');
+  const last = changes.findLastIndex((change) => change.kind !== 'equal');
+  if (first < 0) return changes;
+  const span = changes.slice(first, last + 1);
+  const removed = span.filter((change) => change.kind !== 'insert').map((change) => change.text).join('');
+  const inserted = span.filter((change) => change.kind !== 'delete').map((change) => change.text).join('');
+  return [...changes.slice(0, first), ...(removed ? [{ kind: 'delete', text: removed }] : []),
+    ...(inserted ? [{ kind: 'insert', text: inserted }] : []), ...changes.slice(last + 1)];
+};
+
+export function applyMutationText(runs, base, after, operationID, { hunkBudget = MUTATION_HUNK_WORK_BUDGET } = {}) {
   const result = runs.map((run) => ({ ...run, deletedBy: [...run.deletedBy] }));
-  const changes = mutationDiff(base.map((run) => run.text).join(''), after);
+  let changes = mutationDiff(base.map((run) => run.text).join(''), after);
+  const hunks = changes.reduce((count, change, index) => count + (change.kind !== 'equal' && changes[index - 1]?.kind !== 'delete'
+    && changes[index - 1]?.kind !== 'insert' ? 1 : 0), 0);
+  if (hunks > 1 && hunks * (result.length + base.length) > hunkBudget) changes = coalesceChanges(changes);
   let offset = 0, index = 0;
   for (let i = 0; i < changes.length; i++) {
     const change = changes[i];

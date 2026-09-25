@@ -8,12 +8,6 @@ export interface RateLimitGroup {
   warnings?: string[];
   usageUpdatedAt?: number | null;
   resetCredits?: UsageResetCredits;
-  modelRows?: Array<{
-    modelName: string;
-    label: string;
-    window: UsageWindow;
-    displayLabel: string;
-  }>;
   modelFamilies?: Array<{
     familyId: string | null;
     familyLabel: string;

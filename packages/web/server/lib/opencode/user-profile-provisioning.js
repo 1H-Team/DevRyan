@@ -5,7 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { applyEdits, modify, parse as parseJsonc } from 'jsonc-parser';
 
+import { getAntigravityPluginGoogleModelKeyPaths } from './antigravity-retirement.js';
 import { listDefaultConfigAssets } from './default-config-assets.js';
+import { removeJsoncKeyPaths, removeKeyPathsFromObject } from './jsonc-config.js';
 import {
   DEVRYAN_MANAGED_PROFILE_DEPENDENCIES,
   DEVRYAN_MANAGED_PROFILE_PLUGIN_FILES,
@@ -48,15 +50,24 @@ const readJson = (fsApi, filePath, fallback = {}) => {
   }
 };
 
-const mergeOpenCodeConfig = (current, baseline) => ({
-  ...current,
-  ...baseline,
-  plugin: reconcileDevRyanManagedPluginSpecs(current.plugin, baseline.plugin),
-  agent: {
-    ...(isRecord(current.agent) ? current.agent : {}),
-    ...(isRecord(baseline.agent) ? baseline.agent : {}),
-  },
-});
+// Antigravity is retired: drop the Google models its plugin wrote into the
+// profile. User-authored Google models and provider options stay.
+const removeRetiredAntigravityModels = (config) => (
+  removeKeyPathsFromObject(config, getAntigravityPluginGoogleModelKeyPaths(config))
+);
+
+const mergeOpenCodeConfig = (rawCurrent, baseline) => {
+  const current = removeRetiredAntigravityModels(rawCurrent);
+  return {
+    ...current,
+    ...baseline,
+    plugin: reconcileDevRyanManagedPluginSpecs(current.plugin, baseline.plugin),
+    agent: {
+      ...(isRecord(current.agent) ? current.agent : {}),
+      ...(isRecord(baseline.agent) ? baseline.agent : {}),
+    },
+  };
+};
 
 // Drop dependencies DevRyan used to pin, but only at the exact version it pinned;
 // a user-owned version of the same package is left alone.
@@ -254,7 +265,7 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
       const source = fsApi.readFileSync(legacyConfigPath, 'utf8');
       const parseErrors = [];
       const parsed = parseJsonc(source, parseErrors, { allowTrailingComma: true });
-      if (parseErrors.length > 0 || !isRecord(parsed) || !Array.isArray(parsed.plugin)) {
+      if (parseErrors.length > 0 || !isRecord(parsed)) {
         if (parseErrors.length > 0) {
           result.warnings.push(
             `Skipped legacy managed plugin reconciliation for ${legacyConfigPath}: invalid JSON/JSONC`,
@@ -262,16 +273,23 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
         }
         continue;
       }
-      const reconciledPlugins = removeDevRyanManagedLegacyPluginSpecs(parsed.plugin);
-      if (JSON.stringify(reconciledPlugins) === JSON.stringify(parsed.plugin)) continue;
-      const edits = modify(source, ['plugin'], reconciledPlugins, {
-        formattingOptions: {
-          insertSpaces: true,
-          tabSize: 2,
-          eol: source.includes('\r\n') ? '\r\n' : '\n',
-        },
-      });
-      fsApi.writeFileSync(legacyConfigPath, applyEdits(source, edits), 'utf8');
+      let nextSource = source;
+      if (Array.isArray(parsed.plugin)) {
+        const reconciledPlugins = removeDevRyanManagedLegacyPluginSpecs(parsed.plugin);
+        if (JSON.stringify(reconciledPlugins) !== JSON.stringify(parsed.plugin)) {
+          const edits = modify(nextSource, ['plugin'], reconciledPlugins, {
+            formattingOptions: {
+              insertSpaces: true,
+              tabSize: 2,
+              eol: source.includes('\r\n') ? '\r\n' : '\n',
+            },
+          });
+          nextSource = applyEdits(nextSource, edits);
+        }
+      }
+      nextSource = removeJsoncKeyPaths(nextSource, getAntigravityPluginGoogleModelKeyPaths(parsed));
+      if (nextSource === source) continue;
+      fsApi.writeFileSync(legacyConfigPath, nextSource, 'utf8');
       result.changed = true;
       result.updated.push(legacyConfigPath);
     }

@@ -12,6 +12,7 @@ import { createSseBoundaryTracker, registerOpenCodeProxy, writeSseChunkWithBackp
 import { registerQuestionRoutes } from './lib/opencode/question-routes.js';
 import {
   bindScopedRevertRequestAbort,
+  registerScopedSessionRevertRoute,
   resolveRevertJournalPath,
   reverseApplyUnifiedPatch,
   runScopedSessionRevert,
@@ -78,6 +79,69 @@ const createProxyApp = (upstreamPort, options = {}) => {
     openchamberDataDir: options.openchamberDataDir ?? TEST_DATA_DIR,
     scopedRevertTimeoutMs: options.scopedRevertTimeoutMs,
     ensureOAuthLoopbackPortAvailable: options.ensureOAuthLoopbackPortAvailable,
+  });
+  return app;
+};
+
+// Manual scheduler for the scoped-revert timer seam. Nothing fires on its own:
+// a test waits until a labelled deadline is armed and fires it at the exact
+// point it wants, so host load cannot reorder deadlines and upstream work.
+const createManualRevertScheduler = () => {
+  const armed = [];
+  const waiters = [];
+  const settleWaiters = () => {
+    for (const waiter of [...waiters]) {
+      const timer = armed.find((entry) => entry.label === waiter.label);
+      if (!timer) continue;
+      waiters.splice(waiters.indexOf(waiter), 1);
+      waiter.resolve(timer);
+    }
+  };
+  const disarm = (timer) => {
+    const index = armed.indexOf(timer);
+    if (index === -1) return false;
+    armed.splice(index, 1);
+    return true;
+  };
+  return {
+    scheduleTimer: (label, delayMs, callback) => {
+      const timer = {
+        label,
+        delayMs,
+        fire: () => {
+          if (!disarm(timer)) throw new Error(`${label} timer is not armed`);
+          callback();
+        },
+      };
+      armed.push(timer);
+      settleWaiters();
+      return () => { disarm(timer); };
+    },
+    // Resolves with the first armed timer carrying `label`, now or once armed.
+    armed: (label) => new Promise((resolve) => {
+      waiters.push({ label, resolve });
+      settleWaiters();
+    }),
+    labels: () => armed.map((timer) => timer.label),
+  };
+};
+
+const createGate = () => {
+  let open;
+  const opened = new Promise((resolve) => { open = resolve; });
+  return { open, opened };
+};
+
+// Registers only the scoped-revert routes, with the same dependencies the proxy
+// forwards, so deadline tests can inject the timer seam.
+const createScopedRevertApp = (upstreamPort, { scheduleTimer, timeoutMs }) => {
+  const app = express();
+  registerScopedSessionRevertRoute(app, {
+    buildOpenCodeUrl: (requestPath) => `http://127.0.0.1:${upstreamPort}${requestPath}`,
+    getOpenCodeAuthHeaders: () => ({}),
+    openchamberDataDir: TEST_DATA_DIR,
+    scopedRevertTimeoutMs: timeoutMs,
+    scopedRevertScheduleTimer: scheduleTimer,
   });
   return app;
 };
@@ -331,18 +395,18 @@ describe('OpenCode proxy SSE forwarding', () => {
 
   it('passes unrelated MCP actions through the generic proxy', async () => {
     const upstream = express();
-    upstream.post('/mcp/mobbin/status', (_req, res) => {
-      res.json({ ok: true, status: 'connected' });
+    upstream.post('/mcp/mobbin/auth', (_req, res) => {
+      res.json({ ok: true, authorizationUrl: 'https://auth.example.test/authorize' });
     });
     upstreamServer = await listen(upstream);
 
     proxyServer = await listen(createProxyApp(upstreamServer.address().port));
-    const response = await fetch(`http://127.0.0.1:${proxyServer.address().port}/api/mcp/mobbin/status`, {
+    const response = await fetch(`http://127.0.0.1:${proxyServer.address().port}/api/mcp/mobbin/auth`, {
       method: 'POST',
     });
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, status: 'connected' });
+    expect(await response.json()).toEqual({ ok: true, authorizationUrl: 'https://auth.example.test/authorize' });
   });
 
   it('records prompt_async proxy timing without forwarding diagnostic headers upstream', async () => {
@@ -750,19 +814,37 @@ describe('OpenCode scoped session revert', () => {
         }),
       ]);
     });
+    const revertMutated = createGate();
     upstream.post('/session/:sessionID/revert', async () => {
       upstreamRevertCalls += 1;
       await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\n');
+      // Never answers: the held-open request is what the deadline must bound.
+      revertMutated.open();
     });
     upstreamServer = await listen(upstream);
 
-    proxyServer = await listen(createProxyApp(upstreamServer.address().port, { scopedRevertTimeoutMs: 100 }));
-    const startedAt = Date.now();
-    const response = await fetch(`http://127.0.0.1:${proxyServer.address().port}/api/openchamber/session/session-a/scoped-revert?directory=${encodeURIComponent(repoDirectory)}`, {
+    const scheduler = createManualRevertScheduler();
+    proxyServer = await listen(createScopedRevertApp(upstreamServer.address().port, {
+      scheduleTimer: scheduler.scheduleTimer,
+      timeoutMs: 100,
+    }));
+    const pendingResponse = fetch(`http://127.0.0.1:${proxyServer.address().port}/api/openchamber/session/session-a/scoped-revert?directory=${encodeURIComponent(repoDirectory)}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ messageID: 'msg-target' }),
     });
+
+    // The operation deadline fires only once the upstream revert is held open,
+    // so preparation speed can never decide whether the upstream was reached.
+    await revertMutated.opened;
+    (await scheduler.armed('deadline')).fire();
+    // Rollback waits one settlement window for the stalled upstream, bounded
+    // inside the cleanup deadline so the final restore still has time to run.
+    const settlement = await scheduler.armed('upstream-settlement');
+    const cleanupDeadline = await scheduler.armed('cleanup-deadline');
+    expect(settlement.delayMs).toBeLessThan(cleanupDeadline.delayMs);
+    settlement.fire();
+    const response = await pendingResponse;
     const payload = await response.json();
 
     expect(response.status).toBe(504);
@@ -770,7 +852,9 @@ describe('OpenCode scoped session revert', () => {
       error: 'Scoped session revert timed out',
       code: 'SCOPED_REVERT_TIMEOUT',
     });
-    expect(Date.now() - startedAt).toBeLessThan(1_000);
+    // Bounded by the deadline plus one settlement window: the cleanup deadline
+    // never had to fire and nothing is left armed.
+    expect(scheduler.labels()).toEqual([]);
     expect(upstreamRevertCalls).toBe(1);
     expect(await fs.readFile(path.join(repoDirectory, 'file-a.txt'), 'utf8')).toBe('base\nsession-a\n');
   });
@@ -794,23 +878,38 @@ describe('OpenCode scoped session revert', () => {
         }),
       ]);
     });
+    const firstRevertHeld = createGate();
     upstream.post('/session/:sessionID/revert', async (_req, res) => {
       upstreamRevertCalls += 1;
-      if (upstreamRevertCalls === 1) return;
+      if (upstreamRevertCalls === 1) {
+        firstRevertHeld.open();
+        return;
+      }
       await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\n');
       res.json({ id: 'session-a', title: 'session-a', revert: { messageID: 'msg-target' } });
     });
     upstreamServer = await listen(upstream);
 
-    proxyServer = await listen(createProxyApp(upstreamServer.address().port, { scopedRevertTimeoutMs: 100 }));
+    const scheduler = createManualRevertScheduler();
+    proxyServer = await listen(createScopedRevertApp(upstreamServer.address().port, {
+      scheduleTimer: scheduler.scheduleTimer,
+      timeoutMs: 100,
+    }));
     const url = `http://127.0.0.1:${proxyServer.address().port}/api/openchamber/session/session-a/scoped-revert?directory=${encodeURIComponent(repoDirectory)}`;
-    const firstResponse = await fetch(url, {
+    const pendingFirstResponse = fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ messageID: 'msg-target' }),
     });
+    await firstRevertHeld.opened;
+    (await scheduler.armed('deadline')).fire();
+    (await scheduler.armed('upstream-settlement')).fire();
+    const firstResponse = await pendingFirstResponse;
     expect(firstResponse.status).toBe(504);
+    expect(scheduler.labels()).toEqual([]);
 
+    // No deadline is ever fired for the second request, so however slow the
+    // host is, it can only succeed if the timed-out revert released the lock.
     const secondResponse = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -818,6 +917,7 @@ describe('OpenCode scoped session revert', () => {
     });
 
     expect(secondResponse.status).toBe(200);
+    expect(scheduler.labels()).toEqual([]);
     expect(upstreamRevertCalls).toBe(2);
     expect(await fs.readFile(path.join(repoDirectory, 'file-a.txt'), 'utf8')).toBe('base\n');
   });
@@ -852,6 +952,7 @@ describe('OpenCode scoped session revert', () => {
     const delayedMutation = new Promise((resolve) => {
       resolveDelayedMutation = resolve;
     });
+    const releaseDelayedMutation = createGate();
     const upstream = express();
     upstream.use(express.json());
     upstream.get('/session/:sessionID/message', (_req, res) => {
@@ -869,7 +970,7 @@ describe('OpenCode scoped session revert', () => {
       upstreamRevertCalls += 1;
       if (upstreamRevertCalls === 1) {
         resolveFirstRevertStarted();
-        await new Promise((resolve) => setTimeout(resolve, 75));
+        await releaseDelayedMutation.opened;
         await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\n');
         resolveDelayedMutation();
         return res.json({ id: 'session-a', title: 'session-a', revert: { messageID: 'msg-target' } });
@@ -879,6 +980,7 @@ describe('OpenCode scoped session revert', () => {
     });
     upstreamServer = await listen(upstream);
 
+    const scheduler = createManualRevertScheduler();
     const cancellation = new AbortController();
     const cancelledRevert = runScopedSessionRevert({
       buildOpenCodeUrl: (requestPath) => `http://127.0.0.1:${upstreamServer.address().port}${requestPath}`,
@@ -888,12 +990,18 @@ describe('OpenCode scoped session revert', () => {
       messageID: 'msg-target',
       openchamberDataDir: TEST_DATA_DIR,
       timeoutMs: 300,
+      scheduleTimer: scheduler.scheduleTimer,
       signal: cancellation.signal,
     });
     await firstRevertStarted;
     const cancellationError = new Error('test client disconnected');
     cancellationError.code = 'SCOPED_REVERT_CANCELLED';
     cancellation.abort(cancellationError);
+
+    // The first restore pass has finished and cleanup is now waiting for the
+    // upstream to settle: land the delayed mutation exactly inside that window.
+    await scheduler.armed('upstream-settlement');
+    releaseDelayedMutation.open();
 
     await expect(cancelledRevert).rejects.toEqual(expect.objectContaining({
       code: 'SCOPED_REVERT_CANCELLED',
@@ -909,9 +1017,13 @@ describe('OpenCode scoped session revert', () => {
       messageID: 'msg-target',
       openchamberDataDir: TEST_DATA_DIR,
       timeoutMs: 300,
+      scheduleTimer: scheduler.scheduleTimer,
     });
 
     expect(secondRevert).toEqual(expect.objectContaining({ id: 'session-a' }));
+    // Neither revert needed any deadline; the settlement wait ended because the
+    // upstream answered.
+    expect(scheduler.labels()).toEqual([]);
     expect(upstreamRevertCalls).toBe(2);
     expect(await fs.readFile(path.join(repoDirectory, 'file-a.txt'), 'utf8')).toBe('base\n');
   });
@@ -935,20 +1047,34 @@ describe('OpenCode scoped session revert', () => {
         }),
       ]);
     });
+    const revertStarted = createGate();
+    const releaseMutation = createGate();
     upstream.post('/session/:sessionID/revert', async (_req, res) => {
-      await new Promise((resolve) => setTimeout(resolve, 125));
+      revertStarted.open();
+      await releaseMutation.opened;
       await fs.rm(path.join(repoDirectory, 'file-a.txt'), { force: true });
       await fs.mkdir(path.join(repoDirectory, 'file-a.txt'));
       res.json({ id: 'session-a' });
     });
     upstreamServer = await listen(upstream);
 
-    proxyServer = await listen(createProxyApp(upstreamServer.address().port, { scopedRevertTimeoutMs: 100 }));
-    const response = await fetch(`http://127.0.0.1:${proxyServer.address().port}/api/openchamber/session/session-a/scoped-revert?directory=${encodeURIComponent(repoDirectory)}`, {
+    const scheduler = createManualRevertScheduler();
+    proxyServer = await listen(createScopedRevertApp(upstreamServer.address().port, {
+      scheduleTimer: scheduler.scheduleTimer,
+      timeoutMs: 100,
+    }));
+    const pendingResponse = fetch(`http://127.0.0.1:${proxyServer.address().port}/api/openchamber/session/session-a/scoped-revert?directory=${encodeURIComponent(repoDirectory)}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ messageID: 'msg-target' }),
     });
+    await revertStarted.opened;
+    (await scheduler.armed('deadline')).fire();
+    // The late upstream mutation lands while cleanup waits for settlement, so
+    // the final restoration pass is the one that cannot be confirmed.
+    await scheduler.armed('upstream-settlement');
+    releaseMutation.open();
+    const response = await pendingResponse;
     const payload = await response.json();
 
     expect(response.status).toBe(500);

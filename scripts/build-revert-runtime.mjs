@@ -28,6 +28,13 @@ const upstreamPlatform = platform.replace(/^win32-/, 'windows-');
 // version, platform and Bun. Reuse one that already passed its upstream
 // typecheck and tests; the DevRyan acceptance fixture below always runs.
 const bunVersion = await run('bun', ['--version'], root, process.env, true);
+const buildCommand = ['script/build.ts', '--single', '--skip-install', '--skip-embed-web-ui'];
+// Everything besides the pinned source and patch that decides the binary's
+// behaviour. Bun embeds absolute build paths, so identical inputs still differ
+// byte-wise across machines; duplicate-output qualification matches this
+// identity instead (see harness-duplicate-qualification.js).
+const buildInputsSha256 = hash(JSON.stringify({ version: 1, bun: bunVersion, command: buildCommand,
+  env: { OPENCODE_CHANNEL: 'devryan' }, platform, upstreamVersion: contract.upstreamVersion }));
 const companionKey = hash(JSON.stringify({ version: 1, baseCommit: contract.baseCommit, patchSha256: contract.patchSha256,
   upstreamVersion: contract.upstreamVersion, companionVersion: contract.companionVersion, platform, bunVersion }));
 const companionCache = path.join(root, '.cache/revert-runtime-companion', platform, companionKey);
@@ -74,8 +81,8 @@ async function buildCompanion() {
   // HTTP/SQLite integration fixtures need a bounded budget on loaded native builders.
   await run('bun', ['test', '--timeout', '30000', 'test/session/revert-compact.test.ts', 'test/server/workspace-routing.test.ts',
     'test/server/httpapi-session.test.ts', 'test/session/retention-gate.test.ts', 'test/session/execution-payload.test.ts',
-    'test/session/execution-browser.test.ts', 'test/session/devryan-execution.test.ts'], path.join(source, 'packages/opencode'));
-  await run('bun', ['run', 'script/build.ts', '--single', '--skip-install', '--skip-embed-web-ui'], path.join(source, 'packages/opencode'),
+    'test/session/execution-browser.test.ts', 'test/session/devryan-execution.test.ts', 'test/server/httpapi-ui.test.ts'], path.join(source, 'packages/opencode'));
+  await run('bun', ['run', ...buildCommand], path.join(source, 'packages/opencode'),
     // Report the plain upstream version: companion identity is a separate
     // capability-bearing record (companion.json), never a version suffix.
     { ...process.env, OPENCODE_VERSION: contract.upstreamVersion, OPENCODE_CHANNEL: 'devryan' });
@@ -113,7 +120,7 @@ await run(process.execPath, ['scripts/verify-concurrent-revert-execution.mjs'], 
   DEVRYAN_TEST_EXECUTION_LAUNCHER: path.join(output, `DevRyan-execution-${platform}${extension}`) });
 const manifest = { ...contract.capability, acceptance: true, companionVersion: contract.companionVersion,
   upstreamVersion: contract.upstreamVersion, baseCommit: contract.baseCommit,
-  patchSha256: contract.patchSha256, binary, platform: process.platform, arch: process.arch,
+  patchSha256: contract.patchSha256, buildInputsSha256, binary, platform: process.platform, arch: process.arch,
   sha256: hash(await fs.readFile(path.join(output, binary))) };
 await fs.writeFile(path.join(output, 'companion.json'), JSON.stringify(manifest, null, 2) + '\n');
 console.log(`Verified Revert runtime: ${output}`);

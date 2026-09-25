@@ -11,7 +11,6 @@ export {
   fetchClaudeQuota,
   fetchOpenaiQuota,
   fetchGoogleQuota,
-  fetchAntigravityQuota,
   fetchCodexQuota,
   fetchCursorAcpQuota,
   fetchCopilotQuota,

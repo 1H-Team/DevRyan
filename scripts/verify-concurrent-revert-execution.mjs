@@ -28,18 +28,28 @@ const directory = path.join(root, 'project');
 const dataDirectory = path.join(root, 'app-data');
 const origin = `http://127.0.0.1:${await reservePort()}`;
 const ownedReceipts = [];
+const executionCalls = [];
 let cursor;
 let failToolAdmission = false;
+let skillCompletionGate = null;
+const holdSkillCompletion = () => {
+  assert.equal(skillCompletionGate, null);
+  let release;
+  skillCompletionGate = new Promise(resolve => { release = resolve; });
+  return () => { skillCompletionGate = null; release(); };
+};
 const host = createSessionExecutionHost({ dataDirectory, getLauncher: () => launcher,
   fetchImpl: async (...args) => { const response = await fetch(...args); if (!response.ok) console.error("Fixture request failed", String(args[0]), await response.clone().text()); return response; },
   buildOpenCodeUrl: (route) => origin + route, recordReceipt: (receipt) => ownedReceipts.push(receipt),
   stopCursor: ({ sessionID }) => cursor?.abortAndWait(sessionID) });
-const bridge = createManagedOrchestrationPrivateHost({ handleRpc: ({ method, params }) => {
+const bridge = createManagedOrchestrationPrivateHost({ handleRpc: async ({ method, params }) => {
   assert.equal(method, 'session_execution');
+  executionCalls.push({ action: params.action, tool: params.tool, callID: params.callID });
   if (failToolAdmission && ['begin', 'cancel-before-start'].includes(params.action)) {
     const code = params.action === 'begin' ? 'local_execution_timeout' : 'cleanup_fixture_failed';
     throw Object.assign(new Error(code), { code });
   }
+  if (params.tool === 'skill' && params.action === 'direct-finish') await skillCompletionGate;
   return host.plugin(params);
 } });
 let upstream, server, held, model, traceTimer, skillSource, browserHost;
@@ -271,7 +281,7 @@ try {
   await assert.rejects(fs.access(path.join(directory, 'browser-owned.txt')), { code: 'ENOENT' });
   console.log('PASS: scoped browser capability, cache output isolation and Revert');
   const skills = await request('/session', { title: 'Selected skills' });
-  // Includes consecutive leases and a return to the first skill, with real
+  // Includes consecutive calls and a return to the first skill, with real
   // global, project, tilde, symlink and downloaded-cache discovery.
   for (const name of ['global-fixture', 'project-fixture', 'tilde-fixture', 'symlink-fixture', 'url-fixture', 'project-fixture']) {
     const fetchedBefore = skillFetches;
@@ -279,9 +289,14 @@ try {
     assert(loaded.call.state.output.includes(`Selected ${name} content.`));
     assert(loaded.call.state.output.includes('reference.txt'));
     assert(!loaded.call.state.output.includes('/views/'), 'Skill output paths retain logical project identity');
-    assert.equal(skillFetches, fetchedBefore, 'The worker must not refetch skill URLs');
+    assert.equal(skillFetches, fetchedBefore, 'Loading must not refetch skill URLs');
+    assert.deepEqual(executionCalls.filter(call => call.callID === loaded.call.callID).map(call => call.action),
+      ['direct-admit', 'direct-finish'], 'Built-in skill loading must not prepare a workspace or launch a worker');
+    const receipt = ownedReceipts.find(receipt => receipt.callID === loaded.call.callID);
+    assert(receipt, 'Skill completion retains an owned receipt');
+    assert.deepEqual(receipt.files, []);
   }
-  console.log('PASS: selected global/project/tilde/symlink/URL skills, include paths, and consecutive leases');
+  console.log('PASS: selected global/project/tilde/symlink/URL skills, include paths, and consecutive direct receipts');
   const failed = await request('/session', { title: 'Admission failure fixture' });
   failToolAdmission = true;
   try {
@@ -317,6 +332,20 @@ try {
   await invoke(direct.id, 'apply_patch', { patchText: `*** Begin Patch\n*** Delete File: ${path.join(directory, 'patch-added.txt')}\n*** End Patch` });
   await assert.rejects(fs.access(path.join(directory, 'patch-added.txt')), { code: 'ENOENT' });
   console.log('PASS: native absolute patch add/update/move/delete use confined views and preserve literal file contents');
+  // Built-in read-only tools take the direct receipt path: one finished,
+  // already-cleaned receipt each, and no reserved lease or private view.
+  await fs.writeFile(path.join(directory, 'direct-read.txt'), 'direct receipt content\n');
+  const readCall = (await invoke(direct.id, 'read', { filePath: path.join(directory, 'direct-read.txt') })).call;
+  assert(readCall.state.output.includes('direct receipt content'), 'Direct read returns its result');
+  const grepCall = (await invoke(direct.id, 'grep', { pattern: 'direct receipt' })).call;
+  const directOutcomes = await host.runtime.executionOutcomes({ directory, sessionID: direct.id,
+    calls: [readCall, grepCall].map((call) => ({ messageID: call.messageID, callID: call.callID })) });
+  assert.deepEqual(directOutcomes.map((row) => row.outcome), ['finished', 'finished']);
+  for (const call of [readCall, grepCall]) {
+    const lease = await host.runtime.leaseForCall({ directory, sessionID: direct.id, callID: call.callID });
+    assert(lease?.direct === true && lease.cleaned === true && lease.state === 'published', JSON.stringify(lease));
+  }
+  console.log('PASS: built-in read and grep record one direct receipt each, without a reserved lease or view');
 
   const parent = await request('/session', { title: 'Descendant ownership' });
   const child = await invoke(parent.id, 'task', { description: 'Write the fixture', subagent_type: 'general',
@@ -392,7 +421,7 @@ try {
   console.log('PASS: active Cursor cancellation waits for native termination and persistence');
   if (process.env.DEVRYAN_TEST_REVERT_UI === '1') {
     const { verifyRevertUi } = await import('./qa/revert-ui.mjs');
-    for (const mode of ['web', 'electron']) await verifyRevertUi({ mode, root, dataDirectory, directory, upstream: origin, environment: env, request, invoke, shell, node, until });
+    for (const mode of ['web', 'electron']) await verifyRevertUi({ mode, root, dataDirectory, directory, upstream: origin, environment: env, request, invoke, shell, node, until, holdSkillCompletion });
   }
 } catch (cause) {
   console.error(upstream?.getLog()); throw cause;

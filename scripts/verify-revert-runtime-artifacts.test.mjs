@@ -15,7 +15,8 @@ test('packaging refuses changed, unverified and mismatched Revert artifacts', as
   const native = { version: 1, policy: 2, acceptance: true, platform: 'darwin', arch: 'arm64', binary, sha256,
     spawnLibrary: binary + '-spawn.dylib', spawnSha256: sha256 };
   const runtime = { ...contract.capability, acceptance: true, platform: 'darwin', arch: 'arm64', binary: companion,
-    sha256, patchSha256: contract.patchSha256, baseCommit: contract.baseCommit };
+    sha256, patchSha256: contract.patchSha256, baseCommit: contract.baseCommit, upstreamVersion: contract.upstreamVersion,
+    buildInputsSha256: createHash('sha256').update('build inputs').digest('hex') };
   const verify = () => verifyRevertRuntimeArtifacts({ directory: root, platform: 'darwin', arch: 'arm64' });
   try {
     await fs.mkdir(location);
@@ -40,6 +41,11 @@ test('packaging refuses changed, unverified and mismatched Revert artifacts', as
     await assert.rejects(verify(), /companion artifact/);
     await fs.writeFile(path.join(location, 'companion.json'), JSON.stringify({ ...runtime, patchSha256: 'unreviewed' }));
     await assert.rejects(verify(), /companion artifact/);
+    await fs.writeFile(path.join(location, 'companion.json'), JSON.stringify({ ...runtime, upstreamVersion: '0.0.0' }));
+    await assert.rejects(verify(), /companion artifact/);
+    const { buildInputsSha256: _omitted, ...withoutBuildInputs } = runtime;
+    await fs.writeFile(path.join(location, 'companion.json'), JSON.stringify(withoutBuildInputs));
+    await assert.rejects(verify(), /companion artifact/);
     await fs.writeFile(path.join(location, 'companion.json'), JSON.stringify(runtime));
     await fs.writeFile(path.join(location, native.spawnLibrary), 'changed');
     await assert.rejects(verify(), /spawn library/);
@@ -61,7 +67,8 @@ test('distribution requires every declared architecture and all paired capabilit
       const native = { version: 1, policy: 2, acceptance: true, platform, arch, binary, sha256: hash,
         spawnLibrary: binary + '-spawn.dylib', spawnSha256: hash };
       const runtime = { ...contract.capability, acceptance: true, platform, arch, binary: companion,
-        baseCommit: contract.baseCommit, patchSha256: contract.patchSha256, sha256: hash };
+        baseCommit: contract.baseCommit, patchSha256: contract.patchSha256, upstreamVersion: contract.upstreamVersion,
+        buildInputsSha256: hash, sha256: hash };
       for (const name of [binary, companion, native.spawnLibrary]) await fs.writeFile(path.join(location, name), 'fixture');
       await fs.writeFile(path.join(location, binary + '.json'), JSON.stringify(native));
       await fs.writeFile(path.join(location, 'companion.json'), JSON.stringify(runtime));

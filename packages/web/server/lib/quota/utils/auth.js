@@ -10,6 +10,23 @@ export const ANTIGRAVITY_ACCOUNTS_PATHS = [
   path.join(OPENCODE_DATA_DIR, 'antigravity-accounts.json')
 ];
 
+const RUNTIME_AGENT_OVERLAY_ROOT = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'runtime-agent-overlays');
+
+// The Antigravity plugin stores accounts under OPENCODE_CONFIG_DIR, which a
+// managed runtime points at its per-project overlay directory, so account files
+// also live one level below the overlay root.
+export const listAntigravityAccountsPaths = ({ overlayRoot = RUNTIME_AGENT_OVERLAY_ROOT } = {}) => {
+  let overlayPaths = [];
+  try {
+    overlayPaths = fs.readdirSync(overlayRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(overlayRoot, entry.name, 'antigravity-accounts.json'));
+  } catch {
+    overlayPaths = [];
+  }
+  return [...ANTIGRAVITY_ACCOUNTS_PATHS, ...overlayPaths];
+};
+
 export const readJsonFile = (filePath) => {
   if (!fs.existsSync(filePath)) {
     return null;

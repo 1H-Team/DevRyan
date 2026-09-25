@@ -13,6 +13,14 @@ import { ensureOAuthLoopbackPortAvailable } from './oauth-loopback-preflight.js'
 import { registerScopedSessionRevertRoute } from './session-scoped-revert.js';
 import { createHarnessError, withHarnessResult } from './harness-result.js';
 import { stripEventDiffContent, stripMessageDiffContent } from './diff-summary.js';
+import {
+  createOpenCodeRouteGuardMiddleware,
+  createUnknownOpenCodeRoutePayload,
+  isOpenCodeRouteGuardEnabled,
+  isOpenCodeRouteUnknownError,
+  openCodeFetch,
+  openCodeRouteRegistry,
+} from './opencode-routes.js';
 
 const PROMPT_ASYNC_MESSAGE_ID_HEADER = 'x-openchamber-message-id';
 // Transcripts carry diff snapshots and are not a fast control-plane read.
@@ -300,6 +308,10 @@ export const registerOpenCodeProxy = (app, deps) => {
     ensureOAuthLoopbackPortAvailable: ensureOAuthLoopbackPortAvailableDep,
   } = deps;
 
+  const routeRegistry = deps.openCodeRouteRegistry ?? openCodeRouteRegistry;
+  const fetchOpenCode = (url, init) => openCodeFetch(url, init, { registry: routeRegistry, source: 'proxy' });
+  const sendUnknownOpenCodeRoute = (res) => res.status(404).json(createUnknownOpenCodeRoutePayload());
+
   const runOAuthLoopbackPreflight = typeof ensureOAuthLoopbackPortAvailableDep === 'function'
     ? ensureOAuthLoopbackPortAvailableDep
     : ensureOAuthLoopbackPortAvailable;
@@ -329,6 +341,26 @@ export const registerOpenCodeProxy = (app, deps) => {
   });
   const resolveProxyAgent = createOpenCodeProxyAgentResolver(resolveProxyTarget);
 
+  // The live route table comes from the same upstream the proxy forwards to.
+  routeRegistry.configure({
+    buildDocUrl: () => buildOpenCodeUrl('/doc', ''),
+    getAuthHeaders: getOpenCodeAuthHeaders,
+    recordDiagnostic: deps.recordDiagnostic,
+  });
+  const observeOpenCodeRoutes = () => {
+    if (!isOpenCodeRouteGuardEnabled()) return;
+    try {
+      const runtimeState = getRuntime();
+      const ready = Boolean(runtimeState.openCodePort && runtimeState.isOpenCodeReady && !runtimeState.isRestartingOpenCode);
+      routeRegistry.observeRuntime({
+        ready,
+        key: ready ? `${resolveProxyTarget()}|${runtimeState.openCodeVersion ?? ''}` : null,
+      });
+    } catch {
+      // Route-table refresh scheduling never affects the request itself.
+    }
+  };
+
   const forwardSseRequest = async (req, res) => {
     const abortController = new AbortController();
     const closeUpstream = () => abortController.abort();
@@ -349,7 +381,7 @@ export const registerOpenCodeProxy = (app, deps) => {
       headers.accept ??= 'text/event-stream';
       headers['cache-control'] ??= 'no-cache';
 
-      upstream = await fetch(buildOpenCodeUrl(upstreamPath, ''), {
+      upstream = await fetchOpenCode(buildOpenCodeUrl(upstreamPath, ''), {
         method: 'GET',
         headers,
         signal: abortController.signal,
@@ -454,6 +486,10 @@ export const registerOpenCodeProxy = (app, deps) => {
       res.end();
     } catch (error) {
       if (isAbortError(error)) {
+        return;
+      }
+      if (isOpenCodeRouteUnknownError(error)) {
+        if (!res.headersSent) sendUnknownOpenCodeRoute(res);
         return;
       }
       console.error('[proxy] OpenCode SSE proxy error:', error?.message ?? error);
@@ -579,7 +615,7 @@ export const registerOpenCodeProxy = (app, deps) => {
     }
 
     try {
-      const upstream = await fetch(buildOpenCodeUrl(upstreamPath, ''), fetchOptions);
+      const upstream = await fetchOpenCode(buildOpenCodeUrl(upstreamPath, ''), fetchOptions);
       const body = await upstream.text();
 
       if (!upstream.ok && body.length === 0) {
@@ -604,6 +640,9 @@ export const registerOpenCodeProxy = (app, deps) => {
       applyForwardProxyResponseHeaders(upstream.headers, res);
       return res.send(body);
     } catch (error) {
+      if (isOpenCodeRouteUnknownError(error)) {
+        return sendUnknownOpenCodeRoute(res);
+      }
       console.error(`[proxy] OpenCode MCP ${action} proxy error for ${serverName || 'unknown'}:`, error?.message ?? error);
       return res.status(503).json(withHarnessResult({
         error: `OpenCode service unavailable while ${formatMcpAction(action)} MCP server`,
@@ -625,6 +664,7 @@ export const registerOpenCodeProxy = (app, deps) => {
   // Ensure API prefix is detected before proxying
   app.use('/api', (_req, _res, next) => {
     ensureOpenCodeApiPrefix();
+    observeOpenCodeRoutes();
     next();
   });
 
@@ -831,7 +871,7 @@ export const registerOpenCodeProxy = (app, deps) => {
         if (typeof value === 'string') query.set(key, value);
       }
       const serialized = query.toString();
-      upstream = await fetch(
+      upstream = await fetchOpenCode(
         buildOpenCodeUrl(
           `/session/${encodeURIComponent(req.params.sessionID)}/message${serialized ? `?${serialized}` : ''}`,
           '',
@@ -953,7 +993,7 @@ export const registerOpenCodeProxy = (app, deps) => {
     trace.mark('upstream_create_started');
     try {
       const rawPath = (req.originalUrl || req.url).replace(/^\/api/, '');
-      const response = await fetch(buildOpenCodeUrl(rawPath, ''), {
+      const response = await fetchOpenCode(buildOpenCodeUrl(rawPath, ''), {
         method: 'POST', headers: { ...collectForwardProxyHeaders(req.headers, getOpenCodeAuthHeaders()), 'content-type': 'application/json' },
         body: JSON.stringify(req.body ?? {}), signal: AbortSignal.timeout(Math.floor(trace.remainingMs())),
       });
@@ -965,12 +1005,24 @@ export const registerOpenCodeProxy = (app, deps) => {
       const body = await response.text();
       trace.mark(response.ok ? 'acknowledged' : 'upstream_create_rejected');
       return res.status(response.status).type(response.headers.get('content-type') || 'application/json').send(body);
-    } catch {
+    } catch (error) {
+      if (isOpenCodeRouteUnknownError(error)) {
+        trace.mark('route_unknown');
+        return sendUnknownOpenCodeRoute(res);
+      }
       trace.mark('outcome_unknown');
       return res.status(502).json(creationUnknownPayload());
     }
   });
   const apiProxy = createProxyMiddleware(apiProxyOptions);
 
+  // Unknown OpenCode routes would reach OpenCode's catch-all UI route (an
+  // app.opencode.ai proxy or index.html with 200); answer them locally instead.
+  // Mirrors `pathRewrite`: under the `/api` mount req.url is mount-relative and
+  // the proxy strips a further leading `/api` from it.
+  app.use('/api', createOpenCodeRouteGuardMiddleware({
+    registry: routeRegistry,
+    resolveUpstreamPath: (req) => (typeof req.url === 'string' ? req.url : '/').replace(/^\/api/, ''),
+  }));
   app.use('/api', apiProxy);
 };

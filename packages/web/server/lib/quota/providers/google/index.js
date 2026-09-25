@@ -8,7 +8,6 @@
 export {
   resolveGoogleOAuthClient,
   resolveGeminiCliAuth,
-  resolveAntigravityAuth,
   resolveGoogleAuthSources,
   DEFAULT_PROJECT_ID
 } from './auth.js';
@@ -25,115 +24,18 @@ export {
   fetchGoogleModels
 } from './api.js';
 
-import { buildResult, toUsageWindow } from '../../utils/index.js';
+import { buildResult } from '../../utils/index.js';
 import {
   resolveGoogleAuthSources,
   resolveGoogleOAuthClient,
   DEFAULT_PROJECT_ID
 } from './auth.js';
-import { resolveGoogleWindow, transformQuotaBucket, transformModelData } from './transforms.js';
+import { transformQuotaBucket, transformModelData } from './transforms.js';
 import {
   refreshGoogleAccessToken,
   fetchGoogleQuotaBuckets,
   fetchGoogleModels
 } from './api.js';
-import {
-  ANTIGRAVITY_USAGE_MODELS,
-  resolveAntigravityUsageModel
-} from './antigravity-models.js';
-
-const hasNumericUsage = (window) => (
-  typeof window?.usedPercent === 'number' && Number.isFinite(window.usedPercent)
-);
-
-const shouldReplaceSummaryWindow = (currentWindow, nextWindow) => {
-  if (!currentWindow) {
-    return true;
-  }
-
-  const currentHasUsage = hasNumericUsage(currentWindow);
-  const nextHasUsage = hasNumericUsage(nextWindow);
-  if (nextHasUsage !== currentHasUsage) {
-    return nextHasUsage;
-  }
-
-  if (nextHasUsage && nextWindow.usedPercent !== currentWindow.usedPercent) {
-    return nextWindow.usedPercent > currentWindow.usedPercent;
-  }
-
-  const currentResetAt = typeof currentWindow.resetAt === 'number' ? currentWindow.resetAt : Number.POSITIVE_INFINITY;
-  const nextResetAt = typeof nextWindow.resetAt === 'number' ? nextWindow.resetAt : Number.POSITIVE_INFINITY;
-  return nextResetAt < currentResetAt;
-};
-
-const buildAntigravitySummaryWindows = (models) => {
-  const windows = {};
-
-  for (const modelUsage of Object.values(models)) {
-    for (const [label, window] of Object.entries(modelUsage?.windows ?? {})) {
-      if (shouldReplaceSummaryWindow(windows[label], window)) {
-        windows[label] = { ...window };
-      }
-    }
-  }
-
-  return windows;
-};
-
-const buildAntigravityUsageModels = (rawModels) => {
-  const modelsByCatalogId = new Map();
-
-  for (const [modelName, modelData] of Object.entries(rawModels ?? {})) {
-    const catalogModel = resolveAntigravityUsageModel(modelName, modelData);
-    if (!catalogModel) {
-      continue;
-    }
-
-    const transformed = transformModelData(catalogModel.id, modelData, 'antigravity');
-    const usage = transformed?.[`antigravity/${catalogModel.id}`];
-    if (!usage) {
-      continue;
-    }
-
-    modelsByCatalogId.set(catalogModel.id, {
-      ...usage,
-      displayName: catalogModel.displayName,
-      contextLabel: catalogModel.contextLabel,
-      sortOrder: catalogModel.sortOrder,
-    });
-  }
-
-  const firstExistingWindow = Array.from(modelsByCatalogId.values())
-    .flatMap((usage) => Object.entries(usage.windows ?? {}))
-    .find(([, window]) => typeof window?.windowSeconds === 'number');
-  const fallbackWindow = resolveGoogleWindow('antigravity', null);
-  const placeholderWindowLabel = firstExistingWindow?.[0] ?? fallbackWindow.label;
-  const placeholderWindowSeconds = firstExistingWindow?.[1]?.windowSeconds ?? fallbackWindow.seconds;
-  const placeholderResetAt = firstExistingWindow?.[1]?.resetAt ?? null;
-
-  return Object.fromEntries(
-    ANTIGRAVITY_USAGE_MODELS
-      .map((catalogModel) => {
-        const existingUsage = modelsByCatalogId.get(catalogModel.id);
-        const usage = existingUsage ?? {
-          windows: {
-            [placeholderWindowLabel]: toUsageWindow({
-              usedPercent: 0,
-              windowSeconds: placeholderWindowSeconds,
-              resetAt: placeholderResetAt,
-            }),
-          },
-        };
-
-        return [`antigravity/${catalogModel.id}`, {
-          ...usage,
-          displayName: catalogModel.displayName,
-          contextLabel: catalogModel.contextLabel,
-          sortOrder: catalogModel.sortOrder,
-        }];
-      })
-  );
-};
 
 const fetchGoogleQuotaForSource = async ({
   sourceId,
@@ -167,7 +69,7 @@ const fetchGoogleQuotaForSource = async ({
         sourceErrors.push(`${source.sourceLabel}: Missing refresh token`);
         continue;
       }
-      const { clientId, clientSecret } = resolveGoogleOAuthClient(source.sourceId);
+      const { clientId, clientSecret } = resolveGoogleOAuthClient();
       accessToken = await refreshAccessToken(source.refreshToken, clientId, clientSecret, source.sourceId);
     }
 
@@ -194,16 +96,10 @@ const fetchGoogleQuotaForSource = async ({
 
     const payload = await fetchModels(accessToken, projectId, source.sourceId);
     if (payload) {
-      if (source.sourceId === 'antigravity') {
-        const transformed = buildAntigravityUsageModels(payload.models);
+      for (const [modelName, modelData] of Object.entries(payload.models ?? {})) {
+        const transformed = transformModelData(modelName, modelData, source.sourceId);
         Object.assign(models, transformed);
-        mergedAnyModel = Object.keys(transformed).length > 0 || mergedAnyModel;
-      } else {
-        for (const [modelName, modelData] of Object.entries(payload.models ?? {})) {
-          const transformed = transformModelData(modelName, modelData, source.sourceId);
-          Object.assign(models, transformed);
-          mergedAnyModel = true;
-        }
+        mergedAnyModel = true;
       }
     }
 
@@ -228,7 +124,7 @@ const fetchGoogleQuotaForSource = async ({
     ok: true,
     configured: true,
     usage: {
-      windows: providerId === 'antigravity' ? buildAntigravitySummaryWindows(models) : {},
+      windows: {},
       models: Object.keys(models).length ? models : undefined
     }
   });
@@ -239,11 +135,4 @@ export const fetchGoogleQuota = async (options = {}) => fetchGoogleQuotaForSourc
   sourceId: 'gemini',
   providerId: 'google',
   providerName: 'Google'
-});
-
-export const fetchAntigravityQuota = async (options = {}) => fetchGoogleQuotaForSource({
-  ...options,
-  sourceId: 'antigravity',
-  providerId: 'antigravity',
-  providerName: 'Antigravity'
 });

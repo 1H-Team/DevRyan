@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   disconnectProvider,
   getProviderConnectionState,
+  getProviderDisconnectOutcome,
   hasActiveProviderSource,
   shouldShowConnectedProvider,
   useProviderDisconnectStore,
@@ -81,6 +82,35 @@ describe('provider connection state', () => {
     });
 
     expect(useProviderDisconnectStore.getState().pendingRevisionByProvider).toEqual({});
+  });
+
+  test('keeps a provider connected when something still provides it after disconnect', () => {
+    useProviderDisconnectStore.setState({
+      pendingRevisionByProvider: {},
+      sourceRefreshRevision: 0,
+    });
+    const response = {
+      success: true,
+      removed: false,
+      stillProvidedBy: [
+        { type: 'config' as const, path: '/home/.config/opencode/opencode.json' },
+        { type: 'env' as const, name: 'GEMINI_API_KEY' },
+        { type: 'auth' as const, path: null },
+      ],
+      applyStatus: { revision: 3, appliedRevision: 2, pending: true },
+    };
+
+    useProviderDisconnectStore.getState().markRequested('google', response);
+
+    expect(useProviderDisconnectStore.getState().pendingRevisionByProvider).toEqual({});
+    expect(useProviderDisconnectStore.getState().sourceRefreshRevision).toBe(1);
+    expect(getProviderDisconnectOutcome(response)).toEqual({
+      kind: 'still_provided',
+      sources: ['/home/.config/opencode/opencode.json', 'GEMINI_API_KEY', 'auth.json'],
+    });
+    expect(getProviderDisconnectOutcome({ success: true, removed: false })).toEqual({ kind: 'disconnected' });
+    expect(getProviderDisconnectOutcome({ success: true, removed: true, stillProvidedBy: [] }))
+      .toEqual({ kind: 'disconnected' });
   });
 
   test('surfaces failed disconnect responses without creating pending UI state', async () => {

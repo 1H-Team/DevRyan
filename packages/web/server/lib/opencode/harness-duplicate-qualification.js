@@ -52,6 +52,40 @@ export const createRuntimeDigestReader = (resolveBinary) => {
   };
 };
 
+// The companion build identity, trusted only when companion.json (verified
+// at host start against the artifact contract) describes this exact binary.
+// Bun embeds absolute build paths, so builds from identical source and inputs
+// on different machines differ byte-wise; this identity survives that.
+export const createRuntimeIdentityReader = (resolveBinary, readDigest = createRuntimeDigestReader(resolveBinary)) => async () => {
+  const runtimeHash = await readDigest();
+  if (!validHash(runtimeHash)) return { runtimeHash: null, companion: null };
+  try {
+    const binary = resolveBinary?.();
+    const manifest = JSON.parse(await fs.readFile(path.join(path.dirname(binary), 'companion.json'), 'utf8'));
+    const companion = { upstreamVersion: manifest.upstreamVersion, baseCommit: manifest.baseCommit,
+      patchSha256: manifest.patchSha256, buildInputsSha256: manifest.buildInputsSha256 };
+    const valid = manifest.sha256 === runtimeHash && manifest.acceptance === true
+      && typeof companion.upstreamVersion === 'string' && /^[a-f0-9]{40}$/.test(companion.baseCommit ?? '')
+      && validHash(companion.patchSha256) && validHash(companion.buildInputsSha256);
+    return { runtimeHash, companion: valid ? companion : null };
+  } catch { return { runtimeHash, companion: null }; }
+};
+
+// Request-shaping policies a qualification was measured under. The same
+// plugin bytes build different tool schemas under different values.
+export const duplicatePolicyVector = (environment = {}) => ({
+  waitAny: environment.DEVRYAN_MANAGED_WAIT_ANY === '1',
+  capabilityToolSchema: environment.DEVRYAN_CAPABILITY_TOOL_SCHEMA !== '0',
+});
+
+const runtimeMatches = (candidate, runtimeHash, companion, environment) => {
+  const identity = candidate.runtimeIdentity;
+  // DEVRYAN_DUPLICATE_IDENTITY=binary restores exact binary pinning.
+  if (!identity || environment.DEVRYAN_DUPLICATE_IDENTITY === 'binary') return validHash(candidate.runtimeHash) && candidate.runtimeHash === runtimeHash;
+  return identity.kind === 'companion-build' && companion !== null
+    && ['upstreamVersion', 'baseCommit', 'patchSha256', 'buildInputsSha256'].every(field => identity[field] === companion[field]);
+};
+
 export const readDuplicatePluginInventory = async (configuredPlugins, provider = {}) => {
   if (!Array.isArray(configuredPlugins) || !configuredPlugins.length || configuredPlugins.length > 128) return null;
   try {
@@ -77,8 +111,8 @@ export const readDuplicatePluginInventory = async (configuredPlugins, provider =
 // An exact ordered configuration is a qualification input, not proof that all
 // factories loaded. The release evidence must cover loading and later hooks at
 // the provider boundary, including the runtime's built-in plugins/transport.
-export const qualifyDuplicateOutputs = ({ managed, enabled, runtimeVersion, runtimeHash, selection, inventory, callerInventory, providerRouteHash, providerRoute,
-  profiles = DUPLICATE_OUTPUT_PROFILES } = {}) => {
+export const qualifyDuplicateOutputs = ({ managed, enabled, runtimeVersion, runtimeHash, companion = null, selection, inventory, callerInventory, providerRouteHash, providerRoute,
+  policyVector = duplicatePolicyVector(), environment = {}, profiles = DUPLICATE_OUTPUT_PROFILES } = {}) => {
   const deny = reason => ({ qualified: false, reason });
   if (!managed) return deny('external-runtime');
   if (!enabled) return deny('policy-disabled');
@@ -86,7 +120,8 @@ export const qualifyDuplicateOutputs = ({ managed, enabled, runtimeVersion, runt
   if (!inventory || !callerInventory || !validHash(inventory.configurationHash) || !validHash(inventory.contentHash)
     || JSON.stringify(inventory) !== JSON.stringify(callerInventory)) return deny('inventory-unavailable-or-changed');
   if (!identity(selection?.providerID) || !identity(selection?.modelID)) return deny('selection-unavailable');
-  const profile = profiles.find(candidate => candidate.runtimeVersion === runtimeVersion && candidate.runtimeHash === runtimeHash
+  const profile = profiles.find(candidate => candidate.runtimeVersion === runtimeVersion
+    && runtimeMatches(candidate, runtimeHash, companion, environment)
     && candidate.transport === providerRoute
     && candidate.providerHash === (candidate.providerScope === 'selected-route' ? providerRouteHash : inventory.providerHash)
     && candidate.providerID === selection.providerID && candidate.modelID === selection.modelID
@@ -95,6 +130,7 @@ export const qualifyDuplicateOutputs = ({ managed, enabled, runtimeVersion, runt
     && JSON.stringify(duplicatePluginReleaseIdentity(candidate.plugins)) === JSON.stringify(duplicatePluginReleaseIdentity(inventory.entries)));
   if (!profile) return deny('profile-unqualified');
   if (profile.stale) return deny('profile-stale');
+  if (profile.policyVector && JSON.stringify(stable(profile.policyVector)) !== JSON.stringify(stable(policyVector))) return deny('policy-vector-mismatch');
   if (!identity(profile.id) || !accepted(profile.evidence)) return deny('acceptance-incomplete');
   return { qualified: true, profileId: profile.id, runtimeVersion, runtimeHash, ...selection,
     variant: selection.variant ?? null, configurationHash: inventory.configurationHash, contentHash: inventory.contentHash };

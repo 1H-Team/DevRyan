@@ -1,4 +1,5 @@
-import { afterEach, expect, spyOn, test as bunTest } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test as bunTest } from 'bun:test';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -916,4 +917,223 @@ test('cached repository resolution notices a nested repository and a replaced .g
   expect(await f.runtime.projectDirectory({ directory: sub })).toBe(await fs.realpath(sub));
   await fs.rm(path.join(sub, '.git'), { recursive: true, force: true });
   expect(await f.runtime.projectDirectory({ directory: sub })).toBe(real);
+});
+
+// Logical ledger content by path: published identity, revision count and the
+// stored text of its runs (including deleted runs). Document ids are random,
+// so they are not compared.
+async function ledgerState(f) {
+  const root = path.join(f.storage, changeKey(await fs.realpath(f.directory)));
+  const db = await openChangeStore(root, path.join(root, 'git'));
+  const state = {};
+  for await (const { value } of db.entries('files')) {
+    if (!value.published) continue;
+    let revisions = 0; for await (const _ of db.list(`revisions/${value.id}`)) revisions += 1;
+    const text = []; for await (const run of db.list(`runs/${value.id}`)) text.push(Buffer.from(run.bytes, 'base64').toString('latin1'));
+    state[value.published.path] = { hash: value.published.hash, mode: value.published.mode, deleted: Boolean(value.published.deleted), revisions, text: text.join('') };
+  }
+  return state;
+}
+async function manyFiles(f, count) {
+  for (let index = 0; index < count; index += 1) {
+    const directory = path.join(f.directory, `d${index % 17}`, `e${index % 5}`);
+    await fs.mkdir(directory, { recursive: true });
+    await fs.writeFile(path.join(directory, `f${index}.txt`), `line ${index}\n`.repeat(1 + (index % 4)));
+  }
+  await fs.writeFile(path.join(f.directory, 'bin.dat'), Buffer.from([0, 1, 2, 255]));
+  await fs.writeFile(path.join(f.directory, 'run.sh'), '#!/bin/sh\necho hi\n', { mode: 0o755 });
+  await fs.symlink('d0/e0/f0.txt', path.join(f.directory, 'link'));
+}
+const withEnv = async (values, action) => {
+  const previous = Object.fromEntries(Object.keys(values).map((name) => [name, process.env[name]]));
+  Object.assign(process.env, values);
+  try { return await action(); }
+  finally { for (const [name, value] of Object.entries(previous)) { if (value === undefined) delete process.env[name]; else process.env[name] = value; } }
+};
+
+bunTest('fast first ingest records exactly the ledger the listing path records, across install batches', async () => {
+  const fast = await fixture(), legacy = await fixture();
+  await manyFiles(fast, 1300); await manyFiles(legacy, 1300);
+  await fast.finish(await fast.begin('a', 'pa', 'ca'));
+  await withEnv({ DEVRYAN_LEDGER_FAST_INGEST: '0' }, async () => legacy.finish(await legacy.begin('a', 'pa', 'ca')));
+  const [fastState, legacyState] = await Promise.all([ledgerState(fast), ledgerState(legacy)]);
+  expect(Object.keys(fastState).length).toBe(1303);
+  expect(fastState).toEqual(legacyState);
+  // Later edits build on the fast baseline exactly as on the legacy one.
+  for (const f of [fast, legacy]) {
+    await f.write('d1/e1/f1.txt', 'changed\n');
+    const lease = await f.begin('a', 'pb', 'cb');
+    await fs.writeFile(path.join(lease.viewDirectory, 'd2/e2/f2.txt'), 'edited by the call\n');
+    await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'), JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }));
+    await f.runtime.claimLease({ directory: f.directory, token: lease.token, kind: 'process' }).catch(() => {});
+    const result = await f.finish(lease);
+    expect(result.files).toEqual([{ path: 'd2/e2/f2.txt', status: 'modified' }]);
+  }
+  expect(await ledgerState(fast)).toEqual(await ledgerState(legacy));
+}, 600_000);
+
+bunTest('a writer committing between first-build batches is re-read, not overwritten by carried state', async () => {
+  const f = await fixture(); await manyFiles(f, 1300);
+  const open = fs.open.bind(fs);
+  let triggered = null;
+  const probe = spyOn(fs, 'open').mockImplementation(async (file, ...rest) => {
+    // Well after the first 1024-row batch has committed, another writer lands.
+    if (!triggered && String(file).endsWith(`${path.sep}f1250.txt`)) {
+      triggered = f.runtime.registerPrompt({ directory: f.directory, sessionID: 'other', userMessageID: 'up' });
+      await triggered;
+    }
+    return open(file, ...rest);
+  });
+  try { await f.finish(await f.begin('a', 'pa', 'ca')); }
+  finally { probe.mockRestore(); }
+  expect(triggered).not.toBeNull();
+  const state = await ledgerState(f);
+  expect(Object.keys(state).length).toBe(1303);
+  expect(state['d0/e0/f0.txt'].text).toBe('line 0\n');
+  expect(state[`d${1252 % 17}/e${1252 % 5}/f1252.txt`].text).toBe('line 1252\n');
+  // The concurrent writer's record survived both install batches.
+  expect((await f.runtime.capturedSessionState({ directory: f.directory, sessionID: 'other' })).captured).toBe(true);
+}, 600_000);
+
+test('warm builds a missing ledger once, skips non-repositories, and a real call reuses it', async () => {
+  const f = await fixture(); await manyFiles(f, 40);
+  const plain = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-plain-')); roots.push(plain);
+  expect(await f.runtime.warm({ directory: plain })).toEqual({ skipped: 'not-git' });
+  expect(await f.runtime.warm({ directory: f.directory, maxFiles: 1 })).toEqual({ skipped: 'too-large' });
+  const built = await f.runtime.warm({ directory: f.directory });
+  expect(built).toMatchObject({ built: true });
+  expect(await f.runtime.warm({ directory: f.directory })).toEqual({ skipped: 'already-built' });
+  await f.write('d0/e0/f0.txt', 'external edit after warm\n');
+  const lease = await f.begin('a', 'pa', 'ca');
+  expect(await fs.readFile(path.join(lease.viewDirectory, 'd0/e0/f0.txt'), 'utf8')).toBe('external edit after warm\n');
+  await fs.writeFile(path.join(lease.viewDirectory, 'd1/e1/f1.txt'), 'by the call\n');
+  await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'), JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }));
+  await f.runtime.claimLease({ directory: f.directory, token: lease.token, kind: 'process' });
+  // The external edit made before the call is not attributed to it.
+  expect((await f.finish(lease)).files).toEqual([{ path: 'd1/e1/f1.txt', status: 'modified' }]);
+});
+
+bunTest('a call that starts while a warm build runs joins it and sees a complete view', async () => {
+  const f = await fixture(); await manyFiles(f, 600);
+  const warming = f.runtime.warm({ directory: f.directory });
+  const lease = await f.begin('a', 'pa', 'ca');
+  expect(await fs.readFile(path.join(lease.viewDirectory, 'd4/e4/f599.txt'), 'utf8')).toBe('line 599\n'.repeat(4));
+  expect(await warming).toMatchObject({ built: true });
+  expect(Object.keys(await ledgerState(f)).length).toBe(603);
+}, 600_000);
+
+test('record caching is invisible: edits, reverts and outcomes match with the cache disabled', async () => {
+  const run = async () => {
+    const f = await fixture(); await manyFiles(f, 30);
+    const outcomes = [];
+    for (const [index, file] of ['d0/e0/f0.txt', 'd1/e1/f1.txt', 'd0/e0/f0.txt'].entries()) {
+      const lease = await f.begin('s', `p${index}`, `c${index}`);
+      await fs.writeFile(path.join(lease.viewDirectory, file), `edit ${index}\n`);
+      await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'), JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }));
+      await f.runtime.claimLease({ directory: f.directory, token: lease.token, kind: 'process' });
+      outcomes.push((await f.finish(lease)).files);
+      await f.runtime.cleanupLease({ directory: f.directory, token: lease.token });
+    }
+    await f.revert('s', 'p1');
+    outcomes.push(await f.read('d0/e0/f0.txt'), await f.read('d1/e1/f1.txt'));
+    return { outcomes, state: await ledgerState(f) };
+  };
+  const cached = await run();
+  const uncached = await withEnv({ DEVRYAN_LEDGER_RECORD_CACHE: '0', DEVRYAN_LEDGER_SNAPSHOT_REUSE: '0' }, run);
+  expect(cached).toEqual(uncached);
+});
+
+test('background packing keeps the ledger exact, including while a call runs concurrently', async () => {
+  const f = await fixture({ maintenance: { looseObjects: 5, packs: 2, commits: 1_000, pruneExpiry: 'now' } });
+  await manyFiles(f, 60);
+  const root = path.join(f.storage, changeKey(await fs.realpath(f.directory)));
+  const objects = async () => Object.fromEntries((await git(root, ['--git-dir', path.join(root, 'git'), 'count-objects', '-v'])).toString()
+    .trim().split('\n').map((line) => line.split(': ')).map(([name, value]) => [name, Number(value)]));
+  const call = async (index, file) => {
+    const lease = await f.begin('s', `p${index}`, `c${index}`);
+    await fs.writeFile(path.join(lease.viewDirectory, file), `edit ${index}\n`);
+    await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'), JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }));
+    await f.runtime.claimLease({ directory: f.directory, token: lease.token, kind: 'process' });
+    const result = await f.finish(lease);
+    await f.runtime.cleanupLease({ directory: f.directory, token: lease.token });
+    return result.files;
+  };
+  expect(await call(0, 'd0/e0/f0.txt')).toEqual([{ path: 'd0/e0/f0.txt', status: 'modified' }]);
+  const before = await ledgerState(f);
+  expect((await objects()).count).toBeGreaterThan(5);
+  // First run packs loose objects; a concurrent call must be unaffected.
+  const [, concurrent] = await Promise.all([f.runtime.maintainLedger({ directory: f.directory }), call(1, 'd1/e1/f1.txt')]);
+  expect(concurrent).toEqual([{ path: 'd1/e1/f1.txt', status: 'modified' }]);
+  await f.runtime.maintainLedger({ directory: f.directory });
+  const packed = await objects();
+  expect(packed.packs).toBeGreaterThanOrEqual(1);
+  // Consolidation and prune leave every reachable record readable.
+  expect(await call(2, 'd0/e0/f0.txt')).toEqual([{ path: 'd0/e0/f0.txt', status: 'modified' }]);
+  const after = await ledgerState(f);
+  expect(await f.read('d0/e0/f0.txt')).toBe('edit 2\n');
+  expect(await f.read('d1/e1/f1.txt')).toBe('edit 1\n');
+  expect(after['d0/e0/f0.txt'].revisions).toBe(before['d0/e0/f0.txt'].revisions + 1);
+  expect(Object.keys(after)).toEqual(Object.keys(before));
+  await f.revert('s', 'p2');
+  expect(await f.read('d0/e0/f0.txt')).toBe('edit 0\n');
+}, 600_000);
+
+test('packing can be switched off', async () => {
+  const f = await fixture({ maintenance: { looseObjects: 1, packs: 1, commits: 1 } });
+  await manyFiles(f, 10);
+  await withEnv({ DEVRYAN_LEDGER_PACK: '0' }, async () => {
+    await f.finish(await f.begin('s', 'p', 'c'));
+    expect(await f.runtime.maintainLedger({ directory: f.directory })).toBeNull();
+  });
+  const root = path.join(f.storage, changeKey(await fs.realpath(f.directory)));
+  const stats = (await git(root, ['--git-dir', path.join(root, 'git'), 'count-objects', '-v'])).toString();
+  expect(stats).toMatch(/^packs: 0$/m);
+});
+
+describe('direct receipts for native read-only tools', () => {
+  const digest = 'a'.repeat(64);
+  const scope = (f, call, user = 'pd') => ({ directory: f.directory, sessionID: 's', userMessageID: user, messageID: `${user}-assistant`, callID: call });
+  const outcome = async (f, call, user = 'pd') => (await f.runtime.executionOutcomes({ directory: f.directory, sessionID: 's',
+    calls: [{ messageID: `${user}-assistant`, callID: call }] }))[0].outcome;
+
+  test('admission commits nothing; one finish records a finished, cleaned receipt; retries are idempotent', async () => {
+    const f = await fixture(); await f.write('a.txt', 'a');
+    const { generation } = await f.runtime.admitDirect(scope(f, 'c1'));
+    expect(await outcome(f, 'c1')).toBe('uncertain');
+    const token = randomUUID();
+    const result = await f.runtime.finishDirect({ ...scope(f, 'c1'), token, generation, executionFingerprint: digest });
+    expect(result.files).toEqual([]);
+    expect(await f.runtime.finishDirect({ ...scope(f, 'c1'), token, generation, executionFingerprint: digest })).toEqual(result);
+    await expect(f.runtime.finishDirect({ ...scope(f, 'c1'), token: randomUUID(), generation, executionFingerprint: digest }))
+      .rejects.toMatchObject({ code: 'capture_identity_mismatch' });
+    expect(await outcome(f, 'c1')).toBe('finished');
+    await expect(f.runtime.admitDirect(scope(f, 'c1'))).rejects.toMatchObject({ code: 'execution_already_started' });
+    expect(await f.runtime.pendingCleanup({ directory: f.directory })).toEqual([]);
+    expect((await f.runtime.executionReceipt({ directory: f.directory, token })).files).toEqual([]);
+  });
+
+  test('a revert or cancellation between admission and finish fences the receipt; a crash leaves it uncertain', async () => {
+    const f = await fixture(); await f.write('a.txt', 'before');
+    const lease = await f.begin('s', 'p0', 'c0');
+    await fs.writeFile(path.join(lease.viewDirectory, 'a.txt'), 'after');
+    await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'), JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }));
+    await f.runtime.claimLease({ directory: f.directory, token: lease.token, kind: 'process' });
+    await f.finish(lease);
+    const admitted = await f.runtime.admitDirect(scope(f, 'c1', 'p1'));
+    await f.revert('s', 'p0');
+    await expect(f.runtime.finishDirect({ ...scope(f, 'c1', 'p1'), token: randomUUID(), generation: admitted.generation, executionFingerprint: digest }))
+      .rejects.toMatchObject({ code: 'execution_reverted' });
+    expect(await outcome(f, 'c1', 'p1')).toBe('uncertain');
+
+    const again = await f.runtime.admitDirect(scope(f, 'c2', 'p2'));
+    await f.runtime.cancelUnstartedCall(scope(f, 'c2', 'p2'));
+    await expect(f.runtime.finishDirect({ ...scope(f, 'c2', 'p2'), token: randomUUID(), generation: again.generation, executionFingerprint: digest }))
+      .rejects.toMatchObject({ code: 'execution_cancelled' });
+
+    // Admitted, then the process died before finishing: no record at all.
+    await f.runtime.admitDirect(scope(f, 'c3', 'p3'));
+    const restarted = createSessionMutationRuntime({ directory: f.storage });
+    expect((await restarted.executionOutcomes({ directory: f.directory, sessionID: 's',
+      calls: [{ messageID: 'p3-assistant', callID: 'c3' }] }))[0].outcome).toBe('uncertain');
+  });
 });

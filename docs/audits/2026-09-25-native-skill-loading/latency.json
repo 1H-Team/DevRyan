@@ -1,0 +1,305 @@
+{
+  "version": 1,
+  "at": "2026-09-25T10:24:48.693Z",
+  "platform": "darwin-arm64",
+  "baselineSha256": "d1f46380f028efb9a46bd10c9866231acbab4e31b43afcf1f1ee179868a40882",
+  "candidateSha256": "cdc3cd56ec094f5e1aa3428fade52bc142957303ee7011fbe4a22945a4be9db9",
+  "scope": "Isolated real companions with a loopback model; warm medians exclude each arm’s first call. No live-provider latency claim.",
+  "rows": [
+    {
+      "size": "small",
+      "arm": "baseline",
+      "samples": [
+        {
+          "cold": true,
+          "toolMs": 3132,
+          "totalMs": 5682,
+          "actions": [
+            "begin",
+            "prepare-poll",
+            "claim",
+            "finish"
+          ]
+        },
+        {
+          "cold": false,
+          "toolMs": 2972,
+          "totalMs": 3462,
+          "actions": [
+            "begin",
+            "prepare-poll",
+            "claim",
+            "finish"
+          ]
+        },
+        {
+          "cold": false,
+          "toolMs": 3355,
+          "totalMs": 3812,
+          "actions": [
+            "begin",
+            "prepare-poll",
+            "claim",
+            "finish"
+          ]
+        },
+        {
+          "cold": false,
+          "toolMs": 4508,
+          "totalMs": 5056,
+          "actions": [
+            "begin",
+            "prepare-poll",
+            "claim",
+            "finish"
+          ]
+        },
+        {
+          "cold": false,
+          "toolMs": 3091,
+          "totalMs": 3637,
+          "actions": [
+            "begin",
+            "prepare-poll",
+            "claim",
+            "finish"
+          ]
+        },
+        {
+          "cold": false,
+          "toolMs": 2596,
+          "totalMs": 3069,
+          "actions": [
+            "begin",
+            "prepare-poll",
+            "claim",
+            "finish"
+          ]
+        }
+      ],
+      "warmMedianMs": 3091,
+      "workerObserved": true
+    },
+    {
+      "size": "small",
+      "arm": "candidate",
+      "samples": [
+        {
+          "cold": true,
+          "toolMs": 190,
+          "totalMs": 2105,
+          "actions": [
+            "direct-admit",
+            "direct-finish"
+          ]
+        },
+        {
+          "cold": false,
+          "toolMs": 187,
+          "totalMs": 520,
+          "actions": [
+            "direct-admit",
+            "direct-finish"
+          ]
+        },
+        {
+          "cold": false,
+          "toolMs": 193,
+          "totalMs": 528,
+          "actions": [
+            "direct-admit",
+            "direct-finish"
+          ]
+        },
+        {
+          "cold": false,
+          "toolMs": 244,
+          "totalMs": 627,
+          "actions": [
+            "direct-admit",
+            "direct-finish"
+          ]
+        },
+        {
+          "cold": false,
+          "toolMs": 227,
+          "totalMs": 578,
+          "actions": [
+            "direct-admit",
+            "direct-finish"
+          ]
+        },
+        {
+          "cold": false,
+          "toolMs": 188,
+          "totalMs": 571,
+          "actions": [
+            "direct-admit",
+            "direct-finish"
+          ]
+        }
+      ],
+      "warmMedianMs": 193,
+      "workerObserved": false
+    },
+    {
+      "size": "repository",
+      "arm": "candidate",
+      "samples": [
+        {
+          "cold": true,
+          "toolMs": 263,
+          "totalMs": 2437,
+          "actions": [
+            "direct-admit",
+            "direct-finish"
+          ]
+        },
+        {
+          "cold": false,
+          "toolMs": 185,
+          "totalMs": 579,
+          "actions": [
+            "direct-admit",
+            "direct-finish"
+          ]
+        },
+        {
+          "cold": false,
+          "toolMs": 185,
+          "totalMs": 523,
+          "actions": [
+            "direct-admit",
+            "direct-finish"
+          ]
+        },
+        {
+          "cold": false,
+          "toolMs": 158,
+          "totalMs": 438,
+          "actions": [
+            "direct-admit",
+            "direct-finish"
+          ]
+        },
+        {
+          "cold": false,
+          "toolMs": 163,
+          "totalMs": 462,
+          "actions": [
+            "direct-admit",
+            "direct-finish"
+          ]
+        },
+        {
+          "cold": false,
+          "toolMs": 196,
+          "totalMs": 564,
+          "actions": [
+            "direct-admit",
+            "direct-finish"
+          ]
+        }
+      ],
+      "warmMedianMs": 185,
+      "workerObserved": false
+    },
+    {
+      "size": "repository",
+      "arm": "baseline",
+      "samples": [
+        {
+          "cold": true,
+          "toolMs": 150438,
+          "totalMs": 153283,
+          "actions": [
+            "begin",
+            "prepare-poll",
+            "prepare-poll",
+            "prepare-poll",
+            "prepare-poll",
+            "prepare-poll",
+            "prepare-poll",
+            "prepare-poll",
+            "prepare-poll",
+            "prepare-poll",
+            "prepare-poll",
+            "claim",
+            "finish"
+          ]
+        },
+        {
+          "cold": false,
+          "toolMs": 9258,
+          "totalMs": 10198,
+          "actions": [
+            "begin",
+            "prepare-poll",
+            "claim",
+            "finish"
+          ]
+        },
+        {
+          "cold": false,
+          "toolMs": 8953,
+          "totalMs": 9820,
+          "actions": [
+            "begin",
+            "prepare-poll",
+            "claim",
+            "finish"
+          ]
+        },
+        {
+          "cold": false,
+          "toolMs": 8951,
+          "totalMs": 9837,
+          "actions": [
+            "begin",
+            "prepare-poll",
+            "claim",
+            "finish"
+          ]
+        },
+        {
+          "cold": false,
+          "toolMs": 11795,
+          "totalMs": 12636,
+          "actions": [
+            "begin",
+            "prepare-poll",
+            "claim",
+            "finish"
+          ]
+        },
+        {
+          "cold": false,
+          "toolMs": 8698,
+          "totalMs": 9479,
+          "actions": [
+            "begin",
+            "prepare-poll",
+            "claim",
+            "finish"
+          ]
+        }
+      ],
+      "warmMedianMs": 8953,
+      "workerObserved": true
+    }
+  ],
+  "comparisons": [
+    {
+      "size": "small",
+      "baselineMs": 3091,
+      "candidateMs": 193,
+      "reduction": 0.9375606599805888
+    },
+    {
+      "size": "repository",
+      "baselineMs": 8953,
+      "candidateMs": 185,
+      "reduction": 0.9793365352395845
+    }
+  ]
+}

@@ -49,6 +49,8 @@ const createApp = (overrides = {}) => {
       },
     })),
     removeProviderConfig: vi.fn(() => false),
+    // Never let a route test reach the real Antigravity account files.
+    listAntigravityAccountsPaths: vi.fn(async () => []),
     ensureAnthropicOAuthProviderConfig: vi.fn(() => ({
       changed: false,
       path: '/tmp/user-config.json',
@@ -159,6 +161,7 @@ describe('OpenCode provider routes', () => {
     __resetGitHubCopilotModelDiscoveryCache();
     vi.restoreAllMocks();
     vi.clearAllMocks();
+    authModule.removeProviderAuth.mockImplementation(() => false);
     if (tempDir) {
       rmSync(tempDir, { recursive: true, force: true });
       tempDir = null;
@@ -261,6 +264,49 @@ describe('OpenCode provider routes', () => {
       { providerId: 'antigravity', scope: 'all' },
       true,
     );
+  });
+
+  it('deletes Antigravity accounts stored in runtime overlay directories', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'devryan-antigravity-accounts-'));
+    const accountPaths = ['overlay-a', 'overlay-b'].map((key) => {
+      mkdirSync(join(tempDir, key), { recursive: true });
+      const accountPath = join(tempDir, key, 'antigravity-accounts.json');
+      writeFileSync(accountPath, JSON.stringify({ accounts: [{ email: 'fixture' }] }), 'utf8');
+      return accountPath;
+    });
+    const { app } = createApp({
+      listAntigravityAccountsPaths: vi.fn(async () => [join(tempDir, 'missing.json'), ...accountPaths]),
+    });
+
+    const response = await request(app)
+      .delete('/api/provider/antigravity/auth?scope=all')
+      .expect(200);
+
+    expect(response.body.removedSources.auth).toBe(true);
+    expect(response.body.stillProvidedBy).toEqual([]);
+    expect(accountPaths.map((accountPath) => existsSync(accountPath))).toEqual([false, false]);
+  });
+
+  it('reports every config file and credential env var that still provides a disconnected provider', async () => {
+    const listProviderConfigFiles = vi.fn(() => ['/tmp/home/.config/opencode/opencode.json']);
+    const { app, dependencies } = createApp({
+      listProviderConfigFiles,
+      getProviderEnvironmentSnapshot: () => ({ GEMINI_API_KEY: 'secret-fixture-value' }),
+    });
+
+    const response = await request(app)
+      .delete('/api/provider/google/auth?scope=all')
+      .expect(200);
+
+    expect(listProviderConfigFiles).toHaveBeenCalledWith('google', null);
+    expect(response.body.stillProvidedBy).toEqual(expect.arrayContaining([
+      { type: 'config', path: '/tmp/home/.config/opencode/opencode.json' },
+      { type: 'env', name: 'GEMINI_API_KEY' },
+    ]));
+    expect(JSON.stringify(response.body)).not.toContain('secret-fixture-value');
+    expect(response.body.message).toBe('Provider is still configured elsewhere');
+    // The restart still runs so whatever was removed takes effect.
+    expect(dependencies.markConfigChange).toHaveBeenCalled();
   });
 
   it('requires an explicit directory for project-scoped provider disconnects', async () => {

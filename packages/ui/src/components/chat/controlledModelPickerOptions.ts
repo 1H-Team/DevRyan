@@ -1,4 +1,4 @@
-import { getExecutionProviderId, getModelDisplayName } from '@/lib/providers/antigravity';
+import { getExecutionProviderId, getModelDisplayName } from '@/lib/providers/modelIdentity';
 import { sortProviderTreeForPicker } from '@/lib/providers/sorting';
 import { filterVisibleProviderModelsForPicker } from '@/lib/providers/modelVisibility';
 import { shouldHidePairedFastModel } from '@/lib/providers/variantControls';

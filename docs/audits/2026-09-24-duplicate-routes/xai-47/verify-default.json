@@ -1,0 +1,2903 @@
+{
+  "kind": "release-default-verification",
+  "profile": {
+    "id": "devryan-companion-2.1.0-xai-grok-4.7-medium",
+    "runtimeVersion": "1.18.32",
+    "runtimeHash": "d1f46380f028efb9a46bd10c9866231acbab4e31b43afcf1f1ee179868a40882",
+    "runtimeIdentity": {
+      "kind": "companion-build",
+      "upstreamVersion": "1.18.32",
+      "baseCommit": "545f51d26cc39a907d2867492d498d9607ea5fa4",
+      "patchSha256": "059919cce6c7d77c3db80ff06acc178adf59f8e65293c20ce1857c5777f4710e",
+      "buildInputsSha256": "589475194cfe2ac81d03e47a30fa63d15c0a8b2ca02e5b237dd6db4b31b49266"
+    },
+    "policyVector": {
+      "waitAny": false,
+      "capabilityToolSchema": true
+    },
+    "providerID": "xai",
+    "modelID": "grok-4.7",
+    "variant": "medium",
+    "providerHash": null,
+    "providerScope": "selected-route",
+    "transport": "xai-oauth-responses-v1",
+    "plugins": [
+      {
+        "name": "index.js",
+        "contentHash": "fab88b553785d6b7ae53238c060f0ea3f003dfda2c88667284b5a35ca623488d"
+      },
+      {
+        "name": "devryan-open-cursor.mjs",
+        "contentHash": "75febd08825ee5946200d57d4b710ec6321e2bd7431115fe2dd27e5c736a595e"
+      },
+      {
+        "name": "index.js",
+        "contentHash": "b3a32d1f03047f68e39874725bc9ed40fc42b59a773acdb815e8c9b7b4025aad"
+      },
+      {
+        "name": "index.js",
+        "contentHash": "2a94eedd2be1e77fc2a3e50961d79a9a2695eeeb5866732a13f46948553156b4"
+      },
+      {
+        "name": "devryan-oh-my-opencode-slim.mjs",
+        "contentHash": "7dde3de974347911027abc4d1665cf3007b78013410dd6a94688eee57637023b"
+      },
+      {
+        "name": "devryan-superpowers.mjs",
+        "contentHash": "54e0fc722391a1a2399581c977654627d57ac3aadee6bfb529ee88632221de23"
+      },
+      {
+        "name": "devryan-skill-context.mjs",
+        "contentHash": "99929e135c01749b7e8303b35179240f386e53816b9a35ab57e0d3ad372d551c"
+      },
+      {
+        "name": "devryan-document-reader.mjs",
+        "contentHash": "bef4052f50aa08644dd0c2191ee07d6811c9e0cff57f0090afe9613895cf5de4"
+      },
+      {
+        "name": "devryan-browser.mjs",
+        "contentHash": "f8098613e62d7ea31a680bc63e60b417e688f908a20aa4043fe410a2a5224943"
+      },
+      {
+        "name": "devryan-builder-todo-continuation.mjs",
+        "contentHash": "4f6511bd4206f2e747c3205107cdfbb5b2217a81d988ddc74500d4b22e754748"
+      },
+      {
+        "name": "devryan-file-write-metadata.mjs",
+        "contentHash": "83e76ea73e6c42257ddf4c2aa48f2b5a512e64b9cc7afa7772fb14ddbe816988"
+      },
+      {
+        "name": "devryan-harness-context.mjs",
+        "contentHash": "c97893cda4f61c7fdc1f0cad44dd2484c87215fad2d06b38f1855e263d41f9c7"
+      },
+      {
+        "name": "devryan-managed-orchestration.mjs",
+        "contentHash": "519979b9436a3df4a4ffcee3cd549f3b101f6cf42259fc061170db0e449e3f10"
+      },
+      {
+        "name": "devryan-openai-oauth.mjs",
+        "contentHash": "d57482f361d6f70c35c1e359573fe4810a5a3778c8f1e2e7c67c9bfe954eb739"
+      },
+      {
+        "name": "devryan-primary-recovery.mjs",
+        "contentHash": "68555821e2c5cd52155173e3e1ffb3ca796f05e7779d11efb6a03f6168c9b4d5"
+      },
+      {
+        "name": "devryan-session-changes.mjs",
+        "contentHash": "170dd8989e594ead72d4f4b13b7255bf8de3acf292e557d081f18c1e5156c4a8"
+      },
+      {
+        "name": "devryan-tool-input-guard.mjs",
+        "contentHash": "e485d28adb37b4052df0c3ea3c1556cbaab712690f15da86204ba8e1a1043ebb"
+      },
+      {
+        "name": "github-copilot-models.mjs",
+        "contentHash": "61270a274af4d13024a6014795ab57dc579b30fba508e706b692cbdf8f4750c4"
+      },
+      {
+        "name": "openai-gpt-5-6-models.mjs",
+        "contentHash": "0b918d8333abdf55e6feb42ddd03b538612d8e4af7ca672b33ca0940b5991dc9"
+      },
+      {
+        "name": "openai-tool-schema-sanitizer.mjs",
+        "contentHash": "e824ed4220bc0a26fda7eda34d52248a5320ef48fb866a60621c6db6b63d17ac"
+      },
+      {
+        "name": "council-session.js",
+        "contentHash": "e1ee08ab6945db37f7a4870d9a61406eddf360d43f4b308454e0791226f31bf6"
+      }
+    ]
+  },
+  "wireRoute": {
+    "provider": "xai",
+    "host": "api.x.ai",
+    "path": "/v1/responses",
+    "transport": "responses",
+    "auth": "oauth",
+    "transportIdentity": "xai-oauth-responses-v1"
+  },
+  "pairs": [
+    {
+      "index": 0,
+      "kind": "skill",
+      "baseline": {
+        "fixtureHash": "6f256716008448b554d346b4d0ea578410f5763fcab53fd6ef5f55a6655c80a7",
+        "environmentHash": "51220f4c23d7a1e851738b16c24b7f60e0e3485427b42723f85e389eee80862d",
+        "configurationHash": "77a163e24adce39b9ee2420a507c312c618557aa9e8daadcb6765f8bf3714d82",
+        "duplicateOutputs": false,
+        "executionMode": "live",
+        "completed": true,
+        "factsIntact": true,
+        "criticalFailures": 0,
+        "repeatedMutations": 0,
+        "sameKeyRepeatCalls": 0,
+        "eligibleCalls": 4,
+        "generatedToolCalls": 0,
+        "replyHash": "4c07da8fefe68fefa9022ee9faf73ffbc831e448e8ae0a542f7592489c3f4dbb",
+        "expectedHash": "ac3a4ea2957d2c0cfcb1dc8891bc22e5f19348f80e39bda7bd0b84a68049d3cb",
+        "cleanupComplete": true,
+        "appliedReductions": 0,
+        "canonicalUnchanged": true,
+        "validWire": true,
+        "sessionID": "ses_f2bd41d35ffeZKj97uekOytV4p",
+        "requestCount": 1,
+        "serializedBytes": [
+          87631
+        ],
+        "compactionFrequency": 0,
+        "reportHash": "5167be537295604cd7691cd94e67db0ff6b5f71ee785e2adbbdc6a2a2907db5f"
+      },
+      "candidate": {
+        "fixtureHash": "6f256716008448b554d346b4d0ea578410f5763fcab53fd6ef5f55a6655c80a7",
+        "environmentHash": "51220f4c23d7a1e851738b16c24b7f60e0e3485427b42723f85e389eee80862d",
+        "configurationHash": "77a163e24adce39b9ee2420a507c312c618557aa9e8daadcb6765f8bf3714d82",
+        "duplicateOutputs": true,
+        "executionMode": "live",
+        "completed": true,
+        "factsIntact": true,
+        "criticalFailures": 0,
+        "repeatedMutations": 0,
+        "sameKeyRepeatCalls": 0,
+        "eligibleCalls": 4,
+        "generatedToolCalls": 0,
+        "replyHash": "4c07da8fefe68fefa9022ee9faf73ffbc831e448e8ae0a542f7592489c3f4dbb",
+        "expectedHash": "ac3a4ea2957d2c0cfcb1dc8891bc22e5f19348f80e39bda7bd0b84a68049d3cb",
+        "cleanupComplete": true,
+        "appliedReductions": 2,
+        "canonicalUnchanged": true,
+        "validWire": true,
+        "sessionID": "ses_f2bd2ffb3ffedJQuLQTXla7a8n",
+        "requestCount": 1,
+        "serializedBytes": [
+          63985
+        ],
+        "compactionFrequency": 0,
+        "reportHash": "08668f60cf08505618595f4f0373a27d1a0dfbc4a39c1f35821d109fb80779c5"
+      }
+    },
+    {
+      "index": 5,
+      "kind": "managed",
+      "baseline": {
+        "fixtureHash": "8efc669af96beb8dffa620ee96b65770e1ea9124ea2d6e5bc6998c3630f00593",
+        "environmentHash": "51220f4c23d7a1e851738b16c24b7f60e0e3485427b42723f85e389eee80862d",
+        "configurationHash": "77a163e24adce39b9ee2420a507c312c618557aa9e8daadcb6765f8bf3714d82",
+        "duplicateOutputs": false,
+        "executionMode": "live",
+        "completed": true,
+        "factsIntact": true,
+        "criticalFailures": 0,
+        "repeatedMutations": 0,
+        "sameKeyRepeatCalls": 0,
+        "eligibleCalls": 4,
+        "generatedToolCalls": 0,
+        "replyHash": "f1477fa02e6dea1e855d9097e87de1c06b5ec6bd83e6d9363b5e13f75d3a6315",
+        "expectedHash": "27b27ec4993ccff35fbd3f40b1d125a8549a2fb05e7b94666d703ddd964c489d",
+        "cleanupComplete": true,
+        "appliedReductions": 0,
+        "canonicalUnchanged": true,
+        "validWire": true,
+        "sessionID": "ses_f2bd3b840ffeY5QqDmE0dxbwE5",
+        "requestCount": 1,
+        "serializedBytes": [
+          93727
+        ],
+        "compactionFrequency": 0,
+        "reportHash": "4380e0af22902d6a579886e97160ff9423ce05bf9a11cec8d11d183ae9c646cf"
+      },
+      "candidate": {
+        "fixtureHash": "8efc669af96beb8dffa620ee96b65770e1ea9124ea2d6e5bc6998c3630f00593",
+        "environmentHash": "51220f4c23d7a1e851738b16c24b7f60e0e3485427b42723f85e389eee80862d",
+        "configurationHash": "77a163e24adce39b9ee2420a507c312c618557aa9e8daadcb6765f8bf3714d82",
+        "duplicateOutputs": true,
+        "executionMode": "live",
+        "completed": true,
+        "factsIntact": true,
+        "criticalFailures": 0,
+        "repeatedMutations": 0,
+        "sameKeyRepeatCalls": 0,
+        "eligibleCalls": 4,
+        "generatedToolCalls": 0,
+        "replyHash": "f1477fa02e6dea1e855d9097e87de1c06b5ec6bd83e6d9363b5e13f75d3a6315",
+        "expectedHash": "27b27ec4993ccff35fbd3f40b1d125a8549a2fb05e7b94666d703ddd964c489d",
+        "cleanupComplete": true,
+        "appliedReductions": 2,
+        "canonicalUnchanged": true,
+        "validWire": true,
+        "sessionID": "ses_f2bd27e91ffeKiTE94vDGjOekC",
+        "requestCount": 1,
+        "serializedBytes": [
+          67491
+        ],
+        "compactionFrequency": 0,
+        "reportHash": "5fb1f0ffc7d54b44dedd5b926bd52f113a1dfd07fec24bb50f58721814bb593f"
+      }
+    }
+  ],
+  "sizes": [
+    {
+      "index": 0,
+      "baseline": 87631,
+      "candidate": 63985
+    },
+    {
+      "index": 5,
+      "baseline": 93727,
+      "candidate": 67491
+    }
+  ],
+  "nonIncreasingRequests": true,
+  "behavior": {
+    "factor": "duplicateOutputs",
+    "kind": "behavior-smoke",
+    "qualified": false,
+    "completedPairs": 2,
+    "counts": {
+      "skill": 1,
+      "managed": 1
+    },
+    "sameKeyRepeatRate": {
+      "baseline": 0,
+      "candidate": 0
+    },
+    "reasons": [
+      "ten-matched-pairs-required"
+    ],
+    "statisticalReliabilityClaim": false
+  },
+  "cleanups": [
+    {
+      "arm": "baseline",
+      "source": "retained-os-process-ancestry-and-start-identities",
+      "rootPid": 92211,
+      "rootObserved": true,
+      "observationIntervalMs": 500,
+      "observationErrors": [],
+      "observedProcesses": [
+        {
+          "pid": 92211,
+          "parentPid": 92194,
+          "startIdentity": "Thu Sep 24 20:07:12 2026"
+        },
+        {
+          "pid": 92257,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:13 2026"
+        },
+        {
+          "pid": 92296,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:14 2026"
+        },
+        {
+          "pid": 92297,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:14 2026"
+        },
+        {
+          "pid": 92357,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:15 2026"
+        },
+        {
+          "pid": 92376,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:16 2026"
+        },
+        {
+          "pid": 92397,
+          "parentPid": 92376,
+          "startIdentity": "Thu Sep 24 20:07:16 2026"
+        },
+        {
+          "pid": 92400,
+          "parentPid": 92376,
+          "startIdentity": "Thu Sep 24 20:07:16 2026"
+        },
+        {
+          "pid": 92409,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:16 2026"
+        },
+        {
+          "pid": 92546,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:17 2026"
+        },
+        {
+          "pid": 92556,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:17 2026"
+        },
+        {
+          "pid": 92631,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:18 2026"
+        },
+        {
+          "pid": 92632,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:18 2026"
+        },
+        {
+          "pid": 92639,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:18 2026"
+        },
+        {
+          "pid": 92709,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:20 2026"
+        },
+        {
+          "pid": 92740,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:21 2026"
+        },
+        {
+          "pid": 92767,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:21 2026"
+        },
+        {
+          "pid": 92827,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:21 2026"
+        },
+        {
+          "pid": 92828,
+          "parentPid": 92827,
+          "startIdentity": "Thu Sep 24 20:07:21 2026"
+        },
+        {
+          "pid": 92956,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:22 2026"
+        },
+        {
+          "pid": 93056,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:23 2026"
+        },
+        {
+          "pid": 93111,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:23 2026"
+        },
+        {
+          "pid": 93112,
+          "parentPid": 93111,
+          "startIdentity": "Thu Sep 24 20:07:23 2026"
+        },
+        {
+          "pid": 93298,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:24 2026"
+        },
+        {
+          "pid": 93416,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:25 2026"
+        },
+        {
+          "pid": 93472,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:25 2026"
+        },
+        {
+          "pid": 93483,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:26 2026"
+        },
+        {
+          "pid": 93484,
+          "parentPid": 93483,
+          "startIdentity": "Thu Sep 24 20:07:26 2026"
+        },
+        {
+          "pid": 93619,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:26 2026"
+        },
+        {
+          "pid": 93732,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:27 2026"
+        },
+        {
+          "pid": 93733,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:27 2026"
+        },
+        {
+          "pid": 93787,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:27 2026"
+        },
+        {
+          "pid": 93789,
+          "parentPid": 93787,
+          "startIdentity": "Thu Sep 24 20:07:27 2026"
+        },
+        {
+          "pid": 93947,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:28 2026"
+        },
+        {
+          "pid": 94041,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:29 2026"
+        },
+        {
+          "pid": 94103,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:29 2026"
+        },
+        {
+          "pid": 94104,
+          "parentPid": 94103,
+          "startIdentity": "Thu Sep 24 20:07:29 2026"
+        },
+        {
+          "pid": 94358,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:31 2026"
+        },
+        {
+          "pid": 94436,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:31 2026"
+        },
+        {
+          "pid": 94437,
+          "parentPid": 94436,
+          "startIdentity": "Thu Sep 24 20:07:31 2026"
+        },
+        {
+          "pid": 94476,
+          "parentPid": 94437,
+          "startIdentity": "Thu Sep 24 20:07:32 2026"
+        },
+        {
+          "pid": 94582,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:32 2026"
+        },
+        {
+          "pid": 94687,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:33 2026"
+        },
+        {
+          "pid": 94698,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:33 2026"
+        },
+        {
+          "pid": 94810,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:33 2026"
+        },
+        {
+          "pid": 94811,
+          "parentPid": 94810,
+          "startIdentity": "Thu Sep 24 20:07:33 2026"
+        },
+        {
+          "pid": 94838,
+          "parentPid": 94811,
+          "startIdentity": "Thu Sep 24 20:07:34 2026"
+        },
+        {
+          "pid": 95044,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:35 2026"
+        },
+        {
+          "pid": 95121,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:35 2026"
+        },
+        {
+          "pid": 95122,
+          "parentPid": 95121,
+          "startIdentity": "Thu Sep 24 20:07:35 2026"
+        },
+        {
+          "pid": 95282,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:37 2026"
+        },
+        {
+          "pid": 95392,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:37 2026"
+        },
+        {
+          "pid": 95476,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:37 2026"
+        },
+        {
+          "pid": 95478,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:38 2026"
+        },
+        {
+          "pid": 95503,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:38 2026"
+        },
+        {
+          "pid": 95504,
+          "parentPid": 95503,
+          "startIdentity": "Thu Sep 24 20:07:38 2026"
+        },
+        {
+          "pid": 95611,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:39 2026"
+        },
+        {
+          "pid": 95708,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:39 2026"
+        },
+        {
+          "pid": 96352,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:47 2026"
+        },
+        {
+          "pid": 96353,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:47 2026"
+        },
+        {
+          "pid": 96354,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:47 2026"
+        },
+        {
+          "pid": 96355,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:47 2026"
+        },
+        {
+          "pid": 96491,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:47 2026"
+        },
+        {
+          "pid": 96493,
+          "parentPid": 96491,
+          "startIdentity": "Thu Sep 24 20:07:47 2026"
+        },
+        {
+          "pid": 96588,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:48 2026"
+        },
+        {
+          "pid": 96704,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:49 2026"
+        },
+        {
+          "pid": 96770,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:49 2026"
+        },
+        {
+          "pid": 96810,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:49 2026"
+        },
+        {
+          "pid": 96811,
+          "parentPid": 96810,
+          "startIdentity": "Thu Sep 24 20:07:49 2026"
+        },
+        {
+          "pid": 96927,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:50 2026"
+        },
+        {
+          "pid": 97030,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:51 2026"
+        },
+        {
+          "pid": 97096,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:51 2026"
+        },
+        {
+          "pid": 97114,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:51 2026"
+        },
+        {
+          "pid": 97115,
+          "parentPid": 97114,
+          "startIdentity": "Thu Sep 24 20:07:51 2026"
+        },
+        {
+          "pid": 97354,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:53 2026"
+        },
+        {
+          "pid": 97427,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:53 2026"
+        },
+        {
+          "pid": 97428,
+          "parentPid": 97427,
+          "startIdentity": "Thu Sep 24 20:07:53 2026"
+        },
+        {
+          "pid": 97604,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:54 2026"
+        },
+        {
+          "pid": 97675,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:55 2026"
+        },
+        {
+          "pid": 97739,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:55 2026"
+        },
+        {
+          "pid": 97740,
+          "parentPid": 97739,
+          "startIdentity": "Thu Sep 24 20:07:55 2026"
+        },
+        {
+          "pid": 97817,
+          "parentPid": 97740,
+          "startIdentity": "Thu Sep 24 20:07:56 2026"
+        },
+        {
+          "pid": 97929,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:56 2026"
+        },
+        {
+          "pid": 97992,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:57 2026"
+        },
+        {
+          "pid": 98057,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:57 2026"
+        },
+        {
+          "pid": 98058,
+          "parentPid": 98057,
+          "startIdentity": "Thu Sep 24 20:07:57 2026"
+        },
+        {
+          "pid": 98156,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:58 2026"
+        },
+        {
+          "pid": 98317,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:07:59 2026"
+        },
+        {
+          "pid": 98373,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:07:59 2026"
+        },
+        {
+          "pid": 98375,
+          "parentPid": 98373,
+          "startIdentity": "Thu Sep 24 20:07:59 2026"
+        },
+        {
+          "pid": 98479,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:08:00 2026"
+        },
+        {
+          "pid": 98583,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:08:00 2026"
+        },
+        {
+          "pid": 98648,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:08:01 2026"
+        },
+        {
+          "pid": 98682,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:08:01 2026"
+        },
+        {
+          "pid": 98684,
+          "parentPid": 98682,
+          "startIdentity": "Thu Sep 24 20:08:01 2026"
+        },
+        {
+          "pid": 98816,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:08:02 2026"
+        },
+        {
+          "pid": 98919,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:08:02 2026"
+        },
+        {
+          "pid": 98986,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:08:03 2026"
+        },
+        {
+          "pid": 99043,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:08:03 2026"
+        },
+        {
+          "pid": 99045,
+          "parentPid": 99043,
+          "startIdentity": "Thu Sep 24 20:08:03 2026"
+        },
+        {
+          "pid": 99173,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:08:04 2026"
+        },
+        {
+          "pid": 99255,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:08:04 2026"
+        },
+        {
+          "pid": 99722,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:08:13 2026"
+        },
+        {
+          "pid": 99723,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:08:13 2026"
+        },
+        {
+          "pid": 99724,
+          "parentPid": 92211,
+          "startIdentity": "Thu Sep 24 20:08:13 2026"
+        },
+        {
+          "pid": 99729,
+          "parentPid": 92296,
+          "startIdentity": "Thu Sep 24 20:08:13 2026"
+        }
+      ],
+      "remainingProcessIds": [],
+      "signals": [],
+      "trackingClosed": true
+    },
+    {
+      "arm": "candidate",
+      "source": "retained-os-process-ancestry-and-start-identities",
+      "rootPid": 411,
+      "rootObserved": true,
+      "observationIntervalMs": 500,
+      "observationErrors": [],
+      "observedProcesses": [
+        {
+          "pid": 411,
+          "parentPid": 92194,
+          "startIdentity": "Thu Sep 24 20:08:26 2026"
+        },
+        {
+          "pid": 444,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:26 2026"
+        },
+        {
+          "pid": 520,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:27 2026"
+        },
+        {
+          "pid": 521,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:27 2026"
+        },
+        {
+          "pid": 614,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:08:28 2026"
+        },
+        {
+          "pid": 643,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:08:29 2026"
+        },
+        {
+          "pid": 689,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:29 2026"
+        },
+        {
+          "pid": 735,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:30 2026"
+        },
+        {
+          "pid": 876,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:08:31 2026"
+        },
+        {
+          "pid": 878,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:08:31 2026"
+        },
+        {
+          "pid": 881,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:08:31 2026"
+        },
+        {
+          "pid": 1295,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:34 2026"
+        },
+        {
+          "pid": 1296,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:34 2026"
+        },
+        {
+          "pid": 1309,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:34 2026"
+        },
+        {
+          "pid": 1410,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:34 2026"
+        },
+        {
+          "pid": 1411,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:34 2026"
+        },
+        {
+          "pid": 1471,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:08:34 2026"
+        },
+        {
+          "pid": 1472,
+          "parentPid": 1471,
+          "startIdentity": "Thu Sep 24 20:08:34 2026"
+        },
+        {
+          "pid": 1567,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:35 2026"
+        },
+        {
+          "pid": 1632,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:36 2026"
+        },
+        {
+          "pid": 1741,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:36 2026"
+        },
+        {
+          "pid": 1788,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:08:36 2026"
+        },
+        {
+          "pid": 1789,
+          "parentPid": 1788,
+          "startIdentity": "Thu Sep 24 20:08:36 2026"
+        },
+        {
+          "pid": 2075,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:38 2026"
+        },
+        {
+          "pid": 2116,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:08:38 2026"
+        },
+        {
+          "pid": 2118,
+          "parentPid": 2116,
+          "startIdentity": "Thu Sep 24 20:08:38 2026"
+        },
+        {
+          "pid": 2208,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:39 2026"
+        },
+        {
+          "pid": 2293,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:40 2026"
+        },
+        {
+          "pid": 2407,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:40 2026"
+        },
+        {
+          "pid": 2447,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:08:40 2026"
+        },
+        {
+          "pid": 2448,
+          "parentPid": 2447,
+          "startIdentity": "Thu Sep 24 20:08:40 2026"
+        },
+        {
+          "pid": 2541,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:41 2026"
+        },
+        {
+          "pid": 2755,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:42 2026"
+        },
+        {
+          "pid": 2767,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:08:42 2026"
+        },
+        {
+          "pid": 2768,
+          "parentPid": 2767,
+          "startIdentity": "Thu Sep 24 20:08:42 2026"
+        },
+        {
+          "pid": 2820,
+          "parentPid": 2768,
+          "startIdentity": "Thu Sep 24 20:08:43 2026"
+        },
+        {
+          "pid": 2871,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:43 2026"
+        },
+        {
+          "pid": 2979,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:44 2026"
+        },
+        {
+          "pid": 3075,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:08:44 2026"
+        },
+        {
+          "pid": 3076,
+          "parentPid": 3075,
+          "startIdentity": "Thu Sep 24 20:08:44 2026"
+        },
+        {
+          "pid": 3230,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:45 2026"
+        },
+        {
+          "pid": 3348,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:46 2026"
+        },
+        {
+          "pid": 3434,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:08:46 2026"
+        },
+        {
+          "pid": 3435,
+          "parentPid": 3434,
+          "startIdentity": "Thu Sep 24 20:08:46 2026"
+        },
+        {
+          "pid": 3575,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:47 2026"
+        },
+        {
+          "pid": 3683,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:48 2026"
+        },
+        {
+          "pid": 3760,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:08:48 2026"
+        },
+        {
+          "pid": 3761,
+          "parentPid": 3760,
+          "startIdentity": "Thu Sep 24 20:08:48 2026"
+        },
+        {
+          "pid": 3883,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:49 2026"
+        },
+        {
+          "pid": 3948,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:08:50 2026"
+        },
+        {
+          "pid": 4000,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:08:50 2026"
+        },
+        {
+          "pid": 4001,
+          "parentPid": 4000,
+          "startIdentity": "Thu Sep 24 20:08:50 2026"
+        },
+        {
+          "pid": 4203,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:08:52 2026"
+        },
+        {
+          "pid": 5744,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:07 2026"
+        },
+        {
+          "pid": 5798,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:09:07 2026"
+        },
+        {
+          "pid": 5799,
+          "parentPid": 5798,
+          "startIdentity": "Thu Sep 24 20:09:07 2026"
+        },
+        {
+          "pid": 5877,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:08 2026"
+        },
+        {
+          "pid": 5956,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:09 2026"
+        },
+        {
+          "pid": 6071,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:09 2026"
+        },
+        {
+          "pid": 6133,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:09:10 2026"
+        },
+        {
+          "pid": 6134,
+          "parentPid": 6133,
+          "startIdentity": "Thu Sep 24 20:09:10 2026"
+        },
+        {
+          "pid": 6220,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:10 2026"
+        },
+        {
+          "pid": 6292,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:11 2026"
+        },
+        {
+          "pid": 6293,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:11 2026"
+        },
+        {
+          "pid": 6406,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:11 2026"
+        },
+        {
+          "pid": 6454,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:09:11 2026"
+        },
+        {
+          "pid": 6456,
+          "parentPid": 6454,
+          "startIdentity": "Thu Sep 24 20:09:11 2026"
+        },
+        {
+          "pid": 6598,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:13 2026"
+        },
+        {
+          "pid": 6666,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:09:13 2026"
+        },
+        {
+          "pid": 6667,
+          "parentPid": 6666,
+          "startIdentity": "Thu Sep 24 20:09:13 2026"
+        },
+        {
+          "pid": 6750,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:14 2026"
+        },
+        {
+          "pid": 6855,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:15 2026"
+        },
+        {
+          "pid": 6856,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:15 2026"
+        },
+        {
+          "pid": 6889,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:09:15 2026"
+        },
+        {
+          "pid": 6890,
+          "parentPid": 6889,
+          "startIdentity": "Thu Sep 24 20:09:15 2026"
+        },
+        {
+          "pid": 6927,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:16 2026"
+        },
+        {
+          "pid": 6993,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:16 2026"
+        },
+        {
+          "pid": 7059,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:17 2026"
+        },
+        {
+          "pid": 7114,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:09:17 2026"
+        },
+        {
+          "pid": 7116,
+          "parentPid": 7114,
+          "startIdentity": "Thu Sep 24 20:09:17 2026"
+        },
+        {
+          "pid": 7206,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:18 2026"
+        },
+        {
+          "pid": 7265,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:18 2026"
+        },
+        {
+          "pid": 7321,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:09:19 2026"
+        },
+        {
+          "pid": 7322,
+          "parentPid": 7321,
+          "startIdentity": "Thu Sep 24 20:09:19 2026"
+        },
+        {
+          "pid": 7417,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:20 2026"
+        },
+        {
+          "pid": 7483,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:20 2026"
+        },
+        {
+          "pid": 7512,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:09:21 2026"
+        },
+        {
+          "pid": 7513,
+          "parentPid": 7512,
+          "startIdentity": "Thu Sep 24 20:09:21 2026"
+        },
+        {
+          "pid": 7564,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:21 2026"
+        },
+        {
+          "pid": 7633,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:22 2026"
+        },
+        {
+          "pid": 7714,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:22 2026"
+        },
+        {
+          "pid": 7726,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:09:22 2026"
+        },
+        {
+          "pid": 7727,
+          "parentPid": 7726,
+          "startIdentity": "Thu Sep 24 20:09:22 2026"
+        },
+        {
+          "pid": 7788,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:23 2026"
+        },
+        {
+          "pid": 7864,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:24 2026"
+        },
+        {
+          "pid": 8105,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:09:30 2026"
+        },
+        {
+          "pid": 8132,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:09:31 2026"
+        },
+        {
+          "pid": 8133,
+          "parentPid": 520,
+          "startIdentity": "Thu Sep 24 20:09:31 2026"
+        },
+        {
+          "pid": 8134,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:31 2026"
+        },
+        {
+          "pid": 8135,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:31 2026"
+        },
+        {
+          "pid": 8166,
+          "parentPid": 411,
+          "startIdentity": "Thu Sep 24 20:09:31 2026"
+        }
+      ],
+      "remainingProcessIds": [],
+      "signals": [],
+      "trackingClosed": true
+    }
+  ],
+  "failures": [],
+  "wireFailures": [],
+  "metadataRequests": [
+    {
+      "route": "model-catalog",
+      "statusCode": 200
+    },
+    {
+      "route": "zen-model-catalog",
+      "statusCode": 200
+    },
+    {
+      "route": "antigravity-version",
+      "statusCode": 200
+    },
+    {
+      "route": "model-catalog",
+      "statusCode": 200
+    },
+    {
+      "route": "zen-model-catalog",
+      "statusCode": 200
+    },
+    {
+      "route": "antigravity-version",
+      "statusCode": 200
+    }
+  ],
+  "wire": [
+    {
+      "arm": "baseline",
+      "index": null,
+      "phase": "warmup",
+      "requestIndex": 1,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "4b1e03b0f17398e22b4ac20fe6bce2aba2752b6c0f80383c228b4bdaff4d27b3",
+        "bytes": 35508,
+        "model": "grok-4.7",
+        "instructions": [
+          "5c62febfbf39025b979affd81ab90a78ca8ed3b66265754756d384244eff90b5"
+        ],
+        "tools": [
+          "0d292a133a6da50e8086fe0644ce1d36f2a47bbba131cc818d794bdc83d1bd00",
+          "065b650a23a67410e93c3a50008f30b2267efa68ba3ef942af0e30e9fa204a39",
+          "bbf94dbef3365185705e7714daef753501789ce8222cb3f5349a450cd89c080d",
+          "1b3dc477874be3ba42cb09cd02e268a3bc5648329385ac8bc6e0ced559d2183e",
+          "56b0d4137baeb335c9338bebbfc26326c90b3668aa087af078bb21cc6b519d67",
+          "709ae871e068b6930ca04085257a6e49766b8ea828f8499a6f0aa9d05e6d6d8a",
+          "21bf6317ba034f0d1f3bae6dd343e34d1bf537716936217a9a885234323e0374",
+          "8b86d2fd329e33535a07195a2c6bbef9b3daa6fc3bfd0c6895d7f26df8270934",
+          "7cd5f3cf85fb9db2047076eb5f2115b0f66a084e23532ce6ffe817e02e1ca086",
+          "ee5b0660a9edd3b508b883b9ffe4f2e5f7939a7e8487eaea30cfedfe893a4eb0",
+          "84a971cc0e3a6e599fae7e2b35f39416728e84fdcb5bdcb0398eb88e9362dd4f",
+          "cd3c80a6f84e1d6bd490e9ac43c00a3bd6566b72eb277e5e2bd2e08540230bfa",
+          "6d22c0e4dfa8c16ebcf271218ea48ba3d75ebd5da4ae22e97166ded7de60be6a",
+          "cc90621c7fd380b7fc40ac33ae572a0e0105673d3417d49de84b314178770877",
+          "6b98bf00e5f87470e80e874ed737bb4f5684e6335f106a6fffa5e6cfebd89522",
+          "72b6944b745521d4fbe7a94cf0a8d0c810332f3510c6a616e06bf7cdaf077507",
+          "047b24684c98025c32b9f5c41ec64eacd9433ed1d56c1462046ded6c4534c5b8",
+          "fccf7ca29ea3994bd73e62a7127f893ee7dc306a162e0aea5a51a27455f1ab1d",
+          "bc801ebeba3a1925806db02ea0e255fad0c5e36b5acd21972267b43ebe01b50e",
+          "d29fffb54e7884c0c48cf0f5e6955c01adfa8035e531f8fee46f09550c9e8d6e"
+        ],
+        "history": [
+          "5c62febfbf39025b979affd81ab90a78ca8ed3b66265754756d384244eff90b5",
+          "554df14a516c0bcf042caaeebaf32447433e0485e65377dd275f0f44b22c3791"
+        ],
+        "cacheParametersHash": "6868270a12987be1db809510b057c76bf1d1e987b59a1318917f7c97652bf248",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "228381fb575108d6306b745bb6c0834e0cca3f9b142cfdddb7a7ef9f8d94feb7",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-1",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "4d71a8ab-15bf-9488-a851-48ba51786f0f",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.7",
+        "responseModel": "grok-4.7",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266040890,
+        "tokens": {
+          "totalInput": 9372,
+          "uncachedInput": null,
+          "cacheRead": 1152,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 1,
+          "reasoning": 23,
+          "totalOutput": 24
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.0058344,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266039958,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266040693,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266040890,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266040655
+    },
+    {
+      "arm": "baseline",
+      "index": null,
+      "phase": "warmup",
+      "requestIndex": 2,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "db86ee79b734f9a6f3d29d4c88c97611dc98789526fe4310ec45cb9d5818e5af",
+        "bytes": 2517,
+        "model": "grok-4.7",
+        "instructions": [
+          "9c7483c5ae7347dba02487bcd5afb2f980679f451c25b39ecbd0c6b51532abd2"
+        ],
+        "tools": [],
+        "history": [
+          "9c7483c5ae7347dba02487bcd5afb2f980679f451c25b39ecbd0c6b51532abd2",
+          "17821927c0ebc0fcc040fbb01ebc966e293c4289119de0bbbf755f25b82b3e9f"
+        ],
+        "cacheParametersHash": "9d3544d7dd203328068374d2886899f716de0ac6a5e797394d01b7252377205b",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "a02c5b8d630848d1bdc42647fef57025a918c413c78f270ce27b5e307c8a0067",
+        "reasoningEffort": null,
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-2",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "a0361c36-1cac-9664-b857-f2eb83621ccc",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.7",
+        "responseModel": "grok-4.7",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266053443,
+        "tokens": {
+          "totalInput": 1756,
+          "uncachedInput": null,
+          "cacheRead": 1664,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 4,
+          "reasoning": 976,
+          "totalOutput": 980
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.00234464,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266039934,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266040348,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266053443,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266040340
+    },
+    {
+      "arm": "baseline",
+      "index": 0,
+      "phase": "continuity",
+      "requestIndex": 3,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "4008279617645c77a505e229b103d0362ff20cc6d808c32e68323cefa94f29f4",
+        "bytes": 87631,
+        "model": "grok-4.7",
+        "instructions": [
+          "5c62febfbf39025b979affd81ab90a78ca8ed3b66265754756d384244eff90b5"
+        ],
+        "tools": [
+          "0d292a133a6da50e8086fe0644ce1d36f2a47bbba131cc818d794bdc83d1bd00",
+          "065b650a23a67410e93c3a50008f30b2267efa68ba3ef942af0e30e9fa204a39",
+          "bbf94dbef3365185705e7714daef753501789ce8222cb3f5349a450cd89c080d",
+          "1b3dc477874be3ba42cb09cd02e268a3bc5648329385ac8bc6e0ced559d2183e",
+          "56b0d4137baeb335c9338bebbfc26326c90b3668aa087af078bb21cc6b519d67",
+          "709ae871e068b6930ca04085257a6e49766b8ea828f8499a6f0aa9d05e6d6d8a",
+          "21bf6317ba034f0d1f3bae6dd343e34d1bf537716936217a9a885234323e0374",
+          "8b86d2fd329e33535a07195a2c6bbef9b3daa6fc3bfd0c6895d7f26df8270934",
+          "7cd5f3cf85fb9db2047076eb5f2115b0f66a084e23532ce6ffe817e02e1ca086",
+          "ee5b0660a9edd3b508b883b9ffe4f2e5f7939a7e8487eaea30cfedfe893a4eb0",
+          "84a971cc0e3a6e599fae7e2b35f39416728e84fdcb5bdcb0398eb88e9362dd4f",
+          "cd3c80a6f84e1d6bd490e9ac43c00a3bd6566b72eb277e5e2bd2e08540230bfa",
+          "6d22c0e4dfa8c16ebcf271218ea48ba3d75ebd5da4ae22e97166ded7de60be6a",
+          "cc90621c7fd380b7fc40ac33ae572a0e0105673d3417d49de84b314178770877",
+          "6b98bf00e5f87470e80e874ed737bb4f5684e6335f106a6fffa5e6cfebd89522",
+          "72b6944b745521d4fbe7a94cf0a8d0c810332f3510c6a616e06bf7cdaf077507",
+          "047b24684c98025c32b9f5c41ec64eacd9433ed1d56c1462046ded6c4534c5b8",
+          "fccf7ca29ea3994bd73e62a7127f893ee7dc306a162e0aea5a51a27455f1ab1d",
+          "bc801ebeba3a1925806db02ea0e255fad0c5e36b5acd21972267b43ebe01b50e",
+          "d29fffb54e7884c0c48cf0f5e6955c01adfa8035e531f8fee46f09550c9e8d6e"
+        ],
+        "history": [
+          "5c62febfbf39025b979affd81ab90a78ca8ed3b66265754756d384244eff90b5",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "9aff94687f59a086e720556e7de2366f80bb996b83db09e916fd63b9c3358b45",
+          "686cae9db886c8d39affc2292fa96309a1d05fe38808db111ba9e553bdc118a4",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "0f1a7ff1c52a3119dfa5b2a25b6bb8330182f250b70d31f38c405bf8a5de6095",
+          "5065d22e99e621601210743461e6a63fc6caa2ea4ad21107eb26ed74abaca3ef",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "fdbc81ba515976c19dd49eeec3acdc802213e788f0528af872b5fc3bd68661ac",
+          "59271fb57720e755977058769086c1337c1c60686173e3d66e58f08d31ab8673",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "e8404cb11e3ba09fff0e4bfc7273ed91d62a8aa9d96925d64b7f95690f0f0482",
+          "ce5e925bd8ecabf929de86ac14b6655e5b1501170b26c7d1880d7ca374a9d492",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "9589ea6d87dda166fa5405cd22e93384f89357a8eff743b7afc092990759a427",
+          "4f7262525b1d0ce0af0035615f903ded98e81c297f71560a654f4f5e0b7cc318",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "8157200f352ec5b2337d54d0946e8241902aa5b4ca5578ed87a5abb15c9d1a13",
+          "566d3bc3e2e2ec3cf2b933d4e373505714421b9c4678bf3af2d883b3bb9f688a",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "e8d1b07f51f2bf988635dbef28702a14e7923d64f3ef486c2ef1dee37f26c29a",
+          "361b7404bab20af66efb4c7df092c7e610ea65dccafc90b5a78aa17f1337f65c",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "49dcd0a4634f8fca48594eca4896463c0b483c7183f088434de5e82c913c6392",
+          "b1618b90e68253f573099ad994cabff47112b29bc7fec45ce9a47dac69ce5cb9",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "c874776a31894bfa0f61d8caad3558099cab5b26fe400a093e73ffb3c1da7cb9",
+          "16e9d167d49814f3b2a44243897a99028eb9b30142fd449a46c039096250b4d2",
+          "57587159f2651d051b0a45633b25ad1347ddc70188daf1ac7d8e3e0a38a9a5af"
+        ],
+        "cacheParametersHash": "12512ddc354c62574512a36acf51425101591f2bdff5cf7d6938e4f2ef55a470",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "cb8e8b0fe3af91024ccf90845964bf288de40eecc5e5965fbd7a1a3947cedda1",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": 0,
+        "factHashes": [
+          "c127b0e9be113338e5e4c3d57e44f73619a4cc2dad78892baac698610da5746a"
+        ],
+        "uniqueProofHashes": [
+          "f508255f58a9e60cc29b899c89cb6e9bdaa3807b9a2c855bbc08df7a022f918c"
+        ],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": [
+          "bc1c9ce7e9a7df11e917e26bf1ef2ddda5eee6e923fbc18da5cf11fbc00f682e",
+          "bc1c9ce7e9a7df11e917e26bf1ef2ddda5eee6e923fbc18da5cf11fbc00f682e",
+          "bc1c9ce7e9a7df11e917e26bf1ef2ddda5eee6e923fbc18da5cf11fbc00f682e",
+          "bc1c9ce7e9a7df11e917e26bf1ef2ddda5eee6e923fbc18da5cf11fbc00f682e"
+        ]
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-3",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "cf858f68-f7fb-9595-ab6e-dd0f473202d5",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.7",
+        "responseModel": "grok-4.7",
+        "purpose": "main",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266064289,
+        "tokens": {
+          "totalInput": 19718,
+          "uncachedInput": null,
+          "cacheRead": 1152,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 69,
+          "reasoning": 163,
+          "totalOutput": 232
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.013294,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266060545,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266062175,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266064289,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266061982
+    },
+    {
+      "arm": "baseline",
+      "index": 0,
+      "phase": "continuity",
+      "requestIndex": 4,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "b3d00b258416384abeaa6b0acf475c21ddef3b128473e87707d504b65b2adfdc",
+        "bytes": 3039,
+        "model": "grok-4.7",
+        "instructions": [
+          "9c7483c5ae7347dba02487bcd5afb2f980679f451c25b39ecbd0c6b51532abd2"
+        ],
+        "tools": [],
+        "history": [
+          "9c7483c5ae7347dba02487bcd5afb2f980679f451c25b39ecbd0c6b51532abd2",
+          "c3528f629ba762ef36c781c38968c75ef59f24e95ced616f1e2f54f7d0f52151"
+        ],
+        "cacheParametersHash": "d0a24c6118db8caa630d1a44f10f04b11c955df21f86e1cb766b3e6e86773428",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "d5b25b5850cc4769858029cbc8dbac3e7686b9b31b64d14e60d86e29063a2b5c",
+        "reasoningEffort": null,
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-4",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "c95d2268-0fc5-9414-92a5-a18dba9e0466",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.7",
+        "responseModel": "grok-4.7",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266066871,
+        "tokens": {
+          "totalInput": 1861,
+          "uncachedInput": null,
+          "cacheRead": 1152,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 4,
+          "reasoning": 448,
+          "totalOutput": 452
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.00160004,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266060389,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266061193,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266066871,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266061163
+    },
+    {
+      "arm": "baseline",
+      "index": 5,
+      "phase": "continuity",
+      "requestIndex": 5,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "e331b18290a6b65549f39874f478da5aa63947dbed6fc300fa99bb5268e2fce4",
+        "bytes": 93727,
+        "model": "grok-4.7",
+        "instructions": [
+          "5c62febfbf39025b979affd81ab90a78ca8ed3b66265754756d384244eff90b5"
+        ],
+        "tools": [
+          "0d292a133a6da50e8086fe0644ce1d36f2a47bbba131cc818d794bdc83d1bd00",
+          "065b650a23a67410e93c3a50008f30b2267efa68ba3ef942af0e30e9fa204a39",
+          "bbf94dbef3365185705e7714daef753501789ce8222cb3f5349a450cd89c080d",
+          "1b3dc477874be3ba42cb09cd02e268a3bc5648329385ac8bc6e0ced559d2183e",
+          "56b0d4137baeb335c9338bebbfc26326c90b3668aa087af078bb21cc6b519d67",
+          "709ae871e068b6930ca04085257a6e49766b8ea828f8499a6f0aa9d05e6d6d8a",
+          "21bf6317ba034f0d1f3bae6dd343e34d1bf537716936217a9a885234323e0374",
+          "8b86d2fd329e33535a07195a2c6bbef9b3daa6fc3bfd0c6895d7f26df8270934",
+          "7cd5f3cf85fb9db2047076eb5f2115b0f66a084e23532ce6ffe817e02e1ca086",
+          "ee5b0660a9edd3b508b883b9ffe4f2e5f7939a7e8487eaea30cfedfe893a4eb0",
+          "84a971cc0e3a6e599fae7e2b35f39416728e84fdcb5bdcb0398eb88e9362dd4f",
+          "cd3c80a6f84e1d6bd490e9ac43c00a3bd6566b72eb277e5e2bd2e08540230bfa",
+          "6d22c0e4dfa8c16ebcf271218ea48ba3d75ebd5da4ae22e97166ded7de60be6a",
+          "cc90621c7fd380b7fc40ac33ae572a0e0105673d3417d49de84b314178770877",
+          "6b98bf00e5f87470e80e874ed737bb4f5684e6335f106a6fffa5e6cfebd89522",
+          "72b6944b745521d4fbe7a94cf0a8d0c810332f3510c6a616e06bf7cdaf077507",
+          "047b24684c98025c32b9f5c41ec64eacd9433ed1d56c1462046ded6c4534c5b8",
+          "fccf7ca29ea3994bd73e62a7127f893ee7dc306a162e0aea5a51a27455f1ab1d",
+          "bc801ebeba3a1925806db02ea0e255fad0c5e36b5acd21972267b43ebe01b50e",
+          "d29fffb54e7884c0c48cf0f5e6955c01adfa8035e531f8fee46f09550c9e8d6e"
+        ],
+        "history": [
+          "5c62febfbf39025b979affd81ab90a78ca8ed3b66265754756d384244eff90b5",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "bc28c59ee17f60e141ca897c9ed3b532d14f1c69677998098791d9952c92a836",
+          "1ffcfba863a89e1742d952e1440621ed61193409d6eb4cf3dd81d332a0c5f739",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "31a6a43eb5a9adf085014f008c2fc72909c9206504306d2b6c2ea495c86044c0",
+          "119f9a21bb77ffd784ba60f5e2f22b85293f22ba8c603a2966d99ad2637b104f",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "f6b00f8112126ac47dc4acfc71e35fb7e55da68439d447e1a8fe652f6c20daa2",
+          "2c391813935639dd6eb08a1fcb0cd71d56f0919c9cbc6d1cd1d9ddac0e03de06",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "1795c1a9bdf1077e2ebb23a40d38b7ffab24cef0a36807ed29fdcbb35114a5c0",
+          "692a626aaaee139612261086d49d46af1b64c1e4f4ef0f2546c811a5d6e61eaa",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "f8b6775f54ae9c25f9a6bddfbd6f3878f7230740e5b4feec2ffad9c1eeb1be14",
+          "841e8f3a88c3f33df55e78cb610f260ded1647e0299e4edb4aa96938aae88436",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "2da710802915786cf17f582280f4400122b3b87ebd1e40263241b57d139f73a8",
+          "5add1e81d50d114c3afe4a7ebb276b02b12c76b6a2775a32de1027c4fd6ae9cc",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "d1be946a1aaeb7ee30240e375d5289c9cad0d903794659a38e95150195e6d6e0",
+          "757341df41b22d42e5faabbc4d0f6ae6b5794327b85c469bafff0331f0492e8f",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "5caf363c68a5dea154f5976820e6223128ba80a47fca00a5a99c99da155905c8",
+          "548a688d7fe4489689eb9c6f3d7dec587b2e645d319f77008378711eca22c29a",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "7b7052d9c7118579ce994ee784b5bfe3fa39ae27a3ba0c52e2afccb8e51efb7c",
+          "c8f7f796bf2caa848236c7bd7a6183fae34f18635d3f9e4e178bc7c0c78ca2fb",
+          "e4978356c6e8fc430641c5a5d021d6bd14ae769cc2cef283c30dfa37ff9a1944"
+        ],
+        "cacheParametersHash": "c635bd48bc53724b5bf0105f7ba97806f818f50249cbccdc0bbc0a3f01320612",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "0f562b1658c7911cf3fe210c9081140b60467681ffcdbf741f530cacb8bea800",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": 5,
+        "factHashes": [
+          "889d61d94c09cab253ff11de1ea744d65f04b2b35ea7fb4b8beb7b874e9fb8f2"
+        ],
+        "uniqueProofHashes": [
+          "b49d5f11335597f9eb114137d0c3341f7baa3d7643b6643b4d8ff0c29df29daa"
+        ],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": [
+          "e87d4b35cd2c4c78f4d1addaf32356f43f2d5db8bfeaa47d552b0d58736965a1",
+          "e87d4b35cd2c4c78f4d1addaf32356f43f2d5db8bfeaa47d552b0d58736965a1",
+          "e87d4b35cd2c4c78f4d1addaf32356f43f2d5db8bfeaa47d552b0d58736965a1",
+          "e87d4b35cd2c4c78f4d1addaf32356f43f2d5db8bfeaa47d552b0d58736965a1"
+        ]
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-5",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "68962f5e-34e1-96d4-bc1b-726846019e97",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.7",
+        "responseModel": "grok-4.7",
+        "purpose": "main",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266091375,
+        "tokens": {
+          "totalInput": 21409,
+          "uncachedInput": null,
+          "cacheRead": 1152,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 69,
+          "reasoning": 374,
+          "totalOutput": 443
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.01487432,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266085705,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266086786,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266091375,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266086753
+    },
+    {
+      "arm": "baseline",
+      "index": 5,
+      "phase": "continuity",
+      "requestIndex": 6,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "ccfed3148d6dbc85c310231db94989d42491ab8cd9c8062d9e4d7cd02cc23542",
+        "bytes": 3039,
+        "model": "grok-4.7",
+        "instructions": [
+          "9c7483c5ae7347dba02487bcd5afb2f980679f451c25b39ecbd0c6b51532abd2"
+        ],
+        "tools": [],
+        "history": [
+          "9c7483c5ae7347dba02487bcd5afb2f980679f451c25b39ecbd0c6b51532abd2",
+          "2bc7f9127dcd16067d833f2e66d3268cf8c3ea2f9cce34aaa2091cf767ac8776"
+        ],
+        "cacheParametersHash": "050b7c171efda3838f5b57600b87724ca24d362adbf197bd2b7b18a96a01706f",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "893bd44c142a84ca2e1506ca33ea198838c806ecbee8a975d72f7b8f0c1126cd",
+        "reasoningEffort": null,
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-6",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "4ce43ab8-b85c-969c-86d4-ea059456caf2",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.7",
+        "responseModel": "grok-4.7",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266093178,
+        "tokens": {
+          "totalInput": 1861,
+          "uncachedInput": null,
+          "cacheRead": 1152,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 4,
+          "reasoning": 520,
+          "totalOutput": 524
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.00174692,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266085705,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266086010,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266093178,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266086005
+    },
+    {
+      "arm": "candidate",
+      "index": null,
+      "phase": "warmup",
+      "requestIndex": 7,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "3ec89cd44069bc17e0eeb95f4cf7a6c9ba6a1209abc9f31ca3fa62ad7d6dd0f1",
+        "bytes": 2517,
+        "model": "grok-4.7",
+        "instructions": [
+          "9c7483c5ae7347dba02487bcd5afb2f980679f451c25b39ecbd0c6b51532abd2"
+        ],
+        "tools": [],
+        "history": [
+          "9c7483c5ae7347dba02487bcd5afb2f980679f451c25b39ecbd0c6b51532abd2",
+          "17821927c0ebc0fcc040fbb01ebc966e293c4289119de0bbbf755f25b82b3e9f"
+        ],
+        "cacheParametersHash": "11d4ab412d76b5f4281960b1cc5eb0966e701a2c013607c79182aedf819c3a08",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "6655e6c7a6f8043919a517fb7726e4cf1d96dfa97700b79d04008b92ec49e51c",
+        "reasoningEffort": null,
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-7",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "480f1186-3a6f-9ac3-b2ef-d1fb29fa11c7",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.7",
+        "responseModel": "grok-4.7",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266124956,
+        "tokens": {
+          "totalInput": 1756,
+          "uncachedInput": null,
+          "cacheRead": 1152,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 4,
+          "reasoning": 770,
+          "totalOutput": 774
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.00218552,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266112135,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266112633,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266124956,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266112633
+    },
+    {
+      "arm": "candidate",
+      "index": null,
+      "phase": "warmup",
+      "requestIndex": 8,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "c27bedde39cb44c7b85c580c159578c4a5b8670240f6f6e86ceb03308de83af5",
+        "bytes": 35508,
+        "model": "grok-4.7",
+        "instructions": [
+          "5c62febfbf39025b979affd81ab90a78ca8ed3b66265754756d384244eff90b5"
+        ],
+        "tools": [
+          "0d292a133a6da50e8086fe0644ce1d36f2a47bbba131cc818d794bdc83d1bd00",
+          "065b650a23a67410e93c3a50008f30b2267efa68ba3ef942af0e30e9fa204a39",
+          "bbf94dbef3365185705e7714daef753501789ce8222cb3f5349a450cd89c080d",
+          "1b3dc477874be3ba42cb09cd02e268a3bc5648329385ac8bc6e0ced559d2183e",
+          "56b0d4137baeb335c9338bebbfc26326c90b3668aa087af078bb21cc6b519d67",
+          "709ae871e068b6930ca04085257a6e49766b8ea828f8499a6f0aa9d05e6d6d8a",
+          "21bf6317ba034f0d1f3bae6dd343e34d1bf537716936217a9a885234323e0374",
+          "8b86d2fd329e33535a07195a2c6bbef9b3daa6fc3bfd0c6895d7f26df8270934",
+          "7cd5f3cf85fb9db2047076eb5f2115b0f66a084e23532ce6ffe817e02e1ca086",
+          "ee5b0660a9edd3b508b883b9ffe4f2e5f7939a7e8487eaea30cfedfe893a4eb0",
+          "84a971cc0e3a6e599fae7e2b35f39416728e84fdcb5bdcb0398eb88e9362dd4f",
+          "cd3c80a6f84e1d6bd490e9ac43c00a3bd6566b72eb277e5e2bd2e08540230bfa",
+          "6d22c0e4dfa8c16ebcf271218ea48ba3d75ebd5da4ae22e97166ded7de60be6a",
+          "cc90621c7fd380b7fc40ac33ae572a0e0105673d3417d49de84b314178770877",
+          "6b98bf00e5f87470e80e874ed737bb4f5684e6335f106a6fffa5e6cfebd89522",
+          "72b6944b745521d4fbe7a94cf0a8d0c810332f3510c6a616e06bf7cdaf077507",
+          "047b24684c98025c32b9f5c41ec64eacd9433ed1d56c1462046ded6c4534c5b8",
+          "fccf7ca29ea3994bd73e62a7127f893ee7dc306a162e0aea5a51a27455f1ab1d",
+          "bc801ebeba3a1925806db02ea0e255fad0c5e36b5acd21972267b43ebe01b50e",
+          "d29fffb54e7884c0c48cf0f5e6955c01adfa8035e531f8fee46f09550c9e8d6e"
+        ],
+        "history": [
+          "5c62febfbf39025b979affd81ab90a78ca8ed3b66265754756d384244eff90b5",
+          "554df14a516c0bcf042caaeebaf32447433e0485e65377dd275f0f44b22c3791"
+        ],
+        "cacheParametersHash": "186700ee3a78618c1a97bf82daae48dea8791aac519e7d8195d056abc4f29f4b",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "474ac7415fc0f297cbfe1690987a652cfc150eb8b01e493b5a5dbd6e3d1b3471",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-8",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "60adcbb4-7e8e-934f-bd1f-61d06a0c89fb",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.7",
+        "responseModel": "grok-4.7",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266113979,
+        "tokens": {
+          "totalInput": 9372,
+          "uncachedInput": null,
+          "cacheRead": 1152,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 1,
+          "reasoning": 22,
+          "totalOutput": 23
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.00583236,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266112615,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266113877,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266113979,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266113685
+    },
+    {
+      "arm": "candidate",
+      "index": 0,
+      "phase": "continuity",
+      "requestIndex": 9,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "22641d656bf1772489e437680a3391d3c4625cbe72fd54b8e5f61c7d9711a771",
+        "bytes": 63985,
+        "model": "grok-4.7",
+        "instructions": [
+          "5c62febfbf39025b979affd81ab90a78ca8ed3b66265754756d384244eff90b5"
+        ],
+        "tools": [
+          "0d292a133a6da50e8086fe0644ce1d36f2a47bbba131cc818d794bdc83d1bd00",
+          "065b650a23a67410e93c3a50008f30b2267efa68ba3ef942af0e30e9fa204a39",
+          "bbf94dbef3365185705e7714daef753501789ce8222cb3f5349a450cd89c080d",
+          "1b3dc477874be3ba42cb09cd02e268a3bc5648329385ac8bc6e0ced559d2183e",
+          "56b0d4137baeb335c9338bebbfc26326c90b3668aa087af078bb21cc6b519d67",
+          "709ae871e068b6930ca04085257a6e49766b8ea828f8499a6f0aa9d05e6d6d8a",
+          "21bf6317ba034f0d1f3bae6dd343e34d1bf537716936217a9a885234323e0374",
+          "8b86d2fd329e33535a07195a2c6bbef9b3daa6fc3bfd0c6895d7f26df8270934",
+          "7cd5f3cf85fb9db2047076eb5f2115b0f66a084e23532ce6ffe817e02e1ca086",
+          "ee5b0660a9edd3b508b883b9ffe4f2e5f7939a7e8487eaea30cfedfe893a4eb0",
+          "84a971cc0e3a6e599fae7e2b35f39416728e84fdcb5bdcb0398eb88e9362dd4f",
+          "cd3c80a6f84e1d6bd490e9ac43c00a3bd6566b72eb277e5e2bd2e08540230bfa",
+          "6d22c0e4dfa8c16ebcf271218ea48ba3d75ebd5da4ae22e97166ded7de60be6a",
+          "cc90621c7fd380b7fc40ac33ae572a0e0105673d3417d49de84b314178770877",
+          "6b98bf00e5f87470e80e874ed737bb4f5684e6335f106a6fffa5e6cfebd89522",
+          "72b6944b745521d4fbe7a94cf0a8d0c810332f3510c6a616e06bf7cdaf077507",
+          "047b24684c98025c32b9f5c41ec64eacd9433ed1d56c1462046ded6c4534c5b8",
+          "fccf7ca29ea3994bd73e62a7127f893ee7dc306a162e0aea5a51a27455f1ab1d",
+          "bc801ebeba3a1925806db02ea0e255fad0c5e36b5acd21972267b43ebe01b50e",
+          "d29fffb54e7884c0c48cf0f5e6955c01adfa8035e531f8fee46f09550c9e8d6e"
+        ],
+        "history": [
+          "5c62febfbf39025b979affd81ab90a78ca8ed3b66265754756d384244eff90b5",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "07c28d1a3b941fec3db32eaf69047ee21b2d81ec21d91b220a8158d0a13d3185",
+          "be001bb6eb571cd4500e3d3a9a78aa8e10f7d0e8c8088d3c4d58e5c5d974b5ef",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "4db450c01d8d30c9222f67f983ed0f88cba5e928352bc3af1fb71d83933eb5c0",
+          "93f1c751149ab43a3c62f5c5a736a90cbaa8226f50f711eeefe51bb4b7334883",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "376d56e6f0d5b6234b720eb2fcb0655d55288b12cec120d30c9528393c4d8d9e",
+          "734aef6744c4aa0d43aee67fa8036562a6d5b47a3f8dc274294bbcdba1f26ec8",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "3d1063894b4bfd55f8f78caf57f52bdd0aeb0e4b890ff4c9f499eafb67b2b28a",
+          "b19e7774eb29ba253e58815534fcd3bea836ce5503b359a73e3f86d1c0c025fe",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "ff7346668649636ee0fd8bfcb94425d0b36a1bea680bebb1408f81caf87c5907",
+          "c2c65e445c21c20da5f7ab69f9d06c30e86df2779a2f9ff1cdb6bddb5a5bc272",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "d92ca217ddfee7aa4d1fc192074aff5379969600980e1368913afd178e9696e5",
+          "c2efaea6607c25a6692381cf4434b68d3bf3913aae2574f49ca786fc61c1813c",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "f8faf4f91c33972fcedcf00b43d45e17e563da1a1eae2bf2bd5ed8fddbb31afc",
+          "74bc3a7abb44fe08b69dc8dcf2a3f86de5f3b3950fdb2cd07f993d97cdd4fa3a",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "d00156a285f8822754760af8e13d54c233dd57431334f184f6b1b1cb5569f0cc",
+          "456e3700cc42d962a269450b0ba6fb7a04671adff14e8b3846eaec35029e80b5",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "379f0c2e6c931303984a12ca65771e9fd5a763006b5cda43d43b24f3861f5f7e",
+          "00c53b348c29f7dc45ef09eeb8efd5dbc3c0a57b235c73b286844efb38f5d357",
+          "57587159f2651d051b0a45633b25ad1347ddc70188daf1ac7d8e3e0a38a9a5af"
+        ],
+        "cacheParametersHash": "f9bd1888cc0e2c2bfa3ca19563897d85a66ce2d85ba7bbddabedd906322c2333",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "1f17691f009c9f7202d2000076c0f3ed41cf021a1ff0bb4fd4907e23c855b178",
+        "reasoningEffort": "medium",
+        "skillReferences": 2,
+        "managedReferences": 0,
+        "trialIndex": 0,
+        "factHashes": [
+          "c127b0e9be113338e5e4c3d57e44f73619a4cc2dad78892baac698610da5746a"
+        ],
+        "uniqueProofHashes": [
+          "f508255f58a9e60cc29b899c89cb6e9bdaa3807b9a2c855bbc08df7a022f918c"
+        ],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": [
+          "bc1c9ce7e9a7df11e917e26bf1ef2ddda5eee6e923fbc18da5cf11fbc00f682e",
+          "bc1c9ce7e9a7df11e917e26bf1ef2ddda5eee6e923fbc18da5cf11fbc00f682e"
+        ]
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-9",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "4c9f963c-3873-9bd9-9f4e-7a01f5b85afb",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.7",
+        "responseModel": "grok-4.7",
+        "purpose": "main",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266147026,
+        "tokens": {
+          "totalInput": 14834,
+          "uncachedInput": null,
+          "cacheRead": 1152,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 69,
+          "reasoning": 163,
+          "totalOutput": 232
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.00997288,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266132541,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266144605,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266147026,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266144574
+    },
+    {
+      "arm": "candidate",
+      "index": 0,
+      "phase": "continuity",
+      "requestIndex": 10,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "461b4b364322e170f8256cceeb9d5e9af9f4d3c326c089a41f81de30c1968f61",
+        "bytes": 3039,
+        "model": "grok-4.7",
+        "instructions": [
+          "9c7483c5ae7347dba02487bcd5afb2f980679f451c25b39ecbd0c6b51532abd2"
+        ],
+        "tools": [],
+        "history": [
+          "9c7483c5ae7347dba02487bcd5afb2f980679f451c25b39ecbd0c6b51532abd2",
+          "c3528f629ba762ef36c781c38968c75ef59f24e95ced616f1e2f54f7d0f52151"
+        ],
+        "cacheParametersHash": "36c66f4914ae1185e096989eb8bf0cf8c3f570941896324bade28aba99a76b10",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "767d498676c68620f2fd95f52f539b8c2eaaa8399cb48d568177142ee77fcdfb",
+        "reasoningEffort": null,
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-10",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "499f73a4-86b7-9dcc-81bf-50591f54bd53",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.7",
+        "responseModel": "grok-4.7",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266140339,
+        "tokens": {
+          "totalInput": 1861,
+          "uncachedInput": null,
+          "cacheRead": 1152,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 4,
+          "reasoning": 569,
+          "totalOutput": 573
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.00184688,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266132786,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266133256,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266140339,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266133256
+    },
+    {
+      "arm": "candidate",
+      "index": 5,
+      "phase": "continuity",
+      "requestIndex": 11,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "257e4b035cf050916cfdea2832b39e5c81820877e7725d1d5d7eefa8f680b214",
+        "bytes": 67491,
+        "model": "grok-4.7",
+        "instructions": [
+          "5c62febfbf39025b979affd81ab90a78ca8ed3b66265754756d384244eff90b5"
+        ],
+        "tools": [
+          "0d292a133a6da50e8086fe0644ce1d36f2a47bbba131cc818d794bdc83d1bd00",
+          "065b650a23a67410e93c3a50008f30b2267efa68ba3ef942af0e30e9fa204a39",
+          "bbf94dbef3365185705e7714daef753501789ce8222cb3f5349a450cd89c080d",
+          "1b3dc477874be3ba42cb09cd02e268a3bc5648329385ac8bc6e0ced559d2183e",
+          "56b0d4137baeb335c9338bebbfc26326c90b3668aa087af078bb21cc6b519d67",
+          "709ae871e068b6930ca04085257a6e49766b8ea828f8499a6f0aa9d05e6d6d8a",
+          "21bf6317ba034f0d1f3bae6dd343e34d1bf537716936217a9a885234323e0374",
+          "8b86d2fd329e33535a07195a2c6bbef9b3daa6fc3bfd0c6895d7f26df8270934",
+          "7cd5f3cf85fb9db2047076eb5f2115b0f66a084e23532ce6ffe817e02e1ca086",
+          "ee5b0660a9edd3b508b883b9ffe4f2e5f7939a7e8487eaea30cfedfe893a4eb0",
+          "84a971cc0e3a6e599fae7e2b35f39416728e84fdcb5bdcb0398eb88e9362dd4f",
+          "cd3c80a6f84e1d6bd490e9ac43c00a3bd6566b72eb277e5e2bd2e08540230bfa",
+          "6d22c0e4dfa8c16ebcf271218ea48ba3d75ebd5da4ae22e97166ded7de60be6a",
+          "cc90621c7fd380b7fc40ac33ae572a0e0105673d3417d49de84b314178770877",
+          "6b98bf00e5f87470e80e874ed737bb4f5684e6335f106a6fffa5e6cfebd89522",
+          "72b6944b745521d4fbe7a94cf0a8d0c810332f3510c6a616e06bf7cdaf077507",
+          "047b24684c98025c32b9f5c41ec64eacd9433ed1d56c1462046ded6c4534c5b8",
+          "fccf7ca29ea3994bd73e62a7127f893ee7dc306a162e0aea5a51a27455f1ab1d",
+          "bc801ebeba3a1925806db02ea0e255fad0c5e36b5acd21972267b43ebe01b50e",
+          "d29fffb54e7884c0c48cf0f5e6955c01adfa8035e531f8fee46f09550c9e8d6e"
+        ],
+        "history": [
+          "5c62febfbf39025b979affd81ab90a78ca8ed3b66265754756d384244eff90b5",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "1556c7a1aab44b014e4d25f854bab19a392ac608d322dee663dafdb861356893",
+          "33482fb74ac54648e998427d847f69d70aff72df0f019afa0879ffa2271b02ad",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "fd1540825006219ad3c2a1e658ca5b637b657eebd2996fec3a2594f37a2ca732",
+          "a9ae1806b31582d57b9204294d30a6215573128e86f0ec843747a0a2a03c7742",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "0ca4c335a3ee5a09737cc92ceed4e26f276623880cf97bced7d2a29bfc964eea",
+          "d09f810e1abc3a2ae30968ae82fa742755e343b5c6a360295c4a9e9a421666fb",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "0884024e06e49e234660f19fff59064dd8de78055d6005494b5071096df600fd",
+          "ec91f7433b3982a11cd7175202eb79e58c4fbaf5df58d34aaa6ad1bb9cee48b8",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "ffb791a632a5fe2cbc46045020a43fed6d932c5eef5a044a2074147b426a1f87",
+          "e0e4609d978cc7a938be11b1cb7a5bf12e50a38e357acdaa715d15b44f77c5f3",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "5a0ed436cbd4621afedb1cf680b39444c5c02c8f81ab0c30472e5852bb246ea4",
+          "56664031c3c87594f703945e297590d74d60b30215d33e59ca1c254b14f507e1",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "70f26854de4ff6dfc39084e50378fa32ab6b658dbeafc2c81be3ff065a236819",
+          "4f40eef5920865e9492af77f4d5a44beb08bff0f60894047c51fc4038dc1dcaa",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "38deb0cf3942242360c79fe0045a3ab9a39eabad2a72f67c973327ea1647af65",
+          "209b12c5a1cd88ff8196c52c19c7cc9adc56befaa805b21fc9015e9a6a718ced",
+          "2f45b9f47c322438f0853bc9f033b8f7a4fd8b55c772c48c7748f50fa5cdd124",
+          "29fd79da419f1d1214428681eb860ce78c437fe57033173a6ca88f799867fcd5",
+          "078935f008cb7261afe7f0d3b50dfb530b951e0d3aceb334dd253526b94af773",
+          "e4978356c6e8fc430641c5a5d021d6bd14ae769cc2cef283c30dfa37ff9a1944"
+        ],
+        "cacheParametersHash": "f8859d8c922ebe25c675b199a20b4b610c37aade103179cb443fc38a4f9f9f66",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "de2e1f3c2fe5605c55714f6e07c75c31aa3d05ce09db7affe3221e92b0a6bc07",
+        "reasoningEffort": "medium",
+        "skillReferences": 0,
+        "managedReferences": 2,
+        "trialIndex": 5,
+        "factHashes": [
+          "889d61d94c09cab253ff11de1ea744d65f04b2b35ea7fb4b8beb7b874e9fb8f2"
+        ],
+        "uniqueProofHashes": [
+          "b49d5f11335597f9eb114137d0c3341f7baa3d7643b6643b4d8ff0c29df29daa"
+        ],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": [
+          "eb8b6d21a242d6ba314a359f74b19cfae33f60f7569b48c9104e2ca61934b59b",
+          "eb8b6d21a242d6ba314a359f74b19cfae33f60f7569b48c9104e2ca61934b59b"
+        ]
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-11",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "f5902379-712b-9fcb-8af4-f3c64493fc7c",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.7",
+        "responseModel": "grok-4.7",
+        "purpose": "main",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266170343,
+        "tokens": {
+          "totalInput": 15846,
+          "uncachedInput": null,
+          "cacheRead": 9344,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 69,
+          "reasoning": 366,
+          "totalOutput": 435
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.00689724,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266165281,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266166258,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266170343,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266166081
+    },
+    {
+      "arm": "candidate",
+      "index": 5,
+      "phase": "continuity",
+      "requestIndex": 12,
+      "status": "complete",
+      "request": {
+        "capture": "serialized",
+        "bodyHash": "e72956e06823ddfd63e9489d0b507404ab350480f39164ddaf5d2b9301a00499",
+        "bytes": 3039,
+        "model": "grok-4.7",
+        "instructions": [
+          "9c7483c5ae7347dba02487bcd5afb2f980679f451c25b39ecbd0c6b51532abd2"
+        ],
+        "tools": [],
+        "history": [
+          "9c7483c5ae7347dba02487bcd5afb2f980679f451c25b39ecbd0c6b51532abd2",
+          "2bc7f9127dcd16067d833f2e66d3268cf8c3ea2f9cce34aaa2091cf767ac8776"
+        ],
+        "cacheParametersHash": "916a59d38b4db61010eb6fed8c4057062f921fcb60c7a619401be1210a01204f",
+        "cacheMarkers": [],
+        "markerGap": false,
+        "conversationIdentifier": "88f467d00dddd55df408c4fc29bd2b2483d3946a81421b2eb3c0ef8490908800",
+        "reasoningEffort": null,
+        "skillReferences": 0,
+        "managedReferences": 0,
+        "trialIndex": null,
+        "factHashes": [],
+        "uniqueProofHashes": [],
+        "callPairsIntact": true,
+        "referencesResolve": true,
+        "fixtureEvidenceHashes": []
+      },
+      "statusCode": 200,
+      "gap": null,
+      "providerError": false,
+      "effortError": false,
+      "usageObservation": {
+        "version": 1,
+        "source": "provider_request",
+        "observationID": "duplicate-wire-12",
+        "rootTaskID": null,
+        "rootSessionID": null,
+        "sessionID": null,
+        "messageID": null,
+        "parentMessageID": null,
+        "stepID": null,
+        "attemptID": null,
+        "responseID": "fb0c262e-c644-9614-b90e-8707aa15a60e",
+        "counterScopeID": null,
+        "provider": "xai",
+        "route": "xai-oauth-responses-v1",
+        "runtimeVersion": null,
+        "requestedModel": "grok-4.7",
+        "responseModel": "grok-4.7",
+        "purpose": "unknown",
+        "auth": "oauth",
+        "transport": "responses",
+        "status": "complete",
+        "use": "unknown",
+        "counterMode": "delta",
+        "cumulativeFromZero": false,
+        "sequence": null,
+        "observedAt": 1790266171683,
+        "tokens": {
+          "totalInput": 1861,
+          "uncachedInput": null,
+          "cacheRead": 1152,
+          "cacheWrite": null,
+          "cacheWrite5m": null,
+          "cacheWrite1h": null,
+          "cacheWrite30m": null,
+          "output": 4,
+          "reasoning": 463,
+          "totalOutput": 467
+        },
+        "semantics": {
+          "input": "inclusive",
+          "output": "inclusive"
+        },
+        "cost": {
+          "amount": 0.00163064,
+          "currency": "USD",
+          "provenance": "unknown"
+        },
+        "timing": {
+          "dispatch": {
+            "at": 1790266165147,
+            "origin": "client_wire"
+          },
+          "firstToken": {
+            "at": 1790266165895,
+            "origin": "client_wire"
+          },
+          "completion": {
+            "at": 1790266171683,
+            "origin": "client_wire"
+          },
+          "previousCompletion": {
+            "at": null,
+            "origin": "unknown"
+          }
+        }
+      },
+      "firstResponseDataAt": 1790266165895
+    }
+  ],
+  "probePassed": true,
+  "verifiedDefault": true,
+  "qualified": false,
+  "scope": "Live model behavior over seeded skill/managed observations; actual native runtime and managed plugin configuration. Synthetic observations do not claim managed child execution."
+}

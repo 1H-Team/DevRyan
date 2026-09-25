@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createManagedTaskRecord,
@@ -72,6 +72,9 @@ it.each(['anthropic', 'cursor-acp'])('projects first %s activity through the rea
     },
     fetchImpl: async (url, init) => {
       const pathname = new URL(url).pathname;
+      if (pathname === '/agent' && new URL(url).searchParams.get('directory') === '/workspace') {
+        return Response.json([{ name: 'explorer', mode: 'subagent' }]);
+      }
       if (pathname === '/session' && init.method === 'POST') return Response.json({ id: 'ses_child' });
       if (pathname.endsWith('/prompt_async')) { await accept(); return new Response(null, { status: 204 }); }
       if (pathname === '/session/status') return Response.json({ ses_child: { type: 'idle' } });
@@ -2163,5 +2166,190 @@ describe('web managed orchestration runtime', () => {
 
     await runtime.shutdown();
     await throwingRuntime.shutdown();
+  });
+});
+
+describe('managed agent name admission', () => {
+  const originalValidation = process.env.DEVRYAN_TASK_AGENT_VALIDATION;
+  afterEach(() => {
+    if (originalValidation === undefined) delete process.env.DEVRYAN_TASK_AGENT_VALIDATION;
+    else process.env.DEVRYAN_TASK_AGENT_VALIDATION = originalValidation;
+  });
+
+  const CATALOG = [
+    { name: 'orchestrator', mode: 'primary' },
+    { name: 'builder', mode: 'primary' },
+    { name: 'fixer', mode: 'subagent' },
+    { name: 'explorer', mode: 'subagent' },
+    { name: 'council', mode: 'all' },
+    { name: 'councillor', mode: 'subagent', hidden: true },
+    { name: 'title', mode: 'subagent', options: { hidden: true } },
+  ];
+  const createMockScheduler = () => ({
+    initialize: vi.fn(async () => undefined),
+    submit: vi.fn(async (input) => createManagedTaskRecord({
+      taskId: 'dvr_task_agent', sequence: 1, attempt: 1, priorTaskId: null, executionKind: 'start',
+      createdAt: 1_000, timeoutAt: null, ...input,
+    })),
+    getResultEnvelope: vi.fn(() => null),
+    shutdown: vi.fn(async () => undefined),
+    flush: vi.fn(async () => undefined),
+    getDiagnostics: vi.fn(() => ({})),
+  });
+  const createRuntime = (options = {}) => createWebManagedOrchestrationRuntime({
+    persistence: createPersistence(),
+    executor: { async start() { throw new Error('must not start'); } },
+    ...options,
+  });
+
+  it('canonicalizes a unique case-insensitive match from the submitting project catalog', async () => {
+    const scheduler = createMockScheduler();
+    const readAgentCatalog = vi.fn(async () => CATALOG);
+    const resolveAgentExecution = vi.fn(async ({ fallbackExecution }) => fallbackExecution);
+    const runtime = createRuntime({ scheduler, readAgentCatalog, resolveAgentExecution });
+
+    const result = await runtime.handleRpc({ method: 'submit', params: submitParams(1, { agent: ' Fixer ' }) });
+
+    expect(readAgentCatalog).toHaveBeenCalledWith({ directory: '/workspace' });
+    expect(resolveAgentExecution).toHaveBeenCalledWith(expect.objectContaining({ agent: 'fixer' }));
+    expect(scheduler.submit).toHaveBeenCalledWith(expect.objectContaining({ agent: 'fixer' }));
+    expect(result.task.agent).toBe('fixer');
+    await runtime.shutdown();
+  });
+
+  it('prefers the exact catalog name over a differently cased entry', async () => {
+    const scheduler = createMockScheduler();
+    const runtime = createRuntime({
+      scheduler, readAgentCatalog: async () => [{ name: 'fixer', mode: 'subagent' }, { name: 'Fixer', mode: 'subagent' }],
+    });
+
+    await runtime.handleRpc({ method: 'submit', params: submitParams(1, { agent: 'Fixer' }) });
+
+    expect(scheduler.submit).toHaveBeenCalledWith(expect.objectContaining({ agent: 'Fixer' }));
+    await runtime.shutdown();
+  });
+
+  it.each([
+    ['unknown', 'Fixr', CATALOG, 'managed_agent_unknown: Unknown agent "Fixr"; no managed task was started. Available subagents: council, explorer, fixer.'],
+    ['ambiguous', 'FIXER', [{ name: 'fixer', mode: 'subagent' }, { name: 'Fixer', mode: 'subagent' }],
+      'managed_agent_unknown: Agent name "FIXER" is ambiguous (matches fixer, Fixer); use the exact name. No managed task was started. Available subagents: Fixer, fixer.'],
+  ])('rejects an %s agent before owner resolution or scheduler admission', async (_kind, agent, catalog, message) => {
+    const scheduler = createMockScheduler();
+    const resolveAgentExecution = vi.fn();
+    const validateAgentExecution = vi.fn();
+    const runtime = createRuntime({ scheduler, readAgentCatalog: async () => catalog, resolveAgentExecution, validateAgentExecution });
+
+    await expect(runtime.handleRpc({ method: 'submit', params: submitParams(1, { agent }) }))
+      .rejects.toMatchObject({ code: 'managed_agent_unknown', statusCode: 400, message });
+    expect(resolveAgentExecution).not.toHaveBeenCalled();
+    expect(validateAgentExecution).not.toHaveBeenCalled();
+    expect(scheduler.submit).not.toHaveBeenCalled();
+    await runtime.shutdown();
+  });
+
+  it.each([
+    ['a failed catalog read', async () => { throw new TypeError('fetch failed'); }],
+    ['a malformed catalog payload', async () => ({ fixer: {} })],
+  ])('fails closed with a retryable error for %s', async (_kind, readAgentCatalog) => {
+    const scheduler = createMockScheduler();
+    const runtime = createRuntime({ scheduler, readAgentCatalog });
+
+    await expect(runtime.handleRpc({ method: 'submit', params: submitParams(1, { agent: 'fixer' }) }))
+      .rejects.toMatchObject({ code: 'managed_agent_catalog_unavailable', statusCode: 503 });
+    expect(scheduler.submit).not.toHaveBeenCalled();
+    await runtime.shutdown();
+  });
+
+  it('reads the directory-scoped OpenCode catalog by default', async () => {
+    const scheduler = createMockScheduler();
+    const requests = [];
+    let catalogStatus = 200;
+    const runtime = createRuntime({
+      scheduler,
+      validateAgentExecution: async () => true,
+      buildOpenCodeUrl: (pathname) => `http://127.0.0.1:4096${pathname}`,
+      getOpenCodeAuthHeaders: () => ({ authorization: 'Basic fixture' }),
+      fetchImpl: async (url, init) => {
+        requests.push({ url: new URL(url), init });
+        return catalogStatus === 200 ? Response.json(CATALOG) : new Response('{}', { status: catalogStatus });
+      },
+    });
+
+    await runtime.handleRpc({ method: 'submit', params: submitParams(1, { agent: 'Explorer' }) });
+    expect(requests[0].url.pathname).toBe('/agent');
+    expect(requests[0].url.searchParams.get('directory')).toBe('/workspace');
+    expect(requests[0].init.headers).toMatchObject({ authorization: 'Basic fixture' });
+    expect(scheduler.submit).toHaveBeenCalledWith(expect.objectContaining({ agent: 'explorer' }));
+
+    catalogStatus = 500;
+    await expect(runtime.handleRpc({ method: 'submit', params: submitParams(2, { agent: 'explorer' }) }))
+      .rejects.toMatchObject({ code: 'managed_agent_catalog_unavailable', statusCode: 503 });
+    expect(scheduler.submit).toHaveBeenCalledTimes(1);
+    await runtime.shutdown();
+  });
+
+  it('collapses a re-dispatch that differs only in agent-name case onto the running task', async () => {
+    let taskIndex = 0;
+    const runtime = createRuntime({
+      readAgentCatalog: async () => CATALOG,
+      executor: {
+        async start() { return await new Promise(() => {}); },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' }; },
+        async readRecoverableResult() { return {}; },
+      },
+      createTaskId: () => `dvr_task_case_${++taskIndex}`,
+      createLeaseToken: () => `dvr_lease_case_${taskIndex}`,
+      now: () => 10_000,
+    });
+
+    const first = await runtime.handleRpc({ method: 'submit', params: submitParams(1, { agent: 'Fixer', prompt: 'Fix the parser.' }) });
+    const second = await runtime.handleRpc({ method: 'submit', params: submitParams(2, { agent: 'fixer', prompt: 'Fix the parser.' }) });
+
+    expect(first.task).toMatchObject({ taskId: 'dvr_task_case_1', agent: 'fixer' });
+    expect(second.task.taskId).toBe('dvr_task_case_1');
+    await runtime.shutdown();
+  });
+
+  it('skips validation for Council private dispatch and when the kill switch is 0', async () => {
+    const scheduler = createMockScheduler();
+    const readAgentCatalog = vi.fn(async () => CATALOG);
+    const runtime = createRuntime({ scheduler, readAgentCatalog });
+
+    await runtime.handleRpc({ method: 'submit', params: submitParams(1, { agent: 'Builder', deadlineClass: 'council' }) });
+    expect(scheduler.submit).toHaveBeenLastCalledWith(expect.objectContaining({ agent: 'Builder' }));
+
+    process.env.DEVRYAN_TASK_AGENT_VALIDATION = '0';
+    await runtime.handleRpc({ method: 'submit', params: submitParams(2, { agent: 'Fixr' }) });
+    expect(scheduler.submit).toHaveBeenLastCalledWith(expect.objectContaining({ agent: 'Fixr' }));
+    expect(readAgentCatalog).not.toHaveBeenCalled();
+    await runtime.shutdown();
+  });
+
+  it('canonicalizes a retry agent override and rejects an unknown one before acknowledgement', async () => {
+    const { task, scheduler } = createWaitScheduler();
+    scheduler.acknowledgeResult = vi.fn(async () => ({
+      envelope: { taskId: task.taskId, action: 'retry' },
+      followUpTask: null,
+    }));
+    const readAgentCatalog = vi.fn(async () => CATALOG);
+    const runtime = createRuntime({ scheduler, readAgentCatalog });
+    const acknowledge = (agent, action = 'retry') => runtime.handleRpc({ method: 'acknowledge', params: {
+      taskId: task.taskId, rootSessionId: 'ses_root', directory: '/workspace', action,
+      idempotencyKey: `ack-${agent}-${action}`, providerId: 'github-copilot', modelId: 'gpt-4.1', agent,
+    } });
+
+    await expect(acknowledge('Fixr')).rejects.toMatchObject({ code: 'managed_agent_unknown' });
+    expect(scheduler.acknowledgeResult).not.toHaveBeenCalled();
+
+    await acknowledge('FIXER');
+    expect(readAgentCatalog).toHaveBeenLastCalledWith({ directory: '/workspace' });
+    expect(scheduler.acknowledgeResult).toHaveBeenLastCalledWith(task.taskId, expect.objectContaining({ agent: 'fixer' }));
+
+    // Only retry/resume overrides schedule a new child.
+    await acknowledge('Fixr', 'continue');
+    expect(scheduler.acknowledgeResult).toHaveBeenLastCalledWith(task.taskId, expect.objectContaining({ action: 'continue', agent: 'Fixr' }));
+    expect(readAgentCatalog).toHaveBeenCalledTimes(2);
+    await runtime.shutdown();
   });
 });

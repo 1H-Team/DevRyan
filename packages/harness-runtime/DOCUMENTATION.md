@@ -179,6 +179,15 @@ preserve identity when a rename also replaces the inode. Publication decisions
 and their results are committed together before materializing shared files.
 Recovery refuses to replace a file changed by a foreign writer after that intent.
 
+Ledger work runs on the host event loop, which in Electron is the window's main
+thread. Gitignored directories without tracked content are dependency inputs:
+linked read-only into views, never ingested or published, and fenced from
+history replay (`ignored_input`). Walks yield between tree levels and batches;
+diffs and hunk bookkeeping have fixed work budgets past which they emit exact
+but coarser replacements. The background first build (`warm`) is a single
+budgeted pass that real calls never treat as their observation. Maintenance and
+input-classification failures reach `onDiagnostic` as codes.
+
 `createSessionRevertCoordinator` requires both the legacy conversation-only API
 capability and a confined execution owner. It persists target-tree fences,
 previous conversation boundaries and phases before changing native history.

@@ -152,6 +152,15 @@ behavior.
   session counts. Output is `samples.jsonl` + `events.jsonl` (spawn/exit/mark)
   under `.cache/perf/multi-session/<label>/`; append lines to `marks.txt` to
   annotate the timeline. It never signals or reconfigures the app.
+  `--pid <hostPid>` samples any host process tree instead (an isolated QA web
+  host), and `--runtime-root <dir>` classifies processes under a QA profile;
+  each `lsp` row records its spawn chain (worker, launcher, serve) so a language
+  server can be attributed to the call that started it.
+- `ledger-benchmark.mjs` measures the confined-execution ledger on a shallow
+  clone under `.cache/perf/ledger-bench`: first-call build, warm prepare/publish
+  and control-call timings for `--iterations` rounds, optionally after a
+  `--prewarm`, with RSS/CPU. It writes `termination.json` on failure and runs no
+  provider.
 - `multi-session-report.mjs` turns a run into `report.md` (per-role peaks and
   growth slopes, child-process churn as memory-time, responsiveness
   percentiles, busy-session buckets, Docker, system competitors, timeline) and

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { createSettingsHelpers } from './settings-helpers.js';
+import os from 'node:os';
+import path from 'node:path';
+import { createSettingsHelpers, HIDDEN_MODEL_REFS_LIMIT } from './settings-helpers.js';
+import { createSettingsNormalizationRuntime } from './settings-normalization-runtime.js';
 
 const createTestHelpers = (overrides = {}) => createSettingsHelpers({
   normalizePathForPersistence: (value) => value,
@@ -185,7 +188,17 @@ describe('settings helpers', () => {
     expect(helpers.sanitizeSettingsUpdate({ hiddenModels })).toEqual({
       hiddenModels,
     });
-    expect(calls).toContainEqual({ input: hiddenModels, limit: 64 });
+    expect(calls).toContainEqual({ input: hiddenModels, limit: HIDDEN_MODEL_REFS_LIMIT });
+  });
+
+  it('keeps more than 64 distinct hidden model refs through the real sanitizer (save and read-back)', () => {
+    const { sanitizeModelRefs } = createSettingsNormalizationRuntime({ os, path, processLike: process });
+    const helpers = createTestHelpers({ sanitizeModelRefs });
+    const hiddenModels = Array.from({ length: 150 }, (_, index) => ({ providerID: `p${index % 3}`, modelID: `m${index}` }));
+    const saved = helpers.sanitizeSettingsUpdate({ hiddenModels });
+    expect(saved.hiddenModels).toHaveLength(150);
+    expect(helpers.sanitizeSettingsUpdate({ hiddenModels: [...saved.hiddenModels, { providerID: 'p9', modelID: 'extra' }] }).hiddenModels)
+      .toHaveLength(151);
   });
 
   it('accepts non-negative integer model preference timestamps', () => {

@@ -1529,7 +1529,6 @@ export type RuntimeAPISelector<TValue> = (apis: RuntimeAPIs) => TValue;
 export type PluginScope = 'user' | 'project';
 export type PluginParsedKind = 'npm' | 'path';
 export type DevRyanDefaultPluginId =
-  | 'opencode-antigravity-auth'
   | '@rama_nigg/open-cursor'
   | 'oh-my-opencode-slim'
   | 'opencode-with-claude'

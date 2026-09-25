@@ -276,6 +276,8 @@ describe('OpenCode lifecycle', () => {
     expect(options.env.OPENCODE_DISABLE_DEFAULT_PLUGINS).toBeUndefined();
     expect(options.env.OPENCODE_DISABLE_EXTERNAL_SKILLS).toBeUndefined();
     expect(options.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS).toBe('1');
+    // The companion answers unmatched paths locally instead of proxying them out.
+    expect(options.env.DEVRYAN_OPENCODE_UI_DISABLED).toBe('1');
     expect(options.env).not.toHaveProperty('CONTEXT_MODE_DATA_DIR');
     expect(options.env).not.toHaveProperty('CONTEXT_MODE_DIR');
 

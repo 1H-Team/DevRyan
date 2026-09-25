@@ -48,13 +48,18 @@ const summarize = rows => {
 // input (implicit caching). A later request in the same stream reading much
 // less lost that prefix. Provider eviction also produces a loss, so the idle
 // gap is reported, and a compaction between requests resets the stream.
+// A break that reads back no more than the stream's first request (the shared
+// system/tool prefix every request gets) is a provider-side reset: routing or
+// eviction dropped the conversation's entry although the request stayed
+// append-only (observed for xAI Grok on the wire, 2026-09-24). A break above
+// that floor lost only part of the prefix, which a request change can cause.
 const CONTINUITY_MIN_LOSS = 1024;
 const CONTINUITY_WARM_GAP_MS = 5 * 60 * 1000;
 const at = row => row.timing.completion.at ?? row.observedAt;
 const continuity = rows => {
   const compactions = groupBy(rows.filter(row => row.purpose === 'compaction' && at(row) !== null), row => row.sessionID);
   const result = { compared: 0, unknown: 0, breaks: 0, breaksWithinWarmGap: 0, lostPrefixTokensWithinWarmGap: 0,
-    explicitStreams: 0, implicitStreams: 0 };
+    resetBreaksWithinWarmGap: 0, partialBreaksWithinWarmGap: 0, explicitStreams: 0, implicitStreams: 0 };
   const streams = groupBy(rows.filter(row => row.sessionID && row.purpose !== 'compaction'),
     row => JSON.stringify([row.sessionID, row.provider, row.route, row.requestedModel]));
   for (const stream of streams.values()) {
@@ -62,6 +67,7 @@ const continuity = rows => {
     const explicit = stream.some(row => row.tokens.cacheWrite > 0);
     result[explicit ? 'explicitStreams' : 'implicitStreams']++;
     const resets = (compactions.get(stream[0].sessionID) ?? []).map(at);
+    const floor = stream[0].tokens.cacheRead ?? 0;
     for (let index = 1; index < stream.length; index++) {
       const previous = stream[index - 1], current = stream[index];
       const expected = explicit ? sumKnown(previous.tokens.cacheRead, previous.tokens.cacheWrite) : previous.tokens.totalInput;
@@ -74,6 +80,7 @@ const continuity = rows => {
       result.breaks++;
       if (from !== null && to !== null && to >= from && to - from <= CONTINUITY_WARM_GAP_MS) {
         result.breaksWithinWarmGap++; result.lostPrefixTokensWithinWarmGap += loss;
+        result[current.tokens.cacheRead <= floor ? 'resetBreaksWithinWarmGap' : 'partialBreaksWithinWarmGap']++;
       }
     }
   }

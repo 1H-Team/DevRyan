@@ -143,7 +143,19 @@ test('derives prefix continuity from usage without request hashing', () => {
   i.add(step('i2', 2_000, { read: 4_900, write: 0 }, 1_000));
   i.add(step('i3', 3_000, { read: 0, write: 0 }, 7_000));
   expect(i.finish().roots[0].continuity.runtime).toMatchObject({ compared: 2, breaks: 1, breaksWithinWarmGap: 1,
-    lostPrefixTokensWithinWarmGap: 5_900, implicitStreams: 1 });
+    lostPrefixTokensWithinWarmGap: 5_900, resetBreaksWithinWarmGap: 1, partialBreaksWithinWarmGap: 0, implicitStreams: 1 });
+});
+test('separates provider resets to the shared-prefix floor from partial prefix losses', () => {
+  const step = (id, at, read, input) => event('message.part.updated', { id, messageID: `m-${id}`, type: 'step-finish',
+    time: { end: at }, tokens: { input, output: 10, reasoning: 0, cache: { read, write: 0 } } }, at);
+  // Grok-shaped implicit stream: the first request reads only the 1152-token shared prefix.
+  const c = createUsageCollector();
+  c.add(step('g1', 1_000, 1_152, 16_000));
+  c.add(step('g2', 2_000, 17_000, 18_000));
+  c.add(step('g3', 3_000, 1_152, 19_500));  // back to the floor: provider reset
+  c.add(step('g4', 4_000, 12_000, 21_000)); // above the floor but short: partial loss
+  expect(c.finish().roots[0].continuity.runtime).toMatchObject({ compared: 3, breaks: 2, breaksWithinWarmGap: 2,
+    resetBreaksWithinWarmGap: 1, partialBreaksWithinWarmGap: 1 });
 });
 test('a compaction between requests resets prefix continuity', () => {
   const c = createUsageCollector();

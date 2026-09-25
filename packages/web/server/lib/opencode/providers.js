@@ -2,12 +2,15 @@ import {
   CONFIG_FILE,
   OPENCODE_CONFIG_DIR,
   getConfigPaths,
+  listExistingConfigFiles,
   readConfigLayers,
   readConfigFile,
   isPlainObject,
-  getConfigForPath,
+  removeConfigKeyPaths,
   writeConfig,
 } from './shared.js';
+import { collapseRemovalKeyPaths } from './jsonc-config.js';
+import { getAntigravityPluginGoogleModelKeyPaths } from './antigravity-retirement.js';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -183,7 +186,16 @@ function getProviderSources(providerId, workingDirectory, options = {}) {
       : hasAnyProviderConfig(config, providerLookupIds)
   );
   const customExists = hasProviderSourceConfig(customConfig);
-  const projectExists = hasProviderSourceConfig(projectConfig);
+  // OpenCode merges every project config file, so detection scans all of them
+  // (matching removal) rather than only the first one that exists.
+  const projectSourcePath = workingDirectory
+    ? listExistingConfigFiles(workingDirectory, 'project').find((projectPath) => (
+      projectPath === paths.projectPath
+        ? hasProviderSourceConfig(projectConfig)
+        : hasProviderSourceConfig(readConfigFile(projectPath))
+    ))
+    : null;
+  const projectExists = Boolean(projectSourcePath);
   const userProviderSource = userCandidates.find((candidate) => hasProviderSourceConfig(candidate.config));
   const userExists = Boolean(userProviderSource);
   const customAnthropicOAuthExists = hasAnthropicOAuthConfig(customConfig, providerId);
@@ -195,7 +207,7 @@ function getProviderSources(providerId, workingDirectory, options = {}) {
     sources: {
       auth: { exists: false },
       user: { exists: userExists, path: userProviderSource?.path || paths.userPath },
-      project: { exists: projectExists, path: paths.projectPath || null },
+      project: { exists: projectExists, path: projectSourcePath || paths.projectPath || null },
       custom: { exists: customExists, path: paths.customPath },
       // Visible review note: this is deliberately separate from the normal provider source so Anthropic API-key configs are not mislabeled as the unofficial OAuth proxy path.
       anthropicOAuth: {
@@ -1142,62 +1154,46 @@ function ensureCursorAgentCompatibilityLink(options = {}) {
   };
 }
 
+function listRemovalConfigFiles(workingDirectory, scope) {
+  if (scope === 'project' && !workingDirectory) {
+    throw new Error('Working directory is required for project scope');
+  }
+  return listExistingConfigFiles(workingDirectory, scope);
+}
+
+// Visits every config file of the scope (OpenCode merges all of them), removes
+// what `getKeyPaths` selects, and returns the files that changed.
+function removeFromScopeConfigFiles(workingDirectory, scope, getKeyPaths) {
+  const changedPaths = [];
+  for (const filePath of listRemovalConfigFiles(workingDirectory, scope)) {
+    if (removeConfigKeyPaths(filePath, getKeyPaths(readConfigFile(filePath)))) {
+      changedPaths.push(filePath);
+    }
+  }
+  return changedPaths;
+}
+
+function getProviderConfigKeyPaths(config, providerLookupIds) {
+  return ['provider', 'providers'].flatMap((containerKey) => (
+    collapseRemovalKeyPaths(config, [containerKey], providerLookupIds)
+  ));
+}
+
 function removeProviderConfig(providerId, workingDirectory, scope = 'user') {
   if (!providerId || typeof providerId !== 'string') {
     throw new Error('Provider ID is required');
   }
 
-  const layers = readConfigLayers(workingDirectory);
-  let targetPath = layers.paths.userPath;
-
-  if (scope === 'project') {
-    if (!workingDirectory) {
-      throw new Error('Working directory is required for project scope');
-    }
-    targetPath = layers.paths.projectPath || targetPath;
-  } else if (scope === 'custom') {
-    if (!layers.paths.customPath) {
-      return false;
-    }
-    targetPath = layers.paths.customPath;
-  }
-
-  const targetConfig = getConfigForPath(layers, targetPath);
-  const providerConfig = isPlainObject(targetConfig.provider) ? targetConfig.provider : {};
-  const providersConfig = isPlainObject(targetConfig.providers) ? targetConfig.providers : {};
   const providerLookupIds = getProviderLookupIds(providerId);
-  const removedProvider = providerLookupIds.some((lookupId) => Object.prototype.hasOwnProperty.call(providerConfig, lookupId));
-  const removedProviders = providerLookupIds.some((lookupId) => Object.prototype.hasOwnProperty.call(providersConfig, lookupId));
-
-  if (!removedProvider && !removedProviders) {
-    return false;
+  const changedPaths = removeFromScopeConfigFiles(
+    workingDirectory,
+    scope,
+    (config) => getProviderConfigKeyPaths(config, providerLookupIds),
+  );
+  for (const changedPath of changedPaths) {
+    console.log(`Removed provider ${providerId} from config: ${changedPath}`);
   }
-
-  if (removedProvider) {
-    for (const lookupId of providerLookupIds) {
-      delete providerConfig[lookupId];
-    }
-    if (Object.keys(providerConfig).length === 0) {
-      delete targetConfig.provider;
-    } else {
-      targetConfig.provider = providerConfig;
-    }
-  }
-
-  if (removedProviders) {
-    for (const lookupId of providerLookupIds) {
-      delete providersConfig[lookupId];
-    }
-    if (Object.keys(providersConfig).length === 0) {
-      delete targetConfig.providers;
-    } else {
-      targetConfig.providers = providersConfig;
-    }
-  }
-
-  writeConfig(targetConfig, targetPath || CONFIG_FILE);
-  console.log(`Removed provider ${providerId} from config: ${targetPath}`);
-  return true;
+  return changedPaths.length > 0;
 }
 
 function isAntigravityModel(modelId, model) {
@@ -1205,62 +1201,35 @@ function isAntigravityModel(modelId, model) {
   return modelId.startsWith('antigravity-') || /\s+\(Antigravity\)$/i.test(name);
 }
 
+// Antigravity is retired, so disconnecting it removes every model its plugin
+// wrote under `provider.google` (Antigravity and Gemini CLI), not only the
+// Antigravity-branded ones.
 function removeAntigravityProviderConfig(workingDirectory, scope = 'user') {
-  const layers = readConfigLayers(workingDirectory);
-  let targetPath = layers.paths.userPath;
-
-  if (scope === 'project') {
-    if (!workingDirectory) {
-      throw new Error('Working directory is required for project scope');
-    }
-    targetPath = layers.paths.projectPath || targetPath;
-  } else if (scope === 'custom') {
-    if (!layers.paths.customPath) {
-      return false;
-    }
-    targetPath = layers.paths.customPath;
+  const changedPaths = removeFromScopeConfigFiles(
+    workingDirectory,
+    scope,
+    getAntigravityPluginGoogleModelKeyPaths,
+  );
+  for (const changedPath of changedPaths) {
+    console.log(`Removed Antigravity models from config: ${changedPath}`);
   }
+  return changedPaths.length > 0;
+}
 
-  const targetConfig = getConfigForPath(layers, targetPath);
-  let changed = false;
-
-  for (const containerKey of ['provider', 'providers']) {
-    const container = isPlainObject(targetConfig[containerKey]) ? targetConfig[containerKey] : null;
-    const google = isPlainObject(container?.google) ? container.google : null;
-    const models = isPlainObject(google?.models) ? google.models : null;
-    if (!container || !google || !models) continue;
-
-    const antigravityModelIds = Object.keys(models).filter((modelId) => (
-      isAntigravityModel(modelId, models[modelId])
-    ));
-    if (antigravityModelIds.length === 0) continue;
-
-    for (const modelId of antigravityModelIds) {
-      delete models[modelId];
-    }
-    if (Object.keys(models).length === 0) {
-      delete google.models;
-    } else {
-      google.models = models;
-    }
-    if (Object.keys(google).length === 0) {
-      delete container.google;
-    } else {
-      container.google = google;
-    }
-    if (Object.keys(container).length === 0) {
-      delete targetConfig[containerKey];
-    } else {
-      targetConfig[containerKey] = container;
-    }
-    changed = true;
-  }
-
-  if (!changed) return false;
-
-  writeConfig(targetConfig, targetPath || CONFIG_FILE);
-  console.log(`Removed Antigravity models from config: ${targetPath}`);
-  return true;
+// Every config file that still defines the provider, across user, project and
+// custom layers. Used to verify a removal instead of assuming it worked.
+function listProviderConfigFiles(providerId, workingDirectory) {
+  const normalizedProviderId = normalizeProviderId(providerId);
+  const providerLookupIds = getProviderLookupIds(providerId);
+  const definesProvider = (config) => (
+    normalizedProviderId === 'antigravity'
+      ? hasAntigravityProviderConfig(config)
+      : hasAnyProviderConfig(config, providerLookupIds)
+  );
+  const scopes = workingDirectory ? ['user', 'project', 'custom'] : ['user', 'custom'];
+  return scopes
+    .flatMap((scope) => listExistingConfigFiles(workingDirectory, scope))
+    .filter((filePath) => definesProvider(readConfigFile(filePath)));
 }
 
 export {
@@ -1278,6 +1247,7 @@ export {
   fetchCursorAcpProxyHealth,
   getCursorAcpRuntimeStatus,
   getProviderSources,
+  listProviderConfigFiles,
   removeAntigravityProviderConfig,
   removeProviderConfig,
 };

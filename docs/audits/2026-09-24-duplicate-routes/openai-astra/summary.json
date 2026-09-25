@@ -1,0 +1,40 @@
+{
+  "route": "openai-astra",
+  "reportHash": "38c2411c5b81280fe969eab76d43ecab4bc0cb639d66d5e3f1bdd6a2eb350dd3",
+  "qualified": true,
+  "evidence": {
+    "reportHash": "38c2411c5b81280fe969eab76d43ecab4bc0cb639d66d5e3f1bdd6a2eb350dd3",
+    "correctness": true,
+    "finalRequests": true,
+    "compactionLifecycle": true,
+    "nonIncreasingRequests": true,
+    "livePairs": 10,
+    "skillPairs": 5,
+    "managedPairs": 5,
+    "incompleteTrials": 0,
+    "criticalFailures": 0,
+    "repeatedMutations": 0,
+    "repeatCallDelta": 0
+  },
+  "serialized": {
+    "baseline": [
+      84298,
+      92826
+    ],
+    "candidate": [
+      60652,
+      65374
+    ]
+  },
+  "providerInput": {
+    "baseline": {
+      "input": 173182,
+      "cacheRead": 6144
+    },
+    "candidate": {
+      "input": 122406,
+      "cacheRead": 0
+    }
+  },
+  "failedAttempts": 0
+}

@@ -12,6 +12,7 @@ import {
   getProviderIntegrationLookupIds,
   hasGitHubCopilotProviderModels,
   isGitHubCopilotProviderId,
+  listProviderCredentialEnvKeys,
   mergeGitHubCopilotProvider,
 } from './provider-integrations.js';
 import { annotateOpenAIModelAvailability } from './openai-model-availability.js';
@@ -39,9 +40,14 @@ const CURSOR_USAGE_TOKEN_MAX_LENGTH = 16_384;
 // warms the cache for the next turn.
 const XAI_TOOL_CATALOG_COLD_START_WAIT_MS = 1_200;
 
-const getAntigravityAccountsSource = async () => {
-  const { ANTIGRAVITY_ACCOUNTS_PATHS, readJsonFile } = await import('../quota/utils/index.js');
-  for (const filePath of ANTIGRAVITY_ACCOUNTS_PATHS) {
+const listDefaultAntigravityAccountsPaths = async () => {
+  const { listAntigravityAccountsPaths } = await import('../quota/utils/index.js');
+  return listAntigravityAccountsPaths();
+};
+
+const getAntigravityAccountsSource = async (listAccountsPaths) => {
+  const { readJsonFile } = await import('../quota/utils/index.js');
+  for (const filePath of await listAccountsPaths()) {
     const data = readJsonFile(filePath);
     if (Array.isArray(data?.accounts) && data.accounts.length > 0) {
       return { exists: true, path: filePath };
@@ -50,10 +56,9 @@ const getAntigravityAccountsSource = async () => {
   return { exists: false, path: null };
 };
 
-const removeAntigravityAccounts = async () => {
-  const { ANTIGRAVITY_ACCOUNTS_PATHS } = await import('../quota/utils/index.js');
+const removeAntigravityAccounts = async (listAccountsPaths) => {
   let removed = false;
-  for (const filePath of ANTIGRAVITY_ACCOUNTS_PATHS) {
+  for (const filePath of await listAccountsPaths()) {
     try {
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
@@ -104,6 +109,10 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     getProviderSources,
     removeAntigravityProviderConfig = () => false,
     removeProviderConfig,
+    listProviderConfigFiles = () => [],
+    getProviderEnvironmentSnapshot = () => ({}),
+    // Injected in tests so they never touch the user's real account files.
+    listAntigravityAccountsPaths = listDefaultAntigravityAccountsPaths,
     ensureAnthropicOAuthProviderConfig,
     markConfigChange,
     buildAugmentedPath,
@@ -224,7 +233,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       result.sources.auth.exists = Boolean(auth);
     }
     if (providerId === ANTIGRAVITY_PROVIDER_ID) {
-      result.sources.auth = await getAntigravityAccountsSource();
+      result.sources.auth = await getAntigravityAccountsSource(listAntigravityAccountsPaths);
     }
     return result.sources;
   };
@@ -234,6 +243,28 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       ? removeAntigravityProviderConfig(directory, scope)
       : removeProviderConfig(providerId, directory, scope)
   );
+
+  // What still supplies a provider after a disconnect. OpenCode merges every
+  // config layer, the auth store, and credential env vars, so a removal is
+  // verified against all of them instead of being assumed to have worked.
+  const listRemainingProviderSources = async (providerId, directory) => {
+    const remaining = listProviderConfigFiles(providerId, directory)
+      .map((filePath) => ({ type: 'config', path: filePath }));
+    if (providerId === ANTIGRAVITY_PROVIDER_ID) {
+      const accounts = await getAntigravityAccountsSource(listAntigravityAccountsPaths);
+      if (accounts.exists) remaining.push({ type: 'auth', path: accounts.path });
+      return remaining;
+    }
+    if (providerId !== CURSOR_ACP_PROVIDER_ID
+      && await hasProviderAuthForLookupIds(getProviderIntegrationLookupIds(providerId))) {
+      remaining.push({ type: 'auth', path: null });
+    }
+    const environment = { ...(getProviderEnvironmentSnapshot() || {}), ...process.env };
+    for (const name of listProviderCredentialEnvKeys(providerId, environment)) {
+      remaining.push({ type: 'env', name });
+    }
+    return remaining;
+  };
 
   const normalizeCursorUsageSessionToken = (value) => {
     if (typeof value !== 'string') {
@@ -1234,7 +1265,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
           removedSources.auth = clearCursorSdkAuth({ readAuth: auth.readAuthFile, writeAuth: auth.writeAuthFile });
         } else {
           removedSources.auth = providerId === ANTIGRAVITY_PROVIDER_ID
-            ? await removeAntigravityAccounts()
+            ? await removeAntigravityAccounts(listAntigravityAccountsPaths)
             : await removeProviderAuthForLookupIds(getProviderIntegrationLookupIds(providerId));
         }
       } else if (scope === 'user' || scope === 'project' || scope === 'custom') {
@@ -1244,7 +1275,11 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         removedSources.auth = providerId === CURSOR_ACP_PROVIDER_ID
           ? clearCursorSdkAuth({ readAuth: auth.readAuthFile, writeAuth: auth.writeAuthFile })
           : providerId === ANTIGRAVITY_PROVIDER_ID
-            ? await removeAntigravityAccounts()
+            // The plugin rebuilds its accounts from Google OAuth credentials.
+            ? (await Promise.all([
+              removeAntigravityAccounts(listAntigravityAccountsPaths),
+              removeProviderAuthForLookupIds(getProviderIntegrationLookupIds('google')),
+            ])).some(Boolean)
             : await removeProviderAuthForLookupIds(getProviderIntegrationLookupIds(providerId));
         removedSources.user = removeProviderConfigForScope(providerId, null, 'user');
         removedSources.custom = removeProviderConfigForScope(providerId, null, 'custom');
@@ -1257,22 +1292,30 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
 
       const removed = Object.values(removedSources).some(Boolean);
 
+      // Restart even for an idempotent disconnect: the runtime may still hold a
+      // provider whose source is already gone.
       const applyResult = await markConfigChange(
         `provider ${providerId} disconnected (${scope})`,
         { providerId, scope },
         true,
       );
       const sources = await readProviderSourceSnapshot(providerId, directory);
+      const stillProvidedBy = scope === 'all'
+        ? await listRemainingProviderSources(providerId, directory)
+        : [];
 
       return res.json({
         success: true,
         removed,
         removedSources,
+        stillProvidedBy,
         sources,
         ...applyResult,
-        message: removed
-          ? 'Provider configuration removed; runtime refresh requested'
-          : 'No stored provider configuration was found; runtime refresh requested',
+        message: stillProvidedBy.length > 0
+          ? 'Provider is still configured elsewhere'
+          : removed
+            ? 'Provider configuration removed; runtime refresh requested'
+            : 'No stored provider configuration was found; runtime refresh requested',
       });
     } catch (error) {
       console.error('Failed to disconnect provider:', error);

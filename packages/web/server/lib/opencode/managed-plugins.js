@@ -2,7 +2,6 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const DEVRYAN_MANAGED_PLUGIN_IDS = Object.freeze({
-  ANTIGRAVITY: 'opencode-antigravity-auth',
   OPEN_CURSOR: '@rama_nigg/open-cursor',
   CLAUDE: 'opencode-with-claude',
   GPT_IMAGEGEN: 'opencode-gpt-imagegen',
@@ -15,26 +14,16 @@ export const DEVRYAN_MANAGED_PLUGIN_IDS = Object.freeze({
 
 const definitions = [
   {
-    id: DEVRYAN_MANAGED_PLUGIN_IDS.ANTIGRAVITY,
-    displayName: 'OpenCode Antigravity Auth',
-    packageName: 'opencode-antigravity-auth',
-    version: '1.6.0',
-    entrypoint: 'dist/index.js',
-    registrationPath: './node_modules/opencode-antigravity-auth/dist/index.js',
-    legacySpecs: ['opencode-antigravity-auth', 'opencode-antigravity-auth@latest'],
-    delivery: 'installed-local',
-    sourcePath: 'default-config/user-profile/package.json',
-    profileRegistration: true,
-    public: true,
-  },
-  {
     id: DEVRYAN_MANAGED_PLUGIN_IDS.OPEN_CURSOR,
     displayName: 'Open Cursor',
     packageName: '@rama_nigg/open-cursor',
     version: '2.5.8',
     entrypoint: 'dist/plugin-entry.js',
-    registrationPath: './node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js',
+    // The adapter loads the installed package and drops its local tools, which
+    // shadow OpenCode built-ins without permission checks.
+    registrationPath: './plugins/devryan-open-cursor.mjs',
     legacySpecs: ['@rama_nigg/open-cursor', '@rama_nigg/open-cursor@latest'],
+    legacyRegistrationPaths: ['./node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js'],
     delivery: 'installed-local',
     sourcePath: 'default-config/user-profile/package.json',
     profileRegistration: true,
@@ -122,7 +111,7 @@ const definitions = [
     sourcePath: 'default-config/plugins/devryan-document-reader.mjs',
     profileRegistration: true,
     runtimeDependencies: [
-      { packageName: '@opencode-ai/plugin', version: '1.18.31', entrypoint: 'dist/index.js' },
+      { packageName: '@opencode-ai/plugin', version: '1.18.32', entrypoint: 'dist/index.js' },
       { packageName: 'adm-zip', version: '0.6.0', entrypoint: 'adm-zip.js' },
       { packageName: 'mammoth', version: '1.12.1', entrypoint: 'lib/index.js' },
       { packageName: 'unpdf', version: '1.8.0', entrypoint: 'dist/index.mjs' },
@@ -147,6 +136,7 @@ const definitions = [
 export const DEVRYAN_MANAGED_PLUGINS = Object.freeze(definitions.map((definition) => Object.freeze({
   ...definition,
   legacySpecs: Object.freeze([...definition.legacySpecs]),
+  legacyRegistrationPaths: Object.freeze([...(definition.legacyRegistrationPaths || [])]),
   runtimeDependencies: Object.freeze((definition.runtimeDependencies || []).map((dependency) => Object.freeze({ ...dependency }))),
 })));
 
@@ -176,22 +166,30 @@ export const DEVRYAN_MANAGED_PROFILE_PLUGIN_FILES = Object.freeze(
 // Plugins DevRyan used to provision and now actively removes from existing profiles.
 // Context Mode (removed 2026-09) was only ever pinned at 1.0.169; any other user-owned version is left alone.
 const RETIRED_CONTEXT_MODE_REGISTRATION_PATH = './node_modules/context-mode/build/adapters/opencode/plugin.js';
+// Antigravity (removed 2026-09) was pinned at 1.6.0; the same user-owned-version rule applies.
+const RETIRED_ANTIGRAVITY_REGISTRATION_PATH = './node_modules/opencode-antigravity-auth/dist/index.js';
 
 export const RETIRED_DEVRYAN_PLUGIN_SPECS = Object.freeze([
   'cursor-acp',
   'context-mode',
   'context-mode@1.0.169',
   RETIRED_CONTEXT_MODE_REGISTRATION_PATH,
+  'opencode-antigravity-auth',
+  'opencode-antigravity-auth@latest',
+  'opencode-antigravity-auth@1.6.0',
+  RETIRED_ANTIGRAVITY_REGISTRATION_PATH,
 ]);
 
 // Registration paths also retired in absolute or file:// form (matched by path suffix).
 const RETIRED_DEVRYAN_PLUGIN_REGISTRATION_SUFFIXES = Object.freeze([
   RETIRED_CONTEXT_MODE_REGISTRATION_PATH.replace(/^\.\//, '/'),
+  RETIRED_ANTIGRAVITY_REGISTRATION_PATH.replace(/^\.\//, '/'),
 ]);
 
 // Profile dependencies DevRyan pinned and now removes, keyed by package name with the exact pinned version.
 export const RETIRED_DEVRYAN_PROFILE_DEPENDENCIES = Object.freeze({
   'context-mode': '1.0.169',
+  'opencode-antigravity-auth': '1.6.0',
 });
 
 const normalizeSpec = (value) => {
@@ -203,14 +201,22 @@ const replaceEntrySpec = (entry, nextSpec) => (
   Array.isArray(entry) ? [nextSpec, ...entry.slice(1)] : nextSpec
 );
 
-const isRegistrationPathForPlugin = (spec, plugin) => {
+const matchesRegistrationPath = (spec, registrationPath) => {
   const normalized = normalizeSpec(spec);
-  const registration = plugin.registrationPath.replace(/\\/g, '/');
+  const registration = registrationPath.replace(/\\/g, '/');
   if (!normalized) return false;
   if (normalized === registration) return true;
   const suffix = registration.replace(/^\.\//, '/');
   return normalized.endsWith(suffix);
 };
+
+const isRegistrationPathForPlugin = (spec, plugin) => matchesRegistrationPath(spec, plugin.registrationPath);
+
+// A registration path the plugin used before an adapter replaced it, in its
+// relative or absolute (file URL) spelling.
+const isLegacyRegistrationPathForPlugin = (spec, plugin) => (
+  plugin.legacyRegistrationPaths.some((registrationPath) => matchesRegistrationPath(spec, registrationPath))
+);
 
 const isPackageSpecForPlugin = (spec, plugin) => {
   const normalized = normalizeSpec(spec);
@@ -231,6 +237,7 @@ export const getDevRyanManagedPluginForSpec = (value) => {
     isRegistrationPathForPlugin(spec, plugin)
     || isPackageSpecForPlugin(spec, plugin)
     || plugin.legacySpecs.includes(spec)
+    || isLegacyRegistrationPathForPlugin(spec, plugin)
   )) || null;
 };
 
@@ -248,6 +255,7 @@ const getManagedMigrationPlugin = (value) => {
   return DEVRYAN_MANAGED_PROFILE_PLUGINS.find((plugin) => (
     isRegistrationPathForPlugin(spec, plugin)
     || plugin.legacySpecs.includes(spec)
+    || isLegacyRegistrationPathForPlugin(spec, plugin)
   )) || null;
 };
 
@@ -262,7 +270,8 @@ export const isDevRyanManagedLegacyPluginSpec = (value) => {
   const spec = normalizeSpec(value);
   if (!spec) return false;
   return isRetiredDevRyanPluginSpec(spec)
-    || DEVRYAN_MANAGED_PROFILE_PLUGINS.some((plugin) => plugin.legacySpecs.includes(spec));
+    || DEVRYAN_MANAGED_PROFILE_PLUGINS.some((plugin) => plugin.legacySpecs.includes(spec)
+      || isLegacyRegistrationPathForPlugin(spec, plugin));
 };
 
 export const removeDevRyanManagedLegacyPluginSpecs = (entries) => (

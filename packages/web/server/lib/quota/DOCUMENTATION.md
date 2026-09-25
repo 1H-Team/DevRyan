@@ -9,7 +9,7 @@ This module fetches quota and usage signals for supported providers in the web s
 - `packages/web/server/lib/quota/providers/index.js`: provider registry, configured-provider list, and provider dispatcher.
 - `packages/web/server/lib/quota/providers/interface.js`: JSDoc provider contract used as implementation reference.
 - `packages/web/server/lib/quota/credentials/`: allowlisted managed-credential normalization, private atomic storage, and explicit Cursor import.
-- `packages/web/server/lib/quota/providers/google/`: Google/Gemini and Antigravity auth-source-specific API and transform modules.
+- `packages/web/server/lib/quota/providers/google/`: Google/Gemini auth-source API and transform modules. Antigravity quota was removed with the retired Antigravity plugin; its account files are only discovered by the provider disconnect route (`listAntigravityAccountsPaths` in `utils/auth.js`).
 - `packages/web/server/lib/quota/utils/`: shared auth, transform, and formatting helpers.
 - `@openchamber/shared-runtime/lib/quota-adapters.js`: injected request/parsing contract  for OpenCode Zen, z.ai, Kimi, Codex, xAI, and DeepSeek.
 
@@ -24,7 +24,6 @@ These provider IDs are currently dispatchable via `fetchQuotaForProvider(provide
 | `deepseek` | DeepSeek | `providers/deepseek.js` | `deepseek` API key/token |
 | `cursor-acp` | Cursor | `providers/cursor-acp.js` | Environment/token-file OAuth, managed OAuth/dashboard credential, then legacy `cursor-acp.usageSessionToken`; API alias `cursor` |
 | `google` | Google | `providers/google/index.js` | `google`, `google.oauth` |
-| `antigravity` | Antigravity | `providers/google/index.js` | Antigravity accounts file |
 | `github-copilot` | GitHub Copilot | `providers/copilot.js` | `github-copilot`, `copilot` |
 | `github-copilot-addon` | GitHub Copilot Add-on | `providers/copilot.js` | `github-copilot`, `copilot` |
 | `kimi-for-coding` | Kimi for Coding | `providers/kimi.js` | `kimi-for-coding`, `kimi` |
@@ -177,4 +176,4 @@ measuring refresh behavior. Request counts and status codes are sufficient.
 ## Notes for contributors
 - Keep provider IDs stable; clients use them directly.
 - Keep one visible UI entry per provider family even when dispatcher aliases are accepted for compatibility.
-- Keep Google and Antigravity behavior changes isolated and review `providers/google/*` together; Antigravity reuses the Google module but fetches only the Antigravity auth source.
+- Review `providers/google/*` together; the Google provider reads only the Gemini CLI auth source.

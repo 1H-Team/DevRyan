@@ -21,7 +21,12 @@ import {
 const servers = new Set();
 
 afterEach(async () => {
-  await Promise.all([...servers].map((server) => new Promise((resolve) => server.close(resolve))));
+  await Promise.all([...servers].map((server) => new Promise((resolve) => {
+    server.close(resolve);
+    // Deadline tests abort in-flight loopback requests; do not wait for their
+    // keep-alive sockets to expire before the next test.
+    server.closeAllConnections();
+  })));
   servers.clear();
 });
 
@@ -46,6 +51,38 @@ const sendJson = (response, status, value) => {
   response.writeHead(status, { 'content-type': 'application/json' });
   response.end(JSON.stringify(value));
 };
+
+// Success-path turn budgets are hang guards, not assertions: every fixture
+// below answers terminally on its first polls, so a loaded host must never be
+// able to reach the deadline before the asserted outcome.
+const UNREACHABLE_TURN_BUDGET_MS = 30_000;
+// Cleanup budgets for tests that assert a complete abort tree; cleanup returns
+// as soon as the loopback abort requests answer.
+const UNREACHABLE_CLEANUP_BUDGET_MS = 30_000;
+
+// Manual stand-in for runSessionTurn's deadline timer. Timeout tests fire it
+// from the fixture once the session exists, so the deadline is the only
+// possible outcome and it can never land during session creation.
+const createManualDeadline = () => {
+  let callback = null;
+  return {
+    timers: {
+      setTimeout(onDeadline) {
+        callback = onDeadline;
+        return 'manual-turn-deadline';
+      },
+      clearTimeout() {
+        callback = null;
+      },
+    },
+    fire() {
+      assert.ok(callback, 'turn deadline is not armed');
+      callback();
+    },
+  };
+};
+
+const flushPendingCallbacks = () => new Promise((resolve) => setImmediate(resolve));
 
 describe('DevRyan loopback evaluation client', () => {
   test('uses the host Cursor catalog and SDK auth status for pinned model availability', async () => {
@@ -813,7 +850,7 @@ describe('DevRyan loopback evaluation client', () => {
         variant: 'high',
       },
       prompt: 'secret prompt that must remain in memory only',
-      timeoutMs: 1_000,
+      timeoutMs: UNREACHABLE_TURN_BUDGET_MS,
     });
 
     assert.equal(result.rootSessionId, 'ses_parent');
@@ -943,6 +980,8 @@ describe('DevRyan loopback evaluation client', () => {
 
   test('times out from authoritative busy state and aborts descendants before the parent', async () => {
     const aborts = [];
+    const deadline = createManualDeadline();
+    let statusReads = 0;
     const { baseUrl } = await startServer((request, response) => {
       const url = new URL(request.url, baseUrl);
       if (request.method === 'POST' && url.pathname === '/api/session') return sendJson(response, 200, { id: 'ses_parent' });
@@ -950,7 +989,13 @@ describe('DevRyan loopback evaluation client', () => {
         response.writeHead(204);
         return response.end();
       }
-      if (url.pathname === '/api/session/status') return sendJson(response, 200, { ses_parent: { type: 'busy' } });
+      if (url.pathname === '/api/session/status') {
+        statusReads += 1;
+        // The root never leaves busy. Once two complete polls have observed it,
+        // the turn deadline is the only way the wait can end.
+        if (statusReads === 3) deadline.fire();
+        return sendJson(response, 200, { ses_parent: { type: 'busy' } });
+      }
       if (url.pathname === '/api/session/ses_parent/children') return sendJson(response, 200, [{ id: 'ses_child' }]);
       if (url.pathname === '/api/session/ses_child/children') return sendJson(response, 200, [{ id: 'ses_grandchild' }]);
       if (url.pathname === '/api/session/ses_grandchild/children') return sendJson(response, 200, []);
@@ -971,9 +1016,9 @@ describe('DevRyan loopback evaluation client', () => {
         directory: '/tmp/fixture',
         selection: { providerId: 'p', modelId: 'm', agent: 'builder', variant: null },
         prompt: 'in-memory prompt',
-        // Leave enough headroom for loopback session creation on a loaded host;
-        // the permanently busy status still forces the timeout and cleanup path.
         timeoutMs: 500,
+        timers: deadline.timers,
+        cleanupTimeoutMs: UNREACHABLE_CLEANUP_BUDGET_MS,
       }),
       (error) => {
         assert.ok(error instanceof EvaluationTimeoutError);
@@ -983,6 +1028,33 @@ describe('DevRyan loopback evaluation client', () => {
       },
     );
     assert.deepEqual(aborts, ['ses_grandchild', 'ses_child', 'ses_parent']);
+  });
+
+  test('enforces the host-timer turn deadline when the server never answers', async () => {
+    let requests = 0;
+    const { baseUrl } = await startServer(() => {
+      requests += 1;
+    });
+
+    await assert.rejects(
+      runSessionTurn({
+        client: createEvaluationClient({ baseUrl, pollIntervalMs: 1 }),
+        directory: '/tmp/fixture',
+        selection: { providerId: 'p', modelId: 'm', agent: 'builder', variant: null },
+        prompt: 'in-memory prompt',
+        timeoutMs: 50,
+      }),
+      (error) => {
+        assert.ok(error instanceof EvaluationTimeoutError);
+        assert.equal(error.code, 'evaluation_timeout');
+        assert.equal(error.timeoutMs, 50);
+        // No session was ever created, so there is nothing to clean up.
+        assert.equal(error.rootSessionId, undefined);
+        assert.deepEqual(error.cleanup, { abortedSessionIds: [], abortFailureCount: 0 });
+        return true;
+      },
+    );
+    assert.ok(requests >= 1);
   });
 
   test('does not fabricate idle from missing status entries before later busy and idle', async () => {
@@ -1017,7 +1089,7 @@ describe('DevRyan loopback evaluation client', () => {
       directory: '/tmp/fixture',
       selection: { providerId: 'p', modelId: 'm', agent: 'builder', variant: null },
       prompt: 'in-memory prompt',
-      timeoutMs: 1_000,
+      timeoutMs: UNREACHABLE_TURN_BUDGET_MS,
     });
     assert.ok(statusReads >= 4);
     assert.deepEqual(result.statuses, ['busy', 'idle']);
@@ -1051,7 +1123,7 @@ describe('DevRyan loopback evaluation client', () => {
       directory: '/tmp/fixture',
       selection: { providerId: 'p', modelId: 'm', agent: 'builder', variant: null },
       prompt: 'in-memory prompt',
-      timeoutMs: 1_000,
+      timeoutMs: UNREACHABLE_TURN_BUDGET_MS,
     });
     assert.ok(messageReads >= 2);
     assert.equal(result.terminalEvidence.complete, true);
@@ -1094,7 +1166,7 @@ describe('DevRyan loopback evaluation client', () => {
         selection: { providerId: 'p', modelId: 'm', agent: 'builder', variant: null },
         prompt: 'in-memory prompt',
         caseId,
-        timeoutMs: 200,
+        timeoutMs: UNREACHABLE_TURN_BUDGET_MS,
       });
       assert.equal(result.terminalEvidence.complete, true, caseId);
       assert.equal(result.managedSnapshot.available, false, caseId);
@@ -1134,7 +1206,8 @@ describe('DevRyan loopback evaluation client', () => {
         selection: { providerId: 'p', modelId: 'm', agent: 'builder', variant: null },
         prompt: 'in-memory prompt',
         caseId: 'managed-change',
-        timeoutMs: 200,
+        timeoutMs: UNREACHABLE_TURN_BUDGET_MS,
+        cleanupTimeoutMs: UNREACHABLE_CLEANUP_BUDGET_MS,
       }),
       (error) => error?.code === 'evaluation_managed_unavailable',
     );
@@ -1180,7 +1253,7 @@ describe('DevRyan loopback evaluation client', () => {
       selection: { providerId: 'p', modelId: 'm', agent: 'builder', variant: null },
       prompt: 'in-memory prompt',
       caseId: 'inspect',
-      timeoutMs: 200,
+      timeoutMs: UNREACHABLE_TURN_BUDGET_MS,
     });
     assert.equal(result.terminalEvidence.complete, true);
     assert.ok(snapshotReads >= 3);
@@ -1188,6 +1261,8 @@ describe('DevRyan loopback evaluation client', () => {
 
   test('waits for recursive children and managed tasks, then aborts them before a timed-out parent', async () => {
     const aborts = [];
+    const deadline = createManualDeadline();
+    let statusReads = 0;
     const { baseUrl } = await startServer((request, response) => {
       const url = new URL(request.url, baseUrl);
       if (request.method === 'POST' && url.pathname === '/api/session') return sendJson(response, 200, { id: 'ses_parent' });
@@ -1196,6 +1271,10 @@ describe('DevRyan loopback evaluation client', () => {
         return response.end();
       }
       if (url.pathname === '/api/session/status') {
+        statusReads += 1;
+        // The first poll has discovered the busy child and its running task, so
+        // the turn keeps waiting until the deadline fires here.
+        if (statusReads === 2) deadline.fire();
         return sendJson(response, 200, {
           ses_parent: { type: 'idle' },
           ses_child: { type: 'busy' },
@@ -1223,13 +1302,13 @@ describe('DevRyan loopback evaluation client', () => {
 
     await assert.rejects(
       runSessionTurn({
-        client: createEvaluationClient({ baseUrl, pollIntervalMs: 1, requestTimeoutMs: 1000 }),
+        client: createEvaluationClient({ baseUrl, pollIntervalMs: 1 }),
         directory: '/tmp/fixture',
         selection: { providerId: 'p', modelId: 'm', agent: 'builder', variant: null },
         prompt: 'in-memory prompt',
-        // Exercise deadline cleanup, not loopback startup speed under workspace validation load.
         timeoutMs: 1000,
-        cleanupTimeoutMs: 2000,
+        timers: deadline.timers,
+        cleanupTimeoutMs: UNREACHABLE_CLEANUP_BUDGET_MS,
       }),
       (error) => error?.code === 'evaluation_timeout' && error.cleanup?.complete === true,
     );
@@ -1259,7 +1338,8 @@ describe('DevRyan loopback evaluation client', () => {
         directory: '/tmp/fixture',
         selection: { providerId: 'p', modelId: 'm', agent: 'builder', variant: null },
         prompt: 'in-memory prompt',
-        timeoutMs: 1_000,
+        timeoutMs: UNREACHABLE_TURN_BUDGET_MS,
+        cleanupTimeoutMs: UNREACHABLE_CLEANUP_BUDGET_MS,
       }),
       (error) => error?.code === 'evaluation_session_terminal_failure',
     );
@@ -1271,7 +1351,7 @@ describe('DevRyan loopback evaluation client', () => {
     const cleanup = await abortSessionTree({
       async getChildren() { throw new Error('private failure'); },
       async abortSession(sessionId) { aborts.push(sessionId); },
-    }, 'ses_parent', '/tmp/fixture', { timeoutMs: 100 });
+    }, 'ses_parent', '/tmp/fixture', { timeoutMs: UNREACHABLE_CLEANUP_BUDGET_MS });
     assert.equal(cleanup.complete, false);
     assert.equal(cleanup.discoveryComplete, false);
     assert.deepEqual(cleanup.reasonCodes, ['children_fetch_failed']);
@@ -1305,17 +1385,33 @@ describe('DevRyan loopback evaluation client', () => {
     assert.equal(capAborts.at(-1), 'ses_parent');
   });
 
-  test('bounds hung discovery under one cleanup deadline and still aborts every known session', { timeout: 300 }, async () => {
+  test('bounds hung discovery under one cleanup deadline and still aborts every known session', { timeout: 5_000 }, async (t) => {
+    // No I/O is involved, so the cleanup deadlines run on virtual time and a
+    // loaded host cannot stretch them.
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 });
     const aborts = [];
-    const startedAt = Date.now();
-    const cleanup = await abortSessionTree({
+    let settled = false;
+    const pendingCleanup = abortSessionTree({
       async getChildren() { return await new Promise(() => {}); },
       async abortSession(sessionId) { aborts.push(sessionId); },
     }, 'ses_parent', '/tmp/fixture', {
       timeoutMs: 40,
       knownSessionIds: ['ses_known_child'],
+    }).finally(() => {
+      settled = true;
     });
-    assert.ok(Date.now() - startedAt < 200);
+
+    // Discovery owns the first half of the 40 ms budget and must wait for it.
+    t.mock.timers.tick(19);
+    await flushPendingCallbacks();
+    assert.equal(settled, false);
+    assert.deepEqual(aborts, []);
+
+    // At the discovery deadline, the hung lookup is abandoned and every known
+    // session is aborted without spending the rest of the cleanup budget.
+    t.mock.timers.tick(1);
+    const cleanup = await pendingCleanup;
+    assert.equal(Date.now(), 20);
     assert.equal(cleanup.complete, false);
     assert.equal(cleanup.reasonCodes.includes('cleanup_deadline_exceeded'), true);
     assert.deepEqual(aborts, ['ses_known_child', 'ses_parent']);

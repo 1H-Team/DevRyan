@@ -78,7 +78,22 @@ const abortable = async (promise, signal) => {
   });
 };
 
-const createAbortContext = ({ timeoutMs, signal: parentSignal } = {}) => {
+// Timer seam for the operation, cleanup and upstream-settlement deadlines.
+// Tests inject a manual scheduler so a deadline fires at a chosen point instead
+// of racing host load; production always uses these unref'd host timers.
+// Returns a function that cancels the timer.
+const scheduleHostTimer = (_label, delayMs, callback) => {
+  const timer = setTimeout(callback, delayMs);
+  timer.unref?.();
+  return () => clearTimeout(timer);
+};
+
+const createAbortContext = ({
+  timeoutMs,
+  signal: parentSignal,
+  scheduleTimer = scheduleHostTimer,
+  label = 'deadline',
+} = {}) => {
   const controller = new AbortController();
   const abortFromParent = () => {
     controller.abort(parentSignal?.reason instanceof Error ? parentSignal.reason : new ScopedRevertCancelledError());
@@ -89,13 +104,12 @@ const createAbortContext = ({ timeoutMs, signal: parentSignal } = {}) => {
     parentSignal?.addEventListener('abort', abortFromParent, { once: true });
   }
 
-  const timeout = setTimeout(() => controller.abort(new ScopedRevertTimeoutError()), timeoutMs);
-  timeout.unref?.();
+  const cancelTimeout = scheduleTimer(label, timeoutMs, () => controller.abort(new ScopedRevertTimeoutError()));
 
   return {
     signal: controller.signal,
     dispose: () => {
-      clearTimeout(timeout);
+      cancelTimeout();
       parentSignal?.removeEventListener('abort', abortFromParent);
     },
   };
@@ -1221,14 +1235,19 @@ const isScopedRevertInterruption = (error) => (
   error?.code === 'SCOPED_REVERT_TIMEOUT' || error?.code === 'SCOPED_REVERT_CANCELLED'
 );
 
-const restoreAfterInterruption = async (prepared, options, { timeoutMs, diagnostics, upstreamOperation }) => {
+const restoreAfterInterruption = async (prepared, options, {
+  timeoutMs,
+  diagnostics,
+  upstreamOperation,
+  scheduleTimer = scheduleHostTimer,
+}) => {
   // Cleanup must not inherit the primary request signal: both the deadline and
   // an HTTP disconnect abort that signal before rollback begins. The upstream
   // operation gets an independent bounded settlement window so the directory
   // lock stays authoritative for abort-insensitive handlers. If it remains
   // stalled, abort its transport before the final restoration pass.
   const cleanupTimeoutMs = Math.min(SCOPED_REVERT_CLEANUP_TIMEOUT_MS, Math.max(timeoutMs, 250));
-  const cleanupContext = createAbortContext({ timeoutMs: cleanupTimeoutMs });
+  const cleanupContext = createAbortContext({ timeoutMs: cleanupTimeoutMs, scheduleTimer, label: 'cleanup-deadline' });
   try {
     await restoreProtectedSnapshots(prepared, {
       ...options,
@@ -1237,15 +1256,14 @@ const restoreAfterInterruption = async (prepared, options, { timeoutMs, diagnost
     });
     const finalRestoreReserveMs = Math.min(1_000, Math.max(100, Math.floor(cleanupTimeoutMs / 4)));
     const settlementWaitMs = Math.max(0, cleanupTimeoutMs - finalRestoreReserveMs);
-    let settlementTimer;
+    let cancelSettlementTimer;
     const upstreamSettled = await Promise.race([
       upstreamOperation.promise.then(() => true, () => true),
       new Promise((resolve) => {
-        settlementTimer = setTimeout(() => resolve(false), settlementWaitMs);
-        settlementTimer.unref?.();
+        cancelSettlementTimer = scheduleTimer('upstream-settlement', settlementWaitMs, () => resolve(false));
       }),
     ]);
-    if (settlementTimer) clearTimeout(settlementTimer);
+    cancelSettlementTimer?.();
     if (!upstreamSettled) {
       upstreamOperation.abort(new ScopedRevertTimeoutError());
     }
@@ -1477,12 +1495,13 @@ export const runScopedSessionRevert = async ({
   openchamberDataDir,
   timeoutMs = SCOPED_REVERT_TIMEOUT_MS,
   slowOperationMs = SCOPED_REVERT_SLOW_OPERATION_MS,
+  scheduleTimer = scheduleHostTimer,
   signal: parentSignal,
   onBeforeUpstreamRevert,
 }) => {
   const revertScope = normalizeScope(scope);
   const client = createClient({ buildOpenCodeUrl, getOpenCodeAuthHeaders, fetchImpl });
-  const abortContext = createAbortContext({ timeoutMs, signal: parentSignal });
+  const abortContext = createAbortContext({ timeoutMs, signal: parentSignal, scheduleTimer });
   const signal = abortContext.signal;
   const diagnostics = createSlowOperationDiagnostics(slowOperationMs);
 
@@ -1541,7 +1560,7 @@ export const runScopedSessionRevert = async ({
           await diagnostics.runPhase('restore-original', () => attemptInterruptionCleanup(
             prepared,
             { restoreOriginal: true },
-            { timeoutMs, diagnostics, upstreamOperation },
+            { timeoutMs, diagnostics, upstreamOperation, scheduleTimer },
           ));
         } else {
           await diagnostics.runPhase('rollback-upstream', () => rollbackUpstreamReverts({
@@ -1566,7 +1585,7 @@ export const runScopedSessionRevert = async ({
           await diagnostics.runPhase('restore-files-cleanup', () => attemptInterruptionCleanup(
             prepared,
             {},
-            { timeoutMs, diagnostics, upstreamOperation },
+            { timeoutMs, diagnostics, upstreamOperation, scheduleTimer },
           ));
         }
         throw error;
@@ -1619,10 +1638,11 @@ export const runScopedSessionUnrevert = async ({
   openchamberDataDir,
   timeoutMs = SCOPED_REVERT_TIMEOUT_MS,
   slowOperationMs = SCOPED_REVERT_SLOW_OPERATION_MS,
+  scheduleTimer = scheduleHostTimer,
   signal: parentSignal,
 }) => {
   const client = createClient({ buildOpenCodeUrl, getOpenCodeAuthHeaders, fetchImpl });
-  const abortContext = createAbortContext({ timeoutMs, signal: parentSignal });
+  const abortContext = createAbortContext({ timeoutMs, signal: parentSignal, scheduleTimer });
   const signal = abortContext.signal;
   const diagnostics = createSlowOperationDiagnostics(slowOperationMs);
   const journalPath = resolveRevertJournalPath({ openchamberDataDir, directory, rootSessionID: sessionID });
@@ -1721,7 +1741,7 @@ export const runScopedSessionUnrevert = async ({
           await diagnostics.runPhase('restore-original', () => attemptInterruptionCleanup(
             prepared,
             { restoreOriginal: true },
-            { timeoutMs, diagnostics, upstreamOperation },
+            { timeoutMs, diagnostics, upstreamOperation, scheduleTimer },
           ));
         } else {
           await diagnostics.runPhase('restore-original', () => restoreProtectedSnapshots(prepared, {
@@ -1740,7 +1760,7 @@ export const runScopedSessionUnrevert = async ({
           await diagnostics.runPhase('restore-files-cleanup', () => attemptInterruptionCleanup(
             prepared,
             {},
-            { timeoutMs, diagnostics, upstreamOperation },
+            { timeoutMs, diagnostics, upstreamOperation, scheduleTimer },
           ));
         }
         throw error;
@@ -1833,6 +1853,7 @@ export const registerScopedSessionRevertRoute = (app, deps) => {
     openchamberDataDir: deps.openchamberDataDir,
     timeoutMs: deps.scopedRevertTimeoutMs,
     slowOperationMs: deps.scopedRevertSlowOperationMs,
+    scheduleTimer: deps.scopedRevertScheduleTimer,
   });
 
   // Keep JSON parsing route-local because /api/openchamber/* is intentionally

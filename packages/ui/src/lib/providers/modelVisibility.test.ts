@@ -93,76 +93,42 @@ describe('model visibility helpers', () => {
     expect(filtered[0]?.models.map((model) => model.id)).toEqual(['gpt-5.6-sol']);
   });
 
-  test('hides Google-backed Antigravity models by display provider id', () => {
-    const filtered = filterHiddenProviderModels([
-      {
-        id: 'google',
-        name: 'Google',
-        models: [
-          { id: 'gemini-3-pro', providerID: 'google', name: 'Gemini 3 Pro' },
-          { id: 'antigravity-claude-sonnet-4-6', providerID: 'google', name: 'Claude Sonnet 4.6 (Antigravity)' },
-        ],
-      },
-    ], [
-      { providerID: 'antigravity', modelID: 'antigravity-claude-sonnet-4-6' },
-    ]);
-
-    expect(filtered.map((provider) => ({
-      id: provider.id,
-      models: provider.models.map((model) => model.id),
-    }))).toEqual([
-      { id: 'google', models: ['gemini-3-pro'] },
-    ]);
-  });
-
-  test('detects hidden Google-backed Antigravity models by display provider id', () => {
+  test('detects hidden models by the model execution provider id', () => {
     expect(isHiddenProviderModelRef([
-      { providerID: 'antigravity', modelID: 'antigravity-claude-sonnet-4-6' },
-    ], 'google', {
-      id: 'antigravity-claude-sonnet-4-6',
+      { providerID: 'google', modelID: 'gemini-3-pro' },
+    ], 'custom-display', {
+      id: 'gemini-3-pro',
       providerID: 'google',
-      name: 'Claude Sonnet 4.6 (Antigravity)',
+      name: 'Gemini 3 Pro',
     })).toBe(true);
   });
 
-  test('detects hidden Google-backed Antigravity models by legacy execution provider id', () => {
-    expect(isHiddenProviderModelRef([
-      { providerID: 'google', modelID: 'antigravity-claude-sonnet-4-6' },
-    ], 'antigravity', {
-      id: 'antigravity-claude-sonnet-4-6',
+  test('returns the requested provider ref first and the execution provider as an alias', () => {
+    expect(getHiddenModelRefsForProviderModel('custom-display', {
+      id: 'gemini-3-pro',
       providerID: 'google',
-      name: 'Claude Sonnet 4.6',
-    })).toBe(true);
-  });
-
-  test('returns canonical display ref and execution aliases for split provider models', () => {
-    expect(getHiddenModelRefsForProviderModel('antigravity', {
-      id: 'antigravity-claude-sonnet-4-6',
-      providerID: 'google',
-      name: 'Claude Sonnet 4.6',
+      name: 'Gemini 3 Pro',
     })).toEqual({
-      canonical: { providerID: 'antigravity', modelID: 'antigravity-claude-sonnet-4-6' },
+      canonical: { providerID: 'custom-display', modelID: 'gemini-3-pro' },
       aliases: [
-        { providerID: 'antigravity', modelID: 'antigravity-claude-sonnet-4-6' },
-        { providerID: 'google', modelID: 'antigravity-claude-sonnet-4-6' },
+        { providerID: 'custom-display', modelID: 'gemini-3-pro' },
+        { providerID: 'google', modelID: 'gemini-3-pro' },
       ],
     });
   });
 
-  test('builds picker providers by splitting Antigravity before hidden filtering', () => {
+  test('keeps every Google model under Google in the picker now that Antigravity is retired', () => {
     const filtered = filterVisibleProviderModelsForPicker([
       {
         id: 'google',
         name: 'Google',
         models: [
           { id: 'gemini-3-pro', providerID: 'google', name: 'Gemini 3 Pro' },
-          { id: 'antigravity-claude-sonnet-4-6', providerID: 'google', name: 'Claude Sonnet 4.6 (Antigravity)' },
           { id: 'antigravity-gemini-3-pro', providerID: 'google', name: 'Gemini 3 Pro (Antigravity)' },
         ],
       },
     ], [
-      { providerID: 'antigravity', modelID: 'antigravity-claude-sonnet-4-6' },
-      { providerID: 'antigravity', modelID: 'antigravity-gemini-3-pro' },
+      { providerID: 'google', modelID: 'gemini-3-pro' },
     ]);
 
     expect(filtered.map((provider) => ({
@@ -170,30 +136,7 @@ describe('model visibility helpers', () => {
       name: provider.name,
       models: provider.models.map((model) => model.id),
     }))).toEqual([
-      { id: 'google', name: 'Google', models: ['gemini-3-pro'] },
-    ]);
-  });
-
-  test('filters display-split picker models hidden by legacy execution provider id', () => {
-    const filtered = filterVisibleProviderModelsForPicker([
-      {
-        id: 'google',
-        name: 'Google',
-        models: [
-          { id: 'gemini-3-pro', providerID: 'google', name: 'Gemini 3 Pro' },
-          { id: 'antigravity-claude-sonnet-4-6', providerID: 'google', name: 'Claude Sonnet 4.6 (Antigravity)' },
-        ],
-      },
-    ], [
-      { providerID: 'google', modelID: 'antigravity-claude-sonnet-4-6' },
-    ]);
-
-    expect(filtered.map((provider) => ({
-      id: provider.id,
-      name: provider.name,
-      models: provider.models.map((model) => model.id),
-    }))).toEqual([
-      { id: 'google', name: 'Google', models: ['gemini-3-pro'] },
+      { id: 'google', name: 'Google', models: ['antigravity-gemini-3-pro'] },
     ]);
   });
 });

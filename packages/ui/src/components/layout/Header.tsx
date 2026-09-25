@@ -229,8 +229,7 @@ export const Header: React.FC<HeaderProps> = ({
       const result = quotaResults.find((entry) => entry.providerId === provider.id);
       const windows = (result?.usage?.windows ?? {}) as Record<string, UsageWindow>;
       const models = result?.usage?.models;
-      const isAntigravityProvider = provider.id === 'antigravity';
-      const entries = isAntigravityProvider ? [] : Object.entries(windows);
+      const entries = Object.entries(windows);
 
       const group: RateLimitGroup = {
         providerId: provider.id,
@@ -288,15 +287,11 @@ export const Header: React.FC<HeaderProps> = ({
           }
 
           if (familyModels.length > 0) {
-            if (isAntigravityProvider) {
-              group.modelRows = [...(group.modelRows ?? []), ...familyModels];
-            } else {
-              group.modelFamilies.push({
-                familyId: family.id,
-                familyLabel: family.label,
-                models: familyModels,
-              });
-            }
+            group.modelFamilies.push({
+              familyId: family.id,
+              familyLabel: family.label,
+              models: familyModels,
+            });
           }
         }
 
@@ -325,15 +320,11 @@ export const Header: React.FC<HeaderProps> = ({
             }
           }
           if (otherModels.length > 0) {
-            if (isAntigravityProvider) {
-              group.modelRows = [...(group.modelRows ?? []), ...otherModels];
-            } else {
-              group.modelFamilies.push({
-                familyId: null,
-                familyLabel: t('header.services.modelFamily.other'),
-                models: otherModels,
-              });
-            }
+            group.modelFamilies.push({
+              familyId: null,
+              familyLabel: t('header.services.modelFamily.other'),
+              models: otherModels,
+            });
           }
         }
       }
@@ -341,7 +332,6 @@ export const Header: React.FC<HeaderProps> = ({
       if (
         entries.length > 0 ||
         group.resetCredits ||
-        (group.modelRows && group.modelRows.length > 0) ||
         (group.modelFamilies && group.modelFamilies.length > 0) ||
         (group.warnings && group.warnings.length > 0) ||
         group.error

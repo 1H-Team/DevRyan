@@ -54,6 +54,12 @@ const MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE = 'Designer is implementation-
 const MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED = 'MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED';
 const MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE = 'Plan-mode managed tasks cannot use Cursor because its SDK does not expose enforceable per-prompt write restrictions. Configure the parent Orchestrator or Plan agent with a non-Cursor model.';
 const DEVRYAN_TOOL_INPUT_INVALID = 'DEVRYAN_TOOL_INPUT_INVALID';
+// Agent-name admission. OpenCode resolves a child's agent by exact name, so an
+// unmatched name (a live Claude run sent "Fixer") failed only after the child
+// prompt. DEVRYAN_TASK_AGENT_VALIDATION=0 restores the unvalidated behavior.
+const MANAGED_AGENT_UNKNOWN = 'managed_agent_unknown';
+const MANAGED_AGENT_CATALOG_UNAVAILABLE = 'managed_agent_catalog_unavailable';
+const MANAGED_AGENT_MODEL_UNAVAILABLE = 'managed_agent_model_unavailable';
 const TASK_NOT_FOUND = 'task_not_found';
 const PROVIDER_RECOVERY_MARKER_VERSION = 'v1';
 // A wake is only observable once its message is persisted and visible to
@@ -798,27 +804,85 @@ const buildScopedParams = (args, context) => ({
   directory: requireText(context.directory, 'context.directory'),
 });
 
-const readAgentCatalog = async (context, client) => {
+const createManagedAgentError = (code, message, statusCode, details = undefined) => Object.assign(
+  new Error(`${code}: ${message}`),
+  { code, statusCode, ...(details ? { details } : {}) },
+);
+
+const createAgentCatalogUnavailableError = (cause) => Object.assign(createManagedAgentError(
+  MANAGED_AGENT_CATALOG_UNAVAILABLE,
+  'The agent catalog for this project could not be read, so the agent name cannot be validated and no managed task was started. Retry the same call.',
+  503,
+), cause === undefined ? {} : { cause });
+
+const createAgentModelUnavailableError = (agentName) => Object.assign(
+  new Error(`Managed agent ${agentName} has no executable model`),
+  { code: MANAGED_AGENT_MODEL_UNAVAILABLE, statusCode: 409 },
+);
+
+const readAgentCatalog = async (context, client, validate = false) => {
   if (!client?.app || typeof client.app.agents !== 'function') {
+    if (validate) throw createAgentCatalogUnavailableError();
     return { catalogAvailable: false, agents: [] };
   }
-  const response = await client.app.agents({
-    query: { directory: requireText(context.directory, 'context.directory') },
-  });
-  if (response?.error) {
-    throw new Error('Failed to resolve the managed agent model');
+  const query = { directory: requireText(context.directory, 'context.directory') };
+  if (!validate) {
+    const response = await client.app.agents({ query });
+    if (response?.error) {
+      throw new Error('Failed to resolve the managed agent model');
+    }
+    return {
+      catalogAvailable: true,
+      agents: Array.isArray(response?.data) ? response.data : [],
+    };
   }
-  return {
-    catalogAvailable: true,
-    agents: Array.isArray(response?.data) ? response.data : [],
-  };
+  let response;
+  try {
+    response = await client.app.agents({ query });
+  } catch (error) {
+    throw createAgentCatalogUnavailableError(error);
+  }
+  if (response?.error || !Array.isArray(response?.data)) {
+    throw createAgentCatalogUnavailableError(response?.error);
+  }
+  return { catalogAvailable: true, agents: response.data };
 };
 
-const resolveAgentExecution = (agents, agentName) => {
-  const normalizedAgentName = typeof agentName === 'string' ? agentName.trim().toLowerCase() : '';
-  const agent = agents.find((entry) => (
-    typeof entry?.name === 'string' && entry.name.trim().toLowerCase() === normalizedAgentName
-  ));
+const readCatalogAgentName = (entry) => (typeof entry?.name === 'string' ? entry.name.trim() : '');
+
+// Mirrors the UI's subagent pickers: any non-primary mode that is not hidden
+// (OpenCode reports hidden at the top level or under options).
+const isDispatchableSubagent = (entry) => (
+  typeof entry?.mode === 'string'
+  && entry.mode !== 'primary'
+  && entry.hidden !== true
+  && entry.options?.hidden !== true
+);
+
+// Exact name wins; otherwise one case-insensitive match is canonicalized to the
+// catalog's spelling. Ambiguity or a miss is rejected before anything starts.
+const resolveCatalogAgent = (agents, agentName) => {
+  const requested = typeof agentName === 'string' ? agentName.trim() : '';
+  const named = agents.filter((entry) => readCatalogAgentName(entry));
+  const exact = named.find((entry) => readCatalogAgentName(entry) === requested);
+  if (exact) return exact;
+  const folded = requested.toLowerCase();
+  const matches = named.filter((entry) => readCatalogAgentName(entry).toLowerCase() === folded);
+  if (matches.length === 1) return matches[0];
+  const available = [...new Set(named.filter(isDispatchableSubagent).map(readCatalogAgentName))].sort();
+  const availableText = `Available subagents: ${available.length > 0 ? available.join(', ') : 'none'}.`;
+  const matchNames = matches.map(readCatalogAgentName);
+  throw createManagedAgentError(
+    MANAGED_AGENT_UNKNOWN,
+    matches.length > 1
+      ? `Agent name "${requested}" is ambiguous (matches ${matchNames.join(', ')}); use the exact name. No managed task was started. ${availableText}`
+      : `Unknown agent "${requested}"; no managed task was started. ${availableText}`,
+    400,
+    { agent: requested, available, matches: matchNames },
+  );
+};
+
+const executionFromCatalogAgent = (agent) => {
   const providerId = typeof agent?.model?.providerID === 'string'
     ? agent.model.providerID.trim()
     : '';
@@ -831,6 +895,13 @@ const resolveAgentExecution = (agents, agentName) => {
     modelId,
     variant: typeof agent.variant === 'string' && agent.variant.trim() ? agent.variant.trim() : null,
   };
+};
+
+const resolveAgentExecution = (agents, agentName) => {
+  const normalizedAgentName = typeof agentName === 'string' ? agentName.trim().toLowerCase() : '';
+  return executionFromCatalogAgent(agents.find((entry) => (
+    typeof entry?.name === 'string' && entry.name.trim().toLowerCase() === normalizedAgentName
+  )));
 };
 
 const resolveOwnedAgentExecution = async (context, agent, fallbackExecution) => {
@@ -858,13 +929,20 @@ const resolveOwnedAgentExecution = async (context, agent, fallbackExecution) => 
   };
 };
 
-const resolveConfiguredAgentExecution = async (args, context, client) => {
-  const catalog = await readAgentCatalog(context, client);
-  const agent = requireText(args.agent, 'agent');
-  const configured = catalog.catalogAvailable
-    ? resolveAgentExecution(catalog.agents, agent)
-    : null;
+const resolveConfiguredAgentExecution = async (args, context, client, validate = false) => {
+  const catalog = await readAgentCatalog(context, client, validate);
+  const requestedAgent = requireText(args.agent, 'agent');
+  let agent = requestedAgent;
+  let configured = null;
+  if (catalog.catalogAvailable && validate) {
+    const entry = resolveCatalogAgent(catalog.agents, requestedAgent);
+    agent = readCatalogAgentName(entry);
+    configured = executionFromCatalogAgent(entry);
+  } else if (catalog.catalogAvailable) {
+    configured = resolveAgentExecution(catalog.agents, agent);
+  }
   return {
+    agent,
     catalogAvailable: catalog.catalogAvailable,
     execution: configured
       ? await resolveOwnedAgentExecution(context, agent, configured)
@@ -902,10 +980,18 @@ const createManagedReadOnlyProviderUnsupportedError = () => {
 const formatExecution = (execution) => `${execution.providerId}/${execution.modelId}`;
 
 const resolveStartExecution = async (args, context, client, invocationPolicy) => {
-  const agentName = requireText(args.agent, 'agent');
-  const catalog = await readAgentCatalog(context, client);
+  let agentName = requireText(args.agent, 'agent');
+  const validate = process.env.DEVRYAN_TASK_AGENT_VALIDATION !== '0';
+  // Validation fails closed when the catalog is unreadable, so the no-catalog
+  // compatibility branch below is reachable only through the kill switch.
+  const catalog = await readAgentCatalog(context, client, validate);
   let execution;
-  if (catalog.catalogAvailable) {
+  if (catalog.catalogAvailable && validate) {
+    const entry = resolveCatalogAgent(catalog.agents, agentName);
+    agentName = readCatalogAgentName(entry);
+    execution = executionFromCatalogAgent(entry);
+    if (!execution) throw createAgentModelUnavailableError(agentName);
+  } else if (catalog.catalogAvailable) {
     execution = resolveAgentExecution(catalog.agents, agentName);
     if (!execution) {
       throw new Error(`Managed agent ${agentName} has no executable model`);
@@ -929,7 +1015,7 @@ const resolveStartExecution = async (args, context, client, invocationPolicy) =>
   execution = await resolveOwnedAgentExecution(context, agentName, execution);
 
   if (!invocationPolicy.readOnly || supportsManagedReadOnlyProvider(execution.providerId)) {
-    return { execution, executionNotice: null };
+    return { agent: agentName, execution, executionNotice: null };
   }
 
   let fallback = null;
@@ -961,6 +1047,7 @@ const resolveStartExecution = async (args, context, client, invocationPolicy) =>
   }
 
   return {
+    agent: agentName,
     execution: fallback,
     executionNotice: `Plan-safe model fallback: ${agentName} is configured for ${formatExecution(execution)}; this read-only task is running with ${formatExecution(fallback)} from ${fallbackSource}.`,
   };
@@ -1184,7 +1271,7 @@ const executeAction = async (args, context, client, dispatchCallId = null, resul
   if (!ACTIONS.includes(action)) throw new Error(`Unsupported managed task action: ${action}`);
 
   if (action === 'start') {
-    const agent = requireText(args.agent, 'agent');
+    let agent = requireText(args.agent, 'agent');
     const minimumTimeoutSeconds = resolveMinimumTimeoutSeconds(agent);
     const timeoutSeconds = Number.isFinite(args.timeout_seconds)
       ? Math.min(MAX_TIMEOUT_SECONDS, Math.max(minimumTimeoutSeconds, Math.trunc(args.timeout_seconds)))
@@ -1193,12 +1280,13 @@ const executeAction = async (args, context, client, dispatchCallId = null, resul
     if (invocationPolicy.readOnly && !supportsManagedReadOnlyAgent(agent)) {
       throw createManagedReadOnlyAgentUnsupportedError();
     }
-    const { execution, executionNotice } = await resolveStartExecution(
+    const { agent: canonicalAgent, execution, executionNotice } = await resolveStartExecution(
       args,
       context,
       client,
       invocationPolicy,
     );
+    agent = canonicalAgent;
     const readOnly = invocationPolicy.readOnly;
     const normalizedArgs = {
       action,
@@ -1276,12 +1364,15 @@ const executeAction = async (args, context, client, dispatchCallId = null, resul
       label: typeof args.label === 'string' ? args.label.trim() : '',
       prompt: typeof args.prompt === 'string' ? args.prompt.trim() : '',
     };
+    const validateAgent = process.env.DEVRYAN_TASK_AGENT_VALIDATION !== '0';
     const configuredResolution = normalizedOverrides.agent
-      ? await resolveConfiguredAgentExecution({ agent: normalizedOverrides.agent }, context, client)
+      ? await resolveConfiguredAgentExecution({ agent: normalizedOverrides.agent }, context, client, validateAgent)
       : null;
     if (configuredResolution?.catalogAvailable && !configuredResolution.execution) {
+      if (validateAgent) throw createAgentModelUnavailableError(configuredResolution.agent);
       throw new Error(`Managed agent ${normalizedOverrides.agent} has no executable model`);
     }
+    if (configuredResolution) normalizedOverrides.agent = configuredResolution.agent;
     const configured = configuredResolution?.execution ?? null;
     if (configured) {
       normalizedOverrides.providerId = configured.providerId;
@@ -1347,6 +1438,13 @@ export const DevRyanManagedOrchestrationPlugin = async ({
   while (factories.size > 256) factories.delete(factories.keys().next().value);
   const sessionStates = new Map();
   const modelResultMode = resolveModelResultMode();
+  // The tool schema is fixed for this OpenCode process, so it advertises
+  // wait_any only when the host enables that harness policy. The serve process
+  // inherits the host environment, and this mirrors resolveHarnessPolicies
+  // (standalone assets cannot import it). DEVRYAN_CAPABILITY_TOOL_SCHEMA=0
+  // restores the static schema.
+  const advertiseWaitAny = process.env.DEVRYAN_CAPABILITY_TOOL_SCHEMA === '0'
+    || process.env.DEVRYAN_MANAGED_WAIT_ANY === '1';
   const pendingStartsByArgs = new WeakMap();
   const agentOwnershipCache = new Map();
   const recoveryContinuationsInFlight = new Set();
@@ -2371,7 +2469,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
       // "use devryan_task wait" wording left an orchestrator retrying ordinary
       // tools — on 2026-08-21 five consecutive search/bash/grep calls all
       // failed against this barrier, each burning a full turn.
-      const nextCall = barrier.capabilities?.policies?.waitAny === true && taskIdList.length > 0
+      const nextCall = barrier.capabilities?.policies?.waitAny === true && advertiseWaitAny && taskIdList.length > 0
         ? `devryan_task with action "wait_any" and task_ids ${JSON.stringify(taskIdList)}`
         : taskIdList.length > 0
         ? `devryan_task with action "wait" and task_id "${taskIdList[0]}"`
@@ -2409,12 +2507,14 @@ export const DevRyanManagedOrchestrationPlugin = async ({
     },
     tool: {
       devryan_task: tool({
-      description: 'Start or control a DevRyan-managed sub-agent. When managed delegation is already the decided next action, start it before any standalone todo read/write whose only purpose is to restate that delegation. DevRyan does not impose a managed concurrency cap: start every independent sub-agent needed by the task without batching around an artificial slot limit. DevRyan preserves partial results after failure or abort. DevRyan keeps each wait call attached while repeating bounded polling slices internally; wait returns only a terminal result, and status is the non-blocking way to inspect queued, starting, or running state. Legacy terminal previews require every resultReference page before disposition. With a versioned resultHeader and compactResults capability, inspect canonical outcome, reported status, failures, recovery restrictions and named check evidence first. When detail.requiredBeforeDisposition is true, read all retained pages before reconciliation; otherwise retrieve detail needed for the next decision. A passed check becomes unverified after relevant content changes. Use wait_any for the first collectable result when advertised; with contextProjection enabled, use checkpoint after a wake, after compaction and before final closeout; use decisions and remember_decision for sourced project decisions. A completed result accepts only continue. Retry is only for an eligible failed result. A resumable failure with no agent retry remaining returns immediately with manualRecoveryRequired while its durable result stays pending for the user-facing Model Recovery controls, except provider prompt rejection, which requires the one agent recovery to use a reframed prompt in a fresh child. When that result also carries autoResume.scheduled, DevRyan retries the same child automatically at the reported time or on the backup model; leave it unacknowledged and end the turn. A stale_task_reference or already_dispositioned result requires no repeated wait, disposition, or replacement child; follow its authoritative barrier instruction and continue from the last confirmed parent state when clear. This is distinct from provider-native task orchestration.',
+      description: `Start or control a DevRyan-managed sub-agent. When managed delegation is already the decided next action, start it before any standalone todo read/write whose only purpose is to restate that delegation. DevRyan does not impose a managed concurrency cap: start every independent sub-agent needed by the task without batching around an artificial slot limit. DevRyan preserves partial results after failure or abort. DevRyan keeps each wait call attached while repeating bounded polling slices internally; wait returns only a terminal result, and status is the non-blocking way to inspect queued, starting, or running state. Legacy terminal previews require every resultReference page before disposition. With a versioned resultHeader and compactResults capability, inspect canonical outcome, reported status, failures, recovery restrictions and named check evidence first. When detail.requiredBeforeDisposition is true, read all retained pages before reconciliation; otherwise retrieve detail needed for the next decision. A passed check becomes unverified after relevant content changes. ${advertiseWaitAny ? 'Use wait_any for the first collectable result when advertised; with' : 'With'} contextProjection enabled, use checkpoint after a wake, after compaction and before final closeout; use decisions and remember_decision for sourced project decisions. A completed result accepts only continue. Retry is only for an eligible failed result. A resumable failure with no agent retry remaining returns immediately with manualRecoveryRequired while its durable result stays pending for the user-facing Model Recovery controls, except provider prompt rejection, which requires the one agent recovery to use a reframed prompt in a fresh child. When that result also carries autoResume.scheduled, DevRyan retries the same child automatically at the reported time or on the backup model; leave it unacknowledged and end the turn. A stale_task_reference or already_dispositioned result requires no repeated wait, disposition, or replacement child; follow its authoritative barrier instruction and continue from the last confirmed parent state when clear. This is distinct from provider-native task orchestration.`,
       args: {
-        action: tool.schema.enum(ACTIONS).describe('Action: start, status, wait, wait_any, read_result, cancel, continue, retry, resume, abandon, checkpoint, decisions, or remember_decision. Use read_result only after a terminal wait returns resultReference.nextCursor, and pass requested cursors exactly once in order. Legacy results require all pages; versioned compact headers permit selective detail retrieval. A completed result accepts only continue; retry is only for an eligible failed result. A resumable failure with no agent retry remaining returns manualRecoveryRequired and remains pending for the user-facing Model Recovery controls. After the user retries, an idle-parent continuation collects the recovered result. Wait stays attached only until the requested task is terminal while DevRyan polls internally; use status for a non-blocking live snapshot. stale_task_reference and already_dispositioned are no-op recovery states and must not trigger a replacement task or repeated acknowledgement.'),
-        task_id: tool.schema.string().optional().describe('Managed dvr_task_ ID. Required except for start, wait_any, checkpoint, decisions, and remember_decision.'),
-        task_ids: tool.schema.array(tool.schema.string()).optional().describe('Managed task IDs owned by this root. Required for wait_any when capabilities.policies.waitAny is enabled.'),
-        after_cursor: tool.schema.string().optional().describe('Opaque cursor from the last wait_any. Omit when changing the selected tasks or recollecting retained results. Internal wait slices never return unchanged live snapshots to the model.'),
+        action: tool.schema.enum(advertiseWaitAny ? ACTIONS : ACTIONS.filter((entry) => entry !== 'wait_any')).describe(`Action: start, status, wait, ${advertiseWaitAny ? 'wait_any, ' : ''}read_result, cancel, continue, retry, resume, abandon, checkpoint, decisions, or remember_decision. Use read_result only after a terminal wait returns resultReference.nextCursor, and pass requested cursors exactly once in order. Legacy results require all pages; versioned compact headers permit selective detail retrieval. A completed result accepts only continue; retry is only for an eligible failed result. A resumable failure with no agent retry remaining returns manualRecoveryRequired and remains pending for the user-facing Model Recovery controls. After the user retries, an idle-parent continuation collects the recovered result. Wait stays attached only until the requested task is terminal while DevRyan polls internally; use status for a non-blocking live snapshot. stale_task_reference and already_dispositioned are no-op recovery states and must not trigger a replacement task or repeated acknowledgement.`),
+        task_id: tool.schema.string().optional().describe(`Managed dvr_task_ ID. Required except for start, ${advertiseWaitAny ? 'wait_any, ' : ''}checkpoint, decisions, and remember_decision.`),
+        ...(advertiseWaitAny ? {
+          task_ids: tool.schema.array(tool.schema.string()).optional().describe('Managed task IDs owned by this root. Required for wait_any when capabilities.policies.waitAny is enabled.'),
+          after_cursor: tool.schema.string().optional().describe('Opaque cursor from the last wait_any. Omit when changing the selected tasks or recollecting retained results. Internal wait slices never return unchanged live snapshots to the model.'),
+        } : {}),
         result_cursor: tool.schema.string().optional().describe('Exact resultReference.nextCursor from the preceding wait or read_result page. Required only for read_result.'),
         label: tool.schema.string().optional().describe('Short task label for start or retry.'),
         query: tool.schema.string().optional().describe('Relevant words for project decisions or checkpoint retrieval.'),

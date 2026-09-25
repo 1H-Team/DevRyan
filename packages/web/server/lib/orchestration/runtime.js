@@ -36,6 +36,7 @@ const FIXER_TASK_TIMEOUT_MS = 60 * 60 * 1_000;
 const ORACLE_TASK_TIMEOUT_MS = 15 * 60 * 1_000;
 const COUNCIL_TASK_TIMEOUT_MS = 3 * 60 * 1_000;
 const MAX_WAIT_TIMEOUT_MS = 25_000;
+const AGENT_CATALOG_TIMEOUT_MS = 5_000;
 const AUTO_RESUME_HOST_DEFER_MS = 30_000;
 const AUTO_RESUME_MAX_DEFER_MS = 5 * 60_000;
 // Acknowledge outcomes that mean the parked result already moved on; the
@@ -102,7 +103,9 @@ const ERROR_STATUS_BY_CODE = Object.freeze({
   managed_retry_limit_reached: 409,
   MANAGED_READ_ONLY_AGENT_UNSUPPORTED: 409,
   MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED: 409,
+  managed_agent_catalog_unavailable: 503,
   managed_agent_model_unavailable: 409,
+  managed_agent_unknown: 400,
   managed_dependency_unavailable: 503,
   managed_orchestration_internal_error: 500,
   invalid_request: 400,
@@ -172,6 +175,38 @@ const normalizeRuntimeError = (error) => {
   const invalidInput = error instanceof TypeError || error instanceof RangeError;
   return wrap(invalidInput ? 'invalid_request' : 'managed_orchestration_internal_error',
     error.message || 'Managed orchestration request failed');
+};
+
+const readCatalogAgentName = (entry) => (typeof entry?.name === 'string' ? entry.name.trim() : '');
+
+// Mirrors the UI subagent pickers and the bundled devryan_task plugin: any
+// non-primary mode that OpenCode does not mark hidden (top level or options).
+const isDispatchableSubagent = (entry) => (
+  typeof entry?.mode === 'string'
+  && entry.mode !== 'primary'
+  && entry.hidden !== true
+  && entry.options?.hidden !== true
+);
+
+// OpenCode resolves a child's agent by exact name, so an unmatched name used to
+// fail only at the child prompt. Exact wins; a single case-insensitive match is
+// canonicalized; ambiguity or a miss is rejected before scheduler admission.
+const canonicalizeCatalogAgentName = (agents, agentName) => {
+  const named = agents.filter((entry) => readCatalogAgentName(entry));
+  const exact = named.find((entry) => readCatalogAgentName(entry) === agentName);
+  if (exact) return readCatalogAgentName(exact);
+  const folded = agentName.toLowerCase();
+  const matches = named.filter((entry) => readCatalogAgentName(entry).toLowerCase() === folded)
+    .map(readCatalogAgentName);
+  if (matches.length === 1) return matches[0];
+  const available = [...new Set(named.filter(isDispatchableSubagent).map(readCatalogAgentName))].sort();
+  const availableText = `Available subagents: ${available.length > 0 ? available.join(', ') : 'none'}.`;
+  throw createRuntimeError(
+    'managed_agent_unknown',
+    matches.length > 1
+      ? `managed_agent_unknown: Agent name "${agentName}" is ambiguous (matches ${matches.join(', ')}); use the exact name. No managed task was started. ${availableText}`
+      : `managed_agent_unknown: Unknown agent "${agentName}"; no managed task was started. ${availableText}`,
+  );
 };
 
 const projectTask = (task, envelope = null) => (
@@ -275,6 +310,53 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           }
         }
       : null;
+  // A child prompt resolves its agent in the submitting project's OpenCode
+  // instance, so admission reads that directory-scoped catalog, never the
+  // unscoped /agent snapshot.
+  const readAgentCatalog = typeof options.readAgentCatalog === 'function'
+    ? options.readAgentCatalog
+    : typeof options.buildOpenCodeUrl === 'function'
+      ? async ({ directory }) => {
+          const url = new URL(String(options.buildOpenCodeUrl('/agent', '')));
+          url.searchParams.set('directory', directory);
+          const response = await (options.fetchImpl ?? fetch)(url, {
+            headers: {
+              accept: 'application/json',
+              ...options.getOpenCodeAuthHeaders?.(),
+            },
+            signal: AbortSignal.timeout(AGENT_CATALOG_TIMEOUT_MS),
+          });
+          if (!response.ok) throw new Error(`OpenCode agent catalog request failed (${response.status})`);
+          return await response.json();
+        }
+      : null;
+  // Returns the catalog's canonical agent name, or the submitted value when
+  // validation is off: DEVRYAN_TASK_AGENT_VALIDATION=0, no catalog source (an
+  // external runtime or fixture), or Council's host-constant private dispatch.
+  const resolveSubmittedAgent = async ({ agent, directory, deadlineClass }) => {
+    if (process.env.DEVRYAN_TASK_AGENT_VALIDATION === '0' || !readAgentCatalog || deadlineClass === 'council') {
+      return agent;
+    }
+    const requested = typeof agent === 'string' ? agent.trim() : '';
+    const scope = typeof directory === 'string' ? directory.trim() : '';
+    // Missing fields keep their existing admission errors.
+    if (!requested || !scope) return agent;
+    let agents = null;
+    let failure = null;
+    try {
+      agents = await readAgentCatalog({ directory: scope });
+    } catch (error) {
+      failure = error;
+    }
+    if (!Array.isArray(agents)) {
+      throw Object.assign(createRuntimeError(
+        'managed_agent_catalog_unavailable',
+        'managed_agent_catalog_unavailable: The agent catalog for this project could not be read, so the agent name cannot be validated and no managed task was started. Retry the same call.',
+        503,
+      ), failure ? { cause: failure } : {});
+    }
+    return canonicalizeCatalogAgentName(agents, requested);
+  };
   const resolvePlannedAutoResumeBackup = async (params) => {
     const backup = await resolveAutoResumeBackupExecution(params);
     if (backup && validateAgentExecution && await validateAgentExecution({
@@ -648,8 +730,10 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         assertWorkAdmission();
         const timeoutAt = resolveSubmitTimeoutAt(params, now);
         const readOnly = resolveReadOnly(params);
-        const agent = typeof params.agent === 'string' ? params.agent.trim() : '';
-        const admittedExecution = await resolveAdmittedAgentExecution(params, readOnly);
+        // The canonical name is what gets resolved, scheduled and fingerprinted.
+        const submittedAgent = await resolveSubmittedAgent(params);
+        const agent = typeof submittedAgent === 'string' ? submittedAgent.trim() : '';
+        const admittedExecution = await resolveAdmittedAgentExecution({ ...params, agent: submittedAgent }, readOnly);
         const providerId = admittedExecution.providerId;
         if (readOnly && agent && !supportsManagedReadOnlyAgent(agent)) {
           throw createRuntimeError(
@@ -677,7 +761,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           readOnly,
           providerId: admittedExecution.providerId,
           modelId: admittedExecution.modelId,
-          agent: params.agent,
+          agent: submittedAgent,
           variant: admittedExecution.variant ?? null,
           label: params.label,
           prompt: params.prompt,
@@ -845,8 +929,16 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           timeoutAt: resolveRequestedTimeoutAt(params, now),
           agent: params.agent || task.agent,
         }, now);
-        const agentRetryExecution = ['retry', 'resume'].includes(params.action) && params.agent
-          ? await resolveAdmittedAgentExecution({ ...params, rootSessionId: task.rootSessionId, directory: task.directory }, task.readOnly)
+        const agentOverride = ['retry', 'resume'].includes(params.action) && params.agent;
+        // A retry/resume agent override schedules a new child, so it passes the
+        // same catalog admission as submit.
+        const acknowledgedAgent = agentOverride
+          ? await resolveSubmittedAgent({ agent: params.agent, directory: task.directory })
+          : params.agent;
+        const agentRetryExecution = agentOverride
+          ? await resolveAdmittedAgentExecution({
+            ...params, agent: acknowledgedAgent, rootSessionId: task.rootSessionId, directory: task.directory,
+          }, task.readOnly)
           : null;
         const result = await scheduler.acknowledgeResult(task.taskId, {
           action: params.action,
@@ -857,7 +949,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           ...(agentRetryExecution?.modelId
             ? { modelId: agentRetryExecution.modelId }
             : (params.modelId ? { modelId: params.modelId } : {})),
-          ...(params.agent ? { agent: params.agent } : {}),
+          ...(acknowledgedAgent ? { agent: acknowledgedAgent } : {}),
           ...(agentRetryExecution
             ? { variant: agentRetryExecution.variant ?? null }
             : (params.variant !== undefined ? { variant: params.variant } : {})),

@@ -72,6 +72,78 @@ describe('Claude runtime compatibility', () => {
     });
   });
 
+  // Real-world upgrade: profiles provisioned while DevRyan selected Claude Code
+  // 2.1.251 carry that exact managed pin in both package.json and the marker.
+  const LEGACY_MANAGED_CLAUDE_CODE = '2.1.251';
+
+  it('upgrades a marker-recorded managed Claude Code 2.1.251 override to the selected release', () => {
+    expect(LEGACY_MANAGED_CLAUDE_CODE).not.toBe(CLAUDE_RUNTIME_CANDIDATE.claudeCode);
+    const result = mergeManagedClaudeRuntimeOverrides(
+      {
+        overrides: {
+          '@anthropic-ai/claude-agent-sdk': CLAUDE_RUNTIME_CANDIDATE.agentSdk,
+          '@anthropic-ai/claude-code': LEGACY_MANAGED_CLAUDE_CODE,
+          unrelated: '3.0.0',
+        },
+      },
+      { overrides: CLAUDE_RUNTIME_MANAGED_OVERRIDES },
+      {
+        managedOverrides: {
+          '@anthropic-ai/claude-agent-sdk': CLAUDE_RUNTIME_CANDIDATE.agentSdk,
+          '@anthropic-ai/claude-code': LEGACY_MANAGED_CLAUDE_CODE,
+        },
+        sources: {
+          '@anthropic-ai/claude-agent-sdk': 'managed',
+          '@anthropic-ai/claude-code': 'managed',
+        },
+      },
+    );
+
+    expect(result.overrides).toEqual({
+      '@anthropic-ai/claude-agent-sdk': CLAUDE_RUNTIME_CANDIDATE.agentSdk,
+      '@anthropic-ai/claude-code': CLAUDE_RUNTIME_CANDIDATE.claudeCode,
+      unrelated: '3.0.0',
+    });
+    expect(result.sources).toEqual({
+      '@anthropic-ai/claude-agent-sdk': 'managed',
+      '@anthropic-ai/claude-code': 'managed',
+    });
+  });
+
+  it('reports a managed install still at Claude Code 2.1.251 as drifted from the selected release', () => {
+    const configDirectory = path.join(root, 'config');
+    const installedVersions = {
+      'opencode-with-claude': CLAUDE_RUNTIME_CANDIDATE.opencodeWithClaude,
+      '@rynfar/meridian': CLAUDE_RUNTIME_CANDIDATE.meridian,
+      '@anthropic-ai/claude-agent-sdk': CLAUDE_RUNTIME_CANDIDATE.agentSdk,
+      '@anthropic-ai/claude-code': LEGACY_MANAGED_CLAUDE_CODE,
+    };
+    for (const [name, version] of Object.entries(installedVersions)) {
+      writeJson(path.join(configDirectory, 'node_modules', ...name.split('/'), 'package.json'), { name, version });
+    }
+
+    const result = inspectClaudeRuntimeCompatibility({
+      configDirectory,
+      packageJson: {
+        dependencies: CLAUDE_RUNTIME_MANAGED_DEPENDENCIES,
+        overrides: CLAUDE_RUNTIME_MANAGED_OVERRIDES,
+      },
+      sources: Object.fromEntries(Object.keys(installedVersions).map((name) => [name, 'managed'])),
+      fs,
+      path,
+    });
+
+    expect(result).toMatchObject({
+      source: 'managed',
+      compatibilityStatus: 'drifted',
+      runtimeStatus: 'drifted',
+      expected: { claudeCode: CLAUDE_RUNTIME_CANDIDATE.claudeCode },
+      installed: { claudeCode: LEGACY_MANAGED_CLAUDE_CODE },
+      missingPackages: [],
+      versionMismatches: ['claudeCode'],
+    });
+  });
+
   it('treats an unmarked pre-existing exact pin as user-managed', () => {
     const result = mergeManagedClaudeRuntimeOverrides(
       { overrides: CLAUDE_RUNTIME_MANAGED_OVERRIDES },

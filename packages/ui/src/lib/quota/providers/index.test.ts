@@ -7,7 +7,6 @@ describe('quota provider metadata', () => {
     const sorted = getSortedQuotaProviders();
 
     expect(sorted.map((provider) => provider.name)).toEqual([
-      'Antigravity',
       'ChatGPT',
       'Claude',
       'Cursor',
