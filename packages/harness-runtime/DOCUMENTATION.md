@@ -182,7 +182,13 @@ Recovery refuses to replace a file changed by a foreign writer after that intent
 Ledger work runs on the host event loop, which in Electron is the window's main
 thread. Gitignored directories without tracked content are dependency inputs:
 linked read-only into views, never ingested or published, and fenced from
-history replay (`ignored_input`). Walks yield between tree levels and batches;
+history replay (`ignored_input`). A `node_modules` input links instead to a
+host-owned overlay under the ledger's `module-overlays/`: one link per project
+entry, re-synced from the project listing at each preparation, with `.vite`,
+`.vite-temp`, and `.cache` linked into the project's writable execution cache
+(`context-cache/module-caches/`). Vite and similar tools can write their caches
+while dependencies, the overlay, and the project's own caches stay read-only
+(`DEVRYAN_MODULE_CACHE_OVERLAY=0` restores the direct link). Walks yield between tree levels and batches;
 diffs and hunk bookkeeping have fixed work budgets past which they emit exact
 but coarser replacements. The background first build (`warm`) is a single
 budgeted pass that real calls never treat as their observation. Maintenance and
@@ -210,4 +216,4 @@ The web host emits `session_title_generation` lifecycle records with the target 
 
 Parent collection may request host-owned `executionOutcomes` for failed tools. The mutation ledger returns `never_started`, `finished`, or `uncertain`, scoped to exact session/message/call identities. A cancelled call without execution, or a cancelled and fully cleaned pre-launch lease, proves `never_started`; a published lease proves `finished`. Missing, mismatched, or unsettled evidence stays uncertain. Only managed result collection accepts settled errors; normal recovery never treats error text as execution evidence or replays those commands. Existing collection idempotency, stop and supersession fences remain in force.
 
-Read-only lease and outcome queries retain the owner lock and durable recovery checks, but do not stage unchanged metadata or rebuild the Git index. `lock_wait`, `ledger_open`, `ledger_recovery`, `ledger_transaction`, and `ledger_commit` diagnostics identify work inside the lock; they are journaled only when a phase fails or takes at least 250 ms, because every tool call takes this lock. Every confined worker receives its own scratch `HOME`, temporary paths, and execution-worker marker, including Cursor and read-only provider workers.
+Read-only lease and outcome queries retain the owner lock and durable recovery checks, but do not stage unchanged metadata or rebuild the Git index. `lock_wait`, `ledger_open`, `ledger_recovery`, `ledger_transaction`, and `ledger_commit` diagnostics identify work inside the lock; they are journaled only when a phase fails or takes at least 250 ms, because every tool call takes this lock. Every confined worker receives its own scratch `HOME`, temporary paths, and execution-worker marker, including Cursor and read-only provider workers. On macOS each execution also gets a short private runtime directory, exported as `XDG_RUNTIME_DIR` and spelled `/tmp/dr-<uid>/<lease digest>`, because the scratch path exceeds the 104-byte Unix socket limit. The agent-browser daemon socket therefore fits with its full lease session name (budget: 26 bytes for the directory). The profile lets the execution create and reach sockets only there, plus the system resolver. Cleanup removes it, and host recovery sweeps orphans older than a day. The parent must be a real directory owned by the user with mode 0700, or preparation fails closed.

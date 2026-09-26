@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createSessionMutationRuntime } from '@openchamber/harness-runtime';
-import { prepareSessionExecution, readSessionExecutionReceipt, verifySessionExecutionLauncher, startReadOnlySessionExecution } from '@openchamber/harness-runtime/lib/session-execution.js';
+import { prepareSessionExecution, readSessionExecutionReceipt, verifySessionExecutionLauncher, startReadOnlySessionExecution, sweepExecutionSocketDirectories } from '@openchamber/harness-runtime/lib/session-execution.js';
 import { createScopedRevertCoordinator } from './session-revert-coordinator.js';
 import { createSessionExecutionOwner } from '@openchamber/harness-runtime/lib/session-execution-owner.js';
 import { CURSOR_PROVIDER_ID } from '@openchamber/cursor-sdk-runtime';
@@ -324,6 +324,8 @@ export function createSessionExecutionHost(options) {
         failed = true;
         try { options.onDiagnostic?.({ event: 'session_revert', phase: 'recovery_failed', code: cause.code || 'mutation_recovery_required' }); } catch { /* Observer only. */ }
       };
+      // Orphaned socket directories are disposable; never a recovery failure.
+      void sweepExecutionSocketDirectories().catch(() => {});
       for (const directory of await runtime.projectDirectories()) {
         try {
           if (!await isConfined({ directory })) { failed = true; continue; }

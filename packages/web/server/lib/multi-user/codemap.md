@@ -136,6 +136,8 @@ ownership, directory opacity, and audit control plane.
 `supabase-connection.js` owns enrolled local-owner sessions, reconnect probes and
 idle-restart state; `connection-routes.js` installs the direct-local boundary and
 GET/PATCH control before ordinary API authentication. `disconnected-auth.js`
-requires the enrolled owner in solo mode. `principal-cache.js` coalesces refreshes
+requires the enrolled owner in solo mode, accepting remote owner identity only from
+the tunnel boundary's private authenticated request map. The legacy auth wrapper
+uses the same map for unconfigured hosts. `principal-cache.js` coalesces refreshes
 with revocation fencing; `supabase-traffic.js` aggregates sanitized local byte and
 request estimates at the central transport. See [connection behavior](../../../../../docs/SUPABASE_CONNECTION.md).

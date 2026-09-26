@@ -9,7 +9,7 @@ vi.mock('@openchamber/harness-runtime', () => ({
   createSessionRevertCoordinator: () => ({}),
 }));
 vi.mock('@openchamber/harness-runtime/lib/session-execution.js', () => ({
-  verifySessionExecutionLauncher: async () => true,
+  verifySessionExecutionLauncher: async () => true, sweepExecutionSocketDirectories: async () => 0,
   prepareSessionExecution: vi.fn(), readSessionExecutionReceipt: vi.fn(), startReadOnlySessionExecution: vi.fn(),
 }));
 import { createSessionExecutionHost } from './session-execution-host.js';

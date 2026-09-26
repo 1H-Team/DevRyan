@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.16] - 2026-09-26
+
+- Managed Remote works with Supabase Off through a private, expiring owner link. The link grants the authenticated local owner access on the managed tunnel, can be renewed from tunnel settings, and is revoked with its session when the tunnel or owner state changes. Bot-only sharing continues to require its existing authorization.
+- Managed plugins: upgrade Oh My OpenCode Slim from 2.2.18 to 2.2.24. Slim's `apply_patch` pre-check no longer rejects patches whose context lines differ from the file only by leading indentation ("apply_patch verification failed: Failed to find expected lines"). OpenCode already accepted these patches, and agents no longer need to re-read and retry. Genuinely missing context is still rejected. The real-package upgrade checker covers both cases.
+- DevRyan-managed OpenCode runtimes now disable Oh My OpenCode Slim's foreground model fallback in the generated runtime config. When a model chain was configured, that fallback could move a parent session's task waiter to the background and abort the child outside DevRyan's orchestration. Your own Slim config file is unchanged.
+- Confined macOS executions can host their own short-lived Unix sockets for browser automation while keeping host sockets denied. Project dependency caches use a writable execution overlay, and stale private socket directories are cleaned after crashes.
+- Plan and turn completion wait for active managed children. Open todos defer completion only for agents that the runtime automatically continues, so other agents can finish with blocked items.
+- The bundled browser skill guides agents to an already running local preview and stores screenshots inside the workspace.
+
 ## [1.2.15] - 2026-09-26
 
 - Fixed "DevRyan could not connect to OpenCode" at launch for profiles where open-cursor's installer had symlinked `plugin/cursor-acp.js`, which is its default. The legacy-plugin migration now retires that symlink without touching the installed package. A copy it cannot retire safely no longer blocks OpenCode: DevRyan starts, warns, and offers **Retire Plugin**, which keeps a backup.

@@ -1444,8 +1444,13 @@ async function detectAndMarkPlanLifecycle(
     : null
 
   const isViewed = isViewedInCurrentSession(directory, sessionID)
+  // A running managed child re-prompts this root when it settles, so the
+  // root's idle response is not its final one yet.
+  const hasActiveManagedChild = managedOrchestrationSelectors.hasActiveTasksForRoot(sessionID)(
+    useManagedOrchestrationStore.getState(),
+  )
   const turnCandidateMatchesTrigger = turnCandidate && (!completionMessageId || turnCandidate.completedMessageId === completionMessageId)
-  const settledTurnCandidate = turnCandidate && turnCandidateMatchesTrigger
+  const settledTurnCandidate = turnCandidate && turnCandidateMatchesTrigger && !hasActiveManagedChild
     && isSessionTurnSettledForCompletion({
       sessionID,
       state,
@@ -1455,7 +1460,7 @@ async function detectAndMarkPlanLifecycle(
     : null
   const planCompletionMatchesTrigger = completedCandidate
     && (!completionMessageId || completedCandidate.completedMessageId === completionMessageId)
-  const settledPlanCandidate = completedCandidate && planCompletionMatchesTrigger
+  const settledPlanCandidate = completedCandidate && planCompletionMatchesTrigger && !hasActiveManagedChild
     && isSessionTurnSettledForCompletion({
       sessionID,
       state,
@@ -3173,7 +3178,16 @@ function handleEvent(
     (rootSessionId) => managedOrchestrationSelectors.hasActiveTasksForRoot(rootSessionId)(managedStore),
   )
   if (managedRecoveryRoot) {
+    // Completion was deferred on a possibly stale running child; re-detect
+    // once the authoritative snapshot says otherwise.
     void managedStore.loadSnapshot({ rootSessionId: managedRecoveryRoot })
+      .then(() => {
+        if (managedOrchestrationSelectors.hasActiveTasksForRoot(managedRecoveryRoot)(
+          useManagedOrchestrationStore.getState(),
+        )) return
+        return detectAndMarkPlanLifecycle(managedRecoveryRoot, resolvedDirectory, store, true)
+      })
+      .catch(() => undefined)
   }
 
   replayPendingPartDeltasForEvent(resolvedDirectory, payload, store)

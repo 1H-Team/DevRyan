@@ -1,13 +1,14 @@
 import { runWithRequestPrincipal } from './request-context.js';
 import { publicPrincipal } from './policy.js';
 import { isDirectLocalRequest } from './supabase-connection.js';
+import { getTunnelOwnerPrincipal } from '../tunnels/access-control.js';
 
 const unavailable = (res) => res.status(503).json({
   code: 'supabase_disconnected', error: 'Supabase is disconnected on this host',
 });
 
 export function createDisconnectedAuth(connection) {
-  const resolvePrincipal = async (req) => connection.authenticateLocalOwner(req);
+  const resolvePrincipal = async (req) => getTunnelOwnerPrincipal(req) || connection.authenticateLocalOwner(req);
   const requireAuth = async (req, res, next) => {
     const principal = await resolvePrincipal(req);
     if (!principal) return res.status(401).json({ authenticated: false, error: 'Local owner authentication required' });
@@ -39,6 +40,7 @@ export function createDisconnectedAuth(connection) {
       const principal = await resolvePrincipal(req);
       if (!principal) return null;
       req.principal = principal;
+      if (principal.tunnelGrant) return principal.tunnelGrant.sessionId;
       return String(req.headers.cookie).split(';').find((part) => part.trim().startsWith('devryan_local_owner='))?.trim().slice('devryan_local_owner='.length) || null;
     },
     registerConnection: () => () => {},

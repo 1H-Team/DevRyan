@@ -10,7 +10,7 @@ Use `devryan_browser` to verify website work in DevRyan's isolated browser lease
 ## Workflow
 
 1. Call `devryan_browser` with `command: "open"` and omit `args` so the active branch's assigned preview is the authoritative target.
-2. If the successful result reports that no preview is configured, start the target website, determine its reachable HTTP URL, and call `open` with that exact URL. Do not assume a fixed local port. When a preview is configured, explicit loopback URLs are automatically mapped to the preview origin while preserving their path, query, and fragment.
+2. If the successful result reports that no preview is configured, find a local site that is already running: read the project's dev script for its port and probe it (for example `curl -sI http://127.0.0.1:<port>/`). Call `open` with that exact URL. Do not assume a fixed local port. Do not start a dev server for verification: a process started from a tool command stops when that command ends, so it cannot serve later browser calls. If nothing answers, ask the user to start the site (for example with a Project Action) and share its URL, and report visual verification as blocked until then. When a preview is configured, explicit loopback URLs are automatically mapped to the preview origin while preserving their path, query, and fragment.
 3. Inspect with `snapshot -i`, then interact using the returned element references. Use `inspect` for element existence, attributes, and computed styles. Take a screenshot when visual appearance matters.
 4. After edits, reload or reopen the page and repeat the relevant checks. Report what you actually observed.
 5. Always call `devryan_browser` with `command: "close"` when verification is finished, including after a failed check when possible.
@@ -23,7 +23,7 @@ devryan_browser({ command: "open", args: ["http://127.0.0.1:<actual-port>/dashbo
 devryan_browser({ command: "snapshot", args: ["-i"] })
 devryan_browser({ command: "click", args: ["@e3"] })
 devryan_browser({ command: "inspect", selector: '[role="tooltip"]', styles: ["animation-duration", "transition-duration"], attributes: ["data-state", "style"] })
-devryan_browser({ command: "screenshot", args: ["--full", "/tmp/site.png"] })
+devryan_browser({ command: "screenshot", args: ["--full", "site.png"] })
 devryan_browser({ command: "close" })
 ```
 

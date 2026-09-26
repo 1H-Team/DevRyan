@@ -81,7 +81,7 @@ export function attachSupabaseConnectionBoundary(app, server, connection, { allo
   });
   server?.on('upgrade', (req, socket) => {
     if (req.tunnelAccessDenied || socket.destroyed) return;
-    if (connection.enabled || connection.authenticateLocalOwner(req)) return;
+    if (connection.enabled || connection.authenticateLocalOwner(req) || allowRemoteRequest(req)) return;
     socket.write('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
     socket.destroy();
   });

@@ -1,4 +1,5 @@
 import { sshManagedIdentity, authorizeSshManagedShutdown } from './ssh-managed-identity.js';
+import { getTunnelOwnerPrincipal } from '../tunnels/access-control.js';
 export const registerServerStatusRoutes = (app, dependencies) => {
   const {
     express,
@@ -306,7 +307,7 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     return tunnelAuthController.getActiveTunnelMode() !== 'managed-remote';
   };
   const requiresManagedAccountAuth = (req) => {
-    if (uiAuthController.multiUser) return false;
+    if (uiAuthController.multiUser || getTunnelOwnerPrincipal(req)) return false;
     const requestScope = tunnelAuthController.classifyRequestScope(req);
     if (requestScope !== 'tunnel' && requestScope !== 'unknown-public') return false;
     return tunnelAuthController.getActiveTunnelMode() === 'managed-remote';

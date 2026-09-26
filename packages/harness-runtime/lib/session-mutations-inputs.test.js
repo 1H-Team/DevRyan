@@ -123,6 +123,81 @@ test('an input the call replaced in its view is never published and is reported'
   expect(await f.read('cache/seed')).toBe('seed');
 });
 
+const moduleFixture = async () => {
+  const f = await fixture();
+  await f.put('.gitignore', 'node_modules/\n'); await f.put('a.txt', 'a');
+  await f.put('node_modules/pkg/index.js', 'dependency'); await f.put('node_modules/.bin/tool', 'tool');
+  await f.put('node_modules/.vite/deps/old.js', 'project cache');
+  return f;
+};
+
+const overlayOf = async (f) => {
+  const ledger = path.join(f.storage, changeKey(await fs.realpath(f.directory)));
+  return { ledger, overlays: path.join(ledger, 'module-overlays'), caches: path.join(ledger, 'context-cache', 'module-caches') };
+};
+
+bunTest.skipIf(process.platform === 'win32')('a view node_modules links to a host overlay whose tool caches live in the execution cache', async () => {
+  const f = await moduleFixture();
+  const lease = await f.begin('s', 'p', 'c');
+  expect(lease.inputs).toEqual(['node_modules']);
+  const modules = path.join(lease.viewDirectory, 'node_modules');
+  expect(await kind(modules)).toBe('link');
+  const { ledger, caches } = await overlayOf(f);
+  const overlay = await fs.readlink(modules);
+  expect(path.relative(path.join(ledger, 'module-overlays'), overlay)).toMatch(/^[0-9a-f]{16}$/);
+  expect(await fs.readFile(path.join(modules, 'pkg', 'index.js'), 'utf8')).toBe('dependency');
+  expect(await fs.realpath(path.join(modules, 'pkg'))).toBe(await fs.realpath(path.join(f.directory, 'node_modules', 'pkg')));
+  expect(await fs.realpath(path.join(modules, '.bin'))).toBe(await fs.realpath(path.join(f.directory, 'node_modules', '.bin')));
+  for (const cache of ['.vite', '.vite-temp', '.cache']) {
+    expect(await fs.realpath(path.join(modules, cache))).toBe(await fs.realpath(path.join(caches, path.basename(overlay), cache)));
+  }
+  expect(await fs.readdir(path.join(modules, '.vite'))).toEqual([]);
+  await fs.writeFile(path.join(modules, '.vite', 'x'), 'shared cache');
+  const result = await f.finish(lease);
+  expect(result.files).toEqual([]);
+  expect(result.ignoredInputs).toBeFalsy();
+  expect(await fs.readdir(path.join(f.directory, 'node_modules', '.vite'))).toEqual(['deps']);
+  // The overlay follows installs and removals between calls; caches persist.
+  await f.put('node_modules/added/index.js', 'added'); await fs.rm(path.join(f.directory, 'node_modules', 'pkg'), { recursive: true });
+  const next = await f.begin('s', 'p2', 'c2');
+  const nextModules = path.join(next.viewDirectory, 'node_modules');
+  expect(await fs.readFile(path.join(nextModules, 'added', 'index.js'), 'utf8')).toBe('added');
+  expect(await kind(path.join(nextModules, 'pkg'))).toBe('missing');
+  expect(await fs.readFile(path.join(nextModules, '.vite', 'x'), 'utf8')).toBe('shared cache');
+  await f.finish(next);
+});
+
+bunTest.skipIf(process.platform !== 'darwin')('confined tool caches are writable while dependencies and the overlay stay read-only', async () => {
+  const f = await moduleFixture();
+  const lease = await f.begin('s', 'p', 'c');
+  const viewDirectory = await fs.realpath(lease.viewDirectory);
+  const scratchDirectory = path.join(path.dirname(viewDirectory), 'scratch'); await fs.mkdir(scratchDirectory, { recursive: true });
+  const auxiliaryDirectory = await fs.realpath(lease.auxiliaryDirectory);
+  const profile = sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory });
+  const run = (script) => spawnSync('/usr/bin/sandbox-exec', ['-p', profile, '/bin/sh', '-c', script], { cwd: viewDirectory, encoding: 'utf8' });
+  const cacheWrite = run('mkdir -p node_modules/.vite/deps && echo x > node_modules/.vite/deps/new.js && echo y > node_modules/.vite-temp/config.mjs && rm node_modules/.vite/deps/new.js');
+  expect(cacheWrite.stderr).toBe('');
+  expect(cacheWrite.status).toBe(0);
+  expect(run('echo changed > node_modules/pkg/index.js').status).not.toBe(0);
+  expect(run('echo planted > node_modules/planted').status).not.toBe(0);
+  expect(run('rm node_modules/pkg').status).not.toBe(0);
+  expect(await f.read('node_modules/pkg/index.js')).toBe('dependency');
+  expect(await fs.readdir(path.join(f.directory, 'node_modules', '.vite', 'deps'))).toEqual(['old.js']);
+  expect(await kind(path.join(f.directory, 'node_modules', '.vite-temp'))).toBe('missing');
+  expect((await f.finish(lease)).ignoredInputs).toBeFalsy();
+});
+
+bunTest.skipIf(process.platform === 'win32')('the overlay kill switch restores the direct dependency link', async () => {
+  const f = await moduleFixture();
+  process.env.DEVRYAN_MODULE_CACHE_OVERLAY = '0';
+  try {
+    const lease = await f.begin('s', 'p', 'c');
+    expect(await fs.readlink(path.join(lease.viewDirectory, 'node_modules'))).toBe(path.join(lease.projectDirectory, 'node_modules'));
+    await f.finish(lease);
+  } finally { delete process.env.DEVRYAN_MODULE_CACHE_OVERLAY; }
+  expect(await kind((await overlayOf(f)).overlays)).toBe('missing');
+});
+
 test('a lease prepared before inputs were persisted keeps the name-only rule', async () => {
   const f = await fixture();
   await f.put('node_modules/pkg/index.js', 'dependency'); await f.put('a.txt', 'a');

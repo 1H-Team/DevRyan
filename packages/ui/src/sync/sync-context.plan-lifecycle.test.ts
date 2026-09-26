@@ -42,6 +42,7 @@ import {
 import { useNotificationStore } from "./notification-store"
 import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
 import { usePrimaryRecoveryStore } from "@/stores/usePrimaryRecoveryStore"
+import { useManagedOrchestrationStore } from "@/stores/useManagedOrchestrationStore"
 import { isAbortGuardActive, registerManualAbortGuard, resetAbortGuardState } from "./abort-retry-guard"
 import { useSelectionStore } from "./selection-store"
 import { useMessageQueueStore } from "@/stores/messageQueueStore"
@@ -2460,6 +2461,97 @@ describe("sync plan lifecycle on message.part.delta", () => {
       expect(useNotificationStore.getState().sessionHasError(SESSION_ID)).toBe(true)
     })
   }
+
+  const seedOpenTodoBackgroundTurn = (store: ReturnType<ChildStoreManager["ensureChild"]>, completedPart: Part) => {
+    store.setState({
+      ...INITIAL_STATE,
+      session: [{ id: SESSION_ID, title: "Task session", time: { created: 1, updated: 2 } } as Session],
+      message: {
+        [SESSION_ID]: [userMessage(), { ...assistantMessage(), agent: "orchestrator" } as Message],
+      },
+      part: {
+        [USER_MESSAGE_ID]: [],
+        [ASSISTANT_MESSAGE_ID]: [completedPart],
+      },
+      todo: {
+        [SESSION_ID]: [
+          { content: "Implement the change", priority: "high", status: "completed" },
+          { content: "Verify in the browser", priority: "high", status: "in_progress" },
+        ],
+      },
+      session_status: {
+        [SESSION_ID]: { type: "idle" } as SessionStatus,
+      },
+    })
+  }
+
+  test("records unread completion when an orchestrator turn ends with blocked todos left open", async () => {
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    const completedPart = textPart("Implemented; browser verification is blocked.")
+    seedOpenTodoBackgroundTurn(store, completedPart)
+
+    applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndexFor())
+    await flushAsync()
+    await waitForCompletionIndicatorSettlement()
+
+    expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(true)
+    expect(useSessionUIStore.getState().sessionCompletionIndicator.get(SESSION_ID)).toEqual({
+      messageId: ASSISTANT_MESSAGE_ID,
+      completedAt: 3,
+    })
+  })
+
+  test("defers completion while a managed child runs and re-detects after the idle snapshot settles it", async () => {
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    const completedPart = textPart("Waiting on the reviewer.")
+    seedOpenTodoBackgroundTurn(store, completedPart)
+    const originalManagedState = useManagedOrchestrationStore.getState()
+    const runningTask = { taskId: "task-1", rootSessionId: SESSION_ID, status: "running" }
+    let snapshotLoads = 0
+    useManagedOrchestrationStore.setState({
+      taskIdsByRootId: { [SESSION_ID]: ["task-1"] },
+      tasksById: { "task-1": runningTask as never },
+      loadSnapshot: (async () => {
+        snapshotLoads += 1
+        // The idle handler's own detection must still see the running child.
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        useManagedOrchestrationStore.setState({
+          tasksById: { "task-1": { ...runningTask, status: "completed" } as never },
+        })
+      }) as never,
+    })
+
+    try {
+      applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndexFor())
+      await flushAsync()
+      await waitForCompletionIndicatorSettlement()
+
+      expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(false)
+      expect(useSessionUIStore.getState().sessionCompletionIndicator.has(SESSION_ID)).toBe(false)
+
+      store.setState({ session_status: { [SESSION_ID]: { type: "busy" } as SessionStatus } })
+      applySyncEventForTest(
+        DIRECTORY,
+        sessionStatusEvent({ type: "idle" } as SessionStatus),
+        childStores,
+        routingIndexFor(),
+      )
+      await flushAsync()
+      await flushAsync()
+      await waitForCompletionIndicatorSettlement()
+
+      expect(snapshotLoads).toBe(1)
+      expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(true)
+      expect(useSessionUIStore.getState().sessionCompletionIndicator.get(SESSION_ID)).toEqual({
+        messageId: ASSISTANT_MESSAGE_ID,
+        completedAt: 3,
+      })
+    } finally {
+      useManagedOrchestrationStore.setState(originalManagedState, true)
+    }
+  })
 
   test("successful child completion waits for descendants and resolves only that child's error", async () => {
     const childStores = new ChildStoreManager()

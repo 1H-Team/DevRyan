@@ -10,6 +10,7 @@ import { resolveMultiUserConfig } from './config.js';
 import { createPrincipalCache } from './principal-cache.js';
 import { createSupabaseConnection, isDirectLocalRequest } from './supabase-connection.js';
 import { createDisconnectedAuth } from './disconnected-auth.js';
+import { getTunnelOwnerPrincipal } from '../tunnels/access-control.js';
 import {
   ensureOpenCodeProjectId,
   getBranches,
@@ -546,11 +547,18 @@ export async function createMultiUserRuntime({
     ...legacy,
     multiUser: false,
     async resolvePrincipal(req, res) {
+      const owner = getTunnelOwnerPrincipal(req);
+      if (owner) return owner;
       if (!legacy.enabled) return isLoopbackRequest(req) ? localAdminPrincipal : null;
       const token = await legacy.ensureSessionToken(req, res);
       return token ? localAdminPrincipal : null;
     },
     async requireAuth(req, res, next) {
+      const owner = getTunnelOwnerPrincipal(req);
+      if (owner) {
+        req.principal = owner;
+        return runWithRequestPrincipal(owner, next);
+      }
       if (!legacy.enabled && !isLoopbackRequest(req)) {
         return jsonError(res, 401, 'Local administrator access is loopback-only');
       }
@@ -569,6 +577,8 @@ export async function createMultiUserRuntime({
       return res.json({ authenticated: true, principal: publicPrincipal(localAdminPrincipal), mode: 'local' });
     },
     async ensureSessionToken(req, res) {
+      const owner = getTunnelOwnerPrincipal(req);
+      if (owner) { req.principal = owner; return owner.tunnelGrant.sessionId; }
       if (!legacy.enabled) {
         if (isLoopbackRequest(req)) req.principal = localAdminPrincipal;
         return isLoopbackRequest(req) ? 'local-admin' : null;

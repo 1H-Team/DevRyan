@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -5,6 +6,7 @@ import express from 'express';
 import request from '../../test-supertest.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import DUPLICATE_OUTPUT_PROFILES from './harness-duplicate-profiles.js';
 import {
   DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE,
   DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC,
@@ -12,6 +14,11 @@ import {
   createSlimSetupRuntime,
   registerSlimSetupRoutes,
 } from './slim-install.js';
+
+// The installer must deploy the reviewed adapter byte-for-byte.
+const reviewedAdapter = fs.readFileSync(
+  new URL(`../../default-config/plugins/${DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE}`, import.meta.url),
+);
 
 const writeJson = (filePath, data) => {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -95,7 +102,6 @@ describe('Slim setup runtime', () => {
     const opencodeConfig = readJson(opencodeConfigPath);
     const packageJson = readJson(path.join(configDir, 'package.json'));
     const wrapperPath = path.join(configDir, 'plugins', DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE);
-    const wrapperSource = fs.readFileSync(wrapperPath, 'utf8');
 
     expect(result.ok).toBe(true);
     expect(result.installedVersion).toBe(SLIM_MANAGED_VERSION);
@@ -122,9 +128,7 @@ describe('Slim setup runtime', () => {
     });
     expect(opencodeConfig.lsp).toBe(true);
     expect(packageJson.dependencies['oh-my-opencode-slim']).toBe(SLIM_MANAGED_VERSION);
-    expect(wrapperSource).toContain("'node_modules', 'oh-my-opencode-slim', 'dist', 'index.js'");
-    expect(wrapperSource).toContain('experimental.chat.system.transform');
-    expect(wrapperSource).toContain('delete plugin.agent');
+    expect(fs.readFileSync(wrapperPath).equals(reviewedAdapter)).toBe(true);
     expect(readJson(slimConfigPath).preset).toBe('custom');
     expect(commands).toEqual([
       { command: 'bun', args: ['install', '--ignore-scripts'], cwd: configDir },
@@ -178,5 +182,54 @@ describe('Slim setup runtime', () => {
       expect.objectContaining({ restart: true }),
       true,
     );
+    const wrapperPath = path.join(configDir, 'plugins', DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE);
+    expect(fs.readFileSync(wrapperPath).equals(reviewedAdapter)).toBe(true);
+  });
+
+  it('deploys the qualified adapter bytes pinned by duplicate-output profiles', async () => {
+    const digest = crypto.createHash('sha256').update(reviewedAdapter).digest('hex');
+    const pinned = DUPLICATE_OUTPUT_PROFILES
+      .filter((profile) => !profile.stale)
+      .flatMap((profile) => profile.plugins)
+      .filter((entry) => entry.name === DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE)
+      .map((entry) => entry.contentHash);
+    expect(pinned.length).toBeGreaterThan(0);
+    expect(new Set(pinned)).toEqual(new Set([digest]));
+
+    await createRuntime().install();
+    const deployed = fs.readFileSync(path.join(configDir, 'plugins', DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE));
+    expect(crypto.createHash('sha256').update(deployed).digest('hex')).toBe(digest);
+  });
+
+  it('repair replaces a stale adapter with the reviewed bytes and keeps a backup', async () => {
+    const wrapperPath = path.join(configDir, 'plugins', DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE);
+    const stale = 'export default async (context) => (await import("oh-my-opencode-slim")).default(context);\n';
+    fs.mkdirSync(path.dirname(wrapperPath), { recursive: true });
+    fs.writeFileSync(wrapperPath, stale, 'utf8');
+
+    const result = await createRuntime().repair();
+
+    expect(result.ok).toBe(true);
+    expect(result.repair).toBe(true);
+    expect(fs.readFileSync(wrapperPath).equals(reviewedAdapter)).toBe(true);
+    expect(result.changedFiles).toContain(wrapperPath);
+    const backup = result.backupPaths.find((backupPath) => backupPath.includes(DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE));
+    expect(backup).toBeTruthy();
+    expect(fs.readFileSync(backup, 'utf8')).toBe(stale);
+
+    const repeated = await createRuntime().repair();
+    expect(repeated.changedFiles).not.toContain(wrapperPath);
+  });
+
+  it('writes nothing when the packaged adapter is unavailable', async () => {
+    const missingDirectory = path.join(root, 'missing-plugins');
+    const result = await createRuntime({ packagedPluginDirectory: missingDirectory }).install();
+
+    expect(result.ok).toBe(false);
+    expect(result.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'slim-wrapper-source-missing' }),
+    ]));
+    expect(fs.existsSync(configDir)).toBe(false);
+    expect(commands).toEqual([]);
   });
 });

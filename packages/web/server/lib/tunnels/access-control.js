@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import express from 'express';
 import { isDirectLocalRequest } from '../security/direct-local-request.js';
 import { runWithRequestPrincipal } from '../multi-user/request-context.js';
+import { publicPrincipal, ROLE_POLICY_DEFAULTS } from '../multi-user/policy.js';
 import { isBotTunnelRoute } from './bot-grants.js';
 
 export const TUNNEL_LINK_TTL_MS = 15 * 60 * 1000;
@@ -10,11 +11,16 @@ const STATE_KEY = 'bot-tunnel-authorization-v1';
 const COOKIE = 'oc_tunnel_session';
 const authorizedRequests = new WeakSet();
 export const hasTunnelBoundaryAuthorization = (req) => authorizedRequests.has(req);
+const ownerRequests = new WeakMap();
+export const getTunnelOwnerPrincipal = (req) => ownerRequests.get(req) || null;
 const digest = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const failure = (code, message, statusCode = 403) => Object.assign(new Error(message), { code, statusCode });
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const validBotIds = (ids) => Array.isArray(ids) && ids.length > 0 && ids.length <= 100
   && ids.every((id) => typeof id === 'string' && uuid.test(id)) && new Set(ids).size === ids.length;
+const validGrant = (row, saved) => row.access === 'owner'
+  ? saved.authMode === 'local-owner' && saved.profile?.mode === 'managed-remote' && Array.isArray(row.botIds) && row.botIds.length === 0
+  : (row.access === undefined || row.access === 'bots') && validBotIds(row.botIds);
 const validHash = (value) => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const validHostname = (value) => typeof value === 'string' && /^[a-z0-9.-]+$/.test(value)
   && value.length <= 253 && !value.startsWith('.') && !value.endsWith('.') && !value.includes('..');
@@ -25,11 +31,11 @@ const validSavedState = (saved) => saved?.version === 1 && uuid.test(saved.gener
   && (saved.profile === null || (uuid.test(saved.profile?.id) && validHostname(saved.profile.hostname)
     && ['quick', 'managed-local', 'managed-remote'].includes(saved.profile.mode) && typeof saved.profile.resume === 'boolean'))
   && Array.isArray(saved.links) && saved.links.length <= 32
-  && saved.links.every((row) => uuid.test(row?.id) && validHash(row.tokenHash) && validBotIds(row.botIds)
+  && saved.links.every((row) => uuid.test(row?.id) && validHash(row.tokenHash) && validGrant(row, saved)
     && Number.isFinite(row.expiresAt) && (row.usedAt === null || Number.isFinite(row.usedAt)))
   && Array.isArray(saved.sessions) && saved.sessions.length <= 128
   && saved.sessions.every((row) => uuid.test(row?.sessionId) && uuid.test(row.grantId) && uuid.test(row.generation)
-    && validHash(row.tokenHash) && validBotIds(row.botIds) && row.ownerId === saved.ownerId
+    && validHash(row.tokenHash) && validGrant(row, saved) && row.ownerId === saved.ownerId
     && row.profileId === saved.profile?.id && row.hostname === saved.profile?.hostname && row.generation === saved.generation
     && Number.isFinite(row.createdAt) && row.expiresAt - row.createdAt === TUNNEL_SESSION_TTL_MS);
 const cookieToken = (req) => {
@@ -68,6 +74,7 @@ export function createTunnelAccessControl({ now = Date.now } = {}) {
   const currentMode = () => connection?.authenticationMode || (connection?.enabled ? 'managed-accounts' : 'local-owner');
   const bound = () => !blocked && state && state.ownerId === currentOwner() && state.authMode === currentMode()
     && state.localUiAuthMode === localUiAuthMode;
+  const canUseOwnerLogin = () => Boolean(bound() && currentOwner() && currentMode() === 'local-owner');
   const closeConnections = () => {
     for (const entry of connections) { clearTimeout(entry.timer); entry.close(); }
     connections.clear();
@@ -152,16 +159,23 @@ export function createTunnelAccessControl({ now = Date.now } = {}) {
     await validateBots(connection.ownerPrincipal(), ids);
     return ids;
   };
-  const issueBootstrapToken = async ({ botIds, ttlMs = TUNNEL_LINK_TTL_MS } = {}) => {
+  const issueBootstrapToken = async ({ botIds, access = 'bots', ttlMs = TUNNEL_LINK_TTL_MS } = {}) => {
     if (!active) throw failure('tunnel_inactive', 'Start the tunnel before creating a link', 409);
     if (!Number.isFinite(ttlMs) || ttlMs <= 0 || ttlMs > TUNNEL_LINK_TTL_MS) throw failure('tunnel_link_expiry_invalid', 'Tunnel links expire within 15 minutes', 400);
-    const ids = await validateSelection(botIds);
+    if (!['bots', 'owner'].includes(access)) throw failure('tunnel_access_invalid', 'Invalid tunnel access', 400);
+    if (access === 'owner' && (!canUseOwnerLogin() || state.profile?.mode !== 'managed-remote'
+      || (botIds !== undefined && (!Array.isArray(botIds) || botIds.length !== 0)))) {
+      throw failure('tunnel_owner_unavailable', 'Owner links require a managed tunnel with Supabase Off');
+    }
+    const generation = state.generation;
+    const ids = access === 'owner' ? [] : await validateSelection(botIds);
     const token = crypto.randomBytes(32).toString('base64url');
     return update((next) => {
       assertBound();
+      if (next.generation !== generation) throw failure('tunnel_auth_changed', 'Tunnel authorization changed; create a new link');
       const expiresAt = now() + ttlMs;
       next.links = next.links.filter((link) => link.expiresAt > now() && !link.usedAt).slice(-31);
-      next.links.push({ id: crypto.randomUUID(), tokenHash: digest(token), botIds: ids, expiresAt, usedAt: null });
+      next.links.push({ id: crypto.randomUUID(), tokenHash: digest(token), access, botIds: ids, expiresAt, usedAt: null });
       return { token, expiresAt };
     });
   };
@@ -182,7 +196,10 @@ export function createTunnelAccessControl({ now = Date.now } = {}) {
       && session.generation === state.generation && session.ownerId === state.ownerId
       && session.profileId === state.profile.id && session.hostname === state.profile.hostname) || null;
   };
-  const principalFor = (session) => Object.freeze({
+  const principalFor = (session) => session.access === 'owner' ? Object.freeze({
+    ...connection.ownerPrincipal(), localOwner: false, policy: ROLE_POLICY_DEFAULTS.admin,
+    tunnelGrant: Object.freeze({ id: session.grantId, sessionId: session.sessionId, expiresAt: session.expiresAt }),
+  }) : Object.freeze({
     id: session.ownerId, role: 'developer', scope: 'tunnel-bot', localOwner: false,
     displayName: 'Bot workspace guest', email: null, assignments: [],
     policy: { bots: true, settingsPages: [], files: false, terminal: false, browser: false,
@@ -221,7 +238,12 @@ export function createTunnelAccessControl({ now = Date.now } = {}) {
       if (!bound() || !active || next.generation !== expectedGeneration) return { ok: false, reason: 'inactive' };
       const link = next.links.find((row) => row.tokenHash === digest(token) && !row.usedAt && row.expiresAt > now());
       if (!link) return { ok: false, reason: 'expired' };
-      try { await beforeCommit?.(); await validateBots(connection.ownerPrincipal(), link.botIds); }
+      try {
+        await beforeCommit?.();
+        if (link.access === 'owner') {
+          if (!canUseOwnerLogin()) throw failure('tunnel_owner_unavailable', 'Owner authentication is unavailable');
+        } else await validateBots(connection.ownerPrincipal(), link.botIds);
+      }
       catch { return { ok: false, reason: 'precondition-failed' }; }
       if (!bound() || !active) return { ok: false, reason: 'inactive' };
       const credential = crypto.randomBytes(32).toString('base64url');
@@ -230,13 +252,13 @@ export function createTunnelAccessControl({ now = Date.now } = {}) {
       link.usedAt = now();
       next.sessions = next.sessions.filter((session) => session.expiresAt > now()).slice(-127);
       next.sessions.push({ sessionId: crypto.randomUUID(), tokenHash: digest(credential), grantId: link.id,
-        botIds: link.botIds, ownerId: next.ownerId, profileId: next.profile.id, hostname: next.profile.hostname,
+        access: link.access || 'bots', botIds: link.botIds, ownerId: next.ownerId, profileId: next.profile.id, hostname: next.profile.hostname,
         generation: next.generation, expiresAt, createdAt });
       // The cookie is added only after the enclosing persistence operation.
-      return { ok: true, sessionExpiresAt: expiresAt, credential };
+      return { ok: true, sessionExpiresAt: expiresAt, credential, redirectUrl: link.access === 'owner' ? '/' : '/?view=bots' };
     }).then((result) => {
       if (result.ok) setCookie(res, result.credential, TUNNEL_SESSION_TTL_MS / 1000);
-      return { ok: result.ok, reason: result.reason, sessionExpiresAt: result.sessionExpiresAt };
+      return { ok: result.ok, reason: result.reason, sessionExpiresAt: result.sessionExpiresAt, redirectUrl: result.redirectUrl };
     });
   };
   const registerConnection = (principal, close) => {
@@ -249,7 +271,7 @@ export function createTunnelAccessControl({ now = Date.now } = {}) {
   return {
     initialize, refreshOwner, classifyRequestScope, setActiveTunnel, clearActiveTunnel, suspendActiveTunnel,
     revokeTunnelArtifacts, revokeGrant, validateSelection, issueBootstrapToken, exchangeBootstrapToken, getTunnelSessionFromRequest, requireTunnelSession,
-    registerConnection, principalFor, isDirectLocalRequest,
+    registerConnection, principalFor, isDirectLocalRequest, canUseOwnerLogin,
     getActiveTunnelId: () => active ? state?.profile?.id : null,
     getActiveTunnelHost: () => active ? state?.profile?.hostname : null,
     getActiveTunnelMode: () => active ? state?.profile?.mode : null,
@@ -268,6 +290,14 @@ export function createTunnelAccessControl({ now = Date.now } = {}) {
 
 export function registerTunnelAccessBoundary(app, server, { controller, connection, runtimeInstanceId, getRuntimeReady = () => true, authenticateOwner = (req) => connection.authenticateLocalOwner(req) }) {
   const json = express.json({ limit: '2kb' });
+  const authorizeOwner = (req, session) => {
+    if (session?.access !== 'owner' || !controller.canUseOwnerLogin()) return false;
+    const principal = controller.principalFor(session);
+    req.principal = principal;
+    ownerRequests.set(req, principal);
+    authorizedRequests.add(req);
+    return true;
+  };
   const usesManagedDirectLogin = (req) => connection.enabled
     && controller.getActiveTunnelMode() === 'managed-remote'
     && controller.classifyRequestScope(req) === 'tunnel';
@@ -294,14 +324,15 @@ export function registerTunnelAccessBoundary(app, server, { controller, connecti
     }
     const remoteSession = controller.getTunnelSessionFromRequest(req);
     const hasTunnelCookie = String(req.headers.cookie || '').includes(`${COOKIE}=`);
-    if (/^\/(?:api\/(?:desktop|runtime-service|browser\/agent-leases)(?:\/|$)|auth\/runtime-service-bootstrap$)/.test(pathname)) return res.sendStatus(403);
+    if (/^\/(?:api\/(?:desktop|runtime-service|browser\/agent-leases)(?:\/|$)|auth\/runtime-service-bootstrap$)/i.test(pathname)) return res.sendStatus(403);
     if (req.headers.origin && req.headers.origin !== `https://${remoteHost(req)}`) return res.sendStatus(403);
     if (pathname === '/tunnel/connect') {
       res.setHeader('Cache-Control', 'no-store'); res.setHeader('Referrer-Policy', 'no-referrer');
       if (req.method === 'GET') {
         const nonce = crypto.randomBytes(16).toString('base64');
         res.setHeader('Content-Security-Policy', `default-src 'none'; script-src 'nonce-${nonce}'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`);
-        return res.type('html').send(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Connect to DevRyan Bots</title><h1>Connect to Bot workspaces</h1><p>This link grants access to selected Bots. It expires after 15 minutes.</p><button id="connect">Connect</button><p id="status" role="status"></p><script nonce="${nonce}">let token=new URLSearchParams(location.hash.slice(1)).get('t');history.replaceState(null,'',location.pathname);document.getElementById('connect').onclick=async()=>{const button=document.getElementById('connect');button.disabled=true;try{const response=await fetch('/tunnel/connect',{method:'POST',headers:{'Content-Type':'application/json','X-DevRyan-CSRF':'1'},body:JSON.stringify({token})});if(!response.ok)throw new Error('Connection failed. The link may have expired or already been used.');token=null;location.replace('/?view=bots');}catch(error){document.getElementById('status').textContent=error.message;button.disabled=false;}};</script></html>`);
+        const ownerLink = controller.canUseOwnerLogin() && controller.getActiveTunnelMode() === 'managed-remote';
+        return res.type('html').send(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Connect to DevRyan</title><h1>${ownerLink ? 'Connect to your DevRyan workspace' : 'Connect to Bot workspaces'}</h1><p>${ownerLink ? 'An owner link grants full access to this DevRyan workspace. Keep it private.' : 'This link grants access to selected Bots.'} Links expire after 15 minutes.</p><button id="connect">Connect</button><p id="status" role="status"></p><script nonce="${nonce}">let token=new URLSearchParams(location.hash.slice(1)).get('t');history.replaceState(null,'',location.pathname);document.getElementById('connect').onclick=async()=>{const button=document.getElementById('connect');button.disabled=true;try{const response=await fetch('/tunnel/connect',{method:'POST',headers:{'Content-Type':'application/json','X-DevRyan-CSRF':'1'},body:JSON.stringify({token})});if(!response.ok)throw new Error('Connection failed. The link may have expired or already been used.');const result=await response.json();token=null;location.replace(result.redirectUrl);}catch(error){document.getElementById('status').textContent=error.message;button.disabled=false;}};</script></html>`);
       }
       if (req.method !== 'POST') return res.sendStatus(405);
       return json(req, res, async (error) => {
@@ -310,9 +341,24 @@ export function registerTunnelAccessBoundary(app, server, { controller, connecti
           const result = await controller.exchangeBootstrapToken({ req, res, token: req.body?.token,
             beforeCommit: () => { if (!getRuntimeReady()) throw new Error('Runtime starting'); } });
           if (!result.ok) return res.status(result.reason === 'rate-limited' ? 429 : result.reason === 'origin' ? 403 : result.reason === 'precondition-failed' ? 503 : 401).json({ error: 'Connection link unavailable' });
-          return res.json({ ok: true });
+          return res.json({ ok: true, redirectUrl: result.redirectUrl });
         } catch { return res.status(503).json({ error: 'Tunnel authorization unavailable' }); }
       });
+    }
+    if (remoteSession?.access === 'owner') {
+      if (/^\/(?:api\/(?:openchamber\/tunnel|system\/supabase-connection|passkeys|auth\/reset|admin|bots|bot-actions|bot-channels|bot-runs|bug-reports|user-analytics)(?:\/|$)|auth\/(?:local-owner|passkey|agent-test-session|claim|invite)(?:\/|$))/i.test(pathname)) return res.sendStatus(403);
+      if (!['GET', 'HEAD'].includes(req.method) && (req.headers['x-devryan-csrf'] !== '1' || req.headers.origin !== `https://${remoteSession.hostname}`)) return res.sendStatus(403);
+      if (!authorizeOwner(req, remoteSession)) return res.sendStatus(401);
+      res.setHeader('Cache-Control', 'no-store');
+      if ((pathname === '/auth/logout' && req.method === 'POST') || (pathname === '/auth/session' && req.method === 'DELETE')) {
+        await controller.revokeGrant(remoteSession.grantId);
+        controller.clearTunnelSessionCookie(req, res);
+        return res.json({ authenticated: false });
+      }
+      if (pathname === '/auth/session' && req.method === 'GET') return res.json({ authenticated: true, mode: 'local', principal: publicPrincipal(req.principal) });
+      const unregister = controller.registerConnection(req.principal, () => res.destroy());
+      res.once('close', unregister); res.once('finish', unregister);
+      return runWithRequestPrincipal(req.principal, next);
     }
     // Valid Bot sessions retain their restricted authority. An expired or revoked
     // cookie must not trap the stable hostname behind the obsolete link screen.
@@ -340,6 +386,13 @@ export function registerTunnelAccessBoundary(app, server, { controller, connecti
   const upgrade = (req, socket) => {
     if (socket.destroyed) return;
     if (isDirectLocalRequest(req)) return;
+    const session = controller.getTunnelSessionFromRequest(req);
+    if (session?.access === 'owner' && sameRemoteOrigin(req, session.hostname, true)
+      && /^\/api\/(?:(?:terminal\/ws|(?:global\/)?event\/ws)(?:\?|$)|preview\/proxy\/)/.test(req.url || '') && authorizeOwner(req, session)) {
+      const unregister = controller.registerConnection(req.principal, () => socket.destroy());
+      socket.once('close', unregister);
+      return;
+    }
     if (connection.enabled && !String(req.headers?.cookie || '').includes(`${COOKIE}=`)) return;
     // Downstream upgrade handlers still require normal account authentication.
     if (usesManagedDirectLogin(req) && !controller.getTunnelSessionFromRequest(req)) return;

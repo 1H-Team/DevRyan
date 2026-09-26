@@ -53,16 +53,19 @@ export async function verifySessionExecutionLauncher({ launcher, platform = proc
   } catch { verifiedLaunchers.delete(cacheKey); return false; }
 }
 
-export function sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory }) {
+export function sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory, socketDirectory }) {
   return `(version 1)
 (allow default)
-(deny file-write* (require-all (require-not (subpath ${sbString(viewDirectory)})) (require-not (subpath ${sbString(scratchDirectory)})) ${auxiliaryDirectory ? `(require-not (subpath ${sbString(auxiliaryDirectory)}))` : ''} (require-not (literal "/dev/null"))))
+(deny file-write* (require-all (require-not (subpath ${sbString(viewDirectory)})) (require-not (subpath ${sbString(scratchDirectory)})) ${auxiliaryDirectory ? `(require-not (subpath ${sbString(auxiliaryDirectory)}))` : ''} ${socketDirectory ? `(require-not (subpath ${sbString(socketDirectory)}))` : ''} (require-not (literal "/dev/null"))))
 (deny mach-lookup)
 (deny network-outbound (remote unix-socket))
 ; TCP stays available, so name resolution must too: the system resolver socket
 ; is the only local daemon a confined process may reach (no mach services).
 (allow network-outbound (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))
-(deny process-info-setcontrol)
+${socketDirectory ? `; Sockets this execution's own processes create (for example the agent-browser
+; daemon) live in its private short directory; no host daemon can be reached there.
+(allow network-outbound (remote unix-socket (subpath ${sbString(socketDirectory)})))
+` : ''}(deny process-info-setcontrol)
 (deny signal)
 (allow signal (target same-sandbox))
 (deny process-info*)
@@ -89,6 +92,62 @@ export async function readSessionExecutionReceipt(lease) {
   return value;
 }
 
+// macOS caps Unix socket paths at 104 bytes and a private view's scratch path
+// alone exceeds that, so each execution gets a short private runtime directory
+// for sockets its own processes create, exported as XDG_RUNTIME_DIR. The
+// agent-browser daemon appends /agent-browser/namespaces/devryan/run/ and a
+// 34-character lease session (77 bytes), so the directory is spelled through
+// /tmp (os.tmpdir() is itself too long) and must stay within 26 bytes. The
+// profile matches the resolved /private/tmp path. Keyed by the lease, so
+// cleanup needs no stored state.
+export const executionSocketRoot = () => path.join('/private/tmp', `dr-${process.getuid()}`);
+export function executionSocketDirectory(lease, platform = process.platform) {
+  if (platform !== 'darwin') return null;
+  const identity = lease.token ?? path.resolve(path.dirname(lease.viewDirectory));
+  return path.join(executionSocketRoot(), createHash('sha256').update(identity).digest('hex').slice(0, 8));
+}
+const shortSocketSpelling = (directory) => directory.replace(/^\/private\/tmp\//, '/tmp/');
+
+// /private/tmp is shared: a directory another user created, a symlink or a
+// widened mode would let a different principal observe or plant sockets.
+export const ownedPrivateDirectory = async (directory) => {
+  try { await fs.mkdir(directory, { mode: 0o700 }); }
+  catch (cause) { if (cause.code !== 'EEXIST') throw cause; }
+  const stat = await fs.lstat(directory);
+  if (!stat.isDirectory() || stat.uid !== process.getuid() || (stat.mode & 0o777) !== 0o700) throw error('invalid_execution_path');
+};
+
+async function prepareExecutionSocketDirectory(lease) {
+  const directory = executionSocketDirectory(lease);
+  if (!directory) return null;
+  await ownedPrivateDirectory(path.dirname(directory));
+  await ownedPrivateDirectory(directory);
+  return directory;
+}
+
+export async function removeExecutionSocketDirectory(lease) {
+  const directory = executionSocketDirectory(lease);
+  if (directory) await fs.rm(directory, { recursive: true, force: true });
+}
+
+/** Best effort: removes socket directories a crashed host never cleaned. Only
+ * this user's hash-named directories older than the bound are touched. */
+export async function sweepExecutionSocketDirectories({ root = executionSocketRoot(), olderThanMs = 24 * 60 * 60_000, now = Date.now(), platform = process.platform } = {}) {
+  if (platform !== 'darwin') return 0;
+  let entries;
+  try { entries = await fs.readdir(root, { withFileTypes: true }); }
+  catch (cause) { if (cause.code === 'ENOENT') return 0; throw cause; }
+  let removed = 0;
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !/^[0-9a-f]{8}$/.test(entry.name)) continue;
+    const directory = path.join(root, entry.name);
+    const stat = await fs.lstat(directory).catch(() => null);
+    if (!stat?.isDirectory() || stat.uid !== process.getuid() || now - stat.mtimeMs < olderThanMs) continue;
+    await fs.rm(directory, { recursive: true, force: true }); removed += 1;
+  }
+  return removed;
+}
+
 export async function prepareSessionExecution({ launcher, lease }) {
   if (!['darwin', 'linux', 'win32'].includes(process.platform)) throw error('mutation_platform_unsupported');
   if (!path.isAbsolute(launcher ?? '')) throw error('mutation_runtime_unsupported');
@@ -98,21 +157,25 @@ export async function prepareSessionExecution({ launcher, lease }) {
   const relative = path.relative(viewDirectory, workingDirectory);
   if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw error('invalid_execution_path');
   await fs.mkdir(scratchDirectory, { recursive: true, mode: 0o700 });
-  const auxiliaryDirectory = lease.auxiliaryDirectory ? path.resolve(lease.auxiliaryDirectory) : scratchDirectory;
-  await fs.mkdir(auxiliaryDirectory, { recursive: true, mode: 0o700 });
+  // Seatbelt matches resolved paths; dependency overlays link caches here.
+  const requestedAuxiliary = lease.auxiliaryDirectory ? path.resolve(lease.auxiliaryDirectory) : scratchDirectory;
+  await fs.mkdir(requestedAuxiliary, { recursive: true, mode: 0o700 });
+  const auxiliaryDirectory = await fs.realpath(requestedAuxiliary);
   if (process.platform === 'darwin') {
     const shellEnvironment = `export DYLD_INSERT_LIBRARIES=${'\'' + `${launcher}-spawn.dylib`.replaceAll('\'', '\'\\\'\'') + '\''}\n`;
     await fs.writeFile(path.join(scratchDirectory, '.zshenv'), shellEnvironment, { mode: 0o600 });
     await fs.writeFile(path.join(scratchDirectory, '.bash-env'), shellEnvironment, { mode: 0o600 });
   }
+  const socketDirectory = await prepareExecutionSocketDirectory(lease);
   const profile = path.join(root, `sandbox-${randomUUID()}.sb`);
-  await writeFileAtomic(profile, sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory }));
+  await writeFileAtomic(profile, sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory, socketDirectory }));
   const cancelEvent = `Local\\DevRyan-execution-${randomUUID()}`;
   return { launcher, arguments: [viewDirectory, scratchDirectory, profile, path.join(root, 'termination.json'), '--'],
     cwd: workingDirectory, profile, scratchDirectory,
     environment: { DEVRYAN_EXECUTION_WORKER: '1', HOME: scratchDirectory,
       DEVRYAN_EXECUTION_CWD: lease.logicalWorkingDirectory ?? workingDirectory, DEVRYAN_EXECUTION_CANCEL_EVENT: cancelEvent,
       DEVRYAN_EXECUTION_CACHE: auxiliaryDirectory,
+      ...(socketDirectory ? { XDG_RUNTIME_DIR: shortSocketSpelling(socketDirectory) } : {}),
       ...(process.platform === 'darwin' ? { DYLD_INSERT_LIBRARIES: `${launcher}-spawn.dylib`,
         ZDOTDIR: scratchDirectory, BASH_ENV: path.join(scratchDirectory, '.bash-env') } : {}),
       TMPDIR: scratchDirectory, TMP: scratchDirectory, TEMP: scratchDirectory,
@@ -134,7 +197,10 @@ export async function startSessionExecution({ launcher, lease, command, args = [
     || args.some((arg) => typeof arg !== 'string' || arg.includes('\0'))) throw error('invalid_execution_command');
   signal?.throwIfAborted();
   const prepared = await prepareSessionExecution({ launcher, lease });
-  if (signal?.aborted) { await fs.rm(prepared.profile, { force: true }); signal.throwIfAborted(); }
+  if (signal?.aborted) {
+    await fs.rm(prepared.profile, { force: true }); await removeExecutionSocketDirectory(lease).catch(() => {});
+    signal.throwIfAborted();
+  }
   const child = spawn(launcher, [...prepared.arguments, command, ...args], {
     cwd: prepared.cwd, env: { ...env, ...prepared.environment },
     stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
@@ -173,6 +239,7 @@ export async function startSessionExecution({ launcher, lease, command, args = [
   }).finally(async () => {
     signal?.removeEventListener('abort', cancel);
     await fs.rm(prepared.profile, { force: true });
+    await removeExecutionSocketDirectory(lease).catch(() => {});
   });
   return { pid: child.pid, child, cancel, result };
 }

@@ -7,10 +7,14 @@ import request from '../../test-supertest.js';
 import WebSocket from 'ws';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSupabaseConnection } from '../multi-user/supabase-connection.js';
+import { createDisconnectedAuth } from '../multi-user/disconnected-auth.js';
+import { createMultiUserRuntime } from '../multi-user/runtime.js';
+import { registerAuthAndAccessRoutes } from '../opencode/core-routes.js';
 import { createTunnelAccessControl, registerTunnelAccessBoundary, hasTunnelBoundaryAuthorization, TUNNEL_LINK_TTL_MS, TUNNEL_SESSION_TTL_MS } from './access-control.js';
 import { attachSupabaseConnectionBoundary } from '../multi-user/connection-routes.js';
 import { assertTunnelBotGrant, isBotTunnelRoute } from './bot-grants.js';
 import { isDirectLocalRequest } from '../security/direct-local-request.js';
+import { createRequestSecurityRuntime } from '../security/request-security.js';
 import { createBotAuthorization } from '../bots/authorization.js';
 import { createBotCatalogVisibility } from '../bots/catalog-visibility.js';
 import { registerRuntimeServiceRoutes } from '../runtime-service/routes.js';
@@ -23,7 +27,7 @@ import { createProxyMiddleware, responseInterceptor } from 'http-proxy-middlewar
 const BOT = '00000000-0000-4000-8000-000000000001';
 const OTHER = '00000000-0000-4000-8000-000000000002';
 const OWNER = '00000000-0000-4000-8000-000000000003';
-const remote = { Host: 'bots.example.test', Origin: 'https://bots.example.test', 'X-Forwarded-For': '192.0.2.1' };
+const remote = { Host: 'bots.example.test', Origin: 'https://bots.example.test', 'X-Forwarded-For': '192.0.2.1', 'X-Forwarded-Proto': 'https' };
 const roots = []; const disposers = [];
 afterEach(async () => { for (const close of disposers.splice(0).reverse()) await close(); for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
 // supertest's own listener binds the dual-stack wildcard (::) yet connects to
@@ -36,7 +40,7 @@ async function listenOnLoopback(server) {
   disposers.push(() => new Promise((resolve) => { server.closeAllConnections(); server.close(resolve); }));
   return server;
 }
-async function fixture(mode = 'absent') {
+async function fixture(mode = 'absent', ownerAccess = false) {
   const base = path.resolve('../../.cache/tunnel-access-tests'); await fs.mkdir(base, { recursive: true });
   const root = await fs.mkdtemp(path.join(base, 'fixture-')); roots.push(root);
   const config = { dataDirectory: root, configured: mode !== 'absent', enabled: mode === 'on' };
@@ -64,9 +68,20 @@ async function fixture(mode = 'absent') {
     if (connection.enabled && !req.principal && !isDirectLocalRequest(req)) return res.sendStatus(401);
     next();
   });
-  const auth = { ensureSessionToken: vi.fn(async () => mode === 'on' ? null : 'password-free-fixture') };
+  const unconfiguredRuntime = ownerAccess && mode === 'absent'
+    ? await createMultiUserRuntime({ dataDirectory: root, fetchImpl: () => { throw new Error('No cloud requests'); } }) : null;
+  if (unconfiguredRuntime) disposers.push(async () => { await unconfiguredRuntime.botsRuntime.shutdown(); await unconfiguredRuntime.connection.dispose(); });
+  const auth = unconfiguredRuntime ? unconfiguredRuntime.wrapLegacyAuthController({ enabled: false })
+    : ownerAccess ? createDisconnectedAuth(connection)
+    : { ensureSessionToken: vi.fn(async () => mode === 'on' ? null : 'password-free-fixture') };
+  if (ownerAccess) {
+    registerAuthAndAccessRoutes(app, { uiAuthController: auth, tunnelAuthController: controller,
+      readSettingsFromDiskMigrated: async () => ({}), normalizeTunnelSessionTtlMs: () => TUNNEL_SESSION_TTL_MS });
+    app.all('/api/session', (req, res) => res.json({ principal: req.principal, contextualScope: getRequestPrincipal()?.scope }));
+  }
   const rejectWebSocketUpgrade = (socket, status) => { socket.end(`HTTP/1.1 ${status} Rejected\r\nContent-Length: 0\r\n\r\n`); };
-  const isRequestOriginAllowed = async () => true;
+  const isRequestOriginAllowed = ownerAccess
+    ? createRequestSecurityRuntime({ readSettingsFromDiskMigrated: async () => ({}) }).isRequestOriginAllowed : async () => true;
   const terminal = createTerminalRuntime({ app, server, express, fs: {}, path, uiAuthController: auth,
     buildAugmentedPath: () => '', searchPathFor: () => null, isExecutable: () => false,
     isRequestOriginAllowed, rejectWebSocketUpgrade, TERMINAL_INPUT_WS_HEARTBEAT_INTERVAL_MS: 30000,
@@ -88,8 +103,110 @@ async function fixture(mode = 'absent') {
     const link = await issue(); const response = await exchange(link.token); expect(response.status).toBe(200);
     return response.headers['set-cookie'][0].split(';')[0];
   };
-  return { root, config, controller, connection, app, server, forbidden, validateBots, issue, exchange, login, advance: (ms) => { now += ms; } };
+  return { root, config, controller, connection, app, server, forbidden, validateBots, issue, exchange, login, now: () => now, advance: (ms) => { now += ms; } };
 }
+
+describe('managed remote owner access with Supabase Off', () => {
+  it.each(['off', 'absent'])('authenticates the owner without cloud or Bot dependencies with configuration %s', async (mode) => {
+    const f = await fixture(mode, true);
+    const link = await f.controller.issueBootstrapToken({ access: 'owner' });
+    expect(f.validateBots).not.toHaveBeenCalled();
+    await expect(f.controller.issueBootstrapToken()).rejects.toMatchObject({ code: 'tunnel_bots_required' });
+    const localCookie = await f.connection.issueLocalOwnerSession();
+    expect((await request(f.server).get('/api/session').set(remote).set('Cookie', `${localCookie.name}=${localCookie.value}`)).status).toBe(401);
+    expect((await request(f.server).get('/api/session').set(remote)).status).toBe(401);
+    expect((await f.exchange(link.token, { ...remote, Origin: 'https://attacker.test' })).status).toBe(403);
+    const login = await f.exchange(link.token);
+    expect(login.status).toBe(200); expect(login.body.redirectUrl).toBe('/');
+    expect(login.headers['set-cookie'][0]).toContain('HttpOnly; Secure; SameSite=Strict');
+    const cookie = login.headers['set-cookie'][0].split(';')[0];
+    expect((await f.exchange(link.token)).status).toBe(401);
+    const status = await request(f.server).get('/auth/session').set(remote).set('Cookie', cookie);
+    expect(status.body).toMatchObject({ authenticated: true, mode: 'local', principal: { role: 'admin', scope: 'local-admin', policy: { terminal: true, files: true } } });
+    expect(status.text).not.toContain('settingsOverrides');
+    const session = await request(f.server).get('/api/session').set(remote).set('Cookie', cookie);
+    expect(session.status).toBe(200); expect(session.body.contextualScope).toBe('local-admin');
+    expect((await request(f.server).post('/api/session').set(remote).set('Cookie', cookie)).status).toBe(403);
+    expect((await request(f.server).post('/api/session').set(remote).set('Cookie', cookie).set('X-DevRyan-CSRF', '1')).status).toBe(200);
+    for (const route of ['/api/desktop/browser-cdp', '/API/DESKTOP/browser-cdp', '/api/runtime-service/handshake', '/api/openchamber/tunnel/links', '/API/OPENCHAMBER/TUNNEL/links', '/api/system/supabase-connection', '/api/bots', '/api/passkeys', '/auth/passkey/register/options']) {
+      expect((await request(f.server).get(route).set(remote).set('Cookie', cookie)).status, route).toBe(403);
+    }
+    expect(f.forbidden).not.toHaveBeenCalled();
+    const logout = await request(f.server).post('/auth/logout').set(remote).set('Cookie', cookie).set('X-DevRyan-CSRF', '1');
+    expect(logout.status).toBe(200);
+    expect((await request(f.server).get('/api/session').set(remote).set('Cookie', cookie)).status).toBe(401);
+    expect(f.connection.authenticateLocalOwner({ socket: { remoteAddress: '127.0.0.1' }, headers: { host: 'localhost', cookie: `${localCookie.name}=${localCookie.value}` } })).not.toBeNull();
+  });
+
+  it('authorizes the real terminal WebSocket and closes it on owner grant revocation', async () => {
+    const f = await fixture('off', true);
+    const link = await f.controller.issueBootstrapToken({ access: 'owner' });
+    const login = await f.exchange(link.token);
+    const cookie = login.headers['set-cookie'][0].split(';')[0];
+    const session = f.controller.getTunnelSessionFromRequest({ headers: { host: remote.Host, cookie } });
+    const ws = new WebSocket(`ws://127.0.0.1:${f.server.address().port}/api/terminal/ws`, { headers: { ...remote, Cookie: cookie } });
+    disposers.push(() => ws.terminate());
+    await new Promise((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
+    const closed = new Promise((resolve) => ws.once('close', resolve));
+    await f.controller.revokeGrant(session.grantId);
+    await closed;
+    expect(f.controller.getTunnelSessionFromRequest({ headers: { host: remote.Host, cookie } })).toBeNull();
+  });
+
+  it('resumes owner authorization after restart without issuing a fresh link, and enforces expiry', async () => {
+    const f = await fixture('off', true);
+    const link = await f.controller.issueBootstrapToken({ access: 'owner' });
+    const login = await f.exchange(link.token);
+    const req = { headers: { host: remote.Host, cookie: login.headers['set-cookie'][0].split(';')[0] } };
+    await f.controller.dispose();
+    const connection = await createSupabaseConnection({ config: f.config, fetchImpl: () => { throw new Error('No cloud requests'); } });
+    disposers.push(() => connection.dispose());
+    const controller = createTunnelAccessControl({ now: f.now });
+    await controller.initialize({ connection }); disposers.push(() => controller.dispose());
+    expect(controller.getResumeProfile()).toMatchObject({ hostname: remote.Host, mode: 'managed-remote' });
+    await controller.setActiveTunnel({ publicUrl: `https://${remote.Host}`, mode: 'managed-remote' });
+    expect(controller.getTunnelSessionFromRequest(req)?.access).toBe('owner');
+    const expiring = await controller.issueBootstrapToken({ access: 'owner' });
+    expect((await fs.readFile(path.join(f.root, 'multi-user-vault.json'), 'utf8'))).not.toContain(expiring.token);
+    f.advance(TUNNEL_LINK_TTL_MS + 1);
+    expect(await controller.exchangeBootstrapToken({ token: expiring.token, req: { method: 'POST', headers: {
+      host: remote.Host, origin: remote.Origin, 'x-devryan-csrf': '1',
+    } }, res: { setHeader: vi.fn() } })).toMatchObject({ ok: false, reason: 'expired' });
+    f.advance(TUNNEL_SESSION_TTL_MS + 1);
+    expect(controller.getTunnelSessionFromRequest(req)).toBeNull();
+    await controller.clearActiveTunnel();
+    expect(controller.getResumeProfile()).toBeNull();
+    expect(controller.getTunnelSessionFromRequest(req)).toBeNull();
+  });
+
+  it('never issues owner links for managed accounts, including an On-mode outage', async () => {
+    const f = await fixture('on');
+    await expect(f.controller.issueBootstrapToken({ access: 'owner' })).rejects.toMatchObject({ code: 'tunnel_owner_unavailable' });
+    const connection = await createSupabaseConnection({ config: f.config, fetchImpl: () => { throw new Error('Offline'); } });
+    disposers.push(() => connection.dispose());
+    const controller = createTunnelAccessControl();
+    await controller.initialize({ connection }); disposers.push(() => controller.dispose());
+    await controller.setActiveTunnel({ publicUrl: `https://${remote.Host}`, mode: 'managed-remote' });
+    expect(controller.canUseOwnerLogin()).toBe(false);
+    await expect(controller.issueBootstrapToken({ access: 'owner' })).rejects.toMatchObject({ code: 'tunnel_owner_unavailable' });
+  });
+
+  it('revokes owner sessions when switching from Off to managed account authentication', async () => {
+    const f = await fixture('off');
+    const link = await f.controller.issueBootstrapToken({ access: 'owner' });
+    const login = await f.exchange(link.token);
+    const req = { headers: { host: remote.Host, cookie: login.headers['set-cookie'][0].split(';')[0] } };
+    const connection = await createSupabaseConnection({ config: { ...f.config, enabled: true, url: 'https://supabase.invalid' },
+      fetchImpl: async (url) => new Response(JSON.stringify(url.includes('/rpc/') ? '99999999999999' : [{ id: OWNER, role: 'admin', status: 'active' }])) });
+    disposers.push(() => connection.dispose());
+    const controller = createTunnelAccessControl();
+    await controller.initialize({ connection }); disposers.push(() => controller.dispose());
+    await controller.setActiveTunnel({ publicUrl: `https://${remote.Host}`, mode: 'managed-remote' });
+    expect(connection.enabled).toBe(true);
+    expect(controller.canUseOwnerLogin()).toBe(false);
+    expect(controller.getTunnelSessionFromRequest(req)).toBeNull();
+  });
+});
 
 describe('durable Bot-only tunnel authorization', () => {
   for (const mode of ['on', 'off', 'absent']) describe(mode, () => {

@@ -2,6 +2,7 @@ import { spawn as spawnChild } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseConfigJsonc } from './jsonc-config.js';
 
 import {
@@ -41,91 +42,12 @@ const DEFAULT_SLIM_CONFIG = {
   },
 };
 
-const WRAPPER_PLUGIN_SOURCE = `import fs from 'node:fs';
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-
-const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-
-const cloneValue = (value) => {
-  if (typeof structuredClone === 'function') {
-    return structuredClone(value);
-  }
-  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
-};
-
-const loadSlimPlugin = async () => {
-  const roots = [
-    process.env.DEVRYAN_OPENCODE_USER_CONFIG_DIR,
-    process.env.OPENCODE_CONFIG_DIR,
-    process.cwd(),
-  ].filter(Boolean);
-
-  let lastError = null;
-  for (const root of roots) {
-    try {
-      const pluginEntrypoint = path.join(root, 'node_modules', 'oh-my-opencode-slim', 'dist', 'index.js');
-      if (!fs.existsSync(pluginEntrypoint)) {
-        continue;
-      }
-      const module = await import(pathToFileURL(pluginEntrypoint).href);
-      return module.default || module;
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  try {
-    const module = await import('oh-my-opencode-slim');
-    return module.default || module;
-  } catch (error) {
-    throw lastError || error;
-  }
-};
-
-export const DevRyanOhMyOpenCodeSlimPlugin = async (context) => {
-  const slimPlugin = await loadSlimPlugin();
-  const plugin = await slimPlugin(context);
-  if (!isRecord(plugin)) {
-    return plugin;
-  }
-
-  const slimConfigHook = typeof plugin.config === 'function' ? plugin.config : null;
-  delete plugin.agent;
-  delete plugin['experimental.chat.system.transform'];
-
-  return {
-    ...plugin,
-    name: 'devryan-oh-my-opencode-slim',
-    async config(config) {
-      if (!slimConfigHook || !isRecord(config)) {
-        return;
-      }
-
-      const hadAgent = Object.prototype.hasOwnProperty.call(config, 'agent');
-      const previousAgent = hadAgent ? cloneValue(config.agent) : undefined;
-      const hadDefaultAgent = Object.prototype.hasOwnProperty.call(config, 'default_agent');
-      const previousDefaultAgent = hadDefaultAgent ? config.default_agent : undefined;
-
-      await slimConfigHook(config);
-
-      if (hadAgent) {
-        config.agent = previousAgent;
-      } else {
-        delete config.agent;
-      }
-
-      if (hadDefaultAgent) {
-        config.default_agent = previousDefaultAgent;
-      } else {
-        delete config.default_agent;
-      }
-    },
-  };
-};
-
-export default DevRyanOhMyOpenCodeSlimPlugin;
-`;
+// The installer deploys the reviewed adapter's exact bytes. Duplicate-output
+// qualification pins its SHA-256, so never keep a second copy of its source.
+const DEFAULT_PACKAGED_PLUGIN_DIRECTORY = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../../default-config/plugins',
+);
 
 const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -333,6 +255,7 @@ export const createSlimSetupRuntime = (dependencies = {}) => {
   const env = dependencies.env || process.env;
   const now = dependencies.now || (() => new Date());
   const runCommand = dependencies.runCommand || runCommandDefault;
+  const packagedPluginDirectory = dependencies.packagedPluginDirectory || DEFAULT_PACKAGED_PLUGIN_DIRECTORY;
   const configDirectory = getConfigDirectory({
     pathApi,
     homedir,
@@ -406,13 +329,33 @@ export const createSlimSetupRuntime = (dependencies = {}) => {
 
   const install = async (options = {}) => {
     const paths = getPaths();
+    // Read the packaged adapter before any write, so a missing bundle changes nothing.
+    const wrapperSourcePath = pathApi.join(packagedPluginDirectory, DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE);
+    let wrapperSource;
+    try {
+      wrapperSource = fsApi.readFileSync(wrapperSourcePath, 'utf8');
+    } catch (error) {
+      const status = await getStatus();
+      return {
+        ...status,
+        ok: false,
+        repair: options.repair === true,
+        issues: [
+          ...status.issues,
+          {
+            code: 'slim-wrapper-source-missing',
+            message: `Packaged DevRyan Slim adapter is unreadable: ${wrapperSourcePath} (${error?.code || error?.message || 'unknown error'})`,
+          },
+        ],
+      };
+    }
     const tracker = createWriteTracker({ fsApi, now });
     const opencodeConfig = readJsoncFile(fsApi, paths.opencodeConfigPath);
     const packageJson = readJsoncFile(fsApi, paths.packageJsonPath);
     const slimConfigExists = fsApi.existsSync(paths.slimConfigPath);
 
     tracker.writeJsonTracked(paths.opencodeConfigPath, updateOpenCodeConfig(opencodeConfig));
-    tracker.writeTextTracked(paths.wrapperPath, WRAPPER_PLUGIN_SOURCE);
+    tracker.writeTextTracked(paths.wrapperPath, wrapperSource);
     tracker.writeJsonTracked(paths.packageJsonPath, updatePackageJson(packageJson));
     if (!slimConfigExists || options.resetSlimConfig === true) {
       tracker.writeJsonTracked(paths.slimConfigPath, cloneJson(DEFAULT_SLIM_CONFIG));
@@ -504,5 +447,4 @@ export {
   DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE,
   DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC,
   SLIM_MANAGED_VERSION,
-  WRAPPER_PLUGIN_SOURCE,
 };

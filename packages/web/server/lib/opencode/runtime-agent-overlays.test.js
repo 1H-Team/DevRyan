@@ -550,10 +550,99 @@ describe('syncRuntimeAgentOverlays', () => {
     });
 
     await expect(fs.readFile(path.join(result.targetConfigDirectory, 'oh-my-opencode-slim.json'), 'utf8'))
-      .resolves.toBe(`${JSON.stringify(slimConfig, null, 2)}\n`);
+      .resolves.toBe(`${JSON.stringify({ ...slimConfig, fallback: { enabled: false } }, null, 2)}\n`);
     await expect(fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8'))
       .resolves.not.toContain('oh-my-opencode-slim');
     expect(result.slimConfigWritten).toBe(true);
+  });
+
+  it('disables Slim foreground fallback in the managed overlay while preserving model chains', async () => {
+    const opencodeConfigDirectory = path.join(tempRoot, 'opencode-config');
+    const slimConfigPath = path.join(opencodeConfigDirectory, 'oh-my-opencode-slim.jsonc');
+    const slimConfig = {
+      agents: {
+        fixer: { model: ['openai/gpt-5.5', { id: 'opencode-go/glm-5.1', variant: 'high' }] },
+      },
+      fallback: { enabled: true, maxRetries: 5, retryDelayMs: 250 },
+      council: {
+        presets: { default: { alpha: { models: ['openai/gpt-5.5', 'opencode-go/glm-5.1'] } } },
+      },
+    };
+    await fs.mkdir(opencodeConfigDirectory, { recursive: true });
+    await fs.writeFile(slimConfigPath, `// user comment\n${JSON.stringify(slimConfig, null, 2)}\n`, 'utf8');
+    const syncOptions = {
+      workingDirectory: projectDirectory,
+      packagedAgentDirectory,
+      packagedPluginDirectory,
+      overlayRoot,
+      manifestPath,
+      slimConfigDirectory: opencodeConfigDirectory,
+      readConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
+      readOpenCodeConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
+    };
+
+    const result = await syncRuntimeAgentOverlays(syncOptions);
+    const overlayPath = path.join(result.targetConfigDirectory, 'oh-my-opencode-slim.jsonc');
+    const overlay = JSON.parse(await fs.readFile(overlayPath, 'utf8'));
+
+    expect(result.slimConfigPath).toBe(overlayPath);
+    expect(overlay.fallback).toEqual({ enabled: false, maxRetries: 5, retryDelayMs: 250 });
+    expect(overlay.agents).toEqual(slimConfig.agents);
+    expect(overlay.council).toEqual(slimConfig.council);
+    // The user's own config is never rewritten.
+    await expect(fs.readFile(slimConfigPath, 'utf8')).resolves.toContain('"enabled": true');
+
+    const resynced = await syncRuntimeAgentOverlays(syncOptions);
+    expect(resynced.slimConfigUpdated).toBe(false);
+    expect(resynced.slimConfigWritten).toBe(false);
+  });
+
+  it('writes a fallback-disabled Slim overlay when the user has no Slim config', async () => {
+    const opencodeConfigDirectory = path.join(tempRoot, 'opencode-config');
+    await fs.mkdir(opencodeConfigDirectory, { recursive: true });
+
+    const result = await syncRuntimeAgentOverlays({
+      workingDirectory: projectDirectory,
+      packagedAgentDirectory,
+      packagedPluginDirectory,
+      overlayRoot,
+      manifestPath,
+      slimConfigDirectory: opencodeConfigDirectory,
+      readConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
+      readOpenCodeConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
+    });
+
+    const overlayPath = path.join(result.targetConfigDirectory, 'oh-my-opencode-slim.json');
+    expect(result.slimConfigWritten).toBe(true);
+    expect(result.slimConfigPath).toBe(overlayPath);
+    await expect(fs.readFile(overlayPath, 'utf8'))
+      .resolves.toBe(`${JSON.stringify({ fallback: { enabled: false } }, null, 2)}\n`);
+  });
+
+  it('removes the Slim overlay when Slim is not active', async () => {
+    const opencodeConfigDirectory = path.join(tempRoot, 'opencode-config');
+    await writeJson(path.join(opencodeConfigDirectory, 'oh-my-opencode-slim.json'), { preset: 'openai' });
+    const syncOptions = {
+      workingDirectory: projectDirectory,
+      packagedAgentDirectory,
+      packagedPluginDirectory,
+      overlayRoot,
+      manifestPath,
+      slimConfigDirectory: opencodeConfigDirectory,
+      readConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
+      readOpenCodeConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
+    };
+    const active = await syncRuntimeAgentOverlays(syncOptions);
+    expect(active.slimConfigWritten).toBe(true);
+
+    const inactive = await syncRuntimeAgentOverlays({
+      ...syncOptions,
+      readConfig: () => ({ plugin: [] }),
+      readOpenCodeConfig: () => ({ plugin: [] }),
+    });
+    expect(inactive.slimConfigRemoved).toBe(true);
+    expect(inactive.slimConfigPath).toBeNull();
+    expect(fsSync.existsSync(path.join(inactive.targetConfigDirectory, 'oh-my-opencode-slim.json'))).toBe(false);
   });
 
   it('materializes wrapper-mode Slim model saves into managed agent overlays', async () => {

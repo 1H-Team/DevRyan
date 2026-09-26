@@ -27,9 +27,13 @@ original location. No database schema or cloud records are removed.
 The first local administrator change enrolls an encrypted local-owner identity
 and an HttpOnly, SameSite=Strict cookie. A loopback socket alone never grants
 access. The local boundary also checks Host, Origin and forwarding headers.
-External access is closed while disconnected except for the authenticated Bot-only
-tunnel boundary and public static/liveness responses. Tunnel grants never admit
-host WebSockets or native capabilities. Ordinary local chats, projects, files and diagnostics remain
+External access is closed while disconnected except for authenticated tunnel grants
+and public static/liveness responses. Managed Remote supports private owner links
+with Supabase Off or unconfigured: create the link from the authenticated local app,
+then redeem it once within 15 minutes for a seven-day session. These owner sessions
+can access ordinary chats, projects, files, Git, terminal and preview streams.
+Bot grants remain Bot-only; native capabilities, Supabase/tunnel controls and passkey
+enrollment remain local. Ordinary local chats, projects, files and diagnostics remain
 available. Bots, Telegram, managed-user scheduled execution, shared-user access
 and cloud audit delivery are unavailable. Existing actor-audit records remain in
 the durable outbox; disconnected diagnostics do not enter that outbox.

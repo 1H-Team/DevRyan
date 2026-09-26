@@ -678,10 +678,13 @@ grant changes never delete shared or legacy worktrees.
   genuine identity dependency outage, or `code: "schema_migration_required"`
   plus `requiredMigration` for an incompatible database schema. Loopback
   responses with a local cookie may also set `localResetAvailable: true`.
-- Public Managed Remote authentication and API requests return `503` with
-  `code: "managed_account_auth_required"` when the host has only local/shared
-  password authentication. Loopback administration remains available so the
-  preserved connector preset can be stopped or reconfigured.
+- Public Managed Remote uses individual account authentication with Supabase On.
+  With Off or no configuration, the tunnel boundary can authenticate an explicit
+  owner grant and pass its verified principal to disconnected/legacy auth adapters.
+  Local/shared passwords and forwarded local-owner cookies never substitute for
+  that grant. Without a supported authentication path, the core guard retains
+  `503 managed_account_auth_required`; an On-mode outage never falls back to an
+  owner grant. See [tunnel access](../tunnels/DOCUMENTATION.md).
 - Policy reads first request `settings_permission_overrides`. Only the exact
   PostgREST missing-column error retries the legacy projection, and one
   sanitized warning is emitted per runtime. Unrelated errors propagate.

@@ -59,7 +59,7 @@ const definitions = [
     id: DEVRYAN_MANAGED_PLUGIN_IDS.SLIM,
     displayName: 'Oh My OpenCode Slim',
     packageName: 'oh-my-opencode-slim',
-    version: '2.2.18',
+    version: '2.2.24',
     entrypoint: 'dist/index.js',
     registrationPath: './plugins/devryan-oh-my-opencode-slim.mjs',
     legacySpecs: [
@@ -67,6 +67,7 @@ const definitions = [
       'oh-my-opencode-slim@2.0.5',
       'oh-my-opencode-slim@2.2.15',
       'oh-my-opencode-slim@2.2.18',
+      'oh-my-opencode-slim@2.2.24',
     ],
     delivery: 'installed-local',
     sourcePath: 'default-config/user-profile/package.json',

@@ -33,11 +33,11 @@ Settings navigation selects a section; section reads/writes config through hooks
 `TunnelSettings.tsx` owns managed-remote fixed-origin profiles. It edits `originPort`, shows the exact
 Cloudflare service URL, and displays the stable-origin-to-active-port relay mapping returned by the
 server instead of asking users to update Cloudflare when DevRyan's active port changes. Managed
-Remote exposes the stable public hostname through normal DevRyan account login and does not render
-one-time connect-link TTL, QR, or session controls. It requires a managed-account principal;
-local-admin sessions see an account-setup callout and cannot start or restart Managed Remote.
-Open custom domain and Copy URL use the stable hostname once server readiness is true;
-managed startup never submits Bot selections. Explicit Bot-link issuance is separate from startup.
+Remote follows the server's access policy: Supabase On exposes the stable hostname through
+account login; Off exposes a private owner link with QR/copy and replacement-link controls.
+Start/restart remain available to local owners independently of principal scope; the server
+enforces authentication. `tunnelStatusPresentation.ts` selects the usable URL from that policy.
+Managed startup never submits Bot selections. Explicit Bot-link issuance is separate from startup.
 
 `useGitHubDeviceFlow.ts` owns the reusable OAuth start/poll/cancel flow and
 `GitHubDeviceFlow.tsx` renders its shared verification panel for local and

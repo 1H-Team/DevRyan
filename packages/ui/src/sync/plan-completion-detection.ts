@@ -3,7 +3,7 @@ import type { PlanIndicatorEntry } from "./plan-indicator"
 import { getPlanBlockId, getPlanImplementationKey, isPlanModeUserMessage, resolveMessagePlanCard } from "@/lib/messages/actionablePlan"
 import { filterMessagesForRevert, getEffectiveSessionRevertMessageID } from "./revert-transactions"
 import { isFinalAssistantSummaryMessage } from "./session-working"
-import { hasIncompleteTodos } from "./todo-completion"
+import { mayAutoContinueOpenTodos } from "./todo-completion"
 import type { State } from "./types"
 
 export type PlanCompletedCandidate = {
@@ -31,8 +31,6 @@ export function detectPlanCompletedCandidate({
   isRecordedPlanModeUserMessage?: (messageId: string) => boolean
   implementedPlanRequests?: ReadonlySet<string>
 }): PlanCompletedCandidate | null {
-  if (hasIncompleteTodos(state.todo[sessionID])) return null
-
   const rawMessages = state.message[sessionID]
   if (!rawMessages || rawMessages.length === 0) return null
 
@@ -47,6 +45,7 @@ export function detectPlanCompletedCandidate({
 
     const completedMessage = findCompletedAssistantAfter(state, messages, implementationIndex)
     if (!completedMessage) return null
+    if (mayAutoContinueOpenTodos(completedMessage, state.todo[sessionID])) return null
 
     return {
       sessionID,
@@ -102,6 +101,7 @@ function detectPersistedPlanCompletedCandidate({
 
     const completedMessage = findCompletedAssistantAfter(state, messages, implementationIndex)
     if (!completedMessage) return null
+    if (mayAutoContinueOpenTodos(completedMessage, state.todo[sessionID])) return null
 
     return {
       sessionID,
