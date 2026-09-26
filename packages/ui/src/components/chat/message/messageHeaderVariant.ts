@@ -29,11 +29,14 @@ export const resolveMessageHeaderVariantDisplay = ({
     modelVariantOptions,
     fastEnabled,
 }: MessageHeaderVariantDisplayInput): MessageHeaderVariantDisplay => {
+    const recordedEffort = isFastOnlyVariant(recordedVariant) ? undefined : recordedVariant?.trim() || undefined;
     return {
+        // Catalogs describe today's selectable values, not the effort used by a
+        // historical turn. Keep recorded values through catalog refresh/removal.
         variant: resolveThinkingVariant(
-            isFastOnlyVariant(recordedVariant) ? undefined : recordedVariant,
+            recordedEffort,
             modelVariantOptions,
-        ),
+        ) ?? recordedEffort,
         fastEnabled,
     };
 };

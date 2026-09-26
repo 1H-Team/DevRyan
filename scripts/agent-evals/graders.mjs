@@ -158,6 +158,13 @@ export const gradeToolRequirements = (caseId, toolEvents = []) => {
   if (isRoutingCase(caseId)) {
     const root = events.filter(event => event.sessionScope === 'root');
     const child = events.filter(event => event.sessionScope === 'child');
+    const scenario = ROUTING_CASES[caseId];
+    if (!scenario.agent) return result(`${caseId}.tools`, child.length === 0
+      && !hasFamily(events, 'managed') && (scenario.readOnly
+        ? !hasFamily(events, 'mutation') && hasFamily(root, 'read', { final: true })
+        : hasFamily(root, 'mutation', { final: true })));
+    if (scenario.readOnly) return result(`${caseId}.tools`, !hasFamily(events, 'mutation')
+      && root.some(event => event.tool === 'devryan_task' && isFinalEvent(event)) && hasFamily(child, 'read', { final: true }));
     return result(`${caseId}.tools`,
       root.some(event => event.tool === 'devryan_task' && isFinalEvent(event))
       && !hasFamily(root, 'mutation')
@@ -212,6 +219,8 @@ export const gradeCaseOutcome = (input = {}) => {
         && finalTestPassed,
     );
   }
+  if (ROUTING_CASES[caseId]?.readOnly) return result(`${caseId}.filesystem-test`, manifestSafe
+    && input.ownedSourceChanged === false && input.ownedTestChanged === false && finalTestPassed);
   if (caseId === 'repair-and-test' || caseId === 'managed-change' || isRoutingCase(caseId)) {
     return result(
       `${caseId}.filesystem-test`,
@@ -345,12 +354,13 @@ export const summarizeGraders = (graders = []) => {
   };
 };
 
-export const gradeRoutingOutcome = ({ caseId, rootSessionId, snapshot } = {}) => {
-  const expected = ROUTING_CASES[caseId]?.agent;
+export const gradeRoutingOutcome = ({ caseId, rootSessionId, snapshot, childSessionIds = [], evidence } = {}) => {
+  const scenario = ROUTING_CASES[caseId];
   const tasks = Array.isArray(snapshot?.tasks) ? snapshot.tasks : [];
-  return result(`${caseId}.specialist`, Boolean(expected && rootSessionId)
-    && snapshot?.available !== false
-    && tasks.length === 1
-    && tasks[0].rootSessionId === rootSessionId
-    && tasks[0].agent === expected);
+  const observed = Boolean(scenario && rootSessionId && snapshot && snapshot.available !== false && Array.isArray(snapshot.tasks));
+  const routing = scenario?.agent ? tasks.length === 1 && tasks[0].rootSessionId === rootSessionId && tasks[0].agent === scenario.agent
+    : tasks.length === 0 && childSessionIds.length === 0;
+  const correct = scenario?.kind === 'footer' ? evidence?.located === true && evidence.cause === true && evidence.verification === true
+    : scenario?.kind === 'inventory' ? evidence?.counts?.identity === 180 && evidence.counts.billing === 180 && evidence.counts.session === 180 && evidence.counts.elevated === 135 : true;
+  return result(`${caseId}.specialist`, observed && routing && correct);
 };

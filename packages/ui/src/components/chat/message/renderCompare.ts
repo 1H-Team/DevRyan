@@ -1,4 +1,5 @@
 import type { Message, Part } from '@opencode-ai/sdk/v2';
+import { resolveUserMessageVariant } from '@/sync/subtask-agent';
 import type {
   ChatMessageEntry,
   TurnActivityGroup,
@@ -122,6 +123,7 @@ export const areRenderRelevantMessageInfoEqual = (left: Message, right: Message)
     && (left as { providerID?: unknown }).providerID === (right as { providerID?: unknown }).providerID
     && (left as { modelID?: unknown }).modelID === (right as { modelID?: unknown }).modelID
     && (left as { variant?: unknown }).variant === (right as { variant?: unknown }).variant
+    && resolveUserMessageVariant(left) === resolveUserMessageVariant(right)
     && (left as { clientRole?: unknown }).clientRole === (right as { clientRole?: unknown }).clientRole
     && (left as { userMessageMarker?: unknown }).userMessageMarker === (right as { userMessageMarker?: unknown }).userMessageMarker
     && ((left as { time?: { created?: unknown; completed?: unknown } }).time?.created ?? null) === ((right as { time?: { created?: unknown; completed?: unknown } }).time?.created ?? null)

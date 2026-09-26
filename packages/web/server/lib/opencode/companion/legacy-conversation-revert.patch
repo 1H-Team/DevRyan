@@ -837,7 +837,7 @@ new file mode 100644
 index 000000000..60138a3be
 --- /dev/null
 +++ b/packages/opencode/src/session/devryan-execution.ts
-@@ -0,0 +1,654 @@
+@@ -0,0 +1,659 @@
 +import { assertWorkerPayload, prepareWorkerMessages, prepareWorkerPatch } from "./execution-payload"
 +import { startExecutionBrowser } from "./execution-browser"
 +import { RetentionGate } from "./retention-gate"
@@ -1139,6 +1139,7 @@ index 000000000..60138a3be
 +          messageID: ctx.messageID,
 +          callID: ctx.callID,
 +          tool: def.id,
++          toolOrigin: source ? "custom" : "builtin",
 +        }
 +        const cfg = yield* config.get()
 +        const languageServer = kind === "process" && !source && wantsLanguageServer(def.id, args, cfg.lsp)
@@ -1169,6 +1170,9 @@ index 000000000..60138a3be
 +            const argsDigest = createHash("sha256")
 +              .update(JSON.stringify([def.id, frozen.args, kind]))
 +              .digest("hex")
++            let fallbackReason = ["read", "glob", "grep", "skill"].includes(def.id)
++              ? source ? "custom_tool" : kind === "process" ? "native_reads_disabled" : undefined
++              : undefined
 +            if (kind === "control" && directs.has(def)) {
 +              // Any admission error falls back to the reserved-lease protocol,
 +              // which remains the authority for every refusal.
@@ -1178,6 +1182,7 @@ index 000000000..60138a3be
 +                    await rpc({ ...scope, protocol: 3, action: "direct-admit", argsDigest }, ctx.abort),
 +                  )
 +                } catch {
++                  fallbackReason = "direct_admission_failed"
 +                  return undefined
 +                }
 +              })
@@ -1203,7 +1208,7 @@ index 000000000..60138a3be
 +            const started = Schema.decodeUnknownSync(Launch)(
 +              yield* Effect.promise(async () => {
 +                try {
-+                  const identity = { ...scope, protocol: 2, argsDigest, kind }
++                  const identity = { ...scope, protocol: 2, argsDigest, kind, fallbackReason }
 +                  let state = Schema.decodeUnknownSync(Preparation)(await rpc({ ...identity, action: "begin" }, ctx.abort))
 +                  while (state.state === "preparing") {
 +                    ctx.abort.throwIfAborted()

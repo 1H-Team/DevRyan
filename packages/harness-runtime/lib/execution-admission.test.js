@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import assert from 'node:assert/strict';
 import { executionPhase, quietExecutionPhase, withExecutionAdmission, withExecutionPreparation, withoutExecutionDeadline, executionProgress, executionProgressMeter, waitForExecutionQueue } from './execution-admission.js';
 
 test('an expired active operation retains ownership until it actually settles', async () => {
@@ -127,4 +128,19 @@ test('a summarized admission still journals failed and slow phases as they happe
   expect(records[1].slow).toBe(true);
   expect(records[3].code).toBe('workspace_changing');
   expect(records[4].steps).toMatch(/^reconciliation:1\/\d+,execution_claim:1\/\d+$/);
+});
+
+
+test('tool execution diagnostics whitelist origin, tier and fallback without tool input', async () => {
+  const { withExecutionAdmission, withExecutionPreparation } = await import('./execution-admission.js');
+  const records = [];
+  const input = { sessionID: 'ses_fixture', toolOrigin: 'custom', kind: 'process', fallbackReason: 'custom_tool', args: { secret: 'never-log' } };
+  await withExecutionPreparation(input, async () => {}, { onDiagnostic: record => records.push(record) });
+  assert.ok(records.some(record => record.phase === 'preparation' && record.state === 'completed'
+    && record.toolOrigin === 'custom' && record.executionTier === 'process' && record.fallbackReason === 'custom_tool'
+    && Number.isFinite(record.elapsedMs)));
+  assert.ok(!JSON.stringify(records).includes('never-log'));
+  const unknown = [];
+  await withExecutionAdmission({ toolOrigin: 'private-origin', kind: 'private-kind', fallbackReason: 'private-reason' }, async () => {}, { onDiagnostic: record => unknown.push(record) });
+  assert.ok(unknown.every(record => !('toolOrigin' in record) && !('executionTier' in record) && !('fallbackReason' in record)));
 });

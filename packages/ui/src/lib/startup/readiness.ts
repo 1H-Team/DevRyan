@@ -45,6 +45,8 @@ export interface StartupBootstrapReadiness {
   isConnected: boolean
   isInitialized: boolean
   retriesExhausted: boolean
+  /** The server's authoritative reason OpenCode is unavailable, when known. */
+  openCodeError?: string | null
   providers: StartupPhaseSnapshot
   agents: StartupPhaseSnapshot
   initialization: StartupPhaseSnapshot
@@ -82,6 +84,13 @@ export const withStartupReadinessPhase = (
   [phase]: clonePhase(next),
 })
 
+const describeOpenCodeConnectionFailure = (openCodeError: string | null | undefined): string => {
+  const detail = openCodeError?.trim()
+  return detail
+    ? `DevRyan could not connect to OpenCode: ${detail}`
+    : "DevRyan could not connect to OpenCode."
+}
+
 export const withStartupBootstrapReadiness = (
   snapshot: StartupReadinessSnapshot,
   readiness: StartupBootstrapReadiness,
@@ -91,7 +100,7 @@ export const withStartupBootstrapReadiness = (
   next = withStartupReadinessPhase(next, "health", healthReady
     ? { status: "ready" }
     : readiness.desktopBootReady && readiness.retriesExhausted
-      ? { status: "error", error: "DevRyan could not connect to OpenCode." }
+      ? { status: "error", error: describeOpenCodeConnectionFailure(readiness.openCodeError) }
       : { status: "loading" })
   next = withStartupReadinessPhase(next, "providers", readiness.providers)
   next = withStartupReadinessPhase(next, "agents", readiness.agents)

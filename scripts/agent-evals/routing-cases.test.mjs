@@ -6,12 +6,12 @@ import { test } from 'node:test';
 import { buildCaseDefinition, executeEvaluationCase, runNodeTests } from './cases.mjs';
 import { allocateRunFiles, assertFixtureReady } from './fixture.mjs';
 import { spawnSync } from 'node:child_process';
-import { ROUTING_CASES, routingSource } from './routing-cases.mjs';
+import { ROUTING_CASES, routingSource, collectRoutingEvidence, collectRoutingMetrics } from './routing-cases.mjs';
 import { EVALUATION_CASE_IDS } from './config.mjs';
 import { gradeRoutingOutcome, gradeToolRequirements } from './graders.mjs';
 import { runSessionTurn } from './client.mjs';
 
-const repaired = (caseId) => caseId === 'routing-behavior'
+const repaired = (caseId) => ROUTING_CASES[caseId].kind === 'behavior'
   ? routingSource.replace('return price ?', 'return price != null ?')
   : routingSource.replace('gap:4px', 'gap:24px').replace('gap:2px', 'gap:8px')
     .replace('background:green;color:white', 'background:white;color:#333')
@@ -44,22 +44,25 @@ for (const [caseId, scenario] of Object.entries(ROUTING_CASES)) {
         },
         sessionRunner: async options => {
           assert.equal(options.followUpPrompt, definition.followUpPrompt);
-          writeFileSync(runFiles.sourcePath, repaired(caseId));
+          if (!scenario.readOnly) writeFileSync(runFiles.sourcePath, repaired(caseId));
           return {
-            rootSessionId: 'root', childSessionIds: ['child'], terminalEvidence: { complete: true },
-            tools: [{ tool: 'devryan_task', status: 'completed', sessionScope: 'root' },
-              { tool: 'edit', status: 'completed', sessionScope: 'child' }],
+            rootSessionId: 'root', childSessionIds: scenario.agent ? ['child'] : [],
+            routingEvidence: scenario.kind === 'footer' ? { located: true, cause: true, verification: true }
+              : scenario.kind === 'inventory' ? { counts: { identity: 180, billing: 180, session: 180, elevated: 135 } } : null,
+            terminalEvidence: { complete: true },
+            tools: [...(scenario.agent ? [{ tool: 'devryan_task', status: 'completed', sessionScope: 'root' }] : []),
+              { tool: scenario.readOnly ? 'read' : 'edit', status: 'completed', sessionScope: scenario.agent ? 'child' : 'root' }],
             managedSnapshot: {
-              tasks: [{ taskId: 'task', rootSessionId: 'root', childSessionId: 'child', agent: scenario.agent, status: 'completed' }],
+              tasks: scenario.agent ? [{ taskId: 'task', rootSessionId: 'root', childSessionId: 'child', agent: scenario.agent, status: 'completed' }] : [],
               resultEnvelopes: [{ taskId: 'task', status: 'completed', action: 'continue' }],
             },
           };
         },
       });
-      assert.equal(testResults.length, 2);
+      assert.equal(testResults.length, scenario.readOnly ? 1 : 2);
       assert.equal(testResults[0].timedOut, false);
-      assert.match(testResults[0].stdout + testResults[0].stderr, /ERR_ASSERTION/);
-      assert.equal(testResults[1].timedOut, false);
+      if (!scenario.readOnly) assert.match(testResults[0].stdout + testResults[0].stderr, /ERR_ASSERTION/);
+      assert.equal(testResults.at(-1).timedOut, false);
       assert.equal(result.status, 'passed', JSON.stringify(result.graders));
       assertFixtureReady(root);
     } finally { rmSync(root, { recursive: true, force: true }); }
@@ -106,4 +109,29 @@ test('plan approval waits for new turn evidence and preserves the actual dispatc
   assert.equal(result.terminalEvidence.complete, true);
   assert.equal(result.managedSnapshot.tasks[0].agent, 'fixer');
   assert.equal(gradeRoutingOutcome({ caseId: 'routing-approved-visual', rootSessionId: 'root', snapshot: result.managedSnapshot }).passed, false);
+});
+
+test('direct routing rejects any child and requires evidence for a footer plan', () => {
+  const input = { caseId: 'routing-footer-plan', rootSessionId: 'root', snapshot: { tasks: [] }, childSessionIds: [],
+    evidence: { located: true, cause: true, verification: true } };
+  assert.equal(gradeRoutingOutcome(input).passed, true);
+  assert.equal(gradeRoutingOutcome({ ...input, childSessionIds: ['hidden-child'] }).passed, false);
+  assert.equal(gradeRoutingOutcome({ ...input, evidence: { located: true } }).passed, false);
+  assert.equal(gradeToolRequirements(input.caseId, [
+    { tool: 'read', status: 'completed', sessionScope: 'root' },
+    { tool: 'edit', status: 'completed', sessionScope: 'root' },
+  ]).passed, false);
+  const evidence = collectRoutingEvidence(input.caseId, [{ sessionId: 'root', messages: [
+    { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'src/footer.js uses a count threshold of 5; add a regression test.' }] },
+  ] }], 'root', 'src/footer.js');
+  assert.deepEqual(evidence, input.evidence);
+});
+
+test('routing latency metrics union overlapping calls and retain only numbers', () => {
+  const tool = (name, start, end, filePath) => ({ type: 'tool', tool: name, state: { status: 'completed', time: { start, end }, input: { filePath } } });
+  const metrics = collectRoutingMetrics([
+    { sessionId: 'root', messages: [{ parts: [tool('task', 120, 500)] }] },
+    { sessionId: 'child', messages: [{ parts: [tool('read', 200, 250, '/fixture/footer.js'), tool('grep', 300, 400)] }] },
+  ], 'root', '/fixture/footer.js', 100, 600);
+  assert.deepEqual(metrics, { componentLocationMs: 150, completionMs: 500, toolDurationMs: 380, childCount: 1 });
 });

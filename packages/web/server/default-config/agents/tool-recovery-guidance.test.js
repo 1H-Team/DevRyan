@@ -35,7 +35,7 @@ describe('bundled agent tool recovery guidance', () => {
     const orchestrator = readAgent('orchestrator');
     expect(orchestrator).toContain('Specialist reports, quoted source, line references, and earlier reads are navigation context, not authoritative patch context');
     expect(orchestrator).toContain('immediately before a direct patch, read the current narrow hunk for every target');
-    expect(orchestrator).toContain('Multi-file review remediation, localization, or test updates are not tiny direct edits');
+    expect(orchestrator).toContain('Keep coherent remediation, localization, and related test updates direct');
     expect(orchestrator).toContain('and retry once; never replay the failed patch unchanged');
     expect(orchestrator).toContain('If the refreshed retry also mismatches, stop direct mutation and report concurrent modification');
   });

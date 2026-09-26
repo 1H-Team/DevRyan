@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.15] - 2026-09-26
+
+- Fixed "DevRyan could not connect to OpenCode" at launch for profiles where open-cursor's installer had symlinked `plugin/cursor-acp.js`, which is its default. The legacy-plugin migration now retires that symlink without touching the installed package. A copy it cannot retire safely no longer blocks OpenCode: DevRyan starts, warns, and offers **Retire Plugin**, which keeps a backup.
+- When OpenCode cannot start, the startup screen names the server's reason, and **Retry** also reruns workspace sync, so a recovered runtime no longer stays behind a stale error. Deterministic profile-provisioning failures are no longer retried.
+
+- Managed Cursor profiles retire the known legacy standalone `cursor-acp.js` plugin at startup, preserving verified backups and reporting conflicts for modified or unsafe files. The maintained Cursor adapter remains available.
+- Orchestrator handles bounded implementation and visual changes directly when specialist work adds no clear value. Explorer uses a focused navigation brief and stops after two unsuccessful search rounds; specialist requests and Plan restrictions remain authoritative.
+- Execution diagnostics record bounded tool origin, execution tier and fallback reason so native reads and confined calls can be distinguished without changing admission decisions.
+- Chat message headers and comparison rendering preserve the intended presentation during thinking and result transitions.
+- Expanded deterministic and packaged verification for profile migration, native tool routing, agent evaluation and mounted chat behavior. The simple-task latency pilot was inconclusive because specialist providers rejected some runs; no speedup claim is made.
+- Updated package and desktop metadata to 1.2.15. The release workflow verifies hosted migration history and the Production Bots schema marker before publication.
+
 ## [1.2.14] - 2026-09-25
 
 - Fixed the app freezing for up to a minute after launch, and sessions stuck on their first tool call (for example "loading skills"), in projects with large gitignored folders. The 1.2.14 background ledger build walked gitignored trees such as build outputs, caches and virtual environments on the window's main thread and restarted on every launch.

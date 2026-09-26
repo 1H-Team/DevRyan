@@ -70,6 +70,7 @@ import { createConfigApplyCoordinator, createConfigChangeMarker } from '@opencha
 import { syncPackagedAgents } from './lib/opencode/packaged-agent-sync.js';
 import { syncRuntimeAgentOverlays } from './lib/opencode/runtime-agent-overlays.js';
 import { createUserProfileProvisioningRuntime } from './lib/opencode/user-profile-provisioning.js';
+import { retireLegacyCursorPlugin } from './lib/opencode/legacy-cursor-plugin.js';
 import { readAuthFile } from './lib/opencode/auth.js';
 import { discoverSkills } from './lib/opencode/skills.js';
 import { createOpenCodeEnvRuntime } from './lib/opencode/env-runtime.js';
@@ -720,6 +721,7 @@ let openCodeApiPrefix = '';
 let openCodeApiPrefixDetected = true;
 let openCodeApiDetectionTimer = null;
 let lastOpenCodeError = null;
+let openCodeProfileNotices = [];
 let lastOpenCodeLaunchDiagnostics = null;
 let isOpenCodeReady = false;
 let openCodeNotReadySince = 0;
@@ -1264,6 +1266,7 @@ Object.defineProperties(openCodeLifecycleState, {
   openCodeApiPrefixDetected: { get: () => openCodeApiPrefixDetected, set: (value) => { openCodeApiPrefixDetected = value; } },
   openCodeApiDetectionTimer: { get: () => openCodeApiDetectionTimer, set: (value) => { openCodeApiDetectionTimer = value; } },
   lastOpenCodeError: { get: () => lastOpenCodeError, set: (value) => { lastOpenCodeError = value; } },
+  openCodeProfileNotices: { get: () => openCodeProfileNotices, set: (value) => { openCodeProfileNotices = value; } },
   lastOpenCodeLaunchDiagnostics: { get: () => lastOpenCodeLaunchDiagnostics, set: (value) => { lastOpenCodeLaunchDiagnostics = value; } },
   isOpenCodeReady: { get: () => isOpenCodeReady, set: (value) => { isOpenCodeReady = value; } },
   openCodeNotReadySince: { get: () => openCodeNotReadySince, set: (value) => { openCodeNotReadySince = value; } },
@@ -1308,6 +1311,10 @@ const runOpenCodeDbMaintenanceBeforeSpawn = async ({ reason } = {}) => {
   });
 };
 
+const userProfileProvisioning = createUserProfileProvisioningRuntime({
+  configRoot: defaultConfigRoot,
+  profileRoot: path.join(defaultConfigRoot, 'user-profile'),
+});
 const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
   getManagedOAuthEnvironment: () => openAiOAuthBridge.environment(),
   state: openCodeLifecycleState,
@@ -1339,10 +1346,7 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
   buildManagedOpenCodePath,
   getManagedOpenCodeShellEnvSnapshot: getLoginShellEnvSnapshot,
   getActiveSessionCount,
-  provisionUserProfile: createUserProfileProvisioningRuntime({
-    configRoot: defaultConfigRoot,
-    profileRoot: path.join(defaultConfigRoot, 'user-profile'),
-  }).provision,
+  provisionUserProfile: userProfileProvisioning.provision,
   syncPackagedAgents: (options) => syncPackagedAgents({
     ...options,
     packagedAgentDirectory: path.join(defaultConfigRoot, 'agents'),
@@ -1968,6 +1972,7 @@ async function main(options = {}) {
         openCodeApiPrefixDetected: true,
         isOpenCodeReady,
         lastOpenCodeError,
+        openCodeProfileNotices,
         openCodeProbe: openCodeLifecycleState.openCodeProbe ?? null,
         lastOpenCodeLaunchDiagnostics,
         executionRuntime: { state: executionReadiness.state, code: executionReadiness.diagnostic?.code ?? null },
@@ -2378,6 +2383,10 @@ async function main(options = {}) {
     markConfigChange,
     configApplyCoordinator,
     canForceConfigRestart,
+    retireLegacyCursorPlugin: () => retireLegacyCursorPlugin({
+      configDirectory: userProfileProvisioning.configDirectory,
+      userConfirmed: true,
+    }),
     abortActiveSessionsForConfigRestart,
     auditForceConfigRestart,
     getOpenCodeResolutionSnapshot,

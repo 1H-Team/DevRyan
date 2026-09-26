@@ -22,6 +22,7 @@ export const registerConfigApplyRoutes = (app, {
   canForceRestart = () => false,
   abortActiveSessions = async () => {},
   auditForceRestart = async () => {},
+  retireLegacyCursorPlugin = null,
 }) => {
   app.get('/api/config/apply-status', (req, res) => {
     const canForce = canForceRestart(req.principal);
@@ -54,6 +55,36 @@ export const registerConfigApplyRoutes = (app, {
         canForceRestart: canForce,
       });
       res.json(result);
+    } catch (error) {
+      sendApplyError(res, error, coordinator.getStatus, canForce);
+    }
+  });
+
+  // The user's explicit choice to retire a legacy cursor-acp.js that startup
+  // could not retire safely. Copies are moved to verified backups, never
+  // deleted, and OpenCode restarts through the idle-aware apply coordinator.
+  app.post('/api/config/legacy-cursor-plugin/retire', async (req, res) => {
+    const canForce = canForceRestart(req.principal);
+    if (!canForce || typeof retireLegacyCursorPlugin !== 'function') {
+      return res.status(403).json({ error: 'Only an administrator can change the OpenCode profile.', code: 'FORBIDDEN' });
+    }
+    const retirement = retireLegacyCursorPlugin();
+    if (!retirement.ok) {
+      return res.status(409).json({
+        error: retirement.error || 'The legacy Cursor plugin could not be retired.',
+        code: 'LEGACY_CURSOR_PLUGIN_RETIRE_FAILED',
+        conflicts: retirement.conflicts,
+      });
+    }
+    try {
+      const mutation = await markConfigChange('retire legacy Cursor plugin');
+      const result = await coordinator.apply(mutation.applyRevision, 'when-idle', { canForceRestart: canForce });
+      res.json({
+        success: true,
+        removed: retirement.removed,
+        backups: retirement.backups,
+        applyStatus: result.status,
+      });
     } catch (error) {
       sendApplyError(res, error, coordinator.getStatus, canForce);
     }

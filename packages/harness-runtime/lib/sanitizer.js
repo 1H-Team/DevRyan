@@ -54,6 +54,7 @@ const NESTED_FIELDS = new Set([
   'streamId', 'subscriptionId', 'snapshotBytes', 'sequence', 'generation', 'observedAt', 'origin', 'requestType',
   'firstMissingSequence', 'lastMissingSequence', 'failureCode',
   'elapsedMs', 'failureCategory', 'exitCode', 'signal',
+  'toolOrigin', 'executionTier', 'fallbackReason',
   'schemaVersion', 'configurationHash', 'runtimeVersion', 'selection', 'catalog', 'contentHash', 'sourceHash', 'idsHash', 'providerHash', 'runtimeHash',
   'availability', 'bytes', 'plugins', 'configured', 'observed', 'observation', 'factoryCalls', 'ownership',
   'policies', 'readOverlap', 'waitAny', 'compactResults', 'contextProjection', 'duplicateOutputs',

@@ -799,8 +799,12 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
     const hiddenSkills = sanitizeHiddenSkills(settings?.hiddenSkills) || [];
     const profileResult = await provisionUserProfile();
+    state.openCodeProfileNotices = Array.isArray(profileResult?.profileNotices) ? profileResult.profileNotices : [];
     if (profileResult?.ok === false) {
-      throw new Error(profileResult.error || 'Failed to provision the OpenCode user profile');
+      const error = new Error(profileResult.error || 'Failed to provision the OpenCode user profile');
+      // Provisioning outcomes are deterministic; a second attempt only delays the error.
+      error.code = 'OPENCODE_PROFILE_PROVISIONING_FAILED';
+      throw error;
     }
     if (Array.isArray(profileResult?.conflicts) && profileResult.conflicts.length > 0) {
       console.warn('[OpenCode] Preserved user-modified managed profile files', profileResult.conflicts);
@@ -1072,6 +1076,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
           error?.code === 'execution_artifacts_unavailable'
           || error?.code === 'OPENCODE_BINARY_INVALID'
           || error?.code === 'PACKAGED_AGENT_SYNC_CONFLICT'
+          || error?.code === 'OPENCODE_PROFILE_PROVISIONING_FAILED'
           || isManagedOrchestrationOwnershipError(error)
         ) {
           break;

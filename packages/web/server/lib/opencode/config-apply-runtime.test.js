@@ -9,7 +9,7 @@ import {
 import { registerCommonRequestMiddleware } from './core-routes.js';
 import { registerConfigApplyRoutes } from './config-apply-runtime.js';
 
-const createApp = ({ runtimeMode = 'managed', activeSessionCount = 0 } = {}) => {
+const createApp = ({ runtimeMode = 'managed', activeSessionCount = 0, retireLegacyCursorPlugin = null } = {}) => {
   const applyChanges = vi.fn(async () => {});
   const refreshExternalCatalogs = vi.fn(async () => {});
   const auditForceRestart = vi.fn(async () => {});
@@ -37,6 +37,7 @@ const createApp = ({ runtimeMode = 'managed', activeSessionCount = 0 } = {}) => 
     canForceRestart: (principal) => principal?.scope === 'local-admin' || principal?.role === 'admin',
     auditForceRestart,
     abortActiveSessions,
+    retireLegacyCursorPlugin,
   });
   return {
     app,
@@ -124,5 +125,44 @@ describe('configuration apply HTTP contract', () => {
       .expect(200);
     expect(acknowledgeResponse.body).toMatchObject({ userConfirmed: true, status: { state: 'clean' } });
     expect(runtime.refreshExternalCatalogs).toHaveBeenCalledWith({ revision: 1, scopes: ['providers'] });
+  });
+
+  it('retires the legacy Cursor plugin on request and applies the change when idle', async () => {
+    const retire = vi.fn(() => ({ ok: true, changed: true, conflicts: [], removed: ['/profile/plugin/cursor-acp.js'], backups: ['/profile/.openchamber/retired-plugins/plugin-cursor-acp.js.link.json'] }));
+    const runtime = createApp({ retireLegacyCursorPlugin: retire });
+
+    const response = await request(runtime.app)
+      .post('/api/config/legacy-cursor-plugin/retire')
+      .expect(200);
+
+    expect(retire).toHaveBeenCalledOnce();
+    expect(response.body).toMatchObject({
+      success: true,
+      removed: ['/profile/plugin/cursor-acp.js'],
+      applyStatus: { state: 'clean' },
+    });
+    expect(runtime.applyChanges).toHaveBeenCalledOnce();
+  });
+
+  it('refuses the legacy Cursor plugin retirement to non-administrators', async () => {
+    const retire = vi.fn();
+    const runtime = createApp({ retireLegacyCursorPlugin: retire });
+
+    await request(runtime.app)
+      .post('/api/config/legacy-cursor-plugin/retire')
+      .set('x-test-role', 'developer')
+      .expect(403);
+    expect(retire).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed legacy Cursor plugin retirement without restarting OpenCode', async () => {
+    const retire = vi.fn(() => ({ ok: false, error: 'DEVRYAN_CURSOR_PLUGIN_CONFLICT: x', conflicts: ['/profile/opencode.jsonc'] }));
+    const runtime = createApp({ retireLegacyCursorPlugin: retire });
+
+    const response = await request(runtime.app)
+      .post('/api/config/legacy-cursor-plugin/retire')
+      .expect(409);
+    expect(response.body).toMatchObject({ code: 'LEGACY_CURSOR_PLUGIN_RETIRE_FAILED', conflicts: ['/profile/opencode.jsonc'] });
+    expect(runtime.applyChanges).not.toHaveBeenCalled();
   });
 });

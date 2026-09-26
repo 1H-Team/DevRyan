@@ -12,12 +12,12 @@ const MAX_SLACK_RATIO = 0.1;
 const PROMPT_BODY_BUDGETS = {
   builder: { maxBodyBytes: 7450, rationale: 'Context Mode guidance removed 2026-09-24 (7223 bytes) plus ~3% headroom.' },
   council: { maxBodyBytes: 3900, rationale: 'Baseline 2026-09-23 (3700 bytes) plus ~3% headroom.' },
-  designer: { maxBodyBytes: 5600, rationale: 'Context Mode guidance removed 2026-09-24 (5425 bytes) plus ~3% headroom.' },
-  explorer: { maxBodyBytes: 5270, rationale: 'Context Mode guidance removed 2026-09-24 (5107 bytes) plus ~3% headroom.' },
-  fixer: { maxBodyBytes: 7800, rationale: 'Context Mode guidance removed 2026-09-24 (7576 bytes) plus ~3% headroom.' },
+  designer: { maxBodyBytes: 5648, rationale: 'Complexity-based routing 2026-09-25 (5483 bytes) plus 3% headroom.' },
+  explorer: { maxBodyBytes: 5533, rationale: 'Complexity-based routing 2026-09-25 (5371 bytes) plus 3% headroom.' },
+  fixer: { maxBodyBytes: 7791, rationale: 'Complexity-based routing 2026-09-25 (7564 bytes) plus 3% headroom.' },
   librarian: { maxBodyBytes: 2030, rationale: 'Context Mode guidance removed 2026-09-24 (1969 bytes) plus ~3% headroom.' },
   oracle: { maxBodyBytes: 5600, rationale: 'Code-review precision rules (change attribution, severity vs confidence, verified vs unverified) 2026-09-23; Context Mode guidance removed 2026-09-24 (5439 bytes) plus ~3% headroom.' },
-  orchestrator: { maxBodyBytes: 40450, rationale: 'Context Mode guidance removed 2026-09-24 (39246 bytes) plus ~3% headroom.' },
+  orchestrator: { maxBodyBytes: 37187, rationale: 'Complexity-based routing 2026-09-25 (36103 bytes) plus 3% headroom.' },
   plan: { maxBodyBytes: 3880, rationale: 'Context Mode guidance removed 2026-09-24 (3765 bytes) plus ~3% headroom.' },
 };
 

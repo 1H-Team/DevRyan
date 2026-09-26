@@ -1,4 +1,4 @@
-import { isRoutingCase } from './routing-cases.mjs';
+import { isRoutingCase, collectRoutingEvidence, collectRoutingMetrics } from './routing-cases.mjs';
 import { resolveProviderPromptTools } from '../../packages/orchestration-runtime/provider-prompt-tools.js';
 import { createManagedRecoveryMessageId } from '../../packages/orchestration-runtime/transport-recovery.js';
 import { redactUrl } from './report.mjs';
@@ -1005,6 +1005,8 @@ export const runSessionTurn = async (options = {}) => {
         ownedTestRelativePath: options.runFiles?.testRelativePath,
         workingDirectory: directory,
       }),
+      routingMetrics: collectRoutingMetrics(sessionTree, rootSessionId, options.runFiles?.sourcePath, startedAt, Date.now()),
+      routingEvidence: collectRoutingEvidence(options.caseId, sessionTree, rootSessionId, options.runFiles?.sourceRelativePath),
       oracleReviewEvidence: collectOracleReviewEvidence(sessionTree, {
         rootSessionId,
         runFiles: options.runFiles,

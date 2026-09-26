@@ -289,6 +289,8 @@ export const buildSchemaV1Report = (input = {}) => {
     environmentHash: safeHash(input.environmentHash),
     runs: results.map((result) => ({ caseId: normalizeStatus(result.caseId), repetition: nonNegativeInteger(result.repetition),
       status: normalizeStatus(result.status), durationMs: finiteNumber(result.durationMs),
+      ...(result.routingMetrics ? { routingMetrics: Object.fromEntries(['componentLocationMs', 'completionMs', 'toolDurationMs', 'childCount']
+        .map(key => [key, finiteNumber(result.routingMetrics[key])])) } : {}),
       errorCode: result.errorCode ? normalizeStatus(result.errorCode) : null,
       contract: result.contractEvidence ? { sourceHash: safeHash(result.contractEvidence.sourceHash), selected: nonNegativeInteger(result.contractEvidence.selected), mode: 'deterministic' } : null,
       harness: projectHarnessEvidence(result.harnessEvidence) })),

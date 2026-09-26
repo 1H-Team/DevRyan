@@ -52,6 +52,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       markConfigChange,
       configApplyCoordinator,
       canForceConfigRestart,
+      retireLegacyCursorPlugin,
       abortActiveSessionsForConfigRestart,
       auditForceConfigRestart,
       getOpenCodeResolutionSnapshot,
@@ -112,6 +113,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       canForceRestart: canForceConfigRestart,
       abortActiveSessions: abortActiveSessionsForConfigRestart,
       auditForceRestart: auditForceConfigRestart,
+      retireLegacyCursorPlugin,
     });
 
     // Host process inspection (bottom-dock Processes tab, session-delete auto-stop).

@@ -5,7 +5,7 @@
   "baseCommit": "545f51d26cc39a907d2867492d498d9607ea5fa4",
   "companionVersion": "2.1.1",
   "patch": "legacy-conversation-revert.patch",
-  "patchSha256": "64bfc9d7d0b86c7fc518edaede252248cf64bae36b7dc018f8377c3f04646bc1",
+  "patchSha256": "c3a5e7377f5ac4a41ebcb32cdea24f05cd3cd9e5b20dba6f8600151c76f5e3ce",
   "capability": {
     "legacyConversationRevert": 1,
     "executionBoundary": 1,
@@ -34,7 +34,7 @@
     "packages/opencode/src/server/routes/instance/httpapi/middleware/error.ts": "f92712ac4d8e55d13a019656fe6156fe53c81e4011f4cc2f4d4c707047da544b",
     "packages/opencode/src/server/shared/ui.ts": "0f298bacb22129ae32dc86c7f15cc82f45cd6b2133e01f8b962be98b1e07b89c",
     "packages/opencode/src/server/shared/workspace-routing.ts": "81bb50498387e937bd2f22e2d219524015ce9bd71ac1f8fdf65da6562b6027a9",
-    "packages/opencode/src/session/devryan-execution.ts": "03c596921225b5727d962577d8c770ae3f93f58157c15b90fd4fe00fbb60bdef",
+    "packages/opencode/src/session/devryan-execution.ts": "9ee7e6027edbbc3885a07ca1aa576aee92a2c42bd9835bc20dc58d6d94cc6360",
     "packages/opencode/src/session/execution-browser.ts": "d71476cddb2a8e601ff3ae73929f47b894391ae5ee6f53c13205b32929b5019f",
     "packages/opencode/src/session/execution-payload.ts": "19ed053f3889515104e07f8d03c64b294145c64cbe7c72b82b61e11ffb37048f",
     "packages/opencode/src/session/prompt.ts": "0bfbba70eacdcc8a689ef470d84712a19eea1856e3d0f75a5f94b9196d64c64f",

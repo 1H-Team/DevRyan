@@ -40,7 +40,7 @@ export function createExecutionPreparations({ runtime, onDiagnostic, owner, poll
       }
     }, Math.min(ownerTimeoutMs, 1000));
     job.timer = timer;
-    job.settled = withExecutionPreparation(lease.scope, () => runtime.prepare(lease), {
+    job.settled = withExecutionPreparation({ ...input, ...lease.scope }, () => runtime.prepare(lease), {
       // One summary per preparation, with slow or failed phases journaled as they happen.
       signal: AbortSignal.any([owner.signal, controller.signal]), onDiagnostic, summary: { minMs: 0 },
     }).then((ready) => { job.lease = ready; }, async (cause) => {

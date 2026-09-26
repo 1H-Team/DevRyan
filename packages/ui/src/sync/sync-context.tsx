@@ -3552,7 +3552,9 @@ export function SyncProvider(props: {
   }, [childStores, messageLoader, props.sdk, routingIndex])
 
   // Bootstrap global state — set bootingRoot/bootedAt to suppress
-  // redundant refresh events during startup
+  // redundant refresh events during startup. A bumped epoch (startup Retry)
+  // reruns it after a non-retryable init failure.
+  const globalBootstrapEpoch = useGlobalSyncStore((state) => state.bootstrapEpoch)
   useEffect(() => {
     let active = true
     let retryTimer: ReturnType<typeof setTimeout> | undefined
@@ -3596,7 +3598,19 @@ export function SyncProvider(props: {
         bootingRoot = false
       }
     }
-  }, [props.sdk])
+  }, [globalBootstrapEpoch, props.sdk])
+
+  // A directory bootstrap that failed while OpenCode was down stays partial.
+  // The same startup Retry reruns it for the active directories.
+  useEffect(() => {
+    if (globalBootstrapEpoch === 0) return
+    for (const directory of getActiveDirectoryStoreKeys(childStores.children.keys(), activeDirectoryRef.current)) {
+      const store = childStores.children.get(directory)
+      if (store && store.getState().status !== "complete") {
+        childStores.ensureChild(directory)
+      }
+    }
+  }, [childStores, globalBootstrapEpoch])
 
   // Event pipeline — created once per mount. No class, no start/stop.
   // Abort controller owned by the pipeline closure. Cleanup aborts + flushes.

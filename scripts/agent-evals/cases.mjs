@@ -22,7 +22,7 @@ import {
   gradeToolRequirements,
 } from './graders.mjs';
 
-import { buildRoutingDefinition, isRoutingCase, routingSource, routingTest } from './routing-cases.mjs';
+import { buildRoutingDefinition, isRoutingCase, routingFixture, ROUTING_CASES } from './routing-cases.mjs';
 
 const OUTPUT_LIMIT_BYTES = 4 * 1024 * 1024;
 
@@ -246,8 +246,7 @@ export const buildCaseDefinition = (caseId, runFiles) => {
 
 export const prepareCaseFixture = (caseId, runFiles) => {
   if (isRoutingCase(caseId)) {
-    const baselineSource = routingSource;
-    const baselineTest = routingTest(caseId, path.basename(runFiles.sourcePath));
+    const { source: baselineSource, test: baselineTest } = routingFixture(caseId, path.basename(runFiles.sourcePath));
     writeRunOwnedFile(runFiles.sourcePath, baselineSource, runFiles);
     writeRunOwnedFile(runFiles.testPath, baselineTest, runFiles);
     return { baselineSource, baselineTest };
@@ -388,7 +387,7 @@ export const executeEvaluationCase = async (options = {}) => {
   };
   try {
     prepared = prepareCaseFixture(caseId, runFiles);
-    if (caseId !== 'inspect' && !isContextAnalysisCase(caseId) && !isOracleReviewCase(caseId)) {
+    if (caseId !== 'inspect' && !isContextAnalysisCase(caseId) && !isOracleReviewCase(caseId) && !ROUTING_CASES[caseId]?.readOnly) {
       baselineTest = await testRunner({
         fixtureRoot,
         testRelativePath: runFiles.testRelativePath,
@@ -446,7 +445,7 @@ export const executeEvaluationCase = async (options = {}) => {
         finalTest,
       }),
     ];
-    if (caseId === 'managed-change' || caseId === 'managed-independent' || isRoutingCase(caseId)) {
+    if (caseId === 'managed-change' || caseId === 'managed-independent' || (isRoutingCase(caseId) && ROUTING_CASES[caseId].agent)) {
       graders.push(gradeManagedTaskOutcome({
         rootSessionId: sessionResult?.rootSessionId,
         childSessionIds: sessionResult?.childSessionIds,
@@ -454,7 +453,7 @@ export const executeEvaluationCase = async (options = {}) => {
       }));
     }
     if (isRoutingCase(caseId)) {
-      graders.push(gradeRoutingOutcome({ caseId, rootSessionId: sessionResult?.rootSessionId, snapshot: sessionResult?.managedSnapshot }));
+      graders.push(gradeRoutingOutcome({ caseId, rootSessionId: sessionResult?.rootSessionId, snapshot: sessionResult?.managedSnapshot, childSessionIds: sessionResult?.childSessionIds, evidence: sessionResult?.routingEvidence }));
     }
     if (caseId === 'managed-independent') {
       graders.push(...gradeManagedIndependentFacts(sessionResult ?? {}));
@@ -474,6 +473,7 @@ export const executeEvaluationCase = async (options = {}) => {
         ? sessionResult.durationMs
         : Date.now() - startedAt,
       tools,
+      routingMetrics: isRoutingCase(caseId) ? sessionResult?.routingMetrics ?? null : null,
       graders,
       harnessEvidence: sessionResult?.harnessEvidence ?? sessionError?.harnessEvidence ?? null,
       turnTiming: sessionResult?.turnTiming ?? { records: [] },

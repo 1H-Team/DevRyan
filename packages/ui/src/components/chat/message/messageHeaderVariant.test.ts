@@ -2,8 +2,30 @@ import { describe, expect, test } from 'bun:test';
 
 import { resolveMessageHeaderVariant, resolveMessageHeaderVariantDisplay } from './messageHeaderVariant';
 import { resolveUserMessageVariant } from '@/sync/subtask-agent';
+import { formatEffortLabel } from '../mobileControlsUtils';
 
 describe('resolveMessageHeaderVariant', () => {
+    test('retains primary-agent effort when the catalog is unavailable or has changed', () => {
+        expect(resolveMessageHeaderVariant('high', [])).toBe('high');
+        expect(resolveMessageHeaderVariant('ultra', ['low', 'medium', 'high'])).toBe('ultra');
+        expect(resolveMessageHeaderVariant(' High ', ['high'])).toBe('high');
+    });
+
+    test('formats recorded compound and provider-specific effort without requiring catalog membership', () => {
+        for (const variant of ['thinking-xhigh', 'xhigh-thinking', 'extra-high-thinking']) {
+            expect(formatEffortLabel(resolveMessageHeaderVariant(variant, ['low', 'high']), { providerId: 'cursor-acp' })).toBe('Extra High');
+        }
+        expect(formatEffortLabel(resolveMessageHeaderVariant('low', []), { providerId: 'openai' })).toBe('Light');
+    });
+
+    test('does not replace absent or explicit default effort with a catalog selection', () => {
+        for (const variant of [undefined, null, '', '   ']) {
+            expect(resolveMessageHeaderVariant(variant, ['medium', 'high'])).toBeUndefined();
+        }
+        expect(resolveMessageHeaderVariant(' FAST ', [])).toBeUndefined();
+        expect(resolveMessageHeaderVariant(resolveUserMessageVariant({ model: { variant: null }, variant: 'high' }), [])).toBeUndefined();
+        expect(resolveMessageHeaderVariant(resolveUserMessageVariant({ variant: 'high' }), [])).toBe('high');
+    });
     test('keeps a recorded thinking level when the model supports it', () => {
         expect(resolveMessageHeaderVariant('high', ['minimal', 'low', 'medium', 'high'])).toBe('high');
     });

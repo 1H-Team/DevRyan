@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import syncFs from 'node:fs';
+import { retireLegacyCursorPlugin, LEGACY_CURSOR_PLUGIN_HASH } from '../packages/web/server/lib/opencode/legacy-cursor-plugin.js';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -29,6 +31,7 @@ const dataDirectory = path.join(root, 'app-data');
 const origin = `http://127.0.0.1:${await reservePort()}`;
 const ownedReceipts = [];
 const executionCalls = [];
+const diagnostics = [];
 let cursor;
 let failToolAdmission = false;
 let skillCompletionGate = null;
@@ -38,13 +41,13 @@ const holdSkillCompletion = () => {
   skillCompletionGate = new Promise(resolve => { release = resolve; });
   return () => { skillCompletionGate = null; release(); };
 };
-const host = createSessionExecutionHost({ dataDirectory, getLauncher: () => launcher,
+const host = createSessionExecutionHost({ onDiagnostic: record => diagnostics.push(record), dataDirectory, getLauncher: () => launcher,
   fetchImpl: async (...args) => { const response = await fetch(...args); if (!response.ok) console.error("Fixture request failed", String(args[0]), await response.clone().text()); return response; },
   buildOpenCodeUrl: (route) => origin + route, recordReceipt: (receipt) => ownedReceipts.push(receipt),
   stopCursor: ({ sessionID }) => cursor?.abortAndWait(sessionID) });
 const bridge = createManagedOrchestrationPrivateHost({ handleRpc: async ({ method, params }) => {
   assert.equal(method, 'session_execution');
-  executionCalls.push({ action: params.action, tool: params.tool, callID: params.callID });
+  executionCalls.push({ action: params.action, tool: params.tool, callID: params.callID, toolOrigin: params.toolOrigin });
   if (failToolAdmission && ['begin', 'cancel-before-start'].includes(params.action)) {
     const code = params.action === 'begin' ? 'local_execution_timeout' : 'cleanup_fixture_failed';
     throw Object.assign(new Error(code), { code });
@@ -53,8 +56,9 @@ const bridge = createManagedOrchestrationPrivateHost({ handleRpc: async ({ metho
   return host.plugin(params);
 } });
 let upstream, server, held, model, traceTimer, skillSource, browserHost;
+let requestDirectory = directory;
 const request = async (route, body, base = origin) => {
-  const url = new URL(route, base); url.searchParams.set('directory', directory);
+  const url = new URL(route, base); url.searchParams.set('directory', requestDirectory);
   const response = await fetch(url, { method: body === undefined ? 'GET' : 'POST',
     headers: body === undefined ? {} : { 'content-type': 'application/json' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(120_000) });
@@ -99,6 +103,29 @@ try {
   });
   await new Promise((resolve) => skillSource.listen(0, '127.0.0.1', resolve));
   const skillURL = `http://127.0.0.1:${skillSource.address().port}/`;
+  // Only the relevant managed Cursor adapter owns these names after migration.
+  // The tiny legacy stand-in fails loudly if either discovery or an explicit
+  // registration survives. Production recognition still uses the audited hash.
+  const configDirectory = path.join(root, 'config/opencode');
+  const legacyFixture = 'throw new Error("legacy_cursor_plugin_still_discovered");';
+  for (const folder of ['plugin', 'plugins']) {
+    await fs.mkdir(path.join(configDirectory, folder), { recursive: true });
+    await fs.writeFile(path.join(configDirectory, folder, 'cursor-acp.js'), legacyFixture);
+  }
+  await fs.writeFile(path.join(configDirectory, 'opencode.json'), JSON.stringify({ plugin:
+    ['./plugin/cursor-acp.js', './plugins/cursor-acp.js', './plugin/cursor-acp.js'] }));
+  const migration = retireLegacyCursorPlugin({ configDirectory, fs: syncFs,
+    hashContent: bytes => bytes.toString() === legacyFixture ? LEGACY_CURSOR_PLUGIN_HASH : createHash('sha256').update(bytes).digest('hex') });
+  assert.equal(migration.ok, true);
+  assert.equal(migration.removed.length, 2);
+  assert.equal(retireLegacyCursorPlugin({ configDirectory, fs: syncFs,
+    hashContent: bytes => bytes.toString() === legacyFixture ? LEGACY_CURSOR_PLUGIN_HASH : createHash('sha256').update(bytes).digest('hex') }).changed, false);
+  const cursorAdapter = path.resolve('packages/web/server/default-config/plugins/devryan-open-cursor.mjs');
+  const cursorEntrypoint = path.join(configDirectory, 'node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js');
+  await fs.mkdir(path.dirname(cursorEntrypoint), { recursive: true });
+  await fs.writeFile(path.join(path.dirname(cursorEntrypoint), 'package.json'), '{"type":"module"}');
+  await fs.writeFile(cursorEntrypoint, `export default { server: async () => ({ tool: Object.fromEntries(
+    ['read','glob','grep','oc_read','oc_glob','oc_grep'].map(name => [name, { execute: async () => { throw new Error('replacement tool escaped adapter'); } }])) }) };`);
   const transientContextPlugin = path.join(root, 'transient-context.mjs');
   const browserPlugin = path.resolve('packages/web/server/default-config/plugins/devryan-browser.mjs');
   const browserInstall = path.join(root, 'browser-install');
@@ -136,7 +163,8 @@ try {
     DEVRYAN_BROWSER_CDP_DISCOVERY_URL: `http://127.0.0.1:${browserHost.address().port}/api/desktop/browser-cdp`,
     DEVRYAN_BROWSER_CDP_TOKEN: 'fixture-host-browser', DEVRYAN_AGENT_BROWSER_BIN: browserBinary,
     DEVRYAN_EXECUTION_BROWSER_PLUGIN: createHash('sha256').update(await fs.readFile(browserPlugin)).digest('hex'),
-    OPENCODE_CONFIG_CONTENT: JSON.stringify({ plugin: [pathToFileURL(transientContextPlugin).href, pathToFileURL(browserPlugin).href],
+    DEVRYAN_OPENCODE_USER_CONFIG_DIR: configDirectory,
+    OPENCODE_CONFIG_CONTENT: JSON.stringify({ plugin: [pathToFileURL(cursorAdapter).href, pathToFileURL(transientContextPlugin).href, pathToFileURL(browserPlugin).href],
       model: 'fixture/fixture', small_model: 'fixture/fixture', provider: { fixture: { ...model.config, models: { ...model.config.models, 'gpt-fixture': model.config.models.fixture } }, 'cursor-acp': { ...model.config, models: { 'composer-2.5': model.config.models.fixture } } },
       skills: { paths: ['~/custom-skills'], urls: [skillURL] },
       mcp: {}, snapshot: false, permission: 'allow',
@@ -338,14 +366,18 @@ try {
   const readCall = (await invoke(direct.id, 'read', { filePath: path.join(directory, 'direct-read.txt') })).call;
   assert(readCall.state.output.includes('direct receipt content'), 'Direct read returns its result');
   const grepCall = (await invoke(direct.id, 'grep', { pattern: 'direct receipt' })).call;
+  const globCall = (await invoke(direct.id, 'glob', { pattern: '**/direct-read.txt' })).call;
   const directOutcomes = await host.runtime.executionOutcomes({ directory, sessionID: direct.id,
-    calls: [readCall, grepCall].map((call) => ({ messageID: call.messageID, callID: call.callID })) });
-  assert.deepEqual(directOutcomes.map((row) => row.outcome), ['finished', 'finished']);
-  for (const call of [readCall, grepCall]) {
+    calls: [readCall, grepCall, globCall].map((call) => ({ messageID: call.messageID, callID: call.callID })) });
+  assert.deepEqual(directOutcomes.map((row) => row.outcome), ['finished', 'finished', 'finished']);
+  for (const call of [readCall, grepCall, globCall]) {
+    assert.deepEqual(executionCalls.filter(row => row.callID === call.callID).map(row => [row.action, row.toolOrigin]),
+      [['direct-admit', 'builtin'], ['direct-finish', 'builtin']]);
+    assert(!diagnostics.some(row => row.callID === call.callID && row.phase === 'preparation'));
     const lease = await host.runtime.leaseForCall({ directory, sessionID: direct.id, callID: call.callID });
     assert(lease?.direct === true && lease.cleaned === true && lease.state === 'published', JSON.stringify(lease));
   }
-  console.log('PASS: built-in read and grep record one direct receipt each, without a reserved lease or view');
+  console.log('PASS: built-in read, glob and grep with the managed Cursor adapter record one direct receipt each, without a reserved lease or view');
 
   const parent = await request('/session', { title: 'Descendant ownership' });
   const child = await invoke(parent.id, 'task', { description: 'Write the fixture', subagent_type: 'general',
@@ -419,6 +451,29 @@ try {
   await assert.rejects(fs.access(path.join(directory, 'cursor-held.txt')), { code: 'ENOENT' });
   assert.equal((await host.runtime.activeLeases({ directory, sessions: [activeCursor.id] })).length, 0);
   console.log('PASS: active Cursor cancellation waits for native termination and persistence');
+  // Use a separate cold project: the earlier journey already built its ledger.
+  const warmingDirectory = path.join(root, 'warming-project');
+  await fs.mkdir(warmingDirectory);
+  await git(warmingDirectory, ['init', '--quiet']);
+  for (let batch = 0; batch < 80; batch++) await Promise.all(Array.from({ length: 100 }, (_, i) =>
+    fs.writeFile(path.join(warmingDirectory, `${batch}-${i}.txt`), 'ledger fixture\n')));
+  requestDirectory = warmingDirectory;
+  const warmingSession = await request('/session', { title: 'Native inspection during ledger warming' });
+  let warmSettled = false, overlapped = false;
+  const warming = host.warmLedger({ directory: warmingDirectory }).finally(() => { warmSettled = true; });
+  for (const [name, args] of [['read', { filePath: path.join(warmingDirectory, '0-0.txt') }],
+    ['glob', { pattern: '**/0-0.txt' }], ['grep', { pattern: 'ledger fixture', include: '0-0.txt' }]]) {
+    const { call } = await invoke(warmingSession.id, name, args);
+    overlapped ||= !warmSettled;
+    assert.deepEqual(executionCalls.filter(row => row.callID === call.callID).map(row => row.action), ['direct-admit', 'direct-finish']);
+    assert(!diagnostics.some(row => row.callID === call.callID && row.phase === 'preparation'));
+  }
+  const warmResult = await warming;
+  assert.equal(warmResult.built, true, JSON.stringify(warmResult));
+  assert.equal(warmResult.files, 8000);
+  assert(overlapped, 'A direct inspection must complete while cold ledger preparation is still active');
+  requestDirectory = directory;
+  console.log('PASS: read/glob/grep stay direct during a verified cold 8,000-file ledger build');
   if (process.env.DEVRYAN_TEST_REVERT_UI === '1') {
     const { verifyRevertUi } = await import('./qa/revert-ui.mjs');
     for (const mode of ['web', 'electron']) await verifyRevertUi({ mode, root, dataDirectory, directory, upstream: origin, environment: env, request, invoke, shell, node, until, holdSkillCompletion });

@@ -1,3 +1,10 @@
+export type UserProfileNotice = {
+  code: 'legacy_cursor_plugin_conflict';
+  files: string[];
+  message: string;
+  error?: string;
+};
+
 export type UserProfileProvisionResult = {
   ok: boolean;
   changed: boolean;
@@ -14,6 +21,8 @@ export type UserProfileProvisionResult = {
     installedVersion: string | null;
   }>;
   warnings?: string[];
+  /** Non-blocking problems surfaced to the user; OpenCode still starts. */
+  profileNotices?: UserProfileNotice[];
   imagegenModelHotfix?: {
     ok: boolean;
     changed: boolean;

@@ -74,6 +74,40 @@ describe('user profile provisioning', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
+  it('preserves an unrecognized auto-discovered Cursor plugin without blocking provisioning', async () => {
+    const config = path.join(home, '.config/opencode');
+    const plugin = path.join(config, 'plugin/cursor-acp.js');
+    fs.mkdirSync(path.dirname(plugin), { recursive: true });
+    fs.writeFileSync(plugin, 'user modified plugin');
+    const result = await createRuntime().provision();
+    expect(result.ok).toBe(true);
+    expect(result.error).toBeFalsy();
+    expect(result.conflicts).toContain(plugin);
+    expect(result.profileNotices).toEqual([expect.objectContaining({
+      code: 'legacy_cursor_plugin_conflict',
+      files: [plugin],
+    })]);
+    expect(result.warnings.some((warning) => warning.includes('DEVRYAN_CURSOR_PLUGIN_CONFLICT'))).toBe(true);
+    expect(fs.readFileSync(plugin, 'utf8')).toBe('user modified plugin');
+    expect(fs.existsSync(path.join(config, 'package.json'))).toBe(true);
+  });
+
+  it('retires the default open-cursor installer symlink during provisioning', async () => {
+    const config = path.join(home, '.config/opencode');
+    const target = path.join(root, 'global/lib/node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, 'open-cursor bundle');
+    const plugin = path.join(config, 'plugin/cursor-acp.js');
+    fs.mkdirSync(path.dirname(plugin), { recursive: true });
+    fs.symlinkSync(target, plugin);
+    const result = await createRuntime().provision();
+    expect(result.ok).toBe(true);
+    expect(result.profileNotices).toEqual([]);
+    expect(result.removed).toContain(plugin);
+    expect(fs.existsSync(plugin)).toBe(false);
+    expect(fs.readFileSync(target, 'utf8')).toBe('open-cursor bundle');
+  });
+
   it('blocks startup when the image model patch cannot be applied safely', async () => {
     const result = await createRuntime({ applyImagegenModelHotfix: () => ({ ok: false, changed: false, code: 'DEVRYAN_IMAGEGEN_MODEL_INCOMPATIBLE', error: 'fixture source mismatch' }) }).provision();
     expect(result.ok).toBe(false);

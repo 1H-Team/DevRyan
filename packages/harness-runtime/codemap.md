@@ -52,7 +52,7 @@ API contracts.
 
 - `lib/session-execution.js`, `lib/session-execution-owner.js` and `native/` own native confinement, process termination receipts and publication ownership. `lib/session-mutations.js` and `lib/session-revert-coordinator.js` share durable operation decisions with file Undo/Redo. See [Concurrent Revert](../../docs/CONCURRENT_REVERT.md).
 
-- `lib/execution-admission.js`: scoped admission deadlines, cancellable queue waits, preparation checkpoints and sanitized phase diagnostics. Durable publication retains ownership through settlement.
+- `lib/execution-admission.js`: scoped admission deadlines, cancellable queue waits, preparation checkpoints and sanitized phase diagnostics. Bounded `toolOrigin`, `executionTier` and `fallbackReason` enums identify native/custom execution; preparation timing uses existing `elapsedMs` phase summaries, never tool contents. Durable publication retains ownership through settlement.
 
 - Context projection trace metadata separates planned/applied reductions, summary/checkpoint phases and transform duration from unavailable final-wire sizes; production exports contain no conversation bodies.
 

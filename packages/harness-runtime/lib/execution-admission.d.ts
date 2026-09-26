@@ -1,5 +1,8 @@
 export interface ExecutionDiagnostic {
   event: 'session_execution';
+  toolOrigin?: 'builtin' | 'custom';
+  executionTier?: 'direct' | 'control' | 'process';
+  fallbackReason?: 'custom_tool' | 'native_reads_disabled' | 'direct_admission_failed';
   sessionID?: string;
   userMessageID?: string;
   messageID?: string;
@@ -12,6 +15,7 @@ export interface ExecutionDiagnostic {
   /** Summary records: `phase:count/elapsedMs` per phase, comma-separated. */
   steps?: string;
 }
+export function executionToolMetadata(input: { toolOrigin?: unknown; action?: unknown; kind?: unknown; fallbackReason?: unknown }): Pick<ExecutionDiagnostic, 'toolOrigin' | 'executionTier' | 'fallbackReason'>;
 export function executionRemainingMs(): number;
 export function executionSignal(): AbortSignal | undefined;
 export function checkExecutionAdmission(): void;
@@ -27,6 +31,7 @@ export function waitForExecutionQueue<T>(previous: Promise<T>, progress?: Execut
 export function withExecutionMeter<T>(action: () => T): T;
 export function withExecutionAdmission<T>(input: {
   sessionID?: string; userMessageID?: string; messageID?: string; callID?: string;
+  toolOrigin?: string; action?: string; kind?: string; fallbackReason?: string;
 }, action: () => T | Promise<T>, options?: {
   /** Absolute cap. */ timeoutMs?: number;
   /** Expire once neither this work nor the followed lock holder progressed for this long. */ idleMs?: number;
@@ -37,6 +42,7 @@ export function withExecutionAdmission<T>(input: {
 }): Promise<T>;
 export function withExecutionPreparation<T>(input: {
   sessionID?: string; userMessageID?: string; messageID?: string; callID?: string;
+  toolOrigin?: string; action?: string; kind?: string; fallbackReason?: string;
 }, action: () => T | Promise<T>, options?: {
   timeoutMs?: number; stallMs?: number; signal?: AbortSignal; onDiagnostic?: (record: ExecutionDiagnostic) => void;
   summary?: { minMs?: number; slowMs?: number };

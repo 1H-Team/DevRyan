@@ -291,3 +291,33 @@ See the [2026-09-21 implementation report](audits/2026-09-21-plan-implementation
 for current validation, platform limits and rollback guidance.
 
 Preparation polling spends the same request budget on identity checks, lease lookup and waiting. Poll waits reserve one second for the response and return `preparing` when the remaining budget is exhausted. Completed enumeration, unchanged-file checks and reconciliation batches advance the progress meter. Bounded `identity_lookup`, `lease_lookup` and `poll_wait` diagnostic phases distinguish polling overhead from reconciliation. Cleanup failures are reported separately without replacing the preparation error. Compact skill rows retain the skill name and show loaded or failed outcomes, including sanitized preparation errors.
+
+### Legacy Cursor tool migration and diagnostics
+
+On normal managed-runtime provisioning, `legacy-cursor-plugin.js` recognizes only
+SHA-256 `954ceb8ef4de6ac2cb3e95d81d56a11bda58d396d2dd7756915724e193d8f622`
+at `plugin/cursor-acp.js` or `plugins/cursor-acp.js`. It backs up the exact bytes
+under the profile's `.openchamber/retired-plugins/` directory with a `.disabled`
+suffix before removing matching explicit local registrations and discovered
+copies. The maintained `devryan-open-cursor.mjs` adapter retains provider hooks
+while filtering replacement native file tools. No running session is restarted.
+
+An interrupted migration is retried on provisioning. Existing verified backups
+allow stale registrations to be reconciled after a source has moved. Modified
+plugins, nonregular files, invalid configuration or damaged backups stop
+provisioning with a conflict; they are preserved for reconciliation. To undo a
+migration while the managed runtime is stopped, copy the verified backup to its
+original discovery path. To retain a deliberately customized plugin, reconcile
+its filename/registration explicitly; do not overwrite the backup or disable
+native execution fencing. Provisioning will retire the exact legacy bytes again
+on the next startup.
+
+Execution diagnostics add only bounded `toolOrigin` (`builtin`/`custom`),
+`executionTier` (`direct`/`control`/`process`) and `fallbackReason` enums. Existing
+preparation summaries expose elapsed time through `elapsedMs` and their phase
+steps. Tool arguments, contents and credentials are excluded. These fields are
+observational: native tool identity, permissions, cancellation, Revert fencing,
+durable receipts and confinement of custom same-name tools remain authoritative.
+The packaged runtime fixture loads the managed Cursor adapter after retiring
+legacy stand-ins and checks direct `read`/`glob`/`grep` receipts during ledger
+warming; it does not substitute for live model latency measurements.

@@ -30,7 +30,9 @@ import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { opencodeClient } from '@/lib/opencode/client';
 import { SyncProvider, useDirectorySync, useGlobalSyncSelector, useSessions } from '@/sync/sync-context';
+import { useGlobalSyncStore } from '@/sync/global-sync-store';
 import { ConfigUpdateOverlay } from '@/components/ui/ConfigUpdateOverlay';
+import { OpenCodeProfileNotices } from '@/components/ui/OpenCodeProfileNotices';
 import { AboutDialog } from '@/components/ui/AboutDialog';
 import { RuntimeAPIProvider } from '@/contexts/RuntimeAPIProvider';
 import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
@@ -238,6 +240,7 @@ const StartupReadinessGate: React.FC<{
   isDesktopRuntime: boolean;
   isInitialized: boolean;
   initializationRetriesExhausted: boolean;
+  openCodeError: string | null;
   bootOutcomeKnown: boolean;
   bootViewIsMain: boolean;
   isRetrying: boolean;
@@ -249,6 +252,7 @@ const StartupReadinessGate: React.FC<{
   isDesktopRuntime,
   isInitialized,
   initializationRetriesExhausted,
+  openCodeError,
   bootOutcomeKnown,
   bootViewIsMain,
   isRetrying,
@@ -400,6 +404,7 @@ const StartupReadinessGate: React.FC<{
       isConnected,
       isInitialized,
       retriesExhausted: initializationRetriesExhausted,
+      openCodeError,
       providers: { status: providersLoadStatus, error: providersLoadError },
       agents: { status: agentsLoadStatus, error: agentsLoadError },
       initialization: {
@@ -445,6 +450,7 @@ const StartupReadinessGate: React.FC<{
     initializationLoadError,
     initializationLoadStatus,
     initializationRetriesExhausted,
+    openCodeError,
     providersLoadError,
     providersLoadStatus,
     responseStyleInstructionLoaded,
@@ -536,6 +542,7 @@ function HostApp({ apis }: AppProps) {
 
   const [isEmbeddedVisible, setIsEmbeddedVisible] = React.useState(true);
   const [initRetryExhausted, setInitRetryExhausted] = React.useState(false);
+  const [openCodeFailureDetail, setOpenCodeFailureDetail] = React.useState<string | null>(null);
   const [initRetryEpoch, setInitRetryEpoch] = React.useState(0);
   const [manualInitRetrying, setManualInitRetrying] = React.useState(false);
   const mobileKeyboardMode = useUIStore((state) => state.mobileKeyboardMode);
@@ -722,6 +729,27 @@ function HostApp({ apis }: AppProps) {
 
     dismissInitialLoadingElement();
   }, [initRetryExhausted]);
+
+  // Once retries give up, name the server's reason instead of a generic
+  // connection failure.
+  React.useEffect(() => {
+    if (!initRetryExhausted) {
+      setOpenCodeFailureDetail(null);
+      return;
+    }
+    let cancelled = false;
+    void fetch('/health', { method: 'GET', cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((health: { lastOpenCodeError?: unknown } | null) => {
+        if (cancelled) return;
+        const detail = health?.lastOpenCodeError;
+        setOpenCodeFailureDetail(typeof detail === 'string' && detail.trim() ? detail.trim() : null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [initRetryExhausted, initRetryEpoch]);
 
   React.useEffect(() => {
     if (isSwitchingDirectory) {
@@ -1011,6 +1039,8 @@ function HostApp({ apis }: AppProps) {
       if (recovery.restartError) {
         console.warn('[startup] OpenCode recovery restart failed:', recovery.restartError);
       }
+      // Global bootstrap keeps a non-retryable init error until it reruns.
+      useGlobalSyncStore.getState().actions.retryBootstrap();
     } finally {
       setManualInitRetrying(false);
     }
@@ -1119,6 +1149,7 @@ function HostApp({ apis }: AppProps) {
                     isDesktopRuntime={isDesktopRuntime}
                     isInitialized={isInitialized}
                     initializationRetriesExhausted={initRetryExhausted}
+                    openCodeError={openCodeFailureDetail}
                     bootOutcomeKnown={bootOutcomeKnown}
                     bootViewIsMain={bootViewIsMain}
                     onRetry={() => { void handleManualInitRetry(); }}
@@ -1130,6 +1161,7 @@ function HostApp({ apis }: AppProps) {
                     <Toaster />
                     <>
                       <ConfigUpdateOverlay />
+                      <OpenCodeProfileNotices />
                       <AboutDialogWrapper />
                       {showMemoryDebug && (
                         <MemoryDebugPanel onClose={() => setShowMemoryDebug(false)} />

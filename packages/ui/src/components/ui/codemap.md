@@ -13,6 +13,9 @@ number steppers cannot reuse a stale parent value during rapid activation.
 `OverlayScrollbar.tsx` owns the reusable overlay thumb interactions, while
 `overlayScrollbarBehavior.ts` owns its testable geometry, desktop persistence,
 and auto-hide policy without weakening Fast Refresh boundaries.
+`OpenCodeProfileNotices.tsx` reads `/health` `openCodeProfileNotices` each time
+initialization completes. It keeps a persistent warning with an explicit
+"Retire Plugin" action for profile cleanup that startup could not finish safely.
 
 ## Flow
 Feature components compose these primitives and pass business logic via props/callbacks.

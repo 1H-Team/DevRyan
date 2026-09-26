@@ -98,6 +98,23 @@ describe("startup readiness", () => {
     })
   })
 
+  test("names the server's reason when OpenCode could not start", () => {
+    const snapshot = withStartupBootstrapReadiness(createStartupReadinessSnapshot("ready"), {
+      desktopBootReady: true,
+      isConnected: false,
+      isInitialized: false,
+      retriesExhausted: true,
+      openCodeError: "  DEVRYAN_CURSOR_PLUGIN_CONFLICT: preserve the plugin ",
+      providers: { status: "idle" },
+      agents: { status: "idle" },
+      initialization: { status: "loading" },
+    })
+
+    expect(summarizeStartupReadiness(snapshot).error).toBe(
+      "DevRyan could not connect to OpenCode: DEVRYAN_CURSOR_PLUGIN_CONFLICT: preserve the plugin",
+    )
+  })
+
   test("treats an empty session list as valid after the list request succeeds", () => {
     const snapshot = withStartupReadinessPhase(
       createStartupReadinessSnapshot("ready"),

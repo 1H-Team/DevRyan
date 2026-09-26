@@ -6,6 +6,15 @@ export const executionDiagnostic = (record) => context.getStore()?.report?.(reco
 export const executionSignal = () => context.getStore()?.signal;
 export const checkExecutionAdmission = () => executionSignal()?.throwIfAborted();
 export const executionProgressMeter = () => context.getStore()?.meter;
+// Optional private-companion observations, never authorization inputs. Older
+// companions remain valid and report unknown origin rather than a guessed one.
+export const executionToolMetadata = (input) => ({
+  ...(['builtin', 'custom'].includes(input?.toolOrigin) ? { toolOrigin: input.toolOrigin } : {}),
+  ...(['direct-admit', 'direct-finish'].includes(input?.action) ? { executionTier: 'direct' }
+    : ['control', 'process'].includes(input?.kind) ? { executionTier: input.kind } : {}),
+  ...(['custom_tool', 'native_reads_disabled', 'direct_admission_failed'].includes(input?.fallbackReason)
+    ? { fallbackReason: input.fallbackReason } : {}),
+});
 export const executionProgress = () => { const meter = executionProgressMeter(); if (meter) meter.progress = Date.now(); };
 export const withExecutionSlotWait = async (action) => {
   const current = executionProgressMeter();
@@ -58,8 +67,8 @@ export async function withExecutionAdmission(input, action, { timeoutMs = 25_000
     if (now - started >= timeoutMs || (!observed.waiting && now - observed.progress >= idle)) controller.abort(expired);
   }, Math.min(idle, 1000));
   const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
-  const identity = Object.fromEntries(['sessionID', 'userMessageID', 'messageID', 'callID'].flatMap((key) =>
-    typeof input[key] === 'string' && input[key].length <= 512 ? [[key, input[key]]] : []));
+  const identity = { ...executionToolMetadata(input), ...Object.fromEntries(['sessionID', 'userMessageID', 'messageID', 'callID'].flatMap((key) =>
+    typeof input[key] === 'string' && input[key].length <= 512 ? [[key, input[key]]] : [])) };
   const report = (record) => {
     try { onDiagnostic?.({ event: 'session_execution', ...identity, ...record }); } catch { /* Observer only. */ }
   };

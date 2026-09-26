@@ -723,6 +723,7 @@ export const registerOpenCodeProxy = (app, deps) => {
       req.path.startsWith('/config/settings') ||
       req.path.startsWith('/config/skills') ||
       req.path === '/config/reload' ||
+      req.path === '/config/legacy-cursor-plugin/retire' ||
       req.path === '/health'
     ) {
       return next();

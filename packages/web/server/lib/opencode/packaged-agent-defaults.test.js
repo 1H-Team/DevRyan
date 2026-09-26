@@ -7,7 +7,7 @@ import yaml from 'yaml';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 39_739;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 36_596;
 const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
   __dirname,
   '../../default-config/user-profile/oh-my-opencode-slim.json',
@@ -93,8 +93,8 @@ describe('packaged agent defaults', () => {
     const lineCount = content.trimEnd().split('\n').length;
 
     expect(lineCount).toBeLessThanOrEqual(260);
-    expect(content).toContain('Simple requests: do the work yourself');
-    expect(content).toContain('Designer owns the approved design implementation end to end');
+    expect(content).toContain('Direct work is the default for small coherent tasks.');
+    expect(content).toContain('Designer owns the delegated implementation, related tests, and visible validation.');
     expect(content).toContain('Context:');
     expect(content).toContain('Starting points:');
     expect(content).toContain('Return:');
@@ -140,21 +140,21 @@ describe('packaged agent defaults', () => {
     expect(body.indexOf(implementationGate)).toBeLessThan(body.indexOf(finalCloseout));
   });
 
-  it('keeps design planning with Orchestrator and implementation with Designer', () => {
+  it('keeps bounded work direct and delegates substantial design with its tests', () => {
     const orchestrator = readPackagedAgent('orchestrator');
     const designer = readPackagedAgent('designer');
     const fixer = readPackagedAgent('fixer');
 
-    expect(orchestrator.body).toContain('Orchestrator owns the grounded design approach and decision-complete implementation brief.');
-    expect(orchestrator.body).toContain('Designer owns the approved design implementation end to end');
-    expect(orchestrator.body).toContain('route that work to Designer in normal mode');
-    expect(orchestrator.body).toContain('UI correctness bugs and UI behavior changes under an unchanged presentation route to `fixer`');
-    expect(orchestrator.body).toContain('For mixed work, create disjoint scopes');
-    expect(orchestrator.body).toContain('If Designer remains unavailable after the existing managed recovery, report the blocker');
-    expect(orchestrator.body).toContain('Orchestrator owns design-change planning in plan mode.');
+    expect(orchestrator.body).toContain('Orchestrator owns the grounded design approach and supplies a decision-complete brief');
+    expect(orchestrator.body).toContain('Designer owns the delegated implementation, related tests, and visible validation.');
+    expect(orchestrator.body).toContain('Simple specified visual work may stay with Orchestrator');
+    expect(orchestrator.body).toContain('A bounded behavior fix stays direct');
+    expect(orchestrator.body).toContain('For mixed delegated work, create disjoint scopes');
+    expect(orchestrator.body).toContain('if a required specialist remains unavailable after managed recovery, report the blocker');
+    expect(orchestrator.body).toContain('Orchestrator owns design-change planning in plan mode;');
     expect(orchestrator.body).toContain('never dispatch Designer from a plan-mode turn');
     expect(orchestrator.body).toContain('Never delegate planning-only or standalone review work to Designer.');
-    expect(orchestrator.body).toContain('Non-design implementation gate');
+    expect(orchestrator.body).not.toContain('Non-design implementation gate');
     expect(orchestrator.body).not.toContain('Fixer-first implementation gate');
 
     expect(designer.body).toContain('End-to-end implementation of an approved design plan or decision-complete brief');
@@ -442,21 +442,19 @@ describe('packaged agent defaults', () => {
   it('orchestrator owns planning and asks Explorer only for context locations', () => {
     const content = fs.readFileSync(path.join(AGENTS_DIR, 'orchestrator.md'), 'utf8');
 
-    expect(content).toContain('Orchestrator owns planning');
-    expect(content).toContain('migration candidates if relevant');
-    expect(content).toContain('Do not ask Explorer to plan');
+    expect(content).toContain('Orchestrator owns diagnosis and planning');
+    expect(content).toContain('Need: <entrypoint, relevant symbol, immediate connections, concise paths:lines>');
+    expect(content).toContain('do not ask Explorer to debug, plan');
     expect(content).not.toContain('likely edit points');
   });
 
-  it('orchestrator requires Explorer for unknown discovery in normal and plan modes', () => {
+  it('keeps unknown filenames direct in normal and plan modes', () => {
     const content = fs.readFileSync(path.join(AGENTS_DIR, 'orchestrator.md'), 'utf8');
-
-    expect(content).toContain('Unknown codebase location: call `explorer` before broad direct search.');
-    expect(content).toContain('Unknown file/code discovery in plan mode also routes to `explorer`; keep the rest of the turn read-only and produce only the plan.');
-    expect(content).toContain('Direct inspection is allowed only for codemap-identified targets, exact known paths, exact symbols in 1-2 files, or one narrow `read`/`grep`.');
-    expect(content).toContain('If Explorer remains unavailable after the one managed recovery, continue direct inspection only within the current task scope or report the blocker before broader search.');
-    expect(content).toContain('Do not phrase unknown discovery as optional between Explorer and broad direct search.');
-    expect(content).not.toContain('delegate to `explorer` or look yourself');
+    expect(content).toContain('An unknown filename alone never requires Explorer.');
+    expect(content).toContain('Use the same direct-first discovery policy in plan mode');
+    expect(content).toContain('Explicit user requests for a specialist take precedence.');
+    expect(content).toContain('if a required specialist remains unavailable after managed recovery, report the blocker');
+    expect(content).not.toContain('Unknown codebase location: call');
   });
 
   it('explorer is constrained to context discovery only', () => {
@@ -464,7 +462,8 @@ describe('packaged agent defaults', () => {
 
     expect(content).toContain('Context-only mission');
     expect(content).toContain('relevant context locations');
-    expect(content).toContain('## Migration Candidates');
+    expect(content).not.toContain('## Migration Candidates');
+    expect(content).toContain('After two unsuccessful search rounds');
     expect(content).toContain('Do not create or modify files');
     expect(content).toContain('Do not produce plans');
     expect(content).not.toContain('likely edit points');

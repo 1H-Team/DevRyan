@@ -7,6 +7,7 @@ import { applyEdits, modify, parse as parseJsonc } from 'jsonc-parser';
 
 import { getAntigravityPluginGoogleModelKeyPaths } from './antigravity-retirement.js';
 import { listDefaultConfigAssets } from './default-config-assets.js';
+import { retireLegacyCursorPlugin } from './legacy-cursor-plugin.js';
 import { removeJsoncKeyPaths, removeKeyPathsFromObject } from './jsonc-config.js';
 import {
   DEVRYAN_MANAGED_PROFILE_DEPENDENCIES,
@@ -194,7 +195,27 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
       meridianHttpHotfix: null,
       claudeRuntime: null,
       managedPluginIssues: [],
+      profileNotices: [],
     };
+
+    // Retiring the legacy plugin is cleanup and must never block OpenCode.
+    // An unresolved copy keeps loading as it did before, and the user is told
+    // and offered an explicit retire action.
+    const cursorRetirement = retireLegacyCursorPlugin({ configDirectory, fs: fsApi });
+    result.legacyCursorPlugin = cursorRetirement;
+    result.changed = cursorRetirement.changed;
+    result.updated.push(...cursorRetirement.updated);
+    result.removed.push(...cursorRetirement.removed);
+    result.conflicts.push(...cursorRetirement.conflicts);
+    if (!cursorRetirement.ok) {
+      result.profileNotices.push({
+        code: 'legacy_cursor_plugin_conflict',
+        files: cursorRetirement.conflicts,
+        message: 'A legacy Cursor plugin (cursor-acp.js) could not be retired automatically. It still loads, and its tools bypass OpenCode permission rules.',
+        error: cursorRetirement.error,
+      });
+      result.warnings.push(`${cursorRetirement.error} (${cursorRetirement.conflicts.join(', ') || 'no conflicting path'})`);
+    }
 
     const meridianPolicy = applyManagedMeridianSdkFeaturePolicy({
       fs: fsApi,
@@ -208,7 +229,7 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
       result.error = meridianPolicy.error;
       return result;
     }
-    result.changed = meridianPolicy.changed;
+    result.changed ||= meridianPolicy.changed;
     if (meridianPolicy.warning) {
       result.warnings.push(meridianPolicy.warning);
     }

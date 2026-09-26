@@ -244,6 +244,26 @@ describe('OpenCode lifecycle', () => {
 
     await expect(runtime.startOpenCode()).rejects.toThrow('network unavailable');
     expect(spawnMock).not.toHaveBeenCalled();
+    // A deterministic provisioning failure is not retried.
+    expect(provisionUserProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts OpenCode and records profile notices that do not block startup', async () => {
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n'));
+      return child;
+    });
+    const notice = { code: 'legacy_cursor_plugin_conflict', files: ['/profile/plugin/cursor-acp.js'], message: 'legacy plugin' };
+    const runtime = createRuntime({
+      provisionUserProfile: vi.fn(async () => ({ ok: true, changed: false, conflicts: notice.files, profileNotices: [notice] })),
+    });
+
+    const server = await runtime.startOpenCode();
+
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(runtime.__testState.openCodeProfileNotices).toEqual([notice]);
+    await server.close();
   });
 
   it('exposes the port cleanup helper required by graceful shutdown', () => {

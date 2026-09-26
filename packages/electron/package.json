@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/electron",
-  "version": "1.2.14",
+  "version": "1.2.15",
   "private": true,
   "description": "Electron desktop runtime for DevRyan",
   "author": "DevRyan",

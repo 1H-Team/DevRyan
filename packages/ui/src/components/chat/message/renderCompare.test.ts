@@ -137,6 +137,21 @@ describe('areRelevantTurnGroupingContextsEqual', () => {
 });
 
 describe('areRenderRelevantMessagesEqual', () => {
+  test('refreshes primary headers when canonical user effort arrives, changes, or is cleared', () => {
+    const user = (variant?: string) => ({
+      info: {
+        id: 'user-1', sessionID: 'session-1', role: 'user' as const,
+        time: { created: 1 }, agent: 'orchestrator',
+        model: { providerID: 'openai', modelID: 'gpt-6-sol', ...(variant !== undefined ? { variant } : {}) },
+      },
+      parts: [],
+    });
+    expect(areRenderRelevantMessagesEqual(user(), user('high'))).toBe(false);
+    expect(areRenderRelevantMessagesEqual(user('high'), user('medium'))).toBe(false);
+    expect(areRenderRelevantMessagesEqual(user('high'), user(''))).toBe(false);
+    expect(areRenderRelevantMessagesEqual(user('high'), user('high'))).toBe(true);
+  });
+
   test('treats terminal assistant completion info as render-relevant', () => {
     const streamingInfo = {
       id: 'assistant-1',

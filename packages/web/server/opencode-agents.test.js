@@ -485,14 +485,14 @@ describe('Packaged OpenChamber agents', () => {
     const explorer = listPackagedAgents().find((agent) => agent.name === 'explorer');
     const orchestrator = listPackagedAgents().find((agent) => agent.name === 'orchestrator');
 
-    expect(explorer?.prompt).toContain('explicitly requested full usage map');
-    expect(explorer?.prompt).toContain('continue until the requested scope is covered');
+    expect(explorer?.prompt).toContain('explicitly requested broad usage map');
+    expect(explorer?.prompt).toContain('may continue within its stated scope');
     expect(explorer?.prompt).toContain('smallest needed file slices');
     expect(orchestrator?.prompt).toContain('Find:');
     expect(orchestrator?.prompt).toContain('Scope:');
     expect(orchestrator?.prompt).toContain('Need:');
     expect(orchestrator?.prompt).toContain('Avoid:');
-    expect(orchestrator?.prompt).toContain('For known paths, exact symbols in 1-2 files, codemap-identified targets, or a single narrow `read`/`grep`, do it yourself instead of delegating.');
+    expect(orchestrator?.prompt).toContain('An unknown filename alone never requires Explorer.');
   });
 
   it('instructs Orchestrator to stop after plan-only responses without asking to implement', () => {
@@ -519,7 +519,7 @@ describe('Packaged OpenChamber agents', () => {
     const orchestrator = listPackagedAgents().find((agent) => agent.name === 'orchestrator');
 
     expect(orchestrator?.prompt).toContain('missing design intent before `designer` delegation');
-    expect(orchestrator?.prompt).toContain('Clear user requirements let Orchestrator form the design brief; missing design intent follows the question-routing rule.');
+    expect(orchestrator?.prompt).toContain('Orchestrator owns the grounded design approach and supplies a decision-complete brief');
     expect(orchestrator?.prompt).not.toContain('After Explorer returns files for normal-mode design-quality UI work, immediately delegate the implementation or review to @designer.');
     expect(orchestrator?.prompt).not.toContain('Do not present design options, design directions, wireframes, or implementation approaches for user approval before calling @designer.');
   });
@@ -643,12 +643,12 @@ describe('Packaged OpenChamber agents', () => {
     const plan = agents.find((agent) => agent.name === 'plan');
     const council = agents.find((agent) => agent.name === 'council');
 
-    expect(orchestrator?.prompt).toContain('Non-design implementation gate');
-    expect(orchestrator?.prompt).toContain('default to @fixer');
-    expect(orchestrator?.prompt).toContain('bounded non-design implementation');
-    expect(orchestrator?.prompt).toContain('Orchestrator owns the grounded design approach and decision-complete implementation brief.');
-    expect(orchestrator?.prompt).toContain('Designer owns the approved design implementation end to end');
-    expect(orchestrator?.prompt).toContain('Orchestrator owns design-change planning in plan mode.');
+    expect(orchestrator?.prompt).not.toContain('Non-design implementation gate');
+    expect(orchestrator?.prompt).toContain('A bounded behavior fix stays direct');
+    expect(orchestrator?.prompt).toContain('independent, closed non-design implementation that saves elapsed time');
+    expect(orchestrator?.prompt).toContain('Orchestrator owns the grounded design approach and supplies a decision-complete brief');
+    expect(orchestrator?.prompt).toContain('Designer owns the delegated implementation, related tests, and visible validation.');
+    expect(orchestrator?.prompt).toContain('Orchestrator owns design-change planning in plan mode;');
     expect(orchestrator?.prompt).toContain('never dispatch Designer from a plan-mode turn');
     expect(designer?.prompt).toContain('End-to-end implementation of an approved design plan or decision-complete brief');
     expect(designer?.prompt).toContain('do not stop at a plan, mock recommendation, or review findings.');
