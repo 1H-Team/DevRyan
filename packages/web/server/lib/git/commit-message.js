@@ -81,14 +81,18 @@ export async function generateCommitMessageDirect({
     afterAttempt,
   });
   const source = result.ok ? result.value.source : 'local_fallback';
+  const freeTierRejected = !result.ok && result.failures.some((failure) => failure.reason === 'free_tier_rejected');
   const providerOutcome = result.ok ? 'complete'
-    : result.attempts > 0 ? 'exhausted'
-      : catalogState === 'unavailable' ? 'catalog_unavailable' : 'no_free_models';
-  const warning = result.ok ? null : result.attempts > 0
-    ? 'Free Zen AI attempts were exhausted; created a local commit draft'
-    : catalogState === 'unavailable'
-      ? 'Free Zen model catalog was unavailable; created a local commit draft'
-      : 'No free Zen models were available; created a local commit draft';
+    : freeTierRejected ? 'free_tier_rejected'
+      : result.attempts > 0 ? 'exhausted'
+        : catalogState === 'unavailable' ? 'catalog_unavailable' : 'no_free_models';
+  const warning = result.ok ? null : freeTierRejected
+    ? 'Free Zen rejected the request; created a local commit draft'
+    : result.attempts > 0
+      ? 'Free Zen AI attempts were exhausted; created a local commit draft'
+      : catalogState === 'unavailable'
+        ? 'Free Zen model catalog was unavailable; created a local commit draft'
+        : 'No free Zen models were available; created a local commit draft';
   onTiming?.({
     providerMs: Date.now() - providerStartedAt,
     parseMs: 0,

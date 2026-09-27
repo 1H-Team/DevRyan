@@ -8,18 +8,24 @@ const repoRoot = resolve(testDir, '../../../../../..');
 const source = (fileName: string) => readFileSync(resolve(testDir, fileName), 'utf8');
 const repoSource = (relativePath: string) => readFileSync(resolve(repoRoot, relativePath), 'utf8');
 
-describe('UsagePage model rows', () => {
+describe('Provider usage panel rows', () => {
   test('uses shared Claude window ordering and provider-aware labels for overall usage rows', () => {
+    const pageSource = source('ProviderUsagePanel.tsx');
+
+    expect(pageSource).toContain('sortUsageEntries(quotaProviderId');
+    expect(pageSource).toContain('overallUsageEntries.map');
+    expect(pageSource).toContain('displayTitle={formatProviderWindowLabel(quotaProviderId, label)}');
+  });
+
+  test('the standalone Usage page renders the shared provider usage panel', () => {
     const pageSource = source('UsagePage.tsx');
 
-    expect(pageSource).toContain('sortUsageEntries(selectedProviderId');
-    expect(pageSource).toContain('overallUsageEntries.map');
-    expect(pageSource).toContain('displayTitle={formatProviderWindowLabel(selectedProviderId, label)}');
+    expect(pageSource).toContain('<ProviderUsagePanel key={selectedProviderId} quotaProviderId={selectedProviderId} variant="page" />');
   });
 
   test('shows model names as model row titles while keeping window labels for calculations', () => {
     const cardSource = source('UsageCard.tsx');
-    const pageSource = source('UsagePage.tsx');
+    const pageSource = source('ProviderUsagePanel.tsx');
 
     expect(cardSource).toContain('displayTitle?: string');
     expect(pageSource).toContain('displayTitle={modelDisplay.displayName}');
@@ -35,16 +41,16 @@ describe('UsagePage model rows', () => {
 
   test('retains provider rows while rendering non-fatal warnings and hides value-only progress', () => {
     const cardSource = source('UsageCard.tsx');
-    const pageSource = source('UsagePage.tsx');
+    const pageSource = source('ProviderUsagePanel.tsx');
 
     expect(cardSource).toContain('hasUsageProgress(window)');
     expect(cardSource).toContain('showProgress ? (');
-    expect(pageSource).toContain('selectedResult?.warnings ?? []');
-    expect(pageSource).toContain('selectedProviderWarnings.map');
+    expect(pageSource).toContain('result?.warnings ?? []');
+    expect(pageSource).toContain('providerWarnings.map');
   });
 
   test('renders the shared reset bank independently of overall usage windows', () => {
-    const pageSource = source('UsagePage.tsx');
+    const pageSource = source('ProviderUsagePanel.tsx');
 
     expect(pageSource).toContain("import { UsageResetCreditsList } from '@/components/layout/usage/UsageResetCreditsList'");
     expect(pageSource).toContain('usage?.resetCredits ? (');
@@ -52,10 +58,10 @@ describe('UsagePage model rows', () => {
   });
 
   test('forces only the OpenCode Credits progress row to use the success tone', () => {
-    const pageSource = source('UsagePage.tsx');
+    const pageSource = source('ProviderUsagePanel.tsx');
     const cardSource = source('UsageCard.tsx');
 
-    expect(pageSource).toContain("selectedProviderId === 'opencode' && label === 'credits' ? 'success' : 'adaptive'");
+    expect(pageSource).toContain("quotaProviderId === 'opencode' && label === 'credits' ? 'success' : 'adaptive'");
     expect(cardSource).toContain("progressTone?: 'adaptive' | 'success'");
     expect(cardSource).toContain('tone={progressTone}');
   });
@@ -70,7 +76,7 @@ describe('UsagePage model rows', () => {
   });
 
   test('renders every provider through model families without a retired flat-row path', () => {
-    const pageSource = source('UsagePage.tsx');
+    const pageSource = source('ProviderUsagePanel.tsx');
 
     expect(pageSource).toContain('renderModelCard(model)');
     expect(pageSource).not.toContain("'antigravity'");
@@ -84,14 +90,15 @@ describe('UsagePage model rows', () => {
     expect(cardSource).toContain('<PaceIndicator paceInfo={displayState.paceInfo} displayMode={displayMode} />');
   });
 
-  test('sidebar source persists usageShowPredValues', () => {
-    const sidebarSource = source('UsageSidebar.tsx');
+  test('usage options menu persists usageShowPredValues', () => {
+    const optionsSource = source('UsageOptionsMenu.tsx');
 
-    expect(sidebarSource).toContain('setShowPredictionValues');
-    expect(sidebarSource).toContain('usageShowPredValues: enabled');
-    expect(sidebarSource).toContain('settings.usage.sidebar.field.showPredictionRows');
-    expect(sidebarSource).toContain('resolveUsageDisplayModeLabel');
-    expect(sidebarSource).toContain('settings.usage.sidebar.field.displayModeUsage');
+    expect(optionsSource).toContain('setShowPredictionValues');
+    expect(optionsSource).toContain('usageShowPredValues: enabled');
+    expect(optionsSource).toContain('settings.usage.sidebar.field.showPredictionRows');
+    expect(optionsSource).toContain('settings.usage.sidebar.field.displayModeUsage');
+    expect(source('UsageSidebar.tsx')).toContain('<UsageOptionsMenu');
+    expect(source('ProviderUsagePanel.tsx')).toContain('<UsageOptionsMenu');
   });
 
   test('quota store source defaults prediction visibility to true', () => {

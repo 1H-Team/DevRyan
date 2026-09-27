@@ -274,7 +274,7 @@ describe('tunnel routes', () => {
     });
   });
 
-  it.each([[true, true], [true, false], [false, true]])('reports managed readiness without a link with accounts=%s runtime=%s', async (accountLogin, runtimeReady) => {
+  it.each([[true, true, false], [true, false, false], [false, true, false], [false, true, true], [false, false, true]])('reports managed readiness with accounts=%s runtime=%s ownerLogin=%s', async (accountLogin, runtimeReady, ownerLogin) => {
     const tunnelService = {
       refreshHealth: vi.fn(async () => ({ connectorState: 'healthy' })),
       resolveActiveMode: vi.fn(() => 'managed-remote'),
@@ -288,6 +288,7 @@ describe('tunnel routes', () => {
     };
     const tunnelAuthController = {
       hasOwner: vi.fn(() => true),
+      canUseOwnerLogin: vi.fn(() => ownerLogin),
       getBootstrapStatus: vi.fn(() => ({ hasBootstrapToken: true, bootstrapExpiresAt: 12345 })),
       listTunnelSessions: vi.fn(() => []),
       getActiveTunnelId: vi.fn(() => 'tunnel-1'),
@@ -325,10 +326,10 @@ describe('tunnel routes', () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       active: true,
-      connectReady: accountLogin && runtimeReady,
-      hasBootstrapToken: false,
-      bootstrapExpiresAt: null,
-      policy: 'account-login',
+      connectReady: (accountLogin || ownerLogin) && runtimeReady,
+      hasBootstrapToken: ownerLogin,
+      bootstrapExpiresAt: ownerLogin ? 12345 : null,
+      policy: ownerLogin ? 'owner-link' : 'account-login',
       managedRemoteTunnelTokenPresetIds: ['production'],
       managedRemoteTunnelPresets: [{
         id: 'production',
@@ -337,11 +338,11 @@ describe('tunnel routes', () => {
         originPort: 3000,
       }],
     });
-    expect(tunnelAuthController.getBootstrapStatus).not.toHaveBeenCalled();
+    expect(tunnelAuthController.getBootstrapStatus).toHaveBeenCalledTimes(ownerLogin ? 1 : 0);
     expect(response.text).not.toContain('stored-secret-token');
   });
 
-  it.each([[true, []], [true, ['a7fef886-f6ef-4f43-ac04-a42c9b5f8a10']], [false, []]])('requires direct account login for managed remote with accounts=%s bots=%j', async (accountLogin, botIds) => {
+  it.each([[true, [], false], [true, ['a7fef886-f6ef-4f43-ac04-a42c9b5f8a10'], false], [false, [], false], [false, [], true], [false, ['a7fef886-f6ef-4f43-ac04-a42c9b5f8a10'], true]])('starts managed remote with accounts=%s bots=%j ownerLogin=%s', async (accountLogin, botIds, ownerLogin) => {
     const tunnelService = {
       resolveActiveMode: vi.fn(() => null),
       resolveActiveProvider: vi.fn(() => null),
@@ -356,6 +357,7 @@ describe('tunnel routes', () => {
     };
     const tunnelAuthController = {
       hasOwner: vi.fn(() => true),
+      canUseOwnerLogin: vi.fn(() => ownerLogin),
       getActiveTunnelId: vi.fn(() => null),
       getActiveTunnelMode: vi.fn(() => null),
       setActiveTunnel: vi.fn(),
@@ -395,8 +397,8 @@ describe('tunnel routes', () => {
           botIds,
         });
 
-      expect(tunnelAuthController.issueBootstrapToken).not.toHaveBeenCalled();
       if (accountLogin) {
+        expect(tunnelAuthController.issueBootstrapToken).not.toHaveBeenCalled();
         expect(response.status).toBe(200);
         expect(response.body).toMatchObject({
           runtimeReady: true,
@@ -405,7 +407,20 @@ describe('tunnel routes', () => {
           bootstrapExpiresAt: null,
           policy: 'account-login',
         });
+      } else if (ownerLogin && botIds.length) {
+        expect(response.status).toBe(400);
+        expect(response.body.code).toBe('tunnel_bots_unavailable');
+        expect(tunnelService.start).not.toHaveBeenCalled();
+        expect(persistToken).not.toHaveBeenCalled();
+        expect(tunnelAuthController.issueBootstrapToken).not.toHaveBeenCalled();
+      } else if (ownerLogin) {
+        expect(response.status).toBe(200);
+        expect(response.body).toMatchObject({ runtimeReady: true, connectReady: true,
+          connectUrl: 'https://app.example.com/tunnel/connect#t=bootstrap-token', policy: 'owner-link' });
+        expect(tunnelAuthController.issueBootstrapToken).toHaveBeenCalledWith({ access: 'owner', botIds: undefined, ttlMs: 900_000 });
+        expect(persistToken).toHaveBeenCalledOnce();
       } else {
+        expect(tunnelAuthController.issueBootstrapToken).not.toHaveBeenCalled();
         expect(response.status).toBe(422);
         expect(response.body.code).toBe('managed_account_auth_required');
         expect(tunnelService.start).not.toHaveBeenCalled();

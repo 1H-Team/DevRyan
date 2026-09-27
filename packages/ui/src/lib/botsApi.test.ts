@@ -593,3 +593,12 @@ describe('Production Bots HTTP client', () => {
     expect(getBotRetryReason(error)).toBe(expected);
   }
 });
+
+test('preserves explicit retryability without treating non-boolean values as permission to retry', async () => {
+  for (const retryable of [true, false, undefined, 'true']) {
+    const api = createBotsApi({ fetchImpl: async () => new Response(JSON.stringify({ error: 'Starting', code: 'bots_starting', retryable }), { status: 503 }) });
+    const error = await api.listBots().catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(BotsApiError);
+    expect((error as BotsApiError).retryable).toBe(typeof retryable === 'boolean' ? retryable : undefined);
+  }
+});

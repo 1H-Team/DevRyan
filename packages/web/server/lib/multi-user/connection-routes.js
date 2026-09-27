@@ -63,7 +63,9 @@ export function attachSupabaseConnectionBoundary(app, server, connection, { allo
   let activeRequests = 0;
   app.use((req, res, next) => {
     if (!connection.enabled && !isDirectLocalRequest(req) && !allowRemoteRequest(req)) return unavailable(res);
-    if (!connection.enabled && /^\/api\/(?:admin|bots|bot-actions|bot-channels|bot-runs|bug-reports|user-analytics)(?:\/|$)/.test(req.path) && !allowRemoteRequest(req)) return unavailable(res);
+    // Bots live in the local catalog and authorize their own owner session, so
+    // only the cloud-backed administration surfaces close while Off.
+    if (!connection.enabled && /^\/api\/(?:admin|bug-reports|user-analytics)(?:\/|$)/.test(req.path) && !allowRemoteRequest(req)) return unavailable(res);
     if (connection.status().restartPending && !safeMethods.has(req.method)) {
       // Completion, cancellation and approval for admitted work remain usable.
       const startsWork = /\/(?:prompt_async|message|command|shell|enqueue|retry|prewarm|fork|run-now|execute)$/.test(req.path)
@@ -81,7 +83,7 @@ export function attachSupabaseConnectionBoundary(app, server, connection, { allo
   });
   server?.on('upgrade', (req, socket) => {
     if (req.tunnelAccessDenied || socket.destroyed) return;
-    if (connection.enabled || connection.authenticateLocalOwner(req)) return;
+    if (connection.enabled || connection.authenticateLocalOwner(req) || allowRemoteRequest(req)) return;
     socket.write('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
     socket.destroy();
   });

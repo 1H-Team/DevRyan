@@ -3,6 +3,7 @@ import { once } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createFreeZenCooldowns } from '@openchamber/shared-runtime';
 import { createGitZenTextTransport } from './zen-text.js';
+import { SESSION_MODEL_TEXT_ADVERTISE_ONLY_PATTERN } from '../opencode/session-model-text.js';
 import { generateCommitMessageDirect } from './commit-message.js';
 import { generatePullRequestDescriptionDirect } from './pr-description.js';
 
@@ -64,10 +65,12 @@ describe('native OpenCode Git generation transport', () => {
     const result = await generate(kind, { onAttempt: (attempt) => attempts.push(attempt) });
     expect(result._generation).toMatchObject({ model: 'c', attempts: 3 });
     expect(attempts.map(({ reason }) => reason)).toEqual(['rate_limited', 'invalid_output', undefined]);
+    const helperPermission = [
+      { permission: '*', pattern: '*', action: 'deny' },
+      { permission: '*', pattern: SESSION_MODEL_TEXT_ADVERTISE_ONLY_PATTERN, action: 'deny' },
+    ];
     expect(calls.filter(({ path }) => path === '/session').map(({ body }) => body.permission)).toEqual([
-      [{ permission: '*', pattern: '*', action: 'deny' }],
-      [{ permission: '*', pattern: '*', action: 'deny' }],
-      [{ permission: '*', pattern: '*', action: 'deny' }],
+      helperPermission, helperPermission, helperPermission,
     ]);
     expect(calls.filter(({ method }) => method === 'DELETE').map(({ path }) => path)).toEqual(['/session/ses_1', '/session/ses_2', '/session/ses_3']);
     expect(calls.every(({ directory }) => directory === '/isolated/fixture')).toBe(true);
@@ -85,5 +88,21 @@ describe('native OpenCode Git generation transport', () => {
       'POST /session', 'POST /session/ses_1/message', 'POST /session/ses_1/abort', 'DELETE /session/ses_1',
       'POST /session', 'POST /session/ses_2/message', 'DELETE /session/ses_2',
     ]);
+  });
+
+  it.each(['commit', 'pr'])('%s stops after one free-tier policy rejection', async (kind) => {
+    message = (res) => res.end(JSON.stringify({ info: { role: 'assistant', error: { name: 'APIError', data: { statusCode: 403, message: "Error from provider (Console): OpenCode's free tier can only be used from within OpenCode" } } }, parts: [] }));
+    const cooldowns = createFreeZenCooldowns();
+    const attempts = [];
+    const outcome = await generate(kind, { cooldowns, onAttempt: (attempt) => attempts.push(attempt) }).catch((error) => error);
+    expect(attempts.map(({ model, reason }) => [model, reason])).toEqual([['a', 'free_tier_rejected']]);
+    expect(cooldowns.snapshot()).toEqual([]);
+    expect(calls.filter(({ path }) => path === '/session')).toHaveLength(1);
+    if (kind === 'commit') {
+      expect(outcome._generation).toMatchObject({ source: 'local_fallback', providerOutcome: 'free_tier_rejected', attempts: 1 });
+      expect(outcome._generation.warning).toBe('Free Zen rejected the request; created a local commit draft');
+    } else {
+      expect(outcome).toMatchObject({ code: 'FREE_ZEN_EXHAUSTED', attempts: 1 });
+    }
   });
 });

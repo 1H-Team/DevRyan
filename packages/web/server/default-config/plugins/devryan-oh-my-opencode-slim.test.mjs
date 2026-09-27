@@ -17,7 +17,7 @@ const createInstalledPlugin = (source) => {
   const packageRoot = path.join(temporaryRoot, 'node_modules', 'oh-my-opencode-slim');
   const entrypointPath = path.join(packageRoot, 'dist', 'index.js');
   fs.mkdirSync(path.dirname(entrypointPath), { recursive: true });
-  fs.writeFileSync(path.join(packageRoot, 'package.json'), JSON.stringify({ name: 'oh-my-opencode-slim', version: '2.2.18', type: 'module' }));
+  fs.writeFileSync(path.join(packageRoot, 'package.json'), JSON.stringify({ name: 'oh-my-opencode-slim', version: '2.2.24', type: 'module' }));
   fs.writeFileSync(entrypointPath, source);
 };
 

@@ -54,8 +54,11 @@ export function getSettingsNavigationColumnClassName(): string {
   return 'relative flex h-full min-h-0 w-[216px] min-w-[216px] max-w-[216px] flex-col overflow-hidden border-r';
 }
 
+// The Plugins hub tabs share one width so switching tabs does not shift the layout.
+const WIDE_PAGE_SIDEBAR_SLUGS: ReadonlySet<SettingsPageSlug> = new Set(['plugins', 'skills.installed', 'mcp']);
+
 export function getSettingsPageSidebarClassName(slug: SettingsPageSlug): string {
-  if (slug === 'skills.installed') {
+  if (WIDE_PAGE_SIDEBAR_SLUGS.has(slug)) {
     return 'w-[334px] min-w-[334px] max-w-[334px]';
   }
 

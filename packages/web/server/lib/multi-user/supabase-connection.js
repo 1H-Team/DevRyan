@@ -157,6 +157,11 @@ export async function createSupabaseConnection({ config, fetchImpl = fetch, now 
     get configured() { return configured; },
     get admissionPaused() { return restartPending() || !effectiveEnabled; },
     authenticateLocalOwner, ownerPrincipal, setOwnerCookie,
+    // The cloud account enrolled as this host's owner (from an authenticated
+    // managed administrator), if any. A bootstrapped local owner has none.
+    enrolledCloudOwnerId: () => (owner?.principal?.scope === 'managed' && typeof owner.principal.id === 'string'
+      ? owner.principal.id
+      : null),
     onAuthorizationChange(listener) { authorizationListeners.add(listener); return () => authorizationListeners.delete(listener); },
     // Called only by the host's in-process handle or the filesystem-owner
     // bootstrap exchange. Merely serving a loopback HTTP request never calls it.

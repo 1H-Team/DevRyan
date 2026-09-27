@@ -48,6 +48,9 @@ import {
   type ManagedQuotaProviderId,
 } from './ManagedQuotaCredentials';
 import type { ModelMetadata } from '@/types';
+import { parseUsageOnlyProviderSelection } from '@/lib/quota';
+import { ProviderUsageSection, UsageOnlyProviderView } from './ProviderUsage';
+import { useUsageOnlySelectionAvailable } from './useProviderUsage';
 import { useI18n } from '@/lib/i18n';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import {
@@ -211,12 +214,16 @@ export const ProvidersPage: React.FC = () => {
     reconcileAppliedRevision(appliedRevision);
   }, [appliedRevision, reconcileAppliedRevision]);
 
+  const usageOnlyQuotaProviderId = parseUsageOnlyProviderSelection(selectedProviderId);
+  const usageOnlySelectionAvailable = useUsageOnlySelectionAvailable(usageOnlyQuotaProviderId);
+
   React.useEffect(() => {
     if (selectedProviderId === ADD_PROVIDER_ID) return;
+    if (usageOnlySelectionAvailable) return;
     if (pendingConnections[selectedProviderId]) return;
     if (providers.some((provider) => provider.id === selectedProviderId)) return;
     setSelectedProvider(providers[0]?.id ?? ADD_PROVIDER_ID);
-  }, [providers, pendingConnections, selectedProviderId, setSelectedProvider]);
+  }, [providers, pendingConnections, selectedProviderId, setSelectedProvider, usageOnlySelectionAvailable]);
 
   React.useEffect(() => {
     let isMounted = true;
@@ -1192,6 +1199,10 @@ export const ProvidersPage: React.FC = () => {
     return <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">{connectionStatus}</div>;
   }
 
+  if (usageOnlyQuotaProviderId && usageOnlySelectionAvailable) {
+    return <UsageOnlyProviderView quotaProviderId={usageOnlyQuotaProviderId} />;
+  }
+
   if (!isAddMode && providers.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -1535,6 +1546,8 @@ export const ProvidersPage: React.FC = () => {
             </p>
           </div>
         </div>
+
+        <ProviderUsageSection providerId={selectedProvider.id} />
 
         {/* Authentication */}
         <div className="mb-8">

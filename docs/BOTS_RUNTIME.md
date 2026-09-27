@@ -1,7 +1,9 @@
 # Production Bots runtime
 
-Production Bots is a Docker-backed, Supabase-controlled governed-computer
-runtime. The macOS Electron app is its primary client; after background Bots are
+Production Bots is a Docker-backed governed-computer runtime. Bots, their
+history and their encrypted objects live in a local PostgreSQL catalog on the
+workstation (see [Local Bot catalog](#local-bot-catalog)); Supabase, when
+configured, only signs in and authorizes shared users. The macOS Electron app is its primary client; after background Bots are
 enabled, the same signed Electron executable also runs as a windowless
 launchd-managed runtime service. This document is the operator runbook and
 security-boundary reference. The package-level documents linked throughout
@@ -53,13 +55,13 @@ following prerequisites must all be true:
 1. DevRyan is installed as the local macOS Electron app. A migrated deployment
    may be owned by its registered background runtime while the UI is closed;
    Docker mutations remain inside the signed local runtime boundary. The legacy Tauri shell does not own this feature.
-2. Supabase multi-user mode is configured and every repository migration,
-   through `supabase/migrations/20260908182901_bot_memory_automatic_recovery.sql`,
-   is deployed. A schema-cache miss returns `migration_required` with
-   `requiredMigration: "20260908182901"`; it must never fall back to local
-   plaintext state. The required marker is a minimum: newer 14-digit markers
-   are accepted, and Bot migrations remain backward-compatible for at least one
-   desktop release so database-first rollout does not disable older clients.
+2. The local Bot catalog is installed and ready (`catalogAvailable: true`).
+   Electron applies the reviewed migration inventory from `packages/bot-db`
+   itself; a catalog whose schema is newer than this app, or whose identity
+   does not match the recorded installation, is refused and reported as a
+   recovery state rather than reinitialized. Supabase is optional: the
+   workstation owner keeps Bot access while it is off, unreachable or revoked;
+   shared users need a current Supabase authorization.
 3. Electron `safeStorage` is available so the deployment encryption key can be
    OS-sealed.
 4. Docker Desktop is installed and the Docker Engine is running. Give the
@@ -81,22 +83,146 @@ following prerequisites must all be true:
    be ready.
 
 The capability states are deliberately distinct:
-`supabase_unavailable`, `migration_required`, `unsupported_host`,
+`bots_starting`, `bots_maintenance`, `database_recovery_required`,
+`catalog_unavailable`, `migration_required`, `unsupported_host`,
 `encryption_unavailable`, `docker_not_installed`, `docker_stopped`,
 `setup_required`, `image_update_available`, `index_rebuilding`,
-`runtime_degraded`, `desktop_host_unavailable`, and `healthy`. The UI enables
+`runtime_degraded`, `desktop_host_unavailable`, and `healthy`. Every response
+also carries `catalogAvailable` (the catalog can be read and written) and
+`database: { state, code }` (`starting`, `ready`, `unavailable`,
+`setup_required`, `update_required`, `recovery_required`, `maintenance`), so
+the catalog and Docker execution are reported independently; `available`
+means both. The UI enables
 new sends only while the required capabilities are healthy;
 the server still durably preserves an authorized request if runtime health
 changes between the last capability check and admission, then exposes any safe
 startup failure on that run.
+
+## Local Bot catalog
+
+The Bot catalog is a PostgreSQL 17 cluster plus a PostgREST view of it, both
+shipped as signed Bot runtime images (`database`, `rest`) next to the six
+execution images. They run as the `database` and `database-rest` Compose
+services in `docker/bots/compose.yml`:
+
+- PostgreSQL has no network (`network_mode: none`), listens only on a private
+  socket volume with peer authentication, runs read-only as uid 999, and is
+  created with data checksums and the builtin `C.UTF-8` locale.
+- PostgREST reaches it over that socket as the `authenticator` role only,
+  publishes one ephemeral `127.0.0.1` port, has no anonymous role and no
+  OpenAPI, and accepts only short-lived service tokens (audience
+  `devryan-bots-local`) that Electron mints from the deployment key. Tokens and
+  the endpoint never leave the Electron/server process.
+- The data volume `<namespace>-bot-database-data` is created by Electron with
+  ownership labels (deployment, role, nonce) before PostgreSQL first starts;
+  Compose never creates it. A volume that is missing, foreign, or whose cluster
+  identity (`system_identifier` + installation nonce) differs from the recorded
+  expectation is a `recovery_required` state, never a silent re-initialization.
+
+Lifecycle order is fixed: verify images → inspect the database → back up and
+migrate → expose REST → start execution services. Migrations are the
+byte-for-byte reviewed inventory in `packages/bot-db` (checksum drift is
+rejected); a schema newer than the app is refused, and rolling back to a
+release that kept Bots in Supabase is refused. The server reaches the catalog
+through a narrow transport (`packages/web/server/lib/bots/local-catalog.js`)
+that reuses the existing REST/RPC client, never replays an ambiguous mutation,
+and retries only undelivered requests. Encrypted objects are files under
+`<data>/bots/objects` (`local-object-storage.js`). Catalog reads never install
+images; an outage closes new admissions until the catalog is ready again.
+
+Catalog settings retry transient startup/read failures with capped backoff and
+refresh when catalog readiness arrives. A refresh failure keeps already loaded
+Bots visible; authentication and recovery errors require user action. Failed
+catalog reads record `bot.catalog.read_failed` with only route, status, error
+code and catalog state in the diagnostic journal.
+
+Hosted-import status includes `checking` while its background discovery runs.
+Bot Storage polls only while discovery or a storage operation is in progress;
+hosted discovery failures do not block local Bots. A successful empty local
+catalog does not establish that older hosted Bots are gone: check import status
+and verified backups before choosing a recovery action.
+
+### Identity and access
+
+The workstation owner has an immutable `localBotOwnerId`, created once in the
+host's encrypted vault. The native shell mints a Bot-scoped owner session
+(cookie `devryan_bot_owner`) that is accepted only on direct-local requests and
+only for Bot APIs. Supabase sign-in, enrollment or revocation never changes it,
+and a managed sign-in never gains owner authority. Bots imported from a hosted
+catalog carry a sparse mapping to their verified source owner, so the owner acts
+as that identity for those Bots only (never inferred from e-mail). Every Bot
+projection includes `viewerUserId`, the identity the viewer acts as for that
+Bot; the UI compares ownership per Bot, never against one global id. Shared
+users need a current Supabase authorization; without it their autonomous work
+stays dormant. Tunnel grants keep their existing restrictions.
+
+### Maintenance, backup and recovery
+
+Backup, Restore, Start Empty and import run under a reversible maintenance
+fence: new admissions close, writes are fenced and drained (a busy catalog
+returns `bots_maintenance_busy` instead of interrupting work), and admissions
+resume in a `finally`. After a replacement the transport and object storage are
+rebuilt.
+
+- **Backups** run daily and before every migration, import, Restore and Start
+  Empty. A backup unit holds the database dump, objects, vaults, signing keys,
+  owner mappings and configuration (never sessions or tunnel grants), each
+  encrypted as a standard AES-256-GCM stream under an HKDF domain-separated key
+  and listed in an HMAC-authenticated manifest in `<data>/bots/backups/<id>`.
+  Seven verified daily backups and every pre-change backup from the last 30
+  days are kept; the last verified backup is never deleted.
+- **Restore** authenticates the unit before `pg_restore`, restores into an
+  inaccessible candidate database, validates every envelope, object and vault
+  record, persists an activation hold, then swaps it in through a journaled
+  replacement (`<data>/bots/runtime/replacement.v1.json`) that is rolled back
+  or completed after a crash before REST is exposed.
+- **Start Empty** (confirmation `START EMPTY`) retires the current database and
+  objects instead of deleting them, so the evidence stays available.
+- **Activation hold**: restored or imported Bots do nothing autonomous
+  (routines, Telegram, deliveries) until the owner resumes them.
+
+The owner reaches these through `GET/POST /api/bots/database*`, registered
+before the catalog readiness gate. The UI (`BotCatalogPanel`) shows one
+recovery control per state: Restore the latest verified backup (or Start Empty
+when none exists), Resume Bots, Resume Import, or Import Bots.
+
+### Importing hosted Bots
+
+An empty local catalog never reads as deleted hosted Bots: the owner sees that
+hosted Bots can be imported. Import is offline and owner-confirmed (other
+writers stopped); it never writes to the cloud:
+
+1. Export uses a GET-only allowlisted reader with bounded (32 MiB) responses;
+   pages are stored encrypted and checkpointed with raw numerics preserved. A
+   hosted quota response (402) leaves the import `blocked` and resumable.
+2. Content fingerprints are re-verified before loading; any drift aborts with
+   `bot_import_source_changed`.
+3. Rows load into a source database at the reviewed hosted schema, which is
+   then migrated locally. Constraints and validation triggers stay on; only
+   memory-extraction enqueue and avatar-restore `updated_at` triggers are
+   disabled, cyclic foreign keys are deferred, and avatars are restored last.
+4. The merge runs into a restored copy of the local catalog after a pre-import
+   backup. Bot ids must be disjoint (a conflict aborts with
+   `bot_import_bot_conflict` and changes nothing); audit ids and run queue
+   sequences are regenerated above the local maxima in source order; uncertain
+   deliveries become `uncertain` and are never replayed; integrations whose
+   vault record is missing are marked disconnected.
+5. Inventories are verified, the activation hold is persisted, and the
+   candidate is committed through the journaled replacement.
+
+Only an interrupted or quota-blocked import resumes from its checkpoint; a
+failed one (for example after the hosted catalog changed) starts over from a
+fresh export when retried. A failed Restore or import never lifts an activation
+hold that was already in place.
 
 ## Trust boundaries
 
 | Boundary | Authority and data | Deliberate limit |
 | --- | --- | --- |
 | Electron runtime owner | The foreground app or fenced launchd service owns the OS-sealed key, signed image manifest, Docker executable, fixed Compose project, setup/repair/update/rollback, and exact runtime paths. | Renderer and HTTP callers cannot choose Docker arguments, images, mounts, networks, containers, or volume names. Exactly one generation owns a data directory. |
-| Web/runtime service | Owns authenticated policy, Supabase access, encryption/decryption, private gateway capabilities, adapter-neutral run dispatch, recovery, routines, memory, computer supervision, and purge. | It receives only fixed typed Docker callbacks and never receives the Docker socket. Plaintext is transient. |
-| Supabase | Stores the control plane, immutable encrypted records, and ciphertext in the private `devryan-bot-objects` bucket. Database functions enforce atomic claims and cross-row invariants. | Storage receives no plaintext object bytes or unwrapped object keys. Public projections omit envelopes, object names, host paths, and execution segment IDs. |
+| Web/runtime service | Owns authenticated policy, local catalog access, encryption/decryption, private gateway capabilities, adapter-neutral run dispatch, recovery, routines, memory, computer supervision, and purge. | It receives only fixed typed Docker callbacks and never receives the Docker socket. Plaintext is transient. |
+| Local Bot catalog | PostgreSQL stores the control plane and immutable encrypted records; encrypted objects are files under `bots/objects`. Database functions enforce atomic claims and cross-row invariants. PostgREST is loopback-only with short-lived host-minted tokens. | No network for PostgreSQL; no anonymous REST role. Storage receives no plaintext object bytes or unwrapped object keys. Public projections omit envelopes, object names, host paths, and execution segment IDs. |
+| Supabase (optional) | Signs in and authorizes shared users; the source of a one-time, offline hosted-catalog import. | Never stores Bots, history or objects for this workstation; the owner's Bot access does not depend on it. |
 | Bot engine proxy | Is the only container that mounts `/var/run/docker.sock`; it validates the supervisor's eleven version-normalized Engine operations, request bodies, owned labels, image digests, networks, volumes, query parameters, and response bounds. | The socket remains root-equivalent, but supervisor compromise no longer directly grants it. Unknown API versions, upgrades, encoded paths, arbitrary exec/create options, and unowned resources fail closed. |
 | Bot supervisor | Translates eleven authenticated domain verbs into calls to the engine proxy and carries scoped OpenCode traffic through a revocable in-memory capability. | It has no Docker socket and cannot widen the engine-proxy schema, images, resources, or ownership scope. An unavailable engine proxy disables lifecycle mutation. |
 | Reasoning adapter | New configurations select immutable OpenCode reasoning. The dispatcher consumes one ordered normalized event contract and persists a generic execution handle. | An adapter can reason but cannot act. Every tool intent must traverse the local gateway; adapter switching after run admission is forbidden. The AG-UI adapter is retained only for already-deployed compatibility. |
@@ -509,13 +635,14 @@ failures retain the bounded startup retry path.
 
 Before first setup:
 
-1. Deploy the Supabase migrations using the deployment's normal migration
-   process and confirm `20260830150000` is present in the target database.
+1. Nothing to deploy for the catalog: Electron creates and migrates the local
+   Bot database during Setup. (Supabase migrations matter only for shared-user
+   authorization and for a hosted-catalog import.)
 2. Start Docker Desktop and wait for `docker info` to succeed.
 3. Install a packaged DevRyan build containing the release-generated
    `bot-runtime/images.release.json`. Never hand-author or bypass the signature,
    digest, SBOM, provenance, or architecture checks.
-   The six `ghcr.io/1h-team/devryan-bot-*` container packages must be public:
+   The eight `ghcr.io/1h-team/devryan-bot-*` container packages must be public:
    packaged desktop installs intentionally carry no registry credential and pull
    only the immutable platform digests in that manifest. Release CI verifies the
    index plus both platform digests through an empty Docker credential directory
@@ -530,7 +657,7 @@ The operations have fixed meanings:
 - **Setup** pulls/verifies the selected immutable release images, creates the
   fixed Compose services and named volumes, and writes
   `bots/runtime/installation.v1.json` only after health checks pass.
-  Source-development builds instead inspect all six fixed local `:dev` images
+  Source-development builds instead inspect all eight fixed local `:dev` images
   and fail before Compose when one is missing; they never pull mutable
   development tags.
 - **Repair** reasserts the same desired signed manifest and fixed topology. It
@@ -589,8 +716,8 @@ authorized message and queued run may already have been accepted atomically;
 runtime preparation then records an explicit terminal startup failure instead
 of losing the turn. A failure classified as pre-execution and retryable can be
 requeued only through the same-run Retry contract. Nothing is silently replayed
-when Docker returns, and existing authorized history remains readable from
-Supabase.
+when Docker returns. The local catalog itself runs in Docker, so while Docker
+is stopped Bot history is unavailable until it returns; nothing is lost.
 
 If transport is lost after an action began, a read becomes `failed` and may be
 retried as a new action. A write becomes `unknown`, moves its run to
@@ -719,9 +846,19 @@ Bot-owned local paths are:
 - `bots/vault/credentials.v1.json`: the OS-key encrypted connector/provider
   credential vault;
 - `bots/vault/environment-secrets.v1.json`: Bot-wide values encrypted with the
-  deployment key; Supabase stores metadata and a local vault reference only;
+  deployment key; the catalog stores metadata and a local vault reference only;
 - `bots/runtime/installation.v1.json`: current, staged, and previous runtime
   manifest state;
+- `bots/runtime/database.v1.json`: the recorded catalog cluster expectation
+  (volume nonce, cluster identity, schema head), written before REST is exposed;
+- `bots/objects/`: encrypted Bot object files;
+- `bots/backups/<id>/`: verified catalog backup units (HMAC manifest plus
+  encrypted streams); `bots/restore/` stages candidates and never serves them;
+- `bots/runtime/replacement.v1.json`: the journal of an in-progress Restore,
+  Start Empty or import replacement;
+- `bots/runtime/activation-hold.v1.json`: present while restored or imported
+  Bots wait for the owner to resume them;
+- `bots/import/`: encrypted, checkpointed pages of an in-progress hosted import;
 - `runtime-service/owner.v1.lock`: private single-owner generation fence for
   the current data directory;
 - `runtime-service/owner-recovery.v2.json`: private cross-boot damaged-file
@@ -749,10 +886,11 @@ deployment/Bot/scope labels. Shared files use
 `<channelId>/<messageId>/<sanitizedFilename>`, remain mapped in
 `bot_shared_files`, and are ready only after exact size/hash verification.
 They survive container replacement and ordinary restarts but are removed by an
-explicit Shared/all reset or Bot purge. Supabase retains the
+explicit Shared/all reset or Bot purge. The local catalog retains the
 authoritative control plane and encrypted objects. Do not copy these pieces
 independently as a backup: the wrapped keys, database identities, object
-metadata, and volume ownership must remain consistent.
+metadata, and volume ownership must remain consistent. Use the catalog backups
+described in [Maintenance, backup and recovery](#maintenance-backup-and-recovery).
 
 Bot chat indexes the selected channel's Shared mappings by message. Bot-authored
 PNG, JPEG, GIF, and WebP mappings create inline stable placeholders immediately,
@@ -772,7 +910,7 @@ to the computer Shared volume is asynchronous and may be retried without making
 the inline image disappear or creating a duplicate. Secure export/upload
 failure ends the run visibly as `bot_image_publication_failed`.
 
-Each Supabase object uses a fresh AES-256-GCM key; the deployment key wraps that
+Each Bot object uses a fresh AES-256-GCM key; the deployment key wraps that
 object key. Bot memory, Library provenance, historical evaluation inputs,
 credentials, and other sensitive control-plane values use versioned
 deployment-key envelopes. Historical evaluation records remain preserved for

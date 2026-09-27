@@ -1,6 +1,7 @@
 # Release builds and artifact handoffs
 
-The release workflow builds one web artifact, six Bot images with at most three
+The release workflow builds one web artifact, eight Bot images (six execution
+images plus the local catalog's `database` and `rest`) with at most three
 image jobs running concurrently, and one Apple silicon (arm64) Electron
 preparation. Final Electron packaging waits for all three verified inputs.
 Intel (x64) macOS builds were dropped in 1.2.10 to shorten the release; the
@@ -33,13 +34,16 @@ every workspace's build script. Full validation remains separate from compilatio
 
 1. Validate release metadata and create the draft release.
 2. In parallel, validate UI types and compile web assets once, prepare arm64 native dependencies and
-   helpers, and build the six multi-platform images. Image jobs use individual
+   helpers, and build the eight multi-platform images. Image jobs use individual
    GitHub Actions cache scopes with full intermediate-layer export.
 3. Each image job signs its index and both platform digests and emits one result.
-   The aggregation job requires six distinct results for the same version,
+   The aggregation job requires eight distinct results for the same version,
    revision, repository, OpenCode/schema versions and plugin hash. It validates
    platform/attestation completeness, anonymous pull access and production
-   topology health before exposing the complete manifest.
+   topology health before exposing the complete manifest. The topology smoke
+   runs in an isolated `devryan-smoke-<hex>` namespace, creates, initializes and
+   migrates the catalog volume the way Electron does, and waits for the fixed services,
+   `database` and `database-rest` to become healthy.
 4. npm consumes the web artifact, bundles private workspace runtime packages, and publishes the exact verified tarball.
    Electron consumes web assets, prepared native files, and the complete Bot
    manifest, then runs all existing packaged artifact gates.

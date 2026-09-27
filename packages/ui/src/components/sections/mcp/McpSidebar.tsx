@@ -8,7 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { RiAddLine, RiDeleteBinLine, RiMore2Line, RiPlugLine, RiRefreshLine, RiServerLine, RiGlobalLine } from '@remixicon/react';
+import { RiDeleteBinLine, RiMore2Line, RiPlugLine, RiRefreshLine, RiServerLine, RiGlobalLine } from '@remixicon/react';
 import { useMcpConfigStore, type McpDraft, type McpServerConfig } from '@/stores/useMcpConfigStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useMcpStore } from '@/stores/useMcpStore';
@@ -16,8 +16,11 @@ import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { isMobileDeviceViaCSS } from '@/lib/device';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui';
-import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
+import { SettingsEmptyState } from '@/components/sections/shared/SettingsEmptyState';
 import { SettingsProjectSelector } from '@/components/sections/shared/SettingsProjectSelector';
+import { SettingsSidebarHeader } from '@/components/sections/shared/SettingsSidebarHeader';
+import { SettingsSidebarLayout } from '@/components/sections/shared/SettingsSidebarLayout';
+import { SidebarGroup } from '@/components/sections/shared/SidebarGroup';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -61,9 +64,88 @@ const StatusDot: React.FC<{ tone: StatusTone; enabled: boolean }> = ({ tone, ena
   );
 };
 
+const McpServerListItem: React.FC<{
+  server: McpServerConfig;
+  status: string | undefined;
+  selected: boolean;
+  menuOpen: boolean;
+  onMenuOpenChange: (open: boolean) => void;
+  onSelect: () => void;
+  onDelete: () => void;
+}> = ({ server, status, selected, menuOpen, onMenuOpenChange, onSelect, onDelete }) => {
+  const { t } = useI18n();
+  const isMobile = isMobileDeviceViaCSS();
+  const displayName = formatMcpServerDisplayName(server.name);
+
+  return (
+    <div
+      className={cn(
+        'group relative flex items-center rounded-md px-1.5 py-0.5 transition-all duration-200 select-none',
+        selected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover',
+      )}
+      onContextMenu={!isMobile ? (e) => {
+        e.preventDefault();
+        onMenuOpenChange(true);
+      } : undefined}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        className="flex min-w-0 flex-1 flex-col gap-0 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+      >
+        <div className="flex items-center gap-1.5">
+          <StatusDot tone={statusToneFromMcp(status)} enabled={server.enabled} />
+          <span className="typography-ui-label font-normal truncate text-foreground" title={server.name}>
+            {displayName}
+          </span>
+          <span title={server.type === 'local'
+            ? t('settings.mcp.sidebar.serverType.localTitle')
+            : t('settings.mcp.sidebar.serverType.remoteTitle')}
+          >
+            {server.type === 'local' ? (
+              <RiServerLine className="h-3 w-3 text-muted-foreground/60 flex-shrink-0" />
+            ) : (
+              <RiGlobalLine className="h-3 w-3 text-muted-foreground/60 flex-shrink-0" />
+            )}
+          </span>
+        </div>
+        <div className="typography-micro text-muted-foreground/60 truncate leading-tight pl-3.5">
+          {server.type === 'local'
+            ? (server as { command?: string[] }).command?.join(' ') ?? ''
+            : (server as { url?: string }).url ?? ''}
+        </div>
+      </button>
+
+      <DropdownMenu open={menuOpen} onOpenChange={onMenuOpenChange}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-6 w-6 flex-shrink-0 -mr-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+            aria-label={t('settings.mcp.sidebar.actions.serverMenuAria', { name: displayName })}
+          >
+            <RiMore2Line className="h-3.5 w-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-fit min-w-20">
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="text-destructive focus:text-destructive"
+          >
+            <RiDeleteBinLine className="h-4 w-4 mr-px" />
+            {t('settings.common.actions.delete')}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+};
+
 export const McpSidebar: React.FC<McpSidebarProps> = ({ onItemSelect }) => {
   const { t } = useI18n();
-  const bgClass = 'bg-background';
 
   const { mcpServers, selectedMcpName, setSelectedMcp, setMcpDraft, loadMcpConfigs, deleteMcp } =
     useMcpConfigStore(useShallow((s) => ({
@@ -168,208 +250,70 @@ export const McpSidebar: React.FC<McpSidebarProps> = ({ onItemSelect }) => {
     setIsDeleting(false);
   };
 
-  return (
-    <div className={cn('flex h-full flex-col', bgClass)}>
-      <div className="border-b px-3 pt-4 pb-3">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-base font-semibold text-foreground">{t('settings.mcp.sidebar.title')}</h2>
-          <button
-            type="button"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            disabled={isRefreshingStatus}
-            onClick={handleRefresh}
-            aria-label={t('settings.mcp.sidebar.actions.refreshStatusAria')}
-            title={t('settings.mcp.sidebar.actions.refreshStatusTitle')}
-          >
-            <RiRefreshLine className={cn('h-4 w-4', isRefreshingStatus && 'animate-spin')} />
-          </button>
-        </div>
-        <SettingsProjectSelector className="mb-3" />
-        <div className="flex items-center justify-between gap-2">
-          <span className="typography-meta text-muted-foreground">
-            {t('settings.mcp.sidebar.total', { count: mcpServers.length })}
-          </span>
-          <Button size="sm"
-            variant="ghost"
-            className="h-7 w-7 px-0 -my-1 text-muted-foreground"
-            onClick={handleCreateNew}
-            title={t('settings.mcp.sidebar.actions.addServerTitle')}
-          >
-            <RiAddLine className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </div>
+  const renderServerGroup = (label: string, servers: McpServerConfig[]) => (
+    <SidebarGroup label={label} count={servers.length} storageKey="mcp">
+      {servers.map((server) => (
+        <McpServerListItem
+          key={server.name}
+          server={server}
+          status={mcpStatus[server.name]?.status}
+          selected={selectedMcpName === server.name}
+          menuOpen={openMenuMcp === server.name}
+          onMenuOpenChange={(open) => setOpenMenuMcp(open ? server.name : null)}
+          onSelect={() => {
+            setSelectedMcp(server.name);
+            setMcpDraft(null);
+            onItemSelect?.();
+          }}
+          onDelete={() => setDeleteTarget(server)}
+        />
+      ))}
+    </SidebarGroup>
+  );
 
-      {/* List */}
-      <ScrollableOverlay outerClassName="flex-1 min-h-0" className="space-y-1 px-3 py-2 overflow-x-hidden">
+  return (
+    <>
+      <SettingsSidebarLayout
+        variant="background"
+        header={(
+          <SettingsSidebarHeader
+            title={t('settings.mcp.sidebar.title')}
+            titleActions={(
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground"
+                disabled={isRefreshingStatus}
+                onClick={handleRefresh}
+                aria-label={t('settings.mcp.sidebar.actions.refreshStatusAria')}
+                title={t('settings.mcp.sidebar.actions.refreshStatusTitle')}
+              >
+                <RiRefreshLine className={cn('h-4 w-4', isRefreshingStatus && 'animate-spin')} />
+              </Button>
+            )}
+            countLabel={t('settings.mcp.sidebar.total', { count: mcpServers.length })}
+            onAdd={handleCreateNew}
+            addButtonLabel={t('settings.mcp.sidebar.actions.addServerTitle')}
+            addButtonTitle={t('settings.mcp.sidebar.actions.addServerTitle')}
+          >
+            <SettingsProjectSelector />
+          </SettingsSidebarHeader>
+        )}
+      >
         {mcpServers.length === 0 ? (
-          <div className="py-12 px-4 text-center text-muted-foreground">
-            <RiPlugLine className="mx-auto mb-3 h-10 w-10 opacity-50" />
-            <p className="typography-ui-label font-medium">{t('settings.mcp.sidebar.empty.title')}</p>
-            <p className="typography-meta mt-1 opacity-75">{t('settings.mcp.sidebar.empty.description')}</p>
-          </div>
+          <SettingsEmptyState
+            icon={RiPlugLine}
+            title={t('settings.mcp.sidebar.empty.title')}
+            description={t('settings.mcp.sidebar.empty.description')}
+          />
         ) : (
           <>
-            {projectServers.length > 0 && (
-              <>
-                <div className="px-2 pb-1.5 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t('settings.mcp.sidebar.group.projectServers')}
-                </div>
-                {projectServers.map((server) => {
-                  const runtimeStatus = mcpStatus[server.name];
-                  const tone = statusToneFromMcp(runtimeStatus?.status);
-                  const isSelected = selectedMcpName === server.name;
-                  const isMobile = isMobileDeviceViaCSS();
-
-                  return (
-                    <div
-                      key={server.name}
-                      className={cn(
-                        'group relative flex items-center rounded-md px-1.5 py-1 transition-all duration-200 select-none',
-                        isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover',
-                      )}
-                      onContextMenu={!isMobile ? (e) => {
-                        e.preventDefault();
-                        setOpenMenuMcp(server.name);
-                      } : undefined}
-                    >
-                      <button
-                        onClick={() => {
-                          setSelectedMcp(server.name);
-                          setMcpDraft(null);
-                          onItemSelect?.();
-                        }}
-                        className="flex min-w-0 flex-1 flex-col gap-0 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-                      >
-                        <div className="flex items-center gap-2">
-                          <StatusDot tone={tone} enabled={server.enabled} />
-                          <span className="typography-ui-label font-normal truncate text-foreground" title={server.name}>
-                            {formatMcpServerDisplayName(server.name)}
-                          </span>
-                          <span title={server.type === 'local'
-                            ? t('settings.mcp.sidebar.serverType.localTitle')
-                            : t('settings.mcp.sidebar.serverType.remoteTitle')}
-                          >
-                            {server.type === 'local' ? (
-                              <RiServerLine className="h-3 w-3 text-muted-foreground/60 flex-shrink-0" />
-                            ) : (
-                              <RiGlobalLine className="h-3 w-3 text-muted-foreground/60 flex-shrink-0" />
-                            )}
-                          </span>
-                        </div>
-                        <div className="typography-micro text-muted-foreground/60 truncate leading-tight pl-4">
-                          {server.type === 'local'
-                            ? (server as { command?: string[] }).command?.join(' ') ?? ''
-                            : (server as { url?: string }).url ?? ''}
-                        </div>
-                      </button>
-
-                      <DropdownMenu open={openMenuMcp === server.name} onOpenChange={(open) => setOpenMenuMcp(open ? server.name : null)}>
-                        <DropdownMenuTrigger asChild>
-                          <Button size="xs" variant="ghost" className="flex-shrink-0 -mr-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
-                            <RiMore2Line className="h-3.5 w-3.5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-fit min-w-20">
-                          <DropdownMenuItem
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeleteTarget(server);
-                            }}
-                            className="text-destructive focus:text-destructive"
-                          >
-                            <RiDeleteBinLine className="h-4 w-4 mr-px" />
-                            {t('settings.common.actions.delete')}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  );
-                })}
-              </>
-            )}
-
-            {userServers.length > 0 && (
-              <>
-                <div className="px-2 pb-1.5 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t('settings.mcp.sidebar.group.userServers')}
-                </div>
-                {userServers.map((server) => {
-                  const runtimeStatus = mcpStatus[server.name];
-                  const tone = statusToneFromMcp(runtimeStatus?.status);
-                  const isSelected = selectedMcpName === server.name;
-                  const isMobile = isMobileDeviceViaCSS();
-
-                  return (
-                    <div
-                      key={server.name}
-                      className={cn(
-                        'group relative flex items-center rounded-md px-1.5 py-1 transition-all duration-200 select-none',
-                        isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover',
-                      )}
-                      onContextMenu={!isMobile ? (e) => {
-                        e.preventDefault();
-                        setOpenMenuMcp(server.name);
-                      } : undefined}
-                    >
-                      <button
-                        onClick={() => {
-                          setSelectedMcp(server.name);
-                          setMcpDraft(null);
-                          onItemSelect?.();
-                        }}
-                        className="flex min-w-0 flex-1 flex-col gap-0 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-                      >
-                        <div className="flex items-center gap-2">
-                          <StatusDot tone={tone} enabled={server.enabled} />
-                          <span className="typography-ui-label font-normal truncate text-foreground" title={server.name}>
-                            {formatMcpServerDisplayName(server.name)}
-                          </span>
-                          <span title={server.type === 'local'
-                            ? t('settings.mcp.sidebar.serverType.localTitle')
-                            : t('settings.mcp.sidebar.serverType.remoteTitle')}
-                          >
-                            {server.type === 'local' ? (
-                              <RiServerLine className="h-3 w-3 text-muted-foreground/60 flex-shrink-0" />
-                            ) : (
-                              <RiGlobalLine className="h-3 w-3 text-muted-foreground/60 flex-shrink-0" />
-                            )}
-                          </span>
-                        </div>
-                        <div className="typography-micro text-muted-foreground/60 truncate leading-tight pl-4">
-                          {server.type === 'local'
-                            ? (server as { command?: string[] }).command?.join(' ') ?? ''
-                            : (server as { url?: string }).url ?? ''}
-                        </div>
-                      </button>
-
-                      <DropdownMenu open={openMenuMcp === server.name} onOpenChange={(open) => setOpenMenuMcp(open ? server.name : null)}>
-                        <DropdownMenuTrigger asChild>
-                          <Button size="xs" variant="ghost" className="flex-shrink-0 -mr-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
-                            <RiMore2Line className="h-3.5 w-3.5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-fit min-w-20">
-                          <DropdownMenuItem
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeleteTarget(server);
-                            }}
-                            className="text-destructive focus:text-destructive"
-                          >
-                            <RiDeleteBinLine className="h-4 w-4 mr-px" />
-                            {t('settings.common.actions.delete')}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  );
-                })}
-              </>
-            )}
+            {projectServers.length > 0 ? renderServerGroup(t('settings.mcp.sidebar.group.projectServers'), projectServers) : null}
+            {userServers.length > 0 ? renderServerGroup(t('settings.mcp.sidebar.group.userServers'), userServers) : null}
           </>
         )}
-      </ScrollableOverlay>
+      </SettingsSidebarLayout>
 
       {/* Delete confirm dialog */}
       <Dialog
@@ -399,7 +343,7 @@ export const McpSidebar: React.FC<McpSidebarProps> = ({ onItemSelect }) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 };
 

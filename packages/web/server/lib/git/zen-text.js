@@ -1,6 +1,10 @@
 import { generateTextWithSessionModel } from '../opencode/session-model-text.js';
 
-/** Zen's free tier requires OpenCode's native provider transport. */
+/**
+ * Zen's free tier requires OpenCode's native provider transport, and it rejects
+ * requests that carry no OpenCode tool definitions. Helpers therefore advertise
+ * the tools while the session permission still denies every call.
+ */
 export const createGitZenTextTransport = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, directory, agent }) => {
   let pending;
   return {
@@ -8,7 +12,7 @@ export const createGitZenTextTransport = ({ buildOpenCodeUrl, getOpenCodeAuthHea
       pending = generateTextWithSessionModel({
         buildOpenCodeUrl, getOpenCodeAuthHeaders, directory,
         providerID: 'opencode', modelID: zenModel, agent, prompt, timeoutMs, signal,
-        recoverOnError: false, denyTools: true,
+        recoverOnError: false, denyTools: true, advertiseDeniedTools: true,
       }).then((result) => {
         if (result.ok) return result.text;
         const error = new Error(result.reason === 'timeout' ? 'Zen generation timed out' : `Zen generation ${result.reason}`);

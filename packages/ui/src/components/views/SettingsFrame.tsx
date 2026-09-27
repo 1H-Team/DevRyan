@@ -23,9 +23,14 @@ import {
   type SettingsPageMeta,
 } from '@/lib/settings/metadata';
 import {
+  PLUGINS_SETTINGS_DESTINATION,
   SETTINGS_NAV_SECTIONS,
   getSettingsDestinationFallbackSlug,
+  getSettingsDestinationMemberSlugs,
+  getSettingsDestinationVisibleSlugs,
   getSettingsNavDestination,
+  getSettingsSupersedingSlug,
+  resolveSettingsTabSlug,
 } from '@/lib/settings/navigation';
 import { getSettingsNavIcon } from '@/lib/settings/navigation-icons';
 import {
@@ -232,18 +237,28 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
       ;
   }, [runtimeCtx, principal]);
 
+  const visibleSlugSet = React.useMemo(
+    () => new Set<string>(visiblePages.map((page) => page.slug)),
+    [visiblePages],
+  );
+
+  // Hidden pages fall back to a visible sibling; fallback-only pages (Usage)
+  // fold into their primary page once that page is visible.
+  const effectiveRequestedSlug = React.useMemo<SettingsPageSlug>(() => {
+    if (requestedSettingsSlug === 'home') return 'home';
+    if (visibleSlugSet.has(requestedSettingsSlug)) {
+      return getSettingsSupersedingSlug(requestedSettingsSlug, visibleSlugSet) ?? requestedSettingsSlug;
+    }
+    return getSettingsDestinationFallbackSlug(requestedSettingsSlug, visibleSlugSet) ?? 'home';
+  }, [requestedSettingsSlug, visibleSlugSet]);
+
   React.useEffect(() => {
-    if (requestedSettingsSlug === 'home' || visiblePages.some((page) => page.slug === requestedSettingsSlug)) {
+    if (effectiveRequestedSlug === requestedSettingsSlug) {
       return;
     }
-
-    const fallbackSlug = getSettingsDestinationFallbackSlug(
-      requestedSettingsSlug,
-      new Set(visiblePages.map((page) => page.slug)),
-    );
-    setSettingsPage(fallbackSlug ?? 'home');
-    if (!fallbackSlug) setMobileStage('nav');
-  }, [requestedSettingsSlug, setSettingsPage, visiblePages]);
+    setSettingsPage(effectiveRequestedSlug);
+    if (effectiveRequestedSlug === 'home') setMobileStage('nav');
+  }, [effectiveRequestedSlug, requestedSettingsSlug, setSettingsPage]);
 
   const groupedVisiblePages = React.useMemo(() => {
     const visiblePageBySlug = new Map(visiblePages.map((page) => [page.slug, page]));
@@ -254,22 +269,20 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
         destinations: section.destinations
           .map((destination) => ({
             ...destination,
-            pages: destination.slugs
+            pages: getSettingsDestinationVisibleSlugs(destination, visibleSlugSet)
               .map((slug) => visiblePageBySlug.get(slug))
               .filter((page): page is SettingsPageMeta => Boolean(page)),
           }))
           .filter((destination) => destination.pages.length > 0),
       }))
       .filter((section) => section.destinations.length > 0);
-  }, [visiblePages]);
+  }, [visiblePages, visibleSlugSet]);
   const preloadSlugs = React.useMemo(
     () => visiblePages.map((page) => page.slug),
     [visiblePages],
   );
   const { displayedSlug: settingsSlug, pendingSlug, prepareAndCommit, cancelPending } = usePreparedSettingsNavigation({
-    requestedSlug: requestedSettingsSlug === 'home' || visiblePages.some((page) => page.slug === requestedSettingsSlug)
-      ? requestedSettingsSlug
-      : getSettingsDestinationFallbackSlug(requestedSettingsSlug, new Set(preloadSlugs)) ?? 'home',
+    requestedSlug: effectiveRequestedSlug,
     preloadSlugs,
   });
 
@@ -296,7 +309,8 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
     autoNavSlugRef.current = slug;
     if (!isMobile) return;
 
-    if (slug === 'remote-instances') {
+    // Each hub tab has its own list; land on it instead of an empty detail page.
+    if (slug === 'remote-instances' || getSettingsNavDestination(slug)?.id === PLUGINS_SETTINGS_DESTINATION.id) {
       setMobileStage('page-sidebar');
       return;
     }
@@ -401,15 +415,15 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
     if (!destination || destination.slugs.length <= 1) return content;
 
     const tabs = destination.slugs
-      .filter((slug) => visiblePages.some((page) => page.slug === slug))
+      .filter((slug) => visibleSlugSet.has(slug))
       .map((slug) => ({ slug, label: getPageTitle(slug) }));
+    const activeTabSlug = resolveSettingsTabSlug(settingsSlug);
+    if (!tabs.some((tab) => tab.slug === activeTabSlug)) return content;
 
     return (
       <SettingsSectionTabs
-        activeSlug={settingsSlug}
-        ariaLabel={t(destination.id === 'remote-connections'
-          ? 'settings.remoteConnections.tabs.aria'
-          : 'settings.providers.tabs.aria')}
+        activeSlug={activeTabSlug}
+        ariaLabel={t(destination.tabsAriaLabelKey ?? 'settings.providers.tabs.aria')}
         idPrefix={idPrefix}
         onTabChange={selectSettingsSectionTab}
         pendingSlug={pendingSlug}
@@ -418,7 +432,7 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
         {content}
       </SettingsSectionTabs>
     );
-  }, [getPageTitle, pendingSlug, selectSettingsSectionTab, settingsSlug, t, visiblePages]);
+  }, [getPageTitle, pendingSlug, selectSettingsSectionTab, settingsSlug, t, visibleSlugSet]);
 
   const renderUnavailable = React.useCallback(() => {
     return (
@@ -614,7 +628,7 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
                   {t(section.labelKey)}
                 </div>
                 {section.destinations.map((destination) => {
-                  const selected = destination.slugs.includes(settingsSlug);
+                  const selected = getSettingsDestinationMemberSlugs(destination).includes(settingsSlug);
                   const selectedPage = destination.pages.find((page) => page.slug === settingsSlug);
                   const targetPage = selectedPage ?? destination.pages[0];
                   const Icon = getSettingsNavIcon(destination.iconSlug);

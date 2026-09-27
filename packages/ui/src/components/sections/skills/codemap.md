@@ -5,9 +5,11 @@ Settings sections for skill management and related configuration controls.
 
 ## Design
 Section components share common settings primitives and domain-specific forms.
-`SettingsView` places the shared Coding Agents/Bots tablist above the split
-pane. Coding Agents keeps installed/catalog behavior; Bots reuses the Bot list
-and revision-bound `BotCapabilityAssignments` skill panel.
+Skills is the second tab of the Plugins hub in Settings → Connections; the
+Skills Catalog opens inside that tab. The sidebar uses the shared settings
+sidebar header/layout and `SidebarGroup` for locations, keeping
+`SkillFolderGroup` for nested folders; the detail page uses
+`SettingsDetailHeader`. Bot SOP Skills are chosen from the Bot Resources tab.
 
 ## Flow
 Settings view mounts this section; audience changes retain independent feature

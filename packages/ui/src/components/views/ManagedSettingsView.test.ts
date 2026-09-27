@@ -14,14 +14,16 @@ describe('ManagedSettingsView capabilities', () => {
     expect(source).not.toContain('settingsPermissionBoundarySlug(slug, audience)');
   });
 
-  test('places MCP Servers immediately below Providers in managed navigation', () => {
-    const providersIndex = source.indexOf("{ slug: 'providers'");
-    const usageIndex = source.indexOf("{ slug: 'usage'");
+  test('orders the Plugins hub pages before Providers in managed navigation', () => {
+    const pluginsIndex = source.indexOf("{ slug: 'plugins'");
+    const skillsIndex = source.indexOf("{ slug: 'skills.installed'");
     const mcpIndex = source.indexOf("{ slug: 'mcp'");
+    const providersIndex = source.indexOf("{ slug: 'providers'");
 
-    expect(providersIndex).toBeGreaterThan(-1);
-    expect(usageIndex).toBeGreaterThan(providersIndex);
-    expect(mcpIndex).toBeGreaterThan(usageIndex);
+    expect(pluginsIndex).toBeGreaterThan(-1);
+    expect(skillsIndex).toBeGreaterThan(pluginsIndex);
+    expect(mcpIndex).toBeGreaterThan(skillsIndex);
+    expect(providersIndex).toBeGreaterThan(mcpIndex);
   });
 
   test('contains no Bot capability assignment navigation', () => {
@@ -30,11 +32,17 @@ describe('ManagedSettingsView capabilities', () => {
     expect(source).not.toContain("selectAudience(slug, 'bots')");
   });
 
-  test('presents Providers and Usage as one permission-filtered tabbed destination', () => {
-    expect(source).toContain('const providerPages = React.useMemo');
-    expect(source).toContain("id: 'providers'");
+  test('presents Plugins, Skills and MCP Servers as one permission-filtered tabbed destination', () => {
+    expect(source).toContain("const MANAGED_PLUGIN_HUB_SLUGS: readonly ManagedPluginHubPage[] = ['plugins', 'skills.installed', 'mcp']");
+    expect(source).toContain("id: 'plugins'");
     expect(source).toContain('<SettingsSectionTabs');
-    expect(source).toContain('tabs={providerPages.map');
-    expect(source).toContain("activeSlug === 'providers' || activeSlug === 'usage'");
+    expect(source).toContain('tabs={pluginHubPages.map');
+    expect(source).toContain("ariaLabel={t('settings.plugins.tabs.aria')}");
+  });
+
+  test('shows Providers without a Usage tab and keeps Usage only as a fallback', () => {
+    expect(source).toContain("return providers ? [providers] : usage ? [usage] : [];");
+    expect(source).toContain("settingsPage === 'usage' && providerFallback");
+    expect(source).not.toContain('tabs={providerPages.map');
   });
 });

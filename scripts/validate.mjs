@@ -61,6 +61,10 @@ const packages = {
     prefix: 'packages/bot-indexer/',
     test: ['bun', ['run', '--cwd', 'packages/bot-indexer', 'test']],
   },
+  botDb: {
+    prefix: 'packages/bot-db/',
+    test: ['bun', ['run', '--cwd', 'packages/bot-db', 'test']],
+  },
   cursor: {
     prefix: 'packages/cursor-sdk-runtime/',
     test: ['bun', ['test', 'packages/cursor-sdk-runtime']],
@@ -216,6 +220,14 @@ function isBotServiceTestRelevant(file, prefix) {
   return ['.js', '.mjs'].includes(path.extname(file)) || file.endsWith('/Dockerfile');
 }
 
+// The local Bot catalog package ships migrations, bootstrap SQL and image
+// configuration consumed by the Electron lifecycle and the web import path.
+function isBotDbTestRelevant(file) {
+  if (!file.startsWith('packages/bot-db/')) return false;
+  if (testFilePattern.test(file)) return true;
+  return ['.js', '.mjs', '.sql', '.sh', '.conf', '.json'].includes(path.extname(file)) || file.endsWith('/Dockerfile');
+}
+
 function isOrchestrationTestRelevant(file) {
   if (!file.startsWith('packages/orchestration-runtime/')) return false;
   if (testFilePattern.test(file)) return true;
@@ -323,6 +335,7 @@ export function buildPlan(requestedMode, providedFiles) {
       if (isBotServiceTestRelevant(file, 'packages/bot-egress/')) tests.add('botEgress');
       if (isBotServiceTestRelevant(file, 'packages/bot-computer/')) tests.add('botComputer');
       if (isBotServiceTestRelevant(file, 'packages/bot-indexer/')) tests.add('botIndexer');
+      if (isBotDbTestRelevant(file)) tests.add('botDb');
       if (isCursorTestRelevant(file)) tests.add('cursor');
       if (isOrchestrationTestRelevant(file)) tests.add('orchestration');
       if (file.startsWith('packages/shared-runtime/')) tests.add('shared');
@@ -337,6 +350,10 @@ export function buildPlan(requestedMode, providedFiles) {
     if (tests.has('botSupervisor') || tests.has('botEngineProxy') || tests.has('botEgress')
       || tests.has('botComputer') || tests.has('botIndexer')) {
       tests.add('electron');
+    }
+    if (tests.has('botDb')) {
+      tests.add('electron');
+      tests.add('web');
     }
     if (tests.has('orchestration')) {
       tests.add('ui');
@@ -389,6 +406,7 @@ export function buildPlan(requestedMode, providedFiles) {
     if (isBotServiceTestRelevant(file, 'packages/bot-egress/')) tests.add('botEgress');
     if (isBotServiceTestRelevant(file, 'packages/bot-computer/')) tests.add('botComputer');
     if (isBotServiceTestRelevant(file, 'packages/bot-indexer/')) tests.add('botIndexer');
+    if (isBotDbTestRelevant(file)) tests.add('botDb');
     if (isCursorTestRelevant(file)) tests.add('cursor');
     if (isOrchestrationTestRelevant(file)) tests.add('orchestration');
     if (file.startsWith('packages/shared-runtime/')) tests.add('shared');
@@ -403,6 +421,10 @@ export function buildPlan(requestedMode, providedFiles) {
   if (!quick && (tests.has('botSupervisor') || tests.has('botEngineProxy') || tests.has('botEgress')
     || tests.has('botComputer') || tests.has('botIndexer'))) {
     tests.add('electron');
+  }
+  if (!quick && tests.has('botDb')) {
+    tests.add('electron');
+    tests.add('web');
   }
   if (!quick && tests.has('orchestration')) {
     tests.add('ui');

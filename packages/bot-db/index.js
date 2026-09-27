@@ -1,0 +1,35 @@
+export {
+  BOT_DB_BOOTSTRAP,
+  BOT_DB_INVENTORY_FORMAT,
+  BOT_DB_MIGRATIONS,
+  BOT_DB_SCHEMA_HEAD,
+  LOCAL_MIGRATION_INVENTORY,
+  REVIEWED_SOURCE_SCHEMAS,
+  SUPABASE_MIGRATION_INVENTORY,
+} from './src/inventory.js';
+export {
+  BOT_DATABASE_NAME,
+  BOT_DATABASE_NAME_PATTERN,
+  BotDatabaseInventoryError,
+  assertBotDatabaseName,
+  classifyBotDatabaseHistory,
+  loadBotDatabaseSql,
+  renderMigrationTransaction,
+  sourceSchemaMigrations,
+} from './src/schema.js';
+export {
+  BotImportPlanError,
+  IMPORT_CATALOG_SQL,
+  IMPORT_DISABLED_TRIGGERS,
+  REGENERATED_IDENTITIES,
+  assertPageBytes,
+  planImportTables,
+  renderIdentityInsert,
+  renderLoadEpilogue,
+  renderLoadPrelude,
+  renderMergeFinalization,
+  renderPageClose,
+  renderPageInsert,
+  renderPageOpen,
+  renderSourceIdentityInsert,
+} from './src/import-plan.js';

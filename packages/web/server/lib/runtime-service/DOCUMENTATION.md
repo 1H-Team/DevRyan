@@ -11,7 +11,9 @@ loopback peer with `X-DevRyan-CSRF: 1`. Successful consumption rotates the
 bootstrap and mints a 12-hour `devryan_runtime_service` cookie with `HttpOnly`,
 `SameSite=Strict`, and `Path=/`. Replays fail. Every route except the narrow
 health check then requires that cookie; every unsafe method also requires the
-CSRF header.
+CSRF header. The bootstrap and desktop-host routes parse their own bounded JSON
+bodies because the shared request middleware parses only allowlisted `/api`
+prefixes; their contract must not depend on that list.
 
 The public handshake contains only instance ID, loopback port, protocol version,
 health, owner generation, bounded desktop-host capability names/expiry, and

@@ -8,6 +8,15 @@ import { SupabaseConnectionPanel } from './SupabaseConnectionSettings';
 const off: SupabaseConnectionStatus = { configured: true, desiredEnabled: false, effectiveEnabled: false,
   state: 'disconnected', errorCode: null, restartRequired: false, restartAvailable: true, blockers: [] };
 const toggle = (container: HostElement) => container.find((node) => node.getAttribute('role') === 'switch');
+const REMOVED_COPY = [
+  'Applies to all windows',
+  'Local chats, projects, files and diagnostics stay available',
+  'Supabase is not configured on this host',
+  'Complete the host configuration',
+];
+const expectNoExplanatoryCopy = (container: HostElement) => {
+  for (const text of REMOVED_COPY) expect(container.textContent).not.toContain(text);
+};
 const mount = async (api: SupabaseConnectionAPI | undefined, run: (container: HostElement) => Promise<void>) => withDom(async (container) => {
   const { createRoot } = await import('react-dom/client');
   const root = createRoot(container as unknown as Element);
@@ -29,12 +38,14 @@ describe('mounted Supabase About control', () => {
       expect(container.textContent).toContain('Disconnected');
       expect((toggle(container)?.getAttribute('aria-disabled') === 'true')).toBe(false);
       expect(changes).toBe(0);
+      expectNoExplanatoryCopy(container);
     });
   });
   test('shows Not configured without offering to enable an incomplete configuration', async () => {
     await mount({ getStatus: async () => ({ ...off, configured: false }), setEnabled: async () => { throw new Error('must not change'); } }, async (container) => {
       expect(container.textContent).toContain('Not configured');
       expect((toggle(container)?.getAttribute('aria-disabled') === 'true')).toBe(true);
+      expectNoExplanatoryCopy(container);
     });
   });
   const failures: Array<[SupabaseConnectionFailure, number | null, string]> = [

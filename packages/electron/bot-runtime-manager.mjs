@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 
 import {
@@ -16,10 +16,53 @@ import {
 import {
   BOT_RUNTIME_IMAGE_KEYS,
   BotRuntimeManifestError,
+  isLegacyBotRuntimeManifest,
   validateInstalledBotRuntimeManifest,
 } from './bot-runtime-manifest.mjs';
+import {
+  BOT_DATABASE_RECOVERY_CODES,
+  BOT_DATABASE_REST_SERVICE,
+  BOT_DATABASE_SERVICE,
+  BotDatabaseManagerError,
+  createBotDatabaseManager,
+  createFileBotDatabaseStateStore,
+} from './bot-database-manager.mjs';
+import { createBotCatalogBackups } from './bot-catalog-backup.mjs';
+import { Readable } from 'node:stream';
+import {
+  BOT_DB_MIGRATIONS,
+  IMPORT_CATALOG_SQL,
+  sourceSchemaMigrations,
+} from '@openchamber/bot-db';
 
 export const BOT_RUNTIME_COMPOSE_PROJECT = 'devryan-bots';
+export const BOT_RUNTIME_RESOURCE_NAMESPACE = 'devryan';
+const RESOURCE_NAMESPACE_PATTERN = /^[a-z][a-z0-9-]{0,40}$/;
+const COMPOSE_PROJECT_PATTERN = /^[a-z0-9][a-z0-9_-]{0,62}$/;
+
+// Isolated (test, smoke) runtimes must never resolve to a production resource:
+// Compose project names do not isolate explicitly named networks and volumes.
+export function assertIsolatedBotResourceNames({ projectName, resourceNamespace } = {}) {
+  if (typeof projectName !== 'string' || !COMPOSE_PROJECT_PATTERN.test(projectName)
+    || typeof resourceNamespace !== 'string' || !RESOURCE_NAMESPACE_PATTERN.test(resourceNamespace)) {
+    throw new BotRuntimeManagerError('Isolated Bot runtime names are invalid', 'bot_runtime_isolation_invalid');
+  }
+  const productionPrefixes = ['devryan-bots', 'devryan-bot'];
+  const names = [
+    projectName,
+    `${resourceNamespace}-bots-host-control`,
+    `${resourceNamespace}-bot-database-data`,
+    `${resourceNamespace}-bot-index`,
+  ];
+  if (projectName === BOT_RUNTIME_COMPOSE_PROJECT || resourceNamespace === BOT_RUNTIME_RESOURCE_NAMESPACE
+    || names.some((name) => productionPrefixes.some((prefix) => name === prefix || name.startsWith(`${prefix}-`)))) {
+    throw new BotRuntimeManagerError(
+      'Refusing to use production Bot runtime resource names outside production',
+      'bot_runtime_isolation_invalid',
+    );
+  }
+  return Object.freeze({ projectName, resourceNamespace });
+}
 export const BOT_RUNTIME_STATE_VERSION = 1;
 
 const execFileAsync = promisify(execFile);
@@ -43,6 +86,8 @@ export const BOT_RUNTIME_ENGINE_MEMORY_POLICY = Object.freeze({
     supervisor: 256 * MIB,
     'engine-proxy': 256 * MIB,
     egress: 256 * MIB,
+    database: 512 * MIB,
+    'database-rest': 256 * MIB,
   }),
 });
 
@@ -85,12 +130,15 @@ const FIXED_DOCKER_CANDIDATES = Object.freeze([
   '/usr/local/bin/docker',
   '/Applications/Docker.app/Contents/Resources/bin/docker',
 ]);
-const FIXED_SERVICES = Object.freeze(['supervisor', 'engine-proxy', 'egress', 'indexer']);
+const FIXED_SERVICES = Object.freeze([
+  'supervisor', 'engine-proxy', 'egress', 'indexer', BOT_DATABASE_SERVICE, BOT_DATABASE_REST_SERVICE,
+]);
 // Reasoning and computer containers reach the private gateway on the host
 // loopback through this bridge. Docker Desktop routes container traffic back
 // only when it is masqueraded to the VM address, so a bridge created with the
 // retired no-masquerade policy loses host reachability after a VM restart.
 export const HOST_CONTROL_NETWORK = 'devryan-bots-host-control';
+const hostControlNetworkName = (resourceNamespace) => `${resourceNamespace}-bots-host-control`;
 const HOST_CONTROL_MASQUERADE_OPTION = 'com.docker.network.bridge.enable_ip_masquerade';
 const BOT_RUNTIME_LABEL = 'devryan.runtime';
 const BOT_RUNTIME_LABEL_VALUE = 'production-bots';
@@ -103,6 +151,8 @@ const IMAGE_ENVIRONMENT_KEYS = Object.freeze({
   indexer: 'DEVRYAN_BOT_INDEXER_IMAGE',
   opencode: 'DEVRYAN_BOT_OPENCODE_IMAGE',
   computer: 'DEVRYAN_BOT_COMPUTER_IMAGE',
+  database: 'DEVRYAN_BOT_DATABASE_IMAGE',
+  rest: 'DEVRYAN_BOT_REST_IMAGE',
 });
 const SERVICE_ENVIRONMENT_KEYS = Object.freeze([
   'DEVRYAN_BOT_SUPERVISOR_TOKEN',
@@ -110,6 +160,7 @@ const SERVICE_ENVIRONMENT_KEYS = Object.freeze([
   'DEVRYAN_BOT_EGRESS_SIGNING_KEY',
   'DEVRYAN_BOT_EGRESS_CONTROL_TOKEN',
   'DEVRYAN_BOT_INDEXER_TOKEN',
+  'DEVRYAN_BOT_DATABASE_JWT_SECRET',
   'DEVRYAN_BOT_DEPLOYMENT_ID',
   'DEVRYAN_DOCKER_SOCKET_GID',
   'DEVRYAN_BOT_HOST_RUNTIME_ROOT',
@@ -248,6 +299,7 @@ export function deriveBotRuntimeServiceEnvironment(deploymentKey, {
   const egressSigningKey = derive('egress-signing');
   const egressControlToken = derive('egress-control');
   const indexerToken = derive('indexer-auth');
+  const databaseJwtSecret = derive('database-jwt');
   try {
     return Object.freeze({
       DEVRYAN_BOT_DEPLOYMENT_ID: `deployment-${deploymentDigest.toString('hex').slice(0, 24)}`,
@@ -256,6 +308,7 @@ export function deriveBotRuntimeServiceEnvironment(deploymentKey, {
       DEVRYAN_BOT_EGRESS_SIGNING_KEY: egressSigningKey.toString('base64url'),
       DEVRYAN_BOT_EGRESS_CONTROL_TOKEN: egressControlToken.toString('base64url'),
       DEVRYAN_BOT_INDEXER_TOKEN: indexerToken.toString('base64url'),
+      DEVRYAN_BOT_DATABASE_JWT_SECRET: databaseJwtSecret.toString('base64url'),
       DEVRYAN_DOCKER_SOCKET_GID: String(dockerSocketGid),
       DEVRYAN_BOT_HOST_RUNTIME_ROOT: hostRuntimeRoot,
     });
@@ -266,6 +319,7 @@ export function deriveBotRuntimeServiceEnvironment(deploymentKey, {
     egressSigningKey.fill(0);
     egressControlToken.fill(0);
     indexerToken.fill(0);
+    databaseJwtSecret.fill(0);
   }
 }
 
@@ -275,15 +329,25 @@ const normalizeProcessResult = (result) => ({
   stderr: typeof result?.stderr === 'string' ? result.stderr : '',
 });
 
-const defaultRunProcess = async (file, args, { env, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS } = {}) => {
+const defaultRunProcess = async (file, args, {
+  env,
+  timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS,
+  input,
+  maxBuffer = 4 * 1024 * 1024,
+} = {}) => {
   try {
-    const result = await execFileAsync(file, args, {
+    const pending = execFileAsync(file, args, {
       env,
       timeout: timeoutMs,
-      maxBuffer: 4 * 1024 * 1024,
+      maxBuffer,
       shell: false,
       windowsHide: true,
     });
+    if (input !== undefined) {
+      pending.child.stdin?.on('error', () => undefined);
+      pending.child.stdin?.end(input);
+    }
+    const result = await pending;
     return { exitCode: 0, stdout: result.stdout || '', stderr: result.stderr || '' };
   } catch (error) {
     return {
@@ -293,6 +357,51 @@ const defaultRunProcess = async (file, args, { env, timeoutMs = DEFAULT_COMMAND_
     };
   }
 };
+
+// Streams large binary stdin/stdout (pg_dump, pg_restore) without buffering.
+const defaultStreamProcess = (file, args, {
+  env,
+  input = null,
+  output = null,
+  timeoutMs = 30 * 60_000,
+} = {}) => new Promise((resolve) => {
+  let child;
+  try {
+    child = spawn(file, args, {
+      env,
+      shell: false,
+      windowsHide: true,
+      stdio: [input ? 'pipe' : 'ignore', output ? 'pipe' : 'ignore', 'pipe'],
+    });
+  } catch {
+    output?.end?.();
+    resolve({ exitCode: 1, stderr: '' });
+    return;
+  }
+  let stderr = '';
+  let settled = false;
+  const finish = (exitCode) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    resolve({ exitCode, stderr: stderr.slice(0, 4_000) });
+  };
+  const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
+  child.stderr.on('data', (chunk) => {
+    if (stderr.length < 64 * 1024) stderr += chunk.toString('utf8');
+  });
+  if (input) {
+    child.stdin.on('error', () => undefined);
+    input.on('error', () => child.kill('SIGKILL'));
+    input.pipe(child.stdin);
+  }
+  if (output) child.stdout.pipe(output);
+  child.on('error', () => {
+    output?.end?.();
+    finish(1);
+  });
+  child.on('close', (code) => finish(Number.isInteger(code) ? code : 1));
+});
 
 const defaultWait = (milliseconds) => new Promise((resolve) => {
   setTimeout(resolve, milliseconds);
@@ -387,7 +496,21 @@ const publicManifest = (manifest) => manifest ? ({
   fingerprint: manifest.fingerprint,
 }) : null;
 
-const baseStatus = ({ state, code, currentState, desiredManifest, issues = [], warnings = [] }) => ({
+// The manifest a rollback would activate. A legacy six-image target kept its
+// Bot catalog in Supabase and can never be activated again.
+const rollbackTarget = (currentState) => (currentState?.staged
+  ? currentState.current
+  : currentState?.previous || null);
+
+const baseStatus = ({
+  state,
+  code,
+  currentState,
+  desiredManifest,
+  issues = [],
+  warnings = [],
+  database = null,
+}) => ({
   ok: state === 'healthy',
   state,
   code,
@@ -396,10 +519,21 @@ const baseStatus = ({ state, code, currentState, desiredManifest, issues = [], w
   manifest: publicManifest(currentState?.current || desiredManifest),
   desiredManifest: publicManifest(desiredManifest),
   updateStaged: Boolean(currentState?.staged),
+  database,
   canSetup: state === 'setup_required',
-  canRepair: code !== 'bot_runtime_foreign_deployment' && ['degraded', 'runtime_update_required'].includes(state),
+  canRepair: code !== 'bot_runtime_foreign_deployment'
+    && (['degraded', 'runtime_update_required'].includes(state)
+      || (state === 'database_recovery_required' && code === 'bot_database_state_ambiguous')),
   canUpdate: state === 'runtime_update_required',
-  canRollback: code !== 'bot_runtime_foreign_deployment' && Boolean(currentState?.previous || currentState?.staged),
+  canRollback: code !== 'bot_runtime_foreign_deployment'
+    && state !== 'database_recovery_required'
+    && Boolean(rollbackTarget(currentState))
+    && !isLegacyBotRuntimeManifest(rollbackTarget(currentState)),
+});
+
+const legacyCatalogIssue = () => ({
+  code: 'legacy_cloud_catalog',
+  message: 'This Bot runtime predates local Bot storage; update it to continue',
 });
 
 const dockerNotInstalledStatus = () => ({
@@ -424,10 +558,10 @@ const dockerUnavailableStatus = () => ({
   issues: [{ code: 'docker_unavailable', message: 'Docker is installed but unavailable' }],
 });
 
-const composeArgs = (composePath, action) => [
+const composeArgsFor = (projectName, composePath, action) => [
   'compose',
   '--project-name',
-  BOT_RUNTIME_COMPOSE_PROJECT,
+  projectName,
   '--file',
   composePath,
   ...action,
@@ -441,6 +575,7 @@ const validateServiceEnvironment = (raw) => {
     || !BASE64URL_SECRET_PATTERN.test(raw.DEVRYAN_BOT_EGRESS_SIGNING_KEY)
     || !BASE64URL_SECRET_PATTERN.test(raw.DEVRYAN_BOT_EGRESS_CONTROL_TOKEN)
     || !BASE64URL_SECRET_PATTERN.test(raw.DEVRYAN_BOT_INDEXER_TOKEN)
+    || !BASE64URL_SECRET_PATTERN.test(raw.DEVRYAN_BOT_DATABASE_JWT_SECRET)
     || !DEPLOYMENT_ID_PATTERN.test(raw.DEVRYAN_BOT_DEPLOYMENT_ID)
     || !/^\d{1,10}$/.test(raw.DEVRYAN_DOCKER_SOCKET_GID)
     || Number(raw.DEVRYAN_DOCKER_SOCKET_GID) > 2 ** 31 - 1) {
@@ -456,13 +591,17 @@ const validateServiceEnvironment = (raw) => {
   return raw;
 };
 
-const manifestEnvironment = (baseEnvironment, manifest, serviceEnvironment) => {
+const manifestEnvironment = (baseEnvironment, manifest, serviceEnvironment, resourceNamespace) => {
+  if (isLegacyBotRuntimeManifest(manifest)) {
+    fail('The installed Bot runtime predates local Bot storage and must be updated', 'bot_runtime_update_required');
+  }
   const environment = { ...baseEnvironment };
   for (const key of BOT_RUNTIME_IMAGE_KEYS) {
     environment[IMAGE_ENVIRONMENT_KEYS[key]] = manifest.images[key].reference;
   }
   Object.assign(environment, validateServiceEnvironment(serviceEnvironment));
   environment.DEVRYAN_BOT_ACTIVE_REVISIONS = '';
+  environment.DEVRYAN_BOT_RESOURCE_NAMESPACE = resourceNamespace;
   return environment;
 };
 
@@ -951,7 +1090,7 @@ const computerRuntimeOrigin = (result) => {
   return `${origin}${result.endpoint.path}`;
 };
 
-const serviceIssues = (rows) => {
+const serviceIssues = (rows, services = FIXED_SERVICES) => {
   const byService = new Map();
   for (const row of rows) {
     const service = typeof row?.Service === 'string'
@@ -960,7 +1099,7 @@ const serviceIssues = (rows) => {
     if (service) byService.set(service, row);
   }
   const issues = [];
-  for (const service of FIXED_SERVICES) {
+  for (const service of services) {
     const row = byService.get(service);
     const state = String(row?.State || row?.state || '').toLowerCase();
     const health = String(row?.Health || row?.health || '').toLowerCase();
@@ -991,6 +1130,16 @@ export function createBotRuntimeManager({
   fetchImpl = globalThis.fetch,
   wait = defaultWait,
   now = Date.now,
+  resourceNamespace = BOT_RUNTIME_RESOURCE_NAMESPACE,
+  projectName = BOT_RUNTIME_COMPOSE_PROJECT,
+  databaseStateStore = null,
+  loadDatabaseSql = null,
+  backupBeforeMigrate = null,
+  // Domain-separated root key for catalog backups (derived from the sealed
+  // deployment key by the caller); backups are unavailable without it.
+  loadBackupKey = null,
+  streamProcess = defaultStreamProcess,
+  recordEvent = () => {},
 } = {}) {
   if (typeof composePath !== 'string' || !path.isAbsolute(composePath)) {
     fail('Bot runtime compose path must be absolute', 'bot_runtime_configuration_invalid');
@@ -1004,6 +1153,15 @@ export function createBotRuntimeManager({
   if (typeof installationState?.read !== 'function' || typeof installationState?.write !== 'function') {
     fail('Bot runtime state store is invalid', 'bot_runtime_configuration_invalid');
   }
+  if (resourceNamespace !== BOT_RUNTIME_RESOURCE_NAMESPACE || projectName !== BOT_RUNTIME_COMPOSE_PROJECT) {
+    assertIsolatedBotResourceNames({ projectName, resourceNamespace });
+  }
+  const isolated = resourceNamespace !== BOT_RUNTIME_RESOURCE_NAMESPACE;
+  const hostControlNetwork = hostControlNetworkName(resourceNamespace);
+  const composeArgs = (pathValue, action) => composeArgsFor(projectName, pathValue, action);
+  if (typeof loadDatabaseSql !== 'function') {
+    fail('Bot runtime database inventory loader is required', 'bot_runtime_configuration_invalid');
+  }
   let mutation = Promise.resolve();
   let activeLifecycleOperation = null;
   const hostRuntimeRoot = typeof dataDirectory === 'string' && path.isAbsolute(dataDirectory)
@@ -1014,6 +1172,7 @@ export function createBotRuntimeManager({
     baseEnvironment,
     manifest,
     await loadRuntimeEnvironment(),
+    resourceNamespace,
   );
 
   const invalidInstallationState = (message = 'Bot runtime installation state is outdated or invalid') => ({
@@ -1103,6 +1262,7 @@ export function createBotRuntimeManager({
     args,
     environment = baseEnvironment,
     deadlineAt = null,
+    { input, maxBuffer } = {},
   ) => {
     const remainingMs = deadlineAt === null
       ? DEFAULT_COMMAND_TIMEOUT_MS
@@ -1111,9 +1271,64 @@ export function createBotRuntimeManager({
     const result = normalizeProcessResult(await runProcess(dockerPath, args, {
       env: environment,
       timeoutMs: Math.min(DEFAULT_COMMAND_TIMEOUT_MS, remainingMs),
+      ...(input !== undefined ? { input } : {}),
+      ...(maxBuffer !== undefined ? { maxBuffer } : {}),
     }));
     if (deadlineAt !== null && now() >= deadlineAt) deadlineError();
     return result;
+  };
+
+  const databaseManager = createBotDatabaseManager({
+    run,
+    composeArgs: (action) => composeArgs(composePath, action),
+    resourceNamespace,
+    stateStore: databaseStateStore || createFileBotDatabaseStateStore({ dataDirectory }),
+    loadSql: loadDatabaseSql,
+    now,
+    wait,
+    recordEvent,
+  });
+
+  const catalogBackups = typeof loadBackupKey === 'function' && typeof dataDirectory === 'string'
+    ? createBotCatalogBackups({
+        dataDirectory,
+        loadBackupKey,
+        databaseManager,
+        composeArgs: (action) => composeArgs(composePath, action),
+        streamProcess: (dockerPath, args, environment, { input, output, deadlineAt } = {}) => streamProcess(
+          dockerPath,
+          args,
+          {
+            env: environment,
+            input,
+            output,
+            timeoutMs: deadlineAt ? Math.max(1_000, deadlineAt - now()) : 30 * 60_000,
+          },
+        ),
+        now,
+        recordEvent,
+      })
+    : null;
+
+  const databaseContext = async (dockerPath, manifest, failureCode, deadlineAt = null) => Object.freeze({
+    dockerPath,
+    environment: await composeEnvironment(manifest),
+    baseEnvironment,
+    deadlineAt,
+    failureCode,
+    publishProgress,
+  });
+
+  // Database failures keep their own code (recovery states in particular) so
+  // the lifecycle and UI can offer the matching action.
+  const asRuntimeError = (error, failureCode) => {
+    if (error instanceof BotRuntimeManagerError) return error;
+    if (error instanceof BotDatabaseManagerError) {
+      return new BotRuntimeManagerError(error.message, error.code || failureCode, {
+        stage: 'database', recoveryRequired: error.recoveryRequired === true,
+      });
+    }
+    return error;
   };
 
   const validatePrivateFile = async (filePath, { maximumBytes, writable }) => {
@@ -1458,7 +1673,7 @@ export function createBotRuntimeManager({
   const inspectHostControlNetwork = async (dockerPath, deadlineAt = null) => {
     const result = await run(
       dockerPath,
-      ['network', 'inspect', HOST_CONTROL_NETWORK, '--format', '{{json .}}'],
+      ['network', 'inspect', hostControlNetwork, '--format', '{{json .}}'],
       baseEnvironment,
       deadlineAt,
     );
@@ -1472,7 +1687,7 @@ export function createBotRuntimeManager({
     } catch {
       fail('Unable to inspect the Bot host-control network', 'bot_runtime_ownership_unavailable');
     }
-    if (!network || typeof network !== 'object' || Array.isArray(network) || network.Name !== HOST_CONTROL_NETWORK) {
+    if (!network || typeof network !== 'object' || Array.isArray(network) || network.Name !== hostControlNetwork) {
       fail('Unable to inspect the Bot host-control network', 'bot_runtime_ownership_unavailable');
     }
     const options = network?.Options && typeof network.Options === 'object' ? network.Options : {};
@@ -1488,7 +1703,13 @@ export function createBotRuntimeManager({
   const listRuntimeContainers = async (dockerPath, deploymentId, deadlineAt = null, allManaged = false) => {
     const result = await run(
       dockerPath,
-      ['ps', '--all', '--no-trunc', '--filter', allManaged ? `label=${BOT_RUNTIME_LABEL}=${BOT_RUNTIME_LABEL_VALUE}` : `network=${HOST_CONTROL_NETWORK}`, '--format', '{{json .}}'],
+      [
+        'ps', '--all', '--no-trunc',
+        '--filter', allManaged ? `label=${BOT_RUNTIME_LABEL}=${BOT_RUNTIME_LABEL_VALUE}` : `network=${hostControlNetwork}`,
+        // An isolated runtime owns only its own Compose project.
+        ...(isolated ? ['--filter', `label=${COMPOSE_PROJECT_LABEL}=${projectName}`] : []),
+        '--format', '{{json .}}',
+      ],
       baseEnvironment,
       deadlineAt,
     );
@@ -1499,7 +1720,7 @@ export function createBotRuntimeManager({
         fail('Unable to inspect Bot container ownership', 'bot_runtime_ownership_unavailable');
       }
       const labels = parseContainerLabels(row?.Labels);
-      const service = labels[COMPOSE_PROJECT_LABEL] === BOT_RUNTIME_COMPOSE_PROJECT
+      const service = labels[COMPOSE_PROJECT_LABEL] === projectName
         && FIXED_SERVICES.includes(labels[COMPOSE_SERVICE_LABEL])
         ? labels[COMPOSE_SERVICE_LABEL]
         : null;
@@ -1637,7 +1858,7 @@ export function createBotRuntimeManager({
       failureCode,
       deadlineAt,
     );
-    const removed = await run(dockerPath, ['network', 'rm', HOST_CONTROL_NETWORK], baseEnvironment, deadlineAt);
+    const removed = await run(dockerPath, ['network', 'rm', hostControlNetwork], baseEnvironment, deadlineAt);
     if (removed.exitCode !== 0) fail('Unable to remove the outdated Bot host-control network', failureCode);
   };
 
@@ -2618,7 +2839,7 @@ export function createBotRuntimeManager({
 
   const inspectImages = async (dockerPath, manifest, deadlineAt = null) => {
     const issues = [];
-    for (const key of BOT_RUNTIME_IMAGE_KEYS) {
+    for (const key of Object.keys(manifest.images)) {
       const image = manifest.images[key];
       const result = await run(dockerPath, [
         'image',
@@ -2643,7 +2864,7 @@ export function createBotRuntimeManager({
     return issues;
   };
 
-  const inspectServices = async (dockerPath, manifest, deadlineAt = null) => {
+  const inspectServices = async (dockerPath, manifest, deadlineAt = null, services = FIXED_SERVICES) => {
     const result = await run(
       dockerPath,
       composeArgs(composePath, ['ps', '--format', 'json']),
@@ -2653,7 +2874,7 @@ export function createBotRuntimeManager({
     if (result.exitCode !== 0) {
       return [{ code: 'compose_unavailable', message: 'Bot runtime service status is unavailable' }];
     }
-    return serviceIssues(parseComposeRows(result.stdout));
+    return serviceIssues(parseComposeRows(result.stdout), services);
   };
 
   const waitForHealthyServices = async (
@@ -2661,6 +2882,7 @@ export function createBotRuntimeManager({
     manifest,
     failureCode,
     deadlineAt = null,
+    services = FIXED_SERVICES,
   ) => {
     publishProgress({ phase: 'verifying_health' });
     const healthDeadline = Math.min(
@@ -2670,7 +2892,7 @@ export function createBotRuntimeManager({
     while (true) {
       let issues;
       try {
-        issues = await inspectServices(dockerPath, manifest, healthDeadline);
+        issues = await inspectServices(dockerPath, manifest, healthDeadline, services);
       } catch (error) {
         if (error?.code === 'bot_runtime_startup_timeout' && now() >= healthDeadline) {
           fail('Bot runtime services did not become healthy before the readiness deadline', failureCode);
@@ -2686,6 +2908,23 @@ export function createBotRuntimeManager({
       }
       await wait(Math.min(SERVICE_HEALTH_POLL_INTERVAL_MS, remainingMs));
     }
+  };
+
+  const inspectCatalog = async (dockerPath, manifest, deadlineAt = null) => {
+    const context = await databaseContext(dockerPath, manifest, 'bot_database_unavailable', deadlineAt);
+    const database = await databaseManager.inspect(context);
+    if (database.state === 'ready' && !databaseManager.ready) {
+      // A fresh process adopts an already-verified, running catalog without
+      // a lifecycle operation; resolving the loopback port changes nothing.
+      try {
+        databaseManager.markReady(await databaseManager.resolveRestEndpoint(context));
+      } catch {
+        return Object.freeze({ state: 'stopped', code: 'bot_database_rest_unavailable' });
+      }
+    } else if (database.state !== 'ready' && databaseManager.ready) {
+      databaseManager.markUnavailable();
+    }
+    return database;
   };
 
   const runtimeStatus = async ({
@@ -2748,6 +2987,23 @@ export function createBotRuntimeManager({
         changed,
       };
     }
+    const database = await inspectCatalog(dockerPath, currentState.current, deadlineAt);
+    if (database.state === 'recovery_required') {
+      return {
+        ...baseStatus({
+          state: 'database_recovery_required',
+          code: database.code,
+          currentState,
+          desiredManifest,
+          issues: [{ code: database.code, message: 'The local Bot catalog needs recovery' }],
+          database,
+        }),
+        changed,
+      };
+    }
+    if (database.state !== 'ready') {
+      issues.push({ code: database.code || 'bot_database_unavailable', message: 'The local Bot catalog is not ready' });
+    }
     if (hostControl.staleNetwork) issues.push(hostControlNetworkIssue());
     if (hostControl.retiredAttachments) issues.push(hostControlAttachmentIssue());
     const warnings = await probeEngineMemoryWarnings(dockerPath, deadlineAt);
@@ -2759,6 +3015,7 @@ export function createBotRuntimeManager({
         desiredManifest,
         issues,
         warnings,
+        database,
       }),
       changed,
     };
@@ -2773,11 +3030,12 @@ export function createBotRuntimeManager({
       }
       return;
     }
-    for (const [index, key] of BOT_RUNTIME_IMAGE_KEYS.entries()) {
+    const imageKeys = Object.keys(manifest.images);
+    for (const [index, key] of imageKeys.entries()) {
       publishProgress({
         phase: 'downloading_image',
         completed: index,
-        total: BOT_RUNTIME_IMAGE_KEYS.length,
+        total: imageKeys.length,
       });
       const result = await run(
         dockerPath,
@@ -2791,23 +3049,96 @@ export function createBotRuntimeManager({
     }
     publishProgress({
       phase: 'verifying_images',
-      completed: BOT_RUNTIME_IMAGE_KEYS.length,
-      total: BOT_RUNTIME_IMAGE_KEYS.length,
+      completed: imageKeys.length,
+      total: imageKeys.length,
     });
     const issues = await inspectImages(dockerPath, manifest, deadlineAt);
     if (issues.length > 0) fail('Pulled Bot runtime images failed verification', failureCode);
   };
 
-  const composeUp = async (dockerPath, manifest, failureCode, deadlineAt = null) => {
+  // Verify images → inspect the database → migrate if necessary → expose
+  // REST → start execution services. REST and every service that can write
+  // to the catalog start only after the database is verified at the head.
+  const stopCatalogRest = async (context) => {
+    databaseManager.markUnavailable();
+    const stopped = await run(
+      context.dockerPath,
+      composeArgs(composePath, ['stop', BOT_DATABASE_REST_SERVICE]),
+      context.environment,
+      context.deadlineAt,
+    );
+    if (stopped.exitCode !== 0) fail('Unable to stop the local Bot catalog REST service', 'bot_database_rest_unavailable');
+  };
+
+  // An existing catalog is backed up before its schema changes. REST is
+  // stopped first so no writer exists while the dump, objects and host state
+  // are captured together.
+  const preMigrationBackup = async ({ context, from, pending }) => {
+    if (typeof backupBeforeMigrate === 'function') {
+      return backupBeforeMigrate({ from, pending, context, databaseManager });
+    }
+    if (!catalogBackups) {
+      fail('A verified backup is required before the Bot database can be migrated', 'bot_database_backup_unavailable');
+    }
+    await stopCatalogRest(context);
+    await catalogBackups.createBackup(context, { kind: 'pre_migration' });
+    await catalogBackups.pruneBackups().catch(() => undefined);
+    return undefined;
+  };
+
+  // The expectation follows the live database after a journaled replacement
+  // finished or rolled back while the host was down.
+  const syncExpectationToLive = async (context) => {
+    const inspected = await databaseManager.exec(context, 'devryan_bots', `
+      select json_build_object('databaseId', (select database_id::text from devryan_local.installation));
+    `, { failureCode: 'bot_database_inspection_failed' });
+    const databaseId = JSON.parse(String(inspected).trim())?.databaseId;
+    await databaseManager.adoptLiveDatabaseId(databaseId);
+  };
+
+  const prepareCatalog = async (dockerPath, manifest, failureCode, deadlineAt, database = {}) => {
+    const context = await databaseContext(dockerPath, manifest, failureCode, deadlineAt);
+    databaseManager.markUnavailable();
+    try {
+      await databaseManager.prepare(context, {
+        allowInitialize: database.allowInitialize === true,
+        allowAdopt: database.allowAdopt === true,
+        beforeStart: catalogBackups
+          ? async () => {
+              const outcome = await catalogBackups.recoverInterruptedReplacement(context);
+              return outcome !== 'none';
+            }
+          : null,
+        afterReplacementRecovery: () => syncExpectationToLive(context),
+        beforeMigrate: (info) => preMigrationBackup({ ...info, context }),
+      });
+    } catch (error) {
+      throw asRuntimeError(error, failureCode);
+    }
+    return context;
+  };
+
+  const composeUp = async (dockerPath, manifest, failureCode, deadlineAt = null, database = {}) => {
     publishProgress({ phase: 'starting_services' });
     await migrateHostControlTopology(dockerPath, manifest, failureCode, deadlineAt);
+    const context = await prepareCatalog(dockerPath, manifest, failureCode, deadlineAt, database);
+    publishProgress({ phase: 'starting_services' });
     const result = await run(
       dockerPath,
       composeArgs(composePath, ['up', '--detach', '--remove-orphans']),
-      await composeEnvironment(manifest),
+      context.environment,
       deadlineAt,
     );
     if (result.exitCode !== 0) fail('Unable to start the Bot runtime', failureCode);
+  };
+
+  const markCatalogReady = async (dockerPath, manifest, deadlineAt = null) => {
+    const context = await databaseContext(dockerPath, manifest, 'bot_database_rest_unavailable', deadlineAt);
+    try {
+      databaseManager.markReady(await databaseManager.resolveRestEndpoint(context));
+    } catch (error) {
+      throw asRuntimeError(error, 'bot_database_rest_unavailable');
+    }
   };
 
   const activatedStatus = async ({
@@ -2824,6 +3155,7 @@ export function createBotRuntimeManager({
       failureCode,
       deadlineAt,
     );
+    await markCatalogReady(dockerPath, currentState.current, deadlineAt);
     return {
       ...baseStatus({
         state: 'healthy',
@@ -2841,6 +3173,18 @@ export function createBotRuntimeManager({
     const desiredManifest = await loadManifest();
     await requireDeploymentOwnership(dockerPath, desiredManifest, deadlineAt);
     const existing = await readInstallationState(desiredManifest);
+    if (existing?.current && isLegacyBotRuntimeManifest(existing.current)) {
+      return {
+        ...baseStatus({
+          state: 'runtime_update_required',
+          code: 'bot_runtime_update_required',
+          currentState: existing,
+          desiredManifest,
+          issues: [legacyCatalogIssue()],
+        }),
+        changed: false,
+      };
+    }
     if (existing?.current) {
       const result = await runtimeStatus({
         dockerPath,
@@ -2864,7 +3208,10 @@ export function createBotRuntimeManager({
       return result;
     }
     await pullAndVerify(dockerPath, desiredManifest, 'bot_runtime_setup_failed', deadlineAt);
-    await composeUp(dockerPath, desiredManifest, 'bot_runtime_setup_failed', deadlineAt);
+    // Only an explicit first setup may create a brand-new local catalog.
+    await composeUp(dockerPath, desiredManifest, 'bot_runtime_setup_failed', deadlineAt, {
+      allowInitialize: true,
+    });
     const nextState = {
       version: BOT_RUNTIME_STATE_VERSION,
       current: desiredManifest,
@@ -2883,12 +3230,13 @@ export function createBotRuntimeManager({
     return status;
   };
 
-  const repairInternal = async ({ deadlineAt = null } = {}) => {
+  const repairInternal = async ({ deadlineAt = null, explicit = false } = {}) => {
     const dockerPath = await requireDocker(deadlineAt);
     const desiredManifest = await loadManifest();
     await requireDeploymentOwnership(dockerPath, desiredManifest, deadlineAt);
     const currentState = await readInstallationState(desiredManifest);
     if (!currentState?.current) return setupInternal({ deadlineAt });
+    if (isLegacyBotRuntimeManifest(currentState.current)) return updateInternal({ deadlineAt });
     publishProgress({ phase: 'verifying_images' });
     const imageIssues = await inspectImages(dockerPath, currentState.current, deadlineAt);
     const services = imageIssues.length === 0
@@ -2898,9 +3246,18 @@ export function createBotRuntimeManager({
       ? await inspectHostControlRepair(dockerPath, currentState.current, deadlineAt)
       : { staleNetwork: false, retiredAttachments: false, foreignDeployment: null };
     if (hostControl.foreignDeployment) failForeignDeployment(hostControl.foreignDeployment);
+    const database = imageIssues.length === 0 && services.length === 0
+      ? await inspectCatalog(dockerPath, currentState.current, deadlineAt)
+      : null;
+    // Recovery states are never repaired automatically. An explicit owner
+    // Repair may adopt only an owned catalog whose host record was lost.
+    const adopt = explicit && database?.code === 'bot_database_state_ambiguous';
+    if (database?.state === 'recovery_required' && !adopt) {
+      fail('The local Bot catalog needs recovery', database.code);
+    }
     const hostControlRepair = hostControl.staleNetwork || hostControl.retiredAttachments;
     if (imageIssues.length === 0 && services.length === 0 && !hostControlRepair
-      && !currentState.staged) {
+      && !currentState.staged && database?.state === 'ready') {
       return {
         ...baseStatus({
           state: currentState.current.fingerprint === desiredManifest.fingerprint
@@ -2914,6 +3271,7 @@ export function createBotRuntimeManager({
           issues: currentState.current.fingerprint === desiredManifest.fingerprint
             ? []
             : [{ code: 'manifest_changed', message: 'A Bot runtime update is available' }],
+          database,
         }),
         changed: false,
       };
@@ -2924,7 +3282,9 @@ export function createBotRuntimeManager({
       'bot_runtime_repair_failed',
       deadlineAt,
     );
-    await composeUp(dockerPath, currentState.current, 'bot_runtime_repair_failed', deadlineAt);
+    await composeUp(dockerPath, currentState.current, 'bot_runtime_repair_failed', deadlineAt, {
+      allowAdopt: adopt,
+    });
     const repairedState = { ...currentState, staged: null };
     const status = await activatedStatus({
       dockerPath,
@@ -2944,7 +3304,8 @@ export function createBotRuntimeManager({
     await requireDeploymentOwnership(dockerPath, desiredManifest, deadlineAt);
     const currentState = await readInstallationState(desiredManifest);
     if (!currentState?.current) return setupInternal({ deadlineAt });
-    if (currentState.current.fingerprint === desiredManifest.fingerprint) {
+    const upgradingLegacy = isLegacyBotRuntimeManifest(currentState.current);
+    if (!upgradingLegacy && currentState.current.fingerprint === desiredManifest.fingerprint) {
       return repairInternal({ deadlineAt });
     }
 
@@ -2952,7 +3313,11 @@ export function createBotRuntimeManager({
     await installationState.write(stagedState);
     try {
       await pullAndVerify(dockerPath, desiredManifest, 'bot_runtime_update_failed', deadlineAt);
-      await composeUp(dockerPath, desiredManifest, 'bot_runtime_update_failed', deadlineAt);
+      // The documented upgrade from the six-image format creates the local
+      // catalog; the cloud catalog is imported separately by the owner.
+      await composeUp(dockerPath, desiredManifest, 'bot_runtime_update_failed', deadlineAt, {
+        allowInitialize: upgradingLegacy,
+      });
     } catch (error) {
       if (error instanceof BotRuntimeManagerError) throw error;
       fail('Unable to update the Bot runtime', 'bot_runtime_update_failed');
@@ -2972,6 +3337,7 @@ export function createBotRuntimeManager({
       deadlineAt,
     });
     await installationState.write(updatedState);
+    recordEvent({ event: 'bot.runtime.updated', fromLegacy: upgradingLegacy });
     return status;
   };
 
@@ -2987,6 +3353,12 @@ export function createBotRuntimeManager({
     const rollbackManifest = recoveringStagedUpdate
       ? currentState.current
       : currentState.previous;
+    if (isLegacyBotRuntimeManifest(rollbackManifest)) {
+      fail(
+        'The prior Bot runtime kept Bots in Supabase and cannot be restored on top of local Bot storage',
+        'bot_runtime_rollback_cloud_backed',
+      );
+    }
     await pullAndVerify(dockerPath, rollbackManifest, 'bot_runtime_rollback_failed', deadlineAt);
     await composeUp(dockerPath, rollbackManifest, 'bot_runtime_rollback_failed', deadlineAt);
     const rolledBackState = recoveringStagedUpdate
@@ -3007,6 +3379,50 @@ export function createBotRuntimeManager({
     });
     await installationState.write(rolledBackState);
     return status;
+  };
+
+  // Starts only the catalog (database and REST) for an existing installation.
+  // It never installs images and runs with the installed release, so the
+  // catalog is available independently of supervisor, egress or execution.
+  const ensureCatalogInternal = async ({ deadlineAt = null } = {}) => {
+    const dockerPath = await requireDocker(deadlineAt);
+    const desiredManifest = await loadManifest();
+    const currentState = await readInstallationState(desiredManifest);
+    if (!currentState?.current) fail('Bot runtime setup is required', 'bot_runtime_setup_required');
+    if (isLegacyBotRuntimeManifest(currentState.current)) {
+      fail('The Bot runtime must be updated before local Bots can start', 'bot_runtime_update_required');
+    }
+    await requireDeploymentOwnership(dockerPath, currentState.current, deadlineAt);
+    const imageIssues = await inspectImages(dockerPath, currentState.current, deadlineAt);
+    if (imageIssues.some((issue) => ['database', 'rest'].includes(issue.image))) {
+      fail('The local Bot catalog images are unavailable', 'bot_runtime_degraded');
+    }
+    const context = await prepareCatalog(dockerPath, currentState.current, 'bot_database_unavailable', deadlineAt);
+    const started = await run(
+      dockerPath,
+      composeArgs(composePath, ['up', '--detach', '--no-deps', BOT_DATABASE_REST_SERVICE]),
+      context.environment,
+      deadlineAt,
+    );
+    if (started.exitCode !== 0) fail('Unable to start the local Bot catalog', 'bot_database_rest_unavailable');
+    await waitForHealthyServices(
+      dockerPath,
+      currentState.current,
+      'bot_database_rest_unavailable',
+      deadlineAt,
+      [BOT_DATABASE_SERVICE, BOT_DATABASE_REST_SERVICE],
+    );
+    await markCatalogReady(dockerPath, currentState.current, deadlineAt);
+    return {
+      ...baseStatus({
+        state: 'healthy',
+        code: null,
+        currentState,
+        desiredManifest,
+        database: Object.freeze({ state: 'ready', code: null }),
+      }),
+      changed: true,
+    };
   };
 
   const serializeMutation = (operation) => {
@@ -3051,6 +3467,15 @@ export function createBotRuntimeManager({
         issues: currentState?.invalid
           ? [currentState.invalid]
           : [{ code: 'setup_required', message: 'Bot runtime setup is required' }],
+      });
+    }
+    if (isLegacyBotRuntimeManifest(currentState.current)) {
+      return baseStatus({
+        state: 'runtime_update_required',
+        code: 'bot_runtime_update_required',
+        currentState,
+        desiredManifest,
+        issues: [legacyCatalogIssue()],
       });
     }
     if (currentState.staged) {
@@ -3143,7 +3568,10 @@ export function createBotRuntimeManager({
     return record.promise;
   };
 
-  const ensureReadyInternal = async ({ deadlineAt }) => {
+  // Automatic startup. An existing installation may update or repair itself;
+  // only an explicit owner Setup may install a fresh runtime, and recovery
+  // states always wait for the owner.
+  const ensureReadyInternal = async ({ deadlineAt, allowInstall = false }) => {
     let status = await statusInternal({ deadlineAt });
     for (let transition = 0; transition < MAX_READY_TRANSITIONS; transition += 1) {
       if (status.state === 'healthy') {
@@ -3151,6 +3579,9 @@ export function createBotRuntimeManager({
         return { ...status, changed: transition > 0 };
       }
       if (status.state === 'setup_required') {
+        if (!allowInstall) {
+          fail('The private Bot runtime needs to be set up', 'bot_runtime_setup_required');
+        }
         await setupInternal({ deadlineAt });
       } else if (status.state === 'runtime_update_required') {
         await updateInternal({ deadlineAt });
@@ -3174,12 +3605,332 @@ export function createBotRuntimeManager({
     );
   };
 
+  const resolveCatalogContext = async () => {
+    const dockerPath = await requireDocker();
+    const desiredManifest = await loadManifest();
+    const currentState = await readInstallationState(desiredManifest);
+    if (!currentState?.current || isLegacyBotRuntimeManifest(currentState.current)) {
+      fail('The local Bot catalog is not installed', 'bot_database_unavailable');
+    }
+    const context = await databaseContext(dockerPath, currentState.current, 'bot_database_unavailable');
+    try {
+      return await databaseManager.context(context);
+    } catch (error) {
+      throw asRuntimeError(error, 'bot_database_unavailable');
+    }
+  };
+
+  const CATALOG_OPERATION_DEADLINE_MS = 60 * 60_000;
+  const restoreCandidates = new Map();
+  const requireBackups = () => {
+    if (!catalogBackups) fail('Bot catalog backups are unavailable', 'bot_backup_unavailable');
+    return catalogBackups;
+  };
+
+  // Catalog maintenance runs in the same lifecycle queue as setup, repair,
+  // update and rollback, so none of them can bring REST back mid-operation.
+  const catalogContext = async (operation) => {
+    const dockerPath = await requireDocker();
+    const desiredManifest = await loadManifest();
+    const currentState = await readInstallationState(desiredManifest);
+    if (!currentState?.current || isLegacyBotRuntimeManifest(currentState.current)) {
+      fail('The local Bot catalog is not installed', 'bot_database_unavailable');
+    }
+    const deadlineAt = now() + CATALOG_OPERATION_DEADLINE_MS;
+    const context = await databaseContext(dockerPath, currentState.current, 'bot_database_unavailable', deadlineAt);
+    try {
+      return await operation({ dockerPath, manifest: currentState.current, context, deadlineAt });
+    } catch (error) {
+      throw asRuntimeError(error, 'bot_database_unavailable');
+    }
+  };
+  const catalogOperation = (operation) => serializeMutation(() => catalogContext(operation));
+  // Read-only access to inaccessible candidate and source databases. Not
+  // queued: an import streams a script while reading source pages.
+  const catalogRead = (operation) => catalogContext(operation);
+
+  const startCatalogRest = async (dockerPath, manifest, context) => {
+    const started = await run(
+      dockerPath,
+      composeArgs(composePath, ['up', '--detach', '--no-deps', BOT_DATABASE_REST_SERVICE]),
+      context.environment,
+      context.deadlineAt,
+    );
+    if (started.exitCode !== 0) fail('Unable to start the local Bot catalog', 'bot_database_rest_unavailable');
+    await waitForHealthyServices(
+      dockerPath,
+      manifest,
+      'bot_database_rest_unavailable',
+      context.deadlineAt,
+      [BOT_DATABASE_SERVICE, BOT_DATABASE_REST_SERVICE],
+    );
+    databaseManager.markReady(await databaseManager.resolveRestEndpoint(context));
+  };
+
+  const backupCatalog = ({ kind = 'manual' } = {}) => catalogOperation(async ({ context }) => {
+    const backup = await requireBackups().createBackup(context, { kind });
+    await requireBackups().pruneBackups().catch(() => undefined);
+    return backup;
+  });
+
+  const prepareCatalogRestore = (backupId) => catalogOperation(async ({ context }) => {
+    const candidate = await requireBackups().prepareRestore(context, backupId);
+    restoreCandidates.set(candidate.operationId, candidate);
+    return Object.freeze({
+      operationId: candidate.operationId,
+      backupId: candidate.backupId,
+      manifest: candidate.manifest,
+      schema: candidate.history.state,
+      objectsDirectory: candidate.objectsDirectory,
+      hostStateDirectory: candidate.hostStateDirectory,
+    });
+  });
+
+  const CANDIDATE_TABLE_PATTERN = /^[a-z][a-z0-9_]{0,62}$/;
+  const CANDIDATE_COLUMN_PATTERN = /^[a-z][a-z0-9_]{0,62}$/;
+  // Bounded keyset pages of a restore/import candidate for server-side
+  // envelope, object and vault validation. Read-only; never the live database.
+  const readCatalogCandidate = (operationId, {
+    table,
+    columns,
+    keyColumn = 'id',
+    afterId = null,
+    limit = 200,
+  } = {}) => catalogRead(async ({ context }) => {
+    const candidate = restoreCandidates.get(operationId);
+    if (!candidate) fail('The Bot restore candidate is unavailable', 'bot_restore_candidate_missing');
+    if (!CANDIDATE_TABLE_PATTERN.test(table || '') || !Array.isArray(columns) || columns.length < 1 || columns.length > 32
+      || !['id', 'run_id', 'bot_id'].includes(keyColumn) || !columns.includes(keyColumn)
+      || columns.some((column) => !CANDIDATE_COLUMN_PATTERN.test(column))
+      || (afterId !== null && !/^[0-9a-f-]{36}$/i.test(afterId))
+      || !Number.isSafeInteger(limit) || limit < 1 || limit > 500) {
+      fail('The Bot candidate read is invalid', 'bot_database_configuration_invalid');
+    }
+    const output = await databaseManager.exec(context, candidate.database, `
+      select coalesce(json_agg(row_to_json(t) order by t."${keyColumn}"), '[]'::json) from (
+        select ${columns.map((column) => `"${column}"`).join(', ')} from public."${table}"
+        ${afterId ? `where "${keyColumn}" > '${afterId}'` : ''}
+        order by "${keyColumn}" limit ${limit}
+      ) t;
+    `, { failureCode: 'bot_restore_candidate_read_failed' });
+    return JSON.parse(String(output).trim());
+  });
+
+  const discardCatalogCandidate = (operationId) => catalogOperation(async ({ context }) => {
+    const candidate = restoreCandidates.get(operationId);
+    restoreCandidates.delete(operationId);
+    if (candidate) await requireBackups().discardCandidate(context, candidate);
+  });
+
+  // Swaps in a verified candidate and post-verifies it before writes reopen.
+  // Any failure rolls back to the retained unit.
+  const commitCatalogRestore = (operationId) => catalogOperation(async ({ dockerPath, manifest, context }) => {
+    const candidate = restoreCandidates.get(operationId);
+    if (!candidate) fail('The Bot restore candidate is unavailable', 'bot_restore_candidate_missing');
+    const backups = requireBackups();
+    if (candidate.history.state === 'behind') {
+      await databaseManager.migrateDatabase(context, candidate.database, candidate.history.pending);
+    }
+    const expected = await backups.fingerprintDatabase(context, candidate.database);
+    const handlers = {
+      stopRest: () => stopCatalogRest(context),
+      startRest: async () => {
+        await syncExpectationToLive(context);
+        await startCatalogRest(dockerPath, manifest, context);
+      },
+    };
+    await backups.replaceWithCandidate(context, candidate, handlers);
+    try {
+      const live = await backups.fingerprintLive(context);
+      if (JSON.stringify(live) !== JSON.stringify(expected)) {
+        fail('The restored Bot catalog did not verify after replacement', 'bot_backup_verification_failed');
+      }
+      const inspection = await databaseManager.inspect(context);
+      if (inspection.state !== 'ready') fail('The restored Bot catalog is not ready', inspection.code || 'bot_database_unavailable');
+    } catch (error) {
+      await backups.rollbackReplacement(context, handlers).catch(() => undefined);
+      restoreCandidates.delete(operationId);
+      throw error;
+    }
+    await backups.commitReplacement(context);
+    restoreCandidates.delete(operationId);
+    return Object.freeze({ operationId, generation: databaseManager.generation });
+  });
+
+  // Import: a temporary source database at a reviewed hosted schema, loaded
+  // from raw cloud pages, migrated to the release head and exported into the
+  // merge candidate. Source databases are never reachable through REST.
+  const importSources = new Map();
+  const readCatalogInfo = async (context, database) => JSON.parse(String(await databaseManager.exec(
+    context, database, IMPORT_CATALOG_SQL, { failureCode: 'bot_import_catalog_failed' },
+  )).trim());
+
+  const createImportSource = (marker) => catalogOperation(async ({ context }) => {
+    const prefix = sourceSchemaMigrations(marker);
+    const loaded = await loadDatabaseSql();
+    const byName = new Map(loaded.migrations.map((migration) => [migration.name, migration]));
+    const database = `devryan_bots_source_${crypto.randomBytes(8).toString('hex')}`;
+    await databaseManager.bootstrapDatabase(context, database);
+    try {
+      await databaseManager.migrateDatabase(context, database, prefix.map((migration) => byName.get(migration.name)));
+      const catalog = await readCatalogInfo(context, database);
+      const handle = crypto.randomUUID();
+      importSources.set(handle, { database, applied: prefix.length });
+      return Object.freeze({ handle, marker, catalog });
+    } catch (error) {
+      await requireBackups().dropDatabase(context, database).catch(() => undefined);
+      throw error;
+    }
+  });
+
+  const requireImportSource = (handle) => {
+    const source = importSources.get(handle);
+    if (!source) fail('The Bot import source is unavailable', 'bot_import_source_missing');
+    return source;
+  };
+
+  const migrateImportSource = (handle) => catalogOperation(async ({ context }) => {
+    const source = requireImportSource(handle);
+    const loaded = await loadDatabaseSql();
+    const pending = loaded.migrations.slice(source.applied);
+    await databaseManager.migrateDatabase(context, source.database, pending);
+    source.applied = BOT_DB_MIGRATIONS.length;
+    return Object.freeze({ catalog: await readCatalogInfo(context, source.database) });
+  });
+
+  const targetDatabase = (target) => {
+    if (target?.kind === 'source') return requireImportSource(target.handle).database;
+    if (target?.kind === 'candidate') {
+      const candidate = restoreCandidates.get(target.operationId);
+      if (!candidate) fail('The Bot restore candidate is unavailable', 'bot_restore_candidate_missing');
+      return candidate.database;
+    }
+    fail('The Bot import target is invalid', 'bot_database_configuration_invalid');
+  };
+
+  // Streams a generated SQL script (with raw page bytes) into one source or
+  // candidate database. The script owns its transaction.
+  const runImportSql = (target, chunks) => catalogOperation(async ({ dockerPath, context }) => {
+    const database = targetDatabase(target);
+    const result = await streamProcess(dockerPath, composeArgs(composePath, [
+      'exec', '-T', '--user', 'postgres', BOT_DATABASE_SERVICE,
+      'psql', '-XAtq', '-v', 'ON_ERROR_STOP=1', '-d', database,
+    ]), {
+      env: context.environment,
+      input: Readable.from(chunks),
+      timeoutMs: Math.max(1_000, context.deadlineAt - now()),
+    });
+    if (result.exitCode !== 0) {
+      const detail = /ERROR:\s+([^\n]{0,300})/.exec(result.stderr || '')?.[1] || null;
+      throw new BotRuntimeManagerError('The Bot import script failed', 'bot_import_load_failed', {
+        stage: 'import', detail: detail ? detail.replace(/[\r\0]/g, ' ') : null,
+      });
+    }
+    return Object.freeze({ ok: true });
+  });
+
+  const KEY_VALUE_PATTERN = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|\d{1,20})$/i;
+  // One ordered keyset page as raw single-line JSON (jsonb text keeps exact
+  // numerics) plus the page's last key as text.
+  const exportImportPage = (target, {
+    table, columns, orderColumns, after = null, limit = 500,
+  } = {}) => catalogRead(async ({ context }) => {
+    const database = targetDatabase(target);
+    if (!CANDIDATE_TABLE_PATTERN.test(table || '') || !Array.isArray(columns) || columns.length < 1
+      || columns.some((column) => !CANDIDATE_COLUMN_PATTERN.test(column))
+      || !Array.isArray(orderColumns) || orderColumns.length < 1 || orderColumns.length > 4
+      || orderColumns.some((column) => !columns.includes(column))
+      || (after !== null && (!Array.isArray(after) || after.length !== orderColumns.length
+        || after.some((value) => !KEY_VALUE_PATTERN.test(value))))
+      || !Number.isSafeInteger(limit) || limit < 1 || limit > 5_000) {
+      fail('The Bot import export is invalid', 'bot_database_configuration_invalid');
+    }
+    const order = orderColumns.map((column) => `"${column}"`).join(', ');
+    const where = after ? `where (${order}) > (${after.map((value) => `'${value}'`).join(', ')})` : '';
+    const page = `select ${columns.map((column) => `"${column}"`).join(', ')} from public."${table}" ${where} order by ${order} limit ${limit}`;
+    const output = String(await databaseManager.exec(context, database, `
+      select coalesce(jsonb_agg(to_jsonb(t) order by ${orderColumns.map((column) => `t."${column}"`).join(', ')}), '[]'::jsonb)::text from (${page}) t;
+      select coalesce((select jsonb_build_array(${orderColumns.map((column) => `t."${column}"::text`).join(', ')})::text
+        from (${page}) t order by ${orderColumns.map((column) => `t."${column}" desc`).join(', ')} limit 1), 'null');
+    `, { failureCode: 'bot_import_export_failed' }));
+    const trimmed = output.replace(/\n+$/, '');
+    const split = trimmed.lastIndexOf('\n');
+    if (split < 0) fail('The Bot import export output is invalid', 'bot_import_export_failed');
+    return Object.freeze({
+      page: trimmed.slice(0, split),
+      last: JSON.parse(trimmed.slice(split + 1)),
+    });
+  });
+
+  const countCatalogRows = (target) => catalogRead(async ({ context }) => {
+    const database = targetDatabase(target);
+    const output = await databaseManager.exec(context, database, `
+      select format('select %L || ''|'' || count(*) from public.%I', tablename, tablename)
+      from pg_catalog.pg_tables where schemaname = 'public' and (tablename = 'bots' or tablename like 'bot\\_%')
+      order by tablename
+      \\gexec
+    `, { failureCode: 'bot_import_inventory_failed' });
+    const counts = {};
+    for (const line of String(output).split(/\r?\n/)) {
+      const match = /^([a-z0-9_]+)\|(\d+)$/.exec(line.trim());
+      if (match) counts[match[1]] = Number(match[2]);
+    }
+    return Object.freeze(counts);
+  });
+
+  const dropImportSource = (handle) => catalogOperation(async ({ context }) => {
+    const source = importSources.get(handle);
+    importSources.delete(handle);
+    if (source) await requireBackups().dropDatabase(context, source.database);
+  });
+
+  // Explicit owner Start Empty; the caller confirmed and holds the fence.
+  const startEmptyCatalog = () => catalogOperation(async ({ dockerPath, manifest, context }) => {
+    const operationId = crypto.randomUUID().replaceAll('-', '').slice(0, 24);
+    await stopCatalogRest(context).catch(() => undefined);
+    const result = await databaseManager.startEmpty(context, { retiredSuffix: operationId });
+    if (dataDirectory) {
+      const objects = path.join(dataDirectory, 'bots', 'objects');
+      await fs.rename(objects, `${objects}.retired-${operationId}`).catch((error) => {
+        if (error?.code !== 'ENOENT') throw error;
+      });
+    }
+    await startCatalogRest(dockerPath, manifest, context);
+    return Object.freeze({ retiredDatabase: result.retiredDatabase, generation: databaseManager.generation });
+  });
+
   return Object.freeze({
     status: () => statusInternal(),
     operationStatus: () => operationSnapshot(),
-    ensureReady: (options) => runLifecycle('ensure_ready', ensureReadyInternal, options),
+    ensureReady: (options) => runLifecycle(
+      'ensure_ready',
+      (input) => ensureReadyInternal({ ...input, allowInstall: options?.allowInstall === true }),
+      options,
+    ),
     setup: (options) => runLifecycle('setup', setupInternal, options),
-    repair: (options) => runLifecycle('repair', repairInternal, options),
+    repair: (options) => runLifecycle(
+      'repair',
+      (input) => repairInternal({ ...input, explicit: true }),
+      options,
+    ),
+    ensureCatalog: (options) => runLifecycle('catalog', ensureCatalogInternal, options),
+    backupCatalog,
+    listCatalogBackups: () => requireBackups().listBackups(),
+    prepareCatalogRestore,
+    readCatalogCandidate,
+    discardCatalogCandidate,
+    commitCatalogRestore,
+    startEmptyCatalog,
+    createImportSource,
+    migrateImportSource,
+    runImportSql,
+    exportImportPage,
+    countCatalogRows,
+    dropImportSource,
+    // In-process only: the loopback REST endpoint and a short-lived service
+    // token for the web server. Never exposed to a renderer or HTTP client.
+    databaseContext: () => resolveCatalogContext(),
+    get catalogGeneration() { return databaseManager.generation; },
     update: (options) => runLifecycle('update', updateInternal, options),
     rollback: (options) => runLifecycle('rollback', rollbackInternal, options),
     ensureReasoning: (input) => callSupervisor('ensureReasoning', input),
@@ -3209,6 +3960,12 @@ export function createBotRuntimeManager({
       composePath,
       statePath: installationState.path || null,
       runtimeRoot: hostRuntimeRoot,
+    }),
+    resources: Object.freeze({
+      projectName,
+      resourceNamespace,
+      hostControlNetwork,
+      databaseVolume: databaseManager.volumeName,
     }),
   });
 }

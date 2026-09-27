@@ -30,6 +30,29 @@ describe('SettingsSectionTabs', () => {
     expect(markup).toContain('Usage panel');
   });
 
+  test('lays out three hub tabs in equal columns', () => {
+    const markup = renderToStaticMarkup(
+      <SettingsSectionTabs
+        activeSlug="skills.installed"
+        ariaLabel="Plugin, skill and MCP server settings"
+        idPrefix="plugins-settings"
+        onTabChange={() => {}}
+        tabs={[
+          { slug: 'plugins', label: 'Plugins' },
+          { slug: 'skills.installed', label: 'Skills' },
+          { slug: 'mcp', label: 'MCP Servers' },
+        ]}
+      >
+        <div>Skills panel</div>
+      </SettingsSectionTabs>,
+    );
+
+    expect(markup.match(/role="tab"/g)?.length).toBe(3);
+    expect(markup).toContain('grid-cols-3');
+    expect(markup).not.toContain('grid-cols-2');
+    expect(markup).toContain('aria-labelledby="plugins-settings-skills.installed-tab"');
+  });
+
   test('omits a redundant tab strip when only one tab is available', () => {
     const markup = renderToStaticMarkup(
       <SettingsSectionTabs

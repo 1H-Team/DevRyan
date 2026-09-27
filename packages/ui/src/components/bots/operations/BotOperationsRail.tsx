@@ -5,6 +5,7 @@ import { RiFolderSharedLine, RiRefreshLine, RiShieldCheckLine } from '@remixicon
 import { retryBotsEventConnection } from '@/apps/botEventConnection';
 import { Button } from '@/components/ui/button';
 import { useAuthPrincipal } from '@/lib/authSession';
+import { botViewerId } from '@/lib/botViewer';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { FONT_SIZE_SCALES } from '@/lib/typography';
@@ -73,6 +74,7 @@ export const BotOperationsRail: React.FC<BotOperationsRailProps> = ({
   ));
   const channel = channelStore((state) => channelId ? state.channelsById[channelId] : undefined);
   const membership = botsStore((state) => state.membershipsByBotId[botId]);
+  const viewerId = botsStore((state) => botViewerId(state.botsById[botId], principal.id));
   const connectionState = operationsStore((state) => state.connectionState);
   const connectionErrorCode = operationsStore((state) => state.connectionErrorCode);
   const pendingCount = operationsStore((state) => state.pendingApprovalIds.filter((actionId) => (
@@ -158,7 +160,7 @@ export const BotOperationsRail: React.FC<BotOperationsRailProps> = ({
                 botId={botId}
                 active={activeTab === 'approvals'}
                 canOperate={canOperate}
-                principalId={principal.id}
+                principalId={viewerId}
                 operationsStore={operationsStore}
               />
             </Tabs.Panel>

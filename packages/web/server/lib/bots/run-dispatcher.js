@@ -186,6 +186,9 @@ export function createBotRunDispatcher({
   isRuntimeOwnerAlive = defaultIsRuntimeOwnerAlive,
   autoDispatch = true,
   isAdmissionPaused = () => false,
+  // Why admission is closed (maintenance, activation hold, catalog outage or
+  // a pending Supabase mode restart), reported to the caller verbatim.
+  describeAdmissionPause = () => ({ message: 'Supabase connection is changing', code: 'supabase_change_pending' }),
   recordDiagnostic = () => {},
   logger = console,
 } = {}) {
@@ -2111,7 +2114,10 @@ export function createBotRunDispatcher({
       }
     },
     async enqueueMessage({ principal, channelId, message, admission, timing = null } = {}) {
-      if (isAdmissionPaused()) fail('Supabase connection is changing', 'supabase_change_pending', 503);
+      if (isAdmissionPaused()) {
+        const reason = describeAdmissionPause();
+        fail(reason.message, reason.code, 503);
+      }
       if (shuttingDown) fail('Bot dispatcher is shutting down', 'bots_unavailable', 503);
       const normalizedMessage = normalizeMessage(message);
       markDiagnostic('request_received', {
@@ -2412,7 +2418,10 @@ export function createBotRunDispatcher({
     },
 
     async retryRun({ principal, runId } = {}) {
-      if (isAdmissionPaused()) fail('Supabase connection is changing', 'supabase_change_pending', 503);
+      if (isAdmissionPaused()) {
+        const reason = describeAdmissionPause();
+        fail(reason.message, reason.code, 503);
+      }
       if (shuttingDown) fail('Bot dispatcher is shutting down', 'bots_unavailable', 503);
       if (typeof store.retryRun !== 'function') {
         fail('Bot run retry is unavailable', 'bots_unavailable', 503);

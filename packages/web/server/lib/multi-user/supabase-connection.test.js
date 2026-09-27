@@ -138,7 +138,10 @@ describe('persistent Supabase connection', () => {
     await new Promise((done) => server.listen(0, '127.0.0.1', done));
     const url = `http://127.0.0.1:${server.address().port}`;
     expect((await fetch(`${url}/private`, { headers: { 'x-forwarded-for': '203.0.113.1' } })).status).toBe(503);
-    expect((await fetch(`${url}/api/bots`, { headers: { cookie } })).status).toBe(503);
+    // Cloud administration closes while Off; local Bots authorize themselves
+    // and are never blocked by the Supabase boundary.
+    expect((await fetch(`${url}/api/admin/users`, { headers: { cookie } })).status).toBe(503);
+    expect((await fetch(`${url}/api/bots`, { headers: { cookie } })).status).toBe(404);
     expect((await fetch(`${url}/api/system/supabase-connection`)).status).toBe(403);
     const status = await fetch(`${url}/api/system/supabase-connection`, { headers: { cookie } });
     expect(status.status).toBe(200); expect((await status.json()).effectiveEnabled).toBe(false);

@@ -36,6 +36,10 @@ export const createTunnelRoutesRuntime = (dependencies) => {
     getRuntimeReady = () => true,
     getManagedAccountLoginAvailable = () => false,
   } = dependencies;
+  const usesOwnerLogin = (mode) => mode === TUNNEL_MODE_MANAGED_REMOTE
+    && !getManagedAccountLoginAvailable() && tunnelAuthController.canUseOwnerLogin?.() === true;
+  const resolveAccessPolicy = (mode) => mode !== TUNNEL_MODE_MANAGED_REMOTE ? 'tunnel-gated'
+    : usesOwnerLogin(mode) ? 'owner-link' : 'account-login';
 
   const resolveActiveNormalizedTunnelMode = () => {
     const mode = tunnelService.resolveActiveMode();
@@ -90,10 +94,10 @@ export const createTunnelRoutesRuntime = (dependencies) => {
     }
 
     if (provider === TUNNEL_PROVIDER_CLOUDFLARE && mode === TUNNEL_MODE_MANAGED_REMOTE) {
-      if (!getManagedAccountLoginAvailable()) {
+      if (!getManagedAccountLoginAvailable() && !usesOwnerLogin(mode)) {
         throw new TunnelServiceError(
           'managed_account_auth_required',
-          'Configure and enable Supabase-backed DevRyan account sign-in before starting Managed Remote.'
+          'Authenticate the local owner with Supabase Off, or enable Supabase account sign-in before starting Managed Remote.'
         );
       }
       if (!isValidManagedRemoteOriginPort(originPort)) {
@@ -356,7 +360,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
 
     app.post('/api/openchamber/tunnel/links', async (req, res) => {
       try {
-        const link = await tunnelAuthController.issueBootstrapToken({ botIds: req.body?.botIds, ttlMs: TUNNEL_LINK_TTL_MS });
+        const link = await tunnelAuthController.issueBootstrapToken({ access: req.body?.access, botIds: req.body?.botIds, ttlMs: TUNNEL_LINK_TTL_MS });
         return res.json({ connectUrl: `https://${tunnelAuthController.getActiveTunnelHost()}/tunnel/connect#t=${link.token}`, expiresAt: link.expiresAt });
       } catch (error) { return res.status(error.statusCode || 503).json({ error: error.message, code: error.code || 'tunnel_link_unavailable' }); }
     });
@@ -412,7 +416,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
             bootstrapExpiresAt: null,
             runtimeReady,
             connectReady: false,
-            policy: normalizedMode === TUNNEL_MODE_MANAGED_REMOTE ? 'account-login' : 'tunnel-gated',
+            policy: resolveAccessPolicy(normalizedMode),
             activeTunnelMode: tunnelAuthController.getActiveTunnelMode() || null,
             activeSessions,
             localPort: getActivePort(),
@@ -442,7 +446,8 @@ export const createTunnelRoutesRuntime = (dependencies) => {
           });
         }
 
-        const usesDirectLogin = activeNormalizedMode === TUNNEL_MODE_MANAGED_REMOTE;
+        const ownerLogin = usesOwnerLogin(activeNormalizedMode);
+        const usesDirectLogin = activeNormalizedMode === TUNNEL_MODE_MANAGED_REMOTE && !ownerLogin;
         const bootstrapStatus = usesDirectLogin
           ? { hasBootstrapToken: false, bootstrapExpiresAt: null }
           : tunnelAuthController.getBootstrapStatus();
@@ -451,7 +456,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
         const managedAccountLoginReady = !usesDirectLogin || getManagedAccountLoginAvailable();
         const connectReady = runtimeReady
           && connectorHealthy
-          && (usesDirectLogin ? managedAccountLoginReady : bootstrapStatus.hasBootstrapToken);
+          && (ownerLogin || (usesDirectLogin ? managedAccountLoginReady : bootstrapStatus.hasBootstrapToken));
 
         return res.json({
           active: true,
@@ -468,7 +473,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
           bootstrapExpiresAt: bootstrapStatus.bootstrapExpiresAt,
           runtimeReady,
           connectReady,
-          policy: usesDirectLogin ? 'account-login' : 'tunnel-gated',
+          policy: resolveAccessPolicy(activeNormalizedMode),
           activeTunnelMode: activeNormalizedMode,
           activeSessions: tunnelAuthController.listTunnelSessions(),
           localPort: getActivePort(),
@@ -596,8 +601,12 @@ export const createTunnelRoutesRuntime = (dependencies) => {
         const previousProvider = tunnelService.resolveActiveProvider();
         const previousUrl = tunnelService.getPublicUrl();
         const selectedBotIds = _req.body?.botIds;
-        const usesDirectLogin = mode === TUNNEL_MODE_MANAGED_REMOTE;
-        if (!usesDirectLogin && selectedBotIds !== undefined && (!Array.isArray(selectedBotIds) || selectedBotIds.length)) {
+        const ownerLogin = usesOwnerLogin(mode);
+        const usesDirectLogin = mode === TUNNEL_MODE_MANAGED_REMOTE && !ownerLogin;
+        if (ownerLogin && selectedBotIds !== undefined && (!Array.isArray(selectedBotIds) || selectedBotIds.length)) {
+          return res.status(400).json({ code: 'tunnel_bots_unavailable', error: 'Managed Remote with Supabase Off creates a private owner link. Bot sharing requires Supabase On.' });
+        }
+        if (!usesDirectLogin && !ownerLogin && selectedBotIds !== undefined && (!Array.isArray(selectedBotIds) || selectedBotIds.length)) {
           await tunnelAuthController.validateSelection?.(selectedBotIds);
         }
 
@@ -634,9 +643,9 @@ export const createTunnelRoutesRuntime = (dependencies) => {
           mode,
         });
 
-        const bootstrapToken = usesDirectLogin || (tunnelAuthController.hasOwner && !selectedBotIds?.length)
+        const bootstrapToken = usesDirectLogin || (!ownerLogin && tunnelAuthController.hasOwner && !selectedBotIds?.length)
           ? null
-          : await tunnelAuthController.issueBootstrapToken({ botIds: selectedBotIds, ttlMs: tunnelAuthController.hasOwner ? TUNNEL_LINK_TTL_MS : bootstrapTtlMs });
+          : await tunnelAuthController.issueBootstrapToken({ access: ownerLogin ? 'owner' : 'bots', botIds: ownerLogin ? undefined : selectedBotIds, ttlMs: tunnelAuthController.hasOwner ? TUNNEL_LINK_TTL_MS : bootstrapTtlMs });
         const connectUrl = bootstrapToken
           ? `${publicUrl.replace(/\/$/, '')}/tunnel/connect#t=${encodeURIComponent(bootstrapToken.token)}`
           : null;
@@ -666,7 +675,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
             : null,
           revokedBootstrapCount,
           invalidatedSessionCount,
-          policy: usesDirectLogin ? 'account-login' : 'tunnel-gated',
+          policy: resolveAccessPolicy(mode),
           activeTunnelMode: mode,
           activeSessions: tunnelAuthController.listTunnelSessions(),
           localPort: getActivePort(),

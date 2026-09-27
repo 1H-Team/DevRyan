@@ -90,6 +90,9 @@ export function createBotEventStream({
   loadSnapshot = async () => ({}),
   filterSnapshot = async (_principal, snapshot) => snapshot,
   canDeliver = async () => true,
+  // Every Bot identity a subscriber acts as. The workstation owner acts as its
+  // local identity and as each imported Bot's verified source owner.
+  principalIds = (principal) => [principal?.id],
   epoch = randomUUID(),
   heartbeatMs = 25_000,
   snapshotTimeoutMs = 30_000,
@@ -99,7 +102,8 @@ export function createBotEventStream({
   recordDiagnostic = () => {},
 } = {}) {
   if (typeof loadSnapshot !== 'function' || typeof filterSnapshot !== 'function'
-    || typeof canDeliver !== 'function' || typeof epoch !== 'string' || !epoch
+    || typeof canDeliver !== 'function' || typeof principalIds !== 'function'
+    || typeof epoch !== 'string' || !epoch
     || !Number.isFinite(heartbeatMs) || heartbeatMs < 1_000
     || !Number.isSafeInteger(snapshotTimeoutMs) || snapshotTimeoutMs < 1
     || !Number.isSafeInteger(writeTimeoutMs) || writeTimeoutMs < 1
@@ -315,7 +319,9 @@ export function createBotEventStream({
       const audience = new Set(audienceUserIds);
       const eventSequence = ++sequence;
       let delivered = 0;
-      const targets = [...subscribers].filter((subscriber) => audience.has(subscriber.principal.id));
+      const targets = [...subscribers].filter((subscriber) => (
+        principalIds(subscriber.principal).some((id) => typeof id === 'string' && audience.has(id))
+      ));
       if (targets.length === 0) return Object.freeze({ sequence: eventSequence, delivered });
       const event = Object.freeze({
           id: `${epoch}:${eventSequence}`,
@@ -445,6 +451,11 @@ export function createBotEventStream({
     getSequence: () => sequence,
     getSubscriberCount: () => subscribers.size,
 
+    // Ends every subscription without shutting the stream down; clients
+    // reconnect and load a fresh snapshot (after a catalog replacement).
+    disconnectAll(reason = 'reset') {
+      for (const subscriber of [...subscribers]) closeSubscriber(subscriber, reason);
+    },
     shutdown() {
       shutdown = true;
       snapshotSources.clear();

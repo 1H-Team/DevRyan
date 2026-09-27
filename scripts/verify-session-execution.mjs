@@ -99,6 +99,24 @@ native('name resolution is reachable while other local unix sockets stay denied'
   } finally { await new Promise((resolve) => server.close(resolve)); }
 }, 20_000);
 
+native('an execution reaches sockets only in its own short directory, which termination removes', async () => {
+  if (process.platform !== 'darwin') return;
+  const f = await fixture();
+  const handle = await f.run(`const net = require('node:net'), path = require('node:path');
+    const directory = process.env.XDG_RUNTIME_DIR, file = path.join(directory, 'daemon.sock');
+    const server = net.createServer((socket) => socket.end()).listen(file, () => {
+      const client = net.connect(file);
+      client.once('connect', () => { require('node:fs').writeFileSync('probe', JSON.stringify({ directory, connected: true })); client.destroy(); server.close(); });
+      client.once('error', (e) => { require('node:fs').writeFileSync('probe', JSON.stringify({ directory, connected: e.code })); server.close(); });
+    });`);
+  assert.equal((await handle.result).exitCode, 0, handle.output().stderr);
+  const probe = JSON.parse(await fs.readFile(path.join(f.viewDirectory, 'probe'), 'utf8'));
+  assert.equal(probe.connected, true);
+  // agent-browser appends /agent-browser/namespaces/devryan/run/<lease>.sock (77 bytes).
+  assert.ok(Buffer.byteLength(probe.directory) + 77 <= 103);
+  await assert.rejects(fs.lstat(probe.directory), { code: 'ENOENT' });
+}, 20_000);
+
 native('metadata writes cannot change the original project through an absolute path', async () => {
   const f = await fixture(), original = path.join(f.root, 'original');
   await fs.writeFile(original, 'preserved', { mode: 0o600 });

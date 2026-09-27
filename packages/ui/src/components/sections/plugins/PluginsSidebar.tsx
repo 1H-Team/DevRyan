@@ -1,8 +1,10 @@
 import React from "react";
-import { RiCodeBoxLine, RiFileTextLine, RiFolderLine } from "@remixicon/react";
+import { RiCodeBoxLine, RiFileTextLine, RiFolderLine, RiPlugLine } from "@remixicon/react";
+import { SettingsEmptyState } from "@/components/sections/shared/SettingsEmptyState";
 import { SettingsSidebarHeader } from "@/components/sections/shared/SettingsSidebarHeader";
 import { SettingsSidebarItem } from "@/components/sections/shared/SettingsSidebarItem";
 import { SettingsSidebarLayout } from "@/components/sections/shared/SettingsSidebarLayout";
+import { SidebarGroup } from "@/components/sections/shared/SidebarGroup";
 import { useI18n } from "@/lib/i18n";
 import { usePluginsStore } from "@/stores/usePluginsStore";
 import { groupPluginsForSidebar, type PluginSidebarGroup } from "./pluginSidebarGrouping";
@@ -42,17 +44,13 @@ export const PluginsSidebar: React.FC<PluginsSidebarProps> = ({ onItemSelect }) 
 
   return (
     <SettingsSidebarLayout
+      variant="background"
       header={(
-        <div>
-          <div className="border-b px-3 pt-4 pb-3">
-            <h2 className="text-base font-semibold text-foreground">{t("settings.plugins.sidebar.title")}</h2>
-            <p className="typography-meta mt-1 text-muted-foreground">{t("settings.plugins.sidebar.description")}</p>
-          </div>
-          <SettingsSidebarHeader
-            count={total}
-            label={t("settings.plugins.sidebar.total")}
-          />
-        </div>
+        <SettingsSidebarHeader
+          title={t("settings.plugins.sidebar.title")}
+          count={total}
+          label={t("settings.plugins.sidebar.total")}
+        />
       )}
     >
       {lastError ? (
@@ -70,11 +68,11 @@ export const PluginsSidebar: React.FC<PluginsSidebarProps> = ({ onItemSelect }) 
       ) : null}
 
       {total === 0 && !isLoading ? (
-        <div className="px-2 py-8 text-center text-muted-foreground">
-          <RiFolderLine className="mx-auto mb-3 h-10 w-10 opacity-50" />
-          <p className="typography-ui-label font-medium">{t("settings.plugins.sidebar.empty.title")}</p>
-          <p className="typography-meta mt-1 opacity-75">{t("settings.plugins.sidebar.empty.description")}</p>
-        </div>
+        <SettingsEmptyState
+          icon={RiPlugLine}
+          title={t("settings.plugins.sidebar.empty.title")}
+          description={t("settings.plugins.sidebar.empty.description")}
+        />
       ) : null}
 
       {isLoading && total === 0 ? (
@@ -84,8 +82,7 @@ export const PluginsSidebar: React.FC<PluginsSidebarProps> = ({ onItemSelect }) 
       ) : null}
 
       {grouped.map((group) => (
-        <div key={group.key} className="space-y-1">
-          <div className="typography-micro px-1 pt-2 text-muted-foreground">{t(groupLabelKey(group))}</div>
+        <SidebarGroup key={group.key} label={t(groupLabelKey(group))} count={group.items.length} storageKey="plugins">
           {group.items.map((item) => {
             const Icon = item.kind === "file" ? RiFileTextLine : item.parsedKind === "path" ? RiFolderLine : RiCodeBoxLine;
             const metadata = item.kind === "default"
@@ -111,7 +108,7 @@ export const PluginsSidebar: React.FC<PluginsSidebarProps> = ({ onItemSelect }) 
               />
             );
           })}
-        </div>
+        </SidebarGroup>
       ))}
     </SettingsSidebarLayout>
   );

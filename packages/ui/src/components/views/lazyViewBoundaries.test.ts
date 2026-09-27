@@ -156,7 +156,8 @@ describe('shared lazy view boundaries', () => {
     expect(settingsView).toContain('preloadSettingsSection(targetPage.slug)');
     expect(settingsView).toContain('usePreparedSettingsNavigation');
     expect(settingsView).toContain('displayedSlug: settingsSlug');
-    expect(settingsView).toContain("requestedSlug: requestedSettingsSlug === 'home'");
+    expect(settingsView).toContain('requestedSlug: effectiveRequestedSlug');
+    expect(settingsView).toContain("if (requestedSettingsSlug === 'home') return 'home';");
     expect(settingsView).toContain('visiblePages.map((page) => page.slug)');
     expect(sectionLoaders).toContain('preloadSettingsSectionsWhenIdle');
     expect(sectionLoaders).toContain('resourcesFor(slug).every((resource) => resource.isReady())');

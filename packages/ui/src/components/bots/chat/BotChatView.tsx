@@ -12,6 +12,7 @@ import { useBotSharedFilesStore } from '@/stores/useBotSharedFilesStore';
 import { useBotComputerActivityStore } from '@/stores/useBotComputerActivityStore';
 import { useBotsStore } from '@/stores/useBotsStore';
 import { resolveBotRuntimeRecovery, resolveBotRuntimeWarnings } from '../botPresentation';
+import { refreshBotsState } from '../refreshBotsState';
 import { botRuntimeProgressLabel, useBotRuntimeOperation } from '../useBotRuntimeOperation';
 import { BotComposer, type BotRuntimeRecoveryAction } from './BotComposer';
 import { BotMessageList, type BotMessageListHandle } from './BotMessageList';
@@ -88,7 +89,8 @@ export const BotChatView: React.FC<BotChatViewProps> = ({ bot, channelId }) => {
     const operationKey = `${runtimeOperation.progress?.id}:${phase}`;
     if (refreshedRuntimeOperationRef.current === operationKey) return;
     refreshedRuntimeOperationRef.current = operationKey;
-    void useBotsStore.getState().loadCapabilities();
+    if (phase === 'ready') void refreshBotsState();
+    else void useBotsStore.getState().loadCapabilities();
   }, [runtimeOperation.progress?.id, runtimeOperation.progress?.phase]);
 
   const recoveryAction = React.useMemo<BotRuntimeRecoveryAction | null>(() => {

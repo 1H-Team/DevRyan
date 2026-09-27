@@ -39,6 +39,13 @@ Use a token + hostname managed by Cloudflare:
 openchamber tunnel start --provider cloudflare --mode managed-remote --token-file ~/.secrets/cf-token --hostname app.example.com
 ```
 
+With Supabase On, open the hostname and sign in with your individual account.
+With Supabase Off or unconfigured, an enrolled local owner can start the same
+tunnel and receive a private, one-time owner link. Redeem it within 15 minutes;
+the remote session lasts seven days. Keep this link private: it grants access
+to your local DevRyan workspace. Settings → Remote Tunnel can create a new link
+after an automatic restart. Supabase outages while On do not enable owner links.
+
 ### Managed local
 
 Use a local `cloudflared` config:

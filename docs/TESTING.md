@@ -108,7 +108,7 @@ Do not silence a deterministic scenario with `skip` or `todo`. Remove tests for 
 
 ## Production Bots Docker and acceptance gates
 
-The normal deterministic gate never requires Docker. Three opt-in groups use
+The normal deterministic gate never requires Docker. Four opt-in groups use
 only disposable test containers/volumes and must be run on a release host with a
 healthy Docker Engine:
 
@@ -116,7 +116,20 @@ healthy Docker Engine:
 DEVRYAN_RUN_DOCKER_TESTS=1 bun test packages/bot-supervisor
 DEVRYAN_RUN_BROWSER_TESTS=1 bun test packages/bot-computer/src/browser.test.js
 DEVRYAN_RUN_BOT_INDEXER_DOCKER_TESTS=1 bun run --cwd packages/bot-indexer test
+DEVRYAN_RUN_BOT_DB_DOCKER_TESTS=1 bun test --cwd packages/electron tests/bot-catalog.docker.test.mjs --timeout 600000
 ```
+
+The local Bot catalog group needs the development catalog images
+(`docker build -f packages/bot-db/docker/database/Dockerfile -t devryan/bot-database:dev .`
+and the same for `rest`). Every run uses a unique `devryan-it-<hex>` Compose
+project, namespace and data directory and refuses production resource names,
+so it never touches an installed runtime. It verifies initialization,
+migrations, the REST boundary, backup → verified candidate → validation →
+journaled swap → commit, rollback of an uncommitted replacement, newer-schema
+refusal, Start Empty, cold restart, and a hosted-catalog import against a
+GET-only fake cloud: drift rejection, a resumable 402 block, a disjoint merge
+with regenerated identities, owner mappings and the activation hold, and a
+conflicting re-import that changes nothing.
 
 The supervisor group verifies the real Docker-socket round trip through the
 engine proxy, owned-resource confinement, internal/public network split,

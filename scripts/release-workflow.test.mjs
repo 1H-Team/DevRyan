@@ -8,7 +8,7 @@ test('release graph shares one web build and gates packaging on complete inputs'
   const images = jobs['build-bot-runtime-image'];
   assert.equal(images.strategy['max-parallel'], 3);
   assert.equal(images.strategy['fail-fast'], false);
-  assert.equal(new Set(images.strategy.matrix.image).size, 6);
+  assert.equal(new Set(images.strategy.matrix.image).size, 8);
   const build = images.steps.find((step) => step.uses?.startsWith('docker/build-push-action@'));
   assert.equal(build.with.provenance, 'mode=max');
   assert.equal(build.with.sbom, true);

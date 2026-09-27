@@ -1,3 +1,4 @@
+import express from 'express';
 import { createProjectIdFromPath } from '../projects/project-id.js';
 import fs from 'fs';
 import os from 'os';
@@ -381,7 +382,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     }
   });
 
-  app.post('/api/mcp/auth/pending', async (req, res) => {
+  app.post('/api/mcp/auth/pending', express.json({ limit: '16kb' }), async (req, res) => {
     try {
       pruneExpiredPendingMcpAuthContexts();
 

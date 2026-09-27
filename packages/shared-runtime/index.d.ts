@@ -201,6 +201,7 @@ export function createFreeZenModelCatalog(options?: {
 };
 
 export type FreeZenFailureReason =
+  | 'free_tier_rejected'
   | 'rate_limited'
   | 'model_unavailable'
   | 'unauthorized'
@@ -232,7 +233,7 @@ export function createFreeZenCooldowns(options?: {
 }): FreeZenCooldowns;
 export const sharedFreeZenCooldowns: FreeZenCooldowns;
 
-export type FreeZenSkipReason = 'cooling_down' | 'max_models' | 'deadline';
+export type FreeZenSkipReason = 'cooling_down' | 'max_models' | 'deadline' | 'free_tier_rejected';
 export function runFreeZenModelRotation<TInput = unknown, TOutput = TInput>(options: {
   models: Array<FreeZenModel | string>;
   timeoutMs: number;

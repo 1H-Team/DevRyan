@@ -25,4 +25,15 @@ describe('provider logo aliases', () => {
     expect(source).not.toContain("['opencode-go', 'gocode']");
     expect(existsSync(resolve(currentDir, '../assets/provider-logos/opencode.svg'))).toBe(true);
   });
+
+  test('gives OpenCode Zen its own logo, distinct from OpenCode Go', () => {
+    const source = readFileSync(resolve(currentDir, 'useProviderLogo.ts'), 'utf8');
+
+    expect(source).toContain("['opencode', 'opencode-zen']");
+    expect(existsSync(resolve(currentDir, '../assets/provider-logos/opencode-zen.svg'))).toBe(true);
+  });
+
+  test('ships a local, tightly cropped OpenAI logo', () => {
+    expect(existsSync(resolve(currentDir, '../assets/provider-logos/openai.svg'))).toBe(true);
+  });
 });

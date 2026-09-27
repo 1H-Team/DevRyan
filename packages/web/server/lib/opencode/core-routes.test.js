@@ -5,6 +5,7 @@ import {
   registerAuthAndAccessRoutes,
   registerCommonRequestMiddleware,
   registerServerStatusRoutes,
+  resolveSharedJsonBodyLimit,
 } from './core-routes.js';
 import { createTunnelAuth } from './tunnel-auth.js';
 
@@ -187,6 +188,20 @@ describe('core-routes', () => {
 });
 
 describe('common request middleware', () => {
+  it.each([
+    ['/api/behavior/rules', '1mb'],
+    ['/api/config/apply', '16kb'],
+    ['/api/bots/00000000-0000-4000-8000-000000000001', '50mb'],
+    ['/api/session/ses_1/prompt_async', '50mb'],
+    // Unlisted /api paths stay raw for the OpenCode proxy; body-reading routes
+    // there mount their own parser (api-json-body-coverage.test.js).
+    ['/api/session', null],
+    ['/api/runtime-service/desktop-host', null],
+    ['/auth/session', '50mb'],
+  ])('resolves the shared JSON body limit for %s', (pathname, limit) => {
+    expect(resolveSharedJsonBodyLimit(pathname)).toBe(limit);
+  });
+
   it.each([
     '/api/diagnostics/export',
     '/api/evidence/project',

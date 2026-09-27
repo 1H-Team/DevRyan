@@ -6,7 +6,11 @@ import { pathToFileURL } from 'node:url';
 
 export const BOT_RUNTIME_MANIFEST_VERSION = 1;
 export const BOT_RUNTIME_RELEASE_MANIFEST_VERSION = 2;
-export const BOT_RUNTIME_IMAGE_KEYS = Object.freeze([
+// Releases before local Bot storage shipped six images and kept the Bot
+// catalog in Supabase. That installed format is still recognized so its
+// history is preserved and it can take the automatic upgrade path, but it can
+// never be activated or rolled back to.
+export const LEGACY_BOT_RUNTIME_IMAGE_KEYS = Object.freeze([
   'supervisor',
   'engine-proxy',
   'egress',
@@ -14,6 +18,12 @@ export const BOT_RUNTIME_IMAGE_KEYS = Object.freeze([
   'opencode',
   'computer',
 ]);
+export const BOT_RUNTIME_IMAGE_KEYS = Object.freeze([
+  ...LEGACY_BOT_RUNTIME_IMAGE_KEYS,
+  'database',
+  'rest',
+]);
+export const BOT_RUNTIME_LEGACY_FORMAT = 'cloud-catalog-six-image';
 export const BOT_RUNTIME_RELEASE_PLATFORM_KEYS = Object.freeze([
   'linux/amd64',
   'linux/arm64',
@@ -64,8 +74,17 @@ const ensureExactKeys = (value, expected, code) => {
   }
 };
 
-const validateImageInventory = (images) => {
-  ensureExactKeys(images, BOT_RUNTIME_IMAGE_KEYS, 'bot_runtime_manifest_invalid');
+const validateImageInventory = (images, keys = BOT_RUNTIME_IMAGE_KEYS) => {
+  ensureExactKeys(images, keys, 'bot_runtime_manifest_invalid');
+};
+
+const installedImageKeys = (images) => {
+  const keys = images && typeof images === 'object' && !Array.isArray(images)
+    ? Object.keys(images).sort().join('\0')
+    : '';
+  if (keys === [...BOT_RUNTIME_IMAGE_KEYS].sort().join('\0')) return BOT_RUNTIME_IMAGE_KEYS;
+  if (keys === [...LEGACY_BOT_RUNTIME_IMAGE_KEYS].sort().join('\0')) return LEGACY_BOT_RUNTIME_IMAGE_KEYS;
+  fail('Bot runtime manifest shape is invalid', 'bot_runtime_manifest_invalid');
 };
 
 const exactTrimmedString = (value, pattern) => (
@@ -172,14 +191,19 @@ const freezeManifest = (manifest) => {
   return Object.freeze(manifest);
 };
 
-const normalizeArchitectureReleaseManifest = ({ releaseId, architecture, images }) => {
+const normalizeArchitectureReleaseManifest = ({
+  releaseId,
+  architecture,
+  images,
+  keys = BOT_RUNTIME_IMAGE_KEYS,
+}) => {
   const normalizedArchitecture = normalizeBotRuntimeArchitecture(architecture);
   if (releaseId?.length > 120 || !exactTrimmedString(releaseId, RELEASE_ID_PATTERN)) {
     fail('Bot runtime release identifier is invalid', 'bot_runtime_manifest_invalid');
   }
-  validateImageInventory(images);
+  validateImageInventory(images, keys);
   const normalizedImages = {};
-  for (const key of BOT_RUNTIME_IMAGE_KEYS) {
+  for (const key of keys) {
     const image = images[key];
     ensureExactKeys(image, ['repository', 'digest'], 'bot_runtime_manifest_invalid');
     const repository = typeof image.repository === 'string' ? image.repository.trim() : '';
@@ -200,9 +224,23 @@ const normalizeArchitectureReleaseManifest = ({ releaseId, architecture, images 
   return freezeManifest({ ...normalized, fingerprint: fingerprintManifest(normalized) });
 };
 
+// The installed six-image format keeps its original fingerprint, so a recorded
+// installation validates byte-for-byte; it is marked legacy and never usable.
+const markLegacy = (manifest, keys) => (keys === LEGACY_BOT_RUNTIME_IMAGE_KEYS
+  ? Object.freeze(Object.defineProperty({ ...manifest }, 'legacyFormat', {
+      value: BOT_RUNTIME_LEGACY_FORMAT,
+      enumerable: false,
+    }))
+  : manifest);
+
+export const isLegacyBotRuntimeManifest = (manifest) => (
+  manifest?.legacyFormat === BOT_RUNTIME_LEGACY_FORMAT
+);
+
 export const validateBotRuntimeManifest = (raw, {
   isPackaged,
   architecture = process.arch,
+  allowLegacy = false,
 } = {}) => {
   const expectedArchitecture = normalizeBotRuntimeArchitecture(architecture);
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
@@ -229,9 +267,10 @@ export const validateBotRuntimeManifest = (raw, {
   if (raw.channel !== 'development') {
     fail('Development Bot runtime requires the local manifest', 'bot_runtime_manifest_invalid');
   }
-  validateImageInventory(raw.images);
+  const keys = allowLegacy ? installedImageKeys(raw.images) : BOT_RUNTIME_IMAGE_KEYS;
+  validateImageInventory(raw.images, keys);
   const images = {};
-  for (const key of BOT_RUNTIME_IMAGE_KEYS) {
+  for (const key of keys) {
     const image = raw.images[key];
     ensureExactKeys(image, ['reference'], 'bot_runtime_manifest_invalid');
     const expectedReference = `devryan/bot-${key}:dev`;
@@ -247,7 +286,7 @@ export const validateBotRuntimeManifest = (raw, {
     architecture: expectedArchitecture,
     images,
   };
-  return freezeManifest({ ...normalized, fingerprint: fingerprintManifest(normalized) });
+  return markLegacy(freezeManifest({ ...normalized, fingerprint: fingerprintManifest(normalized) }), keys);
 };
 
 export const validateInstalledBotRuntimeManifest = (raw, { architecture } = {}) => {
@@ -260,11 +299,11 @@ export const validateInstalledBotRuntimeManifest = (raw, { architecture } = {}) 
     'bot_runtime_manifest_invalid',
   );
   const expectedArchitecture = normalizeBotRuntimeArchitecture(architecture || raw.architecture);
+  const keys = installedImageKeys(raw.images);
   let normalized;
   if (raw.channel === 'release') {
     const images = {};
-    validateImageInventory(raw.images);
-    for (const key of BOT_RUNTIME_IMAGE_KEYS) {
+    for (const key of keys) {
       ensureExactKeys(
         raw.images[key],
         ['repository', 'digest', 'reference'],
@@ -275,18 +314,18 @@ export const validateInstalledBotRuntimeManifest = (raw, { architecture } = {}) 
         digest: raw.images[key].digest,
       };
     }
-    normalized = normalizeArchitectureReleaseManifest({
+    normalized = markLegacy(normalizeArchitectureReleaseManifest({
       releaseId: raw.releaseId,
       architecture: raw.architecture,
       images,
-    });
+      keys,
+    }), keys);
     if (normalized.architecture !== expectedArchitecture) {
       fail('Installed Bot runtime architecture does not match this app', 'bot_runtime_architecture_mismatch');
     }
   } else if (raw.channel === 'development') {
     const images = {};
-    validateImageInventory(raw.images);
-    for (const key of BOT_RUNTIME_IMAGE_KEYS) {
+    for (const key of keys) {
       ensureExactKeys(
         raw.images[key],
         ['repository', 'digest', 'reference'],
@@ -301,11 +340,11 @@ export const validateInstalledBotRuntimeManifest = (raw, { architecture } = {}) 
       version: raw.version,
       channel: raw.channel,
       images,
-    }, { isPackaged: false, architecture: expectedArchitecture });
+    }, { isPackaged: false, architecture: expectedArchitecture, allowLegacy: true });
   } else {
     fail('Installed Bot runtime channel is invalid', 'bot_runtime_manifest_invalid');
   }
-  const imageMetadataMatches = BOT_RUNTIME_IMAGE_KEYS.every((key) => (
+  const imageMetadataMatches = keys.every((key) => (
     JSON.stringify(normalized.images[key]) === JSON.stringify(raw.images[key])
   ));
   if (!imageMetadataMatches

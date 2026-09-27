@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  isManagedAccountLoginAvailable,
+  getTunnelAccessUrl,
   isManagedRemoteStatusDegraded,
 } from './tunnelStatusPresentation';
 
@@ -44,9 +44,12 @@ describe('managed remote tunnel status presentation', () => {
     })).toBe(false);
   });
 
-  test('allows Managed Remote startup only for managed-account principals', () => {
-    expect(isManagedAccountLoginAvailable('managed')).toBe(true);
-    expect(isManagedAccountLoginAvailable('local-admin')).toBe(false);
-    expect(isManagedAccountLoginAvailable(undefined)).toBe(false);
+  test('copies the authenticated owner link when Supabase is Off and the hostname for account login', () => {
+    const info = { url: 'https://app.example.com', connectUrl: 'https://app.example.com/tunnel/connect#t=fixture' };
+    expect(getTunnelAccessUrl(info, 'account-login')).toBe(info.url);
+    expect(getTunnelAccessUrl(info, 'owner-link')).toBe(info.connectUrl);
+    expect(getTunnelAccessUrl(info, 'tunnel-gated')).toBe(info.connectUrl);
+    expect(getTunnelAccessUrl({ ...info, connectUrl: null }, 'owner-link')).toBeNull();
+    expect(getTunnelAccessUrl(null, 'owner-link')).toBeNull();
   });
 });

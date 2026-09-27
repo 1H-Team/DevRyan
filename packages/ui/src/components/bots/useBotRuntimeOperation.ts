@@ -12,6 +12,8 @@ const terminalPhase = (phase: BotRuntimeOperationProgress['phase']): boolean => 
   phase === 'ready' || phase === 'failed'
 );
 const BOT_RUNTIME_OPERATION_POLL_MS = 1_000;
+// The desktop host always reports a total; this only covers an older host.
+const BOT_RUNTIME_IMAGE_COUNT = 8;
 
 export const botRuntimeProgressLabel = (
   progress: BotRuntimeOperationProgress | null,
@@ -19,13 +21,17 @@ export const botRuntimeProgressLabel = (
 ): string => {
   if (!progress) return t('bots.runtime.actionWorking');
   if (progress.phase === 'downloading_image') {
-    const total = progress.total ?? 5;
+    const total = progress.total ?? BOT_RUNTIME_IMAGE_COUNT;
     const current = Math.min(total, (progress.completed ?? 0) + 1);
     return t('bots.runtime.progress.downloading', { current, total });
   }
   const phaseKeys: Record<Exclude<BotRuntimeOperationProgress['phase'], 'downloading_image'>, I18nKey> = {
     checking: 'bots.runtime.progress.checking',
     verifying_images: 'bots.runtime.progress.verifying_images',
+    checking_database: 'bots.runtime.progress.checking_database',
+    initializing_database: 'bots.runtime.progress.initializing_database',
+    migrating_database: 'bots.runtime.progress.migrating_database',
+    starting_database: 'bots.runtime.progress.starting_database',
     starting_services: 'bots.runtime.progress.starting_services',
     verifying_health: 'bots.runtime.progress.verifying_health',
     ready: 'bots.runtime.progress.ready',

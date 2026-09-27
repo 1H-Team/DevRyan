@@ -15,6 +15,7 @@ Monorepo package boundary for DevRyan runtimes. It organizes shared UI/runtime i
   - `bot-engine-proxy/`: sole Docker-socket container with independently authenticated eleven-operation validation.
   - `bot-egress/`: purpose-separated model/AG-UI/browser HTTP/CONNECT proxy with private-network denial.
   - `bot-computer/`: persistent Chromium profile, accessibility-ref command API, human-control lease, ephemeral screencast, and private artifact staging for Bot computer scopes.
+  - `bot-db/`: reviewed local Bot catalog database definition — migration inventory, bootstrap SQL, hosted-import planning, and the pinned PostgreSQL/PostgREST images.
   - `bot-indexer/`: authenticated Docker-local SQLite FTS/vector projection for rebuildable Bot retrieval with exact scope namespaces.
   - `harness-runtime/`: dependency-free durable operation, diagnostic, lifecycle, and turn-evidence primitives shared by web/Electron.
   - `ui/` and `web/` provide shared renderer/server layers consumed by runtimes.

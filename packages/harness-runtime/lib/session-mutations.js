@@ -13,7 +13,7 @@ import { applyMutationText, initialMutationRuns, mutationText, visibleMutationRu
 import { inspectMutationFile, copyMutationObject, mutationFileStamp, mutationStatStamp, GRANULAR_TEXT_BYTES } from './session-mutation-files.js';
 import { withExecutionIO } from './execution-io-pool.js';
 import { markObjectIfUnsynced } from './object-durability.js';
-import { readSessionExecutionReceipt } from './session-execution.js';
+import { readSessionExecutionReceipt, removeExecutionSocketDirectory } from './session-execution.js';
 import { removeExecutionDirectory } from './execution-cleanup.js';
 
 const key = (kind, id) => `${kind}/${changeKey(id)}.json`;
@@ -64,6 +64,35 @@ const fastIngest = () => process.env.DEVRYAN_LEDGER_FAST_INGEST !== '0';
 // pay a filesystem lookup per object: 0.6 s per commit, about ten commits per
 // call, on a 5.6k-file project (a packed store answers in about 40 ms).
 const LEDGER_MAINTENANCE = Object.freeze({ looseObjects: 1_000, packs: 12, commits: 64, pruneExpiry: '2.hours.ago' });
+// Build tools write caches inside node_modules (Vite's bundled config and
+// dependency optimizer, loader caches), which the read-only dependency input
+// denies. A view's node_modules therefore links to a host-owned overlay: one
+// link per project entry, and cache entries linked into the project's shared
+// execution cache, which workers may write. Resolution still realpaths into
+// the project; nothing reaches the project's own caches. Windows keeps the
+// direct link. Kill switch: DEVRYAN_MODULE_CACHE_OVERLAY=0.
+const MODULE_CACHE_ENTRIES = Object.freeze(['.vite', '.vite-temp', '.cache']);
+const moduleOverlay = (file) => process.env.DEVRYAN_MODULE_CACHE_OVERLAY !== '0' && process.platform !== 'win32'
+  && path.posix.basename(file) === 'node_modules';
+const ignoreCode = (...codes) => (cause) => { if (!codes.includes(cause.code)) throw cause; };
+// Mirrors the project listing on every preparation (two directory reads), so
+// installed or removed packages appear without rebuilding. Overlay entries
+// are only links this host created; concurrent preparations converge.
+async function syncModuleOverlay({ source, overlay, caches }) {
+  const [wanted, present] = await Promise.all([fs.readdir(source), fs.readdir(overlay).catch((cause) => {
+    if (cause.code === 'ENOENT') return []; throw cause;
+  })]);
+  await fs.mkdir(overlay, { recursive: true, mode: 0o700 });
+  const want = new Set(wanted.filter((name) => !MODULE_CACHE_ENTRIES.includes(name))), have = new Set(present);
+  await mapBounded([...want].filter((name) => !have.has(name)),
+    (name) => fs.symlink(path.join(source, name), path.join(overlay, name)).catch(ignoreCode('EEXIST')));
+  await mapBounded(present.filter((name) => !want.has(name) && !MODULE_CACHE_ENTRIES.includes(name)),
+    (name) => fs.unlink(path.join(overlay, name)).catch(ignoreCode('ENOENT')));
+  for (const name of MODULE_CACHE_ENTRIES) {
+    await fs.mkdir(path.join(caches, name), { recursive: true, mode: 0o700 });
+    if (!have.has(name)) await fs.symlink(path.join(caches, name), path.join(overlay, name)).catch(ignoreCode('EEXIST'));
+  }
+}
 const mapBounded = async (items, fn, limit = FILE_CONCURRENCY) => {
   const results = new Array(items.length);
   let next = 0, failed = false;
@@ -910,9 +939,18 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       for (const file of lease.inputs) {
         checkExecutionAdmission();
         await verifyAncestors(lease.viewDirectory, file);
-        const target = path.join(lease.viewDirectory, file);
+        const target = path.join(lease.viewDirectory, file), source = path.join(lease.projectDirectory, file);
         await fs.mkdir(path.dirname(target), { recursive: true });
-        await fs.symlink(path.join(lease.projectDirectory, file), target, 'dir');
+        let linked = source;
+        if (moduleOverlay(file) && lease.auxiliaryDirectory) {
+          const id = createHash('sha256').update(source).digest('hex').slice(0, 16);
+          const overlay = path.join(rootFor(lease.projectDirectory), 'module-overlays', id);
+          try {
+            await syncModuleOverlay({ source, overlay, caches: path.join(lease.auxiliaryDirectory, 'module-caches', id) });
+            linked = overlay;
+          } catch (cause) { if (!['ENOENT', 'ENOTDIR'].includes(cause.code)) throw cause; }
+        }
+        await fs.symlink(linked, target, 'dir');
       }
       await fs.mkdir(lease.workingDirectory, { recursive: true });
       return await locked(lease.directory, async (current) => {
@@ -1128,6 +1166,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     // The parent holds termination.json. It is recovery evidence, not scratch.
     await removeExecutionDirectory(lease.viewDirectory);
     await removeExecutionDirectory(path.join(path.dirname(lease.viewDirectory), 'scratch'));
+    await removeExecutionSocketDirectory(lease);
     await locked(input.directory, async (repo) => {
       // Deterministic ref identity also recovers pins from older crash windows.
       await repo.db.release(lease.token);

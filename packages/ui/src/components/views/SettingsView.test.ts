@@ -19,6 +19,10 @@ import {
 import {
   SETTINGS_NAV_SECTIONS,
   getSettingsDestinationFallbackSlug,
+  getSettingsDestinationVisibleSlugs,
+  getSettingsNavDestination,
+  getSettingsSupersedingSlug,
+  resolveSettingsTabSlug,
 } from '@/lib/settings/navigation';
 
 const getNavSlugs = (labelKey: string) => SETTINGS_NAV_SECTIONS
@@ -160,16 +164,18 @@ describe('SettingsView navigation', () => {
     expect(classes).not.toContain('pl-[5.5rem]');
   });
 
-  test('skills settings list is wider than other split lists', () => {
+  test('Plugins hub lists share one width that is wider than other split lists', () => {
     const defaultClassName = getSettingsPageSidebarClassName('agents');
-    const skillsClassName = getSettingsPageSidebarClassName('skills.installed');
 
     expect(defaultClassName).toContain('w-[264px]');
     expect(defaultClassName).toContain('min-w-[264px]');
     expect(defaultClassName).toContain('max-w-[264px]');
-    expect(skillsClassName).toContain('w-[334px]');
-    expect(skillsClassName).toContain('min-w-[334px]');
-    expect(skillsClassName).toContain('max-w-[334px]');
+    for (const slug of ['plugins', 'skills.installed', 'mcp'] as const) {
+      const className = getSettingsPageSidebarClassName(slug);
+      expect(className).toContain('w-[334px]');
+      expect(className).toContain('min-w-[334px]');
+      expect(className).toContain('max-w-[334px]');
+    }
   });
 
   test('behavior is routed through agents instead of top-level navigation', () => {
@@ -185,15 +191,22 @@ describe('SettingsView navigation', () => {
     expect(resolveSettingsSlug('github')).toBe('users');
   });
 
-  test('MCP Servers sits immediately below Providers in connections navigation', () => {
-    const connectionsPages = getNavSlugs('settings.view.nav.group.connections');
+  test('Plugins, Skills and MCP Servers share the Plugins hub at the top of Connections', () => {
+    const workflowPages = getNavSlugs('settings.view.nav.group.workflow');
 
     expect(resolveSettingsSlug('plugins')).toBe('plugins');
-    expect(connectionsPages).toContain('providers');
-    expect(connectionsPages).toContain('mcp');
-    expect(connectionsPages.indexOf('mcp')).toBe(connectionsPages.indexOf('usage') + 1);
-    expect(getNavSlugs('settings.view.nav.group.workflow')).not.toContain('mcp');
+    expect(getNavSlugs('settings.view.nav.group.connections').slice(0, 3)).toEqual(['plugins', 'skills.installed', 'mcp']);
+    for (const slug of ['plugins', 'skills.installed', 'mcp'] as const) {
+      expect(workflowPages).not.toContain(slug);
+      expect(getSettingsNavDestination(slug)?.id).toBe('plugins');
+    }
     expect(getSettingsPageMeta('mcp')?.title).toBe('MCP Servers');
+  });
+
+  test('Skills Catalog opens inside the Skills tab of the Plugins hub', () => {
+    expect(getSettingsNavDestination('skills.catalog')?.id).toBe('plugins');
+    expect(resolveSettingsTabSlug('skills.catalog')).toBe('skills.installed');
+    expect(resolveSettingsTabSlug('mcp')).toBe('mcp');
   });
 
   test('places Bots immediately below Agents in workflow navigation', () => {
@@ -262,25 +275,40 @@ describe('SettingsView navigation', () => {
     ).toBe(false);
   });
 
-  test('places MCP Servers after the Providers destination in Connections', () => {
+  test('orders Connections as Plugins, Providers, then Remote Connections', () => {
     const connections = SETTINGS_NAV_SECTIONS
       .find((section) => section.labelKey === 'settings.view.nav.group.connections')
       ?.destinations ?? [];
 
     expect(connections.map((destination) => destination.id)).toEqual([
+      'plugins',
       'providers',
-      'mcp',
       'remote-connections',
     ]);
-    expect(connections[0]?.slugs).toEqual(['providers', 'usage']);
-    expect(connections[1]?.slugs).toEqual(['mcp']);
+    expect(connections[0]?.slugs).toEqual(['plugins', 'skills.installed', 'mcp']);
+    expect(connections[0]?.tabsAriaLabelKey).toBe('settings.plugins.tabs.aria');
+    expect(connections[1]?.slugs).toEqual(['providers']);
+    expect(connections[1]?.fallbackSlugs).toEqual(['usage']);
     expect(connections[2]?.slugs).toEqual(['tunnel', 'remote-instances']);
     expect(connections[2]?.labelKey).toBe('settings.page.remoteConnections.title');
+  });
+
+  test('folds Usage into Providers unless only Usage is readable', () => {
+    const providers = getSettingsNavDestination('providers');
+    expect(getSettingsNavDestination('usage')?.id).toBe('providers');
+    expect(providers && getSettingsDestinationVisibleSlugs(providers, new Set(['providers', 'usage']))).toEqual(['providers']);
+    expect(providers && getSettingsDestinationVisibleSlugs(providers, new Set(['usage']))).toEqual(['usage']);
+    expect(getSettingsSupersedingSlug('usage', new Set(['providers', 'usage']))).toBe('providers');
+    expect(getSettingsSupersedingSlug('usage', new Set(['usage']))).toBeNull();
+    expect(getSettingsSupersedingSlug('providers', new Set(['providers', 'usage']))).toBeNull();
+    expect(getSettingsSupersedingSlug('mcp', new Set(['plugins', 'mcp']))).toBeNull();
   });
 
   test('keeps grouped destinations on the first accessible child tab', () => {
     expect(getSettingsDestinationFallbackSlug('providers', new Set(['usage']))).toBe('usage');
     expect(getSettingsDestinationFallbackSlug('usage', new Set(['providers']))).toBe('providers');
+    expect(getSettingsDestinationFallbackSlug('plugins', new Set(['skills.installed', 'mcp']))).toBe('skills.installed');
+    expect(getSettingsDestinationFallbackSlug('skills.catalog', new Set(['mcp']))).toBe('mcp');
     expect(getSettingsDestinationFallbackSlug('remote-instances', new Set(['tunnel', 'remote-instances']))).toBe('tunnel');
     expect(getSettingsDestinationFallbackSlug('remote-instances', new Set(['tunnel']))).toBe('tunnel');
     expect(getSettingsDestinationFallbackSlug('tunnel', new Set())).toBeNull();

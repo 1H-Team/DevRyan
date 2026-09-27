@@ -17,8 +17,21 @@ export type BotRunState =
   | 'cancelled'
   | 'interrupted';
 
+export type BotCatalogDatabaseState =
+  | 'starting'
+  | 'ready'
+  | 'unavailable'
+  | 'setup_required'
+  | 'update_required'
+  | 'recovery_required'
+  | 'maintenance';
+
 export type BotCapabilities = {
+  /** Execution availability: the catalog and the Docker runtime are both ready. */
   available: boolean;
+  /** The local Bot catalog can be read and written, independently of Docker execution. */
+  catalogAvailable?: boolean;
+  database?: { state: BotCatalogDatabaseState; code: string | null } | null;
   state: string;
   code: string | null;
   owner: string;
@@ -41,6 +54,8 @@ export type BotSummary = {
   createdAt: string;
   updatedAt: string;
   retiredAt: string | null;
+  /** The identity this viewer acts as for this Bot; absent means the principal. */
+  viewerUserId?: string | null;
 };
 
 export type BotModelVariantOption = {
@@ -1156,13 +1171,15 @@ export class BotsApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly details: unknown;
+  readonly retryable: boolean | undefined;
 
-  constructor(message: string, options: { status: number; code: string; details?: unknown }) {
+  constructor(message: string, options: { status: number; code: string; details?: unknown; retryable?: boolean }) {
     super(message);
     this.name = 'BotsApiError';
     this.status = options.status;
     this.code = options.code;
     this.details = options.details ?? null;
+    this.retryable = options.retryable;
   }
 }
 
@@ -1205,7 +1222,71 @@ export type BotSpeechStatus = {
   limits: { maximumInputSeconds: number; maximumInputBytes: number; maximumReplyCharacters: number };
 };
 
+export type BotCatalogBackup = {
+  id: string;
+  kind: 'daily' | 'manual' | 'pre_migration' | 'pre_import' | 'pre_restore' | 'pre_start_empty';
+  createdAt: string;
+  verifiedAt: string;
+  schemaHead: string;
+  objectCount: number;
+  bytes: number;
+};
+
+export type BotCatalogImportMode = 'empty' | 'merge';
+export type BotCatalogImportPhase =
+  | 'exporting' | 'exporting_objects' | 'verifying' | 'loading_source' | 'merging'
+  | 'completed' | 'failed' | 'blocked' | 'cancelled' | 'dismissed';
+
+export type BotCatalogImportStatus = {
+  /** Background hosted discovery is still running; local reads remain available. */
+  checking?: boolean;
+  cloud: { hasBots: boolean | null; checkedAt: string; code: string | null } | null;
+  import: {
+    id: string;
+    mode: BotCatalogImportMode;
+    phase: BotCatalogImportPhase;
+    running: boolean;
+    createdAt: string;
+    updatedAt: string;
+    tables: number;
+    pages: number;
+    objects: number;
+    error: { code: string; message: string; retryable: boolean } | null;
+    result: { importedBotCount?: number } | null;
+  } | null;
+  /** Hosted Bots exist that have not been imported (or dismissed). */
+  pending: boolean;
+};
+
+export type BotCatalogStatus = {
+  state: BotCatalogDatabaseState;
+  code: string | null;
+  schema: { code: string; requiredMigration?: string } | null;
+  maintenance: { kind: string; startedAt: string } | null;
+  activationHold: { reason: string; createdAt: string } | null;
+  /** Only this computer's owner can back up, restore, start empty or import. */
+  viewerIsOwner: boolean;
+  backups?: {
+    backupsAvailable: boolean;
+    lastDailyAt: string | null;
+    running: boolean;
+  };
+  import?: BotCatalogImportStatus;
+};
+
+export const BOT_CATALOG_RESTORE_CONFIRMATION = 'RESTORE';
+export const BOT_CATALOG_START_EMPTY_CONFIRMATION = 'START EMPTY';
+
 export type BotsApi = {
+  getCatalogStatus(): Promise<BotCatalogStatus>;
+  listCatalogBackups(): Promise<{ backups: BotCatalogBackup[] }>;
+  backupCatalog(): Promise<{ backup: BotCatalogBackup }>;
+  restoreCatalog(backupId: string, confirmation: string): Promise<unknown>;
+  startEmptyCatalog(confirmation: string): Promise<unknown>;
+  resumeBotActivation(): Promise<unknown>;
+  startCatalogImport(request: { mode: BotCatalogImportMode; writersStopped: boolean }): Promise<BotCatalogImportStatus>;
+  cancelCatalogImport(): Promise<BotCatalogImportStatus>;
+  dismissCatalogImport(): Promise<BotCatalogImportStatus>;
   getTelegramStatus(botId: string): Promise<BotTelegramStatus>;
   configureTelegram(botId: string, request: { enabled: boolean; token?: string }): Promise<BotTelegramStatus>;
   disconnectTelegram(botId: string): Promise<BotTelegramStatus>;
@@ -1628,6 +1709,7 @@ const errorFromPayload = (status: number, payload: unknown): BotsApiError => {
     status,
     code,
     details: Object.hasOwn(record, 'details') ? record.details : null,
+    retryable: typeof record.retryable === 'boolean' ? record.retryable : undefined,
   });
 };
 
@@ -1751,7 +1833,23 @@ export const createBotsApi = ({
     leaseId === undefined ? {} : { leaseId },
   );
 
+  // Backup, Restore and Start Empty run to completion inside one request.
+  const CATALOG_OPERATION_TIMEOUT_MS = 30 * 60_000;
+
   const api: BotsApi = {
+    getCatalogStatus: () => requestJson('/api/bots/database'),
+    listCatalogBackups: () => requestJson('/api/bots/database/backups'),
+    backupCatalog: () => mutateJson('/api/bots/database/backups', 'POST', {}, undefined, CATALOG_OPERATION_TIMEOUT_MS),
+    restoreCatalog: (backupId, confirmation) => mutateJson(
+      '/api/bots/database/restore', 'POST', { backupId, confirmation }, undefined, CATALOG_OPERATION_TIMEOUT_MS,
+    ),
+    startEmptyCatalog: (confirmation) => mutateJson(
+      '/api/bots/database/start-empty', 'POST', { confirmation }, undefined, CATALOG_OPERATION_TIMEOUT_MS,
+    ),
+    resumeBotActivation: () => mutateJson('/api/bots/database/activation/resume', 'POST', {}),
+    startCatalogImport: (body) => mutateJson('/api/bots/database/import', 'POST', body),
+    cancelCatalogImport: () => mutateJson('/api/bots/database/import/cancel', 'POST', {}),
+    dismissCatalogImport: () => mutateJson('/api/bots/database/import/dismiss', 'POST', {}),
     getTelegramStatus: (botId) => requestJson(`/api/bots/${encoded(botId)}/telegram`),
     configureTelegram: (botId, body) => mutateJson(`/api/bots/${encoded(botId)}/telegram`, 'PUT', body),
     disconnectTelegram: (botId) => mutateJson(`/api/bots/${encoded(botId)}/telegram`, 'DELETE'),

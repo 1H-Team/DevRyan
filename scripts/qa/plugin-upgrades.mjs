@@ -100,8 +100,17 @@ export async function checkInstalledPlugins({ modules, output, configFile }) {
     assert.equal(host.default_agent, 'builder');
     for (const name of config.disabled_mcps ?? []) assert.equal(host.mcp?.[name], undefined);
     assert.ok(Object.keys(slim.tool ?? {}).length > 0);
+    // Slim's pre-native apply_patch hook fails closed. OpenCode tolerates context
+    // whose leading indentation differs; Slim 2.2.18 rejected it (2026-09-26 audit).
+    await fs.writeFile(path.join(workspace, 'indent.ts'), 'function start() {\n  if (ready) {\n            engine.start();\n  }\n}\n');
+    const beforePatch = (patchText, callID) => slim['tool.execute.before'](
+      { tool: 'apply_patch', sessionID: 'fixture-session', callID }, { args: { patchText } });
+    await beforePatch('*** Begin Patch\n*** Update File: indent.ts\n@@\n            engine.start();\n+           ready = false;\n*** End Patch', 'fixture-indent');
+    await assert.rejects(
+      beforePatch('*** Begin Patch\n*** Update File: indent.ts\n@@\n missing();\n+ready = false;\n*** End Patch', 'fixture-missing'),
+      /apply_patch verification failed: Failed to find expected lines/);
     const result = { passed: true, versions, image: 'GPT-6 Astra medium; synthetic SSE generation, reference, quality, size, non-overwrite, missing-auth',
-      slim: 'real package config preserves host models, variants, prompts, permissions and disabled MCPs',
+      slim: 'real package config preserves host models, variants, prompts, permissions and disabled MCPs; apply_patch hook accepts leading-indent context drift and rejects missing context',
       cursor: 'installed entrypoint imports; text delta and tool-call duplicate handling', liveProviderRequests: 0 };
     await fs.writeFile(path.join(root, 'result.json'), JSON.stringify(result, null, 2) + '\n');
     return { ...result, output: root };

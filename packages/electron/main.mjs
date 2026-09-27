@@ -32,7 +32,8 @@ import {
   deriveBotRuntimeServiceEnvironment,
   resolveDockerSocketSupplementalGid,
 } from './bot-runtime-manager.mjs';
-import { loadBotRuntimeManifest } from './bot-runtime-manifest.mjs';
+import { BOT_RUNTIME_IMAGE_KEYS, loadBotRuntimeManifest } from './bot-runtime-manifest.mjs';
+import { loadBotDatabaseSql } from '@openchamber/bot-db';
 import { finishQuitAfterCleanup } from './quit-cleanup.mjs';
 import {
   createRuntimeServiceCoordinator,
@@ -51,6 +52,7 @@ import {
   prepareAutomaticRuntimeService,
   createRuntimeOwnerAcquirer,
   recoverAppBoundRuntime,
+  retryRuntimeServiceConnection,
 } from './runtime-service-startup.mjs';
 import {
   buildQuitRiskSnapshot,
@@ -492,6 +494,33 @@ const botRuntimeComposePath = () => (app.isPackaged
       path.resolve(__dirname, '..', '..', '..', 'docker', 'bots', 'compose.yml'),
     ]));
 
+// Reviewed local Bot catalog SQL: packaged as resources, read from the checkout
+// in development. Every file is checksum-verified against the inventory.
+const botDatabaseSqlPaths = () => (app.isPackaged
+  ? {
+      supabaseMigrationsDirectory: path.join(process.resourcesPath, 'bot-db', 'supabase-migrations'),
+      sqlDirectory: path.join(process.resourcesPath, 'bot-db', 'sql'),
+    }
+  : {
+      supabaseMigrationsDirectory: firstExistingPath([
+        path.resolve(__dirname, '..', '..', 'supabase', 'migrations'),
+        path.resolve(__dirname, '..', '..', '..', 'supabase', 'migrations'),
+      ]),
+      sqlDirectory: firstExistingPath([
+        path.resolve(__dirname, '..', 'bot-db', 'sql'),
+        path.resolve(__dirname, '..', '..', 'bot-db', 'sql'),
+      ]),
+    });
+
+let botDatabaseSqlPromise = null;
+const loadBotDatabaseSqlOnce = () => {
+  botDatabaseSqlPromise ||= loadBotDatabaseSql(botDatabaseSqlPaths()).catch((error) => {
+    botDatabaseSqlPromise = null;
+    throw error;
+  });
+  return botDatabaseSqlPromise;
+};
+
 const getBotRuntimeManager = () => {
   if (state.botRuntimeManager) return state.botRuntimeManager;
   state.botRuntimeManager = createBotRuntimeManager({
@@ -520,6 +549,24 @@ const getBotRuntimeManager = () => {
       isPackaged: app.isPackaged,
       architecture: process.arch,
     }),
+    loadDatabaseSql: loadBotDatabaseSqlOnce,
+    // Catalog backups use their own domain-separated root key; the sealed
+    // deployment key never leaves this process.
+    loadBackupKey: async () => {
+      if (!state.botSecretStore) {
+        const error = new Error('Bot backup encryption is unavailable');
+        error.code = state.botSecretStoreErrorCode || 'bot_os_encryption_unavailable';
+        throw error;
+      }
+      const deploymentKey = state.botSecretStore.getBotEncryptionKey();
+      try {
+        return crypto.createHmac('sha256', deploymentKey)
+          .update('devryan-production-bots/catalog-backup/v1', 'utf8')
+          .digest();
+      } finally {
+        deploymentKey.fill(0);
+      }
+    },
   });
   return state.botRuntimeManager;
 };
@@ -1000,9 +1047,31 @@ const spawnLocalServer = async () => {
     getBotEncryptionKey,
     replaceBotEncryptionKey,
     getBotRuntimeStatus: () => getBotRuntimeManager().status(),
+    // Automatic startup never installs a fresh runtime; an existing
+    // installation may update or repair itself.
     ensureBotRuntimeReady: () => getBotRuntimeManager().ensureReady({
+      allowInstall: false,
       onProgress: (progress) => publishBotRuntimeProgress(progress),
     }),
+    getBotCatalogContext: () => getBotRuntimeManager().databaseContext(),
+    ensureBotCatalog: () => getBotRuntimeManager().ensureCatalog({
+      onProgress: (progress) => publishBotRuntimeProgress(progress),
+    }),
+    botCatalogMaintenance: {
+      listBackups: () => getBotRuntimeManager().listCatalogBackups(),
+      backup: (options) => getBotRuntimeManager().backupCatalog(options),
+      prepareRestore: (backupId) => getBotRuntimeManager().prepareCatalogRestore(backupId),
+      readCandidate: (operationId, request) => getBotRuntimeManager().readCatalogCandidate(operationId, request),
+      commitRestore: (operationId) => getBotRuntimeManager().commitCatalogRestore(operationId),
+      discardCandidate: (operationId) => getBotRuntimeManager().discardCatalogCandidate(operationId),
+      startEmpty: () => getBotRuntimeManager().startEmptyCatalog(),
+      createImportSource: (marker) => getBotRuntimeManager().createImportSource(marker),
+      migrateImportSource: (handle) => getBotRuntimeManager().migrateImportSource(handle),
+      runImportSql: (target, chunks) => getBotRuntimeManager().runImportSql(target, chunks),
+      exportImportPage: (target, request) => getBotRuntimeManager().exportImportPage(target, request),
+      countRows: (target) => getBotRuntimeManager().countCatalogRows(target),
+      dropImportSource: (handle) => getBotRuntimeManager().dropImportSource(handle),
+    },
     ensureBotReasoningRuntime: (request) => getBotRuntimeManager().ensureReasoning(request),
     ensureBotComputerRuntime: (request) => getBotRuntimeManager().ensureComputer(request),
     probeBotComputerIsolation: (request) => getBotRuntimeManager().probeComputerIsolation(request),
@@ -1091,6 +1160,13 @@ const spawnLocalServer = async () => {
     if (ownerCookie) await session.defaultSession.cookies.set({
       url, name: ownerCookie.name, value: ownerCookie.value, path: '/', httpOnly: true,
       secure: false, sameSite: 'strict', expirationDate: Math.floor(Date.now() / 1_000) + ownerCookie.maxAge,
+    });
+    // The workstation owner's Bot-scoped session, valid in every Supabase
+    // state and only for direct-local Bot routes.
+    const botOwnerCookie = await handle.issueBotOwnerSession?.();
+    if (botOwnerCookie) await session.defaultSession.cookies.set({
+      url, name: botOwnerCookie.name, value: botOwnerCookie.value, path: '/', httpOnly: true,
+      secure: false, sameSite: 'strict', expirationDate: Math.floor(Date.now() / 1_000) + botOwnerCookie.maxAge,
     });
   }
   state.sidecarUrl = url;
@@ -1195,6 +1271,11 @@ const setRuntimeServiceCookie = async (url, setCookieHeader) => {
     url, name: 'devryan_local_owner', value: owner[1], path: '/', httpOnly: true,
     secure: false, sameSite: 'strict', expirationDate: Math.floor(Date.now() / 1_000) + (30 * 24 * 60 * 60),
   });
+  const botOwner = /(?:^|,\s*)devryan_bot_owner=([^;]+)/.exec(setCookieHeader || '');
+  if (botOwner) await session.defaultSession.cookies.set({
+    url, name: 'devryan_bot_owner', value: botOwner[1], path: '/', httpOnly: true,
+    secure: false, sameSite: 'strict', expirationDate: Math.floor(Date.now() / 1_000) + (30 * 24 * 60 * 60),
+  });
 };
 
 const registerDesktopHostLease = async (url, broker) => {
@@ -1219,10 +1300,16 @@ const registerDesktopHostLease = async (url, broker) => {
     response = await register(broker.capabilities.filter((value) => value !== 'browser_observation'));
   }
   if (!response.ok) {
+    const payload = await response.json().catch(() => null);
     const error = new Error('Runtime service rejected the desktop host lease');
     error.code = response.status === 401
       ? 'runtime_service_session_required'
       : 'desktop_host_registration_failed';
+    // Bounded, secret-free detail so startup logs say why the service refused.
+    error.rejection = Object.freeze({
+      status: response.status,
+      code: typeof payload?.code === 'string' && /^[a-z][a-z0-9_]{0,99}$/.test(payload.code) ? payload.code : null,
+    });
     throw error;
   }
   return response.json();
@@ -1321,6 +1408,7 @@ const connectToRuntimeService = async ({ reconnecting = false } = {}) => {
       void registerDesktopHostLease(url, broker).catch((error) => {
         log.warn('[runtime-service] desktop host lease refresh failed', {
           code: error?.code || 'desktop_host_registration_failed',
+          ...(error?.rejection ? { rejection: error.rejection } : {}),
         });
         if (runtimeServiceReconnectPromise) return;
         runtimeServiceReconnectPromise = (async () => {
@@ -1472,21 +1560,9 @@ const recoverStartupToAppBound = (connectionError) => recoverAppBoundRuntime({
   log,
 });
 
-const waitForRuntimeServiceConnection = async (timeoutMs = 20_000) => {
-  const deadline = Date.now() + timeoutMs;
-  let lastError = null;
-  while (Date.now() < deadline) {
-    try {
-      return await connectToRuntimeService();
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-  }
-  throw lastError || Object.assign(new Error('Background runtime did not start'), {
-    code: 'runtime_service_start_timeout',
-  });
-};
+const waitForRuntimeServiceConnection = () => retryRuntimeServiceConnection({
+  connect: () => connectToRuntimeService(),
+});
 
 const enableBackgroundBots = async ({ allowLegacy = false } = {}) => {
   if (state.runtimeServiceClient) return runtimeServiceStatus();
@@ -2973,11 +3049,15 @@ const botRuntimeProgressText = (progress) => {
   if (!progress || typeof progress !== 'object') return 'Preparing the private Bot runtime…';
   if (progress.phase === 'checking') return 'Checking the private Bot runtime…';
   if (progress.phase === 'downloading_image') {
-    const total = Number.isInteger(progress.total) ? progress.total : 5;
+    const total = Number.isInteger(progress.total) ? progress.total : BOT_RUNTIME_IMAGE_KEYS.length;
     const current = Number.isInteger(progress.completed) ? Math.min(total, progress.completed + 1) : 1;
     return `Downloading Bot runtime image ${current} of ${total}…`;
   }
   if (progress.phase === 'verifying_images') return 'Verifying Bot runtime images…';
+  if (progress.phase === 'checking_database') return 'Checking Bot storage…';
+  if (progress.phase === 'initializing_database') return 'Creating Bot storage…';
+  if (progress.phase === 'migrating_database') return 'Updating Bot storage…';
+  if (progress.phase === 'starting_database') return 'Starting Bot storage…';
   if (progress.phase === 'starting_services') return 'Starting Bot services…';
   if (progress.phase === 'verifying_health') return 'Verifying Bot service health…';
   if (progress.phase === 'ready') return 'Private Bot runtime is ready.';
@@ -3476,6 +3556,7 @@ const prepareForegroundRuntime = async () => {
       state.sidecarUrl = null;
       log.warn('[runtime-service] startup rolled back to app-bound Bots', {
         code: error?.code || 'runtime_service_start_failed',
+        ...(error?.rejection ? { rejection: error.rejection } : {}),
       });
     }
   }

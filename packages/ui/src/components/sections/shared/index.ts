@@ -55,3 +55,7 @@ export { SettingsSidebarItem, type SettingsSidebarItemAction } from './SettingsS
 export { SettingsPageLayout } from './SettingsPageLayout';
 export { SettingsSection } from './SettingsSection';
 export { SidebarGroup } from './SidebarGroup';
+export { SettingsEmptyState } from './SettingsEmptyState';
+export { SettingsDetailHeader } from './SettingsDetailHeader';
+export { SettingsDetailSection } from './SettingsDetailSection';
+export { SettingsBadge, type SettingsBadgeTone } from './SettingsBadge';

@@ -56,18 +56,36 @@ the OpenCode bootstrap before launching a configured connector. An already-conne
 connector remains visible during a later OpenCode restart, but `runtimeReady` and `connectReady`
 become false and clients must show the stable hostname as unavailable until readiness returns.
 Start and status responses expose both booleans. For managed-remote mode, `connectReady` requires a
-ready runtime, a non-degraded connector, and configured managed-account login. Managed-remote startup never issues a Bot link
-and rejects missing account authentication before persisting configuration or launching
-the connector, even when a local owner is enrolled.
+ready runtime, a non-degraded connector, and either managed-account login or an enrolled
+local owner in effective Supabase Off/unconfigured mode. Startup rejects missing
+authentication before persisting configuration or launching the connector. With
+Supabase Off it returns a private owner link; with On it never issues a bootstrap link.
 
 ## Link routing contract
 
-Managed-remote tunnels require Supabase-backed individual account login and open
-the stable public hostname directly. With Supabase Off or absent, setup must be
-completed locally before managed-remote startup or automatic resume. Other tunnel
-modes retain locally issued links for selected Bot workspaces. Explicit Bot sharing
-remains available through the separate links API. A database outage never changes
-the startup authentication policy.
+Managed-remote tunnels use Supabase-backed individual account login at the stable
+hostname with Supabase On (`policy: account-login`). With Supabase Off or absent,
+an enrolled local owner can start or resume the tunnel (`policy: owner-link`).
+Manual startup returns a one-time owner link; automatic resume restores the connector
+and existing sessions without minting a link. The local settings page can issue a
+replacement using `POST /api/openchamber/tunnel/links` with `{ "access": "owner" }`.
+Other tunnel modes and explicit Bot sharing retain selected-Bot links. A database
+outage while On never enables owner-link authentication.
+
+Owner links use the same encrypted vault, hashed credentials, single-use POST exchange,
+15-minute link expiry, seven-day session expiry, origin/CSRF checks, and revocation
+as Bot links. An explicit persisted `access: owner` grant is accepted only with
+local-owner authentication and a managed-remote profile; existing grants without an
+access field remain Bot-only. Owner sessions grant the local administrator's workspace
+access, including chat, files, Git, terminal and preview streams. Native capabilities,
+tunnel/Supabase controls, passkey enrollment and cloud-only features remain unavailable
+remotely. Logout revokes only that owner's remote grant. The early boundary records
+verified owner requests in a private WeakMap; auth adapters never trust a supplied
+principal or a local-owner cookie forwarded through the tunnel.
+
+Before downgrading to a build without owner-grant support, stop the tunnel in the
+current build to clear its grants. Older builds reject persisted owner grants
+rather than interpreting them as Bot authorization.
 
 On an active managed hostname, stale tunnel cookies are cleared before normal
 account authentication. Valid Bot sessions retain their restricted permissions;
@@ -86,7 +104,7 @@ Links use `/tunnel/connect#t=...`. GET renders a landing page, removes the fragm
 from history and exchanges nothing. Connect sends a same-origin, CSRF-protected
 POST. Tokens expire within 15 minutes and are single-use. Fixed seven-day sessions
 and hashed link credentials live in the private encrypted authorization vault.
-Sessions bind owner, grant, selected Bot UUIDs, durable profile, hostname and
+Sessions bind owner, grant access, selected Bot UUIDs when applicable, durable profile, hostname and
 authorization generation. Raw credentials do not enter server logs or referrers.
 Two fixed installation/tunnel buckets limit exchanges without trusting forwarding headers.
 
@@ -106,7 +124,7 @@ without deleting sessions. Stop, grant revocation, owner changes, authentication
 changes and hostname changes invalidate authorization and close associated streams.
 Expired/lost sessions require another locally issued link; remote passkey enrollment
 is unsupported. `POST /api/openchamber/tunnel/links` issues a selected-Bot link;
-`DELETE /api/openchamber/tunnel/grants/:grantId` revokes one. Both require direct-local
+`DELETE /api/openchamber/tunnel/grants/:grantId` revokes a Bot or owner grant. Both require direct-local
 owner authentication and CSRF protection.
 
 Electron enrolls an absent local owner through its in-process server handle or

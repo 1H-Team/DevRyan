@@ -4,7 +4,7 @@ import { RiArrowDownSLine } from '@remixicon/react';
 import { cn } from '@/lib/utils';
 
 interface SidebarGroupProps {
-  /** Group display label (e.g. "business", "automation-ai") */
+  /** Group display label (e.g. "Project", "User / Agents") */
   label: string;
   /** Number of items in this group */
   count: number;
@@ -20,8 +20,9 @@ function getStorageKey(storageKey: string, label: string): string {
 }
 
 /**
- * Collapsible sidebar group with persisted expand/collapse state.
- * Used in Agents and Skills sidebars to group items by subfolder.
+ * Collapsible top-level group for settings sidebars with persisted state.
+ * Rendered as a flat section header — no indent rail — so item names keep the
+ * full sidebar width. Used by the Plugins, Skills and MCP Servers sidebars.
  */
 export const SidebarGroup: React.FC<SidebarGroupProps> = ({
   label,
@@ -52,16 +53,16 @@ export const SidebarGroup: React.FC<SidebarGroupProps> = ({
   }, [key, expanded]);
 
   return (
-    <div>
+    <div className="pt-1 first:pt-0">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
         aria-controls={contentId}
         className={cn(
-          'flex w-full items-center gap-1 rounded-md px-2 py-1 text-left',
-          'text-xs font-semibold uppercase tracking-wide text-muted-foreground',
-          'hover:bg-[var(--interactive-hover)] transition-colors duration-150',
+          'flex w-full items-center gap-1 rounded-md px-1.5 py-1 text-left',
+          'typography-micro font-semibold uppercase tracking-[0.08em] text-muted-foreground/80',
+          'hover:bg-interactive-hover hover:text-muted-foreground transition-colors duration-150',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
         )}
       >
@@ -72,14 +73,10 @@ export const SidebarGroup: React.FC<SidebarGroupProps> = ({
           )}
         />
         <span className="flex-1 truncate">{label}</span>
-        <span className="ml-1 tabular-nums opacity-60">{count}</span>
+        <span className="ml-1 tabular-nums opacity-70">{count}</span>
       </button>
 
-      <div
-        id={contentId}
-        hidden={!expanded}
-        className="mt-0.5 space-y-0.5 ml-2 pl-3 border-l-2 border-[var(--interactive-border)]"
-      >
+      <div id={contentId} hidden={!expanded} className="mt-0.5 space-y-0.5">
         {children}
       </div>
     </div>

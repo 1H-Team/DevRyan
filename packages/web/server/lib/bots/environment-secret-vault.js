@@ -194,6 +194,10 @@ export async function createBotEnvironmentSecretVault({
   };
 
   return Object.freeze({
+    // Re-reads the vault after a catalog restore replaced its file.
+    reload: () => mutate(async () => {
+      state = await loadState(vaultPath, fsPromises);
+    }),
     async create(input) {
       return mutate(async () => {
         const id = normalizeUuid(input?.id, 'ID');

@@ -110,9 +110,15 @@ Operations rail shared by the web and Electron renderers. Bot configuration live
 ## Flow
 
 1. `SessionSidebar` renders exactly one audience panel. `BotSidebarSection`
-   selects a Bot without touching ordinary session state and ensures the current
-   principal's owner channel.
-   `BotView` then resolves host support, the selected Bot, and its authorized channel.
+   selects a Bot without touching ordinary session state and ensures the
+   viewer's owner channel for that Bot. Ownership (owner channels, own
+   messages, control leases, approvals, shared-file senders) is compared
+   against `botViewerId(bot, principalId)` from `lib/botViewer.ts` — the
+   server's per-Bot `viewerUserId` (an owner acting as the verified source owner
+   of imported Bots), falling back to the principal — never one global id.
+   `BotView` then resolves host support, catalog recovery (showing
+   `BotCatalogPanel` in place of the chat), the selected Bot, and its authorized
+   channel.
 3. `BotChatView` loads canonical messages and renders conversation groups,
    composer, and explicit run state. `chat/BotIdentityHeader.tsx` owns the
    content-driven Bot identity presentation while the layout edge chrome owns

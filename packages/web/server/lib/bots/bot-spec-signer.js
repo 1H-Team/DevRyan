@@ -206,6 +206,10 @@ export function createBotSpecSigner({
 
   return Object.freeze({
     signerPath,
+    // Forgets the cached signing state after a catalog restore replaced it.
+    reset() {
+      loaded = null;
+    },
     async identity() {
       const signer = await load();
       return Object.freeze({ keyId: signer.keyId, publicKey: signer.publicKey });

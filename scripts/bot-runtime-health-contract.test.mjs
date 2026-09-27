@@ -7,12 +7,13 @@ import { fileURLToPath } from 'node:url';
 
 import {
   createBotRuntimeImageSmokeEnvironment,
+  createBotRuntimeImageSmokeNames,
   smokeBotRuntimeImages,
 } from './smoke-bot-runtime-images.mjs';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const temporaryDirectories = [];
-const IMAGE_KEYS = ['supervisor', 'engine-proxy', 'egress', 'indexer', 'opencode', 'computer'];
+const IMAGE_KEYS = ['supervisor', 'engine-proxy', 'egress', 'indexer', 'opencode', 'computer', 'database', 'rest'];
 
 const releaseManifest = () => ({
   version: 2,
@@ -77,7 +78,13 @@ describe('Bot runtime container health contract', () => {
       environment.DEVRYAN_BOT_COMPUTER_IMAGE,
       `ghcr.io/1h-team/devryan-bot-computer@sha256:${'a'.repeat(63)}5`,
     );
+    assert.equal(
+      environment.DEVRYAN_BOT_REST_IMAGE,
+      `ghcr.io/1h-team/devryan-bot-rest@sha256:${'a'.repeat(63)}7`,
+    );
     assert.equal(environment.DEVRYAN_BOT_SUPERVISOR_TOKEN.length, 43);
+    assert.equal(environment.DEVRYAN_BOT_DATABASE_JWT_SECRET.length, 43);
+    assert.match(environment.DEVRYAN_BOT_RESOURCE_NAMESPACE, /^devryan-smoke-[0-9a-f]{12}$/);
     assert.match(environment.DEVRYAN_BOT_DEPLOYMENT_ID, /^deployment-[0-9a-f]{24}$/);
     assert.equal(environment.DEVRYAN_DOCKER_SOCKET_GID, '20');
   });
@@ -90,24 +97,47 @@ describe('Bot runtime container health contract', () => {
     await fs.writeFile(manifestPath, `${JSON.stringify(releaseManifest())}\n`);
     await fs.writeFile(socketPath, 'fixture');
     const calls = [];
+    const names = createBotRuntimeImageSmokeNames('0123456789ab');
 
     await smokeBotRuntimeImages({
       manifestPath,
       architecture: 'x64',
       dockerSocketPath: socketPath,
+      names,
       runner: (args, options) => calls.push({ args, options }),
     });
 
-    assert.equal(calls.length, 2);
+    assert.equal(calls.length, 9);
+    assert.deepEqual(calls[0].args.slice(0, 2), ['volume', 'create']);
+    assert.equal(calls[0].args.at(-1), 'devryan-smoke-0123456789ab-bot-database-data');
+    assert.ok(calls[1].args.includes('--initialize-only'));
+    assert.ok(calls[1].args.includes('DEVRYAN_BOT_DATABASE_INITIALIZE=allow'));
+    assert.deepEqual(calls[2].args.slice(-6), ['up', '--detach', '--wait', '--wait-timeout', '120', 'database']);
+    assert.ok(calls[3].args.includes('psql'));
+    assert.ok(calls[3].options.input.includes('create database devryan_bots'));
+    assert.ok(calls[4].args.includes('psql'));
+    assert.ok(calls[4].options.input.includes('devryan_local.schema_migrations'));
+    assert.deepEqual(calls[5].args.slice(-6), ['up', '--detach', '--wait', '--wait-timeout', '120', 'database-rest']);
     for (const argument of [
       'up', '--detach', '--remove-orphans', '--wait', '--wait-timeout', '120',
-      'supervisor', 'engine-proxy', 'egress', 'indexer',
+      'supervisor', 'engine-proxy', 'egress', 'indexer', 'database', 'database-rest',
     ]) {
-      assert.ok(calls[0].args.includes(argument));
+      assert.ok(calls[6].args.includes(argument));
     }
-    assert.equal(calls[0].options.timeoutMs, 180_000);
-    for (const argument of ['down', '--remove-orphans']) {
-      assert.ok(calls[1].args.includes(argument));
+    assert.equal(calls[6].options.timeoutMs, 180_000);
+    for (const call of calls.slice(1, 8)) {
+      assert.deepEqual(call.args.slice(0, 3), ['compose', '--project-name', 'devryan-smoke-0123456789ab']);
+      assert.equal(call.options.environment.DEVRYAN_BOT_RESOURCE_NAMESPACE, 'devryan-smoke-0123456789ab');
     }
+    for (const argument of ['down', '--remove-orphans', '--volumes']) {
+      assert.ok(calls[7].args.includes(argument));
+    }
+    assert.deepEqual(calls[8].args, ['volume', 'rm', 'devryan-smoke-0123456789ab-bot-database-data']);
+  });
+
+  test('never uses installed runtime resource names', () => {
+    assert.throws(() => createBotRuntimeImageSmokeNames('not-hex'), { code: 'bot_runtime_image_smoke_input_invalid' });
+    const names = createBotRuntimeImageSmokeNames();
+    assert.doesNotMatch(names.projectName, /^devryan-bots?(?:-|$)/);
   });
 });

@@ -12,7 +12,10 @@ type BotBrowserDiagnosticProps = {
   botId: string;
   channelId: string;
   botActive: boolean;
+  /** The signed-in principal; guards against acting for a previous session. */
   principalId: string | null;
+  /** The identity the viewer acts as for this Bot; defaults to the principal. */
+  viewerUserId?: string | null;
   canControl: boolean;
   active: boolean;
   runId?: string;
@@ -138,6 +141,7 @@ export const BotBrowserDiagnostic: React.FC<BotBrowserDiagnosticProps> = ({
   channelId,
   botActive,
   principalId,
+  viewerUserId = principalId,
   canControl,
   active,
   runId,
@@ -166,11 +170,11 @@ export const BotBrowserDiagnostic: React.FC<BotBrowserDiagnosticProps> = ({
   const retryCount = React.useRef(0);
   const presentation = resolveBotControlPresentation({
     control: status?.control ?? null,
-    principalId,
+    principalId: viewerUserId,
     now,
   });
   const ownedLeaseId = presentation.ownedByViewer ? status?.control?.leaseId ?? null : null;
-  const returnableLeaseId = principalId && status?.control?.actorId === principalId
+  const returnableLeaseId = viewerUserId && status?.control?.actorId === viewerUserId
     ? status.control.leaseId : null;
   const expiredOwnedLease = Boolean(returnableLeaseId && typeof status?.control?.expiresAt === 'number'
     && status.control.expiresAt <= now);
@@ -207,7 +211,7 @@ export const BotBrowserDiagnostic: React.FC<BotBrowserDiagnosticProps> = ({
     // Stop the local stream/ticket immediately. Returning control must not hold
     // teardown hostage to a hung command or control HTTP response.
     const stopped = operationsStore.getState().stopComputerView(botId).catch(() => undefined);
-    if (control?.actorId === principalId && control.leaseId) {
+    if (viewerUserId && control?.actorId === viewerUserId && control.leaseId) {
       const leaseId = control.leaseId;
       void operationsStore.getState().returnComputerControl(botId, leaseId).catch(async () => {
         const current = operationsStore.getState();
@@ -228,7 +232,7 @@ export const BotBrowserDiagnostic: React.FC<BotBrowserDiagnosticProps> = ({
       });
     }
     await stopped;
-  }, [botId, channelId, operationsStore, principalId, runId]);
+  }, [botId, channelId, operationsStore, principalId, runId, viewerUserId]);
 
   React.useEffect(() => () => {
     void releaseView();
@@ -397,12 +401,13 @@ export const BotBrowserDiagnostic: React.FC<BotBrowserDiagnosticProps> = ({
     const control = state.computersByBotId[botId]?.control;
     if (!currentView || currentView.id !== viewId || currentView.channelId !== channelId
       || !control?.leaseId
-      || control.actorId !== principalId || typeof control.expiresAt !== 'number'
+      || state.principalId !== principalId
+      || control.actorId !== viewerUserId || typeof control.expiresAt !== 'number'
       || control.expiresAt <= Date.now()) {
       throw new Error('Bot computer input is no longer available');
     }
     await state.sendHumanComputerInput(botId, viewId, control.leaseId, events, signal);
-  }, [botId, channelId, operationsStore, principalId]);
+  }, [botId, channelId, operationsStore, principalId, viewerUserId]);
 
   const handleInputFailure = React.useCallback(() => {
     setControlError(true);
@@ -418,14 +423,14 @@ export const BotBrowserDiagnostic: React.FC<BotBrowserDiagnosticProps> = ({
       await canvasRef.current?.drainPendingInput().catch(() => undefined);
       const state = operationsStore.getState();
       if (state.principalId !== principalId || state.computersByBotId[botId]?.control?.leaseId !== returnableLeaseId
-        || state.computersByBotId[botId]?.control?.actorId !== principalId) return;
+        || state.computersByBotId[botId]?.control?.actorId !== viewerUserId) return;
       await state.returnComputerControl(botId, returnableLeaseId);
     } catch {
       setControlError(true);
     } finally {
       setPendingControl(false);
     }
-  }, [botId, operationsStore, principalId, returnableLeaseId]);
+  }, [botId, operationsStore, principalId, returnableLeaseId, viewerUserId]);
 
   const inputEnabled = Boolean(
     active && botActive && canControl && firstFrameLoaded && ownedLeaseId && visibleView

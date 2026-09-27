@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import request from '../../test-supertest.js';
+import { registerCommonRequestMiddleware } from './core-routes.js';
 
 import {
   deleteAgentBackupModel,
@@ -70,7 +71,7 @@ describe('agent backup model routes', () => {
 
   const createApp = () => {
     const app = express();
-    app.use(express.json());
+    registerCommonRequestMiddleware(app, { express });
     registerConfigEntityRoutes(app, {
       resolveProjectDirectory: async () => ({ directory: projectDirectory }),
       resolveOptionalProjectDirectory: async () => ({ directory: projectDirectory }),
@@ -216,7 +217,7 @@ describe('agent runtime settings routes', () => {
 
   const createApp = (principal, overrides = {}) => {
     const app = express();
-    app.use(express.json());
+    registerCommonRequestMiddleware(app, { express });
     if (principal) {
       app.use((req, _res, next) => {
         req.principal = principal;
@@ -432,7 +433,7 @@ describe('agent overrides listing route', () => {
 
   const createApp = ({ directory = projectDirectory, ...overrides } = {}) => {
     const app = express();
-    app.use(express.json());
+    registerCommonRequestMiddleware(app, { express });
     registerConfigEntityRoutes(app, {
       resolveProjectDirectory: async () => ({ directory }),
       resolveOptionalProjectDirectory: async () => ({ directory }),

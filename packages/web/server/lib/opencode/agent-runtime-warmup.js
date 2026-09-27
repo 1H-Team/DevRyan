@@ -1,3 +1,4 @@
+import express from 'express';
 import {
   createHarnessSuccess,
   createHarnessWarning,
@@ -416,7 +417,7 @@ function createAgentRuntimeWarmup(dependencies = {}) {
 }
 
 function registerAgentRuntimeWarmupRoute(app, warmupRuntime) {
-  app.post('/api/startup/agent-runtime-warmup', async (req, res) => {
+  app.post('/api/startup/agent-runtime-warmup', express.json({ limit: '16kb' }), async (req, res) => {
     try {
       const body = isObject(req.body) ? req.body : {};
       const result = await warmupRuntime.warm({

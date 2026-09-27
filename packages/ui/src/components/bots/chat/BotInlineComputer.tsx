@@ -2,6 +2,7 @@ import React from 'react';
 import { RiArrowDownSLine, RiComputerLine, RiFullscreenExitLine, RiFullscreenLine } from '@remixicon/react';
 import { Button } from '@/components/ui/button';
 import { useAuthPrincipal } from '@/lib/authSession';
+import { botViewerId } from '@/lib/botViewer';
 import { cn } from '@/lib/utils';
 import { useBotComputerActivityStore } from '@/stores/useBotComputerActivityStore';
 import { useBotsStore } from '@/stores/useBotsStore';
@@ -14,6 +15,7 @@ type Props = { botId: string; channelId: string; botActive: boolean };
 export const BotInlineComputer = React.memo(function BotInlineComputer({ botId, channelId, botActive }: Props) {
   const principal = useAuthPrincipal();
   const membership = useBotsStore((s) => s.membershipsByBotId[botId]);
+  const viewerId = useBotsStore((s) => botViewerId(s.botsById[botId], principal.id));
   const activity = useBotComputerActivityStore((s) => s.byBotId[botId]);
   const manual = useBotComputerActivityStore((s) => s.manualByBotId[botId]);
   const runId = activity?.channelId === channelId && activity.state !== 'idle' ? activity.runId : undefined;
@@ -99,7 +101,7 @@ export const BotInlineComputer = React.memo(function BotInlineComputer({ botId, 
         <div className={expanded ? 'min-h-0 w-full' : 'w-full'} data-bot-inline-computer-screen="true">
           <div className={cn('flex w-full flex-col', expanded ? 'max-h-[calc(94dvh-36px)]' : 'max-h-[70dvh] min-h-[220px]')} style={{ aspectRatio: '16 / 8.6' }}>
             <BotBrowserDiagnostic botId={botId} channelId={channelId} botActive={botActive}
-              principalId={principal.id} canControl={Boolean(membership)} runId={requested ? undefined : runId}
+              principalId={principal.id} viewerUserId={viewerId} canControl={Boolean(membership)} runId={requested ? undefined : runId}
               active={documentVisible && (expanded || onScreen)} />
           </div>
         </div>

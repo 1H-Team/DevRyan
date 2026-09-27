@@ -81,6 +81,27 @@ export const hasUsageProgress = (window: UsageWindow): boolean => (
 );
 
 /**
+ * The most-used progress window of a provider's overall usage, falling back to
+ * its model windows when there are no overall ones. Value-only rows are skipped.
+ */
+export const getPeakUsageWindow = (
+  usage: ProviderResult['usage'] | null | undefined,
+): { label: string; usedPercent: number } | null => {
+  if (!usage) return null;
+  const pick = (entries: Array<[string, UsageWindow]>) => {
+    let peak: { label: string; usedPercent: number } | null = null;
+    for (const [label, window] of entries) {
+      if (!hasUsageProgress(window)) continue;
+      const usedPercent = clampPercent(window.usedPercent) ?? 0;
+      if (!peak || usedPercent > peak.usedPercent) peak = { label, usedPercent };
+    }
+    return peak;
+  };
+  return pick(Object.entries(usage.windows ?? {}))
+    ?? pick(Object.values(usage.models ?? {}).flatMap((model) => Object.entries(model.windows ?? {})));
+};
+
+/**
  * Pace status indicating whether usage is on track, slightly fast, or too fast
  */
 export type PaceStatus = 'on-track' | 'slightly-fast' | 'too-fast' | 'exhausted';

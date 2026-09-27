@@ -59,6 +59,16 @@ export const BOT_RUNTIME_IMAGE_DEFINITIONS = Object.freeze({
     dockerfile: 'packages/bot-computer/Dockerfile',
     packageJson: 'packages/bot-computer/package.json',
   }),
+  database: Object.freeze({
+    name: 'devryan-bot-database',
+    dockerfile: 'packages/bot-db/docker/database/Dockerfile',
+    packageJson: 'packages/bot-db/package.json',
+  }),
+  rest: Object.freeze({
+    name: 'devryan-bot-rest',
+    dockerfile: 'packages/bot-db/docker/rest/Dockerfile',
+    packageJson: 'packages/bot-db/package.json',
+  }),
 });
 
 export class BotRuntimeImageBuildError extends Error {

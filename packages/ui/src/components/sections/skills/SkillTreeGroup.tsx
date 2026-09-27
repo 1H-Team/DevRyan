@@ -1,5 +1,5 @@
 import React from 'react';
-import { RiArrowDownSLine, RiArrowRightSLine, RiFolder3Line, RiFolderOpenLine } from '@remixicon/react';
+import { RiArrowRightSLine, RiFolder3Line, RiFolderOpenLine } from '@remixicon/react';
 import { getSafeStorage } from '@/stores/utils/safeStorage';
 import { cn } from '@/lib/utils';
 
@@ -30,59 +30,6 @@ function usePersistedExpanded(key: string, defaultExpanded: boolean, forceExpand
 
   return [expanded, setExpanded] as const;
 }
-
-interface SkillLocationGroupProps {
-  label: string;
-  count: number;
-  storageKey: string;
-  children: React.ReactNode;
-}
-
-/**
- * Top level of the skills tree: a scope/source location such as "User / Agents".
- * Rendered as a flat section header — no indent rail, so skill names keep the
- * full sidebar width instead of paying for two levels of nesting.
- */
-export const SkillLocationGroup: React.FC<SkillLocationGroupProps> = ({
-  label,
-  count,
-  storageKey,
-  children,
-}) => {
-  const key = getStorageKey(storageKey, label);
-  const contentId = React.useId();
-  const [expanded, setExpanded] = usePersistedExpanded(key, true);
-
-  return (
-    <div className="pt-1 first:pt-0">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        aria-expanded={expanded}
-        aria-controls={contentId}
-        className={cn(
-          'flex w-full items-center gap-1 rounded-md px-1.5 py-1 text-left',
-          'typography-micro font-semibold uppercase tracking-[0.08em] text-muted-foreground/80',
-          'hover:bg-interactive-hover hover:text-muted-foreground transition-colors duration-150',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
-        )}
-      >
-        <RiArrowDownSLine
-          className={cn(
-            'h-3.5 w-3.5 flex-shrink-0 transition-transform duration-200',
-            !expanded && '-rotate-90',
-          )}
-        />
-        <span className="flex-1 truncate">{label}</span>
-        <span className="ml-1 tabular-nums opacity-70">{count}</span>
-      </button>
-
-      <div id={contentId} hidden={!expanded} className="mt-0.5 space-y-0.5">
-        {children}
-      </div>
-    </div>
-  );
-};
 
 interface SkillFolderGroupProps {
   label: string;

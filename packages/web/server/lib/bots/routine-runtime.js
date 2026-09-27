@@ -478,6 +478,10 @@ export function createBotRoutineRuntime({
   claimStaleMs = DEFAULT_CLAIM_STALE_MS,
   logger = console,
   isAdmissionPaused = () => false,
+  // Current account authorization for the routine's manager. A manager whose
+  // authorization cannot be established is dormant: nothing is claimed or
+  // advanced until it can be.
+  authorizeManagerAccount = null,
 } = {}) {
   if (!store?.repositories?.bot_routines || !store.repositories.bot_routine_occurrences
     || !store.repositories.bots || !store.repositories.bot_revisions
@@ -674,6 +678,10 @@ export function createBotRoutineRuntime({
     if (routine.status !== 'active' || !routine.next_occurrence_at) return true;
     const firstDue = Date.parse(routine.next_occurrence_at);
     if (!Number.isFinite(firstDue) || firstDue > currentMs) return true;
+    if (typeof authorizeManagerAccount === 'function'
+      && await authorizeManagerAccount(routine.managed_by).catch(() => false) !== true) {
+      return true;
+    }
     const contract = validateBotRoutineContract(routine.schedule_contract);
     const recovery = startup || currentMs - firstDue > MISSED_GRACE_MS;
     const plan = recovery

@@ -13,6 +13,17 @@ domain state remain in the web server and `packages/bots-runtime`.
   deployment-scoped runtime secrets. Only the engine proxy mounts the Docker
   socket. Named runtime/index volumes are intentionally preserved across
   repair, update, rollback, and app quit.
+- `bots/compose.yml` also defines the local Bot catalog: `database`
+  (PostgreSQL, no network, read-only, uid 999, private socket volume, peer
+  auth; the `--initialize-only` one-off runs only when Electron asks) and
+  `database-rest` (PostgREST over that socket as `authenticator`, one
+  ephemeral `127.0.0.1` port on its own `database_host` bridge, no anonymous
+  role, host-minted short-lived tokens). The data volume is `external`:
+  Electron creates and ownership-checks it, so Compose can never create an
+  empty catalog on its own. Images come from `packages/bot-db/docker/`.
+- Every named resource derives from `DEVRYAN_BOT_RESOURCE_NAMESPACE`; tests
+  and the release smoke use unique `devryan-it-*` / `devryan-smoke-*`
+  namespaces and refuse production names.
 
 ## Integration
 

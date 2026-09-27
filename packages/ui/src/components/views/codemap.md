@@ -17,11 +17,14 @@ not exposed. The policy-filtered managed shell preserves its normal settings
 boundary without maintaining a separate Bot capability-assignment audience.
 
 `SettingsSectionTabs.tsx` is the accessible Base UI workspace switcher for
-grouped settings destinations. `SettingsFrame.tsx` uses it for Providers/Usage
-and desktop/web Remote Connections; `ManagedSettingsFrame.tsx` uses the same
-presentation for its permission-filtered Providers destination. The active
-child remains the persisted settings slug so legacy links and command-palette
-entries select the exact tab.
+grouped settings destinations; its tab list sizes itself by tab count.
+`SettingsFrame.tsx` uses it for the Plugins hub (Plugins, Skills, MCP Servers)
+and desktop/web Remote Connections; `ManagedSettingsFrame.tsx` builds the same
+permission-filtered Plugins hub. Providers is untabbed in both shells: usage
+renders inside each provider page, and the standalone Usage page is only the
+fallback for accounts without Providers access. The active child remains the
+persisted settings slug so legacy links and command-palette entries select the
+exact tab; on mobile, switching hub tabs lands on that tab's list.
 
 ## Flow
 Navigation selects a view; view binds data hooks and renders feature sections.

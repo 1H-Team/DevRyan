@@ -212,9 +212,10 @@ describe('Bot capabilities route status caching', () => {
     const uncached = await harness.read({ refresh: '1' });
     const cached = await harness.read();
     expect(cached.payload).toEqual(uncached.payload);
-    expect(Object.keys(cached.payload).sort()).toEqual(
-      ['available', 'canCreateBot', 'canManageRuntime', 'code', 'owner', 'runtime', 'state'],
-    );
+    expect(Object.keys(cached.payload).sort()).toEqual([
+      'available', 'canCreateBot', 'canManageRuntime', 'catalogAvailable', 'code', 'database', 'owner', 'runtime', 'state',
+    ]);
+    expect(cached.payload.database).toEqual({ state: 'ready', code: null });
     expect(cached.payload.runtime).toEqual({
       state: 'healthy',
       code: null,

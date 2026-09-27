@@ -90,6 +90,7 @@ export const createBootstrapRuntime = (dependencies) => {
       readSettingsFromDiskMigrated,
       normalizeTunnelSessionTtlMs,
       getRuntimeReady,
+      getBotOwner: () => multiUserRuntime?.botOwner || null,
     });
 
     registerTtsRoutes(app, { resolveZenModel, sayTTSCapability });

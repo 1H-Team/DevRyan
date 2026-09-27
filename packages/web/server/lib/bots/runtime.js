@@ -62,6 +62,13 @@ import { createBotPurgeRuntime } from './purge-runtime.js';
 import { createBotPurgeAdapter, createBotRecoveryAdapter } from './recovery-adapter.js';
 import { createBotHostStatusCache, registerBotRoutes, resolveBotCapabilities } from './routes.js';
 import { createBotStore } from './store.js';
+import { createLocalBotCatalogTransport } from './local-catalog.js';
+import { createLocalBotObjectStorage } from './local-object-storage.js';
+import { BOT_OWNER_SCOPE } from './local-owner.js';
+import { createBotActivationHold } from './activation-hold.js';
+import { createBotCatalogMaintenance } from './catalog-maintenance.js';
+import { registerBotCatalogRoutes } from './catalog-routes.js';
+import { createBotCatalogImport } from './catalog-import.js';
 import { createBotSourceScanner } from './source-scanner.js';
 import { createBotSpecService } from './bot-spec.js';
 import { createBotSpecSigner } from './bot-spec-signer.js';
@@ -250,6 +257,9 @@ export function trackBotDispatcherActivity(dispatcher, noteActivity) {
   return Object.freeze(tracked);
 }
 
+// Bots always persist to the local catalog owned by the Electron host. Tests
+// may inject a repository transport through `supabase`; production derives it
+// from `botHost.catalog`. The cloud connection is never a Bot store.
 export function createBotsRuntime({
   supabase = null,
   audit = async () => {},
@@ -263,9 +273,14 @@ export function createBotsRuntime({
   isAdmissionPaused = () => false,
   resolvePrincipal = null,
   oauthCoordinator = null,
-  // 'disconnected' / 'not_configured' when the host runs without Supabase by
-  // choice: Bots are unavailable until it is connected, not temporarily down.
-  supabaseMode = null,
+  localOwner = null,
+  // Optional cloud member directory (Supabase enabled). Results are mirrored
+  // as display projections so a Manager can assign any current cloud user.
+  searchCloudDirectory = null,
+  // Read-only cloud import source ({ url, secretKey } or null) and the
+  // workstation owner's verified cloud identity (never inferred by email).
+  readCloudSource = null,
+  resolveVerifiedSourceOwner = null,
 } = {}) {
   if (typeof dataDirectory !== 'string' || !path.isAbsolute(dataDirectory)) {
     throw new TypeError('Bots runtime requires an absolute data directory');
@@ -274,11 +289,238 @@ export function createBotsRuntime({
     throw new TypeError('Bots runtime requires audit and diagnostic functions');
   }
 
-  const store = createBotStore({ supabase });
+  let objectStoragePromise = null;
+  const objectStorage = () => {
+    objectStoragePromise ||= createLocalBotObjectStorage({
+      directory: path.join(dataDirectory, 'bots', 'objects'),
+      assertWritable: (operation) => assertCatalogWritable(operation),
+    }).catch((error) => {
+      objectStoragePromise = null;
+      throw error;
+    });
+    return objectStoragePromise;
+  };
+  const localCatalog = !supabase && botHost?.catalog
+    ? createLocalBotCatalogTransport({
+        catalog: botHost.catalog,
+        objectStorage: Object.freeze({
+          storageUpload: async (...args) => (await objectStorage()).storageUpload(...args),
+          storageDownload: async (...args) => (await objectStorage()).storageDownload(...args),
+          storageDelete: async (...args) => (await objectStorage()).storageDelete(...args),
+        }),
+      })
+    : null;
+  const transport = supabase || localCatalog;
+  // Writes are fenced during maintenance (backup, import, restore, migration).
+  let maintenanceFence = null;
+  // Runs after every successful catalog start (owner identity projection).
+  let onCatalogReady = null;
+  // Catalog recovery routes (status, backups, restore, start empty, import)
+  // registered ahead of the catalog readiness gate.
+  const recoveryRouteRegistrars = [];
+  // Set once the cloud importer exists (it needs the maintenance fence).
+  const catalogImportRef = { current: null };
+  function assertCatalogWritable(operation) {
+    if (!maintenanceFence) return;
+    throw Object.assign(new Error('Bots are paused for maintenance'), {
+      code: 'bots_maintenance',
+      statusCode: 503,
+      retryable: true,
+      operation,
+    });
+  }
+  const catalogState = () => (localCatalog
+    ? localCatalog.getState()
+    : Object.freeze({ state: transport ? 'ready' : 'unavailable', code: transport ? null : 'bot_database_unavailable', generation: 0 }));
+  const catalogReady = () => catalogState().state === 'ready';
+  const activationHold = createBotActivationHold({ dataDirectory });
+  // Database outages, maintenance and a post-import/restore activation hold
+  // close new admissions immediately, including background work; admitted
+  // work drains on its own terms.
+  const admissionPaused = () => isAdmissionPaused() === true || !catalogReady()
+    || maintenanceFence !== null || activationHold.isHeld();
+  const describeAdmissionPause = () => {
+    if (maintenanceFence) return { message: 'Bots are paused for maintenance', code: 'bots_maintenance' };
+    if (activationHold.isHeld()) {
+      return { message: 'Bots are paused until the owner resumes them after an import or restore', code: 'bots_activation_hold' };
+    }
+    if (!catalogReady()) return { message: 'The local Bot catalog is unavailable', code: catalogState().code || 'bot_database_unavailable' };
+    return { message: 'Supabase connection is changing', code: 'supabase_change_pending' };
+  };
+  // In-flight HTTP writes, counted by the route gate, are drained by maintenance.
+  let inflightWrites = 0;
+  const trackWrite = () => {
+    inflightWrites += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      inflightWrites -= 1;
+    };
+  };
+
+  const store = createBotStore({ supabase: transport });
+
+  // Identity. The workstation owner acts as its immutable local identity, or
+  // for an imported Bot as that Bot's verified source owner (sparse mapping
+  // committed with the catalog). Managed principals keep their cloud identity.
+  const ownerId = typeof localOwner?.id === 'string' ? localOwner.id : null;
+  const ownerMappings = new Map();
+  const isOwnerPrincipal = (principal) => Boolean(ownerId)
+    && principal?.scope === BOT_OWNER_SCOPE && principal.botOwner === true;
+  const ownerIdentityFor = (botId) => ownerMappings.get(botId) || ownerId;
+  const ownerIdentities = () => [...new Set([ownerId, ...ownerMappings.values()].filter(Boolean))];
+  const isOwnerIdentity = (userId) => Boolean(ownerId) && (userId === ownerId
+    || [...ownerMappings.values()].includes(userId));
+  // Effective identity for one Bot. Tunnel guests act for the owner under their
+  // own grant restrictions; they never become administrators.
+  const effectivePrincipal = (principal, botId) => {
+    if (!ownerId || typeof botId !== 'string') return principal;
+    if (isOwnerPrincipal(principal) || principal?.scope === 'tunnel-bot') {
+      const id = ownerIdentityFor(botId);
+      return id === principal.id ? principal : Object.freeze({ ...principal, id });
+    }
+    return principal;
+  };
+  const basePrincipalPolicy = principalPolicy;
+  principalPolicy = Object.freeze({
+    isGlobalAdmin: (principal) => isOwnerPrincipal(principal)
+      || (principal?.scope !== 'tunnel-bot' && basePrincipalPolicy?.isGlobalAdmin?.(principal) === true),
+  });
+  const loadOwnerMappings = async () => {
+    if (!ownerId || !transport) return;
+    const rows = await transport.rpc('devryan_local_bot_owner_mappings', {});
+    ownerMappings.clear();
+    for (const row of Array.isArray(rows) ? rows : []) {
+      if (typeof row?.bot_id === 'string' && typeof row?.source_owner_user_id === 'string') {
+        ownerMappings.set(row.bot_id, row.source_owner_user_id);
+      }
+    }
+  };
+  const upsertIdentity = (identity) => transport.rpc('devryan_local_upsert_identity', {
+    p_user_id: identity.id,
+    p_email: identity.email,
+    p_display_name: identity.displayName,
+    p_account_kind: identity.accountKind === 'agent_test' ? 'agent_test' : 'human',
+    p_role: ['admin', 'senior_developer', 'developer'].includes(identity.role) ? identity.role : 'developer',
+    p_status: ['active', 'suspended', 'archived'].includes(identity.status) ? identity.status : 'active',
+  });
+  const ensureOwnerProjection = async () => {
+    if (!ownerId || !transport) return;
+    await upsertIdentity({
+      id: ownerId,
+      email: `owner-${ownerId}@workstation.invalid`,
+      displayName: 'Workstation owner',
+      role: 'admin',
+      status: 'active',
+    });
+    await loadOwnerMappings();
+  };
+  // Managed accounts are mirrored as identity/display projections when they
+  // use Bots; the projection never authorizes anything.
+  const mirroredAt = new Map();
+  const MIRROR_INTERVAL_MS = 10 * 60 * 1000;
+  const mirrorManagedIdentity = async (principal) => {
+    if (principal?.scope !== 'managed' || typeof principal.id !== 'string'
+      || typeof principal.email !== 'string' || !catalogReady()) return;
+    const at = Date.now();
+    if (at - (mirroredAt.get(principal.id) || 0) < MIRROR_INTERVAL_MS) return;
+    mirroredAt.set(principal.id, at);
+    if (mirroredAt.size > 5_000) mirroredAt.delete(mirroredAt.keys().next().value);
+    try {
+      await upsertIdentity({
+        id: principal.id,
+        email: principal.email,
+        displayName: principal.displayName || principal.email,
+        accountKind: principal.accountKind,
+        role: principal.role,
+        status: principal.status || 'active',
+      });
+    } catch (error) {
+      mirroredAt.delete(principal.id);
+      recordDiagnostic({ type: 'lifecycle', event: 'bot.identity.mirror_failed', payload: { code: error?.code || 'bot_identity_mirror_failed' } });
+    }
+  };
+  // Autonomous admission (routines, Telegram, speech): owner identities need
+  // no cloud; any other account needs current Supabase authorization and is
+  // dormant (null) when that cannot be established.
+  const resolveAutonomousPrincipal = async (userId) => {
+    if (isOwnerIdentity(userId)) {
+      return Object.freeze({ ...localOwner.principal, id: userId });
+    }
+    if (typeof resolvePrincipal !== 'function') return null;
+    try {
+      return await resolvePrincipal(userId);
+    } catch {
+      return null;
+    }
+  };
+  onCatalogReady = ensureOwnerProjection;
+
+  // Multi-Bot reads for the owner (or its tunnel guests) cover every identity
+  // it acts as; results are merged and de-duplicated by stable identifiers.
+  const actsAsOwner = (principal) => Boolean(ownerId)
+    && (isOwnerPrincipal(principal) || principal?.scope === 'tunnel-bot');
+  const identitiesForPrincipal = (principal) => (actsAsOwner(principal)
+    ? ownerIdentities()
+    : [principal?.id]);
+  const identityItemKey = (item) => {
+    if (!item || typeof item !== 'object') return JSON.stringify(item);
+    if (typeof item.id === 'string') return item.id;
+    if (typeof item.messageId === 'string') return `message:${item.messageId}`;
+    if (typeof item.botId === 'string' && typeof item.userId === 'string') return `member:${item.botId}:${item.userId}`;
+    return JSON.stringify(item);
+  };
+  const mergeIdentityResults = (results) => {
+    const merged = {};
+    for (const result of results) {
+      for (const [key, value] of Object.entries(result || {})) {
+        if (Array.isArray(value)) {
+          const items = merged[key] instanceof Map ? merged[key] : new Map();
+          for (const item of value) {
+            const itemKey = identityItemKey(item);
+            if (!items.has(itemKey)) items.set(itemKey, item);
+          }
+          merged[key] = items;
+        } else if (!Object.hasOwn(merged, key)) {
+          merged[key] = value;
+        }
+      }
+    }
+    return Object.freeze(Object.fromEntries(Object.entries(merged).map(([key, value]) => [
+      key,
+      value instanceof Map ? Object.freeze([...value.values()]) : value,
+    ])));
+  };
+  const forEachIdentity = async (principal, operation) => {
+    const identities = identitiesForPrincipal(principal);
+    if (identities.length <= 1) {
+      const id = identities[0] ?? principal?.id;
+      return operation(id === principal?.id ? principal : Object.freeze({ ...principal, id }));
+    }
+    const results = [];
+    for (const id of identities) results.push(await operation(Object.freeze({ ...principal, id })));
+    return mergeIdentityResults(results);
+  };
+  // Viewer-specific projections carry the identity the viewer acts as for
+  // each Bot, so the UI never compares ownership against one global id.
+  const viewerUserIdFor = (principal, botId) => effectivePrincipal(principal, botId)?.id ?? principal?.id ?? null;
+  const withViewerIds = (principal, value) => {
+    if (!value || typeof value !== 'object') return value;
+    const annotate = (bot) => (bot && typeof bot.id === 'string'
+      ? Object.freeze({ ...bot, viewerUserId: viewerUserIdFor(principal, bot.id) })
+      : bot);
+    return Object.freeze({
+      ...value,
+      ...(Array.isArray(value.bots) ? { bots: Object.freeze(value.bots.map(annotate)) } : {}),
+      ...(value.bot && typeof value.bot === 'object' ? { bot: annotate(value.bot) } : {}),
+    });
+  };
   const auditRetention = createBotAuditRetention({
     store,
     platformAudit: audit,
     withAuditDeliveryBarrier,
+    isPaused: () => maintenanceFence !== null,
   });
   const botAudit = (entry) => auditRetention.record(entry);
   const authorization = createBotAuthorization({
@@ -294,9 +536,14 @@ export function createBotsRuntime({
   });
   const eventStream = createBotEventStream({
     recordDiagnostic,
-    loadSnapshot: (principal, options) => channels.snapshotForPrincipal(principal, options),
+    principalIds: (principal) => identitiesForPrincipal(principal),
+    loadSnapshot: async (principal, options) => withViewerIds(
+      principal,
+      await forEachIdentity(principal, (identity) => channels.snapshotForPrincipal(identity, options)),
+    ),
     filterSnapshot: catalogVisibility.filterSnapshot,
-    canDeliver: async (principal, botId, channelId) => {
+    canDeliver: async (subscriberPrincipal, botId, channelId) => {
+      const principal = effectivePrincipal(subscriberPrincipal, botId);
       if (!await catalogVisibility.isVisible(principal, botId)) return false;
       if (principal?.scope !== 'tunnel-bot') return true;
       try {
@@ -399,7 +646,10 @@ export function createBotsRuntime({
     audit: botAudit,
     recordDiagnostic,
   });
-  eventStream.addSnapshotSource('computer_activity', (principal, options) => browserService.activity.snapshotForPrincipal(principal, options));
+  eventStream.addSnapshotSource('computer_activity', (principal, options) => forEachIdentity(
+    principal,
+    (identity) => browserService.activity.snapshotForPrincipal(identity, options),
+  ));
   const evidenceService = createBotEvidenceService({
     store,
     blobStore,
@@ -441,7 +691,7 @@ export function createBotsRuntime({
   });
   gatewayOperationHandler = actionGateway.handleGatewayOperation;
   eventStream.addSnapshotSource('operations', async (principal, options) => ({
-    ...(await approvalService.snapshotForPrincipal(principal, options)),
+    ...(await forEachIdentity(principal, (identity) => approvalService.snapshotForPrincipal(identity, options))),
     computers: [],
   }));
   let modelCredentialBroker = null;
@@ -498,7 +748,7 @@ export function createBotsRuntime({
     audit: botAudit,
   });
   memoryRuntime = createBotMemoryRuntime({
-    isAdmissionPaused,
+    isAdmissionPaused: admissionPaused,
     store,
     authorization,
     channels,
@@ -592,6 +842,7 @@ export function createBotsRuntime({
   let executionRetryAttempt = 0;
   let approvalExpiryJob = null;
   let runSweepJob = null;
+  let runRecoveryDeferred = false;
   let runSweepGate = null;
   let memoryStartRetryTimer = null;
   let memoryStartDelayMs = MEMORY_START_RETRY_MIN_MS;
@@ -642,15 +893,18 @@ export function createBotsRuntime({
   let voiceService = null;
   let integrationStartPromise = null;
   const startIntegrations = async () => {
-    if (!store.available || typeof encryption?.getKey !== 'function' || typeof resolvePrincipal !== 'function') return;
+    if (!store.available || typeof encryption?.getKey !== 'function'
+      || (!ownerId && typeof resolvePrincipal !== 'function')) return;
     if (telegramService) return;
     integrationStartPromise ||= (async () => {
-      voiceService ||= createBotVoiceService({ dataDirectory, encryption, authorization, resolvePrincipal });
+      voiceService ||= createBotVoiceService({
+        dataDirectory, encryption, authorization, resolvePrincipal: resolveAutonomousPrincipal,
+      });
       telegramService = await createBotTelegramService({
-        supabase, store, authorization, channels, blobStore, encryption, dataDirectory,
-        resolvePrincipal, getDispatcher: () => backgroundStopped ? null : dispatcher,
+        supabase: transport, store, authorization, channels, blobStore, encryption, dataDirectory,
+        resolvePrincipal: resolveAutonomousPrincipal, getDispatcher: () => backgroundStopped ? null : dispatcher,
         speech: voiceService,
-        isAdmissionPaused,
+        isAdmissionPaused: admissionPaused,
         isOwner: () => executionEnabled && started && !backgroundStopped && !shutdownPromise,
       });
       if (executionEnabled && !backgroundStopped && !shutdownPromise) telegramService.start();
@@ -658,11 +912,40 @@ export function createBotsRuntime({
     return integrationStartPromise;
   };
   const auditQuery = createBotAuditQuery({
-    supabase,
+    supabase: transport,
     assertSchemaVersion: (expectedVersion) => store.assertSchemaVersion(expectedVersion),
   });
+  const managementStore = typeof searchCloudDirectory === 'function'
+    ? Object.freeze({
+        ...store,
+        async searchUserProfiles(query, limit = 20) {
+          let cloud = [];
+          try {
+            cloud = await searchCloudDirectory(query, limit);
+          } catch {
+            cloud = [];
+          }
+          for (const row of Array.isArray(cloud) ? cloud : []) {
+            await upsertIdentity({
+              id: row.id,
+              email: row.email,
+              displayName: row.display_name || row.email,
+              accountKind: row.account_kind,
+              role: row.role,
+              status: row.status,
+            }).catch(() => undefined);
+          }
+          const local = await store.searchUserProfiles(query, limit);
+          const byId = new Map(local.map((row) => [row.id, row]));
+          for (const row of Array.isArray(cloud) ? cloud : []) {
+            if (!byId.has(row.id)) byId.set(row.id, { id: row.id, display_name: row.display_name, email: row.email });
+          }
+          return [...byId.values()].slice(0, Math.min(Math.max(Number.parseInt(limit, 10) || 20, 1), 50));
+        },
+      })
+    : store;
   const management = createBotManagement({
-    store,
+    store: managementStore,
     filterCatalog: catalogVisibility.filterBots,
     authorization,
     encryption,
@@ -919,18 +1202,25 @@ export function createBotsRuntime({
     return modelCredentialBroker;
   };
 
+  // The catalog readiness projection. The local catalog transport owns the
+  // single retry engine (starting an existing installation through the
+  // Electron lifecycle queue); this runtime only reacts to its transitions.
   const startRetention = async () => {
     try {
+      if (localCatalog) await localCatalog.ensureStarted();
       await store.assertSchemaVersion(PRODUCTION_BOTS_MIGRATION);
       await auditRetention.start();
+      await onCatalogReady?.();
       schemaFailure = null;
       controlPlaneFailure = null;
     } catch (error) {
       schemaFailure = productionBotsMigrationFailurePayload(error);
       controlPlaneFailure = schemaFailure ? null : {
-        code: typeof error?.code === 'string' ? error.code : 'bots_supabase_unavailable',
+        code: typeof error?.code === 'string' ? error.code : 'bot_database_unavailable',
       };
-      if (!retryTimer) {
+      if (localCatalog) {
+        localCatalog.scheduleStart();
+      } else if (!retryTimer && transport) {
         retryTimer = setTimeout(() => {
           retryTimer = null;
           void startRetention().then(() => {
@@ -944,6 +1234,27 @@ export function createBotsRuntime({
       }
     }
   };
+
+  // A catalog that becomes ready again resumes the existing services; it
+  // never creates a second dispatcher, scheduler, integration worker or
+  // retention job (every service is created once and only paused meanwhile).
+  let catalogRecovery = null;
+  const unsubscribeCatalog = localCatalog?.onChange((next, previous) => {
+    botHostStatusCache.invalidate();
+    if (next.state !== 'ready' || previous.state === 'ready' || !started || shutdownPromise) return;
+    catalogRecovery ||= (async () => {
+      await startRetention();
+      if (schemaFailure || controlPlaneFailure) return;
+      if (executionEnabled && !prewarmCache) await startExecution();
+      await startIntegrations().catch(() => undefined);
+      if (!maintenanceFence) {
+        dispatcher?.resumeAdmissions?.();
+        await routineRuntime?.tick?.().catch?.(() => undefined);
+      }
+    })().catch(() => undefined).finally(() => {
+      catalogRecovery = null;
+    });
+  }) || null;
 
   const performStartExecution = async () => {
     if (!store.available || !dockerProvider.available || typeof encryption?.getKey !== 'function') return;
@@ -1076,7 +1387,8 @@ export function createBotsRuntime({
         },
       });
       routineRuntime ||= createBotRoutineRuntime({
-        isAdmissionPaused,
+        isAdmissionPaused: admissionPaused,
+        authorizeManagerAccount: async (userId) => Boolean(await resolveAutonomousPrincipal(userId)),
         store,
         authorization,
         channels,
@@ -1104,7 +1416,8 @@ export function createBotsRuntime({
       });
       const sweepGate = runSweepGate;
       dispatcher ||= trackBotDispatcherActivity(createBotRunDispatcher({
-        isAdmissionPaused,
+        isAdmissionPaused: admissionPaused,
+        describeAdmissionPause,
         store,
         channels,
         contextAssembler,
@@ -1127,6 +1440,8 @@ export function createBotsRuntime({
           sweepGate.noteRunStarted(run?.id);
           const capability = await resolveBotCapabilities({
             hasSupabase: store.available,
+            catalog: catalogState(),
+            maintenance: maintenanceFence ? { kind: maintenanceFence.kind } : null,
             botHost,
             encryption,
             schemaFailure,
@@ -1163,7 +1478,7 @@ export function createBotsRuntime({
           maxBackoffMs: 60_000,
           logger: console,
           run: async () => {
-            if (!dispatcher) return;
+            if (!dispatcher || admissionPaused()) return { idle: true };
             const result = await approvalService.expirePending();
             for (const computerScopeKey of result.scopeKeys) {
               void dispatcher?.drainScope(computerScopeKey);
@@ -1173,9 +1488,16 @@ export function createBotsRuntime({
         });
         approvalExpiryJob.start({ immediate: false });
       }
-      const recovered = await runRecovery.recover();
-      for (const computerScopeKey of recovered.queuedScopeKeys || []) {
-        queueMicrotask(() => void dispatcher?.drainScope(computerScopeKey));
+      // Run recovery is autonomous work: it waits for maintenance, catalog
+      // outages and an activation hold, then runs once admissions reopen.
+      if (admissionPaused()) {
+        runRecoveryDeferred = true;
+      } else {
+        runRecoveryDeferred = false;
+        const recovered = await runRecovery.recover();
+        for (const computerScopeKey of recovered.queuedScopeKeys || []) {
+          queueMicrotask(() => void dispatcher?.drainScope(computerScopeKey));
+        }
       }
       if (!runSweepJob) {
         runSweepJob = createBotPeriodicJob({
@@ -1184,7 +1506,7 @@ export function createBotsRuntime({
           maxBackoffMs: 300_000,
           logger: console,
           run: async () => {
-            if (!dispatcher || !runRecovery || !runSweepGate) return;
+            if (!dispatcher || !runRecovery || !runSweepGate || admissionPaused()) return;
             // Resolves null while the runtime is idle; see createBotRunSweepGate.
             const sweep = await runSweepGate.sweep(() => runRecovery.sweep({
               isExecuting: (runId) => dispatcher?.isExecuting(runId) === true,
@@ -1253,7 +1575,8 @@ export function createBotsRuntime({
   async function resolveCurrentCapabilities({ refresh = false } = {}) {
     const input = {
       hasSupabase: store.available,
-      supabaseMode,
+      catalog: catalogState(),
+      maintenance: maintenanceFence ? { kind: maintenanceFence.kind } : null,
       botHost,
       encryption,
       schemaFailure,
@@ -1268,6 +1591,195 @@ export function createBotsRuntime({
       if (live.available) await startExecution();
     }
     return resolveBotCapabilities({ ...input, executionFailure });
+  }
+
+  const activeWorkBlockers = () => [
+    ...(inflightWrites > 0 ? ['http_writes'] : []),
+    ...(integrationStartPromise || executionStartPromise ? ['bot_startup'] : []),
+    ...(routineRuntime?.getActiveWorkCount?.() ? ['bot_routines'] : []),
+    ...(dispatcher?.getActiveWorkCount?.() ? ['bot_runs'] : []),
+    ...(telegramService?.getActiveWorkCount?.() ? ['telegram'] : []),
+    ...(memoryRuntime?.getPendingExtractionCount?.() ? ['memory_extraction'] : []),
+  ];
+
+  // Reopens autonomous work after maintenance or an owner resume: parked
+  // dispatcher wakes, one routine pass and any run recovery deferred while
+  // admissions were closed. Each service already exists exactly once.
+  const resumeAutonomousWork = async () => {
+    if (admissionPaused()) return;
+    dispatcher?.resumeAdmissions?.();
+    await routineRuntime?.tick?.().catch?.(() => undefined);
+    if (runRecoveryDeferred && runRecovery && dispatcher) {
+      runRecoveryDeferred = false;
+      try {
+        const recovered = await runRecovery.recover();
+        for (const computerScopeKey of recovered.queuedScopeKeys || []) {
+          void dispatcher?.drainScope(computerScopeKey);
+        }
+      } catch {
+        runRecoveryDeferred = true;
+      }
+    }
+  };
+
+  // Services hold caches and timers bound to the database they started on.
+  // After a replacement they are stopped and created again; a terminally shut
+  // down object is never restarted.
+  const teardownServices = async () => {
+    backgroundStopped = true;
+    await integrationStartPromise?.catch(() => undefined);
+    await executionStartPromise?.catch(() => undefined);
+    await telegramService?.stop().catch(() => undefined);
+    await voiceService?.shutdown?.().catch?.(() => undefined);
+    telegramService = null;
+    voiceService = null;
+    await routineRuntime?.shutdown().catch(() => undefined);
+    await dispatcher?.shutdown().catch(() => undefined);
+    clearMemoryStartRetry();
+    await memoryRuntime?.shutdown().catch(() => undefined);
+    if (approvalExpiryJob) await approvalExpiryJob.stop();
+    approvalExpiryJob = null;
+    if (runSweepJob) await runSweepJob.stop();
+    runSweepJob = null;
+    runSweepGate = null;
+    runRecovery = null;
+    dispatcher = null;
+    contextAssembler = null;
+    routineRuntime = null;
+    routineDrafter = null;
+    routineSettlementHandler = null;
+    prewarmCache?.invalidateAll();
+    prewarmCache = null;
+    streamAccessLeases.invalidateAll();
+    auditRetention.shutdown();
+    ownerMappings.clear();
+    mirroredAt.clear();
+  };
+
+  const rebuildServices = async () => {
+    backgroundStopped = false;
+    botHostStatusCache.invalidate();
+    // The objects directory was swapped (or retired by Start Empty); the
+    // adapter re-creates and re-checks it on next use.
+    objectStoragePromise = null;
+    // Host vaults and signing state were replaced with the catalog.
+    await credentialVault?.reload?.().catch?.(() => undefined);
+    await environmentSecretVault?.reload?.().catch?.(() => undefined);
+    botSpecSigner?.reset?.();
+    // Existing SSE subscribers hold snapshots of the old catalog; they
+    // reconnect and receive a snapshot of the new one.
+    eventStream.disconnectAll?.('catalog_replaced');
+    await startRetention();
+    if (schemaFailure || controlPlaneFailure) return;
+    if (executionEnabled) await startExecution();
+    await startIntegrations().catch(() => undefined);
+  };
+
+  // One reversible maintenance operation at a time (backup, migration,
+  // import, restore, start empty). Admissions close first; admitted work
+  // drains within a bound or the operation returns a retryable busy result
+  // without aborting anything.
+  const runMaintenance = async (kind, operation, {
+    drainTimeoutMs = 30_000,
+    replacesDatabase = false,
+  } = {}) => {
+    if (typeof operation !== 'function' || !/^[a-z_]{1,32}$/.test(kind)) {
+      throw new TypeError('Bot maintenance operation is invalid');
+    }
+    if (maintenanceFence) {
+      throw Object.assign(new Error('Another Bot maintenance operation is running'), {
+        code: 'bots_maintenance_busy', statusCode: 409, retryable: true,
+      });
+    }
+    maintenanceFence = Object.freeze({ kind, startedAt: new Date().toISOString() });
+    botHostStatusCache.invalidate();
+    let tornDown = false;
+    let replaced = false;
+    try {
+      await routineRuntime?.checkpoint?.().catch?.(() => undefined);
+      const deadline = Date.now() + drainTimeoutMs;
+      for (let blockers = activeWorkBlockers(); blockers.length > 0; blockers = activeWorkBlockers()) {
+        if (Date.now() >= deadline) {
+          throw Object.assign(new Error('Bots are busy; try again when current work finishes'), {
+            code: 'bots_maintenance_busy', statusCode: 409, retryable: true, blockers,
+          });
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      if (replacesDatabase) {
+        localCatalog?.enterMaintenance(`bots_maintenance_${kind}`);
+        await teardownServices();
+        tornDown = true;
+      }
+      return await operation({
+        markReplaced: () => { replaced = true; },
+      });
+    } finally {
+      maintenanceFence = null;
+      botHostStatusCache.invalidate();
+      recordDiagnostic({ type: 'lifecycle', event: 'bot.maintenance.finished', payload: { kind, replaced } });
+      if (tornDown) {
+        await localCatalog?.leaveMaintenance().catch(() => undefined);
+        await rebuildServices().catch(() => undefined);
+      }
+      await resumeAutonomousWork();
+    }
+  };
+
+  const catalogMaintenance = localCatalog
+    ? createBotCatalogMaintenance({
+        maintenance: botHost?.catalog?.maintenance || null,
+        runMaintenance,
+        activationHold,
+        encryption,
+        isCatalogUsable: () => catalogReady() && !schemaFailure && !controlPlaneFailure,
+        resumeAutonomousWork,
+        isMaintenanceActive: () => maintenanceFence !== null,
+        recordDiagnostic,
+      })
+    : null;
+  const catalogStatus = () => {
+    const catalog = catalogState();
+    const hold = activationHold.get();
+    return Object.freeze({
+      state: catalog.state,
+      code: catalog.code ?? null,
+      schema: schemaFailure ? { code: schemaFailure.code, requiredMigration: schemaFailure.requiredMigration } : null,
+      maintenance: maintenanceFence ? { kind: maintenanceFence.kind, startedAt: maintenanceFence.startedAt } : null,
+      activationHold: hold ? { reason: hold.reason, createdAt: hold.createdAt } : null,
+    });
+  };
+  const catalogImport = catalogMaintenance && botHost?.catalog?.maintenance && typeof readCloudSource === 'function'
+    ? createBotCatalogImport({
+        dataDirectory,
+        encryption,
+        host: botHost.catalog.maintenance,
+        runMaintenance,
+        activationHold,
+        readCloudSource,
+        resolveVerifiedSourceOwner: typeof resolveVerifiedSourceOwner === 'function'
+          ? resolveVerifiedSourceOwner
+          : async () => null,
+        validateCandidate: (candidate, options) => catalogMaintenance.validateCandidate(candidate, options),
+        recordDiagnostic,
+      })
+    : null;
+  catalogImportRef.current = catalogImport;
+  let cloudProbeAt = 0;
+  if (localCatalog) {
+    recoveryRouteRegistrars.push((routeApp) => registerBotCatalogRoutes(routeApp, {
+      getStatus: async ({ owner }) => {
+        // An empty local catalog must not read as deleted cloud Bots: the
+        // owner sees whether hosted Bots still await import.
+        if (owner && catalogImport && Date.now() - cloudProbeAt > 60 * 60 * 1000) {
+          cloudProbeAt = Date.now();
+          void catalogImport.probeCloud().catch(() => undefined);
+        }
+        return catalogStatus();
+      },
+      maintenance: catalogMaintenance,
+      catalogImport,
+    }));
   }
 
   const countRows = async (repository, filters) => {
@@ -1441,6 +1953,8 @@ export function createBotsRuntime({
           });
         }
         startupState = 'ready';
+        catalogMaintenance?.start();
+        await catalogImport?.initialize().catch(() => undefined);
       })().catch((error) => {
         startupState = 'failed';
         controlPlaneFailure ||= {
@@ -1452,8 +1966,15 @@ export function createBotsRuntime({
       });
       return startPromise;
     },
+    // Tunnel Bot links act for the workstation owner, so selection is checked
+    // under the identity the owner holds for each Bot.
     async validateTunnelBotSelection(principal, botIds) {
-      for (const botId of botIds) await authorization.requireActiveMembership(principal, botId);
+      for (const botId of botIds) {
+        const effective = ownerId
+          ? Object.freeze({ ...localOwner.principal, id: ownerIdentityFor(botId) })
+          : principal;
+        await authorization.requireActiveMembership(effective, botId);
+      }
     },
     registerRoutes(app) {
       registerBotRoutes(app, {
@@ -1487,6 +2008,26 @@ export function createBotsRuntime({
         getExecutionFailure: () => executionFailure,
         getStartupState: () => startupState,
         resolveCapabilities: (options) => resolveCurrentCapabilities(options),
+        getCatalogState: () => catalogState(),
+        trackWrite,
+        identity: ownerId ? Object.freeze({
+          defaultPrincipal: (principal) => (actsAsOwner(principal) && principal.id !== ownerId
+            ? Object.freeze({ ...principal, id: ownerId })
+            : principal),
+          scopePrincipal: (principal, botId) => effectivePrincipal(principal, botId),
+          needsBotLookup: (principal) => actsAsOwner(principal) && ownerMappings.size > 0,
+          resolveResourceBotId: async (kind, id) => {
+            const table = { channel: 'bot_channels', run: 'bot_runs', action: 'bot_action_attempts' }[kind];
+            if (!table) return null;
+            const row = await store.get(table, { id });
+            return typeof row?.bot_id === 'string' ? row.bot_id : null;
+          },
+          forEachIdentity,
+          withViewerIds,
+          mirror: mirrorManagedIdentity,
+        }) : null,
+        getMaintenance: () => (maintenanceFence ? { kind: maintenanceFence.kind } : null),
+        registerRecoveryRoutes: (routeApp) => recoveryRouteRegistrars.forEach((register) => register(routeApp)),
         getRuntimeServices: () => ({
           memoryRuntime,
           computerResources,
@@ -1504,6 +2045,9 @@ export function createBotsRuntime({
       registerBotVoiceRoutes(app, { getService: () => voiceService });
     },
     getQuitRiskStatus,
+    catalogMaintenance,
+    getCatalogStatus: () => catalogStatus(),
+    runMaintenance,
     getRestartBlockers: () => [
       ...(integrationStartPromise || executionStartPromise ? ['bot_startup'] : []),
       ...(routineRuntime?.getActiveWorkCount?.() ? ['bot_routines'] : []),
@@ -1535,6 +2079,7 @@ export function createBotsRuntime({
         if (runSweepJob) await runSweepJob.stop();
         runSweepJob = null;
         runSweepGate = null;
+        catalogMaintenance?.stop();
         try {
           backgroundStopped = true;
           await integrationStartPromise?.catch(() => undefined);
@@ -1553,6 +2098,8 @@ export function createBotsRuntime({
           if (artifactService) await artifactService.shutdown();
           await mcpHost.shutdown();
         } finally {
+          unsubscribeCatalog?.();
+          localCatalog?.dispose();
           eventStream.shutdown();
           prewarmCache?.invalidateAll();
           streamAccessLeases.invalidateAll();

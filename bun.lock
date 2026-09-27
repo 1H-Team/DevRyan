@@ -38,19 +38,23 @@
     },
     "packages/bot-computer": {
       "name": "@openchamber/bot-computer",
-      "version": "1.2.14",
+      "version": "1.2.16",
+    },
+    "packages/bot-db": {
+      "name": "@openchamber/bot-db",
+      "version": "1.2.16",
     },
     "packages/bot-egress": {
       "name": "@openchamber/bot-egress",
-      "version": "1.2.14",
+      "version": "1.2.16",
     },
     "packages/bot-engine-proxy": {
       "name": "@openchamber/bot-engine-proxy",
-      "version": "1.2.14",
+      "version": "1.2.16",
     },
     "packages/bot-indexer": {
       "name": "@openchamber/bot-indexer",
-      "version": "1.2.14",
+      "version": "1.2.16",
       "dependencies": {
         "@xenova/transformers": "2.17.2",
         "better-sqlite3": "12.11.1",
@@ -58,15 +62,15 @@
     },
     "packages/bot-supervisor": {
       "name": "@openchamber/bot-supervisor",
-      "version": "1.2.14",
+      "version": "1.2.16",
     },
     "packages/bots-runtime": {
       "name": "@openchamber/bots-runtime",
-      "version": "1.2.14",
+      "version": "1.2.16",
     },
     "packages/cursor-sdk-runtime": {
       "name": "@openchamber/cursor-sdk-runtime",
-      "version": "1.2.14",
+      "version": "1.2.16",
       "dependencies": {
         "@cursor/sdk": "1.0.28",
         "@modelcontextprotocol/sdk": "1.29.0",
@@ -75,7 +79,7 @@
     },
     "packages/desktop": {
       "name": "@openchamber/desktop",
-      "version": "1.2.14",
+      "version": "1.2.16",
       "devDependencies": {
         "@tauri-apps/cli": "^2",
         "@types/node": "^24.3.1",
@@ -84,8 +88,9 @@
     },
     "packages/electron": {
       "name": "@openchamber/electron",
-      "version": "1.2.14",
+      "version": "1.2.16",
       "dependencies": {
+        "@openchamber/bot-db": "workspace:*",
         "@openchamber/bot-egress": "workspace:*",
         "@openchamber/web": "workspace:*",
         "electron-context-menu": "^4.1.2",
@@ -102,22 +107,22 @@
     },
     "packages/harness-runtime": {
       "name": "@openchamber/harness-runtime",
-      "version": "1.2.14",
+      "version": "1.2.16",
     },
     "packages/orchestration-runtime": {
       "name": "@openchamber/orchestration-runtime",
-      "version": "1.2.14",
+      "version": "1.2.16",
     },
     "packages/shared-runtime": {
       "name": "@openchamber/shared-runtime",
-      "version": "1.2.14",
+      "version": "1.2.16",
       "dependencies": {
         "adm-zip": "^0.6.0",
       },
     },
     "packages/ui": {
       "name": "@openchamber/ui",
-      "version": "1.2.14",
+      "version": "1.2.16",
       "dependencies": {
         "@base-ui/react": "^1.8.0",
         "@codemirror/autocomplete": "^6.20.3",
@@ -209,7 +214,7 @@
     },
     "packages/web": {
       "name": "@openchamber/web",
-      "version": "1.2.14",
+      "version": "1.2.16",
       "bin": {
         "openchamber": "./bin/cli.js",
       },
@@ -218,6 +223,7 @@
         "@clack/prompts": "^1.7.0",
         "@modelcontextprotocol/sdk": "1.29.0",
         "@octokit/rest": "^22.0.1",
+        "@openchamber/bot-db": "workspace:*",
         "@openchamber/bots-runtime": "workspace:*",
         "@openchamber/cursor-sdk-runtime": "workspace:*",
         "@openchamber/harness-runtime": "workspace:*",
@@ -821,6 +827,8 @@
     "@octokit/types": ["@octokit/types@16.0.0", "", { "dependencies": { "@octokit/openapi-types": "^27.0.0" } }, "sha512-sKq+9r1Mm4efXW1FCk7hFSeJo4QKreL/tTbR0rz/qx/r1Oa2VV83LTA/H/MuCOX7uCIJmQVRKBcbmWoySjAnSg=="],
 
     "@openchamber/bot-computer": ["@openchamber/bot-computer@workspace:packages/bot-computer"],
+
+    "@openchamber/bot-db": ["@openchamber/bot-db@workspace:packages/bot-db"],
 
     "@openchamber/bot-egress": ["@openchamber/bot-egress@workspace:packages/bot-egress"],
 

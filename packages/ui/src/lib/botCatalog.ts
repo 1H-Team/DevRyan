@@ -30,7 +30,8 @@ export const parseBot = (value: unknown, previous?: BotSummary): BotSummary | nu
     || (value.title !== undefined && typeof value.title !== 'string')
     || (value.summary !== undefined && typeof value.summary !== 'string')
     || (value.avatarUrl !== undefined && !hasNullableString(value, 'avatarUrl'))
-    || (value.avatarFallback !== undefined && !hasNullableString(value, 'avatarFallback'))) return null;
+    || (value.avatarFallback !== undefined && !hasNullableString(value, 'avatarFallback'))
+    || (value.viewerUserId !== undefined && !hasNullableString(value, 'viewerUserId'))) return null;
   return {
     id: String(value.id),
     name: String(value.name),
@@ -44,6 +45,8 @@ export const parseBot = (value: unknown, previous?: BotSummary): BotSummary | nu
     createdAt: String(value.createdAt),
     updatedAt: String(value.updatedAt),
     retiredAt: value.retiredAt as string | null,
+    // Bot events are viewer-neutral; keep the identity from the last snapshot.
+    viewerUserId: nullableStringOr(value.viewerUserId, previous?.viewerUserId ?? null),
   };
 };
 

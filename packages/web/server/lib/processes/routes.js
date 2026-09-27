@@ -1,3 +1,5 @@
+import express from 'express';
+
 const sendError = (res, error, fallback) => {
   res.status(error?.statusCode || 500).json({
     error: error?.message || fallback,
@@ -34,7 +36,7 @@ export const registerProcessesRoutes = (app, options = {}) => {
     }
   });
 
-  app.put('/api/processes/project', async (req, res) => {
+  app.put('/api/processes/project', express.json({ limit: '16kb' }), async (req, res) => {
     if (!ensureLocalAdmin(req, res)) return;
     try {
       res.json(await runtime.setProjectSetting(readDirectory(req), {
@@ -55,7 +57,7 @@ export const registerProcessesRoutes = (app, options = {}) => {
     }
   });
 
-  app.post('/api/processes/:pid/stop', async (req, res) => {
+  app.post('/api/processes/:pid/stop', express.json({ limit: '16kb' }), async (req, res) => {
     if (!ensureLocalAdmin(req, res)) return;
     try {
       res.json(await runtime.stopProcess({

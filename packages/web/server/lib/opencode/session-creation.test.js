@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import express from 'express';
 import path from 'node:path';
 import { createDiagnosticSanitizer } from '@openchamber/harness-runtime';
+import { registerCommonRequestMiddleware } from './core-routes.js';
 import { registerOpenCodeProxy } from './proxy.js';
 import { beginSessionCreationTrace } from './session-creation.js';
 
@@ -20,7 +21,7 @@ afterEach(async () => {
 });
 const proxy = (url, { ready = true, records = [], intercept, preparationMs = 0 } = {}) => {
   const app = express();
-  app.use(express.json());
+  registerCommonRequestMiddleware(app, { express });
   app.use('/api/session', (req, _res, next) => { beginSessionCreationTrace(req, (record) => records.push(record)); next(); });
   if (preparationMs) app.use('/api/session', (_req, _res, next) => setTimeout(next, preparationMs));
   if (intercept) app.post('/api/session', intercept);

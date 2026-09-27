@@ -4,6 +4,7 @@ import http from 'node:http';
 import express from 'express';
 import { afterEach, describe, it } from 'vitest';
 
+import { registerCommonRequestMiddleware } from '../opencode/core-routes.js';
 import { registerRuntimeServiceRoutes } from './routes.js';
 
 const servers = [];
@@ -12,7 +13,9 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise((resolve) => server.close(resolve))));
 });
 
-const startFixture = async (options = {}) => {
+// No fixture-level body parser: production mounts these routes behind the
+// shared /api JSON allowlist, which does not include /api/runtime-service.
+const startFixture = async ({ commonRequestMiddleware = false, ...options } = {}) => {
   const sessions = new Set();
   const leases = [];
   let bootstrap = 'a'.repeat(43);
@@ -40,7 +43,7 @@ const startFixture = async (options = {}) => {
     },
   };
   const app = express();
-  app.use(express.json({ limit: '4kb' }));
+  if (commonRequestMiddleware) registerCommonRequestMiddleware(app, { express });
   const server = http.createServer(app);
   registerRuntimeServiceRoutes(app, {
     controller,
@@ -109,8 +112,11 @@ describe('runtime-service HTTP handshake', () => {
     assert.equal(replay.status, 401);
   });
 
-  it('requires CSRF and accepts only a bounded desktop-host broker lease', async () => {
-    const fixture = await startFixture();
+  it.each([
+    ['standalone routes', false],
+    ['the production request middleware', true],
+  ])('requires CSRF and accepts only a bounded desktop-host broker lease behind %s', async (_label, commonRequestMiddleware) => {
+    const fixture = await startFixture({ commonRequestMiddleware });
     const bootstrap = await fetch(`${fixture.baseUrl}/auth/runtime-service-bootstrap`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-DevRyan-CSRF': '1' },

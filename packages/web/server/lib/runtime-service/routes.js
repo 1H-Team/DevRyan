@@ -1,3 +1,5 @@
+import express from 'express';
+
 import { hasTunnelBoundaryAuthorization } from '../tunnels/access-control.js';
 
 const SESSION_COOKIE = 'devryan_runtime_service';
@@ -6,6 +8,9 @@ const MAX_BROKER_TOKEN_LENGTH = 256;
 const DESKTOP_HOST_LEASE_TTL_MS = 30_000;
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const CAPABILITIES = new Set(['focus', 'notifications', 'browser_cdp', 'browser_observation']);
+// The shared request middleware JSON-parses only allowlisted /api prefixes, so
+// every body-reading route here parses its own bounded JSON body.
+const parseJsonBody = express.json({ limit: '4kb' });
 
 const isLoopbackAddress = (value) => {
   const normalized = typeof value === 'string' ? value.toLowerCase() : '';
@@ -92,7 +97,7 @@ export const registerRuntimeServiceRoutes = (app, {
     throw new Error('Runtime service route controller is invalid');
   }
 
-  app.post('/auth/runtime-service-bootstrap', async (req, res) => {
+  app.post('/auth/runtime-service-bootstrap', parseJsonBody, async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     if (!isLoopbackAddress(req.socket?.remoteAddress) || !hasCsrfHeader(req)) {
       return unauthorized(res, 'runtime_service_bootstrap_rejected');
@@ -137,7 +142,7 @@ export const registerRuntimeServiceRoutes = (app, {
     return res.json(controller.publicStatus());
   });
 
-  app.post('/api/runtime-service/desktop-host', async (req, res) => {
+  app.post('/api/runtime-service/desktop-host', parseJsonBody, async (req, res) => {
     const lease = validateDesktopHostLease(req.body);
     if (!lease) {
       return res.status(400).json({

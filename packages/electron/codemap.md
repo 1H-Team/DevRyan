@@ -30,7 +30,7 @@ and desktop-host broker bridges.
   server to listen with OpenCode deferred, activates the renderer, and only then
   resumes OpenCode plus Bot preparation in the background. Automatic runtime-
   service preflight persists an app-bound fallback and is used directly, so an
-  unavailable signed service cannot trigger the stale 20-second connection wait.
+  unavailable signed service cannot trigger the stale connection wait.
   Packaged startup leaves Chromium caches intact; the existing explicit cache-
   clear command remains available. Window hangs, recoveries, renderer exits,
   and main-frame load failures are recorded as content-free lifecycle logs.
@@ -87,6 +87,9 @@ and desktop-host broker bridges.
   of `not_found`/`not_registered` are idempotent success, including unsigned
   bundles; they never bypass stopped-owner verification or exclusive acquisition.
   Post-update registration failures use the same guarded recovery path.
+  `retryRuntimeServiceConnection` bounds the foreground connection at 20 seconds,
+  extended to 60 only while the service is still booting (no descriptor, a stale
+  owner, or health not yet ready), so a cold launchd start is not rolled back.
   Recovery logs retain only allowlisted registration states and bounded native
   and connection codes. Owner/descriptor v1 wire formats and
   generation/instance release fencing remain compatible.
@@ -100,9 +103,31 @@ and desktop-host broker bridges.
   rejects links/oversize files, keeps bounded encrypted bytes in main memory,
   and returns metadata only. `desktop_export_bot_recovery` and
   `desktop_restore_bot_recovery` are local-origin-only preload commands.
+- **Local Bot catalog**: `bot-database-manager.mjs` owns the catalog's
+  PostgreSQL service: creates the labelled data volume before first start,
+  checks ownership (deployment, role, nonce) and cluster identity against the
+  persisted expectation (`bots/runtime/database.v1.json`, written before REST is
+  exposed), runs the one-off `--initialize-only` initialization only for a new
+  volume, applies the reviewed `@openchamber/bot-db` inventory with checksum
+  drift rejection, refuses newer schemas, and reports `recovery_required`
+  instead of re-initializing. `bot-catalog-backup.mjs` owns backup units
+  (pg_dump custom format + objects + host state as AES-256-GCM streams under an
+  HMAC manifest), retention (7 daily, 30 days of pre-change, never the last
+  verified), authenticated restore into an inaccessible candidate database,
+  Start Empty retirement, and the crash-safe replacement journal
+  (`bots/runtime/replacement.v1.json`). `bot-runtime-manager.mjs` orders the
+  lifecycle (verify images → inspect database → back up and migrate → expose
+  REST → start execution), mints short-lived PostgREST tokens
+  (`databaseContext`), serves `ensureCatalog` independently of execution, and
+  exposes the owner-only maintenance surface the server uses for backup,
+  restore, Start Empty and hosted import (`createImportSource`,
+  `runImportSql`, `exportImportPage`, …). Passive reads use
+  `ensureReady({ allowInstall: false })` and never pull images.
 - **Bot Docker ownership**: `bot-runtime-manifest.mjs` validates fixed local
   development tags or selects architecture-matched immutable digests from the
-  complete signed-image release manifest. Release builds download, verify, and
+  complete eight-image signed release manifest; an installed legacy six-image
+  (cloud-catalog) manifest is recognized so its history is preserved and it can
+  upgrade, but it can never be activated or rolled back to. Release builds download, verify, and
   bundle that manifest as `bot-runtime/images.release.json`; local development
   reads only `resources/bot-runtime/images.dev.json`, verifies that every fixed
   local image already exists, and never pulls mutable development tags;

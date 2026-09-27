@@ -25,7 +25,9 @@ const publicOwnershipIssue = (issue) => {
     ...(validDeployment(issue.deployment) ? { deployment: issue.deployment } : {}),
     conflicts: entries.slice(0, 32).filter((entry) => validDeployment(entry?.deployment)).map((entry) => ({
       deployment: entry.deployment,
-      service: ['supervisor', 'engine-proxy', 'egress', 'indexer'].includes(entry.service) ? entry.service : null,
+      service: ['supervisor', 'engine-proxy', 'egress', 'indexer', 'database', 'database-rest'].includes(entry.service)
+        ? entry.service
+        : null,
       state: ['created', 'running', 'paused', 'restarting', 'removing', 'exited', 'dead'].includes(entry.state)
         ? entry.state : 'unknown',
     })),
@@ -57,6 +59,22 @@ const validateComputerFilesPath = (value) => {
   return value;
 };
 
+// A signed specification source is capped at 512 KiB by the Bot spec service;
+// leave room for its JSON string escaping and requirement mappings.
+const BOT_SPEC_IMPORT_JSON_LIMIT = '2mb';
+
+const DATABASE_STATES = new Set([
+  'starting', 'ready', 'unavailable', 'setup_required', 'update_required', 'recovery_required', 'maintenance',
+]);
+
+const publicDatabase = (database) => ({
+  state: DATABASE_STATES.has(database?.state) ? database.state : 'unavailable',
+  code: typeof database?.code === 'string' && /^[a-z][a-z0-9_]{0,119}$/.test(database.code) ? database.code : null,
+});
+
+// `available` keeps meaning execution availability. `catalogAvailable` says
+// whether the local Bot catalog can be read and written, independently of
+// Docker execution services.
 const capability = ({
   state,
   code,
@@ -64,8 +82,12 @@ const capability = ({
   runtime = null,
   available = false,
   requiredMigration = null,
+  catalogAvailable = false,
+  database = null,
 }) => ({
-  available,
+  available: available === true && catalogAvailable === true,
+  catalogAvailable: catalogAvailable === true,
+  database: publicDatabase(database),
   state,
   code,
   owner,
@@ -141,7 +163,8 @@ export function createBotHostStatusCache({ ttlMs = BOT_STATUS_CACHE_TTL_MS, now 
 
 export const resolveBotCapabilities = async ({
   hasSupabase,
-  supabaseMode = null,
+  catalog = null,
+  maintenance = null,
   botHost,
   encryption,
   schemaFailure = null,
@@ -152,53 +175,37 @@ export const resolveBotCapabilities = async ({
   refreshStatus = false,
 } = {}) => {
   const owner = typeof botHost?.owner === 'string' ? botHost.owner : 'unsupported';
-  if (!hasSupabase) {
-    // A deliberate Supabase-off host is a final state; only an outage of a
-    // connected host is transient and worth retrying.
-    if (supabaseMode === 'disconnected' || supabaseMode === 'not_configured') {
-      return capability({ state: `supabase_${supabaseMode}`, code: 'bots_require_supabase', owner });
-    }
-    return capability({
-      state: 'supabase_unavailable',
-      code: 'bots_supabase_unavailable',
-      owner,
-    });
+  const database = maintenance
+    ? { state: 'maintenance', code: maintenance.kind ? `bots_maintenance_${maintenance.kind}` : 'bots_maintenance' }
+    : catalog
+      ? { state: catalog.state, code: catalog.code ?? null }
+      : { state: hasSupabase ? 'ready' : 'unavailable', code: hasSupabase ? null : 'bot_database_unavailable' };
+  const catalogAvailable = hasSupabase === true && database.state === 'ready'
+    && !schemaFailure && !controlPlaneFailure && startupState !== 'starting' && startupState !== 'idle';
+  const result = (input) => capability({ ...input, owner, database, catalogAvailable });
+  // Bots and their encrypted objects live only on an Electron host; a
+  // standalone web server has no Bot catalog.
+  if (!hasSupabase || owner !== 'electron') {
+    return result({ state: 'unsupported_host', code: 'bots_host_unsupported' });
   }
   if (startupState === 'starting' || startupState === 'idle') {
-    return capability({
-      state: 'bots_starting',
-      code: 'bots_starting',
-      owner,
-    });
+    return result({ state: 'bots_starting', code: 'bots_starting' });
+  }
+  if (maintenance) {
+    return result({ state: 'bots_maintenance', code: database.code });
+  }
+  if (database.state === 'recovery_required') {
+    return result({ state: 'database_recovery_required', code: database.code || 'bot_database_recovery_required' });
   }
   if (schemaFailure) {
-    return capability({
+    return result({
       state: 'migration_required',
       code: schemaFailure.code,
-      owner,
       requiredMigration: schemaFailure.requiredMigration,
     });
   }
-  if (controlPlaneFailure) {
-    return capability({
-      state: 'supabase_unavailable',
-      code: controlPlaneFailure.code || 'bots_supabase_unavailable',
-      owner,
-    });
-  }
-  if (owner !== 'electron') {
-    return capability({
-      state: 'unsupported_host',
-      code: 'bots_host_unsupported',
-      owner,
-    });
-  }
   if (typeof encryption?.getKey !== 'function') {
-    return capability({
-      state: 'encryption_unavailable',
-      code: 'bot_os_encryption_unavailable',
-      owner,
-    });
+    return result({ state: 'encryption_unavailable', code: 'bot_os_encryption_unavailable' });
   }
   let encryptionKey = null;
   let providedKey = null;
@@ -207,21 +214,16 @@ export const resolveBotCapabilities = async ({
     encryptionKey = Buffer.from(providedKey || []);
     if (encryptionKey.byteLength !== 32) throw new Error('invalid Bot encryption key');
   } catch (error) {
-    return capability({
+    return result({
       state: 'encryption_unavailable',
       code: typeof error?.code === 'string' ? error.code : 'bot_os_encryption_unavailable',
-      owner,
     });
   } finally {
     encryptionKey?.fill(0);
     if (Buffer.isBuffer(providedKey) || providedKey instanceof Uint8Array) providedKey.fill(0);
   }
   if (typeof botHost?.getStatus !== 'function') {
-    return capability({
-      state: 'runtime_unavailable',
-      code: 'bot_runtime_unavailable',
-      owner,
-    });
+    return result({ state: 'runtime_unavailable', code: 'bot_runtime_unavailable' });
   }
 
   let runtime;
@@ -230,21 +232,15 @@ export const resolveBotCapabilities = async ({
       ? await statusCache.getStatus(botHost, { refresh: refreshStatus === true })
       : await botHost.getStatus();
   } catch (error) {
-    return capability({
+    return result({
       state: 'runtime_unavailable',
       code: typeof error?.code === 'string' ? error.code : 'bot_runtime_unavailable',
-      owner,
     });
   }
   const indexState = runtime?.indexState || runtime?.index?.state || null;
   if (['building', 'rebuilding', 'rebuild_required'].includes(indexState)
     || runtime?.state === 'index_rebuilding') {
-    return capability({
-      state: 'index_rebuilding',
-      code: 'bot_index_rebuilding',
-      owner,
-      runtime,
-    });
+    return result({ state: 'index_rebuilding', code: 'bot_index_rebuilding', runtime });
   }
 
   const states = {
@@ -252,22 +248,27 @@ export const resolveBotCapabilities = async ({
     docker_unavailable: ['docker_stopped', 'bot_runtime_docker_unavailable'],
     setup_required: ['setup_required', 'bot_runtime_setup_required'],
     runtime_update_required: ['image_update_available', 'bot_runtime_update_required'],
+    database_recovery_required: ['database_recovery_required', 'bot_database_recovery_required'],
     degraded: ['runtime_degraded', 'bot_runtime_degraded'],
     healthy: ['healthy', null],
   };
   const [state, code] = states[runtime?.state] || ['runtime_unavailable', 'bot_runtime_unavailable'];
+  if (state === 'healthy' && controlPlaneFailure) {
+    return result({ state: 'catalog_unavailable', code: controlPlaneFailure.code || 'bot_database_unavailable', runtime });
+  }
+  if (state === 'healthy' && !catalogAvailable) {
+    return result({ state: 'catalog_unavailable', code: database.code || 'bot_database_unavailable', runtime });
+  }
   if (state === 'healthy' && executionFailure) {
-    return capability({
+    return result({
       state: 'runtime_degraded',
       code: executionFailure.code || 'bot_runtime_execution_unavailable',
-      owner,
       runtime,
     });
   }
-  return capability({
+  return result({
     state,
     code: runtime?.code || code,
-    owner,
     runtime,
     available: state === 'healthy',
   });
@@ -307,8 +308,36 @@ export function registerBotRoutes(app, {
   getRuntimeServices = null,
   recordDiagnostic = () => {},
   botHostStatusCache = null,
+  getCatalogState = () => ({ state: 'ready', code: null }),
+  getMaintenance = () => null,
+  registerRecoveryRoutes = null,
+  identity = null,
+  trackWrite = null,
 } = {}) {
   const statusCache = botHostStatusCache || createBotHostStatusCache();
+  const recordCatalogFailure = (req, res, code) => {
+    const route = String(req.originalUrl || req.url || '').split('?')[0];
+    if (req.method !== 'GET' || !['/api/bots', '/api/bots/assigned'].includes(route)) return;
+    try {
+      recordDiagnostic({
+        type: 'connection',
+        event: 'bot.catalog.read_failed',
+        payload: {
+          path: route,
+          statusCode: res.statusCode,
+          code: publicDatabase({ code }).code || 'bot_request_failed',
+          state: publicDatabase(getCatalogState()).state,
+        },
+      });
+    } catch {
+      // Diagnostics must not change catalog behavior.
+    }
+  };
+  const catalogGateError = (req, res, payload, status = 503) => {
+    const result = res.status(status).json(payload);
+    recordCatalogFailure(req, res, payload.code);
+    return result;
+  };
   const markComputerView = (stage, payload) => {
     try {
       recordDiagnostic({
@@ -413,6 +442,43 @@ export function registerBotRoutes(app, {
     }
   });
 
+  // Database status, backup inspection, restore, start-empty and import stay
+  // reachable when the catalog is unavailable or in recovery.
+  if (typeof registerRecoveryRoutes === 'function') registerRecoveryRoutes(app);
+
+  // Effective identity. The workstation owner acts as its local identity, or
+  // as an imported Bot's verified source owner; resource routes derive the
+  // Bot from the stored resource. `req.botViewer` keeps the authenticated
+  // principal for multi-Bot reads.
+  const BOT_ROUTE_PATH = /^\/api\/(?:bots|bot-actions|bot-channels|bot-runs|bot-specs|bot-signers)(?:[/?]|$)/;
+  const UUID_PARAM = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const viewerOf = (req) => req.botViewer || req.principal;
+  const scopeToBot = (req, botId) => {
+    if (!identity || !req.principal) return;
+    req.botViewer ||= req.principal;
+    req.principal = identity.scopePrincipal(req.botViewer, botId);
+  };
+  if (identity && typeof app.param === 'function') {
+    app.param('botId', (req, _res, next, value) => {
+      if (BOT_ROUTE_PATH.test(req.originalUrl || '') && UUID_PARAM.test(String(value))) scopeToBot(req, value);
+      next();
+    });
+    for (const [param, kind] of [['channelId', 'channel'], ['runId', 'run'], ['actionId', 'action']]) {
+      app.param(param, async (req, _res, next, value) => {
+        try {
+          if (BOT_ROUTE_PATH.test(req.originalUrl || '') && UUID_PARAM.test(String(value))
+            && identity.needsBotLookup(viewerOf(req))) {
+            const botId = await identity.resolveResourceBotId(kind, value);
+            if (botId) scopeToBot(req, botId);
+          }
+          next();
+        } catch (error) {
+          next(error);
+        }
+      });
+    }
+  }
+
   if (typeof app.use === 'function') {
     app.use(
       [
@@ -423,20 +489,51 @@ export function registerBotRoutes(app, {
         '/api/bot-specs',
         '/api/bot-signers',
       ],
-      (_req, res, next) => {
+      (req, res, next) => {
         if (getStartupState() === 'starting' || getStartupState() === 'idle') {
-          return res.status(503).json({
+          return catalogGateError(req, res, {
             error: 'Bots are still starting',
             code: 'bots_starting',
             retryable: true,
           });
         }
+        const safe = req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS';
+        const maintenance = getMaintenance();
+        if (maintenance && !safe) {
+          return catalogGateError(req, res, {
+            error: 'Bots are paused for maintenance',
+            code: 'bots_maintenance',
+            retryable: true,
+          });
+        }
         const failure = getSchemaFailure();
-        if (!failure) return next();
-        return res.status(failure.status || 503).json({
-          error: failure.error || 'Database migration required',
-          code: failure.code || 'bot_schema_migration_required',
-          requiredMigration: failure.requiredMigration,
+        if (failure) {
+          return catalogGateError(req, res, {
+            error: failure.error || 'Database migration required',
+            code: failure.code || 'bot_schema_migration_required',
+            requiredMigration: failure.requiredMigration,
+          }, failure.status || 503);
+        }
+        const catalog = getCatalogState();
+        if (catalog?.state === 'ready' || (maintenance && safe)) {
+          // Maintenance drains admitted writes before it touches the catalog.
+          if (!safe && typeof trackWrite === 'function') {
+            const release = trackWrite();
+            res.once?.('finish', release);
+            res.once?.('close', release);
+          }
+          if (identity && req.principal) {
+            req.botViewer = req.principal;
+            req.principal = identity.defaultPrincipal(req.principal);
+            return identity.mirror(req.botViewer).then(() => next(), () => next());
+          }
+          return next();
+        }
+        return catalogGateError(req, res, {
+          error: 'The local Bot catalog is unavailable',
+          code: typeof catalog?.code === 'string' ? catalog.code : 'bot_database_unavailable',
+          catalogState: typeof catalog?.state === 'string' ? catalog.state : 'unavailable',
+          retryable: !['recovery_required', 'setup_required', 'update_required'].includes(catalog?.state),
         });
       },
     );
@@ -495,9 +592,14 @@ export function registerBotRoutes(app, {
       if (!channels) throw Object.assign(new Error('Bot catalog is unavailable'), {
         code: 'bot_catalog_unavailable', statusCode: 503,
       });
-      return res.json(await channels.assignedForPrincipal(req.principal));
+      const viewer = viewerOf(req);
+      return res.json(identity
+        ? identity.withViewerIds(viewer, await identity.forEachIdentity(viewer, (principal) => channels.assignedForPrincipal(principal)))
+        : await channels.assignedForPrincipal(req.principal));
     } catch (error) {
-      return botRouteError(res, error);
+      const result = botRouteError(res, error);
+      recordCatalogFailure(req, res, error?.code);
+      return result;
     }
   });
 
@@ -506,9 +608,14 @@ export function registerBotRoutes(app, {
       if (!management) throw Object.assign(new Error('Bot management is unavailable'), {
         code: 'bots_unavailable', statusCode: 503,
       });
-      return res.json(await management.listCatalog(req.principal));
+      const viewer = viewerOf(req);
+      return res.json(identity
+        ? identity.withViewerIds(viewer, await identity.forEachIdentity(viewer, (principal) => management.listCatalog(principal)))
+        : await management.listCatalog(req.principal));
     } catch (error) {
-      return botRouteError(res, error);
+      const result = botRouteError(res, error);
+      recordCatalogFailure(req, res, error?.code);
+      return result;
     }
   });
 
@@ -528,10 +635,11 @@ export function registerBotRoutes(app, {
       if (!management) throw Object.assign(new Error('Bot management is unavailable'), {
         code: 'bots_unavailable', statusCode: 503,
       });
-      return res.json(await management.getDetail(
+      const detail = await management.getDetail(
         req.principal,
         validateUuid(req.params.botId, 'botId'),
-      ));
+      );
+      return res.json(identity ? identity.withViewerIds(viewerOf(req), detail) : detail);
     } catch (error) {
       return botRouteError(res, error);
     }
@@ -887,7 +995,7 @@ export function registerBotRoutes(app, {
     }
   });
 
-  app.post('/api/bot-specs/import/preview', async (req, res) => {
+  app.post('/api/bot-specs/import/preview', express.json({ limit: BOT_SPEC_IMPORT_JSON_LIMIT }), async (req, res) => {
     try {
       if (!botSpecService) throw Object.assign(new Error('Bot specification import is unavailable'), {
         code: 'bots_unavailable', statusCode: 503,
@@ -898,7 +1006,7 @@ export function registerBotRoutes(app, {
     }
   });
 
-  app.post('/api/bot-specs/import', async (req, res) => {
+  app.post('/api/bot-specs/import', express.json({ limit: BOT_SPEC_IMPORT_JSON_LIMIT }), async (req, res) => {
     try {
       if (!botSpecService) throw Object.assign(new Error('Bot specification import is unavailable'), {
         code: 'bots_unavailable', statusCode: 503,
@@ -939,7 +1047,7 @@ export function registerBotRoutes(app, {
     }
   });
 
-  app.put('/api/bot-signers/trust', async (req, res) => {
+  app.put('/api/bot-signers/trust', express.json({ limit: '16kb' }), async (req, res) => {
     try {
       if (!botSpecService) throw Object.assign(new Error('Bot signer trust is unavailable'), {
         code: 'bots_unavailable', statusCode: 503,
@@ -1831,10 +1939,11 @@ export function registerBotRoutes(app, {
       if (!approvalService) throw Object.assign(new Error('Bot approvals are unavailable'), {
         code: 'bots_unavailable', statusCode: 503,
       });
-      return res.json(await approvalService.listPending({
-        principal: req.principal,
-        limit: req.query?.limit === undefined ? 100 : Number(req.query.limit),
-      }));
+      const limit = req.query?.limit === undefined ? 100 : Number(req.query.limit);
+      const viewer = viewerOf(req);
+      return res.json(identity
+        ? await identity.forEachIdentity(viewer, (principal) => approvalService.listPending({ principal, limit }))
+        : await approvalService.listPending({ principal: req.principal, limit }));
     } catch (error) {
       return botRouteError(res, error);
     }

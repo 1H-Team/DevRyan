@@ -107,7 +107,7 @@ describe('release workflow', () => {
     const packageJson = JSON.parse(readFileSync(new URL('package.json', repoRoot), 'utf8'));
     const bumpVersionSource = readFileSync(new URL('scripts/bump-version.mjs', repoRoot), 'utf8');
     for (const packageName of [
-      'bot-supervisor', 'bot-engine-proxy', 'bot-egress', 'bot-computer', 'bot-indexer',
+      'bot-supervisor', 'bot-engine-proxy', 'bot-egress', 'bot-computer', 'bot-indexer', 'bot-db',
     ]) {
       assert.match(
         packageJson.scripts['test:full'],
@@ -283,6 +283,17 @@ describe('Bots affected validation planning', () => {
       'test:botSupervisor',
       'test:electron',
     ]);
+  });
+
+  test('runs the local Bot catalog suite and its Electron and web consumers for affected changes', () => {
+    const plan = buildPlan('affected', ['packages/bot-db/sql/bootstrap-database.sql']);
+    const labels = plan.commands.map((entry) => entry.label);
+    for (const label of ['test:botDb', 'test:electron', 'test:web']) assert.ok(labels.includes(label), label);
+    assert.deepEqual(
+      buildPlan('quick', ['packages/bot-db/src/inventory.js']).commands.map((entry) => entry.label)
+        .filter((label) => label.startsWith('test:')),
+      ['test:botDb'],
+    );
   });
 
   test('keeps each confined service suite in quick mode', () => {

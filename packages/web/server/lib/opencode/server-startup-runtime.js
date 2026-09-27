@@ -104,12 +104,14 @@ export const createServerStartupRuntime = (dependencies) => {
               }
               if (onTunnelReady) {
                 onTunnelReady(publicUrl, connectUrl);
+              } else if (mode === TUNNEL_MODE_MANAGED_REMOTE) {
+                console.log(`\nTunnel connector ready: ${publicUrl}`);
+                console.log(tunnelAuthController.canUseOwnerLogin?.()
+                  ? 'Create a private owner link from the authenticated local tunnel settings.'
+                  : 'Sign in with your DevRyan account.');
               } else if (tunnelAuthController.hasOwner) {
                 console.log(`\nTunnel connector ready: ${publicUrl}`);
                 console.log('Create Bot access links from the authenticated local tunnel settings.');
-              } else if (mode === TUNNEL_MODE_MANAGED_REMOTE) {
-                console.log(`\n🌐 Tunnel URL: ${publicUrl}`);
-                console.log('🔐 Sign in with your DevRyan account\n');
               } else {
                 console.log(`\n🌐 Tunnel URL: ${connectUrl}`);
                 console.log('🔑 One-time connect link (expires after first use)\n');

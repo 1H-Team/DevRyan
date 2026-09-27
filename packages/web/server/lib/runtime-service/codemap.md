@@ -10,5 +10,6 @@ handlers honor prior rejection and never mint native or UI credentials remotely.
   separately negotiated `browser_observation` capability), and fixed Bot
   runtime/disable/update control routes.
 - `routes.test.js`: replay, cookie, CSRF, token non-projection, and bounded
-  desktop-host lease contracts.
+  desktop-host lease contracts, standalone and behind the production shared
+  request middleware (no test-only body parser).
 - `DOCUMENTATION.md`: security and ownership boundary for this module.

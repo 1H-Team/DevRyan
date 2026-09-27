@@ -56,8 +56,8 @@ services:
       DEVRYAN_BOT_HOST_RUNTIME_ROOT: ${DEVRYAN_BOT_HOST_RUNTIME_ROOT:?missing host runtime root}
       DEVRYAN_BOT_OPENCODE_IMAGE: ${DEVRYAN_BOT_OPENCODE_IMAGE:?missing OpenCode image}
       DEVRYAN_BOT_COMPUTER_IMAGE: ${DEVRYAN_BOT_COMPUTER_IMAGE:?missing computer image}
-      DEVRYAN_BOT_REASONING_NETWORK: devryan-bots-reasoning
-      DEVRYAN_BOT_COMPUTER_NETWORK: devryan-bots-computer
+      DEVRYAN_BOT_REASONING_NETWORK: ${DEVRYAN_BOT_RESOURCE_NAMESPACE:-devryan}-bots-reasoning
+      DEVRYAN_BOT_COMPUTER_NETWORK: ${DEVRYAN_BOT_RESOURCE_NAMESPACE:-devryan}-bots-computer
       DEVRYAN_MODEL_EGRESS_URL: http://egress:43121
     labels:
       devryan.runtime: production-bots
@@ -146,11 +146,102 @@ services:
       - management
       - host_control
 
+  # The local Bot catalog. PostgreSQL has no network at all: only the REST
+  # service shares its socket volume, and peer authentication admits that
+  # container's OS user as authenticator for the live database alone. The host
+  # lifecycle owns initialization (a one-off `--initialize-only` run after it
+  # has verified the data volume), migration, backup and replacement.
+  database:
+    image: ${DEVRYAN_BOT_DATABASE_IMAGE:?missing database image}
+    restart: unless-stopped
+    user: "999:999"
+    read_only: true
+    network_mode: none
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.00
+    shm_size: 128m
+    stop_grace_period: 60s
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,mode=1777
+    environment:
+      DEVRYAN_BOT_DATABASE_INITIALIZE: refuse
+    labels:
+      devryan.runtime: production-bots
+      devryan.owner: electron
+      devryan.deployment: ${DEVRYAN_BOT_DEPLOYMENT_ID:?missing deployment id}
+    volumes:
+      - bot-database-data:/var/lib/postgresql/data
+      - bot-database-socket:/var/run/postgresql
+
+  # Loopback-only REST over the private socket. It has no anonymous role and
+  # accepts only short-lived host-minted service tokens for its audience.
+  database-rest:
+    image: ${DEVRYAN_BOT_REST_IMAGE:?missing REST image}
+    restart: unless-stopped
+    user: "65534:65534"
+    group_add:
+      - "999"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.50
+    depends_on:
+      database:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgresql:///devryan_bots?host=/var/run/postgresql&user=authenticator
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_EXTRA_SEARCH_PATH: extensions
+      PGRST_DB_POOL: "10"
+      PGRST_DB_POOL_ACQUISITION_TIMEOUT: "10"
+      PGRST_DB_MAX_ROWS: "1000"
+      PGRST_DB_CHANNEL_ENABLED: "true"
+      PGRST_JWT_SECRET: ${DEVRYAN_BOT_DATABASE_JWT_SECRET:?missing database token secret}
+      PGRST_JWT_AUD: devryan-bots-local
+      PGRST_SERVER_HOST: "0.0.0.0"
+      PGRST_SERVER_PORT: "3000"
+      PGRST_ADMIN_SERVER_HOST: "127.0.0.1"
+      PGRST_ADMIN_SERVER_PORT: "3001"
+      PGRST_OPENAPI_MODE: disabled
+      PGRST_LOG_LEVEL: error
+    labels:
+      devryan.runtime: production-bots
+      devryan.owner: electron
+      devryan.deployment: ${DEVRYAN_BOT_DEPLOYMENT_ID:?missing deployment id}
+    ports:
+      - "127.0.0.1::3000"
+    volumes:
+      - bot-database-socket:/var/run/postgresql:ro
+    networks:
+      - database_host
+
+# Every named resource derives from DEVRYAN_BOT_RESOURCE_NAMESPACE (default
+# `devryan`). Tests and release smoke set a unique namespace and refuse to
+# mutate anything that resolves to a production name.
 volumes:
   bot-runtime-state:
-    name: devryan-bot-runtime-state
+    name: ${DEVRYAN_BOT_RESOURCE_NAMESPACE:-devryan}-bot-runtime-state
   bot-index:
-    name: devryan-bot-index
+    name: ${DEVRYAN_BOT_RESOURCE_NAMESPACE:-devryan}-bot-index
+  # Created and ownership-checked by the host before PostgreSQL starts; Compose
+  # never creates an empty database volume on its own.
+  bot-database-data:
+    name: ${DEVRYAN_BOT_RESOURCE_NAMESPACE:-devryan}-bot-database-data
+    external: true
+  bot-database-socket:
+    name: ${DEVRYAN_BOT_RESOURCE_NAMESPACE:-devryan}-bot-database-socket
+    labels:
+      devryan.runtime: production-bots
+      devryan.volume-role: database-socket
 
 networks:
   # Docker refuses to publish a host port for a container attached only to
@@ -165,32 +256,40 @@ networks:
   # carries the retired no-masquerade policy, and detaches containers that still
   # hold a retired attachment.
   host_control:
-    name: devryan-bots-host-control
+    name: ${DEVRYAN_BOT_RESOURCE_NAMESPACE:-devryan}-bots-host-control
     driver: bridge
     labels:
       devryan.runtime: production-bots
       devryan.network-policy: host-gateway-bridge
   management:
-    name: devryan-bots-management
+    name: ${DEVRYAN_BOT_RESOURCE_NAMESPACE:-devryan}-bots-management
     internal: true
     labels:
       devryan.runtime: production-bots
       devryan.network-policy: management-internal
   reasoning:
-    name: devryan-bots-reasoning
+    name: ${DEVRYAN_BOT_RESOURCE_NAMESPACE:-devryan}-bots-reasoning
     internal: true
     labels:
       devryan.runtime: production-bots
       devryan.network-policy: model-egress-only
   computer:
-    name: devryan-bots-computer
+    name: ${DEVRYAN_BOT_RESOURCE_NAMESPACE:-devryan}-bots-computer
     internal: true
     labels:
       devryan.runtime: production-bots
       devryan.network-policy: browser-egress-only
   egress_public:
-    name: devryan-bots-egress-public
+    name: ${DEVRYAN_BOT_RESOURCE_NAMESPACE:-devryan}-bots-egress-public
     driver: bridge
     labels:
       devryan.runtime: production-bots
       devryan.network-policy: public-egress-service-only
+  # Docker Desktop forwards the loopback REST port only from a non-internal
+  # bridge. Only the REST service joins it; no Bot-authored container can.
+  database_host:
+    name: ${DEVRYAN_BOT_RESOURCE_NAMESPACE:-devryan}-bots-database-host
+    driver: bridge
+    labels:
+      devryan.runtime: production-bots
+      devryan.network-policy: database-rest-host-only

@@ -7,7 +7,7 @@
     "@rynfar/meridian": "1.62.6",
     "adm-zip": "0.6.0",
     "mammoth": "1.12.1",
-    "oh-my-opencode-slim": "2.2.18",
+    "oh-my-opencode-slim": "2.2.24",
     "opencode-gpt-imagegen": "0.1.12",
     "opencode-with-claude": "1.8.0",
     "unpdf": "1.8.0"

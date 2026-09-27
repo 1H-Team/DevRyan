@@ -22,6 +22,9 @@ export const isManagedRemoteStatusDegraded = (status: ManagedRemoteStatusLike): 
   return status.providerMetadata?.publicReachabilityVerified === false;
 };
 
-export const isManagedAccountLoginAvailable = (scope: string | null | undefined): boolean => (
-  scope === 'managed'
-);
+export type TunnelAccessPolicy = 'account-login' | 'owner-link' | 'tunnel-gated';
+
+export const getTunnelAccessUrl = (
+  info: { url: string; connectUrl: string | null } | null,
+  policy: TunnelAccessPolicy,
+): string | null => (policy === 'account-login' ? info?.url : info?.connectUrl) ?? null;

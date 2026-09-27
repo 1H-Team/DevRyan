@@ -1,7 +1,9 @@
 import React from "react";
-import { RiCodeBoxLine, RiDownloadCloud2Line, RiFileTextLine, RiFolderLine, RiRefreshLine } from "@remixicon/react";
+import { RiCodeBoxLine, RiDownloadCloud2Line, RiFileTextLine, RiFolderLine, RiPlugLine, RiRefreshLine } from "@remixicon/react";
+import { SettingsBadge } from "@/components/sections/shared/SettingsBadge";
+import { SettingsDetailHeader } from "@/components/sections/shared/SettingsDetailHeader";
+import { SettingsDetailSection } from "@/components/sections/shared/SettingsDetailSection";
 import { SettingsPageLayout } from "@/components/sections/shared/SettingsPageLayout";
-import { SettingsSection } from "@/components/sections/shared/SettingsSection";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -37,23 +39,15 @@ const DetailRow: React.FC<{ label: string; value: React.ReactNode; mono?: boolea
 );
 
 const ScopeBadge: React.FC<{ scope: "user" | "project"; label: string }> = ({ scope, label }) => (
-  <span
-    className="typography-micro rounded-full border border-[var(--interactive-border)] bg-[var(--surface-elevated)] px-2 py-0.5 font-medium text-muted-foreground"
-    data-scope={scope}
-  >
-    {label}
-  </span>
+  <SettingsBadge tone="neutral" data-scope={scope}>{label}</SettingsBadge>
 );
 
 const DefaultBadge: React.FC = () => {
   const { t } = useI18n();
   return (
-    <span
-      className="typography-micro rounded-full border border-[var(--interactive-border)] bg-[var(--surface-elevated)] px-2 py-0.5 font-medium text-foreground"
-      data-scope="default"
-    >
+    <SettingsBadge tone="accent" data-scope="default">
       {t("settings.plugins.default.badge")}
-    </span>
+    </SettingsBadge>
   );
 };
 
@@ -67,155 +61,151 @@ const SlimStatusPanel: React.FC = () => {
   const repairSlimRuntime = usePluginsStore((state) => state.repairSlimRuntime);
   const busy = isLoading || actionInFlight !== null;
   const actions = getSlimActions(status);
-  const stateLabel = status?.runtimeEnabled && status.wrapperConfigured
-    ? t("settings.plugins.slim.status.ready")
-    : t("settings.plugins.slim.status.needsSetup");
+  const isReady = Boolean(status?.runtimeEnabled && status.wrapperConfigured);
   const issueMessages = status?.issues?.map((issue) => issue.message).filter(Boolean) ?? [];
 
+  const statusBadge = isLoading ? (
+    <SettingsBadge tone="neutral">{t("settings.plugins.slim.status.loading")}</SettingsBadge>
+  ) : (
+    <SettingsBadge tone={isReady ? "success" : "warning"} dot>
+      {isReady ? t("settings.plugins.slim.status.ready") : t("settings.plugins.slim.status.needsSetup")}
+    </SettingsBadge>
+  );
+
   return (
-    <SettingsSection title={t("settings.plugins.slim.title")}>
-      <div className="flex flex-col gap-4">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <DetailRow label={t("settings.plugins.slim.field.status")} value={isLoading ? t("settings.plugins.slim.status.loading") : stateLabel} />
-          <DetailRow label={t("settings.plugins.slim.field.version")} value={status?.installedVersion ?? t("settings.plugins.slim.value.missing")} mono />
-          <DetailRow label={t("settings.plugins.slim.field.wrapper")} value={status?.wrapperConfigured ? t("settings.plugins.slim.value.configured") : t("settings.plugins.slim.value.missing")} />
-          <DetailRow label={t("settings.plugins.slim.field.background")} value={status?.backgroundSubagentsEnv ?? "true"} mono />
-        </div>
-        {status?.backupPaths && status.backupPaths.length > 0 ? (
-          <div className="rounded-md border border-border bg-[var(--surface-elevated)] p-3">
-            <div className="typography-meta text-muted-foreground">{t("settings.plugins.slim.field.backups")}</div>
-            <div className="mt-1 space-y-1">
-              {status.backupPaths.map((backupPath) => (
-                <div key={backupPath} className="typography-meta break-all font-mono text-foreground">{backupPath}</div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-        {issueMessages.length > 0 || lastError ? (
-          <div className="rounded-md border border-[color-mix(in_srgb,var(--status-warning)_35%,var(--border))] bg-[color-mix(in_srgb,var(--status-warning)_8%,var(--background))] p-3 text-[var(--status-warning)]">
-            {lastError ? <div className="typography-meta">{lastError}</div> : null}
-            {issueMessages.map((message) => (
-              <div key={message} className="typography-meta">{message}</div>
-            ))}
-          </div>
-        ) : null}
-        <div className="flex flex-wrap gap-2">
+    <SettingsDetailSection
+      title={t("settings.plugins.slim.title")}
+      meta={statusBadge}
+      actions={(
+        <>
           {actions.install ? <Button
             type="button"
-            size="sm"
+            size="xs"
             onClick={() => { void installSlimRuntime(); }}
             disabled={busy}
           >
-            <RiDownloadCloud2Line className="h-4 w-4" />
+            <RiDownloadCloud2Line className="h-3.5 w-3.5" />
             {actionInFlight === "install" ? t("settings.plugins.slim.action.installing") : t("settings.plugins.slim.action.install")}
           </Button> : null}
           {actions.repair ? <Button
             type="button"
-            size="sm"
+            size="xs"
             variant="outline"
             onClick={() => { void repairSlimRuntime(); }}
             disabled={busy}
           >
-            <RiRefreshLine className="h-4 w-4" />
+            <RiRefreshLine className="h-3.5 w-3.5" />
             {actionInFlight === "repair" ? t("settings.plugins.slim.action.repairing") : t("settings.plugins.slim.action.repair")}
           </Button> : null}
+        </>
+      )}
+      variant="card"
+    >
+      <DetailRow label={t("settings.plugins.slim.field.version")} value={status?.installedVersion ?? t("settings.plugins.slim.value.missing")} mono />
+      <DetailRow label={t("settings.plugins.slim.field.wrapper")} value={status?.wrapperConfigured ? t("settings.plugins.slim.value.configured") : t("settings.plugins.slim.value.missing")} />
+      <DetailRow label={t("settings.plugins.slim.field.background")} value={status?.backgroundSubagentsEnv ?? "true"} mono />
+      {status?.backupPaths && status.backupPaths.length > 0 ? (
+        <DetailRow
+          label={t("settings.plugins.slim.field.backups")}
+          value={(
+            <div className="space-y-1">
+              {status.backupPaths.map((backupPath) => (
+                <div key={backupPath} className="break-all">{backupPath}</div>
+              ))}
+            </div>
+          )}
+          mono
+        />
+      ) : null}
+      {issueMessages.length > 0 || lastError ? (
+        <div className="my-3 rounded-md border border-[var(--status-warning-border)] bg-[var(--status-warning-background)] p-3 text-[var(--status-warning)]">
+          {lastError ? <div className="typography-meta">{lastError}</div> : null}
+          {issueMessages.map((message) => (
+            <div key={message} className="typography-meta">{message}</div>
+          ))}
         </div>
-      </div>
-    </SettingsSection>
+      ) : null}
+    </SettingsDetailSection>
   );
 };
 
-const EntryDetails: React.FC<{ entry: PluginEntry }> = ({ entry }) => {
+const EntryDetails: React.FC<{ entry: PluginEntry; children?: React.ReactNode }> = ({ entry, children }) => {
   const { t } = useI18n();
   const Icon = entry.parsedKind === "path" ? RiFolderLine : RiCodeBoxLine;
+  const scopeLabel = entry.scope === "project" ? t("settings.plugins.scope.project") : t("settings.plugins.scope.user");
 
   return (
     <>
-      <div className="flex items-center gap-3">
-        <Icon className="h-5 w-5 text-muted-foreground" />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="typography-ui-header truncate font-semibold text-foreground">{entry.spec}</h2>
-            <ScopeBadge
-              scope={entry.scope}
-              label={entry.scope === "project" ? t("settings.plugins.scope.project") : t("settings.plugins.scope.user")}
-            />
-          </div>
-          <p className="typography-meta text-muted-foreground">{t("settings.plugins.page.readOnly")}</p>
-        </div>
-      </div>
+      <SettingsDetailHeader
+        icon={<Icon />}
+        title={entry.spec}
+        titleTooltip={entry.spec}
+        badges={<ScopeBadge scope={entry.scope} label={scopeLabel} />}
+        subtitle={t("settings.plugins.page.readOnly")}
+      />
 
-      <SettingsSection title={t("settings.plugins.page.section.config")}>
+      {children}
+
+      <SettingsDetailSection title={t("settings.plugins.page.section.config")} variant="card">
         <DetailRow label={t("settings.plugins.page.field.spec")} value={entry.spec} mono />
         <DetailRow
           label={t("settings.plugins.page.field.kind")}
           value={entry.parsedKind === "path" ? t("settings.plugins.sidebar.kind.path") : t("settings.plugins.sidebar.kind.npm")}
         />
-        <DetailRow
-          label={t("settings.plugins.page.field.scope")}
-          value={entry.scope === "project" ? t("settings.plugins.scope.project") : t("settings.plugins.scope.user")}
-        />
+        <DetailRow label={t("settings.plugins.page.field.scope")} value={scopeLabel} />
         <DetailRow label={t("settings.plugins.page.field.sourcePath")} value={entry.sourcePath} mono />
-      </SettingsSection>
+      </SettingsDetailSection>
 
-      <SettingsSection title={t("settings.plugins.page.section.options")}>
+      <SettingsDetailSection title={t("settings.plugins.page.section.options")}>
         <pre className="typography-meta max-h-[360px] overflow-auto rounded-md border border-border bg-[var(--surface-elevated)] p-3 font-mono text-foreground">
           {formatOptions(entry.options)}
         </pre>
-      </SettingsSection>
+      </SettingsDetailSection>
     </>
   );
 };
 
-const FileDetails: React.FC<{ file: PluginFile }> = ({ file }) => {
+const FileDetails: React.FC<{ file: PluginFile; children?: React.ReactNode }> = ({ file, children }) => {
   const { t } = useI18n();
+  const scopeLabel = file.scope === "project" ? t("settings.plugins.scope.project") : t("settings.plugins.scope.user");
 
   return (
     <>
-      <div className="flex items-center gap-3">
-        <RiFileTextLine className="h-5 w-5 text-muted-foreground" />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="typography-ui-header truncate font-semibold text-foreground">{file.fileName}</h2>
-            <ScopeBadge
-              scope={file.scope}
-              label={file.scope === "project" ? t("settings.plugins.scope.project") : t("settings.plugins.scope.user")}
-            />
-          </div>
-          <p className="typography-meta text-muted-foreground">{t("settings.plugins.page.fileReadOnly")}</p>
-        </div>
-      </div>
+      <SettingsDetailHeader
+        icon={<RiFileTextLine />}
+        title={file.fileName}
+        titleTooltip={file.fileName}
+        badges={<ScopeBadge scope={file.scope} label={scopeLabel} />}
+        subtitle={t("settings.plugins.page.fileReadOnly")}
+      />
 
-      <SettingsSection title={t("settings.plugins.page.section.file")}>
+      {children}
+
+      <SettingsDetailSection title={t("settings.plugins.page.section.file")} variant="card">
         <DetailRow label={t("settings.plugins.page.field.fileName")} value={file.fileName} mono />
-        <DetailRow
-          label={t("settings.plugins.page.field.scope")}
-          value={file.scope === "project" ? t("settings.plugins.scope.project") : t("settings.plugins.scope.user")}
-        />
+        <DetailRow label={t("settings.plugins.page.field.scope")} value={scopeLabel} />
         <DetailRow label={t("settings.plugins.page.field.absolutePath")} value={file.absolutePath} mono />
-      </SettingsSection>
+      </SettingsDetailSection>
     </>
   );
 };
 
-const DefaultDetails: React.FC<{ plugin: DevRyanDefaultPlugin }> = ({ plugin }) => {
+const DefaultDetails: React.FC<{ plugin: DevRyanDefaultPlugin; children?: React.ReactNode }> = ({ plugin, children }) => {
   const { t } = useI18n();
   const effectiveDiffers = plugin.effectiveSpec !== plugin.shippedSpec;
 
   return (
     <>
-      <div className="flex items-center gap-3">
-        <RiCodeBoxLine className="h-5 w-5 text-muted-foreground" />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="typography-ui-header truncate font-semibold text-foreground">{plugin.displayName}</h2>
-            <DefaultBadge />
-          </div>
-          <p className="typography-meta text-muted-foreground">{t("settings.plugins.default.readOnly")}</p>
-        </div>
-      </div>
+      <SettingsDetailHeader
+        icon={<RiCodeBoxLine />}
+        title={plugin.displayName}
+        badges={<DefaultBadge />}
+        subtitle={t("settings.plugins.default.readOnly")}
+      />
 
-      <SettingsSection title={t("settings.plugins.default.section.package")}>
+      {children}
+
+      <SettingsDetailSection title={t("settings.plugins.default.section.package")} variant="card">
         <DetailRow label={t("settings.plugins.default.field.shippedSpec")} value={plugin.shippedSpec} mono />
         {effectiveDiffers ? (
           <DetailRow label={t("settings.plugins.default.field.effectiveSpec")} value={plugin.effectiveSpec} mono />
@@ -234,7 +224,7 @@ const DefaultDetails: React.FC<{ plugin: DevRyanDefaultPlugin }> = ({ plugin }) 
           value={plugin.configuredSourcePath ?? plugin.sourcePath}
           mono
         />
-      </SettingsSection>
+      </SettingsDetailSection>
     </>
   );
 };
@@ -248,26 +238,28 @@ export const PluginsPage: React.FC = () => {
   if (!selected) {
     return (
       <SettingsPageLayout>
+        <SettingsDetailHeader
+          icon={<RiPlugLine />}
+          title={t("settings.plugins.sidebar.title")}
+          subtitle={t("settings.plugins.sidebar.description")}
+        />
         <SlimStatusPanel />
-        <div className="flex min-h-[280px] items-center justify-center px-6">
-          <div className="max-w-sm text-center text-muted-foreground">
-            <RiCodeBoxLine className="mx-auto mb-3 h-12 w-12 opacity-50" />
-            <p className="typography-body">{t("settings.plugins.page.empty.select")}</p>
-            <p className="typography-meta mt-1 opacity-75">{t("settings.plugins.page.empty.description")}</p>
-          </div>
-        </div>
+        <p className="px-1 typography-meta text-muted-foreground">
+          {t("settings.plugins.page.empty.select")}. {t("settings.plugins.page.empty.description")}
+        </p>
       </SettingsPageLayout>
     );
   }
 
+  const slimPanel = isSlimPlugin(selected) ? <SlimStatusPanel /> : null;
+
   return (
     <SettingsPageLayout>
-      {isSlimPlugin(selected) ? <SlimStatusPanel /> : null}
       {selected.kind === "default"
-        ? <DefaultDetails plugin={selected} />
+        ? <DefaultDetails plugin={selected}>{slimPanel}</DefaultDetails>
         : selected.kind === "config"
-        ? <EntryDetails entry={selected} />
-        : <FileDetails file={selected} />}
+        ? <EntryDetails entry={selected}>{slimPanel}</EntryDetails>
+        : <FileDetails file={selected}>{slimPanel}</FileDetails>}
     </SettingsPageLayout>
   );
 };

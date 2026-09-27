@@ -392,14 +392,14 @@ describe('Bot runtime release integration', () => {
 });
 
 
-test('aggregation accepts only the six complete matching image results', async () => {
+test('aggregation accepts only the eight complete matching image results', async () => {
   const metadata = await readBotRuntimeReleaseMetadata({ root: repositoryRoot, version: currentVersion });
   const identity = { version: currentVersion, revision: sourceRevision, repositoryPrefix: 'ghcr.io/1h-team' };
   const results = Object.entries(validManifest().images).map(([key, image]) => ({
     version: 1, releaseId: currentVersion, sourceRevision, repositoryPrefix: identity.repositoryPrefix,
     openCodeVersion: metadata.openCodeVersion, schemaVersion: metadata.schemaVersion, pluginHash: metadata.pluginHash, key, image,
   }));
-  assert.equal(Object.keys((await assembleBotRuntimeImages({ ...identity, results })).images).length, 6);
+  assert.equal(Object.keys((await assembleBotRuntimeImages({ ...identity, results })).images).length, 8);
   for (const invalid of [results.slice(1), [...results.slice(1), results[1]], results.map((entry, i) => i ? entry : { ...entry, sourceRevision: 'f'.repeat(40) })]) {
     await assert.rejects(assembleBotRuntimeImages({ ...identity, results: invalid }), { code: 'bot_runtime_image_results_invalid' });
   }

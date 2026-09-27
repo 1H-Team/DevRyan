@@ -61,6 +61,16 @@ interface ManagedPageDefinition {
   group: 'Preferences' | 'Workspace' | 'Development';
 }
 
+type ManagedPluginHubPage = 'plugins' | 'skills.installed' | 'mcp';
+
+// Mirrors the full shell's Plugins hub (lib/settings/navigation.ts): one
+// destination with a tab per readable page, in this order.
+const MANAGED_PLUGIN_HUB_SLUGS: readonly ManagedPluginHubPage[] = ['plugins', 'skills.installed', 'mcp'];
+
+const isManagedPluginHubPage = (slug: ManagedSettingsPage): slug is ManagedPluginHubPage => (
+  (MANAGED_PLUGIN_HUB_SLUGS as readonly string[]).includes(slug)
+);
+
 interface ManagedNavigationDestination extends Omit<ManagedPageDefinition, 'slug'> {
   id: string;
   slugs: readonly ManagedSettingsPage[];
@@ -109,11 +119,11 @@ export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onCl
       { slug: 'notifications', title: t('settings.page.notifications.title'), description: 'Choose when and how DevRyan notifies you.', group: 'Preferences' },
       { slug: 'bots', title: t('settings.page.bots.title'), description: t('settings.page.bots.description'), group: 'Workspace' },
       { slug: 'agents', title: t('settings.page.agents.title'), description: 'Review the agents available to your account.', group: 'Workspace' },
-      { slug: 'skills.installed', title: t('settings.page.skills.title'), description: 'Manage reusable Coding Agent skills.', group: 'Workspace' },
       { slug: 'plugins', title: t('settings.page.plugins.title'), description: 'Review installed OpenCode plugins.', group: 'Workspace' },
-      { slug: 'providers', title: t('settings.page.providers.title'), description: 'Review provider access and models.', group: 'Workspace' },
-      { slug: 'usage', title: t('settings.page.usage.title'), description: 'Inspect provider usage and limits.', group: 'Workspace' },
+      { slug: 'skills.installed', title: t('settings.page.skills.title'), description: 'Manage reusable Coding Agent skills.', group: 'Workspace' },
       { slug: 'mcp', title: t('settings.page.mcp.title'), description: 'Review Coding Agent servers.', group: 'Workspace' },
+      { slug: 'providers', title: t('settings.page.providers.title'), description: 'Review provider access, models, and usage.', group: 'Workspace' },
+      { slug: 'usage', title: t('settings.page.usage.title'), description: 'Inspect provider usage and limits.', group: 'Workspace' },
       {
         slug: 'bug-reports',
         title: t('settings.page.bugReports.title'),
@@ -126,17 +136,34 @@ export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onCl
     ));
   }, [principal, t]);
 
+  const pluginHubPages = React.useMemo(
+    () => MANAGED_PLUGIN_HUB_SLUGS
+      .map((slug) => pages.find((page) => page.slug === slug))
+      .filter((page): page is ManagedPageDefinition => Boolean(page)),
+    [pages],
+  );
+  // Usage lives inside each provider's page; the standalone Usage page is only
+  // for accounts that may read usage but not providers.
   const providerPages = React.useMemo(
-    () => pages.filter((page) => page.slug === 'providers' || page.slug === 'usage'),
+    () => {
+      const providers = pages.find((page) => page.slug === 'providers');
+      const usage = pages.find((page) => page.slug === 'usage');
+      return providers ? [providers] : usage ? [usage] : [];
+    },
     [pages],
   );
   const requestedPage = pages.find((page) => page.slug === settingsPage) ?? null;
   const providerFallback = (settingsPage === 'providers' || settingsPage === 'usage')
     ? providerPages[0]?.slug
     : null;
+  const pluginHubFallback = isManagedPluginHubPage(settingsPage)
+    ? pluginHubPages[0]?.slug
+    : null;
   const requestedActiveSlug: ManagedSettingsPage = settingsPage === 'home'
     ? 'home'
-    : requestedPage?.slug ?? providerFallback ?? 'home';
+    : settingsPage === 'usage' && providerFallback
+      ? providerFallback
+      : requestedPage?.slug ?? providerFallback ?? pluginHubFallback ?? 'home';
   const preloadSlugs = React.useMemo(
     () => pages.map((page) => page.slug),
     [pages],
@@ -149,16 +176,30 @@ export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onCl
   const navigationDestinations = React.useMemo<ManagedNavigationDestination[]>(() => {
     const destinations: ManagedNavigationDestination[] = [];
     let providersAdded = false;
+    let pluginHubAdded = false;
 
     for (const page of pages) {
       if (page.slug === 'chat') continue;
+      if (isManagedPluginHubPage(page.slug)) {
+        if (pluginHubAdded) continue;
+        pluginHubAdded = true;
+        destinations.push({
+          id: 'plugins',
+          slugs: pluginHubPages.map((hubPage) => hubPage.slug),
+          targetSlug: pluginHubPages[0].slug,
+          title: t('settings.page.plugins.title'),
+          description: 'Review plugins, skills, and MCP servers.',
+          group: 'Workspace',
+        });
+        continue;
+      }
       if (page.slug === 'providers' || page.slug === 'usage') {
         if (providersAdded) continue;
         providersAdded = true;
         if (providerPages.length === 0) continue;
         destinations.push({
           id: 'providers',
-          slugs: providerPages.map((providerPage) => providerPage.slug),
+          slugs: ['providers', 'usage'],
           targetSlug: providerPages[0].slug,
           title: t('settings.page.providers.title'),
           description: t('settings.view.home.cards.providers.description'),
@@ -177,7 +218,7 @@ export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onCl
     }
 
     return destinations;
-  }, [pages, providerPages, t]);
+  }, [pages, pluginHubPages, providerPages, t]);
 
   React.useEffect(() => {
     if (requestedActiveSlug !== settingsPage) {
@@ -308,28 +349,28 @@ export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onCl
         </SettingsPagePermissionBoundary>
       );
     }
-    if (activeSlug === 'providers' || activeSlug === 'usage') {
-      const content = activeSlug === 'providers'
-        ? renderSplitPage(activeSlug, <PreparedProvidersSidebar />, <PreparedProvidersPage />)
-        : renderSplitPage(activeSlug, <PreparedUsageSidebar />, <PreparedUsagePage />);
+    if (activeSlug === 'providers') {
+      return renderSplitPage(activeSlug, <PreparedProvidersSidebar />, <PreparedProvidersPage />);
+    }
+    if (activeSlug === 'usage') {
+      return renderSplitPage(activeSlug, <PreparedUsageSidebar />, <PreparedUsagePage />);
+    }
+    if (isManagedPluginHubPage(activeSlug)) {
+      const content = activeSlug === 'plugins'
+        ? renderSplitPage(activeSlug, <PreparedPluginsSidebar />, <PreparedPluginsPage />)
+        : renderCapabilityPage(activeSlug);
       return (
         <SettingsSectionTabs
           activeSlug={activeSlug}
-          ariaLabel={t('settings.providers.tabs.aria')}
-          idPrefix="managed-providers-settings"
+          ariaLabel={t('settings.plugins.tabs.aria')}
+          idPrefix="managed-plugins-settings"
           onTabChange={(slug) => openPage(slug as ManagedSettingsPage)}
           pendingSlug={pendingSlug}
-          tabs={providerPages.map((page) => ({ slug: page.slug, label: page.title }))}
+          tabs={pluginHubPages.map((page) => ({ slug: page.slug, label: page.title }))}
         >
           {content}
         </SettingsSectionTabs>
       );
-    }
-    if (activeSlug === 'skills.installed' || activeSlug === 'mcp') {
-      return renderCapabilityPage(activeSlug);
-    }
-    if (activeSlug === 'plugins') {
-      return renderSplitPage(activeSlug, <PreparedPluginsSidebar />, <PreparedPluginsPage />);
     }
     if (activeSlug === 'bug-reports') {
       return (
@@ -436,7 +477,9 @@ export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onCl
           <div className="min-w-0 flex-1 truncate typography-ui-label font-medium text-foreground">
             {(activeSlug === 'providers' || activeSlug === 'usage')
                 ? t('settings.page.providers.title')
-                : activePage?.title || t('settings.view.home.title')}
+                : isManagedPluginHubPage(activeSlug)
+                  ? t('settings.page.plugins.title')
+                  : activePage?.title || t('settings.view.home.title')}
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-hidden">

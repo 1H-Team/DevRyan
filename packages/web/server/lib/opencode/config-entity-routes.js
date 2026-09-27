@@ -1,3 +1,4 @@
+import express from 'express';
 import {
   createHarnessError,
   createHarnessSuccess,
@@ -433,7 +434,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     }
   });
 
-  app.put('/api/config/agent-runtime', async (req, res) => {
+  app.put('/api/config/agent-runtime', express.json({ limit: '16kb' }), async (req, res) => {
     if (!canReadFullAgentConfig(req.principal)) {
       return res.status(403).json({ error: AGENT_RUNTIME_FORBIDDEN });
     }

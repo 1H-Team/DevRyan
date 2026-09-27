@@ -1,4 +1,6 @@
 import { sshManagedIdentity, authorizeSshManagedShutdown } from './ssh-managed-identity.js';
+import { getTunnelOwnerPrincipal } from '../tunnels/access-control.js';
+import { runWithRequestPrincipal } from '../multi-user/request-context.js';
 export const registerServerStatusRoutes = (app, dependencies) => {
   const {
     express,
@@ -291,6 +293,7 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     readSettingsFromDiskMigrated,
     normalizeTunnelSessionTtlMs,
     getRuntimeReady = () => true,
+    getBotOwner = () => null,
   } = dependencies;
   const requireMultiUserCsrf = (req, res) => {
     if (!uiAuthController.multiUser) return true;
@@ -306,7 +309,7 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     return tunnelAuthController.getActiveTunnelMode() !== 'managed-remote';
   };
   const requiresManagedAccountAuth = (req) => {
-    if (uiAuthController.multiUser) return false;
+    if (uiAuthController.multiUser || getTunnelOwnerPrincipal(req)) return false;
     const requestScope = tunnelAuthController.classifyRequestScope(req);
     if (requestScope !== 'tunnel' && requestScope !== 'unknown-public') return false;
     return tunnelAuthController.getActiveTunnelMode() === 'managed-remote';
@@ -590,6 +593,17 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
       // The early tunnel boundary already authenticated this explicit,
       // restricted principal and checked the Bot route allowlist.
       if (req.principal?.scope === 'tunnel-bot') return next();
+      // The workstation owner's Bot-scoped session: direct-local requests to
+      // Bot routes only. It never authorizes any other API.
+      const botOwner = getBotOwner();
+      const owner = botOwner?.authenticate?.(req) || null;
+      if (owner) {
+        if (botOwner.requiresCsrf(req) && !botOwner.hasCsrf(req)) {
+          return res.status(403).json({ error: 'Missing CSRF request header' });
+        }
+        req.principal = owner;
+        return runWithRequestPrincipal(owner, next);
+      }
       if (requiresManagedAccountAuth(req)) {
         return sendManagedAccountAuthRequired(res);
       }
@@ -620,65 +634,75 @@ export const registerSettingsUtilityRoutes = (app, dependencies) => {
 
 };
 
+const SHARED_JSON_16KB_PREFIXES = Object.freeze([
+  '/api/desktop/browser-leases',
+  '/api/browser/agent-leases',
+  '/api/config/apply',
+  '/api/preview',
+]);
+
+const SHARED_JSON_50MB_PREFIXES = Object.freeze([
+  '/api/config/agents',
+  '/api/config/commands',
+  '/api/config/mcp',
+  '/api/config/settings',
+  '/api/config/skills',
+  '/api/config/plugins',
+  '/api/admin',
+  '/api/analytics',
+  '/api/bug-reports',
+  '/api/bots',
+  '/api/bot-actions',
+  '/api/bot-channels',
+  '/api/bot-runs',
+  '/api/error-logs',
+  '/api/client-errors',
+  '/api/auth',
+  '/api/diagnostics',
+  '/api/evidence',
+  '/api/projects',
+  '/api/fs',
+  '/api/git',
+  '/api/magic-prompts',
+  '/api/prompts',
+  '/api/terminal',
+  '/api/opencode',
+  '/api/push',
+  '/api/provider',
+  '/api/notifications',
+  '/api/session/',
+  '/api/session-folders',
+  '/api/text',
+  '/api/voice',
+  '/api/tts',
+  '/api/openchamber/tunnel',
+]);
+
+// Limit for the shared JSON parser, or null when the path is left unparsed.
+// Unlisted /api paths stay raw so the OpenCode proxy can stream them; any
+// other /api route that reads req.body mounts its own bounded express.json
+// (enforced by api-json-body-coverage.test.js).
+export const resolveSharedJsonBodyLimit = (pathname) => {
+  if (pathname.startsWith('/api/behavior')) return '1mb';
+  if (SHARED_JSON_16KB_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return '16kb';
+  if (SHARED_JSON_50MB_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return '50mb';
+  if (pathname.startsWith('/api')) return null;
+  return '50mb';
+};
+
 export const registerCommonRequestMiddleware = (app, dependencies) => {
   const { express, verboseRequestLogs = false } = dependencies;
 
   app.use((req, res, next) => {
+    const limit = resolveSharedJsonBodyLimit(req.path);
+    if (!limit) return next();
     if (req.path.startsWith('/api/behavior')) {
       const contentLength = parseInt(req.headers['content-length'] || '0', 10);
       if (contentLength > 1024 * 1024) {
         return res.status(413).json({ error: 'Content exceeds maximum size of 1048576 bytes' });
       }
-      express.json({ limit: '1mb' })(req, res, next);
-    } else if (
-      req.path.startsWith('/api/desktop/browser-leases')
-      || req.path.startsWith('/api/browser/agent-leases')
-      || req.path.startsWith('/api/config/apply')
-      || req.path.startsWith('/api/preview')
-    ) {
-      express.json({ limit: '16kb' })(req, res, next);
-    } else if (
-      req.path.startsWith('/api/config/agents') ||
-      req.path.startsWith('/api/config/commands') ||
-      req.path.startsWith('/api/config/mcp') ||
-      req.path.startsWith('/api/config/settings') ||
-      req.path.startsWith('/api/config/skills') ||
-      req.path.startsWith('/api/config/plugins') ||
-      req.path.startsWith('/api/admin') ||
-      req.path.startsWith('/api/analytics') ||
-      req.path.startsWith('/api/bug-reports') ||
-      req.path.startsWith('/api/bots') ||
-      req.path.startsWith('/api/bot-actions') ||
-      req.path.startsWith('/api/bot-channels') ||
-      req.path.startsWith('/api/bot-runs') ||
-      req.path.startsWith('/api/error-logs') ||
-      req.path.startsWith('/api/client-errors') ||
-      req.path.startsWith('/api/auth') ||
-      req.path.startsWith('/api/diagnostics') ||
-      req.path.startsWith('/api/evidence') ||
-      req.path.startsWith('/api/projects') ||
-      req.path.startsWith('/api/fs') ||
-      req.path.startsWith('/api/git') ||
-      req.path.startsWith('/api/magic-prompts') ||
-      req.path.startsWith('/api/prompts') ||
-      req.path.startsWith('/api/terminal') ||
-      req.path.startsWith('/api/opencode') ||
-      req.path.startsWith('/api/push') ||
-      req.path.startsWith('/api/provider') ||
-      req.path.startsWith('/api/notifications') ||
-      req.path.startsWith('/api/session/') ||
-      req.path.startsWith('/api/session-folders') ||
-      req.path.startsWith('/api/text') ||
-      req.path.startsWith('/api/voice') ||
-      req.path.startsWith('/api/tts') ||
-      req.path.startsWith('/api/openchamber/tunnel')
-    ) {
-      express.json({ limit: '50mb' })(req, res, next);
-    } else if (req.path.startsWith('/api')) {
-      next();
-    } else {
-      express.json({ limit: '50mb' })(req, res, next);
     }
+    return express.json({ limit })(req, res, next);
   });
 
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));

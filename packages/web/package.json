@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/web",
-  "version": "1.2.15",
+  "version": "1.2.16",
   "private": false,
   "type": "module",
   "main": "./server/index.js",
@@ -25,6 +25,7 @@
   "dependencies": {
     "@ag-ui/core": "0.0.58",
     "@clack/prompts": "^1.7.0",
+    "@openchamber/bot-db": "workspace:*",
     "@openchamber/bots-runtime": "workspace:*",
     "@openchamber/cursor-sdk-runtime": "workspace:*",
     "@openchamber/harness-runtime": "workspace:*",

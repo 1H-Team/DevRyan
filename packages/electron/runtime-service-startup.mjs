@@ -48,6 +48,36 @@ export const prepareAutomaticRuntimeService = async ({
   return Object.freeze({ mode: 'service', state: 'enabled', code: null });
 };
 
+// A launchd start runs the service's whole Electron boot before it publishes a
+// live descriptor, and cold boots were observed past 20 s. Only failures that
+// mean the service is not up yet earn the longer budget; any other failure
+// keeps the ordinary bound so a real rejection still falls back promptly.
+const RUNTIME_SERVICE_STARTING_CODES = new Set([
+  'ENOENT',
+  'runtime_service_owner_stale',
+  'runtime_service_unavailable',
+]);
+
+export const retryRuntimeServiceConnection = async ({
+  connect,
+  timeoutMs = 20_000,
+  startingTimeoutMs = 60_000,
+  retryDelayMs = 250,
+  now = Date.now,
+  wait = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
+}) => {
+  const startedAt = now();
+  for (;;) {
+    try {
+      return await connect();
+    } catch (error) {
+      const budgetMs = RUNTIME_SERVICE_STARTING_CODES.has(error?.code) ? startingTimeoutMs : timeoutMs;
+      if (now() - startedAt >= budgetMs) throw error;
+    }
+    await wait(retryDelayMs);
+  }
+};
+
 // Publish only acquired coordinators. A rejected attempt must not make Retry
 // believe it already owns the server, and simultaneous callers share one claim.
 export const createRuntimeOwnerAcquirer = ({ getCoordinator, setCoordinator, createCoordinator }) => {

@@ -9,6 +9,7 @@ const ROOT = path.resolve(__dirname, '..');
 const PACKAGES = [
   'package.json',
   'packages/bot-computer/package.json',
+  'packages/bot-db/package.json',
   'packages/bot-engine-proxy/package.json',
   'packages/bot-egress/package.json',
   'packages/bot-indexer/package.json',

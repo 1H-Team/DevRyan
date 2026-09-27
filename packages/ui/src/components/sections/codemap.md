@@ -10,7 +10,10 @@ Defines settings-domain feature sections (providers, agents, Bots, MCP, skills, 
 - **Managed quota credentials**: `providers/ManagedQuotaCredentials.tsx` is the shared, secret-non-prefilling editor for OpenCode Zen, Ollama Cloud, and Cursor dashboard/OAuth quota credentials; it reuses the single quota refresh coordinator.
 - **Shared-host administration**: `users/UserManagementPage.tsx` renders role-aware user/invite/activity review for senior developers and full user, project, branch, GitHub-account, policy, audit export/purge administration for admins. Checked persisted branches expose a separate write-only preview URL/service-token editor with connection testing, rotation, and removal.
 - **Managed issue intake and diagnostics**: `bug-reports/BugReportsPage.tsx` provides permission-gated report submission plus lazily mounted administrator report/error review without adding broadly shared store state.
-- **Production Bot management**: `bots/` provides a profile-first catalog and
+- **Production Bot management**: `BotsPage` uses the shared catalog retry controller
+  for transient startup recovery and isolates management state by principal.
+  `BotCatalogPanel` polls pending hosted discovery independently of local reads.
+  `bots/` provides a profile-first catalog and
   the simplified Overview, Resources, Memory, Members, Routines, and Lifecycle
   settings. The shared `components/bots/BotAvatar.tsx` consistently projects
   encrypted avatars, migrated glyphs, then initials. Overview owns name, title,
@@ -35,9 +38,17 @@ Defines settings-domain feature sections (providers, agents, Bots, MCP, skills, 
   partial-failure-safe but are not product concepts. `BotRuntimeServicePanel.tsx`
   is the page's Global Settings section: the administrator-only Background
   Runtime Service switch plus the Electron-owned runtime status, projected
-  independently of the Bot editor.
+  independently of the Bot editor. `BotCatalogPanel.tsx` is the Bot Storage section
+  (and, in compact form, the recovery view that replaces the Bot chat): one
+  recovery control per catalog state from `botCatalogPresentation.ts` —
+  Restore the latest verified backup or Start Empty (typed confirmation),
+  Resume Bots after the activation hold, Resume/Cancel/Dismiss a hosted import,
+  or Import Bots with an explicit other-writers-stopped confirmation — plus
+  Back Up Now and the verified backup list for the owner. Non-owners see
+  status only.
 - **Global capabilities versus Bot SOPs**: Coding Agent Skills, MCP Servers, and
-  plugins keep their existing Settings destinations. Bots do not have an MCP
+  plugins share the Plugins hub at the top of Connections, one tab each, with
+  their own permission slugs. Bots do not have an MCP
   assignment workspace. An installed Skill can be added as an optional SOP from
   the Bot Resources tab and is materialized for OpenCode's on-demand Skill
   loading rather than ordinary prompt context.

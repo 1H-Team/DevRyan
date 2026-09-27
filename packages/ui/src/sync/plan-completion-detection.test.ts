@@ -87,36 +87,50 @@ describe("detectPlanCompletedCandidate", () => {
     })).toBeNull()
   })
 
-  test("keeps a plan implementing while any plan todo is pending or in progress", () => {
-    const state = buildState({
-      message: {
-        [SESSION_ID]: [
-          userMessage("msg_plan_user", 1),
-          assistantMessage("msg_plan_assistant", 2, 3),
-          userMessage("msg_impl_user", 4),
-          assistantMessage("msg_impl_assistant", 5, 6),
-        ],
-      },
-      part: {
-        msg_impl_assistant: [textPart("msg_impl_assistant", "Implemented early.")],
-      },
-      todo: {
-        [SESSION_ID]: [
-          { content: "Phase 1: First task", priority: "medium", status: "completed" },
-          { content: "Phase 2: Second task", priority: "medium", status: "in_progress" },
-          { content: "Phase 2: Third task", priority: "medium", status: "pending" },
-        ],
-      },
-    })
+  const openTodoPlanState = (agent: string) => buildState({
+    message: {
+      [SESSION_ID]: [
+        userMessage("msg_plan_user", 1),
+        assistantMessage("msg_plan_assistant", 2, 3),
+        userMessage("msg_impl_user", 4),
+        { ...assistantMessage("msg_impl_assistant", 5, 6), agent } as Message,
+      ],
+    },
+    part: {
+      msg_impl_assistant: [textPart("msg_impl_assistant", "Implemented; browser check blocked.")],
+    },
+    todo: {
+      [SESSION_ID]: [
+        { content: "Phase 1: First task", priority: "medium", status: "completed" },
+        { content: "Phase 2: Second task", priority: "medium", status: "in_progress" },
+        { content: "Phase 2: Third task", priority: "medium", status: "pending" },
+      ],
+    },
+  })
+  const implementingEntry = {
+    state: "implementing",
+    sourceMessageId: "msg_plan_assistant",
+    implementationMessageId: "msg_impl_user",
+  } as const
 
+  test("completes a plan whose final response leaves blocked todos open", () => {
     expect(detectPlanCompletedCandidate({
       sessionID: SESSION_ID,
-      state,
-      planEntry: {
-        state: "implementing",
-        sourceMessageId: "msg_plan_assistant",
-        implementationMessageId: "msg_impl_user",
-      },
+      state: openTodoPlanState("orchestrator"),
+      planEntry: implementingEntry,
+    })).toEqual({
+      sessionID: SESSION_ID,
+      sourceMessageId: "msg_plan_assistant",
+      implementationMessageId: "msg_impl_user",
+      completedMessageId: "msg_impl_assistant",
+    })
+  })
+
+  test("keeps a Builder plan implementing while its todos remain open", () => {
+    expect(detectPlanCompletedCandidate({
+      sessionID: SESSION_ID,
+      state: openTodoPlanState("builder"),
+      planEntry: implementingEntry,
     })).toBeNull()
   })
 

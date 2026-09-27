@@ -210,6 +210,42 @@ describe('Bot event connection controller', () => {
   });
 });
 
+describe('Bot event connection handoff', () => {
+  test('hands a transport failure to the capability probe instead of reconnecting, and resumes as a reconnect', () => {
+    const sources: FakeEventSource[] = [];
+    const timers: Array<() => void> = [];
+    const lost: string[] = [];
+    let connected = 0;
+    let recovered = 0;
+    const controller = createBotEventConnectionController({
+      eventKinds: ['snapshot'],
+      createSource: () => { const source = new FakeEventSource(); sources.push(source); return source; },
+      ingest: () => ({ accepted: true, reason: 'snapshot' }),
+      setConnectionState: () => {},
+      resumed: true,
+      onConnected: () => { connected += 1; },
+      onReconnectedSnapshot: () => { recovered += 1; },
+      onConnectionLost: (code) => { lost.push(code); return true; },
+      setTimeoutImpl: ((callback: () => void) => {
+        timers.push(callback);
+        return timers.length as unknown as ReturnType<typeof setTimeout>;
+      }) as typeof setTimeout,
+      clearTimeoutImpl: (() => {}) as unknown as typeof clearTimeout,
+    });
+    controller.start();
+    sources[0].emit('snapshot', '{}');
+    expect(connected).toBe(1);
+    // A replacement stream after a lost one refreshes the open channel.
+    expect(recovered).toBe(1);
+    sources[0].onerror?.(new Event('error'));
+    expect(lost).toEqual(['bot_event_connection_lost']);
+    expect(sources[0].closeCount).toBe(1);
+    expect(timers).toHaveLength(0);
+    controller.retry();
+    expect(sources).toHaveLength(1);
+  });
+});
+
 describe('Bot capability connection controller', () => {
   test('recovers from migration_required and starts the event connection after a fresh capability probe', async () => {
     const capabilities = [
@@ -224,9 +260,9 @@ describe('Bot capability connection controller', () => {
     const controller = createBotCapabilityConnectionController({
       loadCapabilities: async () => capabilities.shift() ?? null,
       getCapabilitiesErrorCode: () => null,
-      canStream: (state) => state !== 'migration_required' && state !== 'supabase_unavailable',
-      isTransient: (state) => state === 'migration_required' || state === 'supabase_unavailable',
-      createConnection: (initialRecoveryErrorCode) => {
+      canStream: ({ state }) => state !== 'migration_required' && state !== 'supabase_unavailable',
+      isTransient: ({ state }) => state === 'migration_required' || state === 'supabase_unavailable',
+      createConnection: ({ initialRecoveryErrorCode }) => {
         recoveryErrorCode = initialRecoveryErrorCode;
         return {
           start: () => { eventStarts += 1; },
@@ -269,8 +305,8 @@ describe('Bot capability connection controller', () => {
         return Promise.resolve({ state: 'healthy', code: '' });
       },
       getCapabilitiesErrorCode: () => null,
-      canStream: (state) => state === 'healthy',
-      isTransient: (state) => state === 'migration_required',
+      canStream: ({ state }) => state === 'healthy',
+      isTransient: ({ state }) => state === 'migration_required',
       createConnection: () => ({
         start: () => { eventStarts += 1; },
         retry: () => {},
@@ -355,5 +391,61 @@ describe('Bot capability connection controller', () => {
     timers[0]();
     await flushAsync();
     expect(loads).toBe(1);
+  });
+
+  test('a lost stream returns to capability probing and stops in a recovery state', async () => {
+    const capabilities = [
+      { state: 'healthy', code: null, catalogAvailable: true, database: { state: 'ready', code: null } },
+      { state: 'database_recovery_required', code: 'bot_database_identity_changed', catalogAvailable: false,
+        database: { state: 'recovery_required', code: 'bot_database_identity_changed' } },
+      { state: 'healthy', code: null, catalogAvailable: true, database: { state: 'ready', code: null } },
+    ];
+    const timers: Array<() => void> = [];
+    const states: Array<[string, string | null | undefined]> = [];
+    const hooks: Array<{ resumed: boolean; onConnected: () => void; onConnectionLost: (code: string) => boolean }> = [];
+    let loads = 0;
+    const controller = createBotCapabilityConnectionController({
+      loadCapabilities: async () => { loads += 1; return capabilities.shift() ?? null; },
+      getCapabilitiesErrorCode: () => null,
+      canStream: (value) => value.catalogAvailable === true,
+      isTransient: (value) => value.database?.state !== 'recovery_required',
+      createConnection: (connectionHooks) => {
+        hooks.push(connectionHooks);
+        return { start: () => {}, retry: () => {}, dispose: () => {} };
+      },
+      setConnectionState: (state, code) => states.push([state, code]),
+      setTimeoutImpl: ((callback: () => void) => {
+        timers.push(callback);
+        return timers.length as unknown as ReturnType<typeof setTimeout>;
+      }) as typeof setTimeout,
+      clearTimeoutImpl: (() => {}) as unknown as typeof clearTimeout,
+    });
+
+    controller.start();
+    await flushAsync();
+    expect(hooks).toHaveLength(1);
+    expect(hooks[0].resumed).toBe(false);
+    hooks[0].onConnected();
+
+    // The stream drops: the controller takes recovery over from the stream.
+    expect(hooks[0].onConnectionLost('bot_event_connection_lost')).toBe(true);
+    expect(states.at(-1)).toEqual(['reconnecting', 'bot_event_connection_lost']);
+    expect(timers).toHaveLength(1);
+    timers[0]();
+    await flushAsync();
+    expect(loads).toBe(2);
+    // Recovery needs the owner: no futile polling.
+    expect(states.at(-1)).toEqual(['error', 'bot_database_identity_changed']);
+    expect(timers).toHaveLength(1);
+
+    // After Restore the explicit recheck opens a resumed stream.
+    controller.recheck();
+    await flushAsync();
+    expect(loads).toBe(3);
+    expect(hooks).toHaveLength(2);
+    expect(hooks[1].resumed).toBe(true);
+    // A stale connection's late failure is ignored.
+    expect(hooks[0].onConnectionLost('bot_event_connection_lost')).toBe(false);
+    controller.dispose();
   });
 });

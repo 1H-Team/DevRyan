@@ -54,9 +54,10 @@ export const BotGallery: React.FC<BotGalleryProps> = ({
     </div>
 
     <div className="min-h-0 flex-1 overflow-y-auto p-1.5" aria-busy={loading || undefined}>
-      {loading ? (
+      {bots.length > 0 && error ? <p className="px-2 py-3 typography-micro text-muted-foreground" role="alert">{error}</p> : null}
+      {loading && bots.length === 0 ? (
         <p className="px-2 py-3 typography-ui text-muted-foreground" role="status">Loading Bots…</p>
-      ) : error ? (
+      ) : error && bots.length === 0 ? (
         <div className="px-3 py-8 text-center" role="alert">
           <RiRobot2Line className="mx-auto h-5 w-5 text-muted-foreground/60" aria-hidden />
           <p className="mt-2 typography-ui-label text-foreground">Catalog unavailable</p>

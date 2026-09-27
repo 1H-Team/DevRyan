@@ -2,6 +2,10 @@ import React from 'react';
 import { RiRobot2Line } from '@remixicon/react';
 
 import { BotChatView } from '@/components/bots/chat/BotChatView';
+import { refreshBotsState } from '@/components/bots/refreshBotsState';
+import { BotCatalogPanel } from '@/components/sections/bots/BotCatalogPanel';
+import { isBotCatalogRecoveryState } from '@/components/sections/bots/botCatalogPresentation';
+import { botViewerId } from '@/lib/botViewer';
 import { useI18n } from '@/lib/i18n';
 import { botChannelSelectors, useBotChannelStore } from '@/stores/useBotChannelStore';
 import { useBotsStore } from '@/stores/useBotsStore';
@@ -32,10 +36,21 @@ export const BotView: React.FC = () => {
   const capabilities = useBotsStore((state) => state.capabilities);
   const bot = useBotsStore((state) => selectedBotId ? state.botsById[selectedBotId] : undefined);
   const channelId = useBotChannelStore(
-    botChannelSelectors.ownerChannelId(selectedBotId ?? '', principalId),
+    botChannelSelectors.ownerChannelId(selectedBotId ?? '', botViewerId(bot, principalId)),
   );
 
   if (capabilities?.state === 'unsupported_host') return <UnsupportedBotsView  />;
+  // Recovery replaces the chat: nothing is readable until the owner acts.
+  if (isBotCatalogRecoveryState(capabilities)) {
+    return (
+      <div className="flex h-full items-center justify-center px-6" data-bot-catalog-recovery>
+        <div className="w-full max-w-lg">
+          <BotCatalogPanel capabilityState={capabilities?.database?.state ?? capabilities?.state ?? null}
+            onCatalogChanged={() => void refreshBotsState()} />
+        </div>
+      </div>
+    );
+  }
   if (!selectedBotId) {
     return (
       <div className="flex h-full items-center justify-center px-6 text-center">
@@ -47,6 +62,10 @@ export const BotView: React.FC = () => {
           <p className="mt-2 typography-body text-muted-foreground">
             {t('bots.sidebar.selectPrompt.description')}
           </p>
+          {/* An empty local catalog must not read as deleted hosted Bots. */}
+          <BotCatalogPanel className="mt-4 text-left"
+            capabilityState={capabilities?.database?.state ?? capabilities?.state ?? null}
+            onCatalogChanged={() => void refreshBotsState()} />
         </div>
       </div>
     );

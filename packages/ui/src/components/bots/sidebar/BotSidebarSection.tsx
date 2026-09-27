@@ -6,6 +6,7 @@ import { BotSidebarRow } from './BotSidebarRow';
 import { resolveBotSidebarStatus, type BotSidebarStatus } from './botSidebarStatus';
 import { useBotConnectionWarning } from './useBotConnectionWarning';
 import { selectBotCurrentRunId } from '../operations/selectBotCurrentRun';
+import { botViewerId } from '@/lib/botViewer';
 import { useI18n } from '@/lib/i18n';
 import { Button } from '@/components/ui/button';
 import { retryBotsEventConnection } from '@/apps/botEventConnection';
@@ -52,7 +53,7 @@ export const BotSidebarSection: React.FC<BotSidebarSectionProps> = ({
   const ownerChannelIdByBotId = channelStore(useShallow((state) => {
     const values: Record<string, string> = {};
     for (const channel of Object.values(state.channelsById)) {
-      if (channel.ownerUserId === principalId && channel.lifecycle === 'active') {
+      if (channel.ownerUserId === botViewerId(botsById[channel.botId], principalId) && channel.lifecycle === 'active') {
         values[channel.botId] = channel.id;
       }
     }
@@ -61,7 +62,7 @@ export const BotSidebarSection: React.FC<BotSidebarSectionProps> = ({
   const previewAtByBotId = channelStore(useShallow((state) => {
     const values: Record<string, string | null> = {};
     for (const channel of Object.values(state.channelsById)) {
-      if (channel.ownerUserId === principalId && channel.lifecycle === 'active') {
+      if (channel.ownerUserId === botViewerId(botsById[channel.botId], principalId) && channel.lifecycle === 'active') {
         values[channel.botId] = state.previewsByChannelId[channel.id]?.createdAt ?? null;
       }
     }

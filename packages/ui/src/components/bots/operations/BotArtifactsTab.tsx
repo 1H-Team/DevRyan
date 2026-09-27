@@ -10,6 +10,7 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { useAuthPrincipal } from '@/lib/authSession';
+import { botViewerId } from '@/lib/botViewer';
 import { botsApi, type BotSharedFile, type BotsApi } from '@/lib/botsApi';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -18,7 +19,7 @@ import {
   type BotSharedFilesStore,
   useBotSharedFilesStore,
 } from '@/stores/useBotSharedFilesStore';
-import type { BotsStore } from '@/stores/useBotsStore';
+import { useBotsStore, type BotsStore } from '@/stores/useBotsStore';
 import { friendlyComputerPath } from './botSharedFilePresentation';
 
 type BotArtifactsTabProps = {
@@ -122,10 +123,12 @@ export const BotArtifactsTab: React.FC<BotArtifactsTabProps> = ({
   channelId,
   api = botsApi,
   onOpenComputer,
+  botsStore = useBotsStore,
   sharedFilesStore = useBotSharedFilesStore,
 }) => {
   const { t } = useI18n();
   const principal = useAuthPrincipal();
+  const viewerId = botsStore((state) => botViewerId(state.botsById[botId], principal.id));
   const files = sharedFilesStore(useShallow((state) => (
     (state.fileIdsByChannelId[channelId] || [])
       .map((id) => state.filesById[id])
@@ -226,7 +229,7 @@ export const BotArtifactsTab: React.FC<BotArtifactsTabProps> = ({
           <BotSharedFileRow
             key={file.id}
             file={file}
-            viewerUserId={principal.id}
+            viewerUserId={viewerId}
             busy={busyId === file.id}
             onDownload={(entry) => void download(entry)}
             onOpenComputer={(entry) => {

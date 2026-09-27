@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { prepareAutomaticRuntimeService, createRuntimeOwnerAcquirer, recoverAppBoundRuntime } from '../runtime-service-startup.mjs';
+import {
+  prepareAutomaticRuntimeService,
+  createRuntimeOwnerAcquirer,
+  recoverAppBoundRuntime,
+  retryRuntimeServiceConnection,
+} from '../runtime-service-startup.mjs';
 import { createRuntimeServiceRegistration } from '../runtime-service-registration.mjs';
 
 const run = async ({ currentMode = 'app_bound', optedOut = false, status, register } = {}) => {
@@ -226,4 +231,53 @@ describe('transactional foreground recovery', () => {
       if (failure === 'active' || failure === 'corrupt') assert.deepEqual(calls, ['unregister', 'wait']);
     });
   }
+});
+
+describe('background runtime connection wait', () => {
+  const failure = (code) => Object.assign(new Error(code), { code });
+  const retry = (connect) => {
+    const clock = { now: 0, attempts: 0 };
+    const result = retryRuntimeServiceConnection({
+      connect: async () => {
+        clock.attempts += 1;
+        return connect(clock.now);
+      },
+      now: () => clock.now,
+      wait: async (ms) => { clock.now += ms; },
+    });
+    return { clock, result };
+  };
+
+  test('keeps waiting past the ordinary bound while a cold service start publishes no live owner', async () => {
+    // Observed cold launchd boots reached 20-27 s before the service listened.
+    const { clock, result } = await retry((elapsed) => {
+      if (elapsed < 10_000) throw failure('ENOENT');
+      if (elapsed < 24_000) throw failure('runtime_service_owner_stale');
+      if (elapsed < 27_000) throw failure('runtime_service_unavailable');
+      return 'http://127.0.0.1:57123';
+    });
+    assert.equal(await result, 'http://127.0.0.1:57123');
+    assert.ok(clock.now >= 27_000);
+  });
+
+  test('gives up on a service that never starts at the starting bound', async () => {
+    const { clock, result } = retry(() => { throw failure('runtime_service_owner_stale'); });
+    await assert.rejects(result, { code: 'runtime_service_owner_stale' });
+    assert.ok(clock.now >= 60_000 && clock.now < 61_000);
+  });
+
+  test('keeps the ordinary bound for a definitive rejection', async () => {
+    const { clock, result } = retry(() => { throw failure('desktop_host_registration_failed'); });
+    await assert.rejects(result, { code: 'desktop_host_registration_failed' });
+    assert.ok(clock.now >= 20_000 && clock.now < 21_000);
+  });
+
+  test('a late-starting service that rejects the connection falls back without further waiting', async () => {
+    const { clock, result } = retry((elapsed) => {
+      if (elapsed < 25_000) throw failure('runtime_service_owner_stale');
+      throw failure('runtime_service_bootstrap_rejected');
+    });
+    await assert.rejects(result, { code: 'runtime_service_bootstrap_rejected' });
+    assert.ok(clock.now >= 25_000 && clock.now < 25_500);
+  });
 });

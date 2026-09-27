@@ -47,7 +47,7 @@ describe('managed plugin manifest', () => {
       '@rama_nigg/open-cursor': '2.5.8',
       'opencode-with-claude': '1.8.0',
       'opencode-gpt-imagegen': '0.1.12',
-      'oh-my-opencode-slim': '2.2.18',
+      'oh-my-opencode-slim': '2.2.24',
     });
     expect(DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS).toEqual([
       './plugins/devryan-open-cursor.mjs',
@@ -111,7 +111,7 @@ describe('managed plugin manifest', () => {
     }
 
     // Tauri retains Slim 2.0.5 and its legacy loader; the forward profile also
-    // supports the server descriptor exported by its pinned Slim 2.2.18.
+    // supports the server descriptor exported by its pinned Slim 2.2.24.
     expect(fs.readFileSync(path.join(webDefaultConfigRoot, 'plugins', 'devryan-oh-my-opencode-slim.mjs'), 'utf8'))
       .toContain('exported.server');
     expect(fs.readFileSync(path.join(tauriDefaultConfigRoot, 'plugins', 'devryan-oh-my-opencode-slim.mjs'), 'utf8'))

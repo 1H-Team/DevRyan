@@ -251,8 +251,11 @@ const formatRow = (row, { botById, actorById, detail = false }) => {
   };
 };
 
+// A managed administrator or the workstation owner (its Bot-scoped session).
 const requireAdmin = (principal) => {
-  if (principal?.scope !== 'managed' || principal?.role !== 'admin') {
+  const managedAdmin = principal?.scope === 'managed' && principal?.role === 'admin';
+  const workstationOwner = principal?.scope === 'bot-owner' && principal?.botOwner === true && principal?.role === 'admin';
+  if (!managedAdmin && !workstationOwner) {
     fail('Administrator access required', 'bot_audit_admin_required', 403);
   }
 };

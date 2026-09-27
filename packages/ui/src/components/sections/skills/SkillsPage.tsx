@@ -7,6 +7,9 @@ import { useSkillsStore, type SkillConfig, type SupportingFile, type PendingFile
 import { useShallow } from 'zustand/react/shallow';
 import { RiAddLine, RiBookOpenLine, RiDeleteBinLine, RiFileLine, RiFolderReceivedLine, RiUser3Line } from '@remixicon/react';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
+import { SettingsBadge } from '@/components/sections/shared/SettingsBadge';
+import { SettingsDetailHeader } from '@/components/sections/shared/SettingsDetailHeader';
+import { SettingsEmptyState } from '@/components/sections/shared/SettingsEmptyState';
 import {
   Dialog,
   DialogContent,
@@ -365,24 +368,17 @@ const SkillsInstalledPage: React.FC = () => {
 
   if ((!selectedSkillName && !skillDraft) || hasStaleSelection) {
     return (
-      <div className="flex h-full items-center justify-center px-4">
-        <div className="text-center text-muted-foreground">
-          <RiBookOpenLine className="mx-auto mb-3 h-10 w-10 sm:h-12 sm:w-12 opacity-50" />
-          <p className="typography-body">{t('settings.skills.page.empty.title')}</p>
-          <p className="typography-meta mt-1 opacity-75">{t('settings.skills.page.empty.description')}</p>
-        </div>
-      </div>
+      <SettingsEmptyState
+        size="page"
+        icon={RiBookOpenLine}
+        title={t('settings.skills.page.empty.title')}
+        description={t('settings.skills.page.empty.description')}
+      />
     );
   }
 
   if (isLoading) {
-    return (
-      <div className="flex h-full items-center justify-center px-4">
-        <div className="text-center text-muted-foreground">
-          <p className="typography-body">{t('settings.skills.page.loading.details')}</p>
-        </div>
-      </div>
-    );
+    return <SettingsEmptyState size="page" title={t('settings.skills.page.loading.details')} />;
   }
 
   return (
@@ -390,20 +386,17 @@ const SkillsInstalledPage: React.FC = () => {
       <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
 
         {/* Header */}
-        <div className="mb-4">
-          <div className="min-w-0">
-            <h2 className="typography-ui-header font-semibold text-foreground truncate flex items-center gap-2">
-              {isNewSkill ? t('settings.skills.page.title.newSkill') : selectedSkillName}
-            </h2>
-            <p className="typography-meta text-muted-foreground truncate">
-              {selectedSkill
-                ? t('settings.skills.page.subtitle.skillLocation', {
-                    location: locationLabelText(locationValueFrom(selectedSkill.scope, selectedSkill.source)),
-                  })
-                : t('settings.skills.page.subtitle.newSkill')}
-            </p>
-          </div>
-        </div>
+        <SettingsDetailHeader
+          className="mb-4"
+          icon={<RiBookOpenLine />}
+          title={isNewSkill ? t('settings.skills.page.title.newSkill') : selectedSkillName}
+          titleTooltip={isNewSkill ? undefined : selectedSkillName ?? undefined}
+          subtitle={selectedSkill
+            ? t('settings.skills.page.subtitle.skillLocation', {
+                location: locationLabelText(locationValueFrom(selectedSkill.scope, selectedSkill.source)),
+              })
+            : t('settings.skills.page.subtitle.newSkill')}
+        />
 
         {/* Basic Information */}
         <div className="mb-8">
@@ -529,9 +522,9 @@ const SkillsInstalledPage: React.FC = () => {
                       <RiFileLine className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                       <span className="typography-ui-label text-foreground truncate">{file.path}</span>
                       {isNewSkill && (
-                        <span className="typography-micro text-[var(--status-warning)] bg-[var(--status-warning)]/10 px-1.5 py-0.5 rounded flex-shrink-0">
+                        <SettingsBadge tone="warning">
                           {t('settings.skills.page.badge.pending')}
-                        </span>
+                        </SettingsBadge>
                       )}
                       <Button size="sm"
                         variant="ghost"

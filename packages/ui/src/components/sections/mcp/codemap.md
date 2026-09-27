@@ -4,9 +4,11 @@
 MCP Servers configuration and Bot MCP assignment settings.
 
 ## Design
-`SettingsView` places the shared Coding Agents/Bots tablist above the split
-pane. Coding Agents keeps the existing MCP server editor; Bots reuses the Bot
-list and revision-bound `BotCapabilityAssignments` MCP panel.
+MCP Servers is the third tab of the Plugins hub in Settings → Connections. The
+sidebar uses the shared settings sidebar header/layout/group primitives with one
+`McpServerListItem` row component for project and user servers; the detail page
+uses `SettingsDetailHeader` (transport icon, status `SettingsBadge`, runtime
+actions). Bots have no MCP assignment surface.
 
 ## Flow
 Settings navigation selects the stable `mcp` slug. Coding Agent edits use the

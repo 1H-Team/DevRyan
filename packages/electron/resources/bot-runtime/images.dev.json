@@ -7,6 +7,8 @@
     "egress": { "reference": "devryan/bot-egress:dev" },
     "indexer": { "reference": "devryan/bot-indexer:dev" },
     "opencode": { "reference": "devryan/bot-opencode:dev" },
-    "computer": { "reference": "devryan/bot-computer:dev" }
+    "computer": { "reference": "devryan/bot-computer:dev" },
+    "database": { "reference": "devryan/bot-database:dev" },
+    "rest": { "reference": "devryan/bot-rest:dev" }
   }
 }

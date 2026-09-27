@@ -4,7 +4,7 @@
 Public tunnel management subsystem: provider registry, tunnel mode/intent typing, request normalization/validation, and managed configuration support.
 
 ## Design
-- `access-control.js` owns durable Bot grants, hashed sessions, authorization generations, the early HTTP/upgrade boundary and explicit POST landing flow. It is the production tunnel authority injected by `server/index.js`.
+- `access-control.js` owns durable Bot and Supabase-Off owner grants, hashed sessions, authorization generations, the early HTTP/upgrade boundary and explicit POST landing flow. Its private request map supplies verified owner identity to auth adapters. It is the production tunnel authority injected by `server/index.js`.
 - `bot-grants.js` owns the default-deny Bot route allowlist and grant checks reused by Bot authorization/catalog/event code.
 - **Provider registry pattern** (`registry.js`) enforces required provider capabilities (`start/stop/checkAvailability/resolvePublicUrl`).
 - **Strong request normalization** (`types.js`) canonicalizes provider/mode/intent/token/hostname/configPath.
@@ -19,7 +19,7 @@ Public tunnel management subsystem: provider registry, tunnel mode/intent typing
 3. Registry resolves concrete provider implementation (currently Cloudflare).
 4. Provider runtime starts/stops tunnel; stop waits for confirmed connector exit with bounded signal
    escalation before service/auth state is cleared.
-5. Managed-remote startup binds the stable origin relay, starts the connector, and verifies the public hostname reaches this process.
+5. Managed-remote startup requires account login or an enrolled Supabase-Off local owner, binds the stable origin relay, starts the connector, and verifies the public hostname reaches this process. Manual Off startup returns a private owner link; resume preserves existing sessions.
 6. Managed config runtime atomically persists schema-v2 profile state (`originPort`, default `3000`) with private permissions.
 
 ## Integration

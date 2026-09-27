@@ -131,6 +131,9 @@ export function createBotAuditRetention({
   now = () => new Date(),
   setIntervalImpl = setInterval,
   clearIntervalImpl = clearInterval,
+  // Maintenance fences retention: nothing is pruned while a backup, import or
+  // restore holds the catalog.
+  isPaused = () => false,
 } = {}) {
   if (typeof withAuditDeliveryBarrier !== 'function') {
     throw new TypeError('Bot audit retention requires a delivery barrier');
@@ -155,7 +158,8 @@ export function createBotAuditRetention({
     const row = {
       event_id: validateUuid(eventId, 'eventId'),
       bot_id: normalizedBotId,
-      actor_user_id: principal?.scope === 'managed'
+      // The workstation owner is recorded under the identity it acted as.
+      actor_user_id: principal?.scope === 'managed' || principal?.scope === 'bot-owner'
         ? validateOptionalUuid(principal.id, 'actorUserId')
         : null,
       target_type: validateBoundedString(targetType, 'targetType', { maximum: 120 }),
@@ -168,7 +172,9 @@ export function createBotAuditRetention({
       ...(createdAt ? { created_at: new Date(createdAt).toISOString() } : {}),
     };
     const stored = await store.insert('bot_audit_events', row);
-    await platformAudit(principal, action, {
+    // The local ledger is authoritative. Cloud delivery is best-effort and a
+    // failure never fails the Bot operation or the local catalog.
+    await Promise.resolve().then(() => platformAudit(principal, action, {
       eventId: row.event_id,
       targetType: row.target_type,
       targetId: row.target_id,
@@ -178,12 +184,12 @@ export function createBotAuditRetention({
         result,
         ...normalizedMetadata,
       },
-    });
+    })).catch(() => undefined);
     return stored;
   };
 
   const prune = async () => {
-    if (!store.available) return 0;
+    if (!store.available || isPaused()) return 0;
     const current = now();
     const currentMs = current instanceof Date ? current.getTime() : Number(current);
     if (!Number.isFinite(currentMs)) fail('Bot audit clock is invalid', 'bot_audit_retention_invalid', 500);

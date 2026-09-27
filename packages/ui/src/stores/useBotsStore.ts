@@ -57,6 +57,7 @@ const botEqual = (left: BotSummary, right: BotSummary): boolean => (
   && left.createdAt === right.createdAt
   && left.updatedAt === right.updatedAt
   && left.retiredAt === right.retiredAt
+  && (left.viewerUserId ?? null) === (right.viewerUserId ?? null)
 );
 
 const revisionEqual = (left: BotRevisionSummary, right: BotRevisionSummary): boolean => (

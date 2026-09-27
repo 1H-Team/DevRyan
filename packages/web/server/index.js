@@ -19,6 +19,7 @@ import { createUiAuth } from './lib/ui-auth/ui-auth.js';
 import { createMultiUserRuntime, getRequestPrincipal } from './lib/multi-user/index.js';
 import { canUseBrowser } from './lib/multi-user/policy.js';
 import { createBotModelCatalogLoader } from './lib/bots/model-catalog.js';
+import { setBotOwnerCookie } from './lib/bots/local-owner.js';
 import { createTunnelAccessControl as createTunnelAuth, registerTunnelAccessBoundary, hasTunnelBoundaryAuthorization } from './lib/tunnels/access-control.js';
 import { registerLocalOwnerBootstrap } from './lib/multi-user/local-owner-bootstrap.js';
 import { createManagedTunnelConfigRuntime } from './lib/tunnels/managed-config.js';
@@ -753,6 +754,7 @@ let botRuntimeControlProvider = null;
 let botRuntimeIndexerProvider = null;
 let botAgentRequestProvider = null;
 let botBrowserProfilesProvider = null;
+let botCatalogProvider = null;
 let projectPrewarmRuntime = null;
 const userProvidedOpenCodePassword = hmrStateRuntime.getUserProvidedOpenCodePassword(hmrState);
 const initialOpenCodeAuthState = hmrStateRuntime.resolveOpenCodeAuthFromState({
@@ -1718,6 +1720,19 @@ async function main(options = {}) {
   botRuntimeIndexerProvider = typeof options.requestBotIndexer === 'function'
     ? options.requestBotIndexer
     : null;
+  // The local Bot catalog is owned by the Electron runtime manager. Only a
+  // loopback URL and short-lived service token cross this in-process boundary.
+  const catalogMaintenance = options.botCatalogMaintenance;
+  botCatalogProvider = typeof options.getBotCatalogContext === 'function'
+    && typeof options.ensureBotCatalog === 'function'
+    ? Object.freeze({
+        getContext: options.getBotCatalogContext,
+        ensure: options.ensureBotCatalog,
+        maintenance: catalogMaintenance && typeof catalogMaintenance === 'object'
+          ? Object.freeze({ ...catalogMaintenance })
+          : null,
+      })
+    : null;
   botAgentRequestProvider = typeof options.requestBotAgentEndpoint === 'function'
     ? options.requestBotAgentEndpoint
     : null;
@@ -1858,6 +1873,7 @@ async function main(options = {}) {
       indexerRequest: botRuntimeIndexerProvider,
       agentRequest: botAgentRequestProvider,
       getModelCatalog: fetchBotModelCatalog,
+      catalog: botCatalogProvider,
     },
     encryption: {
       getKey: botEncryptionKeyProvider,
@@ -2040,6 +2056,8 @@ async function main(options = {}) {
               await multiUserRuntime.connection.bootstrapLocalOwner();
               multiUserRuntime.connection.setOwnerCookie(res, await multiUserRuntime.connection.issueLocalOwnerSession());
             }
+            // The Bot owner session is issued in every Supabase state.
+            setBotOwnerCookie(res, await multiUserRuntime.botOwner?.issueSession?.());
           },
           server,
           onDesktopHostLease: options.onDesktopHostLease,
@@ -2588,6 +2606,9 @@ async function main(options = {}) {
       await multiUserRuntime.connection.bootstrapLocalOwner();
       return multiUserRuntime.connection.issueLocalOwnerSession();
     },
+    // In-process only: the native shell installs the workstation owner's
+    // Bot-scoped session into its own renderer.
+    issueBotOwnerSession: async () => multiUserRuntime?.botOwner?.issueSession?.() ?? null,
     expressApp: app,
     httpServer: server,
     getPort: () => tunnelRuntimeContext.getActivePort(),

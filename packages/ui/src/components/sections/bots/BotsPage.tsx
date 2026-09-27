@@ -28,12 +28,17 @@ import {
 } from '@/lib/botsApi';
 import { botsDesktopApi, type BotsDesktopApi } from '@/lib/botsDesktopApi';
 import { useAuthPrincipal } from '@/lib/authSession';
+import { botViewerId } from '@/lib/botViewer';
 import { useI18n } from '@/lib/i18n';
 import { botChannelSelectors, useBotChannelStore } from '@/stores/useBotChannelStore';
 import { useBotsStore } from '@/stores/useBotsStore';
 import { BotEditor } from './BotEditor';
 import { BotGallery } from './BotGallery';
 import { BotRuntimeServicePanel } from './BotRuntimeServicePanel';
+import { BotCatalogPanel } from './BotCatalogPanel';
+import { refreshBotsState } from '@/components/bots/refreshBotsState';
+import { createBotCatalogConnection } from '@/apps/botCatalogConnection';
+import { retryBotsEventConnection } from '@/apps/botEventConnection';
 import {
   createDefaultBotRevisionContract,
   getPendingBotAction,
@@ -54,7 +59,12 @@ const errorMessage = (error: unknown): string => (
   error instanceof Error ? error.message : 'Unable to complete the Bot management request.'
 );
 
-export const BotsPage: React.FC<BotsPageProps> = ({
+export const BotsPage: React.FC<BotsPageProps> = (props) => {
+  const principal = useAuthPrincipal();
+  return <BotsPageContent key={principal.id} {...props} />;
+};
+
+const BotsPageContent: React.FC<BotsPageProps> = ({
   api = botsApi,
   initialCatalog = [],
   initialDetail = null,
@@ -74,7 +84,12 @@ export const BotsPage: React.FC<BotsPageProps> = ({
   const [pendingBotMutations, setPendingBotMutations] = React.useState<Readonly<Record<string, PendingBotMutation>>>({});
   const [creating, setCreating] = React.useState(false);
   const [requestError, setRequestError] = React.useState<{ code: string | null; message: string } | null>(null);
-  const [catalogError, setCatalogError] = React.useState<string | null>(null);
+  const [catalogFailure, setCatalogFailure] = React.useState<{ message: string; code: string | null; retryable: boolean } | null>(null);
+  const catalogError = catalogFailure ? `${catalogFailure.message}${catalogFailure.code ? ` (${catalogFailure.code})` : ''}` : null;
+  const catalogStarting = catalogFailure?.retryable === true && catalogFailure.code === 'bots_starting';
+  const [catalogLoaded, setCatalogLoaded] = React.useState(initialCatalog.length > 0);
+  const catalogRetryable = React.useRef(false);
+  const catalogConnection = React.useRef<ReturnType<typeof createBotCatalogConnection> | null>(null);
   const [canCreateBot, setCanCreateBot] = React.useState(initialCanCreateBot);
   const [publicationNotice, setPublicationNotice] = React.useState<string | null>(null);
   const [activationHealth, setActivationHealth] = React.useState<Awaited<ReturnType<BotsApi['getBotActivationHealth']>> | null>(null);
@@ -106,7 +121,7 @@ export const BotsPage: React.FC<BotsPageProps> = ({
   const runtimeRecoveryKind = resolveBotRuntimeRecovery(capabilities, desktopApi.isAvailable());
   const busyAction = getPendingBotAction(pendingBotMutations, detail?.bot.id || null);
   const ownerChannelId = useBotChannelStore(
-    botChannelSelectors.ownerChannelId(detail?.bot.id || '', principal.id),
+    botChannelSelectors.ownerChannelId(detail?.bot.id || '', botViewerId(detail?.bot, principal.id)),
   );
   const ownerChannelMessageCount = useBotChannelStore((state) => (
     ownerChannelId ? state.channelsById[ownerChannelId]?.lastMessageSequence || 0 : 0
@@ -129,7 +144,9 @@ export const BotsPage: React.FC<BotsPageProps> = ({
       if (kind === 'setup') await desktopApi.setup();
       else if (kind === 'update') await desktopApi.update();
       else await desktopApi.repair();
-      return await refreshCapabilities();
+      const next = await refreshCapabilities();
+      retryBotsEventConnection();
+      return next;
     } catch (error) {
       setRuntimeRecoveryError(errorMessage(error));
       throw error;
@@ -175,10 +192,16 @@ export const BotsPage: React.FC<BotsPageProps> = ({
       setDetail((current) => (
         current && result.bots.some((bot) => bot.id === current.bot.id) ? current : null
       ));
-      setCatalogError(null);
+      catalogRetryable.current = false;
+      setCatalogLoaded(true);
+      setCatalogFailure(null);
     } catch (error) {
       if (catalogRequest.current !== request) return;
-      setCatalogError(errorMessage(error));
+      const code = error instanceof BotsApiError ? error.code : null;
+      const retryable = error instanceof BotsApiError && error.status !== 401 && error.status !== 403
+        && (error.retryable ?? ['bots_starting', 'bot_database_unavailable', 'network_error', 'bot_request_timeout'].includes(error.code));
+      catalogRetryable.current = retryable;
+      setCatalogFailure({ message: errorMessage(error), code, retryable });
     } finally {
       if (catalogRequest.current === request) setLoadingCatalog(false);
     }
@@ -224,15 +247,33 @@ export const BotsPage: React.FC<BotsPageProps> = ({
   }, [api]);
 
   React.useEffect(() => {
-    if (initialCatalog.length > 0) return;
-    void loadCatalog();
+    const connection = createBotCatalogConnection({
+      load: loadCatalog,
+      shouldRetry: () => catalogRetryable.current,
+      cancel: () => {
+        catalogRequest.current += 1;
+        detailRequest.current += 1;
+        modelOptionsRequest.current += 1;
+      },
+    });
+    catalogConnection.current = connection;
+    if (initialCatalog.length === 0) connection.retry();
+    return () => {
+      connection.dispose();
+      catalogConnection.current = null;
+    };
   }, [initialCatalog.length, loadCatalog]);
+
+  const catalogReady = capabilities?.catalogAvailable === true;
+  React.useEffect(() => {
+    if (catalogReady && catalogRetryable.current) catalogConnection.current?.retry();
+  }, [catalogReady]);
 
   React.useEffect(() => {
 
-    const refreshOnFocus = () => void loadCatalog();
+    const refreshOnFocus = () => catalogConnection.current?.retry();
     const refreshOnVisibility = () => {
-      if (document.visibilityState === 'visible') void loadCatalog();
+      if (document.visibilityState === 'visible') catalogConnection.current?.retry();
     };
     window.addEventListener('focus', refreshOnFocus);
     document.addEventListener('visibilitychange', refreshOnVisibility);
@@ -329,7 +370,7 @@ export const BotsPage: React.FC<BotsPageProps> = ({
       <BotGallery
         bots={catalog}
         selectedBotId={selectedBotId}
-        loading={loadingCatalog}
+        loading={(!catalogFailure && loadingCatalog) || (!catalogLoaded && catalogStarting)}
         error={catalogError}
         canCreate={canCreate}
         onSelect={(botId) => {
@@ -345,6 +386,15 @@ export const BotsPage: React.FC<BotsPageProps> = ({
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">
         <BotRuntimeServicePanel canManage={principal.role === 'admin'} desktopApi={desktopApi} />
+        <BotCatalogPanel
+          variant="full"
+          api={api}
+          capabilityState={capabilities?.database?.state ?? capabilities?.state ?? null}
+          onCatalogChanged={() => {
+            void refreshBotsState();
+            void loadCatalog();
+          }}
+        />
         <div className="min-h-0 flex-1">
         {loadingDetail ? (
           <div className="flex h-full items-center justify-center typography-ui text-muted-foreground" role="status">Loading Bot management…</div>
@@ -619,6 +669,11 @@ export const BotsPage: React.FC<BotsPageProps> = ({
               </Button>
             </div>
           </div>
+        ) : !catalogLoaded && ((!catalogFailure && loadingCatalog) || catalogStarting) ? (
+          <div className="flex h-full items-center justify-center typography-ui text-muted-foreground" role="status">
+            {catalogFailure?.code === 'bots_starting' || capabilities?.database?.state === 'starting'
+              ? 'Starting Bot storage…' : 'Loading Bots…'}
+          </div>
         ) : (
           <div className="flex h-full items-center justify-center p-6 text-center">
             <div className="max-w-sm">
@@ -631,7 +686,7 @@ export const BotsPage: React.FC<BotsPageProps> = ({
               </p>
               {requestError?.code ? <p className="mt-1 font-mono text-xs text-muted-foreground">{requestError.code}</p> : null}
               {requestError || catalogError ? (
-                <Button type="button" size="xs" variant="outline" className="mt-3" onClick={() => void loadCatalog()}>
+                <Button type="button" size="xs" variant="outline" className="mt-3" onClick={() => catalogConnection.current?.retry()}>
                   <RiRefreshLine className="h-3.5 w-3.5" aria-hidden /> Retry
                 </Button>
               ) : null}

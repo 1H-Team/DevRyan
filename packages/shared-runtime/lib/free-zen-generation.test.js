@@ -85,6 +85,29 @@ describe('free Zen model rotation', () => {
     ]);
   });
 
+  it('stops on a free-tier policy rejection without cooling the model down', async () => {
+    const cooldowns = createFreeZenCooldowns({ now: () => 10_000 });
+    const request = mock(async () => {
+      throw new Error("Error from provider (Console): OpenCode's free tier can only be used from within OpenCode");
+    });
+
+    const result = await runFreeZenModelRotation({
+      models: ['free-a', 'free-b', 'free-c'],
+      timeoutMs: 1_000,
+      request,
+      cooldowns,
+    });
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      ok: false,
+      attempts: 1,
+      failures: [{ model: 'free-a', reason: 'free_tier_rejected' }],
+      skipped: [{ model: 'free-b', reason: 'free_tier_rejected' }, { model: 'free-c', reason: 'free_tier_rejected' }],
+    });
+    expect(cooldowns.snapshot()).toEqual([]);
+  });
+
   it('tries every model anyway when all of them are cooling down', async () => {
     const cooldowns = createFreeZenCooldowns({ now: () => 10_000 });
     cooldowns.mark('free-a', 'rate_limited');

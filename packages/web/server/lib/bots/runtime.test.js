@@ -285,6 +285,46 @@ describe('Production Bots runtime composition', () => {
   });
 });
 
+describe('Production Bots maintenance fence', () => {
+  const fencedRuntime = async () => createBotsRuntime({
+    supabase: {
+      rest: vi.fn(),
+      rpc: vi.fn(async () => PRODUCTION_BOTS_MIGRATION),
+      storageUpload: vi.fn(),
+      storageDownload: vi.fn(),
+      storageDelete: vi.fn(),
+    },
+    dataDirectory: await makeDirectory(),
+  });
+
+  it('runs one reversible operation at a time and always reopens', async () => {
+    const runtime = await fencedRuntime();
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const first = runtime.runMaintenance('backup', async ({ markReplaced }) => {
+      expect(typeof markReplaced).toBe('function');
+      await gate;
+      return 'done';
+    });
+    await vi.waitFor(() => expect(runtime.getCatalogStatus().maintenance).toMatchObject({ kind: 'backup' }));
+    await expect(runtime.runMaintenance('restore', async () => 'second')).rejects.toMatchObject({
+      code: 'bots_maintenance_busy',
+      retryable: true,
+    });
+    release();
+    await expect(first).resolves.toBe('done');
+    expect(runtime.getCatalogStatus().maintenance).toBeNull();
+
+    await expect(runtime.runMaintenance('import', async () => {
+      throw Object.assign(new Error('import failed'), { code: 'bot_import_load_failed' });
+    })).rejects.toMatchObject({ code: 'bot_import_load_failed' });
+    expect(runtime.getCatalogStatus().maintenance).toBeNull();
+    await expect(runtime.runMaintenance('backup', async () => 'again')).resolves.toBe('again');
+    await expect(runtime.runMaintenance('Bad Kind', async () => null)).rejects.toThrow(TypeError);
+    await runtime.shutdown();
+  });
+});
+
 describe('Production Bots run sweep idle gate', () => {
   const HOUR = 60 * 60 * 1000;
   const createClock = (start = Date.UTC(2026, 8, 3, 12)) => {

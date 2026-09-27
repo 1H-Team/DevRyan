@@ -90,14 +90,6 @@ export function SupabaseConnectionPanel({ api: supabaseConnection, onModeChanged
         <Switch id="supabase-connection" checked={status?.configured ? status.desiredEnabled : false} disabled={busy || loading || Boolean(error) || !status?.configured}
           onCheckedChange={(enabled) => void change(enabled)} />
       </div>
-      <p className="typography-meta text-muted-foreground">
-        Applies to all windows and this host’s background service.
-        Local chats, projects, files and diagnostics stay available when disconnected.
-        Bots, Telegram, shared-user access, managed schedules and cloud audit delivery pause.
-      </p>
-      {!loading && !error && status && !status.configured && <p className="typography-meta text-muted-foreground">
-        Supabase is not configured on this host. Complete the host configuration before enabling the connection.
-      </p>}
       {status?.restartRequired && <p className="typography-meta text-muted-foreground">
         {status.restartAvailable ? 'DevRyan will restart when active work finishes.' : 'Restart DevRyan when active work finishes to apply this change.'}
         {status.blockers.length > 0 && ` Waiting for: ${status.blockers.map((value) => value.replaceAll('_', ' ')).join(', ')}.`}

@@ -40,7 +40,7 @@ const registerAdminRoutes = (harness, extras = {}) => {
   const handlers = new Map();
   const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
     method,
-    (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+    (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
   ]));
   harness.runtime.registerRoutes(app, extras);
   return handlers;
@@ -1176,7 +1176,7 @@ describe('multi-user authentication runtime', () => {
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
       method,
-      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+      (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app, {
       buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
@@ -1263,7 +1263,7 @@ describe('multi-user authentication runtime', () => {
     });
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
-      method, (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+      method, (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app, { buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`, getOpenCodeAuthHeaders: () => ({}) });
     const principal = { scope: 'managed', id: USER_IDS.admin, role: 'admin', assignments: [{
@@ -1312,7 +1312,7 @@ describe('multi-user authentication runtime', () => {
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
       method,
-      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+      (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app, {
       buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
@@ -1753,7 +1753,7 @@ describe('multi-user authentication runtime', () => {
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
       method,
-      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+      (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app, {
       buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
@@ -2050,7 +2050,7 @@ describe('multi-user authentication runtime', () => {
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
       method,
-      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+      (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app, {
       buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
@@ -2147,7 +2147,7 @@ describe('multi-user authentication runtime', () => {
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
       method,
-      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+      (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app, {
       buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
@@ -2202,7 +2202,7 @@ describe('multi-user authentication runtime', () => {
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
       method,
-      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+      (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app, {
       buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
@@ -2241,7 +2241,7 @@ describe('multi-user authentication runtime', () => {
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
       method,
-      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+      (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app);
     const response = makeResponse();
@@ -2270,7 +2270,7 @@ describe('multi-user authentication runtime', () => {
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
       method,
-      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+      (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app);
     const admin = { scope: 'managed', id: USER_IDS.admin, role: 'admin' };
@@ -2321,7 +2321,7 @@ describe('multi-user authentication runtime', () => {
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete'].map((method) => [
       method,
-      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+      (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app);
     const principal = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
@@ -2421,7 +2421,7 @@ describe('multi-user authentication runtime', () => {
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete'].map((method) => [
       method,
-      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+      (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app);
     const principal = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
@@ -2462,7 +2462,7 @@ describe('multi-user authentication runtime', () => {
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete'].map((method) => [
       method,
-      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+      (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app);
     const principal = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
@@ -2527,7 +2527,7 @@ describe('multi-user authentication runtime', () => {
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete'].map((method) => [
       method,
-      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+      (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app);
     const principal = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
@@ -2613,7 +2613,7 @@ describe('multi-user authentication runtime', () => {
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete'].map((method) => [
       method,
-      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+      (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app);
     const principal = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
@@ -2677,7 +2677,7 @@ describe('multi-user authentication runtime', () => {
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete'].map((method) => [
       method,
-      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+      (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app);
     const principal = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
@@ -2706,7 +2706,7 @@ describe('multi-user authentication runtime', () => {
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete'].map((method) => [
       method,
-      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+      (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app);
     const principal = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
@@ -3159,7 +3159,7 @@ describe('multi-user authentication runtime', () => {
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete'].map((method) => [
       method,
-      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+      (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app, {
       readSettingsFromDiskMigrated: async () => ({ themeId: 'host-theme' }),
@@ -4337,7 +4337,7 @@ describe('multi-user authentication runtime', () => {
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
       method,
-      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+      (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app);
     const principal = {
@@ -4402,7 +4402,7 @@ describe('multi-user authentication runtime', () => {
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
       method,
-      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+      (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app);
     const principal = {
@@ -4495,7 +4495,7 @@ describe('multi-user authentication runtime', () => {
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
       method,
-      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+      (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app);
     const admin = { scope: 'managed', id: USER_IDS.admin, role: 'admin' };
@@ -4549,7 +4549,7 @@ describe('multi-user authentication runtime', () => {
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
       method,
-      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+      (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app);
     const admin = { scope: 'managed', id: USER_IDS.admin, role: 'admin' };
@@ -4618,7 +4618,7 @@ describe('multi-user authentication runtime', () => {
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
       method,
-      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+      (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app);
     const principal = {
@@ -4679,8 +4679,14 @@ describe('multi-user authentication runtime', () => {
       code: null,
       issues: [],
     }));
+    // The Bot catalog is local and owned by Electron; Supabase is never a Bot
+    // store. An installation that is not set up reports that, not a cloud error.
+    const catalog = {
+      getContext: vi.fn(async () => { throw Object.assign(new Error('not ready'), { code: 'bot_database_unavailable' }); }),
+      ensure: vi.fn(async () => { throw Object.assign(new Error('setup'), { code: 'bot_runtime_setup_required' }); }),
+    };
     const harness = await createHarness({
-      botHost: { owner: 'electron', getStatus },
+      botHost: { owner: 'electron', getStatus, catalog },
       encryption: { getKey: () => Buffer.alloc(32, 0x45) },
     });
     await harness.runtime.botsRuntime.start();
@@ -4691,11 +4697,14 @@ describe('multi-user authentication runtime', () => {
 
     expect(harness.runtime.botsRuntime.enabled).toBe(true);
     expect(response.payload).toMatchObject({
-      available: true,
-      state: 'healthy',
+      available: false,
+      catalogAvailable: false,
+      database: { state: 'setup_required', code: 'bot_runtime_setup_required' },
       owner: 'electron',
       canManageRuntime: true,
     });
+    expect(catalog.ensure).toHaveBeenCalled();
+    expect(harness.runtime.botOwner.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(getStatus).toHaveBeenCalledTimes(1);
   });
 });

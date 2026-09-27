@@ -9,7 +9,9 @@ import {
   loadBotRuntimeManifest,
   validateBotRuntimeManifest,
 } from '../bot-runtime-manifest.mjs';
+import { mintBotDatabaseToken } from '../bot-database-manager.mjs';
 import {
+  assertIsolatedBotResourceNames,
   BOT_RUNTIME_ENGINE_MEMORY_POLICY,
   createBotRuntimeManager,
   createFileBotRuntimeStateStore,
@@ -19,6 +21,16 @@ import {
   resolveDockerExecutable,
 } from '../bot-runtime-manager.mjs';
 import { BOT_RESOURCE_LIMITS } from '../../bot-supervisor/src/docker.js';
+import { BOT_DB_MIGRATIONS, loadBotDatabaseSql } from '@openchamber/bot-db';
+
+const REPOSITORY_ROOT = path.resolve(import.meta.dir, '../../..');
+const loadDatabaseSql = () => loadBotDatabaseSql({
+  supabaseMigrationsDirectory: path.join(REPOSITORY_ROOT, 'supabase/migrations'),
+  sqlDirectory: path.join(REPOSITORY_ROOT, 'packages/bot-db/sql'),
+});
+const DEPLOYMENT_ID = deriveBotRuntimeServiceEnvironment(Buffer.alloc(32, 7), {
+  dockerSocketGid: 20,
+}).DEVRYAN_BOT_DEPLOYMENT_ID;
 
 const DOCKER = '/opt/homebrew/bin/docker';
 const COMPOSE = '/Applications/DevRyan.app/Contents/Resources/bot-runtime/compose.yml';
@@ -91,7 +103,147 @@ const healthyServices = () => ([
   { Service: 'engine-proxy', State: 'running', Health: 'healthy' },
   { Service: 'egress', State: 'running', Health: 'healthy' },
   { Service: 'indexer', State: 'running', Health: 'healthy' },
+  { Service: 'database', State: 'running', Health: 'healthy' },
+  { Service: 'database-rest', State: 'running', Health: 'healthy' },
 ]);
+
+// An in-memory stand-in for the local Bot catalog: the owned data volume, the
+// cluster, the Bot database and its reviewed migration history.
+const createFakeDatabase = ({
+  volume = null,
+  cluster = null,
+  database = null,
+} = {}) => {
+  const model = {
+    volume,
+    cluster,
+    database,
+    containerState: cluster ? 'running' : null,
+  };
+  const current = () => ({
+    ...model,
+    history: model.database?.history?.map((row) => ({ ...row })) ?? [],
+  });
+  return { model, current };
+};
+
+// A healthy, current catalog owned by the default test deployment.
+const currentDatabase = ({ nonce = '11111111-1111-4111-8111-111111111111' } = {}) => createFakeDatabase({
+  volume: {
+    Name: 'devryan-bot-database-data',
+    Labels: {
+      'devryan.runtime': 'production-bots',
+      'devryan.owner': 'electron',
+      'devryan.deployment': DEPLOYMENT_ID,
+      'devryan.volume-role': 'database-data',
+      'devryan.volume-nonce': nonce,
+    },
+  },
+  cluster: { systemIdentifier: '7689906058392190992' },
+  database: {
+    databaseId: '22222222-2222-4222-8222-222222222222',
+    history: BOT_DB_MIGRATIONS.map(({ ordinal, name, sha256 }) => ({ ordinal, name, sha256 })),
+  },
+});
+
+const currentDatabaseState = ({ nonce = '11111111-1111-4111-8111-111111111111' } = {}) => ({
+  version: 1,
+  deploymentId: DEPLOYMENT_ID,
+  volume: { name: 'devryan-bot-database-data', nonce },
+  cluster: { systemIdentifier: '7689906058392190992', databaseId: '22222222-2222-4222-8222-222222222222' },
+  schema: { head: BOT_DB_MIGRATIONS.at(-1).name, appliedCount: BOT_DB_MIGRATIONS.length },
+  updatedAt: '2026-09-26T00:00:00.000Z',
+});
+
+const handleFakeDatabase = (fake, args, options) => {
+  if (!fake) return null;
+  const { model } = fake;
+  if (args[0] === 'volume' && args[1] === 'inspect') {
+    return model.volume
+      ? { exitCode: 0, stdout: JSON.stringify(model.volume), stderr: '' }
+      : { exitCode: 1, stdout: '', stderr: `Error response from daemon: get ${args[2]}: no such volume` };
+  }
+  if (args[0] === 'volume' && args[1] === 'create') {
+    const labels = {};
+    for (let index = 2; index < args.length - 1; index += 1) {
+      if (args[index] === '--label') {
+        const [key, ...rest] = args[index + 1].split('=');
+        labels[key] = rest.join('=');
+        index += 1;
+      }
+    }
+    model.volume = { Name: args.at(-1), Labels: labels };
+    return { exitCode: 0, stdout: `${args.at(-1)}\n`, stderr: '' };
+  }
+  if (args[0] !== 'compose') return null;
+  if (args.includes('run') && args.includes('--initialize-only')) {
+    if (model.cluster) return { exitCode: 66, stdout: '', stderr: 'refusing to initialize a non-empty data directory' };
+    model.cluster = { systemIdentifier: '7689906058392190992' };
+    return { exitCode: 0, stdout: 'devryan-bot-database: cluster initialized\n', stderr: '' };
+  }
+  if (args.includes('up') && args.includes('--no-deps') && args.at(-1) === 'database') {
+    model.containerState = model.cluster ? 'running' : 'exited';
+    return { exitCode: 0, stdout: 'started', stderr: '' };
+  }
+  if (args.includes('ps') && args.at(-1) === 'database') {
+    if (!model.containerState) return { exitCode: 0, stdout: '', stderr: '' };
+    return {
+      exitCode: 0,
+      stdout: JSON.stringify(model.containerState === 'running'
+        ? { Service: 'database', State: 'running', Health: 'healthy', ExitCode: 0 }
+        : { Service: 'database', State: 'exited', Health: '', ExitCode: 67 }),
+      stderr: '',
+    };
+  }
+  if (args.includes('stop') && args.at(-1) === 'database') {
+    model.containerState = 'exited';
+    return { exitCode: 0, stdout: '', stderr: '' };
+  }
+  if (args.includes('exec') && args.includes('psql')) {
+    const sql = String(options.input || '');
+    if (sql.includes('pg_control_system')) {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          systemIdentifier: model.cluster.systemIdentifier,
+          databaseExists: Boolean(model.database),
+        }),
+        stderr: '',
+      };
+    }
+    if (sql.includes("'bootstrapped'")) {
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          bootstrapped: Boolean(model.database?.bootstrapped ?? model.database),
+          databaseId: model.database?.databaseId ?? null,
+          history: model.database?.history ?? [],
+        }),
+        stderr: '',
+      };
+    }
+    if (/create database devryan_bots /.test(sql)) {
+      model.database = { databaseId: null, history: [], bootstrapped: false };
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
+    if (sql.includes('create schema devryan_local')) {
+      model.database.bootstrapped = true;
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
+    const installation = /insert into devryan_local\.installation \(database_id, inventory_format\) values \('([^']+)'/.exec(sql);
+    if (installation) {
+      model.database.databaseId = installation[1];
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
+    const migration = /insert into devryan_local\.schema_migrations \(ordinal, name, sha256, kind\) values \((\d+), '([^']+)', '([0-9a-f]{64})'/.exec(sql);
+    if (migration) {
+      model.database.history.push({ ordinal: Number(migration[1]), name: migration[2], sha256: migration[3] });
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
+    return { exitCode: 0, stdout: '', stderr: '' };
+  }
+  return null;
+};
 
 const createMemoryStateStore = (initial = null) => {
   let value = initial;
@@ -128,6 +280,8 @@ const createFakeRunner = ({
   memTotalBytes = 16 * 1024 * 1024 * 1024,
   hostControlNetwork = { stale: false },
   attachedContainers = [],
+  database = currentDatabase(),
+  restPort = 55130,
 } = {}) => {
   const calls = [];
   let staleNetwork = hostControlNetwork?.stale === true;
@@ -135,7 +289,15 @@ const createFakeRunner = ({
   // the repair can be observed converging instead of repeating.
   let attached = typeof attachedContainers === 'function' ? attachedContainers : [...attachedContainers];
   const runProcess = async (file, args, options = {}) => {
-    calls.push({ file, args: [...args], env: { ...options.env }, shell: options.shell });
+    calls.push({
+      file,
+      args: [...args],
+      env: { ...options.env },
+      shell: options.shell,
+      ...(options.input !== undefined ? { input: options.input } : {}),
+    });
+    const databaseResult = handleFakeDatabase(database, args, options);
+    if (databaseResult) return databaseResult;
     if (args[0] === 'network' && args[1] === 'inspect') {
       if (!hostControlNetwork) {
         return { exitCode: 1, stdout: '', stderr: `Error response from daemon: network ${args[2]} not found` };
@@ -221,12 +383,14 @@ const createFakeRunner = ({
         ? egressPort
         : args.includes('indexer')
           ? indexerPort
-          : supervisorPort;
+          : args.includes('database-rest')
+            ? restPort
+            : supervisorPort;
       return { exitCode: 0, stdout: `127.0.0.1:${publishedPort}\n`, stderr: '' };
     }
     throw new Error(`Unexpected Docker argv: ${args.join(' ')}`);
   };
-  return { calls, runProcess };
+  return { calls, runProcess, database };
 };
 
 const createManager = ({
@@ -238,9 +402,14 @@ const createManager = ({
   fetchImpl,
   wait,
   now,
+  databaseStateStore = createMemoryStateStore(currentDatabaseState()),
+  backupBeforeMigrate,
 } = {}) => ({
   manager: createBotRuntimeManager({
     composePath: COMPOSE,
+    loadDatabaseSql,
+    databaseStateStore: databaseStateStore.store,
+    ...(backupBeforeMigrate ? { backupBeforeMigrate } : {}),
     loadManifest: async () => manifest,
     resolveDocker,
     runProcess: runner.runProcess,
@@ -257,6 +426,7 @@ const createManager = ({
   }),
   runner,
   stateStore,
+  databaseStateStore,
 });
 
 const composePrefix = [
@@ -265,6 +435,19 @@ const composePrefix = [
   'devryan-bots',
   '--file',
   COMPOSE,
+];
+
+const psqlArgs = (database) => [...composePrefix, 'exec', '-T', '--user', 'postgres', 'database',
+  'psql', '-XAtq', '-v', 'ON_ERROR_STOP=1', '-d', database];
+
+// Verifying an already-current catalog: ownership, start, identity, history.
+const currentCatalogPreparation = () => [
+  ['volume', 'inspect', 'devryan-bot-database-data', '--format', '{{json .}}'],
+  [...composePrefix, 'up', '--detach', '--no-deps', 'database'],
+  [...composePrefix, 'ps', '--all', '--format', 'json', 'database'],
+  psqlArgs('postgres'),
+  psqlArgs('devryan_bots'),
+  psqlArgs('devryan_bots'),
 ];
 
 describe('Bot runtime manifest', () => {
@@ -570,7 +753,7 @@ describe('Electron-owned Docker Bot runtime manager', () => {
 
     expect(runner.calls.filter(({ args }) => args[0] === 'pull'))
       .toHaveLength(BOT_RUNTIME_IMAGE_KEYS.length);
-    expect(runner.calls.filter(({ args }) => args.includes('up'))).toHaveLength(1);
+    expect(runner.calls.filter(({ args }) => args.includes('up') && args.includes('--remove-orphans'))).toHaveLength(1);
     expect(stateStore.reads()).toEqual({
       version: 1,
       current: manifest,
@@ -592,7 +775,10 @@ describe('Electron-owned Docker Bot runtime manager', () => {
     });
     const { manager } = createManager({ manifest, stateStore });
 
-    await expect(manager.ensureReady()).resolves.toMatchObject({ state: 'healthy', changed: true });
+    // Automatic startup never installs; the owner's explicit setup does.
+    await expect(manager.ensureReady()).rejects.toMatchObject({ code: 'bot_runtime_setup_required' });
+    expect(stateStore.writes).toEqual([]);
+    await expect(manager.ensureReady({ allowInstall: true })).resolves.toMatchObject({ state: 'healthy', changed: true });
     expect(stateStore.reads()).toEqual({
       version: 1,
       current: manifest,
@@ -661,11 +847,15 @@ describe('Electron-owned Docker Bot runtime manager', () => {
 
   test('performs setup with exact argv arrays and no shell', async () => {
     const manifest = releaseManifest();
-    const { manager, runner, stateStore } = createManager({ manifest });
+    const runner = createFakeRunner({ database: createFakeDatabase() });
+    const databaseStateStore = createMemoryStateStore();
+    const { manager, stateStore } = createManager({ manifest, runner, databaseStateStore });
 
     const result = await manager.setup();
 
     expect(result).toMatchObject({ state: 'healthy', changed: true });
+    const psql = (database) => [...composePrefix, 'exec', '-T', '--user', 'postgres', 'database',
+      'psql', '-XAtq', '-v', 'ON_ERROR_STOP=1', '-d', database];
     expect(runner.calls.map(({ args }) => args)).toEqual([
       ['version', '--format', '{{json .}}'],
       ['ps', '--all', '--no-trunc', '--filter', 'label=devryan.runtime=production-bots', '--format', '{{json .}}'],
@@ -676,10 +866,40 @@ describe('Electron-owned Docker Bot runtime manager', () => {
       ['ps', '--all', '--no-trunc', '--filter', 'label=devryan.runtime=production-bots', '--format', '{{json .}}'],
       ['network', 'inspect', 'devryan-bots-host-control', '--format', '{{json .}}'],
       ['ps', '--all', '--no-trunc', '--filter', 'network=devryan-bots-host-control', '--format', '{{json .}}'],
+      // Ownership is checked before PostgreSQL ever starts.
+      ['volume', 'inspect', 'devryan-bot-database-data', '--format', '{{json .}}'],
+      ['volume', 'create',
+        '--label', 'devryan.runtime=production-bots',
+        '--label', 'devryan.owner=electron',
+        '--label', `devryan.deployment=${DEPLOYMENT_ID}`,
+        '--label', 'devryan.volume-role=database-data',
+        '--label', expect.stringMatching(/^devryan\.volume-nonce=[0-9a-f-]{36}$/),
+        'devryan-bot-database-data'],
+      ['volume', 'inspect', 'devryan-bot-database-data', '--format', '{{json .}}'],
+      [...composePrefix, 'run', '--rm', '--no-deps', '-T',
+        '--env', 'DEVRYAN_BOT_DATABASE_INITIALIZE=allow', 'database', '--initialize-only'],
+      [...composePrefix, 'up', '--detach', '--no-deps', 'database'],
+      [...composePrefix, 'ps', '--all', '--format', 'json', 'database'],
+      psql('postgres'),
+      psql('postgres'),
+      psql('postgres'),
+      psql('postgres'),
+      psql('devryan_bots'),
+      psql('devryan_bots'),
+      psql('devryan_bots'),
+      ...BOT_DB_MIGRATIONS.map(() => psql('devryan_bots')),
+      psql('devryan_bots'),
+      // REST and execution services start only after the catalog is current.
       [...composePrefix, 'up', '--detach', '--remove-orphans'],
       [...composePrefix, 'ps', '--format', 'json'],
+      [...composePrefix, 'port', 'database-rest', '3000'],
     ]);
     expect(runner.calls.every(({ file, shell }) => file === DOCKER && shell === undefined)).toBe(true);
+    // SQL crosses stdin only, never argv.
+    const psqlCalls = runner.calls.filter(({ args }) => args.includes('psql'));
+    expect(psqlCalls.every(({ input }) => typeof input === 'string' && input.length > 0)).toBe(true);
+    expect(psqlCalls.filter(({ input }) => input.includes('insert into devryan_local.schema_migrations')))
+      .toHaveLength(BOT_DB_MIGRATIONS.length);
     const composeCalls = runner.calls.filter(({ args }) => args[0] === 'compose');
     expect(composeCalls.every(({ env }) => (
       env.DEVRYAN_BOT_DEPLOYMENT_ID.startsWith('deployment-')
@@ -688,10 +908,26 @@ describe('Electron-owned Docker Bot runtime manager', () => {
       && env.DEVRYAN_BOT_EGRESS_SIGNING_KEY.length === 43
       && env.DEVRYAN_BOT_EGRESS_CONTROL_TOKEN.length === 43
       && env.DEVRYAN_BOT_INDEXER_TOKEN.length === 43
+      && env.DEVRYAN_BOT_DATABASE_JWT_SECRET.length === 43
+      && env.DEVRYAN_BOT_RESOURCE_NAMESPACE === 'devryan'
       && env.DEVRYAN_BOT_HOST_RUNTIME_ROOT === '/var/lib/devryan-bots/host-runtime'
       && env.DEVRYAN_BOT_ACTIVE_REVISIONS === ''
     ))).toBe(true);
     expect(stateStore.reads()?.current?.fingerprint).toBe(manifest.fingerprint);
+    // The initialized-cluster expectation was persisted before REST started.
+    expect(databaseStateStore.writes[0]).toMatchObject({
+      deploymentId: DEPLOYMENT_ID,
+      volume: { name: 'devryan-bot-database-data' },
+      schema: { appliedCount: 0, head: '' },
+    });
+    expect(databaseStateStore.reads()).toMatchObject({
+      schema: { appliedCount: BOT_DB_MIGRATIONS.length, head: BOT_DB_MIGRATIONS.at(-1).name },
+    });
+    await expect(manager.databaseContext()).resolves.toMatchObject({
+      url: 'http://127.0.0.1:55130',
+      token: expect.stringMatching(/^[\w-]+\.[\w-]+\.[\w-]+$/),
+      generation: expect.any(Number),
+    });
   });
 
   test.each([
@@ -751,8 +987,10 @@ describe('Electron-owned Docker Bot runtime manager', () => {
       ['ps', '--all', '--no-trunc', '--filter', 'label=devryan.runtime=production-bots', '--format', '{{json .}}'],
       ['network', 'inspect', 'devryan-bots-host-control', '--format', '{{json .}}'],
       ['ps', '--all', '--no-trunc', '--filter', 'network=devryan-bots-host-control', '--format', '{{json .}}'],
+      ...currentCatalogPreparation(),
       [...composePrefix, 'up', '--detach', '--remove-orphans'],
       [...composePrefix, 'ps', '--format', 'json'],
+      [...composePrefix, 'port', 'database-rest', '3000'],
     ]);
   });
 
@@ -871,7 +1109,8 @@ describe('Electron-owned Docker Bot runtime manager', () => {
     expect(rm).toBeLessThan(networkRm);
     expect(networkRm).toBeLessThan(composeUp);
     expect(argv.some((args) => args[0] === 'network' && ['disconnect', 'connect'].includes(args[1]))).toBe(false);
-    expect(argv.filter((args) => args[0] === 'compose' && args.includes('up'))).toHaveLength(1);
+    expect(argv.filter((args) => args[0] === 'compose' && args.includes('up') && args.includes('--remove-orphans')))
+      .toHaveLength(1);
     expect(await manager.status()).toMatchObject({ state: 'healthy', code: null });
   });
 
@@ -1223,7 +1462,7 @@ describe('Electron-owned Docker Bot runtime manager', () => {
       .resolves.toMatchObject({ state: 'healthy', changed: true });
 
     expect(waits).toEqual([1_000]);
-    expect(runner.calls.filter(({ args }) => args.includes('up'))).toHaveLength(1);
+    expect(runner.calls.filter(({ args }) => args.includes('up') && args.includes('--remove-orphans'))).toHaveLength(1);
     expect(stateStore.writes).toHaveLength(2);
     expect(stateStore.writes[0]).toMatchObject({
       current: { fingerprint: previous.fingerprint },
@@ -1358,18 +1597,23 @@ describe('Electron-owned Docker Bot runtime manager', () => {
     expect(progress.at(-1)).toMatchObject({ phase: 'ready' });
   });
 
-  test('ensures a missing runtime by performing setup', async () => {
+  test('installs a missing runtime only when installation is allowed', async () => {
     const manifest = releaseManifest();
     const { manager, runner, stateStore } = createManager({ manifest });
 
-    await expect(manager.ensureReady()).resolves.toMatchObject({
+    // Automatic startup reports setup instead of pulling fresh images.
+    await expect(manager.ensureReady()).rejects.toMatchObject({ code: 'bot_runtime_setup_required' });
+    expect(runner.calls.some(({ args }) => args[0] === 'pull' || args[0] === 'compose')).toBe(false);
+    expect(stateStore.writes).toEqual([]);
+
+    await expect(manager.ensureReady({ allowInstall: true })).resolves.toMatchObject({
       state: 'healthy',
       changed: true,
     });
 
     expect(runner.calls.filter(({ args }) => args[0] === 'pull'))
       .toHaveLength(BOT_RUNTIME_IMAGE_KEYS.length);
-    expect(runner.calls.filter(({ args }) => args.includes('up'))).toHaveLength(1);
+    expect(runner.calls.filter(({ args }) => args.includes('up') && args.includes('--remove-orphans'))).toHaveLength(1);
     expect(stateStore.reads()).toMatchObject({
       current: { fingerprint: manifest.fingerprint },
       staged: null,
@@ -1391,7 +1635,7 @@ describe('Electron-owned Docker Bot runtime manager', () => {
 
     expect(runner.calls.filter(({ args }) => args[0] === 'pull'))
       .toHaveLength(BOT_RUNTIME_IMAGE_KEYS.length * 2);
-    expect(runner.calls.filter(({ args }) => args.includes('up'))).toHaveLength(2);
+    expect(runner.calls.filter(({ args }) => args.includes('up') && args.includes('--remove-orphans'))).toHaveLength(2);
     expect(stateStore.writes[0]).toMatchObject({
       current: { fingerprint: previous.fingerprint },
       staged: null,
@@ -1418,9 +1662,10 @@ describe('Electron-owned Docker Bot runtime manager', () => {
     const { manager } = createManager({ manifest, runner });
     const progress = [];
 
-    const first = manager.ensureReady({ onProgress: (event) => progress.push(event) });
-    while (pullCount === 0) await Promise.resolve();
-    const second = manager.ensureReady({ onProgress: (event) => progress.push(event) });
+    const first = manager.ensureReady({ allowInstall: true, onProgress: (event) => progress.push(event) });
+    for (let turn = 0; pullCount === 0 && turn < 10_000; turn += 1) await Promise.resolve();
+    expect(pullCount).toBe(1);
+    const second = manager.ensureReady({ allowInstall: true, onProgress: (event) => progress.push(event) });
     expect(second).toBe(first);
     releaseFirstPull();
 
@@ -1451,11 +1696,12 @@ describe('Electron-owned Docker Bot runtime manager', () => {
   test('persists installation state atomically with private permissions', async () => {
     const dataDirectory = await createTemporaryDirectory();
     const manifest = releaseManifest();
-    const runner = createFakeRunner();
+    const runner = createFakeRunner({ database: createFakeDatabase() });
     const manager = createBotRuntimeManager({
       composePath: COMPOSE,
       dataDirectory,
       loadManifest: async () => manifest,
+      loadDatabaseSql,
       resolveDocker: async () => DOCKER,
       runProcess: runner.runProcess,
       baseEnvironment: { PATH: '/opt/homebrew/bin:/usr/bin' },
@@ -1464,8 +1710,10 @@ describe('Electron-owned Docker Bot runtime manager', () => {
 
     await manager.setup();
 
+    const runtimeDirectory = path.dirname(manager.paths.statePath);
     expect((await fs.stat(manager.paths.statePath)).mode & 0o777).toBe(0o600);
-    expect(await fs.readdir(path.dirname(manager.paths.statePath))).toEqual(['installation.v1.json']);
+    expect((await fs.stat(path.join(runtimeDirectory, 'database.v1.json'))).mode & 0o777).toBe(0o600);
+    expect((await fs.readdir(runtimeDirectory)).sort()).toEqual(['database.v1.json', 'installation.v1.json']);
   });
 
   test('distinguishes unreadable, invalid, and missing installation state files', async () => {
@@ -2119,8 +2367,265 @@ describe('Electron-owned Docker Bot runtime manager', () => {
       new URL('../../../docker/bots/compose.yml', import.meta.url),
       'utf8',
     );
-    expect(compose).toContain('name: devryan-bot-runtime-state');
-    expect(compose).toContain('name: devryan-bot-index');
+    // Production resolves the namespace to `devryan`; every named resource is
+    // overridable so isolated runtimes never touch production names.
+    expect(compose).toContain('name: ${DEVRYAN_BOT_RESOURCE_NAMESPACE:-devryan}-bot-runtime-state');
+    expect(compose).toContain('name: ${DEVRYAN_BOT_RESOURCE_NAMESPACE:-devryan}-bot-index');
+    expect(compose).toContain('name: ${DEVRYAN_BOT_RESOURCE_NAMESPACE:-devryan}-bot-database-data');
+    expect(compose.match(/^\s+name: (?!\$\{DEVRYAN_BOT_RESOURCE_NAMESPACE:-devryan\}-)/gm)).toBeNull();
+    // The database volume is created and ownership-checked by the host only.
+    expect(compose).toMatch(/bot-database-data:\n\s+name: [^\n]+\n\s+external: true/);
     expect(compose).not.toMatch(/\bdown\b|--volumes|-v\b/);
+    // Packaged apps ship the reviewed SQL beside the compose file.
+    expect(packageJson.dependencies['@openchamber/bot-db']).toBe('workspace:*');
+    expect(packageJson.build.extraResources).toEqual(expect.arrayContaining([
+      expect.objectContaining({ from: '../../supabase/migrations', to: 'bot-db/supabase-migrations' }),
+      expect.objectContaining({ from: '../bot-db/sql', to: 'bot-db/sql' }),
+    ]));
+  });
+});
+
+describe('local Bot catalog lifecycle', () => {
+  const legacySixImage = (manifest) => {
+    const legacy = structuredClone(manifest);
+    delete legacy.images.database;
+    delete legacy.images.rest;
+    const normalized = {
+      version: legacy.version,
+      channel: legacy.channel,
+      releaseId: legacy.releaseId,
+      architecture: legacy.architecture,
+      images: legacy.images,
+    };
+    const canonical = (value) => (Array.isArray(value)
+      ? value.map(canonical)
+      : value && typeof value === 'object'
+        ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]))
+        : value);
+    legacy.fingerprint = `sha256:${crypto.createHash('sha256').update(JSON.stringify(canonical(normalized))).digest('hex')}`;
+    return legacy;
+  };
+
+  test('recognizes the six-image cloud-catalog installation and upgrades it automatically', async () => {
+    const desired = releaseManifest({ releaseId: '1.3.0', digestCharacter: 'c' });
+    const legacy = legacySixImage(releaseManifest({ releaseId: '1.2.16', digestCharacter: 'b' }));
+    const stateStore = createMemoryStateStore({ version: 1, current: legacy, previous: null, staged: null });
+    const runner = createFakeRunner({ database: createFakeDatabase() });
+    const databaseStateStore = createMemoryStateStore();
+    const { manager } = createManager({ manifest: desired, stateStore, runner, databaseStateStore });
+
+    await expect(manager.status()).resolves.toMatchObject({
+      state: 'runtime_update_required',
+      issues: [{ code: 'legacy_cloud_catalog' }],
+      canRollback: false,
+    });
+    // A recognized installation takes the documented upgrade path at startup.
+    await expect(manager.ensureReady()).resolves.toMatchObject({ state: 'healthy', changed: true });
+    expect(runner.calls.some(({ args }) => args.includes('--initialize-only'))).toBe(true);
+    expect(stateStore.reads()).toMatchObject({
+      current: { fingerprint: desired.fingerprint },
+      // The six-image record is preserved as history.
+      previous: { fingerprint: legacy.fingerprint },
+      staged: null,
+    });
+    expect(Object.keys(stateStore.reads().previous.images).sort()).toEqual(
+      ['computer', 'egress', 'engine-proxy', 'indexer', 'opencode', 'supervisor'],
+    );
+    await expect(manager.status()).resolves.toMatchObject({ state: 'healthy', canRollback: false });
+    await expect(manager.rollback()).rejects.toMatchObject({ code: 'bot_runtime_rollback_cloud_backed' });
+  });
+
+  test('never initializes a catalog for an installation that already had one', async () => {
+    const manifest = releaseManifest();
+    const runner = createFakeRunner({ database: createFakeDatabase() });
+    const stateStore = createMemoryStateStore({ version: 1, current: manifest, previous: null, staged: null });
+    const { manager } = createManager({ manifest, stateStore, runner });
+
+    await expect(manager.status()).resolves.toMatchObject({
+      state: 'database_recovery_required',
+      code: 'bot_database_volume_missing',
+      canRepair: false,
+      canRollback: false,
+    });
+    await expect(manager.ensureReady()).rejects.toMatchObject({ code: 'bot_database_volume_missing' });
+    await expect(manager.repair()).rejects.toMatchObject({ code: 'bot_database_volume_missing' });
+    expect(runner.calls.some(({ args }) => args[0] === 'volume' && args[1] === 'create')).toBe(false);
+    expect(runner.calls.some(({ args }) => args.includes('--initialize-only'))).toBe(false);
+  });
+
+  test.each([
+    ['a volume labelled for another deployment', () => {
+      const fake = currentDatabase();
+      fake.model.volume.Labels['devryan.deployment'] = 'deployment-ffffffffffffffffffffffff';
+      return { fake, code: 'bot_database_volume_foreign' };
+    }],
+    ['a replaced volume', () => ({ fake: currentDatabase({ nonce: '33333333-3333-4333-8333-333333333333' }), code: 'bot_database_identity_changed' })],
+    ['a changed cluster', () => {
+      const fake = currentDatabase();
+      fake.model.cluster.systemIdentifier = '42';
+      return { fake, code: 'bot_database_identity_changed' };
+    }],
+    ['history from a newer release', () => {
+      const fake = currentDatabase();
+      fake.model.database.history.push({ ordinal: BOT_DB_MIGRATIONS.length, name: 'local:9999_future', sha256: 'f'.repeat(64) });
+      return { fake, code: 'bot_database_schema_newer' };
+    }],
+    ['unrecognized history', () => {
+      const fake = currentDatabase();
+      fake.model.database.history[3] = { ...fake.model.database.history[3], sha256: '0'.repeat(64) };
+      return { fake, code: 'bot_database_schema_unknown' };
+    }],
+  ])('requires recovery for %s instead of repairing it', async (_label, setup) => {
+    const { fake, code } = setup();
+    const manifest = releaseManifest();
+    const runner = createFakeRunner({ database: fake });
+    const stateStore = createMemoryStateStore({ version: 1, current: manifest, previous: null, staged: null });
+    const { manager } = createManager({ manifest, stateStore, runner });
+
+    await expect(manager.status()).resolves.toMatchObject({ state: 'database_recovery_required', code });
+    await expect(manager.ensureReady()).rejects.toMatchObject({ code });
+    expect(runner.calls.some(({ input }) => typeof input === 'string' && input.includes('insert into devryan_local.schema_migrations')))
+      .toBe(false);
+    expect(runner.calls.some(({ args }) => args.includes('--remove-orphans'))).toBe(false);
+  });
+
+  test('adopts an owned catalog without a host record only on explicit repair', async () => {
+    const manifest = releaseManifest();
+    const runner = createFakeRunner({ database: currentDatabase() });
+    const stateStore = createMemoryStateStore({ version: 1, current: manifest, previous: null, staged: null });
+    const databaseStateStore = createMemoryStateStore();
+    const { manager } = createManager({ manifest, stateStore, runner, databaseStateStore });
+
+    await expect(manager.status()).resolves.toMatchObject({
+      state: 'database_recovery_required',
+      code: 'bot_database_state_ambiguous',
+      canRepair: true,
+    });
+    await expect(manager.ensureReady()).rejects.toMatchObject({ code: 'bot_database_state_ambiguous' });
+    await expect(manager.setup()).rejects.toMatchObject({ code: 'bot_database_state_ambiguous' });
+    expect(databaseStateStore.writes).toEqual([]);
+
+    await expect(manager.repair()).resolves.toMatchObject({ state: 'healthy', changed: true });
+    expect(databaseStateStore.reads()).toMatchObject({
+      volume: { nonce: '11111111-1111-4111-8111-111111111111' },
+      cluster: { databaseId: '22222222-2222-4222-8222-222222222222' },
+    });
+  });
+
+  test('backs up and verifies an existing catalog before migrating it', async () => {
+    const manifest = releaseManifest();
+    const fake = currentDatabase();
+    fake.model.database.history = fake.model.database.history.slice(0, BOT_DB_MIGRATIONS.length - 1);
+    const stateStore = createMemoryStateStore({ version: 1, current: manifest, previous: null, staged: null });
+    const order = [];
+    const runner = createFakeRunner({ database: fake });
+    const original = runner.runProcess;
+    runner.runProcess = async (file, args, options) => {
+      if (typeof options?.input === 'string' && options.input.includes('insert into devryan_local.schema_migrations')) {
+        order.push('migrate');
+      }
+      return original(file, args, options);
+    };
+    const backupBeforeMigrate = mock(async ({ from, pending }) => {
+      order.push(`backup:${from}:${pending}`);
+    });
+    const { manager } = createManager({ manifest, stateStore, runner, backupBeforeMigrate });
+
+    await expect(manager.repair()).resolves.toMatchObject({ state: 'healthy' });
+    expect(order).toEqual([
+      `backup:${BOT_DB_MIGRATIONS.at(-2).name}:1`,
+      'migrate',
+    ]);
+
+    const unprotected = currentDatabase();
+    unprotected.model.database.history = unprotected.model.database.history.slice(0, 5);
+    const withoutBackup = createManager({
+      manifest,
+      stateStore: createMemoryStateStore({ version: 1, current: manifest, previous: null, staged: null }),
+      runner: createFakeRunner({ database: unprotected }),
+    });
+    await expect(withoutBackup.manager.repair()).rejects.toMatchObject({ code: 'bot_database_backup_unavailable' });
+    expect(withoutBackup.runner.calls.some(({ input }) => typeof input === 'string'
+      && input.includes('insert into devryan_local.schema_migrations'))).toBe(false);
+  });
+
+  test('starts only the catalog for an existing installation and never installs images', async () => {
+    const manifest = releaseManifest();
+    const stateStore = createMemoryStateStore({ version: 1, current: manifest, previous: null, staged: null });
+    const { manager, runner } = createManager({ manifest, stateStore });
+
+    await expect(manager.databaseContext()).rejects.toMatchObject({ code: 'bot_database_unavailable' });
+    await expect(manager.ensureCatalog()).resolves.toMatchObject({ state: 'healthy' });
+    const argv = runner.calls.map(({ args }) => args);
+    expect(argv.some((args) => args[0] === 'pull')).toBe(false);
+    expect(argv).toContainEqual([...composePrefix, 'up', '--detach', '--no-deps', 'database-rest']);
+    expect(argv.some((args) => args.includes('--remove-orphans'))).toBe(false);
+    await expect(manager.databaseContext()).resolves.toMatchObject({ url: 'http://127.0.0.1:55130' });
+
+    const missing = createManager({ manifest, stateStore: createMemoryStateStore() });
+    await expect(missing.manager.ensureCatalog()).rejects.toMatchObject({ code: 'bot_runtime_setup_required' });
+    expect(missing.runner.calls.some(({ args }) => args[0] === 'pull' || args[0] === 'compose')).toBe(false);
+  });
+
+  test('isolated runtimes never resolve to production resource names', async () => {
+    expect(() => assertIsolatedBotResourceNames({ projectName: 'devryan-bots', resourceNamespace: 'devryan-test-1' }))
+      .toThrow(expect.objectContaining({ code: 'bot_runtime_isolation_invalid' }));
+    expect(() => assertIsolatedBotResourceNames({ projectName: 'devryan-test-1', resourceNamespace: 'devryan' }))
+      .toThrow(expect.objectContaining({ code: 'bot_runtime_isolation_invalid' }));
+    expect(() => assertIsolatedBotResourceNames({ projectName: 'devryan-bots-smoke', resourceNamespace: 'devryan-test-1' }))
+      .toThrow(expect.objectContaining({ code: 'bot_runtime_isolation_invalid' }));
+    expect(() => assertIsolatedBotResourceNames({ projectName: 'devryan-test-1', resourceNamespace: 'devryan-bots-x' }))
+      .toThrow(expect.objectContaining({ code: 'bot_runtime_isolation_invalid' }));
+    expect(assertIsolatedBotResourceNames({ projectName: 'devryan-test-1', resourceNamespace: 'devryan-test-1' }))
+      .toEqual({ projectName: 'devryan-test-1', resourceNamespace: 'devryan-test-1' });
+    expect(() => createBotRuntimeManager({
+      composePath: COMPOSE,
+      loadManifest: async () => releaseManifest(),
+      loadDatabaseSql,
+      runProcess: createFakeRunner().runProcess,
+      stateStore: createMemoryStateStore().store,
+      loadRuntimeEnvironment: async () => deriveBotRuntimeServiceEnvironment(Buffer.alloc(32, 7)),
+      resourceNamespace: 'devryan-test-1',
+    })).toThrow(expect.objectContaining({ code: 'bot_runtime_isolation_invalid' }));
+
+    const runner = createFakeRunner({ database: createFakeDatabase() });
+    const manager = createBotRuntimeManager({
+      composePath: COMPOSE,
+      loadManifest: async () => releaseManifest(),
+      loadDatabaseSql,
+      resolveDocker: async () => DOCKER,
+      runProcess: runner.runProcess,
+      stateStore: createMemoryStateStore().store,
+      databaseStateStore: createMemoryStateStore().store,
+      baseEnvironment: { PATH: '/usr/bin' },
+      loadRuntimeEnvironment: async () => deriveBotRuntimeServiceEnvironment(Buffer.alloc(32, 7)),
+      resourceNamespace: 'devryan-test-1',
+      projectName: 'devryan-test-1',
+    });
+    expect(manager.resources).toEqual({
+      projectName: 'devryan-test-1',
+      resourceNamespace: 'devryan-test-1',
+      hostControlNetwork: 'devryan-test-1-bots-host-control',
+      databaseVolume: 'devryan-test-1-bot-database-data',
+    });
+    await manager.setup();
+    const argv = runner.calls.map(({ args }) => args);
+    expect(argv.every((args) => !args.some((value) => /^devryan-bots?(-|$)/.test(value)))).toBe(true);
+    expect(argv).toContainEqual(expect.arrayContaining(['--filter', 'label=com.docker.compose.project=devryan-test-1']));
+    expect(runner.calls.filter(({ args }) => args[0] === 'compose')
+      .every(({ env }) => env.DEVRYAN_BOT_RESOURCE_NAMESPACE === 'devryan-test-1')).toBe(true);
+  });
+
+  test('mints short-lived audience-bound service tokens only for a ready catalog', () => {
+    const secret = deriveBotRuntimeServiceEnvironment(Buffer.alloc(32, 7)).DEVRYAN_BOT_DATABASE_JWT_SECRET;
+    const minted = mintBotDatabaseToken(secret, { now: () => Date.parse('2026-09-26T00:00:00Z') });
+    const [header, payload, signature] = minted.token.split('.');
+    expect(JSON.parse(Buffer.from(header, 'base64url').toString())).toEqual({ alg: 'HS256', typ: 'JWT' });
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString());
+    expect(claims).toMatchObject({ role: 'service_role', aud: 'devryan-bots-local' });
+    expect(claims.exp - claims.iat).toBe(300);
+    expect(signature).toBe(crypto.createHmac('sha256', secret).update(`${header}.${payload}`).digest('base64url'));
+    expect(minted.expiresAt).toBe('2026-09-26T00:05:00.000Z');
+    expect(() => mintBotDatabaseToken('short')).toThrow(expect.objectContaining({ code: 'bot_database_token_invalid' }));
   });
 });

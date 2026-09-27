@@ -4,8 +4,8 @@ export const ROLE_NAMES = Object.freeze(['admin', 'senior_developer', 'developer
 
 export const SETTINGS_PERMISSION_SLUGS = Object.freeze([
   'appearance', 'notifications', 'shortcuts', 'voice', 'about',
-  'chat', 'sessions', 'bots', 'agents', 'skills.installed', 'skills.catalog', 'plugins', 'magic-prompts',
-  'providers', 'usage', 'mcp', 'remote-instances', 'tunnel',
+  'chat', 'sessions', 'bots', 'agents', 'magic-prompts',
+  'plugins', 'skills.installed', 'skills.catalog', 'mcp', 'providers', 'usage', 'remote-instances', 'tunnel',
   'users', 'bug-reports', 'git', 'projects', 'commands',
 ]);
 

@@ -12,6 +12,17 @@ export const SESSION_MODEL_TEXT_TIMEOUT_MS = 60_000;
 export const SESSION_MODEL_TEXT_RECOVERY_TIMEOUT_MS = 2_500;
 export const SESSION_MODEL_TEXT_SESSION_TITLE = 'DevRyan text generation (internal)';
 
+// OpenCode hides a tool only when the last rule matching its permission is a
+// blanket `*` deny. This trailing deny's pattern matches no real tool input,
+// so tools stay advertised to the model while every call still resolves to the
+// preceding deny-all rule (and a call matching the sentinel is denied as well).
+export const SESSION_MODEL_TEXT_ADVERTISE_ONLY_PATTERN = '__devryan_helper_advertise_only__';
+const DENY_ALL_RULE = { permission: '*', pattern: '*', action: 'deny' };
+const ADVERTISE_ONLY_RULE = { permission: '*', pattern: SESSION_MODEL_TEXT_ADVERTISE_ONLY_PATTERN, action: 'deny' };
+// Zen's free tier rejects requests it does not recognize as OpenCode agent
+// traffic (for example, requests without OpenCode's tool definitions).
+const FREE_TIER_REJECTED_PATTERN = /free tier can only be used/i;
+
 const trimString = (value) => (typeof value === 'string' ? value.trim() : '');
 
 // Unlike the title helper this keeps line breaks: the callers expect markdown.
@@ -66,6 +77,7 @@ export async function generateTextWithSessionModel({
   signal,
   recoverOnError = true,
   denyTools = false,
+  advertiseDeniedTools = false,
   sessionTitle = SESSION_MODEL_TEXT_SESSION_TITLE,
   now = () => Date.now(),
   logger = console,
@@ -121,7 +133,10 @@ export async function generateTextWithSessionModel({
       createResponse = await fetchImpl(createUrl, {
         method: 'POST',
         headers: headers(),
-        body: JSON.stringify({ title: sessionTitle, ...(denyTools ? { permission: [{ permission: '*', pattern: '*', action: 'deny' }] } : {}) }),
+        body: JSON.stringify({
+          title: sessionTitle,
+          ...(denyTools ? { permission: advertiseDeniedTools ? [DENY_ALL_RULE, ADVERTISE_ONLY_RULE] : [DENY_ALL_RULE] } : {}),
+        }),
         signal: requestSignal(),
       });
     } catch (error) {
@@ -198,7 +213,9 @@ export async function generateTextWithSessionModel({
         if (providerError) {
           const status = providerError?.data?.statusCode;
           lastStatus = Number.isFinite(status) ? status : undefined;
-          lastReason = providerError.name === 'ProviderModelNotFoundError' ? 'model_unavailable' : reasonForStatus(lastStatus);
+          lastReason = providerError.name === 'ProviderModelNotFoundError' ? 'model_unavailable'
+            : FREE_TIER_REJECTED_PATTERN.test(String(providerError?.data?.message ?? '')) ? 'free_tier_rejected'
+              : reasonForStatus(lastStatus);
           break;
         }
         const replyText = extractAssistantText(message);

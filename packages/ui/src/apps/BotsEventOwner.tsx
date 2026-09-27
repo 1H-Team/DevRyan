@@ -38,6 +38,7 @@ import {
   releaseBotEventConnection,
   type BotEventSource,
 } from './botEventConnection';
+import { botCapabilityCanStream, botCapabilityIsTransient } from './botCapabilityStream';
 import { createBotCatalogConnection } from './botCatalogConnection';
 
 const BOT_EVENT_KINDS = Object.freeze([
@@ -594,21 +595,9 @@ const resetStores = (principalId: string | null): void => {
   useBotLiveMessageStore.getState().reset();
 };
 
-const controlPlaneCanStream = (state: string): boolean => ![
-  'supabase_unavailable',
-  'supabase_disconnected',
-  'supabase_not_configured',
-  'migration_required',
-].includes(state);
-
 // Supabase deliberately off (or not configured) is not an outage: stop polling
 // and recheck when the window regains focus.
 const finalCapabilityErrorCode = (code: string | null): boolean => code === 'supabase_disconnected';
-
-const transientControlPlaneState = (state: string): boolean => [
-  'supabase_unavailable',
-  'migration_required',
-].includes(state);
 
 export const BotsEventOwner: React.FC = () => {
   const principal = useAuthPrincipal();
@@ -645,13 +634,13 @@ export const BotsEventOwner: React.FC = () => {
     const controller = createBotCapabilityConnectionController({
       loadCapabilities: () => useBotsStore.getState().loadCapabilities(),
       getCapabilitiesErrorCode: () => useBotsStore.getState().capabilitiesErrorCode,
-      canStream: controlPlaneCanStream,
-      isTransient: transientControlPlaneState,
+      canStream: botCapabilityCanStream,
+      isTransient: botCapabilityIsTransient,
       isFinalErrorCode: finalCapabilityErrorCode,
       setConnectionState: (state, errorCode) => {
         if (!disposed) useBotOperationsStore.getState().setConnectionState(state, errorCode);
       },
-      createConnection: (initialRecoveryErrorCode) => createBotEventConnectionController({
+      createConnection: ({ initialRecoveryErrorCode, resumed, onConnected, onConnectionLost }) => createBotEventConnectionController({
         eventKinds: BOT_EVENT_KINDS,
         createSource: () => new EventSource(
           `/api/bots/events?snapshot=${BOT_SNAPSHOT_FORMAT}`,
@@ -662,6 +651,9 @@ export const BotsEventOwner: React.FC = () => {
           if (!disposed) useBotOperationsStore.getState().setConnectionState(state, errorCode);
         },
         initialRecoveryErrorCode,
+        resumed,
+        onConnected,
+        onConnectionLost,
         onReconnectedSnapshot: () => {
           const channelStore = useBotChannelStore.getState();
           channelStore.invalidateInactiveChannels();
@@ -695,9 +687,11 @@ export const BotsEventOwner: React.FC = () => {
     installBotEventConnection(connection);
     catalogConnection.retry();
     controller.start();
-    // A final capability state (Supabase off) is rechecked on focus only.
+    // Final capability states (Supabase off, recovery, setup) are rechecked
+    // on focus only; a pending retry or live stream is left alone.
     const recheckFinalState = () => {
       if (finalCapabilityErrorCode(useBotsStore.getState().capabilitiesErrorCode)) controller.retry();
+      else controller.recheck();
     };
     window.addEventListener('focus', recheckFinalState);
     return () => {

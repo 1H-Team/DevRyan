@@ -690,12 +690,48 @@ describe('Production Bots capabilities and routes', () => {
 
   it('distinguishes every setup and runtime state needed by the UI', async () => {
     const encryption = { getKey: () => Buffer.alloc(32) };
+    // Bots never depend on Supabase: a host without the local catalog is not a
+    // Bot host at all, and catalog availability is independent of execution.
     await expect(resolveBotCapabilities({ hasSupabase: false, botHost: host('healthy'), encryption }))
-      .resolves.toMatchObject({ state: 'supabase_unavailable', available: false });
-    for (const supabaseMode of ['disconnected', 'not_configured']) {
-      await expect(resolveBotCapabilities({ hasSupabase: false, supabaseMode, botHost: host('healthy'), encryption }))
-        .resolves.toMatchObject({ state: `supabase_${supabaseMode}`, code: 'bots_require_supabase', available: false });
-    }
+      .resolves.toMatchObject({
+        state: 'unsupported_host', code: 'bots_host_unsupported', available: false, catalogAvailable: false,
+      });
+    await expect(resolveBotCapabilities({
+      hasSupabase: true,
+      catalog: { state: 'recovery_required', code: 'bot_database_volume_missing' },
+      botHost: host('healthy'),
+      encryption,
+    })).resolves.toMatchObject({
+      state: 'database_recovery_required',
+      code: 'bot_database_volume_missing',
+      available: false,
+      catalogAvailable: false,
+      database: { state: 'recovery_required', code: 'bot_database_volume_missing' },
+    });
+    await expect(resolveBotCapabilities({
+      hasSupabase: true,
+      catalog: { state: 'unavailable', code: 'bot_database_unavailable' },
+      botHost: host('healthy'),
+      encryption,
+    })).resolves.toMatchObject({
+      state: 'catalog_unavailable', code: 'bot_database_unavailable', available: false, catalogAvailable: false,
+    });
+    await expect(resolveBotCapabilities({
+      hasSupabase: true,
+      catalog: { state: 'ready', code: null },
+      maintenance: { kind: 'backup' },
+      botHost: host('healthy'),
+      encryption,
+    })).resolves.toMatchObject({
+      state: 'bots_maintenance', available: false, database: { state: 'maintenance', code: 'bots_maintenance_backup' },
+    });
+    // A ready catalog stays usable while execution is down.
+    await expect(resolveBotCapabilities({
+      hasSupabase: true,
+      catalog: { state: 'ready', code: null },
+      botHost: host('docker_unavailable'),
+      encryption,
+    })).resolves.toMatchObject({ state: 'docker_stopped', available: false, catalogAvailable: true });
     await expect(resolveBotCapabilities({
       hasSupabase: true,
       botHost: host('healthy'),
@@ -766,6 +802,7 @@ describe('Production Bots capabilities and routes', () => {
       });
       expect(result.state).toBe(expectedState);
       expect(result.available).toBe(expectedState === 'healthy');
+      expect(result.catalogAvailable).toBe(true);
     }
   });
 

@@ -15,9 +15,11 @@ import {
 } from '@/lib/botsApi';
 import { takeBotPrewarmLease } from '@/lib/botPrewarmLease';
 import { getAuthPrincipal } from '@/lib/authSession';
+import { botViewerId } from '@/lib/botViewer';
 import { createBotDraftStore, type BotComposerDraft, type BotDraftStore } from '@/stores/useBotDraftStore';
 export type { BotComposerDraft } from '@/stores/useBotDraftStore';
 import { useBotOperationsStore } from '@/stores/useBotOperationsStore';
+import { useBotsStore } from '@/stores/useBotsStore';
 
 type ChannelsSnapshot = Pick<BotSnapshot, 'channels' | 'channelPreviews'>;
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
@@ -187,6 +189,7 @@ export const createBotChannelStore = ({
   uuid = defaultUuid,
   now = () => new Date(),
   getPrincipalId = () => getAuthPrincipal().id,
+  getViewerId = (botId: string) => botViewerId(useBotsStore.getState().botsById[botId], getPrincipalId()),
   draftStore = createBotDraftStore(),
   delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
   maxCachedChannels = 20,
@@ -209,6 +212,8 @@ export const createBotChannelStore = ({
   uuid?: () => string;
   now?: () => Date;
   getPrincipalId?: () => string;
+  /** The identity the viewer acts as for one Bot (see botViewerId). */
+  getViewerId?: (botId: string) => string | null;
   onRunAccepted?: (run: BotSendMessageResponse['run']) => void;
 } = {}): BotChannelStore => Object.assign(create<BotChannelState>((set, get) => {
   let principalGeneration = 0;
@@ -454,7 +459,7 @@ export const createBotChannelStore = ({
       id: messageId,
       channelId,
       runId: null,
-      actorUserId: getPrincipalId(),
+      actorUserId: getViewerId(channel.botId) ?? getPrincipalId(),
       role: 'user',
       assistantPhase: null,
       sequence: optimisticSequence,
@@ -987,7 +992,7 @@ export const createBotChannelStore = ({
     },
 
     ensureOwnerChannel(botId) {
-      const principalId = getPrincipalId();
+      const principalId = getViewerId(botId);
       const existing = Object.values(get().channelsById).find((channel) => (
         channel.botId === botId
         && channel.ownerUserId === principalId
@@ -1122,10 +1127,11 @@ export const botChannelSelectors = Object.freeze({
   pendingMessageId: (channelId: string) => (state: BotChannelState) => (
     state.pendingMessageIdByChannelId[channelId]
   ),
-  ownerChannelId: (botId: string, principalId: string | null) => (state: BotChannelState) => (
+  // `viewerId` is the identity the viewer acts as for this Bot (botViewerId).
+  ownerChannelId: (botId: string, viewerId: string | null) => (state: BotChannelState) => (
     Object.values(state.channelsById).find((channel) => (
       channel.botId === botId
-      && channel.ownerUserId === principalId
+      && channel.ownerUserId === viewerId
       && channel.lifecycle === 'active'
     ))?.id ?? null
   ),

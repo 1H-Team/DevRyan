@@ -27,11 +27,18 @@ original location. No database schema or cloud records are removed.
 The first local administrator change enrolls an encrypted local-owner identity
 and an HttpOnly, SameSite=Strict cookie. A loopback socket alone never grants
 access. The local boundary also checks Host, Origin and forwarding headers.
-External access is closed while disconnected except for the authenticated Bot-only
-tunnel boundary and public static/liveness responses. Tunnel grants never admit
-host WebSockets or native capabilities. Ordinary local chats, projects, files and diagnostics remain
-available. Bots, Telegram, managed-user scheduled execution, shared-user access
-and cloud audit delivery are unavailable. Existing actor-audit records remain in
+External access is closed while disconnected except for authenticated tunnel grants
+and public static/liveness responses. Managed Remote supports private owner links
+with Supabase Off or unconfigured: create the link from the authenticated local app,
+then redeem it once within 15 minutes for a seven-day session. These owner sessions
+can access ordinary chats, projects, files, Git, terminal and preview streams.
+Bot grants remain Bot-only; native capabilities, Supabase/tunnel controls and passkey
+enrollment remain local. Ordinary local chats, projects, files and diagnostics remain
+available, and so do the workstation owner's Bots: they live in the local Bot
+catalog and the owner's Bot session does not depend on Supabase (see
+[Local Bot catalog](BOTS_RUNTIME.md#local-bot-catalog)). Shared users' Bot
+access, their autonomous Bot work, managed-user scheduled execution and cloud
+audit delivery are unavailable. Existing actor-audit records remain in
 the durable outbox; disconnected diagnostics do not enter that outbox.
 
 The switch persists the requested mode immediately. New work admission closes only
@@ -57,11 +64,10 @@ status 1 once idle. Do not set that flag for an unsupervised process. Restart th
 process manually after its listed blockers clear.
 
 An explicit reconnect probes the saved owner's active administrator role before
-opening access and reports the Bot schema separately (`botsSchema`): a lagging or
-missing Bot migration leaves Bots showing **migration required** without keeping
-auth, orchestration policy or error logs offline. With Supabase deliberately off or
-not configured, Bots report `supabase_disconnected`/`supabase_not_configured` and the
-UI stops polling until the window regains focus. The new process repeats that check
+opening access and reports the hosted Bot schema separately (`botsSchema`). It
+matters only for shared-user authorization and a hosted-catalog import; the
+local Bot catalog is migrated by Electron and reports its own state through
+`GET /api/bots/capabilities` (`catalogAvailable`, `database`). The new process repeats that check
 before initializing workers. Failure preserves the selected preference and leaves remote access
 closed: a failed Off-to-On attempt stays Off, while a failed On startup retains
 managed-account authentication. Explicitly changing that policy requires the idle

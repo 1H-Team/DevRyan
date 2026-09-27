@@ -10,6 +10,7 @@ import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useI18n } from '@/lib/i18n';
 import { SidebarFilesTree } from './SidebarFilesTree';
 import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
+import { botViewerId } from '@/lib/botViewer';
 import { botChannelSelectors, useBotChannelStore } from '@/stores/useBotChannelStore';
 import { useBotsStore } from '@/stores/useBotsStore';
 import { useMainSidebarAudienceStore } from '@/stores/useMainSidebarAudienceStore';
@@ -54,9 +55,12 @@ export const RightSidebarTabs: React.FC = () => {
   const requestedBotMode = useMainSidebarAudienceStore((state) => state.audience === 'bots');
   const botMode = canUseBots && requestedBotMode;
   const selectedBotId = useBotsStore((state) => state.selectedBotId);
-  const botPrincipalId = useBotsStore((state) => state.principalId);
+  const botViewer = useBotsStore((state) => botViewerId(
+    selectedBotId ? state.botsById[selectedBotId] : null,
+    state.principalId,
+  ));
   const botChannelId = useBotChannelStore(
-    botChannelSelectors.ownerChannelId(selectedBotId ?? '', botPrincipalId),
+    botChannelSelectors.ownerChannelId(selectedBotId ?? '', botViewer),
   );
 
   useRightSidebarGitSync(directory, isRightSidebarOpen && canUseGit && !botMode);

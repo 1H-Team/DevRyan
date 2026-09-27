@@ -18,13 +18,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { RiAddLine, RiDeleteBinLine, RiFileCopyLine, RiMore2Line, RiEditLine, RiBookOpenLine, RiEyeOffLine, RiSearchLine, RiCloseLine } from '@remixicon/react';
+import { RiDeleteBinLine, RiFileCopyLine, RiMore2Line, RiEditLine, RiBookOpenLine, RiEyeOffLine, RiSearchLine, RiCloseLine } from '@remixicon/react';
 import { getSkillIdentity, useSkillsStore, type DiscoveredSkill } from '@/stores/useSkillsStore';
 import { useSkillsCatalogStore } from '@/stores/useSkillsCatalogStore';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
-import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
-import { SkillFolderGroup, SkillLocationGroup } from './SkillTreeGroup';
+import { SettingsEmptyState } from '@/components/sections/shared/SettingsEmptyState';
+import { SettingsSidebarHeader } from '@/components/sections/shared/SettingsSidebarHeader';
+import { SettingsSidebarLayout } from '@/components/sections/shared/SettingsSidebarLayout';
+import { SidebarGroup } from '@/components/sections/shared/SidebarGroup';
+import { SkillFolderGroup } from './SkillTreeGroup';
 import { useI18n } from '@/lib/i18n';
 import { useUIStore } from '@/stores/useUIStore';
 import { locationValueFrom, type SkillLocationValue } from './skillLocations';
@@ -85,8 +88,6 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
   })));
 
   // Skills are loaded by the Settings shell when this page is active.
-
-  const bgClass = 'bg-background';
 
   const handleCreateNew = () => {
     // Generate unique name
@@ -279,86 +280,80 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
   );
 
   return (
-    <div className={cn('flex h-full flex-col', bgClass)}>
-      <div className="border-b px-3 pt-4 pb-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-base font-semibold text-foreground truncate">{t('settings.skills.sidebar.title')}</h2>
-          <div className="flex items-center gap-1">
-            {canReadCatalog ? <Button
-              type="button"
-              variant="outline"
-              size="xs"
-              className="h-7 gap-1.5 !font-normal normal-case"
-              onClick={() => {
-                setSettingsPage('skills.catalog');
-                onItemSelect?.();
-              }}
-            >
-              <RiBookOpenLine className="h-3.5 w-3.5" />
-              {t('settings.page.skillsCatalog.title')}
-            </Button> : null}
-            <Button size="sm"
-              variant="ghost"
-              className="h-7 w-7 px-0 -my-1 text-muted-foreground"
-              onClick={handleCreateNew}
-              disabled={!canEditSkills}
-            >
-              <RiAddLine className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </div>
-
-        {skills.length > 0 ? (
-          <div className="relative mt-3">
-            <RiSearchLine className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={t('settings.skills.sidebar.field.searchPlaceholder')}
-              className="h-7 pl-7 pr-7 [&::-webkit-search-cancel-button]:appearance-none"
-              onKeyDown={(e) => {
-                if (e.key === 'Escape' && searchQuery) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setSearchQuery('');
-                }
-              }}
-            />
-            {isSearching ? (
-              <button
+    <>
+      <SettingsSidebarLayout
+        variant="background"
+        header={(
+          <SettingsSidebarHeader
+            title={t('settings.skills.sidebar.title')}
+            titleActions={canReadCatalog ? (
+              <Button
                 type="button"
-                aria-label={t('settings.skills.sidebar.search.clearAria')}
-                onClick={() => setSearchQuery('')}
-                className="absolute right-1 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                variant="outline"
+                size="xs"
+                className="h-7 gap-1.5 !font-normal normal-case"
+                onClick={() => {
+                  setSettingsPage('skills.catalog');
+                  onItemSelect?.();
+                }}
               >
-                <RiCloseLine className="h-3.5 w-3.5" />
-              </button>
+                <RiBookOpenLine className="h-3.5 w-3.5" />
+                {t('settings.page.skillsCatalog.title')}
+              </Button>
             ) : null}
-          </div>
-        ) : null}
-
-        <span className="typography-meta text-muted-foreground mt-2 block">
-          {isSearching
-            ? t('settings.skills.sidebar.search.matchCount', { count: searchResults.length, total: skills.length })
-            : t('settings.skills.sidebar.total', { count: skills.length })}
-        </span>
-      </div>
-
-      <ScrollableOverlay outerClassName="flex-1 min-h-0" className="space-y-1 px-3 py-2 overflow-x-hidden">
+            countLabel={isSearching
+              ? t('settings.skills.sidebar.search.matchCount', { count: searchResults.length, total: skills.length })
+              : t('settings.skills.sidebar.total', { count: skills.length })}
+            onAdd={handleCreateNew}
+            addDisabled={!canEditSkills}
+            addButtonLabel={t('settings.skills.sidebar.actions.createSkillAria')}
+            addButtonTitle={t('settings.skills.sidebar.actions.createSkillAria')}
+          >
+            {skills.length > 0 ? (
+              <div className="relative">
+                <RiSearchLine className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={t('settings.skills.sidebar.field.searchPlaceholder')}
+                  className="h-7 pl-7 pr-7 [&::-webkit-search-cancel-button]:appearance-none"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape' && searchQuery) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setSearchQuery('');
+                    }
+                  }}
+                />
+                {isSearching ? (
+                  <button
+                    type="button"
+                    aria-label={t('settings.skills.sidebar.search.clearAria')}
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-1 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                  >
+                    <RiCloseLine className="h-3.5 w-3.5" />
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </SettingsSidebarHeader>
+        )}
+      >
         {skills.length === 0 ? (
-          <div className="py-12 px-4 text-center text-muted-foreground">
-            <RiBookOpenLine className="mx-auto mb-3 h-10 w-10 opacity-50" />
-            <p className="typography-ui-label font-medium">{t('settings.skills.sidebar.empty.title')}</p>
-            <p className="typography-meta mt-1 opacity-75">{t('settings.skills.sidebar.empty.description')}</p>
-          </div>
+          <SettingsEmptyState
+            icon={RiBookOpenLine}
+            title={t('settings.skills.sidebar.empty.title')}
+            description={t('settings.skills.sidebar.empty.description')}
+          />
         ) : isSearching ? (
           searchResults.length === 0 ? (
-            <div className="py-12 px-4 text-center text-muted-foreground">
-              <RiSearchLine className="mx-auto mb-3 h-8 w-8 opacity-40" />
-              <p className="typography-ui-label font-medium">{t('settings.skills.sidebar.search.empty.title')}</p>
-              <p className="typography-meta mt-1 opacity-75">{t('settings.skills.sidebar.search.empty.description')}</p>
-            </div>
+            <SettingsEmptyState
+              icon={RiSearchLine}
+              title={t('settings.skills.sidebar.search.empty.title')}
+              description={t('settings.skills.sidebar.search.empty.description')}
+            />
           ) : (
             <div className="space-y-0.5">
               {searchResults.map((skill) => renderSkillRow(skill, {
@@ -372,7 +367,7 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
         ) : (
           <>
             {groupedSkills.map(({ key: groupKey, label: groupLabel, directSkills, folderGroups, count }) => (
-              <SkillLocationGroup
+              <SidebarGroup
                 key={groupKey}
                 label={groupLabel}
                 count={count}
@@ -391,11 +386,11 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
                     {folderGroup.skills.map((skill) => renderSkillRow(skill, { nested: true }))}
                   </SkillFolderGroup>
                 ))}
-              </SkillLocationGroup>
+              </SidebarGroup>
             ))}
           </>
         )}
-      </ScrollableOverlay>
+      </SettingsSidebarLayout>
 
       <Dialog
         open={deleteDialogSkill !== null}
@@ -464,7 +459,7 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 };
 

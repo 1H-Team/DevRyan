@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 
 import request from '../../test-supertest.js';
+import { registerCommonRequestMiddleware } from '../opencode/core-routes.js';
 import { registerProcessesRoutes } from './routes.js';
 
 const createRuntime = () => ({
@@ -17,7 +18,7 @@ const createRuntime = () => ({
 
 const createApp = ({ principal, runtime = createRuntime() } = {}) => {
   const app = express();
-  app.use(express.json());
+  registerCommonRequestMiddleware(app, { express });
   app.use((req, _res, next) => {
     if (principal !== undefined) req.principal = principal;
     next();

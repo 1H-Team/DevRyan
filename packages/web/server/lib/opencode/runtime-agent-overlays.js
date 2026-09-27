@@ -668,10 +668,28 @@ const buildRuntimeConfigOverlay = (workingDirectory, options = {}) => {
   }, {});
 };
 
+// Slim's foreground fallback promotes the parent's task waiter through
+// POST /experimental/session/{id}/background and aborts the failed child
+// before re-prompting it. Neither call is covered by the managed adapter's
+// prompt gate, so managed runtimes disable the whole fallback manager here:
+// `enabled: false` makes its event handler a no-op whatever model chains exist.
+// The overlay is Slim's highest-precedence user config (OPENCODE_CONFIG_DIR),
+// so it is written even when the user has no Slim config of their own.
+const buildManagedSlimConfig = (userConfig) => {
+  const config = isPlainObject(userConfig) ? userConfig : {};
+  return {
+    ...config,
+    fallback: {
+      ...(isPlainObject(config.fallback) ? config.fallback : {}),
+      enabled: false,
+    },
+  };
+};
+
 const syncSlimConfigOverlay = async (targetConfigDirectory, workingDirectory, options = {}) => {
   const slim = resolveSlimConfig(workingDirectory, options);
   const staleTargets = SLIM_CONFIG_FILE_NAMES.map((fileName) => path.join(targetConfigDirectory, fileName));
-  if (!slim.pluginEnabled || !slim.userConfigPath) {
+  if (!slim.pluginEnabled) {
     let changed = false;
     for (const target of staleTargets) {
       changed = (await removeFileIfPresent(target)) || changed;
@@ -685,8 +703,11 @@ const syncSlimConfigOverlay = async (targetConfigDirectory, workingDirectory, op
     };
   }
 
-  const targetPath = path.join(targetConfigDirectory, path.basename(slim.userConfigPath));
-  const desiredContent = await fs.readFile(slim.userConfigPath, 'utf8');
+  const targetPath = path.join(
+    targetConfigDirectory,
+    slim.userConfigPath ? path.basename(slim.userConfigPath) : 'oh-my-opencode-slim.json',
+  );
+  const desiredContent = `${JSON.stringify(buildManagedSlimConfig(slim.userConfig), null, 2)}\n`;
   let currentContent = null;
   try {
     currentContent = await fs.readFile(targetPath, 'utf8');

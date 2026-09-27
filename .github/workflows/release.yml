@@ -55,6 +55,7 @@ jobs:
           const packageFiles = [
             'package.json',
             'packages/bot-computer/package.json',
+            'packages/bot-db/package.json',
             'packages/bot-engine-proxy/package.json',
             'packages/bot-egress/package.json',
             'packages/bot-indexer/package.json',
@@ -284,7 +285,7 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix:
-        image: [supervisor, engine-proxy, egress, indexer, opencode, computer]
+        image: [supervisor, engine-proxy, egress, indexer, opencode, computer, database, rest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

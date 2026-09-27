@@ -9,6 +9,13 @@ export type SettingsSectionTab = {
   label: string;
 };
 
+// Literal class names so Tailwind keeps each layout in the build.
+const TAB_LIST_LAYOUT_BY_COUNT: Record<number, string> = {
+  2: 'grid-cols-2 max-w-[420px]',
+  3: 'grid-cols-3 max-w-[504px]',
+};
+const TAB_LIST_LAYOUT_FALLBACK = 'grid-flow-col auto-cols-fr max-w-[640px]';
+
 interface SettingsSectionTabsProps {
   activeSlug: SettingsPageSlug;
   ariaLabel: string;
@@ -41,7 +48,10 @@ export const SettingsSectionTabs: React.FC<SettingsSectionTabsProps> = ({
       <div className="shrink-0 border-b border-border bg-background px-4 py-2.5">
         <Tabs.List
           aria-label={ariaLabel}
-          className="mx-auto grid w-full max-w-[420px] grid-cols-2 gap-0.5 rounded-[10px] bg-[color-mix(in_srgb,var(--foreground)_3%,transparent)] p-0.5"
+          className={cn(
+            'mx-auto grid w-full gap-0.5 rounded-[10px] bg-[color-mix(in_srgb,var(--foreground)_3%,transparent)] p-0.5',
+            TAB_LIST_LAYOUT_BY_COUNT[tabs.length] ?? TAB_LIST_LAYOUT_FALLBACK,
+          )}
         >
           {tabs.map((tab) => (
             <Tabs.Tab

@@ -985,7 +985,7 @@ export const registerOpenCodeProxy = (app, deps) => {
   }, resolveProxyAgent);
   // Managed ownership intercepts this route earlier. For other runtimes, keep
   // create on a bounded, single-dispatch path with unambiguous failure codes.
-  app.post('/api/session', async (req, res) => {
+  app.post('/api/session', express.json({ limit: '1mb' }), async (req, res) => {
     const trace = beginSessionCreationTrace(req);
     if (trace.remainingMs() <= 0) {
       trace.mark('deadline_before_creation');

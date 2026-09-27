@@ -3,7 +3,7 @@ import type { PlanIndicatorEntry } from "./plan-indicator"
 import { filterMessagesForRevert, getEffectiveSessionRevertMessageID } from "./revert-transactions"
 import { isFinalAssistantSummaryMessage } from "./session-working"
 import { isCompactionSummaryInfo } from "./compaction-summary"
-import { hasIncompleteTodos } from "./todo-completion"
+import { mayAutoContinueOpenTodos } from "./todo-completion"
 import type { State } from "./types"
 
 export type TurnCompletedCandidate = {
@@ -28,8 +28,6 @@ export function detectTurnCompletedCandidate({
   isRecordedPlanModeUserMessage: (messageId: string) => boolean
   planEntry?: PlanIndicatorEntry | null
 }): TurnCompletedCandidate | null {
-  if (hasIncompleteTodos(state.todo[sessionID])) return null
-
   const pendingQuestions = state.question[sessionID]
   if (pendingQuestions && pendingQuestions.length > 0) return null
 
@@ -46,6 +44,7 @@ export function detectTurnCompletedCandidate({
     if (isCompactionSummaryInfo(assistantMessage)) return null
     if (!isFinalAssistantSummaryMessage(assistantMessage, state.part[assistantMessage.id])) continue
     if (planEntry?.sourceMessageId === assistantMessage.id) return null
+    if (mayAutoContinueOpenTodos(assistantMessage, state.todo[sessionID])) return null
 
     const userMessage = findOriginatingUserMessage(messages, assistantIndex)
     if (!userMessage) return null

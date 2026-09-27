@@ -9,8 +9,15 @@ export type SettingsNavSection = {
 export type SettingsNavDestination = {
   id: string;
   labelKey?: I18nKey;
+  /** Accessible name for the tab strip when the destination shows more than one page. */
+  tabsAriaLabelKey?: I18nKey;
   iconSlug: SettingsPageSlug;
+  /** Pages rendered as tabs, in display order. */
   slugs: readonly SettingsPageSlug[];
+  /** Sub-pages opened from within a tab; they keep that tab and the nav item active. */
+  aliasSlugs?: Readonly<Partial<Record<SettingsPageSlug, SettingsPageSlug>>>;
+  /** Pages shown only when none of `slugs` are visible to the principal. */
+  fallbackSlugs?: readonly SettingsPageSlug[];
 };
 
 const singlePageDestination = (slug: SettingsPageSlug): SettingsNavDestination => ({
@@ -23,16 +30,30 @@ const singlePageDestinations = (...slugs: SettingsPageSlug[]): SettingsNavDestin
   slugs.map(singlePageDestination)
 );
 
+export const PLUGINS_SETTINGS_DESTINATION = {
+  id: 'plugins',
+  labelKey: 'settings.page.plugins.title',
+  tabsAriaLabelKey: 'settings.plugins.tabs.aria',
+  iconSlug: 'plugins',
+  slugs: ['plugins', 'skills.installed', 'mcp'],
+  aliasSlugs: { 'skills.catalog': 'skills.installed' },
+} as const satisfies SettingsNavDestination;
+
+// Usage is shown inside each provider's page. The standalone Usage page remains
+// only for principals who may read usage but not providers.
 export const PROVIDERS_SETTINGS_DESTINATION = {
   id: 'providers',
   labelKey: 'settings.page.providers.title',
+  tabsAriaLabelKey: 'settings.providers.tabs.aria',
   iconSlug: 'providers',
-  slugs: ['providers', 'usage'],
+  slugs: ['providers'],
+  fallbackSlugs: ['usage'],
 } as const satisfies SettingsNavDestination;
 
 export const REMOTE_CONNECTIONS_SETTINGS_DESTINATION = {
   id: 'remote-connections',
   labelKey: 'settings.page.remoteConnections.title',
+  tabsAriaLabelKey: 'settings.remoteConnections.tabs.aria',
   iconSlug: 'tunnel',
   slugs: ['tunnel', 'remote-instances'],
 } as const satisfies SettingsNavDestination;
@@ -50,16 +71,14 @@ export const SETTINGS_NAV_SECTIONS: readonly SettingsNavSection[] = [
       'sessions',
       'agents',
       'bots',
-      'skills.installed',
-      'plugins',
       'magic-prompts',
     ),
   },
   {
     labelKey: 'settings.view.nav.group.connections',
     destinations: [
+      PLUGINS_SETTINGS_DESTINATION,
       PROVIDERS_SETTINGS_DESTINATION,
-      singlePageDestination('mcp'),
       REMOTE_CONNECTIONS_SETTINGS_DESTINATION,
     ],
   },
@@ -69,12 +88,35 @@ export const SETTINGS_NAV_SECTIONS: readonly SettingsNavSection[] = [
   },
 ];
 
+export function getSettingsDestinationMemberSlugs(destination: SettingsNavDestination): SettingsPageSlug[] {
+  return [
+    ...destination.slugs,
+    ...(Object.keys(destination.aliasSlugs ?? {}) as SettingsPageSlug[]),
+    ...(destination.fallbackSlugs ?? []),
+  ];
+}
+
 export function getSettingsNavDestination(slug: SettingsPageSlug): SettingsNavDestination | null {
   for (const section of SETTINGS_NAV_SECTIONS) {
-    const destination = section.destinations.find((item) => item.slugs.includes(slug));
+    const destination = section.destinations.find((item) => getSettingsDestinationMemberSlugs(item).includes(slug));
     if (destination) return destination;
   }
   return null;
+}
+
+/** Maps a sub-page to the tab that owns it; other slugs map to themselves. */
+export function resolveSettingsTabSlug(slug: SettingsPageSlug): SettingsPageSlug {
+  return getSettingsNavDestination(slug)?.aliasSlugs?.[slug] ?? slug;
+}
+
+/** Pages a destination currently presents: its visible tabs, or else its visible fallbacks. */
+export function getSettingsDestinationVisibleSlugs(
+  destination: SettingsNavDestination,
+  visibleSlugs: ReadonlySet<string>,
+): SettingsPageSlug[] {
+  const tabs = destination.slugs.filter((slug) => visibleSlugs.has(slug));
+  if (tabs.length > 0) return tabs;
+  return (destination.fallbackSlugs ?? []).filter((slug) => visibleSlugs.has(slug));
 }
 
 export function getSettingsDestinationFallbackSlug(
@@ -82,5 +124,19 @@ export function getSettingsDestinationFallbackSlug(
   visibleSlugs: ReadonlySet<string>,
 ): SettingsPageSlug | null {
   const destination = getSettingsNavDestination(slug);
-  return destination?.slugs.find((candidate) => visibleSlugs.has(candidate)) ?? null;
+  return destination ? getSettingsDestinationVisibleSlugs(destination, visibleSlugs)[0] ?? null : null;
+}
+
+/**
+ * A fallback page is superseded once one of its destination's primary pages is
+ * visible (for example Usage folds into Providers). Returns the page to show
+ * instead, or null when the requested page should stay.
+ */
+export function getSettingsSupersedingSlug(
+  slug: SettingsPageSlug,
+  visibleSlugs: ReadonlySet<string>,
+): SettingsPageSlug | null {
+  const destination = getSettingsNavDestination(slug);
+  if (!destination?.fallbackSlugs?.includes(slug)) return null;
+  return destination.slugs.find((candidate) => visibleSlugs.has(candidate)) ?? null;
 }

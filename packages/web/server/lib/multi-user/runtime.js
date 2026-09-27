@@ -1,3 +1,4 @@
+import express from 'express';
 import crypto from 'node:crypto';
 import { beginSessionCreationTrace, creationUnknownPayload, creationRestartPayload, creationNotDispatchedPayload } from '../opencode/session-creation.js';
 import fs from 'node:fs/promises';
@@ -10,6 +11,7 @@ import { resolveMultiUserConfig } from './config.js';
 import { createPrincipalCache } from './principal-cache.js';
 import { createSupabaseConnection, isDirectLocalRequest } from './supabase-connection.js';
 import { createDisconnectedAuth } from './disconnected-auth.js';
+import { getTunnelOwnerPrincipal } from '../tunnels/access-control.js';
 import {
   ensureOpenCodeProjectId,
   getBranches,
@@ -124,6 +126,7 @@ import {
   validatePersonalAgentDefault,
 } from './managed-agent-defaults.js';
 import { createBotsRuntime } from '../bots/index.js';
+import { createLocalBotOwner } from '../bots/local-owner.js';
 
 const APP_SESSION_COOKIE = 'oc_app_session';
 const ACCESS_INVITE_COOKIE = 'oc_access_invite';
@@ -535,6 +538,28 @@ export async function createMultiUserRuntime({
   const connection = await createSupabaseConnection({ config, fetchImpl });
   // A failed explicit reconnect uses the same closed local boundary as Off.
   config.enabled = connection.enabled;
+  // The workstation owner's immutable local Bot identity, independent of
+  // every Supabase state (On, Off, absent, unreachable or revoked).
+  const botOwner = await createLocalBotOwner({ vault: connection.vault });
+  // The hosted catalog stays readable for a one-time import even while Off;
+  // an import never enables Supabase and never writes to it.
+  const readBotCloudSource = () => (config.configured && config.url && config.secretKey
+    ? { url: config.url, secretKey: config.secretKey }
+    : null);
+  // Imported Bots map to the enrolled cloud owner only when that account is
+  // still an active administrator; never by matching email addresses.
+  const resolveVerifiedBotSourceOwner = async () => {
+    const ownerId = connection.enrolledCloudOwnerId?.();
+    const cloud = readBotCloudSource();
+    if (!ownerId || !cloud) return null;
+    const client = createSupabaseServerClient({ ...cloud, publishableKey: '', fetchImpl, traffic: connection.traffic });
+    const profile = await client.rest('user_profiles', {
+      query: { id: `eq.${escapeFilterValue(ownerId)}`, limit: 1 },
+      select: 'id,role,status',
+      maybeSingle: true,
+    });
+    return profile?.id === ownerId && profile.role === 'admin' && profile.status === 'active' ? ownerId : null;
+  };
 
   const getGitHubAuthById = githubAuthStore.getGitHubAuthById || getStoredGitHubAuthById;
   const getAllGitHubAuthAccounts = githubAuthStore.getAllGitHubAuthAccounts || getAllStoredGitHubAuthAccounts;
@@ -546,11 +571,18 @@ export async function createMultiUserRuntime({
     ...legacy,
     multiUser: false,
     async resolvePrincipal(req, res) {
+      const owner = getTunnelOwnerPrincipal(req);
+      if (owner) return owner;
       if (!legacy.enabled) return isLoopbackRequest(req) ? localAdminPrincipal : null;
       const token = await legacy.ensureSessionToken(req, res);
       return token ? localAdminPrincipal : null;
     },
     async requireAuth(req, res, next) {
+      const owner = getTunnelOwnerPrincipal(req);
+      if (owner) {
+        req.principal = owner;
+        return runWithRequestPrincipal(owner, next);
+      }
       if (!legacy.enabled && !isLoopbackRequest(req)) {
         return jsonError(res, 401, 'Local administrator access is loopback-only');
       }
@@ -569,6 +601,8 @@ export async function createMultiUserRuntime({
       return res.json({ authenticated: true, principal: publicPrincipal(localAdminPrincipal), mode: 'local' });
     },
     async ensureSessionToken(req, res) {
+      const owner = getTunnelOwnerPrincipal(req);
+      if (owner) { req.principal = owner; return owner.tunnelGrant.sessionId; }
       if (!legacy.enabled) {
         if (isLoopbackRequest(req)) req.principal = localAdminPrincipal;
         return isLoopbackRequest(req) ? 'local-admin' : null;
@@ -583,19 +617,26 @@ export async function createMultiUserRuntime({
   });
 
   if (!config.enabled) {
+    // Bots live in the local catalog whatever the Supabase state. Without a
+    // cloud connection only the workstation owner can use them.
     const botsRuntime = createBotsRuntime({
       oauthCoordinator,
-      supabase: null,
-      supabaseMode: connection.configured ? 'disconnected' : 'not_configured',
+      localOwner: botOwner,
+      readCloudSource: readBotCloudSource,
+      resolveVerifiedSourceOwner: resolveVerifiedBotSourceOwner,
       audit: async () => {},
       principalPolicy: {
-        isGlobalAdmin: (principal) => principal?.role === 'admin',
+        isGlobalAdmin: (principal) => principal?.role === 'admin' && principal?.scope !== 'tunnel-bot',
       },
       dataDirectory: config.dataDirectory,
       botHost,
       encryption,
       recordDiagnostic,
       executionEnabled: botsExecutionEnabled,
+      isAdmissionPaused: () => connection.status().restartPending === true,
+    });
+    void botsRuntime.start().catch((error) => {
+      logger.warn?.('[MultiUser] Bot catalog startup failed:', summarizeDependencyError(error).message);
     });
     return {
       enabled: false,
@@ -605,6 +646,7 @@ export async function createMultiUserRuntime({
       localAdminPrincipal,
       wrapLegacyAuthController,
       botsRuntime,
+      botOwner,
       registerRoutes(app) { botsRuntime.registerRoutes(app); },
       filterEventForPrincipal: () => true,
       recordOpenCodeActivity: async (payload) => payload?.type === 'session.created'
@@ -1023,9 +1065,27 @@ export async function createMultiUserRuntime({
     return { id: profile.id, role: profile.role, scope: 'managed', status: profile.status,
       policy, assignments: [], appSessionId: null };
   };
+  // Current cloud member directory for Bot Managers (display fields only).
+  const searchBotDirectory = async (query, limit = 20) => {
+    const term = typeof query === 'string' ? query.trim().slice(0, 120).replace(/[\\%,()*]/g, '') : '';
+    const bounded = Math.min(Math.max(Number.parseInt(limit, 10) || 20, 1), 50);
+    const rows = await supabase.rest('user_profiles', {
+      query: {
+        ...(term ? { or: `(display_name.ilike.*${term}*,email.ilike.*${term}*)` } : {}),
+        status: 'eq.active',
+        order: 'display_name.asc',
+        limit: String(bounded),
+      },
+      select: 'id,email,display_name,role,status,account_kind',
+    });
+    return Array.isArray(rows) ? rows : [];
+  };
   const botsRuntime = createBotsRuntime({
     oauthCoordinator,
-    supabase,
+    localOwner: botOwner,
+    searchCloudDirectory: searchBotDirectory,
+    readCloudSource: readBotCloudSource,
+    resolveVerifiedSourceOwner: resolveVerifiedBotSourceOwner,
     resolvePrincipal: resolveBotPrincipal,
     audit,
     principalPolicy: {
@@ -1036,11 +1096,13 @@ export async function createMultiUserRuntime({
     encryption,
     recordDiagnostic,
     executionEnabled: botsExecutionEnabled,
-    isAdmissionPaused: () => connection.admissionPaused,
+    // A pending Supabase mode restart drains the whole host; Supabase being
+    // off or unreachable never pauses the owner's local Bots.
+    isAdmissionPaused: () => connection.status().restartPending === true,
     withAuditDeliveryBarrier: auditOutbox.withFlushedDeliveryBarrier,
   });
   void botsRuntime.start().catch((error) => {
-    logger.warn?.('[MultiUser] Bot control plane startup failed:', summarizeDependencyError(error).message);
+    logger.warn?.('[MultiUser] Bot catalog startup failed:', summarizeDependencyError(error).message);
   });
 
   const setBoundedProjectionContext = (cache, key, value, maximum = 5_000) => {
@@ -1359,7 +1421,7 @@ export async function createMultiUserRuntime({
   const loadPrincipal = async (userId, appSession = null, { includeSettings = true } = {}) => {
     const profile = await supabase.rest('user_profiles', {
       query: { id: `eq.${escapeFilterValue(userId)}`, limit: 1 },
-      select: 'id,email,display_name,role,status,github_account_id',
+      select: 'id,email,display_name,role,status,github_account_id,account_kind',
       maybeSingle: true,
     });
     if (!profile || profile.status !== 'active') return null;
@@ -1417,6 +1479,7 @@ export async function createMultiUserRuntime({
       role: profile.role,
       scope: 'managed',
       status: profile.status,
+      accountKind: profile.account_kind === 'agent_test' ? 'agent_test' : 'human',
       githubAccountId: profile.github_account_id || null,
       policy: normalizeRolePolicy(profile.role, rolePolicy, userPolicy),
       settingsOverrides: includeSettings ? userPolicy?.settings_overrides || {} : undefined,
@@ -5433,7 +5496,7 @@ export async function createMultiUserRuntime({
         } catch (error) { return jsonError(res, 502, error.message); }
       });
 
-      app.post('/api/session', async (req, res, next) => {
+      app.post('/api/session', express.json({ limit: '1mb' }), async (req, res, next) => {
         if (req.principal?.scope !== 'managed') return next();
         const trace = beginSessionCreationTrace(req, recordCreationTiming);
         if (trace.remainingMs() <= 0) {
@@ -5667,6 +5730,7 @@ export async function createMultiUserRuntime({
     connection,
     config,
     botsRuntime,
+    botOwner,
     getControlPlaneStatus: () => ({ ...controlPlaneStatus }),
     retryControlPlaneSync: refreshOwnershipIndex,
     authController,

@@ -3,7 +3,7 @@
 ## Responsibility
 
 Server-owned Production Bots control plane and scoped execution boundary:
-explicit Supabase repositories, principal-aware authorization, encrypted
+explicit repositories over the local Bot catalog, principal-aware authorization, encrypted
 private object persistence, immutable revision config, selected-provider and
 legacy-agent credential compatibility, typed Docker/reasoning adapters, a capability-bound
 loopback gateway, continuous encrypted channels, durable scoped run dispatch,
@@ -29,18 +29,54 @@ must preserve those checks. A grant never inherits global administrator access.
 ## Entry points
 
 - `index.js`: public module exports.
-- `runtime.js`: focused composition root receiving only Supabase, platform
+- `runtime.js`: focused composition root receiving the local catalog provider
+  (from the Electron Bot host), optional Supabase authorization, platform
   audit, principal policy, data directory, Bot host, and encryption callbacks;
+  it owns per-Bot effective identity (owner mappings, `viewerUserId`,
+  multi-identity SSE merge), the maintenance fence (close admissions, fence
+  writes, drain, resume in `finally`, rebuild after replacement), the
+  activation hold and catalog maintenance/import wiring;
   also owns the run-sweep idle gate (`createBotRunSweepGate`: six-hour idle
   window, boot sweep always runs, `getSweepDiagnostics()`) and the dispatcher
   activity facade that feeds it.
 - `routes.js`: authenticated `/api/bots/*` capability, management/routine,
   channel/message/run, Bot-SSE, and encrypted-object routes plus stable
-  migration/error envelopes, including profile/avatar/model-option/publish
+  migration/error envelopes and content-free catalog-read failure diagnostics, including profile/avatar/model-option/publish
   contracts. Administrator-only `/api/bot-audit*` reads and review clearing are registered outside
   execution-health middleware so historical diagnostics survive degradation.
   `createBotHostStatusCache` reuses one `botHost.getStatus()` Docker probe for
   sixty seconds (`?refresh=1` bypasses it; failed probes are never cached).
+- `local-catalog.js`: the narrow transport from the unchanged repositories to
+  the Electron-owned local catalog. Reuses the REST/RPC client, strips the
+  `/rest/v1` mount for bare PostgREST, keeps endpoint and short-lived token
+  in-process, retries only undelivered requests (never an ambiguous
+  mutation), and publishes one readiness state (`starting`, `ready`,
+  `unavailable`, `setup_required`, `update_required`, `recovery_required`,
+  `maintenance`); starting never installs images.
+- `local-object-storage.js`: the Storage adapter for encrypted objects as
+  no-follow, exclusive-create files under `<data>/bots/objects`, behind the
+  maintenance write fence.
+- `local-owner.js`: the immutable `localBotOwnerId` (write-once vault record),
+  natively minted Bot-scoped owner sessions (`devryan_bot_owner`) accepted only
+  direct-local and only on Bot APIs, and the owner session cookie.
+- `activation-hold.js`: the persisted hold that keeps restored or imported
+  Bots from any autonomous effect until the owner resumes them.
+- `catalog-routes.js`: `/api/bots/database*` status, backups, Restore, Start
+  Empty, activation resume and hosted import routes, registered before the
+  catalog readiness gate; every mutation requires the owner session.
+- `catalog-maintenance.js`: backup-now, daily schedule and retention trigger,
+  Restore (confirmation `RESTORE`), Start Empty (`START EMPTY`), resume, and
+  candidate validation, each inside the runtime's reversible maintenance fence.
+- `catalog-validation.js`: authenticates every encrypted envelope (with its
+  row-bound associated data), object and vault record of a candidate before it
+  can replace the live catalog; missing vault records reject, or disconnect on
+  import.
+- `catalog-import.js`: offline hosted-catalog import — GET-only allowlisted
+  bounded reader, encrypted checkpointed pages, 402 → resumable `blocked`,
+  fingerprint re-verification, source load at the reviewed schema, disjoint
+  merge into a restored local snapshot with regenerated identities, owner
+  mappings, activation hold and journaled commit. SQL rendering lives in
+  `packages/bot-db/src/import-plan.js`.
 - `store.js`: one explicit-select repository per Bot table, cursor paging with
   cancellation-aware smaller-page retries for oversized reads,
   optimistic `updated_at` writes, fixed exact-version publish RPCs, durable

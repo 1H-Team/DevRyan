@@ -30,11 +30,16 @@ import {
   RiExternalLinkLine,
   RiFileCodeLine,
   RiFolderLine,
+  RiGlobalLine,
   RiPlugLine,
+  RiServerLine,
   RiUser3Line,
 } from '@remixicon/react';
 import { cn } from '@/lib/utils';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
+import { SettingsBadge, type SettingsBadgeTone } from '@/components/sections/shared/SettingsBadge';
+import { SettingsDetailHeader } from '@/components/sections/shared/SettingsDetailHeader';
+import { SettingsEmptyState } from '@/components/sections/shared/SettingsEmptyState';
 import { buildMcpOAuthRedirectUri, parseMcpOAuthCallbackContext, parseMcpOAuthCallbackStateKey, shouldPersistMcpOAuthRedirectUri } from '@/components/sections/mcp/mcpOAuth';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
@@ -435,36 +440,25 @@ const EnvEditor: React.FC<EnvEditorProps> = ({
 // ─────────────────────────────────────────────────────────────
 // Status badge
 // ─────────────────────────────────────────────────────────────
+const STATUS_BADGE_TONES: Record<string, SettingsBadgeTone> = {
+  connected: 'success',
+  failed: 'error',
+  needs_auth: 'warning',
+  needs_client_registration: 'warning',
+};
+
 const StatusBadge: React.FC<{
   status: string | undefined;
   enabled: boolean;
   getStatusLabel: (status: string) => string;
-  variant?: 'compact' | 'pill'
-}> = ({ status, enabled, getStatusLabel, variant = 'compact' }) => {
+}> = ({ status, enabled, getStatusLabel }) => {
   if (!enabled) return null;
   if (!status) return null;
 
-  const colorClassMap: Record<string, { text: string; bg: string }> = {
-    connected: { text: 'text-[var(--status-success)]', bg: 'bg-[var(--status-success)]/10' },
-    failed: { text: 'text-[var(--status-error)]', bg: 'bg-[var(--status-error)]/10' },
-    needs_auth: { text: 'text-[var(--status-warning)]', bg: 'bg-[var(--status-warning)]/10' },
-    needs_client_registration: { text: 'text-[var(--status-warning)]', bg: 'bg-[var(--status-warning)]/10' },
-  };
-
-  const colors = colorClassMap[status] ?? { text: 'text-muted-foreground', bg: '' };
-
-  if (variant === 'pill') {
-    return (
-      <span className={cn('typography-micro font-medium rounded-full px-2 py-0.5', colors.text, colors.bg)}>
-        ● {getStatusLabel(status)}
-      </span>
-    );
-  }
-
   return (
-    <span className={cn('typography-micro font-medium', colors.text)}>
-      ● {getStatusLabel(status)}
-    </span>
+    <SettingsBadge tone={STATUS_BADGE_TONES[status] ?? 'neutral'} dot>
+      {getStatusLabel(status)}
+    </SettingsBadge>
   );
 };
 
@@ -1283,13 +1277,12 @@ export const McpPage: React.FC = () => {
   // ── Empty state ──
   if (!selectedMcpName) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-center text-muted-foreground">
-          <RiPlugLine className="mx-auto mb-3 h-12 w-12 opacity-50" />
-          <p className="typography-body">{t('settings.mcp.page.empty.selectServer')}</p>
-          <p className="typography-meta mt-1 opacity-75">{t('settings.mcp.page.empty.addNewOne')}</p>
-        </div>
-      </div>
+      <SettingsEmptyState
+        size="page"
+        icon={RiPlugLine}
+        title={t('settings.mcp.page.empty.selectServer')}
+        description={t('settings.mcp.page.empty.addNewOne')}
+      />
     );
   }
 
@@ -1324,77 +1317,68 @@ export const McpPage: React.FC = () => {
       <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
 
         {/* Header */}
-        <div className="mb-4">
-          <div className="min-w-0">
-            {isNewServer ? (
-              <h2 className="typography-ui-header font-semibold text-foreground truncate">{t('settings.mcp.page.header.newServer')}</h2>
-            ) : (
-              <div className="flex items-center gap-2 min-w-0">
-                <h2 className="typography-ui-header font-semibold text-foreground truncate" title={selectedMcpName}>
-                  {formatMcpServerDisplayName(selectedMcpName)}
-                </h2>
-                <StatusBadge status={effectiveRuntimeStatus?.status} enabled={enabled} getStatusLabel={getStatusLabel} variant="pill" />
-              </div>
-            )}
-            <div className="flex items-center gap-2 mt-0.5">
-              <p className="typography-meta text-muted-foreground truncate">
-                {isNewServer
-                  ? t('settings.mcp.page.header.configureNewServer')
-                  : t('settings.mcp.page.header.transport', { type: mcpType === 'local' ? t('settings.mcp.page.transport.local') : t('settings.mcp.page.transport.remote') })}
-              </p>
-              {!isNewServer && (
+        <SettingsDetailHeader
+          className="mb-4"
+          icon={isNewServer ? <RiPlugLine /> : mcpType === 'local' ? <RiServerLine /> : <RiGlobalLine />}
+          title={isNewServer ? t('settings.mcp.page.header.newServer') : formatMcpServerDisplayName(selectedMcpName)}
+          titleTooltip={isNewServer ? undefined : selectedMcpName}
+          badges={isNewServer ? null : (
+            <StatusBadge status={effectiveRuntimeStatus?.status} enabled={enabled} getStatusLabel={getStatusLabel} />
+          )}
+          subtitle={isNewServer
+            ? t('settings.mcp.page.header.configureNewServer')
+            : t('settings.mcp.page.header.transport', { type: mcpType === 'local' ? t('settings.mcp.page.transport.local') : t('settings.mcp.page.transport.remote') })}
+          actions={isNewServer ? null : (
+            <>
+              <Button
+                variant={isConnected ? 'outline' : 'default'}
+                size="xs"
+                className="!font-normal"
+                onClick={handleToggleConnect}
+                disabled={isConnecting || !enabled}
+              >
+                {isConnecting ? t('settings.mcp.page.actions.working') : isConnected ? t('settings.mcp.page.actions.disconnect') : t('settings.mcp.page.actions.connect')}
+              </Button>
+              {mcpType === 'remote' && (
                 <>
                   <Button
-                    variant={isConnected ? 'outline' : 'default'}
+                    variant={needsAuthorization ? 'default' : 'outline'}
                     size="xs"
                     className="!font-normal"
-                    onClick={handleToggleConnect}
-                    disabled={isConnecting || !enabled}
-                    >
-                      {isConnecting ? t('settings.mcp.page.actions.working') : isConnected ? t('settings.mcp.page.actions.disconnect') : t('settings.mcp.page.actions.connect')}
-                    </Button>
-                  {mcpType === 'remote' && (
-                    <>
-                      <Button
-                        variant={needsAuthorization ? 'default' : 'outline'}
-                        size="xs"
-                        className="!font-normal"
-                        onClick={() => void handleStartAuthorization()}
-                        disabled={isAuthorizing || !enabled}
-                      >
-                        {isAuthorizing
-                          ? t('settings.mcp.page.actions.starting')
-                          : needsAuthorization
-                            ? t('settings.mcp.page.actions.authorize')
-                            : t('settings.mcp.page.actions.reauthorize')}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        className="!font-normal gap-1 text-muted-foreground"
-                        onClick={() => void handleClearAuthorization()}
-                        disabled={isClearingAuth || !enabled}
-                      >
-                        {isClearingAuth ? t('settings.mcp.page.actions.clearing') : t('settings.mcp.page.actions.clearAuth')}
-                      </Button>
-                    </>
-                  )}
-                  {isConnected && (
-                    <Button
-                      variant="ghost"
-                      size="xs"
-                      className="!font-normal gap-1 text-muted-foreground"
-                      onClick={() => void handleTestConnection()}
-                      disabled={isTestingConnection || !enabled}
-                    >
-                      {isTestingConnection ? t('settings.mcp.page.actions.testing') : t('settings.mcp.page.actions.test')}
-                    </Button>
-                  )}
+                    onClick={() => void handleStartAuthorization()}
+                    disabled={isAuthorizing || !enabled}
+                  >
+                    {isAuthorizing
+                      ? t('settings.mcp.page.actions.starting')
+                      : needsAuthorization
+                        ? t('settings.mcp.page.actions.authorize')
+                        : t('settings.mcp.page.actions.reauthorize')}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="!font-normal gap-1 text-muted-foreground"
+                    onClick={() => void handleClearAuthorization()}
+                    disabled={isClearingAuth || !enabled}
+                  >
+                    {isClearingAuth ? t('settings.mcp.page.actions.clearing') : t('settings.mcp.page.actions.clearAuth')}
+                  </Button>
                 </>
               )}
-            </div>
-          </div>
-        </div>
+              {isConnected && (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="!font-normal gap-1 text-muted-foreground"
+                  onClick={() => void handleTestConnection()}
+                  disabled={isTestingConnection || !enabled}
+                >
+                  {isTestingConnection ? t('settings.mcp.page.actions.testing') : t('settings.mcp.page.actions.test')}
+                </Button>
+              )}
+            </>
+          )}
+        />
 
         {/* Runtime Status - Simplified for connected, expanded for errors */}
         {!isNewServer && shouldShowFullStatusCard(effectiveRuntimeStatus?.status, authUrl, needsAuthorization, isAuthPolling) && (

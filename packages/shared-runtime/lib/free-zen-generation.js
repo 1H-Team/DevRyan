@@ -2,12 +2,18 @@ const trimString = (value) => (typeof value === 'string' ? value.trim() : '');
 
 const modelIdOf = (value) => trimString(value?.id ?? value);
 
-const FAILURE_REASONS = new Set(['rate_limited', 'model_unavailable', 'unauthorized', 'upstream_error', 'timeout', 'empty_output', 'invalid_output', 'request_failed']);
+const FAILURE_REASONS = new Set(['free_tier_rejected', 'rate_limited', 'model_unavailable', 'unauthorized', 'upstream_error', 'timeout', 'empty_output', 'invalid_output', 'request_failed']);
+
+// Zen refuses free-tier requests it does not recognize as OpenCode agent
+// traffic. That is a request-shape policy, not a model fault: every other free
+// model rejects the same request, so rotation stops and no cooldown is marked.
+const FREE_ZEN_TIER_REJECTED_PATTERN = /free tier can only be used/i;
 
 export const classifyFreeZenFailure = (error) => {
   if (FAILURE_REASONS.has(error?.reason)) return error.reason;
   const status = Number(error?.status);
   const message = String(error?.message || error || '');
+  if (FREE_ZEN_TIER_REJECTED_PATTERN.test(message)) return 'free_tier_rejected';
   if (status === 429 || /rate limit/i.test(message)) return 'rate_limited';
   if ([400, 404].includes(status) && /model.*(?:unavailable|not found|unsupported|unknown|invalid)/i.test(message)) {
     return 'model_unavailable';
@@ -123,8 +129,12 @@ export async function runFreeZenModelRotation({
         status: Number.isFinite(Number(error?.status)) ? Number(error.status) : undefined,
       };
       failures.push(failure);
-      cooldowns?.mark?.(model, failure.reason);
       onAttempt?.({ ...failure, outcome: 'failed' });
+      if (failure.reason === 'free_tier_rejected') {
+        for (const rest of candidates.slice(index + 1)) skipped.push({ model: rest, reason: 'free_tier_rejected' });
+        break;
+      }
+      cooldowns?.mark?.(model, failure.reason);
     } finally {
       if (timer !== undefined) clearTimer(timer);
       controller.abort();

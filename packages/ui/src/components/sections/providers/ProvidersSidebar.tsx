@@ -22,6 +22,15 @@ import {
   type ProviderSources,
 } from './providerConnectionState';
 import { withRetiredProviderEntries } from './retiredProviders';
+import { SidebarGroup } from '@/components/sections/shared/SidebarGroup';
+import {
+  getQuotaProviderIdForProvider,
+  toUsageOnlyProviderSelection,
+  type QuotaProviderMeta,
+} from '@/lib/quota';
+import { useQuotaStore } from '@/stores/useQuotaStore';
+import { ProviderUsageMeter } from './ProviderUsage';
+import { useUsageOnlyQuotaProviders } from './useProviderUsage';
 
 const ADD_PROVIDER_ID = '__add_provider__';
 
@@ -63,6 +72,12 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
     () => sortProvidersByDisplayName(providers, sourcesByProvider),
     [providers, sourcesByProvider]
   );
+  const catalogProviderIds = React.useMemo(
+    () => [...providers.map((provider) => provider.id), ...Object.keys(pendingConnections)],
+    [pendingConnections, providers],
+  );
+  const usageOnlyProviders = useUsageOnlyQuotaProviders(catalogProviderIds);
+  const setSelectedQuotaProvider = useQuotaStore((state) => state.setSelectedProvider);
 
   React.useEffect(() => {
     void loadProviders({ directory: null });
@@ -174,7 +189,7 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
       </div>
 
       <ScrollableOverlay outerClassName="flex-1 min-h-0" className="space-y-1 px-3 py-2 overflow-x-hidden">
-        {providers.length === 0 && pendingProviders.length === 0 ? (
+        {providers.length === 0 && pendingProviders.length === 0 && usageOnlyProviders.length === 0 ? (
           <div className="py-12 px-4 text-center text-muted-foreground">
             <RiStackLine className="mx-auto mb-3 h-10 w-10 opacity-50" />
             <p className="typography-ui-label font-medium">{t('settings.providers.sidebar.empty.title')}</p>
@@ -211,6 +226,31 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
                 />
               );
             })}
+            {usageOnlyProviders.length > 0 ? (
+              <div className="pt-2">
+                <SidebarGroup
+                  label={t('settings.providers.sidebar.group.usageOnly')}
+                  count={usageOnlyProviders.length}
+                  storageKey="providers"
+                >
+                  {usageOnlyProviders.map((provider) => {
+                    const selection = toUsageOnlyProviderSelection(provider.id);
+                    return (
+                      <UsageOnlyListItem
+                        key={provider.id}
+                        provider={provider}
+                        selected={selectedProviderId === selection}
+                        onSelect={() => {
+                          setSelectedProvider(selection);
+                          setSelectedQuotaProvider(provider.id);
+                          onItemSelect?.();
+                        }}
+                      />
+                    );
+                  })}
+                </SidebarGroup>
+              </div>
+            ) : null}
           </>
         )}
       </ScrollableOverlay>
@@ -251,8 +291,11 @@ const ProviderListItem: React.FC<{
         tabIndex={0}
       >
         <ProviderLogo providerId={provider.id} className="h-4 w-4 flex-shrink-0" />
-        <span className="typography-ui-label font-normal truncate flex-1 min-w-0 text-foreground">
-          {providerName}
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="typography-ui-label font-normal truncate text-foreground">
+            {providerName}
+          </span>
+          <ProviderUsageMeter quotaProviderId={getQuotaProviderIdForProvider(provider.id)} className="mt-1" />
         </span>
         <span className={cn(
           'typography-micro flex-shrink-0 text-right tabular-nums text-muted-foreground/60',
@@ -284,3 +327,29 @@ const ProviderListItem: React.FC<{
     </div>
   );
 };
+
+const UsageOnlyListItem: React.FC<{
+  provider: QuotaProviderMeta;
+  selected: boolean;
+  onSelect: () => void;
+}> = ({ provider, selected, onSelect }) => (
+  <div
+    className={cn(
+      'group relative flex items-center gap-1 rounded-md px-1.5 py-1 transition-all duration-200',
+      selected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover'
+    )}
+  >
+    <button
+      type="button"
+      onClick={onSelect}
+      className="flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+    >
+      <ProviderLogo providerId={provider.id} className="h-4 w-4 flex-shrink-0" />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="typography-ui-label font-normal truncate text-foreground">{provider.name}</span>
+        <ProviderUsageMeter quotaProviderId={provider.id} className="mt-1" />
+      </span>
+    </button>
+    <div className="h-6 w-6 flex-shrink-0" />
+  </div>
+);

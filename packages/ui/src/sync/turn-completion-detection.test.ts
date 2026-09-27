@@ -82,26 +82,39 @@ describe("detectTurnCompletedCandidate", () => {
     })).toBeNull()
   })
 
-  test("does not classify a final response as completed while todos remain incomplete", () => {
-    const state = {
-      ...stateWithMessages([
-        userMessage("msg_user", 1),
-        assistantMessage("msg_assistant", 2, 3),
-      ], {
-        msg_assistant: [textPart("msg_assistant", "Done early.")],
-      }),
-      todo: {
-        ses_1: [
-          { content: "Task 1", priority: "medium", status: "completed" },
-          { content: "Task 2", priority: "medium", status: "in_progress" },
-          { content: "Task 3", priority: "medium", status: "pending" },
-        ],
-      },
-    } as Pick<State, "message" | "part" | "question" | "session" | "todo" | "revert_transaction">
+  const openTodoState = (agent: string) => ({
+    ...stateWithMessages([
+      userMessage("msg_user", 1),
+      { ...assistantMessage("msg_assistant", 2, 3), agent } as Message,
+    ], {
+      msg_assistant: [textPart("msg_assistant", "Stopped: verification is blocked.")],
+    }),
+    todo: {
+      ses_1: [
+        { content: "Task 1", priority: "medium", status: "completed" },
+        { content: "Task 2", priority: "medium", status: "in_progress" },
+        { content: "Task 3", priority: "medium", status: "pending" },
+      ],
+    },
+  }) as Pick<State, "message" | "part" | "question" | "session" | "todo" | "revert_transaction">
 
+  test("a final response that leaves blocked todos open still completes the turn", () => {
     expect(detectTurnCompletedCandidate({
       sessionID: "ses_1",
-      state,
+      state: openTodoState("orchestrator"),
+      isRecordedPlanModeUserMessage: () => false,
+      planEntry: null,
+    })).toEqual({
+      sessionID: "ses_1",
+      originatingUserMessageId: "msg_user",
+      completedMessageId: "msg_assistant",
+    })
+  })
+
+  test("Builder open todos are not a completion because the runtime re-prompts Builder", () => {
+    expect(detectTurnCompletedCandidate({
+      sessionID: "ses_1",
+      state: openTodoState("builder"),
       isRecordedPlanModeUserMessage: () => false,
       planEntry: null,
     })).toBeNull()

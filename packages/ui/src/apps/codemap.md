@@ -29,4 +29,12 @@ Integrates contexts, stores, styles, and major view modules.
   pure `packages/bots-runtime/event-snapshot.js` contract before reconciling a
   complete snapshot. It bounds incoming frames, discards partial state on
   disconnect/retry, and fences late events by connection generation. Sustained
-  outages back off to 60 seconds while manual retry remains immediate.
+  outages back off to 60 seconds while manual retry remains immediate. The
+  capability controller opens the stream only while `catalogAvailable` is true;
+  when the stream drops it takes over from the connection, re-reads
+  capabilities and reconnects as a resumed stream (refreshing the open
+  channel). Recovery and setup states (`database_recovery_required`, a
+  database in `recovery_required`/`setup_required`/`update_required`,
+  `setup_required`, `unsupported_host`, …) stop polling; they are rechecked on
+  focus and after Setup/Repair/Update/Restore/Start Empty/Resume/import via
+  `components/bots/refreshBotsState.ts`.

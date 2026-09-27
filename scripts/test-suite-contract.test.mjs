@@ -74,6 +74,7 @@ describe('full test-suite contract', () => {
       '.opencode/plugins/',
       'scripts/',
       'packages/bot-computer/',
+      'packages/bot-db/',
       'packages/bot-engine-proxy/',
       'packages/bot-egress/',
       'packages/bot-indexer/',

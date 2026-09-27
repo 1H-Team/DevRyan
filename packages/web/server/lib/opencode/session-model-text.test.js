@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  SESSION_MODEL_TEXT_ADVERTISE_ONLY_PATTERN,
   SESSION_MODEL_TEXT_SESSION_TITLE,
   generateTextWithSessionModel,
 } from './session-model-text.js';
@@ -137,6 +138,28 @@ describe('generateTextWithSessionModel', () => {
     const result = await generateTextWithSessionModel({ ...baseOptions, fetchImpl: fake.fetchImpl });
     expect(result).toMatchObject({ ok: false, reason: 'rate_limited', status: 429, attempts: 1 });
     expect(fake.calls.filter((call) => call.method === 'POST' && call.path.endsWith('/message'))).toHaveLength(1);
+  });
+
+  it('advertises denied tools only when asked and classifies free-tier rejections', async () => {
+    const rejected = () => jsonResponse({
+      info: { role: 'assistant', error: { name: 'APIError', data: { statusCode: 403, message: "OpenCode's free tier can only be used from within OpenCode" } } },
+      parts: [],
+    });
+    const denyAll = { permission: '*', pattern: '*', action: 'deny' };
+
+    const plain = createFakeOpenCode({ replies: [rejected] });
+    await generateTextWithSessionModel({ ...baseOptions, repairPrompt: '', denyTools: true, fetchImpl: plain.fetchImpl });
+    expect(plain.calls[0].body.permission).toEqual([denyAll]);
+
+    const advertised = createFakeOpenCode({ replies: [rejected] });
+    const result = await generateTextWithSessionModel({
+      ...baseOptions, repairPrompt: '', denyTools: true, advertiseDeniedTools: true, fetchImpl: advertised.fetchImpl,
+    });
+    expect(advertised.calls[0].body.permission).toEqual([
+      denyAll,
+      { permission: '*', pattern: SESSION_MODEL_TEXT_ADVERTISE_ONLY_PATTERN, action: 'deny' },
+    ]);
+    expect(result).toMatchObject({ ok: false, reason: 'free_tier_rejected', status: 403, attempts: 1 });
   });
 
   it('fails fast without a runtime URL builder or model', async () => {

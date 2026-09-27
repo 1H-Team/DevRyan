@@ -8,7 +8,8 @@ import {
 export type BotRuntimeOperationProgress = {
   id: string;
   action: string;
-  phase: 'checking' | 'downloading_image' | 'verifying_images' | 'starting_services'
+  phase: 'checking' | 'downloading_image' | 'verifying_images' | 'checking_database'
+    | 'initializing_database' | 'migrating_database' | 'starting_database' | 'starting_services'
     | 'verifying_health' | 'ready' | 'failed';
   completed: number | null;
   total: number | null;

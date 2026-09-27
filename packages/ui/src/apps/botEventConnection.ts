@@ -20,9 +20,19 @@ type ConnectionControllerOptions = {
   setConnectionState: (state: BotEventsConnectionState, errorCode?: string | null) => void;
   onReconnectedSnapshot?: () => void;
   initialRecoveryErrorCode?: string | null;
+  /** This connection replaces one that already delivered a snapshot. */
+  resumed?: boolean;
+  /** Called on every accepted snapshot. */
+  onConnected?: () => void;
+  /** A transport failure (the stream closed or could not open). Returning
+   * true hands recovery to the caller, which disposes this connection and
+   * re-checks capabilities instead of reconnecting blindly. */
+  onConnectionLost?: (errorCode: string) => boolean;
   setTimeoutImpl?: typeof setTimeout;
   clearTimeoutImpl?: typeof clearTimeout;
 };
+
+const TRANSPORT_FAILURE_CODES = new Set(['bot_event_connection_lost', 'bot_event_connection_failed']);
 
 const RECONNECT_DELAYS_MS = Object.freeze([250, 1_000, 2_000, 5_000, 10_000, 30_000, 60_000]);
 
@@ -33,6 +43,9 @@ export const createBotEventConnectionController = ({
   setConnectionState,
   onReconnectedSnapshot = () => {},
   initialRecoveryErrorCode = null,
+  resumed = false,
+  onConnected = () => {},
+  onConnectionLost = () => false,
   setTimeoutImpl = setTimeout,
   clearTimeoutImpl = clearTimeout,
 }: ConnectionControllerOptions) => {
@@ -42,7 +55,7 @@ export const createBotEventConnectionController = ({
   let reconnectAttempt = 0;
   let started = false;
   let disposed = false;
-  let hasSnapshot = false;
+  let hasSnapshot = resumed;
   let lastFailureCode = initialRecoveryErrorCode;
   const snapshotAssembler = createBotSnapshotAssembler();
   let receivingSnapshot = false;
@@ -119,6 +132,7 @@ export const createBotEventConnectionController = ({
       reconnectAttempt = 0;
       lastFailureCode = null;
       setConnectionState('connected');
+      onConnected();
       if (reconnected) onReconnectedSnapshot();
     };
 
@@ -143,6 +157,10 @@ export const createBotEventConnectionController = ({
     generation += 1;
     closeSource();
     clearReconnectTimer();
+    if (TRANSPORT_FAILURE_CODES.has(errorCode) && onConnectionLost(errorCode)) {
+      disposed = true;
+      return;
+    }
     lastFailureCode = hasSnapshot ? errorCode : lastFailureCode || errorCode;
     setConnectionState(
       'reconnecting',
@@ -185,20 +203,31 @@ export const createBotEventConnectionController = ({
 type BotEventConnectionController = ReturnType<typeof createBotEventConnectionController>;
 type RetryableBotConnectionController = Pick<BotEventConnectionController, 'retry' | 'dispose'>;
 
-type BotCapabilitySummary = Readonly<{
+export type BotCapabilitySummary = Readonly<{
   state: string;
   code?: string | null;
+  catalogAvailable?: boolean;
+  database?: Readonly<{ state: string; code?: string | null }> | null;
+}>;
+
+export type BotEventConnectionHooks = Readonly<{
+  initialRecoveryErrorCode: string | null;
+  resumed: boolean;
+  onConnected: () => void;
+  onConnectionLost: (errorCode: string) => boolean;
 }>;
 
 type BotCapabilityConnectionControllerOptions = {
   loadCapabilities: () => Promise<BotCapabilitySummary | null>;
   getCapabilitiesErrorCode: () => string | null;
-  canStream: (state: string) => boolean;
-  isTransient: (state: string) => boolean;
+  canStream: (capabilities: BotCapabilitySummary) => boolean;
+  /** Whether a non-streamable state can clear on its own. Recovery and setup
+   * states cannot: they are rechecked only on an explicit retry or focus. */
+  isTransient: (capabilities: BotCapabilitySummary) => boolean;
   /** A capability error that no retry can clear (for example Supabase is
    * deliberately off on this host); rechecked only on an explicit retry. */
   isFinalErrorCode?: (code: string | null) => boolean;
-  createConnection: (initialRecoveryErrorCode: string | null) => BotEventConnectionController;
+  createConnection: (hooks: BotEventConnectionHooks) => BotEventConnectionController;
   setConnectionState: (state: BotEventsConnectionState, errorCode?: string | null) => void;
   setTimeoutImpl?: typeof setTimeout;
   clearTimeoutImpl?: typeof clearTimeout;
@@ -225,6 +254,7 @@ export const createBotCapabilityConnectionController = ({
   let started = false;
   let disposed = false;
   let hasFailure = false;
+  let hadSnapshot = false;
   let lastFailureCode: string | null = null;
 
   const clearRetryTimer = () => {
@@ -256,11 +286,32 @@ export const createBotCapabilityConnectionController = ({
     try {
       const capabilities = await loadCapabilities().catch(() => null);
       if (disposed || connection) return;
-      if (capabilities && canStream(capabilities.state)) {
-        retryAttempt = 0;
+      if (capabilities && canStream(capabilities)) {
         clearRetryTimer();
         try {
-          connection = createConnection(lastFailureCode);
+          const current: BotEventConnectionController = createConnection({
+            initialRecoveryErrorCode: lastFailureCode,
+            resumed: hadSnapshot,
+            onConnected: () => {
+              hadSnapshot = true;
+              hasFailure = false;
+              retryAttempt = 0;
+              lastFailureCode = null;
+            },
+            // The stream dropped: the catalog may have gone into recovery,
+            // maintenance or a restart. Re-read capabilities before any
+            // reconnect so recovery states stop futile retries.
+            onConnectionLost: (errorCode) => {
+              if (disposed || connection !== current) return false;
+              connection = null;
+              hasFailure = true;
+              lastFailureCode = errorCode;
+              setConnectionState(hadSnapshot ? 'reconnecting' : 'error', errorCode);
+              scheduleRetry();
+              return true;
+            },
+          });
+          connection = current;
           connection.start();
         } catch {
           connection = null;
@@ -277,7 +328,7 @@ export const createBotCapabilityConnectionController = ({
         || getCapabilitiesErrorCode()
         || 'bot_request_failed';
       setConnectionState('error', lastFailureCode);
-      if (capabilities ? isTransient(capabilities.state) : !isFinalErrorCode(lastFailureCode)) scheduleRetry();
+      if (capabilities ? isTransient(capabilities) : !isFinalErrorCode(lastFailureCode)) scheduleRetry();
     } finally {
       probing = false;
       if (retryAfterProbe && !disposed && !connection) {
@@ -305,6 +356,12 @@ export const createBotCapabilityConnectionController = ({
       clearRetryTimer();
       if (probing) retryAfterProbe = true;
       else void probe();
+    },
+    /** Re-checks a stopped (non-transient) failure, for example on focus. */
+    recheck() {
+      if (disposed || connection || retryTimer || probing || !hasFailure) return;
+      retryAttempt = 0;
+      void probe();
     },
     dispose() {
       if (disposed) return;
