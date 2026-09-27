@@ -2235,6 +2235,8 @@ class OpencodeService {
   async getProviders(options?: { directory?: string | null }): Promise<{
     providers: Provider[];
     default: { [key: string]: string };
+    /** Set by the DevRyan server when OpenCode's catalog was unavailable and only integrations remain. */
+    catalogIncomplete?: boolean;
   }> {
     try {
       const hasDirectoryOverride = options !== undefined
@@ -2248,6 +2250,7 @@ class OpencodeService {
       return unwrapSdkData(response as SdkResult<{
         providers: Provider[];
         default: { [key: string]: string };
+        catalogIncomplete?: boolean;
       }>, "config.providers");
     } catch (error) {
       throw formatSdkError("config.providers", error);

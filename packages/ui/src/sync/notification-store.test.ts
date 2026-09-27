@@ -232,6 +232,23 @@ describe("notification-store", () => {
     expect(persistedAfterRead[0]?.viewed).toBe(true)
   })
 
+  test("persists an expired provider sign-in as its stable code without provider text", () => {
+    appendNotification({
+      type: "error",
+      directory: "/repo",
+      session: "ses_signin",
+      time: Date.now(),
+      viewed: false,
+      error: { name: "APIError", data: { message: "Claude OAuth token has expired and could not be refreshed automatically. Run 'claude login' in your terminal to re-authenticate." } },
+    })
+
+    const persisted = JSON.parse(
+      getSafeStorage().getItem(COMPLETION_NOTIFICATION_STORAGE_KEY) ?? "[]",
+    ) as Array<{ error?: { code?: string; message?: string } }>
+    expect(persisted[0]?.error?.code).toBe("provider_token_expired")
+    expect(JSON.stringify(persisted)).not.toContain("claude login")
+  })
+
   test("removes only a permanently deleted session from notification and persisted completion state", () => {
     const targetCompletion = {
       type: "turn-complete" as const,

@@ -834,7 +834,71 @@ describe('OpenCode provider routes', () => {
     expect(response.body.providers).toEqual([
       { id: 'openai', name: 'OpenAI', models: { 'gpt-5.5': { id: 'gpt-5.5', name: 'GPT-5.5' } } },
     ]);
+    expect(response.body).not.toHaveProperty('catalogIncomplete');
 
+    fetchSpy.mockRestore();
+  });
+
+  const createCursorOnlyApp = () => createApp({
+    buildOpenCodeUrl: vi.fn((requestPath) => `http://opencode.test${requestPath}`),
+    cursorSdkRuntime: {
+      getRuntimeStatus: vi.fn(),
+      verifyConnection: vi.fn(),
+      getVirtualProvider: vi.fn(),
+      getCachedVirtualProvider: vi.fn(() => ({
+        id: 'cursor-acp',
+        name: 'Cursor',
+        models: { auto: { id: 'auto', name: 'Auto' } },
+      })),
+      refreshVirtualProvider: vi.fn(() => Promise.resolve()),
+      handlePromptAsync: vi.fn(),
+      abortSession: vi.fn(),
+      getSessionMessages: vi.fn(async () => []),
+    },
+  });
+
+  it('marks the catalog incomplete while keeping Cursor when the upstream fetch fails', async () => {
+    readAuthFile.mockReturnValue({});
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('fetch failed'));
+    const { app } = createCursorOnlyApp();
+
+    const response = await request(app).get('/api/config/providers').expect(200);
+
+    expect(response.body.catalogIncomplete).toBe(true);
+    expect(response.body.providers.map((provider) => provider.id)).toEqual(['cursor-acp']);
+    fetchSpy.mockRestore();
+  });
+
+  it('marks the catalog incomplete when upstream responds with an error status', async () => {
+    readAuthFile.mockReturnValue({});
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: vi.fn(async () => ({ error: 'restarting' })),
+    });
+    const { app } = createCursorOnlyApp();
+
+    const response = await request(app).get('/api/config/providers').expect(200);
+
+    expect(response.body.catalogIncomplete).toBe(true);
+    expect(response.body.providers.map((provider) => provider.id)).toEqual(['cursor-acp']);
+    fetchSpy.mockRestore();
+  });
+
+  it('marks the catalog incomplete when integrations throw and upstream failed', async () => {
+    readAuthFile.mockReturnValue({});
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('fetch failed'));
+    const { app } = createApp({
+      buildOpenCodeUrl: vi.fn((requestPath) => `http://opencode.test${requestPath}`),
+      getProviderSources: vi.fn(() => {
+        throw new Error('provider source lookup failed');
+      }),
+      cursorSdkRuntime: null,
+    });
+
+    const response = await request(app).get('/api/config/providers').expect(200);
+
+    expect(response.body).toEqual({ providers: [], default: {}, catalogIncomplete: true });
     fetchSpy.mockRestore();
   });
 

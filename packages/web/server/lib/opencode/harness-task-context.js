@@ -63,8 +63,8 @@ export const createHarnessTaskContextHost = (options) => {
       return { path: revision.path, outline: outline || null };
     } finally { await handle.close(); }
   };
-  const readChildAssignment = async ({ sessionID, directory }) => {
-    const result = await options.getManagedRuntime().handleRpc({ method: 'child_assignment', params: { childSessionId: sessionID, directory } });
+  const readChildAssignment = async ({ sessionID, directory, maxBytes }) => {
+    const result = await options.getManagedRuntime().handleRpc({ method: 'child_assignment', params: { childSessionId: sessionID, directory, maxBytes } });
     return typeof result?.text === 'string' && result.text ? result.text : null;
   };
   const runtime = createTaskContextRuntime({ ...options,

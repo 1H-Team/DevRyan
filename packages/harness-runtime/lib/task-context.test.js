@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { COMPACTION_ANCHOR_TAG, createTaskContextRuntime, deriveTaskCheckpoint, formatCompactionAnchor } from './task-context.js';
+import { COMPACTION_ANCHOR_TAG, createTaskContextRuntime, deriveTaskCheckpoint, formatChildCompactionAnchor, formatCompactionAnchor } from './task-context.js';
 
 const anchor = { info: { id: 'msg_user', sessionID: 'ses_root', role: 'user' }, parts: [
   { type: 'text', text: 'Keep dependencies unchanged. Implement the selected plan.' },
@@ -116,7 +116,7 @@ describe('compaction anchors', () => {
     expect(text).not.toMatch(/updatedAt|\b1\d{12}\b/);
   });
 
-  test('shed the plan outline, then detail, before shortening the objective below its cap', () => {
+  test('shed the plan outline, then detail, before shortening the objective', () => {
     const long = structuredClone(anchor); long.parts[0].text = `${'objective '.repeat(1_500)}`;
     const todos = Array.from({ length: 20 }, (_, i) => ({ id: `todo_${i}`, content: 'x'.repeat(400), status: 'pending' }));
     const tasks = Array.from({ length: 40 }, (_, i) => ({ taskId: `dvr_task_${i}`, rootSessionId: 'ses_root', childSessionId: `ses_${i}`, status: 'running' }));
@@ -127,6 +127,46 @@ describe('compaction anchors', () => {
     expect(text).toContain('(more tasks outstanding)');
   });
 
+  test('spends optional detail budget on a complete 7 KiB objective and its trailing restriction', () => {
+    const objective = `${'x'.repeat(7 * 1024)}\nDo not change dependencies or permissions.`;
+    const long = { ...anchor, parts: [{ type: 'text', text: objective }] };
+    const todos = Array.from({ length: 20 }, (_, i) => ({ id: `todo_${i}`, content: 'optional '.repeat(70), status: 'pending' }));
+    const tasks = Array.from({ length: 40 }, (_, i) => ({ ...base.tasks[0], taskId: `dvr_task_${i}` }));
+    const text = formatCompactionAnchor(deriveTaskCheckpoint({ ...base, anchor: long, todos, tasks }),
+      { planPath: '/plan.md', planOutline: '- optional outline\n'.repeat(400) });
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(12 * 1024);
+    expect(text).toContain(objective);
+    expect(text).toContain('File: /plan.md');
+    expect(text).toContain('Recovery is read-only');
+    expect(text).not.toContain('- optional outline');
+    expect(text).not.toContain('user message msg_user, truncated');
+  });
+
+  test.each([11_800, 20_000])('keeps incomplete scope explicit across two compactions of %i bytes', (bytes) => {
+    const long = { ...anchor, parts: [{ type: 'text', text: 'é'.repeat(bytes / 2) }] };
+    for (let i = 1; i <= 2; i++) {
+      const checkpoint = deriveTaskCheckpoint({ ...base, anchor: long, tasks: [], envelopes: [], todos: [],
+        primary: { ...base.primary, activeUserID: `msg_summary_${i}` } });
+      if (bytes < 12 * 1024) expect(checkpoint.anchor.complete).toBe(true);
+      const text = formatCompactionAnchor(checkpoint);
+      expect(Buffer.byteLength(text)).toBeLessThanOrEqual(12 * 1024);
+      expect(text).toContain('user message msg_user, truncated');
+      expect(text).toContain('Objective incomplete:');
+      expect(text).toContain('request the missing scope before making changes');
+      expect(text).toContain('Preserve any Objective incomplete marker in every later summary');
+      expect(text).toContain('Recovery is read-only');
+      expect(text).not.toContain('re-read');
+      expect(text).not.toContain('\uFFFD');
+    }
+  });
+
+  test('never cuts an oversized child envelope into invalid JSON', () => {
+    const text = formatChildCompactionAnchor(`Rule\n${JSON.stringify({ prompt: 'x'.repeat(20_000) })}`);
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(12 * 1024);
+    expect(text).toContain('Assignment incomplete:');
+    expect(text).not.toContain('{"prompt":');
+  });
+
   test('the runtime anchor writes no record and a managed child gets its assignment', async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-anchor-'));
     const writes = [];
@@ -135,7 +175,11 @@ describe('compaction anchors', () => {
       readScope: async ({ sessionID, directory: projectDirectory }) => ({ session: { id: sessionID, directory: projectDirectory,
         ...(sessionID === 'ses_child' ? { parentID: 'ses_root' } : {}) }, projectIdentity: projectDirectory, projectDirectory }),
       readTaskState: async () => base, readMessage: async () => anchor, fingerprintFiles: async () => null,
-      readChildAssignment: async ({ sessionID }) => sessionID === 'ses_child' ? 'Continue only the original delegated assignment below.\n{"taskId":"dvr_task_active"}' : null,
+      readChildAssignment: async ({ sessionID, maxBytes }) => {
+        expect(maxBytes).toBeGreaterThan(10 * 1024);
+        expect(maxBytes).toBeLessThan(12 * 1024);
+        return sessionID === 'ses_child' ? 'Continue only the original delegated assignment below.\n{"taskId":"dvr_task_active"}' : null;
+      },
       readPlanOutline: async () => ({ path: '/plans/plan.md', outline: '# Plan' }),
     });
     try {

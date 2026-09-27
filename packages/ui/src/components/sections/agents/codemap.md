@@ -20,10 +20,12 @@ host-managed.
 
 `AgentRuntimeSection.tsx` is a host-wide policy section rendered inside
 Global Agent Behavior, never inside one agent's editor: the agent-runtime
-language-server switch (`/api/config/agent-runtime`, applied on
-the next managed runtime restart; a changed value shows a restart note and,
-where the host exposes `restartOpenCode`, a Restart Runtime button). Host
-admins edit; other principals read the effective values.
+language-server switch (`/api/config/agent-runtime`) compares desired settings
+against the server's last successfully applied managed launch snapshot. Unknown
+and external application states are explicit. Serialized saves keep confirmed
+values while pending; accepted restarts and configuration-apply transitions only
+refresh server state. A known pending managed change exposes Restart Runtime
+where supported. Host admins edit; other principals read the desired values.
 
 ## Flow
 Settings navigation selects a section; section reads/writes config through hooks/APIs.

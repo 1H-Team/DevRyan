@@ -339,6 +339,12 @@ export const AgentsPage: React.FC = () => {
     : null;
   const [showPermissionEditor, setShowPermissionEditor] = React.useState(false);
   const [isSavingModelOverride, setIsSavingModelOverride] = React.useState(false);
+  const hydratedModelSources = React.useRef<{
+    owner: string;
+    primary: string;
+    council: string;
+    backup: string;
+  } | null>(null);
 
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory ?? null);
   const [toolIds, setToolIds] = React.useState<string[]>([]);
@@ -672,24 +678,43 @@ export const AgentsPage: React.FC = () => {
         : undefined;
       const temperatureValue = selectedAgent.temperature;
       const promptValue = selectedAgent.prompt || '';
+      // Compare saved section values, not the agent/provider object identity:
+      // another section's save or a catalog refresh must not replace a draft.
+      const sources = {
+        owner: JSON.stringify([currentDirectory, selectedAgentName, isPersonalModelEditor]),
+        primary: JSON.stringify([modelValue, savedVariantValue]),
+        council: JSON.stringify([councilModelValues, selectedCouncillors.map((entry) => entry.variant)]),
+        backup: JSON.stringify([backupModelValue, selectedBackup?.variant]),
+      };
+      const previous = hydratedModelSources.current;
+      const ownerChanged = previous?.owner !== sources.owner;
+      hydratedModelSources.current = sources;
 
       setDescription(descriptionValue);
       setMode(modeValue);
 
-      setModel(modelValue);
-      setCouncilModels(toEditableModelRows(councilModelValues));
-      setCouncilVariants(councilVariantValues.length > 0 ? councilVariantValues : [undefined]);
-      setVariant(variantValue);
-      setBackupModel(backupModelValue);
-      setBackupVariant(backupVariantValue);
+      if (ownerChanged || previous?.primary !== sources.primary) {
+        setModel(modelValue);
+        setVariant(variantValue);
+      }
+      if (ownerChanged || previous?.council !== sources.council) {
+        setCouncilModels(toEditableModelRows(councilModelValues));
+        setCouncilVariants(councilVariantValues.length > 0 ? councilVariantValues : [undefined]);
+      }
+      if (ownerChanged || previous?.backup !== sources.backup) {
+        setBackupModel(backupModelValue);
+        setBackupVariant(backupVariantValue);
+      }
       setTemperature(temperatureValue);
       setPrompt(promptValue);
 
       applyPermissionState(
         permissionConfigToRuleset(selectedAgent.permission),
       );
+    } else {
+      hydratedModelSources.current = null;
     }
-  }, [isPersonalModelEditor, personalSelection, resolveVariantForModel, selectedAgent, selectedAgentName]);
+  }, [currentDirectory, isPersonalModelEditor, personalSelection, resolveVariantForModel, selectedAgent, selectedAgentName]);
 
   const handleSaveModelOverride = React.useCallback(async () => {
     if (!selectedAgentName) {

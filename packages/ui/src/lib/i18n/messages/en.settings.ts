@@ -625,6 +625,8 @@ export const settingsDict = {
   'settings.agents.runtime.lsp.label': 'Language Server for Agent Sessions',
   'settings.agents.runtime.lsp.description': 'Runs OpenCode\'s language servers (TypeScript and others) inside agent sessions. Turn off to save memory when agents run their own type checks. Applies the next time the agent runtime restarts.',
   'settings.agents.runtime.restart.note': 'Restart the agent runtime to apply.',
+  'settings.agents.runtime.external.note': 'Saved for DevRyan-managed launches. The external runtime’s applied settings cannot be verified here.',
+  'settings.agents.runtime.unknown.note': 'Saved settings apply on the next managed launch. The currently applied settings are not yet known.',
   'settings.agents.runtime.actions.restart': 'Restart Runtime',
   'settings.agents.runtime.readOnly.on': 'On',
   'settings.agents.runtime.readOnly.off': 'Off',

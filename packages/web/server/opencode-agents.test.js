@@ -492,7 +492,8 @@ describe('Packaged OpenChamber agents', () => {
     expect(orchestrator?.prompt).toContain('Scope:');
     expect(orchestrator?.prompt).toContain('Need:');
     expect(orchestrator?.prompt).toContain('Avoid:');
-    expect(orchestrator?.prompt).toContain('An unknown filename alone never requires Explorer.');
+    expect(orchestrator?.prompt).toContain('Goal:');
+    expect(orchestrator?.prompt).toContain('**Explorer-first discovery.**');
   });
 
   it('instructs Orchestrator to stop after plan-only responses without asking to implement', () => {

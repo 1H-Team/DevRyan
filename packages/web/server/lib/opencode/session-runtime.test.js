@@ -168,4 +168,22 @@ describe('session runtime', () => {
     expect(runtime.getSessionState('deleted-session')).toBeNull();
     expect(runtime.getSessionAttentionState('deleted-session')).toBeNull();
   });
+
+  it('lists sessions last reported busy or retrying for restart reconciliation', () => {
+    const runtime = createSessionRuntime({
+      writeSseEvent() {},
+      getNotificationClients: () => new Set(),
+      broadcastEvent() {},
+    });
+    runtimes.push(runtime);
+    for (const [sessionID, type] of [['busy-session', 'busy'], ['retry-session', 'retry'], ['idle-session', 'idle']]) {
+      runtime.processOpenCodeSsePayload({ type: 'session.status', properties: { sessionID, status: { type } } });
+    }
+
+    expect(runtime.listActiveSessions().map(({ sessionId, status }) => [sessionId, status])).toEqual([
+      ['busy-session', 'busy'],
+      ['retry-session', 'retry'],
+    ]);
+    expect(runtime.listActiveSessions()[0].lastUpdateAt).toEqual(expect.any(Number));
+  });
 });

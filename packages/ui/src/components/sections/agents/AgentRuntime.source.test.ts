@@ -33,13 +33,13 @@ describe('agent runtime presentation', () => {
   });
 
   test('shows the restart note after a change and a Restart Runtime button only where the host can restart', () => {
-    expect(sectionSource).toContain('settings.restartRequired ? (');
+    expect(sectionSource).toContain('settings.restartRequired === true ? (');
     expect(sectionSource).toContain("t('settings.agents.runtime.restart.note')");
     expect(sectionSource).toContain('apis.settings.restartOpenCode');
-    expect(sectionSource).toContain('{canEdit && restartOpenCode ? (');
+    expect(sectionSource).toContain("{canEdit && settings.runtimeMode === 'managed' && restartOpenCode ? (");
     expect(sectionSource).toContain("t('settings.agents.runtime.actions.restart')");
     expect(sectionSource).toContain('await restartOpenCode();');
-    expect(sectionSource).toContain('markAgentRuntimeRestarted();');
+    expect(sectionSource).toContain('await getAgentRuntimeSettings();');
     expect(sectionSource).toContain("t('settings.agents.runtime.toast.restartRequested')");
     expect(sectionSource).toContain("t('settings.agents.runtime.toast.restartFailed')");
   });

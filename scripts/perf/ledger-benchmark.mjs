@@ -6,6 +6,8 @@
 //
 //   node scripts/perf/ledger-benchmark.mjs [--repo <git repo>] [--runtime <harness-runtime/lib>]
 //     [--iterations 3] [--warm-calls 3] [--prewarm] [--out <report.json>] [--keep]
+//   --profile [--companion] [--timeout-ms 300000] runs cold, prewarmed,
+//   metadata-only and changed-content cases in fresh worker processes.
 //
 // `--runtime` points at another checkout's `packages/harness-runtime/lib` so a
 // frozen baseline and a candidate run the same workload. Kill-switch variables
@@ -15,13 +17,14 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
+import { startOwnedProcess } from '../qa/process.mjs';
 
 const execute = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 export function parseLedgerBenchmarkArgs(argv) {
   const options = { repo: repositoryRoot, runtime: path.join(repositoryRoot, 'packages/harness-runtime/lib'),
-    iterations: 3, warmCalls: 3, prewarm: false, out: null, keep: false };
+    iterations: 3, warmCalls: 3, prewarm: false, out: null, keep: false, profile: false, companion: false, timeoutMs: 300_000 };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     const value = () => {
@@ -36,11 +39,17 @@ export function parseLedgerBenchmarkArgs(argv) {
     else if (flag === '--out') options.out = path.resolve(value());
     else if (flag === '--prewarm') options.prewarm = true;
     else if (flag === '--keep') options.keep = true;
+    else if (flag === '--profile') options.profile = true;
+    else if (flag === '--companion') options.companion = true;
+    else if (flag === '--timeout-ms') options.timeoutMs = Number(value());
     else throw new Error(`Unknown option ${flag}`);
   }
   for (const [name, count] of [['--iterations', options.iterations], ['--warm-calls', options.warmCalls]]) {
     if (!Number.isSafeInteger(count) || count < 1 || count > 50) throw new Error(`${name} must be an integer from 1 to 50`);
   }
+  if (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs < 1000 || options.timeoutMs > 900_000) throw new Error('--timeout-ms must be an integer from 1000 to 900000');
+  if (options.companion && !options.profile) throw new Error('--companion requires --profile');
+  if (options.companion && options.runtime !== path.join(repositoryRoot, 'packages/harness-runtime/lib')) throw new Error('--companion uses this checkout\'s host; an alternate --runtime requires ledger-only profiling');
   return options;
 }
 
@@ -142,10 +151,72 @@ export async function runLedgerBenchmark(options) {
   };
 }
 
+// Phase profiling runs each case in a fresh process so maxRSS, caches and
+// initialization from earlier cases cannot silently affect the next sample.
+export async function runPreparationProfile(options) {
+  const cacheRoot = path.join(repositoryRoot, '.cache/perf/ledger-profile');
+  await fs.mkdir(cacheRoot, { recursive: true });
+  const outputRoot = await fs.mkdtemp(path.join(cacheRoot, 'run-'));
+  const rows = [];
+  for (const mode of options.companion ? ['ledger', 'companion'] : ['ledger']) {
+    for (let iteration = 0; iteration < options.iterations; iteration += 1) {
+      // Rotate case order to avoid assigning every first/cold trial to the
+      // same filesystem-cache and machine-load position.
+      const cases = ['cold', 'warm', 'metadata-only', 'changed-content'];
+      for (const scenario of [...cases.slice(iteration % 4), ...cases.slice(0, iteration % 4)]) {
+        const trialRoot = path.join(outputRoot, `${mode}-${scenario}-${iteration}`);
+        await fs.mkdir(trialRoot);
+        const resultFile = path.join(trialRoot, 'result.json');
+        const worker = startOwnedProcess(process.execPath, [path.join(repositoryRoot, 'scripts/perf/ledger-profile-worker.mjs'),
+          JSON.stringify({ ...options, mode, scenario, trialRoot, resultFile })], { cwd: repositoryRoot,
+          env: { PATH: process.env.PATH, HOME: path.join(trialRoot, 'home'), TMPDIR: trialRoot, LC_ALL: 'C',
+            ...Object.fromEntries(Object.entries(process.env).filter(([key]) => /^DEVRYAN_(LEDGER|LAZY|VIEW|EXECUTION)_/.test(key)
+              && !/(TOKEN|URL|PASSWORD|SECRET)/.test(key))) } });
+        let timer, timedOut = false, cleanupError = null, cleanup;
+        try {
+          await Promise.race([
+            new Promise(resolve => worker.child.once('close', resolve)),
+            new Promise(resolve => { timer = setTimeout(() => { timedOut = true; resolve(); }, options.timeoutMs); }),
+          ]);
+        } finally {
+          clearTimeout(timer);
+          try { cleanup = await worker.stop(); } catch (error) { cleanupError = error.message; cleanup = worker.getCleanupEvidence(); }
+        }
+        const result = await fs.readFile(resultFile, 'utf8').then(JSON.parse, () => ({ status: 'failed', reason: 'worker produced no completed result' }));
+        const row = { mode, scenario, iteration, evidenceDirectory: trialRoot, ...result, ...(timedOut ? { status: 'timeout' } : {}), cleanup, cleanupError };
+        if (cleanupError) row.status = 'cleanup-failed';
+        await fs.writeFile(path.join(trialRoot, 'worker.log'), worker.getLog());
+        // Delete only after retained OS identities confirm the owned process tree stopped.
+        if (!options.keep && !cleanupError && row.status === 'completed') {
+          await fs.rm(path.join(trialRoot, 'fixture'), { recursive: true, force: true });
+          await fs.rm(path.join(trialRoot, 'home'), { recursive: true, force: true });
+          row.fixtureRemoved = await fs.access(path.join(trialRoot, 'fixture')).then(() => false, () => true);
+          row.homeRemoved = await fs.access(path.join(trialRoot, 'home')).then(() => false, () => true);
+        } else { row.fixtureRemoved = false; row.homeRemoved = false; }
+        rows.push(row);
+        await fs.writeFile(path.join(outputRoot, 'rows.json'), JSON.stringify(rows, null, 2) + '\n');
+        console.error(JSON.stringify({ mode, scenario, iteration, status: row.status, wallMs: row.metrics?.wallMs, preparationMs: row.metrics?.preparationMs }));
+      }
+    }
+  }
+  const summary = {};
+  for (const row of rows) {
+    const key = `${row.mode}/${row.scenario}`;
+    summary[key] ??= { completed: 0, failed: 0, metrics: {} };
+    summary[key][row.status === 'completed' ? 'completed' : 'failed'] += 1;
+    for (const metric of Object.keys(row.metrics ?? {})) summary[key].metrics[metric] = summarize(rows
+      .filter(item => item.status === 'completed' && `${item.mode}/${item.scenario}` === key).map(item => item.metrics?.[metric]));
+  }
+  return { version: 2, at: new Date().toISOString(), outputRoot, repo: options.repo, runtime: options.runtime,
+    platform: `${process.platform}-${process.arch}`, node: process.version, iterations: options.iterations,
+    measurement: 'Independent fresh processes; prewarm is separate. Nested phases and concurrent Git/copy work overlap and must not be added. Host CPU/maxRSS exclude child processes; companion RSS is sampled, not an exact peak. No installed-app state or live provider.', summary, rows };
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const options = parseLedgerBenchmarkArgs(process.argv.slice(2));
-  const report = await runLedgerBenchmark(options);
+  const report = await (options.profile ? runPreparationProfile(options) : runLedgerBenchmark(options));
   const text = `${JSON.stringify(report, null, 2)}\n`;
-  if (options.out) await fs.writeFile(options.out, text);
+  if (options.out) { await fs.mkdir(path.dirname(options.out), { recursive: true }); await fs.writeFile(options.out, text); }
   process.stdout.write(JSON.stringify(report.summary, null, 2) + '\n');
+  if (options.profile && report.rows.some(row => row.status !== 'completed')) process.exitCode = 1;
 }

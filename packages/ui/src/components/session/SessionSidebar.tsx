@@ -29,6 +29,7 @@ import { useProjectSessionSelection } from './sidebar/hooks/useProjectSessionSel
 import { useGroupOrdering } from './sidebar/hooks/useGroupOrdering';
 import { useSessionGrouping } from './sidebar/hooks/useSessionGrouping';
 import { useSessionActions } from './sidebar/hooks/useSessionActions';
+import { resolveSessionDeleteFailureDescription } from './sessionDeleteFeedback';
 import { useSidebarPersistence } from './sidebar/hooks/useSidebarPersistence';
 import { useProjectRepoStatus } from './sidebar/hooks/useProjectRepoStatus';
 import { useProjectSessionLists } from './sidebar/hooks/useProjectSessionLists';
@@ -1334,7 +1335,9 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       if (result.failedIds.length > 0) {
         toast.error(t('sessions.sidebar.dialogs.archiveBranchSessions.partialFailure', {
           count: result.failedIds.length,
-        }));
+        }), {
+          description: resolveSessionDeleteFailureDescription(result.failures, '') || undefined,
+        });
       }
       setArchiveBranchConfirm(null);
     } finally {
@@ -1583,7 +1586,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         }
       } else {
         recordPendingArchiveRevealSessionIds(ids);
-        const { archivedIds, failedIds } = await archiveSessions(ids);
+        const { archivedIds, failedIds, failures } = await archiveSessions(ids);
         collapseArchivedSessionTrees(archivedIds);
         successfulCount = archivedIds.length;
         failedCount = failedIds.length;
@@ -1593,7 +1596,12 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         if (failedIds.length > 0) {
           toast.error(failedIds.length === 1
             ? t('sessions.sidebar.bulkActions.failedArchiveSingle', { count: failedIds.length })
-            : t('sessions.sidebar.bulkActions.failedArchivePlural', { count: failedIds.length }));
+            : t('sessions.sidebar.bulkActions.failedArchivePlural', { count: failedIds.length }), {
+            description: resolveSessionDeleteFailureDescription(
+              failures,
+              t('sessions.sidebar.dialogs.deleteResult.tryAgain'),
+            ),
+          });
         }
       }
 

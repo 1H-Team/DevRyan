@@ -237,6 +237,76 @@ describe('question routes', () => {
     expect(response.body).toEqual({ upstream: 'reply', holdMs: null });
   });
 
+  describe('orphaned OpenCode questions', () => {
+    const toolQuestion = {
+      ...buildQuestion('req_open', 'ses_open'),
+      tool: { messageID: 'msg_asst', callID: 'call_q' },
+    };
+    const json = (payload, status = 200) => new Response(JSON.stringify(payload), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    });
+    const createStatusFetch = (statuses) => vi.fn(async (url) => {
+      const target = String(url);
+      if (target.startsWith('http://opencode.test/question?')) return json([toolQuestion]);
+      if (target.startsWith('http://opencode.test/session/status')) {
+        expect(target).toBe('http://opencode.test/session/status?directory=%2Frepo');
+        return json(statuses);
+      }
+      throw new Error(`unexpected upstream call ${target}`);
+    });
+
+    it('refuses a reply whose session has no running turn, without forwarding it', async () => {
+      const fetchImpl = createStatusFetch({ ses_other: { type: 'busy' } });
+      const { app } = createApp({ fetchImpl });
+
+      const response = await request(app)
+        .post('/api/question/req_open/reply?directory=/repo')
+        .send({ answers: [['A']] })
+        .expect(409);
+
+      expect(response.body).toMatchObject({ code: 'question_orphaned' });
+      // Only the two small reads; the reply itself never reaches OpenCode.
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    });
+
+    it('forwards a reply while the session turn is running or retrying', async () => {
+      for (const type of ['busy', 'retry']) {
+        const { app } = createApp({ fetchImpl: createStatusFetch({ ses_open: { type } }) });
+        const response = await request(app)
+          .post('/api/question/req_open/reply?directory=/repo')
+          .send({ answers: [['A']] })
+          .expect(200);
+        expect(response.body).toEqual({ upstream: 'reply', holdMs: null });
+      }
+    });
+
+    it('fails open to forwarding when the session status cannot be read in time', async () => {
+      const fetchImpl = vi.fn(async (url, init = {}) => {
+        if (String(url).startsWith('http://opencode.test/question?')) return json([toolQuestion]);
+        return new Promise((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => reject(init.signal.reason));
+        });
+      });
+      const { app } = createApp({ fetchImpl, upstreamTimeoutMs: 5 });
+
+      const response = await request(app)
+        .post('/api/question/req_open/reply?directory=/repo')
+        .send({ answers: [['A']] })
+        .expect(200);
+
+      expect(response.body).toEqual({ upstream: 'reply', holdMs: null });
+    });
+
+    it('fails open when the status payload is malformed', async () => {
+      const { app } = createApp({ fetchImpl: createStatusFetch(['not', 'a', 'map']) });
+      await request(app)
+        .post('/api/question/req_open/reply?directory=/repo')
+        .send({ answers: [['A']] })
+        .expect(200);
+    });
+  });
+
   it('logs latency attribution for slow question replies, both Cursor-handled and proxied', async () => {
     const replyToQuestion = vi.fn(async () => true);
     const { app, logger } = createApp({ replyToQuestion, slowRequestThresholdMs: 0 });

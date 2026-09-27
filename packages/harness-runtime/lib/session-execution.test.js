@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { executionSocketDirectory, ownedPrivateDirectory, prepareSessionExecution, removeExecutionSocketDirectory,
-  sessionExecutionProfile, sweepExecutionSocketDirectories, verifySessionExecutionLauncher } from './session-execution.js';
+  sessionExecutionProfile, sweepExecutionSocketDirectories, sweepSessionTemporaryDirectories, verifySessionExecutionLauncher } from './session-execution.js';
 
 const roots = [], leases = [];
 afterEach(async () => {
@@ -24,6 +24,46 @@ test('all confined workers use their scratch home and temporary paths, including
   expect(prepared.environment).toMatchObject({ DEVRYAN_EXECUTION_WORKER: '1', HOME: prepared.scratchDirectory,
     TMPDIR: prepared.scratchDirectory, TMP: prepared.scratchDirectory, TEMP: prepared.scratchDirectory,
     TMPPREFIX: path.join(prepared.scratchDirectory, 'zsh') });
+});
+
+test('each session gets one durable temporary directory in the execution cache that survives its calls', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-execution-session-tmp-')); roots.push(root);
+  const auxiliaryDirectory = path.join(root, 'context-cache');
+  const prepare = async (token, sessionID) => {
+    const viewDirectory = path.join(root, token, 'worktree'); await fs.mkdir(viewDirectory, { recursive: true });
+    const lease = { token, viewDirectory, auxiliaryDirectory, scope: { sessionID } }; leases.push(lease);
+    return prepareSessionExecution({ launcher: path.join(root, 'launcher'), lease });
+  };
+  const first = await prepare('one', 'ses_a');
+  const directory = first.environment.DEVRYAN_SESSION_TMP;
+  expect(path.relative(await fs.realpath(auxiliaryDirectory), directory)).toMatch(/^session-tmp\/[0-9a-f]{16}$/);
+  await fs.writeFile(path.join(directory, 'server.log'), 'kept');
+  expect((await prepare('two', 'ses_a')).environment.DEVRYAN_SESSION_TMP).toBe(directory);
+  expect(await fs.readFile(path.join(directory, 'server.log'), 'utf8')).toBe('kept');
+  expect((await prepare('three', 'ses_b')).environment.DEVRYAN_SESSION_TMP).not.toBe(directory);
+  // A worker may replace its directory (or the root) with a link; it is never followed.
+  const host = path.join(root, 'host'); await fs.mkdir(host);
+  await fs.rm(directory, { recursive: true }); await fs.symlink(host, directory);
+  expect((await prepare('four', 'ses_a')).environment.DEVRYAN_SESSION_TMP).toBe(directory);
+  expect((await fs.lstat(directory)).isDirectory()).toBe(true);
+  await fs.rm(path.dirname(directory), { recursive: true }); await fs.symlink(host, path.dirname(directory));
+  await prepare('five', 'ses_a');
+  expect((await fs.lstat(path.dirname(directory))).isDirectory()).toBe(true);
+  expect(await fs.readdir(host)).toEqual([]);
+  // Calls without a session scope (provider transports) get none.
+  const plain = await prepareTracked(root, path.join(root, 'one', 'worktree'));
+  expect('DEVRYAN_SESSION_TMP' in plain.environment).toBe(false);
+});
+
+test('the session temporary sweep removes only idle hash-named directories', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-execution-session-sweep-')); roots.push(root);
+  const base = path.join(root, 'session-tmp');
+  for (const name of ['0123456789abcdef', 'fedcba9876543210', 'keep-me', 'aaaaaaaaaaaaaaaa']) await fs.mkdir(path.join(base, name), { recursive: true });
+  const old = new Date(Date.now() - 8 * 24 * 60 * 60_000);
+  for (const name of ['0123456789abcdef', 'keep-me', 'aaaaaaaaaaaaaaaa']) await fs.utimes(path.join(base, name), old, old);
+  expect(await sweepSessionTemporaryDirectories({ auxiliaryDirectory: root, keep: path.join(base, 'aaaaaaaaaaaaaaaa') })).toBe(1);
+  expect((await fs.readdir(base)).sort()).toEqual(['aaaaaaaaaaaaaaaa', 'fedcba9876543210', 'keep-me']);
+  expect(await sweepSessionTemporaryDirectories({ auxiliaryDirectory: path.join(root, 'absent') })).toBe(0);
 });
 
 test('confined workers skip per-call language-server downloads unless the kill switch restores them', async () => {

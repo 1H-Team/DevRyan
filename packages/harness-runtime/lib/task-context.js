@@ -100,14 +100,16 @@ const ANCHOR_RULE = 'Begin your summary with a "## Objective anchor" section. Qu
   + 'first part when it is marked truncated), name the approved plan and which of its steps are done or remaining, list the '
   + 'open todos with their status, list outstanding sub-agent tasks, and state the next action. If an earlier summary already '
   + 'has an "Objective anchor", carry its original request forward unless a newer real user message superseded it. Newer user '
-  + 'instructions take precedence; do not invent requirements.';
+  + 'instructions take precedence; do not invent requirements. Preserve any Objective incomplete marker in every later '
+  + 'summary until the complete scope is available or a newer real user message replaces the objective.';
 const CHILD_ANCHOR_RULE = 'Begin your summary with a "## Delegated assignment" section that preserves the assignment below '
   + 'verbatim (scope, owned targets, exclusions and acceptance checks), then what is done and what remains. It stays '
   + 'authoritative after this summary.';
+const CHILD_ANCHOR_PREFIX = `${COMPACTION_ANCHOR_TAG}\n${CHILD_ANCHOR_RULE}\n\n### Delegated assignment\n`;
 const NEXT_ACTION_TEXT = {
   'continue-current-objective': 'Continue the current objective from where the work stopped.',
   'inspect-managed-barrier': 'Inspect the outstanding sub-agent tasks and collect their results before continuing.',
-  'retrieve-objective': 'The objective above is incomplete; re-read the anchored user message before continuing.',
+  'retrieve-objective': 'Objective incomplete: use the complete scope already available in context; otherwise request the missing scope before making changes. Preserve this marker in subsequent summaries.',
 };
 
 /** Deterministic (no clock values, fixed order) and bounded, so the summary
@@ -124,29 +126,37 @@ export const formatCompactionAnchor = (checkpoint, { planPath = null, planOutlin
       sections.push('', '### Approved plan', planPath ? `File: ${planPath}` : `Plan ${checkpoint.selectedPlan.planIndex} from message ${checkpoint.selectedPlan.sourceMessageId}`);
       if (outline) sections.push(outline);
     }
-    if (todoCount) sections.push('', '### Open todos', ...todos.slice(0, todoCount));
-    if (childCount) sections.push('', '### Outstanding sub-agent tasks', ...children.slice(0, childCount),
+    if (todos.length) sections.push('', '### Open todos', ...todos.slice(0, todoCount),
+      ...(todoCount < todos.length ? ['- (more todos outstanding)'] : []));
+    if (children.length || !checkpoint.childCoverage.complete) sections.push('', '### Outstanding sub-agent tasks', ...children.slice(0, childCount),
       ...(childCount < children.length || !checkpoint.childCoverage.complete ? ['- (more tasks outstanding)'] : []));
     if (checkpoint.recovery?.readOnly) sections.push('', '### Restrictions', 'Recovery is read-only: do not modify files until the user resumes normal work.');
-    sections.push('', '### Next action', NEXT_ACTION_TEXT[checkpoint.nextAction?.kind] ?? NEXT_ACTION_TEXT['continue-current-objective']);
+    sections.push('', '### Next action', truncated ? NEXT_ACTION_TEXT['retrieve-objective']
+      : NEXT_ACTION_TEXT[checkpoint.nextAction?.kind] ?? NEXT_ACTION_TEXT['continue-current-objective']);
     return sections.join('\n');
   };
-  // Drop order when over budget: plan outline, extra children, extra todos,
-  // then shorten the objective (never below 2 KiB).
-  const attempt = { objectiveBytes: 6 * 1024, outline: planOutline ? boundedText(planOutline, 3 * 1024) : null,
+  // Spend the final budget on the objective and mandatory scope first.
+  const attempt = { objectiveBytes: Buffer.byteLength(checkpoint.anchor.objective), outline: planOutline ? boundedText(planOutline, 3 * 1024) : null,
     childCount: Math.min(children.length, 10), todoCount: Math.min(todos.length, 20) };
   let text = build(attempt);
   if (Buffer.byteLength(text) > COMPACTION_ANCHOR_MAX_BYTES) { attempt.outline = null; text = build(attempt); }
-  while (Buffer.byteLength(text) > COMPACTION_ANCHOR_MAX_BYTES && attempt.childCount > 3) { attempt.childCount--; text = build(attempt); }
-  while (Buffer.byteLength(text) > COMPACTION_ANCHOR_MAX_BYTES && attempt.todoCount > 5) { attempt.todoCount--; text = build(attempt); }
-  while (Buffer.byteLength(text) > COMPACTION_ANCHOR_MAX_BYTES && attempt.objectiveBytes > 2 * 1024) {
-    attempt.objectiveBytes = Math.max(2 * 1024, attempt.objectiveBytes - 1024); text = build(attempt);
+  while (Buffer.byteLength(text) > COMPACTION_ANCHOR_MAX_BYTES && attempt.childCount > 0) { attempt.childCount--; text = build(attempt); }
+  while (Buffer.byteLength(text) > COMPACTION_ANCHOR_MAX_BYTES && attempt.todoCount > 0) { attempt.todoCount--; text = build(attempt); }
+  if (Buffer.byteLength(text) > COMPACTION_ANCHOR_MAX_BYTES) {
+    const overhead = Buffer.byteLength(build({ ...attempt, objectiveBytes: 0 }));
+    if (overhead > COMPACTION_ANCHOR_MAX_BYTES) throw new RangeError('Compaction anchor identities exceed byte budget');
+    attempt.objectiveBytes = COMPACTION_ANCHOR_MAX_BYTES - overhead;
+    text = build(attempt);
   }
-  return boundedText(text, COMPACTION_ANCHOR_MAX_BYTES);
+  return text;
 };
 
-export const formatChildCompactionAnchor = (assignmentText) => boundedText(
-  `${COMPACTION_ANCHOR_TAG}\n${CHILD_ANCHOR_RULE}\n\n### Delegated assignment\n${assignmentText}`, COMPACTION_ANCHOR_MAX_BYTES);
+export const formatChildCompactionAnchor = (assignmentText) => {
+  const text = `${CHILD_ANCHOR_PREFIX}${assignmentText}`;
+  // The assignment owner budgets its encoded JSON. Never slice an envelope.
+  return Buffer.byteLength(text) <= COMPACTION_ANCHOR_MAX_BYTES ? text
+    : `${CHILD_ANCHOR_PREFIX}Assignment incomplete: use the complete assignment already in context; otherwise request missing scope from the parent before making changes. Preserve this marker in subsequent summaries.`;
+};
 
 export const createTaskContextRuntime = (options) => {
   const now = options.now ?? Date.now;
@@ -255,7 +265,8 @@ export const createTaskContextRuntime = (options) => {
   const compactionAnchor = async ({ sessionID, directory }) => {
     const context = await scope(sessionID, directory);
     if (context.session.parentID) {
-      const assignment = await options.readChildAssignment?.({ sessionID, directory });
+      const assignment = await options.readChildAssignment?.({ sessionID, directory,
+        maxBytes: COMPACTION_ANCHOR_MAX_BYTES - Buffer.byteLength(CHILD_ANCHOR_PREFIX) });
       return typeof assignment === 'string' && assignment
         ? { available: true, kind: 'child', text: formatChildCompactionAnchor(assignment) }
         : { available: false, reason: 'child_unmanaged' };

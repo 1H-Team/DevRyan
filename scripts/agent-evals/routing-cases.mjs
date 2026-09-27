@@ -5,7 +5,7 @@ export const ROUTING_CASES = Object.freeze({
   'routing-direct-behavior': { agent: null, kind: 'behavior' },
   'routing-direct-visual': { agent: null, kind: 'visual' },
   'routing-substantial-design': { agent: 'designer', kind: 'visual' },
-  'routing-footer-plan': { agent: null, kind: 'footer', readOnly: true },
+  'routing-footer-plan': { agent: 'explorer', kind: 'footer', readOnly: true },
   'routing-broad-discovery': { agent: 'explorer', kind: 'inventory', readOnly: true },
   'routing-behavior': { agent: 'fixer', approved: false, kind: 'behavior', explicit: true },
 });

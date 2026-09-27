@@ -141,6 +141,48 @@ describe("useConfigStore startup load status", () => {
     expect(useConfigStore.getState().providers).toEqual([])
   })
 
+  test("an incomplete catalog keeps the last complete providers and the selected model", async () => {
+    const complete = {
+      providers: [{ id: "openai", name: "OpenAI", source: "custom", options: {}, env: [],
+        models: { "gpt-6-astra": { ...selectionModel("gpt-6-astra"), providerID: "openai", name: "GPT-6 Astra" } } }],
+      default: { openai: "gpt-6-astra" },
+    }
+    getProvidersImpl = () => Promise.resolve(complete)
+    await useConfigStore.getState().loadProviders()
+    useConfigStore.getState().setProviderModel("openai", "gpt-6-astra", "medium")
+
+    const cursorOnly = { providers: [{ id: "cursor-acp", name: "Cursor", source: "custom", options: {}, env: [],
+      models: { auto: selectionModel("auto") } }], default: {}, catalogIncomplete: true }
+    getProvidersImpl = () => Promise.resolve(cursorOnly)
+    await useConfigStore.getState().loadProviders()
+
+    let state = useConfigStore.getState()
+    expect(providerCallOptions.length).toBe(4)
+    expect(state.providersLoadStatus).toBe("error")
+    expect(state.providersLoadError).toContain("provider catalog unavailable")
+    expect(state.providers.map(provider => provider.id)).toEqual(["openai"])
+    expect(state.getCurrentModel()?.name).toBe("GPT-6 Astra")
+
+    getProvidersImpl = () => Promise.resolve(complete)
+    await useConfigStore.getState().loadProviders({ force: true })
+
+    state = useConfigStore.getState()
+    expect(state.providersLoadStatus).toBe("ready")
+    expect(state.providersLoadError).toBe(undefined)
+    expect(state.currentModelId).toBe("gpt-6-astra")
+  })
+
+  test("an incomplete catalog without a previous one shows integrations but stays in error", async () => {
+    getProvidersImpl = () => Promise.resolve({ providers: [{ id: "cursor-acp", name: "Cursor", source: "custom",
+      options: {}, env: [], models: { auto: selectionModel("auto") } }], default: {}, catalogIncomplete: true })
+
+    await useConfigStore.getState().loadProviders()
+
+    const state = useConfigStore.getState()
+    expect(state.providersLoadStatus).toBe("error")
+    expect(state.providers.map(provider => provider.id)).toEqual(["cursor-acp"])
+  })
+
   test("agent transient failures set error state and retry can recover to a valid empty list", async () => {
     listAgentsStrictImpl = () => Promise.reject(new Error("agent 503"))
 

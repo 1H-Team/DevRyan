@@ -111,16 +111,27 @@ test('plan approval waits for new turn evidence and preserves the actual dispatc
   assert.equal(gradeRoutingOutcome({ caseId: 'routing-approved-visual', rootSessionId: 'root', snapshot: result.managedSnapshot }).passed, false);
 });
 
-test('direct routing rejects any child and requires evidence for a footer plan', () => {
-  const input = { caseId: 'routing-footer-plan', rootSessionId: 'root', snapshot: { tasks: [] }, childSessionIds: [],
+test('unknown-location footer plan requires one Explorer child and located evidence', () => {
+  const explorerTask = { taskId: 'task', rootSessionId: 'root', childSessionId: 'child', agent: 'explorer' };
+  const input = { caseId: 'routing-footer-plan', rootSessionId: 'root', snapshot: { tasks: [explorerTask] }, childSessionIds: ['child'],
     evidence: { located: true, cause: true, verification: true } };
   assert.equal(gradeRoutingOutcome(input).passed, true);
-  assert.equal(gradeRoutingOutcome({ ...input, childSessionIds: ['hidden-child'] }).passed, false);
+  assert.equal(gradeRoutingOutcome({ ...input, snapshot: { tasks: [] }, childSessionIds: [] }).passed, false);
+  assert.equal(gradeRoutingOutcome({ ...input, snapshot: { tasks: [{ ...explorerTask, agent: 'fixer' }] } }).passed, false);
+  assert.equal(gradeRoutingOutcome({ ...input, snapshot: { tasks: [explorerTask, explorerTask] } }).passed, false);
   assert.equal(gradeRoutingOutcome({ ...input, evidence: { located: true } }).passed, false);
   assert.equal(gradeToolRequirements(input.caseId, [
-    { tool: 'read', status: 'completed', sessionScope: 'root' },
-    { tool: 'edit', status: 'completed', sessionScope: 'root' },
+    { tool: 'read', final: true, sessionScope: 'root' },
   ]).passed, false);
+  assert.equal(gradeToolRequirements(input.caseId, [
+    { tool: 'devryan_task', final: true, sessionScope: 'root' },
+    { tool: 'read', final: true, sessionScope: 'child' },
+    { tool: 'edit', final: true, sessionScope: 'root' },
+  ]).passed, false);
+  assert.equal(gradeToolRequirements(input.caseId, [
+    { tool: 'devryan_task', final: true, sessionScope: 'root' },
+    { tool: 'read', final: true, sessionScope: 'child' },
+  ]).passed, true);
   const evidence = collectRoutingEvidence(input.caseId, [{ sessionId: 'root', messages: [
     { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'src/footer.js uses a count threshold of 5; add a regression test.' }] },
   ] }], 'root', 'src/footer.js');

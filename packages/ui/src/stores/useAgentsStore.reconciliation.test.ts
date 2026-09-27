@@ -197,6 +197,36 @@ describe('directory-owned agent saves', () => {
 });
 
 describe('complete agent catalog reconciliation', () => {
+  test('switching A to B to A cannot reuse the other project catalog within the TTL', async () => {
+    let calls = 0;
+    fetchWith(async () => {
+      calls += 1;
+      return json({ agents: [agent({ prompt: opencodeClient.getDirectory() })] });
+    });
+    await useAgentsStore.getState().loadAgents();
+    opencodeClient.setDirectory(`${directory}/other`);
+    await useAgentsStore.getState().loadAgents();
+    opencodeClient.setDirectory(directory);
+    expect(await useAgentsStore.getState().loadAgents()).toBe(true);
+    expect(useAgentsStore.getState().agents[0].prompt).toBe(directory);
+    expect(calls).toBe(3);
+  });
+
+  test('deduplicates same-directory requests and caches a successfully loaded empty catalog', async () => {
+    const pending = deferred<Response>();
+    let calls = 0;
+    fetchWith(async () => { calls += 1; return pending.promise; });
+    const first = useAgentsStore.getState().loadAgents();
+    const second = useAgentsStore.getState().loadAgents();
+    expect(calls).toBe(1);
+    pending.resolve(json({ agents: [] }));
+    expect(await first).toBe(true);
+    expect(await second).toBe(true);
+    expect(await useAgentsStore.getState().loadAgents()).toBe(true);
+    expect(useAgentsStore.getState().agents).toEqual([]);
+    expect(calls).toBe(1);
+  });
+
   const changes: Array<[string, Partial<AgentWithExtras>]> = [
     ['prompt', { prompt: 'New instructions' }],
     ['permissions', { permission: [{ permission: 'bash', pattern: '*', action: 'deny' }] }],

@@ -1,3 +1,17 @@
+export type AbortSource =
+  | 'stop_button'
+  | 'double_escape'
+  | 'steered_send'
+  | 'session_removal'
+  | 'revert'
+  | 'redo'
+  | 'abort_guard'
+  | 'provider_retry'
+  | 'stall_watchdog'
+  | 'status_row';
+export const ABORT_SOURCE_HEADER: 'X-DevRyan-Abort-Source';
+export const ABORT_SOURCES: readonly AbortSource[];
+export function normalizeAbortSource(value: unknown): AbortSource | 'unknown';
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 export interface ProviderToolCatalogEntry {
@@ -379,6 +393,8 @@ export interface ManagedTaskExecutor {
   }>;
   reconcile(task: ManagedTaskRecord): Promise<ManagedTaskReconciliation>;
   readRecoverableResult(task: ManagedTaskRecord): Promise<Omit<ManagedTaskExecutorResult, 'status'>>;
+  /** Synchronous bounded snapshot for this exact active lease; never performs I/O. */
+  getLastRecoverableResult?(task: ManagedTaskRecord): Omit<ManagedTaskExecutorResult, 'status'> | null;
   shutdown?(): Promise<void>;
 }
 
@@ -427,6 +443,10 @@ export interface ManagedOpenCodeTransport {
     code: string | null;
     statusCode: number | null;
     retryable: boolean | null;
+  } | null>;
+  readOperatorAbort?(input: ManagedOpenCodeTransportInput & { after?: number }): Promise<{
+    sessionId: string;
+    requestedAt: number;
   } | null>;
   abortSession(input: ManagedOpenCodeTransportInput & { signal?: AbortSignal }): Promise<boolean>;
   deleteSession(input: ManagedOpenCodeTransportInput): Promise<boolean>;
@@ -907,6 +927,17 @@ export function createManagedTerminalErrorRegistry(options?: {
   clear(): void;
   readonly size: number;
 };
+export function createManagedOperatorAbortRegistry(options?: {
+  now?: () => number;
+  maximumSessions?: number;
+}): {
+  record(input: { sessionId?: string; requestedAt?: number }): { sessionId: string; requestedAt: number } | null;
+  withdraw(input: { sessionId?: string; requestedAt?: number }): boolean;
+  read(input?: { sessionId?: string; after?: number }): { sessionId: string; requestedAt: number } | null;
+  observe(payload: unknown): boolean;
+  clear(): void;
+  readonly size: number;
+};
 export function truncateManagedText(value: unknown, maxBytes: number): string;
 export function isTerminalManagedTaskStatus(status: unknown): status is ManagedTaskTerminalStatus;
 export function validateManagedTaskRecord(task: unknown): ManagedTaskRecord;
@@ -1026,5 +1057,5 @@ export const PROVIDER_AUTHENTICATION_FAILURE_KIND: 'provider_authentication';
 export function isProviderAuthenticationFailure(value: unknown): boolean;
 export function formatManagedAssignmentContext(
   task: Pick<ManagedTaskRecord, 'taskId' | 'rootSessionId' | 'agent' | 'label' | 'prompt'> & { readOnly?: boolean },
-  options?: { maxPromptBytes?: number },
+  options?: { maxPromptBytes?: number; maxBytes?: number },
 ): string | null;

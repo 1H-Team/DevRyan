@@ -243,14 +243,15 @@ practice (user requirement, 2026-09-04); no store surfaces limits or pacing.
 
 The managed agent-runtime switches (today only `lsp`, OpenCode's language
 servers inside agent sessions) live in `useAgentsStore` as `agentRuntimeSettings`,
-loaded and saved optimistically through `/api/config/agent-runtime` from the
-Agent Runtime section of the same page. OpenCode reads these when its instance
-starts, so the host answers `appliesOnRestart: true` and a `PUT` that changes
-the value while a managed server runs answers `restartRequired: true`; the
-store keeps that flag across reloads and later saves until
-`markAgentRuntimeRestarted()` runs (the section's Restart Runtime button, which
-posts the manual configuration reload through `apis.settings.restartOpenCode`).
-A 404 or 501 from the host clears the state so the section hides.
+loaded and saved through `/api/config/agent-runtime` from the Agent Runtime
+section. Saves are serialized, retain confirmed values while pending, and fence
+older loads. GET and PUT return desired `lsp`, `appliesOnRestart: true`,
+`runtimeMode`, `appliedLsp`, and `restartRequired`. Only successful managed
+readiness proves application; external or unknown application returns null for
+the latter two fields. Repeated saves and renderer reloads preserve pending
+changes, and reverting desired settings clears them. Restart acceptance,
+configuration-apply state changes, and focus trigger fresh reads; none locally
+clear the restart notice. A 404 or 501 clears the state so the section hides.
 
 Ownership and safety rules:
 

@@ -3,15 +3,17 @@ import { describe, expect, it } from 'vitest';
 const readAgent = name => readFileSync(new URL(`./${name}.md`, import.meta.url), 'utf8');
 
 describe('complexity-based bundled agent routing', () => {
-  it('keeps simple discovery, fixes, visual tweaks and related tests direct', () => {
+  it('starts new tasks with Explorer discovery and keeps bounded fixes, visual tweaks and related tests direct', () => {
     const prompt = readAgent('orchestrator');
-    for (const rule of ['An unknown filename alone never requires Explorer', 'fully specified visual tweak',
+    for (const rule of ['**Explorer-first discovery.**', 'the user named the exact files or symbols to change',
+      'the whole answer is one narrow lookup', 'do not repeat its search', 'fully specified visual tweak',
       'Keep related tests and visible verification with the agent doing the change',
       'uncertainty, coupling, risk, and expected elapsed time', 'Explicit user requests for a specialist take precedence']) {
       expect(prompt).toContain(rule);
     }
     for (const obsolete of ['Unknown codebase location: call', 'roughly 20 lines', 'default to @fixer',
-      'small-direct-edit exception does not bypass', 'Plan approval does not change specialist ownership']) {
+      'small-direct-edit exception does not bypass', 'Plan approval does not change specialist ownership',
+      'An unknown filename alone never requires Explorer', 'direct-first discovery policy', 'only when it adds value']) {
       expect(prompt).not.toContain(obsolete);
     }
   });
@@ -28,7 +30,7 @@ describe('complexity-based bundled agent routing', () => {
     const prompt = readAgent('orchestrator');
     expect(prompt).toContain('never dispatch Designer from a plan-mode turn');
     expect(prompt).toContain('Read the approved plan when the follow-up is only "implement plan"');
-    expect(prompt).toContain('Use the same direct-first discovery policy in plan mode');
+    expect(prompt).toContain('Apply Explorer-first discovery in plan mode too; Explorer is read-only.');
     expect(prompt).toContain('Never delegate planning-only or standalone review work to Designer.');
   });
   it('bounds unsuccessful Explorer discovery and stops when navigation evidence is sufficient', () => {
@@ -37,5 +39,6 @@ describe('complexity-based bundled agent routing', () => {
     expect(prompt).toContain('An explicitly requested broad usage map may continue within its stated scope');
     expect(prompt).toContain('do not keep searching after saying you have enough context');
     expect(prompt).toContain('Do not diagnose the bug');
+    expect(prompt).toContain('Given a task goal rather than a single target');
   });
 });

@@ -38,6 +38,7 @@ import { BotRuntimeServicePanel } from './BotRuntimeServicePanel';
 import { BotCatalogPanel } from './BotCatalogPanel';
 import { refreshBotsState } from '@/components/bots/refreshBotsState';
 import { createBotCatalogConnection } from '@/apps/botCatalogConnection';
+import { botCapabilityCanStream } from '@/apps/botCapabilityStream';
 import { retryBotsEventConnection } from '@/apps/botEventConnection';
 import {
   createDefaultBotRevisionContract,
@@ -249,6 +250,10 @@ const BotsPageContent: React.FC<BotsPageProps> = ({
   React.useEffect(() => {
     const connection = createBotCatalogConnection({
       load: loadCatalog,
+      canLoad: () => {
+        const current = useBotsStore.getState().capabilities;
+        return current !== null && botCapabilityCanStream(current);
+      },
       shouldRetry: () => catalogRetryable.current,
       cancel: () => {
         catalogRequest.current += 1;
@@ -257,23 +262,30 @@ const BotsPageContent: React.FC<BotsPageProps> = ({
       },
     });
     catalogConnection.current = connection;
+    const unsubscribeCapabilities = useBotsStore.subscribe((state, previous) => {
+      if (state.capabilities === previous.capabilities || !state.capabilities) return;
+      if (botCapabilityCanStream(state.capabilities)
+        && (!previous.capabilities || !botCapabilityCanStream(previous.capabilities))) connection.retry();
+    });
     if (initialCatalog.length === 0) connection.retry();
     return () => {
+      unsubscribeCapabilities();
       connection.dispose();
       catalogConnection.current = null;
     };
   }, [initialCatalog.length, loadCatalog]);
 
-  const catalogReady = capabilities?.catalogAvailable === true;
-  React.useEffect(() => {
-    if (catalogReady && catalogRetryable.current) catalogConnection.current?.retry();
-  }, [catalogReady]);
+  const retryCatalog = React.useCallback(() => {
+    const current = useBotsStore.getState().capabilities;
+    if (current && botCapabilityCanStream(current)) catalogConnection.current?.retry();
+    else void refreshCapabilities().catch(recordError);
+  }, [recordError, refreshCapabilities]);
 
   React.useEffect(() => {
 
-    const refreshOnFocus = () => catalogConnection.current?.retry();
+    const refreshOnFocus = retryCatalog;
     const refreshOnVisibility = () => {
-      if (document.visibilityState === 'visible') catalogConnection.current?.retry();
+      if (document.visibilityState === 'visible') retryCatalog();
     };
     window.addEventListener('focus', refreshOnFocus);
     document.addEventListener('visibilitychange', refreshOnVisibility);
@@ -281,7 +293,7 @@ const BotsPageContent: React.FC<BotsPageProps> = ({
       window.removeEventListener('focus', refreshOnFocus);
       document.removeEventListener('visibilitychange', refreshOnVisibility);
     };
-  }, [loadCatalog]);
+  }, [retryCatalog]);
 
   React.useEffect(() => {
     if (selectedBotId || catalog.length === 0) return;
@@ -686,7 +698,7 @@ const BotsPageContent: React.FC<BotsPageProps> = ({
               </p>
               {requestError?.code ? <p className="mt-1 font-mono text-xs text-muted-foreground">{requestError.code}</p> : null}
               {requestError || catalogError ? (
-                <Button type="button" size="xs" variant="outline" className="mt-3" onClick={() => catalogConnection.current?.retry()}>
+                <Button type="button" size="xs" variant="outline" className="mt-3" onClick={retryCatalog}>
                   <RiRefreshLine className="h-3.5 w-3.5" aria-hidden /> Retry
                 </Button>
               ) : null}

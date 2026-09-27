@@ -14,6 +14,10 @@ const chatInputSource = readFileSync(
   fileURLToPath(new URL("./ChatInput.tsx", import.meta.url)),
   "utf8",
 )
+const keyboardShortcutsSource = readFileSync(
+  fileURLToPath(new URL("../../hooks/useKeyboardShortcuts.ts", import.meta.url)),
+  "utf8",
+)
 const optionRowSource = readFileSync(
   fileURLToPath(new URL("./QuestionOptionRow.tsx", import.meta.url)),
   "utf8",
@@ -69,7 +73,7 @@ describe("QuestionCard option interaction ownership", () => {
     expect(source).toContain('aria-live="polite"')
 
     const optimisticAckIndex = source.indexOf("acknowledgeQuestionRequests(previous, answerGroups")
-    const awaitSubmitIndex = source.indexOf("await submitQuestionRequestAnswerGroups")
+    const awaitSubmitIndex = source.indexOf("await submitQuestionAnswersWithOrphanResume(")
     expect(optimisticAckIndex).toBeGreaterThan(-1)
     expect(awaitSubmitIndex).toBeGreaterThan(-1)
     expect(optimisticAckIndex).toBeLessThan(awaitSubmitIndex)
@@ -111,5 +115,23 @@ describe("QuestionCard option interaction ownership", () => {
     expect(optionRowSource).toContain("rounded-full bg-muted/60")
     expect(optionRowSource).not.toContain("break-all")
     expect(optionRowSource).not.toContain("text-primary/80")
+  })
+})
+
+describe("QuestionCard stopped-turn handling", () => {
+  test("marks its root so global Escape never aborts the turn waiting on it", () => {
+    expect(source).toContain('data-question-card="true"')
+    expect(keyboardShortcutsSource).toContain(`target?.closest('[data-question-card="true"]')`)
+    expect(keyboardShortcutsSource).toContain("isInsideDialog || isInsideQuestionCard")
+  })
+
+  test("routes answers through the orphan-aware responder and explains a stopped turn", () => {
+    expect(source).toContain("await submitQuestionAnswersWithOrphanResume(")
+    expect(source).toContain("useOrphanedQuestionKeys(normalizedRequests)")
+    expect(source).toContain("t('chat.questionCard.turnStopped')")
+    // The optimistic ack still precedes the awaited submission.
+    const optimisticAckIndex = source.indexOf("acknowledgeQuestionRequests(previous, answerGroups")
+    const responderIndex = source.indexOf("await submitQuestionAnswersWithOrphanResume(")
+    expect(optimisticAckIndex).toBeLessThan(responderIndex)
   })
 })

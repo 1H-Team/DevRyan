@@ -4,7 +4,8 @@ import { toast } from '@/components/ui';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { useI18n } from '@/lib/i18n';
 import type { MainTab } from '@/stores/useUIStore';
-import type { DeleteSessionsResult } from '@/sync/session-actions';
+import type { ArchiveSessionsResult, DeleteSessionsResult, UnarchiveSessionsResult } from '@/sync/session-actions';
+import { resolveSessionDeleteFailureDescription } from '../../sessionDeleteFeedback';
 
 type DeleteSessionConfirmSetter = React.Dispatch<React.SetStateAction<{
   session: Session;
@@ -35,9 +36,9 @@ type Args = {
   deleteSession: (id: string) => Promise<boolean>;
   deleteSessions: (ids: string[]) => Promise<DeleteSessionsResult>;
   archiveSession: (id: string) => Promise<boolean>;
-  archiveSessions: (ids: string[]) => Promise<{ archivedIds: string[]; failedIds: string[] }>;
+  archiveSessions: (ids: string[]) => Promise<ArchiveSessionsResult>;
   unarchiveSession: (id: string) => Promise<boolean>;
-  unarchiveSessions: (ids: string[]) => Promise<{ unarchivedIds: string[]; failedIds: string[] }>;
+  unarchiveSessions: (ids: string[]) => Promise<UnarchiveSessionsResult>;
   onArchiveRequested?: (ids: string[]) => void;
   onArchiveSucceeded?: (ids: string[]) => void;
   onArchiveFailed?: (ids: string[]) => void;
@@ -220,7 +221,7 @@ export const useSessionActions = (args: Args) => {
       }
 
       args.onArchiveRequested?.(ids);
-      const { archivedIds, failedIds } = await args.archiveSessions(ids);
+      const { archivedIds, failedIds, failures } = await args.archiveSessions(ids);
       if (archivedIds.length > 0) {
         args.onArchiveSucceeded?.(archivedIds);
       }
@@ -228,7 +229,12 @@ export const useSessionActions = (args: Args) => {
         args.onArchiveFailed?.(failedIds);
         toast.error(failedIds.length === 1
           ? t('sessions.sidebar.bulkActions.failedArchiveSingle', { count: failedIds.length })
-          : t('sessions.sidebar.bulkActions.failedArchivePlural', { count: failedIds.length }));
+          : t('sessions.sidebar.bulkActions.failedArchivePlural', { count: failedIds.length }), {
+          description: resolveSessionDeleteFailureDescription(
+            failures,
+            t('sessions.sidebar.dialogs.deleteResult.tryAgain'),
+          ),
+        });
       }
     },
     [args, collectDescendants, t],

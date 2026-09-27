@@ -3,6 +3,7 @@ import path from 'node:path';
 import { spawn, execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { writeFileAtomic } from './atomic-file.js';
+import { writableInputDirectories } from './execution-inputs.js';
 
 const error = (code) => Object.assign(new Error(code), { code, status: 409 });
 const sbString = (value) => {
@@ -53,10 +54,11 @@ export async function verifySessionExecutionLauncher({ launcher, platform = proc
   } catch { verifiedLaunchers.delete(cacheKey); return false; }
 }
 
-export function sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory, socketDirectory }) {
+export function sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory, socketDirectory, writableDirectories = [] }) {
+  const writeThrough = writableDirectories.map((directory) => `(require-not (subpath ${sbString(directory)}))`).join(' ');
   return `(version 1)
 (allow default)
-(deny file-write* (require-all (require-not (subpath ${sbString(viewDirectory)})) (require-not (subpath ${sbString(scratchDirectory)})) ${auxiliaryDirectory ? `(require-not (subpath ${sbString(auxiliaryDirectory)}))` : ''} ${socketDirectory ? `(require-not (subpath ${sbString(socketDirectory)}))` : ''} (require-not (literal "/dev/null"))))
+(deny file-write* (require-all (require-not (subpath ${sbString(viewDirectory)})) (require-not (subpath ${sbString(scratchDirectory)})) ${auxiliaryDirectory ? `(require-not (subpath ${sbString(auxiliaryDirectory)}))` : ''} ${socketDirectory ? `(require-not (subpath ${sbString(socketDirectory)}))` : ''} ${writeThrough} (require-not (literal "/dev/null"))))
 (deny mach-lookup)
 (deny network-outbound (remote unix-socket))
 ; TCP stays available, so name resolution must too: the system resolver socket
@@ -148,6 +150,13 @@ export async function sweepExecutionSocketDirectories({ root = executionSocketRo
   return removed;
 }
 
+// A ledger view is <storage>/<project>/views/<token>/worktree. No write-through
+// grant may overlap the ledger storage; other layouts protect their own root.
+const ledgerStorageOf = (viewDirectory) => {
+  const views = path.dirname(path.dirname(viewDirectory));
+  return path.basename(views) === 'views' ? path.dirname(path.dirname(views)) : path.dirname(viewDirectory);
+};
+
 export async function prepareSessionExecution({ launcher, lease }) {
   if (!['darwin', 'linux', 'win32'].includes(process.platform)) throw error('mutation_platform_unsupported');
   if (!path.isAbsolute(launcher ?? '')) throw error('mutation_runtime_unsupported');
@@ -167,19 +176,79 @@ export async function prepareSessionExecution({ launcher, lease }) {
     await fs.writeFile(path.join(scratchDirectory, '.bash-env'), shellEnvironment, { mode: 0o600 });
   }
   const socketDirectory = await prepareExecutionSocketDirectory(lease);
+  const sessionTemporaryDirectory = await prepareSessionTemporaryDirectory(auxiliaryDirectory, lease);
+  // Only the macOS profile grants write-through; the Linux and Windows
+  // launchers are not approved for production and keep inputs read-only.
+  const writableDirectories = process.platform === 'darwin' ? await writableInputDirectories({
+    inputs: lease.inputs, projectDirectory: lease.projectDirectory,
+    protectedDirectories: [ledgerStorageOf(viewDirectory), auxiliaryDirectory],
+  }) : [];
   const profile = path.join(root, `sandbox-${randomUUID()}.sb`);
-  await writeFileAtomic(profile, sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory, socketDirectory }));
+  await writeFileAtomic(profile, sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory, socketDirectory, writableDirectories }));
   const cancelEvent = `Local\\DevRyan-execution-${randomUUID()}`;
   return { launcher, arguments: [viewDirectory, scratchDirectory, profile, path.join(root, 'termination.json'), '--'],
     cwd: workingDirectory, profile, scratchDirectory,
     environment: { DEVRYAN_EXECUTION_WORKER: '1', HOME: scratchDirectory,
       DEVRYAN_EXECUTION_CWD: lease.logicalWorkingDirectory ?? workingDirectory, DEVRYAN_EXECUTION_CANCEL_EVENT: cancelEvent,
       DEVRYAN_EXECUTION_CACHE: auxiliaryDirectory,
+      ...(sessionTemporaryDirectory ? { DEVRYAN_SESSION_TMP: sessionTemporaryDirectory } : {}),
       ...(socketDirectory ? { XDG_RUNTIME_DIR: shortSocketSpelling(socketDirectory) } : {}),
       ...(process.platform === 'darwin' ? { DYLD_INSERT_LIBRARIES: `${launcher}-spawn.dylib`,
         ZDOTDIR: scratchDirectory, BASH_ENV: path.join(scratchDirectory, '.bash-env') } : {}),
       TMPDIR: scratchDirectory, TMP: scratchDirectory, TEMP: scratchDirectory,
       TMPPREFIX: path.join(scratchDirectory, 'zsh'), ...workerLanguageServerEnvironment() } };
+}
+
+// TMPDIR is the per-call scratch, removed when the call ends. Logs a later
+// call must read (a dev server's output, a reproduction transcript) go to this
+// per-session directory inside the execution cache, which every confined call
+// may write. Directories idle for a week are swept, at most hourly per project.
+export const SESSION_TEMPORARY_ROOT = 'session-tmp';
+export const sessionTemporaryDirectory = (auxiliaryDirectory, lease) => {
+  const sessionID = lease?.scope?.sessionID;
+  if (!auxiliaryDirectory || typeof sessionID !== 'string' || !sessionID) return null;
+  return path.join(auxiliaryDirectory, SESSION_TEMPORARY_ROOT, createHash('sha256').update(sessionID).digest('hex').slice(0, 16));
+};
+const sessionTemporarySweeps = new Map();
+async function prepareSessionTemporaryDirectory(auxiliaryDirectory, lease) {
+  const directory = sessionTemporaryDirectory(auxiliaryDirectory, lease);
+  if (!directory) return null;
+  // Workers may write here, so an earlier call may have replaced either level
+  // with a file or a link: never follow one, start the directory over instead.
+  for (const level of [path.dirname(directory), directory]) {
+    const existing = await fs.lstat(level).catch((cause) => { if (cause.code === 'ENOENT') return null; throw cause; });
+    if (existing && !existing.isDirectory()) await fs.rm(level, { recursive: true, force: true });
+    await fs.mkdir(level, { recursive: true, mode: 0o700 });
+  }
+  // Touch: the sweep measures idleness by the directory's own mtime.
+  const now = new Date(); await fs.utimes(directory, now, now);
+  const lastSweep = sessionTemporarySweeps.get(auxiliaryDirectory) ?? 0;
+  if (now.getTime() - lastSweep > 60 * 60_000) {
+    sessionTemporarySweeps.set(auxiliaryDirectory, now.getTime());
+    while (sessionTemporarySweeps.size > 64) sessionTemporarySweeps.delete(sessionTemporarySweeps.keys().next().value);
+    void sweepSessionTemporaryDirectories({ auxiliaryDirectory, keep: directory }).catch(() => {});
+  }
+  return directory;
+}
+
+/** Best effort: removes per-session temporary directories idle past the bound. */
+export async function sweepSessionTemporaryDirectories({ auxiliaryDirectory, olderThanMs = 7 * 24 * 60 * 60_000, now = Date.now(), keep = null } = {}) {
+  if (!auxiliaryDirectory) return 0;
+  const root = path.join(auxiliaryDirectory, SESSION_TEMPORARY_ROOT);
+  if (!(await fs.lstat(root).catch(() => null))?.isDirectory()) return 0;
+  let entries;
+  try { entries = await fs.readdir(root, { withFileTypes: true }); }
+  catch (cause) { if (cause.code === 'ENOENT') return 0; throw cause; }
+  let removed = 0;
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !/^[0-9a-f]{16}$/.test(entry.name)) continue;
+    const directory = path.join(root, entry.name);
+    if (directory === keep) continue;
+    const stat = await fs.lstat(directory).catch(() => null);
+    if (!stat?.isDirectory() || now - stat.mtimeMs < olderThanMs) continue;
+    await fs.rm(directory, { recursive: true, force: true }); removed += 1;
+  }
+  return removed;
 }
 
 // Every worker has an empty scratch cache. OpenCode's download-backed language

@@ -5,6 +5,7 @@ import { INITIAL_STATE } from "@/sync/types"
 import {
   collectVisibleSessionIdsForBlockingRequests,
   createScopedBlockingRequestsSelector,
+  hasScopedPendingQuestions,
 } from "./lib/blockingRequests"
 
 const session = (id: string, parentID?: string): Session => ({
@@ -139,5 +140,41 @@ describe("blocking request session scoping", () => {
     }))
 
     expect(second).toBe(first)
+  })
+})
+
+describe("hasScopedPendingQuestions", () => {
+  test("is false when no question is pending anywhere", () => {
+    expect(hasScopedPendingQuestions(state({ session: [session("ses_a")] }), "ses_a")).toBe(false)
+    expect(hasScopedPendingQuestions(state({ question: { ses_a: [] } }), "ses_a")).toBe(false)
+  })
+
+  test("covers the session itself and its descendants, not unrelated sessions", () => {
+    const tree = {
+      session: [session("ses_a"), session("ses_child", "ses_a"), session("ses_grandchild", "ses_child"), session("ses_other")],
+    }
+    expect(hasScopedPendingQuestions(state({ ...tree, question: { ses_a: [question("que_1", "ses_a")] } }), "ses_a")).toBe(true)
+    expect(hasScopedPendingQuestions(state({ ...tree, question: { ses_grandchild: [question("que_2", "ses_grandchild")] } }), "ses_a")).toBe(true)
+    expect(hasScopedPendingQuestions(state({ ...tree, question: { ses_other: [question("que_3", "ses_other")] } }), "ses_a")).toBe(false)
+    expect(hasScopedPendingQuestions(state({ ...tree, question: { ses_a: [question("que_1", "ses_a")] } }), null)).toBe(false)
+  })
+
+  test("ignores orphaned questions whose turn already stopped", () => {
+    const orphan = {
+      ...question("que_dead", "ses_child"),
+      tool: { messageID: "msg_dead", callID: "call_dead" },
+    } as QuestionRequest
+    const settledPart = { id: "prt", type: "tool", callID: "call_dead", state: { status: "error" } } as never
+    const tree = { session: [session("ses_a"), session("ses_child", "ses_a")] }
+    expect(hasScopedPendingQuestions(state({
+      ...tree,
+      question: { ses_child: [orphan] },
+      part: { msg_dead: [settledPart] },
+    }), "ses_a")).toBe(false)
+    expect(hasScopedPendingQuestions(state({
+      ...tree,
+      question: { ses_child: [orphan] },
+      part: { msg_dead: [{ ...(settledPart as object), state: { status: "running" } } as never] },
+    }), "ses_a")).toBe(true)
   })
 })

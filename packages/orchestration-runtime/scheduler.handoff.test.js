@@ -329,3 +329,22 @@ describe('managed scheduler orchestrator-to-builder handoff', () => {
     expect(scheduler.getResultEnvelope(task.taskId).action).toBe('abandon');
   });
 });
+
+test('failed handoff releases settlement ownership and replays a genuine completed result', async () => {
+  const abortGate = deferred();
+  const { scheduler, runs } = await createHarness({ abortGate, abortResponses: [{ aborted: false }] });
+  try {
+    const current = await scheduler.submit(input(40));
+    const handoff = scheduler.confirmAgentHandoff({ ...handoffScope, idempotencyKey: 'failed-with-completion' });
+    // Wait for ownership and remote abort invocation, not only the handoff lock.
+    while (scheduler.getDiagnostics().pendingCancellationCount === 0) await Promise.resolve();
+    await scheduler.flush();
+    runs[0].result.resolve({ status: 'completed', recoverablePreview: 'Canonically finished' });
+    await scheduler.flush();
+    expect(scheduler.getResultEnvelope(current.taskId)).toBeNull();
+    abortGate.resolve();
+    await expect(handoff).resolves.toMatchObject({ state: 'blocked' });
+    await expect(scheduler.waitForTask(current.taskId)).resolves.toMatchObject({ status: 'completed', recoverablePreview: 'Canonically finished' });
+    expect(scheduler.listResultEnvelopes()).toHaveLength(1);
+  } finally { await scheduler.shutdown(); }
+});

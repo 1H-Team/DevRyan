@@ -19,10 +19,14 @@ describe('branch session cleanup', () => {
 
     const result = await archiveBranchSessions(sessions, async (ids) => {
       receivedIds = ids;
-      return { archivedIds: ['root'], failedIds: ['child'] };
+      return { archivedIds: ['root'], failedIds: ['child'], failures: [{ sessionId: 'child', message: 'archive failed (503): OpenCode is restarting', status: 503 }] };
     });
 
     expect(receivedIds).toEqual(['root', 'child']);
-    expect(result).toEqual({ archivedIds: ['root'], failedIds: ['child'] });
+    expect(result).toEqual({
+      archivedIds: ['root'],
+      failedIds: ['child'],
+      failures: [{ sessionId: 'child', message: 'archive failed (503): OpenCode is restarting', status: 503 }],
+    });
   });
 });

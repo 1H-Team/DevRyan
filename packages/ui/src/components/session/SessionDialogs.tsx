@@ -470,6 +470,7 @@ export const SessionDialogs: React.FC = () => {
                     const result = await archiveSessions(ids);
                     deletedIds = result.archivedIds;
                     failedIds = result.failedIds;
+                    failures = result.failures;
                 } else {
                     const result = await deleteSessions(ids, {
                         archiveWorktree: false,
@@ -526,12 +527,10 @@ export const SessionDialogs: React.FC = () => {
                         : (failedIds.length === 1
                             ? t('sessions.sidebar.bulkActions.failedDeleteSingle', { count: failedIds.length })
                             : t('sessions.sidebar.bulkActions.failedDeletePlural', { count: failedIds.length })), {
-                        description: renderToastDescription(isWorktreeDelete
-                            ? t('sessions.sidebar.dialogs.deleteResult.tryAgain')
-                            : resolveSessionDeleteFailureDescription(
-                                failures,
-                                t('sessions.sidebar.dialogs.deleteResult.tryAgain'),
-                            )),
+                        description: renderToastDescription(resolveSessionDeleteFailureDescription(
+                            failures,
+                            t('sessions.sidebar.dialogs.deleteResult.tryAgain'),
+                        )),
                     });
                     if (deletedIds.length === 0) {
                         setIsProcessingDelete(false);

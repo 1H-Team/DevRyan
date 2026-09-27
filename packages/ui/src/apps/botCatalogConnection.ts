@@ -1,5 +1,6 @@
 type CatalogConnectionOptions = {
   load: () => Promise<unknown>;
+  canLoad: () => boolean;
   shouldRetry: () => boolean;
   cancel: () => void;
   setTimeoutImpl?: typeof setTimeout;
@@ -12,6 +13,7 @@ const RETRY_DELAYS_MS = [250, 1_000, 2_000, 5_000, 15_000] as const;
 // snapshots can settle bootstrap while HTTP is in flight or backing off.
 export const createBotCatalogConnection = ({
   load,
+  canLoad,
   shouldRetry,
   cancel,
   setTimeoutImpl = setTimeout,
@@ -29,7 +31,7 @@ export const createBotCatalogConnection = ({
   };
 
   const refresh = async () => {
-    if (disposed) return;
+    if (disposed || !canLoad()) return;
     if (pending) {
       retryAfterLoad = true;
       return;
@@ -43,11 +45,11 @@ export const createBotCatalogConnection = ({
         if (retryAfterLoad) {
           retryAfterLoad = false;
           void refresh();
-        } else if (shouldRetry()) {
+        } else if (canLoad() && shouldRetry()) {
           const delay = RETRY_DELAYS_MS[Math.min(attempt++, RETRY_DELAYS_MS.length - 1)];
           timer = setTimeoutImpl(() => {
             timer = null;
-            if (shouldRetry()) void refresh();
+            if (canLoad() && shouldRetry()) void refresh();
           }, delay);
         } else {
           attempt = 0;

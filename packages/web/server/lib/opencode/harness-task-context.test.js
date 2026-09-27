@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { formatManagedAssignmentContext } from '@openchamber/orchestration-runtime';
 import { createHarnessTaskContextHost } from './harness-task-context.js';
 
 describe('native canonical task-context adapter', () => {
@@ -24,7 +25,9 @@ describe('native canonical task-context adapter', () => {
       getManagedRuntime: () => ({ handleRpc: async input => input.method === 'harness_capabilities'
         ? { policies: { contextProjection: enabled } }
         : input.method === 'child_assignment'
-          ? { text: input.params.childSessionId === 'ses_root' ? 'Continue only the original delegated assignment below.\n{"taskId":"dvr_task_child"}' : null }
+          ? { text: input.params.childSessionId === 'ses_root' ? formatManagedAssignmentContext({ taskId: 'dvr_task_child',
+            rootSessionId: 'ses_parent', agent: 'fixer', label: 'Fix', prompt: '😀\u0001"\\'.repeat(8_000), readOnly: true },
+          { maxBytes: input.params.maxBytes }) : null }
           : { tasks: [], envelopes: [] } }),
       compactionAnchorEnabled: true,
       sessionOwnerKey: async sessionID => owners[sessionID] ?? null,
@@ -130,6 +133,9 @@ describe('native canonical task-context adapter', () => {
     const child = await host.handleRpc({ action: 'compaction_anchor', ...scope });
     expect(child).toMatchObject({ available: true, kind: 'child' });
     expect(child.text).toContain('"taskId":"dvr_task_child"');
+    expect(Buffer.byteLength(child.text)).toBeLessThanOrEqual(12 * 1024);
+    expect(JSON.parse(child.text.split('\n').at(-1))).toMatchObject({ taskId: 'dvr_task_child', promptTruncated: true });
+    expect(child.text).toContain('read-only');
     const disabled = createHarnessTaskContextHost({ dataDirectory: directory, buildOpenCodeUrl: pathname => `http://127.0.0.1:3000${pathname}`,
       readPrimaryRecord: async () => primary, getManagedRuntime: () => ({ handleRpc: async () => ({}) }), compactionAnchorEnabled: false });
     expect(await disabled.handleRpc({ action: 'compaction_anchor', ...scope })).toEqual({ available: false, reason: 'compaction_anchor_disabled' });

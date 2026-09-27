@@ -8,11 +8,19 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSession } from '@/sync/sync-context';
 import * as sessionActions from '@/sync/session-actions';
+import { resolveSessionSendConfig } from '@/sync/send-config';
+import { guardQueuedBuilderSend } from './agentHandoffGuardContext';
+import {
+  submitQuestionAnswersWithOrphanResume,
+  type OrphanResumeDelivery,
+  type QuestionAnswerSubmissionDependencies,
+} from './questionOrphanResume';
+import { useOrphanedQuestionKeys } from './useOrphanedQuestionKeys';
 import { useI18n } from '@/lib/i18n';
+import { useMessageQueueStore, type QueuedMessage } from '@/stores/messageQueueStore';
 import { toast } from '@/components/ui/toast';
 import {
   buildQuestionRequestAnswerGroups,
-  submitQuestionRequestAnswerGroups,
   type QuestionAnswerEntry,
   type QuestionRequestSubmitResult,
 } from './questionCardRouting';
@@ -57,6 +65,82 @@ interface QuestionCardProps {
   question?: QuestionRequest;
 }
 
+type AnswerSubmissionCopy = {
+  queuedTitle: string;
+  sendNow: string;
+  retryFailed: string;
+};
+
+const sendDelivery = (delivery: OrphanResumeDelivery) => useSessionUIStore.getState().sendMessageToSession(
+  delivery.sessionId,
+  delivery.content,
+  delivery.config.providerID,
+  delivery.config.modelID,
+  delivery.config.agent,
+  undefined,
+  undefined,
+  undefined,
+  delivery.config.variant,
+  'normal',
+  delivery.config.planMode,
+);
+
+const queueDelivery = (delivery: OrphanResumeDelivery): QueuedMessage | undefined => {
+  const queue = useMessageQueueStore.getState();
+  queue.addToQueue(delivery.sessionId, {
+    content: delivery.content,
+    directory: useSessionUIStore.getState().getDirectoryForSession(delivery.sessionId) ?? undefined,
+    sendConfig: {
+      providerID: delivery.config.providerID,
+      modelID: delivery.config.modelID,
+      agent: delivery.config.agent,
+      variant: delivery.config.variant,
+      planMode: delivery.config.planMode,
+    },
+  });
+  return queue.getQueueForSession(delivery.sessionId).at(-1);
+};
+
+const createAnswerSubmissionDependencies = (
+  copy: AnswerSubmissionCopy,
+): QuestionAnswerSubmissionDependencies => {
+  // The card is already gone once the dead request is discarded, so a failed
+  // send parks the answer as a queued message with a one-click retry. The
+  // session is idle, so the queue would not dispatch it on its own.
+  const preserveUnsentAnswer = (delivery: OrphanResumeDelivery, error: unknown) => {
+    const queued = queueDelivery(delivery);
+    const retry = async () => {
+      if (!queued) return;
+      const claim = useMessageQueueStore.getState().claimMessageForSession(delivery.sessionId, queued.id);
+      if (!claim) return;
+      try {
+        await sendDelivery(delivery);
+      } catch (retryError) {
+        useMessageQueueStore.getState().restoreClaimedMessage(delivery.sessionId, claim);
+        toast.error(copy.retryFailed, {
+          description: retryError instanceof Error ? retryError.message : undefined,
+        });
+      }
+    };
+    toast.error(copy.queuedTitle, {
+      description: error instanceof Error ? error.message : undefined,
+      ...(queued ? { action: { label: copy.sendNow, onClick: () => { void retry(); } } } : {}),
+    });
+  };
+
+  return {
+    respondToQuestion: (sessionID, requestID, answers) => sessionActions.respondToQuestion(sessionID, requestID, answers),
+    isOrphanedError: (error) => error instanceof sessionActions.QuestionOrphanedError,
+    resolveRootSessionId: (sessionId) => sessionActions.resolveRootSessionId(sessionId),
+    resolveSendConfig: (sessionId) => resolveSessionSendConfig(sessionId),
+    authorizeSend: guardQueuedBuilderSend,
+    discardQuestion: (sessionID, requestID) => sessionActions.discardOrphanedQuestion(sessionID, requestID),
+    sendMessage: sendDelivery,
+    queueMessage: (delivery) => { queueDelivery(delivery); },
+    preserveUnsentAnswer,
+  };
+};
+
 interface QuestionEntry {
   /** Stable identity across filtering and authoritative request updates. */
   entryKey: string;
@@ -72,7 +156,14 @@ interface QuestionEntry {
 
 export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }) => {
   const { t } = useI18n();
-  const respondToQuestion = sessionActions.respondToQuestion;
+  const answerSubmissionDependencies = React.useMemo(
+    () => createAnswerSubmissionDependencies({
+      queuedTitle: t('chat.questionCard.answerQueuedToast'),
+      sendNow: t('chat.questionCard.sendAnswerNow'),
+      retryFailed: t('chat.questionCard.submitFailedToast'),
+    }),
+    [t],
+  );
   const rejectQuestion = sessionActions.rejectQuestion;
   const isMobile = useUIStore((state) => state.isMobile);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
@@ -158,6 +249,9 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
     ? getQuestionSubmissionStatus(submissionShadowRef.current)
     : null;
   const isSubmitting = submissionPending && Boolean(submissionStatus);
+
+  // Requests whose turn already stopped: their answers go out as a new message.
+  const orphanedRequestKeys = useOrphanedQuestionKeys(normalizedRequests);
 
   const sourceSession = useSession(sessionID);
   const isFromSubagent = Boolean(
@@ -353,7 +447,11 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
     ));
 
     try {
-      const results = await submitQuestionRequestAnswerGroups(answerGroups, respondToQuestion);
+      const results = await submitQuestionAnswersWithOrphanResume(
+        answerGroups,
+        (request) => orphanedRequestKeys.has(getQuestionRequestKey(request)),
+        answerSubmissionDependencies,
+      );
       settleRelevantSubmissionResults(submissionScope, results, 'Failed to submit answer');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to submit answer';
@@ -379,8 +477,9 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
     t,
     buildAnswerForEntry,
     entries,
+    answerSubmissionDependencies,
+    orphanedRequestKeys,
     requiredSatisfied,
-    respondToQuestion,
     sessionScopeKey,
   ]);
 
@@ -515,7 +614,12 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
   };
 
   return (
-    <div className="flex flex-col px-3 pt-2.5 pb-2.5" role="group" aria-label={t('chat.questionCard.inputNeeded')}>
+    <div
+      className="flex flex-col px-3 pt-2.5 pb-2.5"
+      role="group"
+      aria-label={t('chat.questionCard.inputNeeded')}
+      data-question-card="true"
+    >
       {/* Meta row */}
       <div className="flex items-center gap-2 pb-1.5">
         <RiQuestionLine className="h-3.5 w-3.5 text-primary" />
@@ -531,6 +635,12 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
           </span>
         ) : null}
       </div>
+
+      {activeEntry && orphanedRequestKeys.has(getQuestionRequestKey(activeEntry.request)) ? (
+        <div className="mb-2 rounded-md bg-muted/30 px-2 py-1.5 typography-micro text-muted-foreground" role="status">
+          {t('chat.questionCard.turnStopped')}
+        </div>
+      ) : null}
 
       {activeEntry ? renderQuestionBody(activeEntry, { withHeader: totalCount > 1 }) : null}
 

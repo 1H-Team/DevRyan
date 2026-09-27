@@ -439,6 +439,8 @@ describe('web managed orchestration runtime', () => {
     const { text } = await runtime.handleRpc({ method: 'child_assignment', params: { childSessionId: 'ses_child_assigned', directory: '/workspace' } });
     expect(text).toContain('Continue only the original delegated assignment below.');
     expect(JSON.parse(text.slice(text.lastIndexOf('\n') + 1))).toMatchObject({ taskId: 'dvr_task_assignment', prompt: 'Fix the parser only.' });
+    expect(await runtime.handleRpc({ method: 'child_assignment', params: { childSessionId: 'ses_child_assigned', directory: '/workspace', maxBytes: 20 } }))
+      .toEqual({ text: null });
     await expect(runtime.handleRpc({ method: 'child_assignment', params: { childSessionId: 'ses_other', directory: '/workspace' } }))
       .resolves.toEqual({ text: null });
     await expect(runtime.handleRpc({ method: 'child_assignment', params: { directory: '/workspace' } }))

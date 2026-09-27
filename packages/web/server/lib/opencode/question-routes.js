@@ -46,7 +46,21 @@ const buildQuestionReplyPath = (requestID, directory) => {
   return `${path}?${query.toString()}`;
 };
 
+const buildSessionStatusPath = (directory) => {
+  if (!directory) return '/session/status';
+  const query = new URLSearchParams({ directory });
+  return `/session/status?${query.toString()}`;
+};
+
 const OPEN_CODE_SKIP_ANSWER = 'Skip: continue using your best judgment and explicitly state the assumption you made.';
+
+export const QUESTION_ORPHANED_CODE = 'question_orphaned';
+
+// OpenCode keeps a question request answerable after its turn is aborted, but
+// the reply then reaches a tool call that no longer exists and the answer is
+// silently lost. A live question always has its session's turn running, so a
+// session OpenCode does not report busy/retry proves the request is orphaned.
+const isRunningSessionStatus = (status) => status?.type === 'busy' || status?.type === 'retry';
 
 const readResponsePayload = async (response) => {
   const text = await response.text();
@@ -139,6 +153,50 @@ export const registerQuestionRoutes = (app, dependencies) => {
     }
   };
 
+  const readJsonWithinBudget = async (path) => {
+    const upstreamAbortController = new AbortController();
+    const timeout = setTimeout(
+      () => upstreamAbortController.abort(new Error('OpenCode read timed out.')),
+      Math.max(1, Number(upstreamTimeoutMs) || DEFAULT_UPSTREAM_TIMEOUT_MS),
+    );
+    timeout.unref?.();
+    try {
+      const response = await fetchImpl(buildOpenCodeUrl(path, ''), {
+        method: 'GET',
+        signal: upstreamAbortController.signal,
+        headers: {
+          Accept: 'application/json',
+          ...getOpenCodeAuthHeaders(),
+        },
+      });
+      if (!response.ok) return null;
+      return await readResponsePayload(response);
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+
+  // Resolves to the pending OpenCode request only when its session provably has
+  // no running turn. Both reads run in parallel and are small, keeping the reply
+  // path fast. Every lookup failure resolves to null so the caller keeps
+  // today's pass-through behaviour. Residual: an orphan whose session already
+  // runs a newer turn is still forwarded; the DevRyan client discards orphans
+  // before it starts a new turn, so only other clients can produce that state.
+  const findOrphanedOpenCodeQuestion = async (requestID, directory) => {
+    try {
+      const [{ questions, failure }, statuses] = await Promise.all([
+        listOpenCodeQuestions(directory),
+        readJsonWithinBudget(buildSessionStatusPath(directory)).catch(() => null),
+      ]);
+      if (failure || !statuses || typeof statuses !== 'object' || Array.isArray(statuses)) return null;
+      const request = questions.find((entry) => entry?.id === requestID);
+      if (typeof request?.sessionID !== 'string') return null;
+      return isRunningSessionStatus(statuses[request.sessionID]) ? null : request;
+    } catch {
+      return null;
+    }
+  };
+
   app.get('/api/question', async (req, res) => {
     const directory = normalizeDirectory(req);
     const cursorQuestions = cursorSdkRuntime?.listPendingQuestions?.({ directory }) ?? [];
@@ -165,14 +223,20 @@ export const registerQuestionRoutes = (app, dependencies) => {
         req.params.requestID,
         req.body?.answers,
       );
-      if (!handled) return next();
-      return res.json(true);
+      if (handled) return res.json(true);
     } catch (error) {
       logger.error?.('[questions] Failed to reply to a Cursor question:', error);
       return res.status(error instanceof TypeError ? 400 : 500).json({
         error: error instanceof Error ? error.message : 'Failed to reply to Cursor question',
       });
     }
+
+    const orphaned = await findOrphanedOpenCodeQuestion(req.params.requestID, normalizeDirectory(req));
+    if (!orphaned) return next();
+    return res.status(409).json({
+      code: QUESTION_ORPHANED_CODE,
+      error: 'This question belongs to a turn that already stopped; the answer would not reach the agent.',
+    });
   });
 
   app.post('/api/question/:requestID/reject', async (req, res, next) => {

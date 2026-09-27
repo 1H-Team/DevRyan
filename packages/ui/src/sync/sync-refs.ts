@@ -9,6 +9,7 @@ import type { OpencodeClient } from "@opencode-ai/sdk/v2/client"
 import type { StoreApi } from "zustand"
 import type { ChildStoreManager } from "./child-store"
 import { getSessionMaterializationStatus } from "./materialization"
+import { countLivePendingQuestions } from "./question-orphan"
 import type { SessionUIState } from "./session-ui-store"
 import type { State } from "./types"
 import type { SessionMessageLoader } from "./session-message-loader"
@@ -206,6 +207,22 @@ export function getSyncQuestions(sessionId: string, directory?: string) {
   return getDirectoryState(directory)?.question[sessionId] ?? []
 }
 
+/**
+ * Count pending questions that still block a session across initialized child
+ * stores. Orphans — questions whose turn already stopped — are excluded: their
+ * session is not waiting on the user.
+ */
+export function getSyncLiveQuestionCountAnyDirectory(sessionId: string) {
+  const stores = _childStores
+  if (!stores) return 0
+
+  let count = 0
+  for (const store of stores.children.values()) {
+    count += countLivePendingQuestions(store.getState(), sessionId)
+  }
+  return count
+}
+
 export function getSyncBlockingRequestCountAnyDirectory(sessionId: string) {
   const stores = _childStores
   if (!stores) return 0
@@ -214,7 +231,7 @@ export function getSyncBlockingRequestCountAnyDirectory(sessionId: string) {
   for (const store of stores.children.values()) {
     const state = store.getState()
     count += state.permission?.[sessionId]?.length ?? 0
-    count += state.question?.[sessionId]?.length ?? 0
+    count += countLivePendingQuestions(state, sessionId)
   }
   return count
 }

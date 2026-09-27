@@ -239,6 +239,17 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
         return await options.readTerminalError(input);
       },
     } : {}),
+    ...(typeof options.readOperatorAbort === 'function' ? {
+      async readOperatorAbort(input) {
+        return await options.readOperatorAbort(input);
+      },
+    } : {}),
+    ...(typeof options.readRuntimeStartedAt === 'function' ? {
+      // Cursor children run inside this server and survive an OpenCode restart.
+      readRuntimeStartedAt(input) {
+        return input?.providerId === CURSOR_PROVIDER_ID ? null : options.readRuntimeStartedAt();
+      },
+    } : {}),
     async abortSession(input) {
       if (input.providerId === CURSOR_PROVIDER_ID) {
         if (!cursorSdkRuntime || typeof cursorSdkRuntime.abortSession !== 'function') return false;

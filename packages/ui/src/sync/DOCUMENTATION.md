@@ -488,6 +488,15 @@ are absent from both, and unarchived sessions are present in active and absent f
 or failed listings cannot confirm an intent. Per-session versions ensure an older overlapping action
 cannot settle a newer opposite action.
 
+Archive and unarchive PATCHes are idempotent, so `updateSessionArchivedTime()` in `session-actions.ts`
+retries them (9 attempts, 0.5s→4s backoff, about 23.5s, sized to a measured ~18s OpenCode crash-restart window) on transport errors, 5xx, `restarting`/`retryable`
+bodies, and 408/409/423/429. The 409 case is the companion retention gate. This keeps OpenCode
+restarts from surfacing as failed archives. The archive cascade skips descendants already known to be
+archived, and a 404 on a cascaded descendant (its parent is in the same batch) counts as done. A 404 on
+an explicitly targeted session is still a failure. Archive waits up to 15s for a disconnected pipeline
+before failing without an optimistic change. Both actions return per-session `failures` so the toasts
+can show the server's reason.
+
 `queueGlobalSessionsRefreshAfterMutation()` waits for any refresh that predated the mutation, then
 guarantees a new post-mutation refresh. Concurrent completions are coalesced, with another pass queued
 when a later mutation completes during reconciliation. Do not replace this with a direct

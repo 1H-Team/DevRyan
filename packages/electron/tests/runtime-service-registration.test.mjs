@@ -2,11 +2,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, test } from 'node:test';
+import { afterEach, beforeEach, describe, test } from 'node:test';
 
-import { createRuntimeServiceRegistration } from '../runtime-service-registration.mjs';
+import { createRuntimeServiceRegistration as createRegistration } from '../runtime-service-registration.mjs';
 
 const directories = [];
+let fixtureHome;
+const createRuntimeServiceRegistration = (options) => createRegistration({ homeDirectory: fixtureHome, ...options });
+beforeEach(async () => { fixtureHome = await temporaryDirectory(); });
 
 afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => (

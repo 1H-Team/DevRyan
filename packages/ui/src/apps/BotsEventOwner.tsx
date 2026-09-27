@@ -668,11 +668,22 @@ export const BotsEventOwner: React.FC = () => {
 
     const catalogConnection = createBotCatalogConnection({
       load: () => useBotsStore.getState().loadAssignedCatalog(),
+      canLoad: () => {
+        const capabilities = useBotsStore.getState().capabilities;
+        return capabilities !== null && botCapabilityCanStream(capabilities);
+      },
       shouldRetry: () => {
         const state = useBotsStore.getState();
         return !state.catalogLoaded || state.catalogErrorCode !== null;
       },
       cancel: () => useBotsStore.getState().cancelCatalogLoad(),
+    });
+    const unsubscribeCapabilities = useBotsStore.subscribe((state, previous) => {
+      if (state.capabilities === previous.capabilities || !state.capabilities) return;
+      if (botCapabilityCanStream(state.capabilities)
+        && (!previous.capabilities || !botCapabilityCanStream(previous.capabilities))) {
+        catalogConnection.retry();
+      }
     });
     const connection = {
       retry() {
@@ -680,6 +691,7 @@ export const BotsEventOwner: React.FC = () => {
         controller.retry();
       },
       dispose() {
+        unsubscribeCapabilities();
         catalogConnection.dispose();
         controller.dispose();
       },

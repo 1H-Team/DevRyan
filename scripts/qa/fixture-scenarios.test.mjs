@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile, rm, symlink } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
-import { prepareQaFixtureProfile, runQaFixtureScenario } from './fixture-scenarios.mjs';
+import { prepareQaFixtureProfile, runQaFixtureScenario, runQaAgentRuntimeSettingsFixtureProof } from './fixture-scenarios.mjs';
 import { createQaProjectFixture, removeQaProjectFixture } from './project-fixture.mjs';
 import { PERF_PARENT_SESSION_ID } from '../perf/loopback-opencode-fixture.mjs';
 import { listConfigAgents } from '../../packages/web/server/lib/opencode/agents.js';
@@ -62,4 +62,38 @@ test('fixture profiles reject live/unsupported cases and symlink escapes before 
     await assert.rejects(prepareQaFixtureProfile({...options,runtimeRoot:path.join(link,'qa-must-not-create')}),/owned repository cache/);
     await assert.rejects(runQaFixtureScenario({cell:{...cell,scenarioId:'project-work'}}),/Unsupported/);
   } finally {removeQaProjectFixture(project);await rm(project.evidenceDirectory,{recursive:true,force:true});}
+});
+
+for (const runtime of ['web','electron']) test(`${runtime} settings proof drives the UI, records unknown external application and restores desired values`,async () => {
+  let lsp=true;let reloads=0;let toggles=0;const writes=[];const screenshots=[];
+  const api=async(_route,options)=>{
+    if(options?.method==='PUT'){writes.push(JSON.parse(options.body));lsp=JSON.parse(options.body).lsp;}
+    return {lsp,appliesOnRestart:true,runtimeMode:'external',appliedLsp:null,restartRequired:null};
+  };
+  const ui={
+    click:async options=>{if(options.selector?.startsWith('[role="switch"]')){lsp=!lsp;toggles++;}},
+    reveal:async()=>{},waitExpression:async()=>true,
+    waitFor:async(_label,predicate)=>{const value=await predicate();assert.ok(value);return value;},
+    reload:async()=>{reloads++;},
+  };
+  const result=await runQaAgentRuntimeSettingsFixtureProof({cell:{...cell,runtime},ui,api,screenshot:async name=>screenshots.push(name)});
+  assert.equal(result.managedReadiness,false);assert.equal(toggles,1);assert.equal(reloads,1);
+  assert.equal(result.saved.lsp,false);assert.equal(result.reloaded.lsp,false);assert.equal(result.restored.lsp,true);
+  assert.deepEqual(writes,[{lsp:true}]);assert.deepEqual(screenshots,['fixture-agent-runtime-settings']);
+});
+
+test('settings proof restores its sidecar after a reload failure and rejects live transports before mutation',async () => {
+  let lsp=true;let calls=0;const writes=[];
+  const api=async(_route,options)=>{
+    calls++;
+    if(options?.method==='PUT'){writes.push(JSON.parse(options.body));lsp=JSON.parse(options.body).lsp;}
+    return {lsp,runtimeMode:'external',appliedLsp:null,restartRequired:null};
+  };
+  await assert.rejects(runQaAgentRuntimeSettingsFixtureProof({cell:{...cell,transport:'live'},api}),/private desktop fixture/);
+  assert.equal(calls,0);
+  const ui={click:async options=>{if(options.selector?.startsWith('[role="switch"]'))lsp=!lsp;},
+    reveal:async()=>{},waitExpression:async()=>true,waitFor:async(_label,predicate)=>predicate(),
+    reload:async()=>{throw new Error('renderer reload failed');}};
+  await assert.rejects(runQaAgentRuntimeSettingsFixtureProof({cell,ui,api,screenshot:async()=>{}}),/renderer reload failed/);
+  assert.equal(lsp,true);assert.deepEqual(writes,[{lsp:true}]);
 });

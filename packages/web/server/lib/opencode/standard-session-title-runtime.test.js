@@ -203,6 +203,96 @@ afterEach(async () => {
 });
 
 describe('standard session title runtime', () => {
+  it.each([
+    [{ name: 'APIError', data: { statusCode: 403 } }, 'unauthorized'],
+    [{ name: 'APIError', data: { statusCode: 403, message: 'Free tier can only be used with OpenCode' } }, 'free_tier_rejected'],
+    [{ name: 'ProviderModelNotFoundError' }, 'model_unavailable'],
+  ])('settles permanent provider rejection without repair or a generation retry', async (error, reason) => {
+    const fake = createFakeOpenCode();
+    const originalFetch = fake.fetchImpl;
+    const helperRequests = [];
+    fake.fetchImpl = vi.fn((url, options = {}) => {
+      if (String(url).includes('/ses_helper/message')) {
+        helperRequests.push(options.method || 'GET');
+        return Promise.resolve(response({ data: { info: { error }, parts: [] } }));
+      }
+      return originalFetch(url, options);
+    });
+    const projected = [];
+    const diagnostics = [];
+    const { timers, setTimer, clearTimer } = captureTimers();
+    const runtime = createRuntime({ fake, projected, diagnostics, setTimer, clearTimer, generateSessionModelTitle: null });
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    await runtime.dispose();
+    expect(helperRequests).toEqual(['POST']);
+    expect(timers.filter(({ delay }) => delay === 60_000)).toEqual([]);
+    expect(projected[0]).toMatchObject({ title: 'Reliable Session Title Summaries', source: 'derived' });
+    expect(diagnostics.map(({ payload }) => payload)).toContainEqual(expect.objectContaining({ stage: 'helper_response', reason }));
+    expect(fake.state.sessions.has('ses_helper')).toBe(false);
+  });
+
+  it.each([401, 403, 404])('settles HTTP %s without retrying the rejected request', async (status) => {
+    const fake = createFakeOpenCode();
+    const originalFetch = fake.fetchImpl;
+    let requests = 0;
+    fake.fetchImpl = vi.fn((url, options = {}) => {
+      if (String(url).includes('/ses_helper/message')) {
+        requests += 1;
+        return Promise.resolve(response(null, { ok: false, status }));
+      }
+      return originalFetch(url, options);
+    });
+    const projected = [];
+    const { timers, setTimer, clearTimer } = captureTimers();
+    const runtime = createRuntime({ fake, projected, setTimer, clearTimer, generateSessionModelTitle: null });
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    expect(requests).toBe(1);
+    expect(projected[0]?.source).toBe('derived');
+    expect(timers.filter(({ delay }) => delay === 60_000)).toEqual([]);
+    await runtime.dispose();
+  });
+
+  it.each([429, 503])('retries transient provider status %s without a repair prompt', async (statusCode) => {
+    const fake = createFakeOpenCode();
+    const originalFetch = fake.fetchImpl;
+    let requests = 0;
+    fake.fetchImpl = vi.fn((url, options = {}) => {
+      if (String(url).includes('/ses_helper/message') && requests++ === 0) {
+        return Promise.resolve(response({ info: { error: { name: 'APIError', data: { statusCode } } }, parts: [] }));
+      }
+      return originalFetch(url, options);
+    });
+    const projected = [];
+    const { timers, setTimer, clearTimer } = captureTimers();
+    const runtime = createRuntime({ fake, projected, setTimer, clearTimer, generateSessionModelTitle: null });
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    expect(requests).toBe(1);
+    expect(projected).toEqual([]);
+    timers.find(({ delay }) => delay === 60_000).callback();
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    expect(requests).toBe(2);
+    expect(projected[0]?.source).toBe('session_model');
+    await runtime.dispose();
+  });
+
+  it('repairs invalid successful text within the same generation attempt', async () => {
+    const fake = createFakeOpenCode();
+    const originalFetch = fake.fetchImpl;
+    let requests = 0;
+    fake.fetchImpl = vi.fn((url, options = {}) => {
+      if (String(url).includes('/ses_helper/message') && options.method === 'POST' && requests++ === 0) {
+        return Promise.resolve(response({ parts: [{ type: 'text', text: 'This title is much too long to be accepted as a valid generated title' }] }));
+      }
+      return originalFetch(url, options);
+    });
+    const projected = [];
+    const runtime = createRuntime({ fake, projected, generateSessionModelTitle: null });
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    expect(requests).toBe(2);
+    expect(projected[0]?.title).toBe('Selected Model Session Title');
+    await runtime.dispose();
+  });
+
   it('accepts a model response after ten seconds without waiting for slow cleanup', async () => {
     vi.useFakeTimers();
     const fake = createFakeOpenCode();

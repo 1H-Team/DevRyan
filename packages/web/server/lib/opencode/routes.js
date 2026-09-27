@@ -817,6 +817,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
 
   app.get('/api/config/providers', async (req, res) => {
     let upstreamPayload = { providers: [], default: {} };
+    let upstreamOk = false;
     if (typeof buildOpenCodeUrl === 'function') {
       try {
         const query = req.originalUrl?.includes('?') ? `?${req.originalUrl.split('?').slice(1).join('?')}` : '';
@@ -831,6 +832,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
           const parsed = await response.json().catch(() => null);
           if (parsed && typeof parsed === 'object') {
             upstreamPayload = parsed;
+            upstreamOk = true;
             void xaiToolCatalogRuntime?.refreshProviderPayload?.({
               directory: typeof req.query?.directory === 'string' ? req.query.directory : undefined,
               payload: parsed,
@@ -842,14 +844,17 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       }
     }
 
+    // Without the upstream catalog only integration providers remain; flag it so
+    // clients keep their last complete catalog instead of committing this one.
+    const markIncomplete = (payload) => (upstreamOk ? payload : { ...payload, catalogIncomplete: true });
     try {
-      return res.json(annotateModelDefaultThinking(await mergeProviderIntegrations(upstreamPayload, req)));
+      return res.json(markIncomplete(annotateModelDefaultThinking(await mergeProviderIntegrations(upstreamPayload, req))));
     } catch (error) {
       // Provider integrations (Copilot/Cursor discovery, auth reads) are best-effort.
       // If merging fails, still return the upstream provider list so the UI never
       // blanks the entire provider list or persists an empty snapshot.
       console.error('Failed to merge provider integrations:', error);
-      return res.json(annotateModelDefaultThinking(upstreamPayload));
+      return res.json(markIncomplete(annotateModelDefaultThinking(upstreamPayload)));
     }
   });
 

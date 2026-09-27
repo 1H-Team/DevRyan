@@ -2,7 +2,7 @@ import React, { act } from 'react';
 import { expect, spyOn, test } from 'bun:test';
 import { withDom, type HostElement } from '@/components/bots/chat/botMountedDom';
 import { getAuthPrincipal, setAuthPrincipal } from '@/lib/authSession';
-import { botsApi, BotsApiError, type BotsApi } from '@/lib/botsApi';
+import { botsApi, BotsApiError, type BotsApi, type BotCapabilities } from '@/lib/botsApi';
 import { botsDesktopApi } from '@/lib/botsDesktopApi';
 import { I18nProvider } from '@/lib/i18n';
 import { useBotsStore } from '@/stores/useBotsStore';
@@ -13,10 +13,10 @@ const desktopApi = { ...botsDesktopApi, isAvailable: () => false, runtimeService
 const pause = () => new Promise((resolve) => setTimeout(resolve, 300));
 const starting = () => new BotsApiError('Bots are still starting', { code: 'bots_starting', status: 503, retryable: true });
 const ready = { available: false, catalogAvailable: true, state: 'healthy', code: null, owner: 'electron', canManageRuntime: true, canCreateBot: true };
-const mount = async (container: HostElement, overrides: Partial<BotsApi>) => {
+const mount = async (container: HostElement, overrides: Partial<BotsApi>, capabilities: BotCapabilities = ready) => {
   const { createRoot } = await import('react-dom/client');
   const root = createRoot(container as unknown as Element);
-  useBotsStore.getState().setCapabilities({ ...ready, catalogAvailable: false });
+  useBotsStore.getState().setCapabilities(capabilities);
   const api: BotsApi = {
     ...botsApi,
     getCatalogStatus: async () => ({ state: 'ready', code: null, schema: null, maintenance: null, activationHold: null, viewerIsOwner: false }),
@@ -42,21 +42,23 @@ test('recovers a startup failure automatically and only then displays a successf
   } finally { await unmount(); }
 }));
 
-test('catalog readiness retries immediately and refresh failures preserve loaded Bots', async () => withDom(async (container) => {
+test('unavailable catalogs wait for focus recovery and refresh failures preserve loaded Bots', async () => withDom(async (container) => {
   let calls = 0;
   let focus: EventListenerOrEventListenerObject | null = null;
   const listener = spyOn(window, 'addEventListener').mockImplementation((name: string, callback: EventListenerOrEventListenerObject) => { if (name === 'focus') focus = callback; });
-  const unmount = await mount(container, { listBots: async () => {
+  const unmount = await mount(container, { getCapabilities: async () => ready, listBots: async () => {
     calls += 1;
-    if (calls !== 2) throw starting();
+    if (calls !== 1) throw starting();
     return { bots: [managementDetail().bot], canCreateBot: true };
-  } });
+  } }, { ...ready, catalogAvailable: false });
   try {
-    await act(async () => { useBotsStore.getState().setCapabilities(ready); });
-    expect(calls).toBe(2);
+    await act(pause);
+    expect(calls).toBe(0);
+    await act(async () => { if (typeof focus === 'function') focus(new Event('focus')); });
+    expect(calls).toBe(1);
     expect(container.textContent).toContain('Research Desk');
     await act(async () => { if (typeof focus === 'function') focus(new Event('focus')); });
-    expect(calls).toBe(3);
+    expect(calls).toBe(2);
     expect(container.textContent).toContain('Research Desk');
     expect(container.textContent).toContain('bots_starting');
   } finally { await unmount(); listener.mockRestore(); }

@@ -28,9 +28,11 @@ dependency inputs are never published mutations. Dependency inputs are the
 `node_modules`, `.venv` and `__pycache__` names anywhere and, in Git projects,
 every directory Git ignores that holds no tracked path (classified with
 `git check-ignore` per tree level, from the project, never from the view). They
-are linked read-only into views and never ingested, so confined writes into
-them fail and outputs written there are not published (a replaced link is
-reported as `ignoredInputs`). Ignored standalone files such as `.env` are still
+are linked into views and never ingested or published (a replaced link is
+reported as `ignoredInputs`). Dependencies stay read-only. On macOS, ignored
+output folders such as `.artifacts/` or `dist/` are written through to the
+project instead (`packages/harness-runtime/lib/execution-inputs.js`), so those
+writes are neither recorded nor reverted. Ignored standalone files such as `.env` are still
 ingested. Records ingested before a directory became an input are no longer
 observed; Revert, Redo and file restore leave those paths untouched and report
 an `ignored_input` conflict. Private views preserve HEAD and the
@@ -67,7 +69,7 @@ trusted control operations. Native task and managed
 orchestration dispatches register parent call identities before starting children.
 Cursor uses one confined process per turn, mirrors canonical conversation
 records, and awaits publication before completion. Claude through Meridian uses
-passthrough tools and a separate read-only provider transport. On macOS that transport runs from the real project directory, with every write outside its private state still denied. Its environment prompt, and so its cached prefix, stays the same across requests, and the model sees true paths. Confined processes may reach only the system DNS resolver socket (`/private/var/run/mDNSResponder`); every other local unix socket stays denied. Provider API
+passthrough tools and a separate read-only provider transport. On macOS that transport runs from the real project directory, with every write outside its private state still denied. Its environment prompt, and so its cached prefix, stays the same across requests, and the model sees true paths. Confined processes may reach only the system DNS resolver socket (`/private/var/run/mDNSResponder`); every other local unix socket stays denied. Because the sandbox also denies keychain lookups, the transport receives only the account's current Claude access token as `CLAUDE_CODE_OAUTH_TOKEN`; the refresh token and its refresh stay on the host. Provider API
 credentials are not diagnostic evidence or execution ownership.
 
 Native enforcement, not a working directory convention, prevents writes to the

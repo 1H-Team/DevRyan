@@ -211,6 +211,15 @@ function applyEventPipelineConnectionEvent(event: EventPipelineConnectionEvent):
     useConfigStore.setState(update)
   }
 }
+
+// A runtime restart can fail the provider catalog load; the reconnect that follows
+// is the first point where a refetch can succeed. Startup retries own the uninitialized case.
+function recoverFailedProviderCatalog(): void {
+  const { isInitialized, providersLoadStatus, loadProviders } = useConfigStore.getState()
+  if (isInitialized && providersLoadStatus === "error") {
+    void loadProviders({ force: true })
+  }
+}
 const FIRST_ASSISTANT_DELTA_MARK_LIMIT = 1_000
 const firstAssistantDeltaMarkedMessages = new Set<string>()
 const sessionChildrenFetches = new Map<string, SessionChildrenFetchCacheEntry>()
@@ -3760,7 +3769,7 @@ export function SyncProvider(props: {
             abort: async (stalledSessionID, stalledStatus) => {
               const latest = useProviderStallStore.getState().stallsBySessionId[stalledSessionID]
               if (!haveSameProviderStallFingerprint(record, latest)) return false
-              return sessionActions.abortCurrentOperationConfirmed(stalledSessionID, stalledStatus)
+              return sessionActions.abortCurrentOperationConfirmed(stalledSessionID, stalledStatus, undefined, "stall_watchdog")
             },
             offerRecovery: (recovery) => useProviderRecoveryStore.getState().offerRecovery(recovery),
           }).then(() => {
@@ -3874,6 +3883,7 @@ export function SyncProvider(props: {
       },
       onReconnect: () => {
         applyEventPipelineConnectionEvent({ type: "reconnected" })
+        recoverFailedProviderCatalog()
         triggerRelevantDirectoryRecovery()
         void useManagedOrchestrationStore.getState().loadSnapshot()
       },

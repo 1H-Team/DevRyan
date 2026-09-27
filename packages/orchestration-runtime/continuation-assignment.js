@@ -40,10 +40,28 @@ const boundedPrompt = (value, maxBytes) => {
 
 /** The delegated brief, bounded, for a child's native compaction summary. It
  * uses the same authoritative rule and fields as continuation prompts. */
-export const formatManagedAssignmentContext = (task, { maxPromptBytes = 8192 } = {}) => {
+export const formatManagedAssignmentContext = (task, { maxPromptBytes, maxBytes = 12 * 1024 } = {}) => {
   const assignment = Object.fromEntries(FIELDS.map((key) => [key, task?.[key]]));
   if (!validAssignment(assignment)) return null;
-  const prompt = boundedPrompt(assignment.prompt, maxPromptBytes);
-  return `${ASSIGNMENT_RULE}${task.readOnly === true ? ' This assignment is read-only: do not modify files.' : ''}\n`
-    + JSON.stringify({ ...assignment, prompt: prompt.text, ...(prompt.truncated ? { promptTruncated: true } : {}) });
+  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0
+    || (maxPromptBytes !== undefined && (!Number.isSafeInteger(maxPromptBytes) || maxPromptBytes < 0))) return null;
+  const budget = Math.min(maxBytes, 12 * 1024);
+  const prompt = boundedPrompt(assignment.prompt, Math.min(maxPromptBytes ?? budget, budget));
+  const points = Array.from(prompt.text);
+  const rule = `${ASSIGNMENT_RULE}${task.readOnly === true ? ' This assignment is read-only: do not modify files.' : ''}`
+    + ' If promptTruncated is true, preserve it in subsequent summaries; use complete scope already in context, otherwise request missing scope from the parent before making changes.';
+  const render = (count) => `${rule}\n${JSON.stringify({ ...assignment, prompt: points.slice(0, count).join(''),
+    ...(prompt.truncated || count < points.length ? { promptTruncated: true } : {}) })}`;
+  const full = render(points.length);
+  if (Buffer.byteLength(full) <= budget) return full;
+  if (Buffer.byteLength(render(0)) > budget) return null;
+  // Search code-point boundaries: splitting surrogate pairs is not monotonic
+  // in encoded JSON bytes and can produce a malformed prompt character.
+  let low = 0, high = points.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (Buffer.byteLength(render(middle)) <= budget) low = middle;
+    else high = middle - 1;
+  }
+  return render(low);
 };

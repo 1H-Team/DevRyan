@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { formatPackagedAgentSyncConflicts } from './packaged-agent-sync.js';
 import { startParentDeathWatchdog } from './parent-death-watchdog.js';
+import { DEFAULT_AGENT_RUNTIME_SETTINGS, normalizeAgentRuntimeSettings } from './agent-runtime-settings.js';
 import { buildVisibleSkillPolicy } from './skill-policy.js';
 import { CONFIG_FILE, readConfigFile, writeConfig } from './shared.js';
 import { migrateOpenchamberConfigToSidecar } from './openchamber-sidecar.js';
@@ -16,6 +17,8 @@ import {
   registerManagedOpenCodeProcess,
   unregisterManagedOpenCodeProcess,
 } from './managed-process-registry.js';
+
+const MANAGED_EXIT_STDERR_TAIL_MAX_CHARS = 16 * 1024;
 
 const isManagedOrchestrationOwnershipError = (error) => (
   error?.code === 'managed_orchestration_owner_conflict'
@@ -185,10 +188,14 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     syncPackagedAgents = async () => ({ changed: false, conflicts: [] }),
     syncRuntimeAgentOverlays = async () => ({ changed: false, targetConfigDirectory: null }),
     readSettingsFromDisk = async () => ({}),
+    readAgentRuntimeSettings = () => DEFAULT_AGENT_RUNTIME_SETTINGS,
     sanitizeProjects = (value) => (Array.isArray(value) ? value : []),
     sanitizeHiddenSkills = (value) => (Array.isArray(value) ? value : []),
     discoverSkills = () => [],
     onOpenCodeRestarted = () => {},
+    // Reports every exit of a ready managed server, with a bounded stderr tail
+    // (a runtime panic prints there). `expected` is false for a crash.
+    onManagedProcessExit = () => {},
     onStartupStatus = () => {},
     // Awaited right before a managed spawn while no managed child exists (the
     // window in which OpenCode's database is not in use). Best-effort: errors
@@ -516,6 +523,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       // stays attached there.
       detached: process.platform !== 'win32',
     });
+    const spawnedAt = Date.now();
 
     // The server's lifetime is tied to this process: if it exits for any
     // reason (quit, forced exit, crash, SIGKILL), the watchdog stops the
@@ -638,10 +646,20 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       throw error;
     }
 
-    return {
+    // After readiness keep only a bounded stderr tail: an unexpected exit is
+    // otherwise unexplained once the process is gone.
+    let stderrTail = '';
+    const onLateStderr = (chunk) => {
+      stderrTail = (stderrTail + chunk.toString()).slice(-MANAGED_EXIT_STDERR_TAIL_MAX_CHARS);
+    };
+    child.stderr?.on('data', onLateStderr);
+    let closeRequested = false;
+    const instance = {
       url,
+      startedAt: spawnedAt,
       hasExited: () => hasChildProcessExited(child),
       async close() {
+        closeRequested = true;
         const closed = await closeManagedOpenCodeChild(child);
         if (closed) {
           unregisterManagedOpenCodeProcess(child.pid);
@@ -651,6 +669,30 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         }
       },
     };
+    child.once('exit', (code, signal) => {
+      const expected = closeRequested || state.isShuttingDown;
+      let reported = false;
+      let fallback = null;
+      // 'close' follows once stdio drains, so the tail is complete; the timer
+      // covers a pipe a surviving grandchild still holds open.
+      const report = () => {
+        if (reported) return;
+        reported = true;
+        clearTimeout(fallback);
+        child.stderr?.off('data', onLateStderr);
+        try {
+          onManagedProcessExit({ pid: child.pid ?? null, code, signal, uptimeMs: Date.now() - spawnedAt, expected, stderrTail });
+        } catch (error) {
+          console.warn(`[OpenCode] Managed process exit callback failed: ${error?.message || error}`);
+        }
+      };
+      child.once('close', report);
+      fallback = setTimeout(report, 1_000);
+      fallback.unref?.();
+      // Restart now instead of at the next health poll.
+      if (!expected && state.openCodeProcess === instance) void triggerHealthCheck();
+    });
+    return instance;
   };
 
   const resolveManagedOpenCodePort = async (requestedPort, hostname = '127.0.0.1') => {
@@ -769,7 +811,18 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  const syncManagedAgentRuntimeConfig = async () => {
+  const getAgentRuntimeApplicationState = () => {
+    if (state.isExternalOpenCode || env.ENV_SKIP_OPENCODE_START || env.ENV_CONFIGURED_OPENCODE_HOST) {
+      return { runtimeMode: 'external', appliedLsp: null };
+    }
+    return {
+      runtimeMode: 'managed',
+      appliedLsp: typeof state.appliedAgentRuntimeSettings?.lsp === 'boolean'
+        ? state.appliedAgentRuntimeSettings.lsp : null,
+    };
+  };
+
+  const syncManagedAgentRuntimeConfig = async (agentRuntimeSettings = normalizeAgentRuntimeSettings(readAgentRuntimeSettings())) => {
     if (state.isExternalOpenCode || env.ENV_SKIP_OPENCODE_START) {
       return {
         changed: false,
@@ -829,6 +882,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     const overlayResult = await syncRuntimeAgentOverlays({
       workingDirectory: state.openCodeWorkingDirectory,
       skillPolicy,
+      agentRuntimeSettings,
     });
 
     if (packagedResult?.changed) {
@@ -863,12 +917,14 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
   const startOpenCodeOnce = async () => {
     assertExecutionReady();
+    // One snapshot owns this launch even when a save arrives during preparation.
+    const launchAgentRuntimeSettings = Object.freeze(normalizeAgentRuntimeSettings(readAgentRuntimeSettings()));
     // Electron provisions the managed browser skill here so the immediately
     // following skill discovery/overlay sync sees it on this same launch.
     // External and non-Electron runtimes return an empty object without IO.
     const browserEnvironmentInput = await getManagedBrowserEnvironment();
     emitStartupStatus('Preparing plugins and agents…');
-    const agentRuntimeConfig = await syncManagedAgentRuntimeConfig();
+    const agentRuntimeConfig = await syncManagedAgentRuntimeConfig(launchAgentRuntimeSettings);
     emitStartupStatus('Starting OpenCode…');
 
     const desiredPort = env.ENV_CONFIGURED_OPENCODE_PORT ?? 0;
@@ -1046,6 +1102,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         state.isOpenCodeReady = true;
         state.lastOpenCodeError = null;
         state.openCodeNotReadySince = 0;
+        state.appliedAgentRuntimeSettings = { ...launchAgentRuntimeSettings };
+        syncToHmrState();
 
         return serverInstance;
       }
@@ -1106,6 +1164,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       return;
     }
 
+    const restartStartedAt = Date.now();
     state.currentRestartPromise = (async () => {
       state.isRestartingOpenCode = true;
       state.isOpenCodeReady = false;
@@ -1195,7 +1254,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     try {
       await state.currentRestartPromise;
       try {
-        void Promise.resolve(onOpenCodeRestarted()).catch((error) => {
+        void Promise.resolve(onOpenCodeRestarted({ restartStartedAt })).catch((error) => {
           console.warn(`OpenCode restart callback failed: ${error?.message || error}`);
         });
       } catch (error) {
@@ -1547,9 +1606,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     waitForOpenCodeReady,
     waitForAgentPresence,
     applyOpenCodeConfigChanges,
-    // Settings routes that only change the runtime overlay (agent-runtime
-    // switches) re-run the same sync a start does, without restarting.
     syncManagedAgentRuntimeConfig,
+    getAgentRuntimeApplicationState,
     bootstrapOpenCodeAtStartup,
     startHealthMonitoring,
     triggerHealthCheck,

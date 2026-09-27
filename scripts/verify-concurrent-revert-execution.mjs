@@ -177,7 +177,8 @@ try {
   await fs.writeFile(providerProbe, `import assert from 'node:assert/strict';
     import { spawnConfinedProvider } from ${JSON.stringify(new URL('../packages/web/server/lib/opencode/session-provider-spawn.js', import.meta.url).href)};
     const child=spawnConfinedProvider({command:${JSON.stringify(process.execPath)},cwd:${JSON.stringify(directory)},
-      env:{PATH:process.env.PATH,HOME:process.env.HOME},args:['-e',${JSON.stringify(`const fs=require('node:fs');
+      env:{PATH:process.env.PATH,HOME:process.env.HOME,CLAUDE_CODE_OAUTH_TOKEN:'devryan-fixture-token'},args:['-e',${JSON.stringify(`const fs=require('node:fs');
+        if(process.env.CLAUDE_CODE_OAUTH_TOKEN!=='devryan-fixture-token')process.exit(5);
         try{fs.writeFileSync(${JSON.stringify(path.join(directory, 'example'))},'lost');process.exit(2)}
         catch(error){if(!['EPERM','EACCES','EROFS'].includes(error.code))throw error}process.stdin.pipe(process.stdout);`)}]});
     let output='',stderr='';child.stdout.on('data',c=>output+=c);child.stderr.on('data',c=>stderr+=c);

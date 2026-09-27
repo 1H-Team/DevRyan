@@ -1,3 +1,6 @@
+import type { State } from '@/sync/types';
+import { isPendingQuestionOrphaned } from '@/sync/question-orphan';
+
 interface SessionLinkRecord {
     id: string;
     parentID?: string;
@@ -136,4 +139,40 @@ export function createScopedBlockingRequestsSelector<
         previousResult = { permissions, questions };
         return previousResult;
     };
+}
+
+/**
+ * Whether a live question is pending on the session or any descendant — the
+ * scope that shows the question card. Orphaned questions (their turn already
+ * stopped) are ignored: nothing is waiting on them. Runs as a store selector on
+ * streaming updates, so it builds the parent lookup only while a live question
+ * exists outside the session itself.
+ */
+export function hasScopedPendingQuestions(
+    state: Pick<State, 'session' | 'question' | 'part' | 'message'>,
+    sessionId: string | null,
+): boolean {
+    if (!sessionId) return false;
+    let liveQuestionSessionIds: string[] | null = null;
+    for (const [questionSessionId, questions] of Object.entries(state.question)) {
+        if (!questions?.some((question) => !isPendingQuestionOrphaned(state, question))) continue;
+        if (questionSessionId === sessionId) return true;
+        (liveQuestionSessionIds ??= []).push(questionSessionId);
+    }
+    if (!liveQuestionSessionIds) return false;
+
+    const parentById = new Map<string, string>();
+    for (const session of state.session) {
+        if (session.parentID) parentById.set(session.id, session.parentID);
+    }
+    return liveQuestionSessionIds.some((questionSessionId) => {
+        const visited = new Set<string>([questionSessionId]);
+        let parentId = parentById.get(questionSessionId);
+        while (parentId && !visited.has(parentId)) {
+            if (parentId === sessionId) return true;
+            visited.add(parentId);
+            parentId = parentById.get(parentId);
+        }
+        return false;
+    });
 }

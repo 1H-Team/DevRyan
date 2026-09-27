@@ -14,6 +14,7 @@ import { useBotOperationsStore } from '@/stores/useBotOperationsStore';
 import { useBotSharedFilesStore } from '@/stores/useBotSharedFilesStore';
 import { useBotsStore } from '@/stores/useBotsStore';
 import { BotsEventOwner, createBotEventReconciler } from './BotsEventOwner';
+import { retryBotsEventConnection } from './botEventConnection';
 
 // Prism discovers the real environment on module load, before the host fixture.
 await import('@/components/chat/MarkdownRendererImpl');
@@ -40,6 +41,41 @@ const Transcript = ({ owner = false, channelId = channel.id }: { owner?: boolean
 );
 
 describe('normalized Bot events through the mounted transcript', () => {
+  test('catalog discovery waits for availability and manual recovery loads once while execution is unavailable', async () => withDom(async (container) => {
+    const { createRoot } = await import('react-dom/client');
+    const root = createRoot(container as unknown as Element);
+    const originalPrincipal = getAuthPrincipal();
+    const originalSource = Object.getOwnPropertyDescriptor(globalThis, 'EventSource');
+    Object.defineProperty(globalThis, 'EventSource', { configurable: true, writable: true, value: class {
+      onopen = null;
+      onerror = null;
+      addEventListener() {}
+      close() {}
+    } });
+    const unavailable = { available: false, catalogAvailable: false, state: 'setup_required', code: 'setup_required', owner: 'test', canManageRuntime: false, canCreateBot: false, runtime: null };
+    const catalog = spyOn(botsApi, 'getAssignedCatalog').mockResolvedValue({ bots: [], revisions: [], memberships: [] });
+    const capabilities = spyOn(botsApi, 'getCapabilities').mockResolvedValue(unavailable);
+    try {
+      setAuthPrincipal({ ...originalPrincipal, id: 'catalog-member', scope: 'managed', policy: { ...originalPrincipal.policy, bots: true } });
+      await act(async () => { root.render(<BotsEventOwner />); });
+      expect(catalog).toHaveBeenCalledTimes(0);
+      await act(async () => { retryBotsEventConnection(); });
+      expect(capabilities).toHaveBeenCalledTimes(2);
+      expect(catalog).toHaveBeenCalledTimes(0);
+      const recovered = { ...unavailable, state: 'docker_stopped', catalogAvailable: true };
+      capabilities.mockResolvedValue(recovered);
+      await act(async () => { retryBotsEventConnection(); });
+      expect(catalog).toHaveBeenCalledTimes(1);
+      expect(useBotsStore.getState().catalogLoaded).toBe(true);
+      await act(async () => { useBotsStore.getState().setCapabilities({ ...recovered }); });
+      expect(catalog).toHaveBeenCalledTimes(1);
+    } finally {
+      await act(async () => { root.unmount(); });
+      capabilities.mockRestore(); catalog.mockRestore(); setAuthPrincipal(originalPrincipal); resetStores(null);
+      if (originalSource) Object.defineProperty(globalThis, 'EventSource', originalSource); else Reflect.deleteProperty(globalThis, 'EventSource');
+    }
+  }));
+
   test('shows durable acknowledgments immediately, buffers unverified text, and ignores replay and partial regression', async () => withDom(async (container) => {
     const { createRoot } = await import('react-dom/client');
     const root = createRoot(container as unknown as Element);

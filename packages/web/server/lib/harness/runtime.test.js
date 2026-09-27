@@ -153,3 +153,96 @@ describe('web harness prompt admission', () => {
     await runtime.drain();
   });
 });
+
+describe('web harness control journal', () => {
+  it('records aborts with a sanitized source attribution', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-web-harness-'));
+    temporaryDirectories.push(directory);
+    const runtime = createWebHarnessRuntime({ dataDirectory: directory, runtime: 'test' });
+    await runtime.initialize();
+    const abortRequest = (sessionID, headers) => ({
+      method: 'POST',
+      path: '/abort',
+      principal: { id: 'user-1', role: 'admin', scope: 'local-admin' },
+      params: { sessionID },
+      query: { directory: '/repo' },
+      headers,
+      body: {},
+    });
+    const next = vi.fn();
+    runtime.controlJournalMiddleware(abortRequest('ses_esc', { 'x-devryan-abort-source': 'double_escape' }), createResponse(), next);
+    runtime.controlJournalMiddleware(abortRequest('ses_forged', { 'x-devryan-abort-source': 'rm -rf' }), createResponse(), next);
+    runtime.controlJournalMiddleware(abortRequest('ses_none', {}), createResponse(), next);
+    runtime.controlJournalMiddleware({
+      ...abortRequest('ses_revert', { 'x-devryan-abort-source': 'revert' }),
+      path: '/revert',
+    }, createResponse(), next);
+    expect(next).toHaveBeenCalledTimes(4);
+    await runtime.journal.flush();
+
+    const controls = (await runtime.journal.readRecords()).filter((record) => record.type === 'control');
+    const bySession = Object.fromEntries(controls.map((record) => [record.sessionID, record]));
+    expect(bySession.ses_esc).toMatchObject({ action: 'abort', payload: { source: 'double_escape' } });
+    expect(bySession.ses_forged).toMatchObject({ action: 'abort', payload: { source: 'unknown' } });
+    expect(bySession.ses_none).toMatchObject({ action: 'abort', payload: { source: 'unknown' } });
+    expect(bySession.ses_revert.action).toBe('revert');
+    expect('source' in bySession.ses_revert.payload).toBe(false);
+    await runtime.drain();
+  });
+});
+
+describe('web harness control observer', () => {
+  it('hands accepted session controls to the server observer without letting it block the request', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-web-harness-'));
+    temporaryDirectories.push(directory);
+    const runtime = createWebHarnessRuntime({ dataDirectory: directory, runtime: 'test' });
+    await runtime.initialize();
+    const observed = [];
+    runtime.setControlObserver((input) => {
+      observed.push(input);
+      throw new Error('observer failure is advisory');
+    });
+    const request = (action, method = 'POST') => ({
+      method,
+      path: `/${action}`,
+      principal: { id: 'user-1', role: 'admin', scope: 'local-admin' },
+      params: { sessionID: 'ses_child' },
+      query: { directory: '/repo' },
+      headers: { 'x-devryan-abort-source': 'stop_button' },
+      body: {},
+    });
+    const next = vi.fn();
+    const response = createResponse();
+    runtime.controlJournalMiddleware(request('abort'), response, next);
+    runtime.controlJournalMiddleware(request('revert'), createResponse(), next);
+    runtime.controlJournalMiddleware(request('abort', 'GET'), createResponse(), next);
+    expect(next).toHaveBeenCalledTimes(3);
+    expect(observed.map(({ action, sessionID, directory: dir, source }) => [action, sessionID, dir, source])).toEqual([
+      ['abort', 'ses_child', '/repo', 'stop_button'],
+      ['revert', 'ses_child', '/repo', null],
+    ]);
+    expect(observed[0].res).toBe(response);
+    await runtime.drain();
+  });
+
+  it('journals a primary Stop that primary recovery answers locally, exactly once', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-web-harness-'));
+    temporaryDirectories.push(directory);
+    const runtime = createWebHarnessRuntime({ dataDirectory: directory, runtime: 'test' });
+    await runtime.initialize();
+    const express = (await import('express')).default;
+    const request = (await import('../../test-supertest.js')).default;
+    const app = express();
+    // Mirrors the server's order: the journal precedes primary recovery, which
+    // answers a primary abort itself and never calls next().
+    app.use('/api/session/:sessionID', express.json(), runtime.controlJournalMiddleware,
+      (req, res, next) => (req.path === '/abort' ? res.status(200).json(true) : next()));
+    await request(app).post('/api/session/ses_primary/abort?directory=%2Frepo')
+      .set('X-DevRyan-Abort-Source', 'stop_button').send({}).expect(200);
+    await runtime.journal.flush();
+    const controls = (await runtime.journal.readRecords()).filter((record) => record.type === 'control');
+    expect(controls).toHaveLength(1);
+    expect(controls[0]).toMatchObject({ sessionID: 'ses_primary', action: 'abort', payload: { source: 'stop_button' } });
+    await runtime.drain();
+  });
+});

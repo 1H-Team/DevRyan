@@ -755,6 +755,25 @@ describe('turn timing runtime', () => {
     ]);
   });
 
+  it('delegates operator aborts and runtime exits to the lifecycle tracker', () => {
+    const runtime = createTurnTimingRuntime();
+    const events = [];
+    runtime.subscribeLifecycle((event) => events.push(event));
+    runtime.recordPromptAccepted({ sessionID: 'ses_abort', messageID: 'msg_user' });
+    expect(runtime.recordAbortRequested({ sessionID: 'ses_abort' })).toBe(true);
+    runtime.processOpenCodeEvent({ type: 'session.status', properties: { sessionID: 'ses_abort', status: { type: 'idle' } } });
+    runtime.recordPromptAccepted({ sessionID: 'ses_exit', messageID: 'msg_user' });
+    runtime.recordAbortRequested({ sessionID: 'ses_exit' });
+    runtime.withdrawAbortRequest({ sessionID: 'ses_exit' });
+    expect(runtime.recordRuntimeInterrupted({ sessionID: 'ses_exit' })).toBe(true);
+    runtime.processOpenCodeEvent({ type: 'session.idle', properties: { sessionID: 'ses_exit' } });
+    expect(events.filter((event) => event.type.startsWith('turn_') && event.type !== 'turn_started')
+      .map((event) => [event.type, event.sessionID, event.reason])).toEqual([
+      ['turn_aborted', 'ses_abort', 'abort_requested'],
+      ['turn_failed', 'ses_exit', 'runtime_exit'],
+    ]);
+  });
+
   it('wraps diagnostic route responses while preserving existing fields and status codes', async () => {
     const app = express();
     app.use(express.json());

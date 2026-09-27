@@ -3,13 +3,15 @@ import type { AssistantMessage, Message, Part, ReasoningPart, TextPart, ToolPart
 
 import type { MessageStreamPhase } from '@/stores/types/sessionTypes';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useDirectorySync, useSessionPermissions, useSessionQuestions, useSessionStatus } from '@/sync/sync-context';
+import { useDirectorySync, useSessionPermissions, useSessionStatus } from '@/sync/sync-context';
 import { readCompactionPart, type CompactionKind } from '@/components/chat/lib/compactionDisplay';
 import { isTerminalAssistantMessage as isTerminalSyncAssistantMessage } from '@/sync/session-working';
 import { isFullySyntheticMessage } from '@/lib/messages/synthetic';
 import { postRendererTurnTimingMark } from '@/stores/utils/streamDebug';
 import { getAssistantToolStatusPhrase } from './assistantStatusFormatting';
 import { useSessionActivity } from './useSessionActivity';
+import { hasScopedPendingQuestions } from '@/components/chat/lib/blockingRequests';
+import { countLivePendingQuestions } from '@/sync/question-orphan';
 import { useRetryVisibility } from '@/components/chat/lib/turns/retryVisibility';
 import { useAgentRuntimeWarmupStore } from '@/stores/useAgentRuntimeWarmupStore';
 
@@ -410,7 +412,24 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
     );
 
     const sessionPermissionRequests = useSessionPermissions(effectiveSessionId ?? '', effectiveDirectory ?? undefined);
-    const sessionQuestionRequests = useSessionQuestions(effectiveSessionId ?? '', effectiveDirectory ?? undefined);
+    // Orphaned questions (their turn already stopped) wait on nothing, so they
+    // neither hide working state nor block Stop.
+    const hasPendingQuestion = useDirectorySync(
+        React.useCallback(
+            (state) => Boolean(effectiveSessionId) && countLivePendingQuestions(state, effectiveSessionId ?? '') > 0,
+            [effectiveSessionId],
+        ),
+        effectiveDirectory ?? undefined,
+    );
+    // A sub-agent question shows the same card; aborting the parent would kill
+    // the turn that asked it.
+    const hasScopedQuestion = useDirectorySync(
+        React.useCallback(
+            (state) => hasScopedPendingQuestions(state, effectiveSessionId ?? null),
+            [effectiveSessionId],
+        ),
+        effectiveDirectory ?? undefined,
+    );
 
     const sessionAbortRecord = useSessionUIStore(
         React.useCallback((state) => {
@@ -624,10 +643,9 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
         }
 
         const hasPendingPermission = sessionPermissionRequests.length > 0;
-        const hasPendingQuestion = sessionQuestionRequests.length > 0;
 
         if (!hasPendingPermission && !hasPendingQuestion) {
-            return baseWorking;
+            return hasScopedQuestion && baseWorking.canAbort ? { ...baseWorking, canAbort: false } : baseWorking;
         }
 
         if (hasPendingQuestion) {
@@ -651,7 +669,7 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
             canAbort: false,
             retryInfo: null,
         };
-    }, [baseWorking, sessionPermissionRequests, sessionQuestionRequests]);
+    }, [baseWorking, hasPendingQuestion, hasScopedQuestion, sessionPermissionRequests]);
 
     React.useEffect(() => {
         if (!effectiveSessionId || working.isWorking || currentSessionStatus?.type !== 'idle') {

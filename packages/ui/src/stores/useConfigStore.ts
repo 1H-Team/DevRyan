@@ -792,6 +792,7 @@ declare global {
 // In-flight dedup: prevent concurrent duplicate loadProviders/loadAgents calls for the same directory
 const _inFlightProviders = new Map<string, Promise<void>>();
 const _providerLoadTokens = new Map<string, object>();
+const PROVIDER_CATALOG_INCOMPLETE_ERROR = "OpenCode provider catalog unavailable";
 const _inFlightAgents = new Map<string, Promise<boolean>>();
 let _initializeAppInFlight: Promise<void> | null = null;
 
@@ -1127,10 +1128,12 @@ export const useConfigStore = create<ConfigStore>()(
                     const previousDefaults = existingSnapshot?.defaultProviders ?? (get().activeDirectoryKey === directoryKey ? get().defaultProviders : {});
                     let lastError: unknown = null;
 
+                    let incompleteResult: Awaited<ReturnType<typeof opencodeClient.getProviders>> | null = null;
+
                     const commitProviders = (apiResult: {
                         providers?: Provider[];
                         default?: { [key: string]: string };
-                    }) => {
+                    }, commitOptions?: { incomplete?: boolean }) => {
                         if (_providerLoadTokens.get(directoryKey) !== loadToken) return;
                         const providers = Array.isArray(apiResult?.providers) ? apiResult.providers : [];
                         const defaults = apiResult?.default || {};
@@ -1164,8 +1167,8 @@ export const useConfigStore = create<ConfigStore>()(
                             if (state.activeDirectoryKey === directoryKey) {
                                 nextState.providers = processedProviders;
                                 nextState.defaultProviders = defaults;
-                                nextState.providersLoadStatus = "ready";
-                                nextState.providersLoadError = undefined;
+                                nextState.providersLoadStatus = commitOptions?.incomplete ? "error" : "ready";
+                                nextState.providersLoadError = commitOptions?.incomplete ? PROVIDER_CATALOG_INCOMPLETE_ERROR : undefined;
 
                                 // Ensure a valid model stays selected after (re)loading providers.
                                 // Otherwise switching to an uncached directory (which blanks the
@@ -1233,6 +1236,12 @@ export const useConfigStore = create<ConfigStore>()(
                             const apiResult = await opencodeClient.getProviders({
                                 directory: fromDirectoryKey(directoryKey),
                             });
+                            // Only integration providers survived an OpenCode outage; committing
+                            // them would drop the selected model's catalog entry until reload.
+                            if (apiResult?.catalogIncomplete === true) {
+                                incompleteResult = apiResult;
+                                throw new Error(PROVIDER_CATALOG_INCOMPLETE_ERROR);
+                            }
                             commitProviders(apiResult);
 
                             return;
@@ -1263,6 +1272,12 @@ export const useConfigStore = create<ConfigStore>()(
                     }
 
                     if (_providerLoadTokens.get(directoryKey) !== loadToken) return;
+                    if (incompleteResult && previousProviders.length === 0) {
+                        // Nothing better to keep: show the integrations, but stay in error so
+                        // startup and reconnect recovery reload the full catalog.
+                        commitProviders(incompleteResult, { incomplete: true });
+                        return;
+                    }
                     console.error("Failed to load providers:", lastError);
                     const errorMessage = getErrorMessage(lastError, "Failed to load providers");
 

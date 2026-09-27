@@ -5,6 +5,7 @@ import { Switch } from '@/components/ui/switch';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useI18n } from '@/lib/i18n';
 import { useAgentsStore, type AgentRuntimeSettingsInput } from '@/stores/useAgentsStore';
+import { useConfigApplyStore } from '@/stores/useConfigApplyStore';
 
 type AgentRuntimeSectionProps = {
   /** Host admins edit; everyone else who can reach the page reads the effective values. */
@@ -26,10 +27,11 @@ export const AgentRuntimeSection: React.FC<AgentRuntimeSectionProps> = ({ canEdi
   const settings = useAgentsStore((state) => state.agentRuntimeSettings);
   const getAgentRuntimeSettings = useAgentsStore((state) => state.getAgentRuntimeSettings);
   const saveAgentRuntimeSettings = useAgentsStore((state) => state.saveAgentRuntimeSettings);
-  const markAgentRuntimeRestarted = useAgentsStore((state) => state.markAgentRuntimeRestarted);
+  const isSaving = useAgentsStore((state) => state.isSavingAgentRuntimeSettings);
+  const applyState = useConfigApplyStore((state) => state.status?.state);
   const [isRestarting, setIsRestarting] = React.useState(false);
 
-  // The store applies the change optimistically; a rejected save reverts it and we toast.
+  // Preserve the last confirmed settings while a serialized save is pending.
   const save = React.useCallback((input: AgentRuntimeSettingsInput) => (
     saveAgentRuntimeSettings(input).catch((error: unknown) => {
       toast.error(error instanceof Error ? error.message : t('settings.agents.runtime.toast.saveFailed'));
@@ -38,28 +40,35 @@ export const AgentRuntimeSection: React.FC<AgentRuntimeSectionProps> = ({ canEdi
 
   React.useEffect(() => {
     let cancelled = false;
-    getAgentRuntimeSettings().catch((error: unknown) => {
-      if (cancelled) return;
-      toast.error(error instanceof Error ? error.message : t('settings.agents.runtime.toast.loadFailed'));
-    });
+    const refresh = () => {
+      void getAgentRuntimeSettings().catch((error: unknown) => {
+        if (cancelled) return;
+        toast.error(error instanceof Error ? error.message : t('settings.agents.runtime.toast.loadFailed'));
+      });
+    };
+    refresh();
+    window.addEventListener('focus', refresh);
     return () => {
       cancelled = true;
+      window.removeEventListener('focus', refresh);
     };
-  }, [getAgentRuntimeSettings, t]);
+    // Configuration application can trigger a read; only the host's launch
+    // snapshot proves whether these independent settings have been applied.
+  }, [getAgentRuntimeSettings, applyState, t]);
 
   const handleRestart = React.useCallback(async () => {
     if (!restartOpenCode) return;
     setIsRestarting(true);
     try {
       await restartOpenCode();
-      markAgentRuntimeRestarted();
+      await getAgentRuntimeSettings();
       toast.success(t('settings.agents.runtime.toast.restartRequested'));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t('settings.agents.runtime.toast.restartFailed'));
     } finally {
       setIsRestarting(false);
     }
-  }, [markAgentRuntimeRestarted, restartOpenCode, t]);
+  }, [getAgentRuntimeSettings, restartOpenCode, t]);
 
   if (!settings) return null;
 
@@ -81,6 +90,7 @@ export const AgentRuntimeSection: React.FC<AgentRuntimeSectionProps> = ({ canEdi
             {canEdit ? (
               <Switch
                 checked={settings.lsp}
+                disabled={isSaving || isRestarting}
                 onCheckedChange={(checked) => { void save({ lsp: checked }); }}
                 aria-label={t('settings.agents.runtime.lsp.label')}
               />
@@ -94,19 +104,26 @@ export const AgentRuntimeSection: React.FC<AgentRuntimeSectionProps> = ({ canEdi
           </div>
         </div>
 
-        {settings.restartRequired ? (
+        {settings.restartRequired === null ? (
+          <p className="typography-meta text-muted-foreground pt-1" role="status">
+            {t(settings.runtimeMode === 'external'
+              ? 'settings.agents.runtime.external.note'
+              : 'settings.agents.runtime.unknown.note')}
+          </p>
+        ) : null}
+        {settings.restartRequired === true ? (
           <div className="flex items-center justify-between gap-4 pt-1" role="status">
             <p className="typography-meta text-muted-foreground">
               {t('settings.agents.runtime.restart.note')}
             </p>
-            {canEdit && restartOpenCode ? (
+            {canEdit && settings.runtimeMode === 'managed' && restartOpenCode ? (
               <Button
                 type="button"
                 variant="outline"
                 size="xs"
                 className="shrink-0"
                 onClick={() => { void handleRestart(); }}
-                disabled={isRestarting}
+                disabled={isRestarting || isSaving}
               >
                 {t('settings.agents.runtime.actions.restart')}
               </Button>

@@ -1647,8 +1647,10 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
     const getCurrentModelDisplayName = () => {
         if (!currentProviderId || !currentModelId) return 'Not selected';
-        if (models.length === 0) return currentModelId;
         const currentProvider = providers.find((provider) => provider.id === currentProviderId);
+        // A hidden current model is absent from the visible `models`, but still has a catalog name.
+        const catalogModel = currentProvider?.models.find((m: ProviderModel) => m.id === currentModelId);
+        if (models.length === 0) return catalogModel ? getModelDisplayName(catalogModel) : currentModelId;
         const genericDisplayState = getModelVariantDisplayState(currentProvider, currentModelId, currentVariant);
         if (genericDisplayState?.displayModelId && genericDisplayState.displayModelId !== currentModelId) {
             const displayModel = models.find((m: ProviderModel) => m.id === genericDisplayState.displayModelId);
@@ -1662,7 +1664,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 return getModelDisplayName(baseModel);
             }
         }
-        const currentModel = models.find((m: ProviderModel) => m.id === currentModelId);
+        const currentModel = models.find((m: ProviderModel) => m.id === currentModelId) ?? catalogModel;
         return currentModel ? getModelDisplayName(currentModel) : currentModelId;
     };
 

@@ -1,3 +1,4 @@
+export * from './abort-sources.js';
 export * from './agent-contracts.js';
 export * from './assistant-activity.js';
 export * from './auto-resume-policy.js';
@@ -15,6 +16,7 @@ export * from './result-envelope.js';
 export * from './scheduler.js';
 export * from './single-flight.js';
 export * from './terminal-error-registry.js';
+export * from './operator-abort-registry.js';
 export * from './transitions.js';
 export * from './transport-recovery.js';
 export * from './xai-tool-catalog.js';

@@ -666,6 +666,7 @@ describe('OpenCode lifecycle', () => {
     expect(syncRuntimeAgentOverlays).toHaveBeenCalledWith({
       workingDirectory: persistedDirectory,
       skillPolicy: expect.any(Object),
+      agentRuntimeSettings: { lsp: true },
     });
     await server.close();
   });
@@ -937,6 +938,62 @@ describe('OpenCode lifecycle', () => {
     await runtime.__testState.openCodeProcess.close();
   });
 
+  it('reports a crashed managed server with its stderr tail and restarts it without waiting for the poll', async () => {
+    const crashed = createMockChild();
+    const replacement = createMockChild();
+    for (const child of [crashed, replacement]) {
+      spawnMock.mockImplementationOnce(() => {
+        queueMicrotask(() => child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n'));
+        return child;
+      });
+    }
+    globalThis.fetch = vi.fn(async () => { throw new Error('connect ECONNREFUSED'); });
+    const onManagedProcessExit = vi.fn();
+    const onOpenCodeRestarted = vi.fn();
+    const runtime = createRuntime({ initialState: { openCodePort: 45678 }, onManagedProcessExit, onOpenCodeRestarted });
+    await runtime.restartOpenCode();
+    const first = runtime.__testState.openCodeProcess;
+    expect(first.startedAt).toEqual(expect.any(Number));
+
+    crashed.stderr.emit('data', 'x'.repeat(20_000));
+    crashed.stderr.emit('data', 'panic(main thread): Segmentation fault at address 0x0\n');
+    crashed.signalCode = 'SIGTRAP';
+    crashed.emit('exit', null, 'SIGTRAP');
+    crashed.emit('close', null, 'SIGTRAP');
+
+    expect(onManagedProcessExit).toHaveBeenCalledOnce();
+    const report = onManagedProcessExit.mock.calls[0][0];
+    expect(report).toMatchObject({ pid: 12345, code: null, signal: 'SIGTRAP', expected: false });
+    expect(report.stderrTail).toContain('panic(main thread)');
+    expect(report.stderrTail.length).toBeLessThanOrEqual(16 * 1024);
+    await vi.waitFor(() => expect(spawnMock).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(onOpenCodeRestarted).toHaveBeenCalledTimes(2));
+    expect(onOpenCodeRestarted.mock.calls[1][0]).toEqual({ restartStartedAt: expect.any(Number) });
+    expect(runtime.__testState.openCodeProcess).not.toBe(first);
+    await runtime.__testState.openCodeProcess.close();
+  });
+
+  it('reports a requested close as expected and does not restart', async () => {
+    const child = createMockChild();
+    child.kill = vi.fn(() => {
+      child.signalCode = 'SIGTERM';
+      queueMicrotask(() => { child.emit('exit', null, 'SIGTERM'); child.emit('close', null, 'SIGTERM'); });
+      return true;
+    });
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n'));
+      return child;
+    });
+    const onManagedProcessExit = vi.fn();
+    const runtime = createRuntime({ initialState: { openCodePort: 45678 }, onManagedProcessExit });
+    await runtime.restartOpenCode();
+    await runtime.__testState.openCodeProcess.close();
+
+    await vi.waitFor(() => expect(onManagedProcessExit).toHaveBeenCalledOnce());
+    expect(onManagedProcessExit.mock.calls[0][0]).toMatchObject({ expected: true, signal: 'SIGTERM' });
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+  });
+
   it('holds managed browser lease admission closed across managed child replacement', async () => {
     const order = [];
     let releasePause;
@@ -1160,6 +1217,7 @@ describe('OpenCode lifecycle', () => {
     expect(syncRuntimeAgentOverlays).toHaveBeenCalledWith({
       workingDirectory: '/tmp/project',
       skillPolicy: expect.any(Object),
+      agentRuntimeSettings: { lsp: true },
     });
     expect(args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '45678', '--log-level', 'WARN']);
     expect(options.env.OPENCODE_CONFIG_DIR).toBe('/tmp/openchamber-runtime-overlays/project-hash');
@@ -1311,6 +1369,7 @@ describe('OpenCode lifecycle', () => {
     });
     expect(syncRuntimeAgentOverlays).toHaveBeenCalledWith({
       workingDirectory: '/tmp/project',
+      agentRuntimeSettings: { lsp: true },
       skillPolicy: expect.objectContaining({
         skillNames: ['frontend-design'],
         skillDirectories: ['/tmp/project/.opencode/skills/frontend-design'],
@@ -1561,5 +1620,68 @@ describe('OpenCode lifecycle', () => {
       agentReadyTimeoutMs: 20,
       agentReadyIntervalMs: 1,
     } }] })).rejects.toThrow('Agent "fixer" loaded with model "openai/gpt-5.5"; expected "cursor-acp/composer-2.5"');
+  });
+});
+
+describe('managed agent-runtime application snapshots', () => {
+  const provideChild = () => {
+    const child = createMockChild();
+    queueMicrotask(() => child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n'));
+    return child;
+  };
+
+  it('applies the exact overlay snapshot only after readiness, including a save during startup', async () => {
+    let desired = { lsp: true };
+    const readyEntered = Promise.withResolvers();
+    const ready = Promise.withResolvers();
+    const overlays = vi.fn(async () => ({ changed: false, targetConfigDirectory: '/tmp/overlay' }));
+    spawnMock.mockImplementation(provideChild);
+    const runtime = createRuntime({
+      readAgentRuntimeSettings: () => desired,
+      syncRuntimeAgentOverlays: overlays,
+      waitForReady: async () => { readyEntered.resolve(); return await ready.promise; },
+    });
+    const starting = runtime.startOpenCode();
+    await readyEntered.promise;
+    expect(runtime.getAgentRuntimeApplicationState()).toEqual({ runtimeMode: 'managed', appliedLsp: null });
+    desired = { lsp: false };
+    expect(overlays.mock.calls[0][0].agentRuntimeSettings).toEqual({ lsp: true });
+    ready.resolve(true);
+    const server = await starting;
+    try {
+      expect(runtime.getAgentRuntimeApplicationState()).toEqual({ runtimeMode: 'managed', appliedLsp: true });
+      const restored = createRuntime({ initialState: { appliedAgentRuntimeSettings: runtime.__testState.appliedAgentRuntimeSettings } });
+      expect(restored.getAgentRuntimeApplicationState()).toEqual({ runtimeMode: 'managed', appliedLsp: true });
+    } finally { await server.close(); }
+  });
+
+  it('retains the last applied snapshot when every readiness attempt fails', async () => {
+    spawnMock.mockImplementation(provideChild);
+    const runtime = createRuntime({
+      initialState: { appliedAgentRuntimeSettings: { lsp: true } },
+      readAgentRuntimeSettings: () => ({ lsp: false }),
+      waitForReady: async () => false,
+    });
+    await expect(runtime.startOpenCode()).rejects.toThrow('health check failed');
+    expect(runtime.getAgentRuntimeApplicationState()).toEqual({ runtimeMode: 'managed', appliedLsp: true });
+  });
+
+  it('replaces the applied snapshot on a later successful managed launch', async () => {
+    spawnMock.mockImplementation(provideChild);
+    const runtime = createRuntime({
+      initialState: { appliedAgentRuntimeSettings: { lsp: true } },
+      readAgentRuntimeSettings: () => ({ lsp: false }),
+    });
+    const server = await runtime.startOpenCode();
+    try {
+      expect(runtime.getAgentRuntimeApplicationState()).toEqual({ runtimeMode: 'managed', appliedLsp: false });
+    } finally { await server.close(); }
+  });
+
+  it('does not infer application for an external runtime even with an old managed snapshot', () => {
+    const runtime = createRuntime({ initialState: { isExternalOpenCode: true, appliedAgentRuntimeSettings: { lsp: true } } });
+    expect(runtime.getAgentRuntimeApplicationState()).toEqual({ runtimeMode: 'external', appliedLsp: null });
+    const skipped = createRuntime({ env: { ENV_SKIP_OPENCODE_START: true } });
+    expect(skipped.getAgentRuntimeApplicationState()).toEqual({ runtimeMode: 'external', appliedLsp: null });
   });
 });

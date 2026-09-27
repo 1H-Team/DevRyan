@@ -350,6 +350,11 @@ export async function runQaFixtureScenario({cell,fixture,projectFixture,cdp,ui,a
       await screenshot(`fixture-compaction-${label.toLowerCase()}-restored`);
     });
   }
+  if(cell.scenarioId==='core-journey') {
+    await check('agent runtime settings survive renderer reload with honest external application state',async () => {
+      evidence.agentRuntimeSettings = await runQaAgentRuntimeSettingsFixtureProof({cell,ui,api,screenshot});
+    });
+  }
   evidence.planApproval=[];
   for(const virtualized of [false,true]) {
   const mode=virtualized?'virtualized':'mounted';
@@ -412,6 +417,16 @@ export async function runQaFixtureScenario({cell,fixture,projectFixture,cdp,ui,a
     }
     const restored=await api(`/api/session/${sessionID}/plan-revisions/${source.info.id}?${query}`);
     assert.equal(restored.path,saved.path);assert.equal(restored.content,saved.content);
+    if(!virtualized) {
+      // Completed summaries are collapsed and unmounted by default. Expose
+      // these exact fixture paragraphs so they actually put the older Plan
+      // above the viewport; their stored byte count provides no geometry.
+      for(const boundary of boundaries) {
+        const boundarySelector=`[data-compaction-boundary][data-user-message-id=${JSON.stringify(boundary.userMessageID)}]`;
+        await ui.click({selector:boundarySelector+' button',text:'Show Summary'});
+        await ui.waitExpression('fixture summary occupies transcript space',`(() => {const e=document.querySelector(${JSON.stringify(boundarySelector+' [data-message-id='+JSON.stringify(boundary.summaryMessageID)+']')});return e&&e.getBoundingClientRect().height>0;})()`);
+      }
+    }
     await ui.type('');await ui.key('Tab',{code:'Tab',modifiers:8,windowsVirtualKeyCode:9});
     await ui.click({selector:'button:has(.model-controls__agent-label)'});
     await ui.waitExpression('Plan mode enabled immediately before approval',"[...document.querySelectorAll('[aria-pressed]')].some(e=>e.innerText?.trim().startsWith('Plan')&&e.getAttribute('aria-pressed')==='true')");
@@ -612,6 +627,53 @@ export async function runQaFixtureScenario({cell,fixture,projectFixture,cdp,ui,a
     });
   }
   evidence.transportState=fixture.getState();
+  return evidence;
+}
+
+// This fixture owns a private settings sidecar but connects to an external
+// loopback runtime. Managed readiness is covered by lifecycle tests separately.
+export async function runQaAgentRuntimeSettingsFixtureProof({cell,ui,api,screenshot}) {
+  assert.ok(cell?.transport==='fixture' && cell.scenarioId==='core-journey', 'Settings mutation is restricted to the private desktop fixture');
+  const endpoint='/api/config/agent-runtime';
+  const switchSelector='[role="switch"][aria-label="Language Server for Agent Sessions"]';
+  const assertExternal=value=>{
+    assert.equal(typeof value.lsp,'boolean');
+    assert.equal(value.runtimeMode,'external');
+    assert.equal(value.appliedLsp,null);
+    assert.equal(value.restartRequired,null);
+    return value;
+  };
+  const before=assertExternal(await api(endpoint));
+  const evidence={source:'actual-shared-ui-with-private-fixture-settings',managedReadiness:false,before};
+  let opened=false;
+  const openSettings=async()=>{
+    await ui.click({label:'Settings'});
+    opened=true;
+    await ui.click({selector:'[data-settings-view] button',text:'Agents'});
+    await ui.click({selector:'[data-settings-view] button',text:'Global Agent Behavior'});
+    await ui.reveal(switchSelector,undefined,{direction:'down'});
+  };
+  const closeSettings=()=>ui.click({selector:'[data-settings-view] button',label:'Back'});
+  try {
+    await openSettings();
+    await ui.waitExpression('agent runtime desired switch',`document.querySelector(${JSON.stringify(switchSelector)})?.getAttribute('aria-checked')===${JSON.stringify(String(before.lsp))}`);
+    await ui.click({selector:switchSelector});
+    evidence.saved=await ui.waitFor('agent runtime sidecar save',async()=>{
+      const state=assertExternal(await api(endpoint));return state.lsp===!before.lsp?state:null;
+    });
+    await closeSettings();opened=false;
+    await ui.reload();
+    await openSettings();
+    await ui.waitExpression('agent runtime saved switch after reload',`document.querySelector(${JSON.stringify(switchSelector)})?.getAttribute('aria-checked')===${JSON.stringify(String(!before.lsp))}`);
+    await ui.waitExpression('external runtime has no restart action',`![...document.querySelectorAll('[data-settings-view] button')].some(e=>e.innerText?.trim()==='Restart Runtime')`);
+    evidence.reloaded=assertExternal(await api(endpoint));
+    assert.equal(evidence.reloaded.lsp,!before.lsp);
+    await screenshot('fixture-agent-runtime-settings');
+  } finally {
+    evidence.restored=assertExternal(await api(endpoint,{method:'PUT',body:JSON.stringify({lsp:before.lsp})}));
+    assert.equal(evidence.restored.lsp,before.lsp);
+    if(opened) await closeSettings();
+  }
   return evidence;
 }
 

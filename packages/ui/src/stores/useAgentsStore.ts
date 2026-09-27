@@ -358,23 +358,33 @@ export type AgentRuntimeSettings = {
   lsp: boolean;
   /** OpenCode reads these when its instance starts, never live. */
   appliesOnRestart: boolean;
-  /** A save changed the value while the managed runtime ran; cleared once it restarts. */
-  restartRequired: boolean;
+  /** The host can prove application only for a successful managed launch. */
+  runtimeMode: 'managed' | 'external' | 'unknown';
+  appliedLsp: boolean | null;
+  restartRequired: boolean | null;
 };
 
 export type AgentRuntimeSettingsInput = Partial<Pick<AgentRuntimeSettings, 'lsp'>>;
 
 const AGENT_RUNTIME_ENDPOINT = '/api/config/agent-runtime';
-/** Serializes optimistic saves: only the newest one may reconcile or revert the store. */
 let agentRuntimeSaveGeneration = 0;
+let agentRuntimeLoadGeneration = 0;
+let agentRuntimeSaveTail: Promise<void> = Promise.resolve();
 
 export const normalizeAgentRuntimeSettings = (value: unknown): AgentRuntimeSettings | null => {
   if (!isSettingsRecord(value)) return null;
   if (typeof value.lsp !== 'boolean') return null;
+  const runtimeMode = value.runtimeMode === 'managed' || value.runtimeMode === 'external'
+    ? value.runtimeMode : 'unknown';
+  const appliedLsp = runtimeMode === 'managed' && typeof value.appliedLsp === 'boolean'
+    ? value.appliedLsp : null;
   return {
     lsp: value.lsp,
     appliesOnRestart: value.appliesOnRestart !== false,
-    restartRequired: value.restartRequired === true,
+    runtimeMode,
+    appliedLsp,
+    restartRequired: appliedLsp !== null && typeof value.restartRequired === 'boolean'
+      ? value.restartRequired : null,
   };
 };
 
@@ -506,6 +516,7 @@ interface AgentsStore {
 
   selectedAgentName: string | null;
   agents: Agent[];
+  agentsCacheKey: string | null;
   staleModelOverrides: string[];
   isLoading: boolean;
 
@@ -520,12 +531,11 @@ interface AgentsStore {
   resetAgentBackupModel: (name: string) => Promise<AgentOverrideMutationResponse>;
   /** Managed agent-runtime switches; null until loaded, or when the host has no such route. */
   agentRuntimeSettings: AgentRuntimeSettings | null;
+  isSavingAgentRuntimeSettings: boolean;
   /** Loads the switches; resolves null on hosts without the route (404 or 501). */
   getAgentRuntimeSettings: () => Promise<AgentRuntimeSettings | null>;
-  /** Applies a partial update optimistically; reverts and rethrows when the host rejects it. */
+  /** Serializes partial updates and retains the last confirmed state on failure. */
   saveAgentRuntimeSettings: (input: AgentRuntimeSettingsInput) => Promise<AgentRuntimeSettings>;
-  /** Clears the owed restart once the managed runtime has been restarted. */
-  markAgentRuntimeRestarted: () => void;
 }
 
 declare global {
@@ -541,9 +551,11 @@ export const useAgentsStore = create<AgentsStore>()(
 
         selectedAgentName: null,
         agents: [],
+        agentsCacheKey: null,
         staleModelOverrides: [],
         isLoading: false,
         agentRuntimeSettings: null,
+        isSavingAgentRuntimeSettings: false,
 
         setSelectedAgent: (name: string | null) => {
           set({ selectedAgentName: name });
@@ -554,7 +566,7 @@ export const useAgentsStore = create<AgentsStore>()(
           const cacheKey = getAgentsCacheKey(configDirectory);
           const now = Date.now();
           const loadedAt = agentsLastLoadedAt.get(cacheKey) ?? 0;
-          const hasCachedAgents = get().agents.length > 0;
+          const hasCachedAgents = get().agentsCacheKey === cacheKey;
 
           if (hasCachedAgents && now - loadedAt < AGENTS_LOAD_CACHE_TTL_MS) {
             return true;
@@ -582,6 +594,7 @@ export const useAgentsStore = create<AgentsStore>()(
                 if (getConfigDirectory() !== configDirectory) return false;
                 set((state) => ({
                   agents: reconcileAgentCatalog(state.agents, agents),
+                  agentsCacheKey: cacheKey,
                   staleModelOverrides: sameAgentConfigValue(state.staleModelOverrides, staleOverrides)
                     ? state.staleModelOverrides : staleOverrides,
                   isLoading: false,
@@ -759,16 +772,20 @@ export const useAgentsStore = create<AgentsStore>()(
           return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as AgentOverrideMutationResponse : null;
         },
 
-        // Agent runtime switches are host-wide too, and OpenCode only reads them
-        // at start: the store keeps an owed restart until one actually happens,
-        // so a reload of the section never hides it.
+        // The host compares desired settings with its last successful launch.
+        // Reads cannot replace a save, and queued writes reach the server in order.
         getAgentRuntimeSettings: async () => {
+          const loadGeneration = ++agentRuntimeLoadGeneration;
+          const saveGeneration = agentRuntimeSaveGeneration;
+          await agentRuntimeSaveTail;
+          const isCurrent = () => loadGeneration === agentRuntimeLoadGeneration
+            && saveGeneration === agentRuntimeSaveGeneration;
           const response = await fetch(AGENT_RUNTIME_ENDPOINT, {
             method: 'GET',
             headers: { Accept: 'application/json' },
           });
           if (response.status === 404 || response.status === 501) {
-            set({ agentRuntimeSettings: null });
+            if (isCurrent()) set({ agentRuntimeSettings: null });
             return null;
           }
           if (!response.ok) {
@@ -779,21 +796,15 @@ export const useAgentsStore = create<AgentsStore>()(
           if (!loaded) {
             throw new Error('Failed to load agent runtime settings');
           }
-          const settings = {
-            ...loaded,
-            restartRequired: loaded.restartRequired || get().agentRuntimeSettings?.restartRequired === true,
-          };
-          set({ agentRuntimeSettings: settings });
-          return settings;
+          if (isCurrent()) set({ agentRuntimeSettings: loaded });
+          return loaded;
         },
 
         saveAgentRuntimeSettings: async (input: AgentRuntimeSettingsInput) => {
           const body = buildAgentRuntimeSettingsPayload(input);
           const generation = ++agentRuntimeSaveGeneration;
-          const previous = get().agentRuntimeSettings;
-          const optimistic = previous ? { ...previous, ...body } : null;
-          if (optimistic) set({ agentRuntimeSettings: optimistic });
-          try {
+          set({ isSavingAgentRuntimeSettings: true });
+          const save = agentRuntimeSaveTail.then(async () => {
             const response = await fetch(AGENT_RUNTIME_ENDPOINT, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -803,25 +814,18 @@ export const useAgentsStore = create<AgentsStore>()(
               const payload = await response.json().catch(() => null);
               throw new Error(payload?.error || 'Failed to save agent runtime settings');
             }
-            const saved = normalizeAgentRuntimeSettings(await response.json().catch(() => null)) ?? optimistic;
-            if (!saved) {
-              throw new Error('Failed to save agent runtime settings');
-            }
-            const next = {
-              ...saved,
-              restartRequired: saved.restartRequired || previous?.restartRequired === true,
-            };
-            if (generation === agentRuntimeSaveGeneration) set({ agentRuntimeSettings: next });
-            return next;
-          } catch (error) {
-            if (generation === agentRuntimeSaveGeneration) set({ agentRuntimeSettings: previous });
-            throw error;
+            const saved = normalizeAgentRuntimeSettings(await response.json().catch(() => null));
+            if (!saved) throw new Error('Failed to save agent runtime settings');
+            set({ agentRuntimeSettings: saved });
+            return saved;
+          });
+          // A failed write must not poison the queue or roll back a later write.
+          agentRuntimeSaveTail = save.then(() => undefined, () => undefined);
+          try {
+            return await save;
+          } finally {
+            if (generation === agentRuntimeSaveGeneration) set({ isSavingAgentRuntimeSettings: false });
           }
-        },
-
-        markAgentRuntimeRestarted: () => {
-          const current = get().agentRuntimeSettings;
-          if (current?.restartRequired) set({ agentRuntimeSettings: { ...current, restartRequired: false } });
         },
       }),
       {

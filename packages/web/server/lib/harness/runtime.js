@@ -11,6 +11,10 @@ import {
   validateCommandDeadlineRecord,
   validateWorktreeBootstrapReceipt,
 } from '@openchamber/harness-runtime';
+import { ABORT_SOURCE_HEADER, normalizeAbortSource } from '@openchamber/orchestration-runtime';
+
+// Node lower-cases incoming header names.
+const ABORT_SOURCE_REQUEST_HEADER = ABORT_SOURCE_HEADER.toLowerCase();
 
 export const createWebHarnessRuntime = (options = {}) => {
   const paths = createHarnessPaths({ rootDir: options.dataDirectory });
@@ -42,6 +46,7 @@ export const createWebHarnessRuntime = (options = {}) => {
   let commandDeadlineRuntime = null;
   let primaryRecoveryRuntime = null;
   let sessionChangeHost = null;
+  let controlObserver = null;
   let taskContextRuntime = null;
 
   const initialize = () => {
@@ -135,7 +140,11 @@ export const createWebHarnessRuntime = (options = {}) => {
     next();
   };
 
-  const controlJournalMiddleware = (req, _res, next) => {
+  // Attribution only: an unknown or missing value is recorded as 'unknown' and
+  // never changes whether the abort proceeds.
+  const readAbortSource = (req) => normalizeAbortSource(req.headers?.[ABORT_SOURCE_REQUEST_HEADER]);
+
+  const controlJournalMiddleware = (req, res, next) => {
     const action = String(req.path || '').replace(/^\/+/, '').split('/')[0];
     if (
       req.method !== 'GET'
@@ -152,8 +161,22 @@ export const createWebHarnessRuntime = (options = {}) => {
         payload: {
           method: req.method,
           body: req.body,
+          ...(action === 'abort' ? { source: readAbortSource(req) } : {}),
         },
       });
+      if (controlObserver && typeof req.params?.sessionID === 'string') {
+        try {
+          controlObserver({
+            action,
+            sessionID: req.params.sessionID,
+            directory: typeof req.query?.directory === 'string' ? req.query.directory : null,
+            source: action === 'abort' ? readAbortSource(req) : null,
+            res,
+          });
+        } catch {
+          // Observers are advisory; a failure must never block the control request.
+        }
+      }
     }
     next();
   };
@@ -228,6 +251,9 @@ export const createWebHarnessRuntime = (options = {}) => {
     setEvidenceRuntime,
     setCommandDeadlineRuntime,
     setPrimaryRecoveryRuntime(runtime) { primaryRecoveryRuntime = runtime; },
+    // Receives journaled session controls (with the response, so a rejected
+    // request can be withdrawn). Wired by the server, never by a request.
+    setControlObserver(observer) { controlObserver = typeof observer === 'function' ? observer : null; },
     setSessionChangeHost(runtime) { sessionChangeHost = runtime; },
     getWorktreeRuntime: () => worktreeRuntime,
     getWorktreeReceipts,

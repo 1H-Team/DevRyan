@@ -4,9 +4,11 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import os from 'node:os';
 import path from 'node:path';
 import { describe, test } from 'node:test';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import { discoverTestFiles, isIsolatedUiTestSource } from './test-runner-utils.mjs';
-import { discoverElectronTestFiles } from './test-electron.mjs';
+import { discoverElectronTestFiles, planElectronTests } from './test-electron.mjs';
 import { discoverScriptTestFiles } from './test-scripts.mjs';
 import { buildPlan } from './validate.mjs';
 
@@ -88,6 +90,43 @@ describe('test file discovery', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe('Electron framework dispatch', () => {
+  test('uses real Node for nested tests and isolates Bun module mocks from sibling suites', () => {
+    mkdirSync(new URL('.cache/', repoRoot), { recursive: true });
+    const root = mkdtempSync(fileURLToPath(new URL('.cache/electron-runner-', repoRoot)));
+    const environment = { ...process.env, DEVRYAN_RUN_BOT_DB_DOCKER_TESTS: '' };
+    delete environment.NODE_TEST_CONTEXT;
+    const run = () => spawnSync(process.execPath, ['--input-type=module', '-e',
+      `import { runElectronTests } from ${JSON.stringify(new URL('./test-electron.mjs', import.meta.url).href)}; process.exit(runElectronTests(process.argv[1]));`, root],
+    { encoding: 'utf8', env: environment });
+    try {
+      mkdirSync(path.join(root, 'tests'));
+      writeFileSync(path.join(root, 'nested.test.mjs'), `import assert from 'node:assert/strict'; import { test } from 'node:test';
+        test('native node subtests', async t => { assert.equal(process.versions.bun, undefined); await t.test('child', () => assert.ok(true)); });`);
+      writeFileSync(path.join(root, 'shared.mjs'), 'export const value = "original";');
+      writeFileSync(path.join(root, 'a.mock.test.mjs'), `import { test, expect, mock } from 'bun:test';
+        mock.module('./shared.mjs', () => ({ value: 'mocked' }));
+        test('mock', async () => expect((await import('./shared.mjs')).value).toBe('mocked'));`);
+      writeFileSync(path.join(root, 'b.clean.test.mjs'), `import { test, expect } from 'bun:test'; import { value } from './shared.mjs';
+        test('clean import', () => expect(value).toBe('original'));`);
+      writeFileSync(path.join(root, 'tests/bot-catalog.docker.test.mjs'), `import { test } from 'bun:test';
+        test('explicit Docker prerequisite', () => { throw new Error('Docker was not requested'); });`);
+      const plan = planElectronTests(root, {});
+      assert.deepEqual(plan.node, ['nested.test.mjs']);
+      assert.deepEqual(plan.isolatedBun, ['a.mock.test.mjs']);
+      assert.deepEqual(plan.bun, ['b.clean.test.mjs']);
+      assert.deepEqual(plan.optional, ['tests/bot-catalog.docker.test.mjs']);
+      assert.ok(planElectronTests(root, { DEVRYAN_RUN_BOT_DB_DOCKER_TESTS: '1' }).bun.includes('tests/bot-catalog.docker.test.mjs'));
+      const passing = run();
+      assert.equal(passing.status, 0, passing.stdout + passing.stderr);
+      writeFileSync(path.join(root, 'nested.test.mjs'), `import { test } from 'node:test'; test('failure propagates', () => { throw new Error('expected fixture failure'); });`);
+      assert.notEqual(run().status, 0, 'A failing framework must fail the combined runner');
+      writeFileSync(path.join(root, 'splash.test.mjs'), "import { test } from 'vitest'; test('splash', () => {});");
+      assert.deepEqual(planElectronTests(root, {}).vitest, ['splash.test.mjs']);
+    } finally { rmSync(root, { recursive: true, force: true }); }
   });
 });
 

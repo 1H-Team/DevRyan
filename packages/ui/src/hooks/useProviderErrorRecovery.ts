@@ -89,7 +89,7 @@ export function useProviderErrorRecovery(enabled = true): void {
               && !cappedRetryAbortsInFlight.has(sessionId)
             ) {
               cappedRetryAbortsInFlight.add(sessionId);
-              void abortCurrentOperationConfirmed(sessionId, status).then((confirmed) => {
+              void abortCurrentOperationConfirmed(sessionId, status, undefined, 'provider_retry').then((confirmed) => {
                 if (!active || !confirmed) return;
                 cappedRetryUserMessageIds.set(sessionId, userMessageId);
                 const currentDirectory = getSyncSessionDirectoryAnyDirectory(sessionId);

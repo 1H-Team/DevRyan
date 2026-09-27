@@ -92,5 +92,27 @@ test('the compaction assignment context is bounded and keeps the authoritative r
   expect(Buffer.byteLength(value.prompt)).toBeLessThanOrEqual(1024);
   expect(value.prompt.endsWith('�')).toBe(false);
   expect(formatManagedAssignmentContext({ ...task, prompt: '' })).toBeNull();
-  expect(formatManagedAssignmentContext({ ...task, prompt: 'Short.' })).not.toContain('promptTruncated');
+  expect(JSON.parse(formatManagedAssignmentContext({ ...task, prompt: 'Short.' }).split('\n').at(-1))).not.toHaveProperty('promptTruncated');
+});
+
+test.each(['\u0001\\"\n', '😀é漢字', '😀"\\\u0001'])('budgets encoded child assignments without splitting Unicode: %j', (unit) => {
+  const task = { ...assignment, prompt: unit.repeat(8_000), readOnly: true };
+  const text = formatManagedAssignmentContext(task, { maxBytes: 11_500 });
+  expect(Buffer.byteLength(text)).toBeLessThanOrEqual(11_500);
+  const value = JSON.parse(text.split('\n').at(-1));
+  expect(value).toMatchObject({ taskId: assignment.taskId, rootSessionId: assignment.rootSessionId,
+    agent: assignment.agent, label: assignment.label, promptTruncated: true });
+  expect(task.prompt.startsWith(value.prompt)).toBe(true);
+  expect(value.prompt.isWellFormed()).toBe(true);
+  expect(text).toContain('read-only');
+  expect(text).toContain('preserve it in subsequent summaries');
+  expect(text).toContain('request missing scope from the parent before making changes');
+});
+
+test('uses spare encoded budget and rejects budgets unable to preserve mandatory identities', () => {
+  const prompt = `${'x'.repeat(9 * 1024)}\nDo not change permissions.`;
+  const text = formatManagedAssignmentContext({ ...assignment, prompt });
+  expect(JSON.parse(text.split('\n').at(-1))).toEqual({ ...assignment, prompt });
+  expect(formatManagedAssignmentContext(assignment, { maxBytes: 20 })).toBeNull();
+  expect(formatManagedAssignmentContext(assignment, { maxBytes: NaN })).toBeNull();
 });

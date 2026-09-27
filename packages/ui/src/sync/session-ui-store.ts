@@ -78,6 +78,7 @@ import {
 } from "./sync-refs"
 import { markSessionsViewed } from "./notification-store"
 import { setActiveSession } from "./sync-context"
+import { isQuestionOrphaned } from "./question-orphan"
 import {
   createSession as createSessionAction,
   createSessionRecord as createSessionRecordAction,
@@ -93,11 +94,14 @@ import {
   abortCurrentOperation as abortCurrentOperationAction,
   assertSessionRevertMutationAllowed,
   rejectQuestion as rejectQuestionAction,
+  discardOrphanedQuestion,
   optimisticSend,
   refetchSessionMessages,
   getSessionIdsWithDescendants,
   consumeLastCreateSessionError,
+  type ArchiveSessionsResult,
   type DeleteSessionsResult,
+  type UnarchiveSessionsResult,
 } from "./session-actions"
 import { getAttachmentMutationRevision, useInputStore, type SyntheticContextPart } from "./input-store"
 import { getDraftComposerTargetKey } from "./composer-target"
@@ -603,6 +607,8 @@ type SendLifecycleCallbacks = {
 type PendingQuestionDismissal = {
   sessionId: string
   requestId: string
+  /** Its turn already stopped; answering or skipping it resumes nothing. */
+  orphaned: boolean
 }
 
 function getQuestionRequestId(question: unknown): string | null {
@@ -624,7 +630,11 @@ function collectPendingQuestionDismissals(sessionId: string, directory?: string 
       const key = `${candidateSessionId}:${requestId}`
       if (seen.has(key)) continue
       seen.add(key)
-      dismissals.push({ sessionId: candidateSessionId, requestId })
+      const orphaned = isQuestionOrphaned(question, {
+        parts: question.tool ? getSyncParts(question.tool.messageID, directory ?? undefined) : undefined,
+        messages: getSyncMessages(candidateSessionId, directory ?? undefined),
+      })
+      dismissals.push({ sessionId: candidateSessionId, requestId, orphaned })
     }
   }
 
@@ -697,6 +707,17 @@ async function queuePromptAfterPendingQuestions(params: {
 
   const dismissals = collectPendingQuestionDismissals(params.sessionId, params.directory)
   if (dismissals.length === 0) return false
+
+  // Orphaned questions belong to a stopped turn: skipping them resumes nothing,
+  // so a prompt queued behind them would wait for an idle transition that never
+  // comes. Discard them and let the prompt go out directly.
+  if (dismissals.every((dismissal) => dismissal.orphaned)) {
+    clearPendingQuestionsOptimistically(dismissals, params.directory)
+    for (const dismissal of dismissals) {
+      void discardOrphanedQuestion(dismissal.sessionId, dismissal.requestId)
+    }
+    return false
+  }
 
   useMessageQueueStore.getState().addToQueue(params.sessionId, {
     content: params.content,
@@ -876,9 +897,9 @@ export type SessionUIState = {
   deleteSession: (id: string, options?: Record<string, unknown>) => Promise<boolean>
   deleteSessions: (ids: string[], options?: Record<string, unknown>) => Promise<DeleteSessionsResult>
   archiveSession: (id: string) => Promise<boolean>
-  archiveSessions: (ids: string[], options?: Record<string, unknown>) => Promise<{ archivedIds: string[]; failedIds: string[] }>
+  archiveSessions: (ids: string[], options?: Record<string, unknown>) => Promise<ArchiveSessionsResult>
   unarchiveSession: (id: string) => Promise<boolean>
-  unarchiveSessions: (ids: string[], options?: Record<string, unknown>) => Promise<{ unarchivedIds: string[]; failedIds: string[] }>
+  unarchiveSessions: (ids: string[], options?: Record<string, unknown>) => Promise<UnarchiveSessionsResult>
   updateSessionTitle: (sessionId: string, title: string) => Promise<void>
   shareSession: (sessionId: string) => Promise<Session | null>
   unshareSession: (sessionId: string) => Promise<Session | null>

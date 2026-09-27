@@ -45,13 +45,21 @@ const isAssistantRecord = (record) => (
   trimString(record?.info?.role ?? record?.role).toLowerCase() === 'assistant'
 );
 
-const reasonForStatus = (status) => {
+export const sessionModelFailureReasonForStatus = (status) => {
   const code = Number(status);
   if (code === 429) return 'rate_limited';
   if ([401, 402, 403].includes(code)) return 'unauthorized';
   if (code === 404) return 'model_unavailable';
   if (code >= 500) return 'upstream_error';
   return 'request_failed';
+};
+
+export const classifySessionModelProviderError = (error) => {
+  const status = Number.isFinite(error?.data?.statusCode) ? error.data.statusCode : undefined;
+  const reason = error?.name === 'ProviderModelNotFoundError' ? 'model_unavailable'
+    : FREE_TIER_REJECTED_PATTERN.test(String(error?.data?.message ?? '')) ? 'free_tier_rejected'
+      : sessionModelFailureReasonForStatus(status);
+  return { reason, status };
 };
 
 const reasonForError = (error) => {
@@ -203,7 +211,7 @@ export async function generateTextWithSessionModel({
           signal: requestSignal(),
         });
         if (!response?.ok) {
-          lastReason = reasonForStatus(response?.status);
+          lastReason = sessionModelFailureReasonForStatus(response?.status);
           lastStatus = response?.status;
           break;
         }
@@ -211,11 +219,7 @@ export async function generateTextWithSessionModel({
         const message = result?.data ?? result;
         const providerError = message?.info?.error;
         if (providerError) {
-          const status = providerError?.data?.statusCode;
-          lastStatus = Number.isFinite(status) ? status : undefined;
-          lastReason = providerError.name === 'ProviderModelNotFoundError' ? 'model_unavailable'
-            : FREE_TIER_REJECTED_PATTERN.test(String(providerError?.data?.message ?? '')) ? 'free_tier_rejected'
-              : reasonForStatus(lastStatus);
+          ({ reason: lastReason, status: lastStatus } = classifySessionModelProviderError(providerError));
           break;
         }
         const replyText = extractAssistantText(message);

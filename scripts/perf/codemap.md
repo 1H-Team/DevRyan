@@ -159,8 +159,19 @@ behavior.
 - `ledger-benchmark.mjs` measures the confined-execution ledger on a shallow
   clone under `.cache/perf/ledger-bench`: first-call build, warm prepare/publish
   and control-call timings for `--iterations` rounds, optionally after a
-  `--prewarm`, with RSS/CPU. It writes `termination.json` on failure and runs no
-  provider.
+  `--prewarm`, with RSS/CPU. Direct calls write synthetic `termination.json`
+  evidence and run no provider. Its `--profile` mode launches `ledger-profile-worker.mjs` in a
+  fresh process per cold/warm/metadata-only/changed-content case (three trials
+  by default), recording prewarm separately, existing admission phases,
+  benchmark-only Git/copy observers, CPU/RSS and verified cleanup. Add
+  `--companion` for the same cases through the verified repository companion
+  and `qa/revert-model-fixture.mjs` loopback model. Trial timeouts retain partial
+  evidence. Nested phase totals overlap; host CPU/RSS do not include children,
+  and companion RSS is sampled. Native macOS lease sockets retain their normal
+  guarded `/private/tmp` location and must be verified removed; project,
+  config, data, logs and reports stay under the repository cache. See the
+  [preparation profile](../../docs/LEDGER_PREPARATION_PROFILE_2026-09-27.md)
+  for measurement boundaries and the first retained results.
 - `multi-session-report.mjs` turns a run into `report.md` (per-role peaks and
   growth slopes, child-process churn as memory-time, responsiveness
   percentiles, busy-session buckets, Docker, system competitors, timeline) and

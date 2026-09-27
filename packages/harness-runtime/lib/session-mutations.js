@@ -15,6 +15,7 @@ import { withExecutionIO } from './execution-io-pool.js';
 import { markObjectIfUnsynced } from './object-durability.js';
 import { readSessionExecutionReceipt, removeExecutionSocketDirectory } from './session-execution.js';
 import { removeExecutionDirectory } from './execution-cleanup.js';
+import { DEPENDENCY_INPUT_NAMES } from './execution-inputs.js';
 
 const key = (kind, id) => `${kind}/${changeKey(id)}.json`;
 const permissions = (entry) => !entry || entry.deleted || entry.mode === '120000' ? null
@@ -24,10 +25,9 @@ const equal = (a, b) => (a?.hash ?? null) === (b?.hash ?? null) && (a?.mode ?? n
 const validID = (id) => typeof id === 'string' && id.length > 0 && id.length <= 1024 && !id.includes('\0');
 const scopeFields = ['sessionID', 'messageID', 'userMessageID', 'callID'];
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
-// Dependency inputs are linked read-only into views and never ingested: these
-// names anywhere, plus (in Git projects) every directory Git ignores that holds
-// no tracked path. An ignored standalone file such as `.env` is still ingested.
-const inputDirectories = new Set(['node_modules', '.venv', '__pycache__']);
+// Dependency inputs: see execution-inputs.js. Ignored output folders among
+// them are written through on macOS; the ledger still never ingests them.
+const inputDirectories = DEPENDENCY_INPUT_NAMES;
 const underInput = (file, inputs) => {
   if (inputs.has(file)) return true;
   for (let parent = path.posix.dirname(file); parent !== '.'; parent = path.posix.dirname(parent)) if (inputs.has(parent)) return true;
@@ -934,8 +934,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         try { await fs.copyFile(path.join(metadata, 'index'), path.join(lease.viewDirectory, '.git', 'index')); }
         catch (cause) { if (cause.code !== 'ENOENT') throw cause; }
       }
-      // The execution launcher must enforce read-only access to this input.
-      // A symlink and a private cwd alone do not provide write confinement.
+      // The execution launcher enforces access to this input: read-only for
+      // dependencies, write-through for ignored output folders (see
+      // execution-inputs.js). A symlink and a private cwd alone confine nothing.
       for (const file of lease.inputs) {
         checkExecutionAdmission();
         await verifyAncestors(lease.viewDirectory, file);

@@ -199,6 +199,13 @@ describe('managed orchestration contract', () => {
       { ...parked, failureReason: 'provider disconnected' },
       { resumable: true },
     )).toBe(false);
+    // An expired sign-in parks for the user instead of being retried by the agent.
+    const signedOut = {
+      ...parked,
+      failureReason: "Claude OAuth token has expired and could not be refreshed automatically. Run 'claude login' in your terminal to re-authenticate.",
+    };
+    expect(contract.requiresManualModelRecovery(signedOut, { resumable: true })).toBe(true);
+    expect(toManagedTaskEvent(signedOut, envelope).properties.task.failureKind).toBe('provider_authentication');
   });
 
   test('defaults legacy work to no private dispatch identity', () => {

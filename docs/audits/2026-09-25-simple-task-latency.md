@@ -5,6 +5,12 @@ routing, bounded Explorer work and execution diagnostics. No installed profile,
 active user runtime, model defaults, reasoning defaults or dependency versions
 were changed. Release publication and installation were not performed.
 
+> **Superseded 2026-09-27 (discovery routing only).** At the user's request, Orchestrator
+> now starts every new task with Explorer goal discovery unless the user named exact
+> files or symbols, the answer is one narrow lookup, the follow-up continues mapped
+> context, an approved plan names its targets, or the user declined delegation. The
+> direct-implementation routing below is unchanged. See `default-config/codemap.md`.
+
 ## Implemented
 
 - Managed provisioning recognizes the audited 734,390-byte standalone Cursor

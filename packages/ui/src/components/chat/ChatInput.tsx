@@ -2531,7 +2531,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         if (currentSessionId) {
             const sessionId = currentSessionId;
             useSessionUIStore.getState().markSessionStopping(sessionId);
-            void sessionActions.abortCurrentOperationConfirmed(sessionId).then((confirmed) => {
+            void sessionActions.abortCurrentOperationConfirmed(sessionId, undefined, undefined, 'stop_button').then((confirmed) => {
                 if (!confirmed) {
                     useSessionUIStore.getState().clearSessionStopping(sessionId);
                 }

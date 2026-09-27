@@ -22,6 +22,21 @@ describe('managed task deadline classification', () => {
     expect(classifyProviderRetryFailure(reason)).toBeNull();
     expect(classifyProviderTransportFailure(null, reason)).toBeNull();
   });
+  it.each([
+    "Claude OAuth token has expired and could not be refreshed automatically. Run 'claude login' in your terminal to re-authenticate.",
+    'Not logged in · Please run /login',
+    '{"type":"error","error":{"type":"authentication_error","message":"Claude authentication expired or invalid."}}',
+  ])('classifies sign-in failures that cannot heal by retrying: %s', (reason) => {
+    expect(classifyManagedTaskFailure(reason)).toBe('provider_authentication');
+    expect(classifyProviderRetryFailure(reason)).toBeNull();
+    expect(classifyProviderTransportFailure(null, reason)).toBeNull();
+    expect(classifyProviderRetryStatus({ type: 'retry', attempt: 1, message: reason, next: 2_000 })).toBeNull();
+  });
+  it('keeps unrelated sign-in wording and transient failures in their own classes', () => {
+    expect(classifyManagedTaskFailure('You are not logged into any GitHub hosts')).toBeNull();
+    expect(classifyManagedTaskFailure('Upstream request failed: connection reset by peer')).toBe('provider_transport');
+    expect(classifyManagedTaskFailure('Usage limit reached')).toBe('provider_usage_limit');
+  });
   it('recognizes only the scheduler-owned timeout prefix', () => {
     const timeout = `${MANAGED_TASK_TIMEOUT_REASON_PREFIX}1786540028910`;
 

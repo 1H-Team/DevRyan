@@ -516,6 +516,9 @@ export const useKeyboardShortcuts = () => {
       if (e.key === 'Escape') {
         const target = e.target as Element | null;
         const isInsideDialog = Boolean(target?.closest('[role="dialog"]'));
+        // Escape inside a pending question (e.g. leaving the custom answer
+        // field) must never prime the double-Escape abort of its turn.
+        const isInsideQuestionCard = Boolean(target?.closest('[data-question-card="true"]'));
         const isSettingsMounted = Boolean(document.querySelector('[data-settings-view="true"]'));
         const isInsideTerminal = Boolean(
           target?.closest('.terminal-viewport-container') ||
@@ -535,7 +538,7 @@ export const useKeyboardShortcuts = () => {
           activeMainTab,
         } = useUIStore.getState();
 
-        if (isInsideDialog || isInsideTerminal || hasDropdownInteraction) {
+        if (isInsideDialog || isInsideQuestionCard || isInsideTerminal || hasDropdownInteraction) {
           resetAbortPriming();
           return;
         }
@@ -576,7 +579,7 @@ export const useKeyboardShortcuts = () => {
         if (primedUntil && now < primedUntil) {
           e.preventDefault();
           resetAbortPriming();
-          void abortCurrentOperation(sessionId ?? '');
+          void abortCurrentOperation(sessionId ?? '', 'double_escape');
           return;
         }
 

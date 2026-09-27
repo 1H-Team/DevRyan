@@ -205,6 +205,14 @@ All shown fields are required; unknown fields fail validation. The optional `pro
 | `compaction-manual` | Live; web or Electron | Two composer `/compact` boundaries, current saved-plan restoration and approved implementation. |
 | `compaction-natural` | Live; Electron | Two automatic native boundaries reached by ordinary project context growth, followed by restoration and approved implementation. |
 
+The matrix fixture's `core-journey` also changes the Agent Runtime language-server
+switch through the shared Settings UI, reloads, checks the saved value, and
+restores the private sidecar. Its loopback runtime is external, so both applied
+and restart state must remain unknown; managed readiness is verified separately
+by lifecycle tests. Its Stop controls operate on main sessions. The fixture does
+not launch managed children, so managed-child Stop is covered by the real
+registry/executor integration suite rather than claimed as UI acceptance.
+
 To cover manual Electron compaction within selected existing project journeys, set `"projectCompaction": "manual"` on a live Electron cell whose `scenarioIds` is exactly `["project-work"]`. This opt-in keeps one run, owned project, session and pinned model/agent/Plan/thinking selection. It uses the manual adapter's attached diagnosis, two saved plan revisions and unfinished implementation pause, then two actual composer `/compact` boundaries with steering and reload before approval and implementation. It retains the project's seeded-failure gate and final canonical task/browser graders. Each boundary has a separate continuation record for its restored native summary, independently checked paused project and exact revised state. `projectComposition` requires both distinct ordered native cycles, both continuation records, one session through implementation, operational continuity and the independent implementation grade. The browser grade remains separate and mandatory. Omitting the option leaves existing project journeys unchanged; adding `compaction-manual` to `scenarioIds` instead would create another fresh run. Make prospective configurations with an appropriate full-journey timeout; do not relabel historical results or count an unexecuted composition as coverage.
 
 `repetitions` accepts 1–100 and `timeoutMs` accepts 1,000–86,400,000 ms per expanded run. A matrix has 1–500 cells and may expand to at most 10,000 runs. Runs execute sequentially. The evidence root must resolve below the repository's `.cache/`, without a symlink escape. Interrupts clean up the owned run and stop expansion; failures and incomplete matrices exit nonzero.

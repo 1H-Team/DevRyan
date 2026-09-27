@@ -103,6 +103,13 @@ export function classifyAssistantError(
   const detail = stripWrappedJsonQuotes(rawDetail)
 
   if (errorName === "SessionRetry") {
+    // Retrying cannot restore an expired sign-in; say so instead of "retrying automatically".
+    if (isLikelyProviderTokenExpired(detail)) {
+      return {
+        text: `${PROVIDER_TOKEN_EXPIRED_MESSAGE} Press Stop to end the automatic retries.\n\`${detail}\``,
+        variant: "error",
+      }
+    }
     return {
       text: `The provider rejected the request and OpenCode is retrying automatically. Press Stop to cancel and switch models.\n\`${detail}\``,
       variant: "info",

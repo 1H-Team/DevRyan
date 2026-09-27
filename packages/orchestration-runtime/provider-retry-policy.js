@@ -14,8 +14,10 @@ const PROVIDER_USAGE_LIMIT_ACTION_REASONS = new Set([
 
 export const PROVIDER_USAGE_LIMIT_FAILURE_KIND = 'provider_usage_limit';
 export const PROVIDER_AUTHENTICATION_FAILURE_KIND = 'provider_authentication';
+// Sign-in failures cannot heal by retrying. `authentication_error` is the
+// Anthropic/Meridian type; "not logged in" is Claude Code's own wording.
 export const isProviderAuthenticationFailure = (value) => typeof value === 'string'
-  && /\b(?:authentication(?:error)?|authorization(?:error)?|unauthorized|forbidden|invalid (?:api key|credentials?|access token)|missing api key|expired (?:access |refresh )?token|http[ :]+401)\b/i.test(value);
+  && /\b(?:authentication(?:_?error)?|authorization(?:error)?|unauthorized|forbidden|invalid (?:api key|credentials?|access token)|missing api key|expired (?:access |refresh )?token|(?:oauth |access |refresh )?token (?:has |is )?expired|not logged in|http[ :]+401)\b/i.test(value);
 export const PROVIDER_PROMPT_REJECTED_FAILURE_KIND = 'provider_prompt_rejected';
 export const MODEL_UNAVAILABLE_FAILURE_KIND = 'model_unavailable';
 export const DEADLINE_EXCEEDED_FAILURE_KIND = 'deadline_exceeded';

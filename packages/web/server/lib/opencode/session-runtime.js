@@ -314,6 +314,17 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
     return removed;
   };
 
+  // Sessions last reported busy or retrying, for restart reconciliation.
+  const listActiveSessions = () => {
+    const result = [];
+    for (const [sessionId, data] of sessionStates) {
+      if (data.status === 'busy' || data.status === 'retry') {
+        result.push({ sessionId, status: data.status, lastUpdateAt: data.lastUpdateAt });
+      }
+    }
+    return result;
+  };
+
   const cleanupOldSessionStates = () => {
     const now = Date.now();
     for (const [sessionId, data] of sessionStates) {
@@ -367,6 +378,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
     markSessionUnviewed,
     markUserMessageSent,
     resetAllSessionActivityToIdle,
+    listActiveSessions,
     clearSessionActivity,
     dispose,
   };

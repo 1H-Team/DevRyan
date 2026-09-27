@@ -6,10 +6,12 @@ import path from 'node:path';
 import { git } from './session-changes-git.js';
 import { createSessionMutationRuntime } from './session-mutations.js';
 import { openChangeStore, changeKey } from './session-changes-store.js';
-import { sessionExecutionProfile } from './session-execution.js';
+import { prepareSessionExecution, removeExecutionSocketDirectory, sessionExecutionProfile } from './session-execution.js';
+import { writableInputDirectories } from './execution-inputs.js';
 
-// Gitignored directories are dependency inputs: linked read-only into views,
-// never ingested, never published, and fenced from history replay.
+// Gitignored directories are inputs: linked into views, never ingested, never
+// published, and fenced from history replay. Dependencies stay read-only; on
+// macOS ignored output folders are written through to the project.
 const roots = [];
 const test = (name, body) => bunTest(name, body, 120_000);
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true }))); });
@@ -211,14 +213,16 @@ test('a lease prepared before inputs were persisted keeps the name-only rule', a
   expect(await f.read('node_modules/pkg/index.js')).toBe('dependency');
 });
 
-bunTest.skipIf(process.platform !== 'darwin')('the confinement profile denies writes through an input link and allows view writes', async () => {
+bunTest.skipIf(process.platform !== 'darwin')('the kill switch keeps every input link read-only and view writes allowed', async () => {
   const f = await fixture();
   await f.put('.gitignore', 'cache/\n.env\n'); await f.put('cache/seed', 'seed'); await f.put('.env', 'SECRET=1');
   const lease = await f.begin('s', 'p', 'c');
+  process.env.DEVRYAN_IGNORED_WRITE_THROUGH = '0';
+  let prepared;
+  try { prepared = await prepareSessionExecution({ launcher: path.join(f.root, 'launcher'), lease }); }
+  finally { delete process.env.DEVRYAN_IGNORED_WRITE_THROUGH; await removeExecutionSocketDirectory(lease); }
   const viewDirectory = await fs.realpath(lease.viewDirectory);
-  const scratchDirectory = path.join(path.dirname(viewDirectory), 'scratch'); await fs.mkdir(scratchDirectory, { recursive: true });
-  const profile = sessionExecutionProfile({ viewDirectory, scratchDirectory });
-  const run = (script) => spawnSync('/usr/bin/sandbox-exec', ['-p', profile, '/bin/sh', '-c', script], { cwd: viewDirectory, encoding: 'utf8' });
+  const run = (script) => spawnSync('/usr/bin/sandbox-exec', ['-f', prepared.profile, '/bin/sh', '-c', script], { cwd: viewDirectory, encoding: 'utf8' });
   expect(run('echo denied > cache/new').status).not.toBe(0);
   expect(run('echo denied > cache/seed').status).not.toBe(0);
   expect(await kind(path.join(f.directory, 'cache', 'new'))).toBe('missing');
@@ -227,6 +231,74 @@ bunTest.skipIf(process.platform !== 'darwin')('the confinement profile denies wr
   expect(readable.status).toBe(0);
   expect(readable.stdout).toBe('SECRET=1seed');
   expect(await fs.readFile(path.join(viewDirectory, 'view-write'), 'utf8')).toBe('ok\n');
+});
+
+bunTest.skipIf(process.platform !== 'darwin')('confined calls write through ignored output folders while dependencies, hooks and escapes stay read-only', async () => {
+  const f = await fixture();
+  const outside = path.join(f.root, 'outside'); await fs.mkdir(outside);
+  await f.put('.gitignore', '.artifacts/\ncache/\n.husky/_/\nvendor/\nnode_modules/\n');
+  await f.put('.artifacts/vite-cache/deps/old.js', 'stale optimizer output'); await f.put('cache/seed', 'seed');
+  await f.put('.husky/pre-commit', 'tracked hook'); await f.put('.husky/_/husky.sh', 'hook runtime');
+  await f.put('vendor/lib/a.php', 'vendored'); await f.put('node_modules/pkg/index.js', 'dependency'); await f.put('a.txt', 'a');
+  await f.commit('.gitignore', '.husky/pre-commit', 'a.txt');
+  await fs.symlink(outside, path.join(f.directory, '.artifacts', 'escape'));
+  const lease = await f.begin('s', 'p', 'c');
+  expect([...lease.inputs].sort()).toEqual(['.artifacts', '.husky/_', 'cache', 'node_modules', 'vendor']);
+  let prepared;
+  try { prepared = await prepareSessionExecution({ launcher: path.join(f.root, 'launcher'), lease }); }
+  finally { await removeExecutionSocketDirectory(lease); }
+  const viewDirectory = await fs.realpath(lease.viewDirectory);
+  const run = (script) => spawnSync('/usr/bin/sandbox-exec', ['-f', prepared.profile, '/bin/sh', '-c', script],
+    { cwd: viewDirectory, encoding: 'utf8', env: { PATH: process.env.PATH, ...prepared.environment } });
+  // The incident: Vite re-optimizing a cacheDir under .artifacts, and a log beside it.
+  const outputs = run('rm .artifacts/vite-cache/deps/old.js && echo new > .artifacts/vite-cache/deps/new.js && echo log > .artifacts/run.log && echo x > cache/new');
+  expect(outputs.stderr).toBe('');
+  expect(outputs.status).toBe(0);
+  expect(await f.read('.artifacts/run.log')).toBe('log\n');
+  expect(await fs.readdir(path.join(f.directory, '.artifacts', 'vite-cache', 'deps'))).toEqual(['new.js']);
+  expect(await f.read('cache/new')).toBe('x\n');
+  const durable = run('echo kept > "$DEVRYAN_SESSION_TMP/server.log"');
+  expect(durable.status).toBe(0);
+  expect(await fs.readFile(path.join(prepared.environment.DEVRYAN_SESSION_TMP, 'server.log'), 'utf8')).toBe('kept\n');
+  for (const script of ['echo x > /private/tmp/devryan-write-through-probe', 'echo x > .husky/_/husky.sh', 'echo x > vendor/lib/a.php', 'echo x > node_modules/pkg/index.js',
+    'echo x > .artifacts/escape/planted', `echo x > ${JSON.stringify(path.join(f.directory, 'a.txt'))}`]) {
+    expect(run(script).status).not.toBe(0);
+  }
+  expect(await f.read('.husky/_/husky.sh')).toBe('hook runtime');
+  expect(await f.read('vendor/lib/a.php')).toBe('vendored');
+  expect(await f.read('node_modules/pkg/index.js')).toBe('dependency');
+  expect(await fs.readdir(outside)).toEqual([]);
+  const result = await f.finish(lease);
+  expect(result.files).toEqual([]);
+  expect(result.ignoredInputs).toBeFalsy();
+  expect((await f.ledgerPaths()).filter((file) => file.startsWith('.artifacts') || file.startsWith('cache'))).toEqual([]);
+});
+
+test('write-through grants only resolved output folders inside the project, outside the ledger', async () => {
+  const f = await fixture();
+  for (const name of ['.artifacts/a', 'apps/web/dist/a', 'coverage/a', 'node_modules/a', 'vendor/a', 'venv/a', '.opencode/a',
+    '.husky/_/a', '.github/a', '.cache/a', 'dist/node_modules/a', 'ledger/a']) await f.put(name, 'x');
+  await fs.symlink(path.join(f.directory, 'node_modules'), path.join(f.directory, 'alias'));
+  const project = await fs.realpath(f.directory);
+  const inputs = ['.artifacts', 'apps/web/dist', 'coverage', 'node_modules', 'vendor', 'venv', '.opencode', '.husky/_', '.github',
+    '.cache', 'dist/node_modules', 'alias', 'ledger', 'missing', '../outside', '/abs'];
+  const granted = await writableInputDirectories({ inputs, projectDirectory: f.directory, protectedDirectories: [path.join(f.directory, 'ledger')] });
+  expect(granted.map((directory) => path.relative(project, directory))).toEqual(['.artifacts', 'apps/web/dist', 'coverage', '.cache']);
+  process.env.DEVRYAN_IGNORED_WRITE_THROUGH = '0';
+  try { expect(await writableInputDirectories({ inputs, projectDirectory: f.directory })).toEqual([]); }
+  finally { delete process.env.DEVRYAN_IGNORED_WRITE_THROUGH; }
+});
+
+test('an ignored folder a call creates in its view is published like any output', async () => {
+  const f = await fixture();
+  await f.put('.gitignore', 'coverage/\n'); await f.put('a.txt', 'a');
+  const lease = await f.begin('s', 'p', 'c');
+  expect(lease.inputs).toEqual([]);
+  await fs.mkdir(path.join(lease.viewDirectory, 'coverage'));
+  await fs.writeFile(path.join(lease.viewDirectory, 'coverage', 'report.txt'), 'covered');
+  const result = await f.finish(lease);
+  expect(result.files).toEqual([{ path: 'coverage/report.txt', status: 'added' }]);
+  expect(await f.read('coverage/report.txt')).toBe('covered');
 });
 
 test('a real call never settles for a dirty warm pass that started after its reservation', async () => {

@@ -1,9 +1,11 @@
 import type { Session } from '@opencode-ai/sdk/v2';
+import type { SessionMutationFailure } from '@/sync/session-actions';
 import type { SessionGroup } from './types';
 
 export type BranchSessionCleanupResult = {
   archivedIds: string[];
   failedIds: string[];
+  failures: SessionMutationFailure[];
 };
 
 type ArchiveSessions = (ids: string[]) => Promise<BranchSessionCleanupResult>;
@@ -18,7 +20,7 @@ export const archiveBranchSessions = async (
 ): Promise<BranchSessionCleanupResult> => {
   const ids = [...new Set(sessions.map((session) => session.id))];
   if (ids.length === 0) {
-    return { archivedIds: [], failedIds: [] };
+    return { archivedIds: [], failedIds: [], failures: [] };
   }
   return archiveSessions(ids);
 };

@@ -54,6 +54,9 @@ export const createLifecycleTracker = (options = {}) => {
   const turnsByAssistantMessage = new Map();
   const completedTools = new Set();
   const settledTurns = [];
+  // Idle is OpenCode's only terminal edge for an abort during a retry wait or
+  // a runtime exit. Outcomes observed before it decide how idle settles.
+  const pendingOutcomes = new WeakMap();
 
   const emit = (event) => {
     const frozen = Object.freeze({ ...event });
@@ -171,6 +174,30 @@ export const createLifecycleTracker = (options = {}) => {
     });
   };
 
+  // An operator abort request settles the current turn as aborted when its idle
+  // arrives. The first request wins; a later runtime exit does not override it.
+  const recordAbortRequested = (input = {}) => {
+    const turn = activeTurn(asString(input.sessionID ?? input.sessionId));
+    if (!turn || pendingOutcomes.has(turn)) return false;
+    pendingOutcomes.set(turn, { outcome: 'aborted', reason: 'abort_requested' });
+    return true;
+  };
+
+  // A rejected abort request (the runtime did not stop) must not relabel the turn.
+  const withdrawAbortRequest = (input = {}) => {
+    const turn = activeTurn(asString(input.sessionID ?? input.sessionId));
+    if (turn && pendingOutcomes.get(turn)?.reason === 'abort_requested') pendingOutcomes.delete(turn);
+  };
+
+  // The OpenCode process that ran this turn exited; the restarted runtime only
+  // reports it idle.
+  const recordRuntimeInterrupted = (input = {}) => {
+    const turn = activeTurn(asString(input.sessionID ?? input.sessionId));
+    if (!turn || pendingOutcomes.has(turn)) return false;
+    pendingOutcomes.set(turn, { outcome: 'failed', reason: 'runtime_exit' });
+    return true;
+  };
+
   const processMessageUpdated = (properties, directory) => {
     const info = asObject(properties.info ?? properties.message);
     const sessionID = sessionIdFrom(properties, info);
@@ -257,7 +284,8 @@ export const createLifecycleTracker = (options = {}) => {
     if (!sessionID || !status) return;
     if (status === 'idle') {
       const turn = activeTurn(sessionID);
-      settleTurn(turn, 'completed');
+      const pending = turn ? pendingOutcomes.get(turn) : null;
+      settleTurn(turn, pending?.outcome ?? 'completed', pending?.reason ?? null);
       emit({
         type: 'session_idle',
         turnID: turn?.turnID ?? null,
@@ -320,6 +348,9 @@ export const createLifecycleTracker = (options = {}) => {
   return {
     processEvent,
     recordPromptAccepted,
+    recordAbortRequested,
+    withdrawAbortRequest,
+    recordRuntimeInterrupted,
     subscribe(listener) {
       if (typeof listener !== 'function') return () => undefined;
       listeners.add(listener);

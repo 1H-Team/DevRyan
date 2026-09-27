@@ -14,3 +14,11 @@ describe('ModelControls hidden-model fallback', () => {
         );`);
   });
 });
+
+describe('ModelControls current model label', () => {
+  test('resolves a hidden current model name from the unfiltered provider catalog', () => {
+    expect(source).toContain('const catalogModel = currentProvider?.models.find((m: ProviderModel) => m.id === currentModelId);');
+    expect(source).toContain('if (models.length === 0) return catalogModel ? getModelDisplayName(catalogModel) : currentModelId;');
+    expect(source).toContain('const currentModel = models.find((m: ProviderModel) => m.id === currentModelId) ?? catalogModel;');
+  });
+});

@@ -223,6 +223,7 @@ export const createManagedTaskScheduler = (options = {}) => {
   const idempotencyIndex = new Map();
   const activeLaunches = new Map();
   const cancellationPromises = new Map();
+  const cancellationOwners = new Map();
   const acknowledgementPromises = new Map();
   const handoffLocks = new Map();
   const taskWaiters = new Map();
@@ -722,13 +723,19 @@ export const createManagedTaskScheduler = (options = {}) => {
     return sequence + 1;
   };
 
-  const finishTask = async (taskId, leaseToken, result, fallbackStatus = 'failed') => {
+  const finishTask = async (taskId, leaseToken, result, fallbackStatus = 'failed', settlementOwner = null) => {
     if (shutDown) return;
     let changed = false;
     await runExclusive(async () => {
       const previous = tasks.get(taskId);
       if (!previous || isTerminalManagedTaskStatus(previous.status)) return;
       if (previous.leaseToken !== leaseToken) return;
+      const owner = cancellationOwners.get(taskId);
+      if (settlementOwner && owner !== settlementOwner) return;
+      if (owner?.leaseToken === leaseToken && owner !== settlementOwner) {
+        owner.deferred ??= { result, fallbackStatus };
+        return;
+      }
 
       let status = TERMINAL_RESULT_STATUSES.has(result?.status) ? result.status : fallbackStatus;
       let failureReason = typeof result?.failureReason === 'string' && result.failureReason.trim()
@@ -756,6 +763,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         resumable: Boolean(result?.resumable),
         providerResetAt: Number.isFinite(result?.providerResetAt) ? result.providerResetAt : null,
       });
+      if (settlementOwner) settlementOwner.committed = true;
       changed = true;
       try {
         await parkAutoResumeLocked(next);
@@ -767,6 +775,17 @@ export const createManagedTaskScheduler = (options = {}) => {
       }
     });
     if (changed && !recovering) await pump();
+  };
+
+  const releaseCancellationOwner = async (taskId, owner) => {
+    if (!owner) return;
+    const deferred = await runExclusive(() => {
+      if (cancellationOwners.get(taskId) !== owner) return null;
+      cancellationOwners.delete(taskId);
+      return owner.committed ? null : owner.deferred;
+    });
+    if (deferred) await finishTask(taskId, owner.leaseToken, deferred.result, deferred.fallbackStatus);
+    else if (!shutDown && !recovering && tasks.get(taskId)?.status === 'queued') await pump();
   };
 
   const createTaskControl = (taskId, leaseToken) => ({
@@ -1334,7 +1353,7 @@ export const createManagedTaskScheduler = (options = {}) => {
     );
   };
 
-  const readRecovery = async (task) => {
+  const readRecovery = async (task, fallback = {}) => {
     try {
       return await executor.readRecoverableResult(cloneTask(task)) ?? {};
     } catch (error) {
@@ -1342,8 +1361,13 @@ export const createManagedTaskScheduler = (options = {}) => {
         taskId: task.taskId,
         error: error instanceof Error ? error.message : String(error),
       });
-      return {};
+      return fallback ?? {};
     }
+  };
+
+  const lastRecovery = (task) => {
+    try { return structuredClone(executor.getLastRecoverableResult?.(cloneTask(task)) ?? {}); }
+    catch { return {}; }
   };
 
   const recoverTask = async (task) => {
@@ -1542,6 +1566,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       const queued = [...tasks.values()]
         .filter((task) => (
           task.status === 'queued'
+          && !cancellationOwners.has(task.taskId)
           && !(
             task.dispatchGroupId !== null
             && handoffLocks.has(task.rootSessionId)
@@ -2027,11 +2052,20 @@ export const createManagedTaskScheduler = (options = {}) => {
     const existingCancellation = cancellationPromises.get(taskId);
     if (existingCancellation) return await existingCancellation;
 
+    let owner;
     const cancellation = (async () => {
       await ensureInitialized();
       // Wait for any in-flight deadline renewal to commit before deciding
       // whether this timer still owns cancellation.
-      let task = await runExclusive(() => tasks.get(taskId));
+      const task = await runExclusive(() => {
+        const current = tasks.get(taskId);
+        if (current && !isTerminalManagedTaskStatus(current.status)
+          && (expectedTimeoutAt === undefined || current.timeoutAt === expectedTimeoutAt)) {
+          owner = { leaseToken: current.leaseToken, deferred: null, committed: false };
+          cancellationOwners.set(taskId, owner);
+        }
+        return current;
+      });
       if (!task) {
         throw new ManagedOrchestrationError('task_not_found', `managed task ${taskId} was not found`);
       }
@@ -2051,7 +2085,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       if (task.status === 'queued') {
         await runExclusive(async () => {
           const previous = tasks.get(taskId);
-          if (!previous || isTerminalManagedTaskStatus(previous.status)) return;
+          if (!previous || previous.status !== 'queued' || previous.leaseToken !== owner.leaseToken) return;
           const next = {
             ...previous,
             status: 'aborted',
@@ -2066,6 +2100,7 @@ export const createManagedTaskScheduler = (options = {}) => {
 
       let abortResult = null;
       let abortFailure = null;
+      const fallback = lastRecovery(task);
       const abortController = new AbortController();
       try {
         const outcome = await raceAbortWithTimeout(
@@ -2085,7 +2120,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         abortFailure = error instanceof Error ? error.message : String(error);
       }
 
-      const recovery = await readRecovery(task);
+      const recovery = await readRecovery(task, fallback);
       const recoverablePreview = typeof recovery.recoverablePreview === 'string'
         ? recovery.recoverablePreview
         : '';
@@ -2116,7 +2151,7 @@ export const createManagedTaskScheduler = (options = {}) => {
             && task.childSessionId
           )
         ),
-      });
+      }, 'failed', owner);
       return cloneTask(tasks.get(taskId));
     })();
 
@@ -2124,7 +2159,8 @@ export const createManagedTaskScheduler = (options = {}) => {
     try {
       return await cancellation;
     } finally {
-      cancellationPromises.delete(taskId);
+      try { await releaseCancellationOwner(taskId, owner); }
+      finally { if (cancellationPromises.get(taskId) === cancellation) cancellationPromises.delete(taskId); }
     }
   };
 
@@ -2141,8 +2177,17 @@ export const createManagedTaskScheduler = (options = {}) => {
       return cancelled;
     }
 
+    let owner;
     const cancellation = (async () => {
-      const task = tasks.get(taskId);
+      const task = await runExclusive(() => {
+        const current = tasks.get(taskId);
+        if (current && (!isTerminalManagedTaskStatus(current.status)
+          || (current.status === 'interrupted' && activeLaunches.has(taskId)))) {
+          owner = { leaseToken: current.leaseToken, deferred: null, committed: false };
+          cancellationOwners.set(taskId, owner);
+        }
+        return current;
+      });
       if (!task) {
         throw new ManagedOrchestrationError('task_not_found', `managed task ${taskId} was not found`);
       }
@@ -2154,7 +2199,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       if (task.status === 'queued') {
         await runExclusive(async () => {
           const previous = tasks.get(taskId);
-          if (!previous || isTerminalManagedTaskStatus(previous.status)) return;
+          if (!previous || previous.status !== 'queued' || previous.leaseToken !== owner.leaseToken) return;
           const next = {
             ...previous,
             status: 'aborted',
@@ -2167,7 +2212,10 @@ export const createManagedTaskScheduler = (options = {}) => {
         return cloneTask(tasks.get(taskId));
       }
 
-      const outcome = await raceAbortWithTimeout(executor.abort(cloneTask(task)));
+      const fallback = lastRecovery(task);
+      const abortController = new AbortController();
+      const outcome = await raceAbortWithTimeout(executor.abort(cloneTask(task), { signal: abortController.signal }),
+        () => abortController.abort(new Error(`Managed task abort exceeded ${abortTimeoutMs}ms`)));
       const abortConfirmed = !outcome.timedOut && !outcome.error && outcome.value?.aborted !== false;
       if (!abortConfirmed) {
         throw new ManagedOrchestrationError(
@@ -2176,7 +2224,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         );
       }
 
-      const recovery = await readRecovery(task);
+      const recovery = await readRecovery(task, fallback);
       const recoverablePreview = typeof recovery.recoverablePreview === 'string'
         ? recovery.recoverablePreview
         : '';
@@ -2193,7 +2241,7 @@ export const createManagedTaskScheduler = (options = {}) => {
           recoverablePreview,
           canonicalRefs,
           resumable: Boolean(recovery.resumable),
-        });
+        }, 'failed', owner);
       }
       return cloneTask(tasks.get(taskId));
     })();
@@ -2201,9 +2249,8 @@ export const createManagedTaskScheduler = (options = {}) => {
     try {
       return await cancellation;
     } finally {
-      if (cancellationPromises.get(taskId) === cancellation) {
-        cancellationPromises.delete(taskId);
-      }
+      try { await releaseCancellationOwner(taskId, owner); }
+      finally { if (cancellationPromises.get(taskId) === cancellation) cancellationPromises.delete(taskId); }
     }
   };
 
@@ -2685,6 +2732,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       resultActionWaiters.clear();
       activeLaunches.clear();
       cancellationPromises.clear();
+      cancellationOwners.clear();
       acknowledgementPromises.clear();
       handoffLocks.clear();
       providerRecoveryContinuationClaims.clear();

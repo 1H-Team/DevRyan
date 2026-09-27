@@ -976,7 +976,8 @@ export const registerOpenCodeProxy = (app, deps) => {
         }
       },
       error: (err, req, res) => {
-        console.error('[proxy] OpenCode proxy error:', err.message);
+        // Path only: query strings may carry directories or tokens.
+        console.error('[proxy] OpenCode proxy error:', req?.method, String(req?.originalUrl ?? '').split('?')[0], err.message);
         if (res && !res.headersSent && typeof res.status === 'function') {
           res.status(503).json(isSessionCreateRequest(req) ? creationUnknownPayload() : { error: 'OpenCode service unavailable', retryable: true });
         }

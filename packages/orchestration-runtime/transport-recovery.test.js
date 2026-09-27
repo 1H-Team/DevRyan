@@ -15,7 +15,7 @@ const done = (parentID) => ({
   parts: [{ type: 'text', text: 'Finished without repeating the completed edit' }],
 });
 
-const fixture = ({ onPrompt, beforeRead, afterReservation, persisted = null, persistenceFails = false, priorFailureReason = null } = {}) => {
+const fixture = ({ onPrompt, beforeRead, afterReservation, persisted = null, persistenceFails = false, priorFailureReason = null, abortConfirmed = true } = {}) => {
   let clock = 3_000;
   let messages = [user('msg_user'), failed('msg_failed', 'msg_user', [
     { type: 'text', text: 'Preserved completed work' },
@@ -50,7 +50,7 @@ const fixture = ({ onPrompt, beforeRead, afterReservation, persisted = null, per
   const transport = {
     async createSession() { throw new Error('Must preserve the child'); },
     async deleteSession() { throw new Error('Must preserve the child'); },
-    async abortSession() { return true; },
+    async abortSession() { return abortConfirmed; },
     async readSession() { return { id: 'ses_child' }; },
     async readStatus() { return { type: 'idle' }; },
     async readMessages() { await beforeRead?.({ clock, prompts, setMessages }); return messages; },
@@ -237,9 +237,10 @@ describe('durable managed transport recovery', () => {
     expect(f.prompts).toHaveLength(0);
   });
 
-  test('cancellation after reservation prevents dispatch', async () => {
-    const f = fixture({ async afterReservation({ executor, task }) { await executor.abort(task); } });
-    expect(await f.run()).toMatchObject({ status: 'interrupted' });
+  test.each([true, false])('cancellation after reservation prevents dispatch (abort confirmed=%s)', async (abortConfirmed) => {
+    const f = fixture({ abortConfirmed, async afterReservation({ executor, task }) { await executor.abort(task); } });
+    expect(await f.run()).toMatchObject({ status: 'interrupted', partial: true, resumable: true,
+      recoverablePreview: 'Preserved completed work' });
     expect(f.prompts).toHaveLength(0);
     expect(f.saved.phase).toBe('reserved');
   });
@@ -284,16 +285,18 @@ describe('durable managed transport recovery', () => {
     expect(backup.saved.backupAttempts).toBe(1);
   });
 
-  test('a cancelled in-flight recovery cannot be resent', async () => {
+  test.each([true, false])('a cancelled in-flight recovery cannot be resent (abort confirmed=%s)', async (abortConfirmed) => {
     let sentSignal;
-    const f = fixture({ async onPrompt({ input, executor }) {
+    const f = fixture({ abortConfirmed, async onPrompt({ input, executor }) {
       sentSignal = input.signal;
       await executor.abort(f.task);
       throw new Error('cancelled');
     } });
-    expect(await f.run()).toMatchObject({ status: 'interrupted' });
+    expect(await f.run()).toMatchObject({ status: 'interrupted', partial: true, resumable: true,
+      recoverablePreview: 'Preserved completed work' });
     expect(sentSignal.aborted).toBe(true);
     expect(f.prompts).toHaveLength(1);
+    expect(f.saved.phase).toBe('reserved');
   });
 
   test('shutdown cancels an in-flight recovery while retaining its ambiguous reservation', async () => {

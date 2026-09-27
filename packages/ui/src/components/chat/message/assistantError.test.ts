@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { classifyAssistantError, classifySteeredAbortFallback } from "./assistantError"
+import { PROVIDER_TOKEN_EXPIRED_MESSAGE } from "@/lib/messages/providerTokenExpired"
 
 describe("classifyAssistantError", () => {
   test("classifies transient provider stream failures as retryable with friendly copy", () => {
@@ -98,6 +99,14 @@ describe("classifyAssistantError", () => {
       data: { message: "OAuth token refresh failed during stream" },
     })).toEqual({
       text: "Authentication failed for this provider. Please re-authenticate and retry.",
+      variant: "error",
+    })
+  })
+
+  test("does not present an expired sign-in retry as a recoverable automatic retry", () => {
+    const detail = "Claude OAuth token has expired and could not be refreshed automatically. Run 'claude login' in your terminal to re-authenticate."
+    expect(classifyAssistantError({ name: "SessionRetry", data: { message: detail } })).toEqual({
+      text: `${PROVIDER_TOKEN_EXPIRED_MESSAGE} Press Stop to end the automatic retries.\n\`${detail}\``,
       variant: "error",
     })
   })

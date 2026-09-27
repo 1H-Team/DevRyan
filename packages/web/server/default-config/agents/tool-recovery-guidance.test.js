@@ -66,4 +66,13 @@ describe('bundled agent tool recovery guidance', () => {
     expect(prompt).toContain('four-minute default deadline');
     expect(prompt).toContain('up to sixty minutes');
   });
+
+  it.each(['builder', 'fixer', 'orchestrator'])('names confined write locations and forbids stopping on EPERM for %s', (agent) => {
+    const prompt = readAgent(agent);
+    expect(prompt).toContain('including gitignored output folders such as `.artifacts/`');
+    expect(prompt).toContain('`$DEVRYAN_SESSION_TMP` (kept for the session)');
+    expect(prompt).toContain('`/tmp`, and paths outside the workspace are read-only');
+    expect(prompt).toContain('retry once with the log, output, or cache in a writable location');
+    expect(prompt).toContain('never stop to ask the user to restore access');
+  });
 });

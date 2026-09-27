@@ -27,6 +27,8 @@ const sessionDeleteCalls: Array<Record<string, unknown>> = []
 const sessionUpdateOptions: Array<{ throwOnError?: boolean } | undefined> = []
 const sessionDeleteOptions: Array<{ throwOnError?: boolean } | undefined> = []
 const sessionAbortCalls: Array<Record<string, unknown>> = []
+const sessionAbortOptions: Array<{ headers?: Record<string, string> } | undefined> = []
+const mockQuestionCounts: Record<string, number> = {}
 const sessionMessageCalls: Array<Record<string, unknown>> = []
 const sessionUnrevertCalls: Array<Record<string, unknown>> = []
 const sessionForkCalls: Array<Record<string, unknown>> = []
@@ -105,6 +107,14 @@ const applyThrowOnErrorOption = async (
   return result
 }
 
+let nextQuestionReplyResult: (() => Promise<unknown>) | null = null
+let nextQuestionRejectResult: (() => Promise<unknown>) | null = null
+const takeOnce = (next: (() => Promise<unknown>) | null, clear: () => void) => {
+  if (!next) return null
+  clear()
+  return next()
+}
+
 const mockScopedClient = {
   permission: {
     reply: mock((params: Record<string, unknown>) => {
@@ -115,11 +125,13 @@ const mockScopedClient = {
   question: {
     reply: mock((params: Record<string, unknown>) => {
       replyCalls.push({ method: "question.reply", params })
-      return Promise.resolve({ data: questionSettlementConfirmed })
+      return takeOnce(nextQuestionReplyResult, () => { nextQuestionReplyResult = null })
+        ?? Promise.resolve({ data: questionSettlementConfirmed })
     }),
     reject: mock((params: Record<string, unknown>) => {
       replyCalls.push({ method: "question.reject", params })
-      return Promise.resolve({ data: questionSettlementConfirmed })
+      return takeOnce(nextQuestionRejectResult, () => { nextQuestionRejectResult = null })
+        ?? Promise.resolve({ data: questionSettlementConfirmed })
     }),
   },
 }
@@ -140,8 +152,9 @@ const mockSdk = {
       sessionDeleteOptions.push(options)
       return applyThrowOnErrorOption(sessionDeleteHandler(params), options)
     }),
-    abort: mock((params: Record<string, unknown>) => {
+    abort: mock((params: Record<string, unknown>, options?: { headers?: Record<string, string> }) => {
       sessionAbortCalls.push(params)
+      sessionAbortOptions.push(options)
       return sessionAbortHandler(params)
     }),
     messages: mock((params: Record<string, unknown>) => {
@@ -504,6 +517,7 @@ mock.module("./sync-refs", () => ({
   getAllSyncSessionStatuses: () => ({}),
   getSyncSessionStatusAnyDirectory: () => undefined,
   getSyncBlockingRequestCountAnyDirectory: () => 0,
+  getSyncLiveQuestionCountAnyDirectory: (sessionId: string) => mockQuestionCounts[sessionId] ?? 0,
 }))
 
 import { create, type StoreApi } from "zustand"
@@ -778,7 +792,9 @@ describe("createSessionRecord startup readiness", () => {
 })
 
 describe("archiveSessions batch behavior", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    const { setSessionArchiveTimingForTests } = await import("./session-actions")
+    setSessionArchiveTimingForTests({ connectionGraceMs: 50, retryDelayMs: 1, retryMaxDelayMs: 1 })
     sessionCreateCalls.length = 0
     sessionUpdateCalls.length = 0
     sessionDeleteCalls.length = 0
@@ -868,7 +884,7 @@ describe("archiveSessions batch behavior", () => {
     deferredA.resolve({ data: true })
     deferredB.resolve({ data: true })
 
-    expect(await resultPromise).toEqual({ archivedIds: ["session-a", "session-b"], failedIds: [] })
+    expect(await resultPromise).toEqual({ archivedIds: ["session-a", "session-b"], failedIds: [], failures: [] })
   })
 
   test("waits for transient connection recovery before archiving on the first call", async () => {
@@ -897,6 +913,7 @@ describe("archiveSessions batch behavior", () => {
     expect(await archiveSessions(["session-a"])).toEqual({
       archivedIds: ["session-a"],
       failedIds: [],
+      failures: [],
     })
 
     expect(probeCalls).toBe(1)
@@ -918,9 +935,13 @@ describe("archiveSessions batch behavior", () => {
     const { setActionRefs, archiveSessions } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
 
-    expect(await archiveSessions(["session-a"])).toEqual({
+    expect(await withMutedConsoleError(() => archiveSessions(["session-a"]))).toEqual({
       archivedIds: [],
       failedIds: ["session-a"],
+      failures: [{
+        sessionId: "session-a",
+        message: "Connection lost (ws_closed_before_ready). Please wait for reconnection.",
+      }],
     })
 
     expect(sessionUpdateCalls).toEqual([])
@@ -950,6 +971,7 @@ describe("archiveSessions batch behavior", () => {
     expect(await withMutedConsoleError(() => archiveSessions(["session-a", "session-b"]))).toEqual({
       archivedIds: ["session-a"],
       failedIds: ["session-b"],
+      failures: [{ sessionId: "session-b", message: "archive failed" }],
     })
 
     expect(storeA.getState().session).toEqual([])
@@ -980,6 +1002,7 @@ describe("archiveSessions batch behavior", () => {
     expect(await archiveSessions(["global-session"])).toEqual({
       archivedIds: ["global-session"],
       failedIds: [],
+      failures: [],
     })
 
     expect(sessionUpdateCalls).toHaveLength(1)
@@ -1026,6 +1049,7 @@ describe("archiveSessions batch behavior", () => {
     expect(await resultPromise).toEqual({
       archivedIds: ["global-session"],
       failedIds: [],
+      failures: [],
     })
   })
 
@@ -1039,7 +1063,11 @@ describe("archiveSessions batch behavior", () => {
     const { setActionRefs, archiveSessions } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
 
-    expect(await withMutedConsoleError(() => archiveSessions(["session-a"]))).toEqual({ archivedIds: [], failedIds: ["session-a"] })
+    expect(await withMutedConsoleError(() => archiveSessions(["session-a"]))).toEqual({
+      archivedIds: [],
+      failedIds: ["session-a"],
+      failures: [{ sessionId: "session-a", message: "archive failed" }],
+    })
 
     expect(storeA.getState().session.map((session) => session.id)).toEqual(["session-a"])
     expect(setCurrentSessionCalls).toEqual([
@@ -1062,8 +1090,10 @@ describe("archiveSessions batch behavior", () => {
     expect(await withMutedConsoleError(() => archiveSessions(["session-a"]))).toEqual({
       archivedIds: [],
       failedIds: ["session-a"],
+      failures: [{ sessionId: "session-a", message: "archive failed: archive failed" }],
     })
-    expect(sessionUpdateOptions).toEqual([{ throwOnError: true }])
+    // Non-transient errors are not retried.
+    expect(sessionUpdateCalls).toHaveLength(1)
     expect(store.getState().session.map((item) => item.id)).toEqual(["session-a"])
   })
 
@@ -1076,7 +1106,7 @@ describe("archiveSessions batch behavior", () => {
     const { setActionRefs, archiveSessions } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
 
-    expect(await archiveSessions(["session-a"])).toEqual({ archivedIds: ["session-a"], failedIds: [] })
+    expect(await archiveSessions(["session-a"])).toEqual({ archivedIds: ["session-a"], failedIds: [], failures: [] })
     expect(membershipBeginCalls.length).toBe(1)
     expect(membershipBeginCalls[0]?.kind).toBe("archive")
     expect(membershipBeginCalls[0]?.sessionIds).toEqual(["session-a"])
@@ -1105,6 +1135,7 @@ describe("archiveSessions batch behavior", () => {
     expect(await archiveSessions(["parent"])).toEqual({
       archivedIds: ["parent", "child", "grandchild"],
       failedIds: [],
+      failures: [],
     })
 
     expect(sessionUpdateCalls.map((params) => params.sessionID)).toEqual(["parent", "child", "grandchild"])
@@ -1142,7 +1173,7 @@ describe("archiveSessions batch behavior", () => {
     deferredParent.resolve({ data: true })
     deferredChild.resolve({ data: true })
 
-    expect(await resultPromise).toEqual({ archivedIds: ["parent", "child"], failedIds: [] })
+    expect(await resultPromise).toEqual({ archivedIds: ["parent", "child"], failedIds: [], failures: [] })
   })
 
   test("archiving a child does not archive its parent", async () => {
@@ -1156,7 +1187,7 @@ describe("archiveSessions batch behavior", () => {
     const { setActionRefs, archiveSessions } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
 
-    expect(await archiveSessions(["child"])).toEqual({ archivedIds: ["child"], failedIds: [] })
+    expect(await archiveSessions(["child"])).toEqual({ archivedIds: ["child"], failedIds: [], failures: [] })
 
     expect(sessionUpdateCalls.map((params) => params.sessionID)).toEqual(["child"])
     expect(store.getState().session.map((session) => session.id)).toEqual(["parent"])
@@ -1174,7 +1205,7 @@ describe("archiveSessions batch behavior", () => {
     const { setActionRefs, archiveSessions } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
 
-    expect(await archiveSessions(["parent", "child"])).toEqual({ archivedIds: ["parent", "child"], failedIds: [] })
+    expect(await archiveSessions(["parent", "child"])).toEqual({ archivedIds: ["parent", "child"], failedIds: [], failures: [] })
 
     expect(sessionUpdateCalls.map((params) => params.sessionID)).toEqual(["parent", "child"])
     expect(globalArchiveCalls[0].ids).toEqual(["parent", "child"])
@@ -1198,7 +1229,11 @@ describe("archiveSessions batch behavior", () => {
     const { setActionRefs, archiveSessions } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
 
-    expect(await withMutedConsoleError(() => archiveSessions(["parent"]))).toEqual({ archivedIds: ["parent"], failedIds: ["child"] })
+    expect(await withMutedConsoleError(() => archiveSessions(["parent"]))).toEqual({
+      archivedIds: ["parent"],
+      failedIds: ["child"],
+      failures: [{ sessionId: "child", message: "archive failed" }],
+    })
 
     expect(store.getState().session.map((session) => session.id)).toEqual(["child"])
     expect(globalArchiveCalls[0].ids).toEqual(["parent", "child"])
@@ -1226,6 +1261,7 @@ describe("archiveSessions batch behavior", () => {
     expect(await archiveSessions(["parent"])).toEqual({
       archivedIds: ["parent", "child"],
       failedIds: [],
+      failures: [],
     })
 
     expect(sessionAbortCalls.map((params) => params.sessionID)).toEqual(["child", "parent"])
@@ -1250,6 +1286,7 @@ describe("archiveSessions batch behavior", () => {
     expect(await withMutedConsoleError(() => archiveSessions(["parent"]))).toEqual({
       archivedIds: ["parent"],
       failedIds: [],
+      failures: [],
     })
 
     expect(sessionAbortCalls.map((params) => params.sessionID)).toEqual(["parent"])
@@ -1268,14 +1305,142 @@ describe("archiveSessions batch behavior", () => {
     const { setActionRefs, archiveSessions } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
 
-    expect(await archiveSessions(["parent"])).toEqual({ archivedIds: ["parent", "child"], failedIds: [] })
+    expect(await archiveSessions(["parent"])).toEqual({ archivedIds: ["parent", "child"], failedIds: [], failures: [] })
 
     expect(setCurrentSessionCalls).toEqual([{ id: null, directory: undefined }])
+  })
+
+  test("retries an archive when OpenCode is restarting and then succeeds", async () => {
+    const store = createStore({}, [makeSession("session-a")])
+    const childStores = createChildStores([["/test/project", store]])
+    let attempts = 0
+    sessionUpdateHandler = () => {
+      attempts += 1
+      return Promise.resolve(attempts === 1
+        ? { error: { error: "OpenCode is restarting", restarting: true }, response: { status: 503 } }
+        : { data: true })
+    }
+
+    const { setActionRefs, archiveSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    expect(await archiveSessions(["session-a"])).toEqual({ archivedIds: ["session-a"], failedIds: [], failures: [] })
+    expect(sessionUpdateCalls).toHaveLength(2)
+    expect(store.getState().session).toEqual([])
+  })
+
+  test("retries an archive rejected by the retention gate", async () => {
+    const store = createStore({}, [makeSession("session-a")])
+    const childStores = createChildStores([["/test/project", store]])
+    let attempts = 0
+    sessionUpdateHandler = () => {
+      attempts += 1
+      return Promise.resolve(attempts === 1
+        ? { error: { error: "session_retention_in_progress", retryable: true }, response: { status: 409 } }
+        : { data: true })
+    }
+
+    const { setActionRefs, archiveSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    expect(await archiveSessions(["session-a"])).toEqual({ archivedIds: ["session-a"], failedIds: [], failures: [] })
+    expect(sessionUpdateCalls).toHaveLength(2)
+  })
+
+  test("retries an archive after a transport failure", async () => {
+    const store = createStore({}, [makeSession("session-a")])
+    const childStores = createChildStores([["/test/project", store]])
+    let attempts = 0
+    sessionUpdateHandler = () => {
+      attempts += 1
+      return attempts === 1 ? Promise.reject(new TypeError("Failed to fetch")) : Promise.resolve({ data: true })
+    }
+
+    const { setActionRefs, archiveSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    expect(await archiveSessions(["session-a"])).toEqual({ archivedIds: ["session-a"], failedIds: [], failures: [] })
+    expect(sessionUpdateCalls).toHaveLength(2)
+  })
+
+  test("reports the server reason and rolls back when the runtime stays unavailable", async () => {
+    const store = createStore({}, [makeSession("session-a")])
+    const childStores = createChildStores([["/test/project", store]])
+    sessionUpdateHandler = () => Promise.resolve({
+      error: { error: "OpenCode is restarting", restarting: true },
+      response: { status: 503 },
+    })
+
+    const { setActionRefs, archiveSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    expect(await withMutedConsoleError(() => archiveSessions(["session-a"]))).toEqual({
+      archivedIds: [],
+      failedIds: ["session-a"],
+      failures: [{ sessionId: "session-a", message: "archive failed (503): OpenCode is restarting", status: 503 }],
+    })
+    expect(sessionUpdateCalls).toHaveLength(9)
+    expect(store.getState().session.map((item) => item.id)).toEqual(["session-a"])
+  })
+
+  test("does not fail the parent archive when a cascaded child no longer exists", async () => {
+    const parent = makeSession("parent")
+    const child = makeSession("child", "parent")
+    const store = createStore({}, [child, parent])
+    const childStores = createChildStores([["/test/project", store]])
+    sessionUpdateHandler = (params) => Promise.resolve(params.sessionID === "child"
+      ? { error: { name: "NotFoundError", data: { message: "Session not found: child" } }, response: { status: 404 } }
+      : { data: true })
+
+    const { setActionRefs, archiveSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    expect(await archiveSessions(["parent", "child"])).toEqual({
+      archivedIds: ["parent", "child"],
+      failedIds: [],
+      failures: [],
+    })
+    expect(sessionUpdateCalls.filter((params) => params.sessionID === "child")).toHaveLength(1)
+  })
+
+  test("still fails an explicitly selected session the runtime cannot find", async () => {
+    const store = createStore({}, [makeSession("session-a")])
+    const childStores = createChildStores([["/test/project", store]])
+    sessionUpdateHandler = () => Promise.resolve({ error: { error: "Session not found" }, response: { status: 404 } })
+
+    const { setActionRefs, archiveSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    expect(await withMutedConsoleError(() => archiveSessions(["session-a"]))).toEqual({
+      archivedIds: [],
+      failedIds: ["session-a"],
+      failures: [{ sessionId: "session-a", message: "archive failed (404): Session not found", status: 404 }],
+    })
+    expect(sessionUpdateCalls).toHaveLength(1)
+  })
+
+  test("skips descendants that are already archived", async () => {
+    const parent = makeSession("parent")
+    const archivedChild = {
+      ...makeSession("archived-child", "parent"),
+      time: { created: 1, updated: 1, archived: 5 },
+    } as Session
+    mockGlobalArchivedSessions = [archivedChild]
+    const store = createStore({}, [parent])
+    const childStores = createChildStores([["/test/project", store]])
+
+    const { setActionRefs, archiveSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    expect(await archiveSessions(["parent"])).toEqual({ archivedIds: ["parent"], failedIds: [], failures: [] })
+    expect(sessionUpdateCalls.map((params) => params.sessionID)).toEqual(["parent"])
   })
 })
 
 describe("unarchiveSessions cascade behavior", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    const { setSessionArchiveTimingForTests } = await import("./session-actions")
+    setSessionArchiveTimingForTests({ connectionGraceMs: 50, retryDelayMs: 1, retryMaxDelayMs: 1 })
     sessionUpdateCalls.length = 0
     sessionUpdateOptions.length = 0
     globalUnarchiveCalls.length = 0
@@ -1324,7 +1489,7 @@ describe("unarchiveSessions cascade behavior", () => {
     const optimistic = during.session[0]
     deferred.resolve({ data: true })
 
-    expect(await resultPromise).toEqual({ unarchivedIds: [archived.id], failedIds: [] })
+    expect(await resultPromise).toEqual({ unarchivedIds: [archived.id], failedIds: [], failures: [] })
     expect(store.getState().session[0]).toBe(optimistic)
     expect(store.getState().session[1]).toBe(unrelated)
   })
@@ -1350,7 +1515,11 @@ describe("unarchiveSessions cascade behavior", () => {
 
     deferred.reject(new Error("unarchive failed"))
 
-    expect(await resultPromise).toEqual({ unarchivedIds: [], failedIds: [archived.id] })
+    expect(await resultPromise).toEqual({
+      unarchivedIds: [],
+      failedIds: [archived.id],
+      failures: [{ sessionId: archived.id, message: "unarchive failed" }],
+    })
     expect(store.getState().session[0]).toBe(archived)
     expect(store.getState().session[1]).toBe(unrelated)
     expect(mockGlobalActiveSessions).toEqual([])
@@ -1389,7 +1558,11 @@ describe("unarchiveSessions cascade behavior", () => {
     deferredParent.resolve({ data: true })
     deferredChild.reject(new Error("child unarchive failed"))
 
-    expect(await resultPromise).toEqual({ unarchivedIds: [parent.id], failedIds: [child.id] })
+    expect(await resultPromise).toEqual({
+      unarchivedIds: [parent.id],
+      failedIds: [child.id],
+      failures: [{ sessionId: child.id, message: "child unarchive failed" }],
+    })
     expect(store.getState().session[0]).toBe(optimisticParent)
     expect(store.getState().session[1]).toBe(child)
     expect(store.getState().session[2]).toBe(unrelated)
@@ -1421,7 +1594,11 @@ describe("unarchiveSessions cascade behavior", () => {
 
     deferred.reject(new Error("stale unarchive failed"))
 
-    expect(await resultPromise).toEqual({ unarchivedIds: [], failedIds: [archived.id] })
+    expect(await resultPromise).toEqual({
+      unarchivedIds: [],
+      failedIds: [archived.id],
+      failures: [{ sessionId: archived.id, message: "stale unarchive failed" }],
+    })
     expect(store.getState().session[0]).toBe(newer)
     expect(store.getState().session[1]).toBe(unrelated)
   })
@@ -1442,6 +1619,7 @@ describe("unarchiveSessions cascade behavior", () => {
     expect(await unarchiveSessions(["parent"])).toEqual({
       unarchivedIds: ["parent", "child", "grandchild"],
       failedIds: [],
+      failures: [],
     })
 
     expect(sessionUpdateCalls.map((params) => params.sessionID)).toEqual(["parent", "child", "grandchild"])
@@ -1460,7 +1638,7 @@ describe("unarchiveSessions cascade behavior", () => {
     const { setActionRefs, unarchiveSessions } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
 
-    expect(await unarchiveSessions(["child"])).toEqual({ unarchivedIds: ["child"], failedIds: [] })
+    expect(await unarchiveSessions(["child"])).toEqual({ unarchivedIds: ["child"], failedIds: [], failures: [] })
 
     expect(sessionUpdateCalls.map((params) => params.sessionID)).toEqual(["child"])
     expect(globalRestoreCalls[0].ids).toEqual(["child"])
@@ -1486,6 +1664,7 @@ describe("unarchiveSessions cascade behavior", () => {
     expect(await unarchiveSessions([parent.id, child.id, parent.id])).toEqual({
       unarchivedIds: [parent.id, child.id],
       failedIds: [],
+      failures: [],
     })
     expect(sessionUpdateCalls.map((params) => params.sessionID)).toEqual([parent.id, child.id])
   })
@@ -1505,8 +1684,31 @@ describe("unarchiveSessions cascade behavior", () => {
     expect(await withMutedConsoleError(() => unarchiveSessions(["session-a"]))).toEqual({
       unarchivedIds: [],
       failedIds: ["session-a"],
+      failures: [{ sessionId: "session-a", message: "unarchive failed: unarchive failed" }],
     })
-    expect(sessionUpdateOptions).toEqual([{ throwOnError: true }])
+    expect(sessionUpdateCalls).toHaveLength(1)
+  })
+
+  test("retries an unarchive when OpenCode is restarting", async () => {
+    const archived = {
+      ...makeSession("session-a"),
+      time: { created: 1, updated: 1, archived: 10 },
+    } as Session
+    mockGlobalArchivedSessions = [archived]
+    const childStores = createChildStores([])
+    let attempts = 0
+    sessionUpdateHandler = () => {
+      attempts += 1
+      return Promise.resolve(attempts === 1
+        ? { error: { error: "OpenCode service unavailable", retryable: true }, response: { status: 503 } }
+        : { data: true })
+    }
+
+    const { setActionRefs, unarchiveSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    expect(await unarchiveSessions(["session-a"])).toEqual({ unarchivedIds: ["session-a"], failedIds: [], failures: [] })
+    expect(sessionUpdateCalls).toHaveLength(2)
   })
 
   test("registers and settles unarchive membership before requesting a fresh global snapshot", async () => {
@@ -1520,7 +1722,7 @@ describe("unarchiveSessions cascade behavior", () => {
     const { setActionRefs, unarchiveSessions } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
 
-    expect(await unarchiveSessions(["session-a"])).toEqual({ unarchivedIds: ["session-a"], failedIds: [] })
+    expect(await unarchiveSessions(["session-a"])).toEqual({ unarchivedIds: ["session-a"], failedIds: [], failures: [] })
     expect(membershipBeginCalls).toEqual([{
       kind: "unarchive",
       sessionIds: ["session-a"],
@@ -3528,6 +3730,44 @@ describe("respondToQuestion passes directory", () => {
     })
   }
 
+  test("turns the server's question_orphaned refusal into QuestionOrphanedError and keeps the card", async () => {
+    const orphan = { id: "q-dead", sessionID: "session-a", questions: [] }
+    const store = createStore({})
+    store.setState({ question: { "session-a": [orphan] } })
+    const actions = await import("./session-actions")
+    actions.setActionRefs(mockSdk as unknown as OpencodeClient,
+      createChildStores([["/test/project", store]]), () => "/test/project")
+    nextQuestionReplyResult = () => Promise.resolve({
+      data: undefined,
+      error: { code: "question_orphaned", error: "stopped" },
+      response: { status: 409 },
+    })
+
+    const error = await actions.respondToQuestion("session-a", "q-dead", [["Blue"]]).catch((reason: unknown) => reason)
+
+    expect(error).toBeInstanceOf(actions.QuestionOrphanedError)
+    expect(store.getState().question["session-a"]).toEqual([orphan])
+  })
+
+  test("discardOrphanedQuestion clears the card even when the upstream cleanup fails", async () => {
+    const orphan = { id: "q-dead", sessionID: "session-a", questions: [] }
+    const store = createStore({})
+    store.setState({ question: { "session-a": [orphan] } })
+    const actions = await import("./session-actions")
+    actions.setActionRefs(mockSdk as unknown as OpencodeClient,
+      createChildStores([["/test/project", store]]), () => "/test/project")
+    nextQuestionRejectResult = () => Promise.reject(new Error("gone"))
+    const originalWarn = console.warn
+    console.warn = () => {}
+    try {
+      await actions.discardOrphanedQuestion("session-a", "q-dead")
+    } finally {
+      console.warn = originalWarn
+    }
+
+    expect(store.getState().question["session-a"]).toEqual([])
+  })
+
   test("passes directory to question.reply", async () => {
     const childStores = createChildStores([])
 
@@ -3652,6 +3892,50 @@ describe("revertToMessage recovery behavior", () => {
     expect(abortFlag?.reason).toBe("manual")
     expect(abortFlag?.acknowledged).toBe(false)
     expect(typeof abortFlag?.timestamp).toBe("number")
+  })
+
+  test("tags each abort with the UI path that requested it", async () => {
+    const store = createStore({}, [makeSession("session-a")])
+    const childStores = createChildStores([["/test/project", store]])
+    const { abortCurrentOperation, abortCurrentOperationConfirmed, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+    sessionAbortOptions.length = 0
+
+    await abortCurrentOperation("session-a", "double_escape")
+    await abortCurrentOperationConfirmed("session-a", undefined, undefined, "stop_button")
+    await abortCurrentOperationConfirmed("session-a")
+
+    expect(sessionAbortOptions.map((options) => options?.headers?.["X-DevRyan-Abort-Source"])).toEqual([
+      "double_escape",
+      "stop_button",
+      undefined,
+    ])
+  })
+
+  test("the abort guard never re-aborts a session that is waiting on a question", async () => {
+    const store = createStore({}, [makeSession("session-a")])
+    store.setState({ session_status: { "session-a": { type: "busy" } as SessionStatus } })
+    const childStores = createChildStores([["/test/project", store]])
+    const { abortCurrentOperation, setActionRefs } = await import("./session-actions")
+    const { filterSessionStatusThroughAbortGuard } = await import("./abort-retry-guard")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await abortCurrentOperation("session-a", "stop_button")
+    expect(sessionAbortCalls).toHaveLength(1)
+
+    mockQuestionCounts["session-a"] = 1
+    try {
+      filterSessionStatusThroughAbortGuard("session-a", { type: "busy" } as SessionStatus)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      expect(sessionAbortCalls).toHaveLength(1)
+    } finally {
+      delete mockQuestionCounts["session-a"]
+    }
+
+    filterSessionStatusThroughAbortGuard("session-a", { type: "busy" } as SessionStatus, Date.now() + 5_000)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(sessionAbortCalls).toHaveLength(2)
+    expect(sessionAbortOptions.at(-1)?.headers?.["X-DevRyan-Abort-Source"]).toBe("abort_guard")
   })
 
   test("seeds a manual abort guard from the retry status being stopped", async () => {

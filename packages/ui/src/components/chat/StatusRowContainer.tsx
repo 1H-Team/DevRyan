@@ -359,7 +359,7 @@ export const StatusRowContainer: React.FC = React.memo(() => {
                     const { abortCurrentOperationConfirmed } = await import('@/sync/session-actions');
                     const latest = useProviderStallStore.getState().stallsBySessionId[sessionID];
                     if (!haveSameProviderStallFingerprint(current, latest)) return false;
-                    return abortCurrentOperationConfirmed(sessionID, status);
+                    return abortCurrentOperationConfirmed(sessionID, status, undefined, 'status_row');
                 },
                 offerRecovery: (recovery) => useProviderRecoveryStore.getState().offerRecovery(recovery),
             });
@@ -394,7 +394,7 @@ export const StatusRowContainer: React.FC = React.memo(() => {
                     const { abortCurrentOperationConfirmed } = await import('@/sync/session-actions');
                     const latest = useLongRunningToolStore.getState().recordsBySessionId[sessionID];
                     if (!haveSameLongRunningToolFingerprint(current, latest)) return false;
-                    return abortCurrentOperationConfirmed(sessionID, status);
+                    return abortCurrentOperationConfirmed(sessionID, status, undefined, 'status_row');
                 },
             });
             useLongRunningToolStore.getState().clearTool(currentSessionId, current);

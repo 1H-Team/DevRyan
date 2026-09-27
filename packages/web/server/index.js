@@ -63,6 +63,7 @@ import { createBoundedTaskRunner } from './lib/event-stream/bounded-task-runner.
 import { createCanonicalOpenCodeEventProcessor } from './lib/event-stream/canonical-ingestion.js';
 import { createFsSearchRuntime as createFsSearchRuntimeFactory } from './lib/fs/search.js';
 import { createOpenCodeLifecycleRuntime } from './lib/opencode/lifecycle.js';
+import { createRuntimeRestartReconciler } from './lib/opencode/runtime-restart-reconcile.js';
 import { createSessionExecutionHost } from './lib/opencode/session-execution-host.js';
 import { executionArtifacts, executionRuntimeState, executionReadinessMiddleware } from './lib/opencode/execution-artifacts.js';
 import { createOpenAiOAuthCoordinator } from './lib/opencode/openai-oauth-coordinator.js';
@@ -70,6 +71,7 @@ import { createOpenAiOAuthBridge, registerManagedOAuthMutationGate } from './lib
 import { createConfigApplyCoordinator, createConfigChangeMarker } from '@openchamber/shared-runtime';
 import { syncPackagedAgents } from './lib/opencode/packaged-agent-sync.js';
 import { syncRuntimeAgentOverlays } from './lib/opencode/runtime-agent-overlays.js';
+import { readAgentRuntimeSettings } from './lib/opencode/agent-runtime-settings.js';
 import { createUserProfileProvisioningRuntime } from './lib/opencode/user-profile-provisioning.js';
 import { retireLegacyCursorPlugin } from './lib/opencode/legacy-cursor-plugin.js';
 import { readAuthFile } from './lib/opencode/auth.js';
@@ -1258,6 +1260,7 @@ const startupPipelineRuntime = createStartupPipelineRuntime({
 
 const openCodeLifecycleState = {};
 Object.defineProperties(openCodeLifecycleState, {
+  appliedAgentRuntimeSettings: { get: () => hmrState.appliedAgentRuntimeSettings ?? null, set: (value) => { hmrState.appliedAgentRuntimeSettings = value; } },
   openCodeProcess: { get: () => openCodeProcess, set: (value) => { openCodeProcess = value; } },
   openCodePort: { get: () => openCodePort, set: (value) => { openCodePort = value; } },
   openCodeBaseUrl: { get: () => openCodeBaseUrl, set: (value) => { openCodeBaseUrl = value; } },
@@ -1317,6 +1320,37 @@ const userProfileProvisioning = createUserProfileProvisioningRuntime({
   configRoot: defaultConfigRoot,
   profileRoot: path.join(defaultConfigRoot, 'user-profile'),
 });
+// Sessions that died with a crashed OpenCode never receive idle from its
+// replacement; settle only those the restarted runtime reports idle.
+const runtimeRestartReconciler = createRuntimeRestartReconciler({
+  listActiveSessions: () => sessionRuntime.listActiveSessions(),
+  resolveSessionDirectory: async (sessionId) => {
+    const info = await notificationTemplateRuntime.fetchSessionInfo(sessionId);
+    return typeof info?.directory === 'string' ? info.directory : null;
+  },
+  readRuntimeStatuses: async (directory) => {
+    const statusUrl = new URL(buildOpenCodeUrl('/session/status'));
+    statusUrl.searchParams.set('directory', directory);
+    const response = await fetch(statusUrl, {
+      headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) throw new Error(`OpenCode session status responded with ${response.status}`);
+    const statuses = await response.json();
+    if (!statuses || typeof statuses !== 'object' || Array.isArray(statuses)) {
+      throw new Error('OpenCode session status returned an invalid payload');
+    }
+    return statuses;
+  },
+  // Cursor sessions run inside this server and survive an OpenCode restart.
+  isSessionLiveElsewhere: (sessionId) => ['busy', 'retry'].includes(cursorSdkRuntime.getSessionStatus?.()?.[sessionId]?.type),
+  settleSession: ({ sessionId, directory }) => {
+    turnTimingRuntime.recordRuntimeInterrupted({ sessionID: sessionId });
+    emitSyntheticOpenCodeEvent({ type: 'session.status', properties: { sessionID: sessionId, status: { type: 'idle' } } }, { directory });
+  },
+  recordDiagnostic: (summary) => harnessRuntime.record({ type: 'lifecycle', event: 'opencode_restart_reconciled', payload: summary }),
+});
+
 const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
   getManagedOAuthEnvironment: () => openAiOAuthBridge.environment(),
   state: openCodeLifecycleState,
@@ -1360,6 +1394,7 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
     packagedPluginDirectory: path.join(defaultConfigRoot, 'plugins'),
   }),
   readSettingsFromDisk,
+  readAgentRuntimeSettings,
   sanitizeProjects,
   sanitizeHiddenSkills,
   discoverSkills,
@@ -1385,9 +1420,21 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
       ? await browserLeaseRuntime.resumeAfterReset(handle)
       : false
   ),
-  onOpenCodeRestarted: () => {
+  onOpenCodeRestarted: ({ restartStartedAt } = {}) => {
+    // Reads session states before the activity reset below clears phases.
+    void runtimeRestartReconciler.reconcile({ restartStartedAt }).catch((error) => {
+      console.warn(`[OpenCode] Restart reconciliation failed: ${error?.message || error}`);
+    });
     sessionRuntime.resetAllSessionActivityToIdle();
     void projectPrewarmRuntime?.run('opencode-restart');
+  },
+  onManagedProcessExit: ({ pid, code, signal, uptimeMs, expected, stderrTail }) => {
+    harnessRuntime.record({ type: 'lifecycle', event: 'opencode_process_exit',
+      payload: { pid, code, signal, uptimeMs, expected, stderrTail } });
+    if (!expected) {
+      console.error(`[OpenCode] Managed server exited unexpectedly (pid ${pid}, ${signal ? `signal ${signal}` : `code ${code}`}, uptime ${uptimeMs}ms)`,
+        harnessRuntime.sanitizer?.sanitizeText?.(stderrTail) ?? '');
+    }
   },
   onStartupStatus: (text) => onOpenCodeStartupStatus?.(text),
   beforeManagedSpawn: runOpenCodeDbMaintenanceBeforeSpawn,
@@ -1395,7 +1442,7 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
 });
 
 const restartOpenCode = (...args) => openCodeLifecycleRuntime.restartOpenCode(...args);
-const syncManagedAgentRuntimeConfig = (...args) => openCodeLifecycleRuntime.syncManagedAgentRuntimeConfig(...args);
+const getAgentRuntimeApplicationState = () => openCodeLifecycleRuntime.getAgentRuntimeApplicationState();
 const waitForOpenCodeReady = (...args) => openCodeLifecycleRuntime.waitForOpenCodeReady(...args);
 const waitForAgentPresence = (...args) => openCodeLifecycleRuntime.waitForAgentPresence(...args);
 const commandDeadlineRuntime = createWebCommandDeadlineRuntime({
@@ -1433,6 +1480,22 @@ const primaryRecoveryRuntime = createWebPrimaryRecoveryRuntime({
     sessionID: incident.sessionID, messageID: incident.messageID, payload: incident }),
 });
 harnessRuntime.setPrimaryRecoveryRuntime(primaryRecoveryRuntime);
+// Any accepted abort settles the running turn as aborted in the journal. Only an
+// explicit user Stop (or an unattributed client) also stops a managed child's
+// executor from continuing or recovering it; automatic UI aborts do not.
+const OPERATOR_STOP_SOURCES = new Set(['stop_button', 'double_escape', 'status_row', 'session_removal', 'unknown']);
+harnessRuntime.setControlObserver(({ action, sessionID, source, res }) => {
+  if (action !== 'abort') return;
+  turnTimingRuntime.recordAbortRequested({ sessionID });
+  const operatorStop = OPERATOR_STOP_SOURCES.has(source)
+    ? managedOrchestrationRuntime?.recordOperatorAbort?.({ sessionId: sessionID, requestedAt: Date.now() }) ?? null
+    : null;
+  res.once('finish', () => {
+    if (res.statusCode >= 200 && res.statusCode < 300) return;
+    turnTimingRuntime.withdrawAbortRequest({ sessionID });
+    if (operatorStop) managedOrchestrationRuntime?.withdrawOperatorAbort?.(operatorStop);
+  });
+});
 const harnessFingerprintReader = createHarnessRunFingerprintReader({
   getDuplicateProviderRoute: createDuplicateProviderRouteResolver({ openAiUsesOAuth: () => openAiOAuthCoordinator.usesOAuth() }),
   getRuntimeBinary: () => useWslForOpencode || executionReadiness.state === 'required_unavailable' ? null : capturedExecutions
@@ -2129,15 +2192,17 @@ async function main(options = {}) {
       if (!res.destroyed) res.status(result.status).json(result.body);
     } finally { res.off('close', disconnected); }
   });
+  // Controls are journaled before primary recovery: it answers a primary
+  // session's abort locally, so a later journal hook would never see it.
   app.use('/api/session/:sessionID',
     express.json({ limit: '50mb', verify: (req, _res, buf) => { req.rawBody = buf; } }),
+    harnessRuntime.controlJournalMiddleware,
     primaryRecoveryRuntime.middleware);
   app.use(
     '/api/session/:sessionID/prompt_async',
     express.json({ limit: '50mb', verify: (req, _res, buf) => { req.rawBody = buf; } }),
     harnessRuntime.promptAdmissionMiddleware(turnTimingRuntime),
   );
-  app.use('/api/session/:sessionID', harnessRuntime.controlJournalMiddleware);
   registerDiagnosticsRoutes(app, {
     runtime: harnessRuntime,
     getEvidenceRecords: (scope) => evidenceRuntime.getRecords(scope),
@@ -2186,6 +2251,11 @@ async function main(options = {}) {
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     cursorSdkRuntime,
+    // Spawn time of the managed OpenCode now serving; null for an external runtime.
+    readRuntimeStartedAt: () => (
+      isExternalOpenCode || ENV_SKIP_OPENCODE_START || ENV_CONFIGURED_OPENCODE_HOST
+        ? null : openCodeProcess?.startedAt ?? null
+    ),
     registerExecutionChild: capturedExecutions ? (input) => sessionExecutionHost.plugin({ ...input, action: 'child' }) : undefined,
     publishEvent: emitSyntheticOpenCodeEvent,
     isManagedOpenCode: () => !(
@@ -2430,11 +2500,7 @@ async function main(options = {}) {
     restartOpenCode,
     waitForOpenCodeReady,
     isExternalOpenCode: () => isExternalOpenCode || ENV_SKIP_OPENCODE_START,
-    syncManagedAgentRuntimeConfig,
-    // A live managed process is what makes an agent-runtime change owe a restart.
-    isManagedOpenCodeRunning: () => Boolean(
-      openCodeLifecycleState.openCodeProcess && !openCodeLifecycleState.isExternalOpenCode,
-    ),
+    getAgentRuntimeApplicationState,
     buildAugmentedPath,
     projectConfigRuntime,
     scheduledTasksRuntime,
@@ -2505,7 +2571,7 @@ async function main(options = {}) {
     browserObservationRuntime?.closeAll();
     projectPreviewInstancesRuntime.shutdown();
     previewProxyRuntime.shutdown();
-    xaiToolCatalogRuntime.stopPeriodicRefresh();
+    xaiToolCatalogRuntime.dispose();
   });
 
   reportStartupPhase('listener', 'Opening DevRyan…');

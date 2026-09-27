@@ -13,6 +13,7 @@ export const createHmrStateRuntime = (dependencies) => {
         openCodePort: null,
         openCodeVersion: null,
         openCodeWorkingDirectory: os.homedir(),
+        appliedAgentRuntimeSettings: null,
         isShuttingDown: false,
         signalsAttached: false,
         userProvidedOpenCodePassword: undefined,

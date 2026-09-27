@@ -5,6 +5,7 @@ import { useNotificationStore } from '@/sync/notification-store';
 import { getSafeStorage } from '@/stores/utils/safeStorage';
 import { withDom } from '../bots/chat/botMountedDom';
 import { SessionFailureNotice } from './SessionFailureNotice';
+import { PROVIDER_TOKEN_EXPIRED_MESSAGE } from '@/lib/messages/providerTokenExpired';
 
 beforeEach(() => {
   useNotificationStore.setState({ list: [] });
@@ -73,6 +74,24 @@ test('explicit user cancellation is not presented as a failed request', async ()
       });
       expect(container.find((node) => node.getAttribute('role') === 'alert')).toBeNull();
       expect(getSafeStorage().getItem('openchamber:notification-completions:v1')).toContain('session_cancelled');
+    } finally { await act(async () => root.unmount()); }
+  });
+});
+
+test('an expired provider sign-in says how to fix it and persists only its code', async () => {
+  await withDom(async (container) => {
+    const { createRoot } = await import('react-dom/client');
+    const root = createRoot(container as unknown as Element);
+    try {
+      await act(async () => {
+        useNotificationStore.getState().append({ type: 'error', session: 's', time: Date.now(), viewed: true,
+          error: { name: 'APIError', data: { message: "Claude OAuth token has expired and could not be refreshed automatically. Run 'claude login' in your terminal to re-authenticate." } } });
+        root.render(<SessionFailureNotice sessionId="s" />);
+      });
+      expect(container.textContent).toContain(PROVIDER_TOKEN_EXPIRED_MESSAGE);
+      const persisted = getSafeStorage().getItem('openchamber:notification-completions:v1') ?? '';
+      expect(persisted).toContain('provider_token_expired');
+      expect(persisted).not.toContain('claude login');
     } finally { await act(async () => root.unmount()); }
   });
 });

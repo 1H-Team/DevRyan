@@ -59,6 +59,7 @@ const configApplyDefaultsCalls: Array<{
 const activatedConfigDirectories: Array<string | null | undefined> = []
 const managedBranchTargetCalls: Array<{ projectId: string; branchName: string; idempotencyKey: string }> = []
 const rejectQuestionCalls: Array<{ sessionId: string; requestId: string }> = []
+const discardOrphanedQuestionCalls: Array<{ sessionId: string; requestId: string }> = []
 let sessionAgentSelections = new Map<string, string>()
 let builderHandoffClearedSessions = new Set<string>()
 let draftAgentSelections = new Map<string, string>()
@@ -182,12 +183,12 @@ mock.module("./session-actions", () => ({
   deleteSessions: mock(() => Promise.resolve({ deletedIds: [], failedIds: [], failures: [] })),
   deleteSessionInDirectory: mock(() => Promise.resolve(true)),
   archiveSession: mock(() => Promise.resolve(true)),
-  archiveSessions: mock(() => Promise.resolve({ archivedIds: [], failedIds: [] })),
+  archiveSessions: mock(() => Promise.resolve({ archivedIds: [], failedIds: [], failures: [] })),
   unarchiveSession: mock((id: string) => {
     unarchiveCalls.push(id)
     return Promise.resolve(true)
   }),
-  unarchiveSessions: mock(() => Promise.resolve({ unarchivedIds: [], failedIds: [] })),
+  unarchiveSessions: mock(() => Promise.resolve({ unarchivedIds: [], failedIds: [], failures: [] })),
   updateSessionTitle: mock((sessionId: string, title: string) => {
     updateSessionTitleCalls.push({ sessionId, title })
     return Promise.resolve()
@@ -205,6 +206,10 @@ mock.module("./session-actions", () => ({
       rejectNextQuestionWith = null
       return Promise.reject(error)
     }
+    return Promise.resolve()
+  }),
+  discardOrphanedQuestion: mock((sessionId: string, requestId: string) => {
+    discardOrphanedQuestionCalls.push({ sessionId, requestId })
     return Promise.resolve()
   }),
   revertToMessage: mock(() => Promise.resolve()),
@@ -699,6 +704,7 @@ describe("session-ui-store send routing", () => {
     activatedConfigDirectories.length = 0
     managedBranchTargetCalls.length = 0
     rejectQuestionCalls.length = 0
+    discardOrphanedQuestionCalls.length = 0
     sessionAgentSelections = new Map()
     builderHandoffClearedSessions = new Set()
     draftAgentSelections = new Map()
@@ -3082,6 +3088,47 @@ describe("session-ui-store send routing", () => {
     expect(sendConfig.agent).toBe("agent-a")
     expect(sendConfig.variant).toBe("variant-a")
     expect(sendConfig.planMode).toBe(true)
+  })
+
+  test("sendMessageToSession sends directly past a question whose turn already stopped", async () => {
+    const orphan = { id: "q-orphan", sessionID: "session-a", tool: { messageID: "msg-asked", callID: "call-q" } }
+    mockQuestionsBySession.set("session-a", [orphan])
+    mockPartsByMessage.set("msg-asked", [{
+      id: "prt-q",
+      type: "tool",
+      tool: "question",
+      callID: "call-q",
+      state: { status: "error", error: "Tool execution aborted" },
+    }])
+    mockChildStoreState = {
+      message: {},
+      part: {},
+      question: { "session-a": [orphan] },
+    }
+
+    try {
+      await useSessionUIStore.getState().sendMessageToSession(
+        "session-a",
+        "answers after stop",
+        "provider-a",
+        "model-a",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "normal",
+      )
+    } finally {
+      mockPartsByMessage.delete("msg-asked")
+    }
+
+    // Skipping an orphan resumes nothing, so the prompt must not wait in the queue.
+    expect(useMessageQueueStore.getState().getQueueForSession("session-a")).toEqual([])
+    expect(rejectQuestionCalls).toEqual([])
+    expect(discardOrphanedQuestionCalls).toEqual([{ sessionId: "session-a", requestId: "q-orphan" }])
+    expect((mockChildStoreState.question as Record<string, unknown[]>)["session-a"]).toEqual([])
+    expect(sendMessageCalls.length + optimisticCalls.length).toBeGreaterThan(0)
   })
 
   test("sendMessageToSession dismisses descendant questions before queueing next turn", async () => {

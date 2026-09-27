@@ -685,131 +685,153 @@ describe("buildSettingsAgentCatalog", () => {
 });
 
 describe("agent runtime settings", () => {
-  const seed = (overrides: Partial<AgentRuntimeSettings> = {}): AgentRuntimeSettings => {
-    const settings: AgentRuntimeSettings = { lsp: true, appliesOnRestart: true, restartRequired: false, ...overrides };
-    useAgentsStore.setState({ agentRuntimeSettings: settings });
-    return settings;
-  };
+  const known = (lsp: boolean, appliedLsp = true): AgentRuntimeSettings => ({
+    lsp, appliesOnRestart: true, runtimeMode: 'managed', appliedLsp, restartRequired: lsp !== appliedLsp,
+  });
+  const unknown = (lsp: boolean): AgentRuntimeSettings => ({
+    lsp, appliesOnRestart: true, runtimeMode: 'unknown', appliedLsp: null, restartRequired: null,
+  });
+  const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
   const restore = () => {
     globalThis.fetch = originalFetch;
-    useAgentsStore.setState({ agentRuntimeSettings: null });
+    useAgentsStore.setState({ agentRuntimeSettings: null, isSavingAgentRuntimeSettings: false });
   };
-  const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
+  const deferredResponse = () => {
+    let resolve!: (value: Response) => void;
+    const promise = new Promise<Response>((done) => { resolve = done; });
+    return { promise, resolve };
+  };
 
-  test("loads the switches through the agent-runtime route", async () => {
+  test("loads authoritative restart state, including after renderer state is discarded", async () => {
     let requested: { url: string; method: string | undefined } | null = null;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       requested = { url: String(input), method: init?.method };
-      return jsonResponse({ lsp: false, appliesOnRestart: true });
-    }) as unknown as typeof fetch;
-
+      return jsonResponse(known(false));
+    }) as typeof fetch;
     try {
       const settings = await useAgentsStore.getState().getAgentRuntimeSettings();
-
       expect(requested).toEqual({ url: "/api/config/agent-runtime", method: "GET" });
-      expect(settings).toEqual({ lsp: false, appliesOnRestart: true, restartRequired: false });
-      expect(useAgentsStore.getState().agentRuntimeSettings).toEqual(settings);
-    } finally {
-      restore();
-    }
+      expect(settings).toEqual(known(false));
+      useAgentsStore.setState({ agentRuntimeSettings: null });
+      await useAgentsStore.getState().getAgentRuntimeSettings();
+      expect(useAgentsStore.getState().agentRuntimeSettings).toEqual(known(false));
+    } finally { restore(); }
   });
 
-  test("reads a host without the route (404 or 501) as having nothing to show", async () => {
-    for (const status of [404, 501]) {
-      seed();
-      globalThis.fetch = (async () => jsonResponse({ error: "Not here" }, status)) as unknown as typeof fetch;
-      try {
+  test("reads missing routes as unsupported and preserves errors without storing them", async () => {
+    try {
+      for (const status of [404, 501]) {
+        useAgentsStore.setState({ agentRuntimeSettings: known(true) });
+        globalThis.fetch = (async () => jsonResponse({ error: "Not here" }, status)) as typeof fetch;
         await expect(useAgentsStore.getState().getAgentRuntimeSettings()).resolves.toBeNull();
         expect(useAgentsStore.getState().agentRuntimeSettings).toBeNull();
-      } finally {
-        restore();
       }
-    }
+      for (const [body, status, message] of [
+        [{ lsp: "yes" }, 200, "Failed to load agent runtime settings"],
+        [{ error: "Agent runtime settings are not available for this user" }, 403, "not available for this user"],
+      ] as const) {
+        globalThis.fetch = (async () => jsonResponse(body, status)) as typeof fetch;
+        await expect(useAgentsStore.getState().getAgentRuntimeSettings()).rejects.toThrow(message);
+        expect(useAgentsStore.getState().agentRuntimeSettings).toBeNull();
+      }
+    } finally { restore(); }
   });
 
-  test("rejects a malformed payload and surfaces host errors without storing them", async () => {
-    globalThis.fetch = (async () => jsonResponse({ lsp: "yes" })) as unknown as typeof fetch;
+  test("keeps confirmed values while saving, and accepts server reconciliation on repeated saves and revert", async () => {
+    useAgentsStore.setState({ agentRuntimeSettings: known(true) });
+    const bodies: unknown[] = [];
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.method).toBe("PUT");
+      expect(useAgentsStore.getState().isSavingAgentRuntimeSettings).toBe(true);
+      const body = JSON.parse(String(init?.body));
+      bodies.push(body);
+      return jsonResponse(known(body.lsp));
+    }) as typeof fetch;
     try {
-      await expect(useAgentsStore.getState().getAgentRuntimeSettings()).rejects.toThrow("Failed to load agent runtime settings");
-      expect(useAgentsStore.getState().agentRuntimeSettings).toBeNull();
-    } finally {
-      restore();
-    }
-
-    globalThis.fetch = (async () => jsonResponse({ error: "Agent runtime settings are not available for this user" }, 403)) as unknown as typeof fetch;
-    try {
-      await expect(useAgentsStore.getState().getAgentRuntimeSettings()).rejects.toThrow("not available for this user");
-      expect(useAgentsStore.getState().agentRuntimeSettings).toBeNull();
-    } finally {
-      restore();
-    }
+      const saving = useAgentsStore.getState().saveAgentRuntimeSettings({ lsp: false });
+      expect(useAgentsStore.getState().agentRuntimeSettings).toEqual(known(true));
+      expect(await saving).toEqual(known(false));
+      expect(await useAgentsStore.getState().saveAgentRuntimeSettings({ lsp: false })).toEqual(known(false));
+      expect(await useAgentsStore.getState().saveAgentRuntimeSettings({ lsp: true })).toEqual(known(true));
+      expect(bodies).toEqual([{ lsp: false }, { lsp: false }, { lsp: true }]);
+      expect(useAgentsStore.getState().isSavingAgentRuntimeSettings).toBe(false);
+    } finally { restore(); }
   });
 
-  test("saves optimistically, reconciles from the response, and keeps the owed restart", async () => {
-    seed();
-    let optimistic: boolean | null = null;
-    let requestBody: unknown = null;
-    let method: string | undefined;
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toBe("/api/config/agent-runtime");
-      method = init?.method;
-      requestBody = JSON.parse(String(init?.body));
-      optimistic = useAgentsStore.getState().agentRuntimeSettings?.lsp ?? null;
-      return jsonResponse({ lsp: false, appliesOnRestart: true, restartRequired: true });
-    }) as unknown as typeof fetch;
-
+  test("serializes queued writes and a failed first write cannot roll back the second", async () => {
+    useAgentsStore.setState({ agentRuntimeSettings: known(false) });
+    const firstResponse = deferredResponse();
+    const started: unknown[] = [];
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      started.push(JSON.parse(String(init?.body)));
+      return started.length === 1 ? firstResponse.promise : jsonResponse(known(true));
+    }) as typeof fetch;
     try {
-      const saved = await useAgentsStore.getState().saveAgentRuntimeSettings({ lsp: false });
-
-      expect(method).toBe("PUT");
-      expect(requestBody).toEqual({ lsp: false });
-      expect(optimistic).toBe(false);
-      expect(saved).toEqual({ lsp: false, appliesOnRestart: true, restartRequired: true });
-      expect(useAgentsStore.getState().agentRuntimeSettings).toEqual(saved);
-
-      // Toggling back before restarting still owes the restart, and so does a reload.
-      globalThis.fetch = (async () => jsonResponse({ lsp: true, appliesOnRestart: true, restartRequired: false })) as unknown as typeof fetch;
-      const restored = await useAgentsStore.getState().saveAgentRuntimeSettings({ lsp: true });
-      expect(restored.restartRequired).toBe(true);
-
-      globalThis.fetch = (async () => jsonResponse({ lsp: true, appliesOnRestart: true })) as unknown as typeof fetch;
-      await useAgentsStore.getState().getAgentRuntimeSettings();
-      expect(useAgentsStore.getState().agentRuntimeSettings?.restartRequired).toBe(true);
-
-      useAgentsStore.getState().markAgentRuntimeRestarted();
-      expect(useAgentsStore.getState().agentRuntimeSettings).toEqual({ lsp: true, appliesOnRestart: true, restartRequired: false });
-    } finally {
-      restore();
-    }
+      const first = useAgentsStore.getState().saveAgentRuntimeSettings({ lsp: false }).catch((error: unknown) => error);
+      const second = useAgentsStore.getState().saveAgentRuntimeSettings({ lsp: true });
+      await Promise.resolve();
+      expect(started).toEqual([{ lsp: false }]);
+      expect(useAgentsStore.getState().agentRuntimeSettings).toEqual(known(false));
+      firstResponse.resolve(jsonResponse({ error: "Write rejected" }, 500));
+      expect(await first).toBeInstanceOf(Error);
+      expect(await second).toEqual(known(true));
+      expect(started).toEqual([{ lsp: false }, { lsp: true }]);
+      expect(useAgentsStore.getState().agentRuntimeSettings).toEqual(known(true));
+      expect(useAgentsStore.getState().isSavingAgentRuntimeSettings).toBe(false);
+    } finally { restore(); }
   });
 
-  test("reverts the optimistic value and throws when the host rejects the update", async () => {
-    const before = seed();
-    globalThis.fetch = (async () => jsonResponse({ error: 'Agent runtime setting "lsp" must be a boolean' }, 400)) as unknown as typeof fetch;
-
+  test("a delayed GET cannot replace a newer saved response", async () => {
+    const response = deferredResponse();
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => (
+      init?.method === "GET" ? response.promise : jsonResponse(known(false))
+    )) as typeof fetch;
     try {
-      await expect(useAgentsStore.getState().saveAgentRuntimeSettings({ lsp: false }))
-        .rejects.toThrow("must be a boolean");
-      expect(useAgentsStore.getState().agentRuntimeSettings).toEqual(before);
-    } finally {
-      restore();
-    }
+      const load = useAgentsStore.getState().getAgentRuntimeSettings();
+      await Promise.resolve();
+      await useAgentsStore.getState().saveAgentRuntimeSettings({ lsp: false });
+      response.resolve(jsonResponse(known(true)));
+      await load;
+      expect(useAgentsStore.getState().agentRuntimeSettings).toEqual(known(false));
+    } finally { restore(); }
   });
 
-  test("validates the payload before touching the host", async () => {
-    seed();
+  test("a malformed successful PUT cannot replace confirmed settings", async () => {
+    useAgentsStore.setState({ agentRuntimeSettings: known(false) });
+    globalThis.fetch = (async () => jsonResponse({ lsp: "yes" })) as typeof fetch;
+    try {
+      await expect(useAgentsStore.getState().saveAgentRuntimeSettings({ lsp: true }))
+        .rejects.toThrow("Failed to save agent runtime settings");
+      expect(useAgentsStore.getState().agentRuntimeSettings).toEqual(known(false));
+    } finally { restore(); }
+  });
+
+  test("an older load cannot replace the latest status refresh", async () => {
+    const firstResponse = deferredResponse();
     let calls = 0;
-    globalThis.fetch = (async () => { calls += 1; return jsonResponse({}); }) as unknown as typeof fetch;
+    globalThis.fetch = (async () => ++calls === 1 ? firstResponse.promise : jsonResponse(known(false, false))) as typeof fetch;
+    try {
+      const oldLoad = useAgentsStore.getState().getAgentRuntimeSettings();
+      await Promise.resolve();
+      await useAgentsStore.getState().getAgentRuntimeSettings();
+      firstResponse.resolve(jsonResponse(known(false)));
+      await oldLoad;
+      expect(useAgentsStore.getState().agentRuntimeSettings).toEqual(known(false, false));
+    } finally { restore(); }
+  });
 
+  test("validates writes locally and represents unsupported application knowledge honestly", async () => {
+    let calls = 0;
+    globalThis.fetch = (async () => { calls++; return jsonResponse({}); }) as typeof fetch;
     try {
       await expect(useAgentsStore.getState().saveAgentRuntimeSettings({})).rejects.toThrow("Nothing to save");
       expect(calls).toBe(0);
       expect(buildAgentRuntimeSettingsPayload({ lsp: false })).toEqual({ lsp: false });
-      expect(normalizeAgentRuntimeSettings({ lsp: true })).toEqual({ lsp: true, appliesOnRestart: true, restartRequired: false });
+      expect(normalizeAgentRuntimeSettings({ lsp: true })).toEqual(unknown(true));
+      expect(normalizeAgentRuntimeSettings({ ...known(false), runtimeMode: 'external' }))
+        .toEqual({ ...unknown(false), runtimeMode: 'external' });
       expect(normalizeAgentRuntimeSettings({ lsp: 1 })).toBeNull();
       expect(normalizeAgentRuntimeSettings(null)).toBeNull();
-    } finally {
-      restore();
-    }
+    } finally { restore(); }
   });
 });

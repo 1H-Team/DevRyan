@@ -21,7 +21,7 @@ import {
   useGlobalSessionsStore,
 } from "@/stores/useGlobalSessionsStore"
 import { useConfigStore } from "@/stores/useConfigStore"
-import { getSessionUIStore, registerSessionDirectory } from "./sync-refs"
+import { getSessionUIStore, getSyncLiveQuestionCountAnyDirectory, registerSessionDirectory } from "./sync-refs"
 import { useSelectionStore } from "./selection-store"
 import { registerGitGenerationSession } from "@/lib/git/gitGenerationSessions"
 import { isSyntheticPart } from "@/lib/messages/synthetic"
@@ -41,6 +41,9 @@ import {
 import { hasMessageRecordInfo, unwrapMessageRecordsResult } from "./message-fetch"
 import { isSessionWorkingFromState } from "./session-working"
 import { isSafeCreationRestart, runSessionCreation } from './session-creation'
+import { isQuestionOrphanedError } from "./question-orphan"
+import { abortSourceHeaders, type AbortSource } from "./abort-source"
+import { isTransientError, retry } from "./retry"
 import { getSdkErrorMessage } from "@/lib/opencode/sdk-error"
 import { useManagedOrchestrationStore } from "@/stores/useManagedOrchestrationStore"
 import { createClientMessageId } from "./client-message-id"
@@ -60,6 +63,23 @@ import type { ScopedRevertFile, ScopedRevertSessionTarget, ScopedSessionRevertRe
 const MESSAGE_REFETCH_LIMIT = 200
 const MESSAGE_REFETCH_SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 const BULK_SESSION_MUTATION_CONCURRENCY = 6
+// Archive/unarchive PATCHes are idempotent, so transient runtime unavailability
+// (OpenCode restart, proxy socket hang-up, retention-gate 409) is retried
+// instead of surfacing as a failed archive. After an OpenCode crash the proxy
+// fails fast (503 retryable) for ~9s until the restart is noticed, and the
+// runtime is back after ~18s; 9 attempts back off across ~23.5s, and the late
+// attempts are additionally held by the server's readiness hold.
+const SESSION_ARCHIVE_MUTATION_ATTEMPTS = 9
+const REMOVAL_ABORT_TIMEOUT_MS = 5_000
+const DEFAULT_SESSION_ARCHIVE_TIMING = {
+  connectionGraceMs: 15_000,
+  retryDelayMs: 500,
+  retryMaxDelayMs: 4_000,
+}
+let sessionArchiveTiming = DEFAULT_SESSION_ARCHIVE_TIMING
+export function setSessionArchiveTimingForTests(overrides: Partial<typeof DEFAULT_SESSION_ARCHIVE_TIMING> | null): void {
+  sessionArchiveTiming = overrides ? { ...DEFAULT_SESSION_ARCHIVE_TIMING, ...overrides } : DEFAULT_SESSION_ARCHIVE_TIMING
+}
 const QUEUED_SEND_INTERRUPT_IDLE_WAIT_MS = 300
 const QUEUED_SEND_INTERRUPT_IDLE_POLL_MS = 25
 let revertTransactionVersion = 0
@@ -157,8 +177,15 @@ function sdk() {
 setAbortGuardExecutor(async (sessionId, directory) => {
   if (!_sdk) return
   const targetDirectory = directory || getSessionDirectory(sessionId)
+  // A live question means a turn is waiting on the user; re-aborting would kill
+  // it and orphan the question. Orphans left by the stopped turn itself do not
+  // count, so zombie retry attempts are still cancelled.
+  if (getSyncLiveQuestionCountAnyDirectory(sessionId) > 0) return
   postAbortRequestedMark(sessionId, targetDirectory)
-  await _sdk.session.abort({ sessionID: sessionId, directory: targetDirectory })
+  await _sdk.session.abort(
+    { sessionID: sessionId, directory: targetDirectory },
+    abortSourceHeaders("abort_guard"),
+  )
 })
 
 function directoryStore(directory?: string) {
@@ -188,8 +215,8 @@ function connectionLostError(): Error {
 // pipeline recovers within a second. While waiting, run bounded health probes
 // inside the same grace window so stale disconnected state can recover quickly.
 const CONNECTION_GRACE_MS = 2000
-export async function waitForConnectionOrThrow(): Promise<void> {
-  const deadline = Date.now() + CONNECTION_GRACE_MS
+export async function waitForConnectionOrThrow(graceMs: number = CONNECTION_GRACE_MS): Promise<void> {
+  const deadline = Date.now() + graceMs
   while (Date.now() < deadline) {
     if (useConfigStore.getState().isConnected) return
     const remainingMs = deadline - Date.now()
@@ -476,7 +503,6 @@ type OptimisticSessionUnarchiveSnapshot = {
   entries: OptimisticSessionUnarchiveEntry[]
 }
 
-type BulkMutationResult<K extends string> = Record<K, string[]> & { failedIds: string[] }
 export type SessionMutationFailure = {
   sessionId: string
   message: string
@@ -484,6 +510,16 @@ export type SessionMutationFailure = {
 }
 export type DeleteSessionsResult = {
   deletedIds: string[]
+  failedIds: string[]
+  failures: SessionMutationFailure[]
+}
+export type ArchiveSessionsResult = {
+  archivedIds: string[]
+  failedIds: string[]
+  failures: SessionMutationFailure[]
+}
+export type UnarchiveSessionsResult = {
+  unarchivedIds: string[]
   failedIds: string[]
   failures: SessionMutationFailure[]
 }
@@ -830,13 +866,6 @@ function restoreOptimisticallyUnarchivedDirectorySessions(
   }
 }
 
-const makeBulkResult = <K extends string>(successKey: K, successfulIds: string[], failedIds: string[]): BulkMutationResult<K> => {
-  return {
-    [successKey]: successfulIds,
-    failedIds,
-  } as BulkMutationResult<K>
-}
-
 function optimisticRemoveSessions(
   sessionIds: string[],
   knownDirectoryById?: Map<string, string>,
@@ -993,6 +1022,7 @@ async function mutateSessionsInParallel(
 async function abortWorkingSessionsBeforeRemoval(
   sessionIds: string[],
   knownDirectoryById?: Map<string, string>,
+  source: AbortSource = "session_removal",
 ): Promise<void> {
   if (!_childStores || sessionIds.length === 0) {
     return
@@ -1036,7 +1066,11 @@ async function abortWorkingSessionsBeforeRemoval(
       try {
         postAbortRequestedMark(sessionId, directory)
         registerManualAbortGuard(sessionId, directory, status)
-        await sdk().session.abort({ sessionID: sessionId, directory })
+        // Best-effort: a hung abort must not stall the archive/delete behind it.
+        await sdk().session.abort({ sessionID: sessionId, directory }, {
+          signal: AbortSignal.timeout(REMOVAL_ABORT_TIMEOUT_MS),
+          ...abortSourceHeaders(source),
+        })
         markManualAbort(sessionId, getLatestAssistantMessageId(sessionId, directory))
       } catch (error) {
         clearAbortGuard(sessionId)
@@ -1219,8 +1253,14 @@ function createSessionMutationFailure(sessionId: string, error: unknown): Sessio
 }
 
 export function createSessionCreateError(error: unknown, status?: number): Error {
+  return createSdkMutationError("session.create", error, status)
+}
+
+// Normalize a resolved SDK error body into an Error that keeps the HTTP status
+// and the server's code/retryable/restarting hints for retry classification.
+function createSdkMutationError(label: string, error: unknown, status?: number): Error {
   const message = stringifyErrorMessage(error)
-  const formatted = new Error(status ? `session.create failed (${status}): ${message}` : `session.create failed: ${message}`)
+  const formatted = new Error(status ? `${label} failed (${status}): ${message}` : `${label} failed: ${message}`)
   if (status !== undefined) {
     (formatted as Error & { status?: number }).status = status
   }
@@ -1236,6 +1276,64 @@ export function createSessionCreateError(error: unknown, status?: number): Error
     if (typeof details.restarting === "boolean") annotated.restarting = details.restarting
   }
   return formatted
+}
+
+function isRetryableSessionMutationError(error: unknown): boolean {
+  if (error && typeof error === "object" && (error as { retryable?: unknown }).retryable === false) {
+    return false
+  }
+  if (isTransientError(error)) {
+    return true
+  }
+  if (!error || typeof error !== "object") {
+    return false
+  }
+  const details = error as { status?: unknown; retryable?: unknown; restarting?: unknown }
+  if (details.restarting === true || details.retryable === true) {
+    return true
+  }
+  // 409 is the companion retention gate (`session_retention_in_progress`).
+  return details.status === 408 || details.status === 409 || details.status === 423 || details.status === 429
+}
+
+async function updateSessionArchivedTime(
+  sessionId: string,
+  directory: string | undefined,
+  archived: number,
+  label: "archive" | "unarchive",
+): Promise<void> {
+  await retry(
+    async () => {
+      const result = await sdk().session.update(
+        { sessionID: sessionId, directory, time: { archived } },
+      ) as { error?: unknown; response?: { status?: number } }
+      if (result?.error !== undefined && result.error !== null) {
+        throw createSdkMutationError(label, result.error, result.response?.status ?? readErrorStatus(result.error))
+      }
+    },
+    {
+      attempts: SESSION_ARCHIVE_MUTATION_ATTEMPTS,
+      delay: sessionArchiveTiming.retryDelayMs,
+      factor: 2,
+      maxDelay: sessionArchiveTiming.retryMaxDelayMs,
+      retryIf: isRetryableSessionMutationError,
+    },
+  )
+}
+
+// Ids whose parent is part of the same cascade. These were pulled in by the
+// hierarchy, so stale state for them (already archived, already deleted) must
+// not fail the archive of the session the user actually acted on.
+function getCascadeDescendantIds(ids: string[]): Set<string> {
+  const idSet = new Set(ids)
+  const descendants = new Set<string>()
+  for (const session of getKnownSessionSnapshots(ids)) {
+    const parentID = (session as SessionWithHierarchy).parentID
+    if (parentID && idSet.has(parentID)) {
+      descendants.add(session.id)
+    }
+  }
+  return descendants
 }
 
 export function isTransientSessionCreateError(error: unknown): boolean {
@@ -1442,17 +1540,28 @@ export async function archiveSession(sessionId: string): Promise<boolean> {
   return result.archivedIds.includes(sessionId)
 }
 
-export async function archiveSessions(sessionIds: string[]): Promise<{ archivedIds: string[]; failedIds: string[] }> {
-  const { ids, directoryById: knownDirectoryById } = expandSessionIdsWithDescendants(sessionIds)
+export async function archiveSessions(sessionIds: string[]): Promise<ArchiveSessionsResult> {
+  const { ids: expandedIds, directoryById: knownDirectoryById } = expandSessionIdsWithDescendants(sessionIds)
+  const cascadeDescendantIds = getCascadeDescendantIds(expandedIds)
+  // A descendant that is already archived needs no request; re-archiving it
+  // only adds another chance to fail the whole cascade.
+  const alreadyArchivedDescendantIds = new Set(
+    getKnownSessionSnapshots(expandedIds)
+      .filter((session) => cascadeDescendantIds.has(session.id) && Boolean(session.time?.archived))
+      .map((session) => session.id),
+  )
+  const ids = expandedIds.filter((sessionId) => !alreadyArchivedDescendantIds.has(sessionId))
   if (ids.length === 0) {
-    return { archivedIds: [], failedIds: [] }
+    return { archivedIds: [], failedIds: [], failures: [] }
   }
 
   if (!useConfigStore.getState().isConnected) {
     try {
-      await waitForConnectionOrThrow()
-    } catch {
-      return { archivedIds: [], failedIds: ids }
+      await waitForConnectionOrThrow(sessionArchiveTiming.connectionGraceMs)
+    } catch (error) {
+      const failures = ids.map((sessionId) => createSessionMutationFailure(sessionId, error))
+      console.error("[session-actions] archiveSessions skipped: connection unavailable", error)
+      return { archivedIds: [], failedIds: ids, failures }
     }
   }
 
@@ -1474,13 +1583,19 @@ export async function archiveSessions(sessionIds: string[]): Promise<{ archivedI
     ui.setCurrentSession(null)
   }
 
-  const { successfulIds, failedIds } = await mutateSessionsInParallel(
+  const { successfulIds, failedIds, failures } = await mutateSessionsInParallel(
     ids,
     async (sessionId) => {
-      await sdk().session.update(
-        { sessionID: sessionId, directory: directoryById.get(sessionId), time: { archived: archivedAt } },
-        { throwOnError: true },
-      )
+      try {
+        await updateSessionArchivedTime(sessionId, directoryById.get(sessionId), archivedAt, "archive")
+      } catch (error) {
+        // A cascaded child the runtime no longer has is already out of the
+        // active list; the post-mutation global refresh reconciles it.
+        if (cascadeDescendantIds.has(sessionId) && readErrorStatus(error) === 404) {
+          return
+        }
+        throw error
+      }
     },
     "archiveSession",
   )
@@ -1500,7 +1615,7 @@ export async function archiveSessions(sessionIds: string[]): Promise<{ archivedI
     void queueGlobalSessionsRefreshAfterMutation()
   }
 
-  return makeBulkResult("archivedIds", successfulIds, failedIds)
+  return { archivedIds: successfulIds, failedIds, failures }
 }
 
 export async function unarchiveSession(sessionId: string): Promise<boolean> {
@@ -1508,12 +1623,12 @@ export async function unarchiveSession(sessionId: string): Promise<boolean> {
   return result.unarchivedIds.includes(sessionId)
 }
 
-export async function unarchiveSessions(sessionIds: string[]): Promise<{ unarchivedIds: string[]; failedIds: string[] }> {
+export async function unarchiveSessions(sessionIds: string[]): Promise<UnarchiveSessionsResult> {
   // Unarchive cascades for the same reason archive does: parent/child sessions
   // should return to the active sidebar as a coherent expandable hierarchy.
   const { ids, directoryById: knownDirectoryById } = expandSessionIdsWithDescendants(sessionIds)
   if (ids.length === 0) {
-    return { unarchivedIds: [], failedIds: [] }
+    return { unarchivedIds: [], failedIds: [], failures: [] }
   }
 
   const directoryById = new Map(ids.map((sessionId) => [sessionId, getSessionDirectoryForMutation(sessionId, knownDirectoryById)]))
@@ -1526,14 +1641,9 @@ export async function unarchiveSessions(sessionIds: string[]): Promise<{ unarchi
     snapshots: sessionSnapshots,
   })
   const optimisticDirectorySnapshots = optimisticallyUnarchiveDirectorySessions(ids, directoryById)
-  const { successfulIds, failedIds } = await mutateSessionsInParallel(
+  const { successfulIds, failedIds, failures } = await mutateSessionsInParallel(
     ids,
-    async (sessionId) => {
-      await sdk().session.update(
-        { sessionID: sessionId, directory: directoryById.get(sessionId), time: { archived: 0 } },
-        { throwOnError: true },
-      )
-    },
+    (sessionId) => updateSessionArchivedTime(sessionId, directoryById.get(sessionId), 0, "unarchive"),
     "unarchiveSession",
   )
 
@@ -1553,7 +1663,7 @@ export async function unarchiveSessions(sessionIds: string[]): Promise<{ unarchi
     void queueGlobalSessionsRefreshAfterMutation()
   }
 
-  return makeBulkResult("unarchivedIds", successfulIds, failedIds)
+  return { unarchivedIds: successfulIds, failedIds, failures }
 }
 
 export async function updateSessionTitle(sessionId: string, title: string): Promise<void> {
@@ -1863,6 +1973,7 @@ export async function abortCurrentOperationConfirmed(
   sessionId: string,
   statusHint?: SessionStatus,
   timeoutMs: number = ABORT_CONFIRM_TIMEOUT_MS,
+  source?: AbortSource,
 ): Promise<boolean> {
   if (!sessionId) return false
   const sessionDirectory = getSessionDirectory(sessionId)
@@ -1883,7 +1994,7 @@ export async function abortCurrentOperationConfirmed(
     const result = await Promise.race([
       sdk().session.abort(
         { sessionID: sessionId, directory: sessionDirectory },
-        { throwOnError: true },
+        { throwOnError: true, ...abortSourceHeaders(source) },
       ),
       watchdog,
     ])
@@ -1912,8 +2023,8 @@ export async function abortCurrentOperationConfirmed(
   }
 }
 
-export async function abortCurrentOperation(sessionId: string): Promise<void> {
-  await abortCurrentOperationConfirmed(sessionId)
+export async function abortCurrentOperation(sessionId: string, source?: AbortSource): Promise<void> {
+  await abortCurrentOperationConfirmed(sessionId, undefined, undefined, source)
 }
 
 /**
@@ -1988,7 +2099,10 @@ export async function interruptCurrentOperationForSteeredSend(
       }, timeoutMs)
     })
     await Promise.race([
-      sdk().session.abort({ sessionID: sessionId, directory: sessionDirectory }),
+      sdk().session.abort(
+        { sessionID: sessionId, directory: sessionDirectory },
+        abortSourceHeaders("steered_send"),
+      ),
       watchdog,
     ])
   } catch (error) {
@@ -2089,6 +2203,38 @@ function clearConfirmedQuestion(directory: string | undefined, sessionId: string
   })
 }
 
+/** The server refused a reply because the question's turn already stopped. */
+export class QuestionOrphanedError extends Error {
+  readonly sessionId: string
+  readonly requestId: string
+
+  constructor(sessionId: string, requestId: string) {
+    super("This question's turn already stopped")
+    this.name = "QuestionOrphanedError"
+    this.sessionId = sessionId
+    this.requestId = requestId
+  }
+}
+
+/**
+ * Removes a question whose turn already stopped. The upstream rejection is
+ * best-effort cleanup — the tool call it belonged to no longer exists — so the
+ * local card is cleared even when it fails.
+ */
+export async function discardOrphanedQuestion(sessionId: string, requestId: string): Promise<void> {
+  const { client, directory } = getQuestionReplyTarget(sessionId, requestId)
+  try {
+    await client.question.reject({
+      requestID: requestId,
+      ...(directory ? { directory } : {}),
+    })
+  } catch (error) {
+    console.warn(`[question] discarding orphaned ${sessionId}/${requestId} failed:`, error)
+  } finally {
+    clearConfirmedQuestion(directory, sessionId, requestId)
+  }
+}
+
 export async function respondToQuestion(
   sessionId: string,
   requestId: string,
@@ -2102,6 +2248,9 @@ export async function respondToQuestion(
       answers: answers as Array<Array<string>>,
       ...(directory ? { directory } : {}),
     })
+    if (isQuestionOrphanedError(result.error)) {
+      throw new QuestionOrphanedError(sessionId, requestId)
+    }
     if (!result.data) {
       throw new Error("Question reply failed")
     }
@@ -2252,7 +2401,7 @@ async function abortSessionTreeBeforeRevert(tree: RevertTree, fallbackDirectory:
     if (directory) knownDirectoryById.set(id, directory)
   }
 
-  await abortWorkingSessionsBeforeRemoval(working, knownDirectoryById)
+  await abortWorkingSessionsBeforeRemoval(working, knownDirectoryById, "revert")
   await waitForSessionTreeIdle(tree, fallbackDirectory)
 }
 
@@ -2746,7 +2895,10 @@ export async function unrevertSession(sessionId: string): Promise<void> {
   if (status && status.type !== "idle") {
     try {
       registerManualAbortGuard(sessionId, sessionDirectory, status)
-      await sdk().session.abort({ sessionID: sessionId, directory: sessionDirectory })
+      await sdk().session.abort(
+        { sessionID: sessionId, directory: sessionDirectory },
+        abortSourceHeaders("redo"),
+      )
     } catch {
       // ignore abort errors; the abort never reached the server, so stop
       // masking live status.

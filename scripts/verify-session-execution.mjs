@@ -47,6 +47,40 @@ native('native boundary denies absolute, symlink and hardlink writes while allow
   assert.equal(await fs.readFile(path.join(f.viewDirectory, 'owned'), 'utf8'), 'private');
 }, 20_000);
 
+native('ignored output folders are written through while dependencies, escapes and hardlinked host files stay read-only', async () => {
+  if (process.platform !== 'darwin') return;
+  const f = await fixture();
+  // The project lives beside the execution root: a grant may never overlap it.
+  const project = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-project-'))), outside = path.join(f.root, 'outside');
+  roots.push(project);
+  await fs.mkdir(path.join(project, '.artifacts', 'cache', 'deps'), { recursive: true });
+  await fs.mkdir(path.join(project, 'node_modules', 'pkg'), { recursive: true }); await fs.mkdir(outside);
+  await fs.writeFile(path.join(project, '.artifacts', 'cache', 'deps', 'old.js'), 'stale');
+  await fs.writeFile(path.join(project, 'node_modules', 'pkg', 'index.js'), 'dependency');
+  const hostFile = path.join(outside, 'host'); await fs.writeFile(hostFile, 'preserved');
+  await fs.symlink(outside, path.join(project, '.artifacts', 'escape'));
+  for (const input of ['.artifacts', 'node_modules']) await fs.symlink(path.join(project, input), path.join(f.viewDirectory, input));
+  const lease = { viewDirectory: f.viewDirectory, projectDirectory: project, inputs: ['.artifacts', 'node_modules'] };
+  let stderr = '';
+  const handle = await startSessionExecution({ launcher, lease, command: process.execPath, env: { PATH: process.env.PATH },
+    onOutput: ({ stream, data }) => { if (stream === 'stderr') stderr += data; },
+    args: ['-e', `const fs = require('node:fs');
+    fs.unlinkSync('.artifacts/cache/deps/old.js'); fs.writeFileSync('.artifacts/cache/deps/new.js', 'fresh');
+    fs.writeFileSync('.artifacts/run.log', 'log');
+    const denied = ['node_modules/pkg/index.js', 'node_modules/planted', '.artifacts/escape/planted'];
+    try { fs.linkSync(${JSON.stringify(hostFile)}, '.artifacts/hardlink'); denied.push('.artifacts/hardlink'); }
+    catch (error) { if (!['EPERM', 'EACCES', 'EROFS', 'EXDEV'].includes(error.code)) throw error; }
+    for (const file of denied) {
+      try { fs.writeFileSync(file, 'lost'); process.exit(2); } catch (error) { if (!['EPERM', 'EACCES', 'EROFS'].includes(error.code)) throw error; }
+    }`] });
+  assert.equal((await handle.result).exitCode, 0, stderr);
+  assert.deepEqual(await fs.readdir(path.join(project, '.artifacts', 'cache', 'deps')), ['new.js']);
+  assert.equal(await fs.readFile(path.join(project, '.artifacts', 'run.log'), 'utf8'), 'log');
+  assert.equal(await fs.readFile(path.join(project, 'node_modules', 'pkg', 'index.js'), 'utf8'), 'dependency');
+  assert.equal(await fs.readFile(hostFile, 'utf8'), 'preserved');
+  assert.deepEqual(await fs.readdir(outside), ['host']);
+}, 20_000);
+
 native('background descendants are stopped before the supervisor acknowledges termination', async () => {
   const f = await fixture();
   const code = `const fs = require('node:fs'); setInterval(() => fs.appendFileSync('background', 'x'), 2);`;
@@ -210,7 +244,10 @@ native('the provider transport streams through native confinement and cannot mut
       try { fs.writeFileSync('in-project', 'lost'); process.exit(3); }
       catch (error) { if (!['EPERM','EACCES','EROFS'].includes(error.code)) throw error; }
       if (process.platform === 'darwin' && fs.realpathSync(process.cwd()) !== ${JSON.stringify(await fs.realpath(f.viewDirectory))}) process.exit(4);
-      process.stdin.pipe(process.stdout);`], cwd: f.viewDirectory, env: { PATH: process.env.PATH, HOME: f.root } });
+      if (process.env.CLAUDE_CODE_OAUTH_TOKEN !== 'devryan-fixture-token') process.exit(5);
+      process.stdin.pipe(process.stdout);`], cwd: f.viewDirectory,
+      // A caller-supplied token keeps the worker off the real keychain login.
+      env: { PATH: process.env.PATH, HOME: f.root, CLAUDE_CODE_OAUTH_TOKEN: 'devryan-fixture-token' } });
     let output = '', stderr = ''; child.stdout.on('data', (chunk) => output += chunk); child.stderr.on('data', (chunk) => stderr += chunk);
     child.stdin.end('transport-ok');
     const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve); });

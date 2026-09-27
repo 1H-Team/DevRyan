@@ -162,3 +162,55 @@ test('ambiguous errors cannot rewrite a newer completed turn or cascade through 
   tracker.processEvent(error);
   expect(events.filter((event) => event.type === 'turn_failed').map((event) => event.userMessageID)).toEqual(['old']);
 });
+
+describe('operator aborts and runtime exits settled at idle', () => {
+  const terminal = (events) => events.filter((event) => ['turn_completed', 'turn_failed', 'turn_aborted'].includes(event.type))
+    .map((event) => [event.type, event.userMessageID, event.reason]);
+  const setup = () => {
+    const events = [];
+    const tracker = createLifecycleTracker({ clock: () => 1000, onTurnEvent: (event) => events.push(event) });
+    tracker.recordPromptAccepted({ sessionID: 's', messageID: 'u' });
+    return { events, tracker };
+  };
+
+  test('an abort during a retry wait settles as aborted, not completed', () => {
+    const { events, tracker } = setup();
+    expect(tracker.recordAbortRequested({ sessionID: 's' })).toBe(true);
+    tracker.processEvent({ type: 'session.status', properties: { sessionID: 's', status: { type: 'idle' } } });
+    // OpenCode may still publish the cancellation afterwards: no second terminal event.
+    tracker.processEvent({ type: 'session.error', properties: { sessionID: 's', error: { name: 'MessageAbortedError' } } });
+    expect(terminal(events)).toEqual([['turn_aborted', 'u', 'abort_requested']]);
+  });
+
+  test('an abort without an active turn is a no-op and a withdrawn abort completes normally', () => {
+    const idle = createLifecycleTracker();
+    expect(idle.recordAbortRequested({ sessionID: 'none' })).toBe(false);
+    const { events, tracker } = setup();
+    tracker.recordAbortRequested({ sessionID: 's' });
+    tracker.withdrawAbortRequest({ sessionID: 's' });
+    tracker.processEvent({ type: 'session.idle', properties: { sessionID: 's' } });
+    expect(terminal(events)).toEqual([['turn_completed', 'u', null]]);
+  });
+
+  test('a runtime exit settles as failed unless the user already asked to stop', () => {
+    const { events, tracker } = setup();
+    expect(tracker.recordRuntimeInterrupted({ sessionID: 's' })).toBe(true);
+    tracker.processEvent({ type: 'session.idle', properties: { sessionID: 's' } });
+    expect(terminal(events)).toEqual([['turn_failed', 'u', 'runtime_exit']]);
+
+    const stopped = setup();
+    stopped.tracker.recordAbortRequested({ sessionID: 's' });
+    expect(stopped.tracker.recordRuntimeInterrupted({ sessionID: 's' })).toBe(false);
+    stopped.tracker.processEvent({ type: 'session.idle', properties: { sessionID: 's' } });
+    expect(terminal(stopped.events)).toEqual([['turn_aborted', 'u', 'abort_requested']]);
+  });
+
+  test('a pending abort never carries over to the next turn', () => {
+    const { events, tracker } = setup();
+    tracker.recordAbortRequested({ sessionID: 's' });
+    tracker.processEvent({ type: 'session.error', properties: { sessionID: 's', error: { name: 'MessageAbortedError' } } });
+    tracker.recordPromptAccepted({ sessionID: 's', messageID: 'next' });
+    tracker.processEvent({ type: 'session.idle', properties: { sessionID: 's' } });
+    expect(terminal(events)).toEqual([['turn_aborted', 'u', 'session.error'], ['turn_completed', 'next', null]]);
+  });
+});

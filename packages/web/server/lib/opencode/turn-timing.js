@@ -965,6 +965,18 @@ function createTurnTimingRuntime(options = {}) {
       return lifecycleTracker.recordPromptAccepted(input);
     },
 
+    recordAbortRequested(input = {}) {
+      return lifecycleTracker.recordAbortRequested(input);
+    },
+
+    withdrawAbortRequest(input = {}) {
+      return lifecycleTracker.withdrawAbortRequest(input);
+    },
+
+    recordRuntimeInterrupted(input = {}) {
+      return lifecycleTracker.recordRuntimeInterrupted(input);
+    },
+
     subscribeLifecycle(listener) {
       return lifecycleTracker.subscribe(listener);
     },

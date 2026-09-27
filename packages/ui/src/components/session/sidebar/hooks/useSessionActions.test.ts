@@ -31,7 +31,13 @@ describe('session archive expansion lifecycle', () => {
 
     expect(source).toContain('onArchiveSucceeded?: (ids: string[]) => void;');
     expect(source).toContain('args.onArchiveSucceeded?.([session.id]);');
-    expect(source).toContain('const { archivedIds, failedIds } = await args.archiveSessions(ids);');
+    expect(source).toContain('const { archivedIds, failedIds, failures } = await args.archiveSessions(ids);');
     expect(source).toContain('args.onArchiveSucceeded?.(archivedIds);');
+  });
+
+  test('surfaces the archive failure reason instead of only a count', () => {
+    const source = readFileSync(join(testDir, 'useSessionActions.ts'), 'utf8');
+
+    expect(source).toContain('description: resolveSessionDeleteFailureDescription(\n            failures,');
   });
 });

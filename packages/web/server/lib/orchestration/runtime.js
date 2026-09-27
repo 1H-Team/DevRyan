@@ -2,6 +2,7 @@ import { createCompactResultHeader } from '@openchamber/orchestration-runtime';
 import { createRequiredCheckObserver } from './required-check-observer.js';
 import {
   createManagedAssistantActivityRegistry,
+  createManagedOperatorAbortRegistry,
   createManagedTerminalErrorRegistry,
   createManagedTaskScheduler,
   formatManagedAssignmentContext,
@@ -287,6 +288,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     logger,
   });
   const terminalErrors = options.terminalErrors ?? createManagedTerminalErrorRegistry({ now });
+  const operatorAborts = options.operatorAborts ?? createManagedOperatorAbortRegistry({ now });
   const assistantActivity = createManagedAssistantActivityRegistry({ now });
   const validateAgentExecution = typeof options.validateAgentExecution === 'function'
     ? options.validateAgentExecution
@@ -371,6 +373,8 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     registerExecutionChild: options.registerExecutionChild,
     fetchImpl: options.fetchImpl,
     readTerminalError: (input) => terminalErrors.read(input),
+    readOperatorAbort: (input) => operatorAborts.read(input),
+    readRuntimeStartedAt: options.readRuntimeStartedAt,
     subscribeAssistantActivity: assistantActivity.subscribe,
     onFirstAssistantActivity: options.onFirstAssistantActivity,
     now,
@@ -692,7 +696,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         const directory = typeof params.directory === 'string' ? params.directory.trim() : '';
         if (!childSessionId || !directory) throw createRuntimeError('task_scope_mismatch', 'childSessionId and directory are required', 403);
         const task = scheduler.getChildAssignment?.(childSessionId, directory) ?? null;
-        return { text: task ? formatManagedAssignmentContext(task) : null };
+        return { text: task ? formatManagedAssignmentContext(task, { maxBytes: params.maxBytes }) : null };
       }
       case 'required_check': {
         if (!harnessPolicies.compactResults) return { tracked: false };
@@ -1065,6 +1069,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         : { status: 'fulfilled' };
       ownershipAcquired = false;
       terminalErrors.clear();
+      operatorAborts.clear();
       assistantActivity.clear();
       const errors = [hostResult, schedulerResult, ownershipResult]
         .filter((result) => result.status === 'rejected')
@@ -1085,6 +1090,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     processOpenCodeEvent: (payload, directory = null) => {
       assistantActivity.observe(payload, directory);
       const observed = terminalErrors.observe(payload);
+      operatorAborts.observe(payload);
       // A deleted root session can never receive its follow-up, so its parked
       // auto-resume plans stop here instead of firing into a missing session.
       if (payload?.type === 'session.deleted') {
@@ -1105,6 +1111,10 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       }
       return observed;
     },
+    // A user Stop of a managed child: its executor must settle the task as
+    // aborted instead of continuing or recovering it automatically.
+    recordOperatorAbort: (input) => operatorAborts.record(input),
+    withdrawOperatorAbort: (input) => operatorAborts.withdraw(input),
     shutdown,
     flush: () => scheduler.flush(),
     getDiagnostics() {

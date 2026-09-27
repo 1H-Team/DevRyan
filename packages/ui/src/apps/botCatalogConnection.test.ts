@@ -10,9 +10,11 @@ const harness = () => {
   let calls = 0;
   let cancelled = 0;
   let needsRetry = true;
+  let available = true;
   let nextId = 0;
   const controller = createBotCatalogConnection({
     load: () => { calls += 1; return new Promise<void>((resolve) => completions.push(resolve)); },
+    canLoad: () => available,
     cancel: () => { cancelled += 1; },
     shouldRetry: () => needsRetry,
     setTimeoutImpl: ((callback: () => void, delay: number) => {
@@ -29,6 +31,7 @@ const harness = () => {
     cancelled: () => cancelled,
     settle: async () => { completions.shift()?.(); await flush(); },
     ready: () => { needsRetry = false; },
+    available: (value: boolean) => { available = value; },
     tick: () => {
       const entry = timers.entries().next().value;
       if (entry) { timers.delete(entry[0]); entry[1](); }
@@ -37,6 +40,33 @@ const harness = () => {
 };
 
 describe('assigned catalog connection', () => {
+  test('unavailable catalogs skip bootstrap and manual reads until availability recovers', async () => {
+    const h = harness();
+    h.available(false);
+    h.controller.retry();
+    h.controller.retry();
+    expect(h.calls()).toBe(0);
+    expect(h.timers.size).toBe(0);
+    h.available(true);
+    h.controller.retry();
+    expect(h.calls()).toBe(1);
+    h.available(false);
+    await h.settle();
+    expect(h.timers.size).toBe(0);
+    h.controller.dispose();
+  });
+
+  test('a scheduled retry does not read a newly unavailable catalog', async () => {
+    const h = harness();
+    h.controller.retry();
+    await h.settle();
+    h.available(false);
+    h.tick();
+    expect(h.calls()).toBe(1);
+    expect(h.timers.size).toBe(0);
+    h.controller.dispose();
+  });
+
   test('retries bootstrap failures with capped backoff and stops after HTTP or SSE success', async () => {
     const h = harness();
     h.controller.retry();

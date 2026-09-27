@@ -197,6 +197,11 @@ export interface LifecycleTracker {
     messageId?: string;
     directory?: string;
   }): unknown;
+  /** Settles the active turn as `aborted` (reason `abort_requested`) at its idle. */
+  recordAbortRequested(input: { sessionID?: string; sessionId?: string }): boolean;
+  withdrawAbortRequest(input: { sessionID?: string; sessionId?: string }): void;
+  /** Settles the active turn as `failed` (reason `runtime_exit`) at its idle. */
+  recordRuntimeInterrupted(input: { sessionID?: string; sessionId?: string }): boolean;
   subscribe(listener: (event: TurnLifecycleEvent) => void): () => void;
   getActiveTurn(sessionID: string): Record<string, unknown> | null;
 }
@@ -980,8 +985,8 @@ export function createTaskContextRuntime(options: {
   readTaskState(scope: TaskContextScope): Promise<TaskContextState>;
   readMessage(input: TaskContextRequest & { messageID: string }): Promise<TaskContextMessage>;
   fingerprintFiles(directory: string, paths: string[]): Promise<string | null>;
-  /** The delegated brief of a managed child session, for its compaction summary. */
-  readChildAssignment?(input: TaskContextRequest): Promise<string | null>;
+  /** The delegated brief for compaction; maxBytes bounds the complete UTF-8 text including rules and encoded JSON. */
+  readChildAssignment?(input: TaskContextRequest & { maxBytes: number }): Promise<string | null>;
   /** The approved plan file and a bounded heading/list outline. */
   readPlanOutline?(input: { plan: NonNullable<TaskCheckpoint['selectedPlan']>; context: TaskContextScope }): Promise<{ path: string; outline: string | null } | null>;
 }): {

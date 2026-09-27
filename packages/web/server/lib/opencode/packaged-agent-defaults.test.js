@@ -7,7 +7,7 @@ import yaml from 'yaml';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 36_596;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 37_927;
 const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
   __dirname,
   '../../default-config/user-profile/oh-my-opencode-slim.json',
@@ -93,7 +93,7 @@ describe('packaged agent defaults', () => {
     const lineCount = content.trimEnd().split('\n').length;
 
     expect(lineCount).toBeLessThanOrEqual(260);
-    expect(content).toContain('Direct work is the default for small coherent tasks.');
+    expect(content).toContain('Direct implementation is the default for small coherent tasks once discovery grounds the location.');
     expect(content).toContain('Designer owns the delegated implementation, related tests, and visible validation.');
     expect(content).toContain('Context:');
     expect(content).toContain('Starting points:');
@@ -448,10 +448,13 @@ describe('packaged agent defaults', () => {
     expect(content).not.toContain('likely edit points');
   });
 
-  it('keeps unknown filenames direct in normal and plan modes', () => {
+  it('starts new tasks with Explorer discovery in normal and plan modes', () => {
     const content = fs.readFileSync(path.join(AGENTS_DIR, 'orchestrator.md'), 'utf8');
-    expect(content).toContain('An unknown filename alone never requires Explorer.');
-    expect(content).toContain('Use the same direct-first discovery policy in plan mode');
+    expect(content).toContain('For every new user task, in normal and plan mode, start `explorer` with the user\'s goal before any direct `grep`, `glob`, or `read`');
+    expect(content).toContain('Apply Explorer-first discovery in plan mode too');
+    expect(content).toContain('Goal: <the user\'s objective in one sentence>');
+    expect(content).not.toContain('An unknown filename alone never requires Explorer.');
+    expect(content).not.toContain('direct-first discovery policy');
     expect(content).toContain('Explicit user requests for a specialist take precedence.');
     expect(content).toContain('if a required specialist remains unavailable after managed recovery, report the blocker');
     expect(content).not.toContain('Unknown codebase location: call');

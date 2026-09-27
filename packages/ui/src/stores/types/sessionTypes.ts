@@ -2,7 +2,7 @@ import type { Session, Message, Part } from "@opencode-ai/sdk/v2";
 import type { PermissionRequest, PermissionResponse } from "@/types/permission";
 import type { QuestionRequest } from "@/types/question";
 import type { ContextCapacityBasis, ResolvedModelContextCapacity } from "@/stores/utils/modelContextCapacity";
-import type { DeleteSessionsResult } from "@/sync/session-actions";
+import type { ArchiveSessionsResult, DeleteSessionsResult, UnarchiveSessionsResult } from "@/sync/session-actions";
 
 export type SessionWorktreeAttachment = {
   worktreeRoot: string | null;
@@ -335,9 +335,9 @@ export interface SessionStore {
     deleteSession: (id: string, options?: { archiveWorktree?: boolean; deleteRemoteBranch?: boolean; deleteLocalBranch?: boolean; remoteName?: string }) => Promise<boolean>;
     deleteSessions: (ids: string[], options?: { archiveWorktree?: boolean; deleteRemoteBranch?: boolean; deleteLocalBranch?: boolean; remoteName?: string; silent?: boolean }) => Promise<DeleteSessionsResult>;
     archiveSession: (id: string) => Promise<boolean>;
-    archiveSessions: (ids: string[], options?: { silent?: boolean }) => Promise<{ archivedIds: string[]; failedIds: string[] }>;
+    archiveSessions: (ids: string[], options?: { silent?: boolean }) => Promise<ArchiveSessionsResult>;
     unarchiveSession: (id: string) => Promise<boolean>;
-    unarchiveSessions: (ids: string[], options?: { silent?: boolean }) => Promise<{ unarchivedIds: string[]; failedIds: string[] }>;
+    unarchiveSessions: (ids: string[], options?: { silent?: boolean }) => Promise<UnarchiveSessionsResult>;
     updateSessionTitle: (id: string, title: string) => Promise<void>;
     shareSession: (id: string) => Promise<Session | null>;
     unshareSession: (id: string) => Promise<Session | null>;

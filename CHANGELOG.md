@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.17] - 2026-09-27
+
+- Managed child Stop and handoff now retain recoverable output through transient status or transcript failures, fence cancelled attempts before submission, and avoid aborting a newer user turn after an authentication failure.
+- Agent Runtime settings report the desired and applied language-server state separately, preserve pending saves across reloads, and only clear restart notices after managed runtime readiness confirms the setting.
+- Bot and agent catalog views recover from connection changes without losing loaded entries. Provider catalog refreshes have bounded, shared reads and reject late results after shutdown.
+- Compaction anchors preserve incomplete task scope, and the updated Electron and QA fixtures exercise runtime settings, managed cancellation, and ledger preparation with clearer evidence boundaries.
+- Stopping a session now records where the abort came from, settles stopped turns and managed children without automatic continuation, and keeps pending questions available after a turn ends.
+- Managed OpenCode crashes now leave diagnostic evidence and reconcile sessions that the restarted runtime reports idle. Session archive and unarchive operations retry temporary restart failures.
+- Provider sign-in failures surface promptly. Confined Claude workers receive the current access token while refresh credentials stay with the host.
+- Confined execution keeps a session-scoped temporary directory and allows ignored output folders to write through on macOS while preserving read-only dependency inputs.
+- Orchestrator starts unfamiliar task discovery with Explorer, with direct handling for scoped work and follow-ups.
+
 ## [1.2.16] - 2026-09-27
 
 - Settings now groups usage with each provider, with a separate usage view for accounts that cannot manage providers. MCP, plugin, skill, and provider settings share clearer navigation and empty states.

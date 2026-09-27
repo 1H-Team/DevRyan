@@ -129,3 +129,57 @@ describe('managed scheduler cancellation', () => {
     expect(scheduler.listResultEnvelopes()).toHaveLength(1);
   });
 });
+
+for (const completion of ['resolve', 'reject']) {
+  test(`cancellation owns settlement when execution ${completion}s during abort and harvesting`, async () => {
+    const abortStarted = deferred(), abortGate = deferred(), harvestStarted = deferred(), harvestGate = deferred();
+    let resolveRun, rejectRun;
+    const run = new Promise((resolve, reject) => { resolveRun = resolve; rejectRun = reject; });
+    const scheduler = createManagedTaskScheduler({
+      executor: {
+        async start(_task, control) { await control.setChildSessionId('ses_child'); await control.markAccepted(); return await run; },
+        async abort() { abortStarted.resolve(); return await abortGate.promise; },
+        async reconcile() { return { state: 'unavailable' }; },
+        async readRecoverableResult() { harvestStarted.resolve(); return await harvestGate.promise; },
+      },
+    });
+    try {
+      const current = await scheduler.submit(input(20));
+      const cancellation = scheduler.cancelTask(current.taskId, { reason: 'Manual stop' });
+      await abortStarted.promise;
+      if (completion === 'resolve') resolveRun({ status: 'completed', recoverablePreview: 'Late ordinary result' });
+      else rejectRun(new Error('Local cancellation rejection'));
+      await scheduler.flush();
+      expect(scheduler.getResultEnvelope(current.taskId)).toBeNull();
+      abortGate.resolve({ aborted: true });
+      await harvestStarted.promise;
+      await scheduler.flush();
+      expect(scheduler.getResultEnvelope(current.taskId)).toBeNull();
+      harvestGate.resolve({ partial: true, recoverablePreview: 'Fresh harvested output' });
+      await expect(cancellation).resolves.toMatchObject({ status: 'aborted', failureReason: 'Manual stop', recoverablePreview: 'Fresh harvested output' });
+      expect(scheduler.listResultEnvelopes()).toHaveLength(1);
+    } finally { await scheduler.shutdown(); }
+  });
+}
+
+for (const freshFails of [false, true]) {
+  test(`snapshots last-good output before abort and uses it only when fresh harvesting ${freshFails ? 'fails' : 'succeeds'}`, async () => {
+    const events = [];
+    const snapshot = { partial: true, recoverablePreview: 'Before abort', canonicalRefs: [{ type: 'message', id: 'msg_cached' }], resumable: true };
+    let cached = snapshot;
+    const scheduler = createManagedTaskScheduler({ executor: {
+      async start(_task, control) { await control.setChildSessionId('ses_child'); await control.markAccepted(); return await new Promise(() => {}); },
+      getLastRecoverableResult() { events.push('snapshot'); return cached; },
+      async abort() { events.push('abort'); cached = null; return { aborted: true }; },
+      async reconcile() { return { state: 'unavailable' }; },
+      async readRecoverableResult() { events.push('harvest'); if (freshFails) throw new Error('transcript unavailable'); return { recoverablePreview: 'Fresh' }; },
+    }, logger: { warn() {} } });
+    try {
+      const current = await scheduler.submit(input(21));
+      const result = await scheduler.cancelTask(current.taskId);
+      expect(events).toEqual(['snapshot', 'abort', 'harvest']);
+      expect(result.recoverablePreview).toBe(freshFails ? 'Before abort' : 'Fresh');
+      if (freshFails) expect(result.canonicalRefs).toEqual(snapshot.canonicalRefs);
+    } finally { await scheduler.shutdown(); }
+  });
+}

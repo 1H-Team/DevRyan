@@ -419,6 +419,44 @@ describe('managed OpenCode executor', () => {
     expect(calls.filter(([name]) => name === 'abort')).toHaveLength(1);
   });
 
+  test.each([
+    "Claude OAuth token has expired and could not be refreshed automatically. Run 'claude login' in your terminal to re-authenticate.",
+    '{"type":"error","error":{"type":"authentication_error","message":"Claude authentication expired or invalid."}}',
+  ])('parks a sign-in failure without aborting an unidentified turn: %s', async (message) => {
+    const calls = [];
+    const statuses = [
+      { type: 'retry', message, attempt: 1, next: 2_000 },
+      { type: 'idle' },
+    ];
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession() { throw new Error('must not prompt'); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return statuses.shift() ?? { type: 'idle' }; },
+      async readMessages() {
+        return [assistant({ info: { finish: 'tool-calls' }, parts: [{ type: 'text', text: 'Useful partial analysis' }] })];
+      },
+      async abortSession(input) { calls.push(['abort', input]); return true; },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined, retryStopPollLimit: 4 });
+    const running = task({ childSessionId: 'ses_child', status: 'running' });
+
+    const result = await executor.observe(running, {});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(result).toEqual({
+      status: 'failed',
+      failureReason: message,
+      partial: true,
+      recoverablePreview: 'Useful partial analysis',
+      canonicalRefs: [{ type: 'message', id: 'msg_assistant' }],
+      resumable: true,
+    });
+    expect(running.transportRecovery).toBeFalsy();
+    expect(calls.filter(([name]) => name === 'abort')).toHaveLength(0);
+  });
+
   test('settles the exact Zen free-tier retry without waiting for its multi-hour next attempt', async () => {
     const calls = [];
     const resetAt = Date.now() + (4 * 60 * 60 * 1_000);
@@ -997,6 +1035,7 @@ describe('managed OpenCode executor', () => {
       agent: 'explorer',
       variant: 'fast',
       prompt: appendManagedAssignment(task(), MANAGED_RESUME_CONTINUATION_PROMPT),
+      signal: expect.any(AbortSignal),
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
@@ -1780,6 +1819,144 @@ describe('managed OpenCode executor', () => {
     expect(abortCount).toBe(0);
   });
 
+  describe('operator Stop on a managed child', () => {
+    // The incident: a Stop during OpenCode's provider-retry wait leaves an
+    // assistant with no finish and no error, then idle.
+    const user = { info: { id: 'msg_user', role: 'user', time: { created: 1_500 } }, parts: [{ type: 'text', text: 'Do the work' }] };
+    const stopped = assistant({ info: { id: 'msg_stopped', finish: undefined, parentID: 'msg_user' }, parts: [] });
+    const fixture = ({ statuses = [], messages = () => [user, stopped], operatorAbort = null, terminalError = null } = {}) => {
+      const calls = { prompts: [], aborts: 0 };
+      const transport = {
+        async createSession() { throw new Error('must not create'); },
+        async promptSession(input) { calls.prompts.push(input); },
+        async readSession() { return { id: 'ses_child' }; },
+        async readStatus() { return statuses.shift() ?? { type: 'idle' }; },
+        async readMessages() { return messages(); },
+        async abortSession() { calls.aborts += 1; return true; },
+        deleteSession,
+        ...(operatorAbort ? { readOperatorAbort: async ({ after }) => (operatorAbort.requestedAt >= after ? operatorAbort : null) } : {}),
+        ...(terminalError ? { readTerminalError: async () => terminalError } : {}),
+      };
+      const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined, resumeTeardownSettleMs: 0 });
+      return { calls, executor };
+    };
+
+    test('without a Stop, the empty idle turn is continued automatically (baseline)', async () => {
+      const seen = {};
+      const continuation = { info: { id: 'msg_continue', role: 'user', time: { created: 3_000 } }, parts: [{ type: 'text', text: MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT }] };
+      const { calls, executor } = fixture({ messages: () => (seen.calls?.prompts.length
+        ? [user, stopped, continuation, assistant({ info: { id: 'msg_done', parentID: 'msg_continue' } })]
+        : [user, stopped]) });
+      seen.calls = calls;
+      const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {});
+      expect(result).toMatchObject({ status: 'completed' });
+      expect(calls.prompts).toHaveLength(1);
+      expect(calls.prompts[0].prompt).toContain(MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT);
+    });
+
+    test('a Stop settles the child as aborted and never sends a continuation', async () => {
+      const { calls, executor } = fixture({ operatorAbort: { sessionId: 'ses_child', requestedAt: 2_500 } });
+      const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {});
+      expect(result).toMatchObject({ status: 'aborted', failureReason: 'Stopped by the user', resumable: true });
+      expect(calls.prompts).toHaveLength(0);
+    });
+
+    test('a cancellation error after a Stop is an abort, not a failure', async () => {
+      const { calls, executor } = fixture({
+        operatorAbort: { sessionId: 'ses_child', requestedAt: 2_500 },
+        terminalError: { sessionId: 'ses_child', observedAt: 2_600, eventId: 'evt_abort', errorName: 'MessageAbortedError', message: 'Aborted', code: null, statusCode: null, retryable: null },
+      });
+      const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {});
+      expect(result).toMatchObject({ status: 'aborted', failureReason: 'Stopped by the user' });
+      expect(calls.prompts).toHaveLength(0);
+    });
+
+    test('a Stop from an earlier attempt does not affect this one', async () => {
+      const { calls, executor } = fixture({ operatorAbort: { sessionId: 'ses_child', requestedAt: 900 },
+        messages: () => [user, assistant({ info: { id: 'msg_done', parentID: 'msg_user' } })] });
+      const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {});
+      expect(result).toMatchObject({ status: 'completed' });
+      expect(calls.prompts).toHaveLength(0);
+    });
+
+    test('input sent after the Stop continues the child normally', async () => {
+      const steered = { info: { id: 'msg_steer', role: 'user', time: { created: 3_000 } }, parts: [{ type: 'text', text: 'Use the other file' }] };
+      const { executor } = fixture({ operatorAbort: { sessionId: 'ses_child', requestedAt: 2_500 },
+        messages: () => [user, stopped, steered, assistant({ info: { id: 'msg_done', parentID: 'msg_steer' } })] });
+      const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {});
+      expect(result).toMatchObject({ status: 'completed', recoverablePreview: 'Finished analysis' });
+    });
+
+    test('useful output that completed despite the Stop is kept', async () => {
+      const { executor } = fixture({ operatorAbort: { sessionId: 'ses_child', requestedAt: 2_500 },
+        messages: () => [user, assistant({ info: { id: 'msg_done', parentID: 'msg_user' } })] });
+      const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {});
+      expect(result).toMatchObject({ status: 'completed' });
+    });
+
+    test('a child still retrying after the Stop is stopped without any automatic prompt', async () => {
+      const { calls, executor } = fixture({
+        operatorAbort: { sessionId: 'ses_child', requestedAt: 2_500 },
+        statuses: [{ type: 'retry', attempt: 2, message: 'Overloaded', next: 4_000 }, { type: 'retry', attempt: 2, message: 'Overloaded', next: 4_000 }],
+      });
+      const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {});
+      expect(result).toMatchObject({ status: 'aborted', failureReason: 'Stopped by the user' });
+      expect(calls.aborts).toBeGreaterThanOrEqual(1);
+      expect(calls.prompts).toHaveLength(0);
+    });
+  });
+
+  describe('managed child orphaned by an OpenCode restart', () => {
+    const user = { info: { id: 'msg_user', role: 'user', time: { created: 1_500 } }, parts: [{ type: 'text', text: 'Do the work' }] };
+    // The incident: an apply_patch tool part still "running" after the process died.
+    const running = assistant({ info: { id: 'msg_running', finish: undefined, parentID: 'msg_user', time: {} },
+      parts: [{ type: 'tool', tool: 'apply_patch', callID: 'call_patch', state: { status: 'running', input: {} } }] });
+    const fixture = ({ messages, runtimeStartedAt, statuses = [] }) => {
+      const calls = { prompts: 0, statusReads: 0 };
+      const transport = {
+        async createSession() { throw new Error('must not create'); },
+        async promptSession() { calls.prompts += 1; },
+        async readSession() { return { id: 'ses_child' }; },
+        async readStatus() { calls.statusReads += 1; return statuses.shift() ?? { type: 'idle' }; },
+        async readMessages() { return messages(); },
+        async abortSession() { return true; },
+        deleteSession,
+        ...(runtimeStartedAt === undefined ? {} : { readRuntimeStartedAt: () => runtimeStartedAt }),
+      };
+      return { calls, executor: createManagedOpenCodeExecutor({ transport, sleep: async () => undefined }) };
+    };
+
+    test('settles as interrupted and resumable instead of polling to the deadline', async () => {
+      const { calls, executor } = fixture({ messages: () => [user, running], runtimeStartedAt: 5_000 });
+      const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {});
+      expect(result).toMatchObject({
+        status: 'interrupted',
+        failureReason: 'Managed child was interrupted: the OpenCode runtime restarted while it was running',
+        resumable: true,
+      });
+      expect(calls.prompts).toBe(0);
+    });
+
+    test('input sent to the restarted runtime is not an orphan', async () => {
+      let reads = 0;
+      const later = { info: { id: 'msg_later', role: 'user', time: { created: 6_000 } }, parts: [{ type: 'text', text: 'Continue' }] };
+      const { executor } = fixture({ runtimeStartedAt: 5_000, messages: () => (++reads < 4
+        ? [user, later]
+        : [user, later, assistant({ info: { id: 'msg_done', parentID: 'msg_later' } })]) });
+      const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {});
+      expect(result).toMatchObject({ status: 'completed' });
+    });
+
+    test('without a known runtime start the child keeps today\'s behaviour', async () => {
+      let reads = 0;
+      const { executor } = fixture({ runtimeStartedAt: null, messages: () => (++reads < 4
+        ? [user, running]
+        : [user, assistant({ info: { id: 'msg_done', parentID: 'msg_user' } })]) });
+      const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {});
+      expect(result).toMatchObject({ status: 'completed' });
+    });
+  });
+
   test('never collects a child on its compaction summary; it continues with the assignment instead', async () => {
     const prompts = [];
     const statuses = [{ type: 'idle' }, { type: 'busy' }, { type: 'idle' }];
@@ -1882,6 +2059,7 @@ describe('managed OpenCode executor', () => {
       agent: 'explorer',
       variant: 'fast',
       prompt: appendManagedAssignment(task(), MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT),
+      signal: expect.any(AbortSignal),
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
@@ -3253,4 +3431,565 @@ describe('managed task turn budget', () => {
     expect(() => createManagedOpenCodeExecutor({ transport, maxAssistantTurns: 1.5 })).toThrow(RangeError);
     expect(() => createManagedOpenCodeExecutor({ transport, maxAssistantTurns: null })).not.toThrow();
   });
+});
+
+describe('attempt-scoped prompt cancellation gates', () => {
+  for (const channel of ['operator', 'task']) {
+    for (const path of ['initial', 'resume', 'retry', 'recovery', 'empty', 'budget', 'stale']) {
+      test(`${channel} Stop during ${path} preparation prevents its pending prompt`, async () => {
+        let clock = 3_000, stopped = false, idle = path !== 'budget', reads = 0;
+        const prompts = [];
+        const current = task({ childSessionId: path === 'initial' || path === 'budget' ? null : 'ses_child' });
+        let executor;
+        const stop = async () => {
+          if (stopped) return;
+          stopped = true;
+          if (channel === 'task') await executor.abort({ ...current, childSessionId: 'ses_child' });
+        };
+        const user = { info: { id: 'msg_user', role: 'user', time: { created: 2_000 } }, parts: [{ type: 'text', text: 'Original task' }] };
+        const tail = assistant({ info: { id: 'msg_tail', parentID: 'msg_user', finish: path === 'empty' || path === 'budget' ? undefined : path === 'recovery' ? 'error' : 'abort',
+          ...(path === 'budget' ? { time: {} } : {}),
+          ...(path === 'recovery' ? { error: { message: 'The operation timed out.' } } : {}) },
+          parts: path === 'empty' ? [] : [{ type: 'text', text: 'Partial work' }] });
+        executor = createManagedOpenCodeExecutor({
+          now: () => clock, pollIntervalMs: 0, continuationStartGraceMs: 0, resumeTeardownSettleMs: 0,
+          maxAssistantTurns: path === 'budget' ? 1 : null,
+          sleep: async () => { clock += 100; if (reads > 30) throw new Error('Cancellation fixture did not settle'); },
+          transport: {
+            async createSession() { return { id: 'ses_child' }; },
+            async promptSession(input) { prompts.push(input); },
+            async readSession() { return { id: 'ses_child' }; },
+            async readStatus() { return { type: idle ? 'idle' : 'busy' }; },
+            async readMessages() {
+              reads += 1;
+              if (['resume', 'retry', 'empty', 'budget'].includes(path) || (path === 'stale' && prompts.length === 1)) await stop();
+              return [user, tail];
+            },
+            async readOperatorAbort({ after }) { return channel === 'operator' && stopped && 3_000 >= after ? { sessionId: 'ses_child', requestedAt: 3_000 } : null; },
+            async abortSession() { idle = true; return true; },
+            deleteSession,
+          },
+        });
+        const control = {
+          ...recoveryControl(),
+          async setChildSessionId() { if (path === 'initial') await stop(); return true; },
+          async recordTransportRecovery() { if (path === 'recovery') await stop(); return true; },
+        };
+        try {
+          const method = path === 'initial' || path === 'budget' ? 'start' : path === 'resume' || path === 'stale' ? 'resume' : path === 'retry' ? 'retryInPlace' : 'observe';
+          const result = await executor[method](current, control);
+          expect(stopped).toBe(true);
+          // A fenced durable recovery keeps its interrupted receipt contract;
+          // the scheduler separately commits an explicit task cancellation.
+          expect(result.status).toBe(channel === 'task' && path === 'recovery' ? 'interrupted' : 'aborted');
+          expect(prompts).toHaveLength(path === 'budget' || path === 'stale' ? 1 : 0);
+          for (const prompt of prompts) expect(prompt.signal).toBeInstanceOf(AbortSignal);
+        } finally { await executor.shutdown(); }
+      });
+    }
+  }
+
+  for (const path of ['empty', 'recovery', 'stale']) {
+    test(`Stop followed by steering discards pending ${path} continuation and observes the new assistant`, async () => {
+      let clock = 3_000, reads = 0, stopped = false, steeredReads = 0;
+      const prompts = [];
+      const user = { info: { id: 'msg_user', role: 'user', time: { created: 2_000 } }, parts: [{ type: 'text', text: 'Original' }] };
+      const steering = { info: { id: 'msg_steer', role: 'user', time: { created: 3_100 } }, parts: [{ type: 'text', text: 'New user steering' }] };
+      const laterSteering = { info: { id: 'msg_steer_later', role: 'user', time: { created: 3_200 } }, parts: [{ type: 'text', text: 'Additional user steering' }] };
+      const tail = assistant({ info: { id: 'msg_tail', parentID: 'msg_user', finish: path === 'empty' ? undefined : path === 'stale' ? 'abort' : 'error',
+        ...(path === 'recovery' ? { error: { message: 'The operation timed out.' } } : {}) }, parts: [] });
+      const done = assistant({ info: { id: 'msg_steered', parentID: 'msg_steer_later' }, parts: [{ type: 'text', text: 'Steered output' }] });
+      const executor = createManagedOpenCodeExecutor({ now: () => clock, pollIntervalMs: 0,
+        liveTranscriptRefreshMs: 0, continuationStartGraceMs: 0,
+        sleep: async () => { clock += 100; if (reads > 30) throw new Error('Steering did not settle'); },
+        transport: {
+          async createSession() { throw new Error('unexpected create'); },
+          async promptSession(input) { prompts.push(input); },
+          async readSession() { return { id: 'ses_child' }; },
+          async readStatus() { return { type: stopped && steeredReads < 5 ? 'busy' : 'idle' }; },
+          async readMessages() {
+            reads += 1;
+            if (path === 'empty' || (path === 'stale' && prompts.length === 1)) stopped = true;
+            if (!stopped) return [user, tail];
+            steeredReads += 1;
+            return [user, tail, steering, ...(steeredReads >= 4 ? [laterSteering] : []), ...(steeredReads >= 5 ? [done] : [])];
+          },
+          async readOperatorAbort() { return stopped ? { sessionId: 'ses_child', requestedAt: 3_000 } : null; },
+          async abortSession() { return true; }, deleteSession,
+        },
+      });
+      const control = { ...recoveryControl(), async recordTransportRecovery() { if (path === 'recovery') stopped = true; return true; } };
+      try {
+        const result = await executor[path === 'stale' ? 'resume' : 'observe'](task({ childSessionId: 'ses_child' }), control);
+        expect(result).toMatchObject({ status: 'completed', recoverablePreview: 'Steered output' });
+        expect(prompts).toHaveLength(path === 'stale' ? 1 : 0);
+        expect(steeredReads).toBeGreaterThanOrEqual(5);
+      } finally { await executor.shutdown(); }
+    });
+  }
+
+  test('a rejected Stop withdrawn during the gate observation does not suppress submission', async () => {
+    let request = { sessionId: 'ses_child', requestedAt: 3_000 }, prompts = 0;
+    const executor = createManagedOpenCodeExecutor({ sleep: async () => {}, transport: {
+      async createSession() { return { id: 'ses_child' }; },
+      async promptSession() { prompts += 1; },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return { type: 'idle' }; },
+      async readMessages() { request = null; return [assistant()]; },
+      async readOperatorAbort() { return request; },
+      async abortSession() { return true; }, deleteSession,
+    } });
+    try {
+      await expect(executor.start(task(), { async setChildSessionId() { return true; }, async markAccepted() { return true; } })).resolves.toMatchObject({ status: 'completed' });
+      expect(prompts).toBe(1);
+    } finally { await executor.shutdown(); }
+  });
+});
+
+const cancellationDeferred = () => {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+};
+
+test('a cancelled POST keeps unconfirmed remote work observed, without transcript polling or further prompts', async () => {
+  const submitted = cancellationDeferred(), polling = cancellationDeferred(), releasePoll = cancellationDeferred();
+  let aborts = 0, messages = 0, prompts = 0, settled = false;
+  const current = task({ childSessionId: 'ses_child' });
+  const executor = createManagedOpenCodeExecutor({
+    sleep: async () => { polling.resolve(); await releasePoll.promise; }, transport: {
+      async createSession() { return { id: 'ses_child' }; },
+      async promptSession({ signal }) {
+        prompts += 1; submitted.resolve(signal);
+        await new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+      },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return { type: 'busy' }; },
+      async readMessages() { messages += 1; throw new Error('busy cancellation must not fetch transcript'); },
+      async abortSession() { aborts += 1; return aborts > 1; }, deleteSession,
+    },
+  });
+  const running = executor.start(current, { async setChildSessionId() { return true; }, async markAccepted() { return true; } });
+  void running.then(() => { settled = true; });
+  try {
+    const signal = await submitted.promise;
+    await expect(executor.abort(current)).resolves.toEqual({ aborted: false, failureReason: 'Provider did not confirm the managed child abort' });
+    expect(signal.aborted).toBe(true);
+    await polling.promise;
+    expect(settled).toBe(false);
+    expect(messages).toBe(0);
+    await expect(executor.abort(current)).resolves.toEqual({ aborted: true });
+    releasePoll.resolve();
+    await expect(running).resolves.toMatchObject({ status: 'aborted' });
+    expect(prompts).toBe(1);
+  } finally { releasePoll.resolve(); await executor.shutdown(); }
+});
+
+test('last-good recovery is bounded, defensively copied, lease scoped and released with execution', async () => {
+  const sleeping = cancellationDeferred(), releaseSleep = cancellationDeferred();
+  const current = task({ childSessionId: 'ses_child' });
+  const executor = createManagedOpenCodeExecutor({
+    sleep: async () => { sleeping.resolve(); await releaseSleep.promise; }, transport: {
+      async createSession() { throw new Error('unexpected create'); }, async promptSession() { throw new Error('unexpected prompt'); },
+      async readSession() { return { id: 'ses_child' }; }, async readStatus() { return { type: 'busy' }; },
+      async readMessages() { return [assistant({ parts: [{ type: 'text', text: 'x'.repeat(100_000) }] })]; },
+      async abortSession() { return true; }, deleteSession,
+    },
+  });
+  const running = executor.observe(current, {});
+  try {
+    await sleeping.promise;
+    const snapshot = executor.getLastRecoverableResult(current);
+    expect(snapshot.recoverablePreview.length).toBeLessThanOrEqual(65_536);
+    expect(snapshot.partial).toBe(true);
+    snapshot.canonicalRefs[0].id = 'changed';
+    expect(executor.getLastRecoverableResult(current).canonicalRefs[0].id).toBe('msg_assistant');
+    expect(executor.getLastRecoverableResult({ ...current, leaseToken: 'older-lease' })).toBeNull();
+    await executor.abort(current);
+    releaseSleep.resolve();
+    await running;
+    expect(executor.getLastRecoverableResult(current)).toBeNull();
+  } finally { releaseSleep.resolve(); await executor.shutdown(); }
+});
+
+for (const replacementBoundary of ['checkpoint', 'stop-read']) {
+test(`old attempt gates and cleanup cannot affect a newer lease replacing it during ${replacementBoundary}`, async () => {
+  const oldCheckpoint = cancellationDeferred(), releaseOld = cancellationDeferred(), newPrompt = cancellationDeferred();
+  const unsubscribed = [];
+  let creates = 0, aborts = 0;
+  const oldTask = task(), newTask = task({ leaseToken: 'dvr_lease_2', startedAt: 4_000 });
+  const executor = createManagedOpenCodeExecutor({
+    subscribeAssistantActivity({ sessionId }) { return () => unsubscribed.push(sessionId); },
+    transport: {
+      async createSession() { return { id: `ses_${++creates}` }; },
+      async promptSession({ sessionId, signal }) {
+        expect(sessionId).toBe('ses_2'); newPrompt.resolve(signal);
+        await new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+      },
+      async readSession() { return {}; }, async readStatus() { return { type: 'idle' }; },
+      async readOperatorAbort({ sessionId }) {
+        if (replacementBoundary === 'stop-read' && sessionId === 'ses_1') {
+          oldCheckpoint.resolve(); await releaseOld.promise;
+        }
+        return null;
+      },
+      async readMessages() { return []; }, async abortSession() { aborts += 1; return true; }, deleteSession,
+    },
+  });
+  const control = { async setChildSessionId() { return true; }, async markAccepted() { return true; }, async recordProgress() { return true; } };
+  const oldRun = executor.start(oldTask, { ...control, async setChildSessionId() {
+    if (replacementBoundary === 'checkpoint') { oldCheckpoint.resolve(); await releaseOld.promise; }
+    return true;
+  } });
+  const oldRejected = oldRun.catch((error) => error);
+  await oldCheckpoint.promise;
+  const newRun = executor.start(newTask, control);
+  try {
+    const signal = await newPrompt.promise;
+    releaseOld.resolve();
+    expect(await oldRejected).toMatchObject({ message: expect.stringContaining('execution lease changed') });
+    expect(signal.aborted).toBe(false);
+    expect(unsubscribed).not.toContain('ses_2');
+    await expect(executor.abort({ ...oldTask, childSessionId: 'ses_1' })).resolves.toMatchObject({ aborted: false });
+    expect(aborts).toBe(0);
+    expect(unsubscribed).not.toContain('ses_2');
+    await executor.abort({ ...newTask, childSessionId: 'ses_2' });
+    await expect(newRun).resolves.toMatchObject({ status: 'aborted' });
+  } finally { releaseOld.resolve(); await executor.shutdown(); }
+});
+}
+
+test('Stop suppresses initial submission through a failed transcript harvest without losing observation', async () => {
+  let reads = 0, prompts = 0, clock = 3_000;
+  const executor = createManagedOpenCodeExecutor({ now: () => clock, sleep: async (delay) => { clock += delay; }, transport: {
+    async createSession() { return { id: 'ses_child' }; }, async promptSession() { prompts += 1; },
+    async readSession() { return { id: 'ses_child' }; }, async readStatus() { return { type: 'idle' }; },
+    async readMessages() {
+      reads += 1;
+      if (reads < 3) throw new Error('transcript temporarily unavailable');
+      return [assistant({ info: { finish: 'abort' } })];
+    },
+    async readOperatorAbort() { return { sessionId: 'ses_child', requestedAt: 3_000 }; },
+    async abortSession() { return true; }, deleteSession,
+  } });
+  try {
+    await expect(executor.start(task(), { async setChildSessionId() { return true; }, async markAccepted() { return true; } })).resolves.toMatchObject({ status: 'aborted' });
+    expect(prompts).toBe(0);
+    expect(reads).toBe(3);
+  } finally { await executor.shutdown(); }
+});
+
+describe('independent observation failure clocks and owned teardown', () => {
+  const timeout = () => Object.assign(new Error('Transcript read timed out'), { name: 'TimeoutError' });
+  const retained = () => assistant({ info: { finish: 'tool-calls' }, parts: [{ type: 'text', text: 'Retained partial output' }] });
+
+  test.each(['busy', 'retry'])('healthy %s polling cannot reset transcript failure grace or repeat expensive reads', async (liveType) => {
+    let clock = 0, messageReads = 0, statusReads = 0, idle = false;
+    const aborts = [], readTimes = [];
+    const executor = createManagedOpenCodeExecutor({ now: () => clock,
+      liveTranscriptRefreshMs: 750, retryStopMaxAborts: 1, retryStopPollLimit: 2,
+      sleep: async (delay) => { clock += Math.max(1, delay); if (clock > 400_000) throw new Error('Fixture exceeded its stop bound'); },
+      transport: {
+        async createSession() { throw new Error('must not create'); }, async promptSession() { throw new Error('must not prompt'); },
+        async readSession() { return { id: 'ses_child' }; },
+        async readStatus() { statusReads += 1; return { type: idle ? 'idle' : liveType }; },
+        async readMessages() { readTimes.push(clock); messageReads += 1; if (messageReads === 1) return [retained()]; throw timeout(); },
+        async abortSession() { aborts.push(clock); idle = aborts.length === 2; return idle; }, deleteSession,
+      },
+    });
+    try {
+      expect(await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {}))
+        .toMatchObject({ status: 'interrupted', partial: true, recoverablePreview: 'Retained partial output', resumable: true });
+      expect(aborts).toHaveLength(2);
+      expect(aborts[0]).toBeGreaterThanOrEqual(300_750);
+      expect(aborts[1] - aborts[0]).toBeGreaterThanOrEqual(30_000);
+      expect(statusReads).toBeGreaterThan(400);
+      expect(messageReads).toBeLessThan(25);
+      expect(readTimes.some((time, index) => index > 0 && time - readTimes[index - 1] >= 30_000)).toBe(true);
+      expect(readTimes.at(-1)).toBeLessThanOrEqual(aborts[0]);
+    } finally { await executor.shutdown(); }
+  });
+
+  test.each(['busy', 'idle'])('a recovered %s status clears its expired clock before any teardown', async (recoveredStatus) => {
+    let clock = 0, statusReads = 0, aborts = 0, messageReads = 0;
+    const executor = createManagedOpenCodeExecutor({ now: () => clock, observationFailureGraceMs: 3_000,
+      sleep: async (delay) => { clock += delay; },
+      transport: {
+        async createSession() { throw new Error('must not create'); }, async promptSession() { throw new Error('must not prompt'); },
+        async readSession() { return { id: 'ses_child' }; },
+        async readStatus() {
+          statusReads += 1;
+          if (clock < 3_000) throw Object.assign(new Error('Status timed out'), { name: 'TimeoutError' });
+          return { type: messageReads === 0 ? recoveredStatus : 'idle' };
+        },
+        async readMessages() { messageReads += 1; return [assistant()]; },
+        async abortSession() { aborts += 1; return true; }, deleteSession,
+      },
+    });
+    try {
+      expect(await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {})).toMatchObject({ status: 'completed' });
+      expect(aborts).toBe(0); expect(messageReads).toBeGreaterThan(0); expect(statusReads).toBeGreaterThan(4);
+    } finally { await executor.shutdown(); }
+  });
+
+  test('unconfirmed teardown suppresses a later terminal event and survives concurrent fresh harvesting', async () => {
+    let clock = 0, idle = false, event = false, aborts = 0, messageReads = 0, eventReadsAfterStop = 0;
+    let harvested = false, fresh = false;
+    const current = task({ childSessionId: 'ses_child', status: 'running' });
+    const executor = createManagedOpenCodeExecutor({ now: () => clock, observationFailureGraceMs: 3_000,
+      liveTranscriptRefreshMs: 750, retryStopMaxAborts: 1, retryStopPollLimit: 1,
+      sleep: async (delay) => {
+        clock += delay;
+        if (event && !harvested) {
+          harvested = true; fresh = true;
+          expect(await executor.readRecoverableResult(current)).toMatchObject({ recoverablePreview: 'Fresh harvested output' });
+          fresh = false;
+        }
+        if (clock > 50_000) throw new Error('Fixture exceeded its stop bound');
+      },
+      transport: {
+        async createSession() { throw new Error('must not create'); }, async promptSession() { throw new Error('must not prompt'); },
+        async readSession() { return { id: 'ses_child' }; }, async readStatus() { return { type: idle ? 'idle' : 'busy' }; },
+        async readMessages() {
+          messageReads += 1;
+          if (fresh) return [assistant({ info: { finish: 'tool-calls' }, parts: [{ type: 'text', text: 'Fresh harvested output' }] })];
+          if (messageReads === 1) return [retained()];
+          throw timeout();
+        },
+        async readTerminalError() {
+          if (event) { eventReadsAfterStop += 1; return { eventId: 'permanent', message: 'Model not found: retired', observedAt: clock }; }
+          return null;
+        },
+        async abortSession() { aborts += 1; event = true; idle = aborts === 2; return idle; }, deleteSession,
+      },
+    });
+    try {
+      expect(await executor.observe(current, {})).toMatchObject({ status: 'interrupted', recoverablePreview: 'Fresh harvested output' });
+      expect(aborts).toBe(2); expect(eventReadsAfterStop).toBe(0); expect(harvested).toBe(true);
+    } finally { await executor.shutdown(); }
+  });
+
+  test('fresh cancellation harvesting bypasses transcript backoff without shortening its request allowance', async () => {
+    let clock = 0, reads = 0, harvested = false, idle = false;
+    const current = task({ childSessionId: 'ses_child', status: 'running' });
+    const readTimes = [];
+    const executor = createManagedOpenCodeExecutor({ now: () => clock, liveTranscriptRefreshMs: 750,
+      sleep: async (delay) => {
+        if (reads === 2 && !harvested) {
+          harvested = true;
+          expect(await executor.readRecoverableResult(current)).toMatchObject({ recoverablePreview: 'Fresh output' });
+          idle = true;
+        }
+        clock += delay;
+      },
+      transport: {
+        async createSession() { throw new Error('must not create'); }, async promptSession() { throw new Error('must not prompt'); },
+        async readSession() { return { id: 'ses_child' }; }, async readStatus() { return { type: idle ? 'idle' : 'busy' }; },
+        async readMessages() {
+          reads += 1; readTimes.push(clock);
+          if (reads === 1) return [retained()];
+          if (reads === 2) throw timeout();
+          return [assistant({ parts: [{ type: 'text', text: 'Fresh output' }] })];
+        },
+        async abortSession() { throw new Error('must not abort'); }, deleteSession,
+      },
+    });
+    try {
+      expect(await executor.observe(current, {})).toMatchObject({ status: 'completed' });
+      expect(harvested).toBe(true); expect(readTimes[2]).toBe(readTimes[1]);
+    } finally { await executor.shutdown(); }
+  });
+});
+
+for (const channel of ['operator', 'task']) {
+  test(`${channel} Stop retains a bounded transcript failure clock and last-good output`, async () => {
+    let clock = 0, messageReads = 0, stopped = false, idle = false, aborts = 0;
+    const current = task({ childSessionId: 'ses_child', status: 'running', startedAt: 0 });
+    let executor;
+    executor = createManagedOpenCodeExecutor({ now: () => clock, liveTranscriptRefreshMs: 750,
+      retryStopMaxAborts: 1, retryStopPollLimit: 1,
+      sleep: async (delay) => {
+        clock += delay;
+        if (!stopped && messageReads >= (channel === 'task' ? 2 : 1)) {
+          stopped = true;
+          if (channel === 'task') await executor.abort(current);
+        }
+        if (clock > 400_000) throw new Error('Fixture exceeded its stop bound');
+      },
+      transport: {
+        async createSession() { throw new Error('must not create'); }, async promptSession() { throw new Error('must not prompt'); },
+        async readSession() { return { id: 'ses_child' }; },
+        async readStatus() { return { type: idle ? 'idle' : 'busy' }; },
+        async readMessages() {
+          messageReads += 1;
+          if (messageReads === 1) return [assistant({ info: { finish: 'tool-calls' }, parts: [{ type: 'text', text: 'Before Stop' }] })];
+          if (channel === 'task') idle = true;
+          throw Object.assign(new Error('Transcript timed out'), { name: 'TimeoutError' });
+        },
+        async readOperatorAbort() { return channel === 'operator' && stopped ? { sessionId: 'ses_child', requestedAt: 500 } : null; },
+        async abortSession() { aborts += 1; if (channel === 'operator') idle = true; return channel === 'operator'; },
+        deleteSession,
+      },
+    });
+    try {
+      expect(await executor.observe(current, {})).toMatchObject({ status: 'interrupted', partial: true, recoverablePreview: 'Before Stop' });
+      expect(clock).toBeGreaterThanOrEqual(300_750);
+      expect(messageReads).toBeLessThan(25); expect(aborts).toBe(1);
+    } finally { await executor.shutdown(); }
+  });
+}
+
+test('expired status failures attempt bounded teardown and retain ownership through uncertain cleanup', async () => {
+  let clock = 0, aborts = 0, idle = false, reads = 0;
+  const abortTimes = [];
+  const executor = createManagedOpenCodeExecutor({ now: () => clock, observationFailureGraceMs: 3_000,
+    retryStopMaxAborts: 1, retryStopPollLimit: 1,
+    sleep: async (delay) => { clock += delay; if (clock > 50_000) throw new Error('Fixture exceeded its stop bound'); },
+    transport: {
+      async createSession() { throw new Error('must not create'); }, async promptSession() { throw new Error('must not prompt'); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { if (!aborts) throw new TypeError('fetch failed'); return { type: idle ? 'idle' : 'busy' }; },
+      async readMessages() { reads += 1; return [assistant()]; },
+      async abortSession() { abortTimes.push(clock); aborts += 1; idle = aborts === 2; return idle; }, deleteSession,
+    },
+  });
+  try {
+    expect(await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {})).toMatchObject({ status: 'interrupted' });
+    expect(aborts).toBe(2); expect(reads).toBe(0); expect(abortTimes[1] - abortTimes[0]).toBeGreaterThanOrEqual(30_000);
+  } finally { await executor.shutdown(); }
+});
+
+test('successful transcript reads reset only their failure grace and retry delay', async () => {
+  let clock = 0, reads = 0, aborts = 0;
+  const readTimes = [];
+  const executor = createManagedOpenCodeExecutor({ now: () => clock, observationFailureGraceMs: 4_000, liveTranscriptRefreshMs: 750,
+    sleep: async (delay) => { clock += delay; if (clock > 10_000) throw new Error('Fixture exceeded its recovery bound'); },
+    transport: {
+      async createSession() { throw new Error('must not create'); }, async promptSession() { throw new Error('must not prompt'); },
+      async readSession() { return { id: 'ses_child' }; }, async readStatus() { return { type: reads >= 6 ? 'idle' : 'busy' }; },
+      async readMessages() {
+        reads += 1; readTimes.push(clock);
+        if ([1, 2, 4, 5].includes(reads)) throw Object.assign(new Error('Transcript timeout'), { name: 'TimeoutError' });
+        return [assistant()];
+      },
+      async abortSession() { aborts += 1; return true; }, deleteSession,
+    },
+  });
+  try {
+    expect(await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {})).toMatchObject({ status: 'completed' });
+    expect(aborts).toBe(0); expect(readTimes.slice(0, 6)).toEqual([0, 750, 2_250, 3_000, 3_750, 5_250]);
+  } finally { await executor.shutdown(); }
+});
+
+test('an unconfirmed operator Stop with readable output stays owned and retries after thirty seconds', async () => {
+  let clock = 0, idle = false, aborts = 0, eventReads = 0;
+  const abortTimes = [];
+  const executor = createManagedOpenCodeExecutor({ now: () => clock, resumeTeardownSettleMs: 0,
+    retryStopMaxAborts: 1, retryStopPollLimit: 1,
+    sleep: async (delay) => { clock += delay; if (clock > 40_000) throw new Error('Stop fixture exceeded its retry bound'); },
+    transport: {
+      async createSession() { throw new Error('must not create'); }, async promptSession() { throw new Error('must not prompt'); },
+      async readSession() { return { id: 'ses_child' }; }, async readStatus() { return { type: idle ? 'idle' : 'busy' }; },
+      async readMessages() { return [assistant({ info: { finish: 'abort' }, parts: [{ type: 'text', text: 'Stopped partial output' }] })]; },
+      async readOperatorAbort() { return { sessionId: 'ses_child', requestedAt: 0 }; },
+      async readTerminalError() { eventReads += 1; return { message: 'Model not found: old event' }; },
+      async abortSession() { abortTimes.push(clock); aborts += 1; idle = aborts === 2; return idle; }, deleteSession,
+    },
+  });
+  try {
+    expect(await executor.observe(task({ childSessionId: 'ses_child', status: 'running', startedAt: 0 }), {}))
+      .toMatchObject({ status: 'aborted', recoverablePreview: 'Stopped partial output' });
+    expect(aborts).toBe(2); expect(abortTimes[1] - abortTimes[0]).toBeGreaterThanOrEqual(30_000);
+    expect(eventReads).toBe(0);
+  } finally { await executor.shutdown(); }
+});
+
+describe('canonical authentication retry cleanup', () => {
+  const reason = 'Claude OAuth token has expired and could not be refreshed automatically. Run claude login to re-authenticate.';
+  const otherReason = 'Invalid API key supplied';
+  const run = async (source, change = 'matching') => {
+    let clock = 3_000, statusReads = 0, messageReads = 0, eventReads = 0, aborts = 0, readsAfterAbort = 0;
+    const user = { info: { id: 'msg_auth_user', role: 'user', time: { created: 1_500 } }, parts: [] };
+    const failure = assistant({ info: { id: 'msg_auth_failed', parentID: 'msg_auth_user', finish: 'error',
+      time: { created: 1_600, completed: 2_000 }, error: { name: 'APIError', data: { message: reason } } },
+      parts: [{ type: 'text', text: 'Useful work before sign-in expired' }] });
+    const finalMessageRead = source === 'event' ? 3 : 2;
+    const finalStatusRead = source === 'event' ? 4 : 3;
+    const executor = createManagedOpenCodeExecutor({ now: () => clock,
+      sleep: async () => { clock += 1_000; if (clock > 10_000) throw new Error('Authentication fixture did not settle'); },
+      transport: {
+        async createSession() { throw new Error('must not create'); }, async promptSession() { throw new Error('must not prompt'); },
+        async readSession() { return { id: 'ses_child' }; },
+        async readTerminalError() {
+          eventReads += 1;
+          if (source !== 'event' || (eventReads === 1 && change !== 'no-prior')) return null;
+          return { sessionId: 'ses_child', eventId: 'evt_auth', errorName: 'APIError', message: reason,
+            observedAt: change === 'stale-event' ? 2_500 : change === 'missing-event-time' ? undefined : change === 'no-prior' ? 3_000 : 3_500 };
+        },
+        async readStatus() {
+          statusReads += 1;
+          if (aborts) readsAfterAbort += 1;
+          if (source === 'event' && statusReads === 1 && change !== 'no-prior') return { type: 'busy' };
+          const final = statusReads === finalStatusRead;
+          const retry = { type: 'retry', message: reason, attempt: 1, next: 5_000 };
+          if (change === 'idle') return { type: 'idle' };
+          if (change === 'retry-failure-mismatch' && statusReads > (source === 'event' ? 2 : 1)) return { ...retry, message: otherReason };
+          if (change === 'retry-changed-before-confirmation' && statusReads > (source === 'event' ? 2 : 1)) return { ...retry, attempt: 2 };
+          if (final && change === 'new-retry') return { ...retry, attempt: 2, next: 6_000 };
+          if (final && change === 'became-busy') return { type: 'busy' };
+          if (final && change === 'became-idle') return { type: 'idle' };
+          return retry;
+        },
+        async readMessages() {
+          messageReads += 1;
+          if (change === 'unreadable-final' && messageReads === finalMessageRead) throw new TypeError('fetch failed');
+          const currentUser = structuredClone(user), currentFailure = structuredClone(failure);
+          if (change === 'missing-user') return [currentFailure];
+          if (change === 'missing-parent') delete currentFailure.info.parentID;
+          if (change === 'missing-user-time') delete currentUser.info.time;
+          if (change === 'old-turn') currentUser.info.time.created = 1_000;
+          if (change === 'future-user') { currentUser.info.time.created = 10_000; currentFailure.info.time.completed = 11_000; }
+          if (change === 'future-completion') currentFailure.info.time.completed = 11_000;
+          if (change === 'turn-newer-than-event') { currentUser.info.time.created = 3_600; currentFailure.info.time.completed = 3_700; }
+          if (change === 'failure-mismatch') currentFailure.info.error.data.message = otherReason;
+          if ((change === 'new-user' && messageReads === finalMessageRead)
+            || (change === 'event-new-turn' && source === 'event' && messageReads >= 2)) {
+            currentUser.info.id = 'msg_new_user'; currentUser.info.time.created = 3_600;
+            currentFailure.info.id = 'msg_new_failed'; currentFailure.info.parentID = currentUser.info.id;
+            currentFailure.info.time.completed = 3_700;
+          }
+          if (change === 'new-assistant' && messageReads === finalMessageRead) currentFailure.info.id = 'msg_new_failed';
+          return [currentUser, currentFailure];
+        },
+        async abortSession() { aborts += 1; return false; }, deleteSession,
+      },
+    });
+    try {
+      const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {});
+      return { result, aborts, readsAfterAbort };
+    } finally { await executor.shutdown(); }
+  };
+
+  for (const source of ['status', 'event']) {
+    test(`${source} stops one freshly matched authentication retry without chasing a later turn`, async () => {
+      const { result, aborts, readsAfterAbort } = await run(source);
+      expect(result).toMatchObject({ status: 'failed', failureReason: reason, resumable: true, partial: true });
+      expect(aborts).toBe(1); expect(readsAfterAbort).toBe(0);
+    });
+    for (const change of ['missing-user', 'missing-parent', 'missing-user-time', 'old-turn', 'future-user', 'future-completion', 'failure-mismatch',
+      'retry-failure-mismatch', 'retry-changed-before-confirmation', 'new-user', 'new-assistant', 'new-retry', 'became-busy', 'became-idle', 'unreadable-final']) {
+      test(`${source} skips authentication abort for ${change}`, async () => {
+        const { result, aborts } = await run(source, change);
+        expect(result).toMatchObject({ status: 'failed', failureReason: reason, resumable: true });
+        expect(aborts).toBe(0);
+      });
+    }
+  }
+  for (const change of ['no-prior', 'stale-event', 'missing-event-time', 'event-new-turn', 'turn-newer-than-event', 'idle']) {
+    test(`event authentication cleanup requires pre-event matching proof: ${change}`, async () => {
+      const { result, aborts } = await run('event', change);
+      expect(result).toMatchObject({ status: 'failed', failureReason: reason, resumable: true });
+      expect(aborts).toBe(0);
+    });
+  }
 });

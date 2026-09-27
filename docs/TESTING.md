@@ -76,7 +76,7 @@ in [runtime verification](AGENT_RUNTIME_VERIFICATION.md).
 | Production Bot computer | `bun run --cwd packages/bot-computer test` | Authenticated reviewed Chromium commands, profile/scratch ownership, accessibility refs, control, screencast, and gateway file transfer |
 | Production Bot retrieval index | `bun run --cwd packages/bot-indexer test` | Deterministic chunks, offline embeddings, SQLite FTS/vector ranking, namespace isolation, rebuild/recovery, and authenticated host API |
 | Cursor SDK runtime | `bun run --cwd packages/cursor-sdk-runtime test` | Cursor execution, question bridge, tool calls, auth, and usage contracts |
-| Electron | `bun run --cwd packages/electron test` | All Electron `*.test.*` files, recursively discovered outside generated/package output |
+| Electron | `bun run --cwd packages/electron test` | Recursively discovers Electron `*.test.*` outside generated/package output; dispatches Node, Bun, and Vitest suites to their declared runner, isolates Bun module/global mocks, and leaves Docker acceptance behind its explicit opt-in below |
 | Legacy Tauri | `bun run --cwd packages/desktop test` | Locked Rust unit and local integration tests in `src-tauri` |
 | Shared UI | `bun run --cwd packages/ui test` | UI, store, sync, Git, tool presentation, and policy tests; global mocks run in isolated processes |
 | Web | `bun run --cwd packages/web test` | Web runtime adapters, Express APIs, libraries, CLI, packaging, and integration contracts |

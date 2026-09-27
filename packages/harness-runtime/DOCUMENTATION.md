@@ -27,7 +27,13 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
 
 ## Runtime ownership
 
-- `lifecycle.js`: synchronous canonical OpenCode-event correlation.
+- `lifecycle.js`: synchronous canonical OpenCode-event correlation. Idle is
+  OpenCode's only terminal edge for an abort during a provider-retry wait and
+  for a turn whose process exited, so hosts record those before it:
+  `recordAbortRequested` settles the active turn at idle as `turn_aborted`
+  (reason `abort_requested`; `withdrawAbortRequest` undoes a rejected abort) and
+  `recordRuntimeInterrupted` as `turn_failed` (reason `runtime_exit`). An abort
+  request wins over a runtime exit, and neither carries over to a later turn.
 - `prompt-admission.js`: synchronous named-hold controller shared by web/Electron
  . A hold returns the exact HTTP-shaped block for new prompts and
   managed-work launches while allowing active work, cancellation, result
@@ -180,9 +186,19 @@ and their results are committed together before materializing shared files.
 Recovery refuses to replace a file changed by a foreign writer after that intent.
 
 Ledger work runs on the host event loop, which in Electron is the window's main
-thread. Gitignored directories without tracked content are dependency inputs:
-linked read-only into views, never ingested or published, and fenced from
-history replay (`ignored_input`). A `node_modules` input links instead to a
+thread. Gitignored directories without tracked content are inputs: linked into
+views, never ingested or published, and fenced from history replay
+(`ignored_input`). On macOS, ignored output folders among them (`.artifacts/`,
+`dist/`, `coverage/`, a Vite `cacheDir`) are written through to the project:
+`lib/execution-inputs.js` grants their resolved directories in the Seatbelt
+profile when they stay inside the project and outside the ledger storage.
+Dependencies (`node_modules`, `.venv`, `__pycache__`, `vendor`, virtualenvs),
+hidden folders other than known output locations (so `.husky/_`, `.opencode/`
+and `.claude/` stay read-only), and anything resolving elsewhere stay
+read-only; Linux and Windows keep every input read-only
+(`DEVRYAN_IGNORED_WRITE_THROUGH=0` restores that on macOS). An ignored folder a
+call creates in its view is published like any other output. A `node_modules`
+input links instead to a
 host-owned overlay under the ledger's `module-overlays/`: one link per project
 entry, re-synced from the project listing at each preparation, with `.vite`,
 `.vite-temp`, and `.cache` linked into the project's writable execution cache
@@ -216,4 +232,4 @@ The web host emits `session_title_generation` lifecycle records with the target 
 
 Parent collection may request host-owned `executionOutcomes` for failed tools. The mutation ledger returns `never_started`, `finished`, or `uncertain`, scoped to exact session/message/call identities. A cancelled call without execution, or a cancelled and fully cleaned pre-launch lease, proves `never_started`; a published lease proves `finished`. Missing, mismatched, or unsettled evidence stays uncertain. Only managed result collection accepts settled errors; normal recovery never treats error text as execution evidence or replays those commands. Existing collection idempotency, stop and supersession fences remain in force.
 
-Read-only lease and outcome queries retain the owner lock and durable recovery checks, but do not stage unchanged metadata or rebuild the Git index. `lock_wait`, `ledger_open`, `ledger_recovery`, `ledger_transaction`, and `ledger_commit` diagnostics identify work inside the lock; they are journaled only when a phase fails or takes at least 250 ms, because every tool call takes this lock. Every confined worker receives its own scratch `HOME`, temporary paths, and execution-worker marker, including Cursor and read-only provider workers. On macOS each execution also gets a short private runtime directory, exported as `XDG_RUNTIME_DIR` and spelled `/tmp/dr-<uid>/<lease digest>`, because the scratch path exceeds the 104-byte Unix socket limit. The agent-browser daemon socket therefore fits with its full lease session name (budget: 26 bytes for the directory). The profile lets the execution create and reach sockets only there, plus the system resolver. Cleanup removes it, and host recovery sweeps orphans older than a day. The parent must be a real directory owned by the user with mode 0700, or preparation fails closed.
+Read-only lease and outcome queries retain the owner lock and durable recovery checks, but do not stage unchanged metadata or rebuild the Git index. `lock_wait`, `ledger_open`, `ledger_recovery`, `ledger_transaction`, and `ledger_commit` diagnostics identify work inside the lock; they are journaled only when a phase fails or takes at least 250 ms, because every tool call takes this lock. Every confined worker receives its own scratch `HOME`, temporary paths, and execution-worker marker, including Cursor and read-only provider workers. On macOS each execution also gets a short private runtime directory, exported as `XDG_RUNTIME_DIR` and spelled `/tmp/dr-<uid>/<lease digest>`, because the scratch path exceeds the 104-byte Unix socket limit. The agent-browser daemon socket therefore fits with its full lease session name (budget: 26 bytes for the directory). The profile lets the execution create and reach sockets only there, plus the system resolver. Cleanup removes it, and host recovery sweeps orphans older than a day. The parent must be a real directory owned by the user with mode 0700, or preparation fails closed. Every session-scoped execution also gets `DEVRYAN_SESSION_TMP`, `context-cache/session-tmp/<session digest>`: unlike the per-call scratch it survives between the session's calls, so logs and reproduction output remain readable. Preparation never follows a link planted at either level, and directories idle for a week are swept at most hourly per project. `/tmp` itself stays unwritable.
