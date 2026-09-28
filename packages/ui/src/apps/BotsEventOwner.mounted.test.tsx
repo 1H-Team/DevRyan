@@ -54,19 +54,34 @@ describe('normalized Bot events through the mounted transcript', () => {
     } });
     const unavailable = { available: false, catalogAvailable: false, state: 'setup_required', code: 'setup_required', owner: 'test', canManageRuntime: false, canCreateBot: false, runtime: null };
     const catalog = spyOn(botsApi, 'getAssignedCatalog').mockResolvedValue({ bots: [], revisions: [], memberships: [] });
-    const capabilities = spyOn(botsApi, 'getCapabilities').mockResolvedValue(unavailable);
+    const probes: Array<{ refresh?: boolean } | undefined> = [];
+    let current: typeof unavailable | null = unavailable;
+    const capabilities = spyOn(botsApi, 'getCapabilities').mockImplementation(async (options) => {
+      probes.push(options);
+      if (!current) throw new Error('network');
+      return current;
+    });
     try {
       setAuthPrincipal({ ...originalPrincipal, id: 'catalog-member', scope: 'managed', policy: { ...originalPrincipal.policy, bots: true } });
       await act(async () => { root.render(<BotsEventOwner />); });
       expect(catalog).toHaveBeenCalledTimes(0);
       await act(async () => { retryBotsEventConnection(); });
       expect(capabilities).toHaveBeenCalledTimes(2);
+      // The mount probe may use the host's cached status; Retry may not.
+      expect(probes).toEqual([undefined, { refresh: true }]);
+      expect(catalog).toHaveBeenCalledTimes(0);
+      // A failed probe is kept for both Bot surfaces to report.
+      current = null;
+      await act(async () => { retryBotsEventConnection(); });
+      expect(useBotsStore.getState().capabilities).toBeNull();
+      expect(useBotsStore.getState().capabilitiesErrorCode).toBe('bot_request_failed');
       expect(catalog).toHaveBeenCalledTimes(0);
       const recovered = { ...unavailable, state: 'docker_stopped', catalogAvailable: true };
-      capabilities.mockResolvedValue(recovered);
+      current = recovered;
       await act(async () => { retryBotsEventConnection(); });
       expect(catalog).toHaveBeenCalledTimes(1);
       expect(useBotsStore.getState().catalogLoaded).toBe(true);
+      expect(useBotsStore.getState().capabilitiesErrorCode).toBeNull();
       await act(async () => { useBotsStore.getState().setCapabilities({ ...recovered }); });
       expect(catalog).toHaveBeenCalledTimes(1);
     } finally {

@@ -309,6 +309,39 @@ describe('Production Bots catalog store', () => {
     expect(store.getState().capabilities).toBeNull();
     expect(store.getState().principalId).toBe('a0000000-0000-4000-8000-000000000002');
   });
+
+  test('keeps the previous capability failure while a reload is in flight', async () => {
+    const healthy: BotCapabilities = {
+      available: true, state: 'healthy', code: null, owner: 'electron', canManageRuntime: true, canCreateBot: true,
+    };
+    let fail = true;
+    let release!: () => void;
+    const options: Array<{ refresh?: boolean } | undefined> = [];
+    const api = {
+      getCapabilities: async (option?: { refresh?: boolean }) => {
+        options.push(option);
+        if (fail) throw new Error('network');
+        await new Promise<void>((resolve) => { release = resolve; });
+        return healthy;
+      },
+    } as BotsApi;
+    const store = createBotsStore({ api });
+
+    await store.getState().loadCapabilities();
+    expect(store.getState().capabilitiesErrorCode).toBe('bot_request_failed');
+
+    fail = false;
+    const reload = store.getState().loadCapabilities({ refresh: true });
+    await Promise.resolve();
+    expect(store.getState().capabilitiesLoading).toBe(true);
+    expect(store.getState().capabilitiesErrorCode).toBe('bot_request_failed');
+
+    release();
+    await reload;
+    expect(store.getState().capabilities).toBe(healthy);
+    expect(store.getState().capabilitiesErrorCode).toBeNull();
+    expect(options).toEqual([undefined, { refresh: true }]);
+  });
 });
 
 describe('Production Bots event reconciliation', () => {

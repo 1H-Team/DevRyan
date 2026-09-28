@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { I18nProvider } from '@/lib/i18n';
 import type { BotMembershipSummary, BotRun, BotSummary } from '@/lib/botsApi';
+import { botsDesktopApi } from '@/lib/botsDesktopApi';
 import { createBotChannelStore } from '@/stores/useBotChannelStore';
 import { createBotOperationsStore } from '@/stores/useBotOperationsStore';
 import { createBotsStore } from '@/stores/useBotsStore';
@@ -132,6 +133,43 @@ describe('BotSidebarSection', () => {
     operationsStore.getState().setConnectionState('reconnecting', 'bot_event_connection_lost');
     expect(render()).toContain(bot.name);
     expect(render()).toContain('Live updates are unavailable');
+    expect(render()).toContain('Retry');
+    expect(render()).not.toContain('No Bots assigned');
+  });
+
+  test('explains an unavailable catalog instead of loading forever', () => {
+    const botsStore = createBotsStore();
+    const channelStore = createBotChannelStore();
+    const operationsStore = createBotOperationsStore();
+    const desktopApi = { ...botsDesktopApi, isAvailable: () => true };
+    const render = (api = desktopApi) => {
+      Object.assign(botsStore.getInitialState(), botsStore.getState());
+      return renderToStaticMarkup(<I18nProvider><BotSidebarSection botsStore={botsStore} channelStore={channelStore} operationsStore={operationsStore} desktopApi={api} /></I18nProvider>);
+    };
+    const closed = (state: string, database: 'unavailable' | 'starting' = 'unavailable') => botsStore.getState().setCapabilities({
+      available: false, catalogAvailable: false, state, code: null, database: { state: database, code: null },
+      owner: 'electron', canManageRuntime: true, canCreateBot: false,
+    });
+
+    closed('docker_stopped');
+    expect(render()).toContain('Docker Desktop isn’t running');
+    expect(render()).toContain('Open Docker Desktop');
+    expect(render()).toContain('Retry');
+    expect(render()).not.toContain('Loading Bots');
+    expect(render()).not.toContain('No Bots assigned');
+    // A browser connected to the desktop server cannot start Docker Desktop.
+    expect(render({ ...botsDesktopApi, isAvailable: () => false })).not.toContain('Open Docker Desktop');
+
+    closed('docker_not_installed');
+    expect(render()).toContain('Docker Desktop isn’t installed');
+    expect(render()).not.toContain('Open Docker Desktop');
+
+    closed('bots_starting', 'starting');
+    expect(render()).toContain('Starting Bot storage…');
+    expect(render()).not.toContain('Retry');
+
+    botsStore.getState().setCapabilities(null, 'network_error');
+    expect(render()).toContain('Couldn’t check whether Bots are available');
     expect(render()).toContain('Retry');
     expect(render()).not.toContain('No Bots assigned');
   });

@@ -331,6 +331,52 @@ describe('Bot capability connection controller', () => {
     expect(eventStarts).toBe(1);
   });
 
+  test('only an explicit retry asks the host for a fresh probe', async () => {
+    const options: Array<{ refresh?: boolean } | undefined> = [];
+    const timers: Array<() => void> = [];
+    const pending: Array<() => void> = [];
+    let hold = false;
+    const controller = createBotCapabilityConnectionController({
+      loadCapabilities: async (option) => {
+        options.push(option);
+        if (hold) await new Promise<void>((resolve) => { pending.push(resolve); });
+        return { state: 'docker_stopped', code: 'bot_runtime_docker_unavailable', catalogAvailable: false };
+      },
+      getCapabilitiesErrorCode: () => null,
+      canStream: (value) => value.catalogAvailable === true,
+      isTransient: () => true,
+      createConnection: () => ({ start: () => {}, retry: () => {}, dispose: () => {} }),
+      setConnectionState: () => {},
+      setTimeoutImpl: ((callback: () => void) => {
+        timers.push(callback);
+        return timers.length as unknown as ReturnType<typeof setTimeout>;
+      }) as typeof setTimeout,
+      clearTimeoutImpl: (() => {}) as unknown as typeof clearTimeout,
+    });
+
+    controller.start();
+    await flushAsync();
+    timers.at(-1)?.();
+    await flushAsync();
+    expect(options).toEqual([undefined, undefined]);
+
+    controller.retry();
+    await flushAsync();
+    expect(options.at(-1)).toEqual({ refresh: true });
+
+    // A retry that arrives during a scheduled poll still gets a fresh probe.
+    hold = true;
+    timers.at(-1)?.();
+    await flushAsync();
+    expect(options.at(-1)).toBeUndefined();
+    controller.retry();
+    hold = false;
+    pending.shift()?.();
+    await flushAsync();
+    expect(options.at(-1)).toEqual({ refresh: true });
+    controller.dispose();
+  });
+
   test('a deliberately disconnected Supabase stops capability polling until an explicit retry', async () => {
     const timers: Array<() => void> = [];
     let loads = 0;

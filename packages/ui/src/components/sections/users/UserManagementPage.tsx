@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLayout';
 import { SettingsSection } from '@/components/sections/shared/SettingsSection';
 import { GitHubSettings } from '@/components/sections/openchamber/GitHubSettings';
+import { PasskeySettings } from '@/components/sections/openchamber/PasskeySettings';
 import { retryAuthSession, useAuthOfflineGrace, useAuthPrincipal } from '@/lib/authSession';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { useSettingsPagePermission } from '@/lib/settings/permission-state';
@@ -22,12 +23,11 @@ const LocalUserManagementPage: React.FC = () => (
   <SettingsPageLayout>
     <div>
       <h1 className="typography-ui-header font-semibold text-foreground">User Management</h1>
-      <p className="typography-ui text-muted-foreground">Manage the GitHub accounts available to this DevRyan installation.</p>
+      <p className="typography-ui text-muted-foreground">Manage sign-in and the GitHub accounts available to this DevRyan installation.</p>
     </div>
 
-    {(
-      <GitHubSettings />
-    )}
+    <GitHubSettings />
+    <PasskeySettings />
   </SettingsPageLayout>
 );
 

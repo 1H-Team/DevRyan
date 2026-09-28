@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import { spawn as spawnChild } from 'node:child_process';
@@ -33,7 +34,7 @@ const BROWSER_ERROR_CODES = Object.freeze({
   commandAborted: 'DEVRYAN_BROWSER_COMMAND_ABORTED',
   branchPreviewAuthFailed: 'branch_preview_auth_failed',
 });
-// agent-browser 0.33.2 parses this global option before the command and accepts
+// agent-browser 0.38.1 parses this global option before the command and accepts
 // human-readable s/m/h values, normalizing them internally to milliseconds.
 const MANAGED_IDLE_TIMEOUT = '2m';
 const MANAGED_CONFIG_FILE = 'devryan-agent-browser.json';
@@ -125,6 +126,19 @@ const FORBIDDEN_COMMANDS = new Set([
   'exit',
 ]);
 const FORBIDDEN_FLAGS = new Set([
+  '--user-agent',
+  '--hide-scrollbars',
+  '--color-scheme',
+  '--download-path',
+  '--allowed-domains',
+  '--input-mode',
+  '--pin-tab',
+  '--no-pin-tab',
+  '--ca-cert',
+  '--no-ca-cert',
+  '--no-webmcp',
+  '--webgpu',
+  '--ignore-https-errors',
   '--action-policy',
   '--allow-file-access',
   '--args',
@@ -151,6 +165,12 @@ const FORBIDDEN_FLAGS = new Set([
   '--remote-debugging-port',
   '--restore',
   '--restore-save',
+  '--restore-check-url',
+  '--restore-check-text',
+  '--restore-check-fn',
+  '--confirm-actions',
+  '--confirm-interactive',
+  '--device',
   '--session',
   '--session-name',
   '--state',
@@ -425,6 +445,36 @@ const validateInvocation = (commandInput, argsInput) => {
   return { command, args };
 };
 
+const validateSequence = (input) => {
+  if ((input.args !== undefined && (!Array.isArray(input.args) || input.args.length))
+    || input.selector !== undefined || input.styles !== undefined || input.attributes !== undefined
+    || !Array.isArray(input.steps) || input.steps.length < 1 || input.steps.length > 32) {
+    throw browserError(BROWSER_ERROR_CODES.inputInvalid, 'sequence requires 1–32 steps and no command-level args or inspection fields');
+  }
+  let recording = false;
+  const steps = input.steps.map((step, index) => {
+    if (!step || typeof step !== 'object' || Array.isArray(step) || step.steps !== undefined) {
+      throw browserError(BROWSER_ERROR_CODES.inputInvalid, `Invalid sequence step ${index}`);
+    }
+    const { command, args } = validateInvocation(step.command, step.args);
+    normalizeInspection(command, args, step);
+    if (command === 'close' && index !== input.steps.length - 1) {
+      throw browserError(BROWSER_ERROR_CODES.inputInvalid, 'close must be the final sequence step');
+    }
+    if (command === 'record') {
+      const action = args[0];
+      if (!['start', 'restart', 'stop'].includes(action) || (action === 'start' && recording)
+        || (action !== 'start' && !recording)) {
+        throw browserError(BROWSER_ERROR_CODES.inputInvalid, 'Recording requires start, optional restart, then stop in the same sequence');
+      }
+      recording = action !== 'stop';
+    }
+    return { ...step, command, args: normalizeArguments(step.args) };
+  });
+  if (recording) throw browserError(BROWSER_ERROR_CODES.inputInvalid, 'sequence must include record stop before it ends');
+  return steps;
+};
+
 const normalizeConfiguredPreviewUrl = (value) => {
   if (typeof value !== 'string' || !value.trim()) return '';
   try {
@@ -472,11 +522,45 @@ const normalizeTimeout = (value) => {
   return Math.max(1, Math.min(MAX_TIMEOUT_MS, Math.trunc(value)));
 };
 
-const scrubAgentBrowserEnvironment = () => {
+// The installer publishes this receipt only after checksum and encoding probes.
+// Confined workers can read, but cannot modify, the managed tool installation.
+const managedFfmpegDirectory = (binaryPath) => {
+  const root = path.dirname(path.dirname(path.dirname(path.dirname(binaryPath))));
+  const directory = path.join(root, 'ffmpeg');
+  try {
+    const receipt = JSON.parse(fs.readFileSync(path.join(directory, 'ready.json'), 'utf8'));
+    const stat = fs.lstatSync(path.join(directory, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'));
+    if (!stat.isFile() || (process.platform !== 'win32' && !(stat.mode & 0o111))) return null;
+    const identity = [stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs].join(':');
+    return receipt.release === 'b6.1.1' && /^[a-f0-9]{64}$/.test(receipt.sha256)
+      && receipt.identity === identity ? directory : null;
+  } catch { return null; }
+};
+
+// Rust's Command uses posix_spawn without an ENOSYS fallback. Keep only the
+// native supervisor's verified fork/exec adapter; the kernel policy is unchanged.
+const confinedSpawnLibrary = () => {
+  if (process.platform !== 'darwin' || process.env.DEVRYAN_EXECUTION_WORKER !== '1') return null;
+  const library = process.env.DYLD_INSERT_LIBRARIES;
+  if (!library || !path.isAbsolute(library) || path.basename(library) !== `DevRyan-execution-darwin-${process.arch}-spawn.dylib`) return null;
+  try {
+    const manifest = JSON.parse(fs.readFileSync(`${library.slice(0, -'-spawn.dylib'.length)}.json`, 'utf8'));
+    if (manifest.policy !== 2 || manifest.acceptance !== true || manifest.platform !== 'darwin'
+      || manifest.arch !== process.arch || manifest.spawnLibrary !== path.basename(library)
+      || !fs.lstatSync(library).isFile()) return null;
+    return createHash('sha256').update(fs.readFileSync(library)).digest('hex') === manifest.spawnSha256 ? library : null;
+  } catch { return null; }
+};
+
+const scrubAgentBrowserEnvironment = (binaryPath) => {
   const next = {};
   for (const key of SAFE_ENVIRONMENT_KEYS) {
     if (typeof process.env[key] === 'string') next[key] = process.env[key];
   }
+  const spawnLibrary = confinedSpawnLibrary();
+  if (spawnLibrary) next.DYLD_INSERT_LIBRARIES = spawnLibrary;
+  const ffmpegDirectory = binaryPath ? managedFfmpegDirectory(binaryPath) : null;
+  if (ffmpegDirectory) next.PATH = [ffmpegDirectory, next.PATH].filter(Boolean).join(path.delimiter);
   next.NO_COLOR = '1';
   return next;
 };
@@ -509,7 +593,7 @@ const runBinary = ({
   try {
     child = spawnImpl(binaryPath, args, {
       cwd,
-      env: scrubAgentBrowserEnvironment(),
+      env: scrubAgentBrowserEnvironment(binaryPath),
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });
@@ -902,155 +986,240 @@ export const DevRyanBrowserPlugin = async (pluginContext = {}) => {
     return promise;
   };
 
+  const executeCommand = async (input, context, sequence) => {
+    const { command, args } = validateInvocation(input?.command, input?.args);
+    const inspection = normalizeInspection(command, args, input);
+    if (command === 'record' && ['start', 'restart'].includes(args[0]) && !managedFfmpegDirectory(environment.binaryPath)) {
+      throw browserError(BROWSER_ERROR_CODES.configUnavailable, 'Recording requires managed FFmpeg. Use Agent Browser Control → Repair.');
+    }
+    const timeoutMs = normalizeTimeout(input?.timeout_ms);
+    const invocationScope = buildScope(context);
+    const scope = sequence?.scope ?? {
+      ...invocationScope,
+      // OpenCode creates a fresh assistant message after every tool step.
+      // Its parent user message is the stable turn identity needed to keep
+      // sequential commands on one lease and one agent-browser daemon.
+      messageID: await resolveTurnMessageID(invocationScope, client),
+    };
+    if (sequence) {
+      context?.abort?.throwIfAborted();
+      sequence.scope = scope;
+    }
+    const reuseKey = `${scope.opencodeSessionID}\u0000${scope.messageID}`;
+    if (command === 'close' && failedAcquisitionKeys.has(reuseKey)) {
+      return 'Browser lease already closed.';
+    }
+    if (command === 'open' && args.length === 0 && !hasHeldLease(reuseKey)) {
+      // Resolve the branch preview before any surface exists. A branch
+      // without a preview hands off without an Electron renderer or an
+      // agent-browser daemon ever starting. A preview URL, an older
+      // server, or any failure continues through the unchanged acquire.
+      const resolved = await resolveBranchPreview(scope, context?.abort);
+      if (resolved?.previewUrl === null) return NO_PREVIEW_HANDOFF_MESSAGE;
+    }
+    let lease;
+    try {
+      lease = sequence?.lease ?? await acquire(scope, context?.abort);
+      if (sequence) sequence.lease = lease;
+      failedAcquisitionKeys.delete(reuseKey);
+    } catch (error) {
+      rememberFailedAcquisition(reuseKey);
+      throw error;
+    }
+    const leaseId = requireText(
+      lease?.leaseId,
+      'lease response leaseId',
+      BROWSER_ERROR_CODES.leaseResponseInvalid,
+    );
+    const commandArgs = command === 'open'
+      ? resolveOpenCommandArguments(args, lease?.previewUrl)
+      : args;
+    if (commandArgs === null) {
+      if (lease?.created === true) {
+        await releaseForCleanup(leaseId, scope).catch(() => undefined);
+      }
+      return NO_PREVIEW_HANDOFF_MESSAGE;
+    }
+    const wsUrl = requireText(
+      lease?.wsUrl,
+      'lease response endpoint',
+      BROWSER_ERROR_CODES.leaseResponseInvalid,
+    );
+    const sensitiveValues = [environment.token, environment.binaryPath, environment.configPath, wsUrl];
+    // --no-webmcp is a local-launch flag in 0.38.1: sending it after connect
+    // disconnects CDP. The host bridge denies WebMCP instead.
+    const prefix = [
+      '--namespace', 'devryan',
+      '--session', leaseId,
+      '--config', environment.configPath,
+      '--idle-timeout', MANAGED_IDLE_TIMEOUT,
+    ];
+
+    try {
+      await connectLease({
+        reuseKey,
+        leaseId,
+        wsUrl,
+        prefix,
+        timeoutMs,
+        signal: context?.abort,
+        sensitiveValues,
+      });
+    } catch (error) {
+      if (lease?.created === true) {
+        await releaseForCleanup(leaseId, scope).catch(() => undefined);
+      }
+      throw error;
+    }
+
+    if (command === 'close') {
+      let commandError = null;
+      try {
+        await withCleanupSignal((signal) => touch(leaseId, scope, signal));
+        await runBinary({
+          binaryPath: environment.binaryPath,
+          args: [...prefix, 'close', ...commandArgs],
+          timeoutMs,
+          signal: context?.abort,
+          spawnImpl,
+          sensitiveValues,
+          cwd: environment.installRoot,
+        });
+      } catch (error) {
+        commandError = error;
+      } finally {
+        connections.delete(reuseKey);
+        await releaseForCleanup(leaseId, scope).catch((releaseError) => {
+          if (!commandError) commandError = releaseError;
+        });
+      }
+      if (commandError) throw commandError;
+      return 'Browser lease closed.';
+    }
+
+    await touch(leaseId, scope, context?.abort);
+    let result;
+    let commandError = null;
+    try {
+      if (sequence && command === 'record' && ['start', 'restart'].includes(commandArgs[0])) sequence.recording = true;
+      result = await runBinary({
+        binaryPath: environment.binaryPath,
+        args: inspection
+          ? [...prefix, 'eval', buildBrowserInspectionScript(inspection)]
+          : [...prefix, command, ...commandArgs],
+        timeoutMs,
+        signal: context?.abort,
+        spawnImpl,
+        sensitiveValues,
+        cwd: environment.installRoot,
+        callerEval: command === 'eval',
+        errorCode: inspection ? BROWSER_ERROR_CODES.inspectionFailed : BROWSER_ERROR_CODES.commandFailed,
+      });
+      if (sequence && command === 'record' && commandArgs[0] === 'stop') sequence.recording = false;
+      if (inspection) parseBrowserInspectionResult(result, inspection, sensitiveValues);
+    } catch (error) {
+      commandError = error;
+    }
+    try {
+      await touch(leaseId, scope, context?.abort);
+    } catch (touchError) {
+      if (!commandError) {
+        commandError = touchError;
+      } else if (commandError.code === BROWSER_ERROR_CODES.evalError
+        || commandError.code === BROWSER_ERROR_CODES.inputInvalid) {
+        // An expected caller mistake must not hide a simultaneous host
+        // failure. Both messages are already sanitized at their source.
+        touchError.message += `\nBrowser command also failed: ${commandError.message}`;
+        commandError = touchError;
+      }
+    }
+    if (commandError) throw commandError;
+    return result;
+  };
+
   return {
     tool: {
       devryan_browser: tool({
         description: 'Drive a temporary DevRyan in-app browser lease for website inspection and visual verification. Prefer inspect with a CSS selector and optional styles/attributes for safe DOM checks; it reports found, missing, or ambiguous without changing the page. A missing result is not successful visual verification. Call open without a URL first: the assigned branch preview opens when configured, otherwise DevRyan returns successful guidance to start or identify the local site and retry with its full loopback URL. Explicit loopback URLs are mapped to the assigned preview when configured. DevRyan owns connection, process, profile, namespace, and session options. Always call close when verification is finished.',
         args: {
-          command: tool.schema.string().describe('One browser command, such as open, snapshot, inspect, click, fill, reload, screenshot, or close.'),
+          command: tool.schema.string().describe('One browser command, or sequence for bounded recording and before/after comparisons in one confined call.'),
           args: tool.schema.array(tool.schema.string()).optional().describe('Command arguments as an ordered string array. Do not pass connection, process, profile, namespace, session, or daemon options.'),
           selector: tool.schema.string().optional().describe('Required only for inspect: a CSS selector. Exactly one match is needed to read values.'),
           styles: tool.schema.array(tool.schema.string()).optional().describe('Inspect only: CSS property names, such as animation-duration or --accent. Defaults to an empty array.'),
           attributes: tool.schema.array(tool.schema.string()).optional().describe('Inspect only: attribute names, such as data-state. Defaults to an empty array; absent values are null.'),
+          steps: tool.schema.array(tool.schema.object({
+            command: tool.schema.string(),
+            args: tool.schema.array(tool.schema.string()).optional(),
+            selector: tool.schema.string().optional(),
+            styles: tool.schema.array(tool.schema.string()).optional(),
+            attributes: tool.schema.array(tool.schema.string()).optional(),
+          })).optional().describe('Sequence only: 1–32 ordered commands, no nested sequences; close only last. Recording must start and stop within this call. Use selectors for planned actions.'),
           timeout_ms: tool.schema.number().int().min(1).max(MAX_TIMEOUT_MS).optional().describe('Command timeout in milliseconds. Defaults to 30000 and is capped at 120000.'),
         },
         async execute(input, context) {
-          const { command, args } = validateInvocation(input?.command, input?.args);
-          const inspection = normalizeInspection(command, args, input);
-          const timeoutMs = normalizeTimeout(input?.timeout_ms);
-          const invocationScope = buildScope(context);
-          const scope = {
-            ...invocationScope,
-            // OpenCode creates a fresh assistant message after every tool step.
-            // Its parent user message is the stable turn identity needed to keep
-            // sequential commands on one lease and one agent-browser daemon.
-            messageID: await resolveTurnMessageID(invocationScope, client),
-          };
-          const reuseKey = `${scope.opencodeSessionID}\u0000${scope.messageID}`;
-          if (command === 'close' && failedAcquisitionKeys.has(reuseKey)) {
-            return 'Browser lease already closed.';
+          if (input?.command !== 'sequence') {
+            if (input?.steps !== undefined) throw browserError(BROWSER_ERROR_CODES.inputInvalid, 'steps is valid only for sequence');
+            if (process.env.DEVRYAN_EXECUTION_WORKER === '1' && String(input?.command).trim().toLowerCase() === 'record'
+              && ['start', 'restart'].includes(input?.args?.[0])) {
+              throw browserError(BROWSER_ERROR_CODES.inputInvalid, 'Use a sequence containing record start, actions, and record stop; confined calls cannot retain a recording.');
+            }
+            return executeCommand(input, context);
           }
-          if (command === 'open' && args.length === 0 && !hasHeldLease(reuseKey)) {
-            // Resolve the branch preview before any surface exists. A branch
-            // without a preview hands off without an Electron renderer or an
-            // agent-browser daemon ever starting. A preview URL, an older
-            // server, or any failure continues through the unchanged acquire.
-            const resolved = await resolveBranchPreview(scope, context?.abort);
-            if (resolved?.previewUrl === null) return NO_PREVIEW_HANDOFF_MESSAGE;
-          }
-          let lease;
+          const steps = validateSequence(input);
+          const timeoutMs = normalizeTimeout(input.timeout_ms);
+          const timeoutSignal = AbortSignal.timeout(timeoutMs);
+          const signal = AbortSignal.any([...(context?.abort ? [context.abort] : []), timeoutSignal]);
+          const deadline = Date.now() + timeoutMs;
+          const results = [];
+          const sequence = {};
+          let failure;
+          let cleanupError;
+          let cleanupOutput;
+          let index = 0;
           try {
-            lease = await acquire(scope, context?.abort);
-            failedAcquisitionKeys.delete(reuseKey);
-          } catch (error) {
-            rememberFailedAcquisition(reuseKey);
+            for (; index < steps.length; index++) {
+              signal.throwIfAborted();
+              const step = steps[index];
+              // SDK turn lookup has no cancellation contract. Bound that wait
+              // too; a late result still encounters the aborted lease signal.
+              let onAbort;
+              let output;
+              try {
+                output = await Promise.race([
+                  new Promise((_, reject) => {
+                    onAbort = () => reject(signal.reason);
+                    signal.addEventListener('abort', onAbort, { once: true });
+                  }),
+                  executeCommand({ ...step, timeout_ms: Math.max(1, deadline - Date.now()) }, { ...context, abort: signal }, sequence),
+                ]);
+              } finally { signal.removeEventListener('abort', onAbort); }
+              results.push({ index, command: step.command, output });
+              if (Buffer.byteLength(JSON.stringify(results)) > MAX_OUTPUT_BYTES - 20 * 1024) {
+                results.pop();
+                results.push({ index, command: step.command, outputTruncated: true, executed: true });
+                throw browserError(BROWSER_ERROR_CODES.commandFailed, 'Sequence output limit reached; remaining steps were not executed');
+              }
+              if (output === NO_PREVIEW_HANDOFF_MESSAGE) throw browserError(BROWSER_ERROR_CODES.inputInvalid, output);
+            }
+          } catch (error) { failure = error; }
+          finally {
+            if (sequence.recording) {
+              try {
+                cleanupOutput = await executeCommand({ command: 'record', args: ['stop'], timeout_ms: 10_000 },
+                  { ...context, abort: AbortSignal.timeout(10_000) }, sequence);
+              } catch (error) { cleanupError = error; }
+            }
+          }
+          if (failure || cleanupError) {
+            const error = browserError(timeoutSignal.aborted ? BROWSER_ERROR_CODES.commandTimeout
+              : signal.aborted ? BROWSER_ERROR_CODES.commandAborted
+              : failure?.code || BROWSER_ERROR_CODES.commandFailed,
+            JSON.stringify({ results, failedStep: index, error: String(failure?.message || 'Recording finalization failed').slice(0, 2048),
+              ...(cleanupOutput ? { recordingFinalized: true, cleanupOutput: cleanupOutput.slice(0, 1024) } : {}),
+              ...(cleanupError ? { recordingIncomplete: true, cleanupError: String(cleanupError.message).slice(0, 1024) } : {}) }));
             throw error;
           }
-          const leaseId = requireText(
-            lease?.leaseId,
-            'lease response leaseId',
-            BROWSER_ERROR_CODES.leaseResponseInvalid,
-          );
-          const commandArgs = command === 'open'
-            ? resolveOpenCommandArguments(args, lease?.previewUrl)
-            : args;
-          if (commandArgs === null) {
-            if (lease?.created === true) {
-              await releaseForCleanup(leaseId, scope).catch(() => undefined);
-            }
-            return NO_PREVIEW_HANDOFF_MESSAGE;
-          }
-          const wsUrl = requireText(
-            lease?.wsUrl,
-            'lease response endpoint',
-            BROWSER_ERROR_CODES.leaseResponseInvalid,
-          );
-          const sensitiveValues = [environment.token, environment.binaryPath, environment.configPath, wsUrl];
-          const prefix = [
-            '--namespace', 'devryan',
-            '--session', leaseId,
-            '--config', environment.configPath,
-            '--idle-timeout', MANAGED_IDLE_TIMEOUT,
-          ];
-
-          try {
-            await connectLease({
-              reuseKey,
-              leaseId,
-              wsUrl,
-              prefix,
-              timeoutMs,
-              signal: context?.abort,
-              sensitiveValues,
-            });
-          } catch (error) {
-            if (lease?.created === true) {
-              await releaseForCleanup(leaseId, scope).catch(() => undefined);
-            }
-            throw error;
-          }
-
-          if (command === 'close') {
-            let commandError = null;
-            try {
-              await withCleanupSignal((signal) => touch(leaseId, scope, signal));
-              await runBinary({
-                binaryPath: environment.binaryPath,
-                args: [...prefix, 'close', ...commandArgs],
-                timeoutMs,
-                signal: context?.abort,
-                spawnImpl,
-                sensitiveValues,
-                cwd: environment.installRoot,
-              });
-            } catch (error) {
-              commandError = error;
-            } finally {
-              connections.delete(reuseKey);
-              await releaseForCleanup(leaseId, scope).catch((releaseError) => {
-                if (!commandError) commandError = releaseError;
-              });
-            }
-            if (commandError) throw commandError;
-            return 'Browser lease closed.';
-          }
-
-          await touch(leaseId, scope, context?.abort);
-          let result;
-          let commandError = null;
-          try {
-            result = await runBinary({
-              binaryPath: environment.binaryPath,
-              args: inspection
-                ? [...prefix, 'eval', buildBrowserInspectionScript(inspection)]
-                : [...prefix, command, ...commandArgs],
-              timeoutMs,
-              signal: context?.abort,
-              spawnImpl,
-              sensitiveValues,
-              cwd: environment.installRoot,
-              callerEval: command === 'eval',
-              errorCode: inspection ? BROWSER_ERROR_CODES.inspectionFailed : BROWSER_ERROR_CODES.commandFailed,
-            });
-            if (inspection) parseBrowserInspectionResult(result, inspection, sensitiveValues);
-          } catch (error) {
-            commandError = error;
-          }
-          try {
-            await touch(leaseId, scope, context?.abort);
-          } catch (touchError) {
-            if (!commandError) {
-              commandError = touchError;
-            } else if (commandError.code === BROWSER_ERROR_CODES.evalError
-              || commandError.code === BROWSER_ERROR_CODES.inputInvalid) {
-              // An expected caller mistake must not hide a simultaneous host
-              // failure. Both messages are already sanitized at their source.
-              touchError.message += `\nBrowser command also failed: ${commandError.message}`;
-              commandError = touchError;
-            }
-          }
-          if (commandError) throw commandError;
-          return result;
+          return JSON.stringify({ results });
         },
       }),
     },

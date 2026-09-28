@@ -94,7 +94,13 @@ Operations rail shared by the web and Electron renderers. Bot configuration live
   without putting action metadata in the assistant response.
 - `botPresentation.ts` owns pure runtime-copy, revision-marker, action-target,
   run-label, failure-message, key-handling, and control-lease projections used by components and
-  focused tests.
+  focused tests. `resolveBotCatalogReadiness` is the single projection of
+  capabilities, capability errors and the catalog read that the sidebar and
+  Settings → Bots render, so a catalog that is not requested never reads as
+  loading.
+- `OpenDockerDesktopButton.tsx` asks the native shell to start Docker Desktop
+  and then probes capabilities on a bounded interval; it is rendered only
+  while capabilities report `docker_stopped` on the desktop host.
 - `useBotRuntimeOperation.ts` projects Electron's authoritative lifecycle
   snapshot and window-scoped safe progress event into the chat and Bot settings
   recovery surfaces. Those components do not infer a long-running Docker
@@ -163,7 +169,7 @@ Operations rail shared by the web and Electron renderers. Bot configuration live
 - Optional per-Bot Skills/SOPs: `components/sections/bots/BotSkills.tsx`
 - Protected provider API keys/accounts: `components/sections/bots/BotCredentials.tsx`
 
-- Assigned navigation bootstrap uses the dedicated HTTP catalog independently of SSE history/operations. The sidebar subscribes to catalog readiness and connection status separately; loading/failure never renders as unassigned, and Retry refreshes both sources.
+- Assigned navigation bootstrap uses the dedicated HTTP catalog independently of SSE history/operations. The sidebar subscribes to the derived catalog readiness and connection status separately; loading, a blocked catalog and failure never render as unassigned, and Retry refreshes both sources.
 - `sidebar/useBotConnectionWarning.ts` owns the three-second warning grace
   period using the operations store's first-failure timestamp; retries and
   navigation never restart an unresolved outage's clock.

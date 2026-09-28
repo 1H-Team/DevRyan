@@ -9,8 +9,8 @@ Role-aware shared-host user and access administration inside Settings.
 - `UserManagementPage.tsx` is a slim container: users table → per-user detail
   page (in-page `selectedUserId` drill-down with a Back button), plus the
   one-time temporary-password / invite-URL banners. In local web/Electron mode
-  it renders the standalone GitHub account controls instead of requesting the
-  managed-only `/api/admin/*` datasets.
+  it renders the standalone GitHub account controls and passkey management
+  instead of requesting the managed-only `/api/admin/*` datasets.
 - `useAdminUsersData.ts` owns all fetching with per-domain reloaders
   (`reloadUsers`, `reloadInvites`, `reloadActivity`, `reloadProjects`,
   `reloadRoles`, `reloadGithubAccounts`, `reloadAll`) so mutations refresh only
@@ -70,6 +70,9 @@ Role-aware shared-host user and access administration inside Settings.
 - `openchamber/GitHubSettings.tsx` is mounted here for local administrators so
   connect, switch, disconnect, and `gh` CLI fallback controls share the User
   Management destination used by managed account assignment.
+- `openchamber/PasskeySettings.tsx` follows it on the local page only: passkey
+  sign-in exists solely behind the local UI password lock, which is also the
+  only place `SessionAuthGate` offers it.
 - `SettingsPermissionMatrix.tsx` renders the shared category-grouped Read/Edit
   ledger: binary role cells and tri-state inherited/On/Off user cells. Both
   matrices normalize untrusted or version-skewed responses to the complete UI

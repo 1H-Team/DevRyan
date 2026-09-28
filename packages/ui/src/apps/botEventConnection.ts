@@ -218,7 +218,8 @@ export type BotEventConnectionHooks = Readonly<{
 }>;
 
 type BotCapabilityConnectionControllerOptions = {
-  loadCapabilities: () => Promise<BotCapabilitySummary | null>;
+  /** `refresh` asks the host for a live probe; only an explicit retry sets it. */
+  loadCapabilities: (options?: { refresh?: boolean }) => Promise<BotCapabilitySummary | null>;
   getCapabilitiesErrorCode: () => string | null;
   canStream: (capabilities: BotCapabilitySummary) => boolean;
   /** Whether a non-streamable state can clear on its own. Recovery and setup
@@ -251,6 +252,7 @@ export const createBotCapabilityConnectionController = ({
   let retryAttempt = 0;
   let probing = false;
   let retryAfterProbe = false;
+  let refreshAfterProbe = false;
   let started = false;
   let disposed = false;
   let hasFailure = false;
@@ -275,16 +277,17 @@ export const createBotCapabilityConnectionController = ({
     }, delay);
   };
 
-  async function probe() {
+  async function probe(refresh = false) {
     if (disposed || connection) return;
     if (probing) {
       retryAfterProbe = true;
+      refreshAfterProbe ||= refresh;
       return;
     }
     probing = true;
     if (!hasFailure) setConnectionState('connecting');
     try {
-      const capabilities = await loadCapabilities().catch(() => null);
+      const capabilities = await loadCapabilities(refresh ? { refresh: true } : undefined).catch(() => null);
       if (disposed || connection) return;
       if (capabilities && canStream(capabilities)) {
         clearRetryTimer();
@@ -331,11 +334,13 @@ export const createBotCapabilityConnectionController = ({
       if (capabilities ? isTransient(capabilities) : !isFinalErrorCode(lastFailureCode)) scheduleRetry();
     } finally {
       probing = false;
+      const refreshNext = refreshAfterProbe;
+      refreshAfterProbe = false;
       if (retryAfterProbe && !disposed && !connection) {
         retryAfterProbe = false;
         retryAttempt = 0;
         clearRetryTimer();
-        void probe();
+        void probe(refreshNext);
       }
     }
   }
@@ -354,8 +359,8 @@ export const createBotCapabilityConnectionController = ({
       }
       retryAttempt = 0;
       clearRetryTimer();
-      if (probing) retryAfterProbe = true;
-      else void probe();
+      // An explicit retry must not be answered from the host's cached probe.
+      void probe(true);
     },
     /** Re-checks a stopped (non-transient) failure, for example on focus. */
     recheck() {
@@ -367,6 +372,7 @@ export const createBotCapabilityConnectionController = ({
       if (disposed) return;
       disposed = true;
       retryAfterProbe = false;
+      refreshAfterProbe = false;
       clearRetryTimer();
       connection?.dispose();
       connection = null;

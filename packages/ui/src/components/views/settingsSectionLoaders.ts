@@ -12,8 +12,13 @@ import type { SettingsPageSlug } from '@/lib/settings/metadata';
 
 const agentsSidebar = createPreparedSettingsComponent(() =>
   import('@/components/sections/agents/AgentsSidebar').then((module) => ({ default: module.AgentsSidebar })));
+// Same module as the sidebar, so the compact picker adds no separate chunk.
+const agentsPicker = createPreparedSettingsComponent(() =>
+  import('@/components/sections/agents/AgentsSidebar').then((module) => ({ default: module.AgentsSettingsPicker })));
 const agentsPage = createPreparedSettingsComponent(() =>
   import('@/components/sections/agents/AgentsPage').then((module) => ({ default: module.AgentsPage })));
+const sessionDefaultsPage = createPreparedSettingsComponent(() =>
+  import('@/components/sections/agents/SessionDefaultsPage').then((module) => ({ default: module.SessionDefaultsPage })));
 const behaviorPage = createPreparedSettingsComponent(() =>
   import('@/components/sections/behavior/BehaviorPage').then((module) => ({ default: module.BehaviorPage })));
 const commandsSidebar = createPreparedSettingsComponent(() =>
@@ -64,7 +69,9 @@ const botsPage = createPreparedSettingsComponent(() =>
   import('@/components/sections/bots/BotsPage').then((module) => ({ default: module.BotsPage })));
 
 export const PreparedAgentsSidebar = agentsSidebar.Component;
+export const PreparedAgentsSettingsPicker = agentsPicker.Component;
 export const PreparedAgentsPage = agentsPage.Component;
+export const PreparedSessionDefaultsPage = sessionDefaultsPage.Component;
 export const PreparedBehaviorPage = behaviorPage.Component;
 export const PreparedCommandsSidebar = commandsSidebar.Component;
 export const PreparedCommandsPage = commandsPage.Component;
@@ -116,7 +123,7 @@ const pageResources: Partial<Record<SettingsPageSlug, readonly SettingsSectionRe
   'bug-reports': [bugReportsPage],
   projects: [projectsSidebar, projectsPage],
   'remote-instances': [remoteInstancesSidebar, remoteInstancesPage],
-  agents: [agentsSidebar, agentsPage],
+  agents: [agentsSidebar, agentsPicker, agentsPage],
   behavior: [behaviorPage],
   commands: [commandsSidebar, commandsPage],
   mcp: [mcpSidebar, mcpPage],
@@ -132,7 +139,7 @@ const pageResources: Partial<Record<SettingsPageSlug, readonly SettingsSectionRe
   appearance: [openChamberSectionResources.visual],
   chat: [openChamberSectionResources.chat],
   shortcuts: [openChamberSectionResources.shortcuts],
-  sessions: [openChamberSectionResources.sessions],
+  sessions: [agentsSidebar, agentsPicker, sessionDefaultsPage],
   notifications: [openChamberSectionResources.notifications],
   voice: [openChamberSectionResources.voice],
   tunnel: [openChamberSectionResources.tunnel],

@@ -5,7 +5,7 @@
     "": {
       "name": "openchamber-monorepo",
       "dependencies": {
-        "@opencode-ai/sdk": "^1.18.32",
+        "@opencode-ai/sdk": "^1.18.33",
         "react": "^19.2.8",
         "react-dom": "^19.2.8",
         "zod": "^4.5.4",
@@ -38,23 +38,23 @@
     },
     "packages/bot-computer": {
       "name": "@openchamber/bot-computer",
-      "version": "1.2.17",
+      "version": "1.2.18",
     },
     "packages/bot-db": {
       "name": "@openchamber/bot-db",
-      "version": "1.2.17",
+      "version": "1.2.18",
     },
     "packages/bot-egress": {
       "name": "@openchamber/bot-egress",
-      "version": "1.2.17",
+      "version": "1.2.18",
     },
     "packages/bot-engine-proxy": {
       "name": "@openchamber/bot-engine-proxy",
-      "version": "1.2.17",
+      "version": "1.2.18",
     },
     "packages/bot-indexer": {
       "name": "@openchamber/bot-indexer",
-      "version": "1.2.17",
+      "version": "1.2.18",
       "dependencies": {
         "@xenova/transformers": "2.17.2",
         "better-sqlite3": "12.11.1",
@@ -62,15 +62,15 @@
     },
     "packages/bot-supervisor": {
       "name": "@openchamber/bot-supervisor",
-      "version": "1.2.17",
+      "version": "1.2.18",
     },
     "packages/bots-runtime": {
       "name": "@openchamber/bots-runtime",
-      "version": "1.2.17",
+      "version": "1.2.18",
     },
     "packages/cursor-sdk-runtime": {
       "name": "@openchamber/cursor-sdk-runtime",
-      "version": "1.2.17",
+      "version": "1.2.18",
       "dependencies": {
         "@cursor/sdk": "1.0.28",
         "@modelcontextprotocol/sdk": "1.29.0",
@@ -79,7 +79,7 @@
     },
     "packages/desktop": {
       "name": "@openchamber/desktop",
-      "version": "1.2.17",
+      "version": "1.2.18",
       "devDependencies": {
         "@tauri-apps/cli": "^2",
         "@types/node": "^24.3.1",
@@ -88,7 +88,7 @@
     },
     "packages/electron": {
       "name": "@openchamber/electron",
-      "version": "1.2.17",
+      "version": "1.2.18",
       "dependencies": {
         "@openchamber/bot-db": "workspace:*",
         "@openchamber/bot-egress": "workspace:*",
@@ -107,22 +107,22 @@
     },
     "packages/harness-runtime": {
       "name": "@openchamber/harness-runtime",
-      "version": "1.2.17",
+      "version": "1.2.18",
     },
     "packages/orchestration-runtime": {
       "name": "@openchamber/orchestration-runtime",
-      "version": "1.2.17",
+      "version": "1.2.18",
     },
     "packages/shared-runtime": {
       "name": "@openchamber/shared-runtime",
-      "version": "1.2.17",
+      "version": "1.2.18",
       "dependencies": {
         "adm-zip": "^0.6.0",
       },
     },
     "packages/ui": {
       "name": "@openchamber/ui",
-      "version": "1.2.17",
+      "version": "1.2.18",
       "dependencies": {
         "@base-ui/react": "^1.8.0",
         "@codemirror/autocomplete": "^6.20.3",
@@ -153,7 +153,7 @@
         "@fontsource/ibm-plex-sans": "^5.3.0",
         "@lezer/highlight": "^1.2.3",
         "@openchamber/orchestration-runtime": "workspace:*",
-        "@opencode-ai/sdk": "^1.18.32",
+        "@opencode-ai/sdk": "^1.18.33",
         "@pierre/diffs": "1.1.0-beta.13",
         "@remixicon/react": "^4.9.0",
         "@simplewebauthn/browser": "13.3.0",
@@ -214,7 +214,7 @@
     },
     "packages/web": {
       "name": "@openchamber/web",
-      "version": "1.2.17",
+      "version": "1.2.18",
       "bin": {
         "openchamber": "./bin/cli.js",
       },
@@ -229,7 +229,7 @@
         "@openchamber/harness-runtime": "workspace:*",
         "@openchamber/orchestration-runtime": "workspace:*",
         "@openchamber/shared-runtime": "workspace:*",
-        "@opencode-ai/sdk": "^1.18.32",
+        "@opencode-ai/sdk": "^1.18.33",
         "@simplewebauthn/server": "13.3.0",
         "adm-zip": "^0.6.0",
         "better-sqlite3": "^12.11.1",
@@ -259,7 +259,7 @@
         "@fontsource/ibm-plex-mono": "^5.3.0",
         "@fontsource/ibm-plex-sans": "^5.3.0",
         "@openchamber/ui": "workspace:*",
-        "@opencode-ai/plugin": "1.18.32",
+        "@opencode-ai/plugin": "1.18.33",
         "@remixicon/react": "^4.9.0",
         "@simplewebauthn/browser": "13.3.0",
         "@tailwindcss/postcss": "^4.3.3",
@@ -856,9 +856,9 @@
 
     "@openchamber/web": ["@openchamber/web@workspace:packages/web"],
 
-    "@opencode-ai/plugin": ["@opencode-ai/plugin@1.18.32", "", { "dependencies": { "@ai-sdk/provider": "3.0.8", "@opencode-ai/sdk": "1.18.32", "effect": "4.0.0-beta.83", "zod": "4.1.8" }, "peerDependencies": { "@opentui/core": ">=0.4.5", "@opentui/keymap": ">=0.4.5", "@opentui/solid": ">=0.4.5" }, "optionalPeers": ["@opentui/core", "@opentui/keymap", "@opentui/solid"] }, "sha512-JJXaTHmkiU9EAshJOFuIkZsAuvBcLw46BAErePeER8bPeO2LL2uGyBRt4tuLJjJ2N7v1vlZgfvAD7bWKupke1A=="],
+    "@opencode-ai/plugin": ["@opencode-ai/plugin@1.18.33", "", { "dependencies": { "@ai-sdk/provider": "3.0.8", "@opencode-ai/sdk": "1.18.33", "effect": "4.0.0-beta.83", "zod": "4.1.8" }, "peerDependencies": { "@opentui/core": ">=0.4.5", "@opentui/keymap": ">=0.4.5", "@opentui/solid": ">=0.4.5" }, "optionalPeers": ["@opentui/core", "@opentui/keymap", "@opentui/solid"] }, "sha512-fmhqCBJvNt+Vfbx6ckKP19S3xwMBhUXLCBQaK92R4wnv3wsWTZYkJQwYf2egiWfJNOl47jhs3vP7uQkl0mvHQw=="],
 
-    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.18.32", "", { "dependencies": { "cross-spawn": "7.0.6" } }, "sha512-Wi3WtH/cLA3C0ga05lyDb7zac+SzbST9MPwCve1Ffod0xwzHdy9G2gnxvMAR4RBRhKJS32Rgk2cR+fxBhAVSQw=="],
+    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.18.33", "", { "dependencies": { "cross-spawn": "7.0.6" } }, "sha512-Nyurky9+AA2tvZ6my8UtO5pxPoXxrNypqjeEqMshBGiR542glOy+KE1Y+3lwWU+Z6HC/hSmrdXNbX81+qiuTzg=="],
 
     "@paralleldrive/cuid2": ["@paralleldrive/cuid2@2.3.1", "", { "dependencies": { "@noble/hashes": "^1.1.5" } }, "sha512-XO7cAxhnTZl0Yggq6jOgjiOHhbgcO4NqFqwSmQpjK3b6TEE6Uj/jfSk6wzYyemh3+I0sHirKSetjQwn5cZktFw=="],
 

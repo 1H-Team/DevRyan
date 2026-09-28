@@ -1,5 +1,5 @@
 import type { I18nKey } from '@/lib/i18n';
-import type { SettingsPageSlug } from './metadata';
+import type { SettingsPageMeta, SettingsPageSlug } from './metadata';
 
 export type SettingsNavSection = {
   labelKey: I18nKey;
@@ -50,6 +50,18 @@ export const PROVIDERS_SETTINGS_DESTINATION = {
   fallbackSlugs: ['usage'],
 } as const satisfies SettingsNavDestination;
 
+// Session Defaults is an entry in the Agents sidebar rather than a tab. It keeps
+// its own `sessions` page and permission identity, and stands alone for
+// principals who may read session defaults but not agents.
+export const AGENTS_SETTINGS_DESTINATION = {
+  id: 'agents',
+  labelKey: 'settings.page.agents.title',
+  iconSlug: 'agents',
+  slugs: ['agents'],
+  aliasSlugs: { sessions: 'agents' },
+  fallbackSlugs: ['sessions'],
+} as const satisfies SettingsNavDestination;
+
 export const REMOTE_CONNECTIONS_SETTINGS_DESTINATION = {
   id: 'remote-connections',
   labelKey: 'settings.page.remoteConnections.title',
@@ -67,12 +79,10 @@ export const SETTINGS_NAV_SECTIONS: readonly SettingsNavSection[] = [
   },
   {
     labelKey: 'settings.view.nav.group.workflow',
-    destinations: singlePageDestinations(
-      'sessions',
-      'agents',
-      'bots',
-      'magic-prompts',
-    ),
+    destinations: [
+      AGENTS_SETTINGS_DESTINATION,
+      ...singlePageDestinations('bots', 'magic-prompts'),
+    ],
   },
   {
     labelKey: 'settings.view.nav.group.connections',
@@ -130,7 +140,8 @@ export function getSettingsDestinationFallbackSlug(
 /**
  * A fallback page is superseded once one of its destination's primary pages is
  * visible (for example Usage folds into Providers). Returns the page to show
- * instead, or null when the requested page should stay.
+ * instead, or null when the requested page should stay. A fallback that is also
+ * an alias sub-page (Session Defaults) stays reachable from inside its tab.
  */
 export function getSettingsSupersedingSlug(
   slug: SettingsPageSlug,
@@ -138,5 +149,18 @@ export function getSettingsSupersedingSlug(
 ): SettingsPageSlug | null {
   const destination = getSettingsNavDestination(slug);
   if (!destination?.fallbackSlugs?.includes(slug)) return null;
+  if (destination.aliasSlugs?.[slug]) return null;
   return destination.slugs.find((candidate) => visibleSlugs.has(candidate)) ?? null;
+}
+
+/**
+ * A page that borrows another page's sidebar renders on its own when that
+ * sidebar's page is hidden from the principal.
+ */
+export function getSettingsPageLayoutKind(
+  page: Pick<SettingsPageMeta, 'kind' | 'sidebarSlug'>,
+  visibleSlugs: ReadonlySet<string>,
+): SettingsPageMeta['kind'] {
+  if (page.sidebarSlug && !visibleSlugs.has(page.sidebarSlug)) return 'single';
+  return page.kind;
 }

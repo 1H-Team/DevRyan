@@ -47,7 +47,7 @@ const host = createSessionExecutionHost({ onDiagnostic: record => diagnostics.pu
   stopCursor: ({ sessionID }) => cursor?.abortAndWait(sessionID) });
 const bridge = createManagedOrchestrationPrivateHost({ handleRpc: async ({ method, params }) => {
   assert.equal(method, 'session_execution');
-  executionCalls.push({ action: params.action, tool: params.tool, callID: params.callID, toolOrigin: params.toolOrigin });
+  executionCalls.push({ action: params.action, tool: params.tool, callID: params.callID, toolOrigin: params.toolOrigin, token: params.token });
   if (failToolAdmission && ['begin', 'cancel-before-start'].includes(params.action)) {
     const code = params.action === 'begin' ? 'local_execution_timeout' : 'cleanup_fixture_failed';
     throw Object.assign(new Error(code), { code });
@@ -466,7 +466,12 @@ try {
     ['glob', { pattern: '**/0-0.txt' }], ['grep', { pattern: 'ledger fixture', include: '0-0.txt' }]]) {
     const { call } = await invoke(warmingSession.id, name, args);
     overlapped ||= !warmSettled;
-    assert.deepEqual(executionCalls.filter(row => row.callID === call.callID).map(row => row.action), ['direct-admit', 'direct-finish']);
+    const calls = executionCalls.filter(row => row.callID === call.callID);
+    assert.equal(calls[0]?.action, 'direct-admit');
+    assert(calls.length >= 2 && calls.length <= 4 && calls.slice(1).every(row => row.action === 'direct-finish'));
+    assert.equal(new Set(calls.slice(1).map(row => row.token)).size, 1, 'Retried completions keep one receipt identity');
+    const lease = await host.runtime.leaseForCall({ directory: warmingDirectory, sessionID: warmingSession.id, callID: call.callID });
+    assert(lease?.direct === true && lease.cleaned === true && lease.state === 'published');
     assert(!diagnostics.some(row => row.callID === call.callID && row.phase === 'preparation'));
   }
   const warmResult = await warming;

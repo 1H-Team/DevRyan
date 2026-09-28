@@ -11,9 +11,9 @@ OpenChamber supports user-defined themes. Drop a JSON file into the themes direc
 
 2. Create a theme JSON file (e.g., `my-theme.json`) with the format below.
 
-3. In OpenChamber: **Settings → Theme → Reload themes**.
+3. In DevRyan: **Settings → Appearance → Theme → Reload Themes**.
 
-4. Select your theme from the dropdown.
+4. Choose your theme from the Light Theme or Dark Theme cards (it is marked **Custom**).
 
 ## Theme Location
 

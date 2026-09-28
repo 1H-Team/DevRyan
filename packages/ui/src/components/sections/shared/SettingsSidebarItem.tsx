@@ -31,6 +31,8 @@ interface SettingsSidebarItemProps {
   onSelect: () => void;
   /** Optional icon to show before title */
   icon?: React.ReactNode;
+  /** Optional element after the title that is never truncated (for example a badge) */
+  trailing?: React.ReactNode;
   /** Actions shown in dropdown menu. If empty/undefined, no dropdown is shown. */
   actions?: SettingsSidebarItemAction[];
   /** Additional className for the outer container */
@@ -60,6 +62,7 @@ export const SettingsSidebarItem: React.FC<SettingsSidebarItemProps> = ({
   selected = false,
   onSelect,
   icon,
+  trailing,
   actions,
   className,
 }) => {
@@ -86,6 +89,7 @@ export const SettingsSidebarItem: React.FC<SettingsSidebarItemProps> = ({
             <span className="typography-ui-label font-normal truncate text-foreground">
               {title}
             </span>
+            {trailing}
           </div>
 
           {metadata && (

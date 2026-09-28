@@ -11,7 +11,7 @@ const projects = create(() => ({ activeProjectId: 'fixture-project' }));
 mock.module('@/stores/useProjectsStore', () => ({ useProjectsStore: projects }));
 mock.module('@/stores/useUIStore', () => ({ useUIStore: { getState: () => ({ setSettingsPage: (page: string) => calls.push(`page:${page}`) }) } }));
 for (const [store, actions] of Object.entries({
-  useAgentsStore: ['setSelectedAgent', 'loadAgents'], useCommandsStore: ['loadCommands'],
+  useAgentsStore: ['setSelectedGlobalView', 'loadAgents'], useCommandsStore: ['loadCommands'],
   useMcpConfigStore: ['loadMcpConfigs'], useSkillsStore: ['loadSkills'],
   useSkillsCatalogStore: ['loadCatalog'], usePluginsStore: ['loadPlugins', 'loadSlimStatus'],
 })) {
@@ -48,9 +48,9 @@ test('imports do not fetch data; mounting activates only the requested stores', 
 test('normalizing the Behavior alias clears selection without fetching Agents twice', async () => {
   await mounted(async (render) => {
     await render(SettingsDataBoundary, { slug: 'agents', resetSelectedAgent: true });
-    expect(calls).toEqual(['setSelectedAgent', 'page:agents', 'loadAgents']);
+    expect(calls).toEqual(['setSelectedGlobalView', 'page:agents', 'loadAgents']);
     await render(SettingsDataBoundary, { slug: 'agents', resetSelectedAgent: false });
-    expect(calls).toEqual(['setSelectedAgent', 'page:agents', 'loadAgents']);
+    expect(calls).toEqual(['setSelectedGlobalView', 'page:agents', 'loadAgents']);
   });
 });
 

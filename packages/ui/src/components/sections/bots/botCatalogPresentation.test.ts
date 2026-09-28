@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { BotCatalogBackup, BotCatalogStatus } from '@/lib/botsApi';
-import { isBotCatalogRecoveryState, resolveBotCatalogAction } from './botCatalogPresentation';
+import {
+  botCatalogDiscoveryFailure,
+  canCheckHostedBots,
+  isBotCatalogRecoveryState,
+  resolveBotCatalogAction,
+} from './botCatalogPresentation';
 
 const backup: BotCatalogBackup = {
   id: '20260926T010000Z-0000abcd',
@@ -82,5 +87,41 @@ describe('Bot catalog recovery presentation', () => {
     expect(isBotCatalogRecoveryState({ state: 'catalog_unavailable', database: { state: 'starting' } })).toBe(false);
     expect(isBotCatalogRecoveryState({ state: 'docker_stopped', database: { state: 'ready' } })).toBe(false);
     expect(isBotCatalogRecoveryState(null)).toBe(false);
+  });
+
+  test('explains a hosted project that is over its quota', () => {
+    const quota = botCatalogDiscoveryFailure('bot_import_source_quota_exceeded');
+    expect(quota.title).toBe('Hosted Project Is Over Its Quota');
+    expect(quota.detail).toContain('have not been deleted');
+    expect(quota.detail).toContain('check again');
+    expect(quota.detail).not.toContain('bot_import_source_quota_exceeded');
+
+    expect(botCatalogDiscoveryFailure('bot_import_source_forbidden').title).toBe('Hosted Project Rejected the Saved Key');
+    expect(botCatalogDiscoveryFailure('bot_import_source_unavailable')).toEqual({
+      title: 'Could Not Check Hosted Bots',
+      detail: 'The hosted source could not be checked (bot_import_source_unavailable).',
+    });
+  });
+
+  test('offers the hosted check only to the owner of a quiet catalog with a saved source', () => {
+    const saved = { sourceConfigured: true, cloud: null, import: null, pending: false };
+    const offered = (value: BotCatalogStatus) => canCheckHostedBots(value, resolveBotCatalogAction(value, []));
+
+    // A saved source alone raises no notice: nothing was asked yet.
+    expect(resolveBotCatalogAction(status({ import: saved }), [])).toBeNull();
+    expect(offered(status({ import: saved }))).toBe(true);
+    // A finished or dismissed import stays reachable.
+    expect(offered(status({ import: { ...importState('dismissed'), sourceConfigured: true, cloud: null, pending: false } }))).toBe(true);
+
+    expect(offered(status({ import: { ...saved, sourceConfigured: false } }))).toBe(false);
+    expect(offered(status())).toBe(false);
+    expect(offered(status({ viewerIsOwner: false, import: saved }))).toBe(false);
+    expect(offered(status({ state: 'unavailable', import: saved }))).toBe(false);
+    // A notice already carries its own control.
+    expect(offered(status({ import: { ...saved, pending: true } }))).toBe(false);
+    expect(offered(status({
+      import: { ...saved, cloud: { hasBots: null, checkedAt: '', code: 'bot_import_source_quota_exceeded' } },
+    }))).toBe(false);
+    expect(canCheckHostedBots(null, null)).toBe(false);
   });
 });

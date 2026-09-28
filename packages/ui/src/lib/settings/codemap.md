@@ -22,7 +22,14 @@ Servers**.
 permission identities. Connections starts with the Plugins hub (`plugins`,
 `skills.installed` and `mcp` tabs; `skills.catalog` is an `aliasSlugs` sub-page
 that keeps the Skills tab and hub active), then Providers, then Remote
-Connections (`tunnel` and `remote-instances`, tunnel first). Providers has one
+Connections (`tunnel` and `remote-instances`, tunnel first). Workflow starts
+with Agents: one tab (`agents`) whose sidebar also opens Session Defaults, the
+`sessions` page, listed as both an `aliasSlugs` sub-page (keeps Agents active,
+never a tab) and a `fallbackSlugs` page (stands alone for principals who may
+read sessions but not agents). `getSettingsSupersedingSlug` never redirects a
+fallback that is also an alias. Page metadata `sidebarSlug` lets a split page
+borrow another page's sidebar; `getSettingsPageLayoutKind` renders it single
+when that page is hidden. Providers has one
 tab; `usage` is a `fallbackSlugs` page shown only to principals who may read
 usage but not providers, and `getSettingsSupersedingSlug` redirects `usage`
 links to Providers once Providers is visible, where each provider shows its own

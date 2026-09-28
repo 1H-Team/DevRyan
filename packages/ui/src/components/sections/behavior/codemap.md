@@ -6,7 +6,7 @@ Settings → Agents behavior controls shared by the web and Electron renderers.
 
 ## Files
 
-- `BehaviorPage.tsx`: renders Global Agent Behavior and the Rationale Display selector, with independent loading and persistence state for each feature.
+- `BehaviorPage.tsx`: the Behavior entry of Settings → Agents. Renders Global Agent Behavior and the Rationale Display selector, with independent loading and persistence state for each feature. Host runtime switches live in the separate Runtime entry (`agents/AgentRuntimePage.tsx`).
 - `globalAgentsMdApi.ts`: validates the `/api/behavior/agents-md` read/save contract and exposes warning detection for persisted saves whose runtime refresh failed.
 
 ## Data flow

@@ -295,6 +295,17 @@ export function createLocalBotCatalogTransport({
     getState: () => state,
     ensureStarted,
     scheduleStart,
+    // An explicit owner retry does not wait out the backoff. Only a plain
+    // outage restarts this way: recovery, setup, update and maintenance keep
+    // requiring their own owner action, and a start in flight is reused.
+    retryNow() {
+      if (disposed || state.state !== 'unavailable') return false;
+      void ensureStarted().catch((error) => {
+        if (state.state !== 'recovery_required' && state.state !== 'setup_required') scheduleStart();
+        logger?.debug?.('[BotsCatalog] catalog retry deferred', { code: error?.code || 'bot_database_unavailable' });
+      });
+      return true;
+    },
     // Maintenance and replacement: callers stop using the current endpoint
     // and wait for a new generation before reopening writes.
     enterMaintenance(code = 'bots_maintenance') {

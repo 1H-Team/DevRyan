@@ -122,6 +122,8 @@ export type BotsDesktopApi = {
   enableRuntimeService?(allowLegacy?: boolean): Promise<RuntimeServiceStatus>;
   disableRuntimeService?(): Promise<RuntimeServiceStatus>;
   openRuntimeServiceSettings?(): Promise<void>;
+  /** Asks the native shell to start Docker Desktop; absent from older desktop hosts. */
+  openDockerDesktop?(): Promise<{ opened: boolean; code: string | null }>;
   operationStatus?(): Promise<BotRuntimeOperationProgress | null>;
   listenProgress?(listener: (progress: BotRuntimeOperationProgress) => void): Promise<() => void>;
   exportRecovery(botId: string, request: BotRecoveryExportRequest): Promise<BotRecoveryNativeResult>;
@@ -139,6 +141,7 @@ type DesktopCommand =
   | 'desktop_runtime_service_enable'
   | 'desktop_runtime_service_disable'
   | 'desktop_runtime_service_open_settings'
+  | 'desktop_open_docker_desktop'
   | 'desktop_export_bot_recovery'
   | 'desktop_restore_bot_recovery';
 
@@ -241,6 +244,15 @@ export const createBotsDesktopApi = ({
       await call<{ opened: boolean }>(
         'desktop_runtime_service_open_settings', {}, 'Login Items settings could not be opened',
       );
+    },
+    openDockerDesktop: async () => {
+      const result = await call<{ opened?: unknown; code?: unknown }>(
+        'desktop_open_docker_desktop', {}, 'Docker Desktop could not be opened',
+      );
+      return {
+        opened: result.opened === true,
+        code: typeof result.code === 'string' ? result.code : null,
+      };
     },
     exportRecovery: (botId, request) => call<BotRecoveryNativeResult>(
       'desktop_export_bot_recovery',

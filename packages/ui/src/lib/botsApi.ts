@@ -1238,7 +1238,9 @@ export type BotCatalogImportPhase =
   | 'completed' | 'failed' | 'blocked' | 'cancelled' | 'dismissed';
 
 export type BotCatalogImportStatus = {
-  /** Background hosted discovery is still running; local reads remain available. */
+  /** A hosted project is saved on this host; it is contacted only when asked while Supabase is off. */
+  sourceConfigured?: boolean;
+  /** Hosted discovery is still running; local reads remain available. */
   checking?: boolean;
   cloud: { hasBots: boolean | null; checkedAt: string; code: string | null } | null;
   import: {
@@ -1285,6 +1287,8 @@ export type BotsApi = {
   startEmptyCatalog(confirmation: string): Promise<unknown>;
   resumeBotActivation(): Promise<unknown>;
   startCatalogImport(request: { mode: BotCatalogImportMode; writersStopped: boolean }): Promise<BotCatalogImportStatus>;
+  /** Checks the hosted source again now; absent from older hosts (404). */
+  checkCatalogImportSource(): Promise<BotCatalogImportStatus>;
   cancelCatalogImport(): Promise<BotCatalogImportStatus>;
   dismissCatalogImport(): Promise<BotCatalogImportStatus>;
   getTelegramStatus(botId: string): Promise<BotTelegramStatus>;
@@ -1298,7 +1302,8 @@ export type BotsApi = {
   getSpeechStatus(botId: string): Promise<BotSpeechStatus>;
   configureSpeech(botId: string, request: BotSpeechConfiguration): Promise<BotSpeechStatus>;
   checkSpeech(botId: string): Promise<{ stt: { ready: boolean; code: string | null }; tts: { ready: boolean; code: string | null } }>;
-  getCapabilities(): Promise<BotCapabilities>;
+  /** `refresh` bypasses the host's cached Docker probe; used by explicit retries only. */
+  getCapabilities(options?: { refresh?: boolean }): Promise<BotCapabilities>;
   getAssignedCatalog(): Promise<BotAssignedCatalog>;
   listBots(): Promise<{ bots: BotSummary[]; canCreateBot: boolean }>;
   createBot(request: {
@@ -1848,6 +1853,7 @@ export const createBotsApi = ({
     ),
     resumeBotActivation: () => mutateJson('/api/bots/database/activation/resume', 'POST', {}),
     startCatalogImport: (body) => mutateJson('/api/bots/database/import', 'POST', body),
+    checkCatalogImportSource: () => mutateJson('/api/bots/database/import/check', 'POST', {}),
     cancelCatalogImport: () => mutateJson('/api/bots/database/import/cancel', 'POST', {}),
     dismissCatalogImport: () => mutateJson('/api/bots/database/import/dismiss', 'POST', {}),
     getTelegramStatus: (botId) => requestJson(`/api/bots/${encoded(botId)}/telegram`),
@@ -1861,7 +1867,9 @@ export const createBotsApi = ({
     getSpeechStatus: (botId) => requestJson(`/api/bots/${encoded(botId)}/speech`),
     configureSpeech: (botId, body) => mutateJson(`/api/bots/${encoded(botId)}/speech`, 'PUT', body),
     checkSpeech: (botId) => mutateJson(`/api/bots/${encoded(botId)}/speech/check`, 'POST'),
-    getCapabilities: () => requestJson('/api/bots/capabilities'),
+    getCapabilities: (options) => requestJson(
+      options?.refresh ? '/api/bots/capabilities?refresh=1' : '/api/bots/capabilities',
+    ),
     getAssignedCatalog: async () => {
       const catalog = parseBotAssignedCatalog(await requestJson<unknown>('/api/bots/assigned'));
       if (!catalog) throw new BotsApiError('Production Bots returned an invalid catalog', {

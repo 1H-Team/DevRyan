@@ -49,6 +49,8 @@ export interface SettingsPageMeta {
   title: string;
   group: SettingsPageGroup;
   kind: 'single' | 'split';
+  /** Split page that shows another page's sidebar; see `getSettingsPageLayoutKind`. */
+  sidebarSlug?: SettingsPageSlug;
   description?: string;
   keywords?: string[];
   isAvailable?: (ctx: SettingsRuntimeContext) => boolean;
@@ -80,7 +82,7 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     group: 'general',
     kind: 'single',
     description: 'Manage users, roles, projects, branches, GitHub accounts, and audit activity.',
-    keywords: ['users', 'roles', 'access', 'permissions', 'branches', 'github', 'accounts', 'oauth', 'audit'],
+    keywords: ['users', 'roles', 'access', 'permissions', 'branches', 'github', 'accounts', 'oauth', 'audit', 'passkey', 'passkeys', 'sign in', 'security'],
   },
   {
     slug: 'bug-reports',
@@ -190,7 +192,11 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     title: 'Appearance',
     group: 'appearance',
     kind: 'single',
-    keywords: ['theme', 'font', 'spacing', 'padding', 'corner radius', 'radius', 'input bar', 'keyboard', 'viewport', 'mobile', 'terminal', 'pwa', 'install name', 'app shortcuts'],
+    keywords: [
+      'theme', 'color mode', 'dark mode', 'light mode', 'font', 'code font', 'text size', 'chat width', 'spacing',
+      'density', 'padding', 'input bar', 'keyboard', 'viewport', 'mobile', 'terminal', 'pwa', 'install name',
+      'diff', 'mermaid', 'reasoning', 'dotfiles', 'preview mode', 'queue', 'time format', 'week',
+    ],
   },
   {
     slug: 'chat',
@@ -209,10 +215,14 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
   },
   {
     slug: 'sessions',
-    title: 'Sessions',
-    group: 'general',
-    kind: 'single',
-    keywords: ['defaults', 'default agent', 'default model', 'memory', 'limits', 'zen'],
+    title: 'Session Defaults',
+    group: 'opencode',
+    kind: 'split',
+    sidebarSlug: 'agents',
+    keywords: [
+      'sessions', 'defaults', 'new session', 'default agent', 'plan mode', 'default model',
+      'retention', 'cleanup', 'auto delete', 'archive',
+    ],
   },
   {
     slug: 'magic-prompts',

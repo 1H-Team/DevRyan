@@ -1,0 +1,1319 @@
+{
+  "date": "2026-09-28",
+  "platform": "darwin-arm64",
+  "sourceHashes": {
+    "packages/web/server/default-config/plugins/devryan-browser.mjs": "ab368ac6d1675b00ad076e9ab1af13ee8591c0a420369d95d0564f693c489f9c",
+    "packages/web/server/lib/agent-browser/install.js": "c8fca1e4b19387efbc3142739dd1c0c675814ec2c651813e36c3e2a186259645",
+    "packages/web/server/lib/agent-browser/ffmpeg.js": "bb6120dceca8e3c82916a7f9facff46fee42d0b729b716dbf4cf5a0fb5e98903",
+    "packages/web/server/lib/agent-browser/ffmpeg-assets.json": "065019808c3f0c7d3f52e5546be6e4f86c2b9bfa6b3c08d19edb91012a901a56",
+    "packages/web/server/lib/agent-browser/assets/agent-browser/SKILL.md": "f1f3d6fa02820b48091c237c071bfeea0d2eab5ad6f901d6f809d40bd8b295e7",
+    "packages/electron/browser-cdp-bridge.mjs": "a028a22e3b291f0a2e5c212a5155efc53117f8444db9d318f4d55378c98e56ae",
+    "packages/electron/browser-surface-manager.mjs": "b9b021e881298cc49b60d63df375b88c05da3b434fe2d2f277e2007c1094a12f",
+    "packages/electron/main.mjs": "32a442e3553146cab738cbc03df714bb06d10f358f5b3144d19e8e18a04b1f63"
+  },
+  "candidate": {
+    "status": "passed",
+    "versions": {
+      "agentBrowser": "0.38.1",
+      "electron": "41.2.1",
+      "chromium": "146.0.7680.188"
+    },
+    "checks": [
+      "actual CLI navigation, interactive snapshot, fill/click, inspect/eval, hidden screenshot",
+      "persistent refs survive same-node updates, invalidate after replacement/navigation, full baseline refresh",
+      "snapshot delta baseline/unchanged/change; conditional screenshot skip; human pointer click",
+      "WebM/MP4 recording, cursor/contact sheets, simultaneous observation, interaction after capture detach",
+      "explicit close releases bridge and hidden surface",
+      "native confined sequence and cancellation finalize recordings; write isolation; supervisor termination; lease cleanup",
+      "retained process ancestry: no surviving daemon, encoder, or Electron helper; no rescue signals",
+      "all four videos decode fully; contact-sheet artifacts exist"
+    ],
+    "results": [
+      {
+        "input": {
+          "command": "open",
+          "args": [
+            "<LOOPBACK>/fixture"
+          ]
+        },
+        "result": "\u2713 Browser upgrade fixture\n  <LOOPBACK>/fixture",
+        "page": {
+          "url": "<LOOPBACK>/fixture",
+          "text": "Initial",
+          "value": "",
+          "events": []
+        }
+      },
+      {
+        "input": {
+          "command": "snapshot",
+          "args": [
+            "-i"
+          ]
+        },
+        "result": "- heading \"Browser upgrade fixture\" [level=1, ref=e1]\n- textbox \"Name\" [ref=e3]\n- button \"Save\" [ref=e2]",
+        "page": {
+          "url": "<LOOPBACK>/fixture",
+          "text": "Initial",
+          "value": "",
+          "events": []
+        }
+      },
+      {
+        "input": {
+          "command": "fill",
+          "args": [
+            "#name",
+            "Verified"
+          ]
+        },
+        "result": "\u2713 Done",
+        "page": {
+          "url": "<LOOPBACK>/fixture",
+          "text": "Initial",
+          "value": "Verified",
+          "events": []
+        }
+      },
+      {
+        "input": {
+          "command": "click",
+          "args": [
+            "#save"
+          ]
+        },
+        "result": "\u2713 Done",
+        "page": {
+          "url": "<LOOPBACK>/fixture",
+          "text": "Verified",
+          "value": "Verified",
+          "events": [
+            {
+              "type": "pointerdown",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "pointerup",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "click",
+              "x": 305,
+              "y": 137,
+              "target": "save"
+            }
+          ]
+        }
+      },
+      {
+        "input": {
+          "command": "inspect",
+          "selector": "#result",
+          "styles": [
+            "color"
+          ]
+        },
+        "result": "{\n  \"attributes\": {},\n  \"matchCount\": 1,\n  \"selector\": \"#result\",\n  \"status\": \"found\",\n  \"styles\": {\n    \"color\": \"rgb(17, 34, 51)\"\n  }\n}",
+        "page": {
+          "url": "<LOOPBACK>/fixture",
+          "text": "Verified",
+          "value": "Verified",
+          "events": [
+            {
+              "type": "pointerdown",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "pointerup",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "click",
+              "x": 305,
+              "y": 137,
+              "target": "save"
+            }
+          ]
+        }
+      },
+      {
+        "input": {
+          "command": "eval",
+          "args": [
+            "document.querySelector(\"#result\").textContent"
+          ]
+        },
+        "result": "\"Verified\"",
+        "page": {
+          "url": "<LOOPBACK>/fixture",
+          "text": "Verified",
+          "value": "Verified",
+          "events": [
+            {
+              "type": "pointerdown",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "pointerup",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "click",
+              "x": 305,
+              "y": 137,
+              "target": "save"
+            }
+          ]
+        }
+      },
+      {
+        "input": {
+          "command": "screenshot",
+          "args": [
+            "<FIXTURE>/common.png"
+          ]
+        },
+        "result": "\u2713 Screenshot saved to <FIXTURE>/common.png",
+        "page": {
+          "url": "<LOOPBACK>/fixture",
+          "text": "Verified",
+          "value": "Verified",
+          "events": [
+            {
+              "type": "pointerdown",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "pointerup",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "click",
+              "x": 305,
+              "y": 137,
+              "target": "save"
+            }
+          ]
+        }
+      },
+      {
+        "input": {
+          "command": "sequence",
+          "timeout_ms": 120000,
+          "steps": [
+            {
+              "command": "snapshot",
+              "args": [
+                "-i",
+                "--delta"
+              ]
+            },
+            {
+              "command": "snapshot",
+              "args": [
+                "-i",
+                "--delta"
+              ]
+            },
+            {
+              "command": "eval",
+              "args": [
+                "document.querySelector(\"#save\").textContent=\"Save updated\""
+              ]
+            },
+            {
+              "command": "snapshot",
+              "args": [
+                "-i",
+                "--delta"
+              ]
+            },
+            {
+              "command": "screenshot",
+              "args": [
+                "--if-changed",
+                "<FIXTURE>/changed.png"
+              ]
+            },
+            {
+              "command": "screenshot",
+              "args": [
+                "--if-changed",
+                "--threshold",
+                "0.01",
+                "<FIXTURE>/unchanged.png"
+              ]
+            },
+            {
+              "command": "click",
+              "args": [
+                "#save",
+                "--human"
+              ]
+            }
+          ]
+        },
+        "result": "{\"results\":[{\"index\":0,\"command\":\"snapshot\",\"output\":\"- heading \\\"Browser upgrade fixture\\\" [level=1, ref=e1]\\n- textbox \\\"Name\\\" [ref=e3]: Verified\\n- button \\\"Save\\\" [ref=e2]\"},{\"index\":1,\"command\":\"snapshot\",\"output\":\"unchanged (revision 2)\"},{\"index\":2,\"command\":\"eval\",\"output\":\"\\\"Save updated\\\"\"},{\"index\":3,\"command\":\"snapshot\",\"output\":\"- heading \\\"Browser upgrade fixture\\\" [level=1, ref=e1]\\n- textbox \\\"Name\\\" [ref=e3]: Verified\\n- button \\\"Save updated\\\" [ref=e2]\"},{\"index\":4,\"command\":\"screenshot\",\"output\":\"\u2713 Screenshot saved to <FIXTURE>/changed.png\"},{\"index\":5,\"command\":\"screenshot\",\"output\":\"\u2713 Screenshot unchanged (revision 2, 0.0000% pixels changed)\"},{\"index\":6,\"command\":\"click\",\"output\":\"\u2713 Done\"}]}",
+        "page": {
+          "url": "<LOOPBACK>/fixture",
+          "text": "Verified",
+          "value": "Verified",
+          "events": [
+            {
+              "type": "pointerdown",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "pointerup",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "click",
+              "x": 305,
+              "y": 137,
+              "target": "save"
+            },
+            {
+              "type": "pointerdown",
+              "x": 331.48828125,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "pointerup",
+              "x": 331.48828125,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "click",
+              "x": 331,
+              "y": 137,
+              "target": "save"
+            }
+          ]
+        }
+      },
+      {
+        "input": {
+          "command": "sequence",
+          "steps": [
+            {
+              "command": "eval",
+              "args": [
+                "document.querySelector(\"#save\").outerHTML=document.querySelector(\"#save\").outerHTML"
+              ]
+            },
+            {
+              "command": "snapshot",
+              "args": [
+                "-i",
+                "--delta",
+                "--full"
+              ]
+            }
+          ]
+        },
+        "result": "{\"results\":[{\"index\":0,\"command\":\"eval\",\"output\":\"\\\"<button id=\\\\\\\"save\\\\\\\" onclick=\\\\\\\"document.querySelector('#result').textContent=document.querySelector('#name').value\\\\\\\">Save updated</button>\\\"\"},{\"index\":1,\"command\":\"snapshot\",\"output\":\"- heading \\\"Browser upgrade fixture\\\" [level=1, ref=e1]\\n- textbox \\\"Name\\\" [ref=e3]: Verified\\n- button \\\"Save updated\\\" [ref=e4]\"}]}",
+        "page": {
+          "url": "<LOOPBACK>/fixture",
+          "text": "Verified",
+          "value": "Verified",
+          "events": [
+            {
+              "type": "pointerdown",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "pointerup",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "click",
+              "x": 305,
+              "y": 137,
+              "target": "save"
+            },
+            {
+              "type": "pointerdown",
+              "x": 331.48828125,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "pointerup",
+              "x": 331.48828125,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "click",
+              "x": 331,
+              "y": 137,
+              "target": "save"
+            }
+          ]
+        }
+      },
+      {
+        "input": {
+          "command": "open",
+          "args": [
+            "<LOOPBACK>/fixture?navigation"
+          ]
+        },
+        "result": "\u2713 Browser upgrade fixture\n  <LOOPBACK>/fixture?navigation",
+        "page": {
+          "url": "<LOOPBACK>/fixture?navigation",
+          "text": "Initial",
+          "value": "",
+          "events": []
+        }
+      },
+      {
+        "input": {
+          "command": "snapshot",
+          "args": [
+            "-i",
+            "--delta"
+          ]
+        },
+        "result": "- heading \"Browser upgrade fixture\" [level=1, ref=e5]\n- textbox \"Name\" [ref=e7]\n- button \"Save\" [ref=e6]",
+        "page": {
+          "url": "<LOOPBACK>/fixture?navigation",
+          "text": "Initial",
+          "value": "",
+          "events": []
+        }
+      },
+      {
+        "input": {
+          "command": "sequence",
+          "timeout_ms": 120000,
+          "steps": [
+            {
+              "command": "record",
+              "args": [
+                "start",
+                "<FIXTURE>/recording-webm.webm",
+                "--fps",
+                "10",
+                "--cursor",
+                "--contact-sheet"
+              ]
+            },
+            {
+              "command": "open",
+              "args": [
+                "<LOOPBACK>/fixture?record=webm"
+              ]
+            },
+            {
+              "command": "drag",
+              "args": [
+                "#box",
+                "#drop",
+                "--human"
+              ]
+            },
+            {
+              "command": "eval",
+              "args": [
+                "document.querySelector(\"#result\").textContent"
+              ]
+            },
+            {
+              "command": "fill",
+              "args": [
+                "#name",
+                "webm"
+              ]
+            },
+            {
+              "command": "click",
+              "args": [
+                "#save",
+                "--human"
+              ]
+            },
+            {
+              "command": "wait",
+              "args": [
+                "1000"
+              ]
+            },
+            {
+              "command": "record",
+              "args": [
+                "stop"
+              ]
+            },
+            {
+              "command": "inspect",
+              "selector": "#result"
+            }
+          ]
+        },
+        "result": "{\"results\":[{\"index\":0,\"command\":\"record\",\"output\":\"\u2713 Recording started: <FIXTURE>/recording-webm.webm (10 fps)\"},{\"index\":1,\"command\":\"open\",\"output\":\"\u2713 Browser upgrade fixture\\n  <LOOPBACK>/fixture?record=webm\"},{\"index\":2,\"command\":\"drag\",\"output\":\"\u2713 Done\"},{\"index\":3,\"command\":\"eval\",\"output\":\"\\\"Dropped\\\"\"},{\"index\":4,\"command\":\"fill\",\"output\":\"\u2713 Done\"},{\"index\":5,\"command\":\"click\",\"output\":\"\u2713 Done\"},{\"index\":6,\"command\":\"wait\",\"output\":\"\u2713 Done\"},{\"index\":7,\"command\":\"record\",\"output\":\"\u2713 Recording saved to <FIXTURE>/recording-webm.webm (10 fps)\\n\u2713 Contact sheet saved to <FIXTURE>/recording-webm.contact-sheet.png (2 frames)\"},{\"index\":8,\"command\":\"inspect\",\"output\":\"{\\n  \\\"attributes\\\": {},\\n  \\\"matchCount\\\": 1,\\n  \\\"selector\\\": \\\"#result\\\",\\n  \\\"status\\\": \\\"found\\\",\\n  \\\"styles\\\": {}\\n}\"}]}",
+        "page": {
+          "url": "<LOOPBACK>/fixture?record=webm",
+          "text": "webm",
+          "value": "webm",
+          "events": [
+            {
+              "type": "pointerdown",
+              "x": 68,
+              "y": 278.09375,
+              "target": "box"
+            },
+            {
+              "type": "pointerdown",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "pointerup",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "click",
+              "x": 305,
+              "y": 137,
+              "target": "save"
+            }
+          ]
+        }
+      },
+      {
+        "input": {
+          "command": "sequence",
+          "timeout_ms": 120000,
+          "steps": [
+            {
+              "command": "record",
+              "args": [
+                "start",
+                "<FIXTURE>/recording-mp4.mp4",
+                "--fps",
+                "10",
+                "--cursor",
+                "--contact-sheet"
+              ]
+            },
+            {
+              "command": "open",
+              "args": [
+                "<LOOPBACK>/fixture?record=mp4"
+              ]
+            },
+            {
+              "command": "drag",
+              "args": [
+                "#box",
+                "#drop",
+                "--human"
+              ]
+            },
+            {
+              "command": "eval",
+              "args": [
+                "document.querySelector(\"#result\").textContent"
+              ]
+            },
+            {
+              "command": "fill",
+              "args": [
+                "#name",
+                "mp4"
+              ]
+            },
+            {
+              "command": "click",
+              "args": [
+                "#save",
+                "--human"
+              ]
+            },
+            {
+              "command": "wait",
+              "args": [
+                "1000"
+              ]
+            },
+            {
+              "command": "record",
+              "args": [
+                "stop"
+              ]
+            },
+            {
+              "command": "inspect",
+              "selector": "#result"
+            }
+          ]
+        },
+        "result": "{\"results\":[{\"index\":0,\"command\":\"record\",\"output\":\"\u2713 Recording started: <FIXTURE>/recording-mp4.mp4 (10 fps)\"},{\"index\":1,\"command\":\"open\",\"output\":\"\u2713 Browser upgrade fixture\\n  <LOOPBACK>/fixture?record=mp4\"},{\"index\":2,\"command\":\"drag\",\"output\":\"\u2713 Done\"},{\"index\":3,\"command\":\"eval\",\"output\":\"\\\"Dropped\\\"\"},{\"index\":4,\"command\":\"fill\",\"output\":\"\u2713 Done\"},{\"index\":5,\"command\":\"click\",\"output\":\"\u2713 Done\"},{\"index\":6,\"command\":\"wait\",\"output\":\"\u2713 Done\"},{\"index\":7,\"command\":\"record\",\"output\":\"\u2713 Recording saved to <FIXTURE>/recording-mp4.mp4 (10 fps)\\n\u2713 Contact sheet saved to <FIXTURE>/recording-mp4.contact-sheet.png (2 frames)\"},{\"index\":8,\"command\":\"inspect\",\"output\":\"{\\n  \\\"attributes\\\": {},\\n  \\\"matchCount\\\": 1,\\n  \\\"selector\\\": \\\"#result\\\",\\n  \\\"status\\\": \\\"found\\\",\\n  \\\"styles\\\": {}\\n}\"}]}",
+        "page": {
+          "url": "<LOOPBACK>/fixture?record=mp4",
+          "text": "mp4",
+          "value": "mp4",
+          "events": [
+            {
+              "type": "pointerdown",
+              "x": 68,
+              "y": 278.09375,
+              "target": "box"
+            },
+            {
+              "type": "pointerdown",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "pointerup",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "click",
+              "x": 305,
+              "y": 137,
+              "target": "save"
+            }
+          ]
+        }
+      },
+      {
+        "input": {
+          "command": "close"
+        },
+        "result": "Browser lease closed.",
+        "page": null
+      },
+      {
+        "confined": true,
+        "cancelled": false,
+        "result": {
+          "output": "{\"results\":[{\"index\":0,\"command\":\"open\",\"output\":\"\u2713 Browser upgrade fixture\\n  <LOOPBACK>/fixture\"},{\"index\":1,\"command\":\"record\",\"output\":\"\u2713 Recording started: <FIXTURE>/confined-false.webm (10 fps)\"},{\"index\":2,\"command\":\"fill\",\"output\":\"\u2713 Done\"},{\"index\":3,\"command\":\"click\",\"output\":\"\u2713 Done\"},{\"index\":4,\"command\":\"eval\",\"output\":\"\\\"confined\\\"\"},{\"index\":5,\"command\":\"wait\",\"output\":\"\u2713 Done\"},{\"index\":6,\"command\":\"record\",\"output\":\"\u2713 Recording saved to <FIXTURE>/confined-false.webm (10 fps)\\n\u2713 Contact sheet saved to <FIXTURE>/confined-false.contact-sheet.png (2 frames)\"}]}"
+        },
+        "termination": {
+          "terminated": true,
+          "confined": true,
+          "cancelled": false,
+          "exitCode": 0
+        }
+      },
+      {
+        "confined": true,
+        "cancelled": true,
+        "result": {
+          "cancelled": true,
+          "details": {
+            "results": [
+              {
+                "index": 0,
+                "command": "open",
+                "output": "\u2713 Browser upgrade fixture\n  <LOOPBACK>/fixture"
+              },
+              {
+                "index": 1,
+                "command": "record",
+                "output": "\u2713 Recording started: <FIXTURE>/confined-true.webm (10 fps)"
+              },
+              {
+                "index": 2,
+                "command": "fill",
+                "output": "\u2713 Done"
+              },
+              {
+                "index": 3,
+                "command": "click",
+                "output": "\u2713 Done"
+              },
+              {
+                "index": 4,
+                "command": "eval",
+                "output": "\"confined\""
+              }
+            ],
+            "failedStep": 5,
+            "error": "This operation was aborted",
+            "recordingFinalized": true,
+            "cleanupOutput": "\u2713 Recording saved to <FIXTURE>/confined-true.webm (10 fps)\n\u2713 Contact sheet saved to <FIXTURE>/confined-true.contact-sheet.png (2 frames)"
+          }
+        },
+        "termination": {
+          "terminated": true,
+          "confined": true,
+          "cancelled": false,
+          "exitCode": 0
+        }
+      }
+    ],
+    "leaseIds": [
+      "fx_4a7928c6",
+      "fx_423b9396",
+      "fx_440a2bf4"
+    ],
+    "cleanup": {
+      "source": "retained-os-process-ancestry-and-start-identities",
+      "rootPid": 78188,
+      "rootObserved": true,
+      "observationIntervalMs": 500,
+      "observationErrors": [],
+      "observedProcesses": [
+        {
+          "pid": 78188,
+          "parentPid": 77743,
+          "startIdentity": "Mon Sep 28 12:44:39 2026"
+        },
+        {
+          "pid": 78493,
+          "parentPid": 78188,
+          "startIdentity": "Mon Sep 28 12:44:39 2026"
+        },
+        {
+          "pid": 78494,
+          "parentPid": 78188,
+          "startIdentity": "Mon Sep 28 12:44:39 2026"
+        },
+        {
+          "pid": 78638,
+          "parentPid": 78188,
+          "startIdentity": "Mon Sep 28 12:44:39 2026"
+        },
+        {
+          "pid": 78757,
+          "parentPid": 78188,
+          "startIdentity": "Mon Sep 28 12:44:39 2026"
+        },
+        {
+          "pid": 80126,
+          "parentPid": 78188,
+          "startIdentity": "Mon Sep 28 12:44:40 2026"
+        },
+        {
+          "pid": 81102,
+          "parentPid": 78188,
+          "startIdentity": "Mon Sep 28 12:44:40 2026"
+        },
+        {
+          "pid": 81134,
+          "parentPid": 78188,
+          "startIdentity": "Mon Sep 28 12:44:40 2026"
+        },
+        {
+          "pid": 83084,
+          "parentPid": 78188,
+          "startIdentity": "Mon Sep 28 12:44:41 2026"
+        },
+        {
+          "pid": 84292,
+          "parentPid": 78188,
+          "startIdentity": "Mon Sep 28 12:44:41 2026"
+        },
+        {
+          "pid": 87641,
+          "parentPid": 78188,
+          "startIdentity": "Mon Sep 28 12:44:43 2026"
+        },
+        {
+          "pid": 89204,
+          "parentPid": 78188,
+          "startIdentity": "Mon Sep 28 12:44:43 2026"
+        },
+        {
+          "pid": 90208,
+          "parentPid": 78188,
+          "startIdentity": "Mon Sep 28 12:44:44 2026"
+        },
+        {
+          "pid": 92868,
+          "parentPid": 78188,
+          "startIdentity": "Mon Sep 28 12:44:45 2026"
+        },
+        {
+          "pid": 92869,
+          "parentPid": 92868,
+          "startIdentity": "Mon Sep 28 12:44:45 2026"
+        },
+        {
+          "pid": 93210,
+          "parentPid": 78188,
+          "startIdentity": "Mon Sep 28 12:44:45 2026"
+        },
+        {
+          "pid": 93607,
+          "parentPid": 92869,
+          "startIdentity": "Mon Sep 28 12:44:45 2026"
+        },
+        {
+          "pid": 93778,
+          "parentPid": 92869,
+          "startIdentity": "Mon Sep 28 12:44:45 2026"
+        },
+        {
+          "pid": 94939,
+          "parentPid": 92869,
+          "startIdentity": "Mon Sep 28 12:44:46 2026"
+        },
+        {
+          "pid": 97785,
+          "parentPid": 78188,
+          "startIdentity": "Mon Sep 28 12:44:47 2026"
+        },
+        {
+          "pid": 97786,
+          "parentPid": 97785,
+          "startIdentity": "Mon Sep 28 12:44:47 2026"
+        },
+        {
+          "pid": 98050,
+          "parentPid": 78188,
+          "startIdentity": "Mon Sep 28 12:44:47 2026"
+        },
+        {
+          "pid": 98181,
+          "parentPid": 97786,
+          "startIdentity": "Mon Sep 28 12:44:47 2026"
+        },
+        {
+          "pid": 98208,
+          "parentPid": 98181,
+          "startIdentity": "Mon Sep 28 12:44:47 2026"
+        },
+        {
+          "pid": 98693,
+          "parentPid": 98208,
+          "startIdentity": "Mon Sep 28 12:44:47 2026"
+        },
+        {
+          "pid": 98722,
+          "parentPid": 97786,
+          "startIdentity": "Mon Sep 28 12:44:47 2026"
+        },
+        {
+          "pid": 99882,
+          "parentPid": 97786,
+          "startIdentity": "Mon Sep 28 12:44:48 2026"
+        },
+        {
+          "pid": 4641,
+          "parentPid": 97786,
+          "startIdentity": "Mon Sep 28 12:44:49 2026"
+        }
+      ],
+      "remainingProcessIds": [],
+      "signals": [],
+      "trackingClosed": true
+    }
+  },
+  "baseline": {
+    "status": "passed",
+    "versions": {
+      "agentBrowser": "0.33.2",
+      "electron": "41.2.1",
+      "chromium": "146.0.7680.188"
+    },
+    "checks": [
+      "actual CLI navigation, interactive snapshot, fill/click, inspect/eval, hidden screenshot",
+      "explicit close releases bridge and hidden surface",
+      "retained process ancestry: no surviving daemon, encoder, or Electron helper; no rescue signals"
+    ],
+    "results": [
+      {
+        "input": {
+          "command": "open",
+          "args": [
+            "<LOOPBACK>/fixture"
+          ]
+        },
+        "result": "\u2713 Browser upgrade fixture\n  <LOOPBACK>/fixture",
+        "page": {
+          "url": "<LOOPBACK>/fixture",
+          "text": "Initial",
+          "value": "",
+          "events": []
+        }
+      },
+      {
+        "input": {
+          "command": "snapshot",
+          "args": [
+            "-i"
+          ]
+        },
+        "result": "- heading \"Browser upgrade fixture\" [level=1, ref=e1]\n- textbox \"Name\" [ref=e3]\n- button \"Save\" [ref=e2]",
+        "page": {
+          "url": "<LOOPBACK>/fixture",
+          "text": "Initial",
+          "value": "",
+          "events": []
+        }
+      },
+      {
+        "input": {
+          "command": "fill",
+          "args": [
+            "#name",
+            "Verified"
+          ]
+        },
+        "result": "\u2713 Done",
+        "page": {
+          "url": "<LOOPBACK>/fixture",
+          "text": "Initial",
+          "value": "Verified",
+          "events": []
+        }
+      },
+      {
+        "input": {
+          "command": "click",
+          "args": [
+            "#save"
+          ]
+        },
+        "result": "\u2713 Done",
+        "page": {
+          "url": "<LOOPBACK>/fixture",
+          "text": "Verified",
+          "value": "Verified",
+          "events": [
+            {
+              "type": "pointerdown",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "pointerup",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "click",
+              "x": 305,
+              "y": 137,
+              "target": "save"
+            }
+          ]
+        }
+      },
+      {
+        "input": {
+          "command": "inspect",
+          "selector": "#result",
+          "styles": [
+            "color"
+          ]
+        },
+        "result": "{\n  \"attributes\": {},\n  \"matchCount\": 1,\n  \"selector\": \"#result\",\n  \"status\": \"found\",\n  \"styles\": {\n    \"color\": \"rgb(17, 34, 51)\"\n  }\n}",
+        "page": {
+          "url": "<LOOPBACK>/fixture",
+          "text": "Verified",
+          "value": "Verified",
+          "events": [
+            {
+              "type": "pointerdown",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "pointerup",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "click",
+              "x": 305,
+              "y": 137,
+              "target": "save"
+            }
+          ]
+        }
+      },
+      {
+        "input": {
+          "command": "eval",
+          "args": [
+            "document.querySelector(\"#result\").textContent"
+          ]
+        },
+        "result": "\"Verified\"",
+        "page": {
+          "url": "<LOOPBACK>/fixture",
+          "text": "Verified",
+          "value": "Verified",
+          "events": [
+            {
+              "type": "pointerdown",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "pointerup",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "click",
+              "x": 305,
+              "y": 137,
+              "target": "save"
+            }
+          ]
+        }
+      },
+      {
+        "input": {
+          "command": "screenshot",
+          "args": [
+            "<FIXTURE>/common.png"
+          ]
+        },
+        "result": "\u2713 Screenshot saved to <FIXTURE>/common.png",
+        "page": {
+          "url": "<LOOPBACK>/fixture",
+          "text": "Verified",
+          "value": "Verified",
+          "events": [
+            {
+              "type": "pointerdown",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "pointerup",
+              "x": 305.546875,
+              "y": 137.34375,
+              "target": "save"
+            },
+            {
+              "type": "click",
+              "x": 305,
+              "y": 137,
+              "target": "save"
+            }
+          ]
+        }
+      },
+      {
+        "input": {
+          "command": "close"
+        },
+        "result": "Browser lease closed.",
+        "page": null
+      }
+    ],
+    "leaseIds": [
+      "fx_2755168c"
+    ],
+    "cleanup": {
+      "source": "retained-os-process-ancestry-and-start-identities",
+      "rootPid": 75693,
+      "rootObserved": true,
+      "observationIntervalMs": 500,
+      "observationErrors": [],
+      "observedProcesses": [
+        {
+          "pid": 75693,
+          "parentPid": 75266,
+          "startIdentity": "Mon Sep 28 12:44:37 2026"
+        },
+        {
+          "pid": 76535,
+          "parentPid": 75693,
+          "startIdentity": "Mon Sep 28 12:44:38 2026"
+        },
+        {
+          "pid": 76538,
+          "parentPid": 75693,
+          "startIdentity": "Mon Sep 28 12:44:38 2026"
+        },
+        {
+          "pid": 76625,
+          "parentPid": 75693,
+          "startIdentity": "Mon Sep 28 12:44:38 2026"
+        },
+        {
+          "pid": 76948,
+          "parentPid": 75693,
+          "startIdentity": "Mon Sep 28 12:44:38 2026"
+        },
+        {
+          "pid": 77136,
+          "parentPid": 75693,
+          "startIdentity": "Mon Sep 28 12:44:38 2026"
+        },
+        {
+          "pid": 77414,
+          "parentPid": 77136,
+          "startIdentity": "Mon Sep 28 12:44:38 2026"
+        }
+      ],
+      "remainingProcessIds": [],
+      "signals": [],
+      "trackingClosed": true
+    }
+  },
+  "installer": {
+    "results": [
+      {
+        "name": "fresh",
+        "status": {
+          "ok": true,
+          "state": "ready",
+          "expectedVersion": "0.38.1",
+          "installedVersion": "0.38.1",
+          "binaryVersion": "0.38.1",
+          "binaryPath": "<INSTALL>/node_modules/agent-browser/bin/agent-browser-darwin-arm64",
+          "configPath": "<INSTALL>/devryan-agent-browser.json",
+          "installRoot": "<INSTALL>",
+          "bunExecutable": "<BUN_EXECUTABLE>",
+          "issues": [],
+          "repair": false,
+          "changed": true,
+          "recording": {
+            "expectedVersion": "b6.1.1",
+            "binaryPath": "<INSTALL>/ffmpeg/ffmpeg",
+            "source": "https://github.com/eugeneware/ffmpeg-static/releases/tag/b6.1.1",
+            "ok": true,
+            "state": "ready",
+            "installedVersion": "ffmpeg version 6.0 Copyright (c) 2000-2023 the FFmpeg developers",
+            "issues": [],
+            "changed": true
+          }
+        }
+      },
+      {
+        "name": "no-op",
+        "status": {
+          "ok": true,
+          "state": "ready",
+          "expectedVersion": "0.38.1",
+          "installedVersion": "0.38.1",
+          "binaryVersion": "0.38.1",
+          "binaryPath": "<INSTALL>/node_modules/agent-browser/bin/agent-browser-darwin-arm64",
+          "configPath": "<INSTALL>/devryan-agent-browser.json",
+          "installRoot": "<INSTALL>",
+          "bunExecutable": null,
+          "issues": [],
+          "changed": false,
+          "recording": {
+            "expectedVersion": "b6.1.1",
+            "binaryPath": "<INSTALL>/ffmpeg/ffmpeg",
+            "source": "https://github.com/eugeneware/ffmpeg-static/releases/tag/b6.1.1",
+            "ok": true,
+            "state": "ready",
+            "installedVersion": "ffmpeg version 6.0 Copyright (c) 2000-2023 the FFmpeg developers",
+            "issues": []
+          }
+        }
+      },
+      {
+        "name": "repair",
+        "status": {
+          "ok": true,
+          "state": "ready",
+          "expectedVersion": "0.38.1",
+          "installedVersion": "0.38.1",
+          "binaryVersion": "0.38.1",
+          "binaryPath": "<INSTALL>/node_modules/agent-browser/bin/agent-browser-darwin-arm64",
+          "configPath": "<INSTALL>/devryan-agent-browser.json",
+          "installRoot": "<INSTALL>",
+          "bunExecutable": "<BUN_EXECUTABLE>",
+          "issues": [],
+          "repair": true,
+          "changed": true,
+          "recording": {
+            "expectedVersion": "b6.1.1",
+            "binaryPath": "<INSTALL>/ffmpeg/ffmpeg",
+            "source": "https://github.com/eugeneware/ffmpeg-static/releases/tag/b6.1.1",
+            "ok": true,
+            "state": "ready",
+            "installedVersion": "ffmpeg version 6.0 Copyright (c) 2000-2023 the FFmpeg developers",
+            "issues": [],
+            "changed": true
+          }
+        }
+      },
+      {
+        "name": "upgrade-from-0.33.2",
+        "status": {
+          "ok": true,
+          "state": "ready",
+          "expectedVersion": "0.38.1",
+          "installedVersion": "0.38.1",
+          "binaryVersion": "0.38.1",
+          "binaryPath": "<INSTALL>/node_modules/agent-browser/bin/agent-browser-darwin-arm64",
+          "configPath": "<INSTALL>/devryan-agent-browser.json",
+          "installRoot": "<INSTALL>",
+          "bunExecutable": "<BUN_EXECUTABLE>",
+          "issues": [],
+          "repair": false,
+          "changed": true,
+          "recording": {
+            "expectedVersion": "b6.1.1",
+            "binaryPath": "<INSTALL>/ffmpeg/ffmpeg",
+            "source": "https://github.com/eugeneware/ffmpeg-static/releases/tag/b6.1.1",
+            "ok": true,
+            "state": "ready",
+            "installedVersion": "ffmpeg version 6.0 Copyright (c) 2000-2023 the FFmpeg developers",
+            "issues": []
+          }
+        }
+      }
+    ],
+    "layout": [
+      "agent-browser-darwin-arm64",
+      "agent-browser-darwin-x64",
+      "agent-browser-linux-arm64",
+      "agent-browser-linux-x64",
+      "agent-browser-linux-musl-arm64",
+      "agent-browser-linux-musl-x64",
+      "agent-browser-win32-x64.exe"
+    ],
+    "nodeIndependentNativeVersion": true,
+    "unavailableExecutionPlatforms": [
+      "agent-browser-darwin-x64",
+      "agent-browser-linux-arm64",
+      "agent-browser-linux-x64",
+      "agent-browser-linux-musl-arm64",
+      "agent-browser-linux-musl-x64",
+      "agent-browser-win32-x64.exe"
+    ]
+  },
+  "assets": [
+    {
+      "file": "common.png",
+      "sha256": "cf5a1cc71c6e9c0273b850812047343e5c7e7bba30533bee2280324fd5462059",
+      "bytes": 40146,
+      "review": "visually reviewed"
+    },
+    {
+      "file": "recording-webm.webm",
+      "sha256": "cfaf6348d0203465ab495212147f89a05734356880f5588af6bb8248375b199c",
+      "bytes": 51481,
+      "review": "fully decoded"
+    },
+    {
+      "file": "recording-mp4.mp4",
+      "sha256": "451e4510e129cdff884403a725311472a2fa1035762ff04cb3dab187a311b0f0",
+      "bytes": 91185,
+      "review": "fully decoded"
+    },
+    {
+      "file": "confined-false.webm",
+      "sha256": "281a14a18b938c9cf0c7d2e32819a7eba4299d779d9e046ec54dcf7347f8be22",
+      "bytes": 42845,
+      "review": "fully decoded"
+    },
+    {
+      "file": "confined-true.webm",
+      "sha256": "4132b9d4276ba66682ec1cc12baacdbe43e187d8c21d62f178d768ead2e76f10",
+      "bytes": 94888,
+      "review": "fully decoded"
+    },
+    {
+      "file": "recording-webm.contact-sheet.png",
+      "sha256": "1b4946c84a48cffeb51a94cafdb8b06da2513b3e1b87373d769e7306fa9f3257",
+      "bytes": 76638,
+      "review": "visually reviewed"
+    },
+    {
+      "file": "recording-mp4.contact-sheet.png",
+      "sha256": "9e32148dbe3d399484c6a72563fc584bbc13dde6b809c05b4b71cfa0cc2680bd",
+      "bytes": 78285,
+      "review": "visually reviewed"
+    },
+    {
+      "file": "confined-false.contact-sheet.png",
+      "sha256": "9399647c761f79ac63e00255769580e7d33798533de4902ffb5facfa9daa8e5b",
+      "bytes": 77746,
+      "review": "visually reviewed"
+    },
+    {
+      "file": "confined-true.contact-sheet.png",
+      "sha256": "3d98d2691732ffd8ed698550a102b356fdfde915e87b88c9f5659cd69e547a7f",
+      "bytes": 77724,
+      "review": "visually reviewed"
+    },
+    {
+      "file": "baseline-0.33.2.png",
+      "sha256": "cf5a1cc71c6e9c0273b850812047343e5c7e7bba30533bee2280324fd5462059",
+      "review": "visually reviewed",
+      "bytes": 40146
+    }
+  ],
+  "verification": {
+    "validate:full": "passed; lint, type checks and all deterministic workspace suites; final web suite 418 files / 4634 tests; UI suite 582 files / 3968 tests",
+    "build": "passed on final source",
+    "bundle:check": "passed on final build",
+    "focusedBrowserTests": 105,
+    "bridgeTests": 27,
+    "duplicateQualificationTests": 9,
+    "sourceSettingsTests": 8,
+    "slimInstallerTests": 7,
+    "docs:validate": "passed with existing/generated-target warnings",
+    "diff:check": "passed"
+  },
+  "duplicateSerializer": {
+    "passed": true,
+    "runtimeVersion": "1.18.33",
+    "qualification": "synthetic-fixture-only",
+    "checks": {
+      "paired": true,
+      "uniqueEvidence": true,
+      "cleanupComplete": true,
+      "referencesResolve": true,
+      "callPairsIntact": true,
+      "summaryReferencesAbsent": true,
+      "manualBoundaries": true,
+      "automaticBoundary": true,
+      "nativeOrdering": true,
+      "prunedAnchorsRejected": true
+    },
+    "liveProvider": false
+  },
+  "releaseGates": {
+    "packaging": "blocked: required signed images.release.json absent",
+    "otherPlatformExecution": "unavailable",
+    "liveDuplicateRequalification": "unavailable; all six profiles stale; original evidence hashes preserved"
+  }
+}

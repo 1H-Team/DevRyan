@@ -34,10 +34,10 @@ mock.module('@/components/ui/tooltip', () => ({ Tooltip: passthrough, TooltipTri
 mock.module('./config-apply/ConfigApplyControls', () => ({ ConfigApplyControls: () => null }));
 mock.module('./SettingsSectionTabs', () => ({ SettingsSectionTabs: passthrough }));
 mock.module('./settingsSectionLoaders', () => ({
-  ...Object.fromEntries(['AboutSettings', 'AgentsPage', 'AgentsSidebar', 'BehaviorPage', 'BotsPage', 'BugReportsPage',
+  ...Object.fromEntries(['AboutSettings', 'AgentsPage', 'AgentsSettingsPicker', 'AgentsSidebar', 'BehaviorPage', 'BotsPage', 'BugReportsPage',
     'CommandsPage', 'CommandsSidebar', 'GitPage', 'MagicPromptsPage', 'MagicPromptsSidebar', 'McpPage', 'McpSidebar',
     'PluginsPage', 'PluginsSidebar', 'ProjectsPage', 'ProjectsSidebar', 'ProvidersPage', 'ProvidersSidebar',
-    'RemoteInstancesPage', 'RemoteInstancesSidebar', 'SkillsPage', 'SkillsSidebar', 'UsagePage', 'UsageSidebar',
+    'RemoteInstancesPage', 'RemoteInstancesSidebar', 'SessionDefaultsPage', 'SkillsPage', 'SkillsSidebar', 'UsagePage', 'UsageSidebar',
     'UserManagementPage'].map((name) => [`Prepared${name}`, () => <div>{name}</div>])),
   PreparedSettingsDataBoundary: passthrough,
   PreparedOpenChamberPage: ({ section }: { section: string }) => {
@@ -163,6 +163,57 @@ describe('immediately available Settings frames', () => {
       expect(preloads).not.toContain('users');
       expect(container.textContent).not.toContain('UserManagementPage');
       expect(ui.getState().settingsPage).toBe('home');
+    });
+  });
+
+  test('opens Session Defaults inside the Agents destination without a Sessions item', async () => {
+    resourceFor('sessions').finish(); await resourceFor('sessions').load();
+    ui.setState({ settingsPage: 'sessions' });
+    await mounted(false, async (container) => {
+      expect(button(container, 'settings.page.agents.title')?.getAttribute('aria-current')).toBe('page');
+      expect(button(container, 'settings.page.sessions.title')).toBeNull();
+      expect(container.textContent).toContain('AgentsSidebar');
+      expect(container.textContent).toContain('SessionDefaultsPage');
+      expect(ui.getState().settingsPage).toBe('sessions');
+    });
+  });
+
+  test('mobile deep link to Session Defaults lands on its content and Back opens the Agents list', async () => {
+    mobile = true;
+    resourceFor('sessions').finish(); await resourceFor('sessions').load();
+    ui.setState({ settingsPage: 'sessions' });
+    await mounted(false, async (container) => {
+      expect(container.textContent).toContain('SessionDefaultsPage');
+      expect(container.textContent).not.toContain('AgentsSidebar');
+      const back = container.find((node) => node.getAttribute('aria-label') === 'settings.view.actions.backToSettings');
+      await act(async () => back?.click());
+      expect(container.textContent).toContain('AgentsSidebar');
+    });
+  });
+
+  test('managed accounts without Agents access get Session Defaults alone under Agents', async () => {
+    setAuthPrincipal(developer(['sessions']));
+    resourceFor('sessions').finish(); await resourceFor('sessions').load();
+    ui.setState({ settingsPage: 'agents' });
+    await mounted(true, async (container) => {
+      expect(ui.getState().settingsPage).toBe('sessions');
+      expect(button(container, 'settings.page.agents.title')?.getAttribute('aria-current')).toBe('page');
+      expect(button(container, 'settings.page.sessions.title')).toBeNull();
+      expect(container.textContent).toContain('SessionDefaultsPage');
+      expect(container.textContent).not.toContain('AgentsSidebar');
+    });
+  });
+
+  test('managed accounts with Agents access see Session Defaults beside the agent list', async () => {
+    setAuthPrincipal(developer(['sessions', 'agents']));
+    resourceFor('sessions').finish(); await resourceFor('sessions').load();
+    ui.setState({ settingsPage: 'sessions' });
+    await mounted(true, async (container) => {
+      expect(button(container, 'settings.page.agents.title')?.getAttribute('aria-current')).toBe('page');
+      expect(button(container, 'settings.page.sessions.title')).toBeNull();
+      expect(container.textContent).toContain('AgentsSidebar');
+      expect(container.textContent).toContain('AgentsSettingsPicker');
+      expect(container.textContent).toContain('SessionDefaultsPage');
     });
   });
 

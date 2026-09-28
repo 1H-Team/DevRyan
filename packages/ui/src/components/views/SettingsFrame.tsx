@@ -29,6 +29,7 @@ import {
   getSettingsDestinationMemberSlugs,
   getSettingsDestinationVisibleSlugs,
   getSettingsNavDestination,
+  getSettingsPageLayoutKind,
   getSettingsSupersedingSlug,
   resolveSettingsTabSlug,
 } from '@/lib/settings/navigation';
@@ -64,6 +65,7 @@ import {
   PreparedAboutSettings,
   PreparedAgentsPage,
   PreparedAgentsSidebar,
+  PreparedSessionDefaultsPage,
   PreparedBehaviorPage,
   PreparedBotsPage,
   PreparedBugReportsPage,
@@ -128,6 +130,14 @@ function isPageAvailable(page: SettingsPageMeta, ctx: SettingsRuntimeContext): b
   return page.isAvailable(ctx);
 }
 
+// A page shown inside another page's sidebar (Session Defaults) opens on its
+// content; other split pages open on their list first.
+function getMobileLandingStage(page: SettingsPageMeta, visibleSlugs: ReadonlySet<string>): MobileStage {
+  return getSettingsPageLayoutKind(page, visibleSlugs) === 'split' && !page.sidebarSlug
+    ? 'page-sidebar'
+    : 'page-content';
+}
+
 const SettingsHome: React.FC<{
   onOpen: (slug: SettingsPageSlug) => void;
   pendingSlug?: SettingsPageSlug | null;
@@ -137,17 +147,19 @@ const SettingsHome: React.FC<{
   const providersDestinationSlug: SettingsPageSlug = canAccessSettingsDestination(principal, 'providers')
     ? 'providers'
     : 'usage';
+  const agentsDestinationSlug: SettingsPageSlug = canAccessSettingsDestination(principal, 'agents')
+    ? 'agents'
+    : 'sessions';
   const skillsCard = canAccessSettingsPage(principal, 'skills.catalog')
     ? { slug: 'skills.catalog' as const, title: t('settings.view.home.cards.skillsCatalog.title'), description: t('settings.view.home.cards.skillsCatalog.description') }
     : { slug: 'skills.installed' as const, title: 'Skills', description: 'Review the skills assigned to your Bots.' };
   const cards = ([
     { slug: 'users', title: 'User Management', description: 'Manage roles, projects, GitHub accounts, branch grants, and activity.' },
     { slug: 'appearance', title: 'Appearance', description: 'Theme, typography, spacing, and interface preferences.' },
-    { slug: 'sessions', title: 'Sessions', description: 'Defaults, retention, and session behavior.' },
     { slug: 'bots', title: t('settings.page.bots.title'), description: t('settings.page.bots.description') },
     { slug: 'notifications', title: 'Notifications', description: 'Choose when and how DevRyan notifies you.' },
     { slug: providersDestinationSlug, title: t('settings.view.home.cards.providers.title'), description: t('settings.view.home.cards.providers.description') },
-    { slug: 'agents', title: t('settings.view.home.cards.agents.title'), description: t('settings.view.home.cards.agents.description') },
+    { slug: agentsDestinationSlug, title: t('settings.view.home.cards.agents.title'), description: t('settings.view.home.cards.agents.description') },
     skillsCard,
     { slug: 'mcp', title: t('settings.view.home.cards.mcp.title'), description: t('settings.view.home.cards.mcp.description') },
   ] satisfies Array<{ slug: SettingsPageSlug; title: string; description: string }>).filter(
@@ -297,8 +309,8 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
       setMobileStage('nav');
       return;
     }
-    setMobileStage(def.kind === 'split' ? 'page-sidebar' : 'page-content');
-  }, [isMobile, setSettingsPage]);
+    setMobileStage(getMobileLandingStage(def, visibleSlugSet));
+  }, [isMobile, setSettingsPage, visibleSlugSet]);
 
   const openPage = React.useCallback((slug: SettingsPageSlug) => {
     prepareAndCommit(slug, () => commitOpenPage(slug));
@@ -316,13 +328,13 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
     }
 
     const page = getSettingsPageMeta(slug);
-    if (page?.kind === 'single') {
+    if (page && getSettingsPageLayoutKind(page, visibleSlugSet) === 'single') {
       setMobileStage('page-content');
       return;
     }
 
     setMobileStage((stage) => stage === 'page-content' ? 'page-content' : 'page-sidebar');
-  }, [isMobile, setSettingsPage]);
+  }, [isMobile, setSettingsPage, visibleSlugSet]);
 
   const selectSettingsSectionTab = React.useCallback((slug: SettingsPageSlug) => {
     prepareAndCommit(slug, () => commitSettingsSectionTab(slug));
@@ -331,6 +343,7 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
   const activePageMeta = React.useMemo(() => {
     return getSettingsPageMeta(settingsSlug);
   }, [settingsSlug]);
+  const activePageKind = activePageMeta ? getSettingsPageLayoutKind(activePageMeta, visibleSlugSet) : null;
 
   const settingsAudience = 'coding-agents' as const;
 
@@ -340,7 +353,6 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
     appearance: 'visual',
     chat: 'chat',
     shortcuts: 'shortcuts',
-    sessions: 'sessions',
     notifications: 'notifications',
     voice: 'voice',
     tunnel: 'tunnel',
@@ -455,6 +467,7 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
       case 'remote-instances':
         return <PreparedRemoteInstancesSidebar onItemSelect={opts.onItemSelect} />;
       case 'agents':
+      case 'sessions':
         return <PreparedAgentsSidebar onItemSelect={opts.onItemSelect} />;
       case 'commands':
         return <PreparedCommandsSidebar onItemSelect={opts.onItemSelect} />;
@@ -497,6 +510,8 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
         return <PreparedRemoteInstancesPage />;
       case 'agents':
         return <PreparedAgentsPage />;
+      case 'sessions':
+        return <PreparedSessionDefaultsPage />;
       case 'behavior':
         return <PreparedBehaviorPage />;
       case 'commands':
@@ -530,7 +545,6 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
       case 'appearance':
       case 'chat':
       case 'shortcuts':
-      case 'sessions':
       case 'notifications':
       case 'voice':
       case 'tunnel': {
@@ -573,8 +587,8 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
       return;
     }
     autoNavSlugRef.current = settingsSlug;
-    setMobileStage(isBehaviorAliasPage ? 'page-content' : (def.kind === 'split' ? 'page-sidebar' : 'page-content'));
-  }, [isBehaviorAliasPage, isMobile, mobileStage, settingsSlug]);
+    setMobileStage(isBehaviorAliasPage ? 'page-content' : getMobileLandingStage(def, visibleSlugSet));
+  }, [isBehaviorAliasPage, isMobile, mobileStage, settingsSlug, visibleSlugSet]);
 
   const showBackButton = isMobile && mobileStage !== 'nav';
   const showFullPageBackButton = !isMobile && Boolean(onClose);
@@ -582,8 +596,8 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
 
   const handleBack = React.useCallback(() => {
     cancelPending();
-    setMobileStage((stage) => resolveMobileSettingsBackStage(stage, activePageMeta));
-  }, [activePageMeta, cancelPending]);
+    setMobileStage((stage) => resolveMobileSettingsBackStage(stage, activePageKind ? { kind: activePageKind } : null));
+  }, [activePageKind, cancelPending]);
 
   const handleOpenPageSidebar = React.useCallback(() => {
     setMobileStage('page-sidebar');
@@ -668,7 +682,7 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
 
         {/* Footer */}
         <div className="overflow-hidden transition-opacity duration-150 opacity-100">
-          <div className="border-t border-border bg-sidebar px-2 py-1 space-y-0.5">
+          <div className="bg-sidebar px-2 py-1 space-y-0.5">
             <ConfigApplyControls variant="sidebar" />
 
             {principal.scope === 'managed' ? (
@@ -714,7 +728,7 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
     }
 
     if (mobileStage === 'page-sidebar') {
-      if (activePageMeta.kind !== 'split') {
+      if (activePageKind !== 'split') {
         // No sidebar available; fall back to direct content.
         const fallback = renderPageContent(settingsSlug);
         return (
@@ -757,7 +771,7 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
       return <SettingsHome onOpen={openPage} pendingSlug={pendingSlug} />;
     }
 
-    if (activePageMeta.kind === 'split') {
+    if (activePageKind === 'split') {
       const splitContent = (
         <div className="flex h-full min-h-0 overflow-hidden">
           <div className={cn(getSettingsPageSidebarClassName(settingsSlug), 'border-r', 'bg-sidebar')} style={{ borderColor: 'var(--interactive-border)' }}>
@@ -841,7 +855,7 @@ export const SettingsFrame: React.FC<SettingsFrameProps> = ({ onClose, forceMobi
               : (isBehaviorAliasPage ? t('settings.page.behavior.title') : (activePageMeta ? getDestinationTitle(activePageMeta.slug) : t('settings.view.home.title')))}
           </div>
 
-          {mobileStage === 'page-content' && activePageMeta?.kind === 'split' && (
+          {mobileStage === 'page-content' && activePageKind === 'split' && (
             <button
               type="button"
               onClick={handleOpenPageSidebar}

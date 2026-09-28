@@ -173,6 +173,70 @@ describe('local Bot catalog transport', () => {
     }
   });
 
+  it('restarts an unavailable catalog on request without waiting out the backoff', async () => {
+    const timers = manualTimers();
+    let dockerRunning = false;
+    const getContext = vi.fn(async () => {
+      if (!dockerRunning) throw Object.assign(new Error('not ready'), { code: 'bot_database_unavailable' });
+      return context();
+    });
+    const ensure = vi.fn(async () => {
+      if (!dockerRunning) throw Object.assign(new Error('Docker is stopped'), { code: 'bot_runtime_docker_unavailable' });
+      return { state: 'healthy' };
+    });
+    const transport = createLocalBotCatalogTransport({
+      catalog: { getContext, ensure },
+      objectStorage: objectStorage(),
+      fetchImpl: vi.fn(async () => json('20260908182901')),
+      logger: null,
+      ...timers,
+    });
+
+    // Still starting: nothing to retry yet.
+    expect(transport.retryNow()).toBe(false);
+    await expect(transport.ensureStarted()).rejects.toMatchObject({ code: 'bot_runtime_docker_unavailable' });
+    expect(transport.getState()).toMatchObject({ state: 'unavailable' });
+
+    // A retry while Docker is still stopped fails and leaves one backoff timer.
+    expect(transport.retryNow()).toBe(true);
+    await vi.waitFor(() => expect(timers.pending).toHaveLength(1));
+    expect(ensure).toHaveBeenCalledTimes(2);
+    expect(transport.getState()).toMatchObject({ state: 'unavailable' });
+
+    dockerRunning = true;
+    expect(transport.retryNow()).toBe(true);
+    await vi.waitFor(() => expect(transport.getState()).toMatchObject({ state: 'ready' }));
+    expect(timers.pending).toHaveLength(1);
+    expect(transport.retryNow()).toBe(false);
+  });
+
+  it('never restarts a catalog that needs an owner action', async () => {
+    for (const code of ['bot_database_volume_missing', 'bot_runtime_setup_required', 'bot_runtime_update_required']) {
+      const ensure = vi.fn(async () => { throw Object.assign(new Error('x'), { code }); });
+      const transport = createLocalBotCatalogTransport({
+        catalog: {
+          getContext: vi.fn(async () => { throw Object.assign(new Error('x'), { code: 'bot_database_unavailable' }); }),
+          ensure,
+        },
+        objectStorage: objectStorage(),
+        fetchImpl: vi.fn(),
+        ...manualTimers(),
+      });
+      await expect(transport.ensureStarted()).rejects.toMatchObject({ code });
+      expect(transport.retryNow()).toBe(false);
+      expect(ensure).toHaveBeenCalledTimes(1);
+    }
+
+    const maintained = createLocalBotCatalogTransport({
+      catalog: { getContext: vi.fn(async () => context()), ensure: vi.fn() },
+      objectStorage: objectStorage(),
+      fetchImpl: vi.fn(async () => json('20260908182901')),
+    });
+    await maintained.ensureStarted();
+    maintained.enterMaintenance('bots_maintenance_restore');
+    expect(maintained.retryNow()).toBe(false);
+  });
+
   it('holds maintenance until explicitly resumed and notifies listeners', async () => {
     const transport = createLocalBotCatalogTransport({
       catalog: { getContext: vi.fn(async () => context({ generation: 7 })), ensure: vi.fn() },

@@ -135,7 +135,7 @@ describe('user profile provisioning', () => {
     expect(config).not.toHaveProperty('mcp');
     expect(packageJson.dependencies).toMatchObject({
       '@ai-sdk/openai-compatible': '^2.0.47',
-      '@opencode-ai/plugin': '1.18.32',
+      '@opencode-ai/plugin': '1.18.33',
       '@rama_nigg/open-cursor': '2.5.8',
       '@rynfar/meridian': '1.62.6',
       'adm-zip': '0.6.0',

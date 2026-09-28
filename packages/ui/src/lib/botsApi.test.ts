@@ -155,6 +155,22 @@ describe('Production Bots HTTP client', () => {
     expect((error as BotsApiError).message).toBe('Docker Desktop is stopped');
   });
 
+  test('requests a fresh host probe only for an explicit capability refresh', async () => {
+    const urls: string[] = [];
+    const api = createBotsApi({
+      fetchImpl: async (input) => {
+        urls.push(String(input));
+        return new Response(JSON.stringify({ available: false, state: 'docker_stopped', code: null }), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      },
+    });
+
+    await api.getCapabilities();
+    await api.getCapabilities({ refresh: true });
+    expect(urls).toEqual(['/api/bots/capabilities', '/api/bots/capabilities?refresh=1']);
+  });
+
   test('uses no-store reads and preserves break-glass reasons in headers', async () => {
     const calls: RequestInit[] = [];
     const api = createBotsApi({

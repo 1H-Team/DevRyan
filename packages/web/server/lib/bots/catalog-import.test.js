@@ -658,11 +658,11 @@ describe('Bot catalog import', () => {
   it('reports an empty status until something happens', async () => {
     const { importer } = createHarness();
     const status = importer.status();
-    expect(status).toEqual({ cloud: null, checking: false, import: null, pending: false });
+    expect(status).toEqual({ sourceConfigured: true, cloud: null, checking: false, import: null, pending: false });
     expect(Object.isFrozen(status)).toBe(true);
     expect(importer.running).toBe(false);
     await importer.initialize();
-    expect(importer.status()).toEqual({ cloud: null, checking: false, import: null, pending: false });
+    expect(importer.status()).toEqual({ sourceConfigured: true, cloud: null, checking: false, import: null, pending: false });
     expect(await exists(importRoot)).toBe(false);
   });
 
@@ -711,14 +711,20 @@ describe('Bot catalog import', () => {
 
     it('reports no cloud when no hosted project is configured', async () => {
       const { importer, cloud } = createHarness({ readCloudSource: () => null });
-      await expect(importer.probeCloud()).resolves.toEqual({ cloud: null, checking: false, import: null, pending: false });
+      await expect(importer.probeCloud()).resolves.toEqual({
+        sourceConfigured: false, cloud: null, checking: false, import: null, pending: false,
+      });
       expect(cloud.fetchImpl).not.toHaveBeenCalled();
+      // A source that cannot be read is reported as absent, never as an error.
+      const broken = createHarness({ readCloudSource: () => { throw new Error('unreadable'); } }).importer;
+      expect(broken.status()).toMatchObject({ sourceConfigured: false, cloud: null });
     });
 
     it('marks hosted Bots as pending import with a single allowlisted GET', async () => {
       const { importer, cloud } = createHarness();
       const status = await importer.probeCloud();
       expect(status).toEqual({
+        sourceConfigured: true,
         cloud: { hasBots: true, checkedAt: '2026-09-26T12:00:00.000Z', code: null },
         checking: false,
         import: null,
@@ -740,6 +746,7 @@ describe('Bot catalog import', () => {
       clock += 60_000;
       cloud.hooks.respond = () => statusResponse(402);
       await expect(importer.probeCloud()).resolves.toEqual({
+        sourceConfigured: true,
         cloud: { hasBots: true, checkedAt: '2026-09-26T12:01:00.000Z', code: 'bot_import_source_quota_exceeded' },
         checking: false,
         import: null,
@@ -771,6 +778,14 @@ describe('Bot catalog import', () => {
       await restarted.importer.initialize();
       await restarted.importer.probeCloud();
       expect(restarted.importer.status()).toMatchObject({ import: { phase: 'dismissed' }, pending: false });
+
+      // The owner going to look for them outranks the earlier dismissal,
+      // until they dismiss the notice again.
+      await expect(restarted.importer.probeCloud({ requested: true })).resolves.toMatchObject({
+        import: { phase: 'dismissed' }, pending: true,
+      });
+      await expect(restarted.importer.probeCloud()).resolves.toMatchObject({ pending: true });
+      await expect(restarted.importer.dismiss()).resolves.toMatchObject({ pending: false });
     });
   });
 
@@ -1241,7 +1256,9 @@ describe('Bot catalog import', () => {
 
     it('treats cancel without any import as a no-op', async () => {
       const { importer } = createHarness();
-      await expect(importer.cancel()).resolves.toEqual({ cloud: null, checking: false, import: null, pending: false });
+      await expect(importer.cancel()).resolves.toEqual({
+        sourceConfigured: true, cloud: null, checking: false, import: null, pending: false,
+      });
       expect(await exists(importRoot)).toBe(false);
     });
 

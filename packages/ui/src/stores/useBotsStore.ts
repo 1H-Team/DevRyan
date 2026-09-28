@@ -31,7 +31,7 @@ type BotsState = {
   loadAssignedCatalog(): Promise<BotAssignedCatalog | null>;
   cancelCatalogLoad(): void;
   resetPrincipal(principalId: string | null): void;
-  loadCapabilities(): Promise<BotCapabilities | null>;
+  loadCapabilities(options?: { refresh?: boolean }): Promise<BotCapabilities | null>;
   setCapabilities(capabilities: BotCapabilities | null, errorCode?: string | null): void;
   replaceSnapshot(snapshot: CatalogSnapshot): void;
   upsertBot(bot: BotSummary): void;
@@ -203,13 +203,13 @@ export const createBotsStore = ({ api = botsApi }: { api?: BotsApi } = {}): Bots
       set((state) => state.catalogLoading ? { catalogLoading: false } : state);
     },
 
-    async loadCapabilities() {
+    async loadCapabilities(options) {
       const request = ++capabilityRequest;
-      set((state) => state.capabilitiesLoading
-        ? state
-        : { capabilitiesLoading: true, capabilitiesErrorCode: null });
+      // The previous failure stays visible until this request settles, so a
+      // poll never turns a reported failure back into "loading".
+      set((state) => state.capabilitiesLoading ? state : { capabilitiesLoading: true });
       try {
-        const capabilities = await api.getCapabilities();
+        const capabilities = await api.getCapabilities(options);
         if (request !== capabilityRequest) return null;
         set((state) => (
           state.capabilities === capabilities

@@ -512,15 +512,23 @@ export const filterVisibleAgentSelectorOptions = (agents: Agent[]): Agent[] => {
 };
 
 const CONFIG_EVENT_SOURCE = "useAgentsStore";
+
+/** Host-wide Agents settings views shown while no individual agent is selected. */
+export type AgentsGlobalView = 'behavior' | 'runtime';
+
 interface AgentsStore {
 
   selectedAgentName: string | null;
+  /** Which global view is open while `selectedAgentName` is null. */
+  selectedGlobalView: AgentsGlobalView;
   agents: Agent[];
   agentsCacheKey: string | null;
   staleModelOverrides: string[];
   isLoading: boolean;
 
   setSelectedAgent: (name: string | null) => void;
+  /** Opens a global view, clearing the individual agent selection. */
+  setSelectedGlobalView: (view: AgentsGlobalView) => void;
   loadAgents: () => Promise<boolean>;
   getAgentByName: (name: string) => Agent | undefined;
   // Returns only visible agents (excludes hidden internal agents)
@@ -550,6 +558,7 @@ export const useAgentsStore = create<AgentsStore>()(
       (set, get) => ({
 
         selectedAgentName: null,
+        selectedGlobalView: 'behavior',
         agents: [],
         agentsCacheKey: null,
         staleModelOverrides: [],
@@ -559,6 +568,10 @@ export const useAgentsStore = create<AgentsStore>()(
 
         setSelectedAgent: (name: string | null) => {
           set({ selectedAgentName: name });
+        },
+
+        setSelectedGlobalView: (view: AgentsGlobalView) => {
+          set({ selectedAgentName: null, selectedGlobalView: view });
         },
 
         loadAgents: async () => {
@@ -833,7 +846,16 @@ export const useAgentsStore = create<AgentsStore>()(
         storage: createJSONStorage(() => getSafeStorage()),
         partialize: (state) => ({
           selectedAgentName: state.selectedAgentName,
+          selectedGlobalView: state.selectedGlobalView,
         }),
+        merge: (persisted, current) => {
+          const saved = (persisted ?? {}) as Partial<Pick<AgentsStore, 'selectedAgentName' | 'selectedGlobalView'>>;
+          return {
+            ...current,
+            selectedAgentName: typeof saved.selectedAgentName === 'string' ? saved.selectedAgentName : null,
+            selectedGlobalView: saved.selectedGlobalView === 'runtime' ? 'runtime' : 'behavior',
+          };
+        },
       },
     ),
     {

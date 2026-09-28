@@ -6,10 +6,13 @@ import { BotSidebarRow } from './BotSidebarRow';
 import { resolveBotSidebarStatus, type BotSidebarStatus } from './botSidebarStatus';
 import { useBotConnectionWarning } from './useBotConnectionWarning';
 import { selectBotCurrentRunId } from '../operations/selectBotCurrentRun';
+import { canOpenDockerDesktop, resolveBotCatalogReadiness } from '../botPresentation';
+import { OpenDockerDesktopButton } from '../OpenDockerDesktopButton';
 import { botViewerId } from '@/lib/botViewer';
 import { useI18n } from '@/lib/i18n';
 import { Button } from '@/components/ui/button';
 import { retryBotsEventConnection } from '@/apps/botEventConnection';
+import { botsDesktopApi, type BotsDesktopApi } from '@/lib/botsDesktopApi';
 import { useBotChannelStore, type BotChannelStore } from '@/stores/useBotChannelStore';
 import { useBotOperationsStore, type BotOperationsStore } from '@/stores/useBotOperationsStore';
 import { useBotsStore, type BotsStore } from '@/stores/useBotsStore';
@@ -22,6 +25,7 @@ type BotSidebarSectionProps = {
   botsStore?: BotsStore;
   channelStore?: BotChannelStore;
   operationsStore?: BotOperationsStore;
+  desktopApi?: BotsDesktopApi;
   standalone?: boolean;
 };
 
@@ -31,6 +35,7 @@ export const BotSidebarSection: React.FC<BotSidebarSectionProps> = ({
   botsStore = useBotsStore,
   channelStore = useBotChannelStore,
   operationsStore = useBotOperationsStore,
+  desktopApi = botsDesktopApi,
   standalone = false,
 }) => {
   const { t } = useI18n();
@@ -38,9 +43,13 @@ export const BotSidebarSection: React.FC<BotSidebarSectionProps> = ({
   const botsById = botsStore((state) => state.botsById);
   const selectedBotId = botsStore((state) => state.selectedBotId);
   const principalId = botsStore((state) => state.principalId);
-  const catalogLoaded = botsStore((state) => state.catalogLoaded);
   const catalogLoading = botsStore((state) => state.catalogLoading);
-  const catalogErrorCode = botsStore((state) => state.catalogErrorCode);
+  const capabilitiesLoading = botsStore((state) => state.capabilitiesLoading);
+  // Flat primitives: a capability poll that changes nothing re-renders nothing.
+  const readiness = botsStore(useShallow(resolveBotCatalogReadiness));
+  const canOpenDocker = botsStore((state) => (
+    canOpenDockerDesktop(state.capabilities, desktopApi.isAvailable())
+  )) && Boolean(desktopApi.openDockerDesktop);
   const connectionState = operationsStore((state) => state.connectionState);
   const connectionErrorCode = operationsStore((state) => state.connectionErrorCode);
   const connectionFailureStartedAt = operationsStore((state) => state.connectionFailureStartedAt);
@@ -127,28 +136,42 @@ export const BotSidebarSection: React.FC<BotSidebarSectionProps> = ({
             );
           })}
         </div>
-      ) : !catalogErrorCode ? (
-        <p className="px-2 py-1 typography-micro text-muted-foreground" role={!catalogLoaded ? 'status' : undefined}>
+      ) : !readiness.canRetry ? (
+        <p className="px-2 py-1 typography-micro text-muted-foreground" role={readiness.pending ? 'status' : undefined}>
           {accessDisabled
             ? t('bots.sidebar.accessDisabled')
-            : !catalogLoaded
-              ? t('bots.sidebar.loading')
+            : readiness.messageKey
+              ? t(readiness.messageKey)
               : t('bots.sidebar.empty')}
         </p>
       ) : null}
-      {catalogErrorCode || connectionFailed ? (
+      {/* With Bots listed, a closed gate or failed read waits out the same
+          grace as a dropped stream; without them the reason shows at once. */}
+      {(readiness.canRetry && (orderedBotIds.length === 0 || readiness.kind === 'load_failed')) || connectionFailed ? (
         <div className="px-2 py-1 typography-micro text-muted-foreground">
-          <p role={catalogErrorCode ? 'alert' : 'status'}>
-            {catalogErrorCode ? t('bots.sidebar.loadFailed') : t('bots.sidebar.connectionFailed')}
+          <p role={readiness.canRetry ? 'alert' : 'status'}>
+            {readiness.canRetry && readiness.messageKey
+              ? t(readiness.messageKey)
+              : t('bots.sidebar.connectionFailed')}
           </p>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={catalogLoading}
-            onClick={retryBotsEventConnection}
-          >
-            {t('bots.operations.connection.retry')}
-          </Button>
+          <div className="flex flex-wrap items-center gap-1">
+            {canOpenDocker ? (
+              <OpenDockerDesktopButton
+                desktopApi={desktopApi}
+                size="sm"
+                variant="ghost"
+                onRefresh={retryBotsEventConnection}
+              />
+            ) : null}
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={catalogLoading || capabilitiesLoading}
+              onClick={retryBotsEventConnection}
+            >
+              {t('bots.operations.connection.retry')}
+            </Button>
+          </div>
         </div>
       ) : null}
     </section>

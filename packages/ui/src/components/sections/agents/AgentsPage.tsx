@@ -12,11 +12,14 @@ import { useDirectorySync } from '@/sync/sync-context';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useDeviceInfo } from '@/lib/device';
 import { opencodeClient } from '@/lib/opencode/client';
-import { RiAddLine, RiArrowDownSLine, RiCloseLine, RiFlashlightFill, RiInformationLine, RiSaveLine, RiSubtractLine } from '@remixicon/react';
+import { RiAddLine, RiAiAgentLine, RiArrowDownSLine, RiCloseLine, RiFlashlightFill, RiInformationLine, RiSaveLine, RiSubtractLine } from '@remixicon/react';
 import { cn } from '@/lib/utils';
 import { ModelSelector } from './ModelSelector';
 import { BehaviorPage } from '@/components/sections/behavior/BehaviorPage';
-import { AgentRuntimeSection } from './AgentRuntimeSection';
+import { AgentRuntimePage } from './AgentRuntimePage';
+import { resolveAgentsGlobalView, useSessionDefaultAgentName } from './useAgentsSettingsEntries';
+import { SettingsBadge, SettingsDetailHeader, SettingsDetailSection } from '@/components/sections/shared';
+import { getAgentIconColor } from '@/lib/agentColors';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Switch } from '@/components/ui/switch';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
@@ -270,6 +273,7 @@ export const AgentsPage: React.FC = () => {
   const { isMobile } = useDeviceInfo();
   const {
     selectedAgentName,
+    selectedGlobalView,
     getAgentByName,
     agents,
     staleModelOverrides,
@@ -278,6 +282,7 @@ export const AgentsPage: React.FC = () => {
     resetAgentBackupModel,
   } = useAgentsStore(useShallow((s) => ({
     selectedAgentName: s.selectedAgentName,
+    selectedGlobalView: s.selectedGlobalView,
     getAgentByName: s.getAgentByName,
     agents: s.agents,
     staleModelOverrides: s.staleModelOverrides,
@@ -287,6 +292,7 @@ export const AgentsPage: React.FC = () => {
   })));
 
   const selectedAgent = selectedAgentName ? getAgentByName(selectedAgentName) : null;
+  const sessionDefaultAgentName = useSessionDefaultAgentName();
   const providers = useConfigStore((state) => state.providers);
   const personalAgentSelections = useConfigStore((state) => state.agentModelSelections);
   const persistAgentModelSelection = useConfigStore((state) => state.persistAgentModelSelection);
@@ -845,14 +851,10 @@ export const AgentsPage: React.FC = () => {
   }, [resetAgentBackupModel, selectedAgentName, t]);
 
   if (!selectedAgentName) {
+    // Host-wide views sit beside the agents, not inside one agent's editor.
+    if (resolveAgentsGlobalView(selectedGlobalView, authPrincipal) === 'runtime') return <AgentRuntimePage />;
     if (behaviorUiHidden) return null;
-    // Host-wide runtime switches sit with the other per-host policy, not
-    // inside one agent's editor.
-    return (
-      <BehaviorPage>
-        <AgentRuntimeSection canEdit={isHostModelEditor} />
-      </BehaviorPage>
-    );
+    return <BehaviorPage />;
   }
 
   const renderThinkingLevelRow = (
@@ -1010,12 +1012,16 @@ export const AgentsPage: React.FC = () => {
     <ScrollableOverlay outerClassName="h-full" className="w-full">
       <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
 
-        {/* Header */}
-        <div className="mb-4 min-w-0">
-          <h2 className="typography-ui-header font-semibold text-foreground truncate">
-            {formatAgentDisplayName(selectedAgentName)}
-          </h2>
-        </div>
+        <SettingsDetailHeader
+          className="mb-4"
+          icon={<RiAiAgentLine style={{ color: `var(${getAgentIconColor(selectedAgentName).var})` }} />}
+          title={formatAgentDisplayName(selectedAgentName)}
+          badges={selectedAgentName === sessionDefaultAgentName ? (
+            <SettingsBadge tone="accent" title={t('settings.agents.sidebar.badge.defaultTitle')}>
+              {t('settings.agents.sidebar.badge.default')}
+            </SettingsBadge>
+          ) : null}
+        />
 
         {staleModelOverrides.length > 0 && (
           <div className="mb-4 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-2">
@@ -1025,15 +1031,7 @@ export const AgentsPage: React.FC = () => {
           </div>
         )}
 
-        {/* Identity & Role */}
-        <div className="mb-8">
-          <div className="mb-1 px-1">
-            <h3 className="typography-ui-header font-medium text-foreground">
-              {t('settings.agents.page.section.identityRole')}
-            </h3>
-          </div>
-
-          <section className="px-2 pb-2 pt-0 space-y-0">
+        <SettingsDetailSection className="mb-8" title={t('settings.agents.page.section.identityRole')}>
 
             <div className="pb-1.5 pt-0.5">
               <div className="flex min-w-0 flex-col gap-1.5">
@@ -1095,11 +1093,9 @@ export const AgentsPage: React.FC = () => {
 
                 {isPersonalModelEditor && !isCouncilAgent ? (
                   <div className="flex flex-wrap items-center gap-2 py-1.5 typography-meta text-muted-foreground">
-                    <span className={personalSelection
-                      ? 'rounded-full bg-primary/10 px-2 py-0.5 text-primary'
-                      : 'rounded-full bg-muted px-2 py-0.5'}>
-                      {personalSelection ? 'Personal' : 'Inherited'}
-                    </span>
+                    <SettingsBadge tone={personalSelection ? 'accent' : 'neutral'}>
+                      {personalSelection ? t('settings.sessionDefaults.badge.personal') : t('settings.sessionDefaults.badge.inherited')}
+                    </SettingsBadge>
                     {inheritedSelection ? (
                       <span>
                         Host default: {inheritedSelection.providerId}/{inheritedSelection.modelId}
@@ -1322,8 +1318,7 @@ export const AgentsPage: React.FC = () => {
               </div>
             </div>
 
-          </section>
-        </div>
+        </SettingsDetailSection>
 
         {/* Tool Permissions */}
         {!permissionsUiHidden && (

@@ -35,6 +35,7 @@ export const runtimeServiceDescriptorPath = (dataDirectory) => (
 export const runtimeServiceOwnerPath = (dataDirectory) => (
   path.join(serviceDirectory(dataDirectory), 'owner.v1.lock')
 );
+const ownerProcessPath = (dataDirectory) => path.join(serviceDirectory(dataDirectory), 'owner-process.v1.json');
 
 const exactObject = (value, keys) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -109,18 +110,20 @@ export const readRuntimeServiceOwner = async ({ dataDirectory, fsPromises = fs }
       return { state: 'malformed', stat };
     }
     const bytes = await fsPromises.readFile(filePath);
-    try {
-      return { state: 'valid', owner: validateOwner(parseBoundedJson(bytes, 'runtime_service_owner_invalid')), stat };
-    } catch (error) {
-      if (error?.code !== 'runtime_service_owner_invalid') throw error;
-      const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
-      return { state: 'malformed', stat, fingerprint: [
-        stat.dev, stat.ino, stat.size, stat.ctimeMs, stat.mtimeMs,
-        sha256,
-      ].join(':'), identity: {
+    const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
+    const evidence = {
+      stat,
+      fingerprint: [stat.dev, stat.ino, stat.size, stat.ctimeMs, stat.mtimeMs, sha256].join(':'),
+      identity: {
         ino: stat.ino, birthtimeMs: stat.birthtimeMs, size: stat.size,
         ctimeMs: stat.ctimeMs, mtimeMs: stat.mtimeMs, sha256,
-      } };
+      },
+    };
+    try {
+      return { state: 'valid', owner: validateOwner(parseBoundedJson(bytes, 'runtime_service_owner_invalid')), ...evidence };
+    } catch (error) {
+      if (error?.code !== 'runtime_service_owner_invalid') throw error;
+      return { state: 'malformed', ...evidence };
     }
   } catch (error) {
     if (error?.code === 'ENOENT') return { state: 'missing' };
@@ -182,6 +185,50 @@ const readBootSessionId = async () => {
   }
 };
 
+// OS start identity is compared for equality within one boot, never against
+// wall-clock age. No command arguments or environment values are inspected.
+export const readRuntimeProcessStartIdentity = async (pid, {
+  platform = process.platform, fsPromises = fs, execute = execFile,
+} = {}) => {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return null;
+  try {
+    if (platform === 'darwin') {
+      // ponytail: ps has second precision; same-second PID reuse stays blocked.
+      // Use native microsecond start metadata if that conservative limit matters.
+      const stdout = await new Promise((resolve, reject) => {
+        execute('/bin/ps', ['-p', String(pid), '-o', 'lstart='], {
+          encoding: 'utf8', timeout: 2_000, maxBuffer: 256,
+          env: { ...process.env, LC_ALL: 'C', TZ: 'UTC' },
+        }, (error, output) => error ? reject(error) : resolve(output));
+      });
+      const value = stdout.trim().replace(/ +/g, ' ');
+      return /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2} \d{2}:\d{2}:\d{2} \d{4}$/.test(value)
+        ? `darwin:${value}` : null;
+    }
+    if (platform === 'linux') {
+      const raw = await fsPromises.readFile(`/proc/${pid}/stat`, 'utf8');
+      // comm is parenthesized and can itself contain spaces and parentheses.
+      const end = raw.lastIndexOf(')');
+      const startTicks = end > 0 ? raw.slice(end + 1).trim().split(/\s+/)[19] : null;
+      return typeof startTicks === 'string' && /^\d+$/.test(startTicks) ? `linux:${startTicks}` : null;
+    }
+  } catch {
+    // An unavailable OS probe is not evidence that the process stopped.
+  }
+  return null;
+};
+
+const validStartIdentity = (value) => typeof value === 'string'
+  && /^(?:darwin:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{1,2} \d{2}:\d{2}:\d{2} \d{4}|linux:\d{1,30})$/.test(value);
+const observeBoot = async (getBootSessionId) => {
+  const value = await Promise.resolve().then(getBootSessionId).catch(() => null);
+  return isUuid(value) ? value.toLowerCase() : null;
+};
+const observeStart = async (getProcessStartIdentity, pid) => {
+  const value = await Promise.resolve().then(() => getProcessStartIdentity(pid)).catch(() => null);
+  return validStartIdentity(value) ? value : null;
+};
+
 const IDENTITY_KEYS = ['ino', 'birthtimeMs', 'size', 'ctimeMs', 'mtimeMs', 'sha256'];
 const validOwnerIdentity = (identity) => exactObject(identity, IDENTITY_KEYS)
   && Number.isSafeInteger(identity.ino) && identity.ino >= 0
@@ -218,7 +265,7 @@ const readRecoveryProof = async (proofPath, fsPromises) => {
 // The OS device number identifies the current mount, not persistent file
 // identity across boots. Keep it in the immediate fingerprint above, but never
 // include it in the reboot proof. This function requires the mutation guard.
-const inspectCorruptOwnerRecovery = async ({
+const inspectOwnerRecovery = async ({
   dataDirectory, result, fsPromises, getBootSessionId,
 }) => {
   if (!result.fingerprint || !result.stat.isFile() || !validOwnerIdentity(result.identity)) {
@@ -263,45 +310,114 @@ const inspectCorruptOwnerRecovery = async ({
   };
 };
 
+// Recording legacy proof requires the owner mutation guard. Read-only descriptor
+// checks do not write proof. A companion from another generation is irrelevant.
+const inspectOwnerProcess = async ({
+  dataDirectory, result, fsPromises, isProcessAlive, getBootSessionId,
+  getProcessStartIdentity, platform, recordLegacyProof = true,
+}) => {
+  const { owner } = result;
+  if (!isProcessAlive(owner.pid)) return { state: 'stopped', reason: 'process_absent' };
+  if (!['darwin', 'linux'].includes(platform)) return { state: 'active', reason: 'pid_alive' };
+  const saved = await readRecoveryProof(ownerProcessPath(dataDirectory), fsPromises);
+  const matches = exactObject(saved, ['version', 'instanceId', 'generation', 'pid', 'bootSessionId', 'processStartIdentity'])
+    && saved.version === 1 && saved.instanceId === owner.instanceId
+    && saved.generation === owner.generation && saved.pid === owner.pid
+    && (saved.bootSessionId === null || isUuid(saved.bootSessionId))
+    && (saved.processStartIdentity === null || validStartIdentity(saved.processStartIdentity));
+  if (matches && saved.bootSessionId !== null) {
+    const boot = await observeBoot(getBootSessionId);
+    if (!boot) return { state: 'unknown', reason: 'boot_identity_unavailable' };
+    if (boot !== saved.bootSessionId.toLowerCase()) return { state: 'stopped', reason: 'boot_changed' };
+    const started = await observeStart(getProcessStartIdentity, owner.pid);
+    if (!saved.processStartIdentity || !started) return { state: 'unknown', reason: 'process_identity_unavailable' };
+    return started === saved.processStartIdentity
+      ? { state: 'active', reason: 'identity_matches' }
+      : { state: 'stopped', reason: 'pid_reused' };
+  }
+  if (!recordLegacyProof) return { state: 'unknown', reason: 'legacy_identity_missing' };
+  const recovery = await inspectOwnerRecovery({ dataDirectory, result, fsPromises, getBootSessionId });
+  return recovery.canRecover
+    ? { state: 'stopped', reason: 'legacy_boot_changed' }
+    : { state: 'unknown', reason: recovery.reason };
+};
+
+const unverifiedOwnerError = (reason, onDiagnostic) => {
+  const reboot = reason === 'reboot_required' || reason === 'file_changed';
+  const error = new RuntimeServiceError(reboot
+    ? 'The previous runtime owner cannot be verified. Recovery evidence has been saved. Restart the computer, then reopen DevRyan.'
+    : 'The runtime owner could not be verified. Check runtime ownership diagnostics and retry.',
+  'runtime_service_owner_unverified');
+  error.recoveryReason = reason;
+  onDiagnostic({ phase: 'owner_recovery', code: error.code, reason });
+  return error;
+};
+
 export const waitForRuntimeServiceOwnerStopped = async ({
   dataDirectory, fsPromises = fs, timeoutMs = 15_000,
   isProcessAlive = isProcessAliveDefault, wait = delay, clock = Date.now,
   getBootSessionId = readBootSessionId,
+  getProcessStartIdentity = readRuntimeProcessStartIdentity,
+  platform = process.platform,
   onDiagnostic = () => undefined,
 } = {}) => {
   validateAbsoluteDirectory(dataDirectory);
   const deadline = clock() + timeoutMs;
   let bootSessionIdPromise;
   let fileChanged = false;
-  const getObservedBootSessionId = () => bootSessionIdPromise ??= getBootSessionId();
+  const getObservedBootSessionId = () => bootSessionIdPromise ??= observeBoot(getBootSessionId);
   while (true) {
-    let result = await readRuntimeServiceOwner({ dataDirectory, fsPromises });
-    let recovery;
-    if (result.state === 'malformed') {
-      ({ result, recovery } = await withOwnerMutation(dataDirectory, fsPromises, async () => {
-        const current = await readRuntimeServiceOwner({ dataDirectory, fsPromises });
-        return {
-          result: current,
-          recovery: current.state === 'malformed' ? await inspectCorruptOwnerRecovery({
-            dataDirectory, result: current, fsPromises, getBootSessionId: getObservedBootSessionId,
-          }) : null,
-        };
-      }));
-    }
+    const { result, recovery, processState } = await withOwnerMutation(dataDirectory, fsPromises, async () => {
+      const result = await readRuntimeServiceOwner({ dataDirectory, fsPromises });
+      return {
+        result,
+        recovery: result.state === 'malformed' ? await inspectOwnerRecovery({
+          dataDirectory, result, fsPromises, getBootSessionId: getObservedBootSessionId,
+        }) : null,
+        processState: result.state === 'valid' ? await inspectOwnerProcess({
+          dataDirectory, result, fsPromises, isProcessAlive, getBootSessionId: getObservedBootSessionId,
+          getProcessStartIdentity, platform,
+        }) : null,
+      };
+    });
     if (result.state === 'missing') return true;
     if (result.state === 'unreadable') throw ownerStateError(result.state);
-    if (result.state === 'valid' && !isProcessAlive(result.owner.pid)) return true;
-    if (recovery?.canRecover) return true;
-    if (recovery?.reason === 'file_changed') fileChanged = true;
+    if (processState?.state === 'stopped' || recovery?.canRecover) return true;
+    if (recovery?.reason === 'file_changed' || processState?.reason === 'file_changed') fileChanged = true;
     if (clock() >= deadline) {
-      if (result.state === 'malformed') {
-        const reason = fileChanged && recovery.reason === 'reboot_required' ? 'file_changed' : recovery.reason;
-        throw reportBlockedRecovery(reason, onDiagnostic);
-      }
+      const observedReason = recovery?.reason || processState?.reason;
+      const reason = fileChanged && observedReason === 'reboot_required' ? 'file_changed' : observedReason;
+      if (result.state === 'malformed') throw reportBlockedRecovery(reason, onDiagnostic);
+      if (processState?.state === 'unknown') throw unverifiedOwnerError(reason, onDiagnostic);
+      onDiagnostic({ phase: 'owner_recovery', code: 'runtime_service_owner_active', reason });
       return false;
     }
     await wait(Math.min(100, Math.max(1, deadline - clock())));
   }
+};
+
+// A stale handshake must not bootstrap against another generation's listener.
+export const assertRuntimeServiceDescriptorOwner = async ({
+  dataDirectory, descriptor, fsPromises = fs, isProcessAlive = isProcessAliveDefault,
+  getBootSessionId = readBootSessionId, getProcessStartIdentity = readRuntimeProcessStartIdentity,
+  platform = process.platform,
+}) => {
+  const result = await readRuntimeServiceOwner({ dataDirectory, fsPromises });
+  if (result.state === 'unreadable' || result.state === 'malformed') throw ownerStateError(result.state);
+  const owner = result.owner;
+  if (!owner || owner.mode !== 'service' || owner.pid !== descriptor.pid
+    || owner.instanceId !== descriptor.instanceId || owner.generation !== descriptor.ownerGeneration) {
+    fail('The background runtime descriptor no longer matches its owner', 'runtime_service_owner_stale');
+  }
+  const processState = await inspectOwnerProcess({
+    dataDirectory, result, fsPromises, isProcessAlive, getBootSessionId, getProcessStartIdentity, platform,
+    recordLegacyProof: false,
+  });
+  if (processState.state === 'stopped') {
+    fail('The background runtime owner is no longer running', 'runtime_service_owner_stale');
+  }
+  // Legacy services can still authenticate; unknown identity never authorizes
+  // reclamation. The authenticated lease response independently fences generation.
 };
 
 const validateDesktopHost = (value) => {
@@ -429,6 +545,8 @@ export async function createRuntimeServiceCoordinator({
   now = () => new Date(),
   wait = delay,
   getBootSessionId = readBootSessionId,
+  getProcessStartIdentity = readRuntimeProcessStartIdentity,
+  platform = process.platform,
   onDiagnostic = () => undefined,
 } = {}) {
   validateAbsoluteDirectory(dataDirectory);
@@ -486,7 +604,7 @@ export async function createRuntimeServiceCoordinator({
     }
     if (result.state === 'unreadable') throw ownerStateError(result.state);
     if (result.state === 'malformed') {
-      const recovery = await inspectCorruptOwnerRecovery({ dataDirectory, result, fsPromises, getBootSessionId });
+      const recovery = await inspectOwnerRecovery({ dataDirectory, result, fsPromises, getBootSessionId });
       if (!recovery.canRecover) {
         throw reportBlockedRecovery(recovery.reason, onDiagnostic);
       }
@@ -508,15 +626,30 @@ export async function createRuntimeServiceCoordinator({
     }
     const existing = result.state === 'valid' ? result.owner : null;
     if (existing) {
-      if (isProcessAlive(existing.pid)) {
+      const processState = await inspectOwnerProcess({
+        dataDirectory, result, fsPromises, isProcessAlive, getBootSessionId, getProcessStartIdentity, platform,
+      });
+      if (processState.state === 'unknown') throw unverifiedOwnerError(processState.reason, onDiagnostic);
+      if (processState.state === 'active') {
         fail('Another runtime already owns this data directory', 'runtime_service_owner_exists');
       }
+      const latest = await readRuntimeServiceOwner({ dataDirectory, fsPromises });
+      if (latest.state !== 'valid' || latest.fingerprint !== result.fingerprint
+        || latest.identity.birthtimeMs !== result.identity.birthtimeMs) {
+        fail('The runtime owner changed during recovery. Retry to inspect its current state.', 'runtime_service_owner_busy');
+      }
       await fsPromises.unlink(ownerPath);
+      onDiagnostic({ phase: 'owner_recovery', code: 'runtime_service_owner_reclaimed', reason: processState.reason });
     }
     const candidate = {
       version: 1, instanceId, pid, generation: (existing?.generation || 0) + 1,
       mode, createdAt: now().toISOString(),
     };
+    const bootSessionId = await observeBoot(getBootSessionId);
+    const processStartIdentity = await observeStart(getProcessStartIdentity, pid);
+    await atomicWritePrivateJson(ownerProcessPath(dataDirectory), {
+      version: 1, instanceId, generation: candidate.generation, pid, bootSessionId, processStartIdentity,
+    }, fsPromises);
     // link() publishes a complete, durable inode and fails if any owner won
     // first. rename() would silently replace the winner and is not safe here.
     const temporary = `${ownerPath}.${pid}.${randomUUID()}.tmp`;

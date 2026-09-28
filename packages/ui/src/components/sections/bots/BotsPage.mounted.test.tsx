@@ -117,3 +117,101 @@ test('shows the network failure while retrying instead of leaving an indefinite 
     expect(container.textContent).toContain('network_error');
   } finally { await unmount(); }
 }));
+
+const dockerStopped: BotCapabilities = {
+  available: false, catalogAvailable: false, state: 'docker_stopped', code: 'bot_runtime_docker_unavailable',
+  database: { state: 'unavailable', code: 'bot_runtime_docker_unavailable' },
+  owner: 'electron', canManageRuntime: true, canCreateBot: false,
+};
+const button = (container: HostElement, label: string) => (
+  container.find((node) => node.tagName === 'BUTTON' && node.textContent.trim() === label)
+);
+
+test('a blocked catalog names the reason and recovers through Retry', async () => withDom(async (container) => {
+  let calls = 0;
+  let current = dockerStopped;
+  const refreshes: Array<{ refresh?: boolean } | undefined> = [];
+  const listener = spyOn(window, 'addEventListener').mockImplementation(() => {});
+  const unmount = await mount(container, {
+    getCapabilities: async (options) => { refreshes.push(options); return current; },
+    listBots: async () => { calls += 1; return { bots: [managementDetail().bot], canCreateBot: true }; },
+  }, dockerStopped);
+  try {
+    await act(pause);
+    expect(calls).toBe(0);
+    expect(container.textContent).toContain('Docker Desktop isn’t running');
+    expect(container.textContent).toContain('bot_runtime_docker_unavailable');
+    expect(container.textContent).not.toContain('Loading Bots');
+    expect(container.textContent).not.toContain('No Bots assigned');
+    // The browser-hosted page cannot start Docker Desktop.
+    expect(button(container, 'Open Docker Desktop')).toBeNull();
+
+    await act(async () => { button(container, 'Retry')?.click(); });
+    expect(refreshes.at(-1)).toEqual({ refresh: true });
+    expect(calls).toBe(0);
+    expect(container.textContent).toContain('Docker Desktop isn’t running');
+
+    current = ready;
+    await act(async () => { button(container, 'Retry')?.click(); });
+    expect(calls).toBe(1);
+    expect(container.textContent).toContain('Research Desk');
+    expect(container.textContent).not.toContain('Docker Desktop isn’t running');
+  } finally { await unmount(); listener.mockRestore(); }
+}));
+
+test('a failed capability check is visible and recoverable', async () => withDom(async (container) => {
+  let calls = 0;
+  let fail = true;
+  const listener = spyOn(window, 'addEventListener').mockImplementation(() => {});
+  const unmount = await mount(container, {
+    getCapabilities: async () => {
+      if (fail) throw new BotsApiError('Connection unavailable', { status: 0, code: 'network_error' });
+      return ready;
+    },
+    listBots: async () => { calls += 1; return { bots: [], canCreateBot: true }; },
+  }, dockerStopped);
+  try {
+    await act(async () => { button(container, 'Retry')?.click(); });
+    expect(container.textContent).toContain('Couldn’t check whether Bots are available');
+    expect(container.textContent).toContain('network_error');
+    expect(container.textContent).not.toContain('No Bots assigned');
+    expect(calls).toBe(0);
+
+    fail = false;
+    await act(async () => { button(container, 'Retry')?.click(); });
+    expect(calls).toBe(1);
+    expect(container.textContent).toContain('No Bots assigned');
+  } finally { await unmount(); listener.mockRestore(); }
+}));
+
+test('the desktop app offers to open Docker Desktop and then probes for it', async () => withDom(async (container) => {
+  let opens = 0;
+  const listener = spyOn(window, 'addEventListener').mockImplementation(() => {});
+  const { createRoot } = await import('react-dom/client');
+  const root = createRoot(container as unknown as Element);
+  useBotsStore.getState().setCapabilities(dockerStopped);
+  const api: BotsApi = {
+    ...botsApi,
+    getCatalogStatus: async () => ({ state: 'unavailable', code: 'bot_runtime_docker_unavailable', schema: null, maintenance: null, activationHold: null, viewerIsOwner: true }),
+    getCapabilities: async () => dockerStopped,
+    listBots: async () => ({ bots: [], canCreateBot: true }),
+  };
+  const native = {
+    ...desktopApi,
+    isAvailable: () => true,
+    operationStatus: undefined,
+    listenProgress: undefined,
+    openDockerDesktop: async () => { opens += 1; return { opened: true, code: null }; },
+  };
+  await act(async () => { root.render(<I18nProvider><BotsPage api={api} desktopApi={native} /></I18nProvider>); });
+  try {
+    expect(button(container, 'Open Docker Desktop')).not.toBeNull();
+    await act(async () => { button(container, 'Open Docker Desktop')?.click(); });
+    expect(opens).toBe(1);
+    expect(container.textContent).toContain('Waiting for Docker Desktop…');
+  } finally {
+    await act(async () => { root.unmount(); });
+    useBotsStore.getState().resetPrincipal(null);
+    listener.mockRestore();
+  }
+}));

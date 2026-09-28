@@ -29,7 +29,9 @@ import {
 import { cn } from '@/lib/utils';
 import {
   botCatalogBackupLabel,
+  botCatalogDiscoveryFailure,
   botCatalogImportPhaseLabel,
+  canCheckHostedBots,
   formatBotCatalogBytes,
   resolveBotCatalogAction,
   type BotCatalogAction,
@@ -133,6 +135,24 @@ export const BotCatalogPanel: React.FC<BotCatalogPanelProps> = ({
       if (changed) onChangedRef.current?.();
     } catch (operationError) {
       const message = errorText(operationError);
+      setError(message);
+      toast.error(message);
+    } finally {
+      setBusy(false);
+      await load();
+    }
+  };
+
+  // Only an empty answer is announced: found Bots and failures show their
+  // own notice once the status is read again.
+  const checkAgain = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const checked = await api.checkCatalogImportSource();
+      if (checked.cloud?.hasBots === false && !checked.cloud.code) toast.success('No hosted Bots were found.');
+    } catch (checkError) {
+      const message = errorText(checkError);
       setError(message);
       toast.error(message);
     } finally {
@@ -247,12 +267,18 @@ export const BotCatalogPanel: React.FC<BotCatalogPanelProps> = ({
           detail: 'Bots already on this computer remain available.',
           control: <RiLoader4Line className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden />,
         };
-      case 'discovery_failed':
+      case 'discovery_failed': {
+        const failure = botCatalogDiscoveryFailure(current.code);
         return {
-          title: 'Could Not Check Hosted Bots',
-          detail: `The hosted source could not be checked (${current.code}). Bots already on this computer remain available.`,
-          control: null,
+          title: failure.title,
+          detail: `${failure.detail} Bots already on this computer remain available.`,
+          control: (
+            <Button type="button" size="xs" variant="outline" disabled={busy} onClick={() => void checkAgain()}>
+              Check Again
+            </Button>
+          ),
         };
+      }
       case 'import_pending':
         return {
           title: 'Hosted Bots Can Be Imported',
@@ -298,6 +324,12 @@ export const BotCatalogPanel: React.FC<BotCatalogPanelProps> = ({
                   onClick={() => void load()}>
                   <RiRefreshLine className="h-4 w-4" aria-hidden />
                 </Button>
+                {variant === 'full' && canCheckHostedBots(status, action) ? (
+                  <Button type="button" size="xs" variant="ghost" disabled={busy || running}
+                    onClick={() => void checkAgain()}>
+                    Check for Hosted Bots
+                  </Button>
+                ) : null}
                 {status.viewerIsOwner && status.backups?.backupsAvailable ? (
                   <Button type="button" size="xs" variant="outline" disabled={busy || running}
                     onClick={() => void run(() => api.backupCatalog(), 'Backup created and verified.', false)}>

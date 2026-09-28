@@ -15,12 +15,17 @@ import {
   AGENT_BROWSER_VERSION,
   AGENT_BROWSER_MANAGED_CONFIG_FILE,
   __test,
-  createAgentBrowserInstaller,
+  createAgentBrowserInstaller as createInstaller,
   provisionAgentBrowserSkill,
   resolveAgentBrowserBinaryName,
   withdrawAgentBrowserSkill,
 } from './install.js';
 
+const recordingInstaller = {
+  status: async () => ({ ok: true, state: 'ready', issues: [] }),
+  ensureInstalled: async () => ({ ok: true, state: 'ready', issues: [] }),
+};
+const createAgentBrowserInstaller = options => createInstaller({ recordingInstaller, ...options });
 const temporaryDirectories = [];
 
 const makeTemporaryDirectory = () => {
@@ -55,6 +60,19 @@ const writeFakeBun = (root) => {
 };
 
 describe('managed agent-browser installer', () => {
+  it('keeps browsing ready when recording provisioning fails and retries it through repair', async () => {
+    const dataRoot = makeTemporaryDirectory();
+    const installRoot = join(dataRoot, 'tools', 'agent-browser');
+    writeInstalledPackage(installRoot);
+    const unavailable = { ok: false, state: 'unavailable', issues: [{ code: 'ffmpeg-install-failed', message: 'Download failed' }] };
+    const recording = { status: vi.fn(async () => unavailable), ensureInstalled: vi.fn(async () => unavailable) };
+    const installer = createAgentBrowserInstaller({ dataRoot, platform: 'darwin', arch: 'arm64', recordingInstaller: recording,
+      bunExecutable: writeFakeBun(makeTemporaryDirectory()), runCommand: async () => ({ ok: true, stdout: '' }) });
+    expect(await installer.ensureInstalled()).toMatchObject({ ok: true, state: 'ready', recording: unavailable });
+    await installer.repair();
+    expect(recording.ensureInstalled).toHaveBeenLastCalledWith({ repair: true });
+  });
+
   it('resolves every packaged platform binary name', () => {
     expect(resolveAgentBrowserBinaryName({ platform: 'darwin', arch: 'arm64' }))
       .toBe('agent-browser-darwin-arm64');
@@ -150,9 +168,9 @@ describe('managed agent-browser installer', () => {
     const installRoot = join(dataRoot, 'tools', 'agent-browser');
     mkdirSync(installRoot, { recursive: true });
     writeFileSync(join(installRoot, 'package.json'), `${JSON.stringify({
-      dependencies: { 'agent-browser': '0.26.0' },
+      dependencies: { 'agent-browser': '0.33.2' },
     })}\n`, 'utf8');
-    writeInstalledPackage(installRoot, '0.26.0');
+    writeInstalledPackage(installRoot, '0.33.2');
     const installer = createAgentBrowserInstaller({
       dataRoot,
       platform: 'darwin',

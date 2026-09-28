@@ -1,6 +1,6 @@
 import { hasAuthCapability, type AuthPrincipal } from '@/lib/authSession';
 
-import type { VisibleSetting } from './OpenChamberVisualSettings';
+import type { VisibleSetting } from './appearance/visibleSettings';
 
 export const isVisualSettingAllowedByPolicy = (
     setting: VisibleSetting,

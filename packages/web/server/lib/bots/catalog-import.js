@@ -268,6 +268,9 @@ export function createBotCatalogImport({
   let cancelRequested = false;
   let cloudProbe = null;
   let checking = false;
+  // The owner asked for a check in this process, which outranks an earlier
+  // "Not Now": the Bots they went looking for must be importable.
+  let requested = false;
 
   const privateDirectory = async (directory) => {
     await fs.mkdir(directory, { recursive: true, mode: 0o700 });
@@ -712,9 +715,19 @@ export function createBotCatalogImport({
     }
   };
 
+  // Whether a hosted project is saved on this host; never the source itself.
+  const sourceConfigured = () => {
+    try {
+      return Boolean(readCloudSource());
+    } catch {
+      return false;
+    }
+  };
+
   const publicStatus = () => {
     const current = state;
     return Object.freeze({
+      sourceConfigured: sourceConfigured(),
       cloud: cloudProbe,
       checking,
       import: current ? {
@@ -730,7 +743,8 @@ export function createBotCatalogImport({
         error: current.error || null,
         result: current.result || null,
       } : null,
-      pending: Boolean(cloudProbe?.hasBots) && current?.phase !== 'completed' && current?.phase !== 'dismissed',
+      pending: Boolean(cloudProbe?.hasBots) && current?.phase !== 'completed'
+        && (current?.phase !== 'dismissed' || requested),
     });
   };
 
@@ -741,7 +755,8 @@ export function createBotCatalogImport({
     },
     // Detects hosted Bots that have not been imported, so an empty local
     // catalog never reads as "the cloud Bots were deleted".
-    async probeCloud() {
+    async probeCloud({ requested: byOwner = false } = {}) {
+      if (byOwner === true) requested = true;
       if (checking) return publicStatus();
       const cloud = readCloudSource();
       if (!cloud) {
@@ -829,6 +844,7 @@ export function createBotCatalogImport({
       if (running) fail('A Bot import is running; cancel it first', 'bot_import_running', { statusCode: 409 });
       await loadState();
       state ||= { version: STATE_VERSION, id: crypto.randomUUID(), mode: null, createdAt: new Date(now()).toISOString(), tables: {}, objects: null };
+      requested = false;
       state.phase = 'dismissed';
       await saveState();
       return publicStatus();

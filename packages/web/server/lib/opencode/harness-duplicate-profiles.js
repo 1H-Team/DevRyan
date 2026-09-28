@@ -1,10 +1,15 @@
-// Verified release profiles. Evidence: docs/audits/2026-09-24-duplicate-routes/<route>/ (current: companion 2.1.0
+// Historical verified release profiles; all are stale after the 0.38.1 browser plugin change.
+// Original hashes/evidence are retained; live requalification is required. Evidence: docs/audits/2026-09-24-duplicate-routes/<route>/ (current: companion 2.1.0
 // on OpenCode 1.18.32, matched by companion build identity), docs/audits/2026-09-24-companion-requalification/
 // and docs/audits/2026-09-20-context-deduplication/live-acceptance.json (stale predecessors).
 // Changing plugin bytes, native executable, model, effort or transport requires qualification.
 const profiles = [
   {
     "id": "devryan-companion-2.1.0-xai-grok-4.7-medium",
+    "stale": {
+      "reason": "devryan-browser.mjs adds bounded sequences and agent-browser 0.38.1 recording support (2026-09-28); live duplicate-output requalification is required before promotion",
+      "plugins": ["devryan-browser.mjs"]
+    },
     "runtimeVersion": "1.18.32",
     "runtimeHash": "d1f46380f028efb9a46bd10c9866231acbab4e31b43afcf1f1ee179868a40882",
     "runtimeIdentity": {
@@ -128,6 +133,10 @@ const profiles = [
   },
   {
     "id": "devryan-companion-2.1.0-xai-grok-4.6-high",
+    "stale": {
+      "reason": "devryan-browser.mjs adds bounded sequences and agent-browser 0.38.1 recording support (2026-09-28); live duplicate-output requalification is required before promotion",
+      "plugins": ["devryan-browser.mjs"]
+    },
     "runtimeVersion": "1.18.32",
     "runtimeHash": "d1f46380f028efb9a46bd10c9866231acbab4e31b43afcf1f1ee179868a40882",
     "runtimeIdentity": {
@@ -251,6 +260,10 @@ const profiles = [
   },
   {
     "id": "devryan-companion-2.1.0-openai-gpt-6-astra-medium",
+    "stale": {
+      "reason": "devryan-browser.mjs adds bounded sequences and agent-browser 0.38.1 recording support (2026-09-28); live duplicate-output requalification is required before promotion",
+      "plugins": ["devryan-browser.mjs"]
+    },
     "runtimeVersion": "1.18.32",
     "runtimeHash": "d1f46380f028efb9a46bd10c9866231acbab4e31b43afcf1f1ee179868a40882",
     "runtimeIdentity": {
@@ -374,6 +387,10 @@ const profiles = [
   },
   {
     "id": "devryan-companion-2.1.0-openai-gpt-5.6-sol-medium",
+    "stale": {
+      "reason": "devryan-browser.mjs adds bounded sequences and agent-browser 0.38.1 recording support (2026-09-28); live duplicate-output requalification is required before promotion",
+      "plugins": ["devryan-browser.mjs"]
+    },
     "runtimeVersion": "1.18.32",
     "runtimeHash": "d1f46380f028efb9a46bd10c9866231acbab4e31b43afcf1f1ee179868a40882",
     "runtimeIdentity": {
@@ -593,8 +610,8 @@ const profiles = [
     "transport": "openai-chatgpt-managed-responses-v1",
     "defaultEnabled": true,
     "stale": {
-      "reason": "devryan-managed-orchestration.mjs validates devryan_task agent names against the live catalog and advertises wait_any only while its policy is on (2026-09-24); requalify on the follow-up companion build",
-      "plugins": ["devryan-managed-orchestration.mjs"]
+      "reason": "devryan-managed-orchestration.mjs validates devryan_task agent names against the live catalog and advertises wait_any only while its policy is on (2026-09-24); requalify on the follow-up companion build; devryan-browser.mjs adds bounded sequences and 0.38.1 recording support (2026-09-28)",
+      "plugins": ["devryan-managed-orchestration.mjs", "devryan-browser.mjs"]
     },
     "evidence": {
       "reportHash": "35462b59b718e7796efb6113820a702085bfc794b210c945be56c0682b8fa197",

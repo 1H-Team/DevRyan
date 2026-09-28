@@ -285,6 +285,140 @@ describe('Production Bots runtime composition', () => {
   });
 });
 
+describe('Production Bots catalog retry', () => {
+  it('restarts an unavailable local catalog only when capabilities are refreshed', async () => {
+    const dataDirectory = await makeDirectory();
+    const stopped = () => Object.assign(new Error('Docker is stopped'), { code: 'bot_runtime_docker_unavailable' });
+    const botHost = {
+      owner: 'electron',
+      getStatus: vi.fn(async () => ({
+        state: 'docker_unavailable', code: 'bot_runtime_docker_unavailable', issues: [], warnings: [],
+      })),
+      catalog: {
+        getContext: vi.fn(async () => { throw Object.assign(new Error('not ready'), { code: 'bot_database_unavailable' }); }),
+        ensure: vi.fn(async () => { throw stopped(); }),
+      },
+    };
+    const runtime = createBotsRuntime({
+      dataDirectory,
+      botHost,
+      encryption: { getKey: async () => Buffer.alloc(32, 7) },
+    });
+    await runtime.start();
+    try {
+      const handlers = new Map();
+      const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete'].map((method) => [
+        method,
+        (route, ...routeHandlers) => { handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)); },
+      ]));
+      app.use = () => {};
+      runtime.registerRoutes(app);
+      const read = async (query = {}) => {
+        const response = {
+          payload: null,
+          status() { return this; },
+          json(payload) { this.payload = payload; return this; },
+        };
+        await handlers.get('GET /api/bots/capabilities')({
+          body: {}, params: {}, headers: {}, query,
+          principal: { id: 'a0000000-0000-4000-8000-000000000001', role: 'admin', scope: 'managed' },
+        }, response);
+        return response.payload;
+      };
+
+      expect(await read()).toMatchObject({ catalogAvailable: false, database: { state: 'unavailable' } });
+      const attempts = botHost.catalog.ensure.mock.calls.length;
+      expect(attempts).toBeGreaterThan(0);
+      await read();
+      expect(botHost.catalog.ensure).toHaveBeenCalledTimes(attempts);
+
+      expect(await read({ refresh: '1' })).toMatchObject({ catalogAvailable: false });
+      await vi.waitFor(() => expect(botHost.catalog.ensure).toHaveBeenCalledTimes(attempts + 1));
+    } finally {
+      await runtime.shutdown();
+    }
+  });
+});
+
+describe('Production Bots hosted discovery', () => {
+  const HOSTED = 'https://hosted.example.test';
+  const OWNER = { id: 'a0000000-0000-4000-8000-000000000009', role: 'admin', scope: 'bot-owner', botOwner: true };
+
+  const createHost = async (options = {}) => {
+    const dataDirectory = await makeDirectory();
+    const runtime = createBotsRuntime({
+      dataDirectory,
+      botHost: {
+        owner: 'electron',
+        getStatus: vi.fn(async () => ({ state: 'healthy', code: null, issues: [], warnings: [] })),
+        catalog: {
+          getContext: vi.fn(async () => { throw Object.assign(new Error('not ready'), { code: 'bot_database_unavailable' }); }),
+          ensure: vi.fn(async () => { throw Object.assign(new Error('stopped'), { code: 'bot_runtime_docker_unavailable' }); }),
+          maintenance: {},
+        },
+      },
+      encryption: { getKey: async () => Buffer.alloc(32, 7) },
+      readCloudSource: () => ({ url: HOSTED, secretKey: 'aGVhZGVy.cGF5bG9hZA.c2lnbmF0dXJl' }),
+      ...options,
+    });
+    await runtime.start();
+    const handlers = new Map();
+    const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete'].map((method) => [
+      method,
+      (route, ...routeHandlers) => { handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)); },
+    ]));
+    app.use = () => {};
+    runtime.registerRoutes(app);
+    const call = async (route) => {
+      const response = {
+        payload: null,
+        setHeader() {},
+        status() { return this; },
+        json(payload) { this.payload = payload; return this; },
+      };
+      await handlers.get(route)({ body: {}, params: {}, headers: {}, query: {}, principal: OWNER }, response);
+      return response.payload;
+    };
+    return { runtime, call };
+  };
+
+  it('contacts the hosted project only on request while Supabase is not connected', async () => {
+    const hosted = [];
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (target) => {
+      hosted.push(String(target));
+      return new Response(JSON.stringify([{ id: 'hosted-bot' }]), { status: 200 });
+    });
+    const local = await createHost();
+    const connected = await createHost({ discoverCloudSource: true });
+    try {
+      // Off or absent: the status names the saved source and nothing is sent.
+      expect(await local.call('GET /api/bots/database')).toMatchObject({
+        import: { sourceConfigured: true, cloud: null, checking: false, pending: false },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(hosted).toEqual([]);
+
+      expect(await local.call('POST /api/bots/database/import/check')).toMatchObject({
+        cloud: { hasBots: true, code: null }, pending: true,
+      });
+      expect(hosted).toHaveLength(1);
+      expect(hosted[0].startsWith(`${HOSTED}/rest/v1/bots?`)).toBe(true);
+
+      // Connected: discovery runs by itself, at most once an hour.
+      hosted.length = 0;
+      await connected.call('GET /api/bots/database');
+      await vi.waitFor(() => expect(hosted).toHaveLength(1));
+      await connected.call('GET /api/bots/database');
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(hosted).toHaveLength(1);
+    } finally {
+      fetchSpy.mockRestore();
+      await local.runtime.shutdown();
+      await connected.runtime.shutdown();
+    }
+  });
+});
+
 describe('Production Bots maintenance fence', () => {
   const fencedRuntime = async () => createBotsRuntime({
     supabase: {

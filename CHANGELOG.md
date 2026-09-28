@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.18] - 2026-09-28
+
+- Electron recovers a stale background runtime owner after a reboot or PID reuse while preserving live-owner protection.
+- Settings groups session defaults and agent runtime controls under Agents, refreshes navigation and field layouts, and improves passkey, retention, behavior, and user management screens.
+- Bots show Docker and catalog availability directly instead of waiting indefinitely. Retry refreshes Docker capability state, and the macOS app can open Docker Desktop on request.
+- Bot catalog and event handling recover more reliably after disconnects, preserve loaded entries, and present clearer status in the sidebar and gallery.
+- Update the managed OpenCode companion to 2.1.2 on OpenCode 1.18.33, with matching SDK and QA pins. Duplicate-output profiles await requalification; automatic provider recovery remains disabled for this unqualified runtime version.
+- Refresh Appearance settings and previews, and make Bot catalog import an explicit owner action while Supabase is disconnected.
+- Update Agent Browser control and recording support, including the packaged FFmpeg assets and browser inspection checks.
+
 ## [1.2.17] - 2026-09-27
 
 - Managed child Stop and handoff now retain recoverable output through transient status or transcript failures, fence cancelled attempts before submission, and avoid aborting a newer user turn after an authentication failure.

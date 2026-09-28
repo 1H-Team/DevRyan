@@ -9,12 +9,26 @@ import { toast } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/i18n';
-import { SessionRetentionSettings } from './SessionRetentionSettings';
+import { isDesktopLocalOriginActive, isDesktopShell } from '@/lib/desktop';
+import { DataStorageSettings } from './SessionRetentionSettings';
+import { DesktopKeepAwakeSettings } from './DesktopKeepAwakeSettings';
+import { DesktopNetworkSettings } from './DesktopNetworkSettings';
 import { OpenCodeVersionSection } from './OpenCodeVersionSection';
 
 const GITHUB_URL = 'https://github.com/1H-Team/DevRyan';
 
 const MIN_CHECKING_DURATION = 800; // ms
+
+/** App-level switches for the local desktop shell (display sleep and LAN access). */
+const DesktopAppSettings: React.FC = () => {
+  if (!isDesktopShell() || !isDesktopLocalOriginActive()) return null;
+  return (
+    <div className="border-t border-border/40 pt-6">
+      <DesktopKeepAwakeSettings />
+      <DesktopNetworkSettings />
+    </div>
+  );
+};
 
 export const AboutSettings: React.FC = () => {
   const { t } = useI18n();
@@ -136,9 +150,10 @@ export const AboutSettings: React.FC = () => {
           onRestart={updateStore.restartToUpdate}
           runtimeType={updateStore.runtimeType}
         />
+        <DesktopAppSettings />
         <div className="border-t border-border/40 pt-6">
           <SupabaseConnectionSettings />
-        <SessionRetentionSettings />
+          <DataStorageSettings />
         </div>
       </div>
     );
@@ -228,9 +243,10 @@ export const AboutSettings: React.FC = () => {
         onRestart={updateStore.restartToUpdate}
         runtimeType={updateStore.runtimeType}
       />
+      <DesktopAppSettings />
       <div className="border-t border-border/40 pt-6">
         <SupabaseConnectionSettings />
-        <SessionRetentionSettings />
+        <DataStorageSettings />
       </div>
     </div>
   );

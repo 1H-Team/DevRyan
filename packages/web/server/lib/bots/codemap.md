@@ -52,7 +52,10 @@ must preserve those checks. A grant never inherits global administrator access.
   in-process, retries only undelivered requests (never an ambiguous
   mutation), and publishes one readiness state (`starting`, `ready`,
   `unavailable`, `setup_required`, `update_required`, `recovery_required`,
-  `maintenance`); starting never installs images.
+  `maintenance`); starting never installs images. `retryNow()` restarts a
+  plainly `unavailable` catalog without waiting out the backoff; the
+  capabilities route calls it for `?refresh=1`, and owner-action states are
+  never restarted this way.
 - `local-object-storage.js`: the Storage adapter for encrypted objects as
   no-follow, exclusive-create files under `<data>/bots/objects`, behind the
   maintenance write fence.
@@ -64,6 +67,8 @@ must preserve those checks. A grant never inherits global administrator access.
 - `catalog-routes.js`: `/api/bots/database*` status, backups, Restore, Start
   Empty, activation resume and hosted import routes, registered before the
   catalog readiness gate; every mutation requires the owner session.
+  `import/check` is the owner's explicit hosted check; `runtime.js` discovers
+  by itself only when `discoverCloudSource` is set (Supabase connected).
 - `catalog-maintenance.js`: backup-now, daily schedule and retention trigger,
   Restore (confirmation `RESTORE`), Start Empty (`START EMPTY`), resume, and
   candidate validation, each inside the runtime's reversible maintenance fence.

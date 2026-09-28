@@ -189,7 +189,9 @@ describe('Slim setup runtime', () => {
   it('deploys the qualified adapter bytes pinned by duplicate-output profiles', async () => {
     const digest = crypto.createHash('sha256').update(reviewedAdapter).digest('hex');
     const pinned = DUPLICATE_OUTPUT_PROFILES
-      .filter((profile) => !profile.stale)
+      // Browser changes revoke whole profiles without changing this adapter's
+      // reviewed bytes. Only exclude evidence that predates adapter changes.
+      .filter((profile) => !profile.stale?.plugins.includes(DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE))
       .flatMap((profile) => profile.plugins)
       .filter((entry) => entry.name === DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE)
       .map((entry) => entry.contentHash);

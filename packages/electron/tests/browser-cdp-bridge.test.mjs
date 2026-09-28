@@ -133,9 +133,9 @@ const createFakeDebugger = ({ attachError = null, sendCommand } = {}) => {
     isAttached() {
       return attached;
     },
-    async sendCommand(method, params) {
-      this.commands.push({ method, params });
-      if (sendCommand) return sendCommand(method, params);
+    async sendCommand(method, params, sessionId) {
+      this.commands.push({ method, params, ...(sessionId ? { sessionId } : {}) });
+      if (sendCommand) return sendCommand(method, params, sessionId);
       return {};
     },
   };
@@ -190,6 +190,7 @@ const createHarness = ({
   commandTimeoutMs = 1_000,
   orphanTimeoutMs = 5_000,
   maxInFlightCommands = 64,
+  onBeforeCommand,
   now,
   setTimer,
   clearTimer,
@@ -206,6 +207,7 @@ const createHarness = ({
     },
     crypto: createFakeCrypto(),
     onAgentInput: (input) => inputs.push(input),
+    onBeforeCommand,
     onStatusChange: (status) => statuses.push(status),
     commandTimeoutMs,
     orphanTimeoutMs,
@@ -464,7 +466,7 @@ describe('multi-lease bridge lifecycle and routing', () => {
     ]);
   });
 
-  test('supports the agent-browser 0.33.2 root probe and setAutoAttach fallback', async () => {
+  test('supports the agent-browser 0.38.1 root probe and setAutoAttach fallback', async () => {
     const guest = createFakeGuest({
       name: 'handshake',
       sendCommand: (method) => {
@@ -513,6 +515,7 @@ describe('multi-lease bridge lifecycle and routing', () => {
       [7, 'SystemInfo.getInfo', {}],
       [8, 'Memory.startSampling', {}],
       [9, 'Security.setIgnoreCertificateErrors', { ignore: true }],
+      [10, 'WebMCP.enable', {}],
     ]) {
       await sendFrame(socket, { id, method, params, sessionId });
       expect(socket.sent.find((frame) => frame.id === id)?.error?.message).toContain('not permitted');
@@ -715,4 +718,85 @@ describe('multi-lease bridge lifecycle and routing', () => {
     expect(harness.bridge.status()).toMatchObject({ state: 'stopped', running: false, leaseCount: 0 });
     expect(harness.servers[0].closeCalls).toBe(1);
   });
+});
+
+
+test('recording gets an isolated native capture attachment on the pinned target only', async () => {
+  const guest = createFakeGuest({ sendCommand: method => method === 'Target.getTargetInfo'
+    ? { targetInfo: { targetId: 'native-owned-target' } }
+    : method === 'Target.attachToTarget' ? { sessionId: 'native-capture' } : {} });
+  const harness = createHarness();
+  const started = await harness.createLease('recording', {}, guest);
+  const socket = harness.connect(started);
+  const primary = await attach(socket);
+  await sendFrame(socket, { id: 2, method: 'Target.getTargetInfo', sessionId: primary });
+  const targetId = socket.sent.find(frame => frame.id === 2).result.targetInfo.targetId;
+  expect(targetId).not.toBe('native-owned-target');
+  await sendFrame(socket, { id: 3, method: 'Target.attachToTarget', params: { targetId: 'foreign', flatten: true } });
+  expect(socket.sent.find(frame => frame.id === 3).error.message).toBe('No such target');
+  await sendFrame(socket, { id: 4, method: 'Target.attachToTarget', params: { targetId, flatten: true } });
+  for (let i = 0; i < 5; i++) await flushPromises();
+  const capture = socket.sent.find(frame => frame.id === 4).result.sessionId;
+  expect(capture).not.toBe(primary);
+  expect(guest.debugger.commands.find(row => row.method === 'Target.attachToTarget').params)
+    .toEqual({ targetId: 'native-owned-target', flatten: true });
+  await sendFrame(socket, { id: 5, method: 'Page.startScreencast', sessionId: capture });
+  expect(guest.debugger.commands.at(-1).sessionId).toBe('native-capture');
+  guest.debugger.emit('message', {}, 'Page.screencastFrame', { data: 'frame' }, 'native-capture');
+  expect(socket.sent.at(-1).sessionId).toBe(capture);
+  const count = socket.sent.length;
+  guest.debugger.emit('message', {}, 'Page.screencastFrame', { data: 'foreign' }, 'foreign-session');
+  expect(socket.sent).toHaveLength(count);
+  await sendFrame(socket, { id: 6, method: 'Target.detachFromTarget', params: { sessionId: capture } });
+  for (let i = 0; i < 5; i++) await flushPromises();
+  await sendFrame(socket, { id: 7, method: 'Runtime.evaluate', sessionId: primary, params: { expression: '1' } });
+  expect(socket.sent.find(frame => frame.id === 7).result).toEqual({});
+  await sendFrame(socket, { id: 8, method: 'Runtime.evaluate', sessionId: capture });
+  expect(socket.sent.find(frame => frame.id === 8).error.message).toBe('Unknown sessionId');
+  harness.bridge.closeAll();
+});
+
+test('capture admission respects command budgets and detaches late native attachments', async () => {
+  const clock = createFakeClock();
+  let finishBusy, finishAttach;
+  const guest = createFakeGuest({ sendCommand: method => {
+    if (method === 'Runtime.evaluate') return new Promise(resolve => { finishBusy = resolve; });
+    if (method === 'Target.getTargetInfo') return { targetInfo: { targetId: 'own' } };
+    if (method === 'Target.attachToTarget') return new Promise(resolve => { finishAttach = resolve; });
+    return {};
+  } });
+  const harness = createHarness({ ...clock, commandTimeoutMs: 10, maxInFlightCommands: 1 });
+  const socket = harness.connect(await harness.createLease('budget', {}, guest));
+  const primary = await attach(socket);
+  await sendFrame(socket, { id: 2, method: 'Runtime.evaluate', sessionId: primary });
+  await sendFrame(socket, { id: 3, method: 'Target.attachToTarget', params: { flatten: true } });
+  expect(socket.sent.find(frame => frame.id === 3).error.message).toBe('Too many in-flight commands');
+  finishBusy({}); await flushPromises(); await flushPromises();
+  await sendFrame(socket, { id: 4, method: 'Target.attachToTarget', params: { flatten: true } });
+  for (let i = 0; i < 5; i++) await flushPromises();
+  expect(typeof finishAttach).toBe('function');
+  clock.advance(11);
+  finishAttach({ sessionId: 'late-native-capture' });
+  for (let i = 0; i < 5; i++) await flushPromises();
+  expect(socket.sent.find(frame => frame.id === 4).error.message).toContain('timed out');
+  expect(guest.debugger.commands.at(-1)).toEqual({ method: 'Target.detachFromTarget', params: { sessionId: 'late-native-capture' } });
+  expect(guest.debugger.isAttached()).toBe(true);
+  harness.bridge.closeAll();
+});
+
+
+test('a late compositor readiness hook cannot dispatch an expired pointer action', async () => {
+  const clock = createFakeClock();
+  let ready;
+  const harness = createHarness({ ...clock, commandTimeoutMs: 10,
+    onBeforeCommand: () => new Promise(resolve => { ready = resolve; }) });
+  const guest = createFakeGuest();
+  const socket = harness.connect(await harness.createLease('paint', {}, guest));
+  const primary = await attach(socket);
+  await sendFrame(socket, { id: 2, method: 'Input.dispatchMouseEvent', sessionId: primary, params: { type: 'mousePressed', x: 1, y: 1 } });
+  clock.advance(11); ready();
+  for (let i = 0; i < 5; i++) await flushPromises();
+  expect(socket.sent.find(frame => frame.id === 2).error.message).toContain('timed out');
+  expect(guest.debugger.commands).toHaveLength(0);
+  harness.bridge.closeAll();
 });

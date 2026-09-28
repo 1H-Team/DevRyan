@@ -47,6 +47,18 @@
  *   </SettingsPageLayout>
  * );
  * ```
+ *
+ * @example Preference rows:
+ * ```tsx
+ * import { SettingsDetailSection, SettingsField, SettingsSwitchField } from '@/components/sections/shared';
+ *
+ * <SettingsDetailSection title="Layout" description="Chat width and spacing.">
+ *   <SettingsSwitchField label="Sticky User Header" description="Pins your message while you scroll." checked={on} onCheckedChange={setOn} />
+ *   <SettingsField label="Code Font" description="Used for code blocks." reset={reset}>
+ *     {({ labelId, describedBy }) => <Select aria-labelledby={labelId} aria-describedby={describedBy} />}
+ *   </SettingsField>
+ * </SettingsDetailSection>
+ * ```
  */
 
 export { SettingsSidebarLayout } from './SettingsSidebarLayout';
@@ -59,3 +71,11 @@ export { SettingsEmptyState } from './SettingsEmptyState';
 export { SettingsDetailHeader } from './SettingsDetailHeader';
 export { SettingsDetailSection } from './SettingsDetailSection';
 export { SettingsBadge, type SettingsBadgeTone } from './SettingsBadge';
+export {
+  SettingsField,
+  SettingsResetButton,
+  SettingsSwitchField,
+  type SettingsFieldControlProps,
+  type SettingsResetAction,
+} from './SettingsField';
+export { SettingsOptionCardGroup, type SettingsOptionCard } from './SettingsOptionCardGroup';

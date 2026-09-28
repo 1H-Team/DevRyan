@@ -9,6 +9,8 @@ import { afterEach, describe, test } from 'node:test';
 import {
   RUNTIME_SERVICE_PROTOCOL_VERSION,
   createRuntimeServiceCoordinator,
+  assertRuntimeServiceDescriptorOwner,
+  readRuntimeProcessStartIdentity,
   isRuntimeServiceProtocolSupported,
   readRuntimeServiceDescriptor,
   readRuntimeServiceOwner,
@@ -18,6 +20,7 @@ import {
   unsealRuntimeServiceBootstrapToken,
   validateRuntimeServiceDescriptor,
 } from '../runtime-service.mjs';
+import { createRuntimeOwnerAcquirer, recoverAppBoundRuntime } from '../runtime-service-startup.mjs';
 
 const directories = [];
 
@@ -95,6 +98,7 @@ describe('launchd runtime-service ownership and handshake', () => {
       safeStorage,
       pid: 51,
       isProcessAlive: (pid) => pid === 51,
+      getProcessStartIdentity: async () => 'linux:100',
     });
     const firstOwner = await first.acquire({ mode: 'app_bound' });
 
@@ -103,6 +107,7 @@ describe('launchd runtime-service ownership and handshake', () => {
       safeStorage,
       pid: 52,
       isProcessAlive: (pid) => pid === 51,
+      getProcessStartIdentity: async () => 'linux:100',
     });
     await assert.rejects(
       competing.acquire({ mode: 'service' }),
@@ -202,6 +207,8 @@ describe('startup owner-state regression coverage', () => {
     const file = await writeOwnerFixture(dataDirectory, '');
     let waits = 0;
     const coordinator = await coordinatorFor(dataDirectory, {
+      platform: 'linux',
+      getBootSessionId: async () => '123e4567-e89b-42d3-a456-426614174000',
       wait: async () => {
         waits += 1;
         await fs.writeFile(file, JSON.stringify({
@@ -210,7 +217,7 @@ describe('startup owner-state regression coverage', () => {
         }));
       },
     });
-    await assert.rejects(coordinator.acquire(), { code: 'runtime_service_owner_exists' });
+    await assert.rejects(coordinator.acquire(), { code: 'runtime_service_owner_unverified' });
     assert.equal(waits, 1);
     assert.equal((await readRuntimeServiceOwner({ dataDirectory })).owner.generation, 7);
   });
@@ -621,6 +628,16 @@ test('separate Node processes hold a single lifetime owner and reclaim after a c
       assert.equal(result.state, 'runtime_service_owner_exists');
     }
     const winner = winners[0];
+    if (['darwin', 'linux'].includes(process.platform)) {
+      // Native smoke: only this disposable child and its temporary data are read.
+      const started = await readRuntimeProcessStartIdentity(winner.child.pid);
+      assert.ok(started?.startsWith(`${process.platform}:`));
+      assert.equal(await readRuntimeProcessStartIdentity(winner.child.pid), started);
+      const saved = JSON.parse(await fs.readFile(path.join(dataDirectory, 'runtime-service/owner-process.v1.json'), 'utf8'));
+      assert.equal(saved.pid, winner.child.pid);
+      assert.equal(saved.processStartIdentity, started);
+      assert.match(saved.bootSessionId, /^[a-f0-9-]{36}$/);
+    }
     const exited = once(winner.child, 'exit');
     winner.child.kill('SIGKILL');
     await exited;
@@ -639,4 +656,241 @@ test('separate Node processes hold a single lifetime owner and reclaim after a c
       await exited;
     }));
   }
+});
+
+describe('process identity ownership', () => {
+  const firstBoot = '123e4567-e89b-42d3-a456-426614174000';
+  const secondBoot = '123e4567-e89b-42d3-a456-426614174001';
+  const identityPath = (directory) => path.join(directory, 'runtime-service/owner-process.v1.json');
+  const proofPath = (directory) => path.join(directory, 'runtime-service/owner-recovery.v2.json');
+  const fixture = async () => {
+    const dataDirectory = await temporaryDirectory();
+    const live = { boot: firstBoot, started: 'linux:100' };
+    const options = {
+      platform: 'linux', isProcessAlive: () => true,
+      getBootSessionId: async () => live.boot,
+      getProcessStartIdentity: async () => live.started,
+    };
+    const original = await coordinatorFor(dataDirectory, { ...options, pid: 792 });
+    await original.acquire({ mode: 'app_bound' });
+    const replacement = await coordinatorFor(dataDirectory, { ...options, pid: 793 });
+    const stopped = (overrides = {}) => waitForRuntimeServiceOwnerStopped({ dataDirectory, ...options, timeoutMs: 0, ...overrides });
+    return { dataDirectory, live, options, original, replacement, stopped };
+  };
+
+  for (const transition of ['reboot', 'pid_reuse']) {
+    test(`${transition} recovers while the recorded PID is alive and preserves replacement fencing`, async () => {
+      const { dataDirectory, live, options, original, replacement, stopped } = await fixture();
+      const saved = JSON.parse(await fs.readFile(identityPath(dataDirectory), 'utf8'));
+      assert.equal(saved.instanceId, original.getOwner().instanceId);
+      assert.equal(saved.bootSessionId, firstBoot);
+      assert.equal((await fs.stat(identityPath(dataDirectory))).mode & 0o777, 0o600);
+      assert.equal(await stopped(), false);
+      await assert.rejects(replacement.acquire(), { code: 'runtime_service_owner_exists' });
+      if (transition === 'reboot') live.boot = secondBoot;
+      else live.started = 'linux:101';
+      assert.equal(await stopped(), true);
+      const competitor = await coordinatorFor(dataDirectory, options);
+      const claims = await Promise.allSettled([replacement.acquire(), competitor.acquire()]);
+      const winner = claims.find((claim) => claim.status === 'fulfilled').value;
+      assert.equal(claims.filter((claim) => claim.status === 'fulfilled').length, 1);
+      assert.equal(winner.generation, original.getOwner().generation + 1);
+      assert.equal(claims.find((claim) => claim.status === 'rejected').reason.code, 'runtime_service_owner_exists');
+      await original.release();
+      assert.equal((await readRuntimeServiceOwner({ dataDirectory })).owner.instanceId, winner.instanceId);
+      await replacement.release();
+      await competitor.release();
+    });
+  }
+
+  test('legacy evidence survives retries and permits startup fallback only after a verified reboot', async () => {
+    const { dataDirectory, live, original, replacement, stopped } = await fixture();
+    await fs.unlink(identityPath(dataDirectory));
+    let acquired = null;
+    let persisted = 0;
+    const acquire = createRuntimeOwnerAcquirer({
+      getCoordinator: () => acquired, setCoordinator: (value) => { acquired = value; },
+      createCoordinator: async () => replacement,
+    });
+    const recover = () => recoverAppBoundRuntime({
+      connectionError: Object.assign(new Error('old descriptor'), { code: 'runtime_service_owner_stale' }),
+      unregister: async () => ({ ok: true, state: 'not_registered' }),
+      waitForStopped: () => stopped(), acquire: () => acquire('app_bound'),
+      setMode: async () => { persisted += 1; }, release: () => replacement.release(),
+    });
+    await assert.rejects(recover(), { code: 'runtime_service_owner_unverified' });
+    assert.equal(acquired, null);
+    assert.equal(persisted, 0);
+    const proof = await fs.readFile(proofPath(dataDirectory), 'utf8');
+    await assert.rejects(recover(), { code: 'runtime_service_owner_unverified' });
+    assert.equal(await fs.readFile(proofPath(dataDirectory), 'utf8'), proof);
+    live.boot = secondBoot;
+    await recover();
+    assert.equal(persisted, 1);
+    assert.equal(acquired, replacement);
+    assert.equal(acquired.getOwner().mode, 'app_bound');
+    await original.release();
+    assert.equal((await readRuntimeServiceOwner({ dataDirectory })).owner.instanceId, replacement.getOwner().instanceId);
+    await replacement.release();
+  });
+
+  test('legacy file changes invalidate reboot evidence', async () => {
+    const { dataDirectory, live, stopped, replacement } = await fixture();
+    await fs.unlink(identityPath(dataDirectory));
+    await assert.rejects(stopped(), { recoveryReason: 'reboot_required' });
+    live.boot = secondBoot;
+    const owner = (await readRuntimeServiceOwner({ dataDirectory })).owner;
+    await fs.writeFile(runtimeServiceOwnerPath(dataDirectory), JSON.stringify({ ...owner, generation: owner.generation + 1 }));
+    await assert.rejects(stopped(), { recoveryReason: 'file_changed' });
+    await assert.rejects(replacement.acquire(), { code: 'runtime_service_owner_unverified' });
+    assert.equal(JSON.parse(await fs.readFile(proofPath(dataDirectory), 'utf8')).bootSessionId, secondBoot);
+  });
+
+  test('unavailable process or boot evidence never permits reclamation', async () => {
+    const { live, stopped, replacement } = await fixture();
+    live.started = null;
+    await assert.rejects(stopped(), { recoveryReason: 'process_identity_unavailable' });
+    await assert.rejects(replacement.acquire(), { code: 'runtime_service_owner_unverified' });
+    live.boot = null;
+    await assert.rejects(stopped(), { recoveryReason: 'boot_identity_unavailable' });
+    await assert.rejects(stopped({ getBootSessionId: async () => { throw new Error('OS unavailable'); } }), {
+      recoveryReason: 'boot_identity_unavailable',
+    });
+  });
+
+  for (const damaged of ['missing', 'malformed', 'another_generation', 'another_instance', 'another_pid', 'invalid_start', 'old_version_write']) {
+    test(`${damaged} companion cannot authorize same-boot reclamation`, async () => {
+      const { dataDirectory, live, stopped, replacement } = await fixture();
+      const file = identityPath(dataDirectory);
+      const saved = JSON.parse(await fs.readFile(file, 'utf8'));
+      if (damaged === 'missing') await fs.unlink(file);
+      else if (damaged === 'malformed') await fs.writeFile(file, '{');
+      else if (damaged === 'old_version_write') {
+        const owner = (await readRuntimeServiceOwner({ dataDirectory })).owner;
+        await fs.writeFile(runtimeServiceOwnerPath(dataDirectory), JSON.stringify({ ...owner, generation: owner.generation + 1 }));
+      } else {
+        if (damaged === 'another_generation') saved.generation += 1;
+        if (damaged === 'another_instance') saved.instanceId = '123e4567-e89b-42d3-a456-426614174002';
+        if (damaged === 'another_pid') saved.pid += 1;
+        if (damaged === 'invalid_start') saved.processStartIdentity = 'garbage';
+        await fs.writeFile(file, JSON.stringify(saved));
+      }
+      live.started = 'linux:102';
+      await assert.rejects(stopped(), { code: 'runtime_service_owner_unverified' });
+      await assert.rejects(replacement.acquire(), { code: 'runtime_service_owner_unverified' });
+    });
+  }
+
+  for (const problem of ['permission', 'symlink']) {
+    test(`${problem} in identity evidence fails closed`, async () => {
+      const { dataDirectory, options, stopped } = await fixture();
+      const file = identityPath(dataDirectory);
+      let fsPromises = fs;
+      if (problem === 'permission') {
+        fsPromises = { ...fs, readFile: async (target, ...args) => {
+          if (target === file) throw Object.assign(new Error('fixture'), { code: 'EACCES' });
+          return fs.readFile(target, ...args);
+        } };
+      } else {
+        await fs.rename(file, `${file}.original`);
+        await fs.symlink(`${file}.original`, file);
+      }
+      const code = problem === 'permission' ? 'runtime_service_owner_unreadable' : 'runtime_service_owner_invalid';
+      await assert.rejects(stopped({ fsPromises }), { code });
+      const coordinator = await coordinatorFor(dataDirectory, { ...options, fsPromises });
+      await assert.rejects(coordinator.acquire(), { code });
+    });
+  }
+
+  test('reclamation rechecks the owner after OS probes before removing it', async () => {
+    const { dataDirectory, options } = await fixture();
+    const file = runtimeServiceOwnerPath(dataDirectory);
+    const original = await fs.readFile(file, 'utf8');
+    const successor = JSON.stringify({ ...JSON.parse(original), generation: 10 });
+    const coordinator = await coordinatorFor(dataDirectory, { ...options, getProcessStartIdentity: async () => {
+      await fs.writeFile(file, successor);
+      return 'linux:200';
+    } });
+    await assert.rejects(coordinator.acquire(), { code: 'runtime_service_owner_busy' });
+    assert.equal(await fs.readFile(file, 'utf8'), successor);
+  });
+
+  test('identity is durable before owner publication and an interrupted publication is safe to retry', async () => {
+    const dataDirectory = await temporaryDirectory();
+    let failOnce = true;
+    const options = { platform: 'linux', getBootSessionId: async () => firstBoot, getProcessStartIdentity: async () => 'linux:100' };
+    const coordinator = await coordinatorFor(dataDirectory, { ...options, fsPromises: { ...fs, link: async (source, target) => {
+      const candidate = JSON.parse(await fs.readFile(source, 'utf8'));
+      const saved = JSON.parse(await fs.readFile(identityPath(dataDirectory), 'utf8'));
+      assert.equal(saved.instanceId, candidate.instanceId);
+      assert.equal(saved.generation, candidate.generation);
+      assert.equal((await readRuntimeServiceOwner({ dataDirectory })).state, 'missing');
+      if (failOnce) { failOnce = false; throw Object.assign(new Error('fixture'), { code: 'EIO' }); }
+      return fs.link(source, target);
+    } } });
+    await assert.rejects(coordinator.acquire(), { code: 'EIO' });
+    assert.equal(coordinator.getOwner(), null);
+    assert.equal((await readRuntimeServiceOwner({ dataDirectory })).state, 'missing');
+    await coordinator.acquire();
+    await coordinator.release();
+  });
+
+  test('stale descriptors are rejected for app-bound owners and every service identity mismatch', async () => {
+    const { dataDirectory, original, replacement, options, live } = await fixture();
+    await original.start({ port: 44001, health: 'healthy' });
+    const oldDescriptor = original.getDescriptor();
+    await assert.rejects(assertRuntimeServiceDescriptorOwner({ dataDirectory, ...options, descriptor: oldDescriptor }), { code: 'runtime_service_owner_stale' });
+    await original.release();
+    await replacement.acquire();
+    await replacement.start({ port: 44001, health: 'healthy' });
+    const descriptor = replacement.getDescriptor();
+    await assertRuntimeServiceDescriptorOwner({ dataDirectory, ...options, descriptor });
+    live.started = 'linux:999';
+    await assert.rejects(assertRuntimeServiceDescriptorOwner({ dataDirectory, ...options, descriptor }), { code: 'runtime_service_owner_stale' });
+    live.started = 'linux:100';
+    await fs.unlink(identityPath(dataDirectory));
+    // A previous release without the companion can still perform authentication.
+    await assertRuntimeServiceDescriptorOwner({ dataDirectory, ...options, descriptor });
+    for (const mismatch of [oldDescriptor, { ...descriptor, pid: 999 }, { ...descriptor, ownerGeneration: 99 },
+      { ...descriptor, instanceId: '123e4567-e89b-42d3-a456-426614174002' }]) {
+      await assert.rejects(assertRuntimeServiceDescriptorOwner({ dataDirectory, ...options, descriptor: mismatch }), { code: 'runtime_service_owner_stale' });
+    }
+    await replacement.release();
+    await assert.rejects(assertRuntimeServiceDescriptorOwner({ dataDirectory, ...options, descriptor }), { code: 'runtime_service_owner_stale' });
+    assert.equal(await waitForRuntimeServiceOwnerStopped({ dataDirectory, ...options }), true);
+  });
+
+  test('unsupported platforms retain conservative PID fencing', async () => {
+    const { dataDirectory, options } = await fixture();
+    const unsupported = { ...options, platform: 'win32', getBootSessionId: async () => null };
+    assert.equal(await waitForRuntimeServiceOwnerStopped({ dataDirectory, ...unsupported, timeoutMs: 0 }), false);
+    await assert.rejects((await coordinatorFor(dataDirectory, unsupported)).acquire(), { code: 'runtime_service_owner_exists' });
+  });
+});
+
+test('OS identity readers use bounded metadata probes and handle unavailable or malformed output', async () => {
+  let calls = 0;
+  const execute = (file, args, options, callback) => {
+    calls += 1;
+    assert.equal(file, '/bin/ps');
+    assert.deepEqual(args, ['-p', '792', '-o', 'lstart=']);
+    assert.equal(options.env.LC_ALL, 'C');
+    assert.equal(options.env.TZ, 'UTC');
+    assert.equal(options.timeout, 2000);
+    assert.equal(options.maxBuffer, 256);
+    callback(null, 'Mon Sep 28  10:01:26 2026\n');
+  };
+  assert.equal(await readRuntimeProcessStartIdentity(792, { platform: 'darwin', execute }), 'darwin:Mon Sep 28 10:01:26 2026');
+  assert.equal(await readRuntimeProcessStartIdentity(-1, { platform: 'darwin', execute }), null);
+  assert.equal(calls, 1);
+  for (const output of ['', 'not a start identity']) {
+    assert.equal(await readRuntimeProcessStartIdentity(792, { platform: 'darwin', execute: (_file, _args, _options, callback) => callback(null, output) }), null);
+  }
+  assert.equal(await readRuntimeProcessStartIdentity(792, { platform: 'darwin', execute: (_file, _args, _options, callback) => callback(new Error('timeout')) }), null);
+  const fields = ['S', ...Array(18).fill('0'), '123456', '0'];
+  assert.equal(await readRuntimeProcessStartIdentity(792, { platform: 'linux', fsPromises: {
+    readFile: async (file) => { assert.equal(file, '/proc/792/stat'); return `792 (a name ) with parens) ${fields.join(' ')}`; },
+  } }), 'linux:123456');
+  assert.equal(await readRuntimeProcessStartIdentity(792, { platform: 'linux', fsPromises: { readFile: async () => 'bad' } }), null);
+  assert.equal(await readRuntimeProcessStartIdentity(792, { platform: 'linux', fsPromises: { readFile: async () => { throw new Error('denied'); } } }), null);
 });

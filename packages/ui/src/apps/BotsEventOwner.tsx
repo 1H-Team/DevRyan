@@ -632,7 +632,7 @@ export const BotsEventOwner: React.FC = () => {
     }
 
     const controller = createBotCapabilityConnectionController({
-      loadCapabilities: () => useBotsStore.getState().loadCapabilities(),
+      loadCapabilities: (options) => useBotsStore.getState().loadCapabilities(options),
       getCapabilitiesErrorCode: () => useBotsStore.getState().capabilitiesErrorCode,
       canStream: botCapabilityCanStream,
       isTransient: botCapabilityIsTransient,

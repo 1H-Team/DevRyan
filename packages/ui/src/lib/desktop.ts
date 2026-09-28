@@ -302,6 +302,13 @@ export const getBrowserCdpBridgeStatus = async (): Promise<BrowserCdpBridgeStatu
 };
 
 export type AgentBrowserInstallerStatus = {
+  recording?: {
+    ok: boolean;
+    state: string;
+    expectedVersion?: string;
+    installedVersion?: string;
+    issues?: Array<{ code: string; message: string }>;
+  };
   ok: boolean;
   state?: string;
   applied?: boolean;

@@ -22,7 +22,7 @@ export const SettingsDataBoundary: React.FC<SettingsDataBoundaryProps> = ({ slug
 
   React.useEffect(() => {
     if (slug !== 'agents' || !resetSelectedAgent || !canAccessSettingsPage(principal, slug)) return;
-    useAgentsStore.getState().setSelectedAgent(null);
+    useAgentsStore.getState().setSelectedGlobalView('behavior');
     useUIStore.getState().setSettingsPage('agents');
   }, [principal, resetSelectedAgent, slug]);
 

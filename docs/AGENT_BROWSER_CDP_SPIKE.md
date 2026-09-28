@@ -1,4 +1,8 @@
-# Agent-browser ⇄ CDP bridge compatibility spike (revalidated 2026-08-02)
+# Current agent-browser CDP compatibility
+
+The managed pin is now **0.38.1**. See the [2026-09-28 upgrade acceptance](audits/2026-09-28-agent-browser-0.38.1/README.md) for actual Electron/native results and outstanding release gates. The 0.33.2 results below are historical and do not qualify the new build.
+
+## Historical agent-browser ⇄ CDP bridge compatibility spike (revalidated 2026-08-02)
 
 Go/no-go gate for the in-app browser CDP bridge (`packages/electron/browser-cdp-bridge.mjs`). The current run used `agent-browser` **0.33.2**, headless Chrome 150 on loopback port 19223, and a temporary WebSocket logging proxy on port 19224. The CLI connected with a direct page WebSocket URL, matching the capability URL emitted for a DevRyan lease.
 

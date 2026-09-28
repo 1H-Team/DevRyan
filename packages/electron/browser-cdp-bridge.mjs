@@ -37,11 +37,12 @@ const isRootSyntheticMethod = (method) => (
   method === 'Browser.getVersion'
   || method === 'Target.setDiscoverTargets'
   || method === 'Target.getTargets'
+  || method === 'Target.getTargetInfo'
   || method === 'Target.attachToTarget'
   || method === 'Target.detachFromTarget'
 );
 
-// agent-browser 0.33.2 probes the page with a root Runtime.evaluate before its
+// agent-browser 0.38.1 probes the page with a root Runtime.evaluate before its
 // flattened Target.attachToTarget handshake. The guest debugger already is the
 // page session, so forwarding this one root command is both sufficient and
 // narrower than accepting arbitrary session-less CDP commands.
@@ -52,6 +53,7 @@ const isBrowserDomainMethod = (method) => method.startsWith('Browser.');
 const isBrowserWideDomainMethod = (method) => (
   isTargetDomainMethod(method)
   || isBrowserDomainMethod(method)
+  || method.startsWith('WebMCP.')
   || method.startsWith('Memory.')
   || method.startsWith('Security.')
   || method.startsWith('SystemInfo.')
@@ -334,6 +336,8 @@ export const createBrowserCdpBridge = ({
     lease.debuggerDetachListener = null;
     const ownedAttachment = lease.debuggerAttached;
     lease.debuggerAttached = false;
+    lease.primaryAttached = false;
+    lease.captureSessions.clear();
     if (!ownedAttachment) return;
     try {
       if (guest.debugger.isAttached()) guest.debugger.detach();
@@ -407,7 +411,7 @@ export const createBrowserCdpBridge = ({
   const finishForwardedCommand = (lease, message, commandFence, outcome) => {
     if (!isCurrentLease(lease) || !clearCommand(lease, message.id, commandFence)) return;
     touchRecord(lease);
-    const session = message.sessionId ? lease.cdpSessionId : null;
+    const session = message.sessionId || null;
     if (outcome.ok) {
       const payload = { id: message.id, result: outcome.result ?? {} };
       if (session) payload.sessionId = session;
@@ -417,7 +421,7 @@ export const createBrowserCdpBridge = ({
     sendError(lease, message.id, outcome.message, -32000, session);
   };
 
-  const forwardCommand = (lease, message) => {
+  const forwardCommand = (lease, message, operation) => {
     if (!isCurrentLease(lease)) return;
     const guest = lease.guest;
     if (!guest || guest.isDestroyed()) {
@@ -425,12 +429,12 @@ export const createBrowserCdpBridge = ({
       return;
     }
     if (lease.inFlight.has(message.id)) {
-      sendError(lease, message.id, 'Duplicate in-flight command id', -32600, message.sessionId ? lease.cdpSessionId : null);
+      sendError(lease, message.id, 'Duplicate in-flight command id', -32600, message.sessionId || null);
       touchRecord(lease);
       return;
     }
     if (lease.inFlight.size >= maxInFlightCommands) {
-      sendError(lease, message.id, 'Too many in-flight commands', -32000, message.sessionId ? lease.cdpSessionId : null);
+      sendError(lease, message.id, 'Too many in-flight commands', -32000, message.sessionId || null);
       touchRecord(lease);
       return;
     }
@@ -454,13 +458,21 @@ export const createBrowserCdpBridge = ({
         message.id,
         `Command timed out: ${message.method}`,
         -32000,
-        message.sessionId ? lease.cdpSessionId : null,
+        message.sessionId || null,
       );
     }, commandTimeoutMs);
     timer.unref?.();
     lease.inFlight.set(message.id, { fence: commandFence, timer });
 
-    const commandDetail = { leaseId: lease.leaseId, method: message.method };
+    const nativeSession = lease.captureSessions.get(message.sessionId);
+    const commandDetail = { leaseId: lease.leaseId, method: message.method,
+      capture: lease.captureSessions.has(message.sessionId) };
+    const isPending = () => isCurrentLease(lease, token) && lease.inFlight.get(message.id)?.fence === commandFence;
+    const send = () => {
+      if (!isPending()) throw new Error('Command expired before dispatch');
+      return operation ? operation(isPending) : guest.debugger.sendCommand(message.method, message.params,
+        nativeSession);
+    };
     let beforeCommand;
     try {
       beforeCommand = onBeforeCommand?.(commandDetail);
@@ -468,8 +480,8 @@ export const createBrowserCdpBridge = ({
       beforeCommand = Promise.reject(error);
     }
     const forwarded = beforeCommand && typeof beforeCommand.then === 'function'
-      ? Promise.resolve(beforeCommand).then(() => guest.debugger.sendCommand(message.method, message.params))
-      : Promise.resolve().then(() => guest.debugger.sendCommand(message.method, message.params));
+      ? Promise.resolve(beforeCommand).then(send)
+      : Promise.resolve().then(send);
     forwarded
       .then((result) => {
         finishForwardedCommand(lease, message, commandFence, { ok: true, result });
@@ -481,6 +493,7 @@ export const createBrowserCdpBridge = ({
         });
       })
       .finally(() => {
+        if (!isCurrentLease(lease, token)) return;
         Promise.resolve(onAfterCommand?.(commandDetail)).catch((error) => {
           log(`[cdp-bridge] onAfterCommand failed for lease ${lease.leaseId}`, error);
         });
@@ -493,6 +506,16 @@ export const createBrowserCdpBridge = ({
 
   const handleRootCommand = (lease, message) => {
     const { id, method, params } = message;
+    if (method === 'Target.getTargetInfo') {
+      if (params?.targetId && params.targetId !== lease.targetId) {
+        sendError(lease, id, 'No such target', -32600, message.sessionId || null);
+      } else {
+        sendToLease(lease, { id, result: { targetInfo: buildTargetInfo(lease.targetId,
+          lease.guest?.getURL?.(), lease.guest?.getTitle?.()) }, ...(message.sessionId ? { sessionId: message.sessionId } : {}) });
+      }
+      completeRootCommand(lease);
+      return;
+    }
     if (method === 'Browser.getVersion') {
       sendToLease(lease, {
         id,
@@ -540,6 +563,48 @@ export const createBrowserCdpBridge = ({
         completeRootCommand(lease);
         return;
       }
+      if (lease.primaryAttached) {
+        if (lease.capturePending || lease.captureSessions.size) {
+          sendError(lease, id, 'Only one capture session is permitted', -32000);
+          return;
+        }
+        forwardCommand(lease, message, async (isPending) => {
+          if (lease.capturePending || lease.captureSessions.size) throw new Error('Only one capture session is permitted');
+          lease.capturePending = true;
+          const guest = lease.guest;
+          let nativeSession;
+          let sessionId;
+          let suppressing = false;
+          try {
+            const info = await guest.debugger.sendCommand('Target.getTargetInfo');
+            const targetId = info?.targetInfo?.targetId;
+            if (typeof targetId !== 'string' || !targetId) throw new Error('Pinned recording target unavailable');
+            const attached = await guest.debugger.sendCommand('Target.attachToTarget', { targetId, flatten: true });
+            nativeSession = attached?.sessionId;
+            if (typeof nativeSession !== 'string' || !nativeSession) throw new Error('Recording attachment failed');
+            // A late attachment must not survive a timed-out or closed command.
+            if (!isPending()) {
+              throw new Error('Recording attachment expired');
+            }
+            sessionId = crypto.randomBytes(16).toString('hex').toUpperCase();
+            lease.captureSessions.set(sessionId, nativeSession);
+            suppressing = true;
+            await onBeforeCommand?.({ leaseId: lease.leaseId, method: 'DevRyan.captureAttached' });
+            if (!isPending()) throw new Error('Recording attachment expired');
+            sendToLease(lease, { method: 'Target.attachedToTarget', params: { sessionId,
+              targetInfo: buildTargetInfo(lease.targetId, lease.guest.getURL?.(), lease.guest.getTitle?.()),
+              waitingForDebugger: false } });
+            return { sessionId };
+          } catch (error) {
+            if (nativeSession) await guest.debugger.sendCommand('Target.detachFromTarget', { sessionId: nativeSession }).catch(() => {});
+            if (sessionId) lease.captureSessions.delete(sessionId);
+            if (suppressing && isCurrentLease(lease)) await Promise.resolve(onAfterCommand?.({ leaseId: lease.leaseId, method: 'DevRyan.captureDetached' })).catch(() => {});
+            throw error;
+          } finally { lease.capturePending = false; }
+        });
+        return;
+      }
+      lease.primaryAttached = true;
       sendToLease(lease, { id, result: { sessionId: lease.cdpSessionId } });
       sendToLease(lease, {
         method: 'Target.attachedToTarget',
@@ -554,6 +619,20 @@ export const createBrowserCdpBridge = ({
     }
 
     if (method === 'Target.detachFromTarget') {
+      const sessionId = params?.sessionId;
+      if (lease.captureSessions.has(sessionId)) {
+        forwardCommand(lease, message, async () => {
+          await lease.guest.debugger.sendCommand('Target.detachFromTarget', { sessionId: lease.captureSessions.get(sessionId) });
+          lease.captureSessions.delete(sessionId);
+          await onAfterCommand?.({ leaseId: lease.leaseId, method: 'DevRyan.captureDetached' });
+          return {};
+        });
+        return;
+      }
+      if (sessionId !== lease.cdpSessionId) {
+        sendError(lease, id, 'Unknown sessionId', -32600);
+        return;
+      }
       sendToLease(lease, { id, result: {} });
       completeRootCommand(lease);
       return;
@@ -593,19 +672,20 @@ export const createBrowserCdpBridge = ({
       return;
     }
 
-    if (message.sessionId !== lease.cdpSessionId) {
+    if (message.sessionId !== lease.cdpSessionId && !lease.captureSessions.has(message.sessionId)) {
       sendError(lease, message.id, 'Unknown sessionId', -32600);
       touchRecord(lease);
       return;
     }
 
-    // A page debugger can expose the browser-level Target domain. Forwarding
-    // it would let one lease enumerate or attach sibling Electron targets.
-    // agent-browser 0.33.2 only needs setAutoAttach during its handshake, and
-    // the pinned main-page bridge does not need child-target attachment, so
-    // synthesize that one response and reject every other Target command.
+    // Only the pinned target's identity is visible, including to the recorder.
+    if (message.method === 'Target.getTargetInfo') {
+      handleRootCommand(lease, message);
+      return;
+    }
+    // Never forward arbitrary Target/Browser methods to Electron.
     if (message.method === 'Target.setAutoAttach') {
-      sendToLease(lease, { id: message.id, result: {}, sessionId: lease.cdpSessionId });
+      sendToLease(lease, { id: message.id, result: {}, sessionId: message.sessionId });
       touchRecord(lease);
       return;
     }
@@ -615,7 +695,7 @@ export const createBrowserCdpBridge = ({
         message.id,
         `Method not permitted through the browser bridge: ${message.method}`,
         -32601,
-        lease.cdpSessionId,
+        message.sessionId,
       );
       touchRecord(lease);
       return;
@@ -626,7 +706,7 @@ export const createBrowserCdpBridge = ({
         message.id,
         `Method not permitted through the browser bridge: ${message.method}`,
         -32601,
-        lease.cdpSessionId,
+        message.sessionId,
       );
       touchRecord(lease);
       return;
@@ -646,10 +726,13 @@ export const createBrowserCdpBridge = ({
 
     lease.debuggerAttached = true;
     const token = lease.token;
-    lease.debuggerMessageListener = (_event, method, params) => {
+    lease.debuggerMessageListener = (_event, method, params, nativeSession) => {
       if (!isCurrentLease(lease, token)) return;
       if (isBrowserWideDomainMethod(method)) return;
-      sendToLease(lease, { method, params, sessionId: lease.cdpSessionId });
+      const sessionId = nativeSession
+        ? [...lease.captureSessions].find(([, native]) => native === nativeSession)?.[0]
+        : lease.cdpSessionId;
+      if (sessionId) sendToLease(lease, { method, params, sessionId });
     };
     lease.debuggerDetachListener = (_event, reason) => {
       if (!isCurrentLease(lease, token)) return;
@@ -822,6 +905,9 @@ export const createBrowserCdpBridge = ({
       cdpSessionId: crypto.randomBytes(16).toString('hex').toUpperCase(),
       targetId: crypto.randomBytes(16).toString('hex').toUpperCase(),
       inFlight: new Map(),
+      primaryAttached: false,
+      capturePending: false,
+      captureSessions: new Map(),
       lastActivityAt: now(),
       orphanTimer: null,
       debuggerAttached: false,

@@ -35,6 +35,7 @@ and desktop-host broker bridges.
   clear command remains available. Window hangs, recoveries, renderer exits,
   and main-frame load failures are recorded as content-free lifecycle logs.
 - **Native state controllers**: `keep-awake-controller.mjs` wraps `powerSaveBlocker` with idempotent apply/stop semantics for the desktop Keep Awake setting.
+- **Docker Desktop launch**: `docker-desktop-launcher.mjs` starts Docker Desktop by its fixed bundle identifier for `desktop_open_docker_desktop`. The command takes no renderer input, is local-UI only, always runs in the foreground process, and reports `{ opened, code }` instead of throwing; DevRyan never starts Docker Desktop on its own.
 - **Bot key ownership**: `bot-secret-store.mjs` creates one 32-byte deployment
   key, seals it with Electron `safeStorage`, and exposes only a defensive-copy
   callback to the in-process server. A validated recovery restore may atomically
@@ -64,8 +65,23 @@ and desktop-host broker bridges.
 - **Startup owner recovery**: `runtime-service.mjs` centralizes missing/valid/
   malformed/unreadable owner reads, publishes a fsynced private owner inode via
   exclusive hard link, and serializes acquire/reclaim/release through the shared
-  harness cross-process mutation lock. Malformed legacy writes receive a one-
-  second grace period. `owner-recovery.v2.json` records a damaged regular file's
+  harness cross-process mutation lock. `owner-process.v1.json` is published
+  before the unchanged v1 owner lock and binds its instance, generation and PID
+  to an OS boot UUID and process-start identity (bounded macOS `ps` metadata or
+  Linux `/proc` start ticks). Polling and acquisition share active/stopped/unknown
+  decisions: a changed boot or start identity proves stale ownership even when
+  the OS reused the PID; unavailable evidence never permits reclamation.
+  Legacy valid locks without matching identity use the same unchanged-file,
+  across-boot proof as damaged locks. Their first ambiguous observation returns
+  `runtime_service_owner_unverified` with reboot guidance. Stale companions
+  cannot identify a replacement generation, and reclamation rechecks the exact
+  owner file. Release leaves the bounded companion for the next claim to replace.
+  Before health checks and bootstrap, the foreground verifies descriptor/owner
+  PID, instance, generation and service mode, and rejects proven-stopped owners;
+  older services without process evidence can still authenticate, with the
+  lease response retaining its independent generation check.
+  Malformed legacy writes receive a one-second grace period.
+  `owner-recovery.v2.json` records an ambiguous legacy or damaged regular file's
   inode, birth time, size, change/modification times, content hash, and the
   macOS/Linux OS boot-session UUID. Its cross-boot comparison excludes the
   mount device number; the immediate pre-quarantine comparison retains it.
@@ -139,7 +155,9 @@ and desktop-host broker bridges.
   cap on each Docker command. After Compose starts the fixed topology, it polls
   for up to 90 seconds of service-health convergence without recreating
   containers and commits installation state only after health succeeds; failed
-  updates retain the prior manifest plus staged candidate. Ownership preflight
+  updates retain the prior manifest plus staged candidate. Each committed
+  state then removes, without `--force` and best effort, release-repository
+  images outside its current, previous, and staged digests. Ownership preflight
   checks all managed containers, including stopped/off-network ones, before
   lifecycle mutation; foreign deployment status includes bounded, allowlisted
   deployment/service/state conflicts, never an inferred live app owner.
@@ -232,9 +250,9 @@ and desktop-host broker bridges.
   menu role and remains usable without renderer IPC. Isolated real-process
   acceptance lives in `tests/renderer-recovery/`.
 - **Browser DevTools**: `browser-devtools-controller.mjs` idempotently opens or closes Chromium DevTools in a caller-owned `WebContentsView`, clamps its dock bounds, and can rehost the same dock with its browser surface across pop-out/dock transitions. Electron's custom host uses `detach` mode while view bounds provide the physical dock.
-- **Session-scoped agent browser leases**: `browser-cdp-bridge.mjs` owns one asynchronous loopback WebSocket listener and a fenced map of per-lease capability token, main-owned surface contents, debugger session, client, in-flight commands, and orphan timer. The renderer batch-claims exact `(directory, rootSessionId)` ownership when it has the session locally. For authoritative managed ownership, `main.mjs` may instead broker the remote account through the single privileged workstation main window, without requiring that renderer to log into the remote owner. It creates and binds the surface before returning the private capability URL and publishes token-free metadata plus a surface ID only to the host window. Moving or popping the surface does not change lease ownership, CDP attachment, context claims, or menu presence. Agent input is projected through one isolated-world 28×32 system-arrow overlay whose hotspot is its tip, whose pressed state scales subtly, and which hides after four idle seconds. Agent screenshots temporarily suppress the overlay, while observation frames retain it.
+- **Session-scoped agent browser leases**: `browser-cdp-bridge.mjs` owns one asynchronous loopback WebSocket listener and a fenced map of per-lease capability token, main-owned surface contents, debugger session, client, in-flight commands, and orphan timer. The renderer batch-claims exact `(directory, rootSessionId)` ownership when it has the session locally. For authoritative managed ownership, `main.mjs` may instead broker the remote account through the single privileged workstation main window, without requiring that renderer to log into the remote owner. It creates and binds the surface before returning the private capability URL and publishes token-free metadata plus a surface ID only to the host window. Moving or popping the surface does not change lease ownership, CDP attachment, context claims, or menu presence. Agent input is projected through one isolated-world 28×32 system-arrow overlay whose hotspot is its tip, whose pressed state scales subtly, and which hides after four idle seconds. Agent screenshots temporarily suppress the overlay. Recording holds suppression for its separate capture attachment so the recorder cursor is not duplicated; ordinary observation retains the overlay. On macOS, parked agent leases use an invisible, noninteractive native host to initialize compositor hit testing even before first observation; manual tab hosts remain hidden and throttled. The bridge synthesizes pinned `Target.getTargetInfo`, maps one capture attachment to a native debugger session on that same guest, validates session IDs for commands/events, and rejects WebMCP and browser-wide commands.
 - **Demand-driven browser observation**: `browser-surface-manager.mjs` owns one shared capture loop per observed lease. It permits one capture in flight, caps output at 1280×720, emits JPEG quality 65 at no more than eight frames per second, drops frames for backpressured subscribers, retains no frame history, and stops immediately with the final subscriber. App-bound server callbacks consume it directly; runtime-service callbacks relay the same multipart stream through the authenticated foreground desktop-host broker. Endpoint absence or foreground-host loss is a view-only availability failure and does not mutate CDP control or lease lifecycle.
-- **Managed agent-browser runtime**: Electron lazily provisions the packaged `agent-browser` skill and exact pinned CLI under the active `OPENCHAMBER_DATA_DIR` only from the managed-child launch callback. Configured external/remote OpenCode runtimes are not mutated. The three private child variables are supplied through that injected lifecycle callback instead of ambient `process.env`. Local-only `desktop_agent_browser_status|install|repair` IPC supports Settings without exposing mutation over HTTP; failures are nonfatal to desktop startup.
+- **Managed agent-browser runtime**: Electron lazily provisions the packaged `agent-browser` skill and exact pinned CLI under the active `OPENCHAMBER_DATA_DIR` only from the managed-child launch callback. Configured external/remote OpenCode runtimes are not mutated. The three private child variables are supplied through that injected lifecycle callback instead of ambient `process.env`. The shared installer version constant also supplies pending/external/unavailable status. Recording readiness and repair failures are independent of browser readiness. Local-only `desktop_agent_browser_status|install|repair` IPC supports Settings without exposing mutation over HTTP; failures are nonfatal to desktop startup.
 - **Diagnostics export**: `desktop_export_diagnostics` owns the native save
   dialog and streams the in-process server ZIP through a private sibling
   temporary file, fsync, and atomic rename.

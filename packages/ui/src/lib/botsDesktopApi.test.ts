@@ -38,6 +38,27 @@ describe('Production Bots desktop client', () => {
     expect((error as BotsDesktopApiError).code).toBe('bot_runtime_docker_unavailable');
   });
 
+  test('opens Docker Desktop through an argument-free command', async () => {
+    const calls: Array<[string, Record<string, unknown> | undefined]> = [];
+    const results: unknown[] = [{ opened: true, code: null }, { opened: false, code: 'docker_desktop_open_failed' }, { opened: 'yes' }];
+    const api = createBotsDesktopApi({
+      available: () => true,
+      invoke: async <T>(command: string, args?: Record<string, unknown>) => {
+        calls.push([command, args]);
+        return results.shift() as T;
+      },
+    });
+
+    expect(await api.openDockerDesktop?.()).toEqual({ opened: true, code: null });
+    expect(await api.openDockerDesktop?.()).toEqual({ opened: false, code: 'docker_desktop_open_failed' });
+    expect(await api.openDockerDesktop?.()).toEqual({ opened: false, code: null });
+    expect(calls).toEqual([
+      ['desktop_open_docker_desktop', {}],
+      ['desktop_open_docker_desktop', {}],
+      ['desktop_open_docker_desktop', {}],
+    ]);
+  });
+
   test('removes Electron transport prefixes from runtime failures', async () => {
     const api = createBotsDesktopApi({
       available: () => true,

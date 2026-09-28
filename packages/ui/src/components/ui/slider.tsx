@@ -11,6 +11,11 @@ interface SliderProps {
   className?: string;
   label?: string;
   valueFormatter?: (value: number) => string;
+  /** Input id, so an external `<label htmlFor>` can name the slider. */
+  id?: string;
+  'aria-describedby'?: string;
+  /** Spoken value, e.g. "960 pixels"; defaults to the numeric value. */
+  valueText?: string;
 }
 
 /**
@@ -27,11 +32,15 @@ export const Slider: React.FC<SliderProps> = ({
   className,
   label,
   valueFormatter = (v) => v.toFixed(1),
+  id,
+  'aria-describedby': ariaDescribedBy,
+  valueText,
 }) => {
   return (
     <div className={cn('flex items-center gap-3', className)}>
       <div className="flex-1 relative">
         <input
+          id={id}
           type="range"
           min={min}
           max={max}
@@ -54,6 +63,8 @@ export const Slider: React.FC<SliderProps> = ({
           aria-valuemin={min}
           aria-valuemax={max}
           aria-valuenow={value}
+          aria-valuetext={valueText}
+          aria-describedby={ariaDescribedBy}
         />
       </div>
       <span className="typography-mono text-xs text-muted-foreground min-w-[3ch] text-right">

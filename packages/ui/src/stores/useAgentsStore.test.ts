@@ -835,3 +835,25 @@ describe("agent runtime settings", () => {
     } finally { restore(); }
   });
 });
+
+describe("agents settings global view", () => {
+  test("opening a global view clears the individual agent selection", () => {
+    useAgentsStore.setState({ selectedAgentName: "builder", selectedGlobalView: "behavior" });
+    useAgentsStore.getState().setSelectedGlobalView("runtime");
+    expect(useAgentsStore.getState().selectedAgentName).toBeNull();
+    expect(useAgentsStore.getState().selectedGlobalView).toBe("runtime");
+    useAgentsStore.getState().setSelectedGlobalView("behavior");
+  });
+
+  test("restores only a known persisted view and a string agent name", () => {
+    const merge = useAgentsStore.persist.getOptions().merge;
+    if (!merge) throw new Error("agents-store must validate persisted state");
+    const current = useAgentsStore.getState();
+    expect(merge({ selectedAgentName: "builder", selectedGlobalView: "runtime" }, current))
+      .toMatchObject({ selectedAgentName: "builder", selectedGlobalView: "runtime" });
+    expect(merge({ selectedAgentName: 7, selectedGlobalView: "bogus" }, current))
+      .toMatchObject({ selectedAgentName: null, selectedGlobalView: "behavior" });
+    expect(merge(undefined, current))
+      .toMatchObject({ selectedAgentName: null, selectedGlobalView: "behavior" });
+  });
+});

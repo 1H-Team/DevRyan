@@ -21,6 +21,7 @@ import {
   getSettingsDestinationFallbackSlug,
   getSettingsDestinationVisibleSlugs,
   getSettingsNavDestination,
+  getSettingsPageLayoutKind,
   getSettingsSupersedingSlug,
   resolveSettingsTabSlug,
 } from '@/lib/settings/navigation';
@@ -207,6 +208,40 @@ describe('SettingsView navigation', () => {
     expect(getSettingsNavDestination('skills.catalog')?.id).toBe('plugins');
     expect(resolveSettingsTabSlug('skills.catalog')).toBe('skills.installed');
     expect(resolveSettingsTabSlug('mcp')).toBe('mcp');
+  });
+
+  test('opens Session Defaults inside the Agents destination instead of a Sessions item or tab', () => {
+    const workflow = SETTINGS_NAV_SECTIONS
+      .find((section) => section.labelKey === 'settings.view.nav.group.workflow')
+      ?.destinations ?? [];
+    const agents = getSettingsNavDestination('sessions');
+
+    expect(workflow.map((destination) => destination.id)).toEqual(['agents', 'bots', 'magic-prompts']);
+    expect(workflow.some((destination) => destination.id === 'sessions')).toBe(false);
+    expect(agents?.id).toBe('agents');
+    // One tab slug: SettingsFrame draws no tab strip for this destination.
+    expect(agents?.slugs).toEqual(['agents']);
+    expect(resolveSettingsTabSlug('sessions')).toBe('agents');
+    expect(resolveSettingsSlug('sessions')).toBe('sessions');
+    expect(getSettingsPageMeta('sessions')?.title).toBe('Session Defaults');
+  });
+
+  test('keeps Session Defaults reachable with or without Agents access', () => {
+    const agents = getSettingsNavDestination('agents');
+    expect(agents && getSettingsDestinationVisibleSlugs(agents, new Set(['agents', 'sessions']))).toEqual(['agents']);
+    expect(agents && getSettingsDestinationVisibleSlugs(agents, new Set(['sessions']))).toEqual(['sessions']);
+    expect(getSettingsSupersedingSlug('sessions', new Set(['agents', 'sessions']))).toBeNull();
+    expect(getSettingsSupersedingSlug('sessions', new Set(['sessions']))).toBeNull();
+    expect(getSettingsDestinationFallbackSlug('agents', new Set(['sessions']))).toBe('sessions');
+  });
+
+  test('shows the Agents sidebar beside Session Defaults only when Agents is visible', () => {
+    const sessions = getSettingsPageMeta('sessions');
+    expect(sessions?.sidebarSlug).toBe('agents');
+    expect(sessions && getSettingsPageLayoutKind(sessions, new Set(['agents', 'sessions']))).toBe('split');
+    expect(sessions && getSettingsPageLayoutKind(sessions, new Set(['sessions']))).toBe('single');
+    const providers = getSettingsPageMeta('providers');
+    expect(providers && getSettingsPageLayoutKind(providers, new Set())).toBe('split');
   });
 
   test('places Bots immediately below Agents in workflow navigation', () => {

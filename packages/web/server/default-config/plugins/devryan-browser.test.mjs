@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, statSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
@@ -18,6 +19,7 @@ vi.mock('@opencode-ai/plugin', () => {
   };
   const mockTool = (definition) => definition;
   mockTool.schema = {
+    object: makeSchema,
     array: makeSchema,
     number: makeSchema,
     string: makeSchema,
@@ -123,6 +125,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.useRealTimers();
   rmSync(managedRoot, { recursive: true, force: true });
   for (const [key, value] of Object.entries({
@@ -951,5 +954,123 @@ describe('eval snippet wrapping', () => {
   it('leaves non-strings and blanks alone', () => {
     expect(wrapBrowserEvalSnippet('')).toBe('');
     expect(wrapBrowserEvalSnippet(undefined)).toBe(undefined);
+  });
+});
+
+
+describe('bounded browser sequences', () => {
+  const readyRecording = () => {
+    const directory = join(managedRoot, 'ffmpeg');
+    mkdirSync(directory);
+    const binary = join(directory, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+    writeFileSync(binary, 'fixture'); chmodSync(binary, 0o755);
+    const stat = statSync(binary);
+    writeFileSync(join(directory, 'ready.json'), JSON.stringify({ release: 'b6.1.1', sha256: 'a'.repeat(64),
+      identity: [stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs].join(':') }));
+  };
+  it('validates every step before network/process work, including nested sequences and recording balance', async () => {
+    const spawnImpl = vi.fn(); const requests = stubLeaseFetch();
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+    for (const steps of [[], Array(33).fill({ command: 'snapshot' }), [{ command: 'sequence' }],
+      [{ command: 'close' }, { command: 'snapshot' }], [{ command: 'record', args: ['start', 'a.webm'] }],
+      [{ command: 'record', args: ['stop'] }], [{ command: 'click', args: ['#ok', '--no-webmcp=false'] }],
+      [{ command: 'snapshot' }, { command: 'inspect', selector: '' }]]) {
+      await expect(plugin.tool.devryan_browser.execute({ command: 'sequence', steps }, context())).rejects.toThrow();
+    }
+    expect(spawnImpl).not.toHaveBeenCalled(); expect(requests).toHaveLength(0);
+  });
+  it('runs once in order through one connected lease without requesting a local browser launch', async () => {
+    const requests = stubLeaseFetch();
+    const spawnImpl = vi.fn(() => makeChild({ stdout: 'unchanged' }));
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+    const result = JSON.parse(await plugin.tool.devryan_browser.execute({ command: 'sequence', steps: [
+      { command: 'snapshot', args: ['-i', '--delta'] }, { command: 'screenshot', args: ['--if-changed', 'a.png'] },
+    ] }, context()));
+    expect(requests.filter(r => r.url.endsWith('/api/desktop/browser-leases'))).toHaveLength(1);
+    expect(result.results.map(r => r.index)).toEqual([0, 1]);
+    expect(result.results[1].output).toBe('unchanged');
+    expect(spawnImpl.mock.calls.filter(([, args]) => args.includes('connect'))).toHaveLength(1);
+    expect(spawnImpl.mock.calls.every(([, args]) => !args.includes('--no-webmcp'))).toBe(true);
+  });
+  it('finalizes recording after the first failure, keeps prior results and never executes later actions', async () => {
+    readyRecording(); stubLeaseFetch();
+    const spawnImpl = vi.fn((_binary, args) => makeChild(args.includes('click')
+      ? { code: 1, stderr: 'element absent' } : { stdout: 'done' }));
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+    await expect(plugin.tool.devryan_browser.execute({ command: 'sequence', steps: [
+      { command: 'record', args: ['start', 'a.webm'] }, { command: 'click', args: ['#absent'] },
+      { command: 'fill', args: ['#name', 'never'] }, { command: 'record', args: ['stop'] },
+    ] }, context())).rejects.toThrow('"failedStep":1');
+    expect(spawnImpl.mock.calls.filter(([, args]) => args.includes('stop'))).toHaveLength(1);
+    expect(spawnImpl.mock.calls.some(([, args]) => args.includes('fill'))).toBe(false);
+    expect(spawnImpl.mock.calls[0][2].env.PATH.startsWith(join(managedRoot, 'ffmpeg'))).toBe(true);
+    expect(spawnImpl.mock.calls[0][2].env.OPENAI_API_KEY).toBeUndefined();
+  });
+  it('finalizes after cancellation and reports incomplete recording if stop fails', async () => {
+    readyRecording(); stubLeaseFetch();
+    const controller = new AbortController();
+    const spawnImpl = vi.fn((_binary, args) => {
+      if (args.includes('wait')) { queueMicrotask(() => controller.abort()); return makeChild({ close: false }); }
+      return makeChild(args.includes('stop') ? { code: 1, stderr: 'encoder failed' } : { stdout: 'done' });
+    });
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+    await expect(plugin.tool.devryan_browser.execute({ command: 'sequence', steps: [
+      { command: 'record', args: ['start', 'a.webm'] }, { command: 'wait', args: ['10000'] },
+      { command: 'record', args: ['stop'] },
+    ] }, context({ abort: controller.signal }))).rejects.toThrow('"recordingIncomplete":true');
+    expect(spawnImpl.mock.calls.filter(([, args]) => args.includes('stop'))).toHaveLength(1);
+  });
+  it('bounds an unresponsive SDK turn lookup before acquiring a lease', async () => {
+    const requests = stubLeaseFetch(), spawnImpl = vi.fn();
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl, client: { session: { messages: () => new Promise(() => {}) } } });
+    await expect(plugin.tool.devryan_browser.execute({ command: 'sequence', timeout_ms: 10,
+      steps: [{ command: 'snapshot' }] }, context())).rejects.toThrow('DEVRYAN_BROWSER_COMMAND_TIMEOUT');
+    expect(requests).toHaveLength(0); expect(spawnImpl).not.toHaveBeenCalled();
+  });
+  it('bounds aggregate output and stops without replaying an executed step', async () => {
+    stubLeaseFetch();
+    const spawnImpl = vi.fn((_binary, args) => makeChild({ stdout: args.includes('connect') ? 'connected' : 'x'.repeat(32000) }));
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+    const failure = await plugin.tool.devryan_browser.execute({ command: 'sequence', steps: [
+      { command: 'snapshot' }, { command: 'snapshot' }, { command: 'click', args: ['#never'] },
+    ] }, context()).catch(error => error);
+    expect(failure.message).toContain('"failedStep":1');
+    expect(Buffer.byteLength(failure.message)).toBeLessThan(65536);
+    expect(spawnImpl.mock.calls.some(([, args]) => args.includes('click'))).toBe(false);
+  });
+  it.skipIf(process.platform !== 'darwin')('passes only the verified native fork/exec adapter into confined browser children', async () => {
+    const library = join(managedRoot, `DevRyan-execution-darwin-${process.arch}-spawn.dylib`);
+    writeFileSync(library, 'trusted adapter');
+    writeFileSync(library.replace('-spawn.dylib', '.json'), JSON.stringify({ policy: 2, acceptance: true,
+      platform: 'darwin', arch: process.arch, spawnLibrary: library.split('/').at(-1),
+      spawnSha256: createHash('sha256').update('trusted adapter').digest('hex') }));
+    vi.stubEnv('DYLD_INSERT_LIBRARIES', library);
+    vi.stubEnv('DEVRYAN_EXECUTION_WORKER', '1');
+    vi.stubEnv('DEVRYAN_EXECUTION_CACHE', managedRoot);
+    vi.stubEnv('DEVRYAN_EXECUTION_BROWSER_SCOPE', JSON.stringify({ opencodeSessionID: 'ses_child', messageID: 'msg_turn', directory: '/workspace', agent: 'builder' }));
+    stubLeaseFetch();
+    const spawnImpl = vi.fn(() => makeChild({ stdout: 'done' }));
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+    await plugin.tool.devryan_browser.execute({ command: 'snapshot' }, context());
+    expect(spawnImpl.mock.calls.at(-1)[2].env.DYLD_INSERT_LIBRARIES).toBe(library);
+    writeFileSync(library, 'changed adapter');
+    await plugin.tool.devryan_browser.execute({ command: 'snapshot' }, context());
+    expect(spawnImpl.mock.calls.at(-1)[2].env.DYLD_INSERT_LIBRARIES).toBeUndefined();
+  });
+  it('rejects standalone recording starts in confined execution', async () => {
+    process.env.DEVRYAN_EXECUTION_WORKER = '1';
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl: vi.fn() });
+    await expect(plugin.tool.devryan_browser.execute({ command: 'record', args: ['start', 'a.webm'] }, context()))
+      .rejects.toThrow('Use a sequence');
+  });
+  it('reports missing managed FFmpeg without starting a daemon', async () => {
+    const requests = stubLeaseFetch(); const spawnImpl = vi.fn(); const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+    await expect(plugin.tool.devryan_browser.execute({ command: 'record', args: ['start', 'a.webm'] }, context()))
+      .rejects.toThrow('managed FFmpeg');
+    await expect(plugin.tool.devryan_browser.execute({ command: 'sequence', steps: [
+      { command: 'record', args: ['start', 'a.webm'] }, { command: 'record', args: ['stop'] },
+    ] }, context())).rejects.toThrow('managed FFmpeg');
+    expect(requests).toHaveLength(0);
+    expect(spawnImpl).not.toHaveBeenCalled();
   });
 });

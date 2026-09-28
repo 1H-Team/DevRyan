@@ -281,6 +281,10 @@ export function createBotsRuntime({
   // workstation owner's verified cloud identity (never inferred by email).
   readCloudSource = null,
   resolveVerifiedSourceOwner = null,
+  // Whether this host may look for hosted Bots on its own. Only a connected
+  // Supabase does; with Supabase off or absent the hosted project is contacted
+  // solely when the owner asks (check or import).
+  discoverCloudSource = false,
 } = {}) {
   if (typeof dataDirectory !== 'string' || !path.isAbsolute(dataDirectory)) {
     throw new TypeError('Bots runtime requires an absolute data directory');
@@ -1770,8 +1774,9 @@ export function createBotsRuntime({
     recoveryRouteRegistrars.push((routeApp) => registerBotCatalogRoutes(routeApp, {
       getStatus: async ({ owner }) => {
         // An empty local catalog must not read as deleted cloud Bots: the
-        // owner sees whether hosted Bots still await import.
-        if (owner && catalogImport && Date.now() - cloudProbeAt > 60 * 60 * 1000) {
+        // owner sees whether hosted Bots still await import. A host that is
+        // not connected to Supabase reports only that a source is saved.
+        if (discoverCloudSource === true && owner && catalogImport && Date.now() - cloudProbeAt > 60 * 60 * 1000) {
           cloudProbeAt = Date.now();
           void catalogImport.probeCloud().catch(() => undefined);
         }
@@ -2007,7 +2012,12 @@ export function createBotsRuntime({
         getControlPlaneFailure: () => controlPlaneFailure,
         getExecutionFailure: () => executionFailure,
         getStartupState: () => startupState,
-        resolveCapabilities: (options) => resolveCurrentCapabilities(options),
+        resolveCapabilities: (options) => {
+          // A requested refresh is the owner retrying: restart an unavailable
+          // catalog now rather than at the end of its backoff.
+          if (options?.refresh === true) localCatalog?.retryNow();
+          return resolveCurrentCapabilities(options);
+        },
         getCatalogState: () => catalogState(),
         trackWrite,
         identity: ownerId ? Object.freeze({

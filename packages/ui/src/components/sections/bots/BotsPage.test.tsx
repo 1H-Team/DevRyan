@@ -68,6 +68,10 @@ describe('BotsPage', () => {
     expect(source).toContain('detail?.bot.id === selectedBotId');
     expect(source).toContain("requestError || catalogError ? 'Unable to load Bots'");
     expect(source).toContain('error={catalogError}');
+    // Loading is derived from capabilities and the catalog read, never from
+    // a flag that only a gated request could clear.
+    expect(source).toContain('readiness={readiness}');
+    expect(source).not.toContain('loadingCatalog');
     expect(source).toContain('canCreate={canCreate}');
     expect(source).not.toContain('canCreate={canCreate && requestError === null}');
     expect(source).toContain('result.canCreateBot === true');

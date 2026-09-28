@@ -1,3 +1,4 @@
+import { AGENT_BROWSER_VERSION } from '@openchamber/web/server/lib/agent-browser/install.js';
 import { restartSupabaseHost } from './supabase-host-restart.mjs';
 import { createRuntimeMemoryMonitor } from './runtime-memory-monitor.mjs';
 import { installRendererRecovery } from './renderer-recovery.mjs';
@@ -22,6 +23,7 @@ import { ElectronSshManager } from './ssh-manager.mjs';
 import { MacosSpeechManager } from './speech-manager.mjs';
 import { clearElectronRuntimeCaches, getElectronRuntimeCacheInfo } from './cache-maintenance.mjs';
 import { createKeepAwakeController } from './keep-awake-controller.mjs';
+import { createDockerDesktopLauncher } from './docker-desktop-launcher.mjs';
 import {
   createBotSecretStore,
   replaceBotEncryptionKeyAndRepair,
@@ -37,6 +39,7 @@ import { loadBotDatabaseSql } from '@openchamber/bot-db';
 import { finishQuitAfterCleanup } from './quit-cleanup.mjs';
 import {
   createRuntimeServiceCoordinator,
+  assertRuntimeServiceDescriptorOwner,
   isRuntimeServiceProtocolSupported,
   readRuntimeServiceDescriptor,
   waitForRuntimeServiceOwnerStopped as waitForOwnerStopped,
@@ -521,6 +524,12 @@ const loadBotDatabaseSqlOnce = () => {
   return botDatabaseSqlPromise;
 };
 
+let dockerDesktopLauncher = null;
+const getDockerDesktopLauncher = () => {
+  dockerDesktopLauncher ||= createDockerDesktopLauncher({ execFile: execFileAsync });
+  return dockerDesktopLauncher;
+};
+
 const getBotRuntimeManager = () => {
   if (state.botRuntimeManager) return state.botRuntimeManager;
   state.botRuntimeManager = createBotRuntimeManager({
@@ -935,7 +944,7 @@ const spawnLocalServer = async () => {
     state.agentBrowserInstallStatus = {
       ok: false,
       state: 'unavailable',
-      expectedVersion: '0.33.2',
+      expectedVersion: AGENT_BROWSER_VERSION,
       installedVersion: null,
       binaryPath: '',
       issues: [{ code: 'startup-failed', message: error instanceof Error ? error.message : String(error) }],
@@ -1118,7 +1127,7 @@ const spawnLocalServer = async () => {
               ...(state.agentBrowserInstallStatus || {}),
               ok: false,
               state: 'unavailable',
-              expectedVersion: '0.33.2',
+              expectedVersion: AGENT_BROWSER_VERSION,
               installedVersion: null,
               binaryPath: '',
               issues: [{
@@ -1361,21 +1370,14 @@ const connectToRuntimeService = async ({ reconnecting = false } = {}) => {
     error.code = 'runtime_service_protocol_mismatch';
     throw error;
   }
-  try {
-    process.kill(descriptor.pid, 0);
-  } catch (error) {
-    if (error?.code !== 'EPERM') {
-      const stale = new Error('The background runtime owner is not running');
-      stale.code = 'runtime_service_owner_stale';
-      throw stale;
-    }
-  }
+  await assertRuntimeServiceDescriptorOwner({ dataDirectory: dataRootDirectory(), descriptor });
   const url = buildLocalUrl(descriptor.port).replace(/\/$/, '');
   if (!await waitForHealth(url, 5_000, 100)) {
     const error = new Error('The background runtime is not ready');
     error.code = 'runtime_service_unavailable';
     throw error;
   }
+  await assertRuntimeServiceDescriptorOwner({ dataDirectory: dataRootDirectory(), descriptor });
   const bootstrapToken = unsealRuntimeServiceBootstrapToken({ descriptor, safeStorage });
   const bootstrap = await session.defaultSession.fetch(`${url}/auth/runtime-service-bootstrap`, {
     method: 'POST',
@@ -2265,12 +2267,13 @@ const ensureBrowserCdpBridge = async () => {
           emitToWindow(browserWindow, 'browser-agent-input', input);
         },
         onBeforeCommand: ({ leaseId, method }) => {
-          if (method === 'Page.captureScreenshot') {
+          if (method === 'Input.dispatchMouseEvent') return browserSurfaceManager?.prepareAgentInput(leaseId);
+          if (method === 'Page.captureScreenshot' || method === 'DevRyan.captureAttached') {
             return browserSurfaceManager?.setAgentCursorSuppressed(leaseId, true);
           }
         },
         onAfterCommand: ({ leaseId, method }) => {
-          if (method === 'Page.captureScreenshot') {
+          if (method === 'Page.captureScreenshot' || method === 'DevRyan.captureDetached') {
             return browserSurfaceManager?.setAgentCursorSuppressed(leaseId, false);
           }
         },
@@ -2554,7 +2557,7 @@ const readAgentBrowserRuntimeStatus = async ({ refresh = true } = {}) => {
     return {
       ok: false,
       state: 'pending',
-      expectedVersion: '0.33.2',
+      expectedVersion: AGENT_BROWSER_VERSION,
       installedVersion: null,
       binaryPath: '',
       issues: [],
@@ -2566,7 +2569,7 @@ const readAgentBrowserRuntimeStatus = async ({ refresh = true } = {}) => {
     return {
       ok: false,
       state: 'external-runtime',
-      expectedVersion: '0.33.2',
+      expectedVersion: AGENT_BROWSER_VERSION,
       installedVersion: null,
       binaryPath: '',
       issues: [{
@@ -2596,7 +2599,7 @@ const readAgentBrowserRuntimeStatus = async ({ refresh = true } = {}) => {
     ...(state.agentBrowserInstallStatus || {
       ok: false,
       state: 'unavailable',
-      expectedVersion: '0.33.2',
+      expectedVersion: AGENT_BROWSER_VERSION,
       installedVersion: null,
       issues: [{ code: 'installer-unavailable', message: 'Agent browser installer is unavailable' }],
     }),
@@ -4022,6 +4025,11 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       await shell.openExternal(settingsUrl);
       return { opened: true };
     }
+
+    // Docker Desktop is a foreground application of the signed-in user, so
+    // this always runs here and is never forwarded to the background service.
+    case 'desktop_open_docker_desktop':
+      return getDockerDesktopLauncher().open();
 
     case 'desktop_browser_capture_page': {
       return getBrowserSurfaceManager().capture(browserWindow, args);

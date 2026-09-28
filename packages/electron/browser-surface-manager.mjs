@@ -244,12 +244,22 @@ const normalizeBounds = (rawBounds, ownerWindow) => {
   };
 };
 
-const createParkingWindow = () => {
+const createParkingWindow = (kind) => {
   const parkingWindow = new BaseWindow({
     width: DEFAULT_WIDTH,
     height: DEFAULT_HEIGHT,
     show: false,
   });
+  // macOS drops CDP pointer events before a hidden native host has ever drawn.
+  // An invisible, noninteractive lease host keeps hit testing alive without
+  // presenting a window or stealing focus. Manual tabs remain truly hidden.
+  if (kind === 'lease' && process.platform === 'darwin') {
+    parkingWindow.setOpacity(0);
+    parkingWindow.setFocusable(false);
+    parkingWindow.setIgnoreMouseEvents(true);
+    parkingWindow.setSkipTaskbar(true);
+    parkingWindow.showInactive();
+  }
   parkingWindow.__ocBrowserParking = true;
   return parkingWindow;
 };
@@ -382,7 +392,9 @@ export const createBrowserSurfaceManager = ({
       detachView(surface);
       ownerWindow.contentView.addChildView(surface.view);
       surface.attachedWindow = ownerWindow;
+      surface.agentInputFrame = null;
     }
+    if (surface.lastBounds?.width !== nextBounds.width || surface.lastBounds?.height !== nextBounds.height) surface.agentInputFrame = null;
     applyViewportMode(surface, nextBounds);
     surface.lastBounds = nextBounds;
     surface.view.setVisible?.(true);
@@ -398,6 +410,7 @@ export const createBrowserSurfaceManager = ({
       detachView(surface);
       owner.contentView.addChildView(surface.view);
       surface.attachedWindow = owner;
+      surface.agentInputFrame = null;
     }
     surface.view.setBounds({ x: 0, y: 0, width: Math.max(1, bounds.width), height: Math.max(1, bounds.height) });
     // Keep the native view attached/visible within its hidden host so Chromium
@@ -451,6 +464,7 @@ export const createBrowserSurfaceManager = ({
       contents.on(event, schedule);
     }
     const onDidNavigate = () => {
+      surface.agentInputFrame = null;
       surface.faviconUrl = '';
       schedule();
     };
@@ -523,6 +537,7 @@ export const createBrowserSurfaceManager = ({
       url: normalizeBrowserSurfaceUrl(initialUrl),
       faviconUrl: '',
       lastBounds: null,
+      agentInputFrame: null,
       inlineBounds: null,
       cleanupContents: null,
       closingPopout: false,
@@ -1195,6 +1210,20 @@ export const createBrowserSurfaceManager = ({
     return released;
   };
 
+  const prepareAgentInput = (leaseId) => {
+    const surface = surfaceForLease(leaseId);
+    if (!surface || process.platform !== 'darwin') return;
+    // Wait for compositor hit-test data once after navigation/reattachment,
+    // not on every event along a human pointer path. CDP can otherwise succeed
+    // while the first click is silently dropped on a newly parked guest.
+    if (!surface.agentInputFrame) {
+      const frame = surface.view.webContents.capturePage().then(() => undefined);
+      surface.agentInputFrame = frame;
+      void frame.catch(() => { if (surface.agentInputFrame === frame) surface.agentInputFrame = null; });
+    }
+    return surface.agentInputFrame;
+  };
+
   const showAgentInput = (leaseId, input) => {
     const surface = surfaceForLease(leaseId);
     if (!surface) return;
@@ -1258,6 +1287,7 @@ export const createBrowserSurfaceManager = ({
     setViewportMode,
     setLeaseHomeWindow,
     showAgentInput,
+    prepareAgentInput,
     snapshotForLease: (leaseId) => {
       const surface = surfaceForLease(leaseId);
       return surface ? snapshot(surface) : null;

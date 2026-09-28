@@ -21,6 +21,7 @@ const createCatalogImport = () => ({
   start: vi.fn(async ({ mode, writersStopped }) => ({ started: true, mode, writersStopped })),
   cancel: vi.fn(async () => ({ cancelled: true })),
   dismiss: vi.fn(async () => ({ dismissed: true })),
+  probeCloud: vi.fn(async () => ({ cloud: { hasBots: true, code: null }, checking: false, import: null, pending: true })),
 });
 
 const createApp = (options = {}) => {
@@ -49,6 +50,7 @@ const OWNER_ONLY_ROUTES = Object.freeze([
   ['post', '/api/bots/database/activation/resume'],
   ['get', '/api/bots/database/import'],
   ['post', '/api/bots/database/import'],
+  ['post', '/api/bots/database/import/check'],
   ['post', '/api/bots/database/import/cancel'],
   ['post', '/api/bots/database/import/dismiss'],
 ]);
@@ -247,11 +249,29 @@ describe('Bot catalog routes', () => {
     expect(catalogImport.dismiss).toHaveBeenCalledTimes(1);
   });
 
+  it('checks the hosted source again on the owner\'s request', async () => {
+    const { app, catalogImport } = createApp();
+    const checked = await request(app).post('/api/bots/database/import/check').send({ url: 'https://example.test' });
+    expect(checked.status).toBe(200);
+    expect(checked.headers['cache-control']).toBe('no-store');
+    expect(checked.body).toEqual({ cloud: { hasBots: true, code: null }, checking: false, import: null, pending: true });
+    // The request carries no source of its own: the saved one is always used.
+    expect(catalogImport.probeCloud).toHaveBeenCalledWith({ requested: true });
+
+    catalogImport.probeCloud.mockRejectedValueOnce(Object.assign(new Error('Import state is unreadable'), {
+      code: 'bot_import_state_invalid', statusCode: 500,
+    }));
+    const failed = await request(app).post('/api/bots/database/import/check').send({});
+    expect(failed.status).toBe(500);
+    expect(failed.body).toMatchObject({ code: 'bot_import_state_invalid' });
+  });
+
   it('does not register import routes without an import service', async () => {
     const { app } = createApp({ catalogImport: null });
     for (const [method, route] of [
       ['get', '/api/bots/database/import'],
       ['post', '/api/bots/database/import'],
+      ['post', '/api/bots/database/import/check'],
       ['post', '/api/bots/database/import/cancel'],
       ['post', '/api/bots/database/import/dismiss'],
     ]) {

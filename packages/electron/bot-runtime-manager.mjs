@@ -3056,6 +3056,55 @@ export function createBotRuntimeManager({
     if (issues.length > 0) fail('Pulled Bot runtime images failed verification', failureCode);
   };
 
+  // Release images are pulled by digest, so each update leaves the prior
+  // digests behind as untagged images. Once a state is recorded, every image
+  // of an owned release repository that is not the current, previous or staged
+  // release is removed. `image rm` without --force refuses images a container
+  // still uses, and any failure only leaves reclaimable space behind, so the
+  // activated runtime is never affected. Development images are never touched.
+  const pruneSupersededImages = async (dockerPath, state) => {
+    try {
+      const manifests = [state.current, state.previous, state.staged]
+        .filter((manifest) => manifest?.channel === 'release');
+      const repositories = new Set();
+      const keepDigests = new Set();
+      for (const manifest of manifests) {
+        for (const image of Object.values(manifest.images)) {
+          if (typeof image.repository !== 'string' || typeof image.digest !== 'string') continue;
+          repositories.add(image.repository);
+          keepDigests.add(image.digest);
+        }
+      }
+      // The containerd image store lists a digest-pulled image with that
+      // digest as its ID; the classic store lists the repository digest
+      // beside a config ID. Either match keeps the image.
+      const listedIds = new Set();
+      const keptIds = new Set();
+      for (const repository of repositories) {
+        const listed = await run(dockerPath, [
+          'image', 'ls', '--digests', '--no-trunc', '--format', '{{.ID}} {{.Digest}}', repository,
+        ]);
+        if (listed.exitCode !== 0) continue;
+        for (const line of listed.stdout.split('\n')) {
+          const [id, digest] = line.trim().split(' ');
+          if (!/^sha256:[0-9a-f]{64}$/.test(id || '')) continue;
+          listedIds.add(id);
+          if (keepDigests.has(id) || keepDigests.has(digest)) keptIds.add(id);
+        }
+      }
+      const superseded = [...listedIds].filter((id) => !keptIds.has(id));
+      if (superseded.length === 0) return;
+      const removed = await run(dockerPath, ['image', 'rm', ...superseded]);
+      recordEvent({
+        event: 'bot.runtime.images_pruned',
+        candidates: superseded.length,
+        complete: removed.exitCode === 0,
+      });
+    } catch {
+      // Best effort: pruning never changes the outcome of the operation.
+    }
+  };
+
   // Verify images → inspect the database → migrate if necessary → expose
   // REST → start execution services. REST and every service that can write
   // to the catalog start only after the database is verified at the head.
@@ -3227,6 +3276,7 @@ export function createBotRuntimeManager({
       deadlineAt,
     });
     await installationState.write(nextState);
+    await pruneSupersededImages(dockerPath, nextState);
     return status;
   };
 
@@ -3295,6 +3345,7 @@ export function createBotRuntimeManager({
       deadlineAt,
     });
     await installationState.write(repairedState);
+    await pruneSupersededImages(dockerPath, repairedState);
     return status;
   };
 
@@ -3337,6 +3388,7 @@ export function createBotRuntimeManager({
       deadlineAt,
     });
     await installationState.write(updatedState);
+    await pruneSupersededImages(dockerPath, updatedState);
     recordEvent({ event: 'bot.runtime.updated', fromLegacy: upgradingLegacy });
     return status;
   };
@@ -3378,6 +3430,7 @@ export function createBotRuntimeManager({
       deadlineAt,
     });
     await installationState.write(rolledBackState);
+    await pruneSupersededImages(dockerPath, rolledBackState);
     return status;
   };
 

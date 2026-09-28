@@ -160,7 +160,7 @@ message, phase and error identifiers without file contents or tool arguments.
 ## Build and rollout
 
 The [companion manifest](../packages/web/server/lib/opencode/companion/manifest.json)
-pins OpenCode 1.18.32 at `545f51d26cc39a907d2867492d498d9607ea5fa4`, the full patch
+pins OpenCode 1.18.33 at `51ef4be1d3c122f18fefb510dca8d778571f4f18`, the full patch
 digest and every changed source file. `bun run build:revert-runtime` prepares the
 pinned checkout inside `.cache`, verifies source, checks types and regression
 tests, builds the companion and native supervisor, and runs real execution
@@ -177,7 +177,7 @@ the companion step; the `Warm release caches` workflow uses this on `main`,
 because caches saved by a tag-triggered release are visible only to that tag.
 
 Only successful acceptance writes the runtime manifest. The current paired
-companion is 2.1.0 on OpenCode 1.18.32, with execution preparation protocol 3
+companion is 2.1.2 on OpenCode 1.18.33, with execution preparation protocol 3
 (direct receipts for built-in read, glob and grep) and retention protocol 1. The host verifies the required
 capability versions, platform, architecture and artifact digests before enabling
 capture. Artifacts live under `packages/web/runtime/<platform>-<arch>`; Electron

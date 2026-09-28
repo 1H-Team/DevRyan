@@ -1,7 +1,12 @@
 import React from 'react';
 import { RiRefreshLine, RiRobot2Line } from '@remixicon/react';
 
-import { resolveBotRuntimeRecovery } from '@/components/bots/botPresentation';
+import {
+  canOpenDockerDesktop,
+  resolveBotCatalogReadiness,
+  resolveBotRuntimeRecovery,
+} from '@/components/bots/botPresentation';
+import { OpenDockerDesktopButton } from '@/components/bots/OpenDockerDesktopButton';
 import {
   botRuntimeProgressLabel,
   useBotRuntimeOperation,
@@ -80,15 +85,14 @@ const BotsPageContent: React.FC<BotsPageProps> = ({
     initialDetail?.bot.id || initialCatalog[0]?.id || null,
   );
   const [detail, setDetail] = React.useState<BotManagementDetail | null>(initialDetail);
-  const [loadingCatalog, setLoadingCatalog] = React.useState(initialCatalog.length === 0);
   const [loadingDetail, setLoadingDetail] = React.useState(false);
   const [pendingBotMutations, setPendingBotMutations] = React.useState<Readonly<Record<string, PendingBotMutation>>>({});
   const [creating, setCreating] = React.useState(false);
   const [requestError, setRequestError] = React.useState<{ code: string | null; message: string } | null>(null);
   const [catalogFailure, setCatalogFailure] = React.useState<{ message: string; code: string | null; retryable: boolean } | null>(null);
   const catalogError = catalogFailure ? `${catalogFailure.message}${catalogFailure.code ? ` (${catalogFailure.code})` : ''}` : null;
-  const catalogStarting = catalogFailure?.retryable === true && catalogFailure.code === 'bots_starting';
   const [catalogLoaded, setCatalogLoaded] = React.useState(initialCatalog.length > 0);
+  const [checkingCatalog, setCheckingCatalog] = React.useState(false);
   const catalogRetryable = React.useRef(false);
   const catalogConnection = React.useRef<ReturnType<typeof createBotCatalogConnection> | null>(null);
   const [canCreateBot, setCanCreateBot] = React.useState(initialCanCreateBot);
@@ -107,6 +111,16 @@ const BotsPageContent: React.FC<BotsPageProps> = ({
   const mutationSequence = React.useRef(0);
   const selectedBotIdRef = React.useRef(selectedBotId);
   const capabilities = useBotsStore((state) => state.capabilities);
+  const capabilitiesErrorCode = useBotsStore((state) => state.capabilitiesErrorCode);
+  // The catalog is fetched only while capabilities report it available, so
+  // every other state is explained here instead of reading as loading.
+  const readiness = resolveBotCatalogReadiness({
+    capabilities,
+    capabilitiesErrorCode,
+    catalogLoaded,
+    catalogErrorCode: catalogFailure ? catalogFailure.code ?? 'bot_request_failed' : null,
+  });
+  const readinessMessage = readiness.messageKey ? t(readiness.messageKey) : null;
   const runtimeOperation = useBotRuntimeOperation(desktopApi);
   const usesAuthoritativeRuntimeProgress = Boolean(
     desktopApi.operationStatus && desktopApi.listenProgress,
@@ -129,7 +143,9 @@ const BotsPageContent: React.FC<BotsPageProps> = ({
   ));
 
   const refreshCapabilities = React.useCallback(async () => {
-    const next = await api.getCapabilities();
+    // Always an explicit action (Retry, focus, runtime recovery): read the
+    // live host state, never the cached probe.
+    const next = await api.getCapabilities({ refresh: true });
     setCapabilities(next);
     return next;
   }, [api, setCapabilities]);
@@ -179,7 +195,6 @@ const BotsPageContent: React.FC<BotsPageProps> = ({
 
     const request = catalogRequest.current + 1;
     catalogRequest.current = request;
-    setLoadingCatalog(true);
     try {
       const result = await api.listBots();
       if (catalogRequest.current !== request) return;
@@ -203,8 +218,6 @@ const BotsPageContent: React.FC<BotsPageProps> = ({
         && (error.retryable ?? ['bots_starting', 'bot_database_unavailable', 'network_error', 'bot_request_timeout'].includes(error.code));
       catalogRetryable.current = retryable;
       setCatalogFailure({ message: errorMessage(error), code, retryable });
-    } finally {
-      if (catalogRequest.current === request) setLoadingCatalog(false);
     }
   }, [api]);
 
@@ -277,9 +290,20 @@ const BotsPageContent: React.FC<BotsPageProps> = ({
 
   const retryCatalog = React.useCallback(() => {
     const current = useBotsStore.getState().capabilities;
-    if (current && botCapabilityCanStream(current)) catalogConnection.current?.retry();
-    else void refreshCapabilities().catch(recordError);
-  }, [recordError, refreshCapabilities]);
+    if (current && botCapabilityCanStream(current)) {
+      catalogConnection.current?.retry();
+      return;
+    }
+    // The gate is closed: re-read capabilities. A failure is recorded where
+    // both Bot surfaces read it, and the next successful probe clears it.
+    setCheckingCatalog(true);
+    void refreshCapabilities().then((next) => {
+      setRequestError(null);
+      if (botCapabilityCanStream(next)) retryBotsEventConnection();
+    }, (error: unknown) => {
+      setCapabilities(null, error instanceof BotsApiError ? error.code : 'bot_request_failed');
+    }).finally(() => setCheckingCatalog(false));
+  }, [refreshCapabilities, setCapabilities]);
 
   React.useEffect(() => {
 
@@ -382,7 +406,7 @@ const BotsPageContent: React.FC<BotsPageProps> = ({
       <BotGallery
         bots={catalog}
         selectedBotId={selectedBotId}
-        loading={(!catalogFailure && loadingCatalog) || (!catalogLoaded && catalogStarting)}
+        readiness={readiness}
         error={catalogError}
         canCreate={canCreate}
         onSelect={(botId) => {
@@ -681,26 +705,41 @@ const BotsPageContent: React.FC<BotsPageProps> = ({
               </Button>
             </div>
           </div>
-        ) : !catalogLoaded && ((!catalogFailure && loadingCatalog) || catalogStarting) ? (
+        ) : readiness.pending && !requestError ? (
           <div className="flex h-full items-center justify-center typography-ui text-muted-foreground" role="status">
-            {catalogFailure?.code === 'bots_starting' || capabilities?.database?.state === 'starting'
-              ? 'Starting Bot storage…' : 'Loading Bots…'}
+            {readinessMessage}
           </div>
         ) : (
           <div className="flex h-full items-center justify-center p-6 text-center">
             <div className="max-w-sm">
               <RiRobot2Line className="mx-auto h-6 w-6 text-muted-foreground/60" aria-hidden />
-              <h1 className="mt-2 typography-ui-header font-semibold text-foreground">
-                {requestError || catalogError ? 'Unable to load Bots' : t('settings.page.bots.title')}
+              <h1
+                className="mt-2 typography-ui-header font-semibold text-foreground"
+                role={!requestError && !catalogError && readinessMessage ? 'alert' : undefined}
+              >
+                {requestError || catalogError ? 'Unable to load Bots' : readinessMessage ?? t('settings.page.bots.title')}
               </h1>
-              <p className="mt-1 typography-ui text-muted-foreground" role={requestError || catalogError ? 'alert' : undefined}>
-                {requestError?.message || catalogError || 'Select an assigned Bot or create one to begin.'}
-              </p>
-              {requestError?.code ? <p className="mt-1 font-mono text-xs text-muted-foreground">{requestError.code}</p> : null}
               {requestError || catalogError ? (
-                <Button type="button" size="xs" variant="outline" className="mt-3" onClick={retryCatalog}>
-                  <RiRefreshLine className="h-3.5 w-3.5" aria-hidden /> Retry
-                </Button>
+                <p className="mt-1 typography-ui text-muted-foreground" role="alert">
+                  {requestError?.message || catalogError}
+                </p>
+              ) : !readinessMessage ? (
+                <p className="mt-1 typography-ui text-muted-foreground">Select an assigned Bot or create one to begin.</p>
+              ) : capabilities?.state === 'docker_stopped' ? (
+                <p className="mt-1 typography-ui text-muted-foreground">{t('bots.runtime.dockerStoppedDetail')}</p>
+              ) : null}
+              {requestError?.code || (!catalogError && readiness.code) ? (
+                <p className="mt-1 font-mono text-xs text-muted-foreground">{requestError?.code || readiness.code}</p>
+              ) : null}
+              {requestError || catalogError || readiness.canRetry ? (
+                <div className="mt-3 flex items-center justify-center gap-2">
+                  {canOpenDockerDesktop(capabilities, desktopApi.isAvailable()) && desktopApi.openDockerDesktop ? (
+                    <OpenDockerDesktopButton desktopApi={desktopApi} onRefresh={retryCatalog} />
+                  ) : null}
+                  <Button type="button" size="xs" variant="outline" disabled={checkingCatalog} onClick={retryCatalog}>
+                    <RiRefreshLine className="h-3.5 w-3.5" aria-hidden /> Retry
+                  </Button>
+                </div>
               ) : null}
             </div>
           </div>

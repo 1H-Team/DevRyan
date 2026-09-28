@@ -14,7 +14,9 @@ against 1.18.32 (`545f51d2`): between those tags the only runtime changes are an
 import refactor in `core/src/filesystem/search.ts` (ripgrep/fff entry types; no
 new side effect in `glob`/`grep`), a Bedrock attachment check in
 `session/message-v2.ts`, a Node-only resolver fix in `core/src/npm.ts` (the
-companion runs on Bun) and a togetherai dependency bump:
+companion runs on Bun) and a togetherai dependency bump.
+
+OpenCode 1.18.33 (`51ef4be1`) changes none of the companion-patched files or the native `read`, `glob`, and `grep` execution paths. The pinned patch applies unchanged and its file digests still match.
 
 | Tool | Side effects in its execution path | Decision |
 | --- | --- | --- |

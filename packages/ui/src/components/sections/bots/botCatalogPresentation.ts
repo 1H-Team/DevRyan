@@ -55,6 +55,18 @@ export const resolveBotCatalogAction = (
   return null;
 };
 
+// A saved hosted project is contacted only when the owner asks. The request
+// is offered quietly while nothing else about the import needs attention.
+export const canCheckHostedBots = (
+  status: BotCatalogStatus | null,
+  action: BotCatalogAction | null,
+): boolean => Boolean(
+  status?.viewerIsOwner
+  && status.import?.sourceConfigured === true
+  && status.state === 'ready'
+  && action === null,
+);
+
 const BACKUP_KIND_LABELS: Readonly<Record<BotCatalogBackup['kind'], string>> = {
   daily: 'Daily',
   manual: 'Manual',
@@ -86,6 +98,27 @@ const IMPORT_PHASE_LABELS: Readonly<Record<string, string>> = {
   verifying: 'Verifying the hosted copy…',
   loading_source: 'Preparing the import…',
   merging: 'Adding Bots to this computer…',
+};
+
+// Why hosted discovery failed and what the owner can do about it. The hosted
+// Bots themselves are untouched by any of these.
+export const botCatalogDiscoveryFailure = (code: string): { title: string; detail: string } => {
+  if (code === 'bot_import_source_quota_exceeded') {
+    return {
+      title: 'Hosted Project Is Over Its Quota',
+      detail: 'The hosted project refuses reads until its usage quota is restored, so hosted Bots cannot be checked or imported yet. They have not been deleted. Restore service in the Supabase dashboard, then check again.',
+    };
+  }
+  if (code === 'bot_import_source_forbidden') {
+    return {
+      title: 'Hosted Project Rejected the Saved Key',
+      detail: 'The saved Supabase key is no longer accepted, so hosted Bots cannot be checked. Update the key, then check again.',
+    };
+  }
+  return {
+    title: 'Could Not Check Hosted Bots',
+    detail: `The hosted source could not be checked (${code}).`,
+  };
 };
 
 export const botCatalogImportPhaseLabel = (phase: string | null | undefined): string => (

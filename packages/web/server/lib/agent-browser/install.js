@@ -1,11 +1,12 @@
 import crypto from 'node:crypto';
+import { createFfmpegInstaller } from './ffmpeg.js';
 import { spawn as spawnChild } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const AGENT_BROWSER_VERSION = '0.33.2';
+export const AGENT_BROWSER_VERSION = '0.38.1';
 export const AGENT_BROWSER_MANAGED_CONFIG_FILE = 'devryan-agent-browser.json';
 
 const PACKAGE_NAME = 'agent-browser';
@@ -297,6 +298,9 @@ export const createAgentBrowserInstaller = (options = {}) => {
     'bin',
     binaryName ?? `agent-browser-unsupported-${platform}-${arch}`,
   );
+  const recordingInstaller = options.recordingInstaller ?? createFfmpegInstaller({
+    installRoot, platform, arch, runCommand: runCommandDefault,
+  });
   let mutationPromise = null;
 
   const resolveConfiguredBun = () => resolveBunExecutable({
@@ -562,7 +566,12 @@ export const createAgentBrowserInstaller = (options = {}) => {
           ],
         };
       }
-    })().finally(() => {
+    })().then(async (browser) => ({
+      ...browser,
+      recording: browser.ok
+        ? await recordingInstaller.ensureInstalled({ repair })
+        : await recordingInstaller.status(),
+    })).finally(() => {
       mutationPromise = null;
     });
     return mutationPromise;
@@ -573,7 +582,7 @@ export const createAgentBrowserInstaller = (options = {}) => {
   const repair = () => mutate({ repair: true });
 
   return {
-    status,
+    status: async () => ({ ...await status(), recording: await recordingInstaller.status() }),
     ensureInstalled,
     install,
     repair,

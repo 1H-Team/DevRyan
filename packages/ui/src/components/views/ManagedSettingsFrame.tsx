@@ -17,6 +17,7 @@ import { usePreparedSettingsNavigation } from './usePreparedSettingsNavigation';
 import {
   PreparedSettingsDataBoundary,
   PreparedAgentsPage,
+  PreparedAgentsSettingsPicker,
   PreparedAgentsSidebar,
   PreparedBotsPage,
   PreparedBugReportsPage,
@@ -26,6 +27,7 @@ import {
   PreparedPluginsPage,
   PreparedPluginsSidebar,
   PreparedProvidersPage,
+  PreparedSessionDefaultsPage,
   PreparedProvidersSidebar,
   PreparedSkillsPage,
   PreparedSkillsSidebar,
@@ -69,6 +71,12 @@ const MANAGED_PLUGIN_HUB_SLUGS: readonly ManagedPluginHubPage[] = ['plugins', 's
 
 const isManagedPluginHubPage = (slug: ManagedSettingsPage): slug is ManagedPluginHubPage => (
   (MANAGED_PLUGIN_HUB_SLUGS as readonly string[]).includes(slug)
+);
+
+// Mirrors the full shell's Agents destination: Session Defaults is an entry in
+// the Agents sidebar, or stands alone when the account cannot read Agents.
+const isManagedAgentsPage = (slug: ManagedSettingsPage): slug is 'agents' | 'sessions' => (
+  slug === 'agents' || slug === 'sessions'
 );
 
 interface ManagedNavigationDestination extends Omit<ManagedPageDefinition, 'slug'> {
@@ -115,10 +123,10 @@ export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onCl
       { slug: 'appearance', title: t('settings.page.appearance.title'), description: 'Theme, typography, spacing, and interface preferences.', group: 'Preferences' },
       { slug: 'chat', title: t('settings.page.chat.title'), description: 'Message, tool, reasoning, and rendering preferences.', group: 'Preferences' },
       { slug: 'shortcuts', title: t('settings.page.shortcuts.title'), description: 'Review and customize keyboard shortcuts.', group: 'Preferences' },
-      { slug: 'sessions', title: t('settings.page.sessions.title'), description: 'Defaults, retention, and session behavior.', group: 'Preferences' },
+      { slug: 'sessions', title: t('settings.page.sessions.title'), description: t('settings.view.home.cards.agents.description'), group: 'Workspace' },
       { slug: 'notifications', title: t('settings.page.notifications.title'), description: 'Choose when and how DevRyan notifies you.', group: 'Preferences' },
       { slug: 'bots', title: t('settings.page.bots.title'), description: t('settings.page.bots.description'), group: 'Workspace' },
-      { slug: 'agents', title: t('settings.page.agents.title'), description: 'Review the agents available to your account.', group: 'Workspace' },
+      { slug: 'agents', title: t('settings.page.agents.title'), description: t('settings.view.home.cards.agents.description'), group: 'Workspace' },
       { slug: 'plugins', title: t('settings.page.plugins.title'), description: 'Review installed OpenCode plugins.', group: 'Workspace' },
       { slug: 'skills.installed', title: t('settings.page.skills.title'), description: 'Manage reusable Coding Agent skills.', group: 'Workspace' },
       { slug: 'mcp', title: t('settings.page.mcp.title'), description: 'Review Coding Agent servers.', group: 'Workspace' },
@@ -152,6 +160,13 @@ export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onCl
     },
     [pages],
   );
+  const agentsPages = React.useMemo(
+    () => (['agents', 'sessions'] as const)
+      .map((slug) => pages.find((page) => page.slug === slug))
+      .filter((page): page is ManagedPageDefinition => Boolean(page)),
+    [pages],
+  );
+  const canReadAgentsPage = agentsPages.some((page) => page.slug === 'agents');
   const requestedPage = pages.find((page) => page.slug === settingsPage) ?? null;
   const providerFallback = (settingsPage === 'providers' || settingsPage === 'usage')
     ? providerPages[0]?.slug
@@ -159,11 +174,14 @@ export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onCl
   const pluginHubFallback = isManagedPluginHubPage(settingsPage)
     ? pluginHubPages[0]?.slug
     : null;
+  const agentsFallback = isManagedAgentsPage(settingsPage)
+    ? agentsPages[0]?.slug
+    : null;
   const requestedActiveSlug: ManagedSettingsPage = settingsPage === 'home'
     ? 'home'
     : settingsPage === 'usage' && providerFallback
       ? providerFallback
-      : requestedPage?.slug ?? providerFallback ?? pluginHubFallback ?? 'home';
+      : requestedPage?.slug ?? providerFallback ?? pluginHubFallback ?? agentsFallback ?? 'home';
   const preloadSlugs = React.useMemo(
     () => pages.map((page) => page.slug),
     [pages],
@@ -177,6 +195,7 @@ export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onCl
     const destinations: ManagedNavigationDestination[] = [];
     let providersAdded = false;
     let pluginHubAdded = false;
+    let agentsAdded = false;
 
     for (const page of pages) {
       if (page.slug === 'chat') continue;
@@ -189,6 +208,19 @@ export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onCl
           targetSlug: pluginHubPages[0].slug,
           title: t('settings.page.plugins.title'),
           description: 'Review plugins, skills, and MCP servers.',
+          group: 'Workspace',
+        });
+        continue;
+      }
+      if (isManagedAgentsPage(page.slug)) {
+        if (agentsAdded) continue;
+        agentsAdded = true;
+        destinations.push({
+          id: 'agents',
+          slugs: agentsPages.map((agentsPage) => agentsPage.slug),
+          targetSlug: agentsPages[0].slug,
+          title: t('settings.page.agents.title'),
+          description: t('settings.view.home.cards.agents.description'),
           group: 'Workspace',
         });
         continue;
@@ -218,7 +250,7 @@ export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onCl
     }
 
     return destinations;
-  }, [pages, pluginHubPages, providerPages, t]);
+  }, [agentsPages, pages, pluginHubPages, providerPages, t]);
 
   React.useEffect(() => {
     if (requestedActiveSlug !== settingsPage) {
@@ -246,14 +278,22 @@ export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onCl
     slug: ManagedSettingsPage,
     sidebar: React.ReactNode,
     content: React.ReactNode,
+    compactPicker?: React.ReactNode,
   ): React.ReactNode => (
     <SettingsPagePermissionBoundary slug={slug}>
       <div className="flex h-full min-h-0 overflow-hidden">
         <div className="hidden w-56 shrink-0 border-r border-border bg-sidebar md:block">
           <SectionBoundary>{sidebar}</SectionBoundary>
         </div>
-        <div className="min-w-0 flex-1 overflow-hidden bg-background">
-          <SectionBoundary>{content}</SectionBoundary>
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
+          {compactPicker ? (
+            <div className="shrink-0 md:hidden">
+              <SectionBoundary>{compactPicker}</SectionBoundary>
+            </div>
+          ) : null}
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <SectionBoundary>{content}</SectionBoundary>
+          </div>
         </div>
       </div>
     </SettingsPagePermissionBoundary>
@@ -330,7 +370,7 @@ export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onCl
     }
 
     if (activeSlug === 'appearance' || activeSlug === 'chat' || activeSlug === 'shortcuts'
-      || activeSlug === 'sessions' || activeSlug === 'notifications') {
+      || activeSlug === 'notifications') {
       const section = activeSlug === 'appearance' ? 'visual' : activeSlug;
       return (
         <SettingsPagePermissionBoundary slug={activeSlug}>
@@ -339,8 +379,16 @@ export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onCl
       );
     }
 
-    if (activeSlug === 'agents') {
-      return renderSplitPage(activeSlug, <PreparedAgentsSidebar />, <PreparedAgentsPage />);
+    if (isManagedAgentsPage(activeSlug)) {
+      const content = activeSlug === 'sessions' ? <PreparedSessionDefaultsPage /> : <PreparedAgentsPage />;
+      if (!canReadAgentsPage) {
+        return (
+          <SettingsPagePermissionBoundary slug={activeSlug}>
+            <SectionBoundary>{content}</SectionBoundary>
+          </SettingsPagePermissionBoundary>
+        );
+      }
+      return renderSplitPage(activeSlug, <PreparedAgentsSidebar />, content, <PreparedAgentsSettingsPicker />);
     }
     if (activeSlug === 'bots') {
       return (
@@ -479,12 +527,14 @@ export const ManagedSettingsFrame: React.FC<ManagedSettingsFrameProps> = ({ onCl
                 ? t('settings.page.providers.title')
                 : isManagedPluginHubPage(activeSlug)
                   ? t('settings.page.plugins.title')
-                  : activePage?.title || t('settings.view.home.title')}
+                  : isManagedAgentsPage(activeSlug)
+                    ? t('settings.page.agents.title')
+                    : activePage?.title || t('settings.view.home.title')}
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-hidden">
           {activeSlug === 'home' ? renderPage() : (
-            <SectionBoundary key={activeSlug}>
+            <SectionBoundary key={isManagedAgentsPage(activeSlug) ? 'agents' : activeSlug}>
               <PreparedSettingsDataBoundary slug={activeSlug}>{renderPage()}</PreparedSettingsDataBoundary>
             </SectionBoundary>
           )}

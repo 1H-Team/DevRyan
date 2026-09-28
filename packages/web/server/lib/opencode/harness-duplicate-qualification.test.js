@@ -30,18 +30,16 @@ describe('duplicate output release qualification', () => {
     const f = await fixture(); expect(DUPLICATE_OUTPUT_PROFILES).toHaveLength(6);
     expect(qualifyDuplicateOutputs({ ...f.input, profiles: undefined }).qualified).toBe(false);
     expect(qualifyDuplicateOutputs(f.input).qualified).toBe(true);
-    // Companion 2.1.0 routes are qualified by build identity; the earlier
-    // profiles stay on record as stale.
-    expect(DUPLICATE_OUTPUT_PROFILES.filter((profile) => profile.stale).map((profile) => profile.id))
-      .toEqual(['devryan-companion-2.0.0-openai-sol-medium', 'opencode-1.18.31-openai-sol-medium']);
-    expect(DUPLICATE_OUTPUT_PROFILES.filter((profile) => profile.defaultEnabled && !profile.stale).map((profile) => profile.id))
-      .toEqual(['devryan-companion-2.1.0-xai-grok-4.7-medium', 'devryan-companion-2.1.0-xai-grok-4.6-high',
-        'devryan-companion-2.1.0-openai-gpt-6-astra-medium', 'devryan-companion-2.1.0-openai-gpt-5.6-sol-medium']);
-    for (const profile of DUPLICATE_OUTPUT_PROFILES.filter((entry) => !entry.stale)) {
+    // Changing the browser plugin revokes every affected release profile;
+    // historical evidence hashes must not be replaced to fake requalification.
+    expect(DUPLICATE_OUTPUT_PROFILES.filter(profile => profile.stale)).toHaveLength(6);
+    expect(DUPLICATE_OUTPUT_PROFILES.filter(profile => profile.defaultEnabled && !profile.stale)).toEqual([]);
+    for (const profile of DUPLICATE_OUTPUT_PROFILES) expect(profile.stale.plugins).toContain('devryan-browser.mjs');
+    for (const profile of DUPLICATE_OUTPUT_PROFILES.filter(entry => entry.id.startsWith('devryan-companion-2.1.0-'))) {
       expect(profile.runtimeIdentity, profile.id).toMatchObject({ kind: 'companion-build', upstreamVersion: '1.18.32' });
       expect(profile.policyVector, profile.id).toEqual({ waitAny: false, capabilityToolSchema: true });
     }
-    expect(resolveDuplicateOutputPolicy({})).toBe(true);
+    expect(resolveDuplicateOutputPolicy({})).toBe(false);
     expect(resolveDuplicateOutputPolicy({}, DUPLICATE_OUTPUT_PROFILES.filter((profile) => profile.stale))).toBe(false);
     expect(resolveDuplicateOutputPolicy({}, [{ ...f.profile, defaultEnabled: true, stale: { reason: 'bytes changed', plugins: [] } }])).toBe(false);
     expect(qualifyDuplicateOutputs({ ...f.input, profiles: [{ ...f.profile, stale: { reason: 'bytes changed', plugins: [] } }] }))

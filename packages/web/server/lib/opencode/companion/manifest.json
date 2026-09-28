@@ -1,9 +1,9 @@
 {
   "version": 1,
   "upstream": "https://github.com/anomalyco/opencode",
-  "upstreamVersion": "1.18.32",
-  "baseCommit": "545f51d26cc39a907d2867492d498d9607ea5fa4",
-  "companionVersion": "2.1.1",
+  "upstreamVersion": "1.18.33",
+  "baseCommit": "51ef4be1d3c122f18fefb510dca8d778571f4f18",
+  "companionVersion": "2.1.2",
   "patch": "legacy-conversation-revert.patch",
   "patchSha256": "c3a5e7377f5ac4a41ebcb32cdea24f05cd3cd9e5b20dba6f8600151c76f5e3ce",
   "capability": {

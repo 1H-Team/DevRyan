@@ -32,6 +32,8 @@ and public static/liveness responses. Managed Remote supports private owner link
 with Supabase Off or unconfigured: create the link from the authenticated local app,
 then redeem it once within 15 minutes for a seven-day session. These owner sessions
 can access ordinary chats, projects, files, Git, terminal and preview streams.
+While disconnected, the hosted project is never contacted in the background:
+a hosted-catalog check or import runs only on the owner's request.
 Bot grants remain Bot-only; native capabilities, Supabase/tunnel controls and passkey
 enrollment remain local. Ordinary local chats, projects, files and diagnostics remain
 available, and so do the workstation owner's Bots: they live in the local Bot

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
+import { SettingsDetailHeader, SettingsDetailSection, SettingsPageLayout } from '@/components/sections/shared';
 import { toast } from '@/components/ui';
 import { useI18n, type I18nKey } from '@/lib/i18n';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { RiInformationLine } from '@remixicon/react';
+import { RiBrainLine, RiInformationLine } from '@remixicon/react';
 import {
   getResponseStylePresetInstructions,
   isResponseStyleLevel,
@@ -71,12 +71,7 @@ const saveBehaviorSetting = async (settings: Partial<DesktopSettings>, fallbackE
   }
 };
 
-type BehaviorPageProps = {
-  /** Extra host-wide policy sections rendered after the built-in ones, inside the same scroll area. */
-  children?: React.ReactNode;
-};
-
-export const BehaviorPage: React.FC<BehaviorPageProps> = ({ children }) => {
+export const BehaviorPage: React.FC = () => {
   const { t } = useI18n();
   const [prompt, setPrompt] = React.useState('');
   const [responseStyleLevel, setResponseStyleLevel] = React.useState<ResponseStyleLevel>(DEFAULT_BEHAVIOR_SETTINGS.responseStyleLevel);
@@ -210,152 +205,142 @@ export const BehaviorPage: React.FC<BehaviorPageProps> = ({ children }) => {
   };
 
   return (
-    <ScrollableOverlay outerClassName="h-full" className="w-full">
-      <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8 space-y-6">
-        <div className="space-y-1">
-          <h2 className="typography-ui-header font-semibold text-foreground">
-            {t('settings.behavior.page.title')}
-          </h2>
-        </div>
+    <SettingsPageLayout>
+      <SettingsDetailHeader
+        icon={<RiBrainLine />}
+        title={t('settings.behavior.page.title')}
+        subtitle={t('settings.behavior.page.subtitle')}
+      />
 
-        <div>
-          <div className="mb-1 px-1">
-            <div className="flex items-center gap-1.5">
-              <h3 className="typography-ui-header font-medium text-foreground">
-                {t('settings.behavior.page.section.systemPrompt')}
-              </h3>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <RiInformationLine className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
-                </TooltipTrigger>
-                <TooltipContent sideOffset={8} className="max-w-xs">
-                  <div className="space-y-1">
-                    <p className="font-medium text-foreground">
-                      {t('settings.behavior.page.warning.title')}
-                    </p>
-                    <p>
-                      {t('settings.behavior.page.warning.description', { path: AGENTS_MD_PATH })}
-                    </p>
-                  </div>
-                </TooltipContent>
-              </Tooltip>
-            </div>
-          </div>
-
-          <section className="px-2 pb-2 pt-0 space-y-3">
-            {promptLoadError && (
-              <div
-                role="alert"
-                className="flex flex-col gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="min-w-0">
-                  <p className="typography-ui-label text-foreground">
-                    {t('settings.behavior.page.loadFailed')}
+      <SettingsDetailSection
+        bodyClassName="space-y-3"
+        title={(
+          <span className="inline-flex items-center gap-1.5">
+            {t('settings.behavior.page.section.systemPrompt')}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <RiInformationLine className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+              </TooltipTrigger>
+              <TooltipContent sideOffset={8} className="max-w-xs">
+                <div className="space-y-1">
+                  <p className="font-medium text-foreground">
+                    {t('settings.behavior.page.warning.title')}
                   </p>
-                  <p className="typography-meta break-words text-muted-foreground">
-                    {promptLoadError}
+                  <p>
+                    {t('settings.behavior.page.warning.description', { path: AGENTS_MD_PATH })}
                   </p>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="xs"
-                  className="shrink-0 !font-normal"
-                  onClick={() => void loadPrompt()}
-                  disabled={isPromptLoading}
-                >
-                  {t('settings.behavior.page.actions.retry')}
-                </Button>
-              </div>
-            )}
-            {!promptLoadError && !isPromptLoading && !promptEditable && unavailableReason && (
-              <div
-                role="status"
-                className="rounded-md border border-border bg-[var(--surface-muted)] px-3 py-2"
-              >
-                <p className="typography-ui-label text-foreground">
-                  {t('settings.behavior.page.unavailable.title')}
-                </p>
-                <p className="typography-meta text-muted-foreground">
-                  {unavailableReason}
-                </p>
-              </div>
-            )}
-            <Textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder={t('settings.behavior.page.field.systemPromptPlaceholder')}
-              rows={12}
-              disabled={isPromptLoading || !promptEditable || Boolean(promptLoadError)}
-              outerClassName="min-h-[160px] max-h-[70vh]"
-              className="w-full font-mono typography-meta bg-transparent"
-            />
-            <Button
-              onClick={handleSave}
-              disabled={isSaving || !isPromptDirty || isPromptLoading || !promptEditable || Boolean(promptLoadError)}
-              size="xs"
-              className="!font-normal"
-            >
-              {isSaving ? t('settings.common.actions.saving') : t('settings.common.actions.saveChanges')}
-            </Button>
-          </section>
-        </div>
-
-        <div>
-          <div className="mb-1 px-1">
-            <div className="flex items-center gap-1.5">
-              <h3 className="typography-ui-header font-medium text-foreground">
-                {t('settings.behavior.page.section.responseStyle')}
-              </h3>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <RiInformationLine className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
-                </TooltipTrigger>
-                <TooltipContent sideOffset={8} className="max-w-xs">
-                  {t('settings.behavior.page.responseStyle.tooltip')}
-                </TooltipContent>
-              </Tooltip>
-            </div>
-          </div>
-
-          <section className="px-2 pb-2 pt-0 space-y-3">
-            <Select<ResponseStyleLevel>
-              value={responseStyleLevel}
-              onValueChange={setResponseStyleLevel}
-              disabled={isResponseStyleLoading}
-            >
-              <SelectTrigger className="w-full" size="lg" aria-label={t('settings.behavior.page.responseStyle.preset')}>
-                <SelectValue>
-                  {(value) => isResponseStyleLevel(value) ? t(RESPONSE_STYLE_OPTION_LABEL_KEYS[value]) : null}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {RESPONSE_STYLE_LEVELS.map((level) => (
-                  <SelectItem key={level} value={level}>
-                    {t(RESPONSE_STYLE_OPTION_LABEL_KEYS[level])}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <div className="rounded-md border border-border/70 bg-[var(--surface-muted)] px-3 py-2.5">
+              </TooltipContent>
+            </Tooltip>
+          </span>
+        )}
+      >
+        {promptLoadError && (
+          <div
+            role="alert"
+            className="flex flex-col gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div className="min-w-0">
               <p className="typography-ui-label text-foreground">
-                {t(RESPONSE_STYLE_OPTION_LABEL_KEYS[responseStyleLevel])}
+                {t('settings.behavior.page.loadFailed')}
               </p>
-              <p className="typography-meta mt-0.5 text-muted-foreground">
-                {t(RESPONSE_STYLE_OPTION_DESCRIPTION_KEYS[responseStyleLevel])}
+              <p className="typography-meta break-words text-muted-foreground">
+                {promptLoadError}
               </p>
-              {responseStyleLevel !== 'provider' ? (
-                <p className="typography-meta mt-2 border-t border-border/60 pt-2 text-muted-foreground/80">
-                  {getResponseStylePresetInstructions(responseStyleLevel)}
-                </p>
-              ) : null}
             </div>
-          </section>
-        </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              className="shrink-0 !font-normal"
+              onClick={() => void loadPrompt()}
+              disabled={isPromptLoading}
+            >
+              {t('settings.behavior.page.actions.retry')}
+            </Button>
+          </div>
+        )}
+        {!promptLoadError && !isPromptLoading && !promptEditable && unavailableReason && (
+          <div
+            role="status"
+            className="rounded-md border border-border bg-[var(--surface-muted)] px-3 py-2"
+          >
+            <p className="typography-ui-label text-foreground">
+              {t('settings.behavior.page.unavailable.title')}
+            </p>
+            <p className="typography-meta text-muted-foreground">
+              {unavailableReason}
+            </p>
+          </div>
+        )}
+        <Textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder={t('settings.behavior.page.field.systemPromptPlaceholder')}
+          rows={12}
+          disabled={isPromptLoading || !promptEditable || Boolean(promptLoadError)}
+          outerClassName="min-h-[160px] max-h-[70vh]"
+          className="w-full font-mono typography-meta bg-transparent"
+        />
+        <Button
+          onClick={handleSave}
+          disabled={isSaving || !isPromptDirty || isPromptLoading || !promptEditable || Boolean(promptLoadError)}
+          size="xs"
+          className="!font-normal"
+        >
+          {isSaving ? t('settings.common.actions.saving') : t('settings.common.actions.saveChanges')}
+        </Button>
+      </SettingsDetailSection>
 
-        {children}
-      </div>
-    </ScrollableOverlay>
+      <SettingsDetailSection
+        bodyClassName="space-y-3"
+        title={(
+          <span className="inline-flex items-center gap-1.5">
+            {t('settings.behavior.page.section.responseStyle')}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <RiInformationLine className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+              </TooltipTrigger>
+              <TooltipContent sideOffset={8} className="max-w-xs">
+                {t('settings.behavior.page.responseStyle.tooltip')}
+              </TooltipContent>
+            </Tooltip>
+          </span>
+        )}
+      >
+        <Select<ResponseStyleLevel>
+          value={responseStyleLevel}
+          onValueChange={setResponseStyleLevel}
+          disabled={isResponseStyleLoading}
+        >
+          <SelectTrigger className="w-full" size="lg" aria-label={t('settings.behavior.page.responseStyle.preset')}>
+            <SelectValue>
+              {(value) => isResponseStyleLevel(value) ? t(RESPONSE_STYLE_OPTION_LABEL_KEYS[value]) : null}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {RESPONSE_STYLE_LEVELS.map((level) => (
+              <SelectItem key={level} value={level}>
+                {t(RESPONSE_STYLE_OPTION_LABEL_KEYS[level])}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <div className="rounded-md border border-border/70 bg-[var(--surface-muted)] px-3 py-2.5">
+          <p className="typography-ui-label text-foreground">
+            {t(RESPONSE_STYLE_OPTION_LABEL_KEYS[responseStyleLevel])}
+          </p>
+          <p className="typography-meta mt-0.5 text-muted-foreground">
+            {t(RESPONSE_STYLE_OPTION_DESCRIPTION_KEYS[responseStyleLevel])}
+          </p>
+          {responseStyleLevel !== 'provider' ? (
+            <p className="typography-meta mt-2 border-t border-border/60 pt-2 text-muted-foreground/80">
+              {getResponseStylePresetInstructions(responseStyleLevel)}
+            </p>
+          ) : null}
+        </div>
+      </SettingsDetailSection>
+    </SettingsPageLayout>
   );
 };

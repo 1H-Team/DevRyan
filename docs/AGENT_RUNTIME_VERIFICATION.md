@@ -60,6 +60,49 @@ bun scripts/journal.mjs show <sessionID> --tail 200
 bun scripts/journal.mjs gaps
 ```
 
+### Desktop runtime ownership after restart
+
+For launch failures with `runtime_service_owner_active`, `runtime_service_owner_stale`,
+or `runtime_service_owner_unverified`, correlate the Electron startup log with
+`runtime-service/owner.v1.lock` and the non-secret PID/instance/generation fields
+of `handshake.v1.json` under the configured data directory. Do not dump the
+handshake's sealed bootstrap token. A live PID alone does not prove DevRyan is
+running: the OS can assign yesterday's PID to an unrelated process after reboot.
+
+New owners also persist private `owner-process.v1.json` evidence before publishing
+the lock. Its instance/generation/PID must match the owner; the OS boot UUID and
+process-start identity then distinguish the original process from a reused PID.
+Start identities are equality tokens, never wall-clock age thresholds. macOS
+uses bounded `/bin/ps -p <pid> -o lstart=` with `LC_ALL=C` and `TZ=UTC`; Linux uses
+`/proc/<pid>/stat` start ticks. Unsupported platforms retain conservative PID fencing.
+
+Acquisition and stopped-owner polling use the same decision. Proven-stopped
+owners can be reclaimed under the mutation guard after rechecking the exact
+file; verified live owners remain protected. Missing OS evidence and permission
+failures cannot authorize takeover. The foreground also rejects obsolete
+descriptors before attempting bootstrap.
+
+An old valid lock without matching process evidence may remain ambiguous. Its
+first observation saves `owner-recovery.v2.json` and reports
+`runtime_service_owner_unverified`: restart the computer, then reopen DevRyan.
+The unchanged file plus a different boot UUID permits recovery. Repeated Retry
+preserves the original evidence; changing the file requires fresh evidence.
+This is a one-time migration path, not a request to delete the lock or kill its
+PID. Damaged-file quarantine retains its existing safety checks.
+
+Ownership logs contain only bounded phase/code/reason fields, including
+`boot_changed`, `pid_reused`, `legacy_boot_changed`, and identity-unavailable
+reasons. A stale identity companion after release is harmless: only an exact
+owner match can use it, and the next acquisition replaces it.
+
+The Electron runtime-service tests include an isolated native process smoke:
+disposable Node children contend for one temporary data directory, expose
+stable OS start identities, and recover after the winning child exits. It does
+not inspect the user's installed runtime. This does not replace packaged
+launchd, signing, or physical-reboot acceptance.
+
+### Error Log correlation and journal coverage
+
 When the report starts with an Error Log event UUID, treat that UUID as a durable administrative locator, not as the detailed execution record:
 
 1. Resolve the UUID through the administrator Error Log detail surface/API first. Capture the `sessionId`, timestamp, action/kind, and every available `callId`, `toolId`, `messageId`, or `taskId`.

@@ -27,15 +27,19 @@ const formatTimestamp = (timestamp: number | null, neverUsedText: string) => {
   }).format(timestamp);
 };
 
+/**
+ * Passkeys for the local UI password lock (`--ui-password`). The host reports
+ * them disabled without that lock, in tunnel scope, and in multi-user mode, so
+ * the section renders only where there is something to manage.
+ */
 export const PasskeySettings: React.FC = () => {
   const { t } = useI18n();
-  const [supportsPasskeys, setSupportsPasskeys] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(true);
   const [isRegistering, setIsRegistering] = React.useState(false);
   const [revokingId, setRevokingId] = React.useState<string | null>(null);
   const [isResetting, setIsResetting] = React.useState(false);
   const [passkeys, setPasskeys] = React.useState<StoredPasskey[]>([]);
-  const [status, setStatus] = React.useState<PasskeyStatus>(defaultPasskeyStatus);
+  const [status, setStatus] = React.useState<PasskeyStatus | null>(null);
   const [errorMessage, setErrorMessage] = React.useState('');
   const supportState = React.useMemo(() => getPasskeySupportState(), []);
 
@@ -58,50 +62,25 @@ export const PasskeySettings: React.FC = () => {
     let cancelled = false;
 
     void (async () => {
-      try {
-        if (!supportState.supported) {
-          if (!cancelled) {
-            setSupportsPasskeys(false);
-            setIsLoading(false);
-          }
-          return;
-        }
-        if (!cancelled) {
-          setSupportsPasskeys(true);
-        }
-      } catch {
-        if (!cancelled) {
-          setSupportsPasskeys(false);
-        }
+      // Listing and revoking need no WebAuthn support; only adding does.
+      const nextStatus = await fetchPasskeyStatus().catch(() => defaultPasskeyStatus);
+      if (cancelled) return;
+      setStatus(nextStatus);
+      if (!nextStatus.enabled) {
+        setIsLoading(false);
+        return;
       }
-
-      if (!cancelled) {
-        const nextStatus = await fetchPasskeyStatus();
-        setStatus(nextStatus);
-        if (!nextStatus.enabled) {
-          setPasskeys([]);
-          setIsLoading(false);
-          return;
-        }
-        await loadPasskeys();
-      }
+      await loadPasskeys();
     })();
 
     return () => {
       cancelled = true;
       cancelPasskeyCeremony();
     };
-  }, [loadPasskeys, supportState.supported]);
+  }, [loadPasskeys]);
 
   const handleRegisterPasskey = React.useCallback(async () => {
-    if (!status.enabled) {
-      const message = t('settings.openchamber.passkeys.toast.enableUiPasswordFirst');
-      setErrorMessage(message);
-      toast.message(message);
-      return;
-    }
-
-    if (!supportsPasskeys) {
+    if (!supportState.supported) {
       setErrorMessage(supportState.reason);
       toast.message(supportState.reason);
       return;
@@ -133,7 +112,7 @@ export const PasskeySettings: React.FC = () => {
     } finally {
       setIsRegistering(false);
     }
-  }, [isRegistering, loadPasskeys, status.enabled, supportState.reason, supportsPasskeys, t]);
+  }, [isRegistering, loadPasskeys, supportState.reason, supportState.supported, t]);
 
   const handleRevokePasskey = React.useCallback(async (id: string) => {
     setRevokingId(id);
@@ -154,6 +133,8 @@ export const PasskeySettings: React.FC = () => {
   }, [loadPasskeys, t]);
 
   const handleResetAllAuth = React.useCallback(async () => {
+    // The host also deletes every saved passkey and rotates its session secret.
+    if (!window.confirm(t('settings.openchamber.passkeys.confirm.signOutEverywhere'))) return;
     setIsResetting(true);
     setErrorMessage('');
 
@@ -168,10 +149,13 @@ export const PasskeySettings: React.FC = () => {
     }
   }, [t]);
 
+  if (!status?.enabled) return null;
+
   return (
     <div className="mb-8">
-      <div className="mb-1 px-1">
-        <h3 className="typography-ui-header font-medium text-foreground">{t('settings.openchamber.passkeys.title')}</h3>
+      <div className="mb-3 space-y-0.5 px-1">
+        <h3 className="typography-ui-header font-semibold text-foreground">{t('settings.openchamber.passkeys.title')}</h3>
+        <p className="typography-meta text-muted-foreground">{t('settings.openchamber.passkeys.description')}</p>
       </div>
 
       <section className="px-2 pb-2 pt-0 space-y-2">
@@ -203,13 +187,7 @@ export const PasskeySettings: React.FC = () => {
           </div>
         </div>
 
-        {!status.enabled && (
-          <p className="typography-meta text-muted-foreground">
-            {t('settings.openchamber.passkeys.state.uiPasswordRequired')}
-          </p>
-        )}
-
-        {status.enabled && !supportsPasskeys && (
+        {!supportState.supported && (
           <p className="typography-meta text-muted-foreground">
             {supportState.reason}
           </p>

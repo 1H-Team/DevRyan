@@ -2,15 +2,20 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'bun:test';
 
 const pageSource = readFileSync(new URL('./AgentsPage.tsx', import.meta.url), 'utf8');
+const runtimePageSource = readFileSync(new URL('./AgentRuntimePage.tsx', import.meta.url), 'utf8');
 const sectionSource = readFileSync(new URL('./AgentRuntimeSection.tsx', import.meta.url), 'utf8');
 
 describe('agent runtime presentation', () => {
-  test('sits with the host-wide policy page inside Global Agent Behavior', () => {
-    expect(pageSource).toContain('<AgentRuntimeSection canEdit={isHostModelEditor} />');
-    expect(pageSource.indexOf('<BehaviorPage>'))
-      .toBeLessThan(pageSource.indexOf('<AgentRuntimeSection'));
-    expect(pageSource.indexOf('<AgentRuntimeSection'))
+  test('has its own host-editor Runtime view beside Behavior, outside any agent editor', () => {
+    expect(pageSource).toContain("if (resolveAgentsGlobalView(selectedGlobalView, authPrincipal) === 'runtime') return <AgentRuntimePage />;");
+    expect(pageSource.indexOf('<AgentRuntimePage />'))
       .toBeLessThan(pageSource.indexOf("t('settings.agents.page.section.identityRole')"));
+    expect(pageSource).not.toContain('<AgentRuntimeSection');
+    expect(runtimePageSource).toContain('<AgentRuntimeSection canEdit={canViewAgentRuntime(principal)} />');
+    expect(runtimePageSource.indexOf('<AgentRuntimeSection'))
+      .toBeLessThan(runtimePageSource.indexOf('<OpenCodeCliSettings />'));
+    expect(runtimePageSource.indexOf('<OpenCodeCliSettings />'))
+      .toBeLessThan(runtimePageSource.indexOf('<AgentBrowserControlSettings />'));
   });
 
   test('offers the language-server switch to host admins and read-only text to others', () => {

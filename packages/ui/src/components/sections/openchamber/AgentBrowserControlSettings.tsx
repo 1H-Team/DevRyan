@@ -199,11 +199,11 @@ export const AgentBrowserControlSettings: React.FC = () => {
         throw new Error(t('settings.openchamber.agentBrowserControl.installer.error.repairFailed'));
       }
       setInstallerStatus(status);
-      if (status.ok && status.applied === true && status.restartSucceeded === true) {
+      if (status.ok && status.recording?.ok !== false && !status.recording?.issues?.length && status.applied === true && status.restartSucceeded === true) {
         toast.success(t('settings.openchamber.agentBrowserControl.installer.toast.repaired'));
       } else {
-        const failureMessage = status.issues
-          ?.map((issue) => issue.message.trim())
+        const failureMessage = [...(status.issues ?? []), ...(status.recording?.issues ?? [])]
+          .map((issue) => issue.message.trim())
           .find(Boolean)
           ?? t('settings.openchamber.agentBrowserControl.installer.error.repairFailed');
         setInstallerError(failureMessage);
@@ -307,10 +307,18 @@ export const AgentBrowserControlSettings: React.FC = () => {
             </div>
           </div>
 
-          {installerError || (installerStatus?.issues?.length ?? 0) > 0 || skillWarnings.length > 0 ? (
+          {installerStatus?.recording ? (
+            <div className="mt-3 typography-meta" role="status">
+              {t('settings.openchamber.agentBrowserControl.installer.recording')}: {installerStatus.recording.ok
+                ? t('settings.openchamber.agentBrowserControl.installer.ready')
+                : t('settings.openchamber.agentBrowserControl.installer.needsRepair')}
+            </div>
+          ) : null}
+
+          {installerError || (installerStatus?.issues?.length ?? 0) > 0 || (installerStatus?.recording?.issues?.length ?? 0) > 0 || skillWarnings.length > 0 ? (
             <div className="mt-3 rounded-md border border-[color-mix(in_srgb,var(--status-warning)_35%,var(--border))] bg-[color-mix(in_srgb,var(--status-warning)_8%,var(--background))] p-3 text-[var(--status-warning)]">
               {installerError ? <div className="typography-meta">{installerError}</div> : null}
-              {installerStatus?.issues?.map((issue, index) => (
+              {[...(installerStatus?.issues ?? []), ...(installerStatus?.recording?.issues ?? [])].map((issue, index) => (
                 issue.message === installerError
                   ? null
                   : <div key={`${issue.code}:${index}`} className="typography-meta">{issue.message}</div>

@@ -124,6 +124,17 @@ export function registerBotCatalogRoutes(app, {
         return sendError(res, error);
       }
     });
+    // The owner asks again after restoring the hosted project; automatic
+    // discovery otherwise runs at most once an hour.
+    app.post('/api/bots/database/import/check', async (req, res) => {
+      if (!requireOwner(req, res)) return undefined;
+      try {
+        res.setHeader('Cache-Control', 'no-store');
+        return res.json(await catalogImport.probeCloud({ requested: true }));
+      } catch (error) {
+        return sendError(res, error);
+      }
+    });
     app.post('/api/bots/database/import/cancel', async (req, res) => {
       if (!requireOwner(req, res)) return undefined;
       try {

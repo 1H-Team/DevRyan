@@ -38,8 +38,7 @@ recovery remains the fallback until host enforcement is advertised.
 Enforcement requires a live managed runtime, exclusive private file-lock owner,
 healthy durable storage, an allow-listed OpenCode version verified through
 `/global/health` (`PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS` in
-`provider-recovery-policy.js`: 1.18.25, 1.18.26, 1.18.27, 1.18.29, 1.18.30, 1.18.31 and 1.18.32, the current host target
-pin), and the bundled plugin handshake. Unsupported versions, external
+`provider-recovery-policy.js`: 1.18.25, 1.18.26, 1.18.27, 1.18.29, 1.18.30, 1.18.31 and 1.18.32), and the bundled plugin handshake. The 1.18.33 host target awaits transport and hook conformance before automatic recovery can be enabled. Unsupported versions, external
 runtimes, and opt-in WebSocket/native transports remain manual. Do not expand
 this allowlist without transport and hook conformance tests.
 

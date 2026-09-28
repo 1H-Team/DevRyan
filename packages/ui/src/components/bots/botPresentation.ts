@@ -6,6 +6,7 @@ import type {
   BotRunFailurePhase,
 } from '@/lib/botsApi';
 import type { I18nKey } from '@/lib/i18n';
+import { botCapabilityCanStream } from '@/apps/botCapabilityStream';
 
 const runtimeFlag = (capabilities: BotCapabilities | null, name: string): boolean => (
   Boolean(capabilities?.runtime && capabilities.runtime[name] === true)
@@ -66,6 +67,103 @@ export const resolveBotRuntimeMessageKey = (state: string, code?: string | null)
   if (state === 'encryption_unavailable') return 'bots.runtime.encryptionUnavailable';
   return 'bots.runtime.unavailable';
 };
+
+export type BotCatalogReadinessKind =
+  | 'ready'
+  | 'checking'
+  | 'loading'
+  | 'starting'
+  | 'maintenance'
+  | 'load_failed'
+  | 'capabilities_failed'
+  | 'recovery'
+  | 'blocked';
+
+export type BotCatalogReadiness = Readonly<{
+  kind: BotCatalogReadinessKind;
+  /** Null only while `ready`. */
+  messageKey: I18nKey | null;
+  code: string | null;
+  /** Resolves without a user action; the only states that may read as loading. */
+  pending: boolean;
+  canRetry: boolean;
+}>;
+
+export const READY_BOT_CATALOG: BotCatalogReadiness = Object.freeze({
+  kind: 'ready', messageKey: null, code: null, pending: false, canRetry: false,
+});
+
+type BotCatalogReadinessInput = Readonly<{
+  capabilities: Pick<BotCapabilities, 'state' | 'code' | 'catalogAvailable' | 'database'> | null;
+  capabilitiesErrorCode: string | null;
+  catalogLoaded: boolean;
+  catalogErrorCode: string | null;
+}>;
+
+// The catalog is loaded only while capabilities report it available, so a
+// closed gate has to explain itself: "loading" is reserved for states that
+// resolve on their own, and the empty state for a catalog that was read.
+export const resolveBotCatalogReadiness = ({
+  capabilities,
+  capabilitiesErrorCode,
+  catalogLoaded,
+  catalogErrorCode,
+}: BotCatalogReadinessInput): BotCatalogReadiness => {
+  if (capabilities?.code === 'bots_access_disabled') {
+    return { kind: 'blocked', messageKey: 'bots.sidebar.accessDisabled', code: capabilities.code, pending: false, canRetry: false };
+  }
+  if (capabilities && !botCapabilityCanStream(capabilities)) {
+    const { state } = capabilities;
+    const database = capabilities.database?.state ?? null;
+    const code = capabilities.code ?? capabilities.database?.code ?? null;
+    if (state === 'bots_starting' || database === 'starting') {
+      return { kind: 'starting', messageKey: 'bots.runtime.progress.starting_database', code, pending: true, canRetry: false };
+    }
+    if (state === 'bots_maintenance' || database === 'maintenance') {
+      return { kind: 'maintenance', messageKey: 'bots.runtime.storageMaintenance', code, pending: true, canRetry: false };
+    }
+    if (state === 'database_recovery_required' || database === 'recovery_required') {
+      return { kind: 'recovery', messageKey: 'bots.runtime.storageRecovery', code, pending: false, canRetry: true };
+    }
+    if (state === 'unsupported_host') {
+      return { kind: 'blocked', messageKey: 'bots.runtime.unsupportedHost', code, pending: false, canRetry: false };
+    }
+    if (state === 'catalog_unavailable') {
+      return { kind: 'blocked', messageKey: 'bots.runtime.storageUnavailable', code, pending: false, canRetry: true };
+    }
+    return {
+      kind: 'blocked',
+      messageKey: resolveBotRuntimeMessageKey(state, capabilities.code) ?? 'bots.runtime.storageUnavailable',
+      code,
+      pending: false,
+      canRetry: true,
+    };
+  }
+  if (catalogErrorCode === 'bots_starting' && !catalogLoaded) {
+    return { kind: 'starting', messageKey: 'bots.runtime.progress.starting_database', code: catalogErrorCode, pending: true, canRetry: false };
+  }
+  if (catalogErrorCode !== null) {
+    return { kind: 'load_failed', messageKey: 'bots.sidebar.loadFailed', code: catalogErrorCode, pending: false, canRetry: true };
+  }
+  if (catalogLoaded) return READY_BOT_CATALOG;
+  if (!capabilities && capabilitiesErrorCode !== null) {
+    return { kind: 'capabilities_failed', messageKey: 'bots.sidebar.checkFailed', code: capabilitiesErrorCode, pending: false, canRetry: true };
+  }
+  return {
+    kind: capabilities ? 'loading' : 'checking',
+    messageKey: 'bots.sidebar.loading',
+    code: null,
+    pending: true,
+    canRetry: false,
+  };
+};
+
+// Docker Desktop can be opened only by the native shell, and only helps when
+// it is installed but stopped.
+export const canOpenDockerDesktop = (
+  capabilities: Pick<BotCapabilities, 'state'> | null,
+  desktopAvailable: boolean,
+): boolean => desktopAvailable && capabilities?.state === 'docker_stopped';
 
 export const shouldSubmitBotComposerKey = ({
   key,

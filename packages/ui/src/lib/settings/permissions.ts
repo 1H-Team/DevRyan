@@ -17,7 +17,7 @@ export const SETTINGS_PERMISSION_SECTIONS = [
     label: 'Workflow',
     pages: [
       ['chat', 'Chat'],
-      ['sessions', 'Sessions'],
+      ['sessions', 'Session Defaults'],
       ['bots', 'Bots'],
       ['agents', 'Agents'],
       ['magic-prompts', 'Magic Prompts'],

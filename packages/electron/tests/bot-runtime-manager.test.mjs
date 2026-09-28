@@ -282,8 +282,12 @@ const createFakeRunner = ({
   attachedContainers = [],
   database = currentDatabase(),
   restPort = 55130,
+  storedImages = {},
 } = {}) => {
   const calls = [];
+  // Repository → image IDs Docker holds locally. With the containerd image
+  // store an image pulled by digest has that digest as its ID.
+  const images = new Map(Object.entries(storedImages).map(([repository, ids]) => [repository, [...ids]]));
   let staleNetwork = hostControlNetwork?.stale === true;
   // `docker ps --filter network=...` stops listing what has been removed, so
   // the repair can be observed converging instead of repeating.
@@ -363,6 +367,15 @@ const createFakeRunner = ({
         ? pullOverride(args.at(-1))
         : { exitCode: 0, stdout: 'pulled', stderr: '' };
     }
+    if (args[0] === 'image' && args[1] === 'ls') {
+      const ids = images.get(args.at(-1)) || [];
+      return { exitCode: 0, stdout: ids.map((id) => `${id} ${id}\n`).join(''), stderr: '' };
+    }
+    if (args[0] === 'image' && args[1] === 'rm') {
+      const removed = new Set(args.slice(2));
+      for (const [repository, ids] of images) images.set(repository, ids.filter((id) => !removed.has(id)));
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
     if (args[0] === 'image' && args[1] === 'inspect') {
       if (inspectOverride) return inspectOverride(args.at(-1));
       const reference = args.at(-1);
@@ -390,7 +403,7 @@ const createFakeRunner = ({
     }
     throw new Error(`Unexpected Docker argv: ${args.join(' ')}`);
   };
-  return { calls, runProcess, database };
+  return { calls, runProcess, database, images };
 };
 
 const createManager = ({
@@ -893,6 +906,10 @@ describe('Electron-owned Docker Bot runtime manager', () => {
       [...composePrefix, 'up', '--detach', '--remove-orphans'],
       [...composePrefix, 'ps', '--format', 'json'],
       [...composePrefix, 'port', 'database-rest', '3000'],
+      // Superseded release images are looked for once the state is recorded.
+      ...BOT_RUNTIME_IMAGE_KEYS.map((key) => [
+        'image', 'ls', '--digests', '--no-trunc', '--format', '{{.ID}} {{.Digest}}', manifest.images[key].repository,
+      ]),
     ]);
     expect(runner.calls.every(({ file, shell }) => file === DOCKER && shell === undefined)).toBe(true);
     // SQL crosses stdin only, never argv.
@@ -1433,6 +1450,46 @@ describe('Electron-owned Docker Bot runtime manager', () => {
       previous: { fingerprint: desired.fingerprint },
       staged: null,
     });
+  });
+
+  test('removes superseded release images after an update but keeps the rollback release', async () => {
+    const digest = (character) => `sha256:${character.repeat(64)}`;
+    const previous = releaseManifest({ releaseId: '1.2.2', digestCharacter: 'b' });
+    const desired = releaseManifest({ releaseId: '1.2.3', digestCharacter: 'c' });
+    const stateStore = createMemoryStateStore({ version: 1, current: previous, previous: null, staged: null });
+    const storedImages = Object.fromEntries(BOT_RUNTIME_IMAGE_KEYS.map((key) => [
+      desired.images[key].repository,
+      [digest('a'), digest('b'), digest('c')],
+    ]));
+    const runner = createFakeRunner({ storedImages });
+    const { manager } = createManager({ manifest: desired, runner, stateStore });
+
+    expect(await manager.update()).toMatchObject({ state: 'healthy', changed: true });
+
+    const removals = runner.calls.filter(({ args }) => args[0] === 'image' && args[1] === 'rm');
+    expect(removals.map(({ args }) => args)).toEqual([['image', 'rm', digest('a')]]);
+    for (const key of BOT_RUNTIME_IMAGE_KEYS) {
+      expect(runner.images.get(desired.images[key].repository)).toEqual([digest('b'), digest('c')]);
+    }
+  });
+
+  test('never lets a failed image cleanup fail the update', async () => {
+    const previous = releaseManifest({ releaseId: '1.2.2', digestCharacter: 'b' });
+    const desired = releaseManifest({ releaseId: '1.2.3', digestCharacter: 'c' });
+    const stateStore = createMemoryStateStore({ version: 1, current: previous, previous: null, staged: null });
+    const fake = createFakeRunner({
+      storedImages: { [desired.images.supervisor.repository]: [`sha256:${'a'.repeat(64)}`] },
+    });
+    const runner = {
+      ...fake,
+      runProcess: async (file, args, options) => (args[0] === 'image' && args[1] === 'rm'
+        ? { exitCode: 1, stdout: '', stderr: 'image is being used by stopped container' }
+        : fake.runProcess(file, args, options)),
+    };
+    const { manager } = createManager({ manifest: desired, runner, stateStore });
+
+    expect(await manager.update()).toMatchObject({ state: 'healthy', changed: true });
+    expect(stateStore.reads()).toMatchObject({ current: { fingerprint: desired.fingerprint } });
   });
 
   test('waits for fixed services to converge before committing an update', async () => {

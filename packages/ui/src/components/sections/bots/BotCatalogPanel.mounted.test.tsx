@@ -130,3 +130,53 @@ test('polls pending hosted discovery until completion and keeps failures separat
     expect(container.textContent).toContain('bot_import_source_unavailable');
   } finally { await act(async () => { root.unmount(); });  }
 }), 10_000);
+
+test('asks the hosted workspace only when the owner does', async () => withDom(async (container) => {
+  const { createRoot } = await import('react-dom/client');
+  const root = createRoot(container as unknown as Element);
+  let answer: 'quota' | 'found' = 'quota';
+  let asked = false;
+  let checks = 0;
+  const cloud = () => (!asked ? null : answer === 'found'
+    ? { hasBots: true, checkedAt: '2026-09-28T00:00:00.000Z', code: null }
+    : { hasBots: null, checkedAt: '2026-09-28T00:00:00.000Z', code: 'bot_import_source_quota_exceeded' });
+  const importStatus = () => ({ sourceConfigured: true, cloud: cloud(), import: null, pending: asked && answer === 'found' });
+  const api: BotsApi = {
+    ...botsApi,
+    getCatalogStatus: async () => status({ import: importStatus() }),
+    listCatalogBackups: async () => ({ backups: [] }),
+    checkCatalogImportSource: async () => { checks += 1; asked = true; return importStatus(); },
+  };
+  try {
+    await act(async () => { root.render(<I18nProvider><BotCatalogPanel variant="full" api={api} /></I18nProvider>); });
+    // Nothing was asked: no notice, only the quiet request.
+    expect(checks).toBe(0);
+    expect(container.textContent).not.toContain('Hosted Project Is Over Its Quota');
+    expect(container.textContent).not.toContain('Hosted Bots Can Be Imported');
+
+    await act(async () => { buttons(container, 'Check for Hosted Bots')?.click(); });
+    expect(checks).toBe(1);
+    expect(container.textContent).toContain('Hosted Project Is Over Its Quota');
+    expect(container.textContent).toContain('have not been deleted');
+    expect(buttons(container, 'Check for Hosted Bots')).toBeNull();
+
+    answer = 'found';
+    await act(async () => { buttons(container, 'Check Again')?.click(); });
+    expect(checks).toBe(2);
+    expect(container.textContent).toContain('Hosted Bots Can Be Imported');
+    expect(buttons(container, 'Import Bots')).not.toBeNull();
+  } finally { await act(async () => { root.unmount(); }); }
+}));
+
+test('keeps the hosted request out of the chat', async () => withDom(async (container) => {
+  const { createRoot } = await import('react-dom/client');
+  const root = createRoot(container as unknown as Element);
+  const api: BotsApi = {
+    ...botsApi,
+    getCatalogStatus: async () => status({ import: { sourceConfigured: true, cloud: null, import: null, pending: false } }),
+  };
+  try {
+    await act(async () => { root.render(<I18nProvider><BotCatalogPanel api={api} /></I18nProvider>); });
+    expect(container.textContent).toBe('');
+  } finally { await act(async () => { root.unmount(); }); }
+}));

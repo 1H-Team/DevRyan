@@ -40,6 +40,15 @@ describe('ManagedSettingsView capabilities', () => {
     expect(source).toContain("ariaLabel={t('settings.plugins.tabs.aria')}");
   });
 
+  test('folds Session Defaults into one Agents destination without tabs', () => {
+    expect(source).toContain("id: 'agents',");
+    expect(source).toContain('slugs: agentsPages.map((agentsPage) => agentsPage.slug)');
+    expect(source).toContain("activeSlug === 'sessions' ? <PreparedSessionDefaultsPage /> : <PreparedAgentsPage />");
+    expect(source).toContain('<PreparedAgentsSettingsPicker />');
+    expect(source).not.toContain("section={'sessions'}");
+    expect(source).not.toContain('tabs={agentsPages.map');
+  });
+
   test('shows Providers without a Usage tab and keeps Usage only as a fallback', () => {
     expect(source).toContain("return providers ? [providers] : usage ? [usage] : [];");
     expect(source).toContain("settingsPage === 'usage' && providerFallback");

@@ -136,9 +136,27 @@ Bots visible; authentication and recovery errors require user action. Failed
 catalog reads record `bot.catalog.read_failed` with only route, status, error
 code and catalog state in the diagnostic journal.
 
-Hosted-import status includes `checking` while its background discovery runs.
-Bot Storage polls only while discovery or a storage operation is in progress;
-hosted discovery failures do not block local Bots. A successful empty local
+The UI requests the catalog only while `catalogAvailable` is true, so an
+unavailable catalog produces no catalog read and no `bot.catalog.read_failed`
+record. The sidebar and Settings → Bots then show the capability state itself
+(for example "Docker Desktop isn't running") with Retry, never an open-ended
+loading state. Retry reads `GET /api/bots/capabilities?refresh=1`, which
+bypasses the cached Docker probe and restarts a plainly unavailable catalog at
+once instead of at the end of its backoff (up to 60 seconds). While Docker
+Desktop is stopped the macOS app also offers **Open Docker Desktop**; DevRyan
+never starts Docker Desktop on its own.
+
+Hosted discovery runs by itself (at most once an hour) only while Supabase is
+connected. With Supabase off or absent the hosted project is contacted solely
+when the owner asks: Bot Storage offers **Check for Hosted Bots** when a hosted
+project is saved on this host (`import.sourceConfigured`), and
+`POST /api/bots/database/import/check` performs that one read. A failed check
+names its cause (for example a hosted project that is over its quota, which
+answers 402 until service is restored there) and offers **Check Again**; an
+explicit check also outranks an earlier "Not Now". Hosted-import status
+includes `checking` while discovery runs. Bot Storage polls only while
+discovery or a storage operation is in progress; hosted discovery failures do
+not block local Bots. A successful empty local
 catalog does not establish that older hosted Bots are gone: check import status
 and verified backups before choosing a recovery action.
 
@@ -189,7 +207,8 @@ when none exists), Resume Bots, Resume Import, or Import Bots.
 ### Importing hosted Bots
 
 An empty local catalog never reads as deleted hosted Bots: the owner sees that
-hosted Bots can be imported. Import is offline and owner-confirmed (other
+hosted Bots can be imported (after discovery while connected, or after their
+own check otherwise). Import is offline and owner-confirmed (other
 writers stopped); it never writes to the cloud:
 
 1. Export uses a GET-only allowlisted reader with bounded (32 MiB) responses;
@@ -620,6 +639,14 @@ rollback write their committed installation record only after that convergence;
 failed updates retain the prior current manifest and staged candidate. Every
 finished lifecycle operation publishes `ready` or `failed`, never an orphaned
 intermediate phase.
+
+Release images are pulled by digest, so Docker keeps each superseded digest as
+an untagged image. After committing the installation record, the manager
+removes every image of the release repositories that is not the current,
+previous, or staged digest. Removal never uses `--force`: an image a container
+still uses, or one also tagged elsewhere, is left in place. Pruning is best
+effort and never fails the operation. Development-channel images are never
+pruned.
 
 Once Docker is healthy, the in-process server reconciles and starts shared Bot
 infrastructure and warms the model catalog. This boundary does not lease model

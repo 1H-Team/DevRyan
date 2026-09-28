@@ -542,7 +542,8 @@ export async function createMultiUserRuntime({
   // every Supabase state (On, Off, absent, unreachable or revoked).
   const botOwner = await createLocalBotOwner({ vault: connection.vault });
   // The hosted catalog stays readable for a one-time import even while Off;
-  // an import never enables Supabase and never writes to it.
+  // an import never enables Supabase and never writes to it. While Off it is
+  // read only on the owner's request, never in the background.
   const readBotCloudSource = () => (config.configured && config.url && config.secretKey
     ? { url: config.url, secretKey: config.secretKey }
     : null);
@@ -1085,6 +1086,7 @@ export async function createMultiUserRuntime({
     localOwner: botOwner,
     searchCloudDirectory: searchBotDirectory,
     readCloudSource: readBotCloudSource,
+    discoverCloudSource: true,
     resolveVerifiedSourceOwner: resolveVerifiedBotSourceOwner,
     resolvePrincipal: resolveBotPrincipal,
     audit,

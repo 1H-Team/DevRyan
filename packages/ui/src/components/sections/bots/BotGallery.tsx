@@ -5,8 +5,10 @@ import {
 } from '@remixicon/react';
 
 import type { BotSummary } from '@/lib/botsApi';
+import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { BotAvatar } from '@/components/bots/BotAvatar';
+import { READY_BOT_CATALOG, type BotCatalogReadiness } from '@/components/bots/botPresentation';
 
 const lifecycleDot = (lifecycle: BotSummary['lifecycle']): string => {
   if (lifecycle === 'active') return 'bg-[var(--status-success)]';
@@ -18,7 +20,8 @@ const lifecycleDot = (lifecycle: BotSummary['lifecycle']): string => {
 export type BotGalleryProps = {
   bots: readonly BotSummary[];
   selectedBotId: string | null;
-  loading?: boolean;
+  /** Why the catalog is not listed yet; defaults to a catalog that was read. */
+  readiness?: BotCatalogReadiness;
   error?: string | null;
   canCreate: boolean;
   onSelect: (botId: string) => void;
@@ -28,12 +31,15 @@ export type BotGalleryProps = {
 export const BotGallery: React.FC<BotGalleryProps> = ({
   bots,
   selectedBotId,
-  loading = false,
+  readiness = READY_BOT_CATALOG,
   error = null,
   canCreate,
   onSelect,
   onCreate,
-}) => (
+}) => {
+  const { t } = useI18n();
+  const status = readiness.messageKey ? t(readiness.messageKey) : null;
+  return (
   <aside className="flex min-h-0 w-full shrink-0 flex-col border-b border-border bg-sidebar md:w-64 md:border-b-0 md:border-r">
     <div className="flex items-start justify-between gap-3 border-b border-border px-3 py-3">
       <div className="min-w-0">
@@ -53,15 +59,15 @@ export const BotGallery: React.FC<BotGalleryProps> = ({
       ) : null}
     </div>
 
-    <div className="min-h-0 flex-1 overflow-y-auto p-1.5" aria-busy={loading || undefined}>
+    <div className="min-h-0 flex-1 overflow-y-auto p-1.5" aria-busy={readiness.pending || undefined}>
       {bots.length > 0 && error ? <p className="px-2 py-3 typography-micro text-muted-foreground" role="alert">{error}</p> : null}
-      {loading && bots.length === 0 ? (
-        <p className="px-2 py-3 typography-ui text-muted-foreground" role="status">Loading Bots…</p>
-      ) : error && bots.length === 0 ? (
+      {readiness.pending && bots.length === 0 ? (
+        <p className="px-2 py-3 typography-ui text-muted-foreground" role="status">{status}</p>
+      ) : (error || readiness.kind !== 'ready') && bots.length === 0 ? (
         <div className="px-3 py-8 text-center" role="alert">
           <RiRobot2Line className="mx-auto h-5 w-5 text-muted-foreground/60" aria-hidden />
           <p className="mt-2 typography-ui-label text-foreground">Catalog unavailable</p>
-          <p className="mt-1 typography-micro text-muted-foreground">{error}</p>
+          <p className="mt-1 typography-micro text-muted-foreground">{error ?? status}</p>
         </div>
       ) : bots.length === 0 ? (
         <div className="px-3 py-8 text-center">
@@ -107,4 +113,5 @@ export const BotGallery: React.FC<BotGalleryProps> = ({
       )}
     </div>
   </aside>
-);
+  );
+};

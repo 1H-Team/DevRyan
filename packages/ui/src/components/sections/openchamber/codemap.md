@@ -6,17 +6,29 @@ Feature sections for the Settings experience (providers, projects, behavior, des
 ## Design
 Section-per-domain pattern with shared primitives for consistency. The About surface keeps the DevRyan updater independent from the read-only OpenCode version comparison, which shows active, latest stable, and DevRyan-supported runtime versions without mutating or restarting OpenCode.
 
-`AgentModelDefaultsSettings.tsx` is the managed-developer Sessions editor for
-single-model agent defaults. It is available only with Host Settings and Agents
-Read/Edit, matching the Agents-page editor. Rows show inherited/personal
-provenance, save only through the service API, and reset to live host
-inheritance. Council remains a visible host-managed exception because its
-ordered roster is composite.
+Session defaults, the per-agent model summary, the OpenCode binary path and
+Agent Browser Control are composed by `components/sections/agents/` (Session
+Defaults and Runtime entries of Settings → Agents); the components they reuse
+from this folder keep their own loading and persistence.
 
-`OpenChamberVisualSettings.tsx` treats Code Font independently from Terminal
-Font Size and Terminal Quick Keys. `visualSettingsPolicy.ts` hides terminal-only
-rows, tooltips, and empty sections when the effective Terminal capability is
-disabled, while stored terminal preferences remain untouched.
+Settings → Appearance: `OpenChamberVisualSettings.tsx` is a composition root.
+`appearance/visibleSettings.ts` orders eight sections (Theme, Typography,
+Layout, Conversation, Code & Files, Composer, Regional, Mobile & Install) and
+drops rows the page, device or host cannot show. Each `appearance/*Section.tsx`
+subscribes to its own store fields and keeps that setting's persistence path
+(direct `updateDesktopSettings` handlers, `lib/appearanceAutoSave.ts`, theme
+context, or persisted UI store). Every row has a visible description through
+the shared `SettingsField` primitives; single choices use option cards, themes
+use `ThemeSwatch` cards painted from each theme's own colors (color properties
+only). With `preview`, `AppearancePreview.tsx` renders a static mock chat that
+follows the live CSS variables for theme, fonts, text size and density, plus a
+chat-width minimap; it never imports the real chat, Markdown, Mermaid or diff
+renderers. It sits in a sticky side column when the page container is at least
+56rem wide and behind a Show Preview toggle otherwise. The Chat page reuses the
+same sections without the preview. Code Font stays independent from Terminal
+Font Size and Terminal Quick Keys: `visualSettingsPolicy.ts` hides terminal-only
+rows and empty sections when the effective Terminal capability is disabled,
+while stored terminal preferences remain untouched.
 
 `NotificationSettings.tsx` has one foreground web-notification activation path.
 `notificationToggle.ts` requests browser permission at most once from the user
@@ -28,7 +40,7 @@ editor when notification controls become visible. Background push-subscription
 controls remain separate.
 
 ## Flow
-Settings navigation selects a section; section reads/writes config through hooks/APIs. `AboutSettings.tsx` is also routed as the cross-runtime Settings → About page. Its Data Retention section owns session cleanup and one unified Error Logs control: session-count/size status, export, and clearing the past 24 hours, 7 days, 14 days, or all logs. In Electron, the confirmed all-logs clear also removes the Chromium application cache and shows its size on a second line; bounded time ranges leave the cache untouched, and chat history is never part of either operation. `OpenCodeStorageSettings.tsx` follows as the OpenCode Storage block: database size, WAL, event rows, reclaimable space, the last automatic cleanup, a Dry Run that reports what a compaction would remove, and Compact Now (confirmed; restarts the agent runtime and polls until the run lands). It renders only when the runtime diagnostics API exposes the optional `getOpenCodeStorage`/`compactOpenCodeStorage` members (web/Electron). Desktop-only components such as `DesktopKeepAwakeSettings.tsx` and `DesktopNetworkSettings.tsx` appear only for the local desktop origin.
+Settings navigation selects a section; section reads/writes config through hooks/APIs. `AboutSettings.tsx` is also routed as the cross-runtime Settings → About page. `SessionRetentionSettings.tsx` exports the session auto-cleanup rows (rendered by Session Defaults) and About's Data & Storage block, which owns one unified Error Logs control: session-count/size status, export, and clearing the past 24 hours, 7 days, 14 days, or all logs. In Electron, the confirmed all-logs clear also removes the Chromium application cache and shows its size on a second line; bounded time ranges leave the cache untouched, and chat history is never part of either operation. `OpenCodeStorageSettings.tsx` follows as the OpenCode Storage block: database size, WAL, event rows, reclaimable space, the last automatic cleanup, a Dry Run that reports what a compaction would remove, and Compact Now (confirmed; restarts the agent runtime and polls until the run lands). It renders only when the runtime diagnostics API exposes the optional `getOpenCodeStorage`/`compactOpenCodeStorage` members (web/Electron). About's Desktop App block renders `DesktopKeepAwakeSettings.tsx` and `DesktopNetworkSettings.tsx` only for the local desktop origin. Chat settings own Open Files in Preview Mode (`defaultFileViewerPreview`).
 
 `TunnelSettings.tsx` owns managed-remote fixed-origin profiles. It edits `originPort`, shows the exact
 Cloudflare service URL, and displays the stable-origin-to-active-port relay mapping returned by the
@@ -38,6 +50,14 @@ account login; Off exposes a private owner link with QR/copy and replacement-lin
 Start/restart remain available to local owners independently of principal scope; the server
 enforces authentication. `tunnelStatusPresentation.ts` selects the usable URL from that policy.
 Managed startup never submits Bot selections. Explicit Bot-link issuance is separate from startup.
+
+`PasskeySettings.tsx` manages passkeys for the local UI password lock
+(`--ui-password` / `OPENCHAMBER_UI_PASSWORD`) and is mounted on the local User
+Management page. It renders nothing unless `/auth/passkey/status` reports
+passkeys enabled, which excludes hosts without the lock, tunnel scope and
+multi-user mode. Listing and revoking work without WebAuthn; only adding a
+passkey requires a secure context. Sign Out Everywhere confirms first because
+the host also deletes every saved passkey and rotates its session secret.
 
 `useGitHubDeviceFlow.ts` owns the reusable OAuth start/poll/cancel flow and
 `GitHubDeviceFlow.tsx` renders its shared verification panel for local and
@@ -51,8 +71,7 @@ Integrated with views, lib adapters, and settings/auth stores. `OpenCodeVersionS
 ## Loading boundaries
 
 `OpenChamberPage.tsx` is a lightweight layout selecting one resource from
-`openChamberSectionResources.ts`. Appearance/Chat share `VisualSectionContent.tsx`;
-Sessions composition lives in `SessionsSectionContent.tsx`. Shortcuts,
-Notifications, Voice and Tunnel load independently. The section-less combined
-layout is preserved in lazy `LegacyOpenChamberContent.tsx`. Preparing a section
-loads the same resource that rendering consumes, without fetching section data.
+`openChamberSectionResources.ts`. Appearance/Chat share `VisualSectionContent.tsx`; Shortcuts, Notifications,
+Voice and Tunnel load independently. Every caller names its section. Preparing
+a section loads the same resource that rendering consumes, without fetching
+section data.

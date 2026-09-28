@@ -50,7 +50,8 @@ describe('AgentBrowserControlSettings', () => {
     expect(source).not.toContain('useBrowserAgentStore');
     expect(source).toContain('installerStatus?.expectedVersion');
     expect(source).toContain('installerStatus?.installedVersion');
-    expect(source).toContain('installerStatus?.issues?.map');
+    expect(source).toContain('[...(installerStatus?.issues ?? []), ...(installerStatus?.recording?.issues ?? [])].map');
+    expect(source).toContain('installerStatus.recording.ok');
     expect(source).toContain('skill.conflicts');
     expect(source).toContain('skill.issues');
     expect(source).toContain("skill.state === 'conflict'");
@@ -60,7 +61,7 @@ describe('AgentBrowserControlSettings', () => {
   });
 
   test('only reports repair success after setup was applied and managed OpenCode restarted', () => {
-    expect(source).toContain('status.ok && status.applied === true && status.restartSucceeded === true');
+    expect(source).toContain('status.ok && status.recording?.ok !== false && !status.recording?.issues?.length && status.applied === true && status.restartSucceeded === true');
     expect(source).toContain('setInstallerError(failureMessage)');
     expect(source).toContain('toast.error(failureMessage)');
     expect(source).toContain("installerStatus?.state !== 'restart-failed'");

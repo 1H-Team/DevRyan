@@ -9,9 +9,9 @@ describe('composer account-default isolation', () => {
     expect(source).not.toContain('/agent-defaults/');
   });
 
-  test('keeps explicit account persistence in the Sessions settings editor', () => {
+  test('keeps explicit account persistence in the Agents settings editor', () => {
     const source = readFileSync(
-      new URL('../sections/openchamber/AgentModelDefaultsSettings.tsx', import.meta.url),
+      new URL('../sections/agents/AgentsPage.tsx', import.meta.url),
       'utf8',
     );
 
