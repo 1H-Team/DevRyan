@@ -32,6 +32,15 @@ describe('packaged delegation permissions', () => {
     expect(frontmatter.permission.devryan_task).toBe('deny');
   });
 
+  it('hides Slim background-task tools from Orchestrator, which delegates only through devryan_task', () => {
+    // Slim's task_status/task_reply/... resolve only Slim-board jobs, which DevRyan never creates.
+    const { permission } = readFrontmatter('orchestrator');
+    expect(permission['task_*']).toBe('deny');
+    const keys = Object.keys(permission);
+    expect(keys.indexOf('task_*')).toBeGreaterThan(keys.indexOf('*'));
+    expect(permission.devryan_task).toBe('allow');
+  });
+
   it('reserves managed delegation for Orchestrator', () => {
     const managedDelegators = packagedAgentNames.filter((name) => (
       readFrontmatter(name).permission.devryan_task === 'allow'

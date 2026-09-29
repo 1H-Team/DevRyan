@@ -356,15 +356,28 @@ export const summarizeGraders = (graders = []) => {
   };
 };
 
-export const gradeRoutingOutcome = ({ caseId, rootSessionId, snapshot, childSessionIds = [], evidence } = {}) => {
+// Child sessions with at least one completed (not errored) mutation. A child
+// that only failed to write, e.g. in another workspace, does not qualify.
+const completedMutationSessionIds = (sessionTree) => new Set((Array.isArray(sessionTree) ? sessionTree : [])
+  .filter(entry => (entry?.messages ?? []).some(message => (message?.parts ?? []).some(part => (
+    part?.type === 'tool' && TOOL_FAMILIES.mutation.has(normalizeTool(part.tool)) && part.state?.status === 'completed'
+  ))))
+  .map(entry => entry.sessionId));
+
+export const gradeRoutingOutcome = ({ caseId, rootSessionId, snapshot, childSessionIds = [], evidence, sessionTree } = {}) => {
   const scenario = ROUTING_CASES[caseId];
   const tasks = Array.isArray(snapshot?.tasks) ? snapshot.tasks : [];
   const observed = Boolean(scenario && rootSessionId && snapshot && snapshot.available !== false && Array.isArray(snapshot.tasks));
-  const ownTask = task => task.rootSessionId === rootSessionId && task.agent === scenario.agent;
-  const routing = scenario?.agent ? (scenario.multiple ? tasks.length >= 1 && tasks.every(ownTask) : tasks.length === 1 && ownTask(tasks[0]))
+  const companions = scenario?.companions ?? [];
+  const ownTasks = tasks.filter(task => task.agent === scenario?.agent);
+  const mutating = completedMutationSessionIds(sessionTree);
+  const routing = scenario?.agent
+    ? ownTasks.length >= 1 && tasks.length <= (scenario.maxChildren ?? 1)
+      && tasks.every(task => task.rootSessionId === rootSessionId && (task.agent === scenario.agent || companions.includes(task.agent)))
+      && (scenario.readOnly || ownTasks.every(task => mutating.has(task.childSessionId)))
     : tasks.length === 0 && childSessionIds.length === 0;
   const correct = scenario?.kind === 'footer' ? evidence?.located === true && evidence.cause === true && evidence.verification === true
-    : scenario?.kind === 'external' ? evidence?.cited === true && evidence.flag === true
+    : scenario?.kind === 'external' ? evidence?.cited === true && evidence.flag === true && evidence.defaultValue === true
     : scenario?.kind === 'inventory' ? evidence?.counts?.identity === 180 && evidence.counts.billing === 180 && evidence.counts.session === 180 && evidence.counts.elevated === 135 : true;
   return result(`${caseId}.specialist`, observed && routing && correct);
 };

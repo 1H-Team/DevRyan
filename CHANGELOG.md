@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.20] - 2026-09-29
+
+- Orchestrator no longer sees Oh My OpenCode Slim's background-job tools (`task_status`, `task_reply` and the rest). They work only for Slim's own jobs, which DevRyan never creates, so it now delegates and follows up only through DevRyan's managed tasks.
+- Orchestrator starts Librarian beside Explorer whenever a task depends on current external or version-specific facts, including single-area tasks, and answers stable, general programming questions without a web lookup.
+- Agent routing evaluations now allow at most one same-owner review follow-up and require every implementing specialist to complete its own edit, so a retry after a child worked in the wrong project no longer passes. New cases cover a direct typo fix (no specialist) and real Plan mode followed by "implement plan" (Fixer keeps ownership), and the documentation case checks the documented default value. Routing docs now describe the narrower direct-edit rule.
+
 ## [1.2.19] - 2026-09-29
 
 - Orchestrator delegates implementation to specialists again. After Explorer discovery, every bug fix and non-design code change goes to Fixer, every visual change (including fully specified tweaks and approved plans) goes to Designer, and current external documentation goes to Librarian, alongside Explorer when a task depends on it. Orchestrator edits directly only mechanical typo, comment or wording fixes. Plan mode dispatches Explorer and Librarian, and plan approval keeps specialist ownership.

@@ -3,6 +3,7 @@ import { resolveProviderPromptTools } from '../../packages/orchestration-runtime
 import { createManagedRecoveryMessageId } from '../../packages/orchestration-runtime/transport-recovery.js';
 import { redactUrl } from './report.mjs';
 import { retainPrivateToolInterval } from './tool-evidence.mjs';
+import { loadPlanModeInstruction } from './plan-mode.mjs';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 const DEFAULT_POLL_INTERVAL_MS = 250;
@@ -232,7 +233,7 @@ export const createEvaluationClient = (options = {}) => {
       }
       return session;
     },
-    async promptSession(sessionId, directory, selection, prompt, signal) {
+    async promptSession(sessionId, directory, selection, prompt, signal, promptOptions = {}) {
       const tools = resolveProviderPromptTools(selection.providerId, selection.agent, {
         readOnly: normalizeString(selection.agent).toLowerCase() === 'oracle',
       });
@@ -249,7 +250,10 @@ export const createEvaluationClient = (options = {}) => {
           },
           ...(selection.variant === null ? {} : { variant: selection.variant }),
           ...(tools ? { tools } : {}),
-          parts: [{ type: 'text', text: prompt }],
+          // Plan mode is the composer's synthetic preface only; it adds no tool overrides.
+          parts: promptOptions.planMode === true
+            ? [{ type: 'text', text: loadPlanModeInstruction(), synthetic: true }, { type: 'text', text: prompt }]
+            : [{ type: 'text', text: prompt }],
         },
         signal,
         label: 'session.prompt_async',
@@ -965,7 +969,7 @@ export const runSessionTurn = async (options = {}) => {
     const session = await client.createSession(directory, title, signal);
     rootSessionId = session.id;
     knownSessionIds.add(rootSessionId);
-    await client.promptSession(rootSessionId, directory, selection, prompt, signal);
+    await client.promptSession(rootSessionId, directory, selection, prompt, signal, { planMode: options.planMode === true });
     let terminal = await waitForTerminalGraph({
       client,
       rootSessionId,

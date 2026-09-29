@@ -21,7 +21,7 @@ A user-owned plugin (`ponytail`, full mode, installed September 21) appends a "l
   - `fixer` owns non-design code, bug fixes, tests and backend/config work.
   - `designer` owns every visual or UX change, including fully specified tweaks and approved plans.
   - `librarian` owns current external documentation.
-  - Orchestrator implements directly only a trivial one-file edit, Oracle-closeout remediation, or work the user declined to delegate.
+  - Orchestrator implements directly only a mechanical edit that changes no behavior or presentation (typo, comment, wording), Oracle-closeout remediation, or work the user declined to delegate. A one-line bug fix still goes to Fixer.
 - **Kept unchanged:**
   - Explorer-first discovery (2026-09-27).
   - The behavior-under-unchanged-presentation exclusion that keeps Designer off non-visual work (2026-09-09).
@@ -46,7 +46,7 @@ npm `latest` is 2.2.25 (published September 25). `3.0.0-beta.*` and the unreleas
 | Agent prompts / delegation text | **Already covered** | The orchestrator and specialist prompt sections are byte-identical to 2.2.24. The adapter still removes `agent` and `experimental.chat.system.transform`, and still restores DevRyan's agents and default agent in place. |
 | `apply_patch` rewrite | **Adopt** | Rescue matching is always on and destructive moves are blocked. The real-package checker still accepts leading-indent context drift and still rejects missing context with the same `apply_patch verification failed: Failed to find expected lines` message. |
 | `post-file-tool-nudge` removal, compaction reminder strip | **Adopt** | Fewer injected phase reminders. The phase-reminder metadata key (`oh-my-opencode-slim.phaseReminder`) is unchanged, so the adapter keeps stripping it. The reminder instructs `task(...)`, which is denied for Orchestrator. |
-| `task_reply` tool, `backgroundJobs.childInputWake` | **Already covered** | Both resolve only Slim background-board jobs created through Slim's `task` tool. Orchestrator's `task` is denied, and `devryan_task` children never enter that board. The managed context still hides `prompt`/`promptAsync`, so Slim cannot submit a wake. The health-check baseline rises from 9 to 10 tools. |
+| `task_reply` tool, `backgroundJobs.childInputWake` | **Already covered; tools denied in v1.2.20** | Both resolve only Slim background-board jobs created through Slim's `task` tool. Orchestrator's `task` is denied, and `devryan_task` children never enter that board. The managed context still hides `prompt`/`promptAsync`, so Slim cannot submit a wake. The health-check baseline rises from 9 to 10 tools. The tools were still advertised to Orchestrator through `"*": allow`, and `task_reply` invites answering a child's question, so v1.2.20 denies `task_*` in its frontmatter. |
 | Foreground fallback fixes | **Already covered** | `ForegroundFallbackManager.handleEvent` still returns early when disabled. The managed overlay keeps writing `fallback.enabled: false`. |
 | `model` chain with `inheritModelFrom` | **Already covered** | DevRyan does not configure agent model chains. |
 | `smartfetch` / `webfetch` security fixes | **Adopt** | Used by Librarian through Slim's `webfetch` tool. |
@@ -93,3 +93,36 @@ The redesign was routed correctly and Designer edited the files, but the run hit
 **Found during verification:**
 - **Claude transport working-directory leak.** The confined Claude transport kept a working directory from another project's state bucket. Claude-backed Designer children given only relative paths sometimes targeted that project, and the confinement rejected the writes. Orchestrator briefs now name files by absolute workspace path, which removed the re-dispatches in reruns. The transport root cause is tracked separately.
 - **Headless permission stalls.** Headless runs stall on `external_directory` prompts that no one answers. Those prompts were rejected during testing.
+
+## v1.2.20 follow-up (review findings)
+
+A review of the v1.2.19 release led to these changes:
+
+- **Orchestrator tools.** Orchestrator frontmatter denies `task_*`, which hides Slim's background-job tools. Asked live to list its task tools, Orchestrator returned only `devryan_task`.
+- **Explorer/Librarian wording.** The rule now reads "start `librarian` in the same dispatch as Explorer" for any goal that depends on external facts. Stable, general programming questions are answered directly.
+- **Absolute-path briefs.** The rule no longer asserts provider behavior. The Claude working-directory leak itself is tracked separately.
+- **Eval grading changes:**
+  - A per-case `maxChildren` limit replaces the unbounded same-role rule; `companions` lists the extra roles allowed.
+  - Every owning implementation child must complete an edit of its own.
+  - New cases: `routing-direct-typo`, and `routing-plan-mode-behavior`, which sends the composer's real Plan-mode preface.
+  - The docs case now also requires the documented default value.
+- **Docs and budgets.** The stale "trivial one-file edit" wording and the budget rationales were corrected.
+
+**Verification:**
+
+- **Isolated worktree with the exact release content:**
+  - lint, type-check, docs, build and `bundle:check` passed.
+  - All 17 `test:full` suites passed in a single independent pass, including scripts (746), UI (3968), web (418 files, 4636 tests) and the Tauri cargo tests (39).
+  - Chained `validate:full` attempts on a host at load 40–50 each failed once, on a different timing test each time: `controlCopy` 5 s scan, a `host-readiness` port-reuse race, and a 50 ms client deadline. All three pass in isolation, and no release file touches them.
+- **Live on the `web-verify` host:**
+
+  | Case | Result |
+  | --- | --- |
+  | `routing-direct-typo` | 0 children, 2/2 |
+  | `routing-plan-mode-behavior` | Fixer, 2/2 |
+  | `routing-external-docs` | Librarian, with the Infinity default, 2/2 |
+  | Single-area normal-mode docs task | Explorer + Librarian, then Fixer, 2/2 |
+  | Stable-knowledge question | 0 children |
+  | Natural behavior, footer plan, broad discovery (3 Explorers), explicit behavior | all passed |
+
+- **Designer live completion was not re-verified.** Every Designer case dispatched Designer, but the child failed with "Claude Code native binary … failed to launch". At that point the shared OpenCode profile's Meridian entry had been re-patched by uncommitted Claude-transport work from another session, and the released hotfix gate reports `MERIDIAN_HTTP_HOTFIX_INCOMPATIBLE` for it. The Designer path is byte-identical to v1.2.19, whose live Designer runs are recorded above.

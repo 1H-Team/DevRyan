@@ -14,7 +14,7 @@ were changed. Release publication and installation were not performed.
 > **Superseded 2026-09-28 (implementation routing).** At the user's request, the
 > direct-implementation default below was replaced by specialist-owned implementation:
 > Fixer for non-design work, Designer for every visual change, Librarian for external
-> docs; Orchestrator edits directly only trivial one-file changes. See
+> docs; Orchestrator edits directly only mechanical typo, comment or wording fixes. See
 > [the Slim 2.2.25 audit](../2026-09-28-slim-2.2.25/README.md).
 
 ## Implemented
