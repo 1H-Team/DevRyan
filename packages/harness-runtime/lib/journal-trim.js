@@ -22,14 +22,28 @@ const isEmptyObject = (value) => (
   && Object.keys(value).length === 0
 );
 
+const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+// OpenCode's unattributed `sync` bus event is `{ type, id, syncEvent }`. The
+// sanitizer never persists `syncEvent` (the same state is journaled per
+// session as bus events), so only its type and id survive storage.
 const isPropertyFreeRuntimeSync = (record, sessionKey) => {
   if (sessionKey !== RUNTIME_KEY || eventTypeOf(record) !== 'sync') return false;
   const payload = record?.payload;
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false;
+  if (!isPlainObject(payload)) return false;
   return Object.entries(payload).every(([key, value]) => (
     key === 'type'
+    || (key === 'id' && typeof value === 'string')
+    || (key === 'syncEvent' && isPlainObject(value))
     || (key === 'properties' && (value === undefined || value === null || isEmptyObject(value)))
   ));
+};
+
+// Holding the projection avoids re-serializing a large syncEvent body on
+// every coalesced arrival; the stored record is identical after sanitizing.
+const runtimeSyncProjection = (record) => {
+  const { syncEvent: _syncEvent, ...payload } = record.payload;
+  return { ...record, payload };
 };
 
 const partIdentity = (record) => {
@@ -230,7 +244,7 @@ export const createJournalTrimmer = (options = {}) => {
     }
 
     if (isPropertyFreeRuntimeSync(record, sessionKey)) {
-      return hold('runtime:sync', 'runtime-sync', record, sessionKey);
+      return hold('runtime:sync', 'runtime-sync', runtimeSyncProjection(record), sessionKey);
     }
 
     const ready = [];

@@ -76,6 +76,7 @@ export async function generateTextWithSessionModel({
   directory,
   providerID,
   modelID,
+  variant,
   agent,
   prompt,
   repairPrompt,
@@ -95,6 +96,7 @@ export async function generateTextWithSessionModel({
   const promptText = trimString(prompt);
   const startedAt = now();
   const helperAgent = trimString(agent);
+  const helperVariant = trimString(variant);
   let attempts = 0;
   const finish = (fields) => ({
     ok: false,
@@ -205,6 +207,7 @@ export async function generateTextWithSessionModel({
           body: JSON.stringify({
             ...(helperAgent ? { agent: helperAgent } : {}),
             model: { providerID: provider, modelID: model },
+            ...(helperVariant ? { variant: helperVariant } : {}),
             tools: {},
             parts: [{ type: 'text', text }],
           }),

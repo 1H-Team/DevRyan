@@ -165,9 +165,30 @@ const describeSkillCatalog = (index) => {
   return entries.join(', ');
 };
 
-const SKILL_NOT_FOUND_PATTERN = /Skill "([^"]*)" not found\./;
+// Only reached once alias resolution failed, so there is no single suggestion
+// to offer — the slug-annotated catalog is what lets the model self-correct.
+const formatSkillNotFound = (requested, index) => [
+  `Skill "${requested}" not found.`,
+  `Available skills (call them by the name shown before the parentheses, or the exact name when no slug is listed): ${describeSkillCatalog(index)}`,
+].join('\n');
 
 const SKILL_INDEX_TTL_MS = 60_000;
+
+// Native plugins receive the legacy SDK client, whose App lacks skills() (that
+// method exists only in SDK v2). Its request options accept a URL override, so
+// reuse the authenticated agents() transport to read the same native /skill
+// catalog — the approach resolveExecutionSkill in the managed-orchestration
+// plugin already relies on.
+const readSkillCatalog = async (client, directory) => {
+  const response = typeof client?.app?.skills === 'function'
+    ? await client.app.skills(directory ? { directory } : undefined)
+    : typeof client?.app?.agents === 'function'
+      ? await client.app.agents({ url: '/skill', ...(directory ? { query: { directory } } : {}) })
+      : null;
+  if (!response || response.error) return null;
+  const skills = typeof response === 'object' && 'data' in response ? response.data : response;
+  return Array.isArray(skills) ? skills : null;
+};
 
 export const DevRyanSkillContextPlugin = async (pluginContext = {}) => {
   const client = pluginContext?.client;
@@ -176,19 +197,16 @@ export const DevRyanSkillContextPlugin = async (pluginContext = {}) => {
   let cachedAt = 0;
   let inFlight = null;
 
-  const loadSkillIndex = async () => {
-    if (!client?.app?.skills) return null;
+  const loadSkillIndex = async ({ refresh = false } = {}) => {
+    if (typeof client?.app?.skills !== 'function' && typeof client?.app?.agents !== 'function') return null;
     const now = Date.now();
-    if (cachedIndex && now - cachedAt < SKILL_INDEX_TTL_MS) return cachedIndex;
+    if (!refresh && cachedIndex && now - cachedAt < SKILL_INDEX_TTL_MS) return cachedIndex;
     if (inFlight) return inFlight;
 
     inFlight = (async () => {
       try {
-        const response = await client.app.skills(
-          baseDirectory ? { directory: baseDirectory } : undefined,
-        );
-        const skills = Array.isArray(response?.data) ? response.data : response;
-        if (!Array.isArray(skills)) return cachedIndex;
+        const skills = await readSkillCatalog(client, baseDirectory);
+        if (!skills) return cachedIndex;
         cachedIndex = buildSkillAliasIndex(skills);
         cachedAt = Date.now();
         return cachedIndex;
@@ -233,29 +251,28 @@ export const DevRyanSkillContextPlugin = async (pluginContext = {}) => {
     const requested = output?.args?.name;
     if (typeof requested !== 'string' || !requested.trim()) return;
 
-    const index = await loadSkillIndex();
-    const resolved = resolveSkillAlias(requested, index);
-    if (resolved) output.args.name = resolved;
-  },
-  'tool.execute.after': async (input, output) => {
-    if (input?.tool !== 'skill') return;
-    const text = typeof output?.output === 'string' ? output.output : '';
-    const match = text.match(SKILL_NOT_FOUND_PATTERN);
-    if (!match) return;
+    const name = requested.trim();
+    let index = await loadSkillIndex();
+    // No catalog: leave the call alone so the native tool reports honestly.
+    if (!index || index.canonical.size === 0) return;
+    if (index.canonical.has(name)) return;
 
-    // The native error lists display names only, which is unusable to a model
-    // that called the directory slug. Re-render it with slugs and, when we can
-    // find one, a concrete suggestion.
-    const index = await loadSkillIndex();
-    const catalog = describeSkillCatalog(index);
-    if (!catalog) return;
+    let resolved = resolveSkillAlias(name, index);
+    if (!resolved) {
+      // A skill added within the cache TTL must not be rejected on stale data.
+      index = await loadSkillIndex({ refresh: true });
+      if (!index || index.canonical.size === 0 || index.canonical.has(name)) return;
+      resolved = resolveSkillAlias(name, index);
+    }
+    if (resolved) {
+      output.args.name = resolved;
+      return;
+    }
 
-    const suggestion = resolveSkillAlias(match[1], index);
-    output.output = [
-      `Skill "${match[1]}" not found.`,
-      suggestion ? `Did you mean "${suggestion}"? Call the skill tool again with that exact name.` : '',
-      `Available skills (call them by the name shown before the parentheses, or the exact name when no slug is listed): ${catalog}`,
-    ].filter(Boolean).join('\n');
+    // The native skill tool throws on an unknown name, so tool.execute.after
+    // never sees that failure, and its error lists display names only — useless
+    // to a model that called a directory slug. Reject here with slugs instead.
+    throw new Error(formatSkillNotFound(name, index));
   },
   };
 };

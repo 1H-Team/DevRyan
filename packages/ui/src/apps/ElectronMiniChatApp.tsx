@@ -1,3 +1,4 @@
+import { getRetentionNavigationRevision } from '@/lib/sessionRetention';
 import React from 'react';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { RuntimeAPIProvider } from '@/contexts/RuntimeAPIProvider';
@@ -57,6 +58,7 @@ const MiniChatBootstrap: React.FC<{ config: MiniChatConfig }> = ({ config }) => 
     return state.newSessionDraft.bootstrapPendingDirectory ?? state.newSessionDraft.directoryOverride ?? '';
   });
   const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
+  const initialNavigationRevision = React.useRef(getRetentionNavigationRevision());
   const openNewSessionDraft = useSessionUIStore((state) => state.openNewSessionDraft);
   const initializeApp = useConfigStore((state) => state.initializeApp);
   const isInitialized = useConfigStore((state) => state.isInitialized);
@@ -92,11 +94,6 @@ const MiniChatBootstrap: React.FC<{ config: MiniChatConfig }> = ({ config }) => 
     };
   }, [isInitialized]);
 
-  React.useEffect(() => {
-    if (config.mode !== 'session') return;
-    if (!config.directory || currentDirectory === config.directory) return;
-    setDirectory(config.directory, { showOverlay: false });
-  }, [config.directory, config.mode, currentDirectory, setDirectory]);
 
   React.useEffect(() => {
     if (config.mode !== 'draft' || !draftOpen || currentSessionId) return;
@@ -116,7 +113,7 @@ const MiniChatBootstrap: React.FC<{ config: MiniChatConfig }> = ({ config }) => 
     const session = sessions.find((entry) => entry.id === config.sessionId);
     if (!session) return;
     const directory = (session as { directory?: string | null }).directory ?? config.directory;
-    setCurrentSession(config.sessionId, directory);
+    setCurrentSession(config.sessionId, directory, { expectedNavigationRevision: initialNavigationRevision.current });
   }, [config, currentSessionId, sessions, setCurrentSession]);
 
   React.useEffect(() => {

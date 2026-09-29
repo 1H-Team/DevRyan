@@ -79,7 +79,7 @@ export interface StartWebUiServerOptions {
   createBrowserLease?: (input: {
     leaseId: string;
     metadata: BrowserLeaseMetadata;
-    onClosed: (reason?: string) => void;
+    onClosed: (detail?: { leaseId: string; reason: string }) => void;
   }) => Promise<{ wsUrl: string }>;
   touchBrowserLease?: (input: {
     leaseId: string;

@@ -7,7 +7,7 @@ import yaml from 'yaml';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 39_386;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 39_626;
 const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
   __dirname,
   '../../default-config/user-profile/oh-my-opencode-slim.json',
@@ -273,6 +273,7 @@ describe('packaged agent defaults', () => {
         },
         task: 'deny',
         council_session: 'deny',
+        'task_*': 'deny',
         devryan_task: 'allow',
         skill: 'allow',
       },

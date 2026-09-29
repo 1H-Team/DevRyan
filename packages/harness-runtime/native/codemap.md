@@ -14,6 +14,12 @@ execution roots. JavaScript owns output delivery and ledger publication. An
 abort request, process exit without a receipt, or an empty host map cannot prove
 termination.
 
+`session-spawn-darwin.c` is the macOS spawn adapter inserted into confined
+processes. It implements `posix_spawn` file actions (including the macOS 26
+`posix_spawn_file_actions_addchdir`/`addfchdir` names) with fork/exec under
+the same profile and process group. A detached spawn starts in that supervised
+group; creating a new process group or session remains denied.
+
 Build with `scripts/build-session-execution.mjs`; run the explicit native suite
 with `scripts/verify-session-execution.mjs`. These checks use disposable roots.
 The source and helper are internal implementation work, not enabled in the

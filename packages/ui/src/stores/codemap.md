@@ -71,3 +71,5 @@ child indexes are reconciled in one traversal for all affected children, skippin
 progress-only updates and retaining unchanged index references.
 The auto-resume trigger distinguishes the single-backup connection policy from
 existing quota-reset recovery.
+
+- **Multi-run creation**: `useMultiRunStore.ts` accepts an optional target project ID and uses explicit session directory routing without changing displayed project/client state. The launcher applies its guarded selection and project change only after protection.

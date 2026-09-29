@@ -1,3 +1,4 @@
+import { getRetentionNavigationRevision } from '@/lib/sessionRetention';
 import { getSafeStorage } from '@/stores/utils/safeStorage';
 import * as React from 'react';
 import {
@@ -232,6 +233,7 @@ interface NewWorktreeDialogProps {
   onWorktreeCreated?: (worktreePath: string, options?: {
     sessionId?: string;
     projectId?: string;
+    expectedNavigationRevision?: number;
   }) => void;
 }
 
@@ -497,6 +499,7 @@ export function NewWorktreeDialog({
       ?? git.listActiveGitWorktreeBootstrapOperations;
     if (!listActive) return;
     let cancelled = false;
+    const expectedNavigationRevision = getRetentionNavigationRevision();
     void listActive()
       .then(async (operations) => {
         if (cancelled) return;
@@ -510,7 +513,7 @@ export function NewWorktreeDialog({
         setBootstrapProgress(operation);
         setIsCreating(true);
         pendingFinalizeRef.current = async () => {
-          onWorktreeCreated?.(operation.directory);
+          onWorktreeCreated?.(operation.directory, { expectedNavigationRevision });
           onOpenChange(false);
         };
         try {
@@ -950,6 +953,7 @@ export function NewWorktreeDialog({
 
   // Handle worktree creation
   const handleCreate = async () => {
+    const expectedNavigationRevision = getRetentionNavigationRevision();
     if (createSubmissionInFlightRef.current) {
       return;
     }
@@ -1053,7 +1057,7 @@ export function NewWorktreeDialog({
               ? `#${linkedPrState.number} ${linkedPrState.title}`.trim()
               : t('session.newWorktree.newSessionTitle');
 
-          const session = await sessionActions.createSession(sessionTitle, metadata.path, null);
+          const session = await sessionActions.createSessionRecord(sessionTitle, metadata.path, null);
           if (!session?.id) {
             throw new Error('Failed to create session');
           }
@@ -1085,6 +1089,7 @@ export function NewWorktreeDialog({
           onWorktreeCreated?.(metadata.path, {
             sessionId: createdSessionId,
             projectId: projectRef.id,
+            expectedNavigationRevision,
           });
           void sendLinkedContextMessage({
             sessionId: createdSessionId,
@@ -1096,7 +1101,7 @@ export function NewWorktreeDialog({
             toast.error(t('session.newWorktree.error.sendGitHubContextFailed'), { description: message });
           });
         } else {
-          onWorktreeCreated?.(metadata.path, { projectId: projectRef.id });
+          onWorktreeCreated?.(metadata.path, { projectId: projectRef.id, expectedNavigationRevision });
         }
         pendingFinalizeRef.current = null;
         pendingResumeRef.current = null;

@@ -10,7 +10,7 @@ import { openChangeStore, changeKey } from './session-changes-store.js';
 import { safeChangePath, verifyAncestors } from './session-changes-snapshot.js';
 import { withCrossProcessFileLock, writeFileAtomic } from './atomic-file.js';
 import { applyMutationText, initialMutationRuns, mutationText, visibleMutationRuns } from './session-mutation-text.js';
-import { inspectMutationFile, copyMutationObject, mutationFileStamp, mutationStatStamp, GRANULAR_TEXT_BYTES } from './session-mutation-files.js';
+import { inspectMutationFile, copyMutationObject, createViewMaterializer, mutationFileStamp, mutationStatStamp, GRANULAR_TEXT_BYTES } from './session-mutation-files.js';
 import { withExecutionIO } from './execution-io-pool.js';
 import { markObjectIfUnsynced } from './object-durability.js';
 import { readSessionExecutionReceipt, removeExecutionSocketDirectory } from './session-execution.js';
@@ -59,6 +59,12 @@ const WARM_MAX_BYTES = 512 * 1024 * 1024;
 const WARM_BATCH_GAP_MS = 25;
 // Kill switches: set to exactly '0' to restore the previous behaviour.
 const fastIngest = () => process.env.DEVRYAN_LEDGER_FAST_INGEST !== '0';
+// Rows whose content is unchanged (a new inode or ctime only) cost one record
+// update each, so they install in first-build-sized batches with their
+// under-lock stamps checked concurrently; content changes keep INSTALL_BATCH.
+// A mass re-stamp otherwise committed the whole ledger once per 128 rows
+// (99 commits, 53 s, on a 12k-file project).
+const restampBatching = () => process.env.DEVRYAN_LEDGER_RESTAMP_BATCH !== '0';
 // Ledger commits write loose Git objects and plumbing never packs them. Tens
 // of thousands of loose objects make every read-tree, ls-tree -l and cat-file
 // pay a filesystem lookup per object: 0.6 s per commit, about ten commits per
@@ -557,7 +563,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     const pass = { started: Date.now(), work: null, progress: executionProgressMeter(), authoritative: !warm };
     pass.work = (async () => {
       const root = rootFor(lease.projectDirectory), gitDir = path.join(root, 'git');
-      let dirty, attempts = 0, installed = 0, ingestedBytes = 0, skipped = null, inputs = new Set();
+      let dirty, attempts = 0, installed = 0, recorded = 0, restamped = 0, ingestedBytes = 0, skipped = null, inputs = new Set();
       do {
         if (++attempts > 4) throw changeError('workspace_changing', 503);
         dirty = false;
@@ -568,12 +574,14 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         const names = await observedNames(snapshot.directory, paths, walk);
         inputs = walk.inputs;
         if (names.size > maxFiles) { skipped = 'too-large'; break; }
-        const fast = fastIngest(), batchRows = fast && paths.size === 0 ? INITIAL_INSTALL_BATCH : INSTALL_BATCH;
+        const fast = fastIngest(), restamp = fast && !warm && restampBatching();
+        const batchRows = fast && (paths.size === 0 || restamp) ? INITIAL_INSTALL_BATCH : INSTALL_BATCH;
+        const changedBatchRows = fast && paths.size === 0 ? INITIAL_INSTALL_BATCH : INSTALL_BATCH;
         // The walk just listed these directories; each is checked for symlinks
         // once per pass instead of once per file below it. Advisory only: the
         // install below re-stamps every changed file without this memo.
         const ancestors = process.env.DEVRYAN_LEDGER_ANCESTOR_MEMO === '0' ? undefined : new Set();
-        let rows = [], rowBytes = 0, carried = null;
+        let rows = [], rowBytes = 0, changedRows = 0, carried = null;
         const install = async () => {
           if (!rows.length) return;
           let written = null;
@@ -583,14 +591,19 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
             // per batch made a first build quadratic.
             const reuse = carried && repo.db.tree === carried.tree;
             const latest = reuse ? carried.latest : await activePaths(repo), disabled = reuse ? carried.disabled : await inactive(repo);
-            for (const row of rows) {
+            // Same checks, same lock; only the independent lstat work overlaps.
+            const stamps = restamp
+              ? await mapBounded(rows, (row) => { checkExecutionAdmission(); return mutationFileStamp(repo.directory, row.file); })
+              : null;
+            for (const [index, row] of rows.entries()) {
               const doc = latest.get(row.file);
               if (JSON.stringify(doc?.published ?? null) !== JSON.stringify(row.published)
-                || await mutationFileStamp(repo.directory, row.file) !== (row.entry?.observation ?? null)) { dirty = true; continue; }
+                || (stamps ? stamps[index] : await mutationFileStamp(repo.directory, row.file)) !== (row.entry?.observation ?? null)) { dirty = true; continue; }
               if (equal(doc?.published, row.entry)) {
-                if (doc?.published && row.entry) { doc.published = { ...doc.published, ...row.entry }; repo.db.set(key('files', doc.id), doc); }
+                if (doc?.published && row.entry) { doc.published = { ...doc.published, ...row.entry }; repo.db.set(key('files', doc.id), doc); restamped += 1; }
                 continue;
               }
+              recorded += 1;
               const operation = doc ? { id: randomUUID(), sequence: next(repo), active: true, origin: 'external', scope: null } : null;
               const changed = await recordFile(repo, { doc, entry: row.entry, file: row.file, operation, disabled });
               changed.published = row.entry ? { ...row.entry, path: row.file, sequence: operation?.sequence ?? 0 } : null;
@@ -606,7 +619,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
           carried = fast && written ? { tree: written.db.tree, latest: written.latest, disabled: written.disabled } : null;
           executionProgress();
           installed += rows.length;
-          rows = []; rowBytes = 0;
+          rows = []; rowBytes = 0; changedRows = 0;
           if (warm) await new Promise((resolve) => setTimeout(resolve, WARM_BATCH_GAP_MS));
         };
         const ordered = [...names];
@@ -627,15 +640,20 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
           for (const row of observed) {
             if (!row || (!row.published && !row.entry)) continue;
             rows.push(row);
+            if (!equal(row.published, row.entry)) changedRows += 1;
             // Only granular text is staged in memory; whole-content files are not.
             rowBytes += row.entry && !row.entry.whole ? row.entry.size : 0;
             ingestedBytes += row.entry?.size ?? 0;
-            if (rows.length >= batchRows || rowBytes >= INSTALL_BATCH_BYTES) await install();
+            if (rows.length >= batchRows || changedRows >= changedBatchRows || rowBytes >= INSTALL_BATCH_BYTES) await install();
             if (ingestedBytes > maxBytes) { skipped = 'too-large'; break; }
           }
         }
         await install();
       } while (dirty && !warm && !skipped);
+      // Counts only (no paths): shows what drove a large reconciliation, such
+      // as a checkout or tool that rewrote many files with identical bytes.
+      if (recorded >= INSTALL_BATCH) executionDiagnostic({ phase: 'reconciliation_install', state: 'completed', count: recorded });
+      if (restamped >= INSTALL_BATCH) executionDiagnostic({ phase: 'reconciliation_restamp', state: 'completed', count: restamped });
       // Marks that a background build is not to be repeated: a completed pass,
       // or one that met the warm budget (the first real call builds the rest).
       await fs.writeFile(path.join(root, 'observed'), '');
@@ -863,7 +881,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   };
   const prepareView = async (lease) => {
     try {
-      await fs.mkdir(lease.viewDirectory, { recursive: true, mode: 0o700 });
+      // Defined only when this preparation created the view: the fast
+      // materializer never writes into a directory it did not create.
+      const createdView = await fs.mkdir(lease.viewDirectory, { recursive: true, mode: 0o700 });
       if (lease.preparation === 'none') {
         await fs.mkdir(lease.workingDirectory, { recursive: true, mode: 0o700 });
         return await locked(lease.directory, async (repo) => {
@@ -896,16 +916,28 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       // Materialization uses immutable objects captured under the publication
       // lock; commands and copying do not hold that lock.
       const root = rootFor(lease.projectDirectory), db = await openChangeStore(root, path.join(root, 'git'), { ref: lease.snapshotRef });
-      const repo = { root, directory: lease.projectDirectory, db }, disabled = await inactive(repo);
+      const repo = { root, directory: lease.projectDirectory, db };
+      // Operation state only filters eagerly copied base runs; lazy runs are
+      // derived at publication, so the full operation scan is skipped.
+      const disabled = lease.lazyBaseRuns ? null : await inactive(repo);
       const inputSet = new Set(lease.inputs);
+      // Kill switch: DEVRYAN_VIEW_FAST_MATERIALIZE=0 (or DEVRYAN_VIEW_CLONE=0)
+      // restores the per-file temporary-file writer.
+      const fastView = createdView !== undefined && process.env.DEVRYAN_VIEW_FAST_MATERIALIZE !== '0'
+        && process.env.DEVRYAN_VIEW_CLONE !== '0'
+        ? createViewMaterializer(repo, lease.viewDirectory, { io: (action) => withExecutionIO(repo.root, action) })
+        : null;
       const base = async function* () {
         const live = [...await snapshotPaths(repo)].filter(([file, doc]) => !doc.published.deleted && !underInput(file, inputSet));
         for (let start = 0; start < live.length; start += 64) {
           // Copies overlap; ledger rows stay sequential and ordered.
           const identities = await mapBounded(live.slice(start, start + 64), async ([file, doc]) => {
             checkExecutionAdmission();
-            await write(repo, file, doc.published, lease.viewDirectory, { durable: false });
-            const stat = await fs.lstat(path.join(lease.viewDirectory, file), { bigint: true });
+            let stat = fastView ? await fastView(file, doc.published, permissions(doc.published)) : null;
+            if (!stat) {
+              await write(repo, file, doc.published, lease.viewDirectory, { durable: false });
+              stat = await fs.lstat(path.join(lease.viewDirectory, file), { bigint: true });
+            }
             // The full stamp lets publication reuse this entry for an untouched file.
             return { identity: `${stat.dev}:${stat.ino}`, stamp: mutationStatStamp(stat) };
           });
@@ -917,42 +949,46 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
           }
         }
       };
-      await db.setList(`bases/${lease.token}/files`, base());
-      await db.commit();
+      await executionPhase('view_files', () => db.setList(`bases/${lease.token}/files`, base()));
+      await executionPhase('view_commit', () => db.commit());
       noteLedgerCommit(root);
-      await git(lease.viewDirectory, ['init', '--quiet']);
-      if (lease.vcs) {
-        // Git commands can inspect the real revision and staged state without
-        // gaining write access to the original metadata or object database.
-        const common = (await git(lease.projectDirectory, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).toString().trim();
-        const metadata = (await git(lease.projectDirectory, ['rev-parse', '--absolute-git-dir'])).toString().trim();
-        if (/[\r\n]/.test(common)) throw changeError('invalid_execution_path');
-        await fs.mkdir(path.join(lease.viewDirectory, '.git', 'objects', 'info'), { recursive: true });
-        await fs.writeFile(path.join(lease.viewDirectory, '.git', 'objects', 'info', 'alternates'), path.join(common, 'objects') + '\n');
-        const head = await git(lease.projectDirectory, ['rev-parse', '--verify', 'HEAD']).then((value) => value.toString().trim(), () => null);
-        if (head) await git(lease.viewDirectory, ['update-ref', 'HEAD', head]);
-        try { await fs.copyFile(path.join(metadata, 'index'), path.join(lease.viewDirectory, '.git', 'index')); }
-        catch (cause) { if (cause.code !== 'ENOENT') throw cause; }
-      }
-      // The execution launcher enforces access to this input: read-only for
-      // dependencies, write-through for ignored output folders (see
-      // execution-inputs.js). A symlink and a private cwd alone confine nothing.
-      for (const file of lease.inputs) {
-        checkExecutionAdmission();
-        await verifyAncestors(lease.viewDirectory, file);
-        const target = path.join(lease.viewDirectory, file), source = path.join(lease.projectDirectory, file);
-        await fs.mkdir(path.dirname(target), { recursive: true });
-        let linked = source;
-        if (moduleOverlay(file) && lease.auxiliaryDirectory) {
-          const id = createHash('sha256').update(source).digest('hex').slice(0, 16);
-          const overlay = path.join(rootFor(lease.projectDirectory), 'module-overlays', id);
-          try {
-            await syncModuleOverlay({ source, overlay, caches: path.join(lease.auxiliaryDirectory, 'module-caches', id) });
-            linked = overlay;
-          } catch (cause) { if (!['ENOENT', 'ENOTDIR'].includes(cause.code)) throw cause; }
+      await executionPhase('view_git', async () => {
+        await git(lease.viewDirectory, ['init', '--quiet']);
+        if (lease.vcs) {
+          // Git commands can inspect the real revision and staged state without
+          // gaining write access to the original metadata or object database.
+          const common = (await git(lease.projectDirectory, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).toString().trim();
+          const metadata = (await git(lease.projectDirectory, ['rev-parse', '--absolute-git-dir'])).toString().trim();
+          if (/[\r\n]/.test(common)) throw changeError('invalid_execution_path');
+          await fs.mkdir(path.join(lease.viewDirectory, '.git', 'objects', 'info'), { recursive: true });
+          await fs.writeFile(path.join(lease.viewDirectory, '.git', 'objects', 'info', 'alternates'), path.join(common, 'objects') + '\n');
+          const head = await git(lease.projectDirectory, ['rev-parse', '--verify', 'HEAD']).then((value) => value.toString().trim(), () => null);
+          if (head) await git(lease.viewDirectory, ['update-ref', 'HEAD', head]);
+          try { await fs.copyFile(path.join(metadata, 'index'), path.join(lease.viewDirectory, '.git', 'index')); }
+          catch (cause) { if (cause.code !== 'ENOENT') throw cause; }
         }
-        await fs.symlink(linked, target, 'dir');
-      }
+      });
+      await executionPhase('view_inputs', async () => {
+        // The execution launcher enforces access to this input: read-only for
+        // dependencies, write-through for ignored output folders (see
+        // execution-inputs.js). A symlink and a private cwd alone confine nothing.
+        for (const file of lease.inputs) {
+          checkExecutionAdmission();
+          await verifyAncestors(lease.viewDirectory, file);
+          const target = path.join(lease.viewDirectory, file), source = path.join(lease.projectDirectory, file);
+          await fs.mkdir(path.dirname(target), { recursive: true });
+          let linked = source;
+          if (moduleOverlay(file) && lease.auxiliaryDirectory) {
+            const id = createHash('sha256').update(source).digest('hex').slice(0, 16);
+            const overlay = path.join(rootFor(lease.projectDirectory), 'module-overlays', id);
+            try {
+              await syncModuleOverlay({ source, overlay, caches: path.join(lease.auxiliaryDirectory, 'module-caches', id) });
+              linked = overlay;
+            } catch (cause) { if (!['ENOENT', 'ENOTDIR'].includes(cause.code)) throw cause; }
+          }
+          await fs.symlink(linked, target, 'dir');
+        }
+      });
       await fs.mkdir(lease.workingDirectory, { recursive: true });
       return await locked(lease.directory, async (current) => {
         if ((await current.db.get(key('leases', lease.token)))?.state === 'cancelled') throw changeError('execution_cancelled');

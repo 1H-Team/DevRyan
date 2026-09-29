@@ -30,7 +30,9 @@ Repository automation entrypoint for developer workflows: validation planning, l
 - `build-session-execution.mjs` builds the dependency-free native supervisor and
   its digest manifest in an explicit output directory. It does not install it.
 - `verify-session-execution.mjs` verifies native write confinement and process
-  termination in disposable roots. `verify-concurrent-revert-runtime.mjs` adds
+  termination in disposable roots, plus the spawn adapter through `/bin/sh` and
+  a headless Chromium launch (CDP pipe and text rendering) that is skipped when
+  no Playwright `chromium_headless_shell` is installed. `verify-concurrent-revert-runtime.mjs` adds
   the built companion OpenCode's real legacy HTTP API, restart, prompt cleanup,
   Revert and Redo around a held-open native writer. These are explicit acceptance
   commands with supplied binary paths, separate from deterministic unit suites.

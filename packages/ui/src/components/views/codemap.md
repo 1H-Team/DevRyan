@@ -32,7 +32,7 @@ exact tab; on mobile, switching hub tabs lands on that tab's list.
 ## Flow
 Navigation selects a view; view binds data hooks and renders feature sections.
 
-`GitView.tsx` treats generated commit highlights as body details, inserting a validated subject followed by a blank line and bounded bullet list. Host warnings disclose when the local fallback supplied the draft after free Zen attempts were exhausted or the catalog was unavailable.
+`GitView.tsx` treats generated commit highlights as body details, inserting a validated subject followed by a blank line and bounded bullet list. Host warnings disclose when the local fallback supplied the draft after the pinned Zen model (DeepSeek V4.1 Flash) failed, naming the failure category.
 
 ## Integration
 Connected to router/state stores and feature component trees.

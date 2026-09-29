@@ -2,8 +2,7 @@ import http from 'node:http';
 import { once } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createFreeZenCooldowns } from '@openchamber/shared-runtime';
-import { createGitZenTextTransport } from './zen-text.js';
-import { SESSION_MODEL_TEXT_ADVERTISE_ONLY_PATTERN } from '../opencode/session-model-text.js';
+import { GIT_GENERATION_ZEN_MODEL, GIT_GENERATION_ZEN_VARIANT, createGitZenTextTransport } from './zen-text.js';
 import { generateCommitMessageDirect } from './commit-message.js';
 import { generatePullRequestDescriptionDirect } from './pr-description.js';
 
@@ -54,9 +53,15 @@ describe('native OpenCode Git generation transport', () => {
       : generatePullRequestDescriptionDirect({ prompt: 'Describe the fixture', ...options });
   };
 
-  it.each(['commit', 'pr'])('%s uses native free models, rejects embedded provider errors, and deletes all helpers', async (kind) => {
+  it('pins DeepSeek V4.1 Flash at low reasoning effort', () => {
+    expect(GIT_GENERATION_ZEN_MODEL).toBe('deepseek-v4.1-flash');
+    expect(GIT_GENERATION_ZEN_VARIANT).toBe('low');
+  });
+
+  it.each(['commit', 'pr'])('%s uses native Zen models with hidden tools, rejects embedded provider errors, and deletes all helpers', async (kind) => {
     message = (res, body) => {
       expect(body.model.providerID).toBe('opencode');
+      expect(body.variant).toBe(GIT_GENERATION_ZEN_VARIANT);
       expect(body.agent).toBe(kind === 'commit' ? 'devryan-commit' : 'devryan-pr');
       if (body.model.modelID === 'a') res.end(JSON.stringify({ info: { role: 'assistant', error: { name: 'APIError', data: { statusCode: 429, message: 'private upstream detail' } } }, parts: [] }));
       else res.end(JSON.stringify({ info: { role: 'assistant' }, parts: [{ type: 'text', text: body.model.modelID === 'b' ? '{}' : drafts[kind] }] }));
@@ -65,10 +70,8 @@ describe('native OpenCode Git generation transport', () => {
     const result = await generate(kind, { onAttempt: (attempt) => attempts.push(attempt) });
     expect(result._generation).toMatchObject({ model: 'c', attempts: 3 });
     expect(attempts.map(({ reason }) => reason)).toEqual(['rate_limited', 'invalid_output', undefined]);
-    const helperPermission = [
-      { permission: '*', pattern: '*', action: 'deny' },
-      { permission: '*', pattern: SESSION_MODEL_TEXT_ADVERTISE_ONLY_PATTERN, action: 'deny' },
-    ];
+    // A lone blanket deny hides every tool; the paid model needs no advertised tools.
+    const helperPermission = [{ permission: '*', pattern: '*', action: 'deny' }];
     expect(calls.filter(({ path }) => path === '/session').map(({ body }) => body.permission)).toEqual([
       helperPermission, helperPermission, helperPermission,
     ]);

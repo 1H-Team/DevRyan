@@ -21,7 +21,7 @@ const imageCandidate: AssistantImageCandidate = {
 
 const readyState: ReadyAssistantImageTileState = {
     status: 'ready',
-    objectUrl: 'blob:one',
+    url: 'blob:one',
     mimeType: 'image/png',
     size: 12_345,
     filename: 'one.png',
@@ -30,9 +30,9 @@ const readyState: ReadyAssistantImageTileState = {
 describe('assistant image gallery presentation', () => {
     test('uses the required one, two, and responsive many-column layouts', () => {
         expect(getAssistantImageGalleryClassName(1)).toContain('grid-cols-1');
-        expect(getAssistantImageGalleryClassName(1)).toContain('max-w-2xl');
+        expect(getAssistantImageGalleryClassName(1)).toContain('max-w-md');
         expect(getAssistantImageGalleryClassName(2)).toContain('grid-cols-2');
-        expect(getAssistantImageGalleryClassName(2)).toContain('max-w-4xl');
+        expect(getAssistantImageGalleryClassName(2)).toContain('max-w-2xl');
         expect(getAssistantImageGalleryClassName(3)).toContain('grid-cols-2 sm:grid-cols-3');
     });
 
@@ -49,9 +49,17 @@ describe('assistant image gallery presentation', () => {
             size: 12_345,
         });
         expect(pointerPopup.image?.gallery).toBe(undefined);
+        expect(buildAssistantImagePopup(imageCandidate, {
+            status: 'ready',
+            url: 'https://upload.wikimedia.org/one.png',
+            filename: 'one.png',
+        }).image).toEqual({ url: 'https://upload.wikimedia.org/one.png', filename: 'one.png' });
         expect(formatExactAssistantImageSize(12_345)).toBe('12,345 B');
         expect(gallerySource).toContain("event.key !== 'Enter' && event.key !== ' '");
         expect(gallerySource).toContain('openPreview(candidate, state);');
+        // Remote sources render straight into <img>; a cross-origin blob fetch would fail without CORS.
+        expect(gallerySource).toContain('if (isSafeAssistantImageExternalUrl(preparation.url)) {');
+        expect(gallerySource).not.toContain('aspect-[4/3] min-w-0');
     });
 
     test('starts near-viewport loading once and disconnects its observer', () => {

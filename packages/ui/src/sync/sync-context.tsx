@@ -1394,11 +1394,7 @@ const resolveRootSessionId = (sessions: readonly Session[], sessionID?: string):
 }
 
 const openSessionFromToast = (sessionID: string, directory: string) => {
-  void import("./session-ui-store")
-    .then(({ useSessionUIStore }) => {
-      useSessionUIStore.getState().setCurrentSession(sessionID, directory)
-    })
-    .catch(() => undefined)
+  getSessionUIStoreIfInitialized()?.getState().setCurrentSession(sessionID, directory)
 }
 
 // Plan lifecycle detection runs after reducer state is current. It is pure
@@ -2231,9 +2227,6 @@ const removeDeletedSessionFromAllChildStores = (
   void usePermissionStore.getState().clearSessionAutoAccept(sessionID)
   useNotificationStore.getState().removeSession(sessionID)
   const sessionUI = getSessionUIStoreIfInitialized()?.getState()
-  if (sessionUI?.currentSessionId === sessionID) {
-    sessionUI.setCurrentSession(null)
-  }
   sessionUI?.retireDeletedSession(sessionID)
   useProviderRecoveryStore.getState().clearRecovery(sessionID)
   useProviderStallStore.getState().clearStall(sessionID)

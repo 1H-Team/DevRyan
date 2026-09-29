@@ -1,9 +1,10 @@
 import express from 'express';
 import request from '../../test-supertest.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createFreeZenCooldowns } from '@openchamber/shared-runtime';
 
 import { registerGitRoutes } from './routes.js';
+
+const PINNED_MODEL = 'deepseek-v4.1-flash';
 
 const fileDiff = (path, lines) => [
   `diff --git a/${path} b/${path}`,
@@ -14,23 +15,23 @@ const fileDiff = (path, lines) => [
   ...Array.from({ length: lines }, (_, index) => `+line ${index} of ${path} ${'x'.repeat(60)}`),
 ].join('\n');
 
-const exhaustedError = (failures = [{ model: 'free-a', reason: 'rate_limited', durationMs: 5 }], skipped = []) => Object.assign(
-  new Error('Unable to generate a pull request description with the available free Zen models'),
+const defaultFailures = [{ model: PINNED_MODEL, reason: 'rate_limited', durationMs: 5 }];
+
+const exhaustedError = (failures = defaultFailures, skipped = []) => Object.assign(
+  new Error(`Zen could not generate a pull request description (${PINNED_MODEL}: ${failures.at(-1)?.reason})`),
   { code: 'FREE_ZEN_EXHAUSTED', attempts: failures.length, failures, skipped },
 );
 
 // Mirrors the real generator: journals every attempt through onAttempt.
-const exhaustedGenerator = (failures, skipped) => vi.fn(async ({ onAttempt }) => {
+const exhaustedGenerator = (failures = defaultFailures, skipped = []) => vi.fn(async ({ onAttempt }) => {
   failures.forEach((failure, index) => onAttempt?.({ ...failure, attempt: index + 1, outcome: 'failed' }));
   throw exhaustedError(failures, skipped);
 });
 
 const makeApp = ({
-  fetchFreeZenModels = vi.fn(async () => [{ id: 'free-a' }, { id: 'free-b' }]),
-  getCachedFreeZenModels,
   generatePullRequestDescription = vi.fn(async ({ onAttempt }) => {
-    onAttempt?.({ model: 'free-a', attempt: 1, durationMs: 12, outcome: 'complete' });
-    return { title: 'Free Zen title', body: '## Summary\n- free', _generation: { model: 'free-a', attempts: 1, failures: [], skipped: [] } };
+    onAttempt?.({ model: PINNED_MODEL, attempt: 1, durationMs: 12, outcome: 'complete' });
+    return { title: 'Zen title', body: '## Summary\n- zen', _generation: { model: PINNED_MODEL, attempts: 1, failures: [], skipped: [] } };
   }),
   generateTextWithSessionModel = vi.fn(async () => ({ ok: false, value: null, reason: 'timeout', attempts: 1, durationMs: 60_000 })),
   listConfigAgents = vi.fn(() => []),
@@ -45,11 +46,8 @@ const makeApp = ({
   const app = express();
   app.use(express.json());
   registerGitRoutes(app, {
-    fetchFreeZenModels,
-    getCachedFreeZenModels,
     generatePullRequestDescription,
     generateTextWithSessionModel,
-    freeZenCooldowns: createFreeZenCooldowns(),
     listConfigAgents,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
@@ -103,66 +101,24 @@ describe('POST /api/git/pr-description', () => {
       }),
     });
     const response = await post(app).expect(200);
-    expect(response.body).toMatchObject({ title: 'Free Zen title', source: 'free_zen', model: 'free-a' });
+    expect(response.body).toMatchObject({ title: 'Zen title', source: 'zen', model: PINNED_MODEL });
     expect(generatePullRequestDescription.mock.calls[0][0].prompt).toBe('Return the Generate PR JSON');
   });
 
-  it('falls back to the stale catalog when the live catalog fetch fails', async () => {
-    const { app, generatePullRequestDescription } = makeApp({
-      fetchFreeZenModels: vi.fn(async () => { throw new Error('offline'); }),
-      getCachedFreeZenModels: vi.fn(() => [{ id: 'stale-a' }]),
-    });
-    const response = await post(app).expect(200);
-    expect(response.body).toMatchObject({ source: 'free_zen', attempts: [{ tier: 'free_zen', model: 'free-a', reason: null }] });
-    expect(generatePullRequestDescription).toHaveBeenCalledWith(expect.objectContaining({ models: [{ id: 'stale-a' }] }));
-  });
-
-  it('remembers the last catalog it saw and reuses it when the fetch later fails', async () => {
-    let calls = 0;
-    const { app, generatePullRequestDescription } = makeApp({
-      fetchFreeZenModels: vi.fn(async () => {
-        calls += 1;
-        if (calls === 1) return [{ id: 'remembered' }];
-        throw new Error('offline');
-      }),
-    });
-    await post(app).expect(200);
-    await post(app).expect(200);
-    expect(generatePullRequestDescription.mock.calls[1][0].models).toEqual([{ id: 'remembered' }]);
-  });
-
-  it('goes straight to the Builder session model when no free models are available', async () => {
-    const generateTextWithSessionModel = vi.fn(async () => ({
-      ok: true,
-      value: { title: 'Session title', body: '## Summary\n- session' },
-      attempts: 1,
-      durationMs: 800,
-    }));
-    const { app, generatePullRequestDescription, recordCommitTiming } = makeApp({
-      fetchFreeZenModels: vi.fn(async () => { throw new Error('offline'); }),
-      listConfigAgents: vi.fn(() => builderAgents),
-      generateTextWithSessionModel,
-    });
-    const response = await post(app).expect(200);
-    expect(generatePullRequestDescription).not.toHaveBeenCalled();
-    expect(response.body).toEqual({
-      title: 'Session title',
-      body: '## Summary\n- session',
-      source: 'session_model',
-      model: 'anthropic/claude-sonnet',
-      attempts: [{ tier: 'session_model', model: 'anthropic/claude-sonnet', reason: null, durationMs: 800 }],
-    });
+  it('always sends the pinned Zen model without a cooldown catalog', async () => {
+    const { app, generatePullRequestDescription, recordCommitTiming } = makeApp();
+    const response = await post(app, { providerId: 'openai', modelId: 'gpt-5' }).expect(200);
+    expect(response.body).toMatchObject({ source: 'zen', attempts: [{ tier: 'zen', model: PINNED_MODEL, reason: null }] });
+    expect(generatePullRequestDescription).toHaveBeenCalledWith(expect.objectContaining({ models: [PINNED_MODEL], cooldowns: null }));
     expect(recordCommitTiming).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       event: 'git_pr_description_model_attempt',
-      tier: 'session_model',
-      outcome: 'complete',
-      model: 'anthropic/claude-sonnet',
-      catalogState: 'builder',
-      source: 'session_model',
+      tier: 'zen',
+      model: PINNED_MODEL,
+      catalogState: 'pinned',
     }));
   });
 
-  it('uses the Builder model through the hidden helper agent when free Zen is exhausted', async () => {
+  it('uses the Builder model through the hidden helper agent when Zen fails', async () => {
     const generateTextWithSessionModel = vi.fn(async () => ({
       ok: true,
       value: { title: 'Session title', body: '## Summary\n- session' },
@@ -170,10 +126,7 @@ describe('POST /api/git/pr-description', () => {
       durationMs: 1_500,
     }));
     const { app, recordCommitTiming } = makeApp({
-      generatePullRequestDescription: exhaustedGenerator(
-        [{ model: 'free-a', reason: 'rate_limited', durationMs: 5 }, { model: 'free-b', reason: 'timeout', durationMs: 15_000 }],
-        [{ model: 'free-c', reason: 'cooling_down' }],
-      ),
+      generatePullRequestDescription: exhaustedGenerator([{ model: PINNED_MODEL, reason: 'timeout', durationMs: 15_000 }]),
       listConfigAgents: vi.fn(() => builderAgents),
       generateTextWithSessionModel,
     });
@@ -185,9 +138,7 @@ describe('POST /api/git/pr-description', () => {
       source: 'session_model',
       model: 'anthropic/claude-sonnet',
       attempts: [
-        { tier: 'free_zen', model: 'free-a', reason: 'rate_limited' },
-        { tier: 'free_zen', model: 'free-b', reason: 'timeout' },
-        { tier: 'free_zen', model: 'free-c', reason: 'cooling_down' },
+        { tier: 'zen', model: PINNED_MODEL, reason: 'timeout' },
         { tier: 'session_model', model: 'anthropic/claude-sonnet', reason: null },
       ],
     });
@@ -205,8 +156,7 @@ describe('POST /api/git/pr-description', () => {
     // One journal record per attempt, including tier and outcome.
     const journal = recordCommitTiming.mock.calls.map(([, payload]) => [payload.tier, payload.model, payload.outcome, payload.providerOutcome]);
     expect(journal).toEqual([
-      ['free_zen', 'free-a', 'failed', 'rate_limited'],
-      ['free_zen', 'free-b', 'failed', 'timeout'],
+      ['zen', PINNED_MODEL, 'failed', 'timeout'],
       ['session_model', 'anthropic/claude-sonnet', 'complete', 'complete'],
     ]);
   });
@@ -219,7 +169,7 @@ describe('POST /api/git/pr-description', () => {
       durationMs: 10,
     }));
     const { app } = makeApp({
-      generatePullRequestDescription: exhaustedGenerator([{ model: 'free-a', reason: 'rate_limited', durationMs: 5 }]),
+      generatePullRequestDescription: exhaustedGenerator(),
       listConfigAgents: vi.fn(() => [{ name: 'planner', model: { providerID: 'x', modelID: 'y' } }]),
       generateTextWithSessionModel,
     });
@@ -230,20 +180,20 @@ describe('POST /api/git/pr-description', () => {
 
   it('returns FREE_ZEN_EXHAUSTED with the attempts when no session model can be resolved', async () => {
     const { app, generateTextWithSessionModel } = makeApp({
-      generatePullRequestDescription: exhaustedGenerator([{ model: 'free-a', reason: 'rate_limited', durationMs: 5 }]),
+      generatePullRequestDescription: exhaustedGenerator(),
     });
     const response = await post(app).expect(502);
     expect(generateTextWithSessionModel).not.toHaveBeenCalled();
     expect(response.body).toEqual({
-      error: 'Unable to generate a pull request description with the available free Zen models',
+      error: 'Zen could not generate a pull request description (deepseek-v4.1-flash: rate_limited)',
       code: 'FREE_ZEN_EXHAUSTED',
-      attempts: [{ tier: 'free_zen', model: 'free-a', reason: 'rate_limited', durationMs: 5 }],
+      attempts: [{ tier: 'zen', model: PINNED_MODEL, reason: 'rate_limited', durationMs: 5 }],
     });
   });
 
   it('returns SESSION_MODEL_FAILED when the session model tier fails too', async () => {
     const { app } = makeApp({
-      generatePullRequestDescription: exhaustedGenerator([{ model: 'free-a', reason: 'rate_limited', durationMs: 5 }]),
+      generatePullRequestDescription: exhaustedGenerator(),
       listConfigAgents: vi.fn(() => builderAgents),
       generateTextWithSessionModel: vi.fn(async () => ({ ok: false, value: null, reason: 'timeout', attempts: 1, durationMs: 60_000 })),
     });
@@ -252,28 +202,9 @@ describe('POST /api/git/pr-description', () => {
       code: 'SESSION_MODEL_FAILED',
       error: expect.stringContaining('Builder model (anthropic/claude-sonnet)'),
       attempts: [
-        { tier: 'free_zen', model: 'free-a', reason: 'rate_limited' },
+        { tier: 'zen', model: PINNED_MODEL, reason: 'rate_limited' },
         { tier: 'session_model', model: 'anthropic/claude-sonnet', reason: 'timeout' },
       ],
-    });
-  });
-
-  it('returns NO_FREE_MODELS and CATALOG_UNAVAILABLE instead of 503 when nothing can run', async () => {
-    const empty = makeApp({ fetchFreeZenModels: vi.fn(async () => []) });
-    const emptyResponse = await post(empty.app).expect(500);
-    expect(emptyResponse.body).toEqual({
-      error: 'No free Zen models are currently available and no session model is configured',
-      code: 'NO_FREE_MODELS',
-      attempts: [],
-    });
-    expect(empty.generatePullRequestDescription).not.toHaveBeenCalled();
-
-    const offline = makeApp({ fetchFreeZenModels: vi.fn(async () => { throw new Error('offline'); }) });
-    const offlineResponse = await post(offline.app).expect(500);
-    expect(offlineResponse.body).toEqual({
-      error: 'Free Zen model catalog is unavailable',
-      code: 'CATALOG_UNAVAILABLE',
-      attempts: [],
     });
   });
 

@@ -257,6 +257,20 @@ describe('common request middleware', () => {
 });
 
 describe('managed tunnel and invitation links', () => {
+  it('preserves authentication middleware errors while instrumenting selection requests', async () => {
+    const app = express();
+    registerAuthAndAccessRoutes(app, {
+      tunnelAuthController: { classifyRequestScope: () => 'local' },
+      uiAuthController: { multiUser: false, requireAuth: (_req, _res, next) => next(new Error('fixture-auth-failure')) },
+      readSettingsFromDiskMigrated: async () => ({}), normalizeTunnelSessionTtlMs: (value) => value,
+    });
+    app.post('/api/openchamber/session-retention/selection', (_req, res) => res.json({ selected: true }));
+    app.use((error, _req, res, _next) => res.status(503).json({ error: error.message }));
+    const response = await request(app).post('/api/openchamber/session-retention/selection');
+    expect(response.status).toBe(503);
+    expect(response.body).toEqual({ error: 'fixture-auth-failure' });
+  });
+
   it('revokes tunnel grants before acknowledging a local authentication reset', async () => {
     const app = express(); const order = [];
     registerAuthAndAccessRoutes(app, {

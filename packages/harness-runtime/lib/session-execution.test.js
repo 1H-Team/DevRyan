@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { executionSocketDirectory, ownedPrivateDirectory, prepareSessionExecution, removeExecutionSocketDirectory,
+import { executionSocketDirectory, NODE_SPAWN_PRELOAD, ownedPrivateDirectory, prepareSessionExecution, removeExecutionSocketDirectory,
   sessionExecutionProfile, sweepExecutionSocketDirectories, sweepSessionTemporaryDirectories, verifySessionExecutionLauncher } from './session-execution.js';
 
 const roots = [], leases = [];
@@ -169,6 +169,61 @@ darwinTest('each execution gets a short private socket directory that cleanup re
     expect(executionSocketDirectory({ token: 'a', viewDirectory })).not.toBe(executionSocketDirectory({ token: 'b', viewDirectory }));
   } finally { await removeExecutionSocketDirectory(lease); }
   expect(await fs.lstat(executionSocketDirectory(lease)).catch((cause) => cause.code)).toBe('ENOENT');
+});
+
+darwinTest('session-scoped workers get the host browser cache, the Node spawn preload and one Chromium lookup', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-execution-browsers-')); roots.push(root);
+  const saved = { HOME: process.env.HOME, PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH,
+    NODE_OPTIONS: process.env.NODE_OPTIONS, DEVRYAN_WORKER_BROWSERS: process.env.DEVRYAN_WORKER_BROWSERS };
+  const home = path.join(root, 'home'), cache = path.join(home, 'Library', 'Caches', 'ms-playwright');
+  await fs.mkdir(cache, { recursive: true });
+  const launcher = path.join(root, 'launcher');
+  let index = 0;
+  const prepare = async (scope = { sessionID: 'ses_browser' }) => {
+    const viewDirectory = path.join(root, `call-${index += 1}`, 'worktree'); await fs.mkdir(viewDirectory, { recursive: true });
+    const lease = { token: `t${index}`, viewDirectory, ...(scope ? { scope } : {}) }; leases.push(lease);
+    const prepared = await prepareSessionExecution({ launcher, lease });
+    return { prepared, profile: await fs.readFile(prepared.profile, 'utf8') };
+  };
+  const machRules = (profile) => profile.split('\n').filter((line) => line.includes('mach-lookup'));
+  try {
+    process.env.HOME = home;
+    delete process.env.PLAYWRIGHT_BROWSERS_PATH; delete process.env.DEVRYAN_WORKER_BROWSERS;
+    process.env.NODE_OPTIONS = '--max-old-space-size=4096';
+
+    const { prepared, profile } = await prepare();
+    const preload = path.join(prepared.scratchDirectory, NODE_SPAWN_PRELOAD);
+    expect(prepared.environment.PLAYWRIGHT_BROWSERS_PATH).toBe(await fs.realpath(cache));
+    expect(prepared.environment.NODE_OPTIONS).toBe(`--require ${JSON.stringify(preload)} --max-old-space-size=4096`);
+    expect((await fs.stat(preload)).mode & 0o777).toBe(0o600);
+    expect(await fs.readFile(preload, 'utf8')).toContain(JSON.stringify(`${launcher}-spawn.dylib`));
+    expect(machRules(profile)).toEqual([
+      '(deny mach-lookup)',
+      '(allow mach-lookup (global-name-regex #"^org\\.chromium\\.Chromium\\.MachPortRendezvousServer\\.[0-9]+$"))',
+    ]);
+
+    process.env.PLAYWRIGHT_BROWSERS_PATH = '/opt/browsers';
+    expect((await prepare()).prepared.environment.PLAYWRIGHT_BROWSERS_PATH).toBe('/opt/browsers');
+    delete process.env.PLAYWRIGHT_BROWSERS_PATH;
+    await fs.rm(cache, { recursive: true });
+    const missing = await prepare();
+    expect('PLAYWRIGHT_BROWSERS_PATH' in missing.prepared.environment).toBe(false);
+    expect(missing.prepared.environment.NODE_OPTIONS).toContain(NODE_SPAWN_PRELOAD);
+
+    // Provider transports and title calls have no session scope.
+    const unscoped = await prepare(null);
+    expect('NODE_OPTIONS' in unscoped.prepared.environment).toBe(false);
+    expect(machRules(unscoped.profile)).toEqual(['(deny mach-lookup)']);
+
+    process.env.DEVRYAN_WORKER_BROWSERS = '0';
+    const disabled = await prepare();
+    expect('NODE_OPTIONS' in disabled.prepared.environment).toBe(false);
+    expect('PLAYWRIGHT_BROWSERS_PATH' in disabled.prepared.environment).toBe(false);
+    expect(machRules(disabled.profile)).toEqual(['(deny mach-lookup)']);
+    await expect(fs.lstat(path.join(disabled.prepared.scratchDirectory, NODE_SPAWN_PRELOAD))).rejects.toMatchObject({ code: 'ENOENT' });
+  } finally {
+    for (const [key, value] of Object.entries(saved)) if (value === undefined) delete process.env[key]; else process.env[key] = value;
+  }
 });
 
 darwinTest('socket directories fail closed unless privately owned', async () => {

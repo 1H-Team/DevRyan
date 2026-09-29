@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { withCrossProcessFileLock } from './atomic-file.js';
+import { executionStep, timedExecutionStep } from './execution-admission.js';
 import { git, gitToFile, gitTokens, changeError as failure } from './session-changes-git.js';
 import { openChangeStore, changeKey as hash } from './session-changes-store.js';
 import { captureSnapshot, changedEntries, changeTreeEntries, equalEntry as equal,
@@ -25,8 +26,14 @@ export function createSessionChangeRuntime(options) {
   const tails = new Map(), active = new Map(), nativeActive = new Set();
   const diagnostic = async (event) => { try { await options.onDiagnostic?.(event); } catch { /* Optional journaling never invalidates capture. */ } };
   const serialize = (key, run) => {
+    // Every change operation of a project shares this queue; an active
+    // execution summary (for example a direct receipt) records its wait.
+    const queued = Date.now();
     const operation = (tails.get(key) ?? Promise.resolve()).catch(() => {}).then(() =>
-      withCrossProcessFileLock(path.join(storage, 'locks', `${hash(key)}.lock`), run, { timeoutMs: 60_000 }));
+      withCrossProcessFileLock(path.join(storage, 'locks', `${hash(key)}.lock`), () => {
+        executionStep('changes_queue_wait', Date.now() - queued);
+        return timedExecutionStep('changes_transaction', run);
+      }, { timeoutMs: 60_000 }));
     const settled = operation.catch(() => {}).finally(() => { if (tails.get(key) === settled) tails.delete(key); });
     tails.set(key, settled);
     return operation;

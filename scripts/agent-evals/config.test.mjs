@@ -147,6 +147,8 @@ describe('agent evaluation CLI configuration', () => {
       'routing-broad-discovery',
       'routing-behavior',
       'routing-external-docs',
+      'routing-direct-typo',
+      'routing-plan-mode-behavior',
       'inspect',
       'repair-and-test',
       'managed-change',

@@ -1,3 +1,4 @@
+import type { SelectionOptions } from '@/lib/sessionRetention';
 import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { toast } from '@/components/ui';
@@ -25,10 +26,9 @@ type Args = {
   setSessionSearchQuery: (value: string) => void;
   setIsSessionSearchOpen: (open: boolean) => void;
   setActiveProjectIdOnly: (id: string) => void;
-  setDirectory: (directory: string, options?: { showOverlay?: boolean }) => void;
   setActiveMainTab: (tab: MainTab) => void;
   setSessionSwitcherOpen: (open: boolean) => void;
-  setCurrentSession: (sessionId: string | null, directoryHint?: string | null) => void;
+  setCurrentSession: (sessionId: string | null, directoryHint?: string | null, options?: SelectionOptions) => void;
   prepareSession?: (sessionId: string, directory: string) => void;
   updateSessionTitle: (id: string, title: string) => Promise<void>;
   shareSession: (id: string) => Promise<Session | null>;
@@ -84,29 +84,15 @@ export const useSessionActions = (args: Args) => {
         args.setIsSessionSearchOpen(false);
       };
 
-      if (projectId && projectId !== args.activeProjectId) {
-        args.setActiveProjectIdOnly(projectId);
-      }
-
-      if (sessionDirectory && sessionDirectory !== args.currentDirectory) {
-        args.setDirectory(sessionDirectory, { showOverlay: false });
-      }
-
-      if (args.mobileVariant) {
-        args.setActiveMainTab('chat');
-        args.setSessionSwitcherOpen(false);
-      }
-
-      if (sessionId === args.currentSessionId) {
-        if (args.allowReselect) {
-          args.onSessionSelected?.(sessionId);
+      args.setCurrentSession(sessionId, targetDirectory, { onApplied: () => {
+        if (projectId) args.setActiveProjectIdOnly(projectId);
+        if (args.mobileVariant) {
+          args.setActiveMainTab('chat');
+          args.setSessionSwitcherOpen(false);
         }
+        if (sessionId !== args.currentSessionId || args.allowReselect) args.onSessionSelected?.(sessionId);
         resetSessionSearch();
-        return;
-      }
-      args.setCurrentSession(sessionId, sessionDirectory ?? null);
-      args.onSessionSelected?.(sessionId);
-      resetSessionSearch();
+      } });
     },
     [args],
   );

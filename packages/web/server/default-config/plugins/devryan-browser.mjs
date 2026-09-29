@@ -15,7 +15,7 @@ const CLEANUP_TIMEOUT_MS = 3_000;
 const MAX_CONNECTION_ENTRIES = 100;
 const TURN_MESSAGE_LOOKUP_LIMIT = 200;
 const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '0.0.0.0', '::1']);
-const NO_PREVIEW_HANDOFF_MESSAGE = 'No branch preview is configured for this branch. Start or identify the local site, then retry open with its full loopback URL.';
+const NO_PREVIEW_HANDOFF_MESSAGE = 'No branch preview is configured for this branch. Use a local site that is already running: find its port in the project\'s dev script or config, check that it answers, then retry open with its full loopback URL. Do not start a dev server from a tool call; detached or background processes are blocked and anything started ends with the call. If no site answers, ask the user to start it (for example with a Project Action) and report visual verification as blocked.';
 const RETRYABLE_TRANSPORT_STATUS_CODES = new Set([502, 503, 504]);
 const BROWSER_ERROR_CODES = Object.freeze({
   inputInvalid: 'DEVRYAN_BROWSER_INPUT_INVALID',
@@ -38,6 +38,7 @@ const BROWSER_ERROR_CODES = Object.freeze({
 // human-readable s/m/h values, normalizing them internally to milliseconds.
 const MANAGED_IDLE_TIMEOUT = '2m';
 const MANAGED_CONFIG_FILE = 'devryan-agent-browser.json';
+const MAX_WORKER_SCREENSHOTS = 100;
 const SAFE_ENVIRONMENT_KEYS = [
   'APPDATA',
   'HOME',
@@ -247,6 +248,7 @@ const getManagedEnvironment = () => {
     binaryPath,
     configPath,
     installRoot: process.env.DEVRYAN_EXECUTION_WORKER === '1' ? workerBrowserDirectory() : installRoot,
+    screenshotDirectory: process.env.DEVRYAN_EXECUTION_WORKER === '1' ? workerScreenshotDirectory() : null,
   };
 };
 
@@ -260,6 +262,34 @@ const workerBrowserDirectory = () => {
   const directory = path.join(base, 'agent-browser');
   try { fs.mkdirSync(directory, { recursive: true, mode: 0o700 }); return directory; }
   catch { return process.env.TMPDIR || os.tmpdir(); }
+};
+
+// agent-browser saves a pathless screenshot under the daemon's TMPDIR, which
+// in a confined worker is per-call scratch deleted when the call ends. Keep
+// those in the session's durable temporary directory (swept after idle days,
+// readable by later tool calls), bounded to the newest files.
+const workerScreenshotDirectory = () => {
+  const base = process.env.DEVRYAN_SESSION_TMP || process.env.DEVRYAN_EXECUTION_CACHE;
+  if (!base || !path.isAbsolute(base)) return null;
+  const directory = path.join(base, 'agent-browser-screenshots');
+  try {
+    const existing = fs.lstatSync(directory, { throwIfNoEntry: false });
+    // Never write through a planted link or file in place of the directory.
+    if (existing && !existing.isDirectory()) fs.rmSync(directory, { force: true, recursive: true });
+    fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+    const files = fs.readdirSync(directory, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => {
+        const file = path.join(directory, entry.name);
+        // A file removed meanwhile sorts oldest; rmSync with force ignores it.
+        return { file, modified: fs.statSync(file, { throwIfNoEntry: false })?.mtimeMs ?? 0 };
+      })
+      .sort((left, right) => right.modified - left.modified);
+    for (const { file } of files.slice(MAX_WORKER_SCREENSHOTS)) fs.rmSync(file, { force: true });
+    return directory;
+  } catch {
+    return null;
+  }
 };
 
 const normalizeArguments = (value) => {
@@ -552,11 +582,12 @@ const confinedSpawnLibrary = () => {
   } catch { return null; }
 };
 
-const scrubAgentBrowserEnvironment = (binaryPath) => {
+const scrubAgentBrowserEnvironment = (binaryPath, screenshotDirectory = null) => {
   const next = {};
   for (const key of SAFE_ENVIRONMENT_KEYS) {
     if (typeof process.env[key] === 'string') next[key] = process.env[key];
   }
+  if (screenshotDirectory) next.AGENT_BROWSER_SCREENSHOT_DIR = screenshotDirectory;
   const spawnLibrary = confinedSpawnLibrary();
   if (spawnLibrary) next.DYLD_INSERT_LIBRARIES = spawnLibrary;
   const ffmpegDirectory = binaryPath ? managedFfmpegDirectory(binaryPath) : null;
@@ -581,6 +612,7 @@ const runBinary = ({
   spawnImpl,
   sensitiveValues,
   cwd,
+  screenshotDirectory = null,
   errorCode = BROWSER_ERROR_CODES.commandFailed,
   callerEval = false,
 }) => new Promise((resolve, reject) => {
@@ -593,7 +625,7 @@ const runBinary = ({
   try {
     child = spawnImpl(binaryPath, args, {
       cwd,
-      env: scrubAgentBrowserEnvironment(binaryPath),
+      env: scrubAgentBrowserEnvironment(binaryPath, screenshotDirectory),
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });
@@ -974,6 +1006,7 @@ export const DevRyanBrowserPlugin = async (pluginContext = {}) => {
       spawnImpl,
       sensitiveValues,
       cwd: environment.installRoot,
+      screenshotDirectory: environment.screenshotDirectory,
       errorCode: BROWSER_ERROR_CODES.connectionFailed,
     }).then(() => {
       rememberConnectedLease(reuseKey, leaseId);
@@ -1018,13 +1051,20 @@ export const DevRyanBrowserPlugin = async (pluginContext = {}) => {
       if (resolved?.previewUrl === null) return NO_PREVIEW_HANDOFF_MESSAGE;
     }
     let lease;
+    const reusedSequenceLease = sequence?.lease ?? null;
     try {
-      lease = sequence?.lease ?? await acquire(scope, context?.abort);
+      lease = reusedSequenceLease ?? await acquire(scope, context?.abort);
       if (sequence) sequence.lease = lease;
       failedAcquisitionKeys.delete(reuseKey);
     } catch (error) {
       rememberFailedAcquisition(reuseKey);
       throw error;
+    }
+    // The host reports no attached client for a reused lease when its daemon
+    // has exited (idle timeout, or a previous confined worker). Reconnect
+    // instead of sending commands to a daemon that would start detached.
+    if (!reusedSequenceLease && lease?.created === false && lease?.clientAttached === false) {
+      connections.delete(reuseKey);
     }
     const leaseId = requireText(
       lease?.leaseId,
@@ -1084,6 +1124,7 @@ export const DevRyanBrowserPlugin = async (pluginContext = {}) => {
           spawnImpl,
           sensitiveValues,
           cwd: environment.installRoot,
+          screenshotDirectory: environment.screenshotDirectory,
         });
       } catch (error) {
         commandError = error;
@@ -1112,6 +1153,7 @@ export const DevRyanBrowserPlugin = async (pluginContext = {}) => {
         spawnImpl,
         sensitiveValues,
         cwd: environment.installRoot,
+        screenshotDirectory: environment.screenshotDirectory,
         callerEval: command === 'eval',
         errorCode: inspection ? BROWSER_ERROR_CODES.inspectionFailed : BROWSER_ERROR_CODES.commandFailed,
       });
@@ -1140,7 +1182,7 @@ export const DevRyanBrowserPlugin = async (pluginContext = {}) => {
   return {
     tool: {
       devryan_browser: tool({
-        description: 'Drive a temporary DevRyan in-app browser lease for website inspection and visual verification. Prefer inspect with a CSS selector and optional styles/attributes for safe DOM checks; it reports found, missing, or ambiguous without changing the page. A missing result is not successful visual verification. Call open without a URL first: the assigned branch preview opens when configured, otherwise DevRyan returns successful guidance to start or identify the local site and retry with its full loopback URL. Explicit loopback URLs are mapped to the assigned preview when configured. DevRyan owns connection, process, profile, namespace, and session options. Always call close when verification is finished.',
+        description: 'Drive a temporary DevRyan in-app browser lease for website inspection and visual verification. Prefer inspect with a CSS selector and optional styles/attributes for safe DOM checks; it reports found, missing, or ambiguous without changing the page. A missing result is not successful visual verification. Call open without a URL first: the assigned branch preview opens when configured, otherwise DevRyan returns successful guidance to use an already-running local site by its full loopback URL, or to report visual verification as blocked. Explicit loopback URLs are mapped to the assigned preview when configured. DevRyan owns connection, process, profile, namespace, and session options. Always call close when verification is finished.',
         args: {
           command: tool.schema.string().describe('One browser command, or sequence for bounded recording and before/after comparisons in one confined call.'),
           args: tool.schema.array(tool.schema.string()).optional().describe('Command arguments as an ordered string array. Do not pass connection, process, profile, namespace, session, or daemon options.'),

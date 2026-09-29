@@ -2508,8 +2508,6 @@ async function main(options = {}) {
     writeSseEvent,
     emitSyntheticOpenCodeEvent,
     resolveZenModel,
-    fetchFreeZenModels,
-    getCachedZenModels,
     xaiToolCatalogRuntime,
     resolveZenModelNonBlocking,
     recordCommitTiming: (req, payload) => harnessRuntime.record(buildGitGenerationTimingRecord(req, payload)),

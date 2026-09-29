@@ -144,3 +144,44 @@ test('tool execution diagnostics whitelist origin, tier and fallback without too
   await withExecutionAdmission({ toolOrigin: 'private-origin', kind: 'private-kind', fallbackReason: 'private-reason' }, async () => {}, { onDiagnostic: record => unknown.push(record) });
   assert.ok(unknown.every(record => !('toolOrigin' in record) && !('executionTier' in record) && !('fallbackReason' in record)));
 });
+
+test('an execution summary observes without adding cancellation, a deadline or a meter', async () => {
+  const { withExecutionSummary, executionStep, timedExecutionStep, executionSignal, executionRemainingMs } = await import('./execution-admission.js');
+  const records = [];
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const value = await withExecutionSummary({ sessionID: 'ses_summary', action: 'direct-finish', callID: 'call_1', args: { secret: 'never-log' } }, async () => {
+    expect(executionSignal()).toBeUndefined();
+    expect(executionRemainingMs()).toBe(Infinity);
+    expect(executionProgressMeter()).toBeUndefined();
+    executionStep('tool_execution', 12);
+    await executionPhase('direct_receipt', () => sleep(30));
+    return timedExecutionStep('changes_transaction', async () => 'settled');
+  }, { phase: 'direct_finish', minMs: 10, onDiagnostic: (record) => records.push(record) });
+  expect(value).toBe('settled');
+  expect(records).toHaveLength(1);
+  expect(records[0]).toMatchObject({ event: 'session_execution', phase: 'direct_finish', state: 'completed',
+    executionTier: 'direct', sessionID: 'ses_summary', callID: 'call_1' });
+  expect(records[0].steps).toMatch(/^tool_execution:1\/12,direct_receipt:1\/\d+,changes_transaction:1\/\d+$/);
+  assert.ok(!JSON.stringify(records).includes('never-log'));
+  // Fast work stays out of the journal; failures are always reported.
+  await withExecutionSummary({}, async () => {}, { phase: 'direct_finish', minMs: 1_000, onDiagnostic: (record) => records.push(record) });
+  await expect(withExecutionSummary({}, async () => { throw Object.assign(new Error('boom'), { code: 'execution_reverted' }); },
+    { phase: 'direct_finish', minMs: 1_000, onDiagnostic: (record) => records.push(record) })).rejects.toMatchObject({ code: 'execution_reverted' });
+  expect(records.slice(1).map((record) => `${record.phase}:${record.state}`)).toEqual(['direct_finish:failed']);
+});
+
+test('summary steps are no-ops outside a summary and never check an aborted admission', async () => {
+  const { executionStep, timedExecutionStep } = await import('./execution-admission.js');
+  expect(executionStep('changes_queue_wait', 5)).toBeUndefined();
+  await expect(timedExecutionStep('changes_transaction', async () => 'plain')).resolves.toBe('plain');
+  const controller = new AbortController();
+  let ran = false;
+  await withExecutionAdmission({}, async () => {
+    controller.abort(new Error('cancelled'));
+    // A signal-checking phase would throw here; timing-only steps must not.
+    await expect(timedExecutionStep('changes_transaction', async () => 'kept')).resolves.toBe('kept');
+    executionStep('changes_queue_wait', 1);
+    ran = true;
+  }, { signal: controller.signal, summary: { minMs: 0 } }).catch(() => {});
+  expect(ran).toBe(true);
+});

@@ -5,6 +5,7 @@ import { createServer } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, test } from 'node:test';
+import { loadPlanModeInstruction } from './plan-mode.mjs';
 
 import {
   EvaluationHttpError,
@@ -913,6 +914,20 @@ describe('DevRyan loopback evaluation client', () => {
       variant: 'high',
     }, 'private prompt', undefined);
 
+    await client.promptSession('ses_plan', '/tmp/fixture', {
+      providerId: 'openai',
+      modelId: 'gpt-5.4',
+      agent: 'orchestrator',
+      variant: null,
+    }, 'plan this', undefined, { planMode: true });
+
+    // Plan mode is the composer's exact synthetic preface and adds no tool overrides.
+    assert.deepEqual(bodies[5].parts, [
+      { type: 'text', text: loadPlanModeInstruction(), synthetic: true },
+      { type: 'text', text: 'plan this' },
+    ]);
+    assert.deepEqual(bodies[5].tools, bodies[2].tools);
+    assert.deepEqual(bodies[2].parts, [{ type: 'text', text: 'private prompt' }]);
     assert.deepEqual(bodies[0].tools, {
       'resend_*': false,
       'mcp__resend__*': false,

@@ -10,7 +10,7 @@ Use `devryan_browser` to verify website work in DevRyan's isolated browser lease
 ## Workflow
 
 1. Call `devryan_browser` with `command: "open"` and omit `args` so the active branch's assigned preview is the authoritative target.
-2. If the successful result reports that no preview is configured, find a local site that is already running: read the project's dev script for its port and probe it (for example `curl -sI http://127.0.0.1:<port>/`). Call `open` with that exact URL. Do not assume a fixed local port. Do not start a dev server for verification: a process started from a tool command stops when that command ends, so it cannot serve later browser calls. If nothing answers, ask the user to start the site (for example with a Project Action) and share its URL, and report visual verification as blocked until then. When a preview is configured, explicit loopback URLs are automatically mapped to the preview origin while preserving their path, query, and fragment.
+2. If the successful result reports that no preview is configured, find a local site that is already running: read the project's dev script for its port and probe it (for example `curl -sI http://127.0.0.1:<port>/`). Call `open` with that exact URL. Do not assume a fixed local port. Do not start a dev server for verification: a process started from a tool command stops when that command ends (detached or background processes are blocked), so it cannot serve later browser calls. If nothing answers, ask the user to start the site (for example with a Project Action) and share its URL, and report visual verification as blocked until then. When a preview is configured, explicit loopback URLs are automatically mapped to the preview origin while preserving their path, query, and fragment.
 3. Inspect with `snapshot -i`, then interact using stable CSS selectors. Element references are valid only while the same daemon and document remain alive (see sequences below). Use `inspect` for element existence, attributes, and computed styles. Take a screenshot when visual appearance matters.
 4. After edits, reload or reopen the page and repeat the relevant checks. Report what you actually observed.
 5. Always call `devryan_browser` with `command: "close"` when verification is finished, including after a failed check when possible.
@@ -38,12 +38,13 @@ Results contain zero-based step indexes. Execution stops at the first error and
 returns completed results and `failedStep`; actions are never automatically
 replayed. A failed action may have changed the page: inspect before retrying it.
 
-Confined calls end their owned daemon at exit and may release the guest. Put
-`open` and all dependent actions in the same sequence. For initial exploration,
-use a sequence containing `open` and `snapshot -i`; in a later planned sequence,
-open the target again and use stable selectors. Do not assume transient page state
-survives separate calls. Reacquire refs and comparison
-baselines after that boundary. Within one daemon, refs survive snapshots and
+Confined calls end their owned daemon at exit. The page stays on the turn's
+lease until `close`, the end of the turn, or about two minutes without browser
+activity, so a later call reconnects to it; refs and comparison baselines do
+not carry over. Put `open` and all dependent actions in the same sequence. For
+initial exploration, use a sequence containing `open` and `snapshot -i`; in a
+later planned sequence, use stable selectors and reopen the target if the page
+no longer matches. Reacquire refs and comparison baselines after that boundary. Within one daemon, refs survive snapshots and
 same-document updates of the same element; reacquire after element replacement,
 navigation, or close. Use stable selectors in a planned sequence: steps cannot
 substitute previous outputs or run a scripting language.
@@ -92,7 +93,8 @@ On errors or cancellation, bounded cleanup attempts `record stop`; errors report
 Do not claim an incomplete video is playable. Native process cleanup still runs.
 
 Relative output goes to the confined execution cache, outside published project
-changes. Use an authorized absolute path in the private project view only when
+changes. A screenshot without a path is kept in the session's temporary
+directory; read it by the absolute path the tool reports. Use an authorized absolute path in the private project view only when
 an artifact should be published with that tool call. Read/review the reported
 screenshot, video, and contact sheet before claiming visual acceptance. Preserve
 existing file-publication rules and report only files actually produced. WebMCP,

@@ -111,6 +111,46 @@ describe('browser lease runtime', () => {
     });
   });
 
+  it('confirms a reused lease with the host and reports whether a client is attached', async () => {
+    const touchBrowserLease = vi.fn(async ({ leaseId }) => ({ ok: true, state: 'ready', leaseId, clients: 0 }));
+    const { runtime, createBrowserLease } = createRuntime({ touchBrowserLease });
+
+    const first = await runtime.acquire(scope());
+    expect(first).not.toHaveProperty('clientAttached');
+    const reused = await runtime.acquire(scope());
+    expect(reused).toMatchObject({ leaseId: 'dvr_lease_1', created: false, clientAttached: false });
+    expect(touchBrowserLease).toHaveBeenLastCalledWith(expect.objectContaining({ leaseId: 'dvr_lease_1' }));
+
+    touchBrowserLease.mockImplementationOnce(async ({ leaseId }) => ({ ok: true, state: 'connected', leaseId, clients: 1 }));
+    await expect(runtime.acquire(scope())).resolves.toMatchObject({ leaseId: 'dvr_lease_1', clientAttached: true });
+
+    // A host that closed the lease without reaching the server (for example
+    // over the runtime-service broker) yields a replacement, never a dead URL.
+    touchBrowserLease.mockImplementationOnce(async ({ leaseId }) => ({ ok: false, state: 'not_found', leaseId }));
+    const replacement = await runtime.acquire(scope());
+    expect(replacement).toMatchObject({ leaseId: 'dvr_lease_2', created: true });
+    expect(createBrowserLease).toHaveBeenCalledTimes(2);
+    expect(runtime.getSnapshot().map((lease) => lease.leaseId)).toEqual(['dvr_lease_2']);
+  });
+
+  it('omits client state when the host reports none and keeps the record on a transient host failure', async () => {
+    const touchBrowserLease = vi.fn(async () => undefined);
+    const { runtime, createBrowserLease } = createRuntime({ touchBrowserLease });
+
+    await runtime.acquire(scope());
+    const reused = await runtime.acquire(scope());
+    expect(reused).toMatchObject({ leaseId: 'dvr_lease_1', created: false });
+    expect(reused).not.toHaveProperty('clientAttached');
+
+    touchBrowserLease.mockRejectedValueOnce(new Error('broker unavailable'));
+    await expect(runtime.acquire(scope())).rejects.toMatchObject({
+      code: 'browser_host_unavailable',
+      statusCode: 503,
+    });
+    await expect(runtime.acquire(scope())).resolves.toMatchObject({ leaseId: 'dvr_lease_1', created: false });
+    expect(createBrowserLease).toHaveBeenCalledTimes(1);
+  });
+
   it('adds authoritative preview metadata while passing credentials only to the host callback', async () => {
     const resolveBrowserLeaseContext = vi.fn(async () => ({
       metadata: {

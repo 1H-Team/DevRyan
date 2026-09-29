@@ -2,15 +2,21 @@
 export const ROUTING_CASES = Object.freeze({
   'routing-visual': { agent: 'designer', approved: false, kind: 'visual', explicit: true },
   'routing-approved-visual': { agent: 'designer', approved: true, kind: 'visual', explicit: true },
-  // Unprompted cases: Orchestrator may send review remediation back to the same owner.
-  'routing-natural-behavior': { agent: 'fixer', kind: 'behavior', multiple: true },
-  'routing-natural-visual': { agent: 'designer', kind: 'visual', multiple: true },
-  'routing-substantial-design': { agent: 'designer', kind: 'visual', multiple: true },
+  // Unprompted cases allow one same-owner review remediation (maxChildren 2).
+  // Every owning implementation child must complete an edit of its own.
+  'routing-natural-behavior': { agent: 'fixer', kind: 'behavior', maxChildren: 2 },
+  'routing-natural-visual': { agent: 'designer', kind: 'visual', maxChildren: 2 },
+  'routing-substantial-design': { agent: 'designer', kind: 'visual', maxChildren: 2 },
   'routing-footer-plan': { agent: 'explorer', kind: 'footer', readOnly: true },
   // Spans three subsystems: Explorer-first starts one Explorer per subsystem.
-  'routing-broad-discovery': { agent: 'explorer', kind: 'inventory', readOnly: true, multiple: true },
+  'routing-broad-discovery': { agent: 'explorer', kind: 'inventory', readOnly: true, maxChildren: 3 },
   'routing-behavior': { agent: 'fixer', approved: false, kind: 'behavior', explicit: true },
-  'routing-external-docs': { agent: 'librarian', kind: 'external', readOnly: true },
+  // External facts start Librarian, optionally in the same dispatch as Explorer.
+  'routing-external-docs': { agent: 'librarian', kind: 'external', readOnly: true, companions: ['explorer'], maxChildren: 2 },
+  // The remaining direct exception: a mechanical wording fix needs no child.
+  'routing-direct-typo': { agent: null, kind: 'typo' },
+  // Real Plan mode (composer preface), then "implement plan": Fixer keeps ownership.
+  'routing-plan-mode-behavior': { agent: 'fixer', approved: true, planMode: true, kind: 'behavior', companions: ['explorer'], maxChildren: 2 },
 });
 
 export const isRoutingCase = (caseId) => Object.hasOwn(ROUTING_CASES, caseId);
@@ -55,6 +61,7 @@ export const buildRoutingDefinition = (caseId, runFiles) => {
   if (scenario.kind === 'footer') return { caseId, prompt: 'The website footer Healthcare Services, Professionals and Medical Centers lists are empty even though active categories exist. Find the population code and make a concise plan to restore them. Plan only; do not edit files. Explain the observed cause and the regression checks needed.' };
   if (scenario.kind === 'external') return { caseId, prompt: `${runFiles.testRelativePath} runs under node --test. Using the current official Node.js documentation, find which command-line flag makes the Node.js test runner apply a per-test timeout and what its default is. Answer with the flag, its default and the documentation URL. Preserve all files.` };
   if (scenario.kind === 'inventory') return { caseId, prompt: 'Build a complete read-only usage map of the generated route inventory across identity, billing and session subsystems. Identify every elevated route and the ownership boundaries. Preserve all files. Finish with JSON counts using keys identity, billing, session and elevated.' };
+  if (scenario.kind === 'typo') return { caseId, prompt: `In ${runFiles.sourceRelativePath}, the comment above priceLabel misspells "Returns" as "Retruns". Fix only that typo; change no code and preserve ${runFiles.testRelativePath}. Run node --test ${runFiles.testRelativePath}.` };
   const scope = `The service-list fixture is ${runFiles.sourceRelativePath}; its acceptance test is ${runFiles.testRelativePath}.`;
   const change = scenario.kind === 'visual'
     ? 'Improve the cluttered service-list presentation: set service-row gap to 24px, service-pills gap to 8px, make the service-type pill white with #333 text, and place Procedure before Needs Review when present. Preserve labels and pricing behavior.'
@@ -68,6 +75,7 @@ export const buildRoutingDefinition = (caseId, runFiles) => {
       ? `${scope} ${change} Make a plan only, without editing files or dispatching implementation. Include these acceptance criteria and this execution constraint in the plan: ${execution}`
       : `${scope} ${change} Implement now; no planning approval is needed. ${execution}`,
     ...(scenario.approved ? { followUpPrompt: 'implement plan' } : {}),
+    ...(scenario.planMode ? { planMode: true } : {}),
   };
 };
 
@@ -84,6 +92,22 @@ import { readFile } from 'node:fs/promises';
 const source = await readFile(new URL('./${filename}', import.meta.url), 'utf8');
 const { footerCategoryLinks } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 assert.deepEqual(footerCategoryLinks([{active:true,publishedCount:2}]), []);
+`,
+  };
+  if (kind === 'typo') return {
+    source: `// Retruns the display label for a service price.
+export function priceLabel(price) {
+  return price ? String(price) : 'Add Price';
+}
+`,
+    test: `import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+const source = await readFile(new URL('./${filename}', import.meta.url), 'utf8');
+assert.match(source, /\\/\\/ Returns the display label for a service price\\./);
+assert.doesNotMatch(source, /Retruns/);
+const { priceLabel } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+assert.equal(priceLabel(125), '125');
+assert.equal(priceLabel(null), 'Add Price');
 `,
   };
   if (kind === 'external') return {
@@ -120,6 +144,8 @@ export function collectRoutingEvidence(caseId, sessionTree, rootSessionId, sourc
   if (ROUTING_CASES[caseId]?.kind === 'external') return {
     cited: /https:\/\/nodejs\.org\/[^\s)]*\/(?:test|cli)\b/i.test(text),
     flag: /--test-timeout\b/.test(text),
+    // The documented default is Infinity (no per-test timeout).
+    defaultValue: /\bInfinity\b/.test(text),
   };
   if (ROUTING_CASES[caseId]?.kind === 'inventory') {
     for (const match of text.matchAll(/\{[^{}]+\}/g)) {

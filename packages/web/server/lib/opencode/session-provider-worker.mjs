@@ -13,6 +13,8 @@ const controller = new AbortController();
 for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => controller.abort());
 const storage = process.env.DEVRYAN_PROVIDER_STORAGE;
 const account = process.env.CLAUDE_CONFIG_DIR || path.join(process.env.HOME || '', '.claude');
+// input.directory is the requesting session directory (resolveSessionWorkingDirectory),
+// so each project keeps separate Claude state.
 const state = path.join(storage, 'state', createHash('sha256').update(JSON.stringify([account, input.directory])).digest('hex'));
 await fs.mkdir(state, { recursive: true, mode: 0o700 });
 // The transport keeps its own transcripts. Its sandbox denies keychain lookups,

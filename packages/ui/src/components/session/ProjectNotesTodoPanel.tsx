@@ -1,3 +1,4 @@
+import { getRetentionNavigationRevision } from '@/lib/sessionRetention';
 import React from 'react';
 import { RiAddLine, RiDeleteBinLine, RiSendPlaneLine } from '@remixicon/react';
 import { toast } from '@/components/ui';
@@ -102,8 +103,7 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const createSession = useSessionUIStore((state) => state.createSession);
   const initializeNewOpenChamberSession = useSessionUIStore((state) => state.initializeNewOpenChamberSession);
-  const sendMessage = useSessionUIStore((state) => state.sendMessage);
-  const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
+  const sendMessageToSession = useSessionUIStore((state) => state.sendMessageToSession);
   const setPendingInputText = useInputStore((state) => state.setPendingInputText);
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
   const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
@@ -336,6 +336,7 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
         return;
       }
 
+      const navigation = { expectedNavigationRevision: getRetentionNavigationRevision(), onApplied: routeToChat };
       const visiblePrompt = await renderMagicPrompt('plan.todo.visible', {
         todo_text: pendingSendTarget.todoText,
       });
@@ -348,30 +349,25 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
       setSendingTodoId(pendingSendTarget.todoId);
 
       try {
-        routeToChat();
-
         let sessionId: string | null = null;
-        let directoryHint: string | null = projectRef.path;
 
         if (pendingSendTarget.kind === 'worktree') {
           if (!canCreateBranchWorktree) {
             toast.error(t('rightSidebar.contextNotesTodo.toast.worktreeRequiresGitRepo'));
             return;
           }
-          const created = await createWorktreeSessionForNewBranch(projectRef.path, generateBranchName());
+          const created = await createWorktreeSessionForNewBranch(projectRef.path, generateBranchName(), undefined, { navigation });
           if (!created?.id) {
             return;
           }
           sessionId = created.id;
-          directoryHint = null;
         } else {
-          const session = await createSession(undefined, projectRef.path, null);
+          const session = await createSession(undefined, projectRef.path, null, navigation);
           if (!session?.id) {
             toast.error(t('rightSidebar.contextNotesTodo.toast.createSessionFailed'));
             return;
           }
           sessionId = session.id;
-          directoryHint = session.directory ?? projectRef.path;
           initializeNewOpenChamberSession(session.id, useConfigStore.getState().agents ?? []);
         }
 
@@ -393,8 +389,9 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
           );
         }
 
-        setCurrentSession(sessionId, directoryHint);
-        await sendMessage(
+        // Sending is bound to the created record even if the user navigates away.
+        await sendMessageToSession(
+          sessionId,
           visiblePrompt,
           execution.providerID,
           execution.modelID,
@@ -420,7 +417,7 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
         setSendingTodoId(null);
       }
     },
-    [canCreateBranchWorktree, createSession, initializeNewOpenChamberSession, onActionComplete, pendingSendTarget, projectRef, routeToChat, sendMessage, setCurrentSession, t]
+    [canCreateBranchWorktree, createSession, initializeNewOpenChamberSession, onActionComplete, pendingSendTarget, projectRef, routeToChat, sendMessageToSession, t]
   );
 
   const planFileInputRef = React.useRef<HTMLInputElement | null>(null);

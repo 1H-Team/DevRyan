@@ -1,3 +1,4 @@
+import { beginRetentionNavigation, getRetentionNavigationRevision, type SelectionOptions } from '@/lib/sessionRetention'
 import { describe, expect, test, beforeEach, mock } from "bun:test"
 import type { PermissionRequest } from "@/types/permission"
 import type { Message, Part, SessionStatus, UserMessage } from "@opencode-ai/sdk/v2/client"
@@ -254,9 +255,18 @@ const sessionActionsSessionUIStore = {
     currentSessionId: mockCurrentSessionId,
     sessionAbortFlags: mockSessionAbortFlags,
     abortControllers: mockAbortControllers,
-    setCurrentSession: (id: string | null, directory?: string | null) => {
+    setCurrentSession: (id: string | null, directory?: string | null, options?: SelectionOptions) => {
+      if (options?.expectedNavigationRevision !== undefined && options.expectedNavigationRevision !== getRetentionNavigationRevision()) return
+      beginRetentionNavigation()
       setCurrentSessionCalls.push({ id, directory })
       mockCurrentSessionId = id
+      options?.onApplied?.()
+    },
+    invalidateSessionSelection: (id: string) => {
+      if (mockCurrentSessionId !== id) return
+      beginRetentionNavigation()
+      setCurrentSessionCalls.push({ id: null, directory: undefined })
+      mockCurrentSessionId = null
     },
     setSessionDirectory: (sessionId: string, directory: string | null) => {
       sessionDirectories[sessionId] = directory
@@ -668,6 +678,22 @@ describe("createSessionRecord startup readiness", () => {
     sessionCreateHandler = () => Promise.resolve({ data: makeSession("created-session") })
   })
 
+  test("delayed creation keeps its record without overriding a newer navigation", async () => {
+    const created = createDeferred<{ data: Session }>()
+    sessionCreateHandler = () => created.promise
+    const store = createStore({}, [])
+    const { createSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", store]]), () => "/test/project")
+    const pending = createSession("Delayed", "/test/project")
+    beginRetentionNavigation()
+    mockCurrentSessionId = "newer-click"
+    created.resolve({ data: makeSession("created-session") })
+    expect((await pending)?.id).toBe("created-session")
+    expect(globalUpsertCalls.at(-1)?.id).toBe("created-session")
+    expect(mockCurrentSessionId).toBe("newer-click")
+    expect(setCurrentSessionCalls).toEqual([])
+  })
+
   test("keeps the requested directory authoritative for UI routing when OpenCode returns an alias", async () => {
     const store = createStore({}, [])
     const childStores = createChildStores([["/tmp/test-project", store]])
@@ -1076,6 +1102,23 @@ describe("archiveSessions batch behavior", () => {
     ])
     expect(globalArchiveCalls[0].ids).toEqual(["session-a"])
     expect(globalRestoreCalls[0].ids).toEqual(["session-a"])
+  })
+
+  test("failed archive restores data without rolling back newer navigation", async () => {
+    const request = createDeferred<{ data: boolean }>()
+    const arrived = createDeferred<void>()
+    sessionUpdateHandler = () => { arrived.resolve(); return request.promise }
+    mockCurrentSessionId = "session-a"
+    const store = createStore({}, [makeSession("session-a")])
+    const { archiveSessions, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", store]]), () => "/test/project")
+    const pending = withMutedConsoleError(() => archiveSessions(["session-a"]))
+    await arrived.promise
+    sessionActionsSessionUIStore.getState().setCurrentSession("newer-click")
+    request.reject(new Error("fixture archive failed"))
+    await pending
+    expect(store.getState().session.some(session => session.id === "session-a")).toBe(true)
+    expect(mockCurrentSessionId).toBe("newer-click")
   })
 
   test("treats a resolved SDK archive error as a failed mutation", async () => {
@@ -3539,6 +3582,24 @@ describe("session actions use target session directory", () => {
       { sessionID: "session-b", directory: "/other/project", limit: 200 },
     ])
     expect(currentStore.getState().session).toEqual([])
+  })
+
+  test("delayed fork preserves its record without replacing newer navigation or composer input", async () => {
+    const request = createDeferred<{ data: Session }>()
+    sessionForkHandler = () => request.promise
+    const store = createStore({}, [makeSession("session-b")])
+    store.setState({ message: { "session-b": [{ id: "msg_1", role: "user" } as Message] },
+      part: { msg_1: [{ type: "text", text: "must not replace the newer composer" } as Part] } })
+    const { forkFromMessage, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/other/project", store]]), () => "/other/project")
+    const pending = forkFromMessage("session-b", "msg_1")
+    beginRetentionNavigation()
+    mockCurrentSessionId = "newer-click"
+    request.resolve({ data: makeSession("forked-session") })
+    await pending
+    expect(store.getState().session.some(session => session.id === "forked-session")).toBe(true)
+    expect(mockCurrentSessionId).toBe("newer-click")
+    expect(setCurrentSessionCalls).toEqual([])
   })
 
   test("forks using the target session directory instead of the current directory", async () => {

@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createFreeZenCooldowns } from '@openchamber/shared-runtime';
 
 import {
-  COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
   COMMIT_GENERATION_CHAT_MAX_TOKENS,
   COMMIT_GENERATION_RESPONSES_MAX_OUTPUT_TOKENS,
   buildCommitMessagePrompt,
@@ -10,6 +9,7 @@ import {
   generateCommitMessageDirect,
   normalizeGeneratedCommitSubject,
 } from './commit-message.js';
+import { GIT_GENERATION_ZEN_MODEL } from './zen-text.js';
 
 const context = {
   branch: 'feature/source-generation',
@@ -77,16 +77,24 @@ describe('direct commit message generation', () => {
     expect(requestText.mock.calls.flat().join(' ')).not.toMatch(/\/session|prompt_async/);
   });
 
-  it('uses the catalog model selected by the route', async () => {
+  it('uses the pinned Git generation model selected by the route', async () => {
     const requestText = vi.fn(async () => 'fix(git): generate worktree commit message');
 
-    await generateCommitMessageDirect({ context, models: [COMMIT_GENERATION_DEFAULT_ZEN_MODEL], requestText });
+    await generateCommitMessageDirect({ context, models: [GIT_GENERATION_ZEN_MODEL], requestText });
 
-    expect(COMMIT_GENERATION_DEFAULT_ZEN_MODEL).toBe('nemotron-3.5-lightning-free');
     expect(requestText).toHaveBeenCalledWith(expect.objectContaining({
-      zenModel: COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
+      zenModel: 'deepseek-v4.1-flash',
       chatReasoningEffort: 'none',
     }));
+  });
+
+  it('names the failed model and reason when it falls back to a local draft', async () => {
+    const requestText = vi.fn(async () => {
+      throw Object.assign(new Error('Payment required'), { status: 402 });
+    });
+    const result = await generateCommitMessageDirect({ context, models: [GIT_GENERATION_ZEN_MODEL], requestText, cooldowns: null });
+    expect(result._generation).toMatchObject({ source: 'local_fallback', providerOutcome: 'exhausted', attempts: 1 });
+    expect(result._generation.warning).toBe('Zen generation failed (deepseek-v4.1-flash: unauthorized); created a local commit draft');
   });
 
   it('disables hidden reasoning for explicit model overrides', async () => {

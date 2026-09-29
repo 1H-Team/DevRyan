@@ -5,6 +5,7 @@ import {
     createAssistantImageObjectUrlRegistry,
     loadAssistantImageBlob,
     prepareAssistantImageCandidates,
+    resolveAssistantImageDisplayUrl,
 } from './assistantImageLoading';
 
 const candidate = (
@@ -131,5 +132,19 @@ describe('assistant image blob lifecycle', () => {
         registry.revokeAll();
         registry.revokeAll();
         expect(revoked).toEqual(['blob:first', 'blob:second']);
+    });
+});
+
+describe('assistant image display URLs', () => {
+    test('resolves Wikimedia File pages to the served image and leaves other sources alone', () => {
+        expect(resolveAssistantImageDisplayUrl('https://commons.wikimedia.org/wiki/File:Ozempic_pen.jpg'))
+            .toBe('https://commons.wikimedia.org/wiki/Special:FilePath/Ozempic_pen.jpg?width=1280');
+        expect(resolveAssistantImageDisplayUrl('https://en.wikipedia.org/wiki/File:Pen%20photo.png'))
+            .toBe('https://en.wikipedia.org/wiki/Special:FilePath/Pen%20photo.png?width=1280');
+        expect(resolveAssistantImageDisplayUrl('https://upload.wikimedia.org/wikipedia/commons/a/ab/Pen.jpg'))
+            .toBe('https://upload.wikimedia.org/wikipedia/commons/a/ab/Pen.jpg');
+        expect(resolveAssistantImageDisplayUrl('https://cdn.example/wiki/File:photo.jpg'))
+            .toBe('https://cdn.example/wiki/File:photo.jpg');
+        expect(resolveAssistantImageDisplayUrl('/workspace/art/one.png')).toBe('/workspace/art/one.png');
     });
 });

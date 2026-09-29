@@ -191,6 +191,7 @@ const createHarness = ({
   orphanTimeoutMs = 5_000,
   maxInFlightCommands = 64,
   onBeforeCommand,
+  onAfterCommand,
   now,
   setTimer,
   clearTimer,
@@ -208,6 +209,7 @@ const createHarness = ({
     crypto: createFakeCrypto(),
     onAgentInput: (input) => inputs.push(input),
     onBeforeCommand,
+    onAfterCommand,
     onStatusChange: (status) => statuses.push(status),
     commandTimeoutMs,
     orphanTimeoutMs,
@@ -408,6 +410,11 @@ describe('multi-lease bridge lifecycle and routing', () => {
     expect(secondA.closed).toEqual({ code: 1013, reason: 'lease already in use' });
     expect(firstB.closed).toBeNull();
     expect(harness.bridge.status().clients).toBe(2);
+
+    firstA.peerClose();
+    const thirdA = harness.connect(startedA);
+    expect(thirdA.closed).toBeNull();
+    expect(harness.bridge.getLeaseStatus('lease-a')).toMatchObject({ state: 'connected', clients: 1 });
   });
 
   test('keeps the in-flight cap independent for each lease', async () => {
@@ -578,20 +585,139 @@ describe('multi-lease bridge lifecycle and routing', () => {
     expect(socketB.closed?.code).toBe(1008);
   });
 
-  test('socket closure removes only its lease and the final lease stops the server', async () => {
+  test('a clean client disconnect releases only the client and keeps the lease reconnectable', async () => {
+    const harness = createHarness();
+    const guestA = createFakeGuest({ name: 'a' });
+    const startedA = await harness.createLease('lease-a', {}, guestA);
+    const startedB = await harness.createLease('lease-b', {}, createFakeGuest({ name: 'b' }));
+    const socketA = harness.connect(startedA);
+    harness.connect(startedB);
+    await attach(socketA);
+    expect(guestA.debugger.isAttached()).toBe(true);
+    const statusCount = harness.statuses.length;
+
+    socketA.peerClose();
+
+    expect(harness.bridge.getLeaseStatus('lease-a')).toMatchObject({ ok: true, state: 'ready', clients: 0 });
+    expect(harness.bridge.getLeaseStatus('lease-b').state).toBe('connected');
+    expect(guestA.debugger.isAttached()).toBe(false);
+    expect(harness.closed).toEqual([]);
+    expect(harness.statuses.length).toBeGreaterThan(statusCount);
+    expect(harness.statuses.at(-1)).toMatchObject({ clients: 1, leaseCount: 2 });
+    expect(harness.bridge.isRunning).toBe(true);
+    expect(harness.servers[0].closeCalls).toBe(0);
+  });
+
+  test('a reconnecting client resumes the same pinned page after the previous client left', async () => {
+    const guest = createFakeGuest({ name: 'resume', sendCommand: (method) => (
+      method === 'Runtime.evaluate' ? { result: { value: 'kept' } } : {}
+    ) });
+    const harness = createHarness();
+    const started = await harness.createLease('resume', {}, guest);
+    const first = harness.connect(started);
+    const firstSession = await attach(first);
+    first.peerClose();
+
+    const second = harness.connect(started);
+    expect(second.closed).toBeNull();
+    expect(guest.debugger.isAttached()).toBe(true);
+    await sendFrame(second, { id: 1, method: 'Target.setDiscoverTargets', params: { discover: true } });
+    await sendFrame(second, { id: 2, method: 'Target.getTargets' });
+    const secondSession = await attach(second, 3);
+    expect(secondSession).toBe(firstSession);
+    expect(second.sent.find((frame) => frame.id === 2).result.targetInfos[0].url).toBe('https://resume.example/');
+
+    await sendFrame(second, { id: 4, method: 'Runtime.evaluate', params: { expression: 'state' }, sessionId: secondSession });
+    expect(second.sent.find((frame) => frame.id === 4).result).toEqual({ result: { value: 'kept' } });
+    expect(first.sent.find((frame) => frame.id === 4)).toBeUndefined();
+
+    guest.debugger.emit('message', {}, 'Page.loadEventFired', {});
+    expect(second.sent.at(-1)).toEqual({ method: 'Page.loadEventFired', params: {}, sessionId: secondSession });
+    expect(first.sent.find((frame) => frame.method === 'Page.loadEventFired')).toBeUndefined();
+    expect(harness.bridge.getLeaseStatus('resume')).toMatchObject({ state: 'connected', clients: 1 });
+    harness.bridge.closeAll();
+  });
+
+  test('a released client cannot receive late results and an unattached lease still expires', async () => {
+    const clock = createFakeClock();
+    const pending = [];
+    const guest = createFakeGuest({
+      name: 'late',
+      sendCommand: (method) => (method === 'Runtime.evaluate'
+        ? new Promise((resolve) => pending.push(resolve))
+        : {}),
+    });
+    const harness = createHarness({ ...clock, orphanTimeoutMs: 40, commandTimeoutMs: 1_000 });
+    const started = await harness.createLease('late', {}, guest);
+    const first = harness.connect(started);
+    const session = await attach(first);
+    await sendFrame(first, { id: 7, method: 'Runtime.evaluate', params: {}, sessionId: session });
+    expect(harness.bridge.getLeaseStatus('late').inFlight).toBe(1);
+
+    first.peerClose();
+    expect(harness.bridge.getLeaseStatus('late')).toMatchObject({ state: 'ready', inFlight: 0 });
+
+    const second = harness.connect(started);
+    const secondSession = await attach(second);
+    await sendFrame(second, { id: 7, method: 'Runtime.evaluate', params: {}, sessionId: secondSession });
+    pending[0]({ result: { value: 'stale' } });
+    await flushPromises();
+    expect(second.sent.filter((frame) => frame.id === 7)).toEqual([]);
+    pending[1]({ result: { value: 'fresh' } });
+    await flushPromises();
+    expect(second.sent.find((frame) => frame.id === 7).result).toEqual({ result: { value: 'fresh' } });
+
+    second.peerClose();
+    clock.advance(39);
+    expect(harness.bridge.getLeaseStatus('late').state).toBe('ready');
+    clock.advance(2);
+    expect(harness.bridge.getLeaseStatus('late').state).toBe('not_found');
+    expect(harness.closed).toEqual([{ leaseId: 'late', reason: 'orphan_timeout' }]);
+    expect(harness.bridge.isRunning).toBe(false);
+  });
+
+  test('a disconnect releases a held capture suppression exactly once', async () => {
+    const after = [];
+    const guest = createFakeGuest({ sendCommand: (method) => method === 'Target.getTargetInfo'
+      ? { targetInfo: { targetId: 'native-owned-target' } }
+      : method === 'Target.attachToTarget' ? { sessionId: 'native-capture' } : {} });
+    const harness = createHarness({ onAfterCommand: (detail) => { after.push(detail.method); } });
+    const started = await harness.createLease('capture', {}, guest);
+    const first = harness.connect(started);
+    await attach(first);
+    await sendFrame(first, { id: 2, method: 'Target.attachToTarget', params: { flatten: true } });
+    for (let i = 0; i < 5; i++) await flushPromises();
+    expect(typeof first.sent.find((frame) => frame.id === 2).result.sessionId).toBe('string');
+    after.length = 0;
+
+    first.peerClose();
+    for (let i = 0; i < 5; i++) await flushPromises();
+    expect(after.filter((method) => method === 'DevRyan.captureDetached')).toHaveLength(1);
+
+    const second = harness.connect(started);
+    await attach(second);
+    await sendFrame(second, { id: 2, method: 'Target.attachToTarget', params: { flatten: true } });
+    for (let i = 0; i < 5; i++) await flushPromises();
+    expect(typeof second.sent.find((frame) => frame.id === 2).result.sessionId).toBe('string');
+    expect(after.filter((method) => method === 'DevRyan.captureDetached')).toHaveLength(1);
+    harness.bridge.closeAll();
+  });
+
+  test('protocol failures still close their lease and the final lease stops the server', async () => {
     const harness = createHarness();
     const startedA = await harness.createLease('lease-a', {}, createFakeGuest({ name: 'a' }));
     const startedB = await harness.createLease('lease-b', {}, createFakeGuest({ name: 'b' }));
     const socketA = harness.connect(startedA);
     const socketB = harness.connect(startedB);
-    socketA.peerClose();
+    socketA.emit('error', new Error('invalid frame'));
 
     expect(harness.bridge.getLeaseStatus('lease-a').state).toBe('not_found');
+    expect(harness.closed.at(-1)).toEqual({ leaseId: 'lease-a', reason: 'socket_error' });
     expect(harness.bridge.getLeaseStatus('lease-b').state).toBe('connected');
     expect(harness.bridge.isRunning).toBe(true);
     expect(harness.servers[0].closeCalls).toBe(0);
 
-    socketB.peerClose();
+    await sendFrame(socketB, 'not json');
     expect(harness.bridge.status()).toMatchObject({ running: false, leaseCount: 0, clients: 0 });
     expect(harness.servers[0].closeCalls).toBe(1);
   });

@@ -1,9 +1,15 @@
 import { generateTextWithSessionModel } from '../opencode/session-model-text.js';
 
+// Commit and PR drafts use one paid OpenCode Zen model instead of rotating the
+// free catalog, whose models routinely timed out before a local fallback.
+export const GIT_GENERATION_ZEN_MODEL = 'deepseek-v4.1-flash';
+// Drafts are short, so low reasoning effort keeps the sparkles button fast.
+export const GIT_GENERATION_ZEN_VARIANT = 'low';
+
 /**
- * Zen's free tier requires OpenCode's native provider transport, and it rejects
- * requests that carry no OpenCode tool definitions. Helpers therefore advertise
- * the tools while the session permission still denies every call.
+ * Git helpers call OpenCode's native `opencode` (Zen) provider in a temporary
+ * helper session whose permission denies and hides every tool. Only Zen's free
+ * tier requires advertised OpenCode tool definitions; the paid model does not.
  */
 export const createGitZenTextTransport = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, directory, agent }) => {
   let pending;
@@ -11,8 +17,8 @@ export const createGitZenTextTransport = ({ buildOpenCodeUrl, getOpenCodeAuthHea
     requestText({ prompt, zenModel, timeoutMs, signal }) {
       pending = generateTextWithSessionModel({
         buildOpenCodeUrl, getOpenCodeAuthHeaders, directory,
-        providerID: 'opencode', modelID: zenModel, agent, prompt, timeoutMs, signal,
-        recoverOnError: false, denyTools: true, advertiseDeniedTools: true,
+        providerID: 'opencode', modelID: zenModel, variant: GIT_GENERATION_ZEN_VARIANT, agent, prompt, timeoutMs, signal,
+        recoverOnError: false, denyTools: true,
       }).then((result) => {
         if (result.ok) return result.text;
         const error = new Error(result.reason === 'timeout' ? 'Zen generation timed out' : `Zen generation ${result.reason}`);

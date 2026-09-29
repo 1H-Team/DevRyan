@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
-import { protectRetentionSelection, runSessionRetention } from '@/lib/sessionRetention';
+import { protectRetentionSelection, runProtectedSessionRetention } from '@/lib/sessionRetention';
 import { ensureGlobalSessionsLoaded, useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { getAllSyncSessions } from '@/sync/sync-refs';
@@ -125,8 +125,8 @@ export const useSessionAutoCleanup = (enabledOrOptions?: boolean | CleanupOption
       runningRef.current = true;
       setIsRunning(true);
       try {
-        await protectRetentionSelection(currentSessionId);
-        const result = await runSessionRetention();
+        const result = await runProtectedSessionRetention();
+        setAutoDeleteLastRunAt(Date.now());
         const completedIds = result.completed;
         if (result.action === 'archive') useGlobalSessionsStore.getState().archiveSessions(completedIds);
         else useGlobalSessionsStore.getState().removeSessions(completedIds);
@@ -138,14 +138,12 @@ export const useSessionAutoCleanup = (enabledOrOptions?: boolean | CleanupOption
       } finally {
         runningRef.current = false;
         setIsRunning(false);
-        setAutoDeleteLastRunAt(Date.now());
       }
     },
     [
       autoDeleteAfterDays,
       autoDeleteEnabled,
       autoDeleteLastRunAt,
-      currentSessionId,
       isLoading,
       sessionRetentionAction,
       setAutoDeleteLastRunAt,

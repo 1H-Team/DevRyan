@@ -16,6 +16,7 @@ import {
     isSafeAssistantImageExternalUrl,
     loadAssistantImageBlob,
     prepareAssistantImageCandidates,
+    resolveAssistantImageDisplayUrl,
     resolveAssistantImageEditorPath,
     type AssistantImagePreparation,
 } from './assistantImageLoading';
@@ -92,6 +93,16 @@ const AssistantImageGallery: React.FC<AssistantImageGalleryProps> = ({
                 commitTransition(candidate.id, { status: 'error', errorCode: preparation.errorCode });
                 return;
             }
+            if (isSafeAssistantImageExternalUrl(preparation.url)) {
+                // Remote hosts rarely send CORS headers, so a blob fetch fails; the <img> loads
+                // cross-origin without them and reports undecodable responses through onError.
+                commitTransition(candidate.id, {
+                    status: 'ready',
+                    url: resolveAssistantImageDisplayUrl(preparation.url),
+                    filename: preparation.filename,
+                });
+                return;
+            }
             try {
                 const loaded = await loadAssistantImageBlob({
                     url: preparation.url,
@@ -104,7 +115,7 @@ const AssistantImageGallery: React.FC<AssistantImageGalleryProps> = ({
                 objectUrls.track(loaded.objectUrl);
                 commitTransition(candidate.id, {
                     status: 'ready',
-                    objectUrl: loaded.objectUrl,
+                    url: loaded.objectUrl,
                     mimeType: loaded.mimeType,
                     size: loaded.size,
                     filename: preparation.filename,
@@ -154,6 +165,11 @@ const AssistantImageGallery: React.FC<AssistantImageGalleryProps> = ({
         onContentChangeRef.current?.('structural');
     }, []);
 
+    // A single tile sizes to the image, so its height settles only once the pixels arrive.
+    const notifyImageLoaded = React.useCallback(() => {
+        onContentChangeRef.current?.('structural');
+    }, []);
+
     if (candidates.length === 0) return null;
 
     return (
@@ -164,11 +180,15 @@ const AssistantImageGallery: React.FC<AssistantImageGalleryProps> = ({
             data-assistant-image-count={candidates.length}
         >
             {candidates.map((candidate) => {
+                const isSingle = candidates.length === 1;
                 const state = tileStates[candidate.id] ?? { status: 'idle' as const };
-                const commonFigureClass = 'relative aspect-[4/3] min-w-0 overflow-hidden rounded-xl border border-border/40 bg-muted/10';
+                const commonFigureClass = cn(
+                    'relative min-w-0 overflow-hidden rounded-xl border border-border/40 bg-muted/10',
+                    isSingle ? 'max-h-80' : 'aspect-[4/3] max-h-56',
+                );
                 if (state.status === 'ready') {
                     return (
-                        <figure key={candidate.id} className={commonFigureClass} data-assistant-image-state="ready">
+                        <figure key={candidate.id} className={cn(commonFigureClass, isSingle && 'w-fit min-w-48 max-w-full')} data-assistant-image-state="ready">
                             <button
                                 type="button"
                                 onClick={() => openPreview(candidate, state)}
@@ -179,19 +199,20 @@ const AssistantImageGallery: React.FC<AssistantImageGalleryProps> = ({
                                 }}
                                 disabled={!onShowPopup}
                                 className={cn(
-                                    'absolute inset-0 flex h-full w-full items-center justify-center overflow-hidden text-left',
+                                    'flex w-full items-center justify-center overflow-hidden text-left',
+                                    isSingle ? 'max-h-80' : 'absolute inset-0 h-full',
                                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary',
                                     onShowPopup && 'cursor-zoom-in',
                                 )}
                                 aria-label={t('chat.assistantImage.openPreview', { name: candidate.caption })}
                             >
                                 <img
-                                    src={state.objectUrl}
+                                    src={state.url}
                                     alt={candidate.caption}
-                                    className="h-full w-full object-contain"
-                                    loading="lazy"
+                                    className={isSingle ? 'block max-h-80 w-auto max-w-full object-contain' : 'h-full w-full object-contain'}
                                     decoding="async"
                                     referrerPolicy="no-referrer"
+                                    onLoad={isSingle ? notifyImageLoaded : undefined}
                                     onError={() => markDecodeFailure(candidate)}
                                 />
                             </button>
@@ -199,9 +220,11 @@ const AssistantImageGallery: React.FC<AssistantImageGalleryProps> = ({
                                 <span className="min-w-0 truncate typography-meta text-foreground" title={candidate.caption}>
                                     {candidate.caption}
                                 </span>
-                                <span className="flex-shrink-0 typography-micro text-muted-foreground" title={t('chat.assistantImage.sizeBytes', { size: state.size })}>
-                                    {formatExactAssistantImageSize(state.size)}
-                                </span>
+                                {typeof state.size === 'number' ? (
+                                    <span className="flex-shrink-0 typography-micro text-muted-foreground" title={t('chat.assistantImage.sizeBytes', { size: state.size })}>
+                                        {formatExactAssistantImageSize(state.size)}
+                                    </span>
+                                ) : null}
                             </figcaption>
                         </figure>
                     );
@@ -212,17 +235,22 @@ const AssistantImageGallery: React.FC<AssistantImageGalleryProps> = ({
                     const canOpenInEditor = !isExternal && Boolean(runtime?.editor);
                     const failureContent = (
                         <>
-                            <RiFileImageLine className="h-6 w-6 flex-shrink-0 text-muted-foreground" />
-                            <span className="min-w-0 text-center">
+                            <RiFileImageLine className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                            <span className="min-w-0 flex-1 text-left">
                                 <span className="block truncate typography-meta text-foreground" title={candidate.caption}>{candidate.caption}</span>
                                 <span className="block typography-micro text-muted-foreground">{t('chat.assistantImage.previewUnavailable')}</span>
                             </span>
                             {isExternal ? <RiExternalLinkLine className="h-4 w-4 flex-shrink-0 text-muted-foreground" /> : null}
                         </>
                     );
-                    const failureClass = 'absolute inset-0 flex h-full w-full items-center justify-center gap-2 px-4 text-center hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary';
+                    const failureClass = 'flex w-full min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary';
                     return (
-                        <figure key={candidate.id} className={commonFigureClass} data-assistant-image-state="error" data-error-code={state.errorCode}>
+                        <figure
+                            key={candidate.id}
+                            className="col-span-full flex min-w-0 max-w-md rounded-lg border border-border/40 bg-muted/10"
+                            data-assistant-image-state="error"
+                            data-error-code={state.errorCode}
+                        >
                             {canOpenInEditor ? (
                                 <button
                                     type="button"
@@ -253,7 +281,7 @@ const AssistantImageGallery: React.FC<AssistantImageGalleryProps> = ({
                 return (
                     <div
                         key={candidate.id}
-                        className={cn(commonFigureClass, 'animate-pulse bg-muted/20')}
+                        className={cn(commonFigureClass, isSingle && 'h-40', 'animate-pulse bg-muted/20')}
                         aria-label={t('chat.assistantImage.loading')}
                         data-assistant-image-state="idle"
                     />

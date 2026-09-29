@@ -407,6 +407,7 @@ export const executeEvaluationCase = async (options = {}) => {
         selection,
         prompt: definition.prompt,
         followUpPrompt: definition.followUpPrompt,
+        planMode: definition.planMode === true,
         timeoutMs,
         caseId,
         repetition,
@@ -453,7 +454,7 @@ export const executeEvaluationCase = async (options = {}) => {
       }));
     }
     if (isRoutingCase(caseId)) {
-      graders.push(gradeRoutingOutcome({ caseId, rootSessionId: sessionResult?.rootSessionId, snapshot: sessionResult?.managedSnapshot, childSessionIds: sessionResult?.childSessionIds, evidence: sessionResult?.routingEvidence }));
+      graders.push(gradeRoutingOutcome({ caseId, rootSessionId: sessionResult?.rootSessionId, snapshot: sessionResult?.managedSnapshot, childSessionIds: sessionResult?.childSessionIds, evidence: sessionResult?.routingEvidence, sessionTree: sessionResult?.sessionTree }));
     }
     if (caseId === 'managed-independent') {
       graders.push(...gradeManagedIndependentFacts(sessionResult ?? {}));

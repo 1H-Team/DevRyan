@@ -4,7 +4,7 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { checkExecutionAdmission, executionProgress } from './execution-admission.js';
 import { changeError } from './session-changes-git.js';
-import { hasDirectoryAncestors } from './session-changes-snapshot.js';
+import { hasDirectoryAncestors, safeChangePath } from './session-changes-snapshot.js';
 import { markObjectDirectoryPending, markObjectIfUnsynced } from './object-durability.js';
 
 export const GRANULAR_TEXT_BYTES = 8 * 1024 * 1024;
@@ -141,6 +141,54 @@ async function verifyMutationObject(file, expected) {
   if (hash.digest('hex') !== expected) throw changeError('invalid_change_record');
   verifiedObjects.delete(expected); verifiedObjects.set(expected, identity);
   while (verifiedObjects.size > MAX_VERIFIED_OBJECTS) verifiedObjects.delete(verifiedObjects.keys().next().value);
+}
+
+// Materializes files into a disposable view directory this preparation just
+// created. Per file it clones the verified object straight into place (about
+// four filesystem requests instead of about twelve through the temporary-file
+// writer): each directory is created and checked once per preparation, a
+// clone never replaces an existing entry, and ancestors are never followed
+// through a link. `null` asks the caller to use the general writer (symbolic
+// links, and existing entries such as case-only collisions on a
+// case-insensitive volume). Returns the new file's bigint lstat.
+export function createViewMaterializer(repo, view, { io = (action) => action() } = {}) {
+  const directories = new Map([[view, Promise.resolve()]]);
+  const ensure = (directory) => {
+    let pending = directories.get(directory);
+    if (!pending) {
+      pending = ensure(path.dirname(directory))
+        .then(() => fs.mkdir(directory))
+        .catch(async (cause) => {
+          if (cause.code !== 'EEXIST') throw cause;
+          const stat = await fs.lstat(directory);
+          if (!stat.isDirectory() || stat.isSymbolicLink()) throw changeError('unsupported_path');
+        });
+      directories.set(directory, pending);
+    }
+    return pending;
+  };
+  return async (file, entry, mode) => {
+    if (!safeChangePath(file)) throw changeError('unsupported_path');
+    if (!/^[a-f0-9]{64}$/.test(entry?.hash ?? '')) throw changeError('invalid_change_record');
+    if (entry.mode === '120000') return null;
+    const target = path.join(view, file);
+    await ensure(path.dirname(target));
+    const object = path.join(repo.root, 'objects', entry.hash);
+    try {
+      await io(async () => {
+        await verifyMutationObject(object, entry.hash);
+        checkExecutionAdmission();
+        await fs.copyFile(object, target, constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE);
+      });
+    } catch (cause) {
+      if (cause.code === 'EEXIST') return null;
+      if (['ENOSPC', 'EDQUOT'].includes(cause.code)) throw changeError('storage_unavailable', 503);
+      throw cause;
+    }
+    await fs.chmod(target, mode);
+    executionProgress();
+    return fs.lstat(target, { bigint: true });
+  };
 }
 
 // `durable: false` is for disposable execution views: a crash cancels their

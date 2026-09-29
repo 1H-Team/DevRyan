@@ -106,7 +106,9 @@ The [2026-09-20 resource implementation audit](audits/2026-09-20-devryan-resourc
 
 The agent evaluation harness includes `routing-visual`, `routing-approved-visual`,
 `routing-behavior`, the unprompted `routing-natural-visual` and
-`routing-natural-behavior` controls, and the read-only `routing-external-docs`
+`routing-natural-behavior` controls, the zero-child `routing-direct-typo` control,
+the real Plan-mode `routing-plan-mode-behavior` case (composer preface on the
+planning turn, then "implement plan"), and the read-only `routing-external-docs`
 Librarian case. Run them with the existing `bun run agent:eval -- --config
 <path>` interface against a separately prepared, isolated loopback verification
 host and disposable fixture repository. Pin `agent` to `orchestrator` and choose
@@ -120,7 +122,8 @@ request; the zero-price behavior controls expect Fixer and preserve the existing
 presentation. Expected
 roles remain outside model prompts. Grading checks the recorded managed agent,
 exactly one implementation child for explicit requests (unprompted cases accept
-same-owner review remediation), completed/dispositioned work, unchanged tests
+one same-owner review remediation, and every owning child must complete its own
+edit), completed/dispositioned work, unchanged tests
 and unrelated files, and failing-before/passing-after source acceptance tests.
 These checks establish routing and source behavior, not rendered visual quality.
 Deterministic tests exercise the fixtures, wrong-role rejection, and stale-turn

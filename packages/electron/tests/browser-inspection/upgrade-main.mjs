@@ -205,11 +205,39 @@ async function run() {
         assert.equal(termination.confined, true); assert.equal(termination.terminated, true);
         assert.ok((await fs.stat(file)).size > 100);
         evidence.results.push({ confined: true, cancelled, result: JSON.parse(output), termination });
-        // The native supervisor has ended the daemon; its socket disconnect closes the lease.
-        for (let attempt = 0; bridge.status().leaseCount && attempt < 20; attempt++) await new Promise(resolve => setTimeout(resolve, 50));
-        assert.equal(bridge.status().leaseCount, 0);
+        // The native supervisor has ended the daemon; its disconnect releases
+        // only the client, so the turn's next confined call resumes the page.
+        for (let attempt = 0; bridge.status().clients && attempt < 20; attempt++) await new Promise(resolve => setTimeout(resolve, 50));
+        assert.equal(bridge.status().clients, 0);
+        assert.equal(bridge.status().leaseCount, 1);
+        assert.equal(bridge.getLeaseStatus(active.leaseId).state, 'ready');
       }
-      evidence.checks.push('native confined sequence and cancellation finalize recordings; write isolation; supervisor termination; lease cleanup');
+      // A later confined call reads the page state left by the previous one,
+      // and a pathless screenshot outlives the worker's per-call scratch.
+      const sessionTemporary = path.join(root, 'session-tmp');
+      const profile = path.join(root, 'worker-resume.sb');
+      const receipt = path.join(root, 'termination-resume.json');
+      await fs.writeFile(profile, sessionExecutionProfile({ viewDirectory: root, scratchDirectory: path.join(root, 'home'), socketDirectory: root }));
+      const resume = spawn(launcher, [root, path.join(root, 'home'), profile, receipt, '--',
+        process.env.DEVRYAN_BROWSER_UPGRADE_NODE, fileURLToPath(new URL('./upgrade-worker.mjs', import.meta.url))], { env: {
+        ...process.env, TMPDIR: path.join(root, 'home'), DEVRYAN_EXECUTION_CACHE: root, DEVRYAN_EXECUTION_WORKER: '1',
+        DEVRYAN_SESSION_TMP: sessionTemporary,
+        DEVRYAN_EXECUTION_BROWSER_SCOPE: JSON.stringify({ opencodeSessionID: context.sessionID, messageID: context.messageID, directory: root, agent: context.agent }),
+        DYLD_INSERT_LIBRARIES: `${launcher}-spawn.dylib` }, stdio: ['pipe', 'pipe', 'pipe'] });
+      let resumeOutput = '', resumeErrors = '';
+      resume.stdout.on('data', chunk => { resumeOutput += chunk; }); resume.stderr.on('data', chunk => { resumeErrors += chunk; });
+      resume.stdin.end(JSON.stringify({ context, protectedFile: path.join(installRoot, 'worker-must-not-write'), cancelAfterMs: null,
+        invocation: { command: 'sequence', timeout_ms: 20000, steps: [
+          { command: 'eval', args: ['document.querySelector("#result").textContent'] },
+          { command: 'screenshot' },
+        ] } }));
+      assert.equal(await new Promise((resolve, reject) => { resume.once('error', reject); resume.once('close', resolve); }), 0, resumeErrors);
+      evidence.results.push({ confined: true, resumed: true, result: JSON.parse(resumeOutput) });
+      const screenshots = await fs.readdir(path.join(sessionTemporary, 'agent-browser-screenshots'));
+      assert.ok(screenshots.some(name => name.endsWith('.png')), 'Pathless screenshot must persist after the worker exits');
+      await call({ command: 'close' });
+      assert.equal(bridge.status().leaseCount, 0);
+      evidence.checks.push('native confined sequence and cancellation finalize recordings; write isolation; supervisor termination; lease survives workers and resumes page state; pathless screenshot persists; explicit close');
     }
     evidence.status = 'passed';
   } catch (error) { evidence.error = error.stack; }

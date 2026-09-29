@@ -159,7 +159,10 @@ behavior.
 - `ledger-benchmark.mjs` measures the confined-execution ledger on a shallow
   clone under `.cache/perf/ledger-bench`: first-call build, warm prepare/publish
   and control-call timings for `--iterations` rounds, optionally after a
-  `--prewarm`, with RSS/CPU. Direct calls write synthetic `termination.json`
+  `--prewarm`, with RSS/CPU. `--fixture-files N` clones a deterministic
+  synthetic repository (built once under `.cache/perf/ledger-fixtures`),
+  `--parallel K` adds a burst of concurrent calls, and `--restamp` times the
+  call after every tracked file is rewritten with identical bytes. Direct calls write synthetic `termination.json`
   evidence and run no provider. Its `--profile` mode launches `ledger-profile-worker.mjs` in a
   fresh process per cold/warm/metadata-only/changed-content case (three trials
   by default), recording prewarm separately, existing admission phases,

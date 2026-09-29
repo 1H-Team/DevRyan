@@ -3,16 +3,17 @@ import type { AssistantImageCandidate } from './generatedImageResults';
 
 export interface ReadyAssistantImageTileState {
     status: 'ready';
-    objectUrl: string;
-    mimeType: string;
-    size: number;
+    /** Blob object URL for fetched images, or the remote http(s) URL rendered directly by `<img>`. */
+    url: string;
+    mimeType?: string;
+    size?: number;
     filename: string;
 }
 
 export const getAssistantImageGalleryClassName = (count: number): string => {
-    if (count <= 1) return 'grid grid-cols-1 gap-3 w-full max-w-2xl';
-    if (count === 2) return 'grid grid-cols-2 gap-3 w-full max-w-4xl';
-    return 'grid grid-cols-2 sm:grid-cols-3 gap-3 w-full';
+    if (count <= 1) return 'grid grid-cols-1 gap-3 w-full max-w-md';
+    if (count === 2) return 'grid grid-cols-2 gap-3 w-full max-w-2xl';
+    return 'grid grid-cols-2 sm:grid-cols-3 gap-3 w-full max-w-3xl';
 };
 
 export const formatExactAssistantImageSize = (bytes: number): string => (
@@ -33,9 +34,9 @@ export const buildAssistantImagePopup = (
         ...(candidate.toolPartId ? { toolPartId: candidate.toolPartId } : {}),
     },
     image: {
-        url: state.objectUrl,
-        mimeType: state.mimeType,
+        url: state.url,
+        ...(state.mimeType ? { mimeType: state.mimeType } : {}),
         filename: state.filename,
-        size: state.size,
+        ...(typeof state.size === 'number' ? { size: state.size } : {}),
     },
 });

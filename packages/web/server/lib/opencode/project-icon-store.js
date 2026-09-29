@@ -319,8 +319,13 @@ export const createProjectIconStore = ({ fsPromises, path, crypto, dataDirectory
         if (nextFilePath !== filePath) {
           const bytes = await fsPromises.readFile(filePath);
           const temporaryPath = `${nextFilePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          await fsPromises.writeFile(temporaryPath, bytes);
-          await fsPromises.rename(temporaryPath, nextFilePath);
+          try {
+            await fsPromises.writeFile(temporaryPath, bytes);
+            await fsPromises.rename(temporaryPath, nextFilePath);
+          } catch (error) {
+            await Promise.resolve(fsPromises.rm?.(temporaryPath, { force: true })).catch(() => {});
+            throw error;
+          }
           filePath = nextFilePath;
         }
         entry = { ...entry, projectId: project.id, projectPath: project.path, fileName: nextFileName };

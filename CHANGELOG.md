@@ -2,11 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.20] - 2026-09-29
+
+- Orchestrator no longer sees Oh My OpenCode Slim's background-job tools (`task_status`, `task_reply` and the rest). They work only for Slim's own jobs, which DevRyan never creates, so it now delegates and follows up only through DevRyan's managed tasks.
+- Orchestrator starts Librarian beside Explorer whenever a task depends on current external or version-specific facts, including single-area tasks, and answers stable, general programming questions without a web lookup.
+- Agent routing evaluations now allow at most one same-owner review follow-up and require every implementing specialist to complete its own edit, so a retry after a child worked in the wrong project no longer passes. New cases cover a direct typo fix (no specialist) and real Plan mode followed by "implement plan" (Fixer keeps ownership), and the documentation case checks the documented default value. Routing docs now describe the narrower direct-edit rule.
+- `read`, `glob`, `grep` and `skill` no longer wait behind other sessions in the same project. Each call's result was held until three bookkeeping steps finished one after another, all queued behind every session's work in that project; with about seven sessions on one project these tools took a median of 21–35 seconds. A read-only call now waits only for the one ledger commit that protects Revert and cancellation (`DEVRYAN_DIRECT_LEDGER_ONLY=0` restores the previous bookkeeping). The diagnostic journal now records a `direct_finish` timing summary for slow calls, which separates tool run time, queue waiting and commits.
+
 ## [1.2.19] - 2026-09-29
 
 - Orchestrator delegates implementation to specialists again. After Explorer discovery, every bug fix and non-design code change goes to Fixer, every visual change (including fully specified tweaks and approved plans) goes to Designer, and current external documentation goes to Librarian, alongside Explorer when a task depends on it. Orchestrator edits directly only mechanical typo, comment or wording fixes. Plan mode dispatches Explorer and Librarian, and plan approval keeps specialist ownership.
 - Update Oh My OpenCode Slim to 2.2.25. It brings a sturdier `apply_patch`, web-fetch security fixes and fewer injected reminders; DevRyan's agent prompts and the disabled foreground fallback are unchanged.
 - Agent routing evaluations now expect Fixer and Designer for natural bug-fix and visual requests, add a Librarian documentation case, and accept one Explorer per subsystem for broad discovery and same-owner review remediation for unprompted cases. Orchestrator briefs now name files by absolute workspace path.
+- The Git sparkles button (commit message) and PR Generate now use DeepSeek V4.1 Flash on OpenCode Zen at low reasoning effort instead of rotating free Zen models. Those free models kept timing out, so the button waited about 45 seconds and then fell back to a generic local draft. In live checks, commit drafts took 5–8 seconds and a small PR description about 15 seconds. The model is paid, so an OpenCode Zen API key with credit is required. If it fails, commit generation still produces a local draft whose warning names the reason, and PR generation still falls back to the Builder model.
+- Claude (`anthropic/*`) requests now run in the requesting session's project. Previously they ran in the project OpenCode was launched from, so concurrent projects shared one Claude transcript store and the model could be told another project's working directory. A request whose session directory cannot be verified is refused instead of running elsewhere.
+- Skills called by their folder name (for example `accessibility` or `1health-vitest`) now load the registered skill (`Accessibility`, `1Health Vitest`) on the first try instead of failing and being retried. The skill name matcher never received the skill list, because it expected a newer OpenCode client method than the one plugins get. Unknown skill names now fail with a list that pairs each folder name with its skill name.
 
 ## [1.2.18] - 2026-09-28
 

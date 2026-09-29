@@ -9,9 +9,9 @@ import {
 } from './pr-description.js';
 
 describe('direct PR description generation', () => {
-  it('tries free models for 15 seconds each until output is valid', async () => {
+  it('tries models within the per-attempt timeout until output is valid', async () => {
     const requestText = vi.fn(async ({ zenModel, timeoutMs }) => {
-      expect(timeoutMs).toBe(PR_GENERATION_MODEL_TIMEOUT_MS);
+      expect(timeoutMs).toBeLessThanOrEqual(PR_GENERATION_MODEL_TIMEOUT_MS);
       return zenModel === 'free-c'
         ? JSON.stringify({ title: 'Improve PR summaries', body: '## Summary\n- Use free Zen directly' })
         : '{"title":"Incomplete"}';
@@ -100,6 +100,7 @@ describe('direct PR description generation', () => {
         throw new Error('Zen generation timed out');
       }),
     })).rejects.toMatchObject({ code: 'FREE_ZEN_EXHAUSTED', attempts: 3, deadlineExceeded: true });
-    expect(timeouts).toEqual([15_000, 15_000, 5_000]);
+    expect(PR_GENERATION_MODEL_TIMEOUT_MS).toBe(45_000);
+    expect(timeouts).toEqual([45_000, 25_000, 5_000]);
   });
 });

@@ -1,4 +1,5 @@
-import { executionSignal, checkExecutionAdmission, executionPhase, withExecutionAdmission, withExecutionPreparation } from '@openchamber/harness-runtime/lib/execution-admission.js';
+import { executionSignal, checkExecutionAdmission, executionPhase, executionStep, withExecutionAdmission, withExecutionPreparation, withExecutionSummary } from '@openchamber/harness-runtime/lib/execution-admission.js';
+import { classifySessionChangeTool } from '@openchamber/harness-runtime/lib/session-changes-tools.js';
 import { cleanupExecutionLease } from '@openchamber/harness-runtime/lib/execution-cleanup.js';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -16,6 +17,10 @@ const failure = (code, status = 409) => Object.assign(new Error(code), { code, s
 // read-only (companion/SEAMS.md). The companion selects them by object
 // identity; the name check here is defense in depth.
 const DIRECT_RECEIPT_TOOLS = new Set(['read', 'glob', 'grep', 'skill']);
+// Admission times of direct calls, keyed by admission token, so a finish can
+// journal how long the tool ran in the companion. Bounded; a call that never
+// finishes (cancelled, crashed) is evicted by later admissions.
+const DIRECT_ADMISSIONS_MAX = 1024;
 const identity = (value) => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,512}$/.test(value);
 
 /** Private bridge for the pinned companion. Its bearer credential belongs to
@@ -43,6 +48,7 @@ export function createSessionExecutionHost(options) {
     return info;
   };
   const launcher = () => options.getLauncher();
+  const directAdmissions = new Map();
   const ownerDirectory = path.join(options.dataDirectory, 'harness', 'execution-owners');
   let preparationHost;
   // Preparations of a lost keeper already observe its aborted signal; they
@@ -195,10 +201,21 @@ export function createSessionExecutionHost(options) {
       const identity = { ...input, userMessageID: record.info.parentID, parentID: current.parentID };
       if (input.action === 'direct-admit') {
         const admitted = await executionPhase('direct_admission', () => runtime.admitDirect(identity));
-        return { ...admitted, token: randomUUID() };
+        const token = randomUUID();
+        directAdmissions.set(token, Date.now());
+        while (directAdmissions.size > DIRECT_ADMISSIONS_MAX) directAdmissions.delete(directAdmissions.keys().next().value);
+        return { ...admitted, token };
       }
       const result = await executionPhase('direct_receipt', () => runtime.finishDirect({ ...identity, executionFingerprint: input.argsDigest }));
-      await options.recordReceipt?.({ ...await runtime.executionReceipt({ directory: input.directory, token: input.token }), tool: input.tool });
+      // Session-change evidence never covers read-only tools: history import
+      // and observation skip them (session-changes-tools.js). Their empty
+      // attestation only cost a second ledger transaction plus a serialized
+      // session-changes commit per call, queued behind every session of the
+      // project. finishDirect above remains the revert/cancellation fence.
+      // Kill switch: DEVRYAN_DIRECT_LEDGER_ONLY=0 records the attestation again.
+      if (process.env.DEVRYAN_DIRECT_LEDGER_ONLY !== '0' && classifySessionChangeTool(input.tool) === 'read-only') return result;
+      const receipt = await executionPhase('execution_receipt', () => runtime.executionReceipt({ directory: input.directory, token: input.token }));
+      await executionPhase('change_receipt', () => options.recordReceipt?.({ ...receipt, tool: input.tool }));
       return result;
     }
     if (input.action === 'begin') {
@@ -269,7 +286,20 @@ export function createSessionExecutionHost(options) {
     await cleanup({ directory: input.directory, token: lease.token });
     return result;
   };
-  const dispatchPlugin = (input) => ['admit', 'prompt', 'begin', 'child', 'cancel-before-start', 'prepare-poll', 'claim', 'direct-admit'].includes(input.action)
+  // A direct finish withholds a tool result, so its bookkeeping is journaled
+  // like an admission (only when slow or failed) but gains no deadline: the
+  // receipt commit must settle. `tool_execution` is the companion's run time
+  // between admission and this finish; it is not part of `elapsedMs`.
+  const directFinish = (input) => {
+    const admittedAt = typeof input.token === 'string' ? directAdmissions.get(input.token) : undefined;
+    if (admittedAt !== undefined) directAdmissions.delete(input.token);
+    return withExecutionSummary(input, () => {
+      if (admittedAt !== undefined) executionStep('tool_execution', Date.now() - admittedAt);
+      return dispatch(input);
+    }, { phase: 'direct_finish', onDiagnostic: options.onDiagnostic, minMs: options.admissionSummaryMinMs ?? 250 });
+  };
+  const dispatchPlugin = (input) => input.action === 'direct-finish' ? directFinish(input)
+    : ['admit', 'prompt', 'begin', 'child', 'cancel-before-start', 'prepare-poll', 'claim', 'direct-admit'].includes(input.action)
     // Fail after 25 s without progress (this request's own work or the lock
     // holder it queues behind), never later than 50 s: the companion's RPC
     // limit is 60 s, and deadline-free commits may run past the abort.

@@ -1,3 +1,4 @@
+import { getRetentionNavigationRevision } from '@/lib/sessionRetention';
 import { buildKnownSessionDirectories } from '@/lib/worktrees/worktreeDiscovery';
 import { createSidebarRowModel, selectableModelRows } from './sidebar/sidebarRowModel';
 import { SidebarRowsContext } from './sidebar/SidebarRowsContext';
@@ -346,7 +347,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
 
   const homeDirectory = useDirectoryStore((state) => state.homeDirectory);
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
-  const setDirectory = useDirectoryStore((state) => state.setDirectory);
 
   const projects = useProjectsStore((state) => state.projects);
   const activeProjectId = useProjectsStore((state) => state.activeProjectId);
@@ -689,7 +689,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     setSessionSearchQuery,
     setIsSessionSearchOpen,
     setActiveProjectIdOnly,
-    setDirectory,
     setActiveMainTab,
     setSessionSwitcherOpen,
     setCurrentSession,
@@ -1319,10 +1318,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       collapseArchivedSessionTrees(result.archivedIds);
       discardPendingArchiveRevealSessionIdsFor(result.failedIds);
 
-      if (currentSessionId && result.archivedIds.includes(currentSessionId)) {
-        setCurrentSession(null);
-        setDirectory(request.projectDirectory, { showOverlay: false });
-      }
+      for (const id of result.archivedIds) useSessionUIStore.getState().invalidateSessionSelection(id);
 
       if (result.archivedIds.length > 0) {
         toast.success(t('sessions.sidebar.dialogs.archiveBranchSessions.success', {
@@ -1348,11 +1344,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     archiveBranchConfirm,
     archiveSessions,
     collapseArchivedSessionTrees,
-    currentSessionId,
     discardPendingArchiveRevealSessionIdsFor,
     recordPendingArchiveRevealSessionIds,
-    setCurrentSession,
-    setDirectory,
     t,
   ]);
 
@@ -1841,12 +1834,14 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
             open={canCreateWorktrees && newWorktreeDialogOpen}
             onOpenChange={setNewWorktreeDialogOpen}
             onWorktreeCreated={(worktreePath, options) => {
-              setActiveMainTab('chat');
-              if (mobileVariant) {
-                setSessionSwitcherOpen(false);
-              }
+              const expectedNavigationRevision = options?.expectedNavigationRevision;
+              if (expectedNavigationRevision !== undefined && expectedNavigationRevision !== getRetentionNavigationRevision()) return;
+              const onApplied = () => {
+                setActiveMainTab('chat');
+                if (mobileVariant) setSessionSwitcherOpen(false);
+              };
               if (options?.sessionId) {
-                setCurrentSession(options.sessionId);
+                setCurrentSession(options.sessionId, worktreePath, { expectedNavigationRevision, onApplied });
                 return;
               }
               openNewSessionDraft({
@@ -1854,6 +1849,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
                 directoryOverride: worktreePath,
                 preserveDirectoryOverride: true,
               });
+              onApplied();
             }}
           />
         </LazyViewBoundary>

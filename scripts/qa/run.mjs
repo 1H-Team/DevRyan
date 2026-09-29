@@ -16,7 +16,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function runQa({ runtime = 'web', scenario = 'chat', outputRoot = path.join(root, '.cache/qa'), holdMs = 0 } = {}) {
   if (!Number.isSafeInteger(holdMs) || holdMs < 0 || holdMs > 300000) throw new Error('QA inspection hold must be 0–300000 milliseconds');
   if (!['web', 'electron'].includes(runtime)) throw new Error('QA runtime must be web or electron');
-  if (!['chat', 'mobile', 'recovery', 'thinking', 'grok-plan', 'session-changes', 'execution-failure', 'skill-loading'].includes(scenario) || (scenario === 'mobile' && runtime !== 'web')) throw new Error('QA scenario must be chat, recovery, thinking, grok-plan, session-changes, execution-failure, skill-loading, or mobile on web');
+  if (!['chat', 'mobile', 'recovery', 'thinking', 'grok-plan', 'session-changes', 'execution-failure', 'skill-loading', 'navigation'].includes(scenario) || (scenario === 'mobile' && runtime !== 'web')) throw new Error('QA scenario must be chat, recovery, thinking, grok-plan, session-changes, execution-failure, skill-loading, or mobile on web');
   if (runtime === 'electron') {
     const [webIndex, stagedIndex] = await Promise.all([
       readFile(path.join(root, 'packages/web/dist/index.html'), 'utf8'),
@@ -94,12 +94,27 @@ export async function runQa({ runtime = 'web', scenario = 'chat', outputRoot = p
     const sessionChanges = scenario === 'session-changes' ? await import('./session-changes.mjs') : null;
     const preparedChanges = sessionChanges ? await sessionChanges.prepareSessionChangesQa({ fixture, directory: workspace, dataDirectory: data }) : null;
     const debugPort = await reservePort();
+    const profilePort = scenario === 'navigation' ? await reservePort() : null;
     const port = await reservePort();
+    if (runtime === 'electron') {
+      const settingsPath = path.join(data, 'settings.json');
+      await writeFile(settingsPath, JSON.stringify({ ...JSON.parse(await readFile(settingsPath, 'utf8')), desktopLocalPort: port,
+        ...(scenario === 'navigation' && process.env.DEVRYAN_QA_RUNTIME_SERVICE === '1' ? { productionBotsRuntimeMode: 'service' } : {}) }));
+    }
     const env = { ...process.env, OPENCHAMBER_DATA_DIR: data, OPENCHAMBER_ELECTRON_USER_DATA_DIR: profile,
       OPENCHAMBER_DIST_DIR: path.join(root, 'packages/web/dist'), OPENCHAMBER_PORT: String(port),
       OPENCODE_HOST: fixture.origin, OPENCODE_SKIP_START: 'true', OPENCHAMBER_SKIP_OPENCODE_START: 'true',
       OPENCHAMBER_ELECTRON_DEV: '1', NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1' };
     delete env.ELECTRON_RUN_AS_NODE;
+    if (scenario === 'navigation') {
+      const qaHome = path.join(temporary, 'home');
+      await mkdir(qaHome, { recursive: true, mode: 0o700 });
+      await writeFile(path.join(qaHome, '.devryan-qa-home'), '', { mode: 0o600 });
+      await writeFile(path.join(temporary, 'credentials.env.json'), '{}', { mode: 0o600 });
+      Object.assign(env, { DEVRYAN_QA_HOME: qaHome, DEVRYAN_QA_RUNTIME_ROOT: temporary, DEVRYAN_QA_RUNTIME: runtime });
+      for (const key of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|API_KEY/.test(key)) delete env[key];
+      env.GH_CONFIG_DIR = path.join(qaHome, 'gh');
+    }
     const start = (command, args, environment = env) => {
       const process = startOwnedProcess(command, args, { cwd: root, env: environment });
       owned.push(process);
@@ -108,13 +123,18 @@ export async function runQa({ runtime = 'web', scenario = 'chat', outputRoot = p
     const origin = `http://127.0.0.1:${port}`;
     const browserFlags = [`--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`,
       '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--disable-background-timer-throttling'];
-    if (runtime === 'web') {
-      start('node', ['packages/web/server/index.js', '--port', String(port)]);
+    const runtimeService = runtime === 'electron' && scenario === 'navigation' && process.env.DEVRYAN_QA_RUNTIME_SERVICE === '1';
+    evidence.runtimeService = runtimeService;
+    if (runtime === 'web' || runtimeService) {
+      if (runtimeService) {
+        start(requireElectron('electron'), [`--inspect=127.0.0.1:${profilePort}`, 'scripts/qa/isolated-host.mjs', '--runtime-service']);
+      } else start('node', [...(profilePort ? [`--inspect=127.0.0.1:${profilePort}`] : []), ...(scenario === 'navigation' ? ['scripts/qa/isolated-host.mjs'] : ['packages/web/server/index.js', '--port', String(port)])]);
       await waitFor('web readiness', async () => fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(1000) }).then((r) => r.ok).catch(() => false), 60000);
-      start(requireElectron('electron'), [...browserFlags, 'scripts/qa/browser-shell.cjs'],
+      if (runtimeService) start(requireElectron('electron'), [...browserFlags, 'scripts/qa/isolated-host.mjs']);
+      else start(requireElectron('electron'), [...browserFlags, 'scripts/qa/browser-shell.cjs'],
         { ...env, DEVRYAN_QA_ORIGIN: origin });
     } else if (runtime === 'electron') {
-      start(requireElectron('electron'), [...browserFlags, 'packages/electron/main.mjs']);
+      start(requireElectron('electron'), [...browserFlags, ...(profilePort ? [`--inspect=${profilePort}`] : []), scenario === 'navigation' ? 'scripts/qa/isolated-host.mjs' : 'packages/electron/main.mjs']);
     }
     evidence.inspection = { cdp: `http://127.0.0.1:${debugPort}`, fixture: fixture.origin };
     console.log(JSON.stringify({ output, runtime, scenario, ...evidence.inspection }));
@@ -195,7 +215,10 @@ export async function runQa({ runtime = 'web', scenario = 'chat', outputRoot = p
       await cdp.send('Emulation.clearDeviceMetricsOverride');
       await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
     }
-    if (scenario !== 'session-changes') {
+    if (scenario === 'navigation') {
+      const { runNavigationQa } = await import('./navigation.mjs');
+      evidence.navigation = await runNavigationQa({ cdp, fixture, profilePort, output, check, screenshot });
+    } else if (scenario !== 'session-changes') {
     await check('four-session stream reaches selected transcript', async () => {
       await waitFor('renderer event transport readiness', async () => transportReady);
       await delay(500);
@@ -313,6 +336,21 @@ export async function runQa({ runtime = 'web', scenario = 'chat', outputRoot = p
     }
     try { await fixture?.close(); } catch (error) { evidence.cleanupErrors.push(sanitize(error.message)); }
     if (evidence.cleanupErrors.length) evidence.outcome = 'failed';
+    if (scenario === 'navigation') {
+      const selectionTimings = owned.flatMap(process => process.getLog().split('\n').flatMap(line => {
+        const marker = line.indexOf('[selection-timing] ');
+        if (marker < 0) return [];
+        try {
+          const record = JSON.parse(line.slice(marker + '[selection-timing] '.length));
+          if (!/^[a-zA-Z0-9_-]{8,64}$/.test(record.requestID)) return [];
+          return [Object.fromEntries(Object.entries(record).filter(([key, value]) =>
+            ['requestID', 'at', 'phase'].includes(key) && typeof value === 'string'
+            || ['revision', 'status', 'elapsedMs', 'authenticatedMs', 'middlewareMs', 'gateStartMs', 'gateEndMs'].includes(key) && typeof value === 'number'
+            || key === 'committed' && typeof value === 'boolean'))];
+        } catch { return []; }
+      }));
+      await writeFile(path.join(output, 'selection-server-timings.json'), JSON.stringify(selectionTimings, null, 2));
+    }
     const logs = owned.map((process, index) => ({ index, log: sanitize(process.getLog()) }));
     await writeFile(path.join(output, 'process-logs.json'), JSON.stringify(logs, null, 2));
     evidence.finishedAt = new Date().toISOString();

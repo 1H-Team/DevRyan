@@ -93,3 +93,7 @@ Commands, prerequisites, coverage limits and journal investigation: `docs/QA.md`
 The `skill-loading` QA scenario runs skill terminal-state checks independently of the broader `execution-failure` notification-persistence checks.
 
 Live cells may opt into `preserveOrchestration: true`. Profile preparation then copies the saved Slim configuration and the agent overrides/backups sidecar without changing roles, efforts, presets, fallback settings, or model references. Parent model selection remains a composer choice. This option rejects assignment overrides, admits the saved Go/Cursor provider identities, and records credential availability without replacing unsupported or unavailable providers. Refresh credentials remain excluded.
+
+- `navigation.mjs` (`DEVRYAN_QA_SCENARIO=navigation`) profiles the isolated host while switching real sidebar rows under concurrent fixture streams and bounded cold history. It captures timestamped clicks, Chromium request timing/initiators, independent health latency, event-loop delay and a fixture-only JavaScript CPU profile. A passing fixture does not attribute or resolve an installed-runtime stall.
+
+The navigation scenario accepts `DEVRYAN_QA_RUNTIME_SERVICE=1` with Electron to profile an isolated background runtime-service while a real foreground client performs normal authenticated bootstrap. Both processes share only the disposable fixture data root and use separate private profiles; no persistent service registration is performed.

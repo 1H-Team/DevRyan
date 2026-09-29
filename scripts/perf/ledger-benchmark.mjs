@@ -4,8 +4,12 @@
 // Each iteration uses a fresh clone and fresh ledger storage under the
 // repository cache, so it never touches a user's project or runtime state.
 //
-//   node scripts/perf/ledger-benchmark.mjs [--repo <git repo>] [--runtime <harness-runtime/lib>]
-//     [--iterations 3] [--warm-calls 3] [--prewarm] [--out <report.json>] [--keep]
+//   node scripts/perf/ledger-benchmark.mjs [--repo <git repo> | --fixture-files <count>] [--runtime <harness-runtime/lib>]
+//     [--iterations 3] [--warm-calls 3] [--parallel <calls>] [--restamp] [--prewarm] [--out <report.json>] [--keep]
+//   --fixture-files builds (once) a deterministic synthetic repository under
+//   .cache/perf/ledger-fixtures. --parallel adds a burst of concurrent confined
+//   calls after the warm calls; --restamp then rewrites every tracked file with
+//   identical bytes (new inode and ctime) and times the next call.
 //   --profile [--companion] [--timeout-ms 300000] runs cold, prewarmed,
 //   metadata-only and changed-content cases in fresh worker processes.
 //
@@ -24,7 +28,8 @@ const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 export function parseLedgerBenchmarkArgs(argv) {
   const options = { repo: repositoryRoot, runtime: path.join(repositoryRoot, 'packages/harness-runtime/lib'),
-    iterations: 3, warmCalls: 3, prewarm: false, out: null, keep: false, profile: false, companion: false, timeoutMs: 300_000 };
+    iterations: 3, warmCalls: 3, prewarm: false, out: null, keep: false, profile: false, companion: false, timeoutMs: 300_000,
+    fixtureFiles: null, parallel: 1, restamp: false };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     const value = () => {
@@ -42,8 +47,16 @@ export function parseLedgerBenchmarkArgs(argv) {
     else if (flag === '--profile') options.profile = true;
     else if (flag === '--companion') options.companion = true;
     else if (flag === '--timeout-ms') options.timeoutMs = Number(value());
+    else if (flag === '--fixture-files') options.fixtureFiles = Number(value());
+    else if (flag === '--parallel') options.parallel = Number(value());
+    else if (flag === '--restamp') options.restamp = true;
     else throw new Error(`Unknown option ${flag}`);
   }
+  if (options.fixtureFiles !== null && (!Number.isSafeInteger(options.fixtureFiles) || options.fixtureFiles < 1 || options.fixtureFiles > 200_000)) {
+    throw new Error('--fixture-files must be an integer from 1 to 200000');
+  }
+  if (!Number.isSafeInteger(options.parallel) || options.parallel < 1 || options.parallel > 32) throw new Error('--parallel must be an integer from 1 to 32');
+  if (options.profile && (options.parallel > 1 || options.restamp)) throw new Error('--parallel and --restamp apply to the call benchmark, not --profile');
   for (const [name, count] of [['--iterations', options.iterations], ['--warm-calls', options.warmCalls]]) {
     if (!Number.isSafeInteger(count) || count < 1 || count > 50) throw new Error(`${name} must be an integer from 1 to 50`);
   }
@@ -95,6 +108,58 @@ async function controlCall(runtime, directory, ids) {
   return { totalMs: total.ms };
 }
 
+// Deterministic synthetic project: nested directories (depth 3-6), mixed
+// sizes, some executable files and symbolic links, and an ignored dependency
+// input. Built once per size and committed, so every arm clones the same tree.
+export function fixtureEntries(count) {
+  const entries = [];
+  for (let index = 0; index < count; index += 1) {
+    const depth = 3 + (index % 4);
+    const parts = [`d${index % 7}`, `s${(index >> 3) % 11}`, `t${(index >> 6) % 13}`, `u${(index >> 9) % 5}`, `v${(index >> 11) % 3}`, `w${(index >> 12) % 2}`];
+    const file = [...parts.slice(0, depth - 1), `f${index}.${index % 5 === 0 ? 'bin' : 'ts'}`].join('/');
+    if (index % 499 === 498) { entries.push({ file: file.replace(/\.[a-z]+$/, '.link'), link: `f${index - 1}.ts` }); continue; }
+    entries.push({ file, text: `// fixture ${index}\n${'export const value = 1;\n'.repeat(1 + (index % 40))}`, executable: index % 97 === 0 });
+  }
+  return entries;
+}
+
+async function ensureFixtureRepository(count) {
+  const directory = path.join(repositoryRoot, '.cache/perf/ledger-fixtures', `files-${count}`);
+  if (await fs.access(path.join(directory, '.fixture-ready')).then(() => true, () => false)) return directory;
+  await fs.rm(directory, { recursive: true, force: true });
+  await fs.mkdir(directory, { recursive: true });
+  await execute('git', ['init', '--quiet', directory]);
+  await fs.writeFile(path.join(directory, '.gitignore'), 'node_modules/\n');
+  await fs.writeFile(path.join(directory, 'README.md'), '# ledger fixture\n');
+  await fs.mkdir(path.join(directory, 'node_modules/dep'), { recursive: true });
+  await fs.writeFile(path.join(directory, 'node_modules/dep/index.js'), 'module.exports = 1;\n');
+  for (const entry of fixtureEntries(count)) {
+    const target = path.join(directory, entry.file);
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    if (entry.link) await fs.symlink(entry.link, target);
+    else await fs.writeFile(target, entry.text, { mode: entry.executable ? 0o755 : 0o644 });
+  }
+  await execute('git', ['-C', directory, 'add', '-A'], { maxBuffer: 64 * 1024 * 1024 });
+  await execute('git', ['-C', directory, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '-m', 'fixture'], { maxBuffer: 64 * 1024 * 1024 });
+  await fs.writeFile(path.join(directory, '.fixture-ready'), '');
+  return directory;
+}
+
+async function restampTrackedFiles(directory) {
+  const { stdout } = await execute('git', ['-C', directory, 'ls-files', '-z'], { maxBuffer: 256 * 1024 * 1024 });
+  let rewritten = 0;
+  for (const file of stdout.split('\0').filter(Boolean)) {
+    const target = path.join(directory, file);
+    const stat = await fs.lstat(target).catch(() => null);
+    if (!stat?.isFile()) continue;
+    const bytes = await fs.readFile(target);
+    await fs.rm(target);
+    await fs.writeFile(target, bytes, { mode: stat.mode & 0o777 });
+    rewritten += 1;
+  }
+  return rewritten;
+}
+
 async function trackedFileCount(directory) {
   const { stdout } = await execute('git', ['-C', directory, 'ls-files', '-z'], { maxBuffer: 256 * 1024 * 1024 });
   return stdout.split('\0').filter(Boolean).length;
@@ -102,6 +167,7 @@ async function trackedFileCount(directory) {
 
 export async function runLedgerBenchmark(options) {
   const { createSessionMutationRuntime } = await import(pathToFileURL(path.join(options.runtime, 'session-mutations.js')).href);
+  if (options.fixtureFiles !== null) options = { ...options, repo: await ensureFixtureRepository(options.fixtureFiles) };
   const benchRoot = path.join(repositoryRoot, '.cache/perf/ledger-bench');
   await fs.mkdir(benchRoot, { recursive: true });
   const iterations = [];
@@ -126,10 +192,25 @@ export async function runLedgerBenchmark(options) {
       for (let call = 1; call <= options.warmCalls; call += 1) {
         warm.push(await processCall(runtime, project, { session: 's1', user: `u${call}`, call: `c${call}` }, edit));
       }
+      let burst = null;
+      if (options.parallel > 1) {
+        // Concurrent calls of one assistant step: each edits its own new file.
+        const started = performance.now();
+        const calls = await Promise.all(Array.from({ length: options.parallel }, (_, call) => processCall(runtime, project,
+          { session: `b${call}`, user: `bu${call}`, call: `bc${call}` }, `ledger-bench-burst-${call}.txt`)));
+        burst = { spanMs: Math.round(performance.now() - started), calls };
+      }
+      let restamp = null;
+      if (options.restamp) {
+        const rewritten = await restampTrackedFiles(project);
+        restamp = { rewritten, ...await processCall(runtime, project, { session: 's1', user: 'ur', call: 'cr' }, edit) };
+      }
       const control = await controlCall(runtime, project, { session: 's1', user: 'uc', call: 'cc' });
-      iterations.push({ iteration, files, prewarmMs, first, warm, control, maxRssMiB: Math.round(process.resourceUsage().maxRSS / 1024) });
+      iterations.push({ iteration, files, prewarmMs, first, warm, burst, restamp, control, maxRssMiB: Math.round(process.resourceUsage().maxRSS / 1024) });
       console.error(JSON.stringify({ iteration, files, prewarmMs, firstBeginMs: first.beginMs, firstFinishMs: first.finishMs,
-        warmBeginMs: warm.map(row => row.beginMs), warmFinishMs: warm.map(row => row.finishMs), controlMs: control.totalMs }));
+        warmBeginMs: warm.map(row => row.beginMs), warmFinishMs: warm.map(row => row.finishMs),
+        burstSpanMs: burst?.spanMs ?? null, burstBeginMs: burst?.calls.map(row => row.beginMs) ?? null,
+        restampBeginMs: restamp?.beginMs ?? null, controlMs: control.totalMs }));
     } finally {
       if (!options.keep) await fs.rm(root, { recursive: true, force: true });
     }
@@ -138,13 +219,17 @@ export async function runLedgerBenchmark(options) {
   const switches = Object.fromEntries(Object.entries(process.env).filter(([key]) => /^DEVRYAN_(LEDGER|LAZY|VIEW|EXECUTION)_/.test(key)).sort());
   return {
     version: 1, runtime: options.runtime, repo: options.repo, iterations: options.iterations, warmCalls: options.warmCalls,
-    prewarm: options.prewarm, switches, platform: `${process.platform}-${process.arch}`, node: process.version,
+    prewarm: options.prewarm, parallel: options.parallel, restamp: options.restamp, fixtureFiles: options.fixtureFiles,
+    switches, platform: `${process.platform}-${process.arch}`, node: process.version,
     summary: {
       files: pick(row => [row.files]),
       prewarmMs: pick(row => [row.prewarmMs]),
       firstBeginMs: pick(row => [row.first.beginMs]), firstFinishMs: pick(row => [row.first.finishMs]),
       warmBeginMs: pick(row => row.warm.map(call => call.beginMs)), warmFinishMs: pick(row => row.warm.map(call => call.finishMs)),
       warmCleanupMs: pick(row => row.warm.map(call => call.cleanupMs)),
+      burstSpanMs: pick(row => (row.burst ? [row.burst.spanMs] : [])),
+      burstBeginMs: pick(row => row.burst?.calls.map(call => call.beginMs) ?? []),
+      restampBeginMs: pick(row => (row.restamp ? [row.restamp.beginMs] : [])),
       controlMs: pick(row => [row.control.totalMs]), maxRssMiB: pick(row => [row.maxRssMiB]),
     },
     rows: iterations,

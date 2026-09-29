@@ -36,7 +36,7 @@ Everything after attach uses flat-session messaging. Browser operations exercise
 4. **Session routing:** strip the synthetic `sessionId` before `webContents.debugger.sendCommand(method, params)`, then restore it on replies and debugger events.
 5. **Browser-level domain fence:** synthesize in-session `Target.setAutoAttach` as `{}` and reject every other session-scoped `Target.*` or `Browser.*` method. Forwarding those page-debugger domains could enumerate, attach, or mutate sibling Electron targets and windows; main-frame snapshot and interaction do not require them.
 6. **Input attribution:** tag intercepted `Input.*` activity with the owning `leaseId`; Electron emits it only to the window currently observing that lease.
-7. **Reconnection coverage:** a reconnect test must repeat the attach handshake and a real session-scoped command. Merely accepting another socket does not prove that target/session state was rebuilt.
+7. **Reconnection coverage:** a reconnect test must repeat the attach handshake and a real session-scoped command. Merely accepting another socket does not prove that target/session state was rebuilt. A clean client disconnect releases only the client (confined per-call workers end their daemon after every call), so the same capability accepts the next client, which resumes the pinned page with the same session ID while late results of the previous client stay fenced.
 
 ## Packaged Electron acceptance (2026-08-02)
 

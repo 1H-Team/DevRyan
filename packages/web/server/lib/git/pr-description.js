@@ -1,10 +1,12 @@
 import { normalizePullRequestDraft, runFreeZenModelRotation, sharedFreeZenCooldowns } from '@openchamber/shared-runtime';
 import { generateZenText, resolveZenSessionID } from '../text/summarization.js';
 
-export const PR_GENERATION_MODEL_TIMEOUT_MS = 15_000;
+// The pinned Zen model took ~15 s for a small live PR, so one attempt may use the whole
+// 45 s tier-1 budget before the route falls back to the session model.
+export const PR_GENERATION_MODEL_TIMEOUT_MS = 45_000;
 export const PR_GENERATION_MAX_TOKENS = 1_200;
-// Tier 1 is bounded: at most three free models, prioritizing warm ones, and 45 s in total before
-// the route falls back to the user's session model.
+// Tier 1 is bounded: at most three Zen models (the route passes only the pinned Git model),
+// prioritizing warm ones, and 45 s in total.
 export const PR_GENERATION_MAX_FREE_MODELS = 3;
 export const PR_GENERATION_FREE_DEADLINE_MS = 45_000;
 
@@ -45,9 +47,12 @@ export async function generatePullRequestDescriptionDirect({
     afterAttempt,
   });
   if (!result.ok) {
+    const lastFailure = result.failures.at(-1);
     const error = new Error(result.deadlineExceeded
-      ? 'Free Zen models ran out of time while generating the pull request description'
-      : 'Unable to generate a pull request description with the available free Zen models');
+      ? 'Zen ran out of time while generating the pull request description'
+      : lastFailure
+        ? `Zen could not generate a pull request description (${lastFailure.model}: ${lastFailure.reason})`
+        : 'Zen could not generate a pull request description');
     error.code = 'FREE_ZEN_EXHAUSTED';
     error.attempts = result.attempts;
     error.failures = result.failures;

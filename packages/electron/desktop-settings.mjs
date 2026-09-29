@@ -28,8 +28,14 @@ export function createDesktopSettings({ fs, fsp, os, process, log, getMainWindow
     // Atomic: write to a temp file then rename. Readers never see a partial
     // JSON file that could parse-error and get coerced to {}.
     const tmp = `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    await fsp.writeFile(tmp, JSON.stringify(data, null, 2));
-    await fsp.rename(tmp, filePath);
+    try {
+      await fsp.writeFile(tmp, JSON.stringify(data, null, 2));
+      await fsp.rename(tmp, filePath);
+    } catch (error) {
+      // A failed write must not leave its temporary file beside settings.
+      await fsp.rm(tmp, { force: true }).catch(() => {});
+      throw error;
+    }
   };
 
   const readSettingsRoot = () => {

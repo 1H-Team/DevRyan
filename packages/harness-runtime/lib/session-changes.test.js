@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createSessionChangeRuntime } from './session-changes.js';
+import { withExecutionSummary } from './execution-admission.js';
 import { finishFixtureMutation } from '../test/session-change-fixture.js';
 
 // Real Git integration can share the host with builds; keep a bounded budget
@@ -26,6 +27,14 @@ describe('session changes', () => {
     runtime = createSessionChangeRuntime({ directory: path.join(base, 'storage') }); n = 0;
   }, 30_000);
   afterEach(async () => { await runtime.drain(); await fs.rm(base, { recursive: true, force: true }); }, 30_000);
+  test('reports its project queue wait and transaction only to an active execution summary', async () => {
+    await runtime.recordReceipt({ ...input(), source: 'confined-execution', files: [] });
+    const records = [];
+    await withExecutionSummary({ sessionID: 'a' }, () => runtime.recordReceipt({ ...input(), source: 'confined-execution', files: [] }),
+      { phase: 'direct_finish', onDiagnostic: (record) => records.push(record) });
+    expect(records).toHaveLength(1);
+    expect(records[0].steps).toMatch(/^changes_queue_wait:1\/\d+,changes_transaction:1\/\d+$/);
+  });
   test('captures exact fixture changes with a dirty staged baseline, preserving index and HEAD', async () => {
     await write('a.txt', 'base\nuser\n'); command('add', 'a.txt');
     const index = command('diff', '--cached'); const head = command('rev-parse', 'HEAD');

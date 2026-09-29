@@ -139,4 +139,31 @@ describe('diagnostic journal trimming', () => {
       event('sync', {}, 'ses_2'),
     ]);
   });
+
+  test('coalesces SDK-shaped runtime sync events that carry an id and syncEvent body', () => {
+    const trimmer = createJournalTrimmer();
+    const sync = (id, at) => ({
+      at,
+      type: 'open_code_event',
+      payload: {
+        type: 'sync',
+        id,
+        syncEvent: { type: 'message.updated.1', id: `${id}_inner`, seq: at, aggregateID: 'ses_x', data: { large: 'x'.repeat(4096) } },
+      },
+    });
+
+    expect(trimmer.admit(sync('evt_1', 1))).toEqual([]);
+    expect(trimmer.admit(sync('evt_2', 2))).toEqual([]);
+    expect(trimmer.admit(sync('evt_3', 3))).toEqual([]);
+    const [record] = trimmer.flushAll();
+    expect(record).toEqual({ at: 3, type: 'open_code_event', payload: { type: 'sync', id: 'evt_3' }, coalesced: 3 });
+    expect(trimmer.stats().__runtime__.coalescedRuntimeSyncs).toBe(2);
+
+    const numericId = { at: 4, type: 'open_code_event', payload: { type: 'sync', id: 4 } };
+    expect(trimmer.admit(numericId)).toEqual([numericId]);
+    const unknownKey = { at: 5, type: 'open_code_event', payload: { type: 'sync', id: 'evt_5', extra: true } };
+    expect(trimmer.admit(unknownKey)).toEqual([unknownKey]);
+    const arrayBody = { at: 6, type: 'open_code_event', payload: { type: 'sync', id: 'evt_6', syncEvent: [] } };
+    expect(trimmer.admit(arrayBody)).toEqual([arrayBody]);
+  });
 });

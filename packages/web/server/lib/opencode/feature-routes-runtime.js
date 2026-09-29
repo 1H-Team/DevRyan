@@ -84,8 +84,6 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       emitSyntheticOpenCodeEvent,
       resolveZenModel,
       resolveZenModelNonBlocking,
-      fetchFreeZenModels,
-      getCachedZenModels,
       xaiToolCatalogRuntime,
       recordCommitTiming,
       resolveManagedProject,
@@ -330,12 +328,8 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     registerGitHubRoutes(app);
     registerProcessesRoutes(app, { runtime: processesRuntime });
     registerGitRoutes(app, {
-      fetchFreeZenModels,
-      // Last known free-model catalog so a catalog outage degrades to stale
-      // models (then the session model) instead of failing with no attempt.
-      getCachedFreeZenModels: getCachedZenModels,
       recordCommitTiming,
-      // PR description tier 2 (session model through a hidden helper session).
+      // Native Zen helper sessions, plus PR description tier 2 (session model).
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
     });

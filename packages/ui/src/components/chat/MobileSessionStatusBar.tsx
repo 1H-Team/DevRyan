@@ -704,9 +704,10 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
   }
 
   const handleSessionClick = (sessionId: string) => {
-    setCurrentSession(sessionId);
-    onSessionSwitch?.(sessionId);
-    setIsMobileSessionStatusBarCollapsed(true);
+    setCurrentSession(sessionId, undefined, { onApplied: () => {
+      onSessionSwitch?.(sessionId);
+      setIsMobileSessionStatusBarCollapsed(true);
+    } });
   };
 
   const handleSessionDoubleClick = () => {

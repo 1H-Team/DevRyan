@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { chmodSync, statSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, lstatSync, readdirSync, statSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
@@ -70,6 +70,9 @@ const stubLeaseFetch = ({
   previewUrl,
   // 404 mimics an older server without the resolve route.
   resolveStatus = 200,
+  // Reported for reused leases only, as the server does when the host
+  // returned its client count.
+  clientAttached,
 } = {}) => {
   const requests = [];
   vi.stubGlobal('fetch', vi.fn(async (url, init) => {
@@ -94,10 +97,12 @@ const stubLeaseFetch = ({
       });
     }
     if (request.method === 'POST' && request.url.endsWith('/api/desktop/browser-leases')) {
+      const created = requests.filter((entry) => entry.url.endsWith('/api/desktop/browser-leases')).length === 1;
       return new Response(JSON.stringify({
         leaseId: 'dvr_lease_1',
         wsUrl,
-        created: requests.filter((entry) => entry.url.endsWith('/api/desktop/browser-leases')).length === 1,
+        created,
+        ...(!created && clientAttached !== undefined ? { clientAttached } : {}),
         ...(previewUrl ? { previewUrl } : {}),
       }), { status: 200, headers: { 'content-type': 'application/json' } });
     }
@@ -206,6 +211,105 @@ describe('DevRyan agent browser plugin', () => {
     });
   });
 
+  it('reconnects a fresh confined worker to the same turn lease and keeps pathless screenshots durable', async () => {
+    const requests = stubLeaseFetch({ clientAttached: false });
+    const cache = mkdtempSync(join(tmpdir(), 'devryan-browser-cache-'));
+    const sessionTemporary = mkdtempSync(join(tmpdir(), 'devryan-browser-session-'));
+    process.env.DEVRYAN_EXECUTION_WORKER = '1';
+    process.env.DEVRYAN_EXECUTION_CACHE = cache;
+    process.env.DEVRYAN_SESSION_TMP = sessionTemporary;
+    process.env.DEVRYAN_EXECUTION_BROWSER_SCOPE = JSON.stringify({ opencodeSessionID: 'ses_child', messageID: 'msg_user', directory: '/workspace', agent: 'builder' });
+    try {
+      const calls = [];
+      const spawnImpl = vi.fn((binary, args, options) => {
+        calls.push({ args, options });
+        return makeChild({ stdout: args.includes('connect') ? 'connected\n' : 'ok\n' });
+      });
+      // Each confined call loads the plugin in a new worker process.
+      const first = await DevRyanBrowserPlugin({ spawnImpl });
+      await expect(first.tool.devryan_browser.execute({ command: 'open', args: ['http://127.0.0.1:3000'] }, context()))
+        .resolves.toBe('ok');
+      const second = await DevRyanBrowserPlugin({ spawnImpl });
+      await expect(second.tool.devryan_browser.execute({ command: 'screenshot' }, context()))
+        .resolves.toBe('ok');
+
+      const connects = calls.filter((call) => call.args.includes('connect'));
+      expect(connects.map((call) => call.args)).toEqual([
+        ['--namespace', 'devryan', '--session', 'dvr_lease_1', '--config', managedConfigPath, '--idle-timeout', '2m', 'connect', 'ws://127.0.0.1:54321/devtools/page/private-capability'],
+        ['--namespace', 'devryan', '--session', 'dvr_lease_1', '--config', managedConfigPath, '--idle-timeout', '2m', 'connect', 'ws://127.0.0.1:54321/devtools/page/private-capability'],
+      ]);
+      expect(requests.some((request) => request.method === 'DELETE')).toBe(false);
+      const acquires = requests.filter((request) => request.url.endsWith('/api/desktop/browser-leases'));
+      expect(acquires.map((request) => request.body)).toEqual([acquires[0].body, acquires[0].body]);
+      const screenshots = join(sessionTemporary, 'agent-browser-screenshots');
+      expect(lstatSync(screenshots).isDirectory()).toBe(true);
+      expect(calls.every((call) => call.options.env.AGENT_BROWSER_SCREENSHOT_DIR === screenshots)).toBe(true);
+    } finally {
+      delete process.env.DEVRYAN_EXECUTION_CACHE;
+      delete process.env.DEVRYAN_SESSION_TMP;
+      rmSync(cache, { recursive: true, force: true });
+      rmSync(sessionTemporary, { recursive: true, force: true });
+    }
+  });
+
+  it('replaces a planted screenshot link and keeps only the newest worker screenshots', async () => {
+    const sessionTemporary = mkdtempSync(join(tmpdir(), 'devryan-browser-session-'));
+    const outside = mkdtempSync(join(tmpdir(), 'devryan-browser-outside-'));
+    process.env.DEVRYAN_EXECUTION_WORKER = '1';
+    process.env.DEVRYAN_SESSION_TMP = sessionTemporary;
+    try {
+      const screenshots = join(sessionTemporary, 'agent-browser-screenshots');
+      symlinkSync(outside, screenshots, 'dir');
+      expect(__test.getManagedEnvironment().screenshotDirectory).toBe(screenshots);
+      expect(lstatSync(screenshots).isDirectory()).toBe(true);
+      expect(lstatSync(outside).isDirectory()).toBe(true);
+
+      for (let index = 0; index < 102; index += 1) {
+        const file = join(screenshots, `shot-${String(index).padStart(3, '0')}.png`);
+        writeFileSync(file, 'png');
+        utimesSync(file, 1_000 + index, 1_000 + index);
+      }
+      __test.getManagedEnvironment();
+      const kept = readdirSync(screenshots).sort();
+      expect(kept).toHaveLength(100);
+      expect(kept[0]).toBe('shot-002.png');
+    } finally {
+      delete process.env.DEVRYAN_SESSION_TMP;
+      rmSync(sessionTemporary, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('reconnects an unconfined plugin when the reused lease reports no attached client', async () => {
+    process.env.AGENT_BROWSER_SCREENSHOT_DIR = '/untrusted/screenshots';
+    try {
+      stubLeaseFetch({ clientAttached: false });
+      const spawnImpl = vi.fn((binary, args) => makeChild({ stdout: args.includes('connect') ? 'connected\n' : 'ok\n' }));
+      const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+      const tool = plugin.tool.devryan_browser;
+      await tool.execute({ command: 'open', args: ['http://127.0.0.1:3000'] }, context());
+      await tool.execute({ command: 'snapshot', args: ['-i'] }, context());
+      // A sequence acquires once and must not reconnect between its steps.
+      await tool.execute({ command: 'sequence', steps: [
+        { command: 'snapshot', args: ['-i'] },
+        { command: 'get', args: ['title'] },
+      ] }, context());
+      expect(spawnImpl.mock.calls.filter(([, args]) => args.includes('connect'))).toHaveLength(3);
+      expect(spawnImpl.mock.calls.every(([, , options]) => options.env.AGENT_BROWSER_SCREENSHOT_DIR === undefined)).toBe(true);
+    } finally {
+      delete process.env.AGENT_BROWSER_SCREENSHOT_DIR;
+    }
+  });
+
+  it('keeps an unconfined connection when the reused lease still has its client', async () => {
+    stubLeaseFetch({ clientAttached: true });
+    const spawnImpl = vi.fn((binary, args) => makeChild({ stdout: args.includes('connect') ? 'connected\n' : 'ok\n' }));
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+    await plugin.tool.devryan_browser.execute({ command: 'open', args: ['http://127.0.0.1:3000'] }, context());
+    await plugin.tool.devryan_browser.execute({ command: 'snapshot', args: ['-i'] }, context());
+    expect(spawnImpl.mock.calls.filter(([, args]) => args.includes('connect'))).toHaveLength(1);
+  });
+
   it('canonicalizes rotating assistant message IDs to one user turn and one browser lease', async () => {
     const requests = stubLeaseFetch();
     const spawnImpl = vi.fn((binary, args) => makeChild({
@@ -270,6 +374,11 @@ describe('DevRyan agent browser plugin', () => {
 
     await expect(plugin.tool.devryan_browser.execute({ command: 'open' }, context()))
       .resolves.toBe(__test.NO_PREVIEW_HANDOFF_MESSAGE);
+    // Confined commands cannot keep a dev server alive, so the handoff never
+    // tells the agent to start one.
+    expect(__test.NO_PREVIEW_HANDOFF_MESSAGE).toContain('already running');
+    expect(__test.NO_PREVIEW_HANDOFF_MESSAGE).toContain('report visual verification as blocked');
+    expect(__test.NO_PREVIEW_HANDOFF_MESSAGE).not.toContain('Start or identify');
     expect(spawnImpl).not.toHaveBeenCalled();
     expect(requests.map((request) => [request.method, request.url])).toEqual([
       ['POST', 'http://127.0.0.1:45678/api/desktop/browser-leases/resolve'],

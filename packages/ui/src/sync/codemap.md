@@ -84,3 +84,5 @@ Bridges lib/opencode streams with Zustand stores and session/chat components.
 New chat capture boundaries use `normalizeNewChatSendConfig` to freeze the same
 native thinking level displayed by the slider. The lower-level historical and
 queue/retry resolvers continue preserving explicit `null` defaults.
+
+Session navigation keeps `pendingSessionId` separate from the displayed session. The row subscribes narrowly to its pending flag. `setCurrentSession(id, directoryHint, options?)` applies directory/client routing centrally; project, mobile and composer effects belong in `options.onApplied`. Explicit user navigation wins, while asynchronous completion passes its starting navigation revision. `invalidateSessionSelection(id)` clears only that displayed/pending target and preserves unrelated pending user intent. Draft promotion uses the same protection boundary; session-bound sends do not read a changing current selection.

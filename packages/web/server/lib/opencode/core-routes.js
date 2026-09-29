@@ -1,3 +1,4 @@
+import { selectionIngress, markSelectionTiming } from './selection-timing.js';
 import { sshManagedIdentity, authorizeSshManagedShutdown } from './ssh-managed-identity.js';
 import { getTunnelOwnerPrincipal } from '../tunnels/access-control.js';
 import { runWithRequestPrincipal } from '../multi-user/request-context.js';
@@ -589,10 +590,14 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
   });
 
   app.use('/api', async (req, res, next) => {
+    const authenticated = (error) => {
+      if (!error) markSelectionTiming(req, 'authenticatedMs');
+      next(error);
+    };
     try {
       // The early tunnel boundary already authenticated this explicit,
       // restricted principal and checked the Bot route allowlist.
-      if (req.principal?.scope === 'tunnel-bot') return next();
+      if (req.principal?.scope === 'tunnel-bot') return authenticated();
       // The workstation owner's Bot-scoped session: direct-local requests to
       // Bot routes only. It never authorizes any other API.
       const botOwner = getBotOwner();
@@ -602,15 +607,15 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
           return res.status(403).json({ error: 'Missing CSRF request header' });
         }
         req.principal = owner;
-        return runWithRequestPrincipal(owner, next);
+        return runWithRequestPrincipal(owner, authenticated);
       }
       if (requiresManagedAccountAuth(req)) {
         return sendManagedAccountAuthRequired(res);
       }
       if (requiresTunnelBootstrap(req)) {
-        return tunnelAuthController.requireTunnelSession(req, res, next);
+        return tunnelAuthController.requireTunnelSession(req, res, authenticated);
       }
-      await uiAuthController.requireAuth(req, res, next);
+      await uiAuthController.requireAuth(req, res, authenticated);
     } catch (err) {
       next(err);
     }
@@ -692,6 +697,7 @@ export const resolveSharedJsonBodyLimit = (pathname) => {
 
 export const registerCommonRequestMiddleware = (app, dependencies) => {
   const { express, verboseRequestLogs = false } = dependencies;
+  app.use(selectionIngress);
 
   app.use((req, res, next) => {
     const limit = resolveSharedJsonBodyLimit(req.path);

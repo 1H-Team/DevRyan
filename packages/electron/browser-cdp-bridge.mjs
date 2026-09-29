@@ -2,8 +2,12 @@
 //
 // One loopback WebSocket server is shared by every active lease. Each lease
 // gets an unguessable capability path, one explicitly bound browser surface,
-// and at most one controlling client. Closing any one of those resources only
-// tears down its lease; the listener is stopped after the final lease closes.
+// and at most one controlling client at a time. A client that disconnects
+// cleanly (for example a confined per-call worker's daemon exiting) only
+// releases the client: the guest and capability stay reconnectable until the
+// orphan timeout, an explicit release, or guest destruction. Protocol or
+// socket failures tear down the lease; the listener is stopped after the
+// final lease closes.
 
 export const BRIDGE_PROTOCOL_VERSION = '1.3';
 
@@ -400,7 +404,32 @@ export const createBrowserCdpBridge = ({
     return closeLeaseWithToken(leaseId, lease.token, reason);
   };
 
-  const closeAll = (reason = 'bridge_stopped') => {
+  // A controlling client's clean disconnect detaches it without ending the
+  // lease, so the next client (a new daemon for the same agent turn) resumes
+  // the same page. Late results of its in-flight commands are fenced out.
+  const releaseClient = (lease, token, socket) => {
+    if (!isCurrentLease(lease, token) || lease.client !== socket) return false;
+    for (const [id, entry] of lease.inFlight) {
+      clearTimer(entry.timer);
+      lease.inFlight.delete(id);
+    }
+    const heldCaptures = lease.captureSessions.size;
+    detachDebugger(lease);
+    lease.capturePending = false;
+    lease.client = null;
+    // Each held capture was announced through captureAttached; release its
+    // suppression exactly once now that detachDebugger dropped the session.
+    for (let index = 0; index < heldCaptures; index += 1) {
+      Promise.resolve()
+        .then(() => onAfterCommand?.({ leaseId: lease.leaseId, method: 'DevRyan.captureDetached' }))
+        .catch((error) => log(`[cdp-bridge] onAfterCommand failed for lease ${lease.leaseId}`, error));
+    }
+    touchRecord(lease);
+    emitStatus();
+    return true;
+  };
+
+  const closeAll =(reason = 'bridge_stopped') => {
     const snapshot = Array.from(leases.values(), (lease) => ({ leaseId: lease.leaseId, token: lease.token }));
     for (const lease of snapshot) closeLeaseWithToken(lease.leaseId, lease.token, reason);
     stopServerIfUnused();
@@ -570,7 +599,10 @@ export const createBrowserCdpBridge = ({
         }
         forwardCommand(lease, message, async (isPending) => {
           if (lease.capturePending || lease.captureSessions.size) throw new Error('Only one capture session is permitted');
-          lease.capturePending = true;
+          // Fenced per attempt: a released client's attempt must not clear a
+          // reconnected client's pending capture.
+          const pending = Symbol('capture');
+          lease.capturePending = pending;
           const guest = lease.guest;
           let nativeSession;
           let sessionId;
@@ -597,10 +629,11 @@ export const createBrowserCdpBridge = ({
             return { sessionId };
           } catch (error) {
             if (nativeSession) await guest.debugger.sendCommand('Target.detachFromTarget', { sessionId: nativeSession }).catch(() => {});
-            if (sessionId) lease.captureSessions.delete(sessionId);
-            if (suppressing && isCurrentLease(lease)) await Promise.resolve(onAfterCommand?.({ leaseId: lease.leaseId, method: 'DevRyan.captureDetached' })).catch(() => {});
+            // releaseClient already released a capture it found still held.
+            const held = sessionId ? lease.captureSessions.delete(sessionId) : false;
+            if (suppressing && held && isCurrentLease(lease)) await Promise.resolve(onAfterCommand?.({ leaseId: lease.leaseId, method: 'DevRyan.captureDetached' })).catch(() => {});
             throw error;
-          } finally { lease.capturePending = false; }
+          } finally { if (lease.capturePending === pending) lease.capturePending = false; }
         });
         return;
       }
@@ -623,8 +656,9 @@ export const createBrowserCdpBridge = ({
       if (lease.captureSessions.has(sessionId)) {
         forwardCommand(lease, message, async () => {
           await lease.guest.debugger.sendCommand('Target.detachFromTarget', { sessionId: lease.captureSessions.get(sessionId) });
-          lease.captureSessions.delete(sessionId);
-          await onAfterCommand?.({ leaseId: lease.leaseId, method: 'DevRyan.captureDetached' });
+          if (lease.captureSessions.delete(sessionId)) {
+            await onAfterCommand?.({ leaseId: lease.leaseId, method: 'DevRyan.captureDetached' });
+          }
           return {};
         });
         return;
@@ -796,8 +830,7 @@ export const createBrowserCdpBridge = ({
       handleFrame(lease, data.toString('utf8'));
     });
     socket.on('close', () => {
-      if (!isCurrentLease(lease, token) || lease.client !== socket) return;
-      closeLeaseWithToken(lease.leaseId, token, 'client_closed');
+      releaseClient(lease, token, socket);
     });
     socket.on('error', (error) => {
       log(`[cdp-bridge] socket error for lease ${lease.leaseId}`, error);

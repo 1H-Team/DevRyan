@@ -80,6 +80,26 @@ export const isSafeAssistantImageExternalUrl = (source: string): boolean => {
     }
 };
 
+const WIKIMEDIA_FILE_PAGE_HOST = /^(?:commons\.wikimedia\.org|[a-z0-9-]+\.(?:m\.)?wikipedia\.org)$/i;
+const WIKIMEDIA_FILE_PAGE_PATH = /^\/wiki\/File:(.+)$/;
+const WIKIMEDIA_PREVIEW_WIDTH = 1280;
+
+/**
+ * Maps a remote source to the URL an `<img>` should load. Wikimedia `File:` description
+ * pages are HTML, so they resolve to `Special:FilePath`, which redirects to the image itself.
+ */
+export const resolveAssistantImageDisplayUrl = (source: string): string => {
+    if (!isSafeAssistantImageExternalUrl(source)) return source;
+    try {
+        const url = new URL(source);
+        const fileMatch = WIKIMEDIA_FILE_PAGE_HOST.test(url.hostname) ? WIKIMEDIA_FILE_PAGE_PATH.exec(url.pathname) : null;
+        if (!fileMatch?.[1]) return source;
+        return `${url.protocol}//${url.hostname}/wiki/Special:FilePath/${fileMatch[1]}?width=${WIKIMEDIA_PREVIEW_WIDTH}`;
+    } catch {
+        return source;
+    }
+};
+
 const failedPreparation = (
     candidate: AssistantImageCandidate,
     errorCode: string,

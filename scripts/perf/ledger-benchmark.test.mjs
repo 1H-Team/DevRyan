@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import path from 'node:path';
-import { parseLedgerBenchmarkArgs, summarize } from './ledger-benchmark.mjs';
+import { fixtureEntries, parseLedgerBenchmarkArgs, summarize } from './ledger-benchmark.mjs';
 import { phaseTotals, parseProcessSample } from './ledger-profile-worker.mjs';
 
 test('parses benchmark options and rejects invalid counts or unknown flags', () => {
@@ -17,6 +17,26 @@ test('parses benchmark options and rejects invalid counts or unknown flags', () 
   assert.throws(() => parseLedgerBenchmarkArgs(['--warm-calls', '1.5']), /--warm-calls/);
   assert.throws(() => parseLedgerBenchmarkArgs(['--repo']), /requires a value/);
   assert.throws(() => parseLedgerBenchmarkArgs(['--bogus']), /Unknown option/);
+});
+
+test('burst, re-stamp and synthetic fixture options are bounded', () => {
+  const options = parseLedgerBenchmarkArgs(['--fixture-files', '12000', '--parallel', '8', '--restamp']);
+  assert.equal(options.fixtureFiles, 12000);
+  assert.equal(options.parallel, 8);
+  assert.equal(options.restamp, true);
+  assert.equal(parseLedgerBenchmarkArgs([]).parallel, 1);
+  for (const value of ['0', '33', '1.5']) assert.throws(() => parseLedgerBenchmarkArgs(['--parallel', value]), /--parallel/);
+  for (const value of ['0', '200001']) assert.throws(() => parseLedgerBenchmarkArgs(['--fixture-files', value]), /--fixture-files/);
+  assert.throws(() => parseLedgerBenchmarkArgs(['--profile', '--restamp']), /not --profile/);
+});
+
+test('the synthetic fixture is deterministic and mixes depths, links and executables', () => {
+  const entries = fixtureEntries(1000);
+  assert.deepEqual(entries, fixtureEntries(1000));
+  assert.equal(entries.length, 1000);
+  assert.ok(entries.some((entry) => entry.link));
+  assert.ok(entries.some((entry) => entry.executable));
+  assert.deepEqual(new Set(entries.map((entry) => entry.file.split('/').length)), new Set([3, 4, 5, 6]));
 });
 
 test('profile bounds and companion opt-in are explicit', () => {

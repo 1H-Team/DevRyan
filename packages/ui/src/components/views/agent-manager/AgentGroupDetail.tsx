@@ -1,3 +1,4 @@
+import { getRetentionNavigationRevision } from '@/lib/sessionRetention';
 import React from 'react';
 import {
   RiGitBranchLine,
@@ -71,27 +72,19 @@ export const AgentGroupDetail: React.FC<AgentGroupDetailProps> = ({
   }, [group.sessions, selectedSessionId]);
 
   const handleSessionSelect = React.useCallback((session: AgentGroupSession) => {
-    selectSession(session.id);
-    setCurrentSession(session.id, session.path);
+    setCurrentSession(session.id, session.path, { onApplied: () => selectSession(session.id) });
   }, [selectSession, setCurrentSession]);
 
-  // Auto-select first session when group changes and sync OpenCode session
+  // One initial restoration per group; metadata refreshes cannot reclaim navigation.
+  const restoration = React.useMemo(() => ({ group: group.name, revision: getRetentionNavigationRevision(), requested: false }), [group.name]);
   React.useEffect(() => {
-    if (group.sessions.length > 0) {
-      const session = selectedSessionId
-        ? group.sessions.find((s) => s.id === selectedSessionId) ?? group.sessions[0]
-        : group.sessions[0];
-
-        if (session) {
-          if (session.id !== currentSessionId) {
-            setCurrentSession(session.id, session.path);
-          }
-          if (!selectedSessionId) {
-            selectSession(session.id);
-        }
-      }
-    }
-  }, [group.name, group.sessions, selectedSessionId, currentSessionId, selectSession, setCurrentSession]);
+    const session = group.sessions.find(entry => entry.id === selectedSessionId) ?? group.sessions[0];
+    if (!session || restoration.requested) return;
+    restoration.requested = true;
+    setCurrentSession(session.id, session.path, {
+      expectedNavigationRevision: restoration.revision, onApplied: () => selectSession(session.id),
+    });
+  }, [group.sessions, selectedSessionId, restoration, selectSession, setCurrentSession]);
 
   const isSessionSynced = selectedSession?.id === currentSessionId;
 

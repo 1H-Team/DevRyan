@@ -1,3 +1,4 @@
+import { getRetentionNavigationRevision, type SelectionOptions } from '@/lib/sessionRetention';
 /**
  * Session actions — SDK-calling operations for session management.
  * Replaces the action methods from the old useSessionStore.
@@ -1358,12 +1359,14 @@ export async function createSession(
   title?: string,
   directoryOverride?: string | null,
   parentID?: string | null,
+  navigation?: SelectionOptions,
 ): Promise<Session | null> {
+  const expectedNavigationRevision = navigation?.expectedNavigationRevision ?? getRetentionNavigationRevision()
   const session = await createSessionRecord(title, directoryOverride, parentID)
   if (!session) return null
 
   const sessionDirectory = directoryOverride ?? (session as { directory?: string }).directory ?? null
-  getSessionUIStore().getState().setCurrentSession(session.id, sessionDirectory)
+  getSessionUIStore().getState().setCurrentSession(session.id, sessionDirectory, { ...navigation, expectedNavigationRevision })
   return session
 }
 
@@ -1429,6 +1432,7 @@ export async function deleteSession(sessionId: string, _options?: Record<string,
 }
 
 export async function deleteSessions(sessionIds: string[]): Promise<DeleteSessionsResult> {
+  let expectedNavigationRevision = getRetentionNavigationRevision()
   // Deletion cascades like archive/unarchive so parent deletes cannot leave
   // hidden child sessions behind, including when invoked from archived search.
   const { ids, directoryById: knownDirectoryById } = expandSessionIdsWithDescendants(sessionIds)
@@ -1460,9 +1464,9 @@ export async function deleteSessions(sessionIds: string[]): Promise<DeleteSessio
   const ui = getSessionUIStore().getState()
   const previousCurrentSessionId = ui.currentSessionId
   const previousCurrentDirectory = previousCurrentSessionId ? directoryById.get(previousCurrentSessionId) : undefined
-  if (previousCurrentSessionId && ids.includes(previousCurrentSessionId)) {
-    ui.setCurrentSession(null)
-  }
+  const mayRestoreSelection = !ui.pendingSessionId && expectedNavigationRevision === getRetentionNavigationRevision()
+  for (const id of ids) ui.invalidateSessionSelection(id)
+  if (mayRestoreSelection) expectedNavigationRevision = getRetentionNavigationRevision()
 
   const { successfulIds, failedIds, failures } = await mutateSessionsInDepthOrder(
     ids,
@@ -1479,8 +1483,8 @@ export async function deleteSessions(sessionIds: string[]): Promise<DeleteSessio
   settleGlobalSessionMembershipMutation(membershipMutation, { successfulIds, failedIds })
   restoreOptimisticallyRemovedSessions(removalSnapshots, failedIds)
   useGlobalSessionsStore.getState().restoreSessions(filterSnapshotsById(sessionSnapshots, failedIds))
-  if (previousCurrentSessionId && failedIds.includes(previousCurrentSessionId)) {
-    getSessionUIStore().getState().setCurrentSession(previousCurrentSessionId, previousCurrentDirectory ?? null)
+  if (mayRestoreSelection && previousCurrentSessionId && failedIds.includes(previousCurrentSessionId)) {
+    getSessionUIStore().getState().setCurrentSession(previousCurrentSessionId, previousCurrentDirectory ?? null, { expectedNavigationRevision })
   }
   if (successfulIds.length > 0) {
     void queueGlobalSessionsRefreshAfterMutation()
@@ -1509,7 +1513,7 @@ export async function deleteSessionInDirectory(sessionId: string, directory: str
     store.setState({ session: sessions })
   }
   const ui = getSessionUIStore().getState()
-  if (ui.currentSessionId === sessionId) ui.setCurrentSession(null)
+  ui.invalidateSessionSelection(sessionId)
   try {
     await sdk().session.delete(
       { sessionID: sessionId, directory },
@@ -1541,6 +1545,7 @@ export async function archiveSession(sessionId: string): Promise<boolean> {
 }
 
 export async function archiveSessions(sessionIds: string[]): Promise<ArchiveSessionsResult> {
+  let expectedNavigationRevision = getRetentionNavigationRevision()
   const { ids: expandedIds, directoryById: knownDirectoryById } = expandSessionIdsWithDescendants(sessionIds)
   const cascadeDescendantIds = getCascadeDescendantIds(expandedIds)
   // A descendant that is already archived needs no request; re-archiving it
@@ -1579,9 +1584,9 @@ export async function archiveSessions(sessionIds: string[]): Promise<ArchiveSess
   const ui = getSessionUIStore().getState()
   const previousCurrentSessionId = ui.currentSessionId
   const previousCurrentDirectory = previousCurrentSessionId ? directoryById.get(previousCurrentSessionId) : undefined
-  if (previousCurrentSessionId && ids.includes(previousCurrentSessionId)) {
-    ui.setCurrentSession(null)
-  }
+  const mayRestoreSelection = !ui.pendingSessionId && expectedNavigationRevision === getRetentionNavigationRevision()
+  for (const id of ids) ui.invalidateSessionSelection(id)
+  if (mayRestoreSelection) expectedNavigationRevision = getRetentionNavigationRevision()
 
   const { successfulIds, failedIds, failures } = await mutateSessionsInParallel(
     ids,
@@ -1608,8 +1613,8 @@ export async function archiveSessions(sessionIds: string[]): Promise<ArchiveSess
   }
   restoreOptimisticallyRemovedSessions(removalSnapshots, failedIds)
   useGlobalSessionsStore.getState().restoreSessions(filterSnapshotsById(sessionSnapshots, failedIds))
-  if (previousCurrentSessionId && failedIds.includes(previousCurrentSessionId)) {
-    getSessionUIStore().getState().setCurrentSession(previousCurrentSessionId, previousCurrentDirectory ?? null)
+  if (mayRestoreSelection && previousCurrentSessionId && failedIds.includes(previousCurrentSessionId)) {
+    getSessionUIStore().getState().setCurrentSession(previousCurrentSessionId, previousCurrentDirectory ?? null, { expectedNavigationRevision })
   }
   if (successfulIds.length > 0) {
     void queueGlobalSessionsRefreshAfterMutation()
@@ -2951,6 +2956,7 @@ export async function unrevertSession(sessionId: string): Promise<void> {
  * 4. Switch to new session and set pending input text
  */
 export async function forkFromMessage(sessionId: string, messageId: string): Promise<void> {
+  const expectedNavigationRevision = getRetentionNavigationRevision()
   const sessionDirectory = getSessionDirectory(sessionId)
   const store = directoryStore(sessionDirectory)
   const state = store.getState()
@@ -2977,10 +2983,8 @@ export async function forkFromMessage(sessionId: string, messageId: string): Pro
   }
 
   // Switch to new session
-  getSessionUIStore().getState().setCurrentSession(forkedSession.id)
-
-  // Restore forked message text and non-synthetic file attachments to input.
-  if (shouldRestoreInput) {
-    restoreUserMessageInput(forkedSession.id, parts, messageText)
-  }
+  getSessionUIStore().getState().setCurrentSession(forkedSession.id, sessionDirectory, {
+    expectedNavigationRevision,
+    onApplied: () => { if (shouldRestoreInput) restoreUserMessageInput(forkedSession.id, parts, messageText) },
+  })
 }

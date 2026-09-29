@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { createSessionRecord } from '@/sync/session-actions';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { devtools } from './utils/devtoolsGate';
 import type { CreateMultiRunParams, CreateMultiRunResult } from '@/types/multirun';
@@ -41,9 +42,9 @@ const generateWorktreeNameSeed = (groupSlug: string, modelSlug: string): string 
   return `${groupSlug}/${modelSlug}`;
 };
 
-const resolveActiveProject = (): ProjectRef | null => {
+const resolveActiveProject = (projectId?: string): ProjectRef | null => {
   const projectsState = useProjectsStore.getState();
-  const activeProjectId = projectsState.activeProjectId;
+  const activeProjectId = projectId ?? projectsState.activeProjectId;
   if (!activeProjectId) {
     return null;
   }
@@ -52,6 +53,8 @@ const resolveActiveProject = (): ProjectRef | null => {
   if (project?.path) {
     return { id: project.id, path: project.path };
   }
+
+  if (projectId) return null;
 
   // Fall back to current directory only when active project is missing.
   const currentDirectory = useDirectoryStore.getState().currentDirectory ?? null;
@@ -116,7 +119,7 @@ export const useMultiRunStore = create<MultiRunStore>()(
         set({ isLoading: true, error: null });
 
         try {
-          const project = resolveActiveProject();
+          const project = resolveActiveProject(params.projectId);
           if (!project) {
             set({ error: 'Select a project', isLoading: false });
             return null;
@@ -189,10 +192,8 @@ export const useMultiRunStore = create<MultiRunStore>()(
                 ? `${groupSlug}/${model.providerID}/${model.modelID}/${index}`
                 : `${groupSlug}/${model.providerID}/${model.modelID}`;
 
-              const session = await opencodeClient.withDirectory(
-                worktreeMetadata.path,
-                () => opencodeClient.createSession({ title: sessionTitle })
-              );
+              const session = await createSessionRecord(sessionTitle, worktreeMetadata.path);
+              if (!session) throw new Error('Failed to create session');
 
               useSessionUIStore.getState().setWorktreeMetadata(session.id, enrichedMetadata);
 
@@ -245,8 +246,8 @@ export const useMultiRunStore = create<MultiRunStore>()(
               await Promise.allSettled(
                 createdRuns.map(async (run) => {
                   try {
-                      await opencodeClient.withDirectory(run.worktreePath, () =>
-                       opencodeClient.sendMessage({
+                      await opencodeClient.sendMessage({
+                         directory: run.worktreePath,
                          id: run.sessionId,
                          providerID: run.providerID,
                          modelID: run.modelID,
@@ -254,8 +255,7 @@ export const useMultiRunStore = create<MultiRunStore>()(
                          text: prompt,
                          agent,
                          files: filesForMessage,
-                       })
-                     );
+                       });
                   } catch (error) {
                     console.warn('[MultiRun] Failed to start run:', error);
                   }

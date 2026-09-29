@@ -2,13 +2,16 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { applyMeridianHttpHotfix, MERIDIAN_HTTP_SERVER_ORIGINAL, MERIDIAN_REVIEWED_PATCHES } from './meridian-http-hotfix.js';
 import { serveMeridianHttp } from './meridian-http-server.js';
 import { MERIDIAN_HANDOFF_EDITS, MERIDIAN_HANDOFF_HELPER, MERIDIAN_PREFIX_EDITS, stripMeridianHandoffPatch } from './meridian-passthrough-hotfix.js';
 
 const roots = [];
-const source = `      pathToClaudeCodeExecutable: claudeExecutable,\nasync function start() {\n${MERIDIAN_HTTP_SERVER_ORIGINAL}\n    port: finalConfig.port\n  }, () => {\n  });\n  const idleMs = finalConfig.idleTimeoutSeconds * 1000;\n}\n${MERIDIAN_HANDOFF_EDITS.map(([before]) => before).join('\n')}`;
+const cwdAnchor = '        const cwdResolution = resolveSdkWorkingDirectory({';
+const anchors = `      pathToClaudeCodeExecutable: claudeExecutable,\nasync function start() {\n${MERIDIAN_HTTP_SERVER_ORIGINAL}\n    port: finalConfig.port\n  }, () => {\n  });\n  const idleMs = finalConfig.idleTimeoutSeconds * 1000;\n}\n${MERIDIAN_HANDOFF_EDITS.map(([before]) => before).join('\n')}`;
+const source = `${cwdAnchor}\n${anchors}`;
 const sha256 = text => crypto.createHash('sha256').update(text).digest('hex');
 const fixture = (version = '1.62.6') => {
   const cache = path.resolve(import.meta.dirname, '../../../../../.cache/qa');
@@ -131,12 +134,115 @@ describe('Meridian native HTTP cancellation compatibility', () => {
   });
 });
 
+// Executable stand-in for Meridian's request path: the reviewed cwd anchor in a
+// real handler, with Meridian's own resolution (src/proxy/cwd.ts) and the
+// opencode adapter's <env> extraction. Every other anchor stays in a comment.
+const executableSource = () => `import { existsSync } from 'node:fs';
+/*\n${anchors}\n*/
+function resolveSdkWorkingDirectory(opts) {
+  const claimed = opts.envOverride || opts.adapterCwd || opts.fallback;
+  return existsSync(claimed)
+    ? { workingDirectory: claimed, claimedWorkingDirectory: claimed, fellBack: false }
+    : { workingDirectory: opts.fallback, claimedWorkingDirectory: claimed, fellBack: true };
+}
+const adapter = { extractWorkingDirectory: (body) => String(body.system ?? '').match(/<env>\\s*[\\s\\S]*?Working directory:\\s*([^\\n<]+)/i)?.[1]?.trim() };
+export async function handleMessages(c, body) {
+        const cwdResolution = resolveSdkWorkingDirectory({
+          envOverride: process.env.MERIDIAN_WORKDIR ?? process.env.CLAUDE_PROXY_WORKDIR,
+          adapterCwd: adapter.extractWorkingDirectory(body),
+          fallback: process.cwd()
+        });
+  return { cwd: cwdResolution.workingDirectory };
+}
+`;
+
+describe('Meridian requesting-session working directory', () => {
+  const previousBoundary = process.env.DEVRYAN_EXECUTION_BOUNDARY;
+  afterEach(() => {
+    if (previousBoundary === undefined) delete process.env.DEVRYAN_EXECUTION_BOUNDARY;
+    else process.env.DEVRYAN_EXECUTION_BOUNDARY = previousBoundary;
+  });
+  let imports = 0;
+  const install = () => {
+    const { root, dist } = fixture();
+    const entry = path.join(dist, 'cli-wxk8xvd3.js');
+    const text = executableSource();
+    fs.writeFileSync(entry, text);
+    expect(applyMeridianHttpHotfix({ configDirectory: root, expectedOriginalSha256: sha256(text) })).toMatchObject({ ok: true });
+    const project = fs.mkdtempSync(path.join(root, 'project b '));
+    return { root, entry, project, load: () => import(`${pathToFileURL(entry).href}?load=${imports++}`) };
+  };
+  const context = (headers = {}) => ({
+    req: { header: (name) => headers[name.toLowerCase()] },
+    json: (body, status) => ({ status, body }),
+  });
+  // opencode-with-claude removes OpenCode's own <env>…Working directory…</env>.
+  const scrubbed = { system: 'You are an expert coding assistant.\n\nInstructions from: AGENTS.md' };
+
+  it('runs a scrubbed request in the requesting session directory, not the host process cwd', async () => {
+    process.env.DEVRYAN_EXECUTION_BOUNDARY = '1';
+    const { project, load } = install();
+    const { handleMessages } = await load();
+    const header = encodeURIComponent(project);
+    await expect(handleMessages(context({ 'x-devryan-directory': header }), scrubbed)).resolves.toEqual({ cwd: project });
+    // A stale or injected <env> claim never outranks the session directory.
+    await expect(handleMessages(context({ 'x-devryan-directory': header }),
+      { system: `<env>\n  Working directory: ${process.cwd()}\n</env>` })).resolves.toEqual({ cwd: project });
+  });
+
+  it('refuses rather than falling back to another project inside the execution boundary', async () => {
+    process.env.DEVRYAN_EXECUTION_BOUNDARY = '1';
+    const { project, load } = install();
+    const { handleMessages } = await load();
+    for (const headers of [{}, { 'x-devryan-directory': encodeURIComponent(path.join(project, 'missing')) },
+      { 'x-devryan-directory': 'relative/project' }, { 'x-devryan-directory': '%E0%A4%A' }]) {
+      const result = await handleMessages(context(headers), scrubbed);
+      expect(result).toMatchObject({ status: 400, body: { type: 'error', error: { type: 'invalid_request_error' } } });
+      expect(result.body.error.message).toMatch(/^session_directory_unavailable: /);
+    }
+  });
+
+  it('keeps Meridian resolution for clients without the header outside the boundary', async () => {
+    delete process.env.DEVRYAN_EXECUTION_BOUNDARY;
+    const { project, load } = install();
+    const { handleMessages } = await load();
+    await expect(handleMessages(context(), { system: `<env>\n  Working directory: ${project}\n</env>` })).resolves.toEqual({ cwd: project });
+    await expect(handleMessages(context(), scrubbed)).resolves.toEqual({ cwd: process.cwd() });
+    // A header that names no directory is refused even outside the boundary.
+    await expect(handleMessages(context({ 'x-devryan-directory': encodeURIComponent(path.join(project, 'gone')) }), scrubbed))
+      .resolves.toMatchObject({ status: 400 });
+  });
+
+  it('upgrades the previous provider-only installation and stays idempotent', () => {
+    const { root, entry } = install();
+    const complete = fs.readFileSync(entry, 'utf8');
+    const options = { configDirectory: root, expectedOriginalSha256: sha256(executableSource()) };
+    const previous = complete
+      .replace('import { resolveSessionWorkingDirectory } from "./devryan-session-provider-spawn.js";\n', '')
+      .replace(/ {8}const devryanSessionDirectory = [^\n]*\n {8}if \(devryanSessionDirectory\.rejection\)[^\n]*\n {8}const cwdResolution = devryanSessionDirectory\.resolution \?\? resolveSdkWorkingDirectory\(\{/,
+        cwdAnchor);
+    expect(previous).not.toContain('devryanSessionDirectory');
+    fs.writeFileSync(entry, previous);
+    expect(applyMeridianHttpHotfix(options)).toMatchObject({ ok: true, changed: true });
+    expect(fs.readFileSync(entry, 'utf8')).toBe(complete);
+    expect(applyMeridianHttpHotfix(options)).toMatchObject({ ok: true, changed: false });
+  });
+
+  it('rejects a source without exactly one working-directory anchor', () => {
+    const { root, dist } = fixture();
+    const text = executableSource().replace(cwdAnchor, '        const cwdResolution = (0, resolveSdkWorkingDirectory)({');
+    fs.writeFileSync(path.join(dist, 'cli-wxk8xvd3.js'), text);
+    expect(applyMeridianHttpHotfix({ configDirectory: root, expectedOriginalSha256: sha256(text) }))
+      .toMatchObject({ ok: false, code: 'MERIDIAN_HTTP_HOTFIX_INCOMPATIBLE' });
+  });
+});
+
 describe('Meridian upgrade source gates', () => {
   it('supports the candidate without weakening current patch recovery or accepting partial candidates', () => {
     const review = MERIDIAN_REVIEWED_PATCHES['1.68.0'];
     const { root, dist } = fixture('1.68.0');
     const upstreamFork = '...isUndo || forkSession || resumeSessionId && forkSessionId || passthrough && resumeSessionAtUuid ? { forkSession: true } : {},';
-    const candidateSource = `      pathToClaudeCodeExecutable: claudeExecutable,\nasync function start() {\n${MERIDIAN_HTTP_SERVER_ORIGINAL}\n    port: finalConfig.port\n  }, () => {\n  });\n  const idleMs = finalConfig.idleTimeoutSeconds * 1000;\n}\n${review.edits.map(([before]) => before).join('\n')}\n${upstreamFork}`;
+    const candidateSource = `${cwdAnchor}\n      pathToClaudeCodeExecutable: claudeExecutable,\nasync function start() {\n${MERIDIAN_HTTP_SERVER_ORIGINAL}\n    port: finalConfig.port\n  }, () => {\n  });\n  const idleMs = finalConfig.idleTimeoutSeconds * 1000;\n}\n${review.edits.map(([before]) => before).join('\n')}\n${upstreamFork}`;
     const entry = path.join(dist, review.entry);
     fs.writeFileSync(entry, candidateSource);
     const options = { configDirectory: root, expectedOriginalSha256: sha256(candidateSource) };
@@ -147,6 +253,7 @@ describe('Meridian upgrade source gates', () => {
     expect(complete).toContain('continue: false');
     expect(complete).toContain('CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS: "1"');
     expect(complete).not.toContain('CLAUDE_CODE_SESSION_KIND: "bg"');
+    expect(complete).toContain('resolveSessionWorkingDirectory(c.req.header("x-devryan-directory"))');
     expect(applyMeridianHttpHotfix(options)).toMatchObject({ ok: true, changed: false });
     for (const [before, after] of review.edits) {
       const partial = complete.replace(after, before);

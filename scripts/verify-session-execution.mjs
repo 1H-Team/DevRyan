@@ -17,17 +17,20 @@ if (!launcher) throw new Error('Set DEVRYAN_TEST_EXECUTION_LAUNCHER to the built
 const native = (name, body, timeout) => test(name, { timeout }, body);
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true }))); });
-async function fixture() {
+async function fixture({ scope } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-execution-')); roots.push(root);
   const canonical = await fs.realpath(root), viewDirectory = path.join(canonical, 'worktree');
   await fs.mkdir(viewDirectory);
-  return { root: canonical, viewDirectory, lease: { viewDirectory }, run: async (source, signal) => {
+  const lease = { viewDirectory, ...(scope ? { scope } : {}) };
+  const start = async (command, args, signal) => {
     let stdout = '', stderr = '';
-    const handle = await startSessionExecution({ launcher, lease: { viewDirectory }, command: process.execPath,
-      args: ['-e', source], env: { PATH: process.env.PATH }, signal,
+    const handle = await startSessionExecution({ launcher, lease, command, args, env: { PATH: process.env.PATH }, signal,
       onOutput: ({ stream, data }) => { if (stream === 'stdout') stdout += data; else stderr += data; } });
     return { ...handle, output: () => ({ stdout, stderr }) };
-  } };
+  };
+  return { root: canonical, viewDirectory, lease, run: (source, signal) => start(process.execPath, ['-e', source], signal),
+    // Through /bin/sh, as `npm run` starts scripts: macOS strips DYLD_* here.
+    shell: (script, signal) => start('/bin/sh', ['-c', script], signal) };
 }
 
 native('native boundary denies absolute, symlink and hardlink writes while allowing the private view', async () => {
@@ -174,6 +177,8 @@ native('a detached spawn cannot escape execution ownership', async () => {
     } catch (error) { if (!['EPERM', 'EACCES', 'ENOSYS'].includes(error.code)) throw error; }`);
   try {
     assert.equal((await handle.result).exitCode, 0, handle.output().stderr);
+    // A detached request starts inside the supervised group.
+    if (process.platform === 'darwin') assert.match(await fs.readFile(path.join(f.viewDirectory, 'detached-output'), 'utf8'), /^started/);
     const file = path.join(f.viewDirectory, 'detached-output');
     const before = await fs.readFile(file).catch(() => Buffer.alloc(0));
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -184,6 +189,72 @@ native('a detached spawn cannot escape execution ownership', async () => {
     if (Number.isInteger(pid) && pid > 0) { try { process.kill(pid, 'SIGKILL'); } catch { /* already reaped */ } }
   }
 }, 20_000);
+
+native('Node started through /bin/sh regains the spawn adapter, and its children keep their working directory', async () => {
+  if (process.platform !== 'darwin') return;
+  const probe = `const { spawnSync } = require('node:child_process'); const fs = require('node:fs');
+    fs.mkdirSync('sub', { recursive: true });
+    const child = spawnSync(process.execPath, ['-e', 'console.log(JSON.stringify({ cwd: process.cwd(), adapter: Boolean(process.env.DYLD_INSERT_LIBRARIES) }))'], { cwd: 'sub', encoding: 'utf8' });
+    fs.writeFileSync('probe', child.stdout || JSON.stringify({ error: child.error?.code, stderr: child.stderr }));`;
+  const run = async (scope) => {
+    const f = await fixture({ scope });
+    await fs.writeFile(path.join(f.viewDirectory, 'probe.cjs'), probe);
+    const handle = await f.shell(`exec ${JSON.stringify(process.execPath)} probe.cjs`);
+    assert.equal((await handle.result).exitCode, 0, handle.output().stderr);
+    return { f, result: JSON.parse(await fs.readFile(path.join(f.viewDirectory, 'probe'), 'utf8')) };
+  };
+  const scoped = await run({ sessionID: 'ses_native_browser' });
+  assert.equal(scoped.result.adapter, true);
+  assert.equal(await fs.realpath(scoped.result.cwd), await fs.realpath(path.join(scoped.f.viewDirectory, 'sub')));
+}, 30_000);
+
+// Headless Chromium under the confined profile, launched the way Playwright
+// does (detached Node spawn with a CDP pipe on fds 3/4) through /bin/sh. It
+// needs an installed Playwright headless shell and is skipped without one.
+const headlessShell = async () => {
+  const roots_ = [process.env.PLAYWRIGHT_BROWSERS_PATH, path.join(os.homedir(), 'Library', 'Caches', 'ms-playwright')].filter(Boolean);
+  for (const base of roots_) {
+    const versions = (await fs.readdir(base).catch(() => [])).filter((name) => name.startsWith('chromium_headless_shell-')).sort().reverse();
+    for (const version of versions) {
+      const binary = path.join(base, version, `chrome-headless-shell-mac-${process.arch === 'arm64' ? 'arm64' : 'x64'}`, 'chrome-headless-shell');
+      if (await fs.access(binary).then(() => true, () => false)) return binary;
+    }
+  }
+  return null;
+};
+native('headless Chromium launches, speaks CDP and renders text inside the confined profile', async (t) => {
+  if (process.platform !== 'darwin') { t.skip('macOS profile only'); return; }
+  const binary = await headlessShell();
+  if (!binary) { t.skip('no Playwright chromium_headless_shell is installed'); return; }
+  const f = await fixture({ scope: { sessionID: 'ses_native_chromium' } });
+  await fs.writeFile(path.join(f.viewDirectory, 'probe.cjs'), `const { spawn, spawnSync } = require('node:child_process');
+    const crypto = require('node:crypto'), fs = require('node:fs'), path = require('node:path');
+    const binary = ${JSON.stringify(binary)}, scratch = process.env.TMPDIR;
+    const common = ['--headless', '--no-sandbox', '--enable-unsafe-swiftshader', '--no-first-run', '--disable-breakpad', '--hide-scrollbars'];
+    const shots = {};
+    for (const text of ['AAAA', 'BBBB']) {
+      const file = path.join(scratch, text + '.png');
+      spawnSync(binary, [...common, '--user-data-dir=' + path.join(scratch, 'shot-' + text), '--window-size=400,160', '--screenshot=' + file,
+        'data:text/html,<p style="font:80px Helvetica;margin:20px">' + text + '</p>'], { timeout: 30000 });
+      shots[text] = fs.existsSync(file) ? crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex') : null;
+    }
+    const child = spawn(binary, [...common, '--user-data-dir=' + path.join(scratch, 'pipe'), '--remote-debugging-pipe', 'about:blank'],
+      { detached: true, stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] });
+    let stderr = '', reply = '';
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    const done = (result) => { fs.writeFileSync('probe', JSON.stringify({ ...result, shots, stderr: stderr.slice(-400) })); try { child.kill('SIGKILL'); } catch {} process.exit(0); };
+    child.on('error', (error) => done({ error: error.code }));
+    child.stdio[4].on('data', (chunk) => { reply += chunk; if (reply.includes('\\u0000')) done({ reply: reply.split('\\u0000')[0] }); });
+    child.stdio[3].write(JSON.stringify({ id: 1, method: 'Browser.getVersion' }) + '\\u0000');
+    setTimeout(() => done({ timeout: true }), 30000);`);
+  const handle = await f.shell(`exec ${JSON.stringify(process.execPath)} probe.cjs`);
+  assert.equal((await handle.result).exitCode, 0, handle.output().stderr);
+  const probe = JSON.parse(await fs.readFile(path.join(f.viewDirectory, 'probe'), 'utf8'));
+  assert.ok(probe.reply, JSON.stringify(probe));
+  assert.match(JSON.parse(probe.reply).result.product, /HeadlessChrome/);
+  assert.ok(probe.shots.AAAA && probe.shots.BBBB, JSON.stringify(probe));
+  assert.notEqual(probe.shots.AAAA, probe.shots.BBBB);
+}, 90_000);
 
 native('cancellation acknowledges only after the command and its children stop', async () => {
   const f = await fixture();

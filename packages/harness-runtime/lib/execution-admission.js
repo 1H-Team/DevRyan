@@ -50,6 +50,15 @@ const recordStep = (current, phase, elapsedMs) => {
   steps.set(phase, step);
 };
 const formatSteps = (steps) => [...steps].map(([phase, step]) => `${phase}:${step.count}/${step.elapsedMs}`).join(',');
+const createSummary = (summary, root) => ({ root, steps: new Map(), minMs: Math.max(0, Number(summary.minMs) || 0),
+  slowMs: Number(summary.slowMs) > 0 ? Number(summary.slowMs) : SLOW_PHASE_MS });
+const createReport = (input, onDiagnostic) => {
+  const identity = { ...executionToolMetadata(input), ...Object.fromEntries(['sessionID', 'userMessageID', 'messageID', 'callID'].flatMap((key) =>
+    typeof input[key] === 'string' && input[key].length <= 512 ? [[key, input[key]]] : [])) };
+  return (record) => {
+    try { onDiagnostic?.({ event: 'session_execution', ...identity, ...record }); } catch { /* Observer only. */ }
+  };
+};
 
 // Never race active work against a timer: the caller retains ownership until
 // its filesystem operations, child processes and finalizers have settled.
@@ -67,16 +76,33 @@ export async function withExecutionAdmission(input, action, { timeoutMs = 25_000
     if (now - started >= timeoutMs || (!observed.waiting && now - observed.progress >= idle)) controller.abort(expired);
   }, Math.min(idle, 1000));
   const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
-  const identity = { ...executionToolMetadata(input), ...Object.fromEntries(['sessionID', 'userMessageID', 'messageID', 'callID'].flatMap((key) =>
-    typeof input[key] === 'string' && input[key].length <= 512 ? [[key, input[key]]] : [])) };
-  const report = (record) => {
-    try { onDiagnostic?.({ event: 'session_execution', ...identity, ...record }); } catch { /* Observer only. */ }
-  };
-  const summarized = summary ? { steps: new Map(), minMs: Math.max(0, Number(summary.minMs) || 0),
-    slowMs: Number(summary.slowMs) > 0 ? Number(summary.slowMs) : SLOW_PHASE_MS } : undefined;
+  const report = createReport(input, onDiagnostic);
+  const summarized = summary ? createSummary(summary, 'admission') : undefined;
   try {
     return await context.run({ signal: combined, deadline: started + timeoutMs, report, meter, summary: summarized }, () => executionPhase('admission', action));
   } finally { clearTimeout(timer); clearInterval(timer); }
+}
+
+// Observation only: journals one `phase` record with per-step timings when the
+// action failed or took at least `minMs`, exactly like an admission summary,
+// but adds no signal, deadline or meter. Work that ran without an admission
+// keeps its cancellation and queueing behaviour.
+export async function withExecutionSummary(input, action, { phase, onDiagnostic, minMs, slowMs } = {}) {
+  if (typeof phase !== 'string' || !phase) throw new TypeError('withExecutionSummary requires a phase');
+  const report = createReport(input, onDiagnostic);
+  return context.run({ ...context.getStore(), report, summary: createSummary({ minMs, slowMs }, phase) }, () => executionPhase(phase, action));
+}
+
+// Timing-only steps for an active summary. Unlike executionPhase, they never
+// check the admission signal, so code that did not observe cancellation
+// before (for example the session-changes queue) cannot start throwing.
+export const executionStep = (phase, elapsedMs) => recordStep(context.getStore(), phase, elapsedMs);
+export async function timedExecutionStep(phase, action) {
+  const current = context.getStore();
+  if (!current?.summary) return action();
+  const started = Date.now();
+  try { return await action(); }
+  finally { recordStep(current, phase, Date.now() - started); }
 }
 
 export async function executionPhase(phase, action) {
@@ -92,7 +118,7 @@ export async function executionPhase(phase, action) {
   const settle = (record) => {
     clearTimeout(slow.timer);
     if (!summary) return current?.report?.(record);
-    if (phase === 'admission') {
+    if (phase === summary.root) {
       if (record.state === 'failed' || record.elapsedMs >= summary.minMs) current.report?.({ ...record, steps: formatSteps(summary.steps) });
       return;
     }

@@ -40,6 +40,18 @@ export function withExecutionAdmission<T>(input: {
    * phases are journaled individually only when they fail or run for `slowMs` (default 2 s). */
   summary?: { minMs?: number; slowMs?: number };
 }): Promise<T>;
+/** Observation only: journals one `phase` record (with per-step `steps`) when the action failed or took at least
+ * `minMs`, like an admission summary, without adding a signal, deadline or progress meter. */
+export function withExecutionSummary<T>(input: {
+  sessionID?: string; userMessageID?: string; messageID?: string; callID?: string;
+  toolOrigin?: string; action?: string; kind?: string; fallbackReason?: string;
+}, action: () => T | Promise<T>, options: {
+  phase: string; onDiagnostic?: (record: ExecutionDiagnostic) => void; minMs?: number; slowMs?: number;
+}): Promise<T>;
+/** Records a timing step into the active summary, if any. Never checks the admission signal. */
+export function executionStep(phase: string, elapsedMs: number): void;
+/** Times `action` as a summary step when a summary is active. Never checks the admission signal. */
+export function timedExecutionStep<T>(phase: string, action: () => T | Promise<T>): Promise<T>;
 export function withExecutionPreparation<T>(input: {
   sessionID?: string; userMessageID?: string; messageID?: string; callID?: string;
   toolOrigin?: string; action?: string; kind?: string; fallbackReason?: string;

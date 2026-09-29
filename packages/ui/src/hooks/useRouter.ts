@@ -1,3 +1,4 @@
+import { beginRetentionNavigation, getRetentionNavigationRevision } from '@/lib/sessionRetention';
 import React from 'react';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
@@ -9,8 +10,21 @@ import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { resolveRoutedSessionDirectory } from '@/lib/router/routedSessionDirectory';
 
 let pendingRoutedSessionId: string | null = null;
+let pendingRouteRevision = 0;
+let routeSelectionRequested = false;
+let requestingRoute = false;
 
-const applyRoutedSessionSelection = (sessionId: string): boolean => {
+const applyRoutedSessionSelection = (sessionId: string, reconcile = false): boolean => {
+  if (!reconcile) {
+    pendingRouteRevision = beginRetentionNavigation();
+    pendingRoutedSessionId = sessionId;
+    routeSelectionRequested = false;
+  }
+  if (pendingRouteRevision !== getRetentionNavigationRevision()) {
+    pendingRoutedSessionId = null;
+    return false;
+  }
+  if (routeSelectionRequested) return false;
   const sessionState = useSessionUIStore.getState();
   const globalState = useGlobalSessionsStore.getState();
   const directory = resolveRoutedSessionDirectory(
@@ -23,9 +37,16 @@ const applyRoutedSessionSelection = (sessionId: string): boolean => {
     return false;
   }
 
-  pendingRoutedSessionId = null;
-  sessionState.setCurrentSession(sessionId, directory);
-  return true;
+  routeSelectionRequested = true;
+  requestingRoute = true;
+  try {
+    sessionState.setCurrentSession(sessionId, directory, {
+      expectedNavigationRevision: pendingRouteRevision,
+      onApplied: () => { pendingRoutedSessionId = null; },
+    });
+    pendingRouteRevision = getRetentionNavigationRevision();
+  } finally { requestingRoute = false; }
+  return pendingRoutedSessionId === null;
 };
 
 
@@ -68,13 +89,7 @@ export function useRouter(): void {
       try {
         // 1. Apply session first (may trigger async operations)
         if (route.sessionId) {
-          const currentSessionId = useSessionUIStore.getState().currentSessionId;
-          const currentDirectory = useSessionUIStore.getState().getDirectoryForSession(route.sessionId);
-          if (route.sessionId !== currentSessionId || !currentDirectory) {
-            applyRoutedSessionSelection(route.sessionId);
-          } else {
-            pendingRoutedSessionId = null;
-          }
+          applyRoutedSessionSelection(route.sessionId);
         } else {
           pendingRoutedSessionId = null;
         }
@@ -130,7 +145,7 @@ export function useRouter(): void {
    */
   const syncURLFromState = React.useCallback(
     (options: { replace?: boolean } = {}) => {
-      if (isApplyingRouteRef.current) {
+      if (isApplyingRouteRef.current || pendingRoutedSessionId) {
         return;
       }
 
@@ -173,11 +188,12 @@ export function useRouter(): void {
   // becomes authoritative, without temporarily rewriting the URL.
   React.useEffect(() => {
     const reconcilePendingSession = () => {
+      if (requestingRoute) return;
       const sessionId = pendingRoutedSessionId;
       if (!sessionId) return;
       isApplyingRouteRef.current = true;
       try {
-        if (!applyRoutedSessionSelection(sessionId)) return;
+        if (!applyRoutedSessionSelection(sessionId, true)) return;
       } finally {
         isApplyingRouteRef.current = false;
       }

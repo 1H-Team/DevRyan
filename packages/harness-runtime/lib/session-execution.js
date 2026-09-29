@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn, execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -54,15 +55,19 @@ export async function verifySessionExecutionLauncher({ launcher, platform = proc
   } catch { verifiedLaunchers.delete(cacheKey); return false; }
 }
 
-export function sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory, socketDirectory, writableDirectories = [] }) {
+export function sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory, socketDirectory, writableDirectories = [], chromiumRendezvous = false }) {
   const writeThrough = writableDirectories.map((directory) => `(require-not (subpath ${sbString(directory)}))`).join(' ');
   return `(version 1)
 (allow default)
 (deny file-write* (require-all (require-not (subpath ${sbString(viewDirectory)})) (require-not (subpath ${sbString(scratchDirectory)})) ${auxiliaryDirectory ? `(require-not (subpath ${sbString(auxiliaryDirectory)}))` : ''} ${socketDirectory ? `(require-not (subpath ${sbString(socketDirectory)}))` : ''} ${writeThrough} (require-not (literal "/dev/null"))))
 (deny mach-lookup)
-(deny network-outbound (remote unix-socket))
+${chromiumRendezvous ? `; Headless Chromium's helpers fetch their IPC ports from the browser process
+; that launched them; its rendezvous server hands ports only to its own
+; children. This is the one mach service a confined process may look up.
+(allow mach-lookup (global-name-regex #"^org\\.chromium\\.Chromium\\.MachPortRendezvousServer\\.[0-9]+$"))
+` : ''}(deny network-outbound (remote unix-socket))
 ; TCP stays available, so name resolution must too: the system resolver socket
-; is the only local daemon a confined process may reach (no mach services).
+; is the only local daemon a confined process may reach (no other mach services).
 (allow network-outbound (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))
 ${socketDirectory ? `; Sockets this execution's own processes create (for example the agent-browser
 ; daemon) live in its private short directory; no host daemon can be reached there.
@@ -170,11 +175,16 @@ export async function prepareSessionExecution({ launcher, lease }) {
   const requestedAuxiliary = lease.auxiliaryDirectory ? path.resolve(lease.auxiliaryDirectory) : scratchDirectory;
   await fs.mkdir(requestedAuxiliary, { recursive: true, mode: 0o700 });
   const auxiliaryDirectory = await fs.realpath(requestedAuxiliary);
+  // Session-scoped tool calls on macOS may launch headless Chromium (a
+  // project's Playwright check); provider transports never can.
+  const browsers = process.platform === 'darwin' && workerBrowsersEnabled()
+    && typeof lease.scope?.sessionID === 'string' && lease.scope.sessionID.length > 0;
   if (process.platform === 'darwin') {
     const shellEnvironment = `export DYLD_INSERT_LIBRARIES=${'\'' + `${launcher}-spawn.dylib`.replaceAll('\'', '\'\\\'\'') + '\''}\n`;
     await fs.writeFile(path.join(scratchDirectory, '.zshenv'), shellEnvironment, { mode: 0o600 });
     await fs.writeFile(path.join(scratchDirectory, '.bash-env'), shellEnvironment, { mode: 0o600 });
   }
+  const browserEnvironment = browsers ? await workerBrowserEnvironment(launcher, scratchDirectory) : {};
   const socketDirectory = await prepareExecutionSocketDirectory(lease);
   const sessionTemporaryDirectory = await prepareSessionTemporaryDirectory(auxiliaryDirectory, lease);
   // Only the macOS profile grants write-through; the Linux and Windows
@@ -184,7 +194,8 @@ export async function prepareSessionExecution({ launcher, lease }) {
     protectedDirectories: [ledgerStorageOf(viewDirectory), auxiliaryDirectory],
   }) : [];
   const profile = path.join(root, `sandbox-${randomUUID()}.sb`);
-  await writeFileAtomic(profile, sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory, socketDirectory, writableDirectories }));
+  await writeFileAtomic(profile, sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory, socketDirectory, writableDirectories,
+    chromiumRendezvous: browsers }));
   const cancelEvent = `Local\\DevRyan-execution-${randomUUID()}`;
   return { launcher, arguments: [viewDirectory, scratchDirectory, profile, path.join(root, 'termination.json'), '--'],
     cwd: workingDirectory, profile, scratchDirectory,
@@ -196,7 +207,43 @@ export async function prepareSessionExecution({ launcher, lease }) {
       ...(process.platform === 'darwin' ? { DYLD_INSERT_LIBRARIES: `${launcher}-spawn.dylib`,
         ZDOTDIR: scratchDirectory, BASH_ENV: path.join(scratchDirectory, '.bash-env') } : {}),
       TMPDIR: scratchDirectory, TMP: scratchDirectory, TEMP: scratchDirectory,
-      TMPPREFIX: path.join(scratchDirectory, 'zsh'), ...workerLanguageServerEnvironment() } };
+      TMPPREFIX: path.join(scratchDirectory, 'zsh'), ...workerLanguageServerEnvironment(), ...browserEnvironment } };
+}
+
+// Kill switch: DEVRYAN_WORKER_BROWSERS=0 restores the previous worker
+// environment and profile exactly.
+const workerBrowsersEnabled = () => process.env.DEVRYAN_WORKER_BROWSERS !== '0';
+export const NODE_SPAWN_PRELOAD = '.devryan-node-spawn.cjs';
+
+// Playwright resolves browsers from $HOME/Library/Caches/ms-playwright, and a
+// worker's HOME is its per-call scratch. Use the host's cache (read and
+// execute only; the profile still denies writes to it) when it is a real
+// directory this user owns. An explicit host setting is kept as is.
+async function hostPlaywrightBrowsers() {
+  const configured = process.env.PLAYWRIGHT_BROWSERS_PATH;
+  if (typeof configured === 'string' && configured) return configured;
+  // The host's HOME, as Playwright itself resolves it (Bun's os.homedir() ignores later HOME changes).
+  const home = process.env.HOME || os.homedir();
+  const cache = await fs.realpath(path.join(home, 'Library', 'Caches', 'ms-playwright')).catch(() => null);
+  if (!cache) return null;
+  const stat = await fs.stat(cache).catch(() => null);
+  return stat?.isDirectory() && stat.uid === process.getuid() ? cache : null;
+}
+
+// macOS strips DYLD_* whenever a protected binary runs, and `npm run` passes
+// through /usr/bin/env and /bin/sh, so Node started by a script would lose the
+// spawn adapter (.zshenv only restores it for zsh and bash). Without it,
+// Chromium cannot start its helpers: posix_spawn is denied and it has no
+// fork/exec fallback. The preload names the same verified adapter; it adds no
+// authority, and without it spawning fails closed as before.
+async function workerBrowserEnvironment(launcher, scratchDirectory) {
+  const preload = path.join(scratchDirectory, NODE_SPAWN_PRELOAD);
+  await fs.writeFile(preload, `if (!process.env.DYLD_INSERT_LIBRARIES) process.env.DYLD_INSERT_LIBRARIES = ${JSON.stringify(`${launcher}-spawn.dylib`)};\n`, { mode: 0o600 });
+  const browsersPath = await hostPlaywrightBrowsers();
+  return {
+    NODE_OPTIONS: [`--require ${JSON.stringify(preload)}`, process.env.NODE_OPTIONS].filter(Boolean).join(' '),
+    ...(browsersPath ? { PLAYWRIGHT_BROWSERS_PATH: browsersPath } : {}),
+  };
 }
 
 // TMPDIR is the per-call scratch, removed when the call ends. Logs a later

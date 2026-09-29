@@ -8,7 +8,6 @@ import {
 import { generateZenText, resolveZenSessionID } from '../text/summarization.js';
 
 export const COMMIT_SUBJECT_MAX_LENGTH = 72;
-export const COMMIT_GENERATION_DEFAULT_ZEN_MODEL = 'nemotron-3.5-lightning-free';
 export const COMMIT_GENERATION_TIMEOUT_MS = 15_000;
 export const COMMIT_GENERATION_MAX_FREE_MODELS = 3;
 export const COMMIT_GENERATION_CHAT_MAX_TOKENS = 220;
@@ -86,10 +85,11 @@ export async function generateCommitMessageDirect({
     : freeTierRejected ? 'free_tier_rejected'
       : result.attempts > 0 ? 'exhausted'
         : catalogState === 'unavailable' ? 'catalog_unavailable' : 'no_free_models';
+  const lastFailure = result.failures.at(-1);
   const warning = result.ok ? null : freeTierRejected
     ? 'Free Zen rejected the request; created a local commit draft'
     : result.attempts > 0
-      ? 'Free Zen AI attempts were exhausted; created a local commit draft'
+      ? `Zen generation failed (${lastFailure.model}: ${lastFailure.reason}); created a local commit draft`
       : catalogState === 'unavailable'
         ? 'Free Zen model catalog was unavailable; created a local commit draft'
         : 'No free Zen models were available; created a local commit draft';

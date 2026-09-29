@@ -2,7 +2,8 @@
  * The kernel still denies posix_spawn/setpgid/setsid. This library provides no
  * extra authority: it implements the supported file actions using fork/exec,
  * which inherit the supervisor's immutable Seatbelt policy and process group.
- * Omitting/removing the adapter therefore fails closed.
+ * Omitting/removing the adapter therefore fails closed. Detached spawn requests
+ * run in the existing supervised group; creating a new group remains denied.
  */
 #define _DARWIN_C_SOURCE
 #include <spawn.h>
@@ -76,7 +77,8 @@ static int launch(pid_t *pid, const char *file, const posix_spawn_file_actions_t
     int error = posix_spawnattr_getflags(attributes, &flags); if (error) return error;
     posix_spawnattr_getsigmask(attributes, &mask); posix_spawnattr_getsigdefault(attributes, &defaults);
   }
-  if (flags & (POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSID)) return EPERM;
+  /* Detached callers may start, but cannot leave the supervisor's group. */
+  flags &= ~(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSID);
   if (flags & ~(POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_RESETIDS)) return ENOTSUP;
   long maximum = sysconf(_SC_OPEN_MAX); if (maximum <= 0 || maximum > INT_MAX) return EINVAL;
   if ((unsigned long)maximum > INT_MAX / sizeof(struct proc_fdinfo)) return EMFILE;
@@ -173,6 +175,11 @@ INTERPOSE(dup_action, posix_spawn_file_actions_adddup2);
 INTERPOSE(open_action, posix_spawn_file_actions_addopen);
 INTERPOSE(chdir_action, posix_spawn_file_actions_addchdir_np);
 INTERPOSE(fchdir_action, posix_spawn_file_actions_addfchdir_np);
+/* macOS 26 names (Chromium imports these); an untracked chdir action would
+ * silently start the child in the wrong directory. */
+#pragma clang diagnostic ignored "-Wunguarded-availability-new"
+INTERPOSE(chdir_action, posix_spawn_file_actions_addchdir);
+INTERPOSE(fchdir_action, posix_spawn_file_actions_addfchdir);
 INTERPOSE(inherit_action, posix_spawn_file_actions_addinherit_np);
 INTERPOSE(launch, posix_spawn);
 INTERPOSE(launch_path, posix_spawnp);

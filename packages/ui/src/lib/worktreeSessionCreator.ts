@@ -1,3 +1,4 @@
+import { getRetentionNavigationRevision, retentionNavigationChanged, type SelectionOptions } from '@/lib/sessionRetention';
 /**
  * Utilities for creating worktrees and, when needed, sessions bound to them.
  * This is a standalone entrypoint for keyboard shortcuts, menu actions,
@@ -181,7 +182,6 @@ const initializeSessionForWorktree = (sessionId: string, metadata: {
   sessionStore.setSessionDirectory(sessionId, metadata.path);
   sessionStore.setWorktreeMetadata(sessionId, metadata);
   applyDefaultAgentAndModelSelection(sessionId, configState);
-  useDirectoryStore.getState().setDirectory(metadata.path, { showOverlay: false });
 };
 
 
@@ -203,6 +203,7 @@ const createInstantWorktreeDraft = async (options?: {
   }
 
   const projectDirectory = activeProject.path;
+  const startedRevision = getRetentionNavigationRevision();
 
   let isGitRepo = false;
   try {
@@ -218,16 +219,19 @@ const createInstantWorktreeDraft = async (options?: {
     return null;
   }
 
+  if (startedRevision !== getRetentionNavigationRevision()) return null;
   isCreatingWorktreeSession = true;
+  const pendingRequestId = createPendingDraftWorktreeRequest();
+  let draftRevision = startedRevision;
 
   try {
     const projectRef: ProjectRef = { id: activeProject.id, path: projectDirectory };
-    const pendingRequestId = createPendingDraftWorktreeRequest();
 
     // Lock the draft immediately so no React effect can reset it to the project
     // root while we await the preview / worktree creation below.
     const sessionStore = useSessionUIStore.getState();
     if (sessionStore.newSessionDraft?.open) {
+      retentionNavigationChanged();
       sessionStore.overrideNewSessionDraftTarget({
         projectId: projectRef.id,
         directoryOverride: sessionStore.newSessionDraft.directoryOverride ?? projectRef.path,
@@ -247,6 +251,7 @@ const createInstantWorktreeDraft = async (options?: {
       });
     }
 
+    draftRevision = getRetentionNavigationRevision();
     const preferredName = generateBranchName();
 
     const preview = await previewGitWorktree(projectRef.path, {
@@ -256,7 +261,7 @@ const createInstantWorktreeDraft = async (options?: {
     }).catch(() => null);
 
     // Refine draft target once we know the actual worktree path from the preview.
-    if (preview?.path) {
+    if (preview?.path && draftRevision === getRetentionNavigationRevision()) {
       useSessionUIStore.getState().overrideNewSessionDraftTarget({
         projectId: projectRef.id,
         directoryOverride: preview.path,
@@ -280,16 +285,18 @@ const createInstantWorktreeDraft = async (options?: {
     });
 
     resolvePendingDraftWorktreeRequest(pendingRequestId, metadata.path);
-    useSessionUIStore.getState().overrideNewSessionDraftTarget({
+    useSessionUIStore.getState().resolvePendingDraftWorktreeTarget(pendingRequestId, metadata.path, {
+      expectedNavigationRevision: draftRevision,
       projectId: projectRef.id,
-      directoryOverride: metadata.path,
       pendingWorktreeRequestId: null,
       bootstrapPendingDirectory: metadata.path,
       preserveDirectoryOverride: true,
       title: options?.title,
       initialPrompt: options?.initialPrompt,
     });
-    useDirectoryStore.getState().setDirectory(metadata.path, { showOverlay: false });
+    if (draftRevision === getRetentionNavigationRevision()) {
+      useDirectoryStore.getState().setDirectory(metadata.path, { showOverlay: false });
+    }
 
     return metadata.path;
   } catch (error) {
@@ -305,12 +312,11 @@ const createInstantWorktreeDraft = async (options?: {
         deleteLocalBranch: true,
       }).catch(() => undefined);
     }
-    const requestId = useSessionUIStore.getState().newSessionDraft.pendingWorktreeRequestId;
-    if (requestId) {
-      rejectPendingDraftWorktreeRequest(requestId, error instanceof Error ? error : new Error(message));
-      useSessionUIStore.getState().resolvePendingDraftWorktreeTarget(requestId, null);
-    }
-    useSessionUIStore.getState().setDraftBootstrapPendingDirectory(null);
+    rejectPendingDraftWorktreeRequest(pendingRequestId, error instanceof Error ? error : new Error(message));
+    useSessionUIStore.getState().resolvePendingDraftWorktreeTarget(pendingRequestId, null, {
+      expectedNavigationRevision: draftRevision,
+      bootstrapPendingDirectory: null,
+    });
     toast.error('Failed to create worktree', {
       description: message,
     });
@@ -408,6 +414,7 @@ export async function createWorktreeSessionForBranch(
   projectDirectory: string,
   branchName: string,
   options?: {
+    navigation?: SelectionOptions;
     kind?: 'pr' | 'standard';
     existingBranch?: string;
     worktreeName?: string;
@@ -425,6 +432,7 @@ export async function createWorktreeSessionForBranch(
   }
 
   isCreatingWorktreeSession = true;
+  const expectedNavigationRevision = options?.navigation?.expectedNavigationRevision ?? getRetentionNavigationRevision();
 
   try {
     const projectRef = resolveProjectRef(projectDirectory);
@@ -472,7 +480,7 @@ export async function createWorktreeSessionForBranch(
 
     // Create the session
     const sessionStore = useSessionUIStore.getState();
-    const session = await sessionStore.createSession(undefined, metadata.path);
+    const session = await sessionStore.createSession(undefined, metadata.path, null, { ...options?.navigation, expectedNavigationRevision });
     if (!session) {
       // Clean up the worktree if session creation failed
       await removeProjectWorktree(projectRef, metadata, { deleteLocalBranch: true }).catch(() => undefined);
@@ -505,6 +513,7 @@ export async function createWorktreeSessionForNewBranch(
   preferredBranchName: string,
   startPoint?: string,
   options?: {
+    navigation?: SelectionOptions;
     kind?: 'pr' | 'standard';
     worktreeName?: string;
     setUpstream?: boolean;
@@ -521,6 +530,7 @@ export async function createWorktreeSessionForNewBranch(
   }
 
   isCreatingWorktreeSession = true;
+  const expectedNavigationRevision = options?.navigation?.expectedNavigationRevision ?? getRetentionNavigationRevision();
 
   try {
     const start = startPoint?.trim() || 'HEAD';
@@ -573,7 +583,7 @@ export async function createWorktreeSessionForNewBranch(
       };
 
       const sessionStore = useSessionUIStore.getState();
-      const session = await sessionStore.createSession(undefined, metadata.path);
+      const session = await sessionStore.createSession(undefined, metadata.path, null, { ...options?.navigation, expectedNavigationRevision });
       if (!session) {
         await removeProjectWorktree(projectRef, metadata, { deleteLocalBranch: true }).catch(() => undefined);
         throw new Error('Could not create a session for the worktree.');
@@ -601,6 +611,7 @@ export async function createWorktreeSessionForNewBranchExact(
   branchName: string,
   startPoint: string,
   options?: {
+    navigation?: SelectionOptions;
     kind?: 'pr' | 'standard';
     worktreeName?: string;
     setUpstream?: boolean;

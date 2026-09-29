@@ -1,4 +1,5 @@
-import { selectRetentionSession, setRetentionSelectionReader, retentionNavigationChanged } from '@/lib/sessionRetention';
+import { formatMessage, useI18nStore } from '@/lib/i18n/store';
+import { selectRetentionSession, setRetentionSelectionReader, retentionNavigationChanged, invalidateRetentionSession, getRetentionNavigationRevision, RetentionRequestError, type SelectionOptions } from '@/lib/sessionRetention';
 import { toast } from '@/components/ui';
 /**
  * Session UI Store — ephemeral UI state only.
@@ -765,6 +766,7 @@ export type SessionCompletionIndicatorEntry = {
 
 export type SessionUIState = {
   currentSessionId: string | null
+  pendingSessionId: string | null
   currentDraftId: string | null
   draftsById: Record<string, ChatDraft>
   draftOrder: string[]
@@ -830,7 +832,8 @@ export type SessionUIState = {
   dismissPendingChangesBar: (sessionId: string, signature: string | null) => void
 
   // Actions — UI state management
-  setCurrentSession: (id: string | null, directoryHint?: string | null) => void
+  setCurrentSession: (id: string | null, directoryHint?: string | null, options?: SelectionOptions) => void
+  invalidateSessionSelection: (id: string) => void
   openNewSessionDraft: (options?: Partial<NewSessionDraftState>) => void
   selectNewSessionDraft: (draftId: string) => void
   updateNewSessionDraftText: (draftId: string, text: string) => void
@@ -844,6 +847,7 @@ export type SessionUIState = {
     submittedText?: string
     draftTextAtSubmit?: string
     draftAttachmentRevision?: number
+    expectedNavigationRevision?: number
     duplicateDraftCandidates?: Record<string, ChatDraft>
   }) => void
   setNewSessionDraftTarget: (target: { projectId?: string | null; selectedProjectId?: string | null; directoryOverride?: string | null }, options?: { force?: boolean }) => void
@@ -893,7 +897,7 @@ export type SessionUIState = {
     lifecycleCallbacks?: SendLifecycleCallbacks,
   ) => Promise<void>
 
-  createSession: (title?: string, directoryOverride?: string | null, parentID?: string | null) => Promise<Session | null>
+  createSession: (title?: string, directoryOverride?: string | null, parentID?: string | null, navigation?: SelectionOptions) => Promise<Session | null>
   deleteSession: (id: string, options?: Record<string, unknown>) => Promise<boolean>
   deleteSessions: (ids: string[], options?: Record<string, unknown>) => Promise<DeleteSessionsResult>
   archiveSession: (id: string) => Promise<boolean>
@@ -1763,6 +1767,7 @@ const getDraftPromotionDirectory = (
 
 export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   currentSessionId: null,
+  pendingSessionId: null,
   currentDraftId: null,
   ...readPersistedDrafts(safeStorage),
   newSessionDraft: { ...DEFAULT_DRAFT },
@@ -1873,19 +1878,39 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // ---------------------------------------------------------------------------
   // setCurrentSession
   // ---------------------------------------------------------------------------
-  setCurrentSession: (id, directoryHint?: string | null) => {
+  setCurrentSession: (id, directoryHint, options) => {
     selectRetentionSession(id, () => {
       const previousSessionId = get().currentSessionId
       set({ currentSessionId: id, currentDraftId: id ? null : get().currentDraftId,
         newSessionDraft: id ? { ...DEFAULT_DRAFT } : get().newSessionDraft })
       applyCurrentSessionSideEffects(id, directoryHint, previousSessionId, get)
-    }, (error) => toast.error(error.message))
+    }, (error) => {
+      const dictionary = useI18nStore.getState().dictionary
+      const key = error instanceof RetentionRequestError && error.code === 'retention_timeout' ? 'sessions.navigation.timeout'
+        : error instanceof RetentionRequestError && error.code === 'retention_authentication' ? 'sessions.navigation.authentication'
+        : error instanceof RetentionRequestError && error.code === 'session_retention_in_progress' ? 'sessions.navigation.cleanup'
+        : 'sessions.navigation.failed'
+      toast.error(formatMessage(dictionary, key), {
+        action: error instanceof RetentionRequestError && !error.retryable ? undefined : {
+          label: formatMessage(dictionary, 'sessions.navigation.retry'),
+          onClick: () => get().setCurrentSession(id, directoryHint, { onApplied: options?.onApplied }),
+        },
+      })
+    }, options)
+  },
+  invalidateSessionSelection: (id) => {
+    invalidateRetentionSession(id, () => {
+      const previousSessionId = get().currentSessionId
+      set({ currentSessionId: null })
+      applyCurrentSessionSideEffects(null, undefined, previousSessionId, get)
+    })
   },
 
   // ---------------------------------------------------------------------------
   // openNewSessionDraft
   // ---------------------------------------------------------------------------
   openNewSessionDraft: (options) => {
+    retentionNavigationChanged()
     const projectsState = useProjectsStore.getState()
     const projects = projectsState.projects
     const availableWorktreesByProject = get().availableWorktreesByProject
@@ -2024,6 +2049,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   },
 
   selectNewSessionDraft: (draftId) => {
+    retentionNavigationChanged()
     const existingDraft = get().draftsById[draftId]
     if (!existingDraft) return
 
@@ -2168,15 +2194,16 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     })
   },
 
-  promoteDraftToSession: ({ draftId, sessionId, directoryHint, submittedText, draftTextAtSubmit, draftAttachmentRevision, duplicateDraftCandidates }) => {
+  promoteDraftToSession: ({ draftId, sessionId, directoryHint, submittedText, draftTextAtSubmit, draftAttachmentRevision, duplicateDraftCandidates, expectedNavigationRevision }) => {
     const previousSessionId = get().currentSessionId
     const originalDraft = draftId ? get().draftsById[draftId] : null
     const draftUnedited = (!originalDraft || originalDraft.text === (draftTextAtSubmit ?? submittedText))
       && (!draftId || draftAttachmentRevision === undefined
         || getAttachmentMutationRevision(getDraftComposerTargetKey(draftId)) === draftAttachmentRevision)
-    const selectedOriginal = (!draftId || get().currentDraftId === draftId || previousSessionId === sessionId)
+    const selectedOriginal = (expectedNavigationRevision === undefined || expectedNavigationRevision === getRetentionNavigationRevision())
+      && (!draftId || get().currentDraftId === draftId || previousSessionId === sessionId)
       && draftUnedited
-    set((s) => {
+    const completePromotion = () => set((s) => {
       let draftsById = s.draftsById
       let draftOrder = s.draftOrder
       const removedDraftIds = new Set<string>()
@@ -2215,11 +2242,13 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       return {
         draftsById,
         draftOrder,
-        ...(selectedOriginal ? { currentSessionId: sessionId, currentDraftId: null,
-          newSessionDraft: { ...DEFAULT_DRAFT }, error: null } : {}),
+        ...(selectedOriginal ? { error: null } : {}),
       }
     })
-    if (selectedOriginal) applyCurrentSessionSideEffects(sessionId, directoryHint, previousSessionId, get)
+    if (selectedOriginal) get().setCurrentSession(sessionId, directoryHint, {
+      expectedNavigationRevision, onApplied: completePromotion,
+    })
+    else if (get().currentDraftId !== draftId) completePromotion()
   },
 
   setNewSessionDraftTarget: (target) => {
@@ -2431,6 +2460,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       persistDrafts(safeStorage, draftsById, s.draftOrder)
 
       const isCurrentDraft = s.currentDraftId === draftId && s.newSessionDraft?.open
+        && (options?.expectedNavigationRevision === undefined
+          || options.expectedNavigationRevision === getRetentionNavigationRevision())
       if (isCurrentDraft) {
         resolvedCurrentDraftId = draftId
         resolvedProjectId = updatedDraft.selectedProjectId ?? null
@@ -2521,6 +2552,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     // ---- New session from draft ----
     if (draft?.open) {
       const draftTargetFolderId = draft.targetFolderId
+      const expectedNavigationRevision = getRetentionNavigationRevision()
       const capturedDraftId = get().currentDraftId ?? draft.id ?? null
       const draftAbortKey = capturedDraftId ? `draft:${capturedDraftId}` : "draft"
       const draftAbortController = get().claimPendingSendAbort(draftAbortKey)
@@ -2690,6 +2722,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       get().initializeNewOpenChamberSession(created.id, configState.agents ?? [])
 
       get().promoteDraftToSession({
+        expectedNavigationRevision,
         draftId: capturedDraftId,
         sessionId: created.id,
         directoryHint: createdDirectory,
@@ -2802,6 +2835,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       : null
 
     if (!targetSessionId) {
+      const expectedNavigationRevision = getRetentionNavigationRevision()
       const fallbackDirectory = normalizePath(opencodeClient.getDirectory())
       const created = await createSessionRecordAction(undefined, fallbackDirectory, null)
       if (!created?.id) {
@@ -2817,7 +2851,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       if (effectiveAgent?.trim().toLowerCase() === "builder") {
         useSelectionStore.getState().markBuilderHandoffCleared(created.id)
       }
-      get().setCurrentSession(created.id, targetSessionDirectory)
+      get().setCurrentSession(created.id, targetSessionDirectory, { expectedNavigationRevision })
       get().initializeNewOpenChamberSession(created.id, useConfigStore.getState().agents ?? [])
       if (targetSessionDirectory) {
         getSyncChildStores().ensureChild(targetSessionDirectory)
@@ -3041,10 +3075,10 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // ---------------------------------------------------------------------------
   // createSession
   // ---------------------------------------------------------------------------
-  createSession: async (title, directoryOverride, parentID) => {
+  createSession: async (title, directoryOverride, parentID, navigation) => {
     try {
       const dir = directoryOverride ?? opencodeClient.getDirectory()
-      const session = await createSessionAction(title, dir, parentID ?? null)
+      const session = await createSessionAction(title, dir, parentID ?? null, navigation)
       if (!session) return null
 
       return session
@@ -3212,6 +3246,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // ---------------------------------------------------------------------------
   createSessionFromAssistantMessage: async (sourceMessageId) => {
     if (!sourceMessageId) return
+    const expectedNavigationRevision = getRetentionNavigationRevision()
 
     // Find which session this message belongs to by scanning sync state
     const state = getDirectoryState()
@@ -3240,7 +3275,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       (sid) => get().worktreeMetadata.get(sid),
     )
 
-    const session = await get().createSession(undefined, directory ?? null, null)
+    const session = await createSessionRecordAction(undefined, directory ?? null, null)
     if (!session) return
 
     const createdAt = Date.now()
@@ -3272,8 +3307,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       text: assistantPlanText,
       createdAt,
     })
-
-    get().setCurrentSession(session.id, directory ?? (session as { directory?: string | null }).directory ?? null)
+    get().setCurrentSession(session.id, directory, { expectedNavigationRevision })
   },
 
   // ---------------------------------------------------------------------------
@@ -3624,6 +3658,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   retireDeletedSession: (sessionId) => {
     const id = sessionId.trim()
     if (!id) return
+    get().invalidateSessionSelection(id)
 
     clearPendingCompletionTimers(id)
     get().abortControllers.get(id)?.abort()
@@ -3798,7 +3833,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
 setSessionUIStoreRef(useSessionUIStore)
 
-setRetentionSelectionReader(() => useSessionUIStore.getState().currentSessionId)
+setRetentionSelectionReader(() => useSessionUIStore.getState().currentSessionId, pendingSessionId => {
+  if (useSessionUIStore.getState().pendingSessionId !== pendingSessionId) useSessionUIStore.setState({ pendingSessionId })
+})
 useSessionUIStore.subscribe((state, previous) => {
   if (state.currentSessionId !== previous.currentSessionId || state.currentDraftId !== previous.currentDraftId
     || state.newSessionDraft.open !== previous.newSessionDraft.open) retentionNavigationChanged()

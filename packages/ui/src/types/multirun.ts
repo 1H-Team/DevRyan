@@ -22,6 +22,8 @@ export interface MultiRunFileAttachment {
 }
 
 export interface CreateMultiRunParams {
+  /** Target project without changing the current navigation. */
+  projectId?: string;
   /** Group name used for worktree directory and branch naming */
   name: string;
   /** Prompt sent to all sessions */

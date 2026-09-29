@@ -29,6 +29,18 @@ test('settings serialize mutations, recover after failure and read the current d
   } finally { await fsp.rm(root, { recursive: true, force: true }); }
 });
 
+test('a failed settings write leaves no temporary file behind', async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'devryan-settings-'));
+  const environment = { env: { OPENCHAMBER_DATA_DIR: root }, pid: process.pid };
+  const failingFsp = { ...fsp, rename: async () => { throw Object.assign(new Error('disk full'), { code: 'ENOSPC' }); } };
+  try {
+    const settings = createDesktopSettings({ fs, fsp: failingFsp, os, process: environment, log: {}, getMainWindow: () => null, LOCAL_HOST_ID: 'local' });
+    await assert.rejects(settings.mutateSettingsRoot((value) => { value.first = 1; }), /disk full/);
+    const leftovers = (await fsp.readdir(root)).filter((name) => name.startsWith('settings.json.tmp-'));
+    assert.deepEqual(leftovers, []);
+  } finally { await fsp.rm(root, { recursive: true, force: true }); }
+});
+
 test('notifications use live focus and main window state when clicked', () => {
   const events = [];
   let focused = true;

@@ -12,7 +12,7 @@
  * Abort controller created once at init, cleaned up via returned cleanup fn.
  */
 
-import { retentionClientID } from "@/lib/sessionRetention"
+import { retentionClientID, retentionConnectionChanged } from "@/lib/sessionRetention"
 import type { Event, OpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { opencodeClient } from "@/lib/opencode/client"
 import { syncDebug } from "./debug"
@@ -623,6 +623,7 @@ export function createEventPipeline(input: EventPipelineInput) {
   }
 
   const markConnected = () => {
+    retentionConnectionChanged()
     disconnected = false
     consecutiveFailures = 0
     backoffMs = reconnectDelayMs

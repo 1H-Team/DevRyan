@@ -377,14 +377,23 @@ export const createBrowserLeaseRuntime = (options = {}) => {
 
   const reuseKeyFor = (scope) => `${scope.opencodeSessionID}\u0000${scope.messageID}`;
 
-  const publicLease = (record, created) => ({
+  const publicLease = (record, created, hostClients = null) => ({
     leaseId: record.leaseId,
     wsUrl: record.wsUrl,
     created,
     generation: record.generation,
     previewUrl: normalizeOptionalString(record.metadata.previewUrl),
     serviceTokenConfigured: record.metadata.serviceTokenConfigured === true,
+    // Present only when the host reported its client count: a reused lease
+    // whose daemon has exited (for example a confined per-call worker) must
+    // be reconnected before the next command.
+    ...(Number.isInteger(hostClients) ? { clientAttached: hostClients > 0 } : {}),
   });
+
+  const isHostLeaseMissing = (result) => result === false
+    || result?.ok === false
+    || result?.state === 'not_found'
+    || result?.state === 'missing';
 
   const removeRecordLocked = (record) => {
     if (leasesByID.get(record.leaseId)?.fence !== record.fence) return false;
@@ -453,9 +462,28 @@ export const createBrowserLeaseRuntime = (options = {}) => {
       assertAdmission(epoch);
       if (existing?.wsUrl) {
         requireMatchingScope(existing, scope);
-        return publicLease(existing, false);
-      }
-      if (existing) removeRecordLocked(existing);
+        // The host may have closed this lease without the server hearing it:
+        // a runtime-service broker cannot carry the onClosed callback. Confirm
+        // it before handing out its endpoint; a transient host failure keeps
+        // the record.
+        let hostResult;
+        try {
+          hostResult = await touchBrowserLease?.({ leaseId: existing.leaseId, metadata: existing.metadata });
+        } catch (error) {
+          assertAdmission(epoch);
+          throw classifyHostError(error) ?? new BrowserLeaseError(
+            'browser_host_unavailable',
+            'The desktop browser host could not confirm the lease',
+            503,
+          );
+        }
+        assertAdmission(epoch);
+        if (!isHostLeaseMissing(hostResult) && leasesByID.get(existing.leaseId)?.fence === existing.fence) {
+          existing.lastActivityAt = now();
+          return publicLease(existing, false, hostResult?.clients);
+        }
+        if (removeRecordLocked(existing)) emitObservationChanged(existing);
+      } else if (existing) removeRecordLocked(existing);
 
       let rootSessionId;
       try {
@@ -501,8 +529,9 @@ export const createBrowserLeaseRuntime = (options = {}) => {
           previewCredential: isRecord(resolvedContext?.credential)
             ? resolvedContext.credential
             : null,
-          onClosed: (reason) => {
-            void handleHostClosed(leaseId, fence, reason).catch(() => undefined);
+          onClosed: (detail) => {
+            const reason = typeof detail === 'string' ? detail : detail?.reason;
+            void handleHostClosed(leaseId, fence, reason || 'host_closed').catch(() => undefined);
           },
         });
         const current = leasesByID.get(leaseId);
@@ -585,11 +614,7 @@ export const createBrowserLeaseRuntime = (options = {}) => {
       }
       requireMatchingScope(current, scope);
       const hostTouchResult = await touchBrowserLease?.({ leaseId, metadata: current.metadata });
-      const hostLeaseMissing = hostTouchResult === false
-        || hostTouchResult?.ok === false
-        || hostTouchResult?.state === 'not_found'
-        || hostTouchResult?.state === 'missing';
-      if (hostLeaseMissing) {
+      if (isHostLeaseMissing(hostTouchResult)) {
         if (removeRecordLocked(current)) emitObservationChanged(current);
         throw new BrowserLeaseError('browser_lease_not_found', 'Browser lease was not found', 404);
       }

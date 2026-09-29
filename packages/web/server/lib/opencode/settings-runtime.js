@@ -1,3 +1,5 @@
+import { cleanupStaleAtomicFiles } from '@openchamber/harness-runtime';
+
 import { createProjectIdFromPath } from '../projects/project-id.js';
 import { normalizeNotificationTemplates } from './notification-settings.js';
 
@@ -33,6 +35,17 @@ export const createSettingsRuntime = (deps) => {
   } = deps;
 
   let persistSettingsLock = Promise.resolve();
+
+  // A process killed between writing and renaming a settings temporary file
+  // leaves it behind. Sweep stale ones (older than a day, so concurrent
+  // writers are never touched) once per runtime; failures are ignorable.
+  let staleSettingsSweep = null;
+  const sweepStaleSettingsTemporaryFiles = () => {
+    staleSettingsSweep ??= Promise.resolve()
+      .then(() => cleanupStaleAtomicFiles(SETTINGS_FILE_PATH, { fs: fsPromises }))
+      .catch(() => 0);
+    return staleSettingsSweep;
+  };
 
   // Orphan recovery is a one-shot best-effort scan: when orphans can't be
   // matched on first pass they stay on disk and every subsequent settings
@@ -440,9 +453,15 @@ export const createSettingsRuntime = (deps) => {
       // readFile + JSON.parse and silently coerce parse errors to {}. A
       // partial read during a non-atomic writeFile would make their next
       // read-modify-write wipe the settings file.
+      await sweepStaleSettingsTemporaryFiles();
       const tmp = `${SETTINGS_FILE_PATH}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      await fsPromises.writeFile(tmp, JSON.stringify(settings, null, 2), 'utf8');
-      await fsPromises.rename(tmp, SETTINGS_FILE_PATH);
+      try {
+        await fsPromises.writeFile(tmp, JSON.stringify(settings, null, 2), 'utf8');
+        await fsPromises.rename(tmp, SETTINGS_FILE_PATH);
+      } catch (error) {
+        await Promise.resolve(fsPromises.rm?.(tmp, { force: true })).catch(() => {});
+        throw error;
+      }
     } catch (error) {
       console.warn('Failed to write settings file:', error);
       throw error;
@@ -732,6 +751,7 @@ export const createSettingsRuntime = (deps) => {
   };
 
   const readSettingsFromDiskMigrated = async () => {
+    void sweepStaleSettingsTemporaryFiles();
     const current = await readSettingsFromDisk();
     const migration1 = await migrateSettingsFromLegacyLastDirectory(current);
     const migration2 = await migrateSettingsFromLegacyThemePreferences(migration1.settings);

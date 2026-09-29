@@ -447,8 +447,7 @@ export const CommandPalette: React.FC = () => {
 
   const handleOpenSession = React.useCallback(
     (session: Session) => {
-      close();
-      setCurrentSession(session.id, resolveGlobalSessionDirectory(session));
+      setCurrentSession(session.id, resolveGlobalSessionDirectory(session), { onApplied: close });
     },
     [close, setCurrentSession],
   );

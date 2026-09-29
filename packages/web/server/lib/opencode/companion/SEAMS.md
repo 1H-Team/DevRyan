@@ -49,6 +49,25 @@ protocol, which stays the authority for every refusal. Selection is by
 built-in object identity (`DevRyanExecution.direct`); the host also checks the
 tool name. Kill switch: `DEVRYAN_DIRECT_CONTROL_RECEIPTS=0` on the host.
 
+That locked commit is the only bookkeeping a read-only direct call needs.
+Session-change evidence never covers read-only tools (history import and
+observation skip them), so the host no longer reads the receipt back in a
+second ledger transaction or records an empty session-change attestation. Both
+were serialized per project behind every other session's work and each call's
+result waited for them: with about seven concurrent sessions on one project,
+read, glob, grep and skill took a median of 21–35 s. A direct tool that is
+not read-only for session changes keeps its attestation. Kill switch:
+`DEVRYAN_DIRECT_LEDGER_ONLY=0` restores the attestation.
+
+The host journals a `direct_finish` summary (`session_execution`, only when it
+took 250 ms or more or failed). Its steps split the finish into the OpenCode
+identity lookups, the ledger commit (`direct_receipt` with the ledger's own
+`queue_wait`/`ledger_*` steps) and, when recorded, the attestation
+(`execution_receipt`, `change_receipt`, `changes_queue_wait`,
+`changes_transaction`). `tool_execution` is the companion's run time between
+admission and finish; it precedes the summary and is not part of its
+`elapsedMs`.
+
 ### Skill loading (companion 2.1.1)
 
 The previous audit grouped loading skill Markdown with executing its scripts.
@@ -65,7 +84,8 @@ The built-in embedded skill keeps its embedded content. Plugin hooks, agent
 visibility, permission decisions and logical support-file paths remain native.
 `DEVRYAN_NATIVE_READ_TOOLS=0` restores confined loading;
 `DEVRYAN_DIRECT_CONTROL_RECEIPTS=0` falls back to a reserved control lease.
-Completion still waits for the cancellation/generation-fenced durable receipt.
+Completion still waits for the cancellation/generation-fenced durable receipt,
+including when the skill name is unknown and the tool fails.
 
 ## Worker boot
 
@@ -171,3 +191,30 @@ alternating arms):
 Watcher-driven observation stays a design gate: Node's `fs.watch` cannot
 report dropped FSEvents, so silence cannot prove an unchanged workspace. A
 warm per-session view would now save well under a second and is not pursued.
+
+**Re-evaluation 2026-09-29.** On 2026-09-28 the diagnostic journal showed a larger project (about 12k tracked files) with these median preparation times:
+- 21.5 s for each confined edit;
+- 17–41 s for each of 8 parallel edits;
+- a 58 s first call after startup, which was 99 install batches of 128 re-stamped rows, each committing the ledger.
+
+Two changes landed. Neither reuses views.
+
+1. **Fresh-view materializer** (`createViewMaterializer`; turn off with `DEVRYAN_VIEW_FAST_MATERIALIZE=0`). Each file is cloned straight into a view that the preparation itself created. Every directory is created and checked once. This takes about 4 filesystem requests per file instead of about 12.
+2. **Batched re-stamps** (turn off with `DEVRYAN_LEDGER_RESTAMP_BATCH=0`). Rows whose content is identical install in batches of up to 1024, and their under-lock stamps are checked concurrently.
+
+**Results.** Measured on a synthetic 12,002-file fixture (`ledger-benchmark.mjs --fixture-files 12000`), with both arms interleaved in one runtime while the host's load average was 12–16 (medians):
+
+| Case | Before | After |
+| --- | --- | --- |
+| Warm call: prepare (`begin`) | 5.2 s | 4.7 s |
+| Burst of 8 concurrent calls: each `begin` | 32.0 s | 25.2 s |
+| Burst of 8 concurrent calls: span | 56.3 s | 51.0 s |
+| Call after a mass identical-content re-stamp | 47.6 s | 26.0 s |
+
+Materialization turned out not to be the main cost of a burst. Concurrent preparations still share the per-project I/O queue and the cleanup of earlier views. Warm, reused views could remove more of this, but they need their own isolation contract first:
+- reuse only after a confined termination and a complete publication;
+- a reset that rejects extra hard links (`nlink > 1`), nested `.git` directories and replaced input links;
+- a pool of views per project;
+- a sweep at startup.
+
+That remains a separate change. Moving view cleanup off the finish path and sizing the thread pool are also still open.

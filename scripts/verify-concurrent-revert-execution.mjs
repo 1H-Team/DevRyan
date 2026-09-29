@@ -321,9 +321,9 @@ try {
     assert.equal(skillFetches, fetchedBefore, 'Loading must not refetch skill URLs');
     assert.deepEqual(executionCalls.filter(call => call.callID === loaded.call.callID).map(call => call.action),
       ['direct-admit', 'direct-finish'], 'Built-in skill loading must not prepare a workspace or launch a worker');
-    const receipt = ownedReceipts.find(receipt => receipt.callID === loaded.call.callID);
-    assert(receipt, 'Skill completion retains an owned receipt');
-    assert.deepEqual(receipt.files, []);
+    const lease = await host.runtime.leaseForCall({ directory, sessionID: skills.id, callID: loaded.call.callID });
+    assert(lease?.direct === true && lease.cleaned === true && lease.state === 'published',
+      'Skill completion retains its fenced ledger receipt');
   }
   console.log('PASS: selected global/project/tilde/symlink/URL skills, include paths, and consecutive direct receipts');
   const failed = await request('/session', { title: 'Admission failure fixture' });

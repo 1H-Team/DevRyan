@@ -132,6 +132,13 @@ describe('Electron browser lease host contract', () => {
     assert.match(mainSource, /bridge\.bindLeaseGuest\(leaseId, surfaceContents/);
   });
 
+  test('republishes owner snapshots when a lease client attaches or is released', () => {
+    // A confined worker's daemon exit releases only the bridge client; the
+    // renderer must still see the lease (clientAttached:false) between calls.
+    assert.match(mainSource, /onStatusChange: \(\) => publishBrowserLeaseSnapshot\(\)/);
+    assert.match(mainSource, /clientAttached: \(status\.clients \?\? 0\) > 0/);
+  });
+
   test('publishes a token-free global count while keeping lease snapshots owner-scoped', () => {
     assert.match(mainSource, /globalActiveLeaseCount: browserLeaseOwners\.size/);
     assert.match(

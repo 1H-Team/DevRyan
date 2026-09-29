@@ -1,3 +1,4 @@
+import { markSelectionTiming } from './selection-timing.js';
 import express from 'express';
 import path from 'node:path';
 
@@ -161,11 +162,16 @@ export function registerSessionRetentionRoutes(app, { retention, gate }) {
   // Authentication/CSRF and principal middleware precede this registration.
   app.all('/api/session/retention-control', (_req, res) => res.sendStatus(404));
   app.post('/api/openchamber/session-retention/run', express.json({ limit: '4kb' }), async (_req, res) => res.json(await retention.run()));
-  app.post('/api/openchamber/session-retention/selection', express.json({ limit: '4kb' }), (req, res) => {
+  app.post('/api/openchamber/session-retention/selection', (req, _res, next) => {
+    markSelectionTiming(req, 'middlewareMs'); next();
+  }, express.json({ limit: '4kb' }), (req, res) => {
     try {
       const { clientID, sessionID, revision, committed } = req.body ?? {};
       if (sessionID !== null && (typeof sessionID !== 'string' || !/^ses_[a-zA-Z0-9]+$/.test(sessionID))) throw failure('invalid_session');
-      gate.select(clientID, sessionID, revision, committed === true); res.json({ selected: true });
+      markSelectionTiming(req, 'gateStartMs');
+      try { gate.select(clientID, sessionID, revision, committed === true); }
+      finally { markSelectionTiming(req, 'gateEndMs'); }
+      res.json({ selected: true });
     } catch (cause) { res.status(cause.status ?? 400).json({ code: cause.code, retryable: true }); }
   });
   app.use(['/api/global/event', '/api/event'], (req, res, next) => {

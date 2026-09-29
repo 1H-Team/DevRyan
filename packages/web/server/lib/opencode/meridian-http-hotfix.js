@@ -30,6 +30,14 @@ const providerSource = fs.readFileSync(new URL('./session-provider-spawn.js', im
 const PROVIDER_IMPORT = 'import { spawnConfinedProvider } from "./devryan-session-provider-spawn.js";\n';
 const PROVIDER_ANCHOR = '      pathToClaudeCodeExecutable: claudeExecutable,';
 const PROVIDER_PATCHED = PROVIDER_ANCHOR + '\n      ...(process.env.DEVRYAN_EXECUTION_BOUNDARY === "1" ? { spawnClaudeCodeProcess: passthrough ? spawnConfinedProvider : () => { throw new Error("mutation_runtime_unsupported: Claude native execution requires passthrough mode"); } } : {}),';
+// The requesting session directory (see resolveSessionWorkingDirectory) takes
+// the place of the scrubbed <env> claim and the host process cwd fallback. A
+// refusal is a non-retryable 400, never a transient provider failure.
+const DIRECTORY_IMPORT = 'import { resolveSessionWorkingDirectory } from "./devryan-session-provider-spawn.js";\n';
+const DIRECTORY_ANCHOR = '        const cwdResolution = resolveSdkWorkingDirectory({';
+const DIRECTORY_PATCHED = '        const devryanSessionDirectory = resolveSessionWorkingDirectory(c.req.header("x-devryan-directory"));\n'
+  + '        if (devryanSessionDirectory.rejection) return c.json({ type: "error", error: { type: "invalid_request_error", message: devryanSessionDirectory.rejection } }, 400);\n'
+  + '        const cwdResolution = devryanSessionDirectory.resolution ?? resolveSdkWorkingDirectory({';
 const incompatible = error => ({ ok: false, changed: false, code: MERIDIAN_HTTP_HOTFIX_INCOMPATIBLE, error });
 
 export const applyMeridianHttpHotfix = ({ configDirectory, fs: fsApi = fs,
@@ -49,7 +57,8 @@ export const applyMeridianHttpHotfix = ({ configDirectory, fs: fsApi = fs,
     source = fsApi.readFileSync(entry, 'utf8');
   } catch { return incompatible('Meridian HTTP hotfix files are unavailable'); }
   const originalSha256 = expectedOriginalSha256 ?? review.originalSha256;
-  const withoutProvider = source.replace(PROVIDER_IMPORT, '').replace(PROVIDER_PATCHED, PROVIDER_ANCHOR);
+  const withoutProvider = source.replace(PROVIDER_IMPORT, '').replace(PROVIDER_PATCHED, PROVIDER_ANCHOR)
+    .replace(DIRECTORY_IMPORT, '').replace(DIRECTORY_PATCHED, DIRECTORY_ANCHOR);
   const original = stripMeridianHandoffPatch(withoutProvider, review.edits).replace(IMPORT, '').replace(PATCHED, MERIDIAN_HTTP_SERVER_ORIGINAL).replace(PATCHED_END, ORIGINAL_END);
   if (sha256(original) !== originalSha256) return incompatible('Meridian HTTP source hash is incompatible');
   if (original.split(MERIDIAN_HTTP_SERVER_ORIGINAL).length !== 2 || original.split(ORIGINAL_END).length !== 2) {
@@ -65,7 +74,8 @@ export const applyMeridianHttpHotfix = ({ configDirectory, fs: fsApi = fs,
   catch { return incompatible('Meridian handoff source anchors are incompatible'); }
   if (withoutProvider !== original && withoutProvider !== httpPatched && withoutProvider !== previousPatched && withoutProvider !== patched) return incompatible('Meridian source contains an incomplete patch');
   if (original.split(PROVIDER_ANCHOR).length !== 2) return incompatible('Meridian provider execution anchors are incompatible');
-  patched = PROVIDER_IMPORT + patched.replace(PROVIDER_ANCHOR, PROVIDER_PATCHED);
+  if (original.split(DIRECTORY_ANCHOR).length !== 2) return incompatible('Meridian working directory anchors are incompatible');
+  patched = PROVIDER_IMPORT + DIRECTORY_IMPORT + patched.replace(PROVIDER_ANCHOR, PROVIDER_PATCHED).replace(DIRECTORY_ANCHOR, DIRECTORY_PATCHED);
   let changed = false;
   try {
     for (const [file, content] of [[helper, helperSource], [path.join(packageRoot, 'dist', MERIDIAN_HANDOFF_HELPER), handoffSource],
@@ -87,5 +97,6 @@ export const applyMeridianHttpHotfix = ({ configDirectory, fs: fsApi = fs,
     sourceSha256: sha256(patched), helperSha256: sha256(helperSource), handoffSha256: sha256(handoffSource),
     transport: 'bun-native-request-signal; node-adapter-preserved', handoff: 'interrupt-after-complete-tool-checkpoint; canonical-terminal-or-verified-native-checkpoint',
     prefix: 'native-fork-at-client-tool-checkpoint; git-snapshot-disabled-for-passthrough',
-    background: 'normal-sdk-mode; stop-processing-at-forwarded-tool-hook' };
+    background: 'normal-sdk-mode; stop-processing-at-forwarded-tool-hook',
+    workingDirectory: 'requesting-session-directory; refused-when-unverified' };
 };

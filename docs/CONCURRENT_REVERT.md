@@ -76,7 +76,11 @@ Native enforcement, not a working directory convention, prevents writes to the
 original project, dependencies and ownership store. macOS uses Seatbelt and a
 supervised process group; a spawn adapter preserves that group for Bun. On
 Apple silicon the adapter is universal `arm64`/`arm64e`, so arm64e system
-tools such as `/bin/cat` can load it. Linux
+tools such as `/bin/cat` can load it. Session-scoped calls restore the adapter
+for Node started through `/usr/bin/env` or `/bin/sh` (a `NODE_OPTIONS`
+preload) and may look up only Chromium's `MachPortRendezvousServer`, so a
+project's headless Playwright check runs from the host's read-only browser
+cache (`DEVRYAN_WORKER_BROWSERS=0` disables this). Linux
 requires [Landlock ABI 9](https://docs.kernel.org/userspace-api/landlock.html), private user/mount/PID/IPC namespaces, read-only mounts
 and seccomp. Its private root is a recursive read-only clone of the host tree
 with only the view, scratch and cache bound writable, so the real project path
@@ -128,7 +132,14 @@ same snapshot. Nothing is copied per project file into the lease or main state
 (`DEVRYAN_LAZY_BASE_RUNS=0` restores the copy; older leases keep it).
 
 View files are copy-on-write clones of objects whose bytes were verified once
-per object identity (`DEVRYAN_VIEW_CLONE=0` byte-copies). Publication reuses
+per object identity (`DEVRYAN_VIEW_CLONE=0` byte-copies). A view the
+preparation just created is filled by a fresh-view materializer: each directory
+is created and checked once, and each file is cloned straight into place with
+an exclusive create, then chmod and one lstat for its stamp (about four
+filesystem requests per file instead of about twelve). Symbolic links and
+existing entries (for example case-only collisions) use the general writer
+(`DEVRYAN_VIEW_FAST_MATERIALIZE=0` restores it for every file). Its steps are
+journaled as `view_files`, `view_commit`, `view_git` and `view_inputs`. Publication reuses
 the base entry of a file whose full stat stamp is unchanged (inode, size, mode,
 nanosecond mtime and ctime); whole-second timestamps are always re-hashed
 (`DEVRYAN_VIEW_STAT_REUSE=0` hashes every file). Repository resolution is
@@ -147,7 +158,11 @@ Execution views are disposable, since a crash cancels their lease and a view is
 never published after one. View files are copied without sync, while writes
 into the project stay synced. Reconciliation and view preparation overlap
 per-file I/O (eight at a time, results in order) and install observed files in
-batches of 128 per ledger transaction.
+batches of 128 per ledger transaction. Rows whose content is unchanged (a new
+inode or ctime only) install in batches of up to 1024 with their under-lock
+stamps checked concurrently, so a mass re-stamp commits the ledger a few times
+instead of once per 128 files (`DEVRYAN_LEDGER_RESTAMP_BATCH=0`). Large passes
+journal `reconciliation_install` and `reconciliation_restamp` counts.
 Host ownership is proven by the native supervisor's OS lifetime lock. An empty
 in-memory map, heartbeat expiry or a reused PID cannot establish writer death. Failed keeper initialization remains single-flight and becomes retryable only after the failed child is reaped; unconfirmed termination blocks replacement. Independent shutdown paths still drain when keeper initialization fails.
 
@@ -178,7 +193,7 @@ because caches saved by a tag-triggered release are visible only to that tag.
 
 Only successful acceptance writes the runtime manifest. The current paired
 companion is 2.1.2 on OpenCode 1.18.33, with execution preparation protocol 3
-(direct receipts for built-in read, glob and grep) and retention protocol 1. The host verifies the required
+(direct receipts for built-in read, glob, grep and skill; the host records only their fenced ledger commit) and retention protocol 1. The host verifies the required
 capability versions, platform, architecture and artifact digests before enabling
 capture. Artifacts live under `packages/web/runtime/<platform>-<arch>`; Electron
 ships them under `Resources/revert-runtime`. An explicit
@@ -280,7 +295,10 @@ phase, outcome and elapsed milliseconds. Phases distinguish admission, queue
 waiting, reconciliation, lease preparation and cleanup. Host requests and
 preparations are summarized: one `admission` record carries per-phase counts and
 time in `steps` (`phase:count/ms`). Host requests write it only when they failed
-or took at least 250 ms; each preparation writes one. A phase is journaled on its
+or took at least 250 ms; each preparation writes one. A direct receipt's finish
+writes the same summary as a `direct_finish` record under the same rule, without
+gaining a deadline; its `tool_execution` step is the companion's run time before
+the finish, which is not included in `elapsedMs`. A phase is journaled on its
 own when it fails, or as started/completed once it runs for 2 s, so a hang stays
 visible while it happens. They contain no tool arguments, contents, credentials or
 project paths. The shared chat keeps a
@@ -317,7 +335,7 @@ on the next startup.
 Execution diagnostics add only bounded `toolOrigin` (`builtin`/`custom`),
 `executionTier` (`direct`/`control`/`process`) and `fallbackReason` enums. Existing
 preparation summaries expose elapsed time through `elapsedMs` and their phase
-steps. Tool arguments, contents and credentials are excluded. These fields are
+steps; slow direct finishes add a `direct_finish` summary with the same fields. Tool arguments, contents and credentials are excluded. These fields are
 observational: native tool identity, permissions, cancellation, Revert fencing,
 durable receipts and confinement of custom same-name tools remain authoritative.
 The packaged runtime fixture loads the managed Cursor adapter after retiring

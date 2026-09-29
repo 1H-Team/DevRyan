@@ -1,3 +1,4 @@
+import { getRetentionNavigationRevision } from '@/lib/sessionRetention';
 import React from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ChatView } from '@/components/views/ChatView';
@@ -137,6 +138,7 @@ const EmbeddedSessionSelectionGate: React.FC<{
   const sessions = useSessions();
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
+  const initialNavigationRevision = React.useRef(getRetentionNavigationRevision());
 
   React.useEffect(() => {
     if (!embeddedSessionChat) {
@@ -151,7 +153,7 @@ const EmbeddedSessionSelectionGate: React.FC<{
       return;
     }
 
-    void setCurrentSession(embeddedSessionChat.sessionId);
+    setCurrentSession(embeddedSessionChat.sessionId, undefined, { expectedNavigationRevision: initialNavigationRevision.current });
   }, [currentSessionId, embeddedSessionChat, sessions, setCurrentSession]);
 
   return null;
@@ -843,8 +845,9 @@ function HostApp({ apis }: AppProps) {
       const directory = typeof detail?.directory === 'string' && detail.directory.trim().length > 0
         ? detail.directory.trim()
         : null;
-      useUIStore.getState().setActiveMainTab('chat');
-      void useSessionUIStore.getState().setCurrentSession(sessionId, directory);
+      useSessionUIStore.getState().setCurrentSession(sessionId, directory, {
+        onApplied: () => useUIStore.getState().setActiveMainTab('chat'),
+      });
     };
 
     window.addEventListener('openchamber:open-session', handler as EventListener);

@@ -1,15 +1,14 @@
 import express from 'express';
 import request from '../../test-supertest.js';
 import { describe, expect, it, vi } from 'vitest';
-import { createFreeZenCooldowns } from '@openchamber/shared-runtime';
 
 import { generateCommitMessageDirect } from './commit-message.js';
 import { registerGitRoutes } from './routes.js';
 
+const PINNED_MODEL = 'deepseek-v4.1-flash';
+
 const makeApp = ({
   resolveZenModel = vi.fn(async (override) => override || 'gpt-5-nano'),
-  getCachedFreeZenModels,
-  fetchFreeZenModels = vi.fn(async () => [{ id: 'free-a' }, { id: 'free-b' }]),
   generateCommitMessage = vi.fn(async () => ({
     subject: 'feat: add generated source file',
     highlights: [],
@@ -36,11 +35,8 @@ const makeApp = ({
   app.use(express.json());
   registerGitRoutes(app, {
     resolveZenModel,
-    getCachedFreeZenModels,
-    fetchFreeZenModels,
     generateCommitMessage,
     generatePullRequestDescription,
-    freeZenCooldowns: createFreeZenCooldowns(),
     recordCommitTiming,
     loadGitLibraries,
   });
@@ -48,7 +44,6 @@ const makeApp = ({
     app,
     generateCommitMessage,
     generatePullRequestDescription,
-    fetchFreeZenModels,
     resolveZenModel,
     recordCommitTiming,
   };
@@ -71,7 +66,7 @@ const requestBody = {
 };
 
 describe('POST /api/git/commit-message', () => {
-  it('uses the commit-specific free Zen model without calling OpenCode session endpoints', async () => {
+  it('uses the pinned Zen model without resolving a session model', async () => {
     const { app, generateCommitMessage, resolveZenModel } = makeApp();
 
     const response = await request(app)
@@ -86,42 +81,21 @@ describe('POST /api/git/commit-message', () => {
     expect(generateCommitMessage).toHaveBeenCalledWith(expect.objectContaining({
       context: requestBody.context,
       guidance: undefined,
-      models: [{ id: 'free-a' }, { id: 'free-b' }],
+      models: [PINNED_MODEL],
+      cooldowns: null,
     }));
   });
 
-  it('preserves an explicit Zen model override', async () => {
-    const generateCommitMessage = vi.fn(async () => ({
-      subject: 'chore: update generated fixture',
-      highlights: [],
-    }));
-    const { app, resolveZenModel } = makeApp({ generateCommitMessage, fetchFreeZenModels: async () => [{ id: 'free-a' }, { id: 'big-pickle' }] });
-
-    await request(app)
-      .post('/api/git/commit-message?directory=/repo')
-      .send({ ...requestBody, zenModel: 'big-pickle' })
-      .expect(200);
-
-    expect(resolveZenModel).not.toHaveBeenCalled();
-    expect(generateCommitMessage).toHaveBeenCalledWith(expect.objectContaining({
-      models: [{ id: 'big-pickle' }, { id: 'free-a' }],
-    }));
-  });
-
-  it('ignores a requested model that is absent from the free catalog', async () => {
+  it('ignores a requested Zen model and keeps the pinned model', async () => {
     const { app, generateCommitMessage } = makeApp();
     await request(app).post('/api/git/commit-message?directory=/repo')
-      .send({ ...requestBody, zenModel: 'paid-or-retired' }).expect(200);
-    expect(generateCommitMessage).toHaveBeenCalledWith(expect.objectContaining({ models: [{ id: 'free-a' }, { id: 'free-b' }] }));
+      .send({ ...requestBody, zenModel: 'big-pickle' }).expect(200);
+    expect(generateCommitMessage).toHaveBeenCalledWith(expect.objectContaining({ models: [PINNED_MODEL] }));
   });
 
-  it.each(['/commit-message', '/commit-message/draft'])('rotates through actual generators for %s and journals each failure', async (route) => {
-    const requestText = vi.fn()
-      .mockRejectedValueOnce(Object.assign(new Error('unavailable'), { status: 401 }))
-      .mockResolvedValueOnce('invalid draft')
-      .mockResolvedValueOnce(JSON.stringify({ subject: 'fix: recover generation', details: ['Try models in order', 'Keep staged scope'] }));
+  it.each(['/commit-message', '/commit-message/draft'])('generates through the real generator for %s and journals the attempt', async (route) => {
+    const requestText = vi.fn(async () => JSON.stringify({ subject: 'fix: recover generation', details: ['Use the pinned model', 'Keep staged scope'] }));
     const { app, recordCommitTiming } = makeApp({
-      fetchFreeZenModels: async () => ['a', 'b', 'c'],
       generateCommitMessage: (options) => generateCommitMessageDirect({ ...options, requestText }),
     });
     const response = await request(app).post(`/api/git${route}?directory=/repo`)
@@ -129,31 +103,32 @@ describe('POST /api/git/commit-message', () => {
     const message = response.body.message ?? response.body.commits[0];
     expect(message.subject).toBe('fix: recover generation');
     expect(response.body.warnings).toBeUndefined();
-    expect(requestText.mock.calls.map(([input]) => input.zenModel)).toEqual(['a', 'b', 'c']);
+    expect(requestText.mock.calls.map(([input]) => input.zenModel)).toEqual([PINNED_MODEL]);
     const attempts = recordCommitTiming.mock.calls.map(([, payload]) => payload).filter(({ event }) => event === 'git_commit_message_model_attempt');
-    expect(attempts.map(({ attempt, model, providerOutcome }) => [attempt, model, providerOutcome])).toEqual([
-      [1, 'a', 'unauthorized'], [2, 'b', 'invalid_output'], [3, 'c', 'complete'],
+    expect(attempts.map(({ tier, attempt, model, providerOutcome }) => [tier, attempt, model, providerOutcome])).toEqual([
+      ['zen', 1, PINNED_MODEL, 'complete'],
     ]);
-    expect(recordCommitTiming).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ source: 'ai', retried: true, model: 'c' }));
+    expect(recordCommitTiming).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({
+      source: 'ai', retried: false, model: PINNED_MODEL, catalogState: 'pinned',
+    }));
   });
 
-  it.each(['empty', 'unavailable', 'stale'])('handles a %s catalog through the real generator', async (state) => {
-    const requestText = vi.fn(async () => 'fix: use stale catalog');
+  it('returns a disclosed local draft when the pinned model fails', async () => {
+    const requestText = vi.fn(async () => {
+      throw Object.assign(new Error('Zen generation timed out'), { reason: 'timeout' });
+    });
     const { app, recordCommitTiming } = makeApp({
-      fetchFreeZenModels: async () => { if (state !== 'empty') throw new Error('offline'); return []; },
-      getCachedFreeZenModels: () => state === 'stale' ? ['remembered'] : [],
       generateCommitMessage: (options) => generateCommitMessageDirect({ ...options, requestText }),
     });
     const response = await request(app).post('/api/git/commit-message/draft?directory=/repo')
       .send({ selectedFiles: ['new-file.ts'] }).expect(200);
-    if (state === 'stale') {
-      expect(response.body.commits[0].subject).toBe('fix: use stale catalog');
-      expect(requestText).toHaveBeenCalledTimes(1);
-    } else {
-      expect(response.body.warnings[0]).toMatch(state === 'empty' ? /No free Zen models/ : /catalog was unavailable/);
-      expect(requestText).not.toHaveBeenCalled();
-    }
-    expect(recordCommitTiming).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ catalogState: state }));
+    expect(response.body.status).toBe('complete');
+    expect(response.body.commits[0].subject).toBeTruthy();
+    expect(response.body.warnings).toEqual(['Zen generation failed (deepseek-v4.1-flash: timeout); created a local commit draft']);
+    expect(requestText).toHaveBeenCalledTimes(1);
+    expect(recordCommitTiming).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({
+      source: 'local_fallback', providerOutcome: 'exhausted', catalogState: 'pinned',
+    }));
   });
 
   it('rejects missing directory and worktree context', async () => {
@@ -184,10 +159,7 @@ describe('POST /api/git/commit-message', () => {
   });
 
   it('collects commit context in the host and returns the workflow result', async () => {
-    const { app, generateCommitMessage, recordCommitTiming } = makeApp({
-      fetchFreeZenModels: async () => { throw new Error('catalog offline'); },
-      getCachedFreeZenModels: () => [{ id: 'free-a' }, { id: 'free-b' }],
-    });
+    const { app, generateCommitMessage, recordCommitTiming } = makeApp();
 
     const response = await request(app)
       .post('/api/git/commit-message/draft?directory=/repo')
@@ -204,7 +176,7 @@ describe('POST /api/git/commit-message', () => {
     });
     expect(generateCommitMessage).toHaveBeenCalledWith(expect.objectContaining({
       guidance: 'Prefer a source scope',
-      models: [{ id: 'free-a' }, { id: 'free-b' }],
+      models: [PINNED_MODEL],
       context: expect.objectContaining({
         selectedFiles: [expect.objectContaining({ path: 'new-file.ts' })],
       }),
@@ -213,13 +185,13 @@ describe('POST /api/git/commit-message', () => {
     expect(recordCommitTiming).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       outcome: 'complete',
       selectedFileCount: 1,
-      catalogState: 'stale',
+      catalogState: 'pinned',
     }));
   });
 
-  it('keeps staged-only context and selected paths unchanged across attempts', async () => {
+  it('keeps staged-only context and selected paths in the prompt', async () => {
     const getDiff = vi.fn(async () => '+staged fixture change');
-    const requestText = vi.fn().mockRejectedValueOnce(new Error('network failure')).mockResolvedValueOnce('fix: describe staged changes');
+    const requestText = vi.fn(async () => 'fix: describe staged changes');
     const { app } = makeApp({
       generateCommitMessage: (options) => generateCommitMessageDirect({ ...options, requestText }),
       loadGitLibraries: async () => ({
@@ -233,11 +205,10 @@ describe('POST /api/git/commit-message', () => {
     await request(app).post('/api/git/commit-message/draft?directory=/repo')
       .send({ selectedFiles: ['selected.ts'], stagedOnly: true }).expect(200);
     expect(getDiff).toHaveBeenCalledExactlyOnceWith('/repo', { paths: ['selected.ts'], staged: true, contextLines: 1 });
-    expect(requestText).toHaveBeenCalledTimes(2);
-    const prompts = requestText.mock.calls.map(([input]) => input.prompt);
-    expect(prompts[0]).toBe(prompts[1]);
-    expect(prompts[0]).toContain('"stagedOnly":true');
-    expect(prompts[0]).not.toContain('unselected.ts');
+    expect(requestText).toHaveBeenCalledTimes(1);
+    const [{ prompt }] = requestText.mock.calls[0];
+    expect(prompt).toContain('"stagedOnly":true');
+    expect(prompt).not.toContain('unselected.ts');
   });
 
   it('returns a blocked workflow without calling the model during conflicts', async () => {
@@ -306,8 +277,8 @@ describe('POST /api/git/commit-message', () => {
 });
 
 describe('POST /api/git/pr-description', () => {
-  it('uses the complete free catalog and rendered prompt without model selection', async () => {
-    const { app, generatePullRequestDescription, fetchFreeZenModels, resolveZenModel } = makeApp();
+  it('uses the pinned Zen model and rendered prompt without model selection', async () => {
+    const { app, generatePullRequestDescription, resolveZenModel } = makeApp();
     const response = await request(app)
       .post('/api/git/pr-description?directory=/repo')
       .send({ base: 'main', head: 'feature/direct-pr', prompt: 'Return the Generate PR JSON' })
@@ -316,12 +287,11 @@ describe('POST /api/git/pr-description', () => {
     expect(response.body).toMatchObject({
       title: 'Use direct Zen PR generation',
       body: '## Summary\n- Avoid chat sessions',
-      source: 'free_zen',
+      source: 'zen',
     });
-    expect(fetchFreeZenModels).toHaveBeenCalledTimes(1);
     expect(generatePullRequestDescription).toHaveBeenCalledWith(expect.objectContaining({
       prompt: 'Return the Generate PR JSON',
-      models: [{ id: 'free-a' }, { id: 'free-b' }],
+      models: [PINNED_MODEL],
     }));
     expect(resolveZenModel).not.toHaveBeenCalled();
   });

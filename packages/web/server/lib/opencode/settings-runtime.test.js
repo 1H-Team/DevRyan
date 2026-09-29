@@ -77,6 +77,43 @@ const createRuntime = (initialSettings, { projectIconStore } = {}) => {
 };
 
 describe('settings runtime', () => {
+  it('removes its temporary file when a settings write fails', async () => {
+    const { runtime, fsPromises } = createRuntime({});
+    fsPromises.rename.mockRejectedValueOnce(Object.assign(new Error('disk full'), { code: 'ENOSPC' }));
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await expect(runtime.writeSettingsToDisk({ themeId: 'x' })).rejects.toMatchObject({ code: 'ENOSPC' });
+
+    const temporary = fsPromises.writeFile.mock.calls.at(-1)[0];
+    expect(temporary).toMatch(/^\/tmp\/openchamber\/settings\.json\.tmp-\d+-\d+-[a-z0-9]+$/);
+    expect(fsPromises.rm).toHaveBeenCalledWith(temporary, { force: true });
+  });
+
+  it('sweeps only stale leaked settings temporary files, once per runtime', async () => {
+    const { runtime, fsPromises } = createRuntime({});
+    const entry = (name, isFile = true) => ({ name, isFile: () => isFile });
+    const directory = '/tmp/openchamber';
+    fsPromises.readdir.mockImplementation(async (target) => {
+      if (target !== directory) throw Object.assign(new Error('missing directory'), { code: 'ENOENT' });
+      return [
+        entry('settings.json.tmp-11-1-stale1'),
+        entry('settings.json.tmp-12-2-fresh1'),
+        entry('settings.json.tmp-13-3-dir001', false),
+        entry('other.json.tmp-14-4-other1'),
+      ];
+    });
+    fsPromises.stat.mockImplementation(async (target) => ({
+      mtimeMs: target.endsWith('stale1') ? Date.now() - 2 * 24 * 60 * 60 * 1000 : Date.now(),
+    }));
+
+    await runtime.writeSettingsToDisk({ themeId: 'a' });
+    await runtime.writeSettingsToDisk({ themeId: 'b' });
+
+    const removed = fsPromises.rm.mock.calls.map(([target]) => target);
+    expect(removed).toEqual([path.join(directory, 'settings.json.tmp-11-1-stale1')]);
+    expect(fsPromises.readdir.mock.calls.filter(([target]) => target === directory)).toHaveLength(1);
+  });
+
   it('restores manifest-backed project icon metadata while reading settings after an update', async () => {
     const projectPath = '/tmp/project';
     const project = { id: createProjectIdFromPath(projectPath), path: projectPath, iconImage: null };

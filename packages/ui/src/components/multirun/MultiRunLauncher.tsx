@@ -1,3 +1,4 @@
+import { getRetentionNavigationRevision } from '@/lib/sessionRetention';
 import React from 'react';
 import { RiAddLine, RiArrowDownSLine, RiAttachment2, RiCloseLine, RiFileImageLine, RiFileLine, RiFolderLine, RiInformationLine, RiTerminalLine } from '@remixicon/react';
 import { toast } from '@/components/ui';
@@ -538,10 +539,6 @@ export const MultiRunLauncher: React.FC<MultiRunLauncherProps> = ({
     clearError();
 
     try {
-      if (selectedProjectId && selectedProjectId !== activeProjectId) {
-        setActiveProjectIdOnly(selectedProjectId);
-      }
-
       // Strip instanceId before passing to store (UI-only field)
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const modelsForStore: MultiRunModelSelection[] = selectedModels.map(({ instanceId: _instanceId, ...rest }) => rest);
@@ -557,6 +554,7 @@ export const MultiRunLauncher: React.FC<MultiRunLauncherProps> = ({
       const commandsForStore = setupCommands.filter(cmd => cmd.trim().length > 0);
 
       const params: CreateMultiRunParams = {
+        projectId: selectedProjectId ?? undefined,
         name: name.trim(),
         prompt: prompt.trim(),
         models: modelsForStore,
@@ -566,14 +564,20 @@ export const MultiRunLauncher: React.FC<MultiRunLauncherProps> = ({
         setupCommands: commandsForStore.length > 0 ? commandsForStore : undefined,
       };
 
+      const expectedNavigationRevision = getRetentionNavigationRevision();
       const result = await createMultiRun(params);
        if (result) {
          if (result.firstSessionId) {
-           useSessionUIStore.getState().setCurrentSession(result.firstSessionId);
+           useSessionUIStore.getState().setCurrentSession(result.firstSessionId, undefined, {
+             expectedNavigationRevision,
+             onApplied: () => {
+               if (selectedProjectId) setActiveProjectIdOnly(selectedProjectId);
+               onCreated?.();
+             },
+           });
          }
 
-         // Close launcher
-         onCreated?.();
+         if (!result.firstSessionId && expectedNavigationRevision === getRetentionNavigationRevision()) onCreated?.();
        }
     } finally {
       setIsSubmitting(false);

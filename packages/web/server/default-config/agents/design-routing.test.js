@@ -10,7 +10,9 @@ describe('specialist-owned bundled agent routing', () => {
       'You are not the default implementer.', 'every bug fix, tests, fixtures, and backend/server/state/CLI/config work go to `fixer`',
       'visual or UX changes go to `designer`', 'current external documentation goes to `librarian`',
       'whatever its size', 'every bug fix', 'A one-line bug fix is still a bug fix: send it to `fixer` instead of patching it yourself.',
-      'Implement directly only a mechanical edit that changes no behavior or presentation', 'start `librarian` in that same dispatch',
+      'Implement directly only a mechanical edit that changes no behavior or presentation',
+      'When the goal depends on external or version-specific facts, start `librarian` in the same dispatch as Explorer.',
+      'answer stable, general programming knowledge directly',
       'Keep related tests and visible verification with the agent doing the change',
       'Explicit user requests for a specialist take precedence',
       'it never makes you the implementer or replaces Explorer-first discovery']) {
@@ -22,7 +24,8 @@ describe('specialist-owned bundled agent routing', () => {
       'Simple specified visual work may stay with Orchestrator', 'Delegate only when specialization',
       'uncertainty, coupling, risk, and expected elapsed time', 'Delegate only when a specialist gives clear net value',
       'Solve a small coherent change directly', 'simple work stays direct', 'complexity-based routing',
-      'Plan approval does not change specialist ownership', 'a couple of lines with no test change', 'trivial one-file edit', 'An unknown filename alone never requires Explorer',
+      'Plan approval does not change specialist ownership', 'a couple of lines with no test change', 'trivial one-file edit',
+      'when it also depends on external', "a child's provider may report", 'An unknown filename alone never requires Explorer',
       'direct-first discovery policy', 'only when it adds value']) {
       expect(prompt).not.toContain(obsolete);
     }
