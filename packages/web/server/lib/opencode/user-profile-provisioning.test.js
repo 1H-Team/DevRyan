@@ -140,7 +140,7 @@ describe('user profile provisioning', () => {
       '@rynfar/meridian': '1.62.6',
       'adm-zip': '0.6.0',
       'mammoth': '1.12.1',
-      'oh-my-opencode-slim': '2.2.24',
+      'oh-my-opencode-slim': '2.2.25',
       'opencode-gpt-imagegen': '0.1.12',
       'opencode-with-claude': '1.8.0',
       'unpdf': '1.8.0',
@@ -858,7 +858,7 @@ describe('user profile provisioning', () => {
     expect(result.conflicts).toContain(agentPath);
   });
 
-  it.each(['2.0.5', '2.2.18'])('upgrades Slim from %s without changing user-owned config or primary prompt', async (staleVersion) => {
+  it.each(['2.0.5', '2.2.18', '2.2.24'])('upgrades Slim from %s without changing user-owned config or primary prompt', async (staleVersion) => {
     const runtime = createRuntime();
     await runtime.provision();
     const configDir = path.join(home, '.config', 'opencode');
@@ -893,8 +893,8 @@ describe('user profile provisioning', () => {
     const result = await runtime.provision();
 
     expect(result.ok).toBe(true);
-    expect(readJson(packagePath).dependencies['oh-my-opencode-slim']).toBe('2.2.24');
-    expect(readJson(installedPackagePath).version).toBe('2.2.24');
+    expect(readJson(packagePath).dependencies['oh-my-opencode-slim']).toBe('2.2.25');
+    expect(readJson(installedPackagePath).version).toBe('2.2.25');
     expect(fs.readFileSync(slimConfigPath, 'utf8')).toBe(expectedSlimConfig);
     expect(fs.readFileSync(orchestratorPath, 'utf8')).toBe(expectedOrchestrator);
     expect(result.conflicts).toEqual(expect.arrayContaining([
@@ -905,7 +905,7 @@ describe('user profile provisioning', () => {
 
     const repeated = await runtime.provision();
     expect(repeated.ok).toBe(true);
-    expect(readJson(installedPackagePath).version).toBe('2.2.24');
+    expect(readJson(installedPackagePath).version).toBe('2.2.25');
     expect(fs.readFileSync(slimConfigPath, 'utf8')).toBe(expectedSlimConfig);
     expect(commands).toHaveLength(2);
   });

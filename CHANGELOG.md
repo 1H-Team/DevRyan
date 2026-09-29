@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.19] - 2026-09-29
+
+- Orchestrator delegates implementation to specialists again. After Explorer discovery, every bug fix and non-design code change goes to Fixer, every visual change (including fully specified tweaks and approved plans) goes to Designer, and current external documentation goes to Librarian, alongside Explorer when a task depends on it. Orchestrator edits directly only mechanical typo, comment or wording fixes. Plan mode dispatches Explorer and Librarian, and plan approval keeps specialist ownership.
+- Update Oh My OpenCode Slim to 2.2.25. It brings a sturdier `apply_patch`, web-fetch security fixes and fewer injected reminders; DevRyan's agent prompts and the disabled foreground fallback are unchanged.
+- Agent routing evaluations now expect Fixer and Designer for natural bug-fix and visual requests, add a Librarian documentation case, and accept one Explorer per subsystem for broad discovery and same-owner review remediation for unprompted cases. Orchestrator briefs now name files by absolute workspace path.
+
 ## [1.2.18] - 2026-09-28
 
 - Electron recovers a stale background runtime owner after a reboot or PID reuse while preserving live-owner protection.

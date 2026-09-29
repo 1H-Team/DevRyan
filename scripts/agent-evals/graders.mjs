@@ -14,6 +14,7 @@ const TOOL_FAMILIES = Object.freeze({
     'ast_grep_replace', 'rm',
   ]),
   managed: new Set(['task', 'devryan_task', 'council_session']),
+  research: new Set(['webfetch', 'web_fetch', 'websearch', 'web_search', 'smartfetch']),
   nativeInspection: new Set([
     'read', 'file_read', 'oc_read', 'grep', 'glob', 'search', 'find', 'oc_grep',
     'oc_glob', 'ls', 'oc_ls', 'stat', 'oc_stat', 'ast_grep_search',
@@ -164,7 +165,8 @@ export const gradeToolRequirements = (caseId, toolEvents = []) => {
         ? !hasFamily(events, 'mutation') && hasFamily(root, 'read', { final: true })
         : hasFamily(root, 'mutation', { final: true })));
     if (scenario.readOnly) return result(`${caseId}.tools`, !hasFamily(events, 'mutation')
-      && root.some(event => event.tool === 'devryan_task' && isFinalEvent(event)) && hasFamily(child, 'read', { final: true }));
+      && root.some(event => event.tool === 'devryan_task' && isFinalEvent(event))
+      && hasFamily(child, scenario.kind === 'external' ? 'research' : 'read', { final: true }));
     return result(`${caseId}.tools`,
       root.some(event => event.tool === 'devryan_task' && isFinalEvent(event))
       && !hasFamily(root, 'mutation')
@@ -358,9 +360,11 @@ export const gradeRoutingOutcome = ({ caseId, rootSessionId, snapshot, childSess
   const scenario = ROUTING_CASES[caseId];
   const tasks = Array.isArray(snapshot?.tasks) ? snapshot.tasks : [];
   const observed = Boolean(scenario && rootSessionId && snapshot && snapshot.available !== false && Array.isArray(snapshot.tasks));
-  const routing = scenario?.agent ? tasks.length === 1 && tasks[0].rootSessionId === rootSessionId && tasks[0].agent === scenario.agent
+  const ownTask = task => task.rootSessionId === rootSessionId && task.agent === scenario.agent;
+  const routing = scenario?.agent ? (scenario.multiple ? tasks.length >= 1 && tasks.every(ownTask) : tasks.length === 1 && ownTask(tasks[0]))
     : tasks.length === 0 && childSessionIds.length === 0;
   const correct = scenario?.kind === 'footer' ? evidence?.located === true && evidence.cause === true && evidence.verification === true
+    : scenario?.kind === 'external' ? evidence?.cited === true && evidence.flag === true
     : scenario?.kind === 'inventory' ? evidence?.counts?.identity === 180 && evidence.counts.billing === 180 && evidence.counts.session === 180 && evidence.counts.elevated === 135 : true;
   return result(`${caseId}.specialist`, observed && routing && correct);
 };

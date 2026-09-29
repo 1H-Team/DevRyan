@@ -17,7 +17,7 @@ const PROMPT_BODY_BUDGETS = {
   fixer: { maxBodyBytes: 8355, rationale: 'Sandbox write locations and EPERM recovery 2026-09-27 (8112 bytes) plus 3% headroom.' },
   librarian: { maxBodyBytes: 2030, rationale: 'Context Mode guidance removed 2026-09-24 (1969 bytes) plus ~3% headroom.' },
   oracle: { maxBodyBytes: 5600, rationale: 'Code-review precision rules (change attribution, severity vs confidence, verified vs unverified) 2026-09-23; Context Mode guidance removed 2026-09-24 (5439 bytes) plus ~3% headroom.' },
-  orchestrator: { maxBodyBytes: 37994, rationale: 'Explorer-first discovery 2026-09-27 (36887 bytes) plus 3% headroom.' },
+  orchestrator: { maxBodyBytes: 39809, rationale: 'Specialist-owned implementation restored (Fixer/Designer/Librarian routing) 2026-09-28 (38649 bytes) plus 3% headroom.' },
   plan: { maxBodyBytes: 3880, rationale: 'Context Mode guidance removed 2026-09-24 (3765 bytes) plus ~3% headroom.' },
 };
 

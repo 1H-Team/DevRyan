@@ -2,12 +2,15 @@
 export const ROUTING_CASES = Object.freeze({
   'routing-visual': { agent: 'designer', approved: false, kind: 'visual', explicit: true },
   'routing-approved-visual': { agent: 'designer', approved: true, kind: 'visual', explicit: true },
-  'routing-direct-behavior': { agent: null, kind: 'behavior' },
-  'routing-direct-visual': { agent: null, kind: 'visual' },
-  'routing-substantial-design': { agent: 'designer', kind: 'visual' },
+  // Unprompted cases: Orchestrator may send review remediation back to the same owner.
+  'routing-natural-behavior': { agent: 'fixer', kind: 'behavior', multiple: true },
+  'routing-natural-visual': { agent: 'designer', kind: 'visual', multiple: true },
+  'routing-substantial-design': { agent: 'designer', kind: 'visual', multiple: true },
   'routing-footer-plan': { agent: 'explorer', kind: 'footer', readOnly: true },
-  'routing-broad-discovery': { agent: 'explorer', kind: 'inventory', readOnly: true },
+  // Spans three subsystems: Explorer-first starts one Explorer per subsystem.
+  'routing-broad-discovery': { agent: 'explorer', kind: 'inventory', readOnly: true, multiple: true },
   'routing-behavior': { agent: 'fixer', approved: false, kind: 'behavior', explicit: true },
+  'routing-external-docs': { agent: 'librarian', kind: 'external', readOnly: true },
 });
 
 export const isRoutingCase = (caseId) => Object.hasOwn(ROUTING_CASES, caseId);
@@ -50,6 +53,7 @@ export const buildRoutingDefinition = (caseId, runFiles) => {
   const scenario = ROUTING_CASES[caseId];
   if (!scenario) throw new TypeError(`Unknown routing case: ${caseId}`);
   if (scenario.kind === 'footer') return { caseId, prompt: 'The website footer Healthcare Services, Professionals and Medical Centers lists are empty even though active categories exist. Find the population code and make a concise plan to restore them. Plan only; do not edit files. Explain the observed cause and the regression checks needed.' };
+  if (scenario.kind === 'external') return { caseId, prompt: `${runFiles.testRelativePath} runs under node --test. Using the current official Node.js documentation, find which command-line flag makes the Node.js test runner apply a per-test timeout and what its default is. Answer with the flag, its default and the documentation URL. Preserve all files.` };
   if (scenario.kind === 'inventory') return { caseId, prompt: 'Build a complete read-only usage map of the generated route inventory across identity, billing and session subsystems. Identify every elevated route and the ownership boundaries. Preserve all files. Finish with JSON counts using keys identity, billing, session and elevated.' };
   const scope = `The service-list fixture is ${runFiles.sourceRelativePath}; its acceptance test is ${runFiles.testRelativePath}.`;
   const change = scenario.kind === 'visual'
@@ -82,6 +86,14 @@ const { footerCategoryLinks } = await import('data:text/javascript;base64,' + Bu
 assert.deepEqual(footerCategoryLinks([{active:true,publishedCount:2}]), []);
 `,
   };
+  if (kind === 'external') return {
+    source: `export const testRunner = 'node:test';\n`,
+    test: `import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+const source = await readFile(new URL('./${filename}', import.meta.url), 'utf8');
+assert.match(source, /node:test/);
+`,
+  };
   if (kind === 'inventory') {
     const rows = Array.from({ length: 540 }, (_, i) => `  {id:'route${i}',domain:'${['identity','billing','session'][i % 3]}',elevated:${i % 4 === 0}},`).join('\n');
     return { source: `export const routingInventory = [\n${rows}\n];\n`,
@@ -104,6 +116,10 @@ export function collectRoutingEvidence(caseId, sessionTree, rootSessionId, sourc
     located: Boolean(sourceRelativePath && text.includes(sourceRelativePath)),
     cause: /(?:count|threshold|minimum|>=|at least)[\s\S]{0,100}(?:5|five)|(?:5|five)[\s\S]{0,100}(?:count|threshold|minimum)/i.test(text),
     verification: /test|regression|verif/i.test(text),
+  };
+  if (ROUTING_CASES[caseId]?.kind === 'external') return {
+    cited: /https:\/\/nodejs\.org\/[^\s)]*\/(?:test|cli)\b/i.test(text),
+    flag: /--test-timeout\b/.test(text),
   };
   if (ROUTING_CASES[caseId]?.kind === 'inventory') {
     for (const match of text.matchAll(/\{[^{}]+\}/g)) {

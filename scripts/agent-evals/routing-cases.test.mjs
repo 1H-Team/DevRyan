@@ -31,7 +31,7 @@ for (const [caseId, scenario] of Object.entries(ROUTING_CASES)) {
       const runFiles = allocateRunFiles(root, caseId);
       assert.ok(EVALUATION_CASE_IDS.includes(caseId));
       const definition = buildCaseDefinition(caseId, runFiles);
-      assert.doesNotMatch(definition.prompt, /\b(?:Designer|Fixer)\b/i);
+      assert.doesNotMatch(definition.prompt, /\b(?:Designer|Fixer|Librarian|Explorer)\b/i);
       assert.equal(definition.followUpPrompt, scenario.approved ? 'implement plan' : undefined);
       const testResults = [];
       const result = await executeEvaluationCase({
@@ -48,10 +48,11 @@ for (const [caseId, scenario] of Object.entries(ROUTING_CASES)) {
           return {
             rootSessionId: 'root', childSessionIds: scenario.agent ? ['child'] : [],
             routingEvidence: scenario.kind === 'footer' ? { located: true, cause: true, verification: true }
-              : scenario.kind === 'inventory' ? { counts: { identity: 180, billing: 180, session: 180, elevated: 135 } } : null,
+              : scenario.kind === 'inventory' ? { counts: { identity: 180, billing: 180, session: 180, elevated: 135 } }
+              : scenario.kind === 'external' ? { cited: true, flag: true } : null,
             terminalEvidence: { complete: true },
             tools: [...(scenario.agent ? [{ tool: 'devryan_task', status: 'completed', sessionScope: 'root' }] : []),
-              { tool: scenario.readOnly ? 'read' : 'edit', status: 'completed', sessionScope: scenario.agent ? 'child' : 'root' }],
+              { tool: scenario.kind === 'external' ? 'webfetch' : scenario.readOnly ? 'read' : 'edit', status: 'completed', sessionScope: scenario.agent ? 'child' : 'root' }],
             managedSnapshot: {
               tasks: scenario.agent ? [{ taskId: 'task', rootSessionId: 'root', childSessionId: 'child', agent: scenario.agent, status: 'completed' }] : [],
               resultEnvelopes: [{ taskId: 'task', status: 'completed', action: 'continue' }],
@@ -82,6 +83,26 @@ test('routing fails closed on missing, wrong, foreign, or duplicate specialist e
     { tool: 'devryan_task', final: true, sessionScope: 'root' },
     { tool: 'edit', final: true, sessionScope: 'root' },
   ]).passed, false);
+});
+
+test('unprompted implementation accepts same-owner remediation but no other role', () => {
+  const designer = { rootSessionId: 'root', agent: 'designer' };
+  const grade = (caseId, tasks) => gradeRoutingOutcome({ caseId, rootSessionId: 'root', snapshot: { tasks } }).passed;
+  assert.equal(grade('routing-substantial-design', [designer, designer]), true);
+  assert.equal(grade('routing-substantial-design', [designer, { ...designer, agent: 'fixer' }]), false);
+  assert.equal(grade('routing-natural-behavior', [{ ...designer, agent: 'fixer' }, { ...designer, agent: 'fixer' }]), true);
+  // An explicit single-specialist request still requires exactly one child.
+  assert.equal(grade('routing-visual', [designer, designer]), false);
+});
+
+test('broad discovery accepts one Explorer per subsystem but no other role', () => {
+  const explorer = { rootSessionId: 'root', agent: 'explorer' };
+  const input = { caseId: 'routing-broad-discovery', rootSessionId: 'root',
+    evidence: { counts: { identity: 180, billing: 180, session: 180, elevated: 135 } } };
+  assert.equal(gradeRoutingOutcome({ ...input, snapshot: { tasks: [explorer, explorer, explorer] } }).passed, true);
+  assert.equal(gradeRoutingOutcome({ ...input, snapshot: { tasks: [explorer, { ...explorer, agent: 'fixer' }] } }).passed, false);
+  assert.equal(gradeRoutingOutcome({ ...input, snapshot: { tasks: [explorer, { ...explorer, rootSessionId: 'other' }] } }).passed, false);
+  assert.equal(gradeRoutingOutcome({ ...input, snapshot: { tasks: [] } }).passed, false);
 });
 
 test('plan approval waits for new turn evidence and preserves the actual dispatched role', async () => {

@@ -105,7 +105,9 @@ The [2026-09-20 resource implementation audit](audits/2026-09-20-devryan-resourc
 ## Designer routing regression
 
 The agent evaluation harness includes `routing-visual`, `routing-approved-visual`,
-and `routing-behavior`. Run them with the existing `bun run agent:eval -- --config
+`routing-behavior`, the unprompted `routing-natural-visual` and
+`routing-natural-behavior` controls, and the read-only `routing-external-docs`
+Librarian case. Run them with the existing `bun run agent:eval -- --config
 <path>` interface against a separately prepared, isolated loopback verification
 host and disposable fixture repository. Pin `agent` to `orchestrator` and choose
 an advertised provider, model, and variant. Do not point these implementation
@@ -113,10 +115,12 @@ cases at a user's active project or runtime.
 
 The approved case first asks for a plan without edits, then sends exactly
 "implement plan" in the same session. Prior root messages cannot satisfy the
-second turn's terminal evidence. Visual cases expect Designer; the zero-price
-behavior control expects Fixer and preserves the existing presentation. Expected
+second turn's terminal evidence. Visual cases expect Designer, with or without an explicit delegation
+request; the zero-price behavior controls expect Fixer and preserve the existing
+presentation. Expected
 roles remain outside model prompts. Grading checks the recorded managed agent,
-exactly one implementation child, completed/dispositioned work, unchanged tests
+exactly one implementation child for explicit requests (unprompted cases accept
+same-owner review remediation), completed/dispositioned work, unchanged tests
 and unrelated files, and failing-before/passing-after source acceptance tests.
 These checks establish routing and source behavior, not rendered visual quality.
 Deterministic tests exercise the fixtures, wrong-role rejection, and stale-turn

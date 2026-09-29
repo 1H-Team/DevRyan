@@ -577,7 +577,8 @@ describe('Packaged OpenChamber agents', () => {
     expect(orchestrator?.prompt).toContain('DevRyan does not cap managed launches: start every justified independent child without artificial slot limits or oversized assignments.');
     expect(orchestrator?.prompt).toContain('Use parallel agents only when tasks are independently useful and target disjoint files or subsystems.');
     expect(orchestrator?.prompt).toContain('If tasks overlap files, share mutable state, or depend on earlier findings, sequence those dependencies.');
-    expect(orchestrator?.prompt).toContain('Solve a small coherent change directly when delegation would add more coordination than useful work.');
+    expect(orchestrator?.prompt).toContain('Give a single coherent change to one owning specialist instead of splitting it.');
+    expect(orchestrator?.prompt).not.toContain('Solve a small coherent change directly');
     expect(orchestrator?.prompt).not.toContain('at most 3');
     expect(orchestrator?.prompt).toContain('Treat provider/tool crashes, missing terminal status markers, or repeated progress-only output as a blocked subtask.');
     expect(orchestrator?.prompt).toContain('Continue reconciling other returned subtasks instead of waiting indefinitely for the failed branch.');
@@ -645,8 +646,9 @@ describe('Packaged OpenChamber agents', () => {
     const council = agents.find((agent) => agent.name === 'council');
 
     expect(orchestrator?.prompt).not.toContain('Non-design implementation gate');
-    expect(orchestrator?.prompt).toContain('A bounded behavior fix stays direct');
-    expect(orchestrator?.prompt).toContain('independent, closed non-design implementation that saves elapsed time');
+    expect(orchestrator?.prompt).not.toContain('A bounded behavior fix stays direct');
+    expect(orchestrator?.prompt).toContain('default owner of bounded non-design implementation');
+    expect(orchestrator?.prompt).toContain('owner of visual or UX implementation, including fully specified tweaks');
     expect(orchestrator?.prompt).toContain('Orchestrator owns the grounded design approach and supplies a decision-complete brief');
     expect(orchestrator?.prompt).toContain('Designer owns the delegated implementation, related tests, and visible validation.');
     expect(orchestrator?.prompt).toContain('Orchestrator owns design-change planning in plan mode;');

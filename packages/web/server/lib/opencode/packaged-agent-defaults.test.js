@@ -7,7 +7,7 @@ import yaml from 'yaml';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 37_927;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 39_386;
 const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
   __dirname,
   '../../default-config/user-profile/oh-my-opencode-slim.json',
@@ -93,7 +93,7 @@ describe('packaged agent defaults', () => {
     const lineCount = content.trimEnd().split('\n').length;
 
     expect(lineCount).toBeLessThanOrEqual(260);
-    expect(content).toContain('Direct implementation is the default for small coherent tasks once discovery grounds the location.');
+    expect(content).toContain('**Specialist-owned implementation.** You are not the default implementer.');
     expect(content).toContain('Designer owns the delegated implementation, related tests, and visible validation.');
     expect(content).toContain('Context:');
     expect(content).toContain('Starting points:');
@@ -140,16 +140,19 @@ describe('packaged agent defaults', () => {
     expect(body.indexOf(implementationGate)).toBeLessThan(body.indexOf(finalCloseout));
   });
 
-  it('keeps bounded work direct and delegates substantial design with its tests', () => {
+  it('routes implementation to Fixer and Designer, with design tests kept by Designer', () => {
     const orchestrator = readPackagedAgent('orchestrator');
     const designer = readPackagedAgent('designer');
     const fixer = readPackagedAgent('fixer');
 
     expect(orchestrator.body).toContain('Orchestrator owns the grounded design approach and supplies a decision-complete brief');
     expect(orchestrator.body).toContain('Designer owns the delegated implementation, related tests, and visible validation.');
-    expect(orchestrator.body).toContain('Simple specified visual work may stay with Orchestrator');
-    expect(orchestrator.body).toContain('A bounded behavior fix stays direct');
-    expect(orchestrator.body).toContain('For mixed delegated work, create disjoint scopes');
+    expect(orchestrator.body).toContain('Implement directly only a mechanical edit that changes no behavior or presentation');
+    expect(orchestrator.body).toContain('A one-line bug fix is still a bug fix');
+    expect(orchestrator.body).toContain('Plan approval preserves specialist ownership');
+    expect(orchestrator.body).not.toContain('Simple specified visual work may stay with Orchestrator');
+    expect(orchestrator.body).not.toContain('A bounded behavior fix stays direct');
+    expect(orchestrator.body).toContain('For mixed work, create disjoint scopes');
     expect(orchestrator.body).toContain('if a required specialist remains unavailable after managed recovery, report the blocker');
     expect(orchestrator.body).toContain('Orchestrator owns design-change planning in plan mode;');
     expect(orchestrator.body).toContain('never dispatch Designer from a plan-mode turn');

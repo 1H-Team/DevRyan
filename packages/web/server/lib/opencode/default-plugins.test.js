@@ -40,7 +40,7 @@ describe('DevRyan default plugin catalog', () => {
       {
         pluginId: 'oh-my-opencode-slim',
         shippedSpec: './plugins/devryan-oh-my-opencode-slim.mjs',
-        version: '2.2.24',
+        version: '2.2.25',
         delivery: 'installed-local',
       },
       {

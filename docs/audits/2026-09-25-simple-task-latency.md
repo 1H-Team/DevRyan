@@ -10,6 +10,12 @@ were changed. Release publication and installation were not performed.
 > files or symbols, the answer is one narrow lookup, the follow-up continues mapped
 > context, an approved plan names its targets, or the user declined delegation. The
 > direct-implementation routing below is unchanged. See `default-config/codemap.md`.
+>
+> **Superseded 2026-09-28 (implementation routing).** At the user's request, the
+> direct-implementation default below was replaced by specialist-owned implementation:
+> Fixer for non-design work, Designer for every visual change, Librarian for external
+> docs; Orchestrator edits directly only trivial one-file changes. See
+> [the Slim 2.2.25 audit](../2026-09-28-slim-2.2.25/README.md).
 
 ## Implemented
 

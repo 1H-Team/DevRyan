@@ -1,0 +1,16 @@
+[
+  {
+    "package": "oh-my-opencode-slim",
+    "version": "2.2.24",
+    "integrity": "sha512-bahas5stkH/nvvf7Zm5Qmz96ombmENB5TqrZRPZ/rC0jBaRvUYMx+BS+2N2ToeTHj7We+wfXql2vLcBLP9XwRQ==",
+    "tarballSha256": "3e8e116478853385c03f06eb8947780c5aeffc78772e5cf0357e73408acce50b",
+    "distIndexSha256": "8aeb34d032721ba86647791cd78660e7b35549c2f302d1f818f7063d9c3074ed"
+  },
+  {
+    "package": "oh-my-opencode-slim",
+    "version": "2.2.25",
+    "integrity": "sha512-jfcDIOgGDTBQ4QDEZ2terUy2YLu5YSTVAz1AH9uoCRuTPbi6tY376rh8GQAPxjG1X+GrPGMEc4COVJnV2cNFPA==",
+    "tarballSha256": "d10fd17b443593ed791e1b3739f70a4682a0b7e34978237fc8f4e358fd1ec12d",
+    "distIndexSha256": "1a8a7a69db029f1c0fea19c4c8ded674281a8e674bedf72b4c8380e0b6de6e1f"
+  }
+]
