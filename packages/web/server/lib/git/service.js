@@ -21,6 +21,7 @@ import { populateWorktreeWithLockRecovery } from './worktree-lock-recovery.js';
 import { withIndexLockRetry, withIndexLockRetryResult } from './index-lock-retry.js';
 import { getRequestPrincipal } from '../multi-user/request-context.js';
 import { getGitHubAuthById } from '../github/auth.js';
+import { resolveOpenCodeDbPath } from '../opencode/opencode-db-path.js';
 
 const fsp = fs.promises;
 const require = createRequire(import.meta.url);
@@ -1030,7 +1031,7 @@ const getProjectStoragePath = (projectID) => {
 const syncSandboxesToOpenCodeDb = (projectID, sandboxes) => {
   try {
     const Database = require('better-sqlite3');
-    const dbPath = path.join(getOpenCodeDataPath(), 'opencode.db');
+    const dbPath = resolveOpenCodeDbPath(getOpenCodeDataPath());
     if (!fs.existsSync(dbPath)) return;
     const db = new Database(dbPath);
     try {

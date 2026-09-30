@@ -21,6 +21,7 @@
 #include <sys/proc_info.h>
 #include <sys/proc.h>
 #include <sys/syscall.h>
+#include "session-group-darwin.h"
 #elif defined(__linux__)
 #include <dirent.h>
 #include <stddef.h>
@@ -213,6 +214,22 @@ int main(int argc, char **argv) {
     while (read(STDIN_FILENO, &byte, 1) > 0) {}
     close(fd); return 0;
   }
+#ifdef __APPLE__
+  /* Runs inside a confined execution, for a Node process started without the
+   * spawn adapter: signals the virtual groups named, on behalf of its parent.
+   * The leader is the group's first process when the parent started it, else
+   * 0. Exit 0 delivered, 3 no such group (the caller then asks the kernel),
+   * 1 refused. */
+  if (argc >= 5 && !strcmp(argv[1], "--signal-group")) {
+    char *end = NULL; long number = strtol(argv[2], &end, 10); int outcome = 0;
+    if (!argv[2][0] || *end || number < 0 || number >= NSIG) return 125;
+    long leader = strtol(argv[3], &end, 10);
+    if (!argv[3][0] || *end || leader < 0 || leader == 1 || leader > INT_MAX) return 125;
+    for (int i = 4; i < argc; i++) if (!group_name_valid(argv[i])) return 125;
+    if (!group_signal((const char *const *)(argv + 4), argc - 4, (pid_t)leader, (int)number, getppid(), getpid(), &outcome)) return 3;
+    return outcome ? 1 : 0;
+  }
+#endif
   if (argc < 7 || strcmp(argv[5], "--")) { fprintf(stderr, "usage: DevRyan-execution cwd scratch profile receipt -- command [args]\n"); return 125; }
   int receipt = open(argv[4], O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
   if (receipt < 0) fatal("exclusive termination receipt");

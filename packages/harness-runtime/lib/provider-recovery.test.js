@@ -93,19 +93,21 @@ describe('failure classification', () => {
     expect(classifyPrimaryTransportError(timeout, '1.18.30')?.source).toBe('opencode_1.18.30_compatibility');
     expect(classifyPrimaryTransportError(timeout, '1.18.31')?.source).toBe('opencode_1.18.31_compatibility');
     expect(classifyPrimaryTransportError(timeout, '1.18.32')?.source).toBe('opencode_1.18.32_compatibility');
-    expect(classifyPrimaryTransportError(timeout, '1.18.33')).toBeNull();
+    expect(classifyPrimaryTransportError(timeout, '1.18.33')?.source).toBe('opencode_1.18.33_compatibility');
+    expect(classifyPrimaryTransportError(timeout, '1.18.34')).toBeNull();
     expect(classifyPrimaryTransportError(timeout, undefined)).toBeNull();
     // The bundled companion is its upstream base; nothing else borrows it.
     expect(classifyPrimaryTransportError(timeout, '1.18.31-devryan.9')?.source).toBe('opencode_1.18.31_compatibility');
     expect(classifyPrimaryTransportError(timeout, '1.18.32-devryan.1')?.source).toBe('opencode_1.18.32_compatibility');
-    for (const version of ['1.18.33-devryan.1', '1.18.31-devryan', '1.18.31-beta.1', '1.18.31-devryan.9-x', 'x1.18.31-devryan.9']) {
+    expect(classifyPrimaryTransportError(timeout, '1.18.33-devryan.1')?.source).toBe('opencode_1.18.33_compatibility');
+    for (const version of ['1.18.34-devryan.1', '1.18.31-devryan', '1.18.31-beta.1', '1.18.31-devryan.9-x', 'x1.18.31-devryan.9']) {
       expect(classifyPrimaryTransportError(timeout, version)).toBeNull();
     }
     expect(classifyPrimaryTransportError({ name: 'UnknownError', message: 'request timeout' }, '1.18.25')).toBeNull();
     expect(classifyPrimaryTransportError({ name: 'UnknownError', message: 'request timeout' }, '1.18.26')).toBeNull();
   });
   test('allow-lists only verified OpenCode versions for enforcement', async () => {
-    expect([...PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS]).toEqual(['1.18.25', '1.18.26', '1.18.27', '1.18.29', '1.18.30', '1.18.31', '1.18.32']);
+    expect([...PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS]).toEqual(['1.18.25', '1.18.26', '1.18.27', '1.18.29', '1.18.30', '1.18.31', '1.18.32', '1.18.33']);
     const f = await fixture();
     const hello = (version) => f.controller.plugin({ action: 'hello', instanceID: identity.instanceID, policyVersion: 1, version });
     expect((await hello('1.18.26')).supported).toBe(true);
@@ -113,7 +115,8 @@ describe('failure classification', () => {
     expect((await hello('1.18.30')).supported).toBe(true);
     expect((await hello('1.18.31')).supported).toBe(true);
     expect((await hello('1.18.32')).supported).toBe(true);
-    expect((await hello('1.18.33')).supported).toBe(false);
+    expect((await hello('1.18.33')).supported).toBe(true);
+    expect((await hello('1.18.34')).supported).toBe(false);
     expect((await hello('1.18.25')).supported).toBe(true);
   });
   test.each(['AuthenticationError', 'QuotaError', 'CertificateError', 'ModelNotFoundError', 'AbortError', 'PolicyError'])(
@@ -754,7 +757,8 @@ test('Claude exact envelope requires a verified runtime and excludes ambiguous e
   }
   expect(classifyPrimaryTransportError(upstreamTimeout, '1.18.31')).toEqual({ kind: 'chunk_timeout', source: 'upstream_timeout_envelope' });
   expect(classifyPrimaryTransportError(upstreamTimeout, '1.18.32')).toEqual({ kind: 'chunk_timeout', source: 'upstream_timeout_envelope' });
-  expect(classifyPrimaryTransportError(upstreamTimeout, '1.18.33')).toBeNull();
+  expect(classifyPrimaryTransportError(upstreamTimeout, '1.18.33')).toEqual({ kind: 'chunk_timeout', source: 'upstream_timeout_envelope' });
+  expect(classifyPrimaryTransportError(upstreamTimeout, '1.18.34')).toBeNull();
   expect(classifyPrimaryTransportError({ ...upstreamTimeout, statusCode: 401 }, '1.18.29')).toBeNull();
 });
 
@@ -934,4 +938,74 @@ test('a replaced runtime sweeps stored objectives once, retires only deleted ses
   await hello('runtime-next');
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(observations).toBe(seen);
+});
+
+describe('polling a record this runtime cannot act on', () => {
+  const observed = (overrides = {}) => {
+    const reads = { count: 0 };
+    return { reads, options: { observeTurn: async () => { reads.count += 1; throw Object.assign(new Error('recovery observation timeout'), { code: 'recovery_observation_timeout' }); }, ...overrides } };
+  };
+  const stalledStep = async (f) => {
+    f.state.status = 'busy'; delete f.state.messages.at(-1).info.error;
+    await f.controller.plugin({ action: 'step', ...identity });
+    f.advance(600_000);
+  };
+
+  test('an observe-only record is never read for a progress cutoff', async () => {
+    const { reads, options } = observed({ mode: 'observe' });
+    const f = await fixture(options);
+    await stalledStep(f);
+    for (let i = 0; i < 5; i++) { f.advance(1_000); await f.controller.reconcile(); }
+    expect(reads.count).toBe(0);
+    expect(f.incidents.filter((entry) => entry.event === 'provider_recovery_observation_failed')).toHaveLength(0);
+    expect(f.aborted).toHaveLength(0);
+  });
+
+  test('a runtime outside the allow-list is never read for a progress cutoff', async () => {
+    const { reads, options } = observed();
+    const f = await fixture(options);
+    await f.controller.plugin({ action: 'hello', instanceID: identity.instanceID, policyVersion: 1, version: '1.18.99' });
+    await stalledStep(f);
+    for (let i = 0; i < 5; i++) { f.advance(1_000); await f.controller.reconcile(); }
+    expect(reads.count).toBe(0);
+  });
+
+  test('the kill switch restores a read on every poll', async () => {
+    const { reads, options } = observed({ mode: 'observe', advisory: false });
+    const f = await fixture(options);
+    await stalledStep(f);
+    for (let i = 0; i < 3; i++) { f.advance(1_000); await f.controller.reconcile(); }
+    expect(reads.count).toBe(3);
+  });
+
+  test('a failed observation does not disable recovery until the next restart', async () => {
+    let failing = true;
+    const f = await fixture({ observeTurn: async () => { if (failing) throw Object.assign(new Error('timeout'), { code: 'recovery_observation_timeout' }); return structuredClone(f.state); },
+      authorize: async () => { throw new Error('ownership store unavailable'); } });
+    await f.fail();
+    failing = false;
+    // The plugin still answers: storage was never the problem.
+    await expect(f.controller.plugin({ action: 'scope', ...identity })).resolves.toMatchObject({ tracked: true });
+  });
+
+  test('an unfinished recovery is polled with a backoff while it does not change', async () => {
+    const holder = { reads: 0, fixture: null };
+    const f = holder.fixture = await fixture({ observeTurn: async () => { holder.reads += 1; return structuredClone(holder.fixture.state); } });
+    await f.fail();
+    expect((await f.snapshot()).record.state).toBe('recovering');
+    // The recovery turn was accepted and is still running.
+    f.state.messages.push({ info: { id: 'msg_recovery', role: 'user' }, parts: [{ type: 'text', text: 'Continue' }] });
+    f.state.status = 'busy';
+    const before = holder.reads;
+    for (let second = 0; second < 12; second++) { f.advance(1_000); await f.controller.reconcile(); }
+    // Due at once, then 5 s later; the third read is due 10 s after that.
+    expect(holder.reads - before).toBe(2);
+    expect((await f.snapshot()).record.state).toBe('recovering');
+
+    // Its events still settle it at once.
+    f.state.messages.push({ info: { id: 'msg_recovered', role: 'assistant', parentID: 'msg_recovery', time: { completed: 1 } }, parts: [{ type: 'text', text: 'Done' }] });
+    f.state.status = 'idle';
+    await f.controller.observe({ type: 'session.status', properties: { sessionID: identity.sessionID, status: { type: 'idle' } } });
+    expect((await f.snapshot()).record.state).toBe('completed');
+  });
 });

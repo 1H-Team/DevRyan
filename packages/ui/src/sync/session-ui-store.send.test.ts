@@ -616,6 +616,8 @@ const expectPlanModeInstructionContract = (text: string) => {
   expect(text).toContain("**Files read (no edit) for behavior reuse**")
   expect(text).toContain("## Implementation")
   expect(text).toContain("### Phase 1: <name>")
+  // Lets the implementer dispatch independent phases together.
+  expect(text).toContain("write one line `Owner: <specialist>; Depends on: <Phase N | none>`")
   expect(text).toContain("Each phase must contain multiple related tasks")
   expect(text).toContain("Count only actionable implementation tasks as tasks")
   expect(text).toContain("## Verification")

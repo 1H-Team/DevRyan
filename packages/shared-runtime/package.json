@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/shared-runtime",
-  "version": "1.2.20",
+  "version": "1.2.21",
   "private": true,
   "type": "module",
   "main": "./index.js",

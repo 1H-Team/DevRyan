@@ -10,7 +10,14 @@ import {
 } from '@openchamber/orchestration-runtime';
 import { writeFileAtomic } from '@openchamber/harness-runtime';
 
-const DEFAULT_MAX_LEDGER_READ_BYTES = 21 * 1024 * 1024;
+// Well above the 20 MiB the scheduler writes: an oversized ledger is
+// quarantined, which forgets every task, so reading must tolerate one a
+// previous version wrote before compaction brings it back under the cap.
+const DEFAULT_MAX_LEDGER_READ_BYTES = 64 * 1024 * 1024;
+// A save that shrinks a large ledger to less than half keeps the previous
+// file once, beside it, in case the removed history is wanted back.
+const COMPACTION_BACKUP_MIN_BYTES = 5 * 1024 * 1024;
+const COMPACTION_BACKUP_SUFFIX = '.before-compaction';
 const DEFAULT_OWNER_HEARTBEAT_MS = 10_000;
 const DEFAULT_OWNER_STALE_MS = 45_000;
 const MAX_OWNER_RECORD_BYTES = 4 * 1024;
@@ -415,10 +422,32 @@ export const createAtomicManagedOrchestrationLedger = (options = {}) => {
     }
   };
 
+  // Best effort: a failed backup never blocks the save it precedes.
+  const backUpBeforeCompaction = async (nextBytes) => {
+    try {
+      const stat = await fsApi.stat(filePath);
+      if (!stat.isFile() || stat.size < COMPACTION_BACKUP_MIN_BYTES || nextBytes * 2 >= stat.size) return;
+      const backup = `${filePath}${COMPACTION_BACKUP_SUFFIX}`;
+      // COPYFILE_EXCL: only the first large compaction is kept.
+      await fsApi.copyFile(filePath, backup, nodeFs.constants.COPYFILE_EXCL);
+      await fsApi.chmod(backup, 0o600);
+      logger.warn?.('[ManagedOrchestration] Kept the previous ledger before a large compaction', {
+        backup, previousBytes: stat.size, nextBytes,
+      });
+    } catch (error) {
+      if (error?.code !== 'EEXIST' && error?.code !== 'ENOENT') {
+        logger.warn?.('[ManagedOrchestration] Could not keep the previous ledger before compaction', {
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  };
+
   const saveNow = async (snapshot) => {
     await assertOwnership();
     const validated = validateSnapshot(snapshot);
     const serialized = `${JSON.stringify(validated)}\n`;
+    await backUpBeforeCompaction(Buffer.byteLength(serialized, 'utf8'));
     await writeFileAtomic(filePath, serialized, {
       fs: fsApi,
       mode: 0o600,

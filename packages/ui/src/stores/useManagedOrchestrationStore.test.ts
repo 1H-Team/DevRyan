@@ -839,6 +839,8 @@ describe('managed orchestration store', () => {
       ['dvr_task_2', 'dvr_wave_01'],
     ]);
     expect(Array.from(running.openWaveIds)).toEqual(['dvr_wave_01']);
+    expect(Array.from(running.activeWaveIds)).toEqual(['dvr_wave_01']);
+    expect(running.awaitingAcknowledgementTaskIdsByWaveId.size).toBe(0);
     // Repeated reads and unrelated task updates reuse the same index object.
     expect(selector(store.getState())).toBe(running);
     store.getState().ingestEvent(taskEvent(projectedTask(3, 'starting')));
@@ -858,14 +860,21 @@ describe('managed orchestration store', () => {
       { ...toManagedTaskEvent(secondDone, secondEnvelope).properties.task, dispatchWaveId: 'dvr_wave_01' },
       secondEnvelope,
     ));
-    expect(selector(store.getState())).toBe(running);
-    expect(selector(store.getState()).openWaveIds.has('dvr_wave_01')).toBe(true);
+    // The wave stays open but is no longer active: it now closes once both
+    // results are dispositioned, which the chat can see in the transcript.
+    const awaiting = selector(store.getState());
+    expect(awaiting).not.toBe(running);
+    expect(selector(store.getState())).toBe(awaiting);
+    expect(awaiting.openWaveIds.has('dvr_wave_01')).toBe(true);
+    expect(awaiting.activeWaveIds.size).toBe(0);
+    expect(awaiting.awaitingAcknowledgementTaskIdsByWaveId.get('dvr_wave_01')).toEqual(['dvr_task_1', 'dvr_task_2']);
 
     store.getState().ingestEvent(taskEvent(
       { ...toManagedTaskEvent(firstDone, firstEnvelope).properties.task, dispatchWaveId: 'dvr_wave_01' },
       { ...firstEnvelope, action: 'continue', acknowledgedAt: 5_001 },
     ));
     expect(selector(store.getState()).openWaveIds.has('dvr_wave_01')).toBe(true);
+    expect(selector(store.getState()).awaitingAcknowledgementTaskIdsByWaveId.get('dvr_wave_01')).toEqual(['dvr_task_2']);
     store.getState().ingestEvent(taskEvent(
       { ...toManagedTaskEvent(secondDone, secondEnvelope).properties.task, dispatchWaveId: 'dvr_wave_01' },
       { ...secondEnvelope, action: 'continue', acknowledgedAt: 5_002 },
@@ -873,7 +882,20 @@ describe('managed orchestration store', () => {
     const closed = selector(store.getState());
     expect(closed).not.toBe(running);
     expect(closed.openWaveIds.size).toBe(0);
+    expect(closed.awaitingAcknowledgementTaskIdsByWaveId.size).toBe(0);
     expect(closed.waveIdByTaskId.get('dvr_task_2')).toBe('dvr_wave_01');
+  });
+
+  test('indexes a stored task wave by its dispatch call id', () => {
+    const store = createManagedOrchestrationStore({ api: fakeApi() });
+    const selector = managedOrchestrationSelectors.dispatchWaveIndex;
+    store.getState().ingestEvent(taskEvent(projectedTask(1, 'running', {
+      dispatchWaveId: 'dvr_wave_01',
+      dispatchCallId: 'call_explorer',
+    })));
+    store.getState().ingestEvent(taskEvent(projectedTask(2, 'running', { dispatchWaveId: 'dvr_wave_01' })));
+    const index = selector(store.getState());
+    expect(Array.from(index.waveIdByDispatchCallId)).toEqual([['call_explorer', 'dvr_wave_01']]);
   });
 
   test('keeps the display-only dispatch wave label and treats it as immutable', () => {

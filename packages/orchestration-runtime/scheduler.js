@@ -316,6 +316,10 @@ export const createManagedTaskScheduler = (options = {}) => {
       maxTerminalRecords,
       maxAgeMs: maxHistoryAgeMs,
       maxBytes: maxPersistedBytes,
+      // Kill switch, read per persist: DEVRYAN_ORCHESTRATION_UNACKNOWLEDGED_EXPIRY=0
+      // keeps every unacknowledged result until it is collected.
+      expireUnacknowledged: options.expireUnacknowledged
+        ?? globalThis.process?.env?.DEVRYAN_ORCHESTRATION_UNACKNOWLEDGED_EXPIRY !== '0',
       // snapshotLocked() already deep-copies; skip the compactor's own clone.
       assumeOwnedInput: true,
     });

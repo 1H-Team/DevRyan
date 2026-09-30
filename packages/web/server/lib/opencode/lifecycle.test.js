@@ -666,7 +666,7 @@ describe('OpenCode lifecycle', () => {
     expect(syncRuntimeAgentOverlays).toHaveBeenCalledWith({
       workingDirectory: persistedDirectory,
       skillPolicy: expect.any(Object),
-      agentRuntimeSettings: { lsp: true },
+      agentRuntimeSettings: { lsp: false },
     });
     await server.close();
   });
@@ -1130,6 +1130,58 @@ describe('OpenCode lifecycle', () => {
     expect(runtime.__testState.openCodeProbe.lastSuccessAt).toBeTypeOf('number');
   });
 
+  it('restarts a live idle managed child only after three consecutive failed health checks', async () => {
+    const existingProcess = { exitCode: null, signalCode: null, close: vi.fn(async () => {}), hasExited: vi.fn(() => false) };
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => { child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n'); });
+      return child;
+    });
+    const unhealthy = vi.fn(async () => ({ ok: false }));
+    const healthy = vi.fn(async () => ({ ok: true, json: async () => ({ healthy: true, version: '1.18.33' }) }));
+    globalThis.fetch = unhealthy;
+    const runtime = createRuntime({
+      initialState: { openCodeProcess: existingProcess, openCodePort: 45678, isOpenCodeReady: true },
+      getActiveSessionCount: vi.fn(() => 0),
+    });
+
+    await runtime.triggerHealthCheck();
+    await runtime.triggerHealthCheck();
+    // A success in between starts the count again.
+    globalThis.fetch = healthy;
+    await runtime.triggerHealthCheck();
+    globalThis.fetch = unhealthy;
+    await runtime.triggerHealthCheck();
+    await runtime.triggerHealthCheck();
+    expect(existingProcess.close).not.toHaveBeenCalled();
+    expect(spawnMock).not.toHaveBeenCalled();
+
+    await runtime.triggerHealthCheck();
+    expect(existingProcess.close).toHaveBeenCalledTimes(1);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    await runtime.__testState.openCodeProcess.close();
+  });
+
+  it('restarts on the first failed health check when configured to', async () => {
+    vi.stubEnv('DEVRYAN_HEALTH_RESTART_FAILURES', '1');
+    const existingProcess = { exitCode: null, signalCode: null, close: vi.fn(async () => {}), hasExited: vi.fn(() => false) };
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => { child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n'); });
+      return child;
+    });
+    globalThis.fetch = vi.fn(async () => ({ ok: false }));
+    const runtime = createRuntime({
+      initialState: { openCodeProcess: existingProcess, openCodePort: 45678, isOpenCodeReady: true },
+      getActiveSessionCount: vi.fn(() => 0),
+    });
+    try {
+      await runtime.triggerHealthCheck();
+      expect(existingProcess.close).toHaveBeenCalledTimes(1);
+      await runtime.__testState.openCodeProcess.close();
+    } finally { vi.unstubAllEnvs(); }
+  });
+
   it('restarts a definitely exited managed child even when session activity is still marked busy', async () => {
     const existingProcess = {
       exitCode: 1,
@@ -1217,7 +1269,7 @@ describe('OpenCode lifecycle', () => {
     expect(syncRuntimeAgentOverlays).toHaveBeenCalledWith({
       workingDirectory: '/tmp/project',
       skillPolicy: expect.any(Object),
-      agentRuntimeSettings: { lsp: true },
+      agentRuntimeSettings: { lsp: false },
     });
     expect(args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '45678', '--log-level', 'WARN']);
     expect(options.env.OPENCODE_CONFIG_DIR).toBe('/tmp/openchamber-runtime-overlays/project-hash');
@@ -1369,7 +1421,7 @@ describe('OpenCode lifecycle', () => {
     });
     expect(syncRuntimeAgentOverlays).toHaveBeenCalledWith({
       workingDirectory: '/tmp/project',
-      agentRuntimeSettings: { lsp: true },
+      agentRuntimeSettings: { lsp: false },
       skillPolicy: expect.objectContaining({
         skillNames: ['frontend-design'],
         skillDirectories: ['/tmp/project/.opencode/skills/frontend-design'],

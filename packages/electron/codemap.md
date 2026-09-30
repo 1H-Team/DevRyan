@@ -6,8 +6,9 @@
 
 Primary desktop shell and packaged background-runtime executable. App-bound mode
 boots the DevRyan web server in-process; service-client mode connects to the
-fenced launchd owner; `--runtime-service` creates no window and owns the server,
-Production Bots, routines, memory, computer supervision, and Docker management.
+fenced launchd owner; `--runtime-service` creates no window, runs as a macOS
+accessory process (no Dock icon), and owns the server, Production Bots,
+routines, memory, computer supervision, and Docker management.
 The foreground app owns native OS integration and exposes constrained renderer
 and desktop-host broker bridges.
 
@@ -323,6 +324,9 @@ owner through native startup/bootstrap and refreshes attached windows after a
 service generation change. See [connection behavior](../../docs/SUPABASE_CONNECTION.md).
 
 - `runtime-memory-monitor.mjs` samples content-free V8/RSS/external memory, event-loop delay and session-change read counters in foreground and runtime-service processes. It logs at most once per minute plus hysteretic pressure transitions; it collects no heap dumps. The synthetic `scripts/verify-crash-memory.mjs` fixture owns explicit allocation profiling and isolated ownership-mode soaks.
+- The same record carries `stalls`, `stalledMs` and `longestStallMs`: event-loop stalls of 1 s or more since the process started (`@openchamber/harness-runtime/lib/host-stall-clock.js`, read through the server handle).
+- `main.mjs` reports each window's visibility to its page (`openchamber:window-visibility`, `{ visible }`, on show, hide, minimize, restore and after load). Background throttling stays off so streams and timers keep their pace, which also leaves `document.visibilityState` at `visible` for a hidden or minimized window; the page pauses its animations and tickers on this report instead (`packages/ui/src/hooks/useDocumentAnimationState.ts`).
+- `runtime-service-startup.mjs` `ensureRuntimeServiceRegistered` runs before the foreground waits for the background service: a missing registration is registered first, and a registration that cannot start the service (approval pending, not found, unavailable) fails at once with `runtime_service_not_registered`, so startup falls back to the app-bound runtime without the 60-second wait. An unknown state keeps the ordinary wait.
 
 - Concurrent Revert executables ship as `Resources/revert-runtime/<platform>-<arch>`. `scripts/package-prepared.mjs` requires verified artifacts; `scripts/adhoc-sign-macos-app.mjs` verifies them before signing, updates signed digests and reseals the app. Build contracts: [Concurrent Revert](../../docs/CONCURRENT_REVERT.md).
 

@@ -176,3 +176,92 @@ describe('read-only scope transport recovery', () => {
     expect(actions).toEqual(failure === 'transport' ? ['hello', 'scope', 'scope'] : ['hello', 'scope']);
   });
 });
+
+// In observe mode, or on a runtime outside the recovery allow-list, the host
+// reports `enforced: false`. Its hooks then only observe.
+describe('a host that does not enforce recovery', () => {
+  const advisorySetup = async ({ enforced = false, scope = { tracked: true, enforced: false, readOnly: false, agent: 'orchestrator' } } = {}) => {
+    process.env.DEVRYAN_ORCHESTRATION_URL = 'http://127.0.0.1:12345/rpc';
+    process.env.DEVRYAN_ORCHESTRATION_TOKEN = 'isolated-fixture-token';
+    const state = { actions: [], unreachable: false, rejected: null };
+    const plugin = await DevRyanPrimaryRecoveryPlugin({ directory: '/fixture',
+      client: { session: { messages: async () => ({ data: [{ info: { id: 'msg_assistant', parentID: 'msg_user', role: 'assistant' },
+        parts: [{ id: 'prt_tool', type: 'tool', callID: 'call_tool' }] }] }) }, tool: { ids: async () => ({ data: ['read'] }) } },
+      fetchImpl: async (_url, init) => {
+        const { params } = JSON.parse(init.body);
+        state.actions.push(params.action);
+        if (params.action !== 'hello' && state.unreachable) throw new DOMException('The operation timed out.', 'TimeoutError');
+        if (params.action !== 'hello' && state.rejected) return new Response(JSON.stringify({ ok: false, error: { code: state.rejected } }), { status: 409 });
+        return new Response(JSON.stringify({ ok: true, result: params.action === 'hello' ? { supported: true, enforced }
+          : params.action === 'scope' ? scope : { allowed: true } }));
+      } });
+    return { plugin, state };
+  };
+  const step = { sessionID: 'ses_fixture', agent: 'orchestrator', message: { id: 'msg_user' } };
+  const tool = { sessionID: 'ses_fixture', callID: 'call_tool', tool: 'bash' };
+  afterEach(() => { vi.useRealTimers(); delete process.env.DEVRYAN_RECOVERY_ADVISORY_PLUGIN; });
+
+  it('does not fail a turn when the host is unreachable', async () => {
+    const { plugin, state } = await advisorySetup();
+    await plugin['chat.message']({ sessionID: 'ses_fixture' }, { message: { id: 'msg_user' } });
+    state.unreachable = true;
+    await expect(plugin['chat.message']({ sessionID: 'ses_fixture' }, { message: { id: 'msg_user' } })).resolves.toBeUndefined();
+    await expect(plugin['chat.params'](step)).resolves.toBeUndefined();
+    await expect(plugin['tool.execute.before'](tool)).resolves.toBeUndefined();
+    await expect(plugin['tool.execute.after'](tool)).resolves.toBeUndefined();
+  });
+
+  it('reuses a verdict that cannot stop a turn for 30 seconds, until the next user message', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_000_000);
+    const { plugin, state } = await advisorySetup();
+    const scopes = () => state.actions.filter((action) => action === 'scope').length;
+    await plugin['chat.params'](step);
+    await plugin['tool.execute.before'](tool);
+    await plugin['tool.execute.after'](tool);
+    expect(scopes()).toBe(1);
+    expect(state.actions).toEqual(['hello', 'scope', 'step', 'tool_before', 'tool_after']);
+    vi.setSystemTime(1_000_000 + 30_001);
+    await plugin['chat.params'](step);
+    expect(scopes()).toBe(2);
+    await plugin['chat.message']({ sessionID: 'ses_fixture' }, { message: { id: 'msg_next' } });
+    await plugin['chat.params'](step);
+    expect(scopes()).toBe(3);
+  });
+
+  it('keeps every host rejection', async () => {
+    const { plugin, state } = await advisorySetup();
+    await plugin['chat.params'](step);
+    state.rejected = 'provider_recovery_fenced';
+    await expect(plugin['tool.execute.before'](tool)).rejects.toMatchObject({ code: 'provider_recovery_fenced' });
+    await expect(plugin['chat.message']({ sessionID: 'ses_fixture' }, { message: { id: 'msg_user' } }))
+      .rejects.toMatchObject({ code: 'provider_recovery_fenced' });
+  });
+
+  it('never reuses or forgives a verdict that can stop a turn', async () => {
+    const guarded = await advisorySetup({ scope: { tracked: true, enforced: false, readOnly: true, agent: 'orchestrator' } });
+    await guarded.plugin['chat.params'](step);
+    await guarded.plugin['chat.params'](step);
+    expect(guarded.state.actions.filter((action) => action === 'scope')).toHaveLength(2);
+    guarded.state.unreachable = true;
+    await expect(guarded.plugin['chat.params'](step)).rejects.toThrow('Primary recovery scope request failed');
+    await expect(guarded.plugin['tool.execute.before'](tool)).rejects.toThrow('Primary recovery scope request failed');
+  });
+
+  it('stays fail-closed while the host enforces, and with the kill switch', async () => {
+    const enforcing = await advisorySetup({ enforced: true });
+    await enforcing.plugin['chat.params'](step);
+    await enforcing.plugin['chat.params'](step);
+    expect(enforcing.state.actions.filter((action) => action === 'scope')).toHaveLength(2);
+    enforcing.state.unreachable = true;
+    await expect(enforcing.plugin['chat.params'](step)).rejects.toThrow('Primary recovery scope request failed');
+    await expect(enforcing.plugin['chat.message']({ sessionID: 'ses_fixture' }, { message: { id: 'msg_user' } }))
+      .rejects.toThrow('Primary recovery message request failed');
+
+    process.env.DEVRYAN_RECOVERY_ADVISORY_PLUGIN = '0';
+    const disabled = await advisorySetup();
+    await disabled.plugin['chat.params'](step);
+    disabled.state.unreachable = true;
+    await expect(disabled.plugin['chat.params'](step)).rejects.toThrow('Primary recovery scope request failed');
+  });
+});

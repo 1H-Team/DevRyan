@@ -444,6 +444,15 @@ textarea[data-chat-input="true"]:focus-visible {
   -webkit-text-fill-color: transparent;
 }
 
+/* The desktop shell reports a hidden or minimized window (its page otherwise
+   stays "visible" because background throttling is off). Nothing needs to
+   animate where nobody can see it. */
+html[data-window-hidden] *,
+html[data-window-hidden] *::before,
+html[data-window-hidden] *::after {
+  animation-play-state: paused !important;
+}
+
 .oc-text-shimmer[data-animation-state="running"]::after {
   opacity: 1;
   animation: oc-text-shimmer 2.2s linear infinite;

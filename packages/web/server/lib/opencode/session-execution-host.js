@@ -1,4 +1,4 @@
-import { executionSignal, checkExecutionAdmission, executionPhase, executionStep, withExecutionAdmission, withExecutionPreparation, withExecutionSummary } from '@openchamber/harness-runtime/lib/execution-admission.js';
+import { executionSignal, checkExecutionAdmission, executionPhase, executionStep, timedExecutionStep, withExecutionAdmission, withExecutionPreparation, withExecutionSummary } from '@openchamber/harness-runtime/lib/execution-admission.js';
 import { classifySessionChangeTool } from '@openchamber/harness-runtime/lib/session-changes-tools.js';
 import { cleanupExecutionLease } from '@openchamber/harness-runtime/lib/execution-cleanup.js';
 import { randomUUID } from 'node:crypto';
@@ -11,6 +11,7 @@ import { createSessionExecutionOwner } from '@openchamber/harness-runtime/lib/se
 import { CURSOR_PROVIDER_ID } from '@openchamber/cursor-sdk-runtime';
 import { createExecutionHostOwner, executionHostOwnerLost, executionOwnerFactory } from '@openchamber/harness-runtime/lib/execution-host-owner.js';
 import { createExecutionPreparations, recoverExecutionLeases } from './execution-preparations.js';
+import { createExecutionIdleWatchdog } from '@openchamber/harness-runtime/lib/execution-idle-watchdog.js';
 
 const failure = (code, status = 409) => Object.assign(new Error(code), { code, status });
 // Built-in tools the companion may run with a direct receipt: audited
@@ -48,7 +49,24 @@ export function createSessionExecutionHost(options) {
     return info;
   };
   const launcher = () => options.getLauncher();
+  // Ends a confined command whose whole process tree has been idle for ten
+  // minutes (execution-idle-watchdog.js). It never touches a launch.
+  const idleWatchdog = options.idleWatchdog ?? createExecutionIdleWatchdog({ onDiagnostic: options.onDiagnostic });
+  const launchWatched = async (lease, input) => {
+    const launch = await prepareSessionExecution({ launcher: launcher(), lease });
+    idleWatchdog.watch({ token: lease.token, profile: launch.profile,
+      identity: { sessionID: input.sessionID, messageID: input.messageID, callID: input.callID } });
+    return launch;
+  };
   const directAdmissions = new Map();
+  // Claim times of control and process calls, keyed by lease token, so a
+  // finish can journal how long the tool ran between its claim and its finish.
+  // Bounded like directAdmissions.
+  const claims = new Map();
+  const claimed = (lease) => {
+    claims.set(lease.token, Date.now());
+    while (claims.size > DIRECT_ADMISSIONS_MAX) claims.delete(claims.keys().next().value);
+  };
   const ownerDirectory = path.join(options.dataDirectory, 'harness', 'execution-owners');
   let preparationHost;
   // Preparations of a lost keeper already observe its aborted signal; they
@@ -67,6 +85,38 @@ export function createSessionExecutionHost(options) {
   });
   const preparations = () => preparationHost = createPreparations();
   const cleanup = (lease) => cleanupExecutionLease(runtime, lease, options.onDiagnostic);
+  // A cancelled confined call published nothing: its private view was
+  // discarded. Record that, or the conversation's change record stays
+  // incomplete ("a tool did not provide a complete record of its file edits")
+  // after every Stop and every task deadline. Best effort: the cancellation
+  // itself is already durable. Kill switch: DEVRYAN_CANCELLED_RECEIPTS=0.
+  const recordCancelled = async (lease, tool) => {
+    if (process.env.DEVRYAN_CANCELLED_RECEIPTS === '0' || !lease?.scope?.sessionID || !lease.scope.messageID || !lease.scope.callID
+      // A tool that is read-only for session changes has no change record.
+      || classifySessionChangeTool(tool ?? lease.scope.tool) === 'read-only') return;
+    try {
+      await options.recordReceipt?.({ ...lease.scope, directory: lease.directory, source: 'confined-execution', complete: true, files: [], tool });
+    } catch (cause) {
+      try { options.onDiagnostic?.({ event: 'session_execution', sessionID: lease.scope.sessionID, callID: lease.scope.callID,
+        phase: 'cancelled_receipt', state: 'failed', code: cause?.code || 'change_receipt_failed' }); } catch { /* Observer only. */ }
+    }
+  };
+  // Removing a published call's private view (12,000 files take about 0.8 s)
+  // no longer withholds the tool result: publication is already durable, the
+  // view is not read again, and cleanup is retryable work that recovery
+  // finishes after a crash. Shutdown waits for the removals in flight.
+  // Kill switch, read per call: DEVRYAN_DEFERRED_LEASE_CLEANUP=0.
+  const cleanups = new Set();
+  const cleanupAfterPublication = (lease) => {
+    if (process.env.DEVRYAN_DEFERRED_LEASE_CLEANUP === '0') return timedExecutionStep('lease_cleanup', () => cleanup(lease));
+    const started = Date.now();
+    const work = cleanup(lease).then(() => {
+      try { options.onDiagnostic?.({ event: 'session_execution', phase: 'lease_cleanup', state: 'completed', elapsedMs: Date.now() - started, deferred: true }); }
+      catch { /* Observer only. */ }
+    }).finally(() => cleanups.delete(work));
+    cleanups.add(work);
+    return undefined;
+  };
   const cursorOwners = new Map();
   let retentionReady = false;
   const activity = (ids, action) => options.activityGate ? options.activityGate.run(ids, action) : action();
@@ -99,6 +149,7 @@ export function createSessionExecutionHost(options) {
       for (const lease of await runtime.activeLeases(input)) {
         if (lease.executionKind === 'process') await readSessionExecutionReceipt(lease);
         await runtime.cancelLease({ directory: lease.directory, token: lease.token });
+        await recordCancelled(lease, lease.scope?.tool);
       }
       return { terminated: true, sessions: input.sessions };
     },
@@ -239,8 +290,9 @@ export function createSessionExecutionHost(options) {
       const lease = await executionPhase('lease_preparation', () => runtime.begin({ ...input, userMessageID: record.info.parentID, parentID: current.parentID, executionFingerprint }));
       checkExecutionAdmission();
       await runtime.claimLease({ directory: input.directory, token: lease.token, kind: input.kind });
+      claimed(lease);
       if (input.kind === 'control') return { lease };
-      try { return { lease, launch: await prepareSessionExecution({ launcher: launcher(), lease }) }; }
+      try { return { lease, launch: await launchWatched(lease, input) }; }
       catch (cause) {
         await runtime.cancelUnstartedCall({ ...input, token: lease.token });
         await cleanup({ directory: input.directory, token: lease.token });
@@ -250,8 +302,10 @@ export function createSessionExecutionHost(options) {
     if (input.action === 'cancel-before-start') {
       // Only the trusted companion can attest that it never spawned a process.
       const lease = await executionPhase('lease_lookup', () => runtime.leaseForCall(input));
+      if (lease) idleWatchdog.unwatch(lease.token);
       if (lease && preparationHost) await (await preparationHost).jobs.cancel(lease);
       await runtime.cancelUnstartedCall(input);
+      if (lease) await recordCancelled(lease, input.tool);
       if (lease) await cleanup(lease);
       return { cancelled: true };
     }
@@ -265,8 +319,9 @@ export function createSessionExecutionHost(options) {
       if (lease.ownerID !== owner.id) throw failure('execution_owner_lost');
       await executionPhase('execution_claim', () => jobs.claim(lease, () => runtime.claimLease({ directory: input.directory, token: lease.token, kind: input.kind })));
       owner.assert();
+      claimed(lease);
       if (input.kind === 'control') return { lease };
-      try { return { lease, launch: await prepareSessionExecution({ launcher: launcher(), lease }) }; }
+      try { return { lease, launch: await launchWatched(lease, input) }; }
       catch (cause) {
         await runtime.cancelUnstartedCall({ ...input, token: lease.token });
         await cleanup({ directory: input.directory, token: lease.token });
@@ -274,18 +329,39 @@ export function createSessionExecutionHost(options) {
       }
     }
     if (input.action !== 'finish') throw failure('invalid_capture_identity', 400);
+    idleWatchdog.unwatch(lease.token);
+    // Timing only (see `finish` below): these steps keep their own
+    // cancellation and failure behaviour.
+    const claimedAt = claims.get(lease.token);
+    if (claimedAt !== undefined) { claims.delete(lease.token); executionStep('tool_execution', Date.now() - claimedAt); }
     if (lease.executionKind !== 'control') {
-      const receipt = await readSessionExecutionReceipt(lease);
+      const receipt = await timedExecutionStep('termination_receipt', () => readSessionExecutionReceipt(lease));
       if (receipt.cancelled || !receipt.confined) {
         await runtime.cancelLease({ directory: input.directory, token: lease.token });
+        if (receipt.cancelled) await recordCancelled(lease, input.tool);
         throw failure(receipt.cancelled ? 'execution_cancelled' : 'mutation_runtime_unsupported');
       }
     }
-    const result = await runtime.finish({ directory: input.directory, token: lease.token });
-    await options.recordReceipt?.({ ...await runtime.executionReceipt({ directory: input.directory, token: lease.token }), tool: input.tool });
-    await cleanup({ directory: input.directory, token: lease.token });
+    const result = await timedExecutionStep('publication', () => runtime.finish({ directory: input.directory, token: lease.token }));
+    // A control tool that is read-only for session changes (todowrite,
+    // question, webfetch, devryan_task) has nothing to attest, as in a direct
+    // finish: its empty attestation cost a serialized session-changes commit
+    // per call. Kill switch: DEVRYAN_CONTROL_LEDGER_ONLY=0.
+    if (process.env.DEVRYAN_CONTROL_LEDGER_ONLY === '0' || lease.executionKind !== 'control'
+      || classifySessionChangeTool(input.tool) !== 'read-only') {
+      const receipt = await timedExecutionStep('execution_receipt', () => runtime.executionReceipt({ directory: input.directory, token: lease.token }));
+      await timedExecutionStep('change_receipt', async () => options.recordReceipt?.({ ...receipt, tool: input.tool }));
+    }
+    await cleanupAfterPublication({ directory: input.directory, token: lease.token });
     return result;
   };
+  // A finish withholds the tool result until the change is published, its
+  // receipt recorded and its view removed. It is journaled like a direct
+  // finish (one record with per-step time, only when slow or failed) and gains
+  // no deadline. `tool_execution` is the run time between claim and finish; it
+  // is not part of `elapsedMs`.
+  const finish = (input) => withExecutionSummary(input, () => dispatch(input),
+    { phase: 'finish', onDiagnostic: options.onDiagnostic, minMs: options.admissionSummaryMinMs ?? 250 });
   // A direct finish withholds a tool result, so its bookkeeping is journaled
   // like an admission (only when slow or failed) but gains no deadline: the
   // receipt commit must settle. `tool_execution` is the companion's run time
@@ -299,6 +375,7 @@ export function createSessionExecutionHost(options) {
     }, { phase: 'direct_finish', onDiagnostic: options.onDiagnostic, minMs: options.admissionSummaryMinMs ?? 250 });
   };
   const dispatchPlugin = (input) => input.action === 'direct-finish' ? directFinish(input)
+    : input.action === 'finish' ? finish(input)
     : ['admit', 'prompt', 'begin', 'child', 'cancel-before-start', 'prepare-poll', 'claim', 'direct-admit'].includes(input.action)
     // Fail after 25 s without progress (this request's own work or the lock
     // holder it queues behind), never later than 50 s: the companion's RPC
@@ -370,11 +447,13 @@ export function createSessionExecutionHost(options) {
       storage: path.join(options.dataDirectory, 'harness', 'provider-executions'), interactive: true }); },
     beforeCursorPrompt: async (input) => { options.assertExecutionReady?.(); await runtime.assertAdmission(input); return (await session(input)).revert ?? null; },
     drain: async () => {
+      idleWatchdog.stop();
       const warming = ledgerWarm;
       warming?.controller.abort(Object.assign(new Error('ledger_warm_stopped'), { code: 'ledger_warm_stopped' }));
       // A failed keeper must not prevent independent owners and I/O draining.
       const results = await Promise.allSettled([
         warming?.work,
+        ...cleanups,
         // A keeper that never started owns nothing to drain; only an
         // unconfirmed termination remains a shutdown failure.
         preparationHost?.then(async (host) => { try { await host.jobs.drain(); } finally { await host.owner.close(); } },

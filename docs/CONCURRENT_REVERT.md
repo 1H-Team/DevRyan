@@ -80,7 +80,10 @@ tools such as `/bin/cat` can load it. Session-scoped calls restore the adapter
 for Node started through `/usr/bin/env` or `/bin/sh` (a `NODE_OPTIONS`
 preload) and may look up only Chromium's `MachPortRendezvousServer`, so a
 project's headless Playwright check runs from the host's read-only browser
-cache (`DEVRYAN_WORKER_BROWSERS=0` disables this). Linux
+cache (`DEVRYAN_WORKER_BROWSERS=0` disables this). A detached child stays
+in the supervised group; the process that started it can still stop it, because
+a signal for the group it asked for is delivered to that child and its
+descendants (`DEVRYAN_WORKER_GROUP_SIGNALS=0` disables this). Linux
 requires [Landlock ABI 9](https://docs.kernel.org/userspace-api/landlock.html), private user/mount/PID/IPC namespaces, read-only mounts
 and seccomp. Its private root is a recursive read-only clone of the host tree
 with only the view, scratch and cache bound writable, so the real project path

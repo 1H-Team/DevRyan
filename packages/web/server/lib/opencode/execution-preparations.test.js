@@ -212,3 +212,61 @@ test('a transient cancellation failure stays retryable instead of pinning the jo
   expect(cancels).toBe(2);
   await expect(jobs.poll(lease)).rejects.toMatchObject({ code: 'execution_owner_unavailable' });
 });
+
+// A stalled host (its event loop blocked for 30, 61 or 110 s, as on
+// 2026-09-29) cannot answer a poll. That time must not make the poller "lost".
+import { afterEach, describe, vi } from 'vitest';
+import { resetHostStallClock } from '@openchamber/harness-runtime/lib/host-stall-clock.js';
+
+describe('a lost poller is measured in time the host could run', () => {
+  afterEach(() => { vi.useRealTimers(); resetHostStallClock(); delete process.env.DEVRYAN_STALL_AWARE_DEADLINES; });
+  const setup = () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    resetHostStallClock();
+    const cancelled = [];
+    // The preparation ends when it is cancelled, as real preparation does.
+    const runtime = { prepare: () => new Promise((resolve, reject) => {
+      const signal = executionSignal();
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    }), cleanupLease: async () => true, cancelLease: async (lease) => { cancelled.push(lease.token); } };
+    const lease = { token: 'stalled', directory: '/fixture', scope: {}, state: 'preparing' };
+    const jobs = createExecutionPreparations({ runtime, owner: { signal: new AbortController().signal, assert() {} }, ownerTimeoutMs: 60_000 });
+    jobs.start(lease);
+    // The loop is blocked: the clock moves, no timer runs.
+    const stall = async (ms) => { vi.setSystemTime(Date.now() + ms); await vi.advanceTimersByTimeAsync(250); };
+    return { jobs, lease, cancelled, stall, run: (ms) => vi.advanceTimersByTimeAsync(ms) };
+  };
+  const lost = async (f) => { await f.run(0); return f.cancelled.length > 0; };
+
+  test.each([30_000, 61_000, 110_000])('a %i ms stall does not lose a poller that was 20 s from its limit', async (ms) => {
+    const f = setup();
+    await f.run(40_000);
+    await f.stall(ms);
+    await f.run(15_000);
+    // 55 s of runnable time without a poll: still inside the 60 s limit.
+    expect(await lost(f)).toBe(false);
+  });
+
+  test('a poller that really stopped is lost after 60 s of runnable time', async () => {
+    const f = setup();
+    await f.run(40_000); await f.stall(61_000); await f.run(21_000);
+    expect(await lost(f)).toBe(true);
+  });
+
+  test('repeated stalls cannot keep a dead poller alive beyond 180 s', async () => {
+    const f = setup();
+    // 150 s by the wall clock, of which the host could run for about 6 s.
+    for (let i = 0; i < 5; i++) { await f.stall(29_000); await f.run(1_000); }
+    expect(await lost(f)).toBe(false);
+    await f.stall(29_000); await f.run(2_000);
+    expect(await lost(f)).toBe(true);
+  });
+
+  test('the kill switch restores the wall clock', async () => {
+    process.env.DEVRYAN_STALL_AWARE_DEADLINES = '0';
+    const f = setup();
+    await f.run(40_000); await f.stall(30_000);  await f.run(1_000);
+    expect(await lost(f)).toBe(true);
+  });
+});

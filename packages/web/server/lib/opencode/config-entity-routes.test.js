@@ -261,7 +261,8 @@ describe('agent runtime settings routes', () => {
 
   it('reads defaults and the authoritative applied state without touching the sidecar', async () => {
     await request(createApp()).get('/api/config/agent-runtime').expect(200).expect((res) => {
-      expect(res.body).toEqual(known(true));
+      // Off by default; this runtime was launched with the server on.
+      expect(res.body).toEqual(known(false));
     });
     await expect(fs.stat(sidecarPath)).rejects.toMatchObject({ code: 'ENOENT' });
     expect(syncManagedAgentRuntimeConfig).not.toHaveBeenCalled();

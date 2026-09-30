@@ -2,7 +2,10 @@ import { createLineageId, isAutoResumeActive } from './auto-resume-policy.js';
 import { isTerminalManagedTaskStatus } from './contract.js';
 
 export const DEFAULT_MANAGED_TERMINAL_MAX_RECORDS = 2_000;
-export const DEFAULT_MANAGED_TERMINAL_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1_000;
+// Finished work older than this is dropped. Every task transition clones,
+// validates and serializes the whole ledger, so its size is a per-transition
+// cost: 90 days of history held 1,670 records and 20.9 MB at the write cap.
+export const DEFAULT_MANAGED_TERMINAL_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1_000;
 export const DEFAULT_MANAGED_LEDGER_MAX_BYTES = 20 * 1024 * 1024;
 /**
  * Eager bound on acknowledged records per recovery lineage. Auto-resume can chain
@@ -42,19 +45,40 @@ const lineageKeyOf = (task, taskById) => {
   return createLineageId(current.taskId);
 };
 
+// A root conversation is active while it has unfinished work, or while any of
+// its tasks or results changed within `maxAgeMs`.
+const collectActiveRoots = (tasks, envelopeByTask, now, maxAgeMs) => {
+  const active = new Set();
+  for (const task of tasks) {
+    if (active.has(task.rootSessionId)) continue;
+    const envelope = envelopeByTask.get(task.taskId);
+    const latest = Math.max(task.createdAt ?? 0, task.startedAt ?? 0, task.finishedAt ?? 0,
+      envelope?.createdAt ?? 0, envelope?.acknowledgedAt ?? 0);
+    if (!isTerminalManagedTaskStatus(task.status) || now - latest <= maxAgeMs) active.add(task.rootSessionId);
+  }
+  return active;
+};
+
 /**
  * `hardProtectedIds` can never be removed. `protectedIds` additionally holds the
  * retained attempt lineage of every chain whose newest member still needs its
  * history (non-terminal, unacknowledged, or auto-resuming); those records are
  * shielded from the ordinary caps but remain subject to the eager lineage bound.
+ *
+ * An unacknowledged result is protected while its root conversation is active.
+ * A result nobody collected in a conversation idle for `maxAgeMs` would
+ * otherwise be kept forever. `expireUnacknowledged: false` keeps it forever.
  */
-const collectProtectedTaskIds = (tasks, envelopes) => {
+const collectProtectedTaskIds = (tasks, envelopes, { now, maxAgeMs, expireUnacknowledged }) => {
   const hardProtectedIds = new Set();
   const protectedIds = new Set();
   const envelopeByTask = new Map(envelopes.map((envelope) => [envelope.taskId, envelope]));
   const taskById = new Map(tasks.map((task) => [task.taskId, task]));
   const priorTaskIds = new Set(tasks.map((task) => task.priorTaskId).filter(Boolean));
-  const isUnacknowledged = (taskId) => envelopeByTask.get(taskId)?.action === null;
+  const activeRoots = expireUnacknowledged && Number.isFinite(maxAgeMs)
+    ? collectActiveRoots(tasks, envelopeByTask, now, maxAgeMs) : null;
+  const isUnacknowledged = (taskId) => envelopeByTask.get(taskId)?.action === null
+    && (activeRoots === null || activeRoots.has(taskById.get(taskId)?.rootSessionId));
   const isParked = (task) => (
     isTerminalManagedTaskStatus(task.status)
     && (isUnacknowledged(task.taskId) || isAutoResumeActive(envelopeByTask.get(task.taskId)))
@@ -114,12 +138,15 @@ export const compactManagedOrchestrationState = (input, options = {}) => {
   // task/envelope objects (it only filters arrays), so a caller that passes an
   // already-owned snapshot — the scheduler's persist path, which deep-copies in
   // snapshotLocked() — avoids a second full-ledger clone on every transition.
-  const cloneRecord = options.assumeOwnedInput === true ? (record) => record : structuredClone;
+  // Array.map passes the index as a second argument, which structuredClone
+  // rejects as its options.
+  const cloneRecord = options.assumeOwnedInput === true ? (record) => record : (record) => structuredClone(record);
   const tasks = Array.isArray(input?.tasks) ? input.tasks.map(cloneRecord) : [];
   const envelopes = Array.isArray(input?.resultEnvelopes)
     ? input.resultEnvelopes.map(cloneRecord)
     : [];
-  const { hardProtectedIds, protectedIds, envelopeByTask, taskById } = collectProtectedTaskIds(tasks, envelopes);
+  const { hardProtectedIds, protectedIds, envelopeByTask, taskById } = collectProtectedTaskIds(tasks, envelopes,
+    { now, maxAgeMs, expireUnacknowledged: options.expireUnacknowledged !== false });
   const removable = tasks
     .filter((task) => isTerminalManagedTaskStatus(task.status) && !protectedIds.has(task.taskId))
     .sort(terminalOldestFirst);

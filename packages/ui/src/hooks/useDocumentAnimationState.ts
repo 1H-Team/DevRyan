@@ -42,6 +42,34 @@ let reducedMotionQuery: MediaQueryList | null = null;
 let listening = false;
 let snapshot = VISIBLE_ANIMATED;
 
+// The desktop shell runs without background throttling, so a hidden or
+// minimized window still reports `visibilityState: 'visible'`. The shell
+// reports its window's visibility itself; without a report the window counts
+// as visible.
+export const WINDOW_VISIBILITY_EVENT = 'openchamber:window-visibility';
+export const WINDOW_HIDDEN_ATTRIBUTE = 'data-window-hidden';
+let windowHidden = false;
+
+const readWindowHidden = (event: Event): boolean => {
+  const detail = (event as CustomEvent<unknown>).detail;
+  return typeof detail === 'object' && detail !== null && (detail as { visible?: unknown }).visible === false;
+};
+
+const onWindowVisibility = (event: Event): void => {
+  windowHidden = readWindowHidden(event);
+  // Pauses every CSS animation, including those that do not read this hook.
+  if (typeof document !== 'undefined') {
+    document.documentElement.toggleAttribute(WINDOW_HIDDEN_ATTRIBUTE, windowHidden);
+  }
+  notifyIfChanged();
+};
+
+// Registered once, for the life of the page: a report must not be lost while
+// nothing is subscribed.
+if (typeof window !== 'undefined') {
+  window.addEventListener(WINDOW_VISIBILITY_EVENT, onWindowVisibility);
+}
+
 const getReducedMotionQuery = (): MediaQueryList | null => {
   if (reducedMotionQuery || typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
     return reducedMotionQuery;
@@ -51,7 +79,7 @@ const getReducedMotionQuery = (): MediaQueryList | null => {
 };
 
 const readSnapshot = (): DocumentAnimationState => {
-  const isVisible = typeof document === 'undefined' || document.visibilityState !== 'hidden';
+  const isVisible = !windowHidden && (typeof document === 'undefined' || document.visibilityState !== 'hidden');
   const prefersReducedMotion = getReducedMotionQuery()?.matches === true;
   return resolveDocumentAnimationState(isVisible, prefersReducedMotion);
 };
@@ -61,12 +89,12 @@ const getSnapshot = (): DocumentAnimationState => {
   return snapshot;
 };
 
-const notifyIfChanged = (): void => {
+function notifyIfChanged(): void {
   const next = readSnapshot();
   if (next === snapshot) return;
   snapshot = next;
   listeners.forEach((listener) => listener());
-};
+}
 
 const addSharedListeners = (): void => {
   if (listening) return;

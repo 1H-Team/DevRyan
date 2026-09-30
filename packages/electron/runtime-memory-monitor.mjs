@@ -22,7 +22,9 @@ export function createRuntimeMemoryMonitor({ log, role, version, getWork = () =>
       pressure, rss: number(memory.rss), heapUsed: number(memory.heapUsed), heapLimit: number(memory.heapLimit),
       external: number(memory.external), arrayBuffers: number(memory.arrayBuffers),
       eventLoopDelayMaxMs: number(delay.max / 1e6) };
-    for (const key of ['active', 'queued', 'scopes', 'activeResponses', 'responseBytes', 'peakResponseBytes']) record[key] = number(work[key]);
+    // stalls/stalledMs/longestStallMs: event-loop stalls of 1 s or more since this process started.
+    for (const key of ['active', 'queued', 'scopes', 'activeResponses', 'responseBytes', 'peakResponseBytes',
+      'stalls', 'stalledMs', 'longestStallMs']) record[key] = number(work[key]);
     log(record);
     delay.reset();
     return record;

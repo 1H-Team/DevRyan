@@ -10,7 +10,7 @@ export const RECOVERY_CONTINUATION = 'Continue from the existing progress and co
 // lossy `UnknownError` timeout shape were verified for automatic primary
 // recovery (docs/PROVIDER_RECOVERY.md). Extend only with transport and hook
 // conformance evidence. The host target pin is independent of this allow-list.
-export const PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS = Object.freeze(['1.18.25', '1.18.26', '1.18.27', '1.18.29', '1.18.30', '1.18.31', '1.18.32']);
+export const PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS = Object.freeze(['1.18.25', '1.18.26', '1.18.27', '1.18.29', '1.18.30', '1.18.31', '1.18.32', '1.18.33']);
 // The bundled companion runtime is a pinned upstream release plus DevRyan's
 // execution patch, which does not touch provider transport; it reports
 // `<upstream>-devryan.<n>` and is compatible exactly as its upstream base.

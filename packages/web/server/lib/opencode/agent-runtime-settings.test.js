@@ -37,17 +37,17 @@ describe('agent runtime settings sidecar', () => {
     tempRoot = undefined;
   });
 
-  it('defaults to lsp enabled when no sidecar exists', () => {
-    expect(readAgentRuntimeSettings({ userConfigPath })).toEqual({ lsp: true });
-    expect(DEFAULT_AGENT_RUNTIME_SETTINGS).toEqual({ lsp: true });
+  it('defaults to lsp disabled when no sidecar exists', () => {
+    expect(readAgentRuntimeSettings({ userConfigPath })).toEqual({ lsp: false });
+    expect(DEFAULT_AGENT_RUNTIME_SETTINGS).toEqual({ lsp: false });
   });
 
   it('normalizes unknown, missing, and non-boolean values to the defaults', () => {
-    expect(normalizeAgentRuntimeSettings(undefined)).toEqual({ lsp: true });
-    expect(normalizeAgentRuntimeSettings(null)).toEqual({ lsp: true });
-    expect(normalizeAgentRuntimeSettings('nope')).toEqual({ lsp: true });
-    expect(normalizeAgentRuntimeSettings({ lsp: 'false' })).toEqual({ lsp: true });
-    expect(normalizeAgentRuntimeSettings({ lsp: 0 })).toEqual({ lsp: true });
+    expect(normalizeAgentRuntimeSettings(undefined)).toEqual({ lsp: false });
+    expect(normalizeAgentRuntimeSettings(null)).toEqual({ lsp: false });
+    expect(normalizeAgentRuntimeSettings('nope')).toEqual({ lsp: false });
+    expect(normalizeAgentRuntimeSettings({ lsp: 'true' })).toEqual({ lsp: false });
+    expect(normalizeAgentRuntimeSettings({ lsp: 1 })).toEqual({ lsp: false });
     expect(normalizeAgentRuntimeSettings({ lsp: false, extra: 1 })).toEqual({ lsp: false });
     expect(normalizeAgentRuntimeSettings({ lsp: true })).toEqual({ lsp: true });
   });
@@ -98,25 +98,25 @@ describe('agent runtime settings sidecar', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-03T12:00:00Z'));
 
-    expect(readAgentRuntimeSettings({ userConfigPath })).toEqual({ lsp: true });
+    expect(readAgentRuntimeSettings({ userConfigPath })).toEqual({ lsp: false });
 
     // An out-of-band sidecar edit is invisible while the cache is warm...
     await fs.mkdir(path.dirname(sidecarPath), { recursive: true });
-    await fs.writeFile(sidecarPath, JSON.stringify({ [AGENT_RUNTIME_SETTINGS_KEY]: { lsp: false } }), 'utf8');
-    expect(readAgentRuntimeSettings({ userConfigPath })).toEqual({ lsp: true });
+    await fs.writeFile(sidecarPath, JSON.stringify({ [AGENT_RUNTIME_SETTINGS_KEY]: { lsp: true } }), 'utf8');
+    expect(readAgentRuntimeSettings({ userConfigPath })).toEqual({ lsp: false });
 
     // ...and visible once the TTL has elapsed.
     vi.advanceTimersByTime(AGENT_RUNTIME_SETTINGS_CACHE_TTL_MS + 1);
-    expect(readAgentRuntimeSettings({ userConfigPath })).toEqual({ lsp: false });
+    expect(readAgentRuntimeSettings({ userConfigPath })).toEqual({ lsp: true });
 
     // A write through the module invalidates immediately.
-    writeAgentRuntimeSettings({ lsp: true }, { userConfigPath });
-    expect(readAgentRuntimeSettings({ userConfigPath })).toEqual({ lsp: true });
+    writeAgentRuntimeSettings({ lsp: false }, { userConfigPath });
+    expect(readAgentRuntimeSettings({ userConfigPath })).toEqual({ lsp: false });
   });
 
   it('returns defensive copies so callers cannot mutate the cache', () => {
     const first = readAgentRuntimeSettings({ userConfigPath });
-    first.lsp = false;
-    expect(readAgentRuntimeSettings({ userConfigPath })).toEqual({ lsp: true });
+    first.lsp = true;
+    expect(readAgentRuntimeSettings({ userConfigPath })).toEqual({ lsp: false });
   });
 });

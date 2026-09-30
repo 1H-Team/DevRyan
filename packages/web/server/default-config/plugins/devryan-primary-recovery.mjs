@@ -48,15 +48,28 @@ export const DevRyanPrimaryRecoveryPlugin = async ({ client, directory, fetchImp
     return body.result;
   };
   let handshake;
+  // Last capability the host reported. While the host does not enforce
+  // recovery (observe mode, or a runtime it cannot act on), these hooks only
+  // observe: an unreachable host (its event loop stalled under load) then must
+  // not fail the user's turn. A host rejection, which carries a code, and a
+  // session last seen guarded always stand.
+  // Kill switch, read per call: DEVRYAN_RECOVERY_ADVISORY_PLUGIN=0.
+  let capability = null;
+  const SCOPE_TTL_MS = 30_000;
+  const scopes = new Map();
+  const advisory = () => process.env.DEVRYAN_RECOVERY_ADVISORY_PLUGIN !== '0'
+    && capability?.enforced === false;
+  const unreachable = (error) => Boolean(error?.cause) && !error.code;
   const unsupportedTransport = [process.env.OPENCODE_EXPERIMENTAL_WEBSOCKETS, process.env.OPENCODE_EXPERIMENTAL_NATIVE_LLM]
     .some((value) => value && !['0', 'false'].includes(value.toLowerCase()));
   const hello = () => (handshake ??= rpc({ action: 'hello', policyVersion: 1,
     transport: unsupportedTransport ? 'websocket-unverified' : 'fetch',
-  }).catch((error) => { handshake = null; throw error; }));
+  }).then((result) => { capability = result; return result; })
+    .catch((error) => { handshake = null; throw error; }));
   // Managed continuation producers must wait for this real plugin's host
   // registration. An instance UUID by itself is not evidence of ownership.
   globalThis[Symbol.for('devryan.primary-recovery.ready.v1')] = hello;
-  const scope = async (sessionID) => {
+  const lookUpScope = async (sessionID) => {
     await hello();
     try { return await rpc({ action: 'scope', sessionID }); }
     catch (error) {
@@ -65,6 +78,22 @@ export const DevRyanPrimaryRecoveryPlugin = async ({ client, directory, fetchImp
       if (!error.cause) throw error;
       return rpc({ action: 'scope', sessionID });
     }
+  };
+  const scope = async (sessionID) => {
+    const known = scopes.get(sessionID);
+    if (advisory() && known && !known.guarded && Date.now() - known.at < SCOPE_TTL_MS) return known.policy;
+    let policy;
+    try { policy = await lookUpScope(sessionID); }
+    catch (error) {
+      // A session last seen guarded stays fail-closed.
+      if (advisory() && unreachable(error) && !known?.guarded) return known?.policy ?? { tracked: false };
+      throw error;
+    }
+    // Only a verdict that cannot stop a turn is reused.
+    const guarded = Boolean(policy?.enforced || policy?.readOnly);
+    scopes.set(sessionID, { policy, guarded, at: guarded ? 0 : Date.now() });
+    while (scopes.size > 512) scopes.delete(scopes.keys().next().value);
+    return policy;
   };
   const inspect = async (input) => {
     const response = await client.session.messages({ path: { id: input.sessionID },
@@ -128,9 +157,15 @@ export const DevRyanPrimaryRecoveryPlugin = async ({ client, directory, fetchImp
         && rejectionObservers.get(directory) === observeRejection) rejectionObservers.delete(directory);
     },
     'chat.message': async (input, output) => {
-      await hello();
-      await rpc({ action: 'message', sessionID: input.sessionID,
-        userMessageID: output.message.id });
+      try {
+        await hello();
+        await rpc({ action: 'message', sessionID: input.sessionID,
+          userMessageID: output.message.id });
+      } catch (error) {
+        if (!(advisory() && unreachable(error))) throw error;
+      }
+      // A new user message may change what the host tracks for this session.
+      scopes.delete(input.sessionID);
     },
     'chat.params': (input) => execute('step', input),
     'tool.execute.before': (input) => execute('tool_before', input),

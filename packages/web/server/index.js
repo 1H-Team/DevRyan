@@ -65,6 +65,7 @@ import { createFsSearchRuntime as createFsSearchRuntimeFactory } from './lib/fs/
 import { createOpenCodeLifecycleRuntime } from './lib/opencode/lifecycle.js';
 import { createRuntimeRestartReconciler } from './lib/opencode/runtime-restart-reconcile.js';
 import { createSessionExecutionHost } from './lib/opencode/session-execution-host.js';
+import { hostStallClock, onHostStall } from '@openchamber/harness-runtime/lib/host-stall-clock.js';
 import { executionArtifacts, executionRuntimeState, executionReadinessMiddleware } from './lib/opencode/execution-artifacts.js';
 import { createOpenAiOAuthCoordinator } from './lib/opencode/openai-oauth-coordinator.js';
 import { createOpenAiOAuthBridge, registerManagedOAuthMutationGate } from './lib/opencode/openai-oauth-bridge.js';
@@ -1548,6 +1549,13 @@ const sessionExecutionHost = createSessionExecutionHost({ assertExecutionReady: 
     sessionID: event.sessionID, payload: event }),
 });
 observeCommandDeadline = (payload) => commandDeadlineRuntime.observe(payload);
+// A stalled event loop explains slow calls and late deadlines that nothing
+// else in the journal would: record every stall of 2 s or more.
+onHostStall((stall) => {
+  if (stall.ms < 2_000) return;
+  try { harnessRuntime.record({ type: 'lifecycle', event: 'host_stall', sessionID: null, payload: { ms: stall.ms, from: stall.from, to: stall.to } }); }
+  catch { /* Observer only. */ }
+});
 const canForceConfigRestart = (principal) => (
   principal?.scope === 'local-admin' || principal?.role === 'admin'
 );
@@ -2682,6 +2690,7 @@ async function main(options = {}) {
     }),
     getManagedOrchestrationDiagnostics: () => managedOrchestrationRuntime?.getDiagnostics() ?? null,
     getSessionChangeReadDiagnostics: () => sessionChangeHost.getReadDiagnostics(),
+    getHostStallDiagnostics: () => hostStallClock().snapshot(),
     getBrowserLeaseDiagnostics: () => ({
       activeLeases: browserLeaseRuntime?.getSnapshot().length ?? 0,
     }),

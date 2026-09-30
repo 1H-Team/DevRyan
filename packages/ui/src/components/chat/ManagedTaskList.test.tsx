@@ -564,7 +564,7 @@ describe('managed task presentation', () => {
     expect(html).not.toContain('rate limit reached for GPT 4.1. Recovering with');
   });
 
-  test('follow-up attempts name their model once; only confirmed recoveries say Recovered with', () => {
+  test('a follow-up attempt names its model only after a Model Recovery; only confirmed recoveries say Recovered with', () => {
     const base = { ...toManagedTaskEvent(terminalTask('completed')).properties.task,
       providerId: 'openai', modelId: 'gpt-5.4', variant: 'medium' };
     const providers = [{ id: 'openai', name: 'OpenAI', models: [{ id: 'gpt-5.4', name: 'GPT 5.4' }] }];
@@ -576,12 +576,39 @@ describe('managed task presentation', () => {
     expect(first).toContain('Complete');
     expect(first).not.toContain('GPT 5.4');
     expect(first).not.toContain('Medium');
-    for (const executionKind of ['resume', 'retry_in_place', 'recover_in_place'] as const) {
+    const modelLine = /OpenAI \/ GPT 5\.4 · Medium/g;
+    // The host starts these from a Model Recovery: a chosen model or an automatic resume.
+    for (const executionKind of ['retry_in_place', 'recover_in_place'] as const) {
       const html = render({ ...base, executionKind });
       expect(html).toContain('Complete');
-      expect(html.match(/OpenAI \/ GPT 5\.4 · Medium/g)).toHaveLength(1);
+      expect(html.match(modelLine)).toHaveLength(1);
       expect(html).not.toContain('Recovered with');
       expect(html).not.toContain('parent needs to resume');
+    }
+    // An agent's own resume names its model only with evidence of a recovery.
+    const prior = { ...base, taskId: 'dvr_prior_attempt', status: 'failed' as const };
+    const resumed = { ...base, executionKind: 'resume' as const, attempt: 2, priorTaskId: prior.taskId, status: 'running' as const };
+    for (const html of [
+      // After a task deadline, on the same model.
+      render(resumed, { recoverySourceTask: { ...prior, failureKind: 'deadline_exceeded' } }),
+      render(resumed, { recoverySourceTask: prior }),
+      // The prior attempt left the store, or belongs to another lineage.
+      render(resumed),
+      render(resumed, { recoverySourceTask: { ...prior, taskId: 'dvr_unrelated', failureKind: 'provider_transport' } }),
+      render({ ...base, executionKind: 'resume' }),
+    ]) {
+      expect(html).not.toContain('GPT 5.4');
+      expect(html).not.toContain('Recovered with');
+    }
+    for (const source of [
+      { ...prior, failureKind: 'provider_transport' as const },
+      { ...prior, failureKind: 'model_unavailable' as const },
+      { ...prior, modelId: 'gpt-5.3' },
+      { ...prior, variant: 'high' },
+    ]) {
+      const html = render(resumed, { recoverySourceTask: source });
+      expect(html.match(modelLine)).toHaveLength(1);
+      expect(html).not.toContain('Recovered with');
     }
     const transportRecovery = { revision: 1, phase: 'recovered' as const, kind: 'connection_failure' as const,
       sameModelAttempts: 1 as const, backupAttempts: 1 as const, failedMessageId: 'msg_failed',
@@ -1145,6 +1172,111 @@ describe('managed task presentation', () => {
     expect(html.match(/data-managed-task-card="true"/g)).toHaveLength(2);
     expect(html.match(/<h3[^>]*>Agent Dispatch<\/h3>/g)).toHaveLength(2);
     expect(html.match(/data-managed-task-fallback-id=/g)).toHaveLength(2);
+  });
+
+  describe('provisional start placement across an acknowledged wave', () => {
+    const shipmentStart = () => startPart(
+      'shipment-start',
+      'call_shipment',
+      'explorer',
+      'map-shipment-tracking',
+      fallbackOutput('dvr_task_shipment', 'call_shipment', 'explorer', 'map-shipment-tracking', 'completed'),
+    );
+    const dispositionPart = (action: string, id = `${action}-part`) => ({
+      id,
+      type: 'tool',
+      tool: 'devryan_task',
+      state: { status: 'running', input: { action, task_id: 'dvr_task_shipment' } },
+    });
+    const provisionalExplorerStart = {
+      id: 'pharmacy-start',
+      type: 'tool',
+      tool: 'devryan_task',
+      callID: 'call_pharmacy',
+      state: {
+        status: 'running',
+        input: { action: 'start', agent: 'explorer', label: 'locate-pharmacy-config' },
+      },
+    };
+    const messages = (nextMessageParts: readonly unknown[]) => [
+      { messageId: 'assistant-shipment', parts: [shipmentStart()] as never },
+      { messageId: 'assistant-pharmacy', parts: nextMessageParts as never },
+    ];
+    // The store has not received the acknowledgement event yet: the shipment
+    // task is terminal and still awaiting disposition.
+    const awaitingAcknowledgement = {
+      getTaskWaveId: () => 'dvr_wave_first',
+      isWaveOpen: () => true,
+      isWaveActive: () => false,
+      getWaveAwaitingTaskIds: (waveId: string) => (waveId === 'dvr_wave_first' ? ['dvr_task_shipment'] : []),
+    };
+    const owners = (projections: ReturnType<typeof resolveManagedTaskTurnProjection>) => projections.map((projection) => [
+      projection.ownerMessageId,
+      projection.taskIds,
+      projection.pendingDispatches.map((dispatch) => dispatch.partId),
+    ]);
+
+    test('renders at its own message on first paint when the transcript already continued the wave', () => {
+      const provisional = resolveManagedTaskTurnProjection(
+        messages([dispositionPart('continue'), provisionalExplorerStart]),
+        awaitingAcknowledgement,
+      );
+      expect(owners(provisional)).toEqual([
+        ['assistant-shipment', ['dvr_task_shipment'], []],
+        ['assistant-pharmacy', [], ['pharmacy-start']],
+      ]);
+
+      // The authoritative task arrives with the new wave: the row stays put.
+      const authoritative = resolveManagedTaskTurnProjection(
+        messages([
+          dispositionPart('continue'),
+          startPart('pharmacy-start', 'call_pharmacy', 'explorer', 'locate-pharmacy-config', fallbackOutput('dvr_task_pharmacy', 'call_pharmacy', 'explorer', 'locate-pharmacy-config')),
+        ]),
+        {
+          getTaskWaveId: (taskId: string) => (taskId === 'dvr_task_pharmacy' ? 'dvr_wave_second' : 'dvr_wave_first'),
+          isWaveOpen: (waveId: string) => waveId === 'dvr_wave_second',
+          isWaveActive: (waveId: string) => waveId === 'dvr_wave_second',
+          getWaveAwaitingTaskIds: () => [],
+        },
+      );
+      expect(owners(authoritative)).toEqual([
+        ['assistant-shipment', ['dvr_task_shipment'], []],
+        ['assistant-pharmacy', ['dvr_task_pharmacy'], []],
+      ]);
+    });
+
+    test('uses the stored task wave for a start whose tool part has no output yet', () => {
+      const projections = resolveManagedTaskTurnProjection(messages([provisionalExplorerStart]), {
+        ...awaitingAcknowledgement,
+        getDispatchCallWaveId: (callId: string) => (callId === 'call_pharmacy' ? 'dvr_wave_second' : null),
+      });
+      expect(owners(projections)).toEqual([
+        ['assistant-shipment', ['dvr_task_shipment'], []],
+        ['assistant-pharmacy', [], ['pharmacy-start']],
+      ]);
+      expect(projections[1]?.waveId).toBe('dvr_wave_second');
+    });
+
+    test('joins the wave while its result has no closing disposition', () => {
+      for (const parts of [
+        [provisionalExplorerStart],
+        // A retry's follow-up inherits the wave and keeps the barrier locked.
+        [dispositionPart('retry'), provisionalExplorerStart],
+      ]) {
+        expect(owners(resolveManagedTaskTurnProjection(messages(parts), awaitingAcknowledgement))).toEqual([
+          ['assistant-shipment', ['dvr_task_shipment'], ['pharmacy-start']],
+        ]);
+      }
+    });
+
+    test('joins an active wave even after a disposition', () => {
+      expect(owners(resolveManagedTaskTurnProjection(
+        messages([dispositionPart('continue'), provisionalExplorerStart]),
+        { ...awaitingAcknowledgement, isWaveActive: () => true },
+      ))).toEqual([
+        ['assistant-shipment', ['dvr_task_shipment'], ['pharmacy-start']],
+      ]);
+    });
   });
 
   test('keeps parallel launches from one assistant message in one card projection', () => {

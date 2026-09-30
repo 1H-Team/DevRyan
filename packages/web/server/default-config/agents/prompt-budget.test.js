@@ -17,8 +17,8 @@ const PROMPT_BODY_BUDGETS = {
   fixer: { maxBodyBytes: 8355, rationale: 'Specialist-owned routing wording 2026-09-28 (8066 bytes) plus ~3.5% headroom.' },
   librarian: { maxBodyBytes: 2030, rationale: 'Context Mode guidance removed 2026-09-24 (1969 bytes) plus ~3% headroom.' },
   oracle: { maxBodyBytes: 5600, rationale: 'Code-review precision rules (change attribution, severity vs confidence, verified vs unverified) 2026-09-23; Context Mode guidance removed 2026-09-24 (5439 bytes) plus ~3% headroom.' },
-  orchestrator: { maxBodyBytes: 39809, rationale: 'Specialist-owned implementation, absolute-path briefs and Slim task_* denial 2026-09-29 (38899 bytes) plus ~2% headroom.' },
-  plan: { maxBodyBytes: 3880, rationale: 'Context Mode guidance removed 2026-09-24 (3765 bytes) plus ~3% headroom.' },
+  orchestrator: { maxBodyBytes: 40720, rationale: 'Parallel dispatch of independent plan phases, one closing cross-scope check and Designer task sizing 2026-09-30, replacing the Dispatching Parallel Agents skill (39922 bytes) plus ~2% headroom.' },
+  plan: { maxBodyBytes: 4115, rationale: 'Owner and dependency line per phase 2026-09-30 (3994 bytes) plus ~3% headroom.' },
 };
 
 const measuredPrompts = () => buildPackagedPromptMeasurement(listPackagedAgents()).items;

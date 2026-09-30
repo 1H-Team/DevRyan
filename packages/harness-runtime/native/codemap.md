@@ -20,6 +20,19 @@ processes. It implements `posix_spawn` file actions (including the macOS 26
 the same profile and process group. A detached spawn starts in that supervised
 group; creating a new process group or session remains denied.
 
+`session-group-darwin.h` gives such a child a virtual group, so the process
+that started it can stop it. The child carries the group it asked for in
+`DEVRYAN_SPAWN_GROUP` (named after its pid by the adapter, `n<pid>.<n>` by the
+Node preload), and `kill(-pid)`/`killpg` deliver the signal to the members of
+the supervised group that carry the name. macOS hides the environment of system
+binaries, so the starter also names the leader: the leader and its descendants
+without a readable name belong to the group. Node processes started through
+`/usr/bin/env` or `/bin/sh` have no adapter; their preload asks the launcher
+(`--signal-group <signal> <leader|0> <name>...`, exit 0 delivered, 3 no such
+group, 125 malformed), which runs under the same profile. Nothing leaves the
+supervised group and no process outside the sandbox can be signalled.
+`DEVRYAN_WORKER_GROUP_SIGNALS=0` restores the kernel's answer (`ESRCH`).
+
 Build with `scripts/build-session-execution.mjs`; run the explicit native suite
 with `scripts/verify-session-execution.mjs`. These checks use disposable roots.
 The source and helper are internal implementation work, not enabled in the

@@ -12,8 +12,10 @@ const AGENT_RUNTIME_SETTINGS_KEY = 'agentRuntime';
 const DEFAULT_AGENT_RUNTIME_SETTINGS = Object.freeze({
   // Language servers (typescript-language-server, etc.) for agent sessions.
   // Agents run their own type-checkers, and OpenCode's tsserver held ~4.7 GiB
-  // across a 15-session run, so this is the switch the UI exposes.
-  lsp: true,
+  // across a 15-session run, so this is the switch the UI exposes. Off unless
+  // the user turns it on: a confined edit starts its own server from cold for
+  // the whole project and discards it (10-20 s and 2-3 GiB per edit).
+  lsp: false,
 });
 const AGENT_RUNTIME_SETTING_KEYS = Object.freeze(Object.keys(DEFAULT_AGENT_RUNTIME_SETTINGS));
 const READ_CACHE_TTL_MS = 5_000;

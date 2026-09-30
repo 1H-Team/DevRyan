@@ -331,6 +331,18 @@ desired settings and compare them with that snapshot; they never resynchronize
 the overlay or infer application from a configuration revision. Unknown or
 external application reports null applied/restart state.
 
+The language server (`agentRuntime.lsp`) is off unless the user turns it on in
+Settings → Agents → Runtime. While it is off the runtime overlay writes
+`lsp: false`, which also reaches confined workers, because the companion sends
+them the host's configuration. A confined `edit`, `write` or `apply_patch`
+otherwise starts `typescript-language-server` and `tsserver` from cold for the
+whole project and discards them when the call ends: measured on 2026-09-30 at
+10 to 20 seconds and 2 to 3 GiB per edit. Agents run the project's own type
+checks instead.
+
+Tests that need a language server in the runtime set the desired state
+explicitly; nothing else reads the default.
+
 ## Public exports (agent-runtime-warmup.js)
 - `createAgentRuntimeWarmup(dependencies)`: creates a read-only warmup runtime. Returned API:
   - `warm({ directory?, timeoutMs?, commandTimeoutMs?, mcpTimeoutMs? })`: runs health, directory-scoped config/provider/agent/session-status/OpenCode skill/MCP/command fetches, optional Cursor SDK worker prewarm, and capped visible-skill file read tasks; returns per-task ready/error/timeout results and never starts prompts, command execution, or sessions. MCP status and command discovery run concurrently with independent longer timeouts because cold OpenCode MCP/runtime loading can sit on the first-prompt critical path. Concurrent calls for the same normalized directory share one in-flight promise and its first caller's timeout configuration; different directories remain concurrent.

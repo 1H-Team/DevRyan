@@ -190,6 +190,77 @@ native('a detached spawn cannot escape execution ownership', async () => {
   }
 }, 20_000);
 
+// A detached child asked for its own group, which the kernel denies. Its
+// starter stops it by signalling that group and then waits for the exit
+// (Playwright's webServer, bounded test wrappers): a signal that reaches
+// nothing leaves the command running until its task deadline.
+const groupProbe = `const { spawn } = require('node:child_process'); const fs = require('node:fs');
+  const record = (result) => { fs.writeFileSync('probe', JSON.stringify(result)); process.exit(0); };
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  // The server replaces its worker's environment, as a launcher with its own env does.
+  const server = "const { spawn } = require('node:child_process');"
+    + "const worker = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore', env: { PATH: process.env.PATH } });"
+    + "require('node:fs').writeFileSync('worker', String(worker.pid)); console.log('listening'); setInterval(() => {}, 1000)";
+  const child = process.argv[2] === 'shell'
+    ? spawn('sleep 30 & echo listening; exec sleep 30', { shell: true, detached: true, stdio: ['ignore', 'pipe', 'ignore'] })
+    : spawn(process.execPath, ['-e', server], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] });
+  child.stdout.once('data', () => {
+    child.stdout.destroy();
+    const worker = Number(fs.readFileSync('worker', 'utf8').trim() || 0) || null;
+    let delivered; try { process.kill(-child.pid, 'SIGTERM'); delivered = true; } catch (error) { delivered = error.code; }
+    if (delivered !== true) { try { process.kill(child.pid, 'SIGKILL'); } catch {} if (worker) try { process.kill(worker, 'SIGKILL'); } catch {} }
+    child.once('exit', (code, signal) => setTimeout(() => {
+      let after; try { process.kill(-child.pid, 0); after = 'exists'; } catch (error) { after = error.code; }
+      record({ delivered, signal, worker: worker ? alive(worker) : null, after, adapter: Boolean(process.env.DYLD_INSERT_LIBRARIES) });
+    }, 100));
+  });
+  setTimeout(() => record({ timeout: true }), 10000);`;
+const groupSignals = async (leader, { adapter = false } = {}) => {
+  const f = await fixture({ scope: { sessionID: 'ses_native_groups' } });
+  await fs.writeFile(path.join(f.viewDirectory, 'probe.cjs'), groupProbe); await fs.writeFile(path.join(f.viewDirectory, 'worker'), '');
+  // Node started by /bin/sh has no adapter; the Node it starts itself has.
+  const command = adapter
+    ? `exec ${JSON.stringify(process.execPath)} -e ${JSON.stringify(`require('node:child_process').spawnSync(process.execPath, ['probe.cjs', ${JSON.stringify(leader)}], { stdio: 'inherit' })`)}`
+    : `exec ${JSON.stringify(process.execPath)} probe.cjs ${leader}`;
+  const started = Date.now();
+  const handle = await f.shell(command);
+  assert.equal((await handle.result).exitCode, 0, handle.output().stderr);
+  return { ...JSON.parse(await fs.readFile(path.join(f.viewDirectory, 'probe'), 'utf8')), elapsedMs: Date.now() - started };
+};
+native('a detached group can be signalled by the process that started it, and the command ends', async () => {
+  if (process.platform !== 'darwin') return;
+  const saved = process.env.DEVRYAN_WORKER_GROUP_SIGNALS;
+  try {
+    delete process.env.DEVRYAN_WORKER_GROUP_SIGNALS;
+    // Through the Node preload: a Node leader whose worker has a replaced
+    // environment, then a shell leader (macOS hides its environment).
+    assert.deepEqual({ ...await groupSignals('node'), elapsedMs: 0 }, { delivered: true, signal: 'SIGTERM', worker: false, after: 'ESRCH', adapter: true, elapsedMs: 0 });
+    const shell = await groupSignals('shell');
+    assert.deepEqual([shell.delivered, shell.signal, shell.after], [true, 'SIGTERM', 'ESRCH']);
+    assert.ok(shell.elapsedMs < 8_000, `the command ended after ${shell.elapsedMs} ms`);
+    // Through the spawn adapter, for a process that has it.
+    const adapted = await groupSignals('shell', { adapter: true });
+    assert.deepEqual([adapted.delivered, adapted.signal, adapted.after], [true, 'SIGTERM', 'ESRCH']);
+    // Kill switch: the kernel's answer, as before.
+    process.env.DEVRYAN_WORKER_GROUP_SIGNALS = '0';
+    const disabled = await groupSignals('node');
+    assert.equal(disabled.delivered, 'ESRCH');
+  } finally { if (saved === undefined) delete process.env.DEVRYAN_WORKER_GROUP_SIGNALS; else process.env.DEVRYAN_WORKER_GROUP_SIGNALS = saved; }
+}, 90_000);
+
+native('the launcher signals only well-formed groups of its own execution', async () => {
+  if (process.platform !== 'darwin') return;
+  const run = (args) => new Promise((resolve, reject) => {
+    const child = spawn(launcher, args, { stdio: 'ignore' });
+    child.once('error', reject); child.once('close', resolve);
+  });
+  // Outside an execution no process carries a group name: nothing is signalled.
+  assert.equal(await run(['--signal-group', '0', '0', `n${process.pid}.1`]), 3);
+  assert.equal(await run(['--signal-group', '0', '0', String(process.pid)]), 3);
+  for (const args of [['--signal-group', '99', '0', 'n1.1'], ['--signal-group', '15', '1', 'n1.1'], ['--signal-group', '15', '0', 'bad name'],
+    ['--signal-group', '15', '-4', 'n1.1'], ['--signal-group', 'x', '0', 'n1.1']]) assert.equal(await run(args), 125, args.join(' '));
+}, 20_000);
+
 native('Node started through /bin/sh regains the spawn adapter, and its children keep their working directory', async () => {
   if (process.platform !== 'darwin') return;
   const probe = `const { spawnSync } = require('node:child_process'); const fs = require('node:fs');

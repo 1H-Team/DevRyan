@@ -573,7 +573,11 @@ const analyzeMessages = (inputRecords, childSessionId, recovery = null) => {
   const completedAt = latest.info?.time?.completed;
   const failureReason = extractFailureReason(latest.info?.error);
   const isToolCallHandoff = finish === 'tool-calls';
+  const handoffRejected = (Array.isArray(latest.parts) ? latest.parts : []).some((part) => (
+    part?.type === 'tool' && /rejected permission|dismissed this question|rejected the question/i.test(trimString(part.state?.error))
+  ));
   return {
+    handoffRejected,
     assistantCount: assistants.length,
     canonicalRefs,
     childSessionId,
@@ -621,6 +625,34 @@ const isRuntimeOrphanObservation = (observation, runtimeStartedAt) => (
   && observation.latestUserCreatedAt < runtimeStartedAt
   && (observation.continuationPending || observation.hasInFlightTool || !toTerminalResult(observation))
 );
+
+// A child that stopped between steps never continues on its own: its last
+// step handed off to tools, every tool settled, no newer input is waiting and
+// the session is idle. OpenCode ends a turn this way when the user rejects a
+// permission or a question. Left alone, the task runs until its deadline
+// (60 minutes for Designer and Fixer) while its parent waits.
+// Kill switch, read per poll: DEVRYAN_MANAGED_STOPPED_HANDOFF=0.
+export const MANAGED_STOPPED_HANDOFF_MS = 30_000;
+const isStoppedHandoffObservation = (observation) => (
+  globalThis.process?.env?.DEVRYAN_MANAGED_STOPPED_HANDOFF !== '0'
+  && !LIVE_STATUS_TYPES.has(observation.statusType)
+  && observation.finish === 'tool-calls'
+  && observation.assistantCompleted === true
+  && !observation.failureReason
+  && !observation.hasInFlightTool
+  && !observation.continuationPending
+  && !observation.hasNewerUserInput
+);
+const toStoppedHandoffResult = (observation) => ({
+  status: 'failed',
+  failureReason: observation.handoffRejected
+    ? 'Managed child stopped before finishing: a tool permission or question was rejected'
+    : 'Managed child stopped before finishing its turn',
+  partial: observation.hasUsefulWork === true,
+  recoverablePreview: observation.recoverablePreview,
+  canonicalRefs: observation.canonicalRefs,
+  resumable: Boolean(observation.childSessionId),
+});
 
 const toTerminalResult = (observation) => {
   if (LIVE_STATUS_TYPES.has(observation.statusType)) return null;
@@ -694,6 +726,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
   }
   const pollIntervalMs = options.pollIntervalMs ?? 750;
   const idleStablePolls = options.idleStablePolls ?? 2;
+  const stoppedHandoffMs = options.stoppedHandoffMs ?? MANAGED_STOPPED_HANDOFF_MS;
   const now = options.now ?? Date.now;
   const observationFailureGraceMs = options.observationFailureGraceMs
     ?? DEFAULT_OBSERVATION_FAILURE_GRACE_MS;
@@ -1533,6 +1566,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     const operatorAbortAfter = attemptFor(task)?.operatorAbortAfter ?? terminalErrorAfter;
     terminalErrorAfter = Math.max(terminalErrorAfter, task.transportRecovery?.reservedAt ?? 0);
     let orphanPolls = 0;
+    let stoppedHandoff = null;
     let operatorAbortSeenAt = null;
     let operatorAbortStopNotBefore = null;
     const settleOperatorAbort = async () => {
@@ -1974,6 +2008,14 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         const turnBudgetResult = await enforceTurnBudget(observation);
         if (turnBudgetResult) return turnBudgetResult;
       }
+      if (isStoppedHandoffObservation(observation)) {
+        // The same stopped step must be seen for the whole window.
+        if (stoppedHandoff?.messageId !== observation.latestAssistantMessageId) {
+          stoppedHandoff = { messageId: observation.latestAssistantMessageId, since: now() };
+        } else if (now() - stoppedHandoff.since >= stoppedHandoffMs) {
+          return toStoppedHandoffResult(observation);
+        }
+      } else stoppedHandoff = null;
       const terminal = toTerminalResult(observation);
       if (terminal) {
         const isEmptyTerminal = terminal.status === 'failed'

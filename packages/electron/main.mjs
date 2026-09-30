@@ -56,6 +56,7 @@ import {
   createRuntimeOwnerAcquirer,
   recoverAppBoundRuntime,
   retryRuntimeServiceConnection,
+  ensureRuntimeServiceRegistered,
 } from './runtime-service-startup.mjs';
 import {
   buildQuitRiskSnapshot,
@@ -119,6 +120,21 @@ if (isDev && typeof process.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR === 'string')
   // single-instance lock and Chromium profile. Isolate both before acquiring
   // the lock so visual verification never disrupts the user's running app.
   app.setPath('userData', devUserDataDirectory);
+}
+
+// The background runtime service and the status probe run from the same app
+// bundle as the foreground window. Without this, macOS registers them as
+// regular apps and shows a second "DevRyan" in the Dock.
+const hideHeadlessProcessFromDock = () => {
+  if (process.platform !== 'darwin') return;
+  try {
+    app.dock?.hide();
+  } catch {
+  }
+};
+
+if (isRuntimeServiceMode || isRuntimeServiceControlProbe) {
+  hideHeadlessProcessFromDock();
 }
 
 if (isRuntimeServiceMode) {
@@ -295,7 +311,7 @@ const runtimeMemoryMonitor = createRuntimeMemoryMonitor({
   log: (sample) => log.info('[runtime-memory]', sample),
   role: isRuntimeServiceMode ? 'runtime-service' : 'foreground',
   version: app.getVersion(),
-  getWork: () => state.serverHandle?.getSessionChangeReadDiagnostics?.(),
+  getWork: () => ({ ...state.serverHandle?.getSessionChangeReadDiagnostics?.(), ...state.serverHandle?.getHostStallDiagnostics?.() }),
 });
 app.once('will-quit', () => runtimeMemoryMonitor.stop());
 
@@ -2893,6 +2909,19 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
     browserWindow.on('focus', refreshTrafficLights);
   }
 
+  // Background throttling is off so streams and timers keep their pace, which
+  // also means the page never learns that its window is hidden or minimized:
+  // its visibility state stays "visible" and it keeps animating and polling.
+  // A busy session cost about one core that way with nobody looking.
+  const emitWindowVisibility = () => {
+    if (browserWindow.isDestroyed()) return;
+    emitToWindow(browserWindow, 'openchamber:window-visibility', {
+      visible: browserWindow.isVisible() && !browserWindow.isMinimized(),
+    });
+  };
+  for (const event of ['show', 'hide', 'minimize', 'restore']) browserWindow.on(event, emitWindowVisibility);
+  browserWindow.webContents.on('did-finish-load', emitWindowVisibility);
+
   browserWindow.on('resize', () => {
     emitToWindow(browserWindow, 'openchamber:window-resized');
     debounceWindowStatePersist(browserWindow, false);
@@ -3552,6 +3581,7 @@ const prepareForegroundRuntime = async () => {
   if (automaticRuntime.mode === 'service') {
     try {
       await resumeBackgroundRuntimeAfterAppUpdate();
+      await ensureRuntimeServiceRegistered({ registration: getRuntimeServiceRegistration(), log });
       await waitForRuntimeServiceConnection();
     } catch (error) {
       await recoverStartupToAppBound(error);
@@ -5030,6 +5060,9 @@ app.whenReady().then(async () => {
     return;
   }
   if (isRuntimeServiceMode) {
+    // Accessory (not prohibited): no Dock icon or menu bar, yet a native
+    // dialog raised by the service can still be shown.
+    if (process.platform === 'darwin') app.setActivationPolicy('accessory');
     await acquireRuntimeOwner('service');
     await spawnLocalServer();
     prepareBotRuntimeInBackground();

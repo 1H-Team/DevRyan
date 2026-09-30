@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.21] - 2026-09-30
+
+- Local execution deadlines now account for host event-loop stalls while retaining wall-clock caps. Finished tools return after durable publication without waiting for private-view cleanup, and diagnostics distinguish tool execution, publication, cleanup and host stalls.
+- Confined macOS commands can stop the detached child process groups they started. An idle-process watchdog cleans up stuck commands, and cancelled executions record that their private edits were discarded.
+- Managed tasks that stop between tool steps now settle with recoverable output instead of waiting for their full deadline. Finished task history defaults to 14 days, with uncollected results retained while their conversation still has active or recent work.
+- Enable automatic provider recovery and managed continuation on the verified OpenCode 1.18.33 companion. Advisory recovery hooks tolerate temporary host transport failures while preserving host rejections and guarded sessions, and unchanged recovery records poll less often.
+- Desktop startup registers a missing background runtime service before waiting for it. Hidden and minimized windows pause animations and visibility-dependent work, and database maintenance resolves the active companion or standard OpenCode database.
+- Agent language servers default to off unless explicitly enabled, avoiding repeated cold starts for confined edits. A live, idle OpenCode process must fail three consecutive health probes before it is restarted.
+- Managed task cards place pending dispatches in their expected wave and show model details for model recovery rather than ordinary same-model deadline resumes. Plan implementation prompts allow independent phases to run together with bounded specialist assignments.
+
 ## [1.2.20] - 2026-09-29
 
 - Orchestrator no longer sees Oh My OpenCode Slim's background-job tools (`task_status`, `task_reply` and the rest). They work only for Slim's own jobs, which DevRyan never creates, so it now delegates and follows up only through DevRyan's managed tasks.

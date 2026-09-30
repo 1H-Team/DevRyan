@@ -149,6 +149,47 @@ describe('atomic managed orchestration ledger', () => {
     expect(ledger.getDiagnostics().quarantinedPath).toBeNull();
   });
 
+  it('reads a ledger larger than the write cap instead of quarantining it', async () => {
+    const dataDirectory = await createTemporaryDirectory();
+    const ledger = await createOwnedLedger({ dataDirectory });
+    await fs.mkdir(path.dirname(ledger.filePath), { recursive: true });
+    // 22 MiB of ordinary records, as a version with a longer history wrote.
+    const tasks = Array.from({ length: 22 * 32 }, (_, index) => ({ ...queuedTask(index + 1), prompt: 'x'.repeat(32 * 1024) }));
+    await fs.writeFile(ledger.filePath, JSON.stringify({ version: 1, tasks, resultEnvelopes: [] }));
+    expect((await fs.stat(ledger.filePath)).size).toBeGreaterThan(21 * 1024 * 1024);
+    const loaded = await ledger.load();
+    expect(loaded.tasks).toHaveLength(tasks.length);
+    expect(ledger.getDiagnostics().quarantinedPath).toBeNull();
+    await ledger.releaseOwnership();
+  });
+
+  it('keeps the previous ledger once before a save that removes most of a large one', async () => {
+    const dataDirectory = await createTemporaryDirectory();
+    const ledger = await createOwnedLedger({ dataDirectory, logger: {} });
+    const backup = `${ledger.filePath}.before-compaction`;
+    await fs.mkdir(path.dirname(ledger.filePath), { recursive: true });
+    const large = JSON.stringify({ version: 1, tasks: [{ ...queuedTask(1), prompt: 'x'.repeat(6 * 1024 * 1024) }], resultEnvelopes: [] });
+    await fs.writeFile(ledger.filePath, large);
+
+    await ledger.save(snapshot([queuedTask(2)]));
+    expect(await fs.readFile(backup, 'utf8')).toBe(large);
+    expect((await fs.stat(backup)).mode & 0o777).toBe(0o600);
+    expect(JSON.parse(await fs.readFile(ledger.filePath, 'utf8')).tasks.map((task) => task.taskId)).toEqual(['dvr_task_2']);
+
+    // Only the first large compaction is kept.
+    await fs.writeFile(ledger.filePath, large.replace('Task 1', 'Later'));
+    await ledger.save(snapshot([queuedTask(3)]));
+    expect(await fs.readFile(backup, 'utf8')).toBe(large);
+    await ledger.releaseOwnership();
+
+    // Ordinary saves keep nothing.
+    const small = await createOwnedLedger({ dataDirectory: await createTemporaryDirectory() });
+    await small.save(snapshot([queuedTask(1), queuedTask(2)]));
+    await small.save(snapshot([]));
+    await expect(fs.stat(`${small.filePath}.before-compaction`)).rejects.toMatchObject({ code: 'ENOENT' });
+    await small.releaseOwnership();
+  });
+
   it('serializes overlapping saves in invocation order', async () => {
     const dataDirectory = await createTemporaryDirectory();
     const ledger = await createOwnedLedger({ dataDirectory });

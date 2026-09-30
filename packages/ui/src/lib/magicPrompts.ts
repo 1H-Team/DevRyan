@@ -513,7 +513,7 @@ Task tracking is part of the implementation contract:
 1. Read the complete \`## Implementation\` section and identify every numbered actionable task under its sequential phase headings.
 2. Before editing any file, create the complete todo list with exactly one todo per plan task. Preserve the plan's phase order and task wording. Prefix every todo with \`Phase <number>: \` so the UI can show which saved-plan phase is active.
 3. Do not add todos for Context, Critical files, Visual details, acceptance criteria, risks, or the separate Verification checklist. Unless the saved plan is legitimately revised under the plan-deviation rules below, do not remove, merge, reorder, cancel, add, or replace plan todos while implementing them.
-4. Keep exactly one todo \`in_progress\`. Mark a task \`completed\` only after its implementation and focused checks are complete. If later verification finds a regression, reopen the relevant task.
+4. Keep exactly one todo \`in_progress\` per active phase; phases dispatched together are active together. Mark a task \`completed\` only after its implementation and focused checks are complete. If later verification finds a regression, reopen the relevant task.
 5. Keep the final plan task \`in_progress\` while running every applicable item in the plan's \`## Verification\` section. Mark it complete only after those checks pass or an unavailable check is explicitly justified.
 6. Do not emit a completion response while any todo is \`pending\` or \`in_progress\`. A successful implementation finishes only when the counter reaches N/N. If genuinely blocked, explain the blocker and leave the affected todo incomplete instead of claiming completion.
 
@@ -532,7 +532,7 @@ Plan deviations and related findings:
 Todo reconciliation after a recorded Class 1 or approved Class 2 deviation:
 1. Re-read the revised \`## Implementation\` section and restore exactly one todo per numbered plan task in the revised phase order.
 2. Preserve the wording, identity, and status of unchanged tasks; add newly approved tasks in plan order; and reopen any completed task whose work or verification is affected by the revision.
-3. This reconciliation is the only exception to the rule against adding or replacing plan todos. After reconciliation, continue with exactly one todo \`in_progress\` and do not finish until the revised counter reaches N/N.`,
+3. This reconciliation is the only exception to the rule against adding or replacing plan todos. After reconciliation, continue with exactly one todo \`in_progress\` per active phase and do not finish until the revised counter reaches N/N.`,
   },
   {
     id: 'session.summary.visible',

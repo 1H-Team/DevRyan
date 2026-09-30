@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import {
+  ensureRuntimeServiceRegistered,
   prepareAutomaticRuntimeService,
   createRuntimeOwnerAcquirer,
   recoverAppBoundRuntime,
@@ -280,4 +281,52 @@ describe('background runtime connection wait', () => {
     await assert.rejects(result, { code: 'runtime_service_bootstrap_rejected' });
     assert.ok(clock.now >= 25_000 && clock.now < 25_500);
   });
+});
+
+describe('service mode without a registration', () => {
+  const registration = (status, register) => {
+    const calls = [];
+    return { calls, status: async () => { calls.push('status'); if (status instanceof Error) throw status; return status; },
+      register: async (options) => { calls.push(['register', options]); if (register instanceof Error) throw register; return register; } };
+  };
+
+  test('an enabled registration is left alone and the connection is awaited as before', async () => {
+    const service = registration({ ok: true, state: 'enabled', code: null });
+    assert.deepEqual(await ensureRuntimeServiceRegistered({ registration: service }), { state: 'enabled', registered: false });
+    assert.deepEqual(service.calls, ['status']);
+  });
+
+  test('a missing registration is registered before waiting', async () => {
+    const service = registration({ ok: true, state: 'not_registered', code: null }, { ok: true, state: 'enabled', code: null });
+    const warnings = [];
+    assert.deepEqual(await ensureRuntimeServiceRegistered({ registration: service, log: { warn: (...args) => warnings.push(args) } }),
+      { state: 'enabled', registered: true });
+    assert.deepEqual(service.calls, ['status', ['register', { allowLegacy: true }]]);
+    assert.equal(warnings.length, 1);
+  });
+
+  for (const [name, status, register] of [
+    ['registration needs approval', { ok: true, state: 'not_registered' }, { ok: true, state: 'requires_approval', code: null }],
+    ['registration fails', { ok: true, state: 'not_registered' }, Object.assign(new Error('denied'), { code: 'smappservice_register_failed' })],
+    ['approval is pending', { ok: true, state: 'requires_approval' }, undefined],
+    ['the service is not in the bundle', { ok: false, state: 'not_found' }, undefined],
+    ['the service is unavailable', { ok: false, state: 'unavailable' }, undefined],
+  ]) {
+    test(`fails at once when ${name}, so startup falls back without waiting`, async () => {
+      await assert.rejects(ensureRuntimeServiceRegistered({ registration: registration(status, register) }),
+        (error) => error.code === 'runtime_service_not_registered');
+    });
+  }
+
+  for (const [name, status] of [
+    ['the state is unknown', { ok: true, state: 'unknown' }],
+    ['a legacy agent is required', { ok: true, state: 'legacy_required' }],
+    ['the status cannot be read', new Error('status unavailable')],
+  ]) {
+    test(`keeps the ordinary wait when ${name}`, async () => {
+      const result = await ensureRuntimeServiceRegistered({ registration: registration(status) });
+      assert.equal(result.registered, false);
+      assert.notEqual(result.state, 'enabled');
+    });
+  }
 });

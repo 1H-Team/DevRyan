@@ -24,7 +24,7 @@ describe('runtime-service desktop bootstrap source contract', () => {
       mainSource.indexOf('const prepareForegroundRuntime = async () => {'),
       mainSource.indexOf('const startDesktopRuntime = () => {'),
     );
-    assert.match(preparation, /try \{\s+await resumeBackgroundRuntimeAfterAppUpdate\(\);\s+await waitForRuntimeServiceConnection\(\);\s+\} catch \(error\) \{\s+await recoverStartupToAppBound\(error\);/);
+    assert.match(preparation, /try \{\s+await resumeBackgroundRuntimeAfterAppUpdate\(\);\s+await ensureRuntimeServiceRegistered\(\{ registration: getRuntimeServiceRegistration\(\), log \}\);\s+await waitForRuntimeServiceConnection\(\);\s+\} catch \(error\) \{\s+await recoverStartupToAppBound\(error\);/);
   });
 
   test('background mode owns the server and returns before creating a window', () => {
@@ -39,6 +39,27 @@ describe('runtime-service desktop bootstrap source contract', () => {
     assert.match(readyBranch, /prepareBotRuntimeInBackground\(\)/);
     assert.match(readyBranch, /return;/);
     assert.doesNotMatch(readyBranch, /createBrowserWindow\(/);
+  });
+
+  test('headless service processes stay out of the macOS Dock; the foreground app does not', () => {
+    const lockIndex = mainSource.indexOf('app.requestSingleInstanceLock()');
+    const preReady = mainSource.slice(0, lockIndex);
+    assert.match(preReady, /if \(isRuntimeServiceMode \|\| isRuntimeServiceControlProbe\) \{\s+hideHeadlessProcessFromDock\(\);/);
+    assert.match(preReady, /app\.dock\?\.hide\(\)/);
+
+    const readyStart = mainSource.indexOf('app.whenReady().then(async () => {');
+    const serviceBranch = mainSource.slice(
+      mainSource.indexOf('if (isRuntimeServiceMode) {', readyStart),
+      mainSource.indexOf('nativeTheme.themeSource = readThemeSource();'),
+    );
+    const policy = serviceBranch.indexOf("app.setActivationPolicy('accessory')");
+    assert.notEqual(policy, -1);
+    assert.ok(policy < serviceBranch.indexOf("acquireRuntimeOwner('service')"));
+
+    const foregroundPath = mainSource.slice(mainSource.indexOf('nativeTheme.themeSource = readThemeSource();'));
+    assert.doesNotMatch(foregroundPath, /setActivationPolicy\(|dock\?\.hide\(|dock\.hide\(/);
+    assert.equal(mainSource.match(/app\.dock\?\.hide\(\)/g)?.length, 1);
+    assert.equal(mainSource.match(/setActivationPolicy\(/g)?.length, 1);
   });
 
   test('ordinary desktop activation precedes non-blocking Docker preparation', () => {

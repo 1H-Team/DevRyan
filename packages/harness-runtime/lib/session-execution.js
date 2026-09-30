@@ -177,14 +177,16 @@ export async function prepareSessionExecution({ launcher, lease }) {
   const auxiliaryDirectory = await fs.realpath(requestedAuxiliary);
   // Session-scoped tool calls on macOS may launch headless Chromium (a
   // project's Playwright check); provider transports never can.
-  const browsers = process.platform === 'darwin' && workerBrowsersEnabled()
-    && typeof lease.scope?.sessionID === 'string' && lease.scope.sessionID.length > 0;
+  const sessionScoped = process.platform === 'darwin' && typeof lease.scope?.sessionID === 'string' && lease.scope.sessionID.length > 0;
+  const browsers = sessionScoped && workerBrowsersEnabled();
+  // A detached child's group can be signalled (see native/session-group-darwin.h).
+  const groupSignals = sessionScoped && workerGroupSignalsEnabled();
   if (process.platform === 'darwin') {
     const shellEnvironment = `export DYLD_INSERT_LIBRARIES=${'\'' + `${launcher}-spawn.dylib`.replaceAll('\'', '\'\\\'\'') + '\''}\n`;
     await fs.writeFile(path.join(scratchDirectory, '.zshenv'), shellEnvironment, { mode: 0o600 });
     await fs.writeFile(path.join(scratchDirectory, '.bash-env'), shellEnvironment, { mode: 0o600 });
   }
-  const browserEnvironment = browsers ? await workerBrowserEnvironment(launcher, scratchDirectory) : {};
+  const nodeEnvironment = browsers || groupSignals ? await workerNodeEnvironment({ launcher, scratchDirectory, browsers, groupSignals }) : {};
   const socketDirectory = await prepareExecutionSocketDirectory(lease);
   const sessionTemporaryDirectory = await prepareSessionTemporaryDirectory(auxiliaryDirectory, lease);
   // Only the macOS profile grants write-through; the Linux and Windows
@@ -207,7 +209,9 @@ export async function prepareSessionExecution({ launcher, lease }) {
       ...(process.platform === 'darwin' ? { DYLD_INSERT_LIBRARIES: `${launcher}-spawn.dylib`,
         ZDOTDIR: scratchDirectory, BASH_ENV: path.join(scratchDirectory, '.bash-env') } : {}),
       TMPDIR: scratchDirectory, TMP: scratchDirectory, TEMP: scratchDirectory,
-      TMPPREFIX: path.join(scratchDirectory, 'zsh'), ...workerLanguageServerEnvironment(), ...browserEnvironment } };
+      TMPPREFIX: path.join(scratchDirectory, 'zsh'), ...workerLanguageServerEnvironment(), ...nodeEnvironment,
+      // The spawn adapter reads the same switch inside the worker.
+      ...(process.platform === 'darwin' && !workerGroupSignalsEnabled() ? { DEVRYAN_WORKER_GROUP_SIGNALS: '0' } : {}) } };
 }
 
 // Kill switch: DEVRYAN_WORKER_BROWSERS=0 restores the previous worker
@@ -230,16 +234,69 @@ async function hostPlaywrightBrowsers() {
   return stat?.isDirectory() && stat.uid === process.getuid() ? cache : null;
 }
 
+// Kill switch: DEVRYAN_WORKER_GROUP_SIGNALS=0 restores plain kernel group
+// signals (a detached child's group does not exist and cannot be signalled).
+const workerGroupSignalsEnabled = () => process.env.DEVRYAN_WORKER_GROUP_SIGNALS !== '0';
+
+// Node started through /usr/bin/env or /bin/sh has no spawn adapter, so its
+// detached children carry no group name and its process.kill(-pid) asks the
+// kernel for a group that cannot exist. Playwright's webServer and bounded test
+// wrappers stop their servers that way, then wait forever for the exit. The
+// preload names the group of each detached child and delivers a group signal
+// through the verified launcher, which runs under the same profile.
+const groupSignalPreload = (launcher) => `if (process.env.DEVRYAN_WORKER_GROUP_SIGNALS !== '0') {
+  const childProcess = require('node:child_process');
+  const signals = require('node:os').constants.signals;
+  const launcher = ${JSON.stringify(launcher)}, variable = 'DEVRYAN_SPAWN_GROUP=';
+  const groups = new Map();
+  let started = 0;
+  const spawn = childProcess.ChildProcess && childProcess.ChildProcess.prototype.spawn;
+  // Another runtime that reads this preload keeps its own spawn.
+  if (typeof spawn === 'function') childProcess.ChildProcess.prototype.spawn = function (options) {
+    let group = null;
+    if (options && options.detached === true && Array.isArray(options.envPairs)) {
+      group = 'n' + process.pid + '.' + (started += 1);
+      options.envPairs = options.envPairs.filter((pair) => !String(pair).startsWith(variable));
+      options.envPairs.push(variable + group);
+    }
+    const result = spawn.call(this, options);
+    if (group && Number.isInteger(this.pid)) {
+      groups.set(this.pid, group);
+      if (groups.size > 256) groups.delete(groups.keys().next().value);
+    }
+    return result;
+  };
+  const kill = process.kill;
+  process.kill = function (pid, signal) {
+    const target = Number(pid);
+    const number = typeof signal === 'number' ? signal : signal === undefined ? signals.SIGTERM : signals[signal];
+    if (Number.isInteger(target) && target < -1 && Number.isInteger(number)) {
+      const names = [String(-target)];
+      if (groups.has(-target)) names.push(groups.get(-target));
+      try {
+        const leader = groups.has(-target) ? String(-target) : '0';
+        const outcome = childProcess.spawnSync(launcher, ['--signal-group', String(number), leader, ...names], { stdio: 'ignore', timeout: 5000 });
+        if (outcome.status === 0) return true;
+      } catch { /* The kernel decides. */ }
+    }
+    return kill.apply(this, arguments);
+  };
+}
+`;
+
 // macOS strips DYLD_* whenever a protected binary runs, and `npm run` passes
 // through /usr/bin/env and /bin/sh, so Node started by a script would lose the
 // spawn adapter (.zshenv only restores it for zsh and bash). Without it,
 // Chromium cannot start its helpers: posix_spawn is denied and it has no
 // fork/exec fallback. The preload names the same verified adapter; it adds no
 // authority, and without it spawning fails closed as before.
-async function workerBrowserEnvironment(launcher, scratchDirectory) {
+async function workerNodeEnvironment({ launcher, scratchDirectory, browsers, groupSignals }) {
   const preload = path.join(scratchDirectory, NODE_SPAWN_PRELOAD);
-  await fs.writeFile(preload, `if (!process.env.DYLD_INSERT_LIBRARIES) process.env.DYLD_INSERT_LIBRARIES = ${JSON.stringify(`${launcher}-spawn.dylib`)};\n`, { mode: 0o600 });
-  const browsersPath = await hostPlaywrightBrowsers();
+  await fs.writeFile(preload, [
+    browsers ? `if (!process.env.DYLD_INSERT_LIBRARIES) process.env.DYLD_INSERT_LIBRARIES = ${JSON.stringify(`${launcher}-spawn.dylib`)};\n` : '',
+    groupSignals ? groupSignalPreload(launcher) : '',
+  ].join(''), { mode: 0o600 });
+  const browsersPath = browsers ? await hostPlaywrightBrowsers() : null;
   return {
     NODE_OPTIONS: [`--require ${JSON.stringify(preload)}`, process.env.NODE_OPTIONS].filter(Boolean).join(' '),
     ...(browsersPath ? { PLAYWRIGHT_BROWSERS_PATH: browsersPath } : {}),

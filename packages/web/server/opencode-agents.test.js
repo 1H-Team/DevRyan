@@ -584,6 +584,21 @@ describe('Packaged OpenChamber agents', () => {
     expect(orchestrator?.prompt).toContain('Continue reconciling other returned subtasks instead of waiting indefinitely for the failed branch.');
   });
 
+  it('dispatches independent plan phases together and runs cross-scope checks once', () => {
+    const agents = listPackagedAgents();
+    const orchestrator = agents.find((agent) => agent.name === 'orchestrator');
+    const plan = agents.find((agent) => agent.name === 'plan');
+
+    // Replaces the retired Dispatching Parallel Agents skill, without its cap.
+    expect(orchestrator?.prompt).toContain('are independent when their owned files are disjoint and their only coupling is an interface contract written into each brief: start them in the same dispatch and name each sibling\'s owned files in every brief.');
+    expect(orchestrator?.prompt).toContain('A contract both briefs already state is not a dependency.');
+    expect(orchestrator?.prompt).toContain('then run cross-scope checks (type-check, build, end-to-end) once yourself.');
+    expect(orchestrator?.prompt).toContain('Its task loop sets tracking and verification, not dispatch order: start independent phases together per Parallel Delegation.');
+    expect(orchestrator?.prompt).toContain('Size each Designer task to one visual outcome');
+    expect(orchestrator?.prompt).not.toContain('Dispatching Parallel Agents');
+    expect(plan?.prompt).toContain('write one line `Owner: <specialist>; Depends on: <Phase N | none>`');
+  });
+
   it('instructs delegated packaged specialists to block on unrecoverable runtime failures', () => {
     const agents = listPackagedAgents();
     const delegatedAgentNames = ['explorer', 'fixer', 'designer', 'oracle', 'librarian', 'council'];

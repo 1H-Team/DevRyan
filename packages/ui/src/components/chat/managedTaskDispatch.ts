@@ -70,6 +70,25 @@ export type ManagedTaskTurnProjectionOptions = {
    * start with the same wave.
    */
   isWaveOpen?: (waveId: string) => boolean;
+  /**
+   * True while a task of the wave is non-terminal. Such a wave cannot close
+   * before a provisional start is submitted, so the start will join it.
+   * Supplying this (with `getWaveAwaitingTaskIds`) replaces `isWaveOpen` for
+   * provisional placement.
+   */
+  isWaveActive?: (waveId: string) => boolean;
+  /**
+   * Terminal tasks of the wave whose results the store still sees as
+   * unacknowledged. A `continue`/`abandon` part for each one in the transcript
+   * means the wave closes before the next start is submitted, even when the
+   * acknowledgement event has not reached the store yet.
+   */
+  getWaveAwaitingTaskIds?: (waveId: string) => readonly string[];
+  /**
+   * Wave of the stored task a provisional start created, looked up by its tool
+   * call id while the tool part has no output yet. Authoritative when present.
+   */
+  getDispatchCallWaveId?: (dispatchCallId: string) => string | null | undefined;
 };
 
 /**
@@ -88,6 +107,12 @@ const appendTo = <T>(map: Map<string, T[]>, key: string, value: T) => {
   if (existing) existing.push(value);
   else map.set(key, [value]);
 };
+
+/**
+ * Result dispositions that close a wave. `retry`/`resume`/`recover_in_place`
+ * start a follow-up that inherits the wave, so they keep it open.
+ */
+const WAVE_CLOSING_DISPOSITION_ACTIONS = new Set(['continue', 'abandon']);
 
 const MANAGED_TASK_STATUSES = new Set<ManagedTaskStatus>([
   'queued',
@@ -250,6 +275,18 @@ const pendingDispatchFromPart = (part: ToolPart): PendingManagedTaskDispatch | n
   };
 };
 
+const closingDispositionTaskIdFromPart = (part: ToolPart): string | null => {
+  if (!isManagedTaskToolName(part.tool)) return null;
+  const state = part.state as Record<string, unknown> | undefined;
+  const status = typeof state?.status === 'string' ? state.status.trim() : '';
+  if (status !== 'pending' && status !== 'running' && status !== 'completed') return null;
+  const input = state?.input as Record<string, unknown> | undefined;
+  const action = typeof input?.action === 'string' ? input.action.trim() : '';
+  if (!WAVE_CLOSING_DISPOSITION_ACTIONS.has(action)) return null;
+  const taskId = typeof input?.task_id === 'string' ? input.task_id.trim() : '';
+  return taskId.startsWith('dvr_task_') ? taskId : null;
+};
+
 export const resolveManagedTaskDispatch = (parts: readonly Part[]) => {
   const projectedContentParts: Part[] = [];
   const taskIds: string[] = [];
@@ -307,8 +344,11 @@ export const resolveManagedTaskDispatch = (parts: readonly Part[]) => {
  * Starts are then grouped by the scheduler's `dispatchWaveId`: a card is owned
  * by the first message that dispatched into its wave and collects every later
  * start of that wave, however many assistant messages the fan-out spans.
- * Provisional starts join the latest wave while it is open (the scheduler will
- * label them with it), otherwise they stay at their own message. Tasks the
+ * A provisional start is placed where the scheduler will label it at submit
+ * time, so it renders in its final card on first paint: the wave of its stored
+ * task when the store already has it, else the latest wave while that wave is
+ * active or has a result no transcript `continue`/`abandon` disposes of, else
+ * its own message. Tasks the
  * store cannot label share one per-turn card at the first dispatching message,
  * which is how ledgers written before waves existed keep rendering.
  *
@@ -319,7 +359,9 @@ export const resolveManagedTaskTurnProjection = (
   options: ManagedTaskTurnProjectionOptions = {},
 ): ManagedTaskTurnProjection[] => {
   const getTaskWaveId = options.getTaskWaveId ?? (() => null);
-  const isWaveOpen = options.isWaveOpen ?? (() => false);
+  const getDispatchCallWaveId = options.getDispatchCallWaveId ?? (() => null);
+  const { isWaveActive, getWaveAwaitingTaskIds } = options;
+  const legacyIsWaveOpen = options.isWaveOpen ?? (() => false);
 
   // Pass 1: where each start was issued.
   const messageOrder: string[] = [];
@@ -328,6 +370,7 @@ export const resolveManagedTaskTurnProjection = (
   const messageIdByDispatchCallId = new Map<string, string>();
   const pendingDispatchesByMessageId = new Map<string, PendingManagedTaskDispatch[]>();
   const seenPendingPartIds = new Set<string>();
+  const closingDispositionTaskIds = new Set<string>();
   const allParts: Part[] = [];
 
   for (const message of messages) {
@@ -336,6 +379,11 @@ export const resolveManagedTaskTurnProjection = (
       messageOrder.push(message.messageId);
     }
     allParts.push(...message.parts);
+    for (const part of message.parts) {
+      if (part.type !== 'tool') continue;
+      const dispositionTaskId = closingDispositionTaskIdFromPart(part as ToolPart);
+      if (dispositionTaskId) closingDispositionTaskIds.add(dispositionTaskId);
+    }
     const dispatch = resolveManagedTaskDispatch(message.parts);
 
     for (const taskId of dispatch.taskIds) {
@@ -394,6 +442,11 @@ export const resolveManagedTaskTurnProjection = (
     return projection;
   };
 
+  const isWaveOpen = isWaveActive && getWaveAwaitingTaskIds
+    ? (waveId: string) => isWaveActive(waveId)
+      || getWaveAwaitingTaskIds(waveId).some((taskId) => !closingDispositionTaskIds.has(taskId))
+    : legacyIsWaveOpen;
+
   let latestWaveId: string | null = null;
   for (const messageId of messageOrder) {
     for (const taskId of taskIdsByDispatchMessageId.get(messageId) ?? []) {
@@ -409,17 +462,22 @@ export const resolveManagedTaskTurnProjection = (
       if (pendingDispatch.dispatchCallId && authoritativeDispatchCallIds.has(pendingDispatch.dispatchCallId)) {
         continue;
       }
-      // No wave seen yet: the start belongs with the turn's unlabeled work. A
-      // still-open wave will label this start too, so it joins that card; after
-      // the wave closed the start will open a new wave at its own message.
-      const groupKey = latestWaveId === null
-        ? UNLABELED_TURN_GROUP_KEY
-        : isWaveOpen(latestWaveId)
-          ? latestWaveId
-          : messageGroupKey(messageId);
-      ensureProjection(groupKey, messageId, groupKey === latestWaveId ? latestWaveId : null)
+      // The store may already hold the task this start created: its wave is
+      // authoritative. Otherwise predict the scheduler. No wave seen yet: the
+      // start belongs with the turn's unlabeled work. A still-open wave will
+      // label this start too, so it joins that card; a wave closed (or about to
+      // close) opens a new wave at the start's own message.
+      const storedWaveId = pendingDispatch.dispatchCallId
+        ? normalizeWaveId(getDispatchCallWaveId(pendingDispatch.dispatchCallId))
+        : null;
+      const predictedWaveId = storedWaveId
+        ?? (latestWaveId !== null && isWaveOpen(latestWaveId) ? latestWaveId : null);
+      const groupKey = predictedWaveId
+        ?? (latestWaveId === null ? UNLABELED_TURN_GROUP_KEY : messageGroupKey(messageId));
+      ensureProjection(groupKey, messageId, predictedWaveId)
         .pendingDispatches
         .push(pendingDispatch);
+      if (storedWaveId) latestWaveId = storedWaveId;
     }
   }
 

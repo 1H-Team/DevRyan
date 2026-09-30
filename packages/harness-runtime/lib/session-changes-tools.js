@@ -35,9 +35,28 @@ export const isSyntheticSessionChange = (part) => part?.state?.metadata?.synthet
 const filePath = (value) => object(value) ? text(value.filePath) ?? text(value.file_path) ?? text(value.path)
   ?? text(value.file) ?? text(value.relativePath) : null;
 
+// An apply_patch envelope names every file it touches in a header. Observing
+// only those files replaces a snapshot of the whole project before and after
+// the call (about 10 s cold on 12,000 files). Any other patch format, or an
+// envelope without headers, keeps the whole-project snapshot.
+// Kill switch, read per call: DEVRYAN_PATCH_CAPTURE_PATHS=0.
+const PATCH_FILE = /^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+?)\s*$/;
+const patchEnvelopePaths = (input) => {
+  if (process.env.DEVRYAN_PATCH_CAPTURE_PATHS === '0') return null;
+  const patch = object(input) ? text(input.patchText) ?? text(input.patch) : null;
+  if (!patch || !/^\*\*\* Begin Patch\s*$/m.test(patch)) return null;
+  const files = new Set();
+  for (const line of patch.split('\n')) {
+    const match = PATCH_FILE.exec(line);
+    if (match) files.add(match[1]);
+  }
+  return files.size && files.size <= 512 ? [...files] : null;
+};
+
 export function sessionChangeCapturePaths(part) {
   if (classifySessionChangeTool(part?.tool) !== 'file') return null;
   const input = part.state?.input ?? part.input;
+  if (normalizeSessionChangeTool(part.tool) === 'apply_patch') return patchEnvelopePaths(input);
   const file = filePath(input);
   // A declared target narrows observation cost, but is not an edit receipt.
   if (file && !['apply_patch', 'multiedit'].includes(normalizeSessionChangeTool(part.tool))) return [file];

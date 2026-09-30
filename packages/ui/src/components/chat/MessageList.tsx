@@ -684,6 +684,13 @@ const TurnBlock = React.memo(({
             {
                 getTaskWaveId: (taskId) => managedDispatchWaves.waveIdByTaskId.get(taskId) ?? null,
                 isWaveOpen: (waveId) => managedDispatchWaves.openWaveIds.has(waveId),
+                isWaveActive: (waveId) => managedDispatchWaves.activeWaveIds.has(waveId),
+                getWaveAwaitingTaskIds: (waveId) => (
+                    managedDispatchWaves.awaitingAcknowledgementTaskIdsByWaveId.get(waveId) ?? []
+                ),
+                getDispatchCallWaveId: (dispatchCallId) => (
+                    managedDispatchWaves.waveIdByDispatchCallId.get(dispatchCallId) ?? null
+                ),
             },
         ).map((projection) => [projection.ownerMessageId, projection] as const),
     ), [managedDispatchWaves, visibleAssistantMessages]);

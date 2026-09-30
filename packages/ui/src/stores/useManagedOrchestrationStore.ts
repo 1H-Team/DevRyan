@@ -1312,49 +1312,94 @@ export const useManagedOrchestrationStore = createManagedOrchestrationStore();
 /**
  * Wave labels the chat groups Agent Dispatch cards by. `openWaveIds` holds
  * every wave with a task that is non-terminal or whose result is still
- * unacknowledged: the scheduler labels the next start with that wave, so the
- * chat attaches provisional starts to it. Display only.
+ * unacknowledged: the scheduler labels the next start with that wave. The
+ * finer fields let the chat predict a provisional start's wave the way the
+ * scheduler will at submit time: an active wave (`activeWaveIds`) cannot close
+ * before then, while a wave only awaiting acknowledgement closes as soon as the
+ * listed results are dispositioned, which the transcript can show before the
+ * acknowledgement event lands. `waveIdByDispatchCallId` names the wave of a
+ * start whose task the store already holds while its tool part has no output.
+ * Display only.
  */
 export type ManagedDispatchWaveIndex = {
   waveIdByTaskId: ReadonlyMap<string, string>;
+  waveIdByDispatchCallId: ReadonlyMap<string, string>;
   openWaveIds: ReadonlySet<string>;
+  activeWaveIds: ReadonlySet<string>;
+  awaitingAcknowledgementTaskIdsByWaveId: ReadonlyMap<string, readonly string[]>;
 };
 
 const EMPTY_DISPATCH_WAVE_INDEX: ManagedDispatchWaveIndex = Object.freeze({
   waveIdByTaskId: new Map<string, string>(),
+  waveIdByDispatchCallId: new Map<string, string>(),
   openWaveIds: new Set<string>(),
+  activeWaveIds: new Set<string>(),
+  awaitingAcknowledgementTaskIdsByWaveId: new Map<string, readonly string[]>(),
 });
 
 const buildDispatchWaveIndex = (state: ManagedOrchestrationStore): ManagedDispatchWaveIndex => {
   const waveIdByTaskId = new Map<string, string>();
+  const waveIdByDispatchCallId = new Map<string, string>();
   const openWaveIds = new Set<string>();
+  const activeWaveIds = new Set<string>();
+  const awaitingAcknowledgementTaskIdsByWaveId = new Map<string, string[]>();
   for (const task of Object.values(state.tasksById)) {
     const waveId = task.dispatchWaveId ?? null;
     if (!waveId) continue;
     waveIdByTaskId.set(task.taskId, waveId);
-    if (openWaveIds.has(waveId)) continue;
+    if (task.dispatchCallId) waveIdByDispatchCallId.set(task.dispatchCallId, waveId);
     if (!isTerminalManagedTaskStatus(task.status)) {
       openWaveIds.add(waveId);
+      activeWaveIds.add(waveId);
       continue;
     }
     const envelope = state.resultEnvelopesByTaskId[task.taskId];
-    if (!envelope || envelope.action === null) openWaveIds.add(waveId);
+    if (envelope && envelope.action !== null) continue;
+    openWaveIds.add(waveId);
+    const awaiting = awaitingAcknowledgementTaskIdsByWaveId.get(waveId);
+    if (awaiting) awaiting.push(task.taskId);
+    else awaitingAcknowledgementTaskIdsByWaveId.set(waveId, [task.taskId]);
   }
   if (waveIdByTaskId.size === 0) return EMPTY_DISPATCH_WAVE_INDEX;
-  return { waveIdByTaskId, openWaveIds };
+  for (const taskIds of awaitingAcknowledgementTaskIdsByWaveId.values()) taskIds.sort();
+  return {
+    waveIdByTaskId,
+    waveIdByDispatchCallId,
+    openWaveIds,
+    activeWaveIds,
+    awaitingAcknowledgementTaskIdsByWaveId,
+  };
+};
+
+const isSameStringMap = (current: ReadonlyMap<string, string>, next: ReadonlyMap<string, string>) => {
+  if (current.size !== next.size) return false;
+  for (const [key, value] of next) {
+    if (current.get(key) !== value) return false;
+  }
+  return true;
+};
+
+const isSameStringSet = (current: ReadonlySet<string>, next: ReadonlySet<string>) => {
+  if (current.size !== next.size) return false;
+  for (const value of next) {
+    if (!current.has(value)) return false;
+  }
+  return true;
 };
 
 const isSameDispatchWaveIndex = (current: ManagedDispatchWaveIndex, next: ManagedDispatchWaveIndex) => {
   if (current === next) return true;
   if (
-    current.waveIdByTaskId.size !== next.waveIdByTaskId.size
-    || current.openWaveIds.size !== next.openWaveIds.size
+    !isSameStringMap(current.waveIdByTaskId, next.waveIdByTaskId)
+    || !isSameStringMap(current.waveIdByDispatchCallId, next.waveIdByDispatchCallId)
+    || !isSameStringSet(current.openWaveIds, next.openWaveIds)
+    || !isSameStringSet(current.activeWaveIds, next.activeWaveIds)
+    || current.awaitingAcknowledgementTaskIdsByWaveId.size !== next.awaitingAcknowledgementTaskIdsByWaveId.size
   ) return false;
-  for (const [taskId, waveId] of next.waveIdByTaskId) {
-    if (current.waveIdByTaskId.get(taskId) !== waveId) return false;
-  }
-  for (const waveId of next.openWaveIds) {
-    if (!current.openWaveIds.has(waveId)) return false;
+  for (const [waveId, taskIds] of next.awaitingAcknowledgementTaskIdsByWaveId) {
+    const currentTaskIds = current.awaitingAcknowledgementTaskIdsByWaveId.get(waveId);
+    if (!currentTaskIds || currentTaskIds.length !== taskIds.length) return false;
+    if (taskIds.some((taskId, index) => currentTaskIds[index] !== taskId)) return false;
   }
   return true;
 };

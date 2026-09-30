@@ -48,6 +48,39 @@ export const prepareAutomaticRuntimeService = async ({
   return Object.freeze({ mode: 'service', state: 'enabled', code: null });
 };
 
+// Service mode relies on a launchd registration. Without one nothing will ever
+// start the service, and waiting for its connection only delays startup (65 s
+// before the fallback, observed on 2026-09-29). Register it first; when that
+// is not possible, fail at once so startup falls back to the app-bound
+// runtime. A state that cannot tell (`unknown`, `legacy_required`, a failed
+// status read) keeps the ordinary wait.
+const RUNTIME_SERVICE_UNSTARTABLE_STATES = new Set([
+  'not_registered', 'requires_approval', 'not_found', 'unavailable', 'invalid',
+]);
+export const ensureRuntimeServiceRegistered = async ({ registration, log } = {}) => {
+  let current;
+  try { current = await registration.status(); }
+  catch { return Object.freeze({ state: 'unknown', registered: false }); }
+  if (current?.state === 'not_registered') {
+    try {
+      const registered = await registration.register({ allowLegacy: true });
+      if (registered?.state === 'enabled') {
+        log?.warn?.('[runtime-service] registered at startup', { phase: 'register', code: 'runtime_service_registered_at_startup' });
+        return Object.freeze({ state: 'enabled', registered: true });
+      }
+      current = registered;
+    } catch (error) {
+      current = { state: 'not_registered', code: error?.code };
+    }
+  }
+  if (!RUNTIME_SERVICE_UNSTARTABLE_STATES.has(current?.state)) {
+    return Object.freeze({ state: current?.state ?? 'unknown', registered: false });
+  }
+  throw Object.assign(new Error('Background runtime is not registered, so it cannot start'), {
+    code: 'runtime_service_not_registered', registrationState: current.state,
+  });
+};
+
 // A launchd start runs the service's whole Electron boot before it publishes a
 // live descriptor, and cold boots were observed past 20 s. Only failures that
 // mean the service is not up yet earn the longer budget; any other failure

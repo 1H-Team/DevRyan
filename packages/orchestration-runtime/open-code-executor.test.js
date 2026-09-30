@@ -2572,6 +2572,71 @@ describe('managed OpenCode executor', () => {
     });
   });
 
+  test('reports a child that stopped between steps instead of waiting for its deadline', async () => {
+    let time = 10_000;
+    const stopped = (error) => [assistant({
+      info: { id: 'msg_work', finish: 'tool-calls', time: { completed: 2_000 } },
+      parts: [{ type: 'text', text: 'Useful work before the stop' },
+        { id: 'prt_done', type: 'tool', callID: 'call_done', tool: 'bash', state: { status: 'completed', input: {}, output: 'ok', time: { start: 1, end: 2 } } }],
+    }), assistant({
+      info: { id: 'msg_stopped', finish: 'tool-calls', time: { completed: 3_000 } },
+      parts: [{ id: 'prt_read', type: 'tool', callID: 'call_read', tool: 'read',
+        state: { status: 'error', input: { filePath: '/Applications' }, error, time: { start: 2_500, end: 2_900 } } }],
+    })];
+    const run = async (records, options = {}, status = { type: 'idle' }) => {
+      const prompts = [];
+      const executor = createManagedOpenCodeExecutor({ now: () => time, sleep: async () => { time += 750; },
+        transport: { async createSession() { return { id: 'ses_stopped' }; }, async promptSession(input) { prompts.push(input); },
+          async readSession() { return { id: 'ses_stopped' }; }, async readStatus() { return typeof status === 'function' ? status() : status; },
+          async readMessages() { return typeof records === 'function' ? records() : records; },
+          async abortSession() { return true; }, deleteSession }, ...options });
+      const started = time;
+      const result = await executor.observe(task({ childSessionId: 'ses_stopped', timeoutAt: time + 3_600_000 }), {});
+      return { result, prompts, elapsed: time - started };
+    };
+
+    const rejected = await run(stopped('The user rejected permission to use this specific tool call.'));
+    expect(rejected.result).toMatchObject({ status: 'failed', partial: true, resumable: true,
+      failureReason: 'Managed child stopped before finishing: a tool permission or question was rejected' });
+    expect(rejected.result.recoverablePreview).toContain('rejected permission');
+    // Reported after the stop was seen for 30 seconds, not at the deadline.
+    expect(rejected.elapsed).toBeGreaterThanOrEqual(30_000);
+    expect(rejected.elapsed).toBeLessThan(35_000);
+    expect(rejected.prompts).toHaveLength(0);
+
+    const other = await run(stopped('File not found'));
+    expect(other.result).toMatchObject({ status: 'failed', failureReason: 'Managed child stopped before finishing its turn' });
+
+    // A child whose next step arrives within the window keeps running.
+    let polls = 0;
+    const resumed = await run(() => (polls += 1) < 20 ? stopped('File not found') : [...stopped('File not found'), assistant({
+      info: { id: 'msg_final', finish: 'stop', time: { completed: 4_000 } },
+      parts: [{ type: 'text', text: 'Finished.\n\n**Status:** complete' }],
+    })]);
+    expect(resumed.result).toMatchObject({ status: 'completed' });
+  });
+
+  test('a busy child between steps and the kill switch keep waiting', async () => {
+    let time = 10_000, polls = 0;
+    const records = () => [assistant({ info: { id: 'msg_step', finish: 'tool-calls', time: { completed: 2_000 } },
+      parts: [{ id: 'prt_tool', type: 'tool', callID: 'call_tool', tool: 'bash', state: { status: 'completed', input: {}, output: 'ok', time: { start: 1, end: 2 } } }] }),
+    ...(polls > 80 ? [assistant({ info: { id: 'msg_final', finish: 'stop', time: { completed: 4_000 } }, parts: [{ type: 'text', text: 'Done.\n\n**Status:** complete' }] })] : [])];
+    const create = (status) => createManagedOpenCodeExecutor({ now: () => time, sleep: async () => { time += 750; polls += 1; },
+      transport: { async createSession() { return { id: 'ses_busy' }; }, async promptSession() {}, async readSession() { return { id: 'ses_busy' }; },
+        async readStatus() { return status(); }, async readMessages() { return records(); }, async abortSession() { return true; }, deleteSession } });
+
+    // The model is producing its next step: the status stays busy for a minute.
+    const busy = await create(() => ({ type: polls > 80 ? 'idle' : 'busy' })).observe(task({ childSessionId: 'ses_busy', timeoutAt: time + 3_600_000 }), {});
+    expect(busy).toMatchObject({ status: 'completed' });
+
+    polls = 0; process.env.DEVRYAN_MANAGED_STOPPED_HANDOFF = '0';
+    try {
+      const disabled = await create(() => ({ type: 'idle' })).observe(task({ childSessionId: 'ses_busy', timeoutAt: time + 3_600_000 }), {});
+      expect(disabled).toMatchObject({ status: 'completed' });
+      expect(polls).toBeGreaterThan(80);
+    } finally { delete process.env.DEVRYAN_MANAGED_STOPPED_HANDOFF; }
+  });
+
   test('fails honestly when the same child ends empty again after automatic continuation', async () => {
     const prompts = [];
     const transport = {

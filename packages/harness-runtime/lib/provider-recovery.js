@@ -44,6 +44,9 @@ export function createPrimaryRecoveryController(options) {
   let ownerTask;
   let ready;
   let storageHealthy = true;
+  // Kill switch, read per use: DEVRYAN_RECOVERY_ADVISORY_PLUGIN=0 restores the
+  // one-second poll of every record and the unconditional storage latch.
+  const advisory = () => (options.advisory ?? process.env.DEVRYAN_RECOVERY_ADVISORY_PLUGIN !== '0');
   const modeFor = (record) => primaryRecoveryMode(record?.providerID, options);
   const providerSupported = (record) => !record || (isPrimaryRecoveryProvider(record.providerID)
     && (record.providerID !== 'anthropic' || options.isAnthropicConformant?.(record, handshake?.version ?? undefined) === true));
@@ -400,7 +403,10 @@ export function createPrimaryRecoveryController(options) {
         checkWatchdog = reschedule.get(id) === true;
       } while (!draining && reschedule.has(id));
     })().catch(() => {
-      storageHealthy = false;
+      // A failed store write already marked the storage unhealthy (mutate).
+      // Any other failure here, such as an observation that timed out while
+      // recording attention, must not disable recovery until the next restart.
+      if (!advisory()) storageHealthy = false;
       diagnostic('provider_recovery_persistence_failed', records.get(id));
     }).finally(() => { pending.delete(id); reschedule.delete(id); });
     pending.set(id, operation);
@@ -725,12 +731,28 @@ export function createPrimaryRecoveryController(options) {
       && p.info.parentID === currentObjectiveUser(r)) return schedule(id);
   }
 
+  // Every poll reads the turn's whole transcript. A progress cutoff can only
+  // stop a turn this runtime may act on, so other records are never polled for
+  // it. An unfinished recovery is normally settled by its events; its fallback
+  // poll backs off from 5 s to 5 min while the record does not change.
+  const polls = new Map();
+  const pollDue = (record) => {
+    const known = polls.get(record.sessionID);
+    const at = now();
+    if (known && known.revision === record.revision && at < known.next) return false;
+    const delay = known?.revision === record.revision ? Math.min(known.delay * 2, 300_000) : 5_000;
+    polls.set(record.sessionID, { revision: record.revision, delay, next: at + delay });
+    while (polls.size > 1024) polls.delete(polls.keys().next().value);
+    return true;
+  };
   async function reconcile() {
+    const relaxed = advisory();
     await Promise.allSettled([...records.values()].filter((r) => !TERMINAL.has(r.state)).map((r) => {
       const l = remember(r);
       const watchdog = progressTimeoutMs !== false && l.phase === 'provider' && !l.calls.size && !l.blockers.size
-        && now() - l.at >= progressTimeoutMs;
-      return watchdog || ACTIVE_RECOVERY.has(r.state) ? schedule(r.sessionID, watchdog) : undefined;
+        && now() - l.at >= progressTimeoutMs && (!relaxed || (active(r) && supported(r)));
+      if (watchdog) return schedule(r.sessionID, true);
+      return ACTIVE_RECOVERY.has(r.state) && (!relaxed || pollDue(r)) ? schedule(r.sessionID, false) : undefined;
     }));
   }
   return {

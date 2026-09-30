@@ -285,3 +285,15 @@ test('a disconnected sole summary client aborts upstream history and releases it
     expect(shared.getReadDiagnostics()).toMatchObject({ active: 0, queued: 0, scopes: 0, responseBytes: 0 });
   } finally { await shared.drain(); }
 });
+
+test('a cancelled confined call with an empty receipt leaves the change record complete', async () => {
+  await host.plugin({ action: 'message', sessionID: 'ses_a', directory, userMessageID: 'user_1' });
+  const record = tool('stopped'); record.parts[0].state = { status: 'error', input: { command: 'npm run verify' }, error: 'Tool execution aborted' };
+  messages.push(record);
+  const input = { sessionID: 'ses_a', directory, callID: 'stopped' };
+  // The call was observed before it ran and stopped before its after hook.
+  await host.plugin({ ...input, action: 'before' });
+  await host.recordReceipt({ ...input, messageID: 'msg_stopped', userMessageID: 'user_1', source: 'confined-execution', complete: true, files: [], tool: 'bash' });
+  const result = await host.handleRequest('GET', endpoint());
+  expect(result.body).toMatchObject({ coverage: 'complete', reasons: [], fileCount: 0 });
+});

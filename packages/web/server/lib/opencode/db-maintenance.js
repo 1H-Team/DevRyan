@@ -20,6 +20,7 @@ import { Worker } from 'node:worker_threads';
 
 import { getOpenCodeDataPath } from '../git/service.js';
 import { isProcessRunning, readManagedOpenCodeRegistry } from './managed-process-registry.js';
+import { resolveOpenCodeDbPath } from './opencode-db-path.js';
 import {
   NO_SQLITE_DRIVER_PREFIX,
   OPENCODE_DB_MAINTENANCE_DEFAULTS,
@@ -36,12 +37,15 @@ export {
   resolveSqliteDriver,
 } from './db-maintenance-core.js';
 
-export const OPENCODE_DB_FILE_NAME = 'opencode.db';
+export { OPENCODE_DB_FILE_NAME } from './opencode-db-path.js';
 export const OPENCODE_DB_MAINTENANCE_STATE_FILE = 'opencode-db-maintenance.json';
 export const OPENCODE_DB_MAINTENANCE_JOURNAL_EVENT = 'opencode_db_maintenance';
 const STATE_FILE_VERSION = 1;
 
-export const resolveDefaultOpenCodeDbPath = () => path.join(getOpenCodeDataPath(), OPENCODE_DB_FILE_NAME);
+// The database the managed runtime writes. Maintaining `opencode.db` while the
+// companion writes `opencode-devryan.db` pruned a stale file and left the live
+// one to grow (489 MB, 87 % event log, on 2026-09-30).
+export const resolveDefaultOpenCodeDbPath = () => resolveOpenCodeDbPath(getOpenCodeDataPath());
 
 const OPENCODE_EXECUTABLE_PATTERN = /^opencode(?:-[a-z0-9.-]+)?(?:\.exe)?$/i;
 const OPENCODE_SERVE_PATTERN = /(?:^|[\s/\\])opencode(?:\.exe)?\s+serve\b/i;

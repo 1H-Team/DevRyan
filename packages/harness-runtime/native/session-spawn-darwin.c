@@ -4,6 +4,10 @@
  * which inherit the supervisor's immutable Seatbelt policy and process group.
  * Omitting/removing the adapter therefore fails closed. Detached spawn requests
  * run in the existing supervised group; creating a new group remains denied.
+ *
+ * Virtual groups (session-group-darwin.h): a child that requested its own
+ * group is named after its pid in DEVRYAN_SPAWN_GROUP, and kill/killpg deliver
+ * a signal for that group to the supervised processes that carry the name.
  */
 #define _DARWIN_C_SOURCE
 #include <spawn.h>
@@ -18,6 +22,7 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <libproc.h>
+#include "session-group-darwin.h"
 
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #define INTERPOSE(replacement, original) \
@@ -70,14 +75,41 @@ static int chdir_action(posix_spawn_file_actions_t *v, const char *p) { return a
 static int fchdir_action(posix_spawn_file_actions_t *v, int fd) { return add(v, FCHDIR, fd, 0, NULL, 0, 0); }
 static int inherit_action(posix_spawn_file_actions_t *v, int fd) { return add(v, INHERIT, fd, 0, NULL, 0, 0); }
 
+#define GROUP_DIGITS 20
+/* Children this process started detached: it may name them as group leaders. */
+static pid_t detached[64]; static unsigned int detachedCount;
+static void write_group(char *marker, pid_t group) {
+  char digits[GROUP_DIGITS]; int count = 0;
+  for (unsigned long rest = (unsigned long)group; rest && count < GROUP_DIGITS; rest /= 10) digits[count++] = (char)('0' + rest % 10);
+  char *out = marker + sizeof(GROUP_VARIABLE) - 1;
+  while (count) *out++ = digits[--count];
+  *out = 0;
+}
+/* The child's environment with its requested group. Allocated before fork:
+ * the child only writes its own pid into the reserved digits. */
+static char **group_environment(char *const envp[], char **marker) {
+  size_t count = 0, name = sizeof(GROUP_VARIABLE) - 1;
+  while (envp && envp[count]) count++;
+  char **copy = calloc(count + 2, sizeof(*copy));
+  *marker = calloc(1, name + GROUP_DIGITS + 1);
+  if (!copy || !*marker) { free(copy); free(*marker); *marker = NULL; return NULL; }
+  memcpy(*marker, GROUP_VARIABLE, name);
+  size_t kept = 0;
+  for (size_t i = 0; i < count; i++) if (strncmp(envp[i], GROUP_VARIABLE, name)) copy[kept++] = envp[i];
+  copy[kept] = *marker;
+  return copy;
+}
+
 static int launch(pid_t *pid, const char *file, const posix_spawn_file_actions_t *value,
   const posix_spawnattr_t *attributes, char *const argv[], char *const envp[]) {
-  short flags = 0; sigset_t mask, defaults;
+  short flags = 0; sigset_t mask, defaults; pid_t joined = 0;
   if (attributes) {
     int error = posix_spawnattr_getflags(attributes, &flags); if (error) return error;
     posix_spawnattr_getsigmask(attributes, &mask); posix_spawnattr_getsigdefault(attributes, &defaults);
+    if ((flags & POSIX_SPAWN_SETPGROUP) && !(flags & POSIX_SPAWN_SETSID)) posix_spawnattr_getpgroup(attributes, &joined);
   }
   /* Detached callers may start, but cannot leave the supervisor's group. */
+  int grouped = (flags & (POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSID)) && group_signals_enabled();
   flags &= ~(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSID);
   if (flags & ~(POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_RESETIDS)) return ENOTSUP;
   long maximum = sysconf(_SC_OPEN_MAX); if (maximum <= 0 || maximum > INT_MAX) return EINVAL;
@@ -97,9 +129,13 @@ static int launch(pid_t *pid, const char *file, const posix_spawn_file_actions_t
   }
   int report = fcntl(errors[1], F_DUPFD_CLOEXEC, top + 1); close(errors[1]);
   if (report < 0) { int error = errno; pthread_mutex_unlock(&lock); close(errors[0]); free(descriptors); return error; }
+  /* Without memory the child starts ungrouped, exactly as before. */
+  char *marker = NULL, **environment = grouped ? group_environment(envp, &marker) : NULL;
+  if (environment && joined > 1) write_group(marker, joined);
   pid_t child = fork();
   if (child == 0) {
     close(errors[0]);
+    if (environment && joined <= 1) write_group(marker, getpid());
     if (flags & POSIX_SPAWN_RESETIDS) if (setegid(getgid()) || seteuid(getuid())) goto failed;
     if (flags & POSIX_SPAWN_SETSIGMASK) if (sigprocmask(SIG_SETMASK, &mask, NULL)) goto failed;
     if (flags & POSIX_SPAWN_SETSIGDEF) for (int signal = 1; signal < NSIG; signal++) {
@@ -133,17 +169,18 @@ static int launch(pid_t *pid, const char *file, const posix_spawn_file_actions_t
       }
       if (!keep) close(fd);
     }
-    execve(file, argv, envp);
+    execve(file, argv, environment ? environment : envp);
 failed: {
       int error = errno; (void)write(report, &error, sizeof(error)); _exit(127);
     }
   }
-  int error = errno; pthread_mutex_unlock(&lock); close(report); free(descriptors);
+  int error = errno; pthread_mutex_unlock(&lock); close(report); free(descriptors); free(environment); free(marker);
   if (child < 0) { close(errors[0]); return error; }
   int result = 0; ssize_t readCount;
   do { readCount = read(errors[0], &result, sizeof(result)); } while (readCount < 0 && errno == EINTR);
   close(errors[0]);
   if (readCount != 0) { int status; while (waitpid(child, &status, 0) < 0 && errno == EINTR) {} return result ? result : EIO; }
+  if (grouped && joined <= 1) { pthread_mutex_lock(&lock); detached[detachedCount++ % 64] = child; pthread_mutex_unlock(&lock); }
   if (pid) *pid = child; return 0;
 }
 static int launch_path(pid_t *pid, const char *file, const posix_spawn_file_actions_t *actions,
@@ -168,6 +205,25 @@ static int launch_path(pid_t *pid, const char *file, const posix_spawn_file_acti
   return denied ? EACCES : ENOENT;
 }
 
+static int signal_process(pid_t pid, int signal) {
+  int outcome;
+  if (pid < -1) {
+    char name[GROUP_DIGITS + sizeof(GROUP_VARIABLE)]; write_group(name, -pid);
+    const char *names[1] = { name + sizeof(GROUP_VARIABLE) - 1 };
+    /* Read without the lock: kill may interrupt a spawn holding it. */
+    pid_t leader = 0; for (int i = 0; i < 64; i++) if (detached[i] == -pid) leader = -pid;
+    if (group_signal(names, 1, leader, signal, getpid(), 0, &outcome)) return outcome;
+  } else if (pid == 0 && group_signal(NULL, 0, 0, signal, getpid(), 0, &outcome)) return outcome;
+  return kill(pid, signal);
+}
+static int signal_process_group(pid_t group, int signal) {
+  if (group > 1) return signal_process(-group, signal);
+  if (group == 0) return signal_process(0, signal);
+  return killpg(group, signal);
+}
+
+INTERPOSE(signal_process, kill);
+INTERPOSE(signal_process_group, killpg);
 INTERPOSE(initialize, posix_spawn_file_actions_init);
 INTERPOSE(destroy, posix_spawn_file_actions_destroy);
 INTERPOSE(close_action, posix_spawn_file_actions_addclose);

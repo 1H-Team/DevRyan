@@ -6,7 +6,8 @@ test('bounds periodic samples, reports pressure transitions, and excludes unexpe
   let time = 0, used = 20, stopped = false; const records = [];
   const monitor = createRuntimeMemoryMonitor({ log: r => records.push(r), role: 'fixture', version: 'test',
     now: () => time, readMemory: () => ({ heapUsed: used, heapLimit: 100, rss: 200 }),
-    getWork: () => ({ active: 2, queued: 1, responseBytes: 7, prompt: 'must not appear', token: 'must not appear' }),
+    getWork: () => ({ active: 2, queued: 1, responseBytes: 7, stalls: 3, stalledMs: 61_000, longestStallMs: 40_000,
+      prompt: 'must not appear', token: 'must not appear' }),
     schedule: () => 1, cancel: () => { stopped = true; } });
   monitor.sample(); assert.equal(records.length, 1);
   used = 85; monitor.sample(); assert.equal(records.at(-1).pressure, true);
@@ -14,6 +15,7 @@ test('bounds periodic samples, reports pressure transitions, and excludes unexpe
   used = 65; monitor.sample(); assert.equal(records.at(-1).pressure, false);
   time += 60000; monitor.sample(); assert.equal(records.length, 4);
   assert.equal(records[0].active, 2); assert.equal('prompt' in records[0], false); assert.equal('token' in records[0], false);
+  assert.deepEqual([records[0].stalls, records[0].stalledMs, records[0].longestStallMs], [3, 61_000, 40_000]);
   monitor.stop(); assert.equal(stopped, true);
 });
 

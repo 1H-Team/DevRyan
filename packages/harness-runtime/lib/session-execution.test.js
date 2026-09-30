@@ -171,10 +171,11 @@ darwinTest('each execution gets a short private socket directory that cleanup re
   expect(await fs.lstat(executionSocketDirectory(lease)).catch((cause) => cause.code)).toBe('ENOENT');
 });
 
-darwinTest('session-scoped workers get the host browser cache, the Node spawn preload and one Chromium lookup', async () => {
+darwinTest('session-scoped workers get the host browser cache, the Node spawn preload, group signals and one Chromium lookup', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-execution-browsers-')); roots.push(root);
   const saved = { HOME: process.env.HOME, PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH,
-    NODE_OPTIONS: process.env.NODE_OPTIONS, DEVRYAN_WORKER_BROWSERS: process.env.DEVRYAN_WORKER_BROWSERS };
+    NODE_OPTIONS: process.env.NODE_OPTIONS, DEVRYAN_WORKER_BROWSERS: process.env.DEVRYAN_WORKER_BROWSERS,
+    DEVRYAN_WORKER_GROUP_SIGNALS: process.env.DEVRYAN_WORKER_GROUP_SIGNALS };
   const home = path.join(root, 'home'), cache = path.join(home, 'Library', 'Caches', 'ms-playwright');
   await fs.mkdir(cache, { recursive: true });
   const launcher = path.join(root, 'launcher');
@@ -188,7 +189,7 @@ darwinTest('session-scoped workers get the host browser cache, the Node spawn pr
   const machRules = (profile) => profile.split('\n').filter((line) => line.includes('mach-lookup'));
   try {
     process.env.HOME = home;
-    delete process.env.PLAYWRIGHT_BROWSERS_PATH; delete process.env.DEVRYAN_WORKER_BROWSERS;
+    delete process.env.PLAYWRIGHT_BROWSERS_PATH; delete process.env.DEVRYAN_WORKER_BROWSERS; delete process.env.DEVRYAN_WORKER_GROUP_SIGNALS;
     process.env.NODE_OPTIONS = '--max-old-space-size=4096';
 
     const { prepared, profile } = await prepare();
@@ -196,7 +197,12 @@ darwinTest('session-scoped workers get the host browser cache, the Node spawn pr
     expect(prepared.environment.PLAYWRIGHT_BROWSERS_PATH).toBe(await fs.realpath(cache));
     expect(prepared.environment.NODE_OPTIONS).toBe(`--require ${JSON.stringify(preload)} --max-old-space-size=4096`);
     expect((await fs.stat(preload)).mode & 0o777).toBe(0o600);
-    expect(await fs.readFile(preload, 'utf8')).toContain(JSON.stringify(`${launcher}-spawn.dylib`));
+    const source = await fs.readFile(preload, 'utf8');
+    expect(source).toContain(JSON.stringify(`${launcher}-spawn.dylib`));
+    // A detached child's group is named, and signalled through the launcher.
+    expect(source).toContain(`const launcher = ${JSON.stringify(launcher)}`);
+    expect(source).toContain("'--signal-group'");
+    expect('DEVRYAN_WORKER_GROUP_SIGNALS' in prepared.environment).toBe(false);
     expect(machRules(profile)).toEqual([
       '(deny mach-lookup)',
       '(allow mach-lookup (global-name-regex #"^org\\.chromium\\.Chromium\\.MachPortRendezvousServer\\.[0-9]+$"))',
@@ -214,6 +220,21 @@ darwinTest('session-scoped workers get the host browser cache, the Node spawn pr
     const unscoped = await prepare(null);
     expect('NODE_OPTIONS' in unscoped.prepared.environment).toBe(false);
     expect(machRules(unscoped.profile)).toEqual(['(deny mach-lookup)']);
+
+    // Without browsers the preload still delivers group signals, and only those.
+    process.env.DEVRYAN_WORKER_BROWSERS = '0';
+    const groupsOnly = await prepare();
+    expect('PLAYWRIGHT_BROWSERS_PATH' in groupsOnly.prepared.environment).toBe(false);
+    expect(machRules(groupsOnly.profile)).toEqual(['(deny mach-lookup)']);
+    const groupsSource = await fs.readFile(path.join(groupsOnly.prepared.scratchDirectory, NODE_SPAWN_PRELOAD), 'utf8');
+    expect(groupsSource).toContain("'--signal-group'");
+    expect(groupsSource).not.toContain('DYLD_INSERT_LIBRARIES');
+
+    process.env.DEVRYAN_WORKER_BROWSERS = '1'; process.env.DEVRYAN_WORKER_GROUP_SIGNALS = '0';
+    const browsersOnly = await prepare();
+    expect(await fs.readFile(path.join(browsersOnly.prepared.scratchDirectory, NODE_SPAWN_PRELOAD), 'utf8')).not.toContain('--signal-group');
+    // The spawn adapter reads the same switch inside the worker.
+    expect(browsersOnly.prepared.environment.DEVRYAN_WORKER_GROUP_SIGNALS).toBe('0');
 
     process.env.DEVRYAN_WORKER_BROWSERS = '0';
     const disabled = await prepare();

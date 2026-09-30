@@ -38,7 +38,7 @@ recovery remains the fallback until host enforcement is advertised.
 Enforcement requires a live managed runtime, exclusive private file-lock owner,
 healthy durable storage, an allow-listed OpenCode version verified through
 `/global/health` (`PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS` in
-`provider-recovery-policy.js`: 1.18.25, 1.18.26, 1.18.27, 1.18.29, 1.18.30, 1.18.31 and 1.18.32), and the bundled plugin handshake. The 1.18.33 host target awaits transport and hook conformance before automatic recovery can be enabled. Unsupported versions, external
+`provider-recovery-policy.js`: 1.18.25, 1.18.26, 1.18.27, 1.18.29, 1.18.30, 1.18.31, 1.18.32 and 1.18.33), and the bundled plugin handshake. Unsupported versions, external
 runtimes, and opt-in WebSocket/native transports remain manual. Do not expand
 this allowlist without transport and hook conformance tests.
 
@@ -128,7 +128,7 @@ bounded to 30 seconds with bounded individual observations. Idle, an abort
 acknowledgement, a failed read, and renderer-forced idle are not sufficient.
 Healthy status-map omission is accepted only with independent session,
 transcript and blocker checks. Generic timeout wording is ineligible; a bounded, valid JSON envelope with `type: upstream_timeout` and the exact `Upstream stalled: no data for <positive milliseconds>ms` message is classified as a chunk timeout on verified runtime versions. The presentation classifier maps the same envelope to `stream_idle_timeout`. The exact
-`UnknownError` timeout shape of an allow-listed runtime (1.18.25, 1.18.26, 1.18.27, 1.18.29, 1.18.30, 1.18.31, 1.18.32) has
+`UnknownError` timeout shape of an allow-listed runtime (1.18.25, 1.18.26, 1.18.27, 1.18.29, 1.18.30, 1.18.31, 1.18.32, 1.18.33) has
 a version-specific compatibility rule.
 
 With no prior work, recovery reuses original text and safe file/data attachment
@@ -260,6 +260,25 @@ upstream-timeout traffic each completed one recovery with two provider requests;
 heartbeat needed one rerun for the documented cold start. Semantic cutoff and
 interrupted Anthropic tool input each made one provider request and zero
 recovery attempts, stopping for user attention.
+
+OpenCode 1.18.33 compatibility was verified on September 30, 2026 with the
+isolated loopback-provider fixture against the bundled DevRyan companion 2.1.2
+(upstream 1.18.33). Heartbeat, silent-SSE, non-SSE, missing-header and Anthropic
+upstream-timeout traffic each completed one recovery with two provider requests;
+missing-header needed one rerun. Semantic cutoff and interrupted Anthropic tool
+input each made one provider request and zero recovery attempts, stopping for
+user attention. The allow-list also gates managed continuation (the wake that
+makes a parent collect a finished sub-agent's result), which was fenced as
+`runtime_unsupported` on 1.18.33 until this verification.
+
+The bundled plugin's hooks only observe while the host does not enforce
+recovery (its hello reports `enforced: false`: observe mode, or a runtime it
+cannot act on). In that state an unreachable host, for example one whose event
+loop stalled under load, no longer fails the user's turn: a scope verdict that
+cannot stop a turn is reused for 30 seconds, until the next user message, and a
+transport failure proceeds. A host rejection (an error code) and a session last
+seen guarded always stand. `DEVRYAN_RECOVERY_ADVISORY_PLUGIN=0` restores the
+fail-closed hooks and the one-second poll of every record.
 
 The opt-in executable fixture is `tests/provider-recovery/runtime-conformance.mjs`.
 It requires `DEVRYAN_TEST_OPENCODE_BIN` and has no access to the user's provider

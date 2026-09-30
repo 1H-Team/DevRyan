@@ -54,7 +54,7 @@ Omit any of the three subsections that do not apply, but keep the bold sub-headi
 
 ## Implementation
 
-Use sequential third-level headings in the exact form `### Phase 1: <name>`, `### Phase 2: <name>`, and so on. Under each phase, write a numbered list of concrete, actionable implementation tasks. Each phase must contain multiple related tasks; merge a phase that would contain only one task. Include short code or markdown snippets inline only where the exact shape of a change matters (function signature, JSX wiring, schema, etc.). Do not paste whole files. Reference existing functions/utilities by file path with line numbers so the implementer can navigate directly. Count only actionable implementation tasks as tasks. Keep acceptance criteria, files, risks, and verification separate from task counts.
+Use sequential third-level headings in the exact form `### Phase 1: <name>`, `### Phase 2: <name>`, and so on. Directly below each phase heading, write one line `Owner: <specialist>; Depends on: <Phase N | none>`; use `none` when the phase's files are disjoint from other phases and any coupling is an interface contract stated in the plan. Under that line, write a numbered list of concrete, actionable implementation tasks. Each phase must contain multiple related tasks; merge a phase that would contain only one task. Include short code or markdown snippets inline only where the exact shape of a change matters (function signature, JSX wiring, schema, etc.). Do not paste whole files. Reference existing functions/utilities by file path with line numbers so the implementer can navigate directly. Count only actionable implementation tasks as tasks. Keep acceptance criteria, files, risks, and verification separate from task counts.
 
 ## Visual details
 

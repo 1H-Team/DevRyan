@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { hostDeadlineExpired } from './host-stall-clock.js';
 
 const context = new AsyncLocalStorage();
 export const executionRemainingMs = () => Math.max(0, (context.getStore()?.deadline ?? Infinity) - Date.now());
@@ -71,9 +72,12 @@ export async function withExecutionAdmission(input, action, { timeoutMs = 25_000
   const started = Date.now();
   const meter = { progress: started, waiters: 0 };
   const idle = Number.isFinite(idleMs) && idleMs > 0 && idleMs < timeoutMs ? idleMs : null;
+  // The idle limit counts only time this host could run: while its event loop
+  // is stalled, the work cannot report progress. `timeoutMs` stays a
+  // wall-clock cap.
   const timer = idle === null ? setTimeout(() => controller.abort(expired), timeoutMs) : setInterval(() => {
     const now = Date.now(), observed = followedProgress(meter);
-    if (now - started >= timeoutMs || (!observed.waiting && now - observed.progress >= idle)) controller.abort(expired);
+    if (now - started >= timeoutMs || (!observed.waiting && hostDeadlineExpired(observed.progress, idle, timeoutMs))) controller.abort(expired);
   }, Math.min(idle, 1000));
   const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
   const report = createReport(input, onDiagnostic);
@@ -201,14 +205,19 @@ function waitForQueue(previous) {
   });
 }
 
-export async function executionCleanup(action) {
+// Cleanup gets 5 s of time this host could run, and at most 60 s.
+export async function executionCleanup(action, { timeoutMs = 5_000, capMs = 60_000 } = {}) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(Object.assign(new Error('local_execution_cleanup_timeout'), {
-    code: 'local_execution_cleanup_timeout', status: 503,
-  })), 5_000);
+  const started = Date.now();
+  const timer = setInterval(() => {
+    if (hostDeadlineExpired(started, timeoutMs, capMs)) controller.abort(Object.assign(new Error('local_execution_cleanup_timeout'), {
+      code: 'local_execution_cleanup_timeout', status: 503,
+    }));
+  }, Math.min(timeoutMs, 250));
+  timer.unref?.();
   try {
     return await context.run({ ...context.getStore(), signal: controller.signal }, () => executionPhase('cleanup', action));
-  } finally { clearTimeout(timer); }
+  } finally { clearInterval(timer); }
 }
 
 export async function withExecutionPreparation(input, action, { signal, onDiagnostic, summary, timeoutMs = 15 * 60_000, stallMs = 60_000 } = {}) {
@@ -219,7 +228,9 @@ export async function withExecutionPreparation(input, action, { signal, onDiagno
       // Copied admission contexts retain this meter. Joiners follow actual
       // producer progress without borrowing its cancellation or deadline.
       const { progress, waiting } = followedProgress(current);
-      if (!waiting && Date.now() - progress >= stallMs) controller.abort(Object.assign(new Error('execution_preparation_stalled'), {
+      // Stalled means no progress during `stallMs` of time this host could
+      // run, or during three times that long by the wall clock.
+      if (!waiting && hostDeadlineExpired(progress, stallMs, stallMs * 3)) controller.abort(Object.assign(new Error('execution_preparation_stalled'), {
         code: 'execution_preparation_stalled', status: 503,
       }));
     }, Math.min(stallMs, 1000));

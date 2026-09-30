@@ -121,8 +121,50 @@ describe('managed orchestration ledger compaction', () => {
   });
   test('exports the approved production bounds', () => {
     expect(DEFAULT_MANAGED_TERMINAL_MAX_RECORDS).toBe(2_000);
-    expect(DEFAULT_MANAGED_TERMINAL_MAX_AGE_MS).toBe(90 * 24 * 60 * 60 * 1_000);
+    expect(DEFAULT_MANAGED_TERMINAL_MAX_AGE_MS).toBe(14 * 24 * 60 * 60 * 1_000);
     expect(DEFAULT_MANAGED_LEDGER_MAX_BYTES).toBe(20 * 1024 * 1024);
+  });
+
+  test('an unacknowledged result is kept while its conversation is active and dropped once it is idle', () => {
+    const day = 24 * 60 * 60 * 1_000, maxAgeMs = 14 * day, now = 100 * day;
+    const grouped = (index, finishedAt, rootSessionId) => terminal(index, {
+      rootSessionId, dispatchGroupId: `msg_${rootSessionId}`, createdAt: finishedAt, startedAt: finishedAt, finishedAt,
+    });
+    const input = state([
+      grouped(1, now - 40 * day, 'ses_idle'),
+      grouped(2, now - 30 * day, 'ses_idle'),
+      // Old and uncollected, but its conversation dispatched again yesterday.
+      grouped(3, now - 40 * day, 'ses_active'),
+      grouped(4, now - 1 * day, 'ses_active'),
+      // Old and uncollected, and its conversation still has running work.
+      grouped(5, now - 40 * day, 'ses_running'),
+      task(6, { rootSessionId: 'ses_running', status: 'running', createdAt: now - 39 * day, startedAt: now - 39 * day }),
+    ]);
+    const options = { now, maxAgeMs, maxTerminalRecords: Infinity, maxBytes: Infinity };
+
+    const expired = compactManagedOrchestrationState(input, options);
+    expect(expired.removedTaskIds.sort()).toEqual(['dvr_task_1', 'dvr_task_2']);
+    expect(expired.state.resultEnvelopes.map((envelope) => envelope.taskId).sort())
+      .toEqual(['dvr_task_3', 'dvr_task_4', 'dvr_task_5']);
+
+    // Kill switch: nothing uncollected is ever dropped.
+    expect(compactManagedOrchestrationState(input, { ...options, expireUnacknowledged: false }).removedTaskIds).toEqual([]);
+    // Without an age bound there is no idle conversation.
+    expect(compactManagedOrchestrationState(input, { ...options, maxAgeMs: Infinity }).removedTaskIds).toEqual([]);
+  });
+
+  test('an auto-resuming result survives an idle conversation', () => {
+    const day = 24 * 60 * 60 * 1_000, now = 100 * day;
+    const parked = terminal(1, { status: 'failed', dispatchGroupId: 'msg_parent', createdAt: now - 40 * day, startedAt: now - 40 * day, finishedAt: now - 40 * day });
+    const input = state([parked], { [parked.taskId]: activeAutoResume() });
+    expect(compactManagedOrchestrationState(input, { now, maxAgeMs: 14 * day, maxTerminalRecords: Infinity, maxBytes: Infinity }).removedTaskIds).toEqual([]);
+  });
+
+  test('clones its input unless the caller owns it', () => {
+    const input = state([terminal(1), terminal(2)]);
+    const result = compactManagedOrchestrationState(input, { now: 100, maxAgeMs: Infinity });
+    expect(result.state.tasks[0]).toEqual(input.tasks[0]);
+    expect(result.state.tasks[0]).not.toBe(input.tasks[0]);
   });
 
   test('removes the oldest unreferenced terminal records to meet the count cap', () => {
@@ -252,14 +294,15 @@ describe('managed orchestration ledger compaction', () => {
     expect(tight.overLimit).toBe(true);
   });
 
-  test('never compacts a grouped terminal result before disposition', () => {
+  test('never compacts a grouped terminal result of an active conversation before disposition', () => {
     const grouped = terminal(1, { dispatchGroupId: 'msg_parent' });
     const removable = terminal(2);
 
     const result = compactManagedOrchestrationState(state([grouped, removable]), {
       now: 100,
       maxTerminalRecords: 0,
-      maxAgeMs: 0,
+      // The conversation last changed 98 ms ago.
+      maxAgeMs: 99,
       maxBytes: Number.POSITIVE_INFINITY,
     });
 

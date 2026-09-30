@@ -88,11 +88,38 @@ const providerModelLabel = (
   };
 };
 
-// Retried, recovered and resumed attempts name the model they run on unless a
-// recovery message already does.
-const isFollowUpExecution = (kind: ManagedTaskRowTask['executionKind']) => (
-  kind === 'retry_in_place' || kind === 'recover_in_place' || kind === 'resume'
-);
+// Failures a Model Recovery answers. A deadline is not one of them.
+const MODEL_RECOVERY_FAILURE_KINDS = new Set<string>([
+  'provider_usage_limit',
+  'provider_transport',
+  'provider_authentication',
+  'provider_configuration',
+  'provider_prompt_rejected',
+  'model_unavailable',
+]);
+
+// An attempt names the model it runs on only after a Model Recovery, unless a
+// recovery message already does. The host starts `retry_in_place` and
+// `recover_in_place` from one (a chosen model, or an automatic resume). An
+// agent's own `resume` counts only with evidence: the prior attempt failed at
+// its provider or model, its auto-resume started this attempt, or this attempt
+// runs on another model or thinking level. A resume after a task deadline on
+// the same model names nothing.
+const followsModelRecovery = (
+  task: ManagedTaskRowTask,
+  recoverySourceTask: ManagedTaskRowTask | undefined,
+  priorEnvelope: ManagedTaskRowEnvelope | undefined,
+) => {
+  if (task.executionKind === 'retry_in_place' || task.executionKind === 'recover_in_place') return true;
+  if (task.executionKind !== 'resume' || !task.priorTaskId) return false;
+  if (priorEnvelope?.taskId === task.priorTaskId && priorEnvelope.autoResume) return true;
+  if (recoverySourceTask?.taskId !== task.priorTaskId) return false;
+  return MODEL_RECOVERY_FAILURE_KINDS.has(recoverySourceTask.failureKind ?? '')
+    || Boolean(recoverySourceTask.transportRecovery)
+    || recoverySourceTask.providerId !== task.providerId
+    || recoverySourceTask.modelId !== task.modelId
+    || (recoverySourceTask.variant ?? null) !== (task.variant ?? null);
+};
 
 const getProviderFailurePresentation = ({
   task,
@@ -339,7 +366,7 @@ export const ManagedTaskRowView = React.memo(({
               {providerFailurePresentation.message}
             </p>
           ) : null}
-          {!providerFailurePresentation && isFollowUpExecution(task.executionKind) ? (
+          {!providerFailurePresentation && followsModelRecovery(task, recoverySourceTask, priorEnvelope) ? (
             <p className="mt-1 typography-micro text-muted-foreground">
               {providerModelLabel(task, providers).combined} · {formatEffortLabel(task.variant ?? undefined, { providerId: task.providerId })}
             </p>

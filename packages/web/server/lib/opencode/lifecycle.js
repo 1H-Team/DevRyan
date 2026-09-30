@@ -1564,16 +1564,34 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     return true;
   };
 
-  const triggerHealthCheck = async () => {
+  // One failed probe of a live process is not proof that it is broken: under
+  // load the 5 s probe times out while OpenCode is only slow. A process that
+  // exited restarts at once; a live idle one restarts after this many
+  // consecutive failed probes. DEVRYAN_HEALTH_RESTART_FAILURES=1 restores a
+  // restart on the first failure.
+  const healthFailuresBeforeRestart = () => {
+    const configured = Number(process.env.DEVRYAN_HEALTH_RESTART_FAILURES);
+    return Number.isSafeInteger(configured) && configured >= 1 && configured <= 10 ? configured : 3;
+  };
+  let consecutiveHealthFailures = 0;
+  const checkHealth = async (restartMessage) => {
     if (!state.openCodeProcess || state.isShuttingDown || state.isRestartingOpenCode) return;
+    const healthy = await isOpenCodeProcessHealthy();
+    if (healthy) { consecutiveHealthFailures = 0; return; }
+    if (shouldPreserveBusyProcessAfterHealthFailure()) return;
+    consecutiveHealthFailures += 1;
+    if (!hasChildProcessExited(state.openCodeProcess) && consecutiveHealthFailures < healthFailuresBeforeRestart()) {
+      console.warn(`[lifecycle] OpenCode health check failed (${consecutiveHealthFailures} of ${healthFailuresBeforeRestart()}); keeping the live process`);
+      return;
+    }
+    consecutiveHealthFailures = 0;
+    console.log(restartMessage);
+    await restartOpenCode();
+  };
 
+  const triggerHealthCheck = async () => {
     try {
-      const healthy = await isOpenCodeProcessHealthy();
-      if (!healthy) {
-        if (shouldPreserveBusyProcessAfterHealthFailure()) return;
-        console.log('[lifecycle] immediate health check: OpenCode not healthy, restarting...');
-        await restartOpenCode();
-      }
+      await checkHealth('[lifecycle] immediate health check: OpenCode not healthy, restarting...');
     } catch (error) {
       console.error(`[lifecycle] immediate health check error: ${error.message}`);
     }
@@ -1585,15 +1603,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     }
 
     state.healthCheckInterval = setInterval(async () => {
-      if (!state.openCodeProcess || state.isShuttingDown || state.isRestartingOpenCode) return;
-
       try {
-        const healthy = await isOpenCodeProcessHealthy();
-        if (!healthy) {
-          if (shouldPreserveBusyProcessAfterHealthFailure()) return;
-          console.log('OpenCode process not running, restarting...');
-          await restartOpenCode();
-        }
+        await checkHealth('OpenCode process not running, restarting...');
       } catch (error) {
         console.error(`Health check error: ${error.message}`);
       }

@@ -2038,14 +2038,14 @@ describe('syncRuntimeAgentOverlays', () => {
       });
     });
 
-    it('never disables the language server for malformed injected settings', async () => {
+    it('keeps the default (off) for malformed injected settings', async () => {
       const syncOptions = buildSyncOptions();
-      const result = await syncRuntimeAgentOverlays({ ...syncOptions, agentRuntimeSettings: { lsp: 'false' } });
+      const result = await syncRuntimeAgentOverlays({ ...syncOptions, agentRuntimeSettings: { lsp: 'true' } });
       const runtimeConfig = JSON.parse(await fs.readFile(
         path.join(result.targetConfigDirectory, 'opencode.json'),
         'utf8',
       ));
-      expect(runtimeConfig).not.toHaveProperty('lsp');
+      expect(runtimeConfig.lsp).toBe(false);
     });
 
     it('reads the setting from the DevRyan sidecar when it is not injected', async () => {

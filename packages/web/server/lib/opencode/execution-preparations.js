@@ -1,6 +1,7 @@
 import { readSessionExecutionReceipt } from '@openchamber/harness-runtime/lib/session-execution.js';
 import { cleanupExecutionLease } from '@openchamber/harness-runtime/lib/execution-cleanup.js';
 import { withExecutionPreparation, withoutExecutionDeadline, executionRemainingMs, executionPhase, executionCleanup } from '@openchamber/harness-runtime/lib/execution-admission.js';
+import { hostDeadlineExpired } from '@openchamber/harness-runtime/lib/host-stall-clock.js';
 
 const failure = (code) => Object.assign(new Error(code), { code, status: 409 });
 
@@ -34,8 +35,12 @@ export function createExecutionPreparations({ runtime, onDiagnostic, owner, poll
     const controller = new AbortController();
     const job = { controller, touched: Date.now(), lease, tool: input?.tool, requestDirectory: input?.directory ?? lease.directory, error: null, settled: null, done: false };
     jobs.set(lease.token, job);
+    // The companion polls at least every 20 s. It is lost after `ownerTimeoutMs`
+    // without a poll, counting only time this host could run (a stalled host
+    // cannot answer a poll either), never while a poll is being answered, and
+    // at most three times that long by the wall clock.
     const timer = setInterval(() => {
-      if (Date.now() - job.touched >= ownerTimeoutMs) {
+      if (!job.polls && hostDeadlineExpired(job.touched, ownerTimeoutMs, ownerTimeoutMs * 3)) {
         void abandon(job).catch(() => {});
       }
     }, Math.min(ownerTimeoutMs, 1000));
@@ -61,6 +66,8 @@ export function createExecutionPreparations({ runtime, onDiagnostic, owner, poll
     const job = jobs.get(lease.token);
     if (!job) throw failure('execution_owner_unavailable');
     job.touched = Date.now();
+    job.polls = (job.polls ?? 0) + 1;
+    try {
     if (wait && !job.done) {
       let timer;
       // Identity and durable lease lookup already spent part of this request's
@@ -76,6 +83,7 @@ export function createExecutionPreparations({ runtime, onDiagnostic, owner, poll
     }
     if (job.error) return { protocol: 2, state: 'failed', lease: { token: lease.token }, error: { code: job.error.code || 'local_execution_failed' } };
     return { protocol: 2, state: job.done ? 'ready' : 'preparing', lease: job.lease };
+    } finally { job.polls -= 1; job.touched = Date.now(); }
   };
   const cancel = async (lease) => {
     const job = jobs.get(lease.token);

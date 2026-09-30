@@ -7,8 +7,8 @@ const profiles = [
   {
     "id": "devryan-companion-2.1.0-xai-grok-4.7-medium",
     "stale": {
-      "reason": "devryan-browser.mjs adds bounded sequences and agent-browser 0.38.1 recording support (2026-09-28); live duplicate-output requalification is required before promotion; devryan-skill-context.mjs reads the skill alias catalog through the legacy client /skill route and rejects unresolvable skill names before the native tool runs (2026-09-29)",
-      "plugins": ["devryan-browser.mjs", "devryan-skill-context.mjs"]
+      "reason": "devryan-browser.mjs adds bounded sequences and agent-browser 0.38.1 recording support (2026-09-28); live duplicate-output requalification is required before promotion; devryan-skill-context.mjs reads the skill alias catalog through the legacy client /skill route and rejects unresolvable skill names before the native tool runs (2026-09-29); devryan-primary-recovery.mjs only observes while the host does not enforce recovery, so an unreachable host no longer fails a turn (2026-09-30)",
+      "plugins": ["devryan-browser.mjs", "devryan-skill-context.mjs", "devryan-primary-recovery.mjs"]
     },
     "runtimeVersion": "1.18.32",
     "runtimeHash": "d1f46380f028efb9a46bd10c9866231acbab4e31b43afcf1f1ee179868a40882",
@@ -134,8 +134,8 @@ const profiles = [
   {
     "id": "devryan-companion-2.1.0-xai-grok-4.6-high",
     "stale": {
-      "reason": "devryan-browser.mjs adds bounded sequences and agent-browser 0.38.1 recording support (2026-09-28); live duplicate-output requalification is required before promotion; devryan-skill-context.mjs reads the skill alias catalog through the legacy client /skill route and rejects unresolvable skill names before the native tool runs (2026-09-29)",
-      "plugins": ["devryan-browser.mjs", "devryan-skill-context.mjs"]
+      "reason": "devryan-browser.mjs adds bounded sequences and agent-browser 0.38.1 recording support (2026-09-28); live duplicate-output requalification is required before promotion; devryan-skill-context.mjs reads the skill alias catalog through the legacy client /skill route and rejects unresolvable skill names before the native tool runs (2026-09-29); devryan-primary-recovery.mjs only observes while the host does not enforce recovery, so an unreachable host no longer fails a turn (2026-09-30)",
+      "plugins": ["devryan-browser.mjs", "devryan-skill-context.mjs", "devryan-primary-recovery.mjs"]
     },
     "runtimeVersion": "1.18.32",
     "runtimeHash": "d1f46380f028efb9a46bd10c9866231acbab4e31b43afcf1f1ee179868a40882",
@@ -261,8 +261,8 @@ const profiles = [
   {
     "id": "devryan-companion-2.1.0-openai-gpt-6-astra-medium",
     "stale": {
-      "reason": "devryan-browser.mjs adds bounded sequences and agent-browser 0.38.1 recording support (2026-09-28); live duplicate-output requalification is required before promotion; devryan-skill-context.mjs reads the skill alias catalog through the legacy client /skill route and rejects unresolvable skill names before the native tool runs (2026-09-29)",
-      "plugins": ["devryan-browser.mjs", "devryan-skill-context.mjs"]
+      "reason": "devryan-browser.mjs adds bounded sequences and agent-browser 0.38.1 recording support (2026-09-28); live duplicate-output requalification is required before promotion; devryan-skill-context.mjs reads the skill alias catalog through the legacy client /skill route and rejects unresolvable skill names before the native tool runs (2026-09-29); devryan-primary-recovery.mjs only observes while the host does not enforce recovery, so an unreachable host no longer fails a turn (2026-09-30)",
+      "plugins": ["devryan-browser.mjs", "devryan-skill-context.mjs", "devryan-primary-recovery.mjs"]
     },
     "runtimeVersion": "1.18.32",
     "runtimeHash": "d1f46380f028efb9a46bd10c9866231acbab4e31b43afcf1f1ee179868a40882",
@@ -388,8 +388,8 @@ const profiles = [
   {
     "id": "devryan-companion-2.1.0-openai-gpt-5.6-sol-medium",
     "stale": {
-      "reason": "devryan-browser.mjs adds bounded sequences and agent-browser 0.38.1 recording support (2026-09-28); live duplicate-output requalification is required before promotion; devryan-skill-context.mjs reads the skill alias catalog through the legacy client /skill route and rejects unresolvable skill names before the native tool runs (2026-09-29)",
-      "plugins": ["devryan-browser.mjs", "devryan-skill-context.mjs"]
+      "reason": "devryan-browser.mjs adds bounded sequences and agent-browser 0.38.1 recording support (2026-09-28); live duplicate-output requalification is required before promotion; devryan-skill-context.mjs reads the skill alias catalog through the legacy client /skill route and rejects unresolvable skill names before the native tool runs (2026-09-29); devryan-primary-recovery.mjs only observes while the host does not enforce recovery, so an unreachable host no longer fails a turn (2026-09-30)",
+      "plugins": ["devryan-browser.mjs", "devryan-skill-context.mjs", "devryan-primary-recovery.mjs"]
     },
     "runtimeVersion": "1.18.32",
     "runtimeHash": "d1f46380f028efb9a46bd10c9866231acbab4e31b43afcf1f1ee179868a40882",
@@ -610,8 +610,8 @@ const profiles = [
     "transport": "openai-chatgpt-managed-responses-v1",
     "defaultEnabled": true,
     "stale": {
-      "reason": "devryan-managed-orchestration.mjs validates devryan_task agent names against the live catalog and advertises wait_any only while its policy is on (2026-09-24); requalify on the follow-up companion build; devryan-browser.mjs adds bounded sequences and 0.38.1 recording support (2026-09-28); devryan-skill-context.mjs reads the skill alias catalog through the legacy client /skill route and rejects unresolvable skill names before the native tool runs (2026-09-29)",
-      "plugins": ["devryan-managed-orchestration.mjs", "devryan-browser.mjs", "devryan-skill-context.mjs"]
+      "reason": "devryan-managed-orchestration.mjs validates devryan_task agent names against the live catalog and advertises wait_any only while its policy is on (2026-09-24); requalify on the follow-up companion build; devryan-browser.mjs adds bounded sequences and 0.38.1 recording support (2026-09-28); devryan-skill-context.mjs reads the skill alias catalog through the legacy client /skill route and rejects unresolvable skill names before the native tool runs (2026-09-29); devryan-primary-recovery.mjs only observes while the host does not enforce recovery, so an unreachable host no longer fails a turn (2026-09-30)",
+      "plugins": ["devryan-managed-orchestration.mjs", "devryan-browser.mjs", "devryan-skill-context.mjs", "devryan-primary-recovery.mjs"]
     },
     "evidence": {
       "reportHash": "35462b59b718e7796efb6113820a702085bfc794b210c945be56c0682b8fa197",
