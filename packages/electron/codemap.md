@@ -2,6 +2,10 @@
 
 ## Responsibility
 
+Normal `desktop_restart` shares `quit-cleanup.mjs`'s bounded owned-resource
+cleanup before relaunch. A background-runtime client only detaches its desktop
+broker; its service-owned terminals survive the window restart.
+
 `browser-parking.mjs` separates parked manual-tab hosts from active agent-lease hosts. `browser-surface-manager.mjs` enables background throttling before parking manual tabs and disables it when attached visibly; agent leases retain unthrottled scheduling and frame subscriptions. Views remain visible inside hidden parking windows so Chromium receives the host visibility transition. Parking windows are destroyed with their manager. The isolated `tests/browser-inspection/run.mjs` fixture exercises production scheduling, capture and restoration; its optional `--baseline-root` uses an explicit repository-local baseline checkout. A failed animation prerequisite cannot support a CPU/GPU comparison.
 
 Primary desktop shell and packaged background-runtime executable. App-bound mode

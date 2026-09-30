@@ -745,10 +745,14 @@ export interface SessionPlanRevisionWrite extends SessionPlanRevisionIdentity {
   markdown: string;
 }
 
+export interface SessionPlanRevisionUpdate extends SessionPlanRevisionWrite {
+  expectedVersion: string;
+}
+
 export interface SessionPlansAPI {
-  ensureRevision(input: SessionPlanRevisionWrite): Promise<{ path: string; created: boolean }>;
-  readRevision(input: SessionPlanRevisionIdentity): Promise<{ path: string; content: string }>;
-  updateRevision(input: SessionPlanRevisionWrite): Promise<{ path: string; saved: boolean }>;
+  ensureRevision(input: SessionPlanRevisionWrite): Promise<{ path: string; created: boolean; version: string }>;
+  readRevision(input: SessionPlanRevisionIdentity): Promise<{ path: string; content: string; version: string }>;
+  updateRevision(input: SessionPlanRevisionUpdate): Promise<{ path: string; saved: boolean; version: string }>;
 }
 
 export interface ProjectEntry {

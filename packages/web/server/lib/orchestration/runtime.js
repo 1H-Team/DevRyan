@@ -1004,7 +1004,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     }
   };
 
-  privateHost = options.privateHost ?? createManagedOrchestrationPrivateHost({ handleRpc });
+  privateHost = options.privateHost ?? createManagedOrchestrationPrivateHost({ handleRpc, authorizeRpc: options.authorizePrivateRpc });
 
   const prepareBridge = async () => {
     assertAvailable();

@@ -39,6 +39,25 @@ afterEach(() => {
 });
 
 describe('DevRyan tool input guard plugin', () => {
+  test.each(['edit', 'write', 'oc_edit', 'oc_write', 'multiedit'])('guides %s plan writes to the scoped writer', async (tool) => {
+    const dataDir = createDataDir();
+    const hooks = await DevRyanToolInputGuardPlugin({ directory: LEGACY_FIXTURE_ROOT }, { dataDir });
+    await expect(hooks['tool.execute.before']({ tool }, { args: {
+      filePath: path.join(dataDir, 'projects', 'path_project', 'plans', 'draft.md'),
+    } })).rejects.toMatchObject({ code: 'DEVRYAN_TOOL_INPUT_INVALID', message: expect.stringContaining('plan_update') });
+  });
+  test.each(['Add File', 'Update File', 'Delete File', 'Move to'])('guides apply_patch %s plan targets after normalization', async (directive) => {
+    const dataDir = createDataDir();
+    const hooks = await DevRyanToolInputGuardPlugin({ directory: LEGACY_FIXTURE_ROOT }, { dataDir });
+    const target = path.join(dataDir, 'projects', 'path_project', 'plans', 'sub', '..', 'draft.md');
+    await expect(hooks['tool.execute.before']({ tool: 'apply_patch' }, { args: {
+      patchText: `*** Begin Patch\n*** ${directive}: ${target}\n+text\n*** End Patch`,
+    } })).rejects.toMatchObject({ code: 'DEVRYAN_TOOL_INPUT_INVALID', message: expect.stringContaining('plan_read') });
+    await expect(hooks['tool.execute.before']({ tool: 'apply_patch' }, { args: {
+      patchText: '*** Begin Patch\n*** Update File: src/app.ts\n+text\n*** End Patch',
+    } })).resolves.toBeUndefined();
+  });
+
   test('allows one grep path, including a path containing spaces', async () => {
     await expect(beforeTool('grep', { path: '/tmp/Project With Spaces/src' })).resolves.toBeUndefined();
   });

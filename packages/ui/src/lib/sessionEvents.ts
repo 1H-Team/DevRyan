@@ -1,5 +1,23 @@
 import type { Session } from '@opencode-ai/sdk/v2';
 import type { WorktreeMetadata } from '@/types/worktree';
+import type { SessionPlanRevisionIdentity } from '@/lib/api/types';
+
+export type SessionPlanUpdated = SessionPlanRevisionIdentity & { version: string };
+const planUpdatedListeners = new Set<(event: SessionPlanUpdated) => void>();
+
+export const notifyPlanUpdated = (properties: unknown): void => {
+  if (!properties || typeof properties !== 'object') return;
+  const value = properties as Record<string, unknown>;
+  if (typeof value.sessionID !== 'string' || !value.sessionID
+    || typeof value.sourceMessageID !== 'string' || !value.sourceMessageID
+    || typeof value.directory !== 'string' || !value.directory
+    || typeof value.sessionCreated !== 'number' || !Number.isSafeInteger(value.sessionCreated) || value.sessionCreated <= 0
+    || typeof value.sessionSlug !== 'string' || !value.sessionSlug
+    || typeof value.version !== 'string' || !value.version) return;
+  const event = { sessionId: value.sessionID, sourceMessageId: value.sourceMessageID,
+    directory: value.directory, sessionCreated: value.sessionCreated, sessionSlug: value.sessionSlug, version: value.version };
+  planUpdatedListeners.forEach(listener => listener(event));
+};
 
 export type SessionDeleteRequest = {
   sessions: Session[];
@@ -27,6 +45,10 @@ const directoryListeners = new Set<DirectoryListener>();
 const gitRefreshListeners = new Set<GitRefreshListener>();
 
 export const sessionEvents = {
+  onPlanUpdated(listener: (event: SessionPlanUpdated) => void) {
+    planUpdatedListeners.add(listener);
+    return () => { planUpdatedListeners.delete(listener); };
+  },
   onDeleteRequest(listener: DeleteListener) {
     deleteListeners.add(listener);
     return () => {

@@ -7,6 +7,7 @@ export const finishQuitAfterCleanup = async ({
   cleanupOwnedResources,
   requestQuit,
   forceExit,
+  relaunch = () => {},
   onCleanupError = () => {},
   scheduleTimeout = setTimeout,
   cancelTimeout = clearTimeout,
@@ -57,12 +58,14 @@ export const finishQuitAfterCleanup = async ({
       }));
       return 'blocked';
     }
+    relaunch();
     forceExit();
     return 'forced';
   }
 
   cancelTimeout(timeoutHandle);
   if (result === 'failed') return 'blocked';
+  relaunch();
   requestQuit();
   return 'quit';
 };

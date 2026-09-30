@@ -13,7 +13,7 @@ const record = { ...createManagedTaskRecord({ taskId: 'dvr_task_visual', idempot
 useManagedOrchestrationStore.getState().ingestEvent(toManagedTaskEvent(record));
 const name = 'Feedback Chat Greeting and Form';
 const setTitle = (title: string) => fixtureSessions.setState({ session: [{ id: record.childSessionId, title }] });
-const App = () => {
+export const App = () => {
   const title = useStore(fixtureSessions, (state) => state.session[0].title);
   return <I18nProvider><main style={{ maxWidth: 900, padding: 20, margin: 'auto' }}>
     <h1 style={{ fontSize: 22 }}>Implementation startup fixture</h1>
@@ -28,7 +28,6 @@ const App = () => {
       {resolveDisplaySessionTitle({ title, fallback: 'Untitled Session' })}
     </aside>
     <section aria-label="Implementation transcript">
-      <details><summary>skill · Executing Plans · completed (fixture)</summary>Full execution-skill result is present in this simulated active context.</details>
       <p style={{ margin: '16px 0' }}>I will implement the feedback-only change and verify the greeting and form.</p>
       <ManagedTaskList rootSessionId="ses_visual" />
     </section>

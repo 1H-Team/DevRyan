@@ -8,6 +8,15 @@ Terminal transport/runtime utilities for PTY streaming: WebSocket protocol norma
 - **Replay buffer primitive** (`output-replay-buffer.js`) supports terminal reattach/resume without full process restart.
 - **Public environment boundary** (`project-environment.js`) reads only fixed development dotenv files from the assigned project's registered repository, applies deterministic precedence, and rejects server credentials before values reach a managed PTY.
 - **Runtime wrapper** (`runtime.js`) composes protocol + PTY IO hooks.
+- Terminal stop, idle cleanup, restart and shutdown snapshot POSIX parent/group
+  and start identities before signalling owned descendant groups and the shell.
+  Graceful stops retain the capture after session removal, then escalate only
+  still-matching individual processes after 500 ms. Close/restart await cleanup;
+  shutdown drains pending captures and prevents a waiting restart from spawning
+  another PTY. Runtime, shared and unrelated groups are excluded; unavailable
+  enumeration retains the PTY fallback. `scripts/qa/terminal-cleanup.mjs`
+  exercises real disposable PTYs with children resistant to hangup/termination
+  and an unrelated sentinel; deterministic runtime tests mock all OS signals.
 
 ## Flow
 1. Incoming WS frames are normalized to text/buffer and checked for control tags.

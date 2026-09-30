@@ -1,4 +1,5 @@
 import { WebSocketServer } from 'ws';
+import { execFileSync } from 'node:child_process';
 import {
   TERMINAL_INPUT_WS_MAX_PAYLOAD_BYTES,
   TERMINAL_INPUT_WS_PATH,
@@ -14,6 +15,62 @@ import {
   readTerminalInputWsControlFrame,
 } from './index.js';
 import { loadProjectPublicEnvironment } from './project-environment.js';
+
+export const killTerminalProcess = (ptyProcess, mode = 'term', {
+  platform = process.platform, ownPid = process.pid,
+  readProcessTable = () => execFileSync('/bin/ps', ['-axo', 'pid=,ppid=,pgid=,lstart='], { encoding: 'utf8', timeout: 1000, maxBuffer: 4 * 1024 * 1024 }),
+  signalProcess = (pid, signal) => process.kill(pid, signal),
+  waitForEscalation = () => new Promise((resolve) => setTimeout(resolve, 500)),
+} = {}) => {
+  if (!ptyProcess) return Promise.resolve();
+  let captured = [];
+  const processRows = () => String(readProcessTable()).split('\n').flatMap((line) => {
+    const match = /^\s*(\d+)\s+(\d+)\s+(\d+)(?:\s+(.+?))?\s*$/.exec(line);
+    return match ? [{ pid: Number(match[1]), ppid: Number(match[2]), pgid: Number(match[3]), start: match[4]?.trim() }] : [];
+  });
+  const signal = mode === 'kill' ? 'SIGKILL' : 'SIGTERM';
+  const pid = ptyProcess.pid;
+  if (platform !== 'win32' && Number.isSafeInteger(pid) && pid > 1 && pid !== ownPid) {
+    // Snapshot ancestry before the shell exits and reparents its jobs. Interactive
+    // shells give foreground/background jobs their own groups, unlike the shell.
+    let groups = [];
+    let ownGroup;
+    try {
+      const rows = processRows();
+      ownGroup = rows.find((row) => row.pid === ownPid)?.pgid;
+      const children = new Map();
+      for (const row of rows) {
+        if (!children.has(row.ppid)) children.set(row.ppid, []);
+        children.get(row.ppid).push(row.pid);
+      }
+      const owned = new Set([pid]);
+      for (const parent of owned) for (const child of children.get(parent) ?? []) owned.add(child);
+      captured = rows.filter((row) => owned.has(row.pid) && row.pid > 1 && row.pid !== ownPid && row.start);
+      if (ownGroup && rows.some((row) => row.pid === pid)) {
+        groups = [...new Set(rows.filter((row) => owned.has(row.pid)).map((row) => row.pgid))]
+          .filter((group) => group > 1 && group !== pid && group !== ownGroup && owned.has(group)
+            && rows.every((row) => row.pgid !== group || owned.has(row.pid))).reverse();
+      }
+    } catch { /* Keep the existing PTY/group fallback when ps is unavailable. */ }
+    for (const group of groups) { try { signalProcess(-group, signal); } catch {} }
+    if (pid !== ownGroup) { try { signalProcess(-pid, signal); } catch {} }
+  }
+  try { ptyProcess.kill(mode === 'kill' ? 'SIGKILL' : undefined); } catch {}
+  if (!captured.length) return Promise.resolve();
+  // Keep the original identities after the shell exits and jobs are reparented.
+  // Never escalate by group: unrelated/new members may have joined it meanwhile.
+  const killCaptured = () => {
+    let current;
+    try { current = new Map(processRows().map((row) => [row.pid, row])); } catch { return; }
+    for (const original of captured.reverse()) {
+      const row = current.get(original.pid);
+      if (!row || row.start !== original.start || row.pgid !== original.pgid || row.pid === ownPid) continue;
+      try { signalProcess(row.pid, 'SIGKILL'); } catch {}
+    }
+  };
+  if (mode === 'kill') { killCaptured(); return Promise.resolve(); }
+  return waitForEscalation().then(killCaptured);
+};
 
 export function createTerminalRuntime({
   app,
@@ -32,6 +89,7 @@ export function createTerminalRuntime({
   TERMINAL_INPUT_WS_MAX_REBINDS_PER_WINDOW,
   multiUserRuntime,
   onTerminalSessionClosed,
+  killPtyProcess = killTerminalProcess,
 }) {
   let ptyProviderPromise = null;
   const getPtyProvider = async () => {
@@ -154,6 +212,7 @@ export function createTerminalRuntime({
           ptyOptions.useConpty = true;
         }
 
+        if (shuttingDown) throw new Error('Terminal runtime is shutting down');
         const ptyProcess = pty.spawn(shell, [], ptyOptions);
 
         return { ptyProcess, shell };
@@ -168,6 +227,8 @@ export function createTerminalRuntime({
   };
 
   const terminalSessions = new Map();
+  const pendingProcessCleanup = new Set();
+  let shuttingDown = false;
   const terminalWsConnections = new Set();
   const MAX_TERMINAL_SESSIONS = 20;
   const TERMINAL_IDLE_TIMEOUT = 30 * 60 * 1000;
@@ -257,28 +318,6 @@ export function createTerminalRuntime({
     return true;
   };
 
-  const killTerminalProcess = (ptyProcess, mode = 'term') => {
-    if (!ptyProcess) return;
-
-    // Best-effort: try killing the process group first so child processes
-    // started by shells (e.g. preview dev servers) don't orphan.
-    if (process.platform !== 'win32') {
-      const pid = ptyProcess.pid;
-      if (typeof pid === 'number' && Number.isFinite(pid) && pid > 0) {
-        try {
-          process.kill(-pid, mode === 'kill' ? 'SIGKILL' : 'SIGTERM');
-        } catch {
-        }
-      }
-    }
-
-    try {
-      // node-pty accepts an optional signal string; bun-pty ignores extra args.
-      ptyProcess.kill(mode === 'kill' ? 'SIGKILL' : undefined);
-    } catch {
-    }
-  };
-
   const terminateTerminalSession = (sessionId, reason, mode = 'term') => {
     const session = terminalSessions.get(sessionId);
     if (!session) return false;
@@ -287,8 +326,10 @@ export function createTerminalRuntime({
     // PTY implementations emit `onExit` synchronously from `kill()`, and that
     // callback must not replace the more specific close reason.
     removeTerminalSession(sessionId, reason);
-    killTerminalProcess(session.ptyProcess, mode);
-    return true;
+    const processCleanup = Promise.resolve(killPtyProcess(session.ptyProcess, mode));
+    const tracked = processCleanup.finally(() => pendingProcessCleanup.delete(tracked));
+    pendingProcessCleanup.add(tracked);
+    return tracked;
   };
 
   const sendTerminalInputWsControl = (socket, payload) => {
@@ -774,7 +815,7 @@ export function createTerminalRuntime({
     }
   });
 
-  app.delete('/api/terminal/:sessionId', (req, res) => {
+  app.delete('/api/terminal/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
     const session = terminalSessions.get(sessionId);
 
@@ -783,7 +824,7 @@ export function createTerminalRuntime({
     }
 
     try {
-      terminateTerminalSession(sessionId, 'closed');
+      await terminateTerminalSession(sessionId, 'closed');
       console.log(`Closed terminal session: ${sessionId}`);
       res.json({ success: true });
     } catch (error) {
@@ -802,7 +843,7 @@ export function createTerminalRuntime({
 
     const existingSession = terminalSessions.get(sessionId);
     if (existingSession) {
-      terminateTerminalSession(sessionId, 'restart');
+      await terminateTerminalSession(sessionId, 'restart');
     }
 
     try {
@@ -900,6 +941,7 @@ export function createTerminalRuntime({
   multiUserRuntime?.setTerminalOwnerTerminator?.(terminateOwnerSessions);
 
   const shutdown = async () => {
+    shuttingDown = true;
     server.off('upgrade', upgradeHandler);
 
     if (idleSweepInterval) {
@@ -909,6 +951,8 @@ export function createTerminalRuntime({
     for (const [sessionId] of terminalSessions) {
       terminateTerminalSession(sessionId, 'shutdown', 'kill');
     }
+
+    await Promise.all([...pendingProcessCleanup]);
 
     if (!terminalInputWsServer) {
       return;

@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { COMPACTION_ANCHOR_TAG, createTaskContextRuntime, deriveTaskCheckpoint, formatChildCompactionAnchor, formatCompactionAnchor } from './task-context.js';
+import { COMPACTION_ANCHOR_TAG, createTaskContextRuntime, deriveTaskCheckpoint, formatChildCompactionAnchor, formatCompactionAnchor, planReference } from './task-context.js';
 
 const anchor = { info: { id: 'msg_user', sessionID: 'ses_root', role: 'user' }, parts: [
   { type: 'text', text: 'Keep dependencies unchanged. Implement the selected plan.' },
@@ -14,6 +14,17 @@ const base = { session: { id: 'ses_root', directory: '/project' }, anchor, proje
     { taskId: 'dvr_task_done', rootSessionId: 'ses_root', childSessionId: 'ses_done', status: 'failed', failureReason: 'Required check failed' }],
   envelopes: [{ taskId: 'dvr_task_done', rootSessionId: 'ses_root', envelopeId: 'dvr_result_done', action: null }],
   todos: [{ id: 'todo_1', content: 'Reconcile the failed check', status: 'pending' }], now: 100 };
+
+test('selected plan references require one canonical synthetic implement marker', () => {
+  const marker = { action: 'implement', sourceSessionId: 'ses_root', sourceMessageId: 'msg_plan', planIndex: 0, projectDirectory: '/project/pkg' };
+  const selected = (value) => ({ ...anchor, parts: [{ type: 'text', synthetic: true, text: `[openchamber-plan-action:v1] ${JSON.stringify(value)}` }] });
+  expect(planReference(selected(marker))).toEqual({ sourceSessionId: 'ses_root', sourceMessageId: 'msg_plan', planIndex: 0, projectDirectory: '/project/pkg' });
+  for (const value of [null, { ...marker, action: 'view' }, { ...marker, sourceSessionId: '../other' }, { ...marker, sourceMessageId: '' },
+    { ...marker, planIndex: -1 }, { ...marker, projectDirectory: 'relative' }, { ...marker, projectDirectory: 1 }]) expect(planReference(selected(value))).toBeNull();
+  const ordinary = selected(marker); ordinary.parts[0].synthetic = false; expect(planReference(ordinary)).toBeNull();
+  const assistant = selected(marker); assistant.info = { ...anchor.info, role: 'assistant' }; expect(planReference(assistant)).toBeNull();
+  const duplicate = selected(marker); duplicate.parts.push({ ...duplicate.parts[0] }); expect(planReference(duplicate)).toBeNull();
+});
 
 describe('recoverable task checkpoints', () => {
   test.each(['manual', 'natural'])('preserves objective, plan, children and recovery across two %s boundaries', () => {

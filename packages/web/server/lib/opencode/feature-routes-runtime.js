@@ -89,6 +89,8 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       resolveManagedProject,
       ownsSession,
       resolveOwnedSessionPlanContext,
+      recordPlanDiagnostic,
+      readCanonicalPlanIdentity,
       getLoginShellEnvSnapshot,
     } = routeDependencies;
 
@@ -349,6 +351,9 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       path,
       ownsSession,
       resolveOwnedSessionPlanContext,
+      publishEvent: emitSyntheticOpenCodeEvent,
+      recordDiagnostic: recordPlanDiagnostic,
+      readCanonicalPlanIdentity,
     });
     const imageAssetsRuntime = createImageAssetsRuntime({
       fsPromises,

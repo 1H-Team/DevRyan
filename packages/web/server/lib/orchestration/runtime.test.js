@@ -2169,6 +2169,29 @@ describe('web managed orchestration runtime', () => {
     await runtime.shutdown();
     await throwingRuntime.shutdown();
   });
+  it('wires canonical private admission before model dispatch while trusted host calls keep their existing path', async () => {
+    const scheduler = { initialize: vi.fn(), shutdown: vi.fn(), flush: vi.fn(), getDiagnostics: () => ({}) };
+    const plan = vi.fn(async () => ({ version: 'selected-revision' }));
+    const authorizePrivateRpc = vi.fn(async ({ method }) => {
+      if (method === 'submit') throw Object.assign(new Error('Builder plans only'), { code: 'managed_orchestrator_authority_required', statusCode: 403 });
+    });
+    const runtime = createWebManagedOrchestrationRuntime({ scheduler, persistence: createPersistence(),
+      executor: {}, authorizePrivateRpc, auxiliaryRpcHandlers: { harness_plan: plan } });
+    try {
+      const environment = await runtime.prepareBridge();
+      const rpc = async body => fetch(environment.DEVRYAN_ORCHESTRATION_URL, { method: 'POST',
+        headers: { authorization: `Bearer ${environment.DEVRYAN_ORCHESTRATION_TOKEN}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const denied = await rpc({ method: 'submit', params: submitParams(1) });
+      expect(denied.status).toBe(403);
+      expect(scheduler.initialize).not.toHaveBeenCalled();
+      expect(plan).not.toHaveBeenCalled();
+      expect((await rpc({ method: 'harness_plan', params: { action: 'plan_read' } })).status).toBe(200);
+      expect(authorizePrivateRpc).toHaveBeenCalledTimes(2);
+      await runtime.handleRpc({ method: 'harness_plan', params: { action: 'plan_read' } });
+      expect(authorizePrivateRpc).toHaveBeenCalledTimes(2);
+      expect(plan).toHaveBeenCalledTimes(2);
+    } finally { await runtime.shutdown(); }
+  });
 });
 
 describe('managed agent name admission', () => {

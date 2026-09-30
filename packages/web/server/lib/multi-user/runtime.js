@@ -2807,6 +2807,26 @@ export async function createMultiUserRuntime({
     };
   };
 
+  const resolveSessionPlanContext = async ({ sessionID, directory = '' } = {}) => {
+    if (typeof sessionID !== 'string' || !sessionID) return null;
+    const owner = await sessionOwnership(sessionID);
+    if (!owner?.user_id || owner.archived_at) return null;
+    // Saved-plan writes require current grants; background transport grace is
+    // deliberately unavailable at this filesystem authorization boundary.
+    const principal = await loadPrincipal(owner.user_id, null, { includeSettings: false });
+    if (!principal) return null;
+    const context = await resolveOwnedSessionPlanContext(principal, sessionID, directory);
+    return context ? { ...context, ownerKey: `user:${owner.user_id}` } : null;
+  };
+
+  const resolveCurrentOwnedSessionPlanContext = async (principal, sessionID, directory = '') => {
+    if (principal?.scope !== 'managed' || !principal.id) return null;
+    // Never restore authority from the request's cached assignments or from
+    // the session owner's identity: only this authenticated caller's grants.
+    const current = await loadPrincipal(principal.id, null, { includeSettings: false });
+    return current ? resolveOwnedSessionPlanContext(current, sessionID, directory) : null;
+  };
+
   const resolveSessionAgentExecution = async ({
     rootSessionId,
     directory = '',
@@ -5748,6 +5768,8 @@ export async function createMultiUserRuntime({
     publicizeValue,
     ownsSession,
     resolveOwnedSessionPlanContext,
+    resolveCurrentOwnedSessionPlanContext,
+    resolveSessionPlanContext,
     resolveSessionAgentExecution,
     resolveSessionOwnerKey,
     resolveSessionAgentBackupExecution,

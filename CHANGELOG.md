@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.22] - 2026-09-30
+
+- Saved plans now support versioned edits from Plan View and the managed agent, with conflict detection, serialized saves and current ownership checks. Switching chats preserves each plan's draft, and implementation uses the selected saved revision.
+- Sequential edits and Undo/Redo retain exact mutation order. Stopping or restarting a terminal cleans up owned descendants, including children that resist graceful termination, and Electron waits for pending cleanup before quitting or restarting.
+- Provider authentication recovery handles long-lived OAuth refresh responses and keeps bounded diagnostics. New successful turns clear superseded failure notifications while retaining current failures through reload.
+- Agent guidance clarifies saved-plan access, verification and supervised server cleanup. Status animation retains its appearance with one accessible label.
+
 ## [1.2.21] - 2026-09-30
 
 - Local execution deadlines now account for host event-loop stalls while retaining wall-clock caps. Finished tools return after durable publication without waiting for private-view cleanup, and diagnostics distinguish tool execution, publication, cleanup and host stalls.

@@ -140,7 +140,7 @@ function baseRange(base, start, length) {
 function anchorAt(base, offset) {
   let position = 0, left = null;
   for (const run of base) {
-    if (offset <= position + run.text.length) {
+    if (offset < position + run.text.length) {
       if (offset > position) left = { id: run.id, offset: run.start + offset - position };
       return { left, right: { id: run.id, offset: run.start + offset - position } };
     }
@@ -148,6 +148,13 @@ function anchorAt(base, offset) {
     left = { id: run.id, offset: run.start + run.text.length };
   }
   return { left, right: null };
+}
+
+function pastReplaced(runs, at) {
+  const owner = runs[at - 1];
+  while (at < runs.length && owner.replaces.some((range) => runs[at].id === range.id
+    && runs[at].start >= range.start && runs[at].start < range.start + range.length)) at++;
+  return at;
 }
 
 /** Record changes from a private base, including when that base has since been
@@ -205,10 +212,12 @@ export function applyMutationText(runs, base, after, operationID, { hunkBudget =
     if (inserted) {
       if (anchor.left) splitAt(result, anchor.left.id, anchor.left.offset);
       if (anchor.right) splitAt(result, anchor.right.id, anchor.right.offset);
-      let at = anchor.right ? result.findIndex((run) => run.id === anchor.right.id && run.start === anchor.right.offset) : -1;
+      const boundary = !removed && anchor.left && (!anchor.right || anchor.left.id !== anchor.right.id
+        || anchor.left.offset !== anchor.right.offset);
+      let at = !boundary && anchor.right ? result.findIndex((run) => run.id === anchor.right.id && run.start === anchor.right.offset) : -1;
       if (at < 0 && anchor.left) {
         const left = result.findIndex((run) => run.id === anchor.left.id && run.start + run.text.length === anchor.left.offset);
-        if (left >= 0) at = left + 1;
+        if (left >= 0) at = boundary ? pastReplaced(result, left + 1) : left + 1;
       }
       if (at < 0) at = result.length;
       result.splice(at, 0, { id: `${operationID}:${index++}`, start: 0, text: inserted,

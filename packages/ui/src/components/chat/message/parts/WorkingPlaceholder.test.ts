@@ -26,7 +26,7 @@ describe('WorkingPlaceholder status presentation', () => {
         expect(html.match(/Waiting for subagent output/g)).toHaveLength(2);
     });
 
-    test('restores the visible gradient text sweep from the prior implementation', () => {
+    test('keeps the gradient sweep decorative so the status is announced only once', () => {
         const styles = readFileSync(new URL('../../../../index.css', import.meta.url), 'utf8');
         const shimmerRule = styles.slice(
             styles.indexOf('@keyframes oc-text-shimmer'),
@@ -35,7 +35,7 @@ describe('WorkingPlaceholder status presentation', () => {
 
         expect(shimmerRule).toContain('animation: oc-text-shimmer 2.2s linear infinite;');
         expect(shimmerRule).toContain('--oc-shimmer-highlight: color-mix(in oklch, var(--foreground) 92%, transparent);');
-        expect(shimmerRule).toContain('content: attr(data-shimmer-text);');
+        expect(shimmerRule).toContain('content: attr(data-shimmer-text) / "";');
         expect(shimmerRule).toContain('background-position: 200% 0;');
         expect(shimmerRule).toContain('background-position: -200% 0;');
         expect(shimmerRule).toContain('background-clip: text;');

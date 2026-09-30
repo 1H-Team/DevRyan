@@ -356,7 +356,7 @@ const prepareForQuit = ({ installingUpdate = false } = {}) => {
   }
 };
 
-const performConfirmedQuit = () => {
+const performConfirmedQuit = ({ restart = false } = {}) => {
   if (state.quitConfirmed || state.quitCleanupPromise) return;
   prepareForQuit();
   state.quitCleanupPromise = finishQuitAfterCleanup({
@@ -366,12 +366,13 @@ const performConfirmedQuit = () => {
     cleanupOwnedResources: async () => {
       speechManager.shutdown();
       await Promise.all([
-        killSidecar(),
+        state.runtimeServiceClient ? stopDesktopHostBroker() : killSidecar(),
         Promise.resolve(sshManager.shutdownAll()).catch((error) => {
           log.warn('[electron] SSH shutdown failed during quit:', error);
         }),
       ]);
     },
+    relaunch: restart ? () => app.relaunch() : undefined,
     requestQuit: () => {
       state.quitCleanupPromise = null;
       app.quit();
@@ -4700,8 +4701,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
               log.error('[electron] update installation failed', error);
             });
           } else {
-            app.relaunch();
-            app.exit(0);
+            performConfirmedQuit({ restart: true });
           }
         } catch (err) {
           log.error('[electron] desktop_restart failed', err);

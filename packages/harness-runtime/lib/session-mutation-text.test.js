@@ -1,6 +1,112 @@
 import { expect, test } from 'bun:test';
 import { applyMutationText, initialMutationRuns, mutationDiff, mutationText, visibleMutationRuns } from './session-mutation-text.js';
 
+const sequentialCases = [
+  ['ac', ['abc', 'aXbc'], [[0, 'aXc']]],
+  ['abc', ['aBc', 'aXBc'], [[0, 'aXbc']]],
+  ['abc', ['aBc', 'aBXc'], [[0, 'abXc']]],
+  ['ab', ['aB', 'aBX'], [[0, 'abX']]],
+  ['ab', ['aB', 'aQ', 'aQX'], [[1, 'aBX'], [0, 'aQX']]],
+  ['ab', ['aB', 'aBX', 'aBXY'], [[0, 'abXY']]],
+  ['abc', ['ac', 'aXc'], [[0, 'aXbc']]],
+  ['ad', ['abd', 'abcd', 'aXbcd'], [[0, 'aXcd'], [1, 'aXbd']]],
+  ['abc', ['aBc', 'aQc', 'aXQc'], [[1, 'aXBc'], [0, 'aXQc']]],
+  ['abc', ['ac', 'aC'], [[0, 'abC']]],
+  ['ac', ['abc', 'aYc', 'aXYc'], [[1, 'aXbc']]],
+  ['ac', ['abc', 'aYc', 'aYXc'], [[1, 'abXc']]],
+  ['abc', ['ab', 'abX'], [[0, 'abXc']]],
+  ['l1\nl2\n', ['l1\nL2\n', 'l1\nL2\nl3\n'], [[0, 'l1\nl2\nl3\n']]],
+  ['', ['abc', 'Xabc', 'XabYc'], [[2, 'Xabc'], [1, 'abYc']]],
+];
+for (const [before, edits, undos] of sequentialCases) {
+  test(`sequential boundaries preserve requested text and selective undo: ${JSON.stringify([before, ...edits])}`, () => {
+    let runs = initialMutationRuns(before, 'base');
+    for (const [index, after] of edits.entries()) {
+      const prior = mutationText(runs), operation = `op-${index}`;
+      runs = applyMutationText(runs, visibleMutationRuns(runs), after, operation);
+      expect(mutationText(runs)).toBe(after);
+      expect(mutationText(runs, new Set([operation]))).toBe(prior);
+    }
+    for (const [index, expected] of undos) expect(mutationText(runs, new Set([`op-${index}`]))).toBe(expected);
+    expect(mutationText(runs)).toBe(edits.at(-1));
+  });
+}
+
+test('stale concurrent inserts keep publication order at a shared base position', () => {
+  const base = initialMutationRuns('ac', 'base');
+  const first = applyMutationText(base, base, 'abc', 'a');
+  const second = applyMutationText(first, base, 'aXc', 'b');
+  expect(mutationText(second)).toBe('abXc');
+  expect(mutationText(second, new Set(['a']))).toBe('aXc');
+  expect(mutationText(second, new Set(['b']))).toBe('abc');
+});
+
+test('legacy replacement layouts retain insertion order through selective undo', () => {
+  // Frozen ac -> abc -> aYc ledger from the old boundary algorithm: the
+  // replaced b precedes Y. Loading it must not rewrite its stored run order.
+  const legacy = [
+    { id: 'base', start: 0, text: 'a', owner: null, deletedBy: [], replaces: [] },
+    { id: 'a:0', start: 0, text: 'b', owner: 'a', deletedBy: ['b'], replaces: [] },
+    { id: 'b:0', start: 0, text: 'Y', owner: 'b', deletedBy: [], replaces: [{ id: 'a:0', start: 0, length: 1 }] },
+    { id: 'base', start: 1, text: 'c', owner: null, deletedBy: [], replaces: [] },
+  ];
+  const stored = structuredClone(legacy);
+  for (const [after, undone] of [['aXYc', 'aXbc'], ['aYXc', 'abXc']]) {
+    const changed = applyMutationText(legacy, visibleMutationRuns(legacy), after, 'c');
+    expect(mutationText(changed)).toBe(after);
+    expect(mutationText(changed, new Set(['b']))).toBe(undone);
+    expect(mutationText(changed, new Set(['c']))).toBe('aYc');
+  }
+  expect(legacy).toEqual(stored);
+});
+
+test('bounded seeded sequential edits reproduce every request and undo the last operation', () => {
+  let seed = 29183;
+  const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0);
+  for (let sequence = 0; sequence < 20; sequence++) {
+    let text = 'abc\ndef\n', runs = initialMutationRuns(text, 'base');
+    for (let index = 0; index < 30; index++) {
+      const offset = random() % (text.length + 1);
+      const removed = random() % (Math.min(3, text.length - offset) + 1);
+      const inserted = Array.from({ length: random() % 4 }, () => 'abXY\n'[random() % 5]).join('');
+      const after = text.slice(0, offset) + inserted + text.slice(offset + removed), operation = `op-${index}`;
+      runs = applyMutationText(runs, visibleMutationRuns(runs), after, operation);
+      expect(mutationText(runs)).toBe(after);
+      expect(mutationText(runs, new Set([operation]))).toBe(text);
+      text = after;
+    }
+  }
+});
+
+test('boundary inserts after coalesced replacements preserve text and undo order', () => {
+  const base = initialMutationRuns('abc def ghi', 'base');
+  const coarse = applyMutationText(base, base, 'aBc dEf ghi', 'a', { hunkBudget: 1 });
+  const changed = applyMutationText(coarse, visibleMutationRuns(coarse), 'aBc dEXf ghi', 'b');
+  expect(mutationText(coarse)).toBe('aBc dEf ghi');
+  expect(mutationText(changed)).toBe('aBc dEXf ghi');
+  expect(mutationText(changed, new Set(['b']))).toBe('aBc dEf ghi');
+  expect(mutationText(changed, new Set(['a']))).toBe('abc deXf ghi');
+});
+
+test('sequential boundary edits preserve CRLF, UTF-8 and binary bytes', () => {
+  const cases = [
+    ['a\r\nc', ['a\r\nbc', 'a\r\nXbc'], 'a\r\nXc'],
+    ['éc', ['é😀c', 'é🀄😀c'], 'é🀄c'],
+    [Buffer.from([0, 255, 97]), [Buffer.from([0, 255, 98]), Buffer.from([0, 254, 98])], Buffer.from([0, 254, 98])],
+  ];
+  const bytes = (value) => Buffer.from(value).toString('latin1');
+  for (const [before, edits, undone] of cases) {
+    let runs = initialMutationRuns(bytes(before), 'base');
+    for (const [index, after] of edits.entries()) {
+      const prior = mutationText(runs), operation = `op-${index}`;
+      runs = applyMutationText(runs, visibleMutationRuns(runs), bytes(after), operation);
+      expect(mutationText(runs)).toBe(bytes(after));
+      expect(mutationText(runs, new Set([operation]))).toBe(prior);
+    }
+    expect(mutationText(runs, new Set(['op-0']))).toBe(bytes(undone));
+  }
+});
+
 test('diff reconstruction and captured mutations preserve arbitrary bytes', () => {
   let seed = 78231;
   const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0);

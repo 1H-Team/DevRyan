@@ -350,6 +350,33 @@ const validateToolPathInput = (tool, args, { directory } = {}) => {
   }
 };
 
+// Guidance only: native confinement still owns filesystem authorization.
+const validateSavedPlanWrite = (tool, args, { directory, dataDir }) => {
+  if (!isRecord(args)) return;
+  const name = String(tool ?? '').replace(/^oc_/, '');
+  const targets = ['edit', 'write', 'multiedit', 'patch'].includes(name)
+    ? READ_PATH_ARGS.map((key) => args[key]).filter((value) => typeof value === 'string') : [];
+  if (name === 'apply_patch' || name === 'patch') {
+    const patch = args.patchText ?? args.patch;
+    if (typeof patch === 'string') for (const match of patch.matchAll(/^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$/gm)) targets.push(match[1]);
+  }
+  const canonical = (value) => {
+    const resolved = path.resolve(value);
+    const ancestor = findDeepestExistingAncestor(resolved);
+    try { return path.resolve(fs.realpathSync(ancestor), path.relative(ancestor, resolved)); }
+    catch { return resolved; }
+  };
+  const projects = path.join(canonical(dataDir), 'projects');
+  for (const target of targets) {
+    const absolute = path.resolve(directory || process.cwd(), target.trim());
+    const relative = path.relative(projects, canonical(absolute));
+    const segments = relative.split(path.sep);
+    if (!relative.startsWith('..') && !path.isAbsolute(relative) && segments[0] && segments[1] === 'plans') {
+      throw inputError('Saved plans use devryan_task plan_read and plan_update with expected_version and complete text. Specialists report changes to the root agent; do not retry a raw file write.');
+    }
+  }
+};
+
 const isHeavyCheckCommand = (command) => {
   if (typeof command !== 'string') return false;
   const text = command.replace(/\s+/g, ' ').trim();
@@ -589,6 +616,7 @@ export const DevRyanToolInputGuardPlugin = async (pluginInput = {}, testOptions 
   return {
     'tool.execute.before': async (input, output) => {
       try {
+        validateSavedPlanWrite(input?.tool, output?.args, { directory, dataDir: shellPolicies.dataDir });
         validateToolPathInput(input?.tool, output?.args, { directory });
         if (READ_TOOLS.has(input?.tool)) {
           validateReadInput(output?.args, input.tool);

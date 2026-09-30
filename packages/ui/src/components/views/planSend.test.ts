@@ -59,6 +59,11 @@ describe('plan send helpers', () => {
 });
 
 describe('buildPlanImplementationSyntheticParts', () => {
+  test('forwards the canonical saved revision project directory in the implementation marker', () => {
+    const parts = buildPlanImplementationSyntheticParts({ sourceSessionId: 'session-a', sourceMessageId: 'assistant-a', instructions: 'Implement', projectDirectory: '/repo/saved' });
+    expect(parsePlanImplementationRequestPart({ id: 'part-a', sessionID: 'session-a', messageID: 'implementation-a', type: 'text', ...parts[0] } as Part))
+      .toMatchObject({ projectDirectory: '/repo/saved' });
+  });
   test('keeps the authoritative marker separate from editable implementation instructions', () => {
     const parts = buildPlanImplementationSyntheticParts({
       sourceSessionId: 'session-a',

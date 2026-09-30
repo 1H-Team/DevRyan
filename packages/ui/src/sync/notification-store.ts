@@ -1,3 +1,6 @@
+import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import { hasPlanImplementationRequestPart, isPlanModeInstructionPart, isPlanSelectionMaintenanceMessage } from "@/lib/messages/actionablePlan"
+import { compareMessagesChronologically } from "./message-order"
 import { describeSessionFailure, type SessionFailure } from "./session-failure"
 // ---------------------------------------------------------------------------
 // Notification store — session turn-complete and error tracking
@@ -31,6 +34,8 @@ type ErrorNotification = NotificationBase & {
   type: "error"
   error?: SessionFailure
   resolvedByMessageId?: string
+  failedUserMessageId?: string
+  failedUserCreatedAt?: number
 }
 
 type QuestionNotification = NotificationBase & {
@@ -118,6 +123,9 @@ function readPersistedCompletionNotifications(): Notification[] {
           candidate.error && typeof candidate.error === "object" && "code" in candidate.error
             && typeof candidate.error.code === "string" ? { code: candidate.error.code } : undefined),
           ...(typeof candidate.resolvedByMessageId === "string" ? { resolvedByMessageId: candidate.resolvedByMessageId } : {}),
+          ...(typeof candidate.failedUserMessageId === "string" ? { failedUserMessageId: candidate.failedUserMessageId } : {}),
+          ...(typeof candidate.failedUserCreatedAt === "number" && Number.isFinite(candidate.failedUserCreatedAt) && candidate.failedUserCreatedAt > 0
+            ? { failedUserCreatedAt: candidate.failedUserCreatedAt } : {}),
         } : {}),
         session: candidate.session,
         time: candidate.time,
@@ -162,6 +170,7 @@ interface NotificationStore {
   // Mutations
   append: (notification: Notification) => void
   resolveErrors: (errors: readonly Notification[], messageId: string, completedAt: number) => void
+  supersedeSessionErrors: (sessionId: string, userMessageId: string, createdAt: number, messages?: ReadonlyMap<string, CanonicalFailureRecord["info"]>) => void
   markSessionViewed: (sessionId: string) => void
   markSessionsViewed: (sessionIds: string[]) => void
   markSessionCompletionsViewed: (sessionId: string) => void
@@ -212,6 +221,32 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
         || !captured.has(notification) || notification.time >= completedAt) return notification
       changed = true
       return { ...notification, resolvedByMessageId: messageId }
+    })
+    if (changed) {
+      set({ list: next, index: buildIndex(next) })
+      persistCompletionNotifications(next)
+    }
+  },
+
+  supersedeSessionErrors: (sessionId, userMessageId, createdAt, messages) => {
+    if (!sessionId || !userMessageId || !Number.isFinite(createdAt) || createdAt <= 0) return
+    const current = get().list
+    let changed = false
+    const next = current.map((notification) => {
+      if (notification.type !== "error" || notification.resolvedByMessageId
+        || notification.session !== sessionId || notification.failedUserMessageId === userMessageId) return notification
+      // Canonical assistant parentID is stronger than an error's creation time.
+      const failedMessage = notification.messageId ? messages?.get(notification.messageId) : undefined
+      const failedUserId = notification.failedUserMessageId ?? failedMessage?.parentID
+      if (failedUserId === userMessageId) return notification
+      // Compare server chronology, never renderer receipt time. Unknown legacy
+      // notices remain until success; their age cannot prove which turn failed.
+      const failedAt = (failedUserId ? messages?.get(failedUserId)?.time.created : undefined)
+        ?? notification.failedUserCreatedAt
+        ?? failedMessage?.time.created
+      if (failedAt === undefined || !Number.isFinite(failedAt) || failedAt <= 0 || failedAt >= createdAt) return notification
+      changed = true
+      return { ...notification, resolvedByMessageId: userMessageId }
     })
     if (changed) {
       set({ list: next, index: buildIndex(next) })
@@ -283,6 +318,42 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
 // ---------------------------------------------------------------------------
 // Imperative API for non-React code (event handler in sync-context)
 // ---------------------------------------------------------------------------
+
+type CanonicalFailureRecord = {
+  info: Pick<Message, "id" | "sessionID" | "role" | "time"> & { parentID?: string }
+  parts?: readonly Part[]
+}
+
+let failureIndexList: Notification[] | undefined
+let unresolvedFailureSessions = new Set<string>()
+
+/** Memoized by the low-frequency notification list, including viewed failures. */
+export function hasUnresolvedSessionError(sessionId: string): boolean {
+  const list = useNotificationStore.getState().list
+  if (list !== failureIndexList) {
+    failureIndexList = list
+    unresolvedFailureSessions = new Set(list.flatMap(notification => (
+      notification.type === "error" && !notification.resolvedByMessageId && notification.session ? [notification.session] : []
+    )))
+  }
+  return unresolvedFailureSessions.has(sessionId)
+}
+
+/** Call only with server records, before optimistic history is merged. */
+export function reconcileSessionFailureNotifications(sessionId: string, records: readonly CanonicalFailureRecord[]) {
+  const notifications = useNotificationStore.getState()
+  if (!hasUnresolvedSessionError(sessionId)) return
+  let latest: CanonicalFailureRecord["info"] | undefined
+  for (const { info, parts } of records) {
+    if (info.sessionID !== sessionId || info.role !== "user" || !parts || isPlanSelectionMaintenanceMessage(parts)) continue
+    if (parts.length > 0 && parts.every(part => part.type === "text" && part.synthetic === true)
+      && !parts.some(isPlanModeInstructionPart) && !hasPlanImplementationRequestPart(parts)) continue
+    if (!latest || compareMessagesChronologically(latest, info) < 0) latest = info
+  }
+  if (!latest) return
+  const messages = new Map(records.map(({ info }) => [info.id, info]))
+  notifications.supersedeSessionErrors(sessionId, latest.id, latest.time.created, messages)
+}
 
 export function appendNotification(notification: Notification) {
   useNotificationStore.getState().append(notification)

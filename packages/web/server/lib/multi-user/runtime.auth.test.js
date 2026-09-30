@@ -1462,6 +1462,25 @@ describe('multi-user authentication runtime', () => {
     await expect(harness.runtime.resolveOwnedSessionPlanContext(principal, 'ses-foreign')).resolves.toBeNull();
     await expect(harness.runtime.resolveOwnedSessionPlanContext(principal, 'ses-archived')).resolves.toBeNull();
     await expect(harness.runtime.resolveOwnedSessionPlanContext(principal, 'ses-revoked')).resolves.toBeNull();
+    await expect(harness.runtime.resolveSessionPlanContext({ sessionID: 'ses-owned', directory: repositoryPath })).resolves.toEqual({
+      directory: repositoryPath, projectId: project.id, branchName: 'main', ownerKey: `user:${USER_IDS.developer}`,
+    });
+    for (const sessionID of ['ses-archived', 'ses-revoked', 'ses-missing']) {
+      await expect(harness.runtime.resolveSessionPlanContext({ sessionID })).resolves.toBeNull();
+    }
+    await expect(harness.runtime.resolveSessionPlanContext({ sessionID: 'ses-owned', directory: outsidePath })).resolves.toBeNull();
+
+    await expect(harness.runtime.resolveCurrentOwnedSessionPlanContext(principal, 'ses-owned', repositoryPath)).resolves.toEqual({
+      directory: repositoryPath, projectId: project.id, branchName: 'main',
+    });
+    await expect(harness.runtime.resolveCurrentOwnedSessionPlanContext(principal, 'ses-foreign', repositoryPath)).resolves.toBeNull();
+    const previousFetch = harness.fetchImpl.getMockImplementation();
+    harness.fetchImpl.mockImplementation(async (url, options) => String(url).includes('/rest/v1/user_project_access')
+      ? jsonResponse([]) : previousFetch(url, options));
+    // The request's earlier assignments remain populated after grants change.
+    expect(principal.assignments).not.toEqual([]);
+    await expect(harness.runtime.resolveCurrentOwnedSessionPlanContext(principal, 'ses-owned', repositoryPath)).resolves.toBeNull();
+    harness.fetchImpl.mockImplementation(previousFetch);
 
     const allowedResponse = makeResponse();
     const allowedNext = vi.fn(() => allowedResponse.json({ ok: true }));

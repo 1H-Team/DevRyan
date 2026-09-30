@@ -2,9 +2,9 @@ import fs from 'node:fs/promises';
 import { constants } from 'node:fs';
 import http from 'node:http';
 
-const failure = (code = 'bot_oauth_coordinator_unavailable') => Object.assign(
+const failure = (code = 'bot_oauth_coordinator_unavailable', bot = false) => Object.assign(
   new Error(`${code}: ${code === 'bot_opencode_provider_authentication'
-    ? 'Reconnect the selected host OpenAI account in Providers and Bot Settings.'
+    ? `Reconnect the selected host OpenAI account in Providers${bot ? ' and Bot Settings' : ''}.`
     : 'Managed OpenAI authentication is unavailable.'}`),
   { code },
 );
@@ -75,7 +75,7 @@ function createAccessClient(environment, fetchImpl = privatePost) {
     } finally { await reader.cancel().catch(() => {}); }
     const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     if (!response.ok) throw failure(['bot_opencode_provider_authentication', 'bot_oauth_refresh_unavailable',
-      'bot_oauth_persistence_failed'].includes(value.code) ? value.code : 'bot_oauth_coordinator_unavailable');
+      'bot_oauth_persistence_failed'].includes(value.code) ? value.code : 'bot_oauth_coordinator_unavailable', bot);
     if (operation === 'ready') {
       if (value.protocol !== 1) throw failure();
       return value;

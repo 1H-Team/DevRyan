@@ -18,6 +18,7 @@ export type PlanImplementationRequest = {
   sourceSessionId: string;
   sourceMessageId: string;
   planIndex: number;
+  projectDirectory?: string;
 };
 
 const PLAN_MODE_SECTION_HEADINGS = new Set([
@@ -126,12 +127,14 @@ export const buildPlanImplementationRequestMarker = ({
   sourceSessionId,
   sourceMessageId,
   planIndex,
+  projectDirectory,
 }: Omit<PlanImplementationRequest, 'action'>): string => {
   return `${PLAN_IMPLEMENTATION_REQUEST_PREFIX}${JSON.stringify({
     action: 'implement',
     sourceSessionId,
     sourceMessageId,
     planIndex,
+    ...(projectDirectory !== undefined ? { projectDirectory } : {}),
   })}`;
 };
 
@@ -151,6 +154,7 @@ export const parsePlanImplementationRequestPart = (
       sourceSessionId?: unknown;
       sourceMessageId?: unknown;
       planIndex?: unknown;
+      projectDirectory?: unknown;
     };
     if (parsed.action !== 'implement') return null;
     if (typeof parsed.sourceSessionId !== 'string' || parsed.sourceSessionId.trim().length === 0) {
@@ -160,12 +164,16 @@ export const parsePlanImplementationRequestPart = (
       return null;
     }
     if (!Number.isSafeInteger(parsed.planIndex) || (parsed.planIndex as number) < 0) return null;
+    if (parsed.projectDirectory !== undefined && (typeof parsed.projectDirectory !== 'string'
+      || !parsed.projectDirectory.trim() || parsed.projectDirectory.length > 4096
+      || /\p{Cc}/u.test(parsed.projectDirectory))) return null;
 
     return {
       action: 'implement',
       sourceSessionId: parsed.sourceSessionId,
       sourceMessageId: parsed.sourceMessageId,
       planIndex: parsed.planIndex as number,
+      ...(typeof parsed.projectDirectory === 'string' ? { projectDirectory: parsed.projectDirectory } : {}),
     };
   } catch {
     return null;

@@ -3,6 +3,7 @@ import type { Message, TextPart } from "@opencode-ai/sdk/v2/client"
 import { opencodeClient } from "@/lib/opencode/client"
 import { useFeatureFlagsStore } from "@/stores/useFeatureFlagsStore"
 import { ChildStoreManager } from "./child-store"
+import { useNotificationStore } from "./notification-store"
 import { SessionMessageLoader } from "./session-message-loader"
 import { createSessionPlanSelectionSelector } from "./session-plan-selection"
 import { useSelectionStore } from "./selection-store"
@@ -32,6 +33,39 @@ describe("SessionMessageLoader", () => {
       configurable: true,
       value: originalGetScopedSdkClient,
     })
+  })
+
+  test("canonical hydration clears an older failure without accepting an optimistic retry", async () => {
+    const target = { directory: "/repo/failure-hydration", sessionID: "session-1" }
+    const stores = new ChildStoreManager()
+    const loader = new SessionMessageLoader(stores)
+    const old = { ...message("msg_old", "user"), time: { created: 10 } }
+    const retry = { ...message("msg_retry", "user"), time: { created: 20 } }
+    const future = { ...message("msg_future", "user"), time: { created: 30 } }
+    const notice = () => useNotificationStore.getState().list.find(n => n.session === target.sessionID && n.type === "error")
+    const isUnresolved = () => { const n = notice(); return n?.type === "error" && !n.resolvedByMessageId }
+    useNotificationStore.getState().removeSession(target.sessionID)
+    useNotificationStore.getState().append({ type: "error", session: target.sessionID, time: Date.now(), viewed: false,
+      failedUserMessageId: retry.id, failedUserCreatedAt: retry.time.created })
+    Object.defineProperty(opencodeClient, "getScopedSdkClient", { configurable: true,
+      value: () => ({ session: { messages: async () => response([old, retry]) } }) })
+    try {
+      loader.optimisticAdd({ ...target, message: future, parts: [] })
+      await loader.ensure(target, { force: true })
+      expect(isUnresolved()).toBe(true)
+      // The next REST echo, rather than the local optimistic row, authorizes it.
+      Object.defineProperty(opencodeClient, "getScopedSdkClient", { configurable: true,
+        value: () => ({ session: { messages: async () => response([old, retry, future]) } }) })
+      await loader.ensure(target, { force: true })
+      expect(notice()).toMatchObject({ resolvedByMessageId: future.id, viewed: false })
+      const state = useNotificationStore.getState()
+      await loader.ensure(target, { force: true })
+      expect(useNotificationStore.getState()).toBe(state)
+    } finally {
+      loader.dispose()
+      stores.disposeAll()
+      useNotificationStore.getState().removeSession(target.sessionID)
+    }
   })
 
   for (const mode of ["cold", "prefetched"] as const) {

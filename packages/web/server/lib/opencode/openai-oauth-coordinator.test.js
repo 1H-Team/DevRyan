@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createDiagnosticJournal, createDiagnosticSanitizer } from '@openchamber/harness-runtime';
 import { compareAndSwapOpenAiAuth, createOpenAiOAuthCoordinator } from './openai-oauth-coordinator.js';
 import { createOpenAiOAuthBridge } from './openai-oauth-bridge.js';
 import plugin from '../../default-config/plugins/devryan-openai-oauth.mjs';
@@ -27,6 +28,86 @@ function fixture(options = {}) {
 }
 
 describe('managed OpenAI OAuth owner', () => {
+  it('persists ten-day rotated credentials and reloads the unblocked generation', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-oauth-'));
+    cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const authFile = path.join(dir, 'auth.json');
+    const stateFile = path.join(dir, 'state.json');
+    fs.writeFileSync(authFile, JSON.stringify({ openai: originalAuth() }));
+    const fetchImpl = vi.fn(async () => Response.json({ access_token: 'rotated-access', refresh_token: 'rotated-refresh', expires_in: 864000 }));
+    const options = { stateFile, now: () => clock, fetchImpl,
+      readAuth: () => JSON.parse(fs.readFileSync(authFile, 'utf8')).openai,
+      compareAndSwap: (expected, next) => compareAndSwapOpenAiAuth(expected, next, { authFile }) };
+    const coordinator = createOpenAiOAuthCoordinator(options);
+    coordinator.markReady();
+    const access = await coordinator.access({ expectedAccountId: 'account-a' });
+    expect(access).toMatchObject({ accessToken: 'rotated-access', expiresAt: clock + 864000000 });
+    expect(options.readAuth()).toEqual({ ...originalAuth(), access: 'rotated-access', refresh: 'rotated-refresh', expires: clock + 864000000 });
+    expect(JSON.parse(fs.readFileSync(stateFile, 'utf8'))).toMatchObject({ blocked: false });
+    const reloaded = createOpenAiOAuthCoordinator(options);
+    reloaded.markReady();
+    expect(reloaded.getAuthState('account-a')).toBe('ready');
+    expect(await reloaded.access({ expectedAccountId: 'account-a' })).toEqual(access);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([undefined, null, '864000', 119, -1, Number.MAX_SAFE_INTEGER, 120.000001])(
+    'blocks invalid expiry %s without saving or retrying rotated credentials', async (expires_in) => {
+      const fetchImpl = vi.fn(async () => Response.json({ access_token: 'new-access', refresh_token: 'new-refresh', expires_in }));
+      const f = fixture({ fetchImpl });
+      await expect(f.coordinator.access()).rejects.toMatchObject({ code: 'bot_oauth_response_invalid' });
+      expect(f.write).not.toHaveBeenCalled();
+      expect(f.coordinator.getAuthState()).toBe('reauth_required');
+      await expect(f.coordinator.access()).rejects.toMatchObject({ code: 'bot_opencode_provider_authentication' });
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([
+    { access_token: '', refresh_token: 'new-refresh', expires_in: 864000 },
+    { access_token: 'new-access', refresh_token: null, expires_in: 864000 },
+    { access_token: 'new-access', refresh_token: '', expires_in: 864000 },
+  ])('still blocks invalid rotated token fields with a ten-day expiry', async (tokens) => {
+    const f = fixture({ fetchImpl: async () => Response.json(tokens) });
+    await expect(f.coordinator.access()).rejects.toMatchObject({ code: 'bot_oauth_response_invalid' });
+    expect(f.write).not.toHaveBeenCalled();
+    expect(f.coordinator.getAuthState()).toBe('reauth_required');
+  });
+
+  it('still blocks a rotated token bound to a different account with a ten-day expiry', async () => {
+    const access_token = `fixture.${Buffer.from(JSON.stringify({ 'https://api.openai.com/auth': { chatgpt_account_id: 'account-b' } })).toString('base64url')}.fixture`;
+    const f = fixture({ fetchImpl: async () => Response.json({ access_token, refresh_token: 'new-refresh', expires_in: 864000 }) });
+    await expect(f.coordinator.access()).rejects.toMatchObject({ code: 'bot_opencode_provider_authentication' });
+    expect(f.write).not.toHaveBeenCalled();
+    expect(f.coordinator.getAuthState()).toBe('reauth_required');
+  });
+
+  it('journals a bounded failure reason without provider response contents', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-oauth-'));
+    const journal = createDiagnosticJournal({ directory: path.join(dir, 'journal'), sanitizer: createDiagnosticSanitizer(), runtime: 'test' });
+    cleanups.push(async () => { await journal.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+    const f = fixture({ recordDiagnostic: record => journal.enqueue(record),
+      fetchImpl: async () => Response.json({ access_token: 'synthetic-private-access', refresh_token: 'synthetic-private-refresh', expires_in: 1 }) });
+    await expect(f.coordinator.access()).rejects.toMatchObject({ code: 'bot_oauth_response_invalid' });
+    await journal.flush();
+    const records = await journal.readRecords();
+    expect(records.find(record => record.payload.outcome === 'failed')).toMatchObject({
+      event: 'provider.oauth.refresh', payload: { reason: 'bot_oauth_response_invalid', statusCode: 200 },
+    });
+    expect(JSON.stringify(records)).not.toMatch(/synthetic-private|old-access|old-refresh|account-a/);
+  });
+
+  it('guides host reconnection to Providers and Bot reconnection to its settings', async () => {
+    for (const bot of [false, true]) {
+      const environment = bot
+        ? { DEVRYAN_BOT_GATEWAY_URL: 'http://egress:43121', DEVRYAN_BOT_RUNTIME_TOKEN: 'a'.repeat(43) }
+        : { DEVRYAN_OPENAI_OAUTH_URL: 'http://127.0.0.1:12345', DEVRYAN_OPENAI_OAUTH_TOKEN: 'a'.repeat(43) };
+      const access = plugin.testing.createAccessClient(environment, async () => Response.json({ code: 'bot_opencode_provider_authentication' }, { status: 401 }));
+      await expect(access('access')).rejects.toMatchObject({ code: 'bot_opencode_provider_authentication', message:
+        `bot_opencode_provider_authentication: Reconnect the selected host OpenAI account in Providers${bot ? ' and Bot Settings' : ''}.` });
+    }
+  });
+
   it('coalesces normal chat, concurrent bots, structured work and images into one refresh', async () => {
     const f = fixture();
     const results = await Promise.all(Array.from({ length: 12 }, () => f.coordinator.access({ expectedAccountId: 'account-a' })));

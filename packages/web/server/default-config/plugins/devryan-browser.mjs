@@ -15,7 +15,7 @@ const CLEANUP_TIMEOUT_MS = 3_000;
 const MAX_CONNECTION_ENTRIES = 100;
 const TURN_MESSAGE_LOOKUP_LIMIT = 200;
 const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '0.0.0.0', '::1']);
-const NO_PREVIEW_HANDOFF_MESSAGE = 'No branch preview is configured for this branch. Use a local site that is already running: find its port in the project\'s dev script or config, check that it answers, then retry open with its full loopback URL. Do not start a dev server from a tool call; detached or background processes are blocked and anything started ends with the call. If no site answers, ask the user to start it (for example with a Project Action) and report visual verification as blocked.';
+const NO_PREVIEW_HANDOFF_MESSAGE = 'No branch preview is configured for this branch. Prefer the project verification action, or open a local site that is already running by its full loopback URL. A shell-based check may use one bounded call to start a server, wait for readiness, run the check and clean up on success and failure. Detached servers do not survive the call; do not start one in a separate call for this browser. If neither path works, report visual verification as blocked.';
 const RETRYABLE_TRANSPORT_STATUS_CODES = new Set([502, 503, 504]);
 const BROWSER_ERROR_CODES = Object.freeze({
   inputInvalid: 'DEVRYAN_BROWSER_INPUT_INVALID',

@@ -113,7 +113,8 @@ import {
 } from "@/stores/utils/streamDebug"
 import { toast } from "@/components/ui"
 import { clearAbortGuard, clearAbortGuards } from "./abort-retry-guard"
-import { appendNotification, useNotificationStore } from "./notification-store"
+import { notifyPlanUpdated } from "@/lib/sessionEvents"
+import { appendNotification, hasUnresolvedSessionError, reconcileSessionFailureNotifications, useNotificationStore } from "./notification-store"
 import { useSelectionStore } from "./selection-store"
 import type { State } from "./types"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
@@ -874,6 +875,7 @@ async function materializeSessionFromServer(
       ...(activityChanged ? { session_user_activity: draft.session_user_activity } : {}),
     }
   })
+  reconcileSessionFailureNotifications(sessionID, records)
   replayPendingPartDeltasForSession(directory, sessionID, store)
   reconcileSessionChangeAttribution(directory, sessionID, store.getState())
 
@@ -2681,6 +2683,7 @@ export async function resyncDirectoryAfterReconnect(
       }
     })
 
+    reconcileSessionFailureNotifications(sessionId, materializedRecords)
     setIndexedSessionDirectory(routingIndex, nextSession.id, directory)
     setIndexedSessionMessages(routingIndex, sessionId, directory, nextMessages)
     reconcileSessionChangeAttribution(directory, sessionId, store.getState())
@@ -2749,6 +2752,12 @@ function handleEvent(
   messageLoader?: SessionMessageLoader,
   batch?: StreamingEventBatch,
 ) {
+  // Host-owned saved-plan revisions are outside the OpenCode SDK event union.
+  if ((payload as { type: string }).type === "session.plan.updated") {
+    notifyPlanUpdated(payload.properties)
+    return
+  }
+
   const directory = resolveDirectoryFromRoutingIndex(routingIndex, rawDirectory, payload, childStores)
 
   if (payload.type === "session.created" || payload.type === "session.updated") {
@@ -3020,6 +3029,11 @@ function handleEvent(
     const sessionID = props.sessionID
     if (sessionID) {
       const viewed = isViewedInCurrentSession(resolvedDirectory, sessionID)
+      const messages = store.getState().message[sessionID] ?? EMPTY_MESSAGES
+      let failedUser: Message | undefined
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        if (messages[index].role === "user") { failedUser = messages[index]; break }
+      }
       appendNotification({
         directory: resolvedDirectory,
         session: sessionID,
@@ -3027,6 +3041,7 @@ function handleEvent(
         viewed,
         type: "error",
         error: props.error,
+        ...(failedUser ? { failedUserMessageId: failedUser.id, failedUserCreatedAt: failedUser.time.created } : {}),
       })
     }
   }
@@ -3169,6 +3184,22 @@ function handleEvent(
       ?? undefined
     if (materializationSessionID) {
       enqueueSessionMaterialization(resolvedDirectory, materializationSessionID, childStores)
+    }
+  }
+
+  // Only server message/part events authorize a retry boundary. Optimistic
+  // insertion alone never reaches this path; missing user parts wait for hydration.
+  if (payload.type === "message.updated" || payload.type === "message.part.updated") {
+    const sessionID = getSessionIdFromPayload(payload)
+    const messageID = getMessageIdFromPayload(payload)
+    if (sessionID && messageID && hasUnresolvedSessionError(sessionID)) {
+      const latest = store.getState()
+      const info = payload.type === "message.updated"
+        ? (payload.properties as { info: Message }).info
+        : latest.message[sessionID]?.find(message => message.id === messageID)
+      if (info?.role === "user") {
+        reconcileSessionFailureNotifications(sessionID, [{ info, parts: latest.part[messageID] }])
+      }
     }
   }
 

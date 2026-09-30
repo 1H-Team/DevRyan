@@ -1,7 +1,33 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import fs from 'node:fs';
 
 import { finishQuitAfterCleanup } from '../quit-cleanup.mjs';
+
+test('normal desktop restart relaunches only after cleanup, including the bounded fallback', async () => {
+  for (const timedOut of [false, true]) {
+    const calls = []; let timeout;
+    const operation = finishQuitAfterCleanup({
+      cleanupOwnedResources: () => { calls.push('cleanup'); return timedOut ? new Promise(() => {}) : undefined; },
+      relaunch: () => calls.push('relaunch'), requestQuit: () => calls.push('quit'), forceExit: () => calls.push('exit'),
+      scheduleTimeout: (callback) => { timeout = callback; return 1; }, cancelTimeout: () => {},
+    });
+    await Promise.resolve();
+    assert.deepEqual(calls, ['cleanup']);
+    if (timedOut) timeout();
+    await operation;
+    assert.deepEqual(calls, ['cleanup', 'relaunch', timedOut ? 'exit' : 'quit']);
+  }
+});
+
+test('desktop restart uses bounded cleanup and detaches background-service clients', () => {
+  const source = fs.readFileSync(new URL('../main.mjs', import.meta.url), 'utf8');
+  const restart = source.slice(source.indexOf("case 'desktop_restart':"), source.indexOf("case 'desktop_get_lan_address':"));
+  assert.match(restart, /performConfirmedQuit\(\{ restart: true \}\)/);
+  assert.doesNotMatch(restart, /app\.exit\(0\)/);
+  const cleanup = source.slice(source.indexOf('const performConfirmedQuit'), source.indexOf('const requestQuitWithConfirmation'));
+  assert.match(cleanup, /state\.runtimeServiceClient \? stopDesktopHostBroker\(\) : killSidecar\(\)/);
+});
 
 test('update cleanup lets only the updater request the eventual quit', async () => {
   const calls = [];

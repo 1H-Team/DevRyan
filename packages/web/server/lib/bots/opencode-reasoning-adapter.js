@@ -42,12 +42,12 @@ export const classifyOpenCodeRunError = (error) => {
     : (typeof error?.isRetryable === 'boolean' ? error.isRetryable : null);
   let classified = SESSION_ERROR_KINDS[providerErrorType] || SESSION_ERROR_KINDS.UnknownError;
   const message = typeof data.message === 'string' ? data.message : error?.message;
+  const hasCode = (code) => error?.code === code || (providerErrorType === 'UnknownError'
+    && typeof message === 'string' && message.startsWith(`${code}:`));
   const refreshFailure = providerErrorType === 'UnknownError'
     && ['Token refresh failed: 400', 'Token refresh failed: 401', 'Token refresh failed: 403'].includes(message)
     ? Number(message.slice(-3)) : null;
-  const coordinatedAuthFailure = error?.code === 'bot_opencode_provider_authentication'
-    || (providerErrorType === 'UnknownError'
-      && message === 'bot_opencode_provider_authentication: Reconnect the selected host OpenAI account in Providers and Bot Settings.');
+  const coordinatedAuthFailure = hasCode('bot_opencode_provider_authentication');
   if (refreshFailure || coordinatedAuthFailure || (providerErrorType === 'APIError' && statusCode === 401)) {
     statusCode = refreshFailure || 401;
     classified = SESSION_ERROR_KINDS.ProviderAuthError;
@@ -62,7 +62,7 @@ export const classifyOpenCodeRunError = (error) => {
     };
   }
   for (const code of ['bot_oauth_refresh_unavailable', 'bot_oauth_persistence_failed', 'bot_oauth_coordinator_unavailable']) {
-    if (error?.code === code || (providerErrorType === 'UnknownError' && message === `${code}: Managed OpenAI authentication is unavailable.`)) {
+    if (hasCode(code)) {
       classified = { interruptionKind: code, retryable: false };
     }
   }

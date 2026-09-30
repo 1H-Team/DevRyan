@@ -5,10 +5,10 @@ import path from 'node:path';
 import http from 'node:http';
 import { once } from 'node:events';
 import WebSocket from 'ws';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as nodePty from 'node-pty';
 
-import { createTerminalRuntime } from './runtime.js';
+import { createTerminalRuntime, killTerminalProcess } from './runtime.js';
 
 const mockPtyProcess = {
   pid: 12345,
@@ -60,6 +60,7 @@ function createRuntime(server, options = {}) {
     TERMINAL_INPUT_WS_MAX_REBINDS_PER_WINDOW: 3,
     multiUserRuntime: options.multiUserRuntime,
     onTerminalSessionClosed: options.onTerminalSessionClosed,
+    killPtyProcess: options.killPtyProcess,
   });
 
   return { runtime, routes };
@@ -90,8 +91,63 @@ async function callRoute(routes, method, route, req) {
 }
 
 describe('terminal runtime', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(process, 'kill').mockImplementation(() => true);
+  });
+
+  it('awaits removed-session cleanup on close and concurrent shutdown', async () => {
+    let release;
+    const killPtyProcess = vi.fn(() => new Promise(resolve => { release = resolve; }));
+    const { runtime, routes } = createRuntime(http.createServer(), {
+      isExecutable: candidate => candidate === '/bin/sh', killPtyProcess,
+    });
+    const created = await callRoute(routes, 'post', '/api/terminal/create', { body: { cwd: process.cwd() } });
+    let closed = false, stopped = false;
+    const close = callRoute(routes, 'delete', '/api/terminal/:sessionId', { params: { sessionId: created.body.sessionId } }).then(() => { closed = true; });
+    const shutdown = runtime.shutdown().then(() => { stopped = true; });
+    await Promise.resolve();
+    expect(runtime.getSessionDescriptor(created.body.sessionId)).toBeNull();
+    expect(killPtyProcess).toHaveBeenCalledTimes(1);
+    expect(closed).toBe(false); expect(stopped).toBe(false);
+    release(); await Promise.all([close, shutdown]);
+    expect(closed).toBe(true); expect(stopped).toBe(true);
+  });
+
+  it('does not spawn the replacement PTY until restart cleanup completes', async () => {
+    let release;
+    const { runtime, routes } = createRuntime(http.createServer(), {
+      isExecutable: candidate => candidate === '/bin/sh',
+      killPtyProcess: () => new Promise(resolve => { release = resolve; }),
+    });
+    const created = await callRoute(routes, 'post', '/api/terminal/create', { body: { cwd: process.cwd() } });
+    const spawnCount = nodePty.spawn.mock.calls.length;
+    const restart = callRoute(routes, 'post', '/api/terminal/:sessionId/restart', {
+      params: { sessionId: created.body.sessionId }, body: { cwd: process.cwd() },
+    });
+    await Promise.resolve(); expect(nodePty.spawn).toHaveBeenCalledTimes(spawnCount);
+    release(); const replacement = await restart;
+    expect(replacement.statusCode).toBe(200); expect(nodePty.spawn).toHaveBeenCalledTimes(spawnCount + 1);
+    const shutdown = runtime.shutdown(); release(); await shutdown;
+  });
+
+  it('does not create a PTY when shutdown races a waiting restart', async () => {
+    let release;
+    const { runtime, routes } = createRuntime(http.createServer(), {
+      isExecutable: candidate => candidate === '/bin/sh',
+      killPtyProcess: () => new Promise(resolve => { release = resolve; }),
+    });
+    const created = await callRoute(routes, 'post', '/api/terminal/create', { body: { cwd: process.cwd() } });
+    const spawnCount = nodePty.spawn.mock.calls.length;
+    const restart = callRoute(routes, 'post', '/api/terminal/:sessionId/restart', {
+      params: { sessionId: created.body.sessionId }, body: { cwd: process.cwd() },
+    });
+    const shutdown = runtime.shutdown();
+    release(); const [response] = await Promise.all([restart, shutdown]);
+    expect(response.statusCode).toBe(500);
+    expect(response.body.error).toContain('shutting down');
+    expect(nodePty.spawn).toHaveBeenCalledTimes(spawnCount);
   });
 
   it('marks historical output only for clients that opt in, before live output', async () => {
@@ -124,6 +180,21 @@ describe('terminal runtime', () => {
       await runtime.shutdown();
       await new Promise((resolve) => server.close(resolve));
     }
+  });
+
+  it('cleans up an idle owned PTY through the same process cleanup path', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1000);
+    const onTerminalSessionClosed = vi.fn();
+    const { runtime, routes } = createRuntime(http.createServer(), { isExecutable: (candidate) => candidate === '/bin/sh', onTerminalSessionClosed });
+    try {
+      const created = await callRoute(routes, 'post', '/api/terminal/create', { body: { cwd: process.cwd() } });
+      clock.mockReturnValue(32 * 60 * 1000);
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+      expect(runtime.getSessionDescriptor(created.body.sessionId)).toBeNull();
+      expect(mockPtyProcess.kill).toHaveBeenCalled();
+      expect(onTerminalSessionClosed).toHaveBeenCalledWith(expect.objectContaining({ sessionId: created.body.sessionId, reason: 'idle-timeout' }));
+    } finally { await runtime.shutdown(); vi.useRealTimers(); }
   });
 
   it('removes its websocket upgrade listener on shutdown', async () => {
@@ -430,5 +501,77 @@ describe('terminal runtime', () => {
     })).statusCode).toBe(200);
 
     await runtime.shutdown();
+  });
+});
+
+describe('owned PTY process groups', () => {
+  it('bounded escalation revalidates original PID, PGID and start identities and never signals new members', async () => {
+    const signals = []; let release;
+    const original = '10 1 10 runtime-start\n100 10 100 shell-start\n101 100 101 child-start\n102 100 102 old-child-start\n103 100 103 moved-child-start\n';
+    const current = '10 1 10 runtime-start\n101 1 101 child-start\n102 1 102 reused-child-start\n103 1 203 moved-child-start\n201 1 101 foreign-start\n';
+    const readProcessTable = vi.fn().mockReturnValueOnce(original).mockReturnValue(current);
+    let settled = false;
+    const cleanup = Promise.resolve(killTerminalProcess({ pid: 100, kill() {} }, 'term', {
+      ownPid: 10, platform: 'linux', readProcessTable,
+      signalProcess: (pid, signal) => signals.push([pid, signal]),
+      waitForEscalation: () => new Promise(resolve => { release = resolve; }),
+    })).then(() => { settled = true; });
+    await Promise.resolve(); expect(settled).toBe(false);
+    release(); await cleanup;
+    expect(signals.filter(([, signal]) => signal === 'SIGKILL')).toEqual([[101, 'SIGKILL']]);
+    expect(readProcessTable).toHaveBeenCalledTimes(2);
+  });
+
+  it('hard-kills captured owned individuals in a shared foreign-led group without signaling that group', async () => {
+    const signals = [];
+    await killTerminalProcess({ pid: 100, kill() {} }, 'kill', {
+      ownPid: 10, platform: 'linux',
+      readProcessTable: () => '10 1 10 runtime-start\n100 10 100 shell-start\n201 100 500 child-start\n500 1 500 sentinel-start\n',
+      signalProcess: (pid, signal) => signals.push([pid, signal]),
+    });
+    expect(signals).toContainEqual([201, 'SIGKILL']);
+    expect(signals).not.toContainEqual([-500, 'SIGKILL']);
+    expect(signals).not.toContainEqual([500, 'SIGKILL']);
+    expect(signals).not.toContainEqual([10, 'SIGKILL']);
+  });
+
+  it('never falls back to delayed signals when identity enumeration fails', async () => {
+    const signals = [];
+    const readProcessTable = vi.fn().mockReturnValueOnce('10 1 10 runtime-start\n100 10 100 shell-start\n101 100 101 child-start\n')
+      .mockImplementation(() => { throw new Error('ps unavailable'); });
+    await killTerminalProcess({ pid: 100, kill() {} }, 'term', {
+      ownPid: 10, platform: 'linux', readProcessTable, waitForEscalation: async () => {},
+      signalProcess: (pid, signal) => signals.push([pid, signal]),
+    });
+    expect(signals.filter(([, signal]) => signal === 'SIGKILL')).toEqual([]);
+  });
+
+  it('signals descendant-only groups before the shell and leaves unrelated groups alone', () => {
+    const signals = [];
+    const pty = { pid: 100, kill: (signal) => signals.push(['pty', signal]) };
+    killTerminalProcess(pty, 'term', { ownPid: 10, platform: 'linux',
+      readProcessTable: () => '10 1 10\n100 10 100\n101 100 101\n102 101 101\n200 1 200\n201 200 200\n',
+      signalProcess: (pid, signal) => signals.push([pid, signal]) });
+    expect(signals).toEqual([[-101, 'SIGTERM'], [-100, 'SIGTERM'], ['pty', undefined]]);
+  });
+  it('never signals group 1, its own runtime group, or a group with an unrelated member', () => {
+    const signals = [];
+    killTerminalProcess({ pid: 100, kill() {} }, 'kill', { ownPid: 10, platform: 'darwin',
+      readProcessTable: () => '10 1 10\n100 10 100\n101 100 10\n102 100 1\n103 100 103\n200 1 103\n',
+      signalProcess: (pid, signal) => signals.push([pid, signal]) });
+    expect(signals).toEqual([[-100, 'SIGKILL']]);
+  });
+  it('keeps PTY cleanup available when process enumeration is unavailable', () => {
+    const signals = [];
+    killTerminalProcess({ pid: 100, kill: () => signals.push('pty') }, 'term', { ownPid: 10, platform: 'linux',
+      readProcessTable: () => { throw new Error('ps unavailable'); }, signalProcess: (pid) => signals.push(pid) });
+    expect(signals).toEqual([-100, 'pty']);
+  });
+  it('uses the PTY provider on Windows without POSIX process groups', () => {
+    const signalProcess = vi.fn(), readProcessTable = vi.fn(), kill = vi.fn();
+    killTerminalProcess({ pid: 100, kill }, 'kill', { platform: 'win32', signalProcess, readProcessTable });
+    expect(kill).toHaveBeenCalledWith('SIGKILL');
+    expect(signalProcess).not.toHaveBeenCalled();
+    expect(readProcessTable).not.toHaveBeenCalled();
   });
 });

@@ -46,6 +46,10 @@ ownership, directory opacity, and audit control plane.
   assigned-branch worktree resolution shared by chat and scheduled execution.
 - `runtime.js` also exposes authoritative scheduled-task access classification
   and notifies the scheduler after owner/project/branch access mutations.
+- `runtime.js` exposes `resolveCurrentOwnedSessionPlanContext` for HTTP plan
+  admission and locked publication: it reloads the authenticated caller's
+  current project/branch grants, then checks that caller's session ownership.
+  It never authorizes from cached request assignments or background owner grace.
 - `dotenv-visibility.js`: non-admin managed-role dotenv concealment for file
   discovery, reads, Git changes/diffs, and OpenCode file/search responses.
 - `branch-authorization.js`: request-scoped project resolution and exact logical

@@ -285,6 +285,7 @@ const PlanCard: React.FC<PlanCardProps> = ({
       const syntheticParts = buildPlanImplementationSyntheticParts({
         sourceSessionId: sessionId,
         sourceMessageId,
+        projectDirectory: currentPlanFileRecord?.revisionIdentity?.directory,
         instructions,
       });
 
@@ -359,7 +360,7 @@ const PlanCard: React.FC<PlanCardProps> = ({
       const rawMessage = error instanceof Error ? error.message.trim() : '';
       toast.error(rawMessage.length > 0 ? rawMessage : 'Failed to start implementing the plan.');
     }
-  }, [actionState.canImplement, currentPlanFileRecord?.path, currentPlanFileRecord?.status, implementationKey, isSubmitting, planText, sessionId, sourceMessageId]);
+  }, [actionState.canImplement, currentPlanFileRecord?.path, currentPlanFileRecord?.revisionIdentity?.directory, currentPlanFileRecord?.status, implementationKey, isSubmitting, planText, sessionId, sourceMessageId]);
 
   // The text container's minHeight only matters during the initial skeleton
   // phase, to prevent a height pop the instant the skeleton swaps for the

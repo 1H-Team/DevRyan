@@ -3,6 +3,16 @@ import { describe, expect, test } from 'bun:test';
 import { createDiagnosticSanitizer } from './sanitizer.js';
 
 describe('diagnostic sanitizer', () => {
+  test('limits process-exit fields to their dedicated event without widening other payloads', () => {
+    const sanitizer = createDiagnosticSanitizer();
+    const payload = { pid: 123, uptimeMs: 456, expected: true, stderrTail: 'panic' };
+    expect(sanitizer.sanitizeRecord({ type: 'lifecycle', event: 'opencode_process_exit', payload }).payload).toEqual(payload);
+    expect(sanitizer.sanitizeRecord({ type: 'lifecycle', event: 'unrelated', payload }).payload).toEqual({});
+    expect(sanitizer.sanitizeRecord({ type: 'lifecycle', event: 'opencode_process_exit', payload: {
+      pid: null, code: 1, signal: null, uptimeMs: 0, expected: true,
+    } }).payload).toEqual({ pid: null, code: 1, signal: null, uptimeMs: 0, expected: true });
+  });
+
   test('retains question settlement identity without admitting credentials', () => {
     const record = createDiagnosticSanitizer().sanitizeRecord({
       type: 'open_code_event', payload: {

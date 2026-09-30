@@ -59,6 +59,15 @@ describe("plan implementation request marker", () => {
     })
   })
 
+  test('round-trips the saved project directory without changing legacy markers', () => {
+    const text = buildPlanImplementationRequestMarker({ sourceSessionId: 'session-1', sourceMessageId: 'assistant-1', planIndex: 0, projectDirectory: '/repo/worktree' });
+    expect(parsePlanImplementationRequestPart(syntheticTextPart(text))).toMatchObject({ projectDirectory: '/repo/worktree' });
+  })
+
+  for (const projectDirectory of [null, 1, '', '   ', '/repo\u0000secret']) test('rejects a malformed optional project directory', () => {
+    expect(parsePlanImplementationRequestPart(syntheticTextPart(`${PLAN_IMPLEMENTATION_REQUEST_PREFIX}${JSON.stringify({ action: 'implement', sourceSessionId: 'session-1', sourceMessageId: 'assistant-1', planIndex: 0, projectDirectory })}`))).toBeNull();
+  })
+
   test("rejects malformed marker JSON", () => {
     expect(parsePlanImplementationRequestPart(
       syntheticTextPart(`${PLAN_IMPLEMENTATION_REQUEST_PREFIX}{broken`),

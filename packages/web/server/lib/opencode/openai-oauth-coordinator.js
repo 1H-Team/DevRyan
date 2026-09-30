@@ -101,10 +101,11 @@ export function createOpenAiOAuthCoordinator({
     }
     return auth;
   };
-  const diagnostic = (stage, outcome, statusCode = null, credentialId = null) => {
+  const diagnostic = (stage, outcome, statusCode = null, credentialId = null, reason = null) => {
     try {
       recordDiagnostic({ type: 'lifecycle', event: 'provider.oauth.refresh', payload: {
         provider: 'openai', credentialId, generation: state.generation, stage, outcome, statusCode,
+        ...(reason ? { reason } : {}),
       } });
     } catch { /* diagnostics must not replace the provider failure */ }
   };
@@ -160,13 +161,14 @@ export function createOpenAiOAuthCoordinator({
         }
       } finally { await reader.cancel().catch(() => {}); }
       const tokens = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      const expires = now() + tokens.expires_in * 1000;
       if (typeof tokens.access_token !== 'string' || !tokens.access_token
         || typeof tokens.refresh_token !== 'string' || !tokens.refresh_token
-        || !Number.isFinite(tokens.expires_in) || tokens.expires_in < 120 || tokens.expires_in > 86400) {
+        || !Number.isFinite(tokens.expires_in) || tokens.expires_in < 120 || !Number.isSafeInteger(expires)) {
         throw new OpenAiOAuthError('bot_oauth_response_invalid');
       }
       const next = { ...auth, access: tokens.access_token, refresh: tokens.refresh_token,
-        expires: now() + tokens.expires_in * 1000 };
+        expires };
       read();
       if (state.fingerprint !== original) return;
       const refreshedAccount = openAiAccountId({ access: tokens.access_token });
@@ -196,7 +198,10 @@ export function createOpenAiOAuthCoordinator({
         state.refreshing = false;
         persist();
       }
-      diagnostic('refresh', 'failed', response?.status || null, credentialId);
+      const reason = error instanceof OpenAiOAuthError && [OPENAI_OAUTH_AUTHENTICATION,
+        'bot_oauth_response_invalid', 'bot_oauth_persistence_failed', 'bot_oauth_refresh_unavailable'].includes(error.code)
+        ? error.code : 'bot_oauth_refresh_unavailable';
+      diagnostic('refresh', 'failed', response?.status || null, credentialId, reason);
       if (error instanceof OpenAiOAuthError) throw error;
       throw new OpenAiOAuthError('bot_oauth_refresh_unavailable');
     }

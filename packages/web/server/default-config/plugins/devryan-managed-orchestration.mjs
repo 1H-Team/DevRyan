@@ -9,6 +9,8 @@ const ACTIONS = [
   'wait',
   'wait_any',
   'checkpoint',
+  'plan_read',
+  'plan_update',
   'remember_decision',
   'decisions',
   'read_result',
@@ -541,65 +543,15 @@ const resolveAdjacentAssistantSibling = (records, messageId) => {
   return { assistant: sibling, parent };
 };
 
-// Match the skill tool's catalog aliases (display name or directory slug),
-// without prescribing an installed path or loading skill bodies ourselves.
-const isExecutingPlansName = (value) => typeof value === 'string'
-  && value.toLowerCase().replace(/[^a-z0-9]/g, '') === 'executingplans';
-
-const matchesSkillPattern = (pattern, name) => typeof pattern === 'string'
-  && new RegExp(`^${pattern.split('*').map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`).test(name);
-
-const executionSkillDenied = (agent, name) => {
-  const permission = agent?.permission;
-  if (Array.isArray(permission)) {
-    const rule = permission.filter((entry) => entry?.permission === 'skill' && matchesSkillPattern(entry.pattern, name)).at(-1);
-    return rule?.action === 'deny';
-  }
-  const rules = permission?.skill;
-  if (rules === 'deny' || rules === false) return true;
-  if (!isRecord(rules)) return false;
-  const rule = Object.entries(rules).filter(([pattern]) => matchesSkillPattern(pattern, name)).at(-1);
-  return rule?.[1] === 'deny';
-};
-
-const resolveExecutionSkill = async (client, directory, agentName) => {
-  // Native plugins still receive the legacy SDK, whose App lacks skills().
-  // Its request options allow a URL override; retain that authenticated
-  // transport while requesting the same native /skill catalog as SDK v2.
-  const response = typeof client?.app?.skills === 'function'
-    ? await client.app.skills({ directory })
-    : typeof client?.app?.agents === 'function'
-      ? await client.app.agents({ url: '/skill', query: { directory } })
-      : null;
-  const skills = unwrapResponseData(response);
-  if (response?.error || !Array.isArray(skills)) {
-    throw new Error('Cannot verify implementation startup: the skill catalog is unavailable. Retry before dispatching.');
-  }
-  const skill = skills.find((entry) => {
-    const segments = typeof entry?.location === 'string' ? entry.location.split(/[\\/]+/).filter(Boolean) : [];
-    const slug = /^skill\.md$/i.test(segments.at(-1) ?? '') ? segments.at(-2) : segments.at(-1)?.replace(/\.mdx?$/i, '');
-    return typeof entry?.name === 'string' && (isExecutingPlansName(entry.name) || isExecutingPlansName(slug));
-  });
-  if (!skill) return null;
-  if (typeof client?.app?.agents === 'function') {
-    const response = await client.app.agents({ directory, query: { directory } });
-    if (response?.error) throw new Error('Cannot verify implementation startup: agent skill permissions are unavailable.');
-    const agents = unwrapResponseData(response);
-    const agent = Array.isArray(agents) ? agents.find((entry) => entry?.name?.toLowerCase() === agentName?.toLowerCase()) : null;
-    if (executionSkillDenied(agent, skill.name)) return null;
-  }
-  return skill.name;
-};
-
 const assertPlanImplementationStartup = async (client, { context, parent, assistant, firstPage, dispatchCallId }) => {
   if (!hasPlanImplementationRequest(parent)) return;
   const sessionId = context.sessionID;
   let page = firstPage ?? await readPlanHistoryPage(client, { sessionId, directory: context.directory });
   let records = [...page.records];
   const seenCursors = new Set();
-  // Include active-context skills from planning, but never cross a compaction
-  // summary. Bounded native pagination avoids mistaking an unloaded older page
-  // for a missing skill. The exact assistant bounds out later text/turns.
+  // Read back to the active compaction summary with bounded native pagination
+  // so an earlier admitted start is found. The exact assistant bounds out later
+  // text/turns.
   for (let pages = 1; page.cursor && !records.some((record) => record?.info?.summary === true); pages += 1) {
     if (pages >= PLAN_AUTHORITY_MAX_PAGES || seenCursors.has(page.cursor)
       || Buffer.byteLength(JSON.stringify(records), 'utf8') > PLAN_AUTHORITY_MAX_BYTES) {
@@ -615,7 +567,6 @@ const assertPlanImplementationStartup = async (client, { context, parent, assist
   const summaryIndex = records.findLastIndex((record) => record?.info?.summary === true);
   const activeRecords = records.slice(summaryIndex + 1);
   let hasStatement = false;
-  const loadedSkills = new Set();
   for (const record of activeRecords) {
     if (record?.info?.role !== 'assistant') continue;
     if (record.info.sessionID && record.info.sessionID !== sessionId) continue;
@@ -626,27 +577,19 @@ const assertPlanImplementationStartup = async (client, { context, parent, assist
       if (record.info.parentID === parent.info.id) {
         if (part?.type === 'text' && part.synthetic !== true && part.ignored !== true && readPartText(part).trim()) hasStatement = true;
         // Only the first admitted start owns the startup contract. A rejected
-        // start does not count, and subsequent waves do not reload skills.
+        // start does not count, and subsequent waves skip the statement check.
         if (part?.tool === 'devryan_task' && part.state?.input?.action === 'start' && part.state.status === 'completed') {
           try {
             if (JSON.parse(part.state.output)?.dispatched === true) return;
           } catch { /* An invalid/failed result cannot prove admission. */ }
         }
       }
-      if (part?.tool === 'skill' && part.state?.status === 'completed'
-        && typeof part.state.input?.name === 'string' && typeof part.state.output === 'string'
-        && part.state.output.trim() && !part.state.output.includes('<devryan_skill_reuse>')
-        && !part.state.output.startsWith('Skill "') && !Number.isFinite(part.state.time?.compacted)) {
-        loadedSkills.add(part.state.input.name);
-      }
     }
   }
-  const skillName = await resolveExecutionSkill(client, context.directory, context.agent ?? parent.info.agent);
-  const hasSkill = !skillName || [...loadedSkills].some((name) => name === skillName || isExecutingPlansName(name));
-  if (hasSkill && hasStatement) return;
+  if (hasStatement) return;
   throw createToolInputInvalidError(
-    `Implementation has not been dispatched. ${!hasSkill ? `Load the available skill "${skillName}" (or restore its full active-context result), then ` : ''}${!hasStatement ? 'write one brief visible assistant sentence stating what you will implement and verify, then ' : ''}call devryan_task start again. No child was created.`,
-    { state: 'implementation_startup_required', skillRequired: !hasSkill, statementRequired: !hasStatement },
+    'Implementation has not been dispatched. Write one brief visible assistant sentence stating what you will implement and verify, then call devryan_task start again. No child was created.',
+    { state: 'implementation_startup_required', statementRequired: true },
   );
 };
 
@@ -1326,6 +1269,13 @@ const executeAction = async (args, context, client, dispatchCallId = null, resul
     return annotateDispatchResult(withNotice, dispatchCallId);
   }
 
+  if (action === 'plan_read' || action === 'plan_update') {
+    return await callRpc('harness_plan', { action,
+      sessionID: requireText(context.sessionID, 'context.sessionID'), directory: requireText(context.directory, 'context.directory'),
+      messageID: requireText(context.messageID, 'context.messageID'), callID: requireText(context.callID, 'context.callID'),
+      ...(action === 'plan_update' ? { expectedVersion: args.expected_version, text: args.text } : {}),
+    }, { signal: context.abort });
+  }
   if (['checkpoint', 'remember_decision', 'decisions'].includes(action)) {
     return await callRpc('harness_context', { action, sessionID: context.sessionID, directory: context.directory,
       query: args.query, statement: args.decision, sourceMessageID: args.source_message_id, paths: args.decision_paths,
@@ -2507,16 +2457,18 @@ export const DevRyanManagedOrchestrationPlugin = async ({
     },
     tool: {
       devryan_task: tool({
-      description: `Start or control a DevRyan-managed sub-agent. When managed delegation is already the decided next action, start it before any standalone todo read/write whose only purpose is to restate that delegation. DevRyan does not impose a managed concurrency cap: start every independent sub-agent needed by the task without batching around an artificial slot limit. DevRyan preserves partial results after failure or abort. DevRyan keeps each wait call attached while repeating bounded polling slices internally; wait returns only a terminal result, and status is the non-blocking way to inspect queued, starting, or running state. Legacy terminal previews require every resultReference page before disposition. With a versioned resultHeader and compactResults capability, inspect canonical outcome, reported status, failures, recovery restrictions and named check evidence first. When detail.requiredBeforeDisposition is true, read all retained pages before reconciliation; otherwise retrieve detail needed for the next decision. A passed check becomes unverified after relevant content changes. ${advertiseWaitAny ? 'Use wait_any for the first collectable result when advertised; with' : 'With'} contextProjection enabled, use checkpoint after a wake, after compaction and before final closeout; use decisions and remember_decision for sourced project decisions. A completed result accepts only continue. Retry is only for an eligible failed result. A resumable failure with no agent retry remaining returns immediately with manualRecoveryRequired while its durable result stays pending for the user-facing Model Recovery controls, except provider prompt rejection, which requires the one agent recovery to use a reframed prompt in a fresh child. When that result also carries autoResume.scheduled, DevRyan retries the same child automatically at the reported time or on the backup model; leave it unacknowledged and end the turn. A stale_task_reference or already_dispositioned result requires no repeated wait, disposition, or replacement child; follow its authoritative barrier instruction and continue from the last confirmed parent state when clear. This is distinct from provider-native task orchestration.`,
+      description: `Manage DevRyan sub-agents. plan_read/plan_update require Implement selection, never a new Plan proposal; expected_version and full text. No raw plan writes. When managed delegation is already the decided next action, start it before any standalone todo read/write whose only purpose is to restate that delegation. DevRyan does not impose a managed concurrency cap: start every independent sub-agent needed by the task without batching around an artificial slot limit. DevRyan preserves partial results after failure or abort. DevRyan keeps each wait call attached while repeating bounded polling slices internally; wait returns only a terminal result, and status is the non-blocking way to inspect queued, starting, or running state. Legacy previews require every resultReference page before disposition. With resultHeader and compactResults, inspect canonical outcome, status, failures, recovery restrictions and named check evidence first. When detail.requiredBeforeDisposition is true, read all retained pages before reconciliation; otherwise retrieve detail needed for the next decision. A passed check becomes unverified after relevant content changes. ${advertiseWaitAny ? 'Use wait_any for the first collectable result when advertised; with' : 'With'} contextProjection enabled, use checkpoint after a wake, after compaction and before final closeout; use decisions and remember_decision for sourced project decisions. A completed result accepts only continue. Retry is only for an eligible failed result. A resumable failure with no agent retry remaining returns immediately with manualRecoveryRequired while its durable result stays pending for the user-facing Model Recovery controls, except provider prompt rejection, which requires the one agent recovery to use a reframed prompt in a fresh child. When that result also carries autoResume.scheduled, DevRyan retries the same child automatically at the reported time or on the backup model; leave it unacknowledged and end the turn. A stale_task_reference or already_dispositioned result requires no repeated wait, disposition, or replacement child; follow its authoritative barrier instruction and continue from the last confirmed parent state when clear. Distinct from provider-native task orchestration.`,
       args: {
-        action: tool.schema.enum(advertiseWaitAny ? ACTIONS : ACTIONS.filter((entry) => entry !== 'wait_any')).describe(`Action: start, status, wait, ${advertiseWaitAny ? 'wait_any, ' : ''}read_result, cancel, continue, retry, resume, abandon, checkpoint, decisions, or remember_decision. Use read_result only after a terminal wait returns resultReference.nextCursor, and pass requested cursors exactly once in order. Legacy results require all pages; versioned compact headers permit selective detail retrieval. A completed result accepts only continue; retry is only for an eligible failed result. A resumable failure with no agent retry remaining returns manualRecoveryRequired and remains pending for the user-facing Model Recovery controls. After the user retries, an idle-parent continuation collects the recovered result. Wait stays attached only until the requested task is terminal while DevRyan polls internally; use status for a non-blocking live snapshot. stale_task_reference and already_dispositioned are no-op recovery states and must not trigger a replacement task or repeated acknowledgement.`),
-        task_id: tool.schema.string().optional().describe(`Managed dvr_task_ ID. Required except for start, ${advertiseWaitAny ? 'wait_any, ' : ''}checkpoint, decisions, and remember_decision.`),
+        action: tool.schema.enum(advertiseWaitAny ? ACTIONS : ACTIONS.filter((entry) => entry !== 'wait_any')).describe(`Action: start, status, wait, ${advertiseWaitAny ? 'wait_any, ' : ''}read_result, cancel, continue, retry, resume, abandon, plan_read, plan_update, checkpoint, decisions, or remember_decision. Use read_result only after a terminal wait returns resultReference.nextCursor, and pass requested cursors exactly once in order. Legacy results require all pages; versioned compact headers permit selective detail retrieval. A completed result accepts only continue; retry is only for an eligible failed result. A resumable failure with no agent retry remaining returns manualRecoveryRequired and remains pending for the user-facing Model Recovery controls. After the user retries, an idle-parent continuation collects the recovered result. Wait stays attached only until the requested task is terminal while DevRyan polls internally; use status for a non-blocking live snapshot. stale_task_reference and already_dispositioned are no-op recovery states and must not trigger a replacement task or repeated acknowledgement.`),
+        task_id: tool.schema.string().optional().describe(`Managed dvr_task_ ID. Required except for start, ${advertiseWaitAny ? 'wait_any, ' : ''}plan_read, plan_update, checkpoint, decisions, and remember_decision.`),
         ...(advertiseWaitAny ? {
           task_ids: tool.schema.array(tool.schema.string()).optional().describe('Managed task IDs owned by this root. Required for wait_any when capabilities.policies.waitAny is enabled.'),
           after_cursor: tool.schema.string().optional().describe('Opaque cursor from the last wait_any. Omit when changing the selected tasks or recollecting retained results. Internal wait slices never return unchanged live snapshots to the model.'),
         } : {}),
         result_cursor: tool.schema.string().optional().describe('Exact resultReference.nextCursor from the preceding wait or read_result page. Required only for read_result.'),
         label: tool.schema.string().optional().describe('Short task label for start or retry.'),
+        expected_version: tool.schema.string().optional().describe('plan_read version for plan_update; reread and reconcile stale versions.'),
+        text: tool.schema.string().optional().describe('Full plan Markdown, max 256 KiB UTF-8; preserve approved revisions and deviations.'),
         query: tool.schema.string().optional().describe('Relevant words for project decisions or checkpoint retrieval.'),
         decision: tool.schema.string().optional().describe('Exact bounded quote from a real user message for remember_decision; project scope only.'),
         source_message_id: tool.schema.string().optional().describe('Canonical real-user message containing the exact decision quote in this session.'),
@@ -2543,6 +2495,10 @@ export const DevRyanManagedOrchestrationPlugin = async ({
           ? contextCallID || pendingStart?.callID || null
           : null;
         try {
+          if (['build', 'builder'].includes(context.agent?.toLowerCase()) && action !== 'plan_read' && action !== 'plan_update') {
+            throw Object.assign(new Error('Builder may only use devryan_task to read or update its selected saved plan'),
+              { code: 'managed_orchestrator_authority_required', statusCode: 403 });
+          }
           if (action === 'read_result') {
             const taskId = requireText(args.task_id, 'task_id');
             const collected = state.collectedResults.get(taskId);

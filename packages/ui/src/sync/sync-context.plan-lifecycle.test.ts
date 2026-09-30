@@ -39,6 +39,7 @@ import {
   setActiveSession,
   setExternallyViewedSession,
 } from "./sync-context"
+import { sessionEvents, type SessionPlanUpdated } from "@/lib/sessionEvents"
 import { useNotificationStore } from "./notification-store"
 import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
 import { usePrimaryRecoveryStore } from "@/stores/usePrimaryRecoveryStore"
@@ -316,6 +317,52 @@ describe("sync plan lifecycle on message.part.delta", () => {
       sessionContextUsage: new Map(),
       sessionAgentEditModes: new Map(),
     })
+  })
+
+  test("forwards canonical saved-plan revisions without allocating a directory store", () => {
+    const childStores = new ChildStoreManager()
+    const updates: SessionPlanUpdated[] = []
+    const unsubscribe = sessionEvents.onPlanUpdated(event => updates.push(event))
+    const properties = { sessionID: SESSION_ID, sourceMessageID: ASSISTANT_MESSAGE_ID, directory: DIRECTORY,
+      sessionCreated: 1, sessionSlug: "plan-session", version: "sha256-version" }
+    try {
+      applySyncEventForTest("global", { type: "session.plan.updated", properties } as unknown as Event, childStores, routingIndexFor())
+      expect(updates).toEqual([{ sessionId: SESSION_ID, sourceMessageId: ASSISTANT_MESSAGE_ID, directory: DIRECTORY,
+        sessionCreated: 1, sessionSlug: "plan-session", version: "sha256-version" }])
+      applySyncEventForTest("global", { type: "session.plan.updated", properties: { ...properties, version: "" } } as unknown as Event,
+        childStores, routingIndexFor())
+      expect(updates).toHaveLength(1)
+      expect(childStores.children.size).toBe(0)
+    } finally { unsubscribe(); childStores.disposeAll() }
+  })
+
+  test("a canonical Plan retry supersedes its prior auth failure while preserving a current failure", async () => {
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    const routing = routingIndexFor()
+    store.setState({ ...INITIAL_STATE, message: { [SESSION_ID]: [userMessage()] }, part: { [USER_MESSAGE_ID]: [] } })
+    const authError = { type: "session.error", properties: { sessionID: SESSION_ID,
+      error: { name: "UnknownError", data: { message: "bot_opencode_provider_authentication" } } } } as Event
+    applySyncEventForTest(DIRECTORY, authError, childStores, routing)
+    expect(useNotificationStore.getState().sessionHasError(SESSION_ID)).toBe(true)
+    const retry = implementingUserMessage()
+    // Info without its parts does not establish a human retry boundary.
+    applySyncEventForTest(DIRECTORY, { type: "message.updated", properties: { info: retry } } as Event, childStores, routing)
+    expect(useNotificationStore.getState().sessionHasError(SESSION_ID)).toBe(true)
+    const retryPart = { ...planModePart(), id: "prt_retry", messageID: retry.id }
+    applySyncEventForTest(DIRECTORY, partUpdatedEvent(retryPart), childStores, routing)
+    const afterRetry = useNotificationStore.getState()
+    expect(afterRetry.sessionHasError(SESSION_ID)).toBe(false)
+    expect(afterRetry.list[0]).toMatchObject({ failedUserMessageId: USER_MESSAGE_ID, resolvedByMessageId: retry.id })
+    applySyncEventForTest(DIRECTORY, authError, childStores, routing)
+    const currentFailure = useNotificationStore.getState()
+    expect(currentFailure.sessionHasError(SESSION_ID)).toBe(true)
+    // Duplicate retry and delayed old metadata cannot erase this turn's failure.
+    applySyncEventForTest(DIRECTORY, { type: "message.updated", properties: { info: retry } } as Event, childStores, routing)
+    applySyncEventForTest(DIRECTORY, { type: "message.updated", properties: { info: userMessage() } } as Event, childStores, routing)
+    expect(useNotificationStore.getState()).toBe(currentFailure)
+    await flushAsync()
+    childStores.disposeAll()
   })
 
   test("projects completed file tools into the session attribution store", () => {
@@ -1479,7 +1526,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
       sessionPlans: {
         ensureRevision: async () => {
           writes += 1
-          return { path: '/plans/plan.md', created: true }
+          return { path: '/plans/plan.md', created: true, version: 'fixture-version' }
         },
       },
     } as unknown as RuntimeAPIs)
@@ -1670,7 +1717,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     const originalProjects = useProjectsStore.getState().projects
     registerRuntimeAPIs({
       sessionPlans: {
-        ensureRevision: async () => ({ path: '/plans/plan.md', created: false }),
+        ensureRevision: async () => ({ path: '/plans/plan.md', created: false, version: 'fixture-version' }),
       },
     } as unknown as RuntimeAPIs)
     useProjectsStore.setState({

@@ -1,6 +1,7 @@
 import type {
   SessionPlanRevisionIdentity,
   SessionPlanRevisionWrite,
+  SessionPlanRevisionUpdate,
   SessionPlansAPI,
 } from '@openchamber/ui/lib/api/types';
 
@@ -14,16 +15,23 @@ const identityPayload = (input: SessionPlanRevisionIdentity) => ({
   sessionSlug: input.sessionSlug,
 });
 
-const requestJson = async <T>(url: string, init?: RequestInit): Promise<T> => {
+const requestJson = async (url: string, init?: RequestInit): Promise<Record<string, unknown> & { path: string; version: string }> => {
   const response = await fetch(url, init);
-  const payload = await response.json().catch(() => null) as { error?: unknown } | T | null;
+  const payload: unknown = await response.json().catch(() => null);
+  const value = payload && typeof payload === 'object' && !Array.isArray(payload)
+    ? payload as Record<string, unknown> : {};
   if (!response.ok) {
-    const message = payload && typeof (payload as { error?: unknown }).error === 'string'
-      ? (payload as { error: string }).error
-      : response.statusText;
-    throw new Error(message || `Plan request failed (${response.status})`);
+    const message = typeof value.error === 'string' ? value.error : response.statusText;
+    throw Object.assign(new Error(message || `Plan request failed (${response.status})`), {
+      status: response.status,
+      ...(typeof value.code === 'string' ? { code: value.code } : {}),
+      ...(typeof value.version === 'string' ? { version: value.version } : {}),
+    });
   }
-  return payload as T;
+  if (typeof value.path !== 'string' || typeof value.version !== 'string' || !value.version) {
+    throw new Error('Invalid plan response');
+  }
+  return { ...value, path: value.path, version: value.version };
 };
 
 const mutationHeaders = {
@@ -33,11 +41,13 @@ const mutationHeaders = {
 
 export const createWebSessionPlansAPI = (): SessionPlansAPI => ({
   async ensureRevision(input: SessionPlanRevisionWrite) {
-    return requestJson(routeFor(input), {
+    const result = await requestJson(routeFor(input), {
       method: 'POST',
       headers: mutationHeaders,
       body: JSON.stringify({ ...identityPayload(input), markdown: input.markdown }),
     });
+    if (typeof result.created !== 'boolean') throw new Error('Invalid plan response');
+    return { path: result.path, created: result.created, version: result.version };
   },
 
   async readRevision(input: SessionPlanRevisionIdentity) {
@@ -46,14 +56,18 @@ export const createWebSessionPlansAPI = (): SessionPlansAPI => ({
       sessionCreated: String(input.sessionCreated),
       sessionSlug: input.sessionSlug,
     });
-    return requestJson(`${routeFor(input)}?${query.toString()}`, { cache: 'no-store' });
+    const result = await requestJson(`${routeFor(input)}?${query.toString()}`, { cache: 'no-store' });
+    if (typeof result.content !== 'string') throw new Error('Invalid plan response');
+    return { path: result.path, content: result.content, version: result.version };
   },
 
-  async updateRevision(input: SessionPlanRevisionWrite) {
-    return requestJson(routeFor(input), {
+  async updateRevision(input: SessionPlanRevisionUpdate) {
+    const result = await requestJson(routeFor(input), {
       method: 'PUT',
       headers: mutationHeaders,
-      body: JSON.stringify({ ...identityPayload(input), markdown: input.markdown }),
+      body: JSON.stringify({ ...identityPayload(input), markdown: input.markdown, expectedVersion: input.expectedVersion }),
     });
+    if (typeof result.saved !== 'boolean') throw new Error('Invalid plan response');
+    return { path: result.path, saved: result.saved, version: result.version };
   },
 });

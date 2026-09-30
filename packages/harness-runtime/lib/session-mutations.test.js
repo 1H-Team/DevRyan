@@ -139,6 +139,69 @@ test('private executions publish only owned changes, then selectively revert and
   expect(await f.read('x')).toBe('a=3 b=4\n');
 });
 
+test('sequential publication receipts and file Undo/Redo retain boundary order after reload', async () => {
+  const f = await fixture();
+  const versions = [
+    ['ac', 'ab', 'é\r\nc', Buffer.from([0, 255, 97])],
+    ['abc', 'aB', 'é\r\n😀c', Buffer.from([0, 255, 98])],
+    ['aYc', 'aQ', 'é\r\n🀄c', Buffer.from([0, 254, 98])],
+    ['aXYc', 'aQX', 'é\r\nX🀄c', Buffer.from([0, 254, 99])],
+  ];
+  const names = ['before.txt', 'after.txt', 'utf8.txt', 'binary.dat'];
+  for (const [index, name] of names.entries()) await f.write(name, versions[0][index]);
+  const changesDirectory = path.join(f.root, 'changes');
+  let mutations = f.runtime;
+  const restoreOwned = async (input) => {
+    const tx = await mutations.prepareFileRestore(input);
+    await mutations.settleRevert({ directory: f.directory, transactionID: tx.id, commit: true });
+  };
+  let changes = createSessionChangeRuntime({ directory: changesDirectory, restoreOwned });
+  const tokens = [];
+  const receiptBytes = async (content) => {
+    const chunks = [];
+    for await (const chunk of content.byteStream) chunks.push(chunk);
+    return Buffer.concat(chunks);
+  };
+  try {
+    for (let operation = 0; operation < 3; operation++) {
+      const lease = await f.begin(`s${operation}`, `p${operation}`, `c${operation}`); tokens.push(lease.token);
+      for (const [index, name] of names.entries()) {
+        expect(await fs.readFile(path.join(lease.viewDirectory, name))).toEqual(Buffer.from(versions[operation][index]));
+        await fs.writeFile(path.join(lease.viewDirectory, name), versions[operation + 1][index]);
+      }
+      expect((await f.finish(lease)).files.map((file) => file.path).sort()).toEqual([...names].sort());
+      for (const [index, name] of names.entries()) expect(await fs.readFile(path.join(f.directory, name)))
+        .toEqual(Buffer.from(versions[operation + 1][index]));
+      await changes.recordReceipt(await f.runtime.executionReceipt({ directory: f.directory, token: lease.token }));
+    }
+    await changes.drain(); await f.runtime.drain();
+    mutations = createSessionMutationRuntime({ directory: f.storage });
+    changes = createSessionChangeRuntime({ directory: changesDirectory, restoreOwned });
+    for (const [operation, token] of tokens.entries()) {
+      const receipt = await mutations.executionReceipt({ directory: f.directory, token });
+      expect(receipt).toMatchObject({ sessionID: `s${operation}`, complete: true, source: 'confined-execution' });
+      for (const file of receipt.files) {
+        const index = names.indexOf(path.basename(file.path)); expect(index).toBeGreaterThanOrEqual(0);
+        expect(await receiptBytes(file.before)).toEqual(Buffer.from(versions[operation][index]));
+        expect(await receiptBytes(file.after)).toEqual(Buffer.from(versions[operation + 1][index]));
+      }
+    }
+    const summary = await changes.summarize({ directory: f.directory, rootSessionID: 's1' });
+    expect(summary).toMatchObject({ coverage: 'complete', fileCount: 4, restoreAvailable: true });
+    const diff = await changes.diff({ directory: f.directory, rootSessionID: 's1', revision: summary.revision, file: 'before.txt' });
+    expect(diff.patch).toContain('-abc'); expect(diff.patch).toContain('+aYc');
+    await changes.restore({ directory: f.directory, rootSessionID: 's1', revision: summary.revision });
+    const undone = ['aXbc', 'aBX', 'é\r\nX😀c', versions[3][3]];
+    for (const [index, name] of names.entries()) expect(await fs.readFile(path.join(f.directory, name))).toEqual(Buffer.from(undone[index]));
+    await changes.drain(); await mutations.drain();
+    mutations = createSessionMutationRuntime({ directory: f.storage });
+    changes = createSessionChangeRuntime({ directory: changesDirectory, restoreOwned });
+    const restored = await changes.summarize({ directory: f.directory, rootSessionID: 's1' });
+    await changes.restore({ directory: f.directory, rootSessionID: 's1', revision: restored.revision, redo: true });
+    for (const [index, name] of names.entries()) expect(await fs.readFile(path.join(f.directory, name))).toEqual(Buffer.from(versions[3][index]));
+  } finally { await changes.drain(); await mutations.drain(); }
+});
+
 test('late unrelated execution keeps its changes without resurrecting reverted bytes', async () => {
   const f = await fixture(); await f.write('x', 'a=1 b=2');
   const a = await f.begin('a', 'pa', 'ca'); await fs.writeFile(path.join(a.viewDirectory, 'x'), 'a=3 b=2'); await f.finish(a);

@@ -42,6 +42,27 @@ afterEach(async () => {
 });
 
 describe('session-partitioned diagnostic journal', () => {
+  test('retains typed process-exit evidence with a bounded redacted stderr tail through disk', async () => {
+    const journal = createJournal(await temporaryDirectory(), { blobThresholdBytes: 100000 });
+    journal.enqueue({ type: 'lifecycle', event: 'opencode_process_exit', payload: {
+      pid: 12345, code: null, signal: 'SIGABRT', uptimeMs: 56789, expected: false,
+      stderrTail: `${'panic output\n'.repeat(2000)}Bearer sk-synthetic01234567890123456789\n`,
+      headers: { authorization: 'private' }, accessToken: 'private',
+    } });
+    journal.enqueue({ type: 'lifecycle', event: 'opencode_process_exit', payload: {
+      pid: -1, code: 'private', signal: { text: 'private' }, uptimeMs: Infinity,
+      expected: 'private', stderrTail: { text: 'private' },
+    } });
+    await journal.flush();
+    const records = await journal.readRecords();
+    expect(records[0].payload).toMatchObject({ pid: 12345, code: null, signal: 'SIGABRT', uptimeMs: 56789, expected: false });
+    expect(records[0].payload.stderrTail).toContain('panic output');
+    expect(records[0].payload.stderrTail).toContain('[REDACTED]');
+    expect(records[0].payload.stderrTail.length).toBeLessThanOrEqual(16 * 1024);
+    expect(JSON.stringify(records)).not.toMatch(/synthetic012|private/);
+    expect(records[1].payload).toEqual({});
+    await journal.close();
+  });
   test('drains records queued during asynchronous segment publication before shutdown', async () => {
     const directory = await temporaryDirectory();
     let release;

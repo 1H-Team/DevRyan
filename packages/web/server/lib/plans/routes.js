@@ -1,70 +1,12 @@
-import { createProjectIdFromPath } from '../projects/project-id.js';
-import { resolvePlanProjectStorageId } from '@openchamber/shared-runtime/lib/plan-storage-id.js';
-
+import { resolveSessionPlanRevision, readPlanRevision, writePlanRevision, planError } from './revisions.js';
+export { resolveSessionPlanRevision } from './revisions.js';
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
-
-const normalizePath = (value) => {
-  const normalized = String(value || '').trim().replace(/\\/g, '/').replace(/\/+$/g, '');
-  return normalized || (String(value || '').trim().startsWith('/') ? '/' : '');
-};
-
-const sanitizePlanPathSegment = (value) => String(value || '')
-  .trim()
-  .replace(/[\\/]+/g, '-')
-  .replace(/\.+/g, '-')
-  .replace(/[^A-Za-z0-9_-]+/g, '-')
-  .replace(/-+/g, '-')
-  .replace(/^-+|-+$/g, '');
-
-const routeError = (statusCode, message) => Object.assign(new Error(message), { statusCode });
-
-export const resolveSessionPlanRevision = async ({
-  dataDirectory,
-  directory,
-  sessionCreated,
-  sessionSlug,
-  sourceMessageID,
-  path,
-}) => {
-  const normalizedDataDirectory = normalizePath(dataDirectory);
-  const normalizedDirectory = normalizePath(directory);
-  const created = Number(sessionCreated);
-  const slug = sanitizePlanPathSegment(sessionSlug);
-  const sourceID = String(sourceMessageID || '').trim();
-
-  if (!normalizedDataDirectory || !path.isAbsolute(normalizedDataDirectory)) {
-    throw routeError(500, 'Plan storage is unavailable');
-  }
-  if (!normalizedDirectory || !path.isAbsolute(normalizedDirectory)) {
-    throw routeError(400, 'Plan directory must be an absolute path');
-  }
-  if (!Number.isFinite(created) || created <= 0 || Math.trunc(created) !== created) {
-    throw routeError(400, 'Plan session creation time is invalid');
-  }
-  if (!slug) {
-    throw routeError(400, 'Plan session slug is invalid');
-  }
-  if (!SESSION_ID_PATTERN.test(sourceID)) {
-    throw routeError(400, 'Plan source message ID is invalid');
-  }
-
-  const projectID = await resolvePlanProjectStorageId(sanitizePlanPathSegment(createProjectIdFromPath(normalizedDirectory)));
-  if (!projectID) {
-    throw routeError(400, 'Plan project identity is invalid');
-  }
-
-  const plansDirectory = path.join(normalizedDataDirectory, 'projects', projectID, 'plans');
-  const fileName = `${Math.trunc(created)}-${slug}-${sourceID}.md`;
-  return {
-    directory: plansDirectory,
-    path: path.join(plansDirectory, fileName),
-  };
-};
 
 const sendRouteError = (res, error, fallback) => {
   const status = Number(error?.statusCode)
     || (error?.code === 'EACCES' || error?.code === 'EPERM' ? 403 : 500);
-  return res.status(status).json({ error: error?.message || fallback });
+  return res.status(status).json({ error: error?.message || fallback,
+    ...(error?.code ? { code: error.code } : {}), ...(error?.version ? { version: error.version } : {}) });
 };
 
 export const registerSessionPlanRoutes = (app, {
@@ -73,12 +15,14 @@ export const registerSessionPlanRoutes = (app, {
   path,
   ownsSession,
   resolveOwnedSessionPlanContext,
+  publishEvent = () => {},
+  recordDiagnostic = () => {},
+  readCanonicalPlanIdentity,
 }) => {
-  const authorizeSession = async (req, res) => {
+  const authorizeSession = async (req) => {
     const sessionID = String(req.params.sessionID || '').trim();
     if (!SESSION_ID_PATTERN.test(sessionID)) {
-      res.status(400).json({ error: 'Plan session ID is invalid' });
-      return null;
+      throw planError(400, 'plan_identity_invalid', 'Plan session ID is invalid');
     }
     if (req.principal?.scope !== 'managed') return { directory: null };
     const requestedDirectory = req.method === 'GET' ? req.query?.directory : req.body?.directory;
@@ -86,95 +30,73 @@ export const registerSessionPlanRoutes = (app, {
       ? await resolveOwnedSessionPlanContext(req.principal, sessionID, requestedDirectory)
       : null;
     if (!context || typeof ownsSession !== 'function' || !await ownsSession(req.principal, sessionID)) {
-      res.status(404).json({ error: 'Session not found' });
-      return null;
+      throw planError(404, 'plan_owner_unavailable', 'Session not found');
     }
     return context;
   };
 
-  const resolveFromRequest = (req, sessionContext) => resolveSessionPlanRevision({
-    dataDirectory,
-    directory: sessionContext?.directory
-      || (req.method === 'GET' ? req.query?.directory : req.body?.directory),
-    sessionCreated: req.method === 'GET' ? req.query?.sessionCreated : req.body?.sessionCreated,
-    sessionSlug: req.method === 'GET' ? req.query?.sessionSlug : req.body?.sessionSlug,
-    sourceMessageID: req.params.sourceMessageID,
-    path,
-  });
+  const resolveFromRequest = async (req, sessionContext) => {
+    const submitted = req.method === 'GET' ? req.query : req.body;
+    const directory = sessionContext?.directory || submitted?.directory;
+    if (typeof readCanonicalPlanIdentity !== 'function') throw planError(503, 'plan_identity_unavailable');
+    const canonical = await readCanonicalPlanIdentity({ sessionID: req.params.sessionID,
+      sourceMessageID: req.params.sourceMessageID, directory });
+    if (Number(submitted?.sessionCreated) !== canonical.sessionCreated || submitted?.sessionSlug !== canonical.sessionSlug) {
+      throw planError(409, 'plan_identity_mismatch', 'Plan identity does not match its session');
+    }
+    return resolveSessionPlanRevision({
+      dataDirectory,
+      directory,
+      sessionCreated: canonical.sessionCreated,
+      sessionSlug: canonical.sessionSlug,
+      sourceMessageID: req.params.sourceMessageID,
+      path,
+    });
+  };
 
-  app.post('/api/session/:sessionID/plan-revisions/:sourceMessageID', async (req, res) => {
+  const diagnostic = (req, outcome, result) => recordDiagnostic({ type: 'lifecycle', event: 'session_plan_write',
+    sessionID: req.params.sessionID, payload: { outcome, code: result?.code, version: result?.version } });
+  const publish = (req, sessionContext, result) => publishEvent({ type: 'session.plan.updated', properties: {
+    sessionID: req.params.sessionID, sourceMessageID: req.params.sourceMessageID,
+    directory: sessionContext?.directory || req.body.directory,
+    sessionCreated: req.body.sessionCreated, sessionSlug: req.body.sessionSlug, version: result.version,
+  } }, { directory: sessionContext?.directory || req.body.directory });
+
+  for (const method of ['post', 'put']) app[method]('/api/session/:sessionID/plan-revisions/:sourceMessageID', async (req, res) => {
     try {
-      const sessionContext = await authorizeSession(req, res);
-      if (!sessionContext) return;
-      const markdown = req.body?.markdown;
-      if (typeof markdown !== 'string' || !markdown.trim()) {
-        throw routeError(400, 'Completed plan Markdown is required');
-      }
+      const sessionContext = await authorizeSession(req);
       const revision = await resolveFromRequest(req, sessionContext);
-      await fsPromises.mkdir(revision.directory, { recursive: true });
-
-      let handle;
-      try {
-        handle = await fsPromises.open(revision.path, 'wx');
-        try {
-          await handle.writeFile(markdown, 'utf8');
-        } catch (error) {
-          await handle.close().catch(() => {});
-          handle = null;
-          await fsPromises.unlink(revision.path).catch(() => {});
+      const authorize = async () => {
+        const current = await authorizeSession(req).catch(error => {
+          if (error.code === 'plan_owner_unavailable') throw planError(404, 'plan_owner_changed', 'Session not found');
           throw error;
-        }
-        return res.json({ path: revision.path, created: true });
-      } catch (error) {
-        if (error?.code !== 'EEXIST') throw error;
-        const stat = await fsPromises.stat(revision.path).catch((statError) => {
-          throw statError;
         });
-        if (!stat.isFile()) throw routeError(409, 'The canonical plan path is not a file');
-        return res.json({ path: revision.path, created: false });
-      } finally {
-        await handle?.close().catch(() => {});
-      }
+        if (current.directory !== sessionContext.directory || current.projectId !== sessionContext.projectId
+          || current.branchName !== sessionContext.branchName || (await resolveFromRequest(req, current)).path !== revision.path) {
+          throw planError(404, 'plan_owner_changed', 'Session not found');
+        }
+      };
+      const result = await writePlanRevision(revision, { text: req.body?.markdown,
+        expectedVersion: req.body?.expectedVersion, create: method === 'post', fsApi: fsPromises, authorize });
+      diagnostic(req, 'saved', result);
+      if (method === 'put' || result.created) publish(req, sessionContext, result);
+      return res.json(result);
     } catch (error) {
+      diagnostic(req, 'refused', error);
       return sendRouteError(res, error, 'Failed to save plan revision');
     }
   });
 
   app.get('/api/session/:sessionID/plan-revisions/:sourceMessageID', async (req, res) => {
     try {
-      const sessionContext = await authorizeSession(req, res);
-      if (!sessionContext) return;
+      const sessionContext = await authorizeSession(req);
       const revision = await resolveFromRequest(req, sessionContext);
-      const content = await fsPromises.readFile(revision.path, 'utf8');
-      return res.json({ path: revision.path, content });
+      const current = await authorizeSession(req);
+      if (current.directory !== sessionContext.directory || current.projectId !== sessionContext.projectId
+        || current.branchName !== sessionContext.branchName) throw planError(404, 'plan_owner_changed', 'Session not found');
+      return res.json(await readPlanRevision(revision, { fsApi: fsPromises }));
     } catch (error) {
-      if (error?.code === 'ENOENT') return res.status(404).json({ error: 'Plan revision not found' });
       return sendRouteError(res, error, 'Failed to read plan revision');
-    }
-  });
-
-  app.put('/api/session/:sessionID/plan-revisions/:sourceMessageID', async (req, res) => {
-    try {
-      const sessionContext = await authorizeSession(req, res);
-      if (!sessionContext) return;
-      const markdown = req.body?.markdown;
-      if (typeof markdown !== 'string') throw routeError(400, 'Plan Markdown is required');
-      const revision = await resolveFromRequest(req, sessionContext);
-      const stat = await fsPromises.stat(revision.path).catch((error) => {
-        if (error?.code === 'ENOENT') throw routeError(404, 'Plan revision not found');
-        throw error;
-      });
-      if (!stat.isFile()) throw routeError(409, 'The canonical plan path is not a file');
-      const temporaryPath = `${revision.path}.${process.pid}.${Date.now()}.tmp`;
-      try {
-        await fsPromises.writeFile(temporaryPath, markdown, { encoding: 'utf8', flag: 'wx' });
-        await fsPromises.rename(temporaryPath, revision.path);
-      } finally {
-        await fsPromises.unlink(temporaryPath).catch(() => {});
-      }
-      return res.json({ path: revision.path, saved: true });
-    } catch (error) {
-      return sendRouteError(res, error, 'Failed to update plan revision');
     }
   });
 };

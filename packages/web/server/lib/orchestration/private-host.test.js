@@ -12,6 +12,35 @@ const callRpc = (environment, body, options = {}) => fetch(environment.DEVRYAN_O
 });
 
 describe('managed orchestration private host', () => {
+  it('runs native action authority after bearer admission and before dispatch', async () => {
+    const handleRpc = vi.fn(async () => 'dispatched');
+    const authorizeRpc = vi.fn(async ({ params }) => {
+      if (params?.deny) throw Object.assign(new Error('Orchestrator required'), { code: 'managed_orchestrator_authority_required', statusCode: 403 });
+    });
+    const host = createManagedOrchestrationPrivateHost({ handleRpc, authorizeRpc });
+    const environment = await host.start();
+    try {
+      expect((await callRpc(environment, { method: 'submit', params: { deny: true } }, { token: 'wrong' })).status).toBe(401);
+      expect(authorizeRpc).not.toHaveBeenCalled();
+      const denied = await callRpc(environment, { method: 'submit', params: { deny: true } });
+      expect(denied.status).toBe(403);
+      expect(handleRpc).not.toHaveBeenCalled();
+      expect((await denied.json()).error.code).toBe('managed_orchestrator_authority_required');
+      expect((await callRpc(environment, { method: 'harness_plan', params: { action: 'plan_read' } })).status).toBe(200);
+      expect(handleRpc).toHaveBeenCalledOnce();
+    } finally { await host.stop(); }
+  });
+  it('accepts a full saved-plan payload even when JSON escapes expand its wire size', async () => {
+    const text = '\u0001'.repeat(256 * 1024);
+    const host = createManagedOrchestrationPrivateHost({ handleRpc: async ({ params }) => ({ bytes: Buffer.byteLength(params.text) }) });
+    const environment = await host.start();
+    try {
+      const response = await callRpc(environment, { method: 'harness_plan', params: { action: 'plan_update', text } });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true, result: { bytes: 256 * 1024 } });
+    } finally { await host.stop(); }
+  });
+
   it('binds IPv4 loopback and requires its random bearer token', async () => {
     const handleRpc = vi.fn(async ({ method, params }) => ({ method, params }));
     const host = createManagedOrchestrationPrivateHost({ handleRpc });

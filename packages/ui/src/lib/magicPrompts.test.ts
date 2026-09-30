@@ -15,10 +15,9 @@ describe("magic prompt catalog", () => {
     invalidateMagicPromptOverridesCache()
   })
 
-  test("implementation startup requires reusable execution skill, visible intent, then a meaningful dispatch label", () => {
+  test("implementation startup requires visible intent, then a meaningful dispatch label", () => {
     const prompt = getDefaultMagicPromptTemplate("plan.implement.instructions")
-    expect(prompt).toContain("Executing Plans")
-    expect(prompt).toContain("Reuse its completed full content")
+    expect(prompt).not.toContain("Executing Plans")
     expect(prompt).toContain("before calling any sub-agent start tool")
     expect(prompt).toContain("concise outcome-based label")
     expect(prompt.indexOf("1. Read the approved plan")).toBeLessThan(prompt.indexOf("2. Write one brief"))

@@ -7,11 +7,20 @@ describe('Bot authentication diagnostics', () => {
     { name: 'ProviderAuthError', data: { message: 'provider authentication failed', isRetryable: true } },
     { name: 'APIError', data: { statusCode: 401, isRetryable: true } },
     { name: 'UnknownError', data: { message: 'bot_opencode_provider_authentication: Reconnect the selected host OpenAI account in Providers and Bot Settings.' } },
-  ])('classifies typed failures and the exact incident without retrying an accepted prompt', (error) => {
+    { name: 'UnknownError', data: { message: 'bot_opencode_provider_authentication: Reconnect the selected host OpenAI account in Providers.' } },
+    { name: 'UnknownError', data: { message: 'bot_opencode_provider_authentication: Updated reconnect guidance.' } },
+  ])('classifies typed failures and stable authentication codes without retrying an accepted prompt', (error) => {
     expect(classifyOpenCodeRunError(error)).toMatchObject({ interruptionKind: 'bot_opencode_provider_authentication', retryable: false });
   });
+  it.each(['bot_oauth_refresh_unavailable', 'bot_oauth_persistence_failed', 'bot_oauth_coordinator_unavailable'])(
+    'classifies %s independently of reconnect guidance', code => {
+      expect(classifyOpenCodeRunError({ name: 'UnknownError', data: { message: `${code}: Updated guidance.` } }))
+        .toMatchObject({ interruptionKind: code, retryable: false });
+    },
+  );
   it.each(['server replied 401', 'Tool output: Token refresh failed: 401', 'Token refresh failed: 401\n',
-    'Token refresh failed: 500', 'bot_opencode_provider_authentication: arbitrary text', 'An unrelated failure'])('does not guess authentication from %s', (message) => {
+    'Token refresh failed: 500', 'Tool output: bot_opencode_provider_authentication: arbitrary text',
+    'bot_opencode_provider_authentication_extra: arbitrary text', 'An unrelated failure'])('does not guess authentication from %s', (message) => {
     expect(classifyOpenCodeRunError({ name: 'UnknownError', data: { message } }).interruptionKind).toBe('bot_opencode_provider_unknown');
   });
 });

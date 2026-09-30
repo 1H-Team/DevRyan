@@ -41,12 +41,14 @@ describe('packaged delegation permissions', () => {
     expect(permission.devryan_task).toBe('allow');
   });
 
-  it('reserves managed delegation for Orchestrator', () => {
+  it('exposes the private task tool to Builder for plans while native tasks stay denied', () => {
     const managedDelegators = packagedAgentNames.filter((name) => (
       readFrontmatter(name).permission.devryan_task === 'allow'
     ));
 
-    expect(managedDelegators).toEqual(['orchestrator']);
+    expect(managedDelegators).toEqual(['builder', 'orchestrator']);
+    expect(deniesAll(readFrontmatter('builder').permission.task)).toBe(true);
+    expect(readFrontmatter('builder').permission.council_session).toBe('deny');
     expect(deniesAll(readFrontmatter('orchestrator').permission.task)).toBe(true);
   });
 });

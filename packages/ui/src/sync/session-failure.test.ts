@@ -21,6 +21,9 @@ describe('describeSessionFailure', () => {
   test('names other provider authentication failures', () => {
     expect(describeSessionFailure({ name: 'APIError', data: { message: '401 Unauthorized' } }))
       .toEqual({ code: 'provider_auth_failed', message: PROVIDER_AUTH_FAILURE_MESSAGE });
+    expect(describeSessionFailure({ name: 'UnknownError', data: {
+      message: 'bot_opencode_provider_authentication: Reconnect the selected host OpenAI account in Providers and Bot Settings.',
+    } })).toEqual({ code: 'provider_auth_failed', message: PROVIDER_AUTH_FAILURE_MESSAGE });
   });
 
   test('restores each classification from its persisted code alone', () => {

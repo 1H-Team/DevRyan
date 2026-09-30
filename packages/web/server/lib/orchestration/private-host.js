@@ -1,7 +1,8 @@
 import crypto from 'node:crypto';
 import http from 'node:http';
 
-const DEFAULT_MAX_BODY_BYTES = 384 * 1024;
+// A 256 KiB plan can expand sixfold when control characters are JSON-escaped.
+const DEFAULT_MAX_BODY_BYTES = 2 * 1024 * 1024;
 const LOOPBACK_ADDRESS = '127.0.0.1';
 
 const writeJson = (response, statusCode, body) => {
@@ -144,6 +145,7 @@ export const createManagedOrchestrationPrivateHost = (options = {}) => {
             return;
           }
 
+          await options.authorizeRpc?.(parsed);
           const result = await handleRpc(parsed, { signal: controller.signal });
           writeJson(response, 200, { ok: true, result: result ?? null });
         } catch (error) {

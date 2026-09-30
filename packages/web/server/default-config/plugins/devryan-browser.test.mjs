@@ -374,9 +374,11 @@ describe('DevRyan agent browser plugin', () => {
 
     await expect(plugin.tool.devryan_browser.execute({ command: 'open' }, context()))
       .resolves.toBe(__test.NO_PREVIEW_HANDOFF_MESSAGE);
-    // Confined commands cannot keep a dev server alive, so the handoff never
-    // tells the agent to start one.
+    // A supervised shell check owns its entire server lifecycle; the browser
+    // cannot depend on a detached server from a previous call.
     expect(__test.NO_PREVIEW_HANDOFF_MESSAGE).toContain('already running');
+    expect(__test.NO_PREVIEW_HANDOFF_MESSAGE).toContain('one bounded call');
+    expect(__test.NO_PREVIEW_HANDOFF_MESSAGE).toContain('clean up on success and failure');
     expect(__test.NO_PREVIEW_HANDOFF_MESSAGE).toContain('report visual verification as blocked');
     expect(__test.NO_PREVIEW_HANDOFF_MESSAGE).not.toContain('Start or identify');
     expect(spawnImpl).not.toHaveBeenCalled();

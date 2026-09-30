@@ -953,7 +953,7 @@ export interface TaskContextEnvelope { taskId: string; rootSessionId: string; en
 export interface TaskCheckpoint {
   schemaVersion: 1; kind: 'task'; sessionID: string; projectKey: string; updatedAt: number;
   anchor: { messageID: string; objective: string; complete: boolean; reference: { sessionID: string; messageID: string } };
-  selectedPlan: { sourceSessionId: string; sourceMessageId: string; planIndex: number } | null;
+  selectedPlan: { sourceSessionId: string; sourceMessageId: string; planIndex: number; projectDirectory?: string } | null;
   decisions: ProjectDecision[];
   unresolvedWork: Array<{ id: string | null; status: string; content: string }>;
   children: Array<{ taskId: string; childSessionId: string | null; status: string; envelopeId: string | null; action: string | null;
@@ -973,6 +973,7 @@ export interface TaskContextState {
 }
 export interface TaskContextRequest { sessionID: string; directory: string; query?: string }
 export function validateTaskContextRecord(record: unknown): TaskContextRecord;
+export function planReference(record: TaskContextMessage): TaskCheckpoint['selectedPlan'];
 export const COMPACTION_ANCHOR_TAG: '[devryan-compaction-anchor:v1]';
 export function formatCompactionAnchor(checkpoint: TaskCheckpoint, options?: { planPath?: string | null; planOutline?: string | null }): string;
 export function formatChildCompactionAnchor(assignmentText: string): string;

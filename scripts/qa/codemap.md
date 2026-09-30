@@ -2,6 +2,12 @@
 
 Repository-only Electron/web QA and shared CDP inspection helpers. No file in this directory enters the shipped UI or changes native security policy.
 
+- `terminal-cleanup.mjs`: opt-in native POSIX PTY stop/restart/shutdown check.
+  Disposable shells and children resistant to SIGHUP/SIGTERM live under
+  `.cache/qa`; an unrelated sentinel must survive every cleanup. Unsupported
+  platforms fail as unavailable. Run
+  with `bun scripts/qa/terminal-cleanup.mjs`; no installed runtime is accessed.
+
 - Cache accounting QA: `cache-study.mjs` owns canonical profiles and shared parent campaign ledgers with persistent 160/40 attempt caps; fixture ledgers stay local. `cache-wire-evidence.mjs` projects hashes/usage, and `cache-wire-observer.mjs` preserves bounded streaming and rejects unregistered inference during qualified runs. Load only its default-only `cache-wire-plugin.mjs` entrypoint. `cache-serializer-probe.mjs` checks installed OpenCode adapters on loopback; full DevRyan overlay qualification remains separate. `cache-usage-report.mjs` reads retained evidence without initializing a runtime. `execution-phase-report.mjs` summarizes per-dispatch execution phases from retained journals (run with `DEVRYAN_EXECUTION_SUMMARY_MIN_MS=0`) and optional `DEVRYAN_EXECUTION_TRACE=1` worker milestones from a runtime log. `cache-title-plugin.mjs`, `cache-efficiency-experiments.mjs` and `cache-pair-runner.mjs` own exact-route gates, wire reconciliation, balanced title arms and a blinded rubric; the 16 A/A / 24 title allocation is unchanged. A verified live host adapter remains a prerequisite. See `docs/CACHE_EFFICIENCY.md`; fixture success cannot establish live coverage or enable cache-policy A/B.
 
 - `run.mjs`: existing isolated QA entrypoint plus an explicit `--config` path to the separate matrix runner.

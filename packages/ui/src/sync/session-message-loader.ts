@@ -17,6 +17,7 @@ import { clearSessionPrefetch, getSessionPrefetch, setSessionPrefetch } from "./
 import { clearSessionMessagePagination, setSessionMessagePagination } from "./message-pagination-store"
 import { startSessionLoadPerformanceEvent } from "./session-load-performance"
 import { dropSessionCaches } from "./session-cache"
+import { reconcileSessionFailureNotifications } from "./notification-store"
 import { createSessionPlanSelectionSelector } from "./session-plan-selection"
 import { useSelectionStore } from "./selection-store"
 import { getSessionUIStoreIfInitialized } from "./sync-refs"
@@ -721,6 +722,8 @@ export class SessionMessageLoader {
         ...(activityChanged ? { session_user_activity: draft.session_user_activity } : {}),
       })
     }
+    reconcileSessionFailureNotifications(target.sessionID,
+      page.session.map(info => ({ info, parts: page.partsByMessageID.get(info.id) })))
     reconcileSessionChangeAttribution(target.directory, target.sessionID, store.getState())
     const endedAt = typeof performance !== "undefined" ? performance.now() : Date.now()
     streamPerfObserve("session.load.messages.materialize.duration_ms", Math.max(0, endedAt - startedAt))

@@ -17,17 +17,20 @@ const boundedText = (value, bytes) => {
   return result.endsWith('\uFFFD') ? result.slice(0, -1) : result;
 };
 const fault = (code) => Object.assign(new Error(code), { code, statusCode: 409 });
-const planReference = (record) => {
-  for (const part of textParts(record)) {
-    if (part.synthetic !== true || !part.text.startsWith('[openchamber-plan-action:v1] ')) continue;
-    try {
-      const value = JSON.parse(part.text.slice('[openchamber-plan-action:v1] '.length));
-      if (value.action === 'implement' && typeof value.sourceSessionId === 'string' && typeof value.sourceMessageId === 'string'
-        && Number.isSafeInteger(value.planIndex) && value.planIndex >= 0) {
-        return { sourceSessionId: value.sourceSessionId, sourceMessageId: value.sourceMessageId, planIndex: value.planIndex };
-      }
-    } catch { /* A malformed marker cannot manufacture a plan selection. */ }
-  }
+export const planReference = (record) => {
+  if (record?.info?.role !== 'user') return null;
+  const markers = textParts(record).filter((part) => part.synthetic === true && part.text.startsWith('[openchamber-plan-action:v1] '));
+  if (markers.length !== 1) return null;
+  try {
+    const value = JSON.parse(markers[0].text.slice('[openchamber-plan-action:v1] '.length));
+    if (value?.action === 'implement' && [value.sourceSessionId, value.sourceMessageId]
+      .every((id) => typeof id === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(id))
+      && Number.isSafeInteger(value.planIndex) && value.planIndex >= 0
+      && (value.projectDirectory === undefined || typeof value.projectDirectory === 'string' && path.isAbsolute(value.projectDirectory))) {
+      return { sourceSessionId: value.sourceSessionId, sourceMessageId: value.sourceMessageId, planIndex: value.planIndex,
+        ...(value.projectDirectory === undefined ? {} : { projectDirectory: value.projectDirectory }) };
+    }
+  } catch { /* A malformed marker cannot manufacture a plan selection. */ }
   return null;
 };
 

@@ -463,7 +463,7 @@ Final plan:
     template: `You are starting from an existing implementation plan.
 Plan title: {{plan_title}}
 This plan is stored in the file: {{plan_path}}
-Read that file first and treat its current contents as the source of truth for the plan.
+Use \`devryan_task\` with \`action: plan_read\` to read the selected saved revision and its version. Treat its current contents as the source of truth; the path is a reference, not a raw-write target.
 Your job right now is to improve this plan so it is better grounded in the actual repo state. Do not implement yet. Optimize for a well-considered improved plan, not a fast one.
 
 Work back and forth with me. Do not dump a wall of questions. Do not jump to the full improved plan.
@@ -479,7 +479,7 @@ Alignment:
 6. Share a short summary of proposed changes — what sections of the plan change and why, open questions, recommendations. Do not rewrite the whole plan inline and do not return the full plan as a code block. Quote only small targeted snippets or describe the exact sections to change. Wait for my confirmation or corrections. Iterate until I confirm.
 
 Final step:
-7. Once aligned, explicitly offer to edit this same file ({{plan_path}}) with the agreed changes. Make remaining assumptions and missing context explicit.`,
+7. Once aligned, save the agreed full revision through \`devryan_task\` \`plan_update\` using the last read \`expected_version\` and complete revised \`text\`. Preserve revision and deviation history. Make remaining assumptions and missing context explicit. If the tool refuses, say persistence failed and retain the proposed revision in chat; never fall back to raw writes.`,
   },
   {
     id: 'plan.implement.visible',
@@ -500,11 +500,11 @@ Final step:
     template: `You are starting from an existing implementation plan.
 Plan title: {{plan_title}}
 This plan is stored in the file: {{plan_path}}
-Read that file first and treat its current contents as the source of truth for the plan. The plan is already agreed; implement it end-to-end without deviating from it.
+Use \`devryan_task\` with \`action: plan_read\` to read the selected saved revision and its version. Treat its current contents as the source of truth; the path is a reference, not a raw-write target. The plan is already agreed; implement it end-to-end without deviating from it.
 
 Implementation startup, before the first sub-agent dispatch:
-1. Read the approved plan, then load the available Executing Plans workflow skill through the skill tool. Resolve its registered name from the skill catalog. Reuse its completed full content if it is already in the active context; reload only if that content was compacted away or changed.
-2. Write one brief, visible assistant sentence stating the implementation outcome and verification intent before calling any sub-agent start tool. Skill activity does not replace this implementation statement. If the execution skill is unavailable, continue with the plan and the available tools.
+1. Read the approved plan through \`devryan_task\` \`plan_read\`.
+2. Write one brief, visible assistant sentence stating the implementation outcome and verification intent before calling any sub-agent start tool.
 3. Dispatch with a concise outcome-based label, without procedural prefixes such as "Approved plan:" or generic labels such as "Managed designer task". Implementation-specific skills remain the responsibility of the specialist doing that work.
 
 Before and during implementation, build a deep understanding of the project — relevant files, module docs, existing patterns, nearby code, conventions — so your choices fit the repo's style.
@@ -525,7 +525,7 @@ Plan deviations and related findings:
 3. Every deviation note reads \`Deviation: <step> → <change>. Why: … Still delivers: <approved outcome>\`. For a Class 1 deviation, note it inline in normal progress reporting, record it in this same plan file ({{plan_path}}) under \`## Deviations\`, reconcile the todos under the rules below, and continue automatically; do not interrupt me for approval.
 4. For a Class 2 deviation, do not implement it yet. Ask exactly one question through the structured question tool so the existing question-card UI can keep the session resumable. Use the header \`Plan deviation\`. Write the question as several lines in layman's terms: line 1 is the question itself; then one line each starting with \`What changes:\`, \`Why:\`, \`For end users:\`, \`Security & data:\`, \`Reversibility:\`, and \`If we keep the original plan:\`. Offer exactly these options: \`Approve deviation (Recommended)\`, \`Keep original plan\`, and \`Something else\` (a custom answer is allowed). Never ask this as free-form assistant text. While the question is pending, do not emit a completion or blocked response and do not implement the Class 2 change.
 5. If I choose \`Approve deviation\`, record the deviation in this same plan file first, reconcile the todos, implement it, and resume in the same session without asking me to send another prompt. If I choose \`Something else\`, treat the custom answer as the approved change and record it the same way. If I choose \`Keep original plan\`, skip the question, or give an ambiguous answer, do not implement the deviation: follow the original step when it can still be done; otherwise leave the affected todo incomplete and report that the implementation is paused for plan revision.
-6. Record every deviation in this same plan file under a \`## Deviations\` section (create it at the end of the file when missing) as a numbered list: \`N. [Class 1 | Class 2 approved] <step> → <change>. Why: … Still delivers: …\`.
+6. Save each approved full revision and every deviation through \`devryan_task\` \`plan_update\` with the last read \`expected_version\` and complete revised \`text\`; preserve prior revision and deviation history. If refused, say persistence failed and keep the note in chat; never fall back to raw writes. Record deviations under a \`## Deviations\` section (create it at the end of the file when missing) as a numbered list: \`N. [Class 1 | Class 2 approved] <step> → <change>. Why: … Still delivers: …\`.
 7. For an unrelated finding, do not expand the plan to fix it. Record it concisely and continue when the agreed outcome can still be completed. If it genuinely prevents the agreed outcome or its verification, treat the required response as a Class 2 deviation and use the question-card flow.
 8. "Blocked" is reserved for missing user intent, a provider or tool failure, or a rule that cannot be satisfied. A sub-agent's blocked status caused by a plan-vs-repository conflict is a deviation to classify, not a blocker.
 

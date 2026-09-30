@@ -310,6 +310,22 @@ export const createDiagnosticSanitizer = (options = {}) => {
         report.droppedFields += 1;
         continue;
       }
+      if (key === 'payload' && type === 'lifecycle' && object.event === 'opencode_process_exit') {
+        const metadata = {};
+        for (const [field, nested] of Object.entries(asObject(value) || {})) {
+          if ((field === 'pid' && (nested === null || (Number.isSafeInteger(nested) && nested > 0)))
+            || (field === 'code' && (nested === null || (Number.isSafeInteger(nested) && nested >= -2147483648 && nested <= 2147483647)))
+            || (field === 'uptimeMs' && Number.isSafeInteger(nested) && nested >= 0)
+            || (field === 'expected' && typeof nested === 'boolean')
+            || (field === 'signal' && (nested === null || (typeof nested === 'string' && /^SIG[A-Z0-9]{1,20}$/.test(nested))))) {
+            metadata[field] = nested;
+          } else if (field === 'stderrTail' && typeof nested === 'string') {
+            metadata[field] = redactString(nested).slice(-16 * 1024);
+          } else report.droppedFields += 1;
+        }
+        output[key] = metadata;
+        continue;
+      }
       if (key === 'payload' && type === 'lifecycle' && object.event === 'session_revert') {
         output[key] = Object.fromEntries(Object.entries(asObject(value) || {}).filter(([field, nested]) => (
           REVERT_FIELDS.has(field) && typeof nested === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(nested)

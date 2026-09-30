@@ -593,9 +593,10 @@ describe('Packaged OpenChamber agents', () => {
     expect(orchestrator?.prompt).toContain('are independent when their owned files are disjoint and their only coupling is an interface contract written into each brief: start them in the same dispatch and name each sibling\'s owned files in every brief.');
     expect(orchestrator?.prompt).toContain('A contract both briefs already state is not a dependency.');
     expect(orchestrator?.prompt).toContain('then run cross-scope checks (type-check, build, end-to-end) once yourself.');
-    expect(orchestrator?.prompt).toContain('Its task loop sets tracking and verification, not dispatch order: start independent phases together per Parallel Delegation.');
+    expect(orchestrator?.prompt).toContain('Start independent phases together per Parallel Delegation.');
     expect(orchestrator?.prompt).toContain('Size each Designer task to one visual outcome');
     expect(orchestrator?.prompt).not.toContain('Dispatching Parallel Agents');
+    expect(orchestrator?.prompt).not.toContain('Executing Plans');
     expect(plan?.prompt).toContain('write one line `Owner: <specialist>; Depends on: <Phase N | none>`');
   });
 

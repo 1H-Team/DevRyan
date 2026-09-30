@@ -7,7 +7,7 @@ import yaml from 'yaml';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 40_430;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 40_546;
 const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
   __dirname,
   '../../default-config/user-profile/oh-my-opencode-slim.json',
@@ -42,6 +42,30 @@ function readPackagedAgent(name) {
 }
 
 describe('packaged agent defaults', () => {
+  it('allows scoped correction reruns and keeps unchanged failures bounded', () => {
+    for (const name of ['fixer', 'designer', 'orchestrator']) {
+      const { body } = readPackagedAgent(name);
+      expect(body).not.toContain('at most 2 focused test runs and 1 type-check');
+      expect(body).toContain('after the last edit');
+      expect(body).toContain('two unchanged failures');
+      expect(body).toContain('first assertion');
+    }
+  });
+
+  it('uses the selected-plan tool and bounded project verification in primary prompts', () => {
+    for (const name of ['builder', 'orchestrator']) {
+      const { body } = readPackagedAgent(name);
+      expect(body).toContain('plan_read');
+      expect(body).toContain('plan_update');
+      expect(body).toContain('never for a new Plan proposal');
+      expect(body).toContain('expected_version');
+      expect(body).toContain('persistence failed');
+      expect(body).toContain('wait for readiness');
+      expect(body).toContain('clean up on success and failure');
+    }
+    expect(readPackagedAgent('plan').frontmatter.permission.devryan_task).toBe('deny');
+  });
+
   it('detects common user-local path forms', () => {
     expect(containsLocalMachinePath('external_directory: /Users/dev/.codex/skills')).toBe(true);
     expect(containsLocalMachinePath('external_directory: /home/dev/.codex/skills')).toBe(true);
@@ -345,15 +369,14 @@ describe('packaged agent defaults', () => {
     expect(new TextEncoder().encode(content).byteLength).toBe(EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES);
   });
 
-  it('requires execution skill reuse, visible implementation intent and outcome labels before plan dispatch', () => {
+  it('requires visible implementation intent and outcome labels before plan dispatch', () => {
     const { body } = readPackagedAgent('orchestrator');
-    expect(body).toContain('Executing Plans');
-    expect(body).toContain('Reuse a completed full skill result already in the active context');
+    expect(body).not.toContain('Executing Plans');
     expect(body).toContain('visible assistant');
     expect(body).toContain('outcome-based');
   });
 
-  it('grants managed delegation only to orchestrator and disables its provider-native task tool', () => {
+  it('exposes Builder plan actions while reserving managed delegation for the native Orchestrator authority', () => {
     const orchestrator = readPackagedAgent('orchestrator');
     expect(orchestrator.frontmatter.permission.devryan_task).toBe('allow');
     expect(orchestrator.frontmatter.permission.task).toBe('deny');
@@ -361,7 +384,9 @@ describe('packaged agent defaults', () => {
     expect(orchestrator.content).toContain('Provider-native `task` is disabled for Orchestrator');
     expect(orchestrator.content).toContain('does not impose an artificial managed concurrency cap');
 
-    for (const agentName of ['builder', 'council', 'designer', 'explorer', 'fixer', 'librarian', 'oracle', 'plan']) {
+    expect(readPackagedAgent('builder').frontmatter.permission.devryan_task).toBe('allow');
+    expect(readPackagedAgent('builder').frontmatter.permission.task).toEqual({ '*': 'deny' });
+    for (const agentName of ['council', 'designer', 'explorer', 'fixer', 'librarian', 'oracle', 'plan']) {
       expect(readPackagedAgent(agentName).frontmatter.permission.devryan_task, agentName).toBe('deny');
     }
   });

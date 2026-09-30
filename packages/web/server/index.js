@@ -1516,6 +1516,10 @@ const harnessTaskContext = createHarnessTaskContextHost({
   // Multi-user plan references resolve only between sessions of one owner.
   sessionOwnerKey: async (sessionID) => (multiUserRuntime?.enabled
     ? (await multiUserRuntime.resolveSessionOwnerKey?.({ rootSessionId: sessionID })) ?? null : 'local'),
+  isManaged: () => Boolean(multiUserRuntime?.enabled),
+  resolveOwnedPlanContext: (input) => multiUserRuntime?.resolveSessionPlanContext?.(input),
+  getRegisteredProjects: async () => sanitizeProjects((await readSettingsFromDiskMigrated())?.projects),
+  publishEvent: emitSyntheticOpenCodeEvent,
 });
 harnessRuntime.setTaskContextRuntime(harnessTaskContext);
 const sessionChangeHost = createSessionChangeHost({
@@ -2294,11 +2298,13 @@ async function main(options = {}) {
       harness_run: (params) => harnessFingerprintReader.capture(params),
       harness_context_observation: (params) => harnessFingerprintReader.observeContext(params),
       harness_context: (params) => harnessTaskContext.handleRpc(params),
+      harness_plan: (params) => harnessTaskContext.handlePlanRpc(params),
       session_changes: (params) => sessionChangeHost.plugin(params),
       session_execution: (params) => sessionExecutionHost.plugin(params),
       resolve_agent_execution: (params) => multiUserRuntime.resolveSessionAgentExecution?.(params)
         ?? params.fallbackExecution,
     },
+    authorizePrivateRpc: (request) => harnessTaskContext.authorizePrivateRpc(request),
     logger: console,
   });
   const retention = createSessionRetention({
@@ -2521,7 +2527,9 @@ async function main(options = {}) {
     recordCommitTiming: (req, payload) => harnessRuntime.record(buildGitGenerationTimingRecord(req, payload)),
     resolveManagedProject: multiUserRuntime.resolveManagedProject?.bind(multiUserRuntime),
     ownsSession: multiUserRuntime.ownsSession?.bind(multiUserRuntime),
-    resolveOwnedSessionPlanContext: multiUserRuntime.resolveOwnedSessionPlanContext?.bind(multiUserRuntime),
+    resolveOwnedSessionPlanContext: multiUserRuntime.resolveCurrentOwnedSessionPlanContext?.bind(multiUserRuntime),
+    readCanonicalPlanIdentity: (input) => harnessTaskContext.readCanonicalPlanIdentity(input),
+    recordPlanDiagnostic: (entry) => harnessRuntime.record(entry),
   });
 
   const localInstanceStatusRuntime = createLocalInstanceStatusRuntime({ net, URL });

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import { getSafeStorage } from "@/stores/utils/safeStorage"
-import { appendNotification, markSessionViewed, markSessionsViewed, useNotificationStore } from "./notification-store"
+import { appendNotification, markSessionViewed, markSessionsViewed, reconcileSessionFailureNotifications, useNotificationStore } from "./notification-store"
 
 const COMPLETION_NOTIFICATION_STORAGE_KEY = "openchamber:notification-completions:v1"
 
@@ -68,6 +68,104 @@ describe("notification-store", () => {
       store.resolveErrors(useNotificationStore.getState().list, "msg_success", invalid)
       expect(useNotificationStore.getState().sessionHasError("root")).toBe(true)
     }
+  })
+
+  test("a later user prompt supersedes only older errors in its own session", () => {
+    const createdAt = Date.now()
+    const store = useNotificationStore.getState()
+    store.append({ type: "error", session: "root", directory: "/repo", time: createdAt - 10, failedUserCreatedAt: createdAt - 10, viewed: false })
+    store.append({ type: "error", session: "other", directory: "/repo", time: createdAt - 10, failedUserCreatedAt: createdAt - 10, viewed: false })
+    store.append({ type: "error", session: "root", directory: "/repo", time: createdAt + 1, failedUserCreatedAt: createdAt + 1, viewed: false })
+    store.supersedeSessionErrors("root", "msg_user", createdAt)
+    const state = useNotificationStore.getState()
+    expect(state.list[0]).toMatchObject({ resolvedByMessageId: "msg_user", viewed: false })
+    expect("resolvedByMessageId" in state.list[1]).toBe(false)
+    expect("resolvedByMessageId" in state.list[2]).toBe(false)
+    expect(state.sessionHasError("root")).toBe(true)
+
+    store.supersedeSessionErrors("root", "msg_user", createdAt)
+    expect(useNotificationStore.getState()).toBe(state)
+    store.supersedeSessionErrors("root", "msg_next", createdAt + 5)
+    expect(useNotificationStore.getState().sessionHasError("root")).toBe(false)
+    expect(useNotificationStore.getState().sessionHasError("other")).toBe(true)
+  })
+
+  test("canonical turn identity preserves current failures across renderer/server clock skew", () => {
+    const now = Date.now()
+    const store = useNotificationStore.getState()
+    store.append({ type: "error", session: "root", time: now + 60_000, viewed: false,
+      failedUserMessageId: "msg_old", failedUserCreatedAt: 10 })
+    store.append({ type: "error", session: "root", time: now - 60_000, viewed: false,
+      failedUserMessageId: "msg_retry", failedUserCreatedAt: 20 })
+    store.supersedeSessionErrors("root", "msg_retry", 20)
+    const state = useNotificationStore.getState()
+    expect(state.list[0]).toMatchObject({ resolvedByMessageId: "msg_retry" })
+    expect("resolvedByMessageId" in state.list[1]).toBe(false)
+    store.supersedeSessionErrors("root", "msg_retry", 20)
+    expect(useNotificationStore.getState()).toBe(state)
+    expect(useNotificationStore.getState().list).toBe(state.list)
+    expect(useNotificationStore.getState().index).toBe(state.index)
+  })
+
+  test("canonical Plan history supersedes a restored failure and a delayed correlated old error", () => {
+    const now = Date.now()
+    const store = useNotificationStore.getState()
+    const failure = { type: "error" as const, session: "root", time: now, viewed: false,
+      failedUserMessageId: "msg_old", failedUserCreatedAt: 10 }
+    store.append(failure)
+    const persisted = JSON.parse(getSafeStorage().getItem(COMPLETION_NOTIFICATION_STORAGE_KEY) ?? "[]")
+    resetNotificationStore()
+    useNotificationStore.getState().append(persisted[0])
+    const retry = { id: "msg_retry", sessionID: "root", role: "user" as const, time: { created: 20 } }
+    const parts = [{ id: "prt_plan", sessionID: "root", messageID: retry.id, type: "text" as const,
+      text: "User has requested to enter plan mode.\nProduce an implementation plan only.", synthetic: true }]
+    reconcileSessionFailureNotifications("root", [{ info: retry, parts }])
+    expect(useNotificationStore.getState().sessionHasError("root")).toBe(false)
+    store.append(failure)
+    reconcileSessionFailureNotifications("root", [{ info: retry, parts }])
+    expect(useNotificationStore.getState().list.every(n => n.type === "error" && n.resolvedByMessageId === retry.id)).toBe(true)
+  })
+
+  test("history resolves a legacy keyed failure but preserves uncorrelated notices", () => {
+    const store = useNotificationStore.getState()
+    store.append({ type: "error", session: "root", messageId: "msg_failed", time: Date.now(), viewed: false })
+    store.append({ type: "error", session: "root", time: Date.now() - 60_000, viewed: false })
+    reconcileSessionFailureNotifications("root", [
+      { info: { id: "msg_failed", role: "assistant", sessionID: "root", time: { created: 10 } }, parts: [] },
+      { info: { id: "msg_retry", role: "user", sessionID: "root", time: { created: 20 } }, parts: [] },
+    ])
+    expect(useNotificationStore.getState().list[0]).toMatchObject({ resolvedByMessageId: "msg_retry" })
+    expect("resolvedByMessageId" in useNotificationStore.getState().list[1]).toBe(false)
+  })
+
+  test("canonical assistant parents supersede delayed older failures but preserve the retry's failure", () => {
+    const store = useNotificationStore.getState()
+    for (const messageId of ["msg_failed_old", "msg_failed_retry"]) {
+      store.append({ type: "error", session: "root", messageId, time: Date.now(), viewed: false })
+    }
+    reconcileSessionFailureNotifications("root", [
+      { info: { id: "msg_old", role: "user", sessionID: "root", time: { created: 10 } }, parts: [] },
+      { info: { id: "msg_retry", role: "user", sessionID: "root", time: { created: 20 } }, parts: [] },
+      { info: { id: "msg_failed_old", role: "assistant", parentID: "msg_old", sessionID: "root", time: { created: 30 } }, parts: [] },
+      { info: { id: "msg_failed_retry", role: "assistant", parentID: "msg_retry", sessionID: "root", time: { created: 15 } }, parts: [] },
+    ])
+    expect(useNotificationStore.getState().list[0]).toMatchObject({ resolvedByMessageId: "msg_retry" })
+    expect("resolvedByMessageId" in useNotificationStore.getState().list[1]).toBe(false)
+  })
+
+  test("missing parts and synthetic maintenance never supersede failures", () => {
+    const now = Date.now()
+    const store = useNotificationStore.getState()
+    store.append({ type: "error", session: "root", time: now, viewed: false,
+      failedUserMessageId: "msg_old", failedUserCreatedAt: 10 })
+    const before = useNotificationStore.getState()
+    for (const text of ["[devryan-provider-recovery:v1:task]\nContinue", "[devryan-open-todo-continuation:v1]\nContinue", "Synthetic internal prompt"]) {
+      const info = { id: "msg_wake", sessionID: "root", role: "user" as const, time: { created: 20 } }
+      reconcileSessionFailureNotifications("root", [{ info }])
+      reconcileSessionFailureNotifications("root", [{ info, parts: [{ id: "prt_wake", sessionID: "root", messageID: info.id,
+        type: "text" as const, text, synthetic: true }] }])
+    }
+    expect(useNotificationStore.getState()).toBe(before)
   })
 
   test("indexes unviewed turn-complete notifications as session completion", () => {

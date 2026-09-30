@@ -38,7 +38,21 @@ describe('plan presentation', () => {
     expect(planViewSource).toContain('<PreviewToggleButton');
     expect(planViewSource).toContain("setMdViewMode(mdViewMode === 'preview' ? 'edit' : 'preview')");
     expect(planViewSource).toContain('runtimeApis.sessionPlans.readRevision(sessionPlanIdentity)');
-    expect(planViewSource).toContain('runtimeApis.sessionPlans.updateRevision({');
+    expect(planViewSource).toContain('runtimeApis.sessionPlans.updateRevision({ ...identity, markdown, expectedVersion })');
+  });
+
+  test('wires baseline autosave and full-identity live refresh without discarding drafts', () => {
+    expect(planViewSource).toContain('createPlanRevisionDraft');
+    expect(planViewSource).toContain('void draft.save()');
+    expect(planViewSource).toContain('sessionEvents.onPlanUpdated');
+    expect(planViewSource).toContain('identity.directory !== event.directory');
+    expect(planViewSource).toContain('identity.sessionCreated !== event.sessionCreated');
+    expect(planViewSource).toContain('identity.sessionSlug !== event.sessionSlug');
+    expect(planViewSource).toContain('active.draft.observe(event.version)');
+    expect(planViewSource).toContain('revisionDrafts.set(key, { draft, identity })');
+    expect(planViewSource).toContain('activeDraftRef.current?.draft.edit(text)');
+    expect(planViewSource).toContain('role="alert"');
+    expect(planCardSource).toContain('projectDirectory: currentPlanFileRecord?.revisionIdentity?.directory');
   });
 
   test('uses the saved canonical revision identity and exposes scoped read failures for retry', () => {

@@ -28,12 +28,19 @@ import { copyTextToClipboard } from '@/lib/clipboard';
 import { parseProjectPlanMarkdown } from '@/lib/openchamberConfig';
 import { useI18n } from '@/lib/i18n';
 import { getPlanViewCandidatePaths } from './planViewPaths';
+import type { SessionPlanRevisionIdentity } from '@/lib/api/types';
+import { createPlanRevisionDraft, type PlanRevisionDraft } from '@/lib/plans/planRevisionDraft';
+import { sessionEvents } from '@/lib/sessionEvents';
+import { getAuthPrincipal } from '@/lib/authSession';
 
 type PlanViewProps = {
   targetPath?: string | null;
   presentation?: 'standalone' | 'context-panel';
   headerActionsTarget?: HTMLElement | null;
 };
+
+// Unsaved work survives view remounts in this page; acknowledged clean drafts leave the cache.
+const revisionDrafts = new Map<string, { draft: PlanRevisionDraft; identity: SessionPlanRevisionIdentity | null }>();
 
 const normalize = (value: string): string => {
   if (!value) return '';
@@ -137,6 +144,8 @@ export const PlanView: React.FC<PlanViewProps> = ({
     return toDisplayPath(resolvedPath, { currentDirectory: sessionDirectory, homeDirectory });
   }, [resolvedPath, sessionDirectory, homeDirectory]);
   const [content, setContent] = React.useState<string>('');
+  const activeDraftRef = React.useRef<{ draft: PlanRevisionDraft; identity: SessionPlanRevisionIdentity | null } | null>(null);
+  const draftSubscriptionRef = React.useRef<(() => void) | null>(null);
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [loadRetryNonce, setLoadRetryNonce] = React.useState(0);
@@ -279,25 +288,28 @@ export const PlanView: React.FC<PlanViewProps> = ({
       setContent('');
       setLoadError(null);
       setLoading(false);
+      activeDraftRef.current = null;
+      draftSubscriptionRef.current?.();
+      draftSubscriptionRef.current = null;
       return;
     }
 
     let cancelled = false;
 
-    const readText = async (path: string): Promise<string> => {
+    const readText = async (path: string): Promise<{ content: string; version: string }> => {
       if (path === sessionPlanPath && sessionPlanIdentity) {
         const result = await runtimeApis.sessionPlans.readRevision(sessionPlanIdentity);
-        return result.content;
+        return result;
       }
       if (runtimeApis.files?.readFile) {
         const result = await runtimeApis.files.readFile(path);
-        return result?.content ?? '';
+        return { content: result?.content ?? '', version: 'generic-file' };
       }
 
       const runtimeFiles = getRegisteredRuntimeAPIs()?.files;
       if (runtimeFiles?.readFile) {
         const result = await runtimeFiles.readFile(path, { optional: true });
-        return result?.content ?? '';
+        return { content: result?.content ?? '', version: 'generic-file' };
       }
 
       const response = await fetch(`/api/fs/read?path=${encodeURIComponent(path)}&optional=true`, {
@@ -307,12 +319,52 @@ export const PlanView: React.FC<PlanViewProps> = ({
       if (!response.ok) {
         throw new Error(`Failed to read plan file (${response.status})`);
       }
-      return response.text();
+      return { content: await response.text(), version: 'generic-file' };
+    };
+
+    const activateDraft = (path: string) => {
+      const identity = path === sessionPlanPath ? sessionPlanIdentity : null;
+      const key = JSON.stringify([getAuthPrincipal().id, identity ?? { path }]);
+      let record = revisionDrafts.get(key);
+      if (!record) {
+        const draft = createPlanRevisionDraft(async (markdown, expectedVersion) => {
+          if (identity) {
+            const result = await runtimeApis.sessionPlans.updateRevision({ ...identity, markdown, expectedVersion });
+            if (!result.saved) throw new Error(t('planView.error.writeFailed'));
+            return result.version;
+          }
+          if (runtimeApis.files?.writeFile) {
+            const result = await runtimeApis.files.writeFile(path, markdown);
+            if (!result?.success) throw new Error(t('planView.error.writeFailed'));
+          } else {
+            const response = await fetch('/api/fs/write', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ path, content: markdown }) });
+            if (!response.ok) throw new Error(t('planView.error.writePlanFileFailed', { status: response.status }));
+          }
+          return 'generic-file';
+        });
+        record = { draft, identity };
+        draft.subscribe(() => {
+          const state = draft.snapshot();
+          if (state.dirty || state.saving) revisionDrafts.set(key, { draft, identity });
+          else if (revisionDrafts.get(key)?.draft === draft) revisionDrafts.delete(key);
+        });
+      }
+      draftSubscriptionRef.current?.();
+      activeDraftRef.current = record;
+      const draft = record.draft;
+      draftSubscriptionRef.current = draft.subscribe(() => {
+        const state = draft.snapshot();
+        setContent(state.content);
+        setSaveError(state.error);
+      });
+      setContent(record.draft.snapshot().content);
+      setSaveError(record.draft.snapshot().error);
+      return record.draft;
     };
 
     const run = async () => {
       setResolvedPath(null);
-      setContent('');
       setSaveError(null);
       setLoadError(null);
 
@@ -333,15 +385,24 @@ export const PlanView: React.FC<PlanViewProps> = ({
         });
 
         let resolved: string | null = null;
-        let text: string | null = null;
+        let loaded = false;
         let canonicalReadError: string | null = null;
 
         for (const candidate of candidates) {
+          if (cancelled) return;
           try {
-            text = await readText(candidate);
+            const draft = activateDraft(candidate);
+            const state = draft.snapshot();
+            if (!state.dirty && !state.saving) {
+              const result = await readText(candidate);
+              if (cancelled) return;
+              draft.load(result.content, result.version);
+            }
             resolved = candidate;
+            loaded = true;
             break;
           } catch (error) {
+            if (cancelled) return;
             if (candidate === sessionPlanPath && sessionPlanIdentity) {
               canonicalReadError = error instanceof Error
                 ? error.message
@@ -353,7 +414,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
 
         if (cancelled) return;
 
-        if (!resolved || text === null) {
+        if (!resolved || !loaded) {
           setResolvedPath(null);
           setContent('');
           if (canonicalReadError) {
@@ -363,7 +424,6 @@ export const PlanView: React.FC<PlanViewProps> = ({
         }
 
         setResolvedPath(resolved);
-        setContent(text);
       } catch (error) {
         if (cancelled) return;
         setResolvedPath(null);
@@ -381,53 +441,30 @@ export const PlanView: React.FC<PlanViewProps> = ({
     };
   }, [homeDirectory, loadRetryNonce, planModeEnabled, runtimeApis.files, runtimeApis.sessionPlans, sessionCreated, sessionDirectory, sessionPlanIdentity, sessionPlanPath, sessionSlug, t, targetPath]);
 
-  const savePlanContent = React.useCallback(async (): Promise<boolean> => {
-    if (!resolvedPath) return false;
+  React.useEffect(() => sessionEvents.onPlanUpdated((event) => {
+    const active = activeDraftRef.current;
+    const identity = active?.identity;
+    if (!active || !identity || identity.sessionId !== event.sessionId || identity.sourceMessageId !== event.sourceMessageId
+      || identity.directory !== event.directory || identity.sessionCreated !== event.sessionCreated || identity.sessionSlug !== event.sessionSlug) return;
+    if (active.draft.observe(event.version) === 'reload') setLoadRetryNonce(nonce => nonce + 1);
+  }), []);
 
-    try {
-      setSaveError(null);
-      if (resolvedPath === sessionPlanPath && sessionPlanIdentity) {
-        const result = await runtimeApis.sessionPlans.updateRevision({
-          ...sessionPlanIdentity,
-          markdown: content,
-        });
-        if (!result.saved) throw new Error(t('planView.error.writeFailed'));
-      } else if (runtimeApis.files?.writeFile) {
-        const result = await runtimeApis.files.writeFile(resolvedPath, content);
-        if (!result?.success) {
-          throw new Error(t('planView.error.writeFailed'));
-        }
-      } else {
-        const response = await fetch('/api/fs/write', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: resolvedPath, content }),
-        });
-        if (!response.ok) {
-          throw new Error(t('planView.error.writePlanFileFailed', { status: response.status }));
-        }
-      }
-      return true;
-    } catch (error) {
-      setSaveError(error instanceof Error ? error.message : t('planView.error.saveFailed'));
-      return false;
-    }
-  }, [content, resolvedPath, runtimeApis.files, runtimeApis.sessionPlans, sessionPlanIdentity, sessionPlanPath, t]);
+  React.useEffect(() => () => {
+    draftSubscriptionRef.current?.();
+  }, []);
 
   React.useEffect(() => {
-    if (!resolvedPath) {
-      setSaveError(null);
-      return;
-    }
+    const draft = activeDraftRef.current?.draft;
+    if (!resolvedPath || !draft) return;
 
     const controller = window.setTimeout(() => {
-      void savePlanContent();
+      void draft.save();
     }, 350);
 
     return () => {
       window.clearTimeout(controller);
     };
-  }, [resolvedPath, savePlanContent]);
+  }, [content, resolvedPath]);
 
   React.useEffect(() => {
     return () => {
@@ -510,8 +547,8 @@ export const PlanView: React.FC<PlanViewProps> = ({
           <div className="min-w-0 flex-1">
             <div className="typography-ui-label truncate font-medium">{isMobile ? t('layout.mainTab.plan') : parsedTitle}</div>
             {saveError ? (
-              <div className="typography-micro truncate text-[color:var(--status-error)]" title={saveError}>
-                {t('planView.error.saveFailed')}
+              <div role="alert" className="typography-micro text-[color:var(--status-error)]" title={saveError}>
+                {saveError || t('planView.error.saveFailed')}
               </div>
             ) : null}
           </div>
@@ -534,8 +571,9 @@ export const PlanView: React.FC<PlanViewProps> = ({
         <div
           className="typography-micro flex-shrink-0 truncate border-b border-border/40 px-3 py-1 text-[color:var(--status-error)]"
           title={saveError}
+          role="alert"
         >
-          {t('planView.error.saveFailed')}
+          {saveError || t('planView.error.saveFailed')}
         </div>
       ) : null}
 
@@ -588,7 +626,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
                   <div className="relative h-full" ref={editorWrapperRef}>
                     <CodeMirrorEditor
                       value={content}
-                      onChange={setContent}
+                      onChange={(text) => activeDraftRef.current?.draft.edit(text)}
                       readOnly={false}
                       className="h-full"
                       extensions={editorExtensions}

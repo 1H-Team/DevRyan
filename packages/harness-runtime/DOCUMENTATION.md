@@ -99,6 +99,9 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
   permit those fields. A real journal write/read regression verifies this
   contract after sanitization, rather than testing only a recorder mock.
   `elapsedMs` is retained only as a finite non-negative number.
+  `opencode_process_exit` payloads retain only typed PID, exit code, signal,
+  non-negative safe-integer uptime, expected-exit flag, and a redacted stderr
+  tail clipped to 16,384 characters. Other payload fields are excluded.
 - `bot.memory.extraction.*` lifecycle payloads use a separate content-free
   projection: correlation IDs, bounded counters, outcome/reason/validator labels,
   and a fixed rejection histogram. Conversation, memory, input and arbitrary

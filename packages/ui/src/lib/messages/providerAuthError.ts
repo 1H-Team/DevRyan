@@ -12,6 +12,7 @@ export const isLikelyProviderAuthFailure = (value: unknown): boolean => {
 
   if (
     detail.includes("token refresh failed") ||
+    detail.includes("provider_authentication") ||
     detail.includes("unauthorized") ||
     detail.includes("invalid token") ||
     detail.includes("expired token")
