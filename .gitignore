@@ -31,9 +31,6 @@ local-dev*
 .hive
 .cache/
 packages/web/runtime/*
-!packages/web/runtime/reviewed-inputs/
-!packages/web/runtime/reviewed-inputs/**
-packages/web/runtime/reviewed-inputs/claude-1.8.0/assets/DevRyan-Claude-darwin-arm64
 /.tmp/
 docs/personal/*
 packages/electron/resources/bot-runtime/images.release.json
@@ -66,3 +63,8 @@ data/
 workspaces/
 .worktrees/
 *.pid
+
+# Exact reviewed build inputs override generic dependency/data exclusions.
+!packages/web/runtime/reviewed-inputs/
+!packages/web/runtime/reviewed-inputs/**
+packages/web/runtime/reviewed-inputs/claude-1.8.0/assets/DevRyan-Claude-darwin-arm64

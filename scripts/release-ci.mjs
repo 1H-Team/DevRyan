@@ -1,4 +1,3 @@
-import { packWebRelease } from './pack-web-release.mjs';
 // Fixed CI operations; reusable validation lives in release-artifacts/image modules.
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -6,7 +5,6 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { BOT_RUNTIME_IMAGE_DEFINITIONS, assembleBotRuntimeImages, createBotRuntimeImageBuildPlan, signBotRuntimeImage } from './build-bot-runtime-images.mjs';
 import { describeWebArtifact, verifyWebArtifact, stageWebArtifact, hash, releaseIdentity, verifyPreparedMetadata } from './release-artifacts.mjs';
-import { restoreRevertRuntimeExecutableModes, verifyRevertRuntimeArtifacts, assertUniversalNativeReleaseAvailable, SUPPORTED_NATIVE_RUNTIME_TARGETS } from './verify-revert-runtime-artifacts.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const env = process.env;
@@ -41,7 +39,9 @@ switch (env.RELEASE_OPERATION) {
     await write(`DevRyan-bot-runtime-images-${identity.release}.json`, await assembleBotRuntimeImages({ ...botIdentity, results, root }));
     break;
   }
-  case 'web-pack':
+  case 'web-pack': {
+    const { packWebRelease } = await import('./pack-web-release.mjs');
+    const { restoreRevertRuntimeExecutableModes, assertUniversalNativeReleaseAvailable, SUPPORTED_NATIVE_RUNTIME_TARGETS } = await import('./verify-revert-runtime-artifacts.mjs');
     assertUniversalNativeReleaseAvailable();
     await verifyWebArtifact(path.join(root, 'packages/web/dist'), await read('web.json'), identity);
     for (const target of SUPPORTED_NATIVE_RUNTIME_TARGETS) {
@@ -50,6 +50,7 @@ switch (env.RELEASE_OPERATION) {
     }
     await packWebRelease({ root, destination: path.join(root, 'packages/web') });
     break;
+  }
   case 'web-describe':
     await write('web.json', await describeWebArtifact(path.join(output, 'web'), identity));
     break;
@@ -58,6 +59,7 @@ switch (env.RELEASE_OPERATION) {
       destination: path.join(root, env.RELEASE_WEB_TARGET === 'electron' ? 'packages/electron/resources/web-dist' : 'packages/web/dist') });
     break;
   case 'prepare-export': {
+    const { verifyRevertRuntimeArtifacts, SUPPORTED_NATIVE_RUNTIME_TARGETS } = await import('./verify-revert-runtime-artifacts.mjs');
     const arch = env.ELECTRON_BUILDER_ARCH;
     if (!['arm64', 'x64'].includes(arch)) throw new Error('Invalid prepared architecture');
     await fs.mkdir(output, { recursive: true });

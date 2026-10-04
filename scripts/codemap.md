@@ -207,7 +207,7 @@ Repository automation entrypoint for developer workflows: validation planning, l
 
 - Release asset verification rejects extension packages and artifacts before publication.
 
-- **Release handoffs**: `release-artifacts.mjs` verifies web files and native archive identity/checksums; `release-ci.mjs` adapts fixed workflow operations. Web assets build once, and native tar handoffs preserve permissions/symlinks per architecture. See [release pipeline](../docs/RELEASE_PIPELINE.md) for commands, failure semantics and timing acceptance.
+- **Release handoffs**: `release-artifacts.mjs` verifies web files and native archive identity/checksums; `release-ci.mjs` adapts fixed workflow operations. Image planning and prepared import run before dependency installation; runtime packaging imports are scoped to the operations that need them. Web assets build once, and native tar handoffs preserve permissions/symlinks per architecture. See [release pipeline](../docs/RELEASE_PIPELINE.md) for commands, failure semantics and timing acceptance.
 
 - **npm runtime closure**: `pack-web-release.mjs` stages private runtime workspaces as bundled dependencies and preserves their external ranges in published metadata. `release-ci.mjs` invokes it after verified web staging; npm publishes the exact checked tarball, not a second pack.
 
