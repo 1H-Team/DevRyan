@@ -68,6 +68,11 @@ archive took longer than downloading packages (ARM 163s before, 62s restore +
 188s install after). Jobs have timeouts, so a stalled native fixture fails the
 release instead of holding it open.
 
+Fresh native builds compile the confined execution launcher when no accepted
+launcher exists. Its `--verify` acceptance suite runs with Node even when Bun
+invokes the builder, because the suite uses `node:test` hooks. The acceptance
+marker is written only after that suite succeeds.
+
 Failed image jobs can be rerun within the same workflow run; successful results
 remain available. Image artifacts use stable per-image names with overwrite on a
 rerun. Missing, duplicate, stale or incomplete results fail aggregation. Cache

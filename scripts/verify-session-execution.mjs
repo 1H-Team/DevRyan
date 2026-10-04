@@ -338,7 +338,7 @@ native('cancellation acknowledges only after the command and its children stop',
   assert.equal((await handle.result).cancelled, true);
 }, 20_000);
 
-native('a real command held open across Revert publishes only its surviving contribution', async () => {
+native('a real command held open across Revert publishes only its surviving contribution', async (t) => {
   const f = await fixture(); await git(f.viewDirectory, ['init', '--quiet']);
   const directory = f.viewDirectory;
   const file = path.join(directory, 'x'); await fs.writeFile(file, 'a=1; b=2');
@@ -350,21 +350,26 @@ native('a real command held open across Revert publishes only its surviving cont
   await owner.execute({ ...scope('a'), args: ['-e', "require('node:fs').writeFileSync('x', 'a=3; b=2')"] });
   let ready; const started = new Promise((resolve) => { ready = resolve; });
   const release = path.join(f.root, 'release');
-  const b = owner.execute({ ...scope('b'), args: ['-e', `const fs = require('node:fs');
+  const b = owner.execute({ ...scope('b'), signal: t.signal, args: ['-e', `const fs = require('node:fs');
     const base = fs.readFileSync('x', 'utf8'); console.log('ready');
     const timer = setInterval(() => { if (!fs.existsSync(${JSON.stringify(release)})) return;
       clearInterval(timer); fs.writeFileSync('x', base.replace('b=2', 'b=4')); }, 10);`],
   onOutput: ({ data }) => { if (data.toString().includes('ready')) ready(); } });
-  await started;
-  let session = { id: 'a', directory };
-  const coordinator = createSessionRevertCoordinator({ runtime, executions: owner, directory: path.join(f.root, 'coordinator'),
-    conversation: { capabilities: async () => ({ legacyConversationRevert: 1 }), get: async () => session,
-      revert: async ({ messageID, files }) => { session = { ...session, revert: { messageID, fileRestore: files !== false } }; return session; },
-      unrevert: async () => { session = { ...session, revert: undefined }; return session; } } });
-  await coordinator.revert({ directory, sessionID: 'a', messageID: 'pa' });
-  assert.equal(await fs.readFile(file, 'utf8'), 'a=1; b=2');
-  await fs.writeFile(release, 'go'); await b;
-  assert.equal(await fs.readFile(file, 'utf8'), 'a=1; b=4');
+  try {
+    await Promise.race([started, b.then(() => { throw new Error('Writer exited before readiness'); })]);
+    let session = { id: 'a', directory };
+    const coordinator = createSessionRevertCoordinator({ runtime, executions: owner, directory: path.join(f.root, 'coordinator'),
+      conversation: { capabilities: async () => ({ conversationOnlyRevert: 1 }), get: async () => session,
+        revert: async ({ messageID, files }) => { session = { ...session, revert: { messageID, fileRestore: files !== false } }; return session; },
+        unrevert: async () => { session = { ...session, revert: undefined }; return session; } } });
+    await coordinator.revert({ directory, sessionID: 'a', messageID: 'pa' });
+    assert.equal(await fs.readFile(file, 'utf8'), 'a=1; b=2');
+    await fs.writeFile(release, 'go'); await b;
+    assert.equal(await fs.readFile(file, 'utf8'), 'a=1; b=4');
+  } finally {
+    await owner.cancelAndWait({ directory, sessions: ['b'] });
+    await b.catch(() => {});
+  }
 }, 60_000);
 
 native('the provider transport streams through native confinement and cannot mutate its logical project', async () => {

@@ -40,7 +40,9 @@ try {
   const manifestPath = path.join(output, `${name}.json`);
   await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600 });
   if (process.argv.includes('--verify')) {
-    await promisify(execFile)(process.execPath, [path.join(root, 'scripts/verify-session-execution.mjs')], {
+    // The acceptance suite uses node:test hooks, including when Bun builds the helper.
+    const verificationRunner = process.versions.bun ? 'node' : process.execPath;
+    await promisify(execFile)(verificationRunner, [path.join(root, 'scripts/verify-session-execution.mjs')], {
       cwd: root, env: { ...process.env, DEVRYAN_TEST_EXECUTION_LAUNCHER: path.join(output, name) },
       timeout: 300_000, maxBuffer: 1024 * 1024,
     });
