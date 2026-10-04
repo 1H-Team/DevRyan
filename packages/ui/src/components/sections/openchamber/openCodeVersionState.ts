@@ -1,29 +1,8 @@
-export type OpenCodeVersionViewStatus =
-  | 'idle'
-  | 'checking'
-  | 'updateAvailable'
-  | 'upToDate'
-  | 'newerThanLatest'
-  | 'currentUnavailable'
-  | 'error';
-
-type OpenCodeVersionViewState = {
-  checked: boolean;
-  checking: boolean;
-  error: string | null;
-  currentVersion: string | null;
-  latestVersion: string | null;
-  updateAvailable: boolean | null;
-};
-
-export const resolveOpenCodeVersionViewStatus = (
-  state: OpenCodeVersionViewState,
-): OpenCodeVersionViewStatus => {
-  if (state.checking) return 'checking';
-  if (state.error) return 'error';
-  if (!state.checked) return 'idle';
-  if (!state.currentVersion) return 'currentUnavailable';
-  if (state.updateAvailable) return 'updateAvailable';
-  if (state.currentVersion === state.latestVersion) return 'upToDate';
-  return 'newerThanLatest';
+export type BundledRuntimeVersion = { version: string; ready: boolean };
+const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
+/** Only the server's verified bundle metadata identifies the bundled runtime. */
+export const parseBundledRuntimeVersion = (value: unknown): BundledRuntimeVersion | null => {
+  if (!record(value) || value.source !== 'verified-native-bundle' || typeof value.targetVersion !== 'string'
+    || !/^2\.\d+\.\d+$/.test(value.targetVersion)) return null;
+  return { version: value.targetVersion, ready: value.detectedVersion === value.targetVersion };
 };

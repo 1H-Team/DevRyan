@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/electron",
-  "version": "1.2.22",
+  "version": "2.0.0",
   "private": true,
   "description": "Electron desktop runtime for DevRyan",
   "author": "DevRyan",
@@ -96,7 +96,13 @@
       },
       {
         "from": "../web/runtime",
-        "to": "revert-runtime"
+        "to": "revert-runtime",
+        "filter": [
+          "darwin-arm64/native-bundle.json",
+          "darwin-arm64/DevRyan-*",
+          "!**/DevRyan-opencode*",
+          "!**/companion.json"
+        ]
       }
     ],
     "extraFiles": [

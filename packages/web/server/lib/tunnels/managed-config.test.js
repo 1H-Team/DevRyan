@@ -47,10 +47,40 @@ const createRuntime = (initialFiles = []) => {
     },
   });
 
-  return { configPath, files, legacyConfigPath, runtime };
+  return { configPath, files, legacyConfigPath, runtime, fsPromises };
 };
 
 describe('createManagedTunnelConfigRuntime', () => {
+  it('drains a read-time schema rewrite and rejects new reads or mutations while held', async () => {
+    const configPath = '/config/cloudflare-managed-remote-tunnels.json';
+    const { runtime, fsPromises, files } = createRuntime([[configPath, JSON.stringify({ version: 1, tunnels: [] })]]);
+    const rename = fsPromises.rename, started = Promise.withResolvers(), release = Promise.withResolvers();
+    fsPromises.rename = async (...args) => { started.resolve(); await release.promise; return rename(...args); };
+    const reading = runtime.readManagedRemoteTunnelConfigFromDisk();
+    await started.promise;
+    const draining = runtime.holdForCheckpoint();
+    expect(runtime.holdForCheckpoint()).toBe(draining);
+    let drained = false; void draining.then(() => { drained = true; });
+    await expect(runtime.resolveManagedRemoteTunnelToken({ hostname: 'example.com' })).rejects.toMatchObject({ code: 'tunnel_config_checkpoint_held' });
+    await expect(runtime.syncManagedRemoteTunnelConfigWithPresets([])).rejects.toMatchObject({ code: 'tunnel_config_checkpoint_held' });
+    expect(drained).toBe(false);
+    release.resolve(); await reading; await draining;
+    expect(JSON.parse(files.get(configPath)).version).toBe(2);
+  });
+
+  it('awaits every already-admitted queued update before completing its checkpoint', async () => {
+    const { runtime, fsPromises, files, configPath } = createRuntime();
+    const rename = fsPromises.rename, started = Promise.withResolvers(), release = Promise.withResolvers();
+    fsPromises.rename = async (...args) => { started.resolve(); await release.promise; return rename(...args); };
+    const first = runtime.upsertManagedRemoteTunnelToken({ id: 'one', name: 'One', hostname: 'one.example.com', token: TOKEN, originPort: 4001 });
+    const second = runtime.upsertManagedRemoteTunnelToken({ id: 'two', name: 'Two', hostname: 'two.example.com', token: TOKEN, originPort: 4002 });
+    await started.promise;
+    const draining = runtime.holdForCheckpoint();
+    await expect(runtime.upsertManagedRemoteTunnelToken({})).rejects.toMatchObject({ code: 'tunnel_config_checkpoint_held' });
+    release.resolve(); await Promise.all([first, second, draining]);
+    expect(JSON.parse(files.get(configPath)).tunnels.map(row => row.originPort)).toEqual([4001, 4002]);
+  });
+
   it('persists only the normalized token from a cloudflared command', async () => {
     const { configPath, files, runtime } = createRuntime();
 

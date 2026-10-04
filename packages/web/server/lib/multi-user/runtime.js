@@ -1,5 +1,7 @@
 import express from 'express';
 import crypto from 'node:crypto';
+import { resolveGen2OpenCodeClient } from '../opencode/opencode-client-seam.js';
+import { listFacadeSessionPage, readFacadeSessionQuery, resolveFacadeDirectory, validateFacadeBody } from '../opencode/v2/facade-routes.js';
 import { beginSessionCreationTrace, creationUnknownPayload, creationRestartPayload, creationNotDispatchedPayload } from '../opencode/session-creation.js';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -567,16 +569,25 @@ export async function createMultiUserRuntime({
   const clearGitHubAuthById = githubAuthStore.clearGitHubAuthById || clearStoredGitHubAuthById;
   const verifiedGitHubAccountId = createVerifiedGitHubAccountId(getGitHubAuthById);
 
+  const legacyAuthorizations = new WeakMap();
+  const authenticatedLocalPrincipal = async (legacy, req) => {
+    const principal = Object.freeze({ ...localAdminPrincipal });
+    const check = typeof legacy.captureAuthorization === 'function' ? await legacy.captureAuthorization(req)
+      : !legacy.enabled ? () => true : null;
+    if (typeof check === 'function') legacyAuthorizations.set(principal, () => connection.isLocalAccessActive() && check());
+    return principal;
+  };
   const wrapLegacyAuthController = (legacy) => connection.configured && !connection.enabled
     ? createDisconnectedAuth(connection) : ({
     ...legacy,
     multiUser: false,
+    captureAuthorization: principal => connection.captureAuthorization(principal) ?? legacyAuthorizations.get(principal) ?? null,
     async resolvePrincipal(req, res) {
       const owner = getTunnelOwnerPrincipal(req);
       if (owner) return owner;
-      if (!legacy.enabled) return isLoopbackRequest(req) ? localAdminPrincipal : null;
+      if (!legacy.enabled) return isLoopbackRequest(req) ? authenticatedLocalPrincipal(legacy, req) : null;
       const token = await legacy.ensureSessionToken(req, res);
-      return token ? localAdminPrincipal : null;
+      return token ? authenticatedLocalPrincipal(legacy, req) : null;
     },
     async requireAuth(req, res, next) {
       const owner = getTunnelOwnerPrincipal(req);
@@ -587,9 +598,9 @@ export async function createMultiUserRuntime({
       if (!legacy.enabled && !isLoopbackRequest(req)) {
         return jsonError(res, 401, 'Local administrator access is loopback-only');
       }
-      return legacy.requireAuth(req, res, () => {
-        req.principal = localAdminPrincipal;
-        return runWithRequestPrincipal(localAdminPrincipal, next);
+      return legacy.requireAuth(req, res, async () => {
+        req.principal = await authenticatedLocalPrincipal(legacy, req);
+        return runWithRequestPrincipal(req.principal, next);
       });
     },
     async handleSessionStatus(req, res) {
@@ -605,11 +616,11 @@ export async function createMultiUserRuntime({
       const owner = getTunnelOwnerPrincipal(req);
       if (owner) { req.principal = owner; return owner.tunnelGrant.sessionId; }
       if (!legacy.enabled) {
-        if (isLoopbackRequest(req)) req.principal = localAdminPrincipal;
+        if (isLoopbackRequest(req)) req.principal = await authenticatedLocalPrincipal(legacy, req);
         return isLoopbackRequest(req) ? 'local-admin' : null;
       }
       const token = await legacy.ensureSessionToken(req, res);
-      if (token || !legacy.enabled) req.principal = localAdminPrincipal;
+      if (token || !legacy.enabled) req.principal = await authenticatedLocalPrincipal(legacy, req);
       return token;
     },
     authorizeSystemRequest(req, res, next) {
@@ -2827,6 +2838,34 @@ export async function createMultiUserRuntime({
     return current ? resolveOwnedSessionPlanContext(current, sessionID, directory) : null;
   };
 
+  // Native request capabilities retain this original caller, never the
+  // session owner's identity or cached assignments from the first HTTP check.
+  const resolveCurrentNativeOperationContext = async ({ principal, sessionID, directory, settingsAccess }) => {
+    if (settingsAccess !== undefined && (!settingsAccess || typeof settingsAccess !== 'object'
+      || Object.keys(settingsAccess).some(key => !['page', 'mode'].includes(key))
+      || !['providers', 'mcp'].includes(settingsAccess.page) || !['read', 'edit'].includes(settingsAccess.mode))) return null;
+    if (principal?.scope !== 'managed' || !principal.id || !principal.appSessionId || !path.isAbsolute(directory ?? '')) return null;
+    const readCurrentAppSession = async () => {
+      const session = await supabase.rest('app_sessions', { query: { id: `eq.${escapeFilterValue(principal.appSessionId)}`,
+        user_id: `eq.${escapeFilterValue(principal.id)}`, revoked_at: 'is.null', expires_at: `gt.${new Date().toISOString()}`, limit: 1 }, maybeSingle: true });
+      return session?.id === principal.appSessionId && session.user_id === principal.id
+        && !session.revoked_at && Date.parse(session.expires_at) > Date.now() ? session : null;
+    };
+    const appSession = await readCurrentAppSession();
+    if (!appSession) return null;
+    const current = await loadPrincipal(principal.id, appSession, { includeSettings: false });
+    if (!current) return null;
+    if (settingsAccess && !(settingsAccess.mode === 'edit' ? canEditSettingsPage : canReadSettingsPage)(current, settingsAccess.page)) return null;
+    const context = sessionID ? await resolveOwnedSessionPlanContext(current, sessionID, directory)
+      : resolveAssignmentForValue(current, directory);
+    const assignedDirectory = context?.directory ?? context?.repositoryPath;
+    if (!assignedDirectory || await fs.realpath(assignedDirectory) !== await fs.realpath(directory)) return null;
+    // Grants, ownership and canonical paths above may await remote reads. The
+    // original login must still be live at the final authorization decision.
+    if (!await readCurrentAppSession()) return null;
+    return { directory, projectId: context.projectId, branchName: context.branchName };
+  };
+
   const resolveSessionAgentExecution = async ({
     rootSessionId,
     directory = '',
@@ -3333,35 +3372,53 @@ export async function createMultiUserRuntime({
     return payload?.type === 'openchamber:heartbeat' || payload?.type === 'server.connected';
   };
 
-  const fetchUpstreamJson = async ({ req, buildOpenCodeUrl, getOpenCodeAuthHeaders, pathname, method = req.method, body = req.body, timeoutMs = 120_000 }) => {
-    const sourceUrl = new URL(req.originalUrl || req.url, 'http://127.0.0.1');
-    const target = new URL(buildOpenCodeUrl(pathname, ''));
-    for (const [key, value] of sourceUrl.searchParams) target.searchParams.set(key, value);
-    const response = await fetchImpl(target, {
-      method,
-      headers: {
-        Accept: 'application/json',
-        ...(body !== undefined && method !== 'GET' ? { 'Content-Type': 'application/json' } : {}),
-        ...getOpenCodeAuthHeaders(),
-      },
-      body: body !== undefined && method !== 'GET' ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(Math.max(1, Math.floor(timeoutMs))),
-    });
-    const text = await response.text();
-    let payload = null;
-    try { payload = text ? JSON.parse(text) : null; } catch { payload = text; }
-    return { response, payload };
-  };
-
   const registerRoutes = (app, {
+    openCodeClient,
     readSettingsFromDiskMigrated,
-    buildOpenCodeUrl,
-    getOpenCodeAuthHeaders,
     listConfigAgents: listConfigAgentsForDirectory,
     getConfigApplyMutationResponse = () => ({ requiresReload: false }),
     isSessionCreationRestarting = () => false,
     recordCreationTiming = () => {},
   } = {}) => {
+    const fetchUpstreamJson = async ({ req, pathname, method = req.method ?? 'GET', body = req.body, timeoutMs = 120_000 }) => {
+      const client = resolveGen2OpenCodeClient(openCodeClient);
+      try {
+        const options = { directory: await resolveFacadeDirectory(req), timeoutMs };
+        let payload;
+        if (pathname === '/session' && method === 'GET') {
+          payload = await client.sessions.list(readFacadeSessionQuery(req), options);
+        } else if (pathname === '/session' && method === 'POST') {
+          const input = validateFacadeBody(body ?? {}, ['id', 'directory', 'title', 'parentID', 'agent', 'model']);
+          if (input.directory !== undefined && (typeof input.directory !== 'string' || !input.directory
+            || (options.directory && options.directory !== input.directory))) {
+            throw Object.assign(new Error('Request directories do not agree'), { statusCode: 400, code: 'opencode_invalid_input' });
+          }
+          payload = await client.sessions.create(input, options);
+        } else if (pathname === '/session/status' && method === 'GET') {
+          payload = await client.sessions.status({ directory: options.directory }, options);
+        } else {
+          const match = /^\/session\/([^/]+)(\/fork)?$/.exec(pathname);
+          if (match && method === 'DELETE' && !match[2]) {
+            payload = await client.sessions.remove(decodeURIComponent(match[1]), options);
+          } else if (match?.[2] && method === 'POST') {
+            payload = await client.sessions.fork(decodeURIComponent(match[1]), validateFacadeBody(body ?? {}, ['messageID']), options);
+          } else {
+            throw Object.assign(new Error('OpenCode 2 does not provide this legacy file route'), {
+              statusCode: 501, code: 'capability_unavailable', capability: 'upstreamFiles',
+            });
+          }
+        }
+        return { response: { ok: true, status: 200 }, payload };
+      } catch (error) {
+        const candidate = error?.statusCode ?? error?.status;
+        const status = Number.isInteger(candidate) && candidate >= 400 && candidate <= 599 ? candidate : 502;
+        return { response: { ok: false, status }, payload: {
+          error: error.message, code: error.code ?? 'opencode_unavailable', retryable: error.retryable === true,
+          ...(error.capability ? { capability: error.capability } : {}),
+        } };
+      }
+    };
+
     if (typeof listConfigAgentsForDirectory === 'function') {
       listManagedConfigAgents = listConfigAgentsForDirectory;
     }
@@ -3549,7 +3606,7 @@ export async function createMultiUserRuntime({
       return res.json({ results });
     });
 
-    if (typeof buildOpenCodeUrl === 'function' && typeof getOpenCodeAuthHeaders === 'function') {
+    {
       abortOwnedSessions = async (userId) => {
         const rows = ownershipIndex.list().filter((row) => row.user_id === userId && !row.archived_at);
         const branchRows = await supabase.rest('user_project_branches', {
@@ -3560,15 +3617,10 @@ export async function createMultiUserRuntime({
           row.workspace_path,
         ]));
         await Promise.allSettled(rows.map(async (row) => {
-          const target = new URL(buildOpenCodeUrl(`/session/${encodeURIComponent(row.session_id)}/abort`, ''));
           const workspacePath = workspaceByBranch.get(`${row.project_id}\0${row.branch_name}`);
           if (typeof workspacePath !== 'string' || !workspacePath) return;
-          target.searchParams.set('directory', workspacePath);
-          await fetchImpl(target, {
-            method: 'POST',
-            headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
-            signal: AbortSignal.timeout(5_000),
-          });
+          const client = resolveGen2OpenCodeClient(openCodeClient);
+          return client.sessions.abort(row.session_id, { directory: workspacePath, timeoutMs: 5_000 });
         }));
       };
 
@@ -3583,26 +3635,11 @@ export async function createMultiUserRuntime({
       };
 
       const fetchExperimentalSessionPage = async ({ archived, cursor = null, limit = 200, query = {} }) => {
-        const target = new URL(buildOpenCodeUrl('/experimental/session', ''));
-        for (const key of ['directory', 'workspace', 'roots', 'start', 'search']) {
-          const value = query?.[key];
-          if (typeof value === 'string' && value) target.searchParams.set(key, value);
-        }
-        target.searchParams.set('archived', String(Boolean(archived)));
-        target.searchParams.set('limit', String(normalizeSessionPageLimit(limit)));
-        if (cursor !== null) target.searchParams.set('cursor', String(cursor));
-        const response = await fetchImpl(target, {
-          headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
-          signal: AbortSignal.timeout(15_000),
-        });
-        const sessions = await response.json().catch(() => []);
-        if (!response.ok) throw new Error(`Failed to enumerate sessions (${response.status})`);
-        const rawCursor = response.headers.get('x-next-cursor');
-        const parsedCursor = rawCursor === null ? null : Number(rawCursor);
-        return {
-          sessions: Array.isArray(sessions) ? sessions : [],
-          nextCursor: Number.isFinite(parsedCursor) ? parsedCursor : null,
-        };
+        const client = resolveGen2OpenCodeClient(openCodeClient);
+        return listFacadeSessionPage(client, { query: {
+          ...query, archived: String(Boolean(archived)), limit: String(normalizeSessionPageLimit(limit)),
+          ...(cursor === null ? { cursor: undefined } : { cursor: String(cursor) }),
+        } }, { timeoutMs: 15_000 });
       };
 
       const enumerateExperimentalSessions = async (archived) => {
@@ -5425,16 +5462,14 @@ export async function createMultiUserRuntime({
       return res.json({ success: true, restarted: false, path: assignment.publicDirectory });
     });
 
-    if (typeof buildOpenCodeUrl === 'function' && typeof getOpenCodeAuthHeaders === 'function') {
+    {
       const registerFilteredFileRead = (pathname) => {
         app.get(`/api${pathname}`, async (req, res, next) => {
           if (!shouldHideProtectedDotenv(req.principal)) return next();
           try {
             const { response, payload } = await fetchUpstreamJson({
               req,
-              buildOpenCodeUrl,
-              getOpenCodeAuthHeaders,
-              pathname,
+                                  pathname,
             });
             if (!response.ok) {
               return res.status(response.status).send(
@@ -5460,9 +5495,7 @@ export async function createMultiUserRuntime({
           ownershipIndex.delete(sessionId),
           fetchUpstreamJson({
             req,
-            buildOpenCodeUrl,
-            getOpenCodeAuthHeaders,
-            pathname: `/session/${encodeURIComponent(sessionId)}`,
+                            pathname: `/session/${encodeURIComponent(sessionId)}`,
             method: 'DELETE',
             body: undefined,
           }).then(({ response }) => {
@@ -5507,7 +5540,7 @@ export async function createMultiUserRuntime({
       app.get('/api/session', async (req, res, next) => {
         if (req.principal?.scope !== 'managed') return next();
         try {
-          const { response, payload } = await fetchUpstreamJson({ req, buildOpenCodeUrl, getOpenCodeAuthHeaders, pathname: '/session' });
+          const { response, payload } = await fetchUpstreamJson({ req, pathname: '/session' });
           if (!response.ok) return res.status(response.status).send(typeof payload === 'string' ? payload : JSON.stringify(payload));
           const sessions = Array.isArray(payload) ? payload : [];
           const visible = [];
@@ -5531,7 +5564,7 @@ export async function createMultiUserRuntime({
         }
         try {
           trace.mark('upstream_create_started');
-          const { response, payload } = await fetchUpstreamJson({ req, buildOpenCodeUrl, getOpenCodeAuthHeaders, pathname: '/session', method: 'POST', timeoutMs: trace.remainingMs() });
+          const { response, payload } = await fetchUpstreamJson({ req, pathname: '/session', method: 'POST', timeoutMs: trace.remainingMs() });
           if (!response.ok) {
             trace.mark('upstream_create_rejected');
             if (response.status >= 500) return res.status(response.status).json(creationUnknownPayload());
@@ -5573,7 +5606,7 @@ export async function createMultiUserRuntime({
       app.get('/api/session/status', async (req, res, next) => {
         if (req.principal?.scope !== 'managed') return next();
         try {
-          const { response, payload } = await fetchUpstreamJson({ req, buildOpenCodeUrl, getOpenCodeAuthHeaders, pathname: '/session/status' });
+          const { response, payload } = await fetchUpstreamJson({ req, pathname: '/session/status' });
           if (!response.ok) return res.status(response.status).send(typeof payload === 'string' ? payload : JSON.stringify(payload));
           const visible = {};
           for (const [sessionId, status] of Object.entries(payload || {})) {
@@ -5589,9 +5622,7 @@ export async function createMultiUserRuntime({
           if (!await ownsSession(req.principal, req.params.sessionID)) return jsonError(res, 404, 'Session not found');
           const { response, payload } = await fetchUpstreamJson({
             req,
-            buildOpenCodeUrl,
-            getOpenCodeAuthHeaders,
-            pathname: `/session/${encodeURIComponent(req.params.sessionID)}/fork`,
+                            pathname: `/session/${encodeURIComponent(req.params.sessionID)}/fork`,
             method: 'POST',
           });
           if (!response.ok) return res.status(response.status).send(typeof payload === 'string' ? payload : JSON.stringify(payload));
@@ -5602,7 +5633,7 @@ export async function createMultiUserRuntime({
           } catch (error) {
             if (typeof payload?.id === 'string') {
               await fetchUpstreamJson({
-                req, buildOpenCodeUrl, getOpenCodeAuthHeaders,
+                req,
                 pathname: `/session/${encodeURIComponent(payload.id)}`, method: 'DELETE', body: undefined,
               }).catch(() => {});
             }
@@ -5682,9 +5713,7 @@ export async function createMultiUserRuntime({
           }
           const { response, payload } = await fetchUpstreamJson({
             req,
-            buildOpenCodeUrl,
-            getOpenCodeAuthHeaders,
-            pathname: `/session/${encodeURIComponent(req.params.sessionID)}`,
+                            pathname: `/session/${encodeURIComponent(req.params.sessionID)}`,
             method: 'DELETE',
             body: undefined,
           });
@@ -5769,6 +5798,7 @@ export async function createMultiUserRuntime({
     ownsSession,
     resolveOwnedSessionPlanContext,
     resolveCurrentOwnedSessionPlanContext,
+    resolveCurrentNativeOperationContext,
     resolveSessionPlanContext,
     resolveSessionAgentExecution,
     resolveSessionOwnerKey,

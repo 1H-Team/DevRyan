@@ -44,14 +44,10 @@ const createHarness = (overrides = {}) => {
   const calls = [];
   const client = {
     provider: { list: vi.fn(async () => ({ data: { all: [] } })) },
+    structured: vi.fn(async () => ({ data: { candidates: [] } })),
+    close: vi.fn(),
     session: {
       create: vi.fn(async () => ({ data: { id: 'ses_bot_1' } })),
-      prompt: vi.fn(async () => ({
-        data: {
-          info: { id: 'msg_extract', role: 'assistant' },
-          parts: [{ type: 'text', text: '{"candidates":[]}' }],
-        },
-      })),
       promptAsync: vi.fn(async () => ({ data: true })),
       delete: vi.fn(async () => ({ data: true })),
       abort: vi.fn(async () => ({ data: true })),
@@ -703,40 +699,27 @@ describe('scoped Bot OpenCode provider', () => {
     expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('secret upstream detail');
   });
 
-  it('runs strict JSON extraction in a disposable no-tools session on the pinned model', async () => {
+  it('runs native strict JSON extraction without creating or executing a session', async () => {
     const harness = createHarness();
     await harness.provider.startReasoningRun({ run: run(), contract: contract(), catalog: [] });
     const schema = {
-      type: 'object',
-      additionalProperties: false,
-      required: ['candidates'],
+      type: 'object', additionalProperties: false, required: ['candidates'],
       properties: { candidates: { type: 'array' } },
     };
-
     await expect(harness.provider.runNoToolsExtraction({
-      runId: RUN_ID,
-      prompt: 'Extract reusable memory.',
-      schema,
+      runId: RUN_ID, prompt: 'Extract reusable memory.', schema,
     })).resolves.toBe('{"candidates":[]}');
-
-    expect(harness.client.session.prompt).toHaveBeenCalledWith({
-      sessionID: 'ses_bot_1',
-      directory: '/workspace',
-      agent: 'bot',
-      model: { providerID: 'openai', modelID: 'gpt-5.6-sol' },
-      variant: 'high',
-      tools: { '*': false },
-      format: { type: 'json_schema', schema, retryCount: 2 },
+    expect(harness.client.structured).toHaveBeenCalledWith({
+      model: { providerID: 'openai', id: 'gpt-5.6-sol', variant: 'high' },
+      prompt: 'Extract reusable memory.', schema,
+      title: `Bot memory extraction ${RUN_ID.slice(0, 8)}`,
       system: 'Extract structured memory only. Do not call tools or perform actions.',
-      parts: [{ type: 'text', text: 'Extract reusable memory.' }],
     }, { signal: expect.any(AbortSignal) });
-    expect(harness.client.session.delete).toHaveBeenCalledWith({
-      sessionID: 'ses_bot_1',
-      directory: '/workspace',
-    }, { signal: expect.any(AbortSignal) });
+    expect(harness.client.session.create).not.toHaveBeenCalled();
+    expect(harness.client.session.promptAsync).not.toHaveBeenCalled();
   });
 
-  it('allows structured completion after fifteen seconds and still removes its session', async () => {
+  it('allows structured completion after fifteen seconds within its bounded deadline', async () => {
     const harness = createHarness();
     await harness.provider.startReasoningRun({ run: run(), contract: contract(), catalog: [] });
     vi.useFakeTimers();
@@ -746,68 +729,54 @@ describe('scoped Bot OpenCode provider', () => {
       return controller.signal;
     });
     try {
-      harness.client.session.prompt.mockImplementationOnce(() => new Promise((resolve) => setTimeout(() => resolve({
-        data: { parts: [{ type: 'text', text: '{"candidates":[]}' }] },
+      harness.client.structured.mockImplementationOnce(() => new Promise((resolve) => setTimeout(() => resolve({
+        data: { candidates: [] },
       }), 16_000)));
       const result = harness.provider.runNoToolsExtraction({ runId: RUN_ID, prompt: 'Extract', schema: { type: 'object' } });
       await vi.advanceTimersByTimeAsync(16_000);
       await expect(result).resolves.toBe('{"candidates":[]}');
       expect(timeout).toHaveBeenCalledWith(120_000);
-      expect(harness.client.session.delete).toHaveBeenCalledTimes(1);
     } finally { timeout.mockRestore(); vi.useRealTimers(); }
   });
 
-  it('deletes a disposable session that arrives after its creation was cancelled', async () => {
+  it('cancels the native structured operation and never replays a late answer', async () => {
     const harness = createHarness();
     await harness.provider.startReasoningRun({ run: run(), contract: contract(), catalog: [] });
     let finish;
-    harness.client.session.create.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    harness.client.structured.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
     const controller = new AbortController();
     const result = harness.provider.runNoToolsExtraction({
       runId: RUN_ID, prompt: 'Extract', schema: { type: 'object' }, signal: controller.signal,
     });
     const rejected = expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    await waitUntil(() => Boolean(finish));
     controller.abort();
     await rejected;
-    finish({ data: { id: 'ses_late' } });
-    await vi.waitFor(() => expect(harness.client.session.delete).toHaveBeenCalledWith(
-      { sessionID: 'ses_late', directory: '/workspace' }, { signal: expect.any(AbortSignal) },
-    ));
-    expect(harness.client.session.prompt).not.toHaveBeenCalled();
+    expect(harness.client.structured.mock.calls[0][1].signal.aborted).toBe(true);
+    finish({ data: { candidates: [] } });
+    await Promise.resolve();
+    expect(harness.client.structured).toHaveBeenCalledTimes(1);
+    expect(harness.client.session.create).not.toHaveBeenCalled();
+    expect(harness.client.session.promptAsync).not.toHaveBeenCalled();
   });
 
   it('supports purpose-bound no-tools structured runs for reviewed routine drafting', async () => {
     const harness = createHarness();
-    harness.client.session.prompt.mockResolvedValueOnce({
-      data: {
-        info: { id: 'msg_routine', role: 'assistant' },
-        parts: [{ type: 'text', text: '{"version":1}' }],
-      },
-    });
+    harness.client.structured.mockResolvedValueOnce({ data: { version: 1 } });
     await harness.provider.startReasoningRun({ run: run(), contract: contract(), catalog: [] });
     const schema = {
       type: 'object', additionalProperties: false, required: ['version'],
       properties: { version: { type: 'integer', const: 1 } },
     };
-
     await expect(harness.provider.runNoToolsStructured({
-      runId: RUN_ID,
-      prompt: 'Draft the reviewed routine contract.',
-      schema,
-      title: 'Bot Routine Draft',
+      runId: RUN_ID, prompt: 'Draft the reviewed routine contract.', schema, title: 'Bot Routine Draft',
       system: 'Return routine JSON only. Do not call tools or perform actions.',
     })).resolves.toBe('{"version":1}');
-
-    expect(harness.client.session.create).toHaveBeenLastCalledWith({
-      directory: '/workspace',
-      title: 'Bot Routine Draft',
-    }, { signal: expect.any(AbortSignal) });
-    expect(harness.client.session.prompt).toHaveBeenLastCalledWith(expect.objectContaining({
-      sessionID: 'ses_bot_1',
-      tools: { '*': false },
-      format: { type: 'json_schema', schema, retryCount: 2 },
+    expect(harness.client.structured).toHaveBeenLastCalledWith(expect.objectContaining({
+      schema, title: 'Bot Routine Draft',
       system: 'Return routine JSON only. Do not call tools or perform actions.',
     }), { signal: expect.any(AbortSignal) });
+    expect(harness.client.session.create).not.toHaveBeenCalled();
   });
 
   it('reconciles a persisted run marker and terminal assistant without replaying content', async () => {

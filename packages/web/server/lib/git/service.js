@@ -21,7 +21,6 @@ import { populateWorktreeWithLockRecovery } from './worktree-lock-recovery.js';
 import { withIndexLockRetry, withIndexLockRetryResult } from './index-lock-retry.js';
 import { getRequestPrincipal } from '../multi-user/request-context.js';
 import { getGitHubAuthById } from '../github/auth.js';
-import { resolveOpenCodeDbPath } from '../opencode/opencode-db-path.js';
 
 const fsp = fs.promises;
 const require = createRequire(import.meta.url);
@@ -1028,25 +1027,6 @@ const getProjectStoragePath = (projectID) => {
   return path.join(getOpenCodeDataPath(), 'storage', 'project', `${projectID}.json`);
 };
 
-const syncSandboxesToOpenCodeDb = (projectID, sandboxes) => {
-  try {
-    const Database = require('better-sqlite3');
-    const dbPath = resolveOpenCodeDbPath(getOpenCodeDataPath());
-    if (!fs.existsSync(dbPath)) return;
-    const db = new Database(dbPath);
-    try {
-      const row = db.prepare('SELECT sandboxes FROM project WHERE id = ?').get(projectID);
-      if (!row) return;
-      const json = JSON.stringify(sandboxes);
-      db.prepare('UPDATE project SET sandboxes = ?, time_updated = ? WHERE id = ?').run(json, Date.now(), projectID);
-    } finally {
-      db.close();
-    }
-  } catch (error) {
-    console.warn('Failed to sync sandboxes to OpenCode DB:', error instanceof Error ? error.message : String(error));
-  }
-};
-
 const updateProjectSandboxes = async (projectID, primaryWorktree, updater) => {
   const storagePath = getProjectStoragePath(projectID);
   await fsp.mkdir(path.dirname(storagePath), { recursive: true });
@@ -1087,8 +1067,6 @@ const updateProjectSandboxes = async (projectID, primaryWorktree, updater) => {
 
   await fsp.writeFile(storagePath, `${JSON.stringify(current, null, 2)}\n`, 'utf8');
 
-  // Sync to OpenCode's SQLite database so project.sandboxes is visible via the SDK
-  syncSandboxesToOpenCodeDb(projectID, current.sandboxes);
 };
 
 const syncProjectSandboxAdd = async (projectID, primaryWorktree, sandboxPath) => {

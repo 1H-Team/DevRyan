@@ -109,7 +109,21 @@ export const createBrowserObservationRuntime = ({
   }
 
   const views = new Map();
+  const pendingOperations = new Set();
+  let held = false;
+  let checkpointDrain;
   let revision = 0;
+  const track = operation => {
+    const pending = Promise.resolve().then(operation);
+    pendingOperations.add(pending);
+    pending.then(() => pendingOperations.delete(pending), () => pendingOperations.delete(pending));
+    return pending;
+  };
+  const admitted = operation => (...args) => {
+    if (held) return Promise.reject(new BrowserObservationError('browser_observation_held', 'Browser observation is paused', 503));
+    return track(() => operation(...args));
+  };
+  const recordAudit = (...args) => track(() => audit(...args));
 
   const records = () => {
     const value = getLeaseRecords();
@@ -164,7 +178,7 @@ export const createBrowserObservationRuntime = ({
   const auditViewStop = async (principal, view, reason) => {
     if (view.stopAudited) return;
     view.stopAudited = true;
-    await audit(principal, 'browser.agent_view.stop', {
+    await recordAudit(principal, 'browser.agent_view.stop', {
       targetType: 'session',
       targetId: view.rootSessionId,
       sessionId: view.rootSessionId,
@@ -202,8 +216,9 @@ export const createBrowserObservationRuntime = ({
     return Object.freeze({ revision, leases });
   };
 
-  const startView = async (principal, leaseIdInput) => {
+  const startView = admitted(async (principal, leaseIdInput) => {
     const record = await requireRecord(principal, leaseIdInput);
+    if (held) throw new BrowserObservationError('browser_observation_held', 'Browser observation is paused', 503);
     if (typeof openHostLeaseStream !== 'function') {
       throw new BrowserObservationError(
         'browser_observation_unavailable',
@@ -217,6 +232,7 @@ export const createBrowserObservationRuntime = ({
         await auditViewStop(principal, existing, 'replaced');
       }
     }
+    if (held) throw new BrowserObservationError('browser_observation_held', 'Browser observation is paused', 503);
 
     let id;
     do {
@@ -243,7 +259,7 @@ export const createBrowserObservationRuntime = ({
     view.expiryTimer.unref?.();
     views.set(id, view);
     try {
-      await audit(principal, 'browser.agent_view.start', {
+      await recordAudit(principal, 'browser.agent_view.start', {
         targetType: 'session',
         targetId: record.rootSessionId,
         sessionId: record.rootSessionId,
@@ -261,9 +277,9 @@ export const createBrowserObservationRuntime = ({
         streamUrl: `${BROWSER_AGENT_LEASES_PATH}/${encodeURIComponent(record.leaseId)}/views/${encodeURIComponent(id)}/stream`,
       }),
     });
-  };
+  });
 
-  const stopView = async (principal, leaseIdInput, viewIdInput, reason = 'stopped') => {
+  const stopView = admitted(async (principal, leaseIdInput, viewIdInput, reason = 'stopped') => {
     assertPrincipal(principal);
     const leaseId = normalizedString(leaseIdInput, MAX_ID_LENGTH);
     const viewId = normalizedString(viewIdInput, MAX_ID_LENGTH);
@@ -275,9 +291,9 @@ export const createBrowserObservationRuntime = ({
     deleteView(view, reason);
     await auditViewStop(principal, view, reason);
     return Object.freeze({ stopped: true });
-  };
+  });
 
-  const openView = async (principal, leaseIdInput, viewIdInput, response) => {
+  const openView = admitted(async (principal, leaseIdInput, viewIdInput, response) => {
     assertPrincipal(principal);
     const leaseId = normalizedString(leaseIdInput, MAX_ID_LENGTH);
     const viewId = normalizedString(viewIdInput, MAX_ID_LENGTH);
@@ -295,6 +311,7 @@ export const createBrowserObservationRuntime = ({
       throw new BrowserObservationError('browser_view_expired', 'Browser viewer session expired', 410);
     }
     const record = await requireRecord(principal, leaseId);
+    if (held || views.get(viewId) !== view) throw new BrowserObservationError('browser_observation_held', 'Browser observation is paused', 503);
     view.attached = true;
     if (view.expiryTimer) clearTimer(view.expiryTimer);
     view.expiryTimer = null;
@@ -350,7 +367,7 @@ export const createBrowserObservationRuntime = ({
       if (!response.destroyed && !response.writableEnded) response.end();
       await auditViewStop(principal, view, 'stream_closed').catch(() => undefined);
     }
-  };
+  });
 
   const handleLeaseChanged = ({ leaseId, ownerUserId } = {}) => {
     revision += 1;
@@ -423,6 +440,15 @@ export const createBrowserObservationRuntime = ({
     stopView,
     handleLeaseChanged,
     closeAll,
+    holdForCheckpoint() {
+      held = true;
+      closeAll();
+      checkpointDrain ??= (async () => {
+        // Stream completion can enqueue its final audit after view deletion.
+        while (pendingOperations.size) await Promise.allSettled([...pendingOperations]);
+      })();
+      return checkpointDrain;
+    },
     getRevision: () => revision,
     getViewCount: () => views.size,
   };

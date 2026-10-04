@@ -5,7 +5,6 @@ import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
-import { useTerminalStore } from '@/stores/useTerminalStore';
 import { quotaRefreshCoordinator } from '@/stores/useQuotaStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,7 +28,7 @@ import {
   getHiddenModelRefsForProviderModel,
   isHiddenProviderModelRef,
 } from '@/lib/providers/modelVisibility';
-import { parseProvidersPayload, type ProviderOption } from './providerOptions';
+import { mergeProviderConnectionOptions, parseProvidersPayload, type ProviderOption } from './providerOptions';
 import { isRetiredProviderId, withRetiredProviderEntries } from './retiredProviders';
 import { getProviderModelsForDisplay } from './providerSorting';
 import {
@@ -52,7 +51,9 @@ import { parseUsageOnlyProviderSelection } from '@/lib/quota';
 import { ProviderUsageSection, UsageOnlyProviderView } from './ProviderUsage';
 import { useUsageOnlySelectionAvailable } from './useProviderUsage';
 import { useI18n } from '@/lib/i18n';
-import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
+import { useAuthPrincipal } from '@/lib/authSession';
+import { ClaudeDedicatedEnrollment } from './ClaudeDedicatedEnrollment';
+import { BundledRuntimeUpdate } from './BundledRuntimeUpdate';
 import {
   getClaudePromptMode,
   setClaudeCompatibilityMode,
@@ -66,6 +67,7 @@ import {
   shouldShowConnectedProvider,
   useProviderDisconnectStore,
   type ProviderSources,
+  type ProviderConnectionState,
 } from './providerConnectionState';
 
 const ADD_PROVIDER_ID = '__add_provider__';
@@ -90,6 +92,79 @@ interface ClaudeCliStatus {
   authMethod?: string;
   subscriptionType?: string;
   error?: string;
+}
+
+type ClaudeAuthenticationState = 'loading' | 'unavailable' | 'account_unavailable' | 'error' | 'authenticated' | 'signed_out';
+
+const getClaudeAuthenticationState = (status: ClaudeCliStatus | null, loading: boolean): ClaudeAuthenticationState => {
+  if (loading || !status) return 'loading';
+  if (status.authStatus === 'error') return 'error';
+  if (!status.installed) return 'unavailable';
+  if (status.authStatus === 'unavailable') return 'account_unavailable';
+  if (status.authStatus === 'authenticated' && status.loggedIn) return 'authenticated';
+  return 'signed_out';
+};
+
+const claudeAuthenticationTitleKeys = {
+  loading: 'settings.providers.page.auth.checkingClaudeCliTitle',
+  unavailable: 'settings.providers.page.auth.claudeCliMissingTitle',
+  account_unavailable: 'settings.providers.page.auth.claudeStatusErrorTitle',
+  error: 'settings.providers.page.auth.claudeStatusErrorTitle',
+  authenticated: 'settings.providers.page.auth.claudeAuthenticatedTitle',
+  signed_out: 'settings.providers.page.auth.claudeLoginTitle',
+} as const;
+
+const claudeAuthenticationDescriptionKeys = {
+  loading: 'settings.providers.page.auth.checkingClaudeCliDescription',
+  unavailable: 'settings.providers.page.auth.claudeCliMissingDescription',
+  account_unavailable: 'settings.providers.page.auth.claudeStatusErrorDescription',
+  error: 'settings.providers.page.auth.claudeStatusErrorDescription',
+  authenticated: 'settings.providers.page.auth.claudeAuthenticatedDescription',
+  signed_out: 'settings.providers.page.auth.claudeLoginDescription',
+} as const;
+
+export function ProviderAuthenticationSummary({ providerId, connectionState, cursorConfigured, claudeStatus, claudeLoading }: {
+  providerId: string;
+  connectionState: ProviderConnectionState;
+  cursorConfigured: boolean;
+  claudeStatus: ClaudeCliStatus | null;
+  claudeLoading: boolean;
+}) {
+  const { t } = useI18n();
+  if (isAnthropicOAuthProviderId(providerId) && connectionState !== 'disconnect_pending' && connectionState !== 'not_connected') {
+    const status = getClaudeAuthenticationState(claudeStatus, claudeLoading);
+    return (
+      <div className="flex items-center gap-1.5 py-1.5" data-claude-auth-state={status}>
+        {status === 'loading' ? <RiLoader4Line className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" />
+          : status === 'authenticated' ? <RiCheckLine className="w-4 h-4 text-[var(--status-success)] shrink-0" /> : null}
+        <span className="typography-ui-label text-foreground">{t(claudeAuthenticationTitleKeys[status])}</span>
+        <span className="typography-meta text-muted-foreground ml-1">
+          {(status === 'error' || status === 'account_unavailable') && claudeStatus?.error
+            ? claudeStatus.error : t(claudeAuthenticationDescriptionKeys[status])}
+        </span>
+      </div>
+    );
+  }
+  const cursorSetupRequired = providerId === CURSOR_ACP_PROVIDER_ID && !cursorConfigured;
+  return (
+    <div className="flex items-center gap-1.5 py-1.5">
+      {connectionState === 'disconnect_pending' ? (
+        <RiLoader4Line className="h-4 w-4 shrink-0 animate-spin text-[var(--status-warning)]" aria-hidden="true" />
+      ) : connectionState === 'not_connected' || cursorSetupRequired ? null : (
+        <RiCheckLine className="w-4 h-4 text-[var(--status-success)] shrink-0" />
+      )}
+      <span className="typography-ui-label text-foreground">
+        {connectionState === 'disconnect_pending' ? t('settings.providers.page.state.disconnectPending')
+          : connectionState === 'not_connected' ? t('settings.providers.page.auth.notConnected')
+            : cursorSetupRequired ? t('settings.providers.page.auth.cursorSetupRequired') : t('settings.providers.page.auth.connected')}
+      </span>
+      <span className="typography-meta text-muted-foreground ml-1">
+        {connectionState === 'disconnect_pending' ? t('settings.providers.page.state.disconnectPendingHint')
+          : connectionState === 'not_connected' ? t('settings.providers.page.auth.connectToUse')
+            : cursorSetupRequired ? t('settings.providers.page.auth.cursorSetupRequiredHint') : t('settings.providers.page.auth.useReconnectHint')}
+      </span>
+    </div>
+  );
 }
 
 interface CursorAcpRuntimeStatus {
@@ -145,9 +220,9 @@ const providerSupportsApiKey = (providerId: string) => (
   && !isAnthropicOAuthProviderId(providerId)
 );
 
-export const ProvidersPage: React.FC = () => {
+const ProvidersPageContent: React.FC = () => {
   const { t } = useI18n();
-  const { terminal } = useRuntimeAPIs();
+  const principal = useAuthPrincipal();
   const rawProviders = useConfigStore((state) => state.directoryScoped.__global__?.providers ?? state.providers);
   const discoveredProviders = React.useMemo(
     () => withRetiredProviderEntries(rawProviders),
@@ -165,8 +240,6 @@ export const ProvidersPage: React.FC = () => {
   const hideModelRefs = useUIStore((state) => state.hideModelRefs);
   const showModelRefs = useUIStore((state) => state.showModelRefs);
   const toggleHiddenModelRefs = useUIStore((state) => state.toggleHiddenModelRefs);
-  const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
-  const setBottomTerminalOpen = useUIStore((state) => state.setBottomTerminalOpen);
 
   const [authMethodsByProvider, setAuthMethodsByProvider] = React.useState<Record<string, AuthMethod[]>>({});
   const [authLoading, setAuthLoading] = React.useState(false);
@@ -303,16 +376,21 @@ export const ProvidersPage: React.FC = () => {
     [providers, pendingConnections]
   );
 
+  const connectionProviderOptions = React.useMemo(
+    () => mergeProviderConnectionOptions(availableProviders, authMethodsByProvider),
+    [availableProviders, authMethodsByProvider]
+  );
+
   const unconnectedProviders = React.useMemo(
     () =>
-      availableProviders
+      connectionProviderOptions
         .filter((provider) => !connectedProviderIds.has(provider.id))
         .sort((a, b) => {
           const labelA = (a.name || a.id).toLowerCase();
           const labelB = (b.name || b.id).toLowerCase();
           return labelA.localeCompare(labelB);
         }),
-    [availableProviders, connectedProviderIds]
+    [connectionProviderOptions, connectedProviderIds]
   );
 
   React.useEffect(() => {
@@ -826,129 +904,6 @@ export const ProvidersPage: React.FC = () => {
     );
   };
 
-  const runCommandInTerminal = async ({
-    label,
-    command,
-    startedToast,
-    failedToast,
-  }: {
-    label: string;
-    command: string;
-    startedToast: string;
-    failedToast: string;
-  }) => {
-    const directory = currentDirectory?.trim();
-    if (!directory) {
-      toast.error(t('settings.providers.page.toast.terminalDirectoryUnavailable'));
-      return;
-    }
-
-    let createdSessionId: string | null = null;
-    let createdTabId: string | null = null;
-    try {
-      const terminalStore = useTerminalStore.getState();
-      terminalStore.ensureDirectory(directory);
-      const tabId = terminalStore.createTab(directory);
-      createdTabId = tabId;
-      terminalStore.setTabLabel(directory, tabId, label);
-      terminalStore.setActiveTab(directory, tabId);
-      setBottomTerminalOpen(true);
-      setActiveMainTab('terminal');
-
-      terminalStore.setConnecting(directory, tabId, true);
-      const session = await terminal.createSession({ cwd: directory });
-      createdSessionId = session.sessionId;
-      terminalStore.setTabSessionId(directory, tabId, createdSessionId);
-      terminalStore.setTabLifecycle(directory, tabId, 'running');
-      terminalStore.setConnecting(directory, tabId, false);
-
-      await new Promise((resolve) => window.setTimeout(resolve, 350));
-      await terminal.sendInput(createdSessionId, `${command}\r`);
-      toast.message(startedToast);
-    } catch (error) {
-      console.error('Failed to run provider terminal command:', error);
-      if (createdTabId) {
-        const terminalStore = useTerminalStore.getState();
-        terminalStore.setConnecting(directory, createdTabId, false);
-        terminalStore.setTabLifecycle(directory, createdTabId, 'exited');
-      }
-      if (createdSessionId) {
-        try {
-          await terminal.close(createdSessionId);
-        } catch {
-          // ignore cleanup failures
-        }
-      }
-      toast.error(failedToast);
-    }
-  };
-
-  const handleLaunchClaudeLogin = async () => {
-    const busyKey = 'claude-login';
-    setAuthBusyKey(busyKey);
-    try {
-      await runCommandInTerminal({
-        label: t('settings.providers.page.auth.claudeLoginTerminalLabel'),
-        command: 'claude auth login',
-        startedToast: t('settings.providers.page.toast.claudeLoginStarted'),
-        failedToast: t('settings.providers.page.toast.claudeLoginFailed'),
-      });
-    } finally {
-      setAuthBusyKey(null);
-    }
-  };
-
-  const handleCheckClaudeOAuth = async () => {
-    const busyKey = 'claude-check-oauth';
-    setAuthBusyKey(busyKey);
-    try {
-      const directory = currentDirectory?.trim();
-      const query = directory ? `?directory=${encodeURIComponent(directory)}` : '';
-      const response = await fetch(`/api/provider/anthropic/check-oauth${query}`, {
-        method: 'POST',
-        headers: { Accept: 'application/json' },
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        const message = payload?.error || t('settings.providers.page.toast.claudeOAuthCheckFailed');
-        throw new Error(message);
-      }
-
-      toast.success(t('settings.providers.page.toast.claudeOAuthChecked'));
-      recordConfigMutationResponse(payload);
-      await loadProviders({ directory: null });
-      const resolvedProviderId = 'anthropic';
-      setSelectedProvider(resolvedProviderId);
-      await loadProviderSources(resolvedProviderId);
-      await refreshClaudeCliStatus();
-      try {
-        await quotaRefreshCoordinator.refreshNow({ forceRefresh: true, rediscover: true });
-      } catch (quotaError) {
-        console.warn('Claude Code was configured, but usage refresh failed:', quotaError);
-      }
-    } catch (error) {
-      console.error('Failed to check Claude OAuth:', error);
-      toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.claudeOAuthCheckFailed'));
-    } finally {
-      setAuthBusyKey(null);
-    }
-  };
-
-  const handleInstallClaudeCli = async () => {
-    const busyKey = 'claude-install';
-    setAuthBusyKey(busyKey);
-    try {
-      await runCommandInTerminal({
-        label: t('settings.providers.page.auth.claudeInstallTerminalLabel'),
-        command: 'npm install -g @anthropic-ai/claude-code',
-        startedToast: t('settings.providers.page.toast.claudeInstallStarted'),
-        failedToast: t('settings.providers.page.toast.claudeInstallFailed'),
-      });
-    } finally {
-      setAuthBusyKey(null);
-    }
-  };
-
   const handleClaudeCompatibilityChange = async (compatibilityMode: boolean) => {
     if (claudePromptModeUpdating || claudePromptMode?.editable === false) return;
     setClaudePromptModeUpdating(true);
@@ -1051,95 +1006,31 @@ export const ProvidersPage: React.FC = () => {
   };
 
   const renderClaudeCodeAuth = () => {
-    let status: 'loading' | 'unavailable' | 'error' | 'authenticated' | 'signed_out';
-    if (claudeCliStatusLoading || !claudeCliStatus) {
-      status = 'loading';
-    } else if (claudeCliStatus.authStatus === 'error') {
-      status = 'error';
-    } else if (!claudeCliStatus.installed) {
-      status = 'unavailable';
-    } else if (claudeCliStatus.loggedIn) {
-      status = 'authenticated';
-    } else {
-      status = 'signed_out';
-    }
-    const titleKey = {
-      loading: 'settings.providers.page.auth.checkingClaudeCliTitle',
-      unavailable: 'settings.providers.page.auth.claudeCliMissingTitle',
-      error: 'settings.providers.page.auth.claudeStatusErrorTitle',
-      authenticated: 'settings.providers.page.auth.claudeAuthenticatedTitle',
-      signed_out: 'settings.providers.page.auth.claudeLoginTitle',
-    }[status] as Parameters<typeof t>[0];
-    const descriptionKey = {
-      loading: 'settings.providers.page.auth.checkingClaudeCliDescription',
-      unavailable: 'settings.providers.page.auth.claudeCliMissingDescription',
-      error: 'settings.providers.page.auth.claudeStatusErrorDescription',
-      authenticated: 'settings.providers.page.auth.claudeAuthenticatedDescription',
-      signed_out: 'settings.providers.page.auth.claudeLoginDescription',
-    }[status] as Parameters<typeof t>[0];
-
-    return (
+    const status = getClaudeAuthenticationState(claudeCliStatus, claudeCliStatusLoading);
+    return <>
       <div className="flex items-center justify-between gap-3 py-1.5">
         <div>
-          <div className="typography-ui-label text-foreground">{t(titleKey)}</div>
+          <div className="typography-ui-label text-foreground">{t(claudeAuthenticationTitleKeys[status])}</div>
           <div className="typography-meta text-muted-foreground">
-            {status === 'error' && claudeCliStatus?.error ? claudeCliStatus.error : t(descriptionKey)}
+            {(status === 'error' || status === 'account_unavailable') && claudeCliStatus?.error ? claudeCliStatus.error : t(claudeAuthenticationDescriptionKeys[status])}
           </div>
         </div>
-        {status === 'loading' ? null : status === 'unavailable' ? (
-          <div className="flex shrink-0 gap-1">
-            <Button
-              variant="outline"
-              size="xs"
-              className="!font-normal"
-              onClick={handleInstallClaudeCli}
-              disabled={authBusyKey === 'claude-install'}
-            >
-              {authBusyKey === 'claude-install' ? t('settings.providers.page.actions.openingTerminal') : t('settings.providers.page.actions.installClaudeCli')}
-            </Button>
-            <Button variant="ghost" size="xs" className="!font-normal" onClick={refreshClaudeCliStatus}>
-              {t('settings.providers.page.actions.refresh')}
-            </Button>
-          </div>
-        ) : status === 'authenticated' ? (
-          <div className="flex shrink-0 gap-1">
-            <Button
-              variant="outline"
-              size="xs"
-              className="!font-normal"
-              onClick={handleLaunchClaudeLogin}
-              disabled={authBusyKey === 'claude-login'}
-            >
-              {authBusyKey === 'claude-login' ? t('settings.providers.page.actions.openingTerminal') : t('settings.providers.page.actions.reconnect')}
-            </Button>
-            <Button
-              variant="outline"
-              size="xs"
-              className="!font-normal"
-              onClick={handleCheckClaudeOAuth}
-              disabled={authBusyKey === 'claude-check-oauth'}
-            >
-              {authBusyKey === 'claude-check-oauth' ? t('settings.providers.page.actions.checkingOAuth') : t('settings.providers.page.actions.configure')}
-            </Button>
-          </div>
-        ) : (
-          <div className="flex shrink-0 gap-1">
-            <Button
-              variant="outline"
-              size="xs"
-              className="!font-normal"
-              onClick={handleLaunchClaudeLogin}
-              disabled={authBusyKey === 'claude-login'}
-            >
-              {authBusyKey === 'claude-login' ? t('settings.providers.page.actions.openingTerminal') : t('settings.providers.page.actions.authenticate')}
-            </Button>
-            <Button variant="ghost" size="xs" className="!font-normal" onClick={refreshClaudeCliStatus}>
-              {t('settings.providers.page.actions.refresh')}
-            </Button>
-          </div>
-        )}
+        {status !== 'loading' ? <Button variant="ghost" size="xs" className="!font-normal" onClick={refreshClaudeCliStatus}>
+          {t('settings.providers.page.actions.refresh')}
+        </Button> : null}
       </div>
-    );
+      <ClaudeDedicatedEnrollment
+        administrator={principal.role === 'admin' && principal.scope !== 'tunnel-bot'}
+        principalID={principal.id}
+        directory={currentDirectory}
+        onSelected={async () => {
+          const result = await requestPostAuthConfigReload();
+          if (!result.ok) throw new Error('reload');
+          await loadProviders({ directory: null });
+          await refreshClaudeCliStatus();
+        }}
+      />
+    </>;
   };
 
   const renderClaudeCompatibilityMode = () => (
@@ -1570,31 +1461,13 @@ export const ProvidersPage: React.FC = () => {
 
           <section className="px-2 pb-2 pt-0">
             {!showAuthPanel ? (
-              <div className="flex items-center gap-1.5 py-1.5">
-                {selectedConnectionState === 'disconnect_pending' ? (
-                  <RiLoader4Line className="h-4 w-4 shrink-0 animate-spin text-[var(--status-warning)]" aria-hidden="true" />
-                ) : selectedConnectionState === 'not_connected' || (selectedProviderIsCursor && !cursorSdkConfigured) ? null : (
-                  <RiCheckLine className="w-4 h-4 text-[var(--status-success)] shrink-0" />
-                )}
-                <span className="typography-ui-label text-foreground">
-                  {selectedConnectionState === 'disconnect_pending'
-                    ? t('settings.providers.page.state.disconnectPending')
-                    : selectedConnectionState === 'not_connected'
-                      ? t('settings.providers.page.auth.notConnected')
-                      : selectedProviderIsCursor && !cursorSdkConfigured
-                    ? t('settings.providers.page.auth.cursorSetupRequired')
-                    : t('settings.providers.page.auth.connected')}
-                </span>
-                <span className="typography-meta text-muted-foreground ml-1">
-                  {selectedConnectionState === 'disconnect_pending'
-                    ? t('settings.providers.page.state.disconnectPendingHint')
-                    : selectedConnectionState === 'not_connected'
-                      ? t('settings.providers.page.auth.connectToUse')
-                      : selectedProviderIsCursor && !cursorSdkConfigured
-                    ? t('settings.providers.page.auth.cursorSetupRequiredHint')
-                    : t('settings.providers.page.auth.useReconnectHint')}
-                </span>
-              </div>
+              <ProviderAuthenticationSummary
+                providerId={selectedProvider.id}
+                connectionState={selectedConnectionState}
+                cursorConfigured={cursorSdkConfigured}
+                claudeStatus={claudeCliStatus}
+                claudeLoading={claudeCliStatusLoading}
+              />
             ) : authLoading ? (
               <div className="py-1.5 typography-meta text-muted-foreground">{t('settings.providers.page.auth.loadingMethods')}</div>
             ) : (
@@ -1937,3 +1810,8 @@ export const ProvidersPage: React.FC = () => {
     </ScrollableOverlay>
   );
 };
+
+export const ProvidersPage: React.FC = () => <div className="flex h-full min-h-0 flex-col">
+  <BundledRuntimeUpdate />
+  <div className="min-h-0 flex-1"><ProvidersPageContent /></div>
+</div>;

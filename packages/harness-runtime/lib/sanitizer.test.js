@@ -1,8 +1,33 @@
 import { describe, expect, test } from 'bun:test';
 
 import { createDiagnosticSanitizer } from './sanitizer.js';
+import { parseNativeJournalObservation } from '../../shared-runtime/lib/native-observation.js';
 
 describe('diagnostic sanitizer', () => {
+  test('preserves finite native request evidence through journal and export without admitting content or paths', () => {
+    const sanitizer = createDiagnosticSanitizer({ worktreeRoots: ['/fixture/project'], knownSecrets: ['fixture-secret-model'] });
+    const payload = { schema: 1, stage: 'model-prepared', controllerInstanceID: 'instance-1', configurationDigest: 'a'.repeat(64),
+      sessionID: 'ses_1', directory: '/fixture/project', requestID: 'request-1', kind: 'primary',
+      execution: { agent: 'orchestrator', providerID: 'openai', modelID: 'model-1', variant: 'medium' },
+      options: { reasoningEffort: 'medium', reasoning: { effort: 'medium', summary: 'auto' } },
+      hookOptions: { thinking: { type: 'enabled', budgetTokens: 4096 } }, modelLimits: { context: 100000, input: null, output: 4096 } };
+    const row = { type: 'lifecycle', event: 'native_observation', at: 1, sessionID: payload.sessionID, directory: payload.directory, payload };
+    const saved = sanitizer.sanitizeRecord(row);
+    expect(saved.directory).toMatch(/^<WORKTREE_[a-f0-9]{12}>$/);
+    expect(saved.payload).toEqual({ ...payload, directory: saved.directory });
+    expect(parseNativeJournalObservation(saved.payload)).toEqual(saved.payload);
+    expect(sanitizer.sanitizeExportValue(saved)).toEqual(saved);
+    expect(JSON.stringify(saved)).not.toContain('/fixture/project');
+    expect(() => sanitizer.sanitizeRecord({ ...row, payload: { ...payload, text: 'private prompt' } })).toThrow();
+    expect(() => sanitizer.sanitizeRecord({ ...row, directory: '/fixture/foreign' })).toThrow();
+    expect(() => sanitizer.sanitizeRecord({ ...row, payload: { ...payload, execution: { ...payload.execution, modelID: 'fixture-secret-model' } } })).toThrow();
+    const unrelated = sanitizer.sanitizeRecord({ type: 'lifecycle', event: 'unrelated', payload: { schema: 1, configurationDigest: 'a'.repeat(64), reasoning: { effort: 'medium', text: 'private thoughts' } } });
+    expect(unrelated.payload).toEqual({});
+    expect(sanitizer.sanitizeRecord({ type: 'lifecycle', event: 'native_observation_gap', payload: {
+      stage: 'controller', controllerInstanceID: 'instance-1', message: 'private error detail',
+    } }).payload).toEqual({ code: 'native_observation_unavailable', stage: 'controller', controllerInstanceID: 'instance-1' });
+  });
+
   test('limits process-exit fields to their dedicated event without widening other payloads', () => {
     const sanitizer = createDiagnosticSanitizer();
     const payload = { pid: 123, uptimeMs: 456, expected: true, stderrTail: 'panic' };

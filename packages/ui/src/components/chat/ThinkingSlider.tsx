@@ -24,7 +24,9 @@ export const ThinkingSlider = React.memo(function ThinkingSlider({ levels, value
     const index = preview?.index ?? selectedIndex;
     const position = preview?.position ?? selectedIndex;
     const interactive = !disabled && levels.length > 1;
-    const label = levels.length ? formatEffortLabel(levels[index], { providerId }) : 'Fast Mode';
+    const unconfirmed = typeof value === 'string' && value.length > 0 && !levels.includes(value);
+    const label = !preview && unconfirmed ? `${formatEffortLabel(value, { providerId })} (unconfirmed)`
+        : levels.length ? formatEffortLabel(levels[index], { providerId }) : 'Fast Mode';
     const reduceMotion = useReducedMotion();
     const target = useMotionValue(position);
     const spring = useSpring(target, { stiffness: 1000, damping: 46, mass: 0.45 });

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { EventEmitter } from 'events';
+import fs from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import path from 'path';
 import { pathToFileURL } from 'url';
 
@@ -321,5 +324,23 @@ describe('CLI PID lifecycle validation', () => {
       '/usr/local/bin/openchamber tunnel status',
       { launchMode: 'foreground' },
     )).toBe(false);
+  });
+});
+
+
+describe('bundled runtime help', () => {
+  it('describes the bundled runtime without unsupported external runtime controls', async () => {
+    const root = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../../.cache/v2-validation/cli-help-'));
+    try {
+      const { stdout } = await promisify(execFile)(process.execPath, [path.join(import.meta.dirname, 'cli.js'), 'serve', '--help'], {
+        cwd: root, env: { PATH: process.env.PATH, HOME: root, XDG_CONFIG_HOME: path.join(root, 'config'),
+          XDG_DATA_HOME: path.join(root, 'data'), OPENCHAMBER_DATA_DIR: path.join(root, 'web-data'), NO_COLOR: '1' },
+        timeout: 15000, maxBuffer: 256 * 1024,
+      });
+      expect(stdout).toContain('bundled native OpenCode 2.0.20');
+      expect(stdout).toContain('Update DevRyan');
+      for (const flag of ['--foreground', '--host', '--port']) expect(stdout).toContain(flag);
+      expect(stdout).not.toMatch(/OPENCODE_HOST|OPENCODE_PORT|OPENCODE_SKIP_START|OPENCHAMBER_OPENCODE_HOSTNAME/);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 });

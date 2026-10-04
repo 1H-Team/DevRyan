@@ -3,7 +3,8 @@
 // Releases ship Apple silicon only; Intel builds were dropped in 1.2.10.
 const appArchs = ['arm64'];
 
-export function requiredReleaseAssetNames(version) {
+export function requiredReleaseAssetNames(version, scope = 'full') {
+  if (!['full', 'desktop-macos-arm64'].includes(scope)) throw new Error('Unknown release distribution scope');
   const appAssets = appArchs.flatMap((arch) => [
     `DevRyan-${version}-${arch}.dmg`,
     `DevRyan-${version}-${arch}.dmg.blockmap`,
@@ -14,14 +15,14 @@ export function requiredReleaseAssetNames(version) {
   return [
     ...appAssets,
     'latest-mac.yml',
-    `DevRyan-web-${version}.tgz`,
+    ...(scope === 'full' ? [`DevRyan-web-${version}.tgz`] : []),
     `DevRyan-bot-runtime-images-${version}.json`,
   ];
 }
 
-export function missingRequiredReleaseAssets(assetNames, version) {
+export function missingRequiredReleaseAssets(assetNames, version, scope = 'full') {
   const available = new Set(assetNames);
-  return requiredReleaseAssetNames(version).filter((name) => !available.has(name));
+  return requiredReleaseAssetNames(version, scope).filter((name) => !available.has(name));
 }
 
 export function legacyBrandedReleaseAssetNames(assetNames) {
@@ -103,7 +104,7 @@ async function main() {
   if (extensions.length > 0) {
     throw new Error(`Release ${tag} contains unsupported extension assets:\n${extensions.join('\n')}`);
   }
-  const missing = missingRequiredReleaseAssets(assetNames, version);
+  const missing = missingRequiredReleaseAssets(assetNames, version, process.env.RELEASE_SCOPE || 'full');
 
   if (missing.length > 0) {
     throw new Error(`Release ${tag} is missing required assets:\n${missing.map((name) => `- ${name}`).join('\n')}`);

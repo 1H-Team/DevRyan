@@ -30,7 +30,10 @@ local-dev*
 .opencode/plans/*
 .hive
 .cache/
-packages/web/runtime/
+packages/web/runtime/*
+!packages/web/runtime/reviewed-inputs/
+!packages/web/runtime/reviewed-inputs/**
+packages/web/runtime/reviewed-inputs/claude-1.8.0/assets/DevRyan-Claude-darwin-arm64
 /.tmp/
 docs/personal/*
 packages/electron/resources/bot-runtime/images.release.json

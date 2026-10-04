@@ -54,15 +54,29 @@ export function createOpenAiOAuthCoordinator({
   now = Date.now,
   recordDiagnostic = () => {},
   stateFile = null,
+  asyncStorage = /** @type {import('./runtime-host/native-openai-auth.js').NativeOpenAiAsyncStorage | null} */ (null),
+  withMutationQueue = /** @type {import('./runtime-host/native-openai-auth.js').NativeOpenAiMutationQueue | null} */ (null),
 } = {}) {
   let state = { fingerprint: null, generation: null, blocked: false };
   let persistenceFailure = false;
   let unreadableState = false;
+  const blockedRefreshFingerprints = new Set();
+  let blockedRefreshOverflow = false;
   if (stateFile) {
     try {
       const saved = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
       if (!/^[a-f0-9]{64}$/.test(saved.fingerprint) || !/^[a-f0-9-]{36}$/.test(saved.generation)
         || typeof saved.blocked !== 'boolean') throw new Error('invalid OAuth state');
+      if (saved.blockedRefreshFingerprints !== undefined) {
+        if (!Array.isArray(saved.blockedRefreshFingerprints) || saved.blockedRefreshFingerprints.length > 128
+          || saved.blockedRefreshFingerprints.some(key => typeof key !== 'string' || !/^[a-f0-9]{64}$/.test(key))) throw new Error('invalid OAuth state');
+        for (const key of saved.blockedRefreshFingerprints) blockedRefreshFingerprints.add(key);
+      }
+      if (saved.refreshFingerprint !== undefined) {
+        if (typeof saved.refreshFingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(saved.refreshFingerprint)) throw new Error('invalid OAuth state');
+        if (saved.refreshing === true) blockedRefreshFingerprints.add(saved.refreshFingerprint);
+      }
+      if (saved.blockedRefreshOverflow === true) unreadableState = true;
       // A crash during rotation may have consumed the token without saving it.
       state = { fingerprint: saved.fingerprint, generation: saved.generation,
         blocked: saved.blocked || saved.refreshing === true, refreshing: false };
@@ -74,6 +88,7 @@ export function createOpenAiOAuthCoordinator({
   let inFlight = null;
   let mutationQueue = Promise.resolve();
   const withAuthMutation = (work) => {
+    if (withMutationQueue) return withMutationQueue(work);
     const pending = mutationQueue.then(work);
     mutationQueue = pending.catch(() => {});
     return pending;
@@ -83,23 +98,60 @@ export function createOpenAiOAuthCoordinator({
     const temporary = `${stateFile}.${crypto.randomUUID()}.tmp`;
     try {
       fs.mkdirSync(path.dirname(stateFile), { recursive: true, mode: 0o700 });
-      fs.writeFileSync(temporary, JSON.stringify(state), { mode: 0o600, flag: 'wx' });
+      fs.writeFileSync(temporary, JSON.stringify({ ...state,
+        ...(blockedRefreshFingerprints.size ? { blockedRefreshFingerprints: [...blockedRefreshFingerprints] } : {}),
+        ...(blockedRefreshOverflow ? { blockedRefreshOverflow: true } : {}),
+      }), { mode: 0o600, flag: 'wx' });
       fs.renameSync(temporary, stateFile);
     } catch {
       persistenceFailure = true;
       throw new OpenAiOAuthError('bot_oauth_persistence_failed');
     } finally { try { fs.rmSync(temporary, { force: true }); } catch { /* preserve original failure */ } }
   };
-  const read = () => {
-    if (unreadableState) throw new OpenAiOAuthError('bot_oauth_persistence_failed');
-    const auth = readAuth();
-    const key = fingerprint(auth);
+  // A native-agent instance never falls back to the legacy auth file when its
+  // controller stops. Legacy/bot instances retain their default storage.
+  const activeStorage = () => asyncStorage;
+  const tokenFingerprint = auth => typeof auth?.refresh === 'string' && auth.refresh ? fingerprint(auth.refresh) : null;
+  const blockRefresh = auth => {
+    const key = tokenFingerprint(auth);
+    if (!key) return;
+    if (!blockedRefreshFingerprints.has(key) && blockedRefreshFingerprints.size >= 128) {
+      blockedRefreshOverflow = true; unreadableState = true;
+    } else blockedRefreshFingerprints.add(key);
+    if (fingerprint(auth) === state.fingerprint) state.blocked = true;
+    persist();
+  };
+  const acceptRead = (auth, native = false) => {
+    const key = fingerprint(auth), refreshKey = tokenFingerprint(auth);
+    // Older crash state had only the whole-record fingerprint. Conservatively
+    // retain its ambiguity on first native adoption; a proved new token clears
+    // the current block, while its old token hash remains unusable across aliases.
+    if (native && state.blocked && !blockedRefreshFingerprints.size && refreshKey) blockRefresh(auth);
+    const blocked = native && refreshKey && blockedRefreshFingerprints.has(refreshKey);
     if (key !== state.fingerprint) {
-      state = { fingerprint: key, generation: crypto.randomUUID(), blocked: false };
+      state = { fingerprint: key, generation: crypto.randomUUID(), blocked: Boolean(blocked) };
       persistenceFailure = false;
       persist();
-    }
+    } else if (blocked && !state.blocked) { state.blocked = true; persist(); }
     return auth;
+  };
+  const read = () => {
+    if (unreadableState) throw new OpenAiOAuthError('bot_oauth_persistence_failed');
+    if (asyncStorage) throw new OpenAiOAuthError('bot_oauth_coordinator_unavailable');
+    const auth = readAuth();
+    if (auth && typeof auth.then === 'function') throw new OpenAiOAuthError('bot_oauth_coordinator_unavailable');
+    return acceptRead(auth);
+  };
+  const readAsync = async storage => {
+    if (unreadableState) throw new OpenAiOAuthError('bot_oauth_persistence_failed');
+    if (storage?.isActive && !storage.isActive()) throw new OpenAiOAuthError('bot_oauth_coordinator_unavailable');
+    const auth = storage ? await storage.readAuth() : readAuth();
+    if (auth && typeof auth.then === 'function' || storage !== activeStorage()
+      || (storage?.isActive && !storage.isActive())) throw new OpenAiOAuthError('bot_oauth_coordinator_unavailable');
+    return acceptRead(auth, Boolean(storage));
+  };
+  const current = storage => {
+    if (!ready || storage !== activeStorage() || (storage?.isActive && !storage.isActive())) throw new OpenAiOAuthError('bot_oauth_coordinator_unavailable');
   };
   const diagnostic = (stage, outcome, statusCode = null, credentialId = null, reason = null) => {
     try {
@@ -117,15 +169,16 @@ export function createOpenAiOAuthCoordinator({
     }
     return accountId;
   };
-  const refresh = async (auth, credentialId) => {
+  const refresh = async (auth, credentialId, storage) => {
     const original = state.fingerprint;
-    read();
+    await readAsync(storage);
     if (fingerprint(auth) !== state.fingerprint) return;
-    if (!ready) throw new OpenAiOAuthError('bot_oauth_coordinator_unavailable');
+    current(storage);
     diagnostic('refresh', 'started', null, credentialId);
     let response;
     try {
       state.refreshing = true;
+      if (storage) state.refreshFingerprint = tokenFingerprint(auth);
       persist();
       response = await fetchImpl('https://auth.openai.com/oauth/token', {
         method: 'POST', redirect: 'error', signal: AbortSignal.timeout(15_000),
@@ -133,13 +186,18 @@ export function createOpenAiOAuthCoordinator({
         body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: auth.refresh, client_id: CLIENT_ID }),
       });
       // A login/disconnect that won while refresh was in flight is authoritative.
-      read();
-      if (state.fingerprint !== original) { await response.body?.cancel(); return; }
+      await readAsync(storage);
+      if (state.fingerprint !== original) {
+        if (storage && response.ok) blockRefresh(auth);
+        await response.body?.cancel(); return;
+      }
+      current(storage);
       if (!response.ok) {
         await response.body?.cancel();
         state.refreshing = false;
         if ([400, 401, 403].includes(response.status)) {
           state.blocked = true;
+          if (storage) blockRefresh(auth);
           persist();
           diagnostic('refresh', 'reauth_required', response.status, credentialId);
           throw new OpenAiOAuthError(OPENAI_OAUTH_AUTHENTICATION, 401);
@@ -169,28 +227,33 @@ export function createOpenAiOAuthCoordinator({
       }
       const next = { ...auth, access: tokens.access_token, refresh: tokens.refresh_token,
         expires };
-      read();
-      if (state.fingerprint !== original) return;
+      await readAsync(storage);
+      if (state.fingerprint !== original) { if (storage) blockRefresh(auth); return; }
+      current(storage);
       const refreshedAccount = openAiAccountId({ access: tokens.access_token });
       if (refreshedAccount && refreshedAccount !== openAiAccountId(auth)) {
         state.blocked = true;
+        if (storage) blockRefresh(auth);
         persist();
         throw new OpenAiOAuthError(OPENAI_OAUTH_AUTHENTICATION, 401);
       }
       let committed;
-      try { committed = compareAndSwap(auth, next); } catch {
+      try { committed = await (storage ? storage.compareAndSwap(auth, next) : compareAndSwap(auth, next)); } catch {
         persistenceFailure = true;
         state.blocked = true;
+        if (storage) blockRefresh(auth);
         persist();
         throw new OpenAiOAuthError('bot_oauth_persistence_failed');
       }
-      read();
+      await readAsync(storage);
+      current(storage);
       if (state.fingerprint === original) {
         persistenceFailure = true;
         throw new OpenAiOAuthError('bot_oauth_persistence_failed');
       }
       diagnostic('persist', committed ? 'completed' : 'superseded', null, credentialId);
     } catch (error) {
+      if (storage && (!response || response.ok)) blockRefresh(auth);
       if (state.fingerprint === original && state.refreshing) {
         // An interrupted/malformed successful exchange may have consumed the
         // refresh token. Do not repeatedly send that generation after ambiguity.
@@ -210,7 +273,7 @@ export function createOpenAiOAuthCoordinator({
     withAuthMutation,
     markReady() { ready = true; },
     markStopped() { ready = false; },
-    usesOAuth() { return readAuth()?.type === 'oauth'; },
+    usesOAuth() { return asyncStorage ? false : readAuth()?.type === 'oauth'; },
     getBinding() {
       if (!ready) throw new OpenAiOAuthError('bot_oauth_coordinator_unavailable');
       const auth = read();
@@ -224,18 +287,33 @@ export function createOpenAiOAuthCoordinator({
         return auth.access && auth.expires > now() + 60_000 ? 'ready' : 'unknown';
       } catch (error) { return error?.code === OPENAI_OAUTH_AUTHENTICATION ? 'reauth_required' : 'unavailable'; }
     },
+    async usesOAuthAsync() { return (await readAsync(activeStorage()))?.type === 'oauth'; },
+    async getBindingAsync() {
+      if (!ready) throw new OpenAiOAuthError('bot_oauth_coordinator_unavailable');
+      const storage = activeStorage(), auth = await readAsync(storage); current(storage);
+      return { type: 'host_oauth', connectionId: 'host:openai', accountId: requireAccount(auth) };
+    },
+    async getAuthStateAsync(expectedAccountId = null) {
+      try {
+        if (!ready) return 'unavailable';
+        const storage = activeStorage(), auth = await readAsync(storage); current(storage);
+        requireAccount(auth, expectedAccountId);
+        return auth.access && auth.expires > now() + 60_000 ? 'ready' : 'unknown';
+      } catch (error) { return error?.code === OPENAI_OAUTH_AUTHENTICATION ? 'reauth_required' : 'unavailable'; }
+    },
     async access({ expectedAccountId = null, credentialId = null } = {}) {
       const safeCredentialId = typeof credentialId === 'string' && /^[a-f0-9-]{36}$/i.test(credentialId) ? credentialId : null;
-      if (!ready) throw new OpenAiOAuthError('bot_oauth_coordinator_unavailable');
+      const storage = activeStorage();
+      current(storage);
       for (let attempt = 0; attempt < 2; attempt++) {
-        if (!ready) throw new OpenAiOAuthError('bot_oauth_coordinator_unavailable');
-        const auth = read();
+        current(storage);
+        const auth = await readAsync(storage); current(storage);
         const accountId = requireAccount(auth, expectedAccountId);
         if (auth.access && Number.isFinite(auth.expires) && auth.expires > now() + 60_000) {
           return { accessToken: auth.access, expiresAt: auth.expires, accountId, generation: state.generation };
         }
         if (typeof auth.refresh !== 'string' || !auth.refresh) throw new OpenAiOAuthError(OPENAI_OAUTH_AUTHENTICATION, 401);
-        if (!inFlight) inFlight = withAuthMutation(() => refresh(auth, safeCredentialId)).finally(() => { inFlight = null; });
+        if (!inFlight) inFlight = withAuthMutation(() => refresh(auth, safeCredentialId, storage)).finally(() => { inFlight = null; });
         await inFlight;
       }
       throw new OpenAiOAuthError('bot_oauth_refresh_unavailable');

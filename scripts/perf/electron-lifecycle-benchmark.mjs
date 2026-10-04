@@ -159,10 +159,10 @@ export async function prepareMemorySessions(fixture) {
   const sessions = [];
   for (let index = 0; index < SESSION_MEMORY_FIXTURE.sessions; index += 1) {
     const title = `Memory fixture ${index + 1}`;
-    const response = await fetch(`${fixture.origin}/session`, { method: 'POST',
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }), signal: AbortSignal.timeout(5000) });
+    const response = await fetch(`${fixture.origin}/api/session`, { method: 'POST',
+      headers: { ...fixture.authHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ title, location: { directory: fixture.directory } }), signal: AbortSignal.timeout(5000) });
     assert.equal(response.status, 200, 'Fixture must support independent owned sessions');
-    const session = await response.json();
+    const session = (await response.json()).data;
     assert.match(session.id, /^ses_[a-zA-Z0-9]+$/);
     assert.equal(session.parentID, undefined);
     const history = fixture.seedHistory(session.id, SESSION_MEMORY_FIXTURE);

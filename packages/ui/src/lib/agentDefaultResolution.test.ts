@@ -85,7 +85,7 @@ describe('agent default resolution', () => {
     });
   });
 
-  test('falls back from a known unavailable personal model to the host default', () => {
+  test('preserves a known unavailable personal model and effort', () => {
     expect(resolveAgentDefaultSelection({
       agentName: 'Orchestrator',
       agents: [orchestrator],
@@ -95,10 +95,10 @@ describe('agent default resolution', () => {
       },
     })).toEqual({
       agentName: 'Orchestrator',
-      providerId: 'openai',
-      modelId: 'gpt-5.6-sol',
-      variant: 'medium',
-      source: 'inherited',
+      providerId: 'anthropic',
+      modelId: 'retired-model',
+      variant: 'high',
+      source: 'personal',
     });
   });
 
@@ -119,7 +119,7 @@ describe('agent default resolution', () => {
     });
   });
 
-  test('normalizes thinking when an explicitly unavailable host model uses the catalog fallback', () => {
+  test('preserves an unavailable host model without substituting a catalog fallback', () => {
     const unavailableHost = {
       ...orchestrator,
       model: { providerID: 'openai', modelID: 'retired-model' },
@@ -139,9 +139,9 @@ describe('agent default resolution', () => {
     })).toEqual({
       agentName: 'Orchestrator',
       providerId: 'openai',
-      modelId: 'gpt-5.6-sol',
-      variant: null,
-      source: 'availability-fallback',
+      modelId: 'retired-model',
+      variant: 'medium',
+      source: 'inherited',
     });
   });
 

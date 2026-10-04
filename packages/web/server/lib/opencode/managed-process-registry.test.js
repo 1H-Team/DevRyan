@@ -28,6 +28,18 @@ const createRegistryPath = () => {
 };
 
 describe('managed OpenCode process registry', () => {
+  it('retains an orphan until command identity and termination are established', async () => {
+    const registryPath = createRegistryPath();
+    registerManagedOpenCodeProcess({ childPid: 200, ownerPid: 100, port: 45678, binary: 'opencode' }, { registryPath });
+    const options = { registryPath, isProcessRunning: pid => pid === 200,
+      readProcessCommand: () => null, terminateManagedOpenCodePid: vi.fn(async () => false) };
+    expect((await reapOrphanedManagedOpenCodeProcesses(options)).skipped).toEqual([expect.objectContaining({ reason: 'command-unavailable' })]);
+    expect(options.terminateManagedOpenCodePid).not.toHaveBeenCalled();
+    options.readProcessCommand = () => 'opencode serve --port 45678';
+    expect((await reapOrphanedManagedOpenCodeProcesses(options)).reaped).toEqual([expect.objectContaining({ terminated: false })]);
+    expect(readManagedOpenCodeRegistry({ registryPath })).toEqual([expect.objectContaining({ childPid: 200 })]);
+  });
+
   it('registers and unregisters a managed child process record', () => {
     const registryPath = createRegistryPath();
 
@@ -240,6 +252,13 @@ describe('managed OpenCode process registry', () => {
       'opencode serve --hostname 127.0.0.1 --port 4096',
       { binary: 'opencode', port: 45678 },
     )).toBe(false);
+    const native = { binary: '/owned/DevRyan-native-controller', nativeInstanceID: 'a'.repeat(32) };
+    const provider = { binary: '/owned/DevRyan-native-controller', providerInstanceID: 'b'.repeat(32) };
+    expect(isManagedOpenCodeProcessCommand(`${provider.binary} --provider-worker --native-instance ${provider.providerInstanceID}`, provider)).toBe(true);
+    expect(isManagedOpenCodeProcessCommand(`${provider.binary} serve --native-instance ${provider.providerInstanceID}`, provider)).toBe(false);
+    expect(isManagedOpenCodeProcessCommand(`${provider.binary} --provider-worker --native-instance ${provider.providerInstanceID}c`, provider)).toBe(false);
+    expect(isManagedOpenCodeProcessCommand(`${native.binary} serve --native-instance ${native.nativeInstanceID}`, native)).toBe(true);
+    expect(isManagedOpenCodeProcessCommand(`${native.binary} serve --native-instance ${native.nativeInstanceID}b`, native)).toBe(false);
   });
 
   it('persists the working directory (registry v2) and reads v1 files without one', () => {

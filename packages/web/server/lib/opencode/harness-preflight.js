@@ -13,6 +13,7 @@ import {
 } from './runtime-surface-policy.js';
 import { buildHarnessContextBudget } from './harness-context-budget.js';
 import { createHarnessToolManifestReader } from './harness-tool-manifest.js';
+import { resolveGen2OpenCodeClient } from './opencode-client-seam.js';
 
 const KNOWN_PERMISSION_KEYS = new Set([
   '*',
@@ -184,18 +185,20 @@ function resolveSafeMeridianOrigin(value) {
   }
 }
 
+async function readProviderConfigPayload({ context, signal, client }) {
+  const directory = normalizePath(context.directory);
+  return client.catalog.providers({ directory: directory || undefined }, { signal });
+}
+
 async function readMeridianTooling({
   context,
   dependencies,
   headers,
   signal,
+  client = null,
 }) {
-  const configUrl = new URL(dependencies.buildOpenCodeUrl('/config/providers'));
-  const directory = normalizePath(context.directory);
-  if (directory) configUrl.searchParams.set('directory', directory);
-  const configResponse = await dependencies.fetchImpl(configUrl, { headers, signal });
-  if (!configResponse.ok) return null;
-  const configPayload = await configResponse.json();
+  const configPayload = await readProviderConfigPayload({ context, dependencies, headers, signal, client });
+  if (configPayload === null) return null;
   const anthropic = asArray(configPayload?.providers)
     .find((provider) => provider?.id === 'anthropic');
   const origin = resolveSafeMeridianOrigin(
@@ -235,54 +238,46 @@ async function readMeridianTooling({
   };
 }
 
-function createHarnessAnthropicUsageReader(dependencies = {}) {
-  if (
-    typeof dependencies.fetchImpl !== 'function'
-    || typeof dependencies.buildOpenCodeUrl !== 'function'
-  ) {
+/**
+ * Gen 2 (DESIGN.md E item 13d): the session's latest 500 v1 message records
+ * through openCodeClient, plus the same Meridian tooling read. `fetchImpl`
+ * still reaches the loopback Meridian proxy, never OpenCode.
+ */
+async function readAnthropicUsageThroughClient({ client, context, dependencies, sessionID }) {
+  const directory = normalizePath(context.directory);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5_000);
+  timeout.unref?.();
+  try {
+    const [usage, tooling] = await Promise.all([
+      client.sessions.messages(sessionID, { limit: 500 }, { directory: directory || undefined, signal: controller.signal })
+        .then((page) => extractAnthropicUsageFromMessages(page?.records))
+        .catch(() => null),
+      readMeridianTooling({
+        context,
+        dependencies,
+        headers: {},
+        signal: controller.signal,
+        client,
+      }).catch(() => null),
+    ]);
+    if (!usage && !tooling) return null;
+    return { ...(usage || {}), tooling };
+  } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
+}
+
+function createHarnessAnthropicUsageReader(dependencies = {}) {
+  if (typeof dependencies.fetchImpl !== 'function' || !dependencies.openCodeClient) return null;
   return async function readAnthropicUsage(context = {}) {
     const sessionID = normalizePath(context.sessionID);
     if (!sessionID) return null;
-    let headers = {};
-    try {
-      headers = typeof dependencies.getOpenCodeAuthHeaders === 'function'
-        ? await dependencies.getOpenCodeAuthHeaders()
-        : {};
-    } catch {
-      return null;
-    }
-    const url = new URL(dependencies.buildOpenCodeUrl(
-      `/session/${encodeURIComponent(sessionID)}/message`,
-    ));
-    const directory = normalizePath(context.directory);
-    if (directory) url.searchParams.set('directory', directory);
-    url.searchParams.set('limit', '500');
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5_000);
-    timeout.unref?.();
-    try {
-      const [usage, tooling] = await Promise.all([
-        dependencies.fetchImpl(url, { headers, signal: controller.signal })
-          .then(async (response) => (
-            response.ok ? extractAnthropicUsageFromMessages(await response.json()) : null
-          ))
-          .catch(() => null),
-        readMeridianTooling({
-          context,
-          dependencies,
-          headers,
-          signal: controller.signal,
-        }).catch(() => null),
-      ]);
-      if (!usage && !tooling) return null;
-      return { ...(usage || {}), tooling };
-    } catch {
-      return null;
-    } finally {
-      clearTimeout(timeout);
-    }
+    let client;
+    try { client = resolveGen2OpenCodeClient(dependencies.openCodeClient); } catch { return null; }
+    return readAnthropicUsageThroughClient({ client, context, dependencies, sessionID });
   };
 }
 
@@ -1024,10 +1019,7 @@ function createHarnessPreflight(dependencies = {}) {
   const read = (name, context) => (
     typeof dependencies[name] === 'function' ? dependencies[name](context) : []
   );
-  const runtimeToolManifestReader = (
-    typeof dependencies.fetchImpl === 'function'
-    && typeof dependencies.buildOpenCodeUrl === 'function'
-  )
+  const runtimeToolManifestReader = dependencies.openCodeClient
     ? createHarnessToolManifestReader(dependencies)
     : null;
   const anthropicUsageReader = createHarnessAnthropicUsageReader(dependencies);

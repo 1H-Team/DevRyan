@@ -8,3 +8,4 @@ export * from './lib/free-zen-generation.js';
 export * from './lib/free-zen-cooldowns.js';
 export * from './lib/usage-observation.js';
 export * from './lib/cache-efficiency-policy.js';
+export * from './lib/model-selection-availability.js';

@@ -34,6 +34,24 @@ afterEach(async () => {
 });
 
 describe('web harness prompt admission', () => {
+  it('passes only canonical idle events to the native TODO observer after existing liveness observation', async () => {
+    const directory = await mkdtemp(path.resolve(import.meta.dirname, '../../../../../.cache/v2-validation/idle-observer-'));
+    temporaryDirectories.push(directory);
+    const runtime = createWebHarnessRuntime({ dataDirectory: directory, runtime: 'test' });
+    const events = [];
+    runtime.setPrimaryRecoveryRuntime({ observe: () => events.push('primary') });
+    runtime.setNativeSessionIdleObserver(input => { events.push(input); });
+    const idle = { type: 'session.status', properties: { sessionID: 'ses_owned', status: { type: 'idle' } } };
+    runtime.recordOpenCodeEvent(idle, directory);
+    await Promise.resolve();
+    expect(events).toEqual(['primary', { sessionID: 'ses_owned', directory }]);
+    runtime.recordOpenCodeEvent(idle);
+    runtime.recordOpenCodeEvent({ ...idle, properties: { ...idle.properties, status: { type: 'busy' } } }, directory);
+    runtime.recordOpenCodeEvent({ type: 'message.updated', properties: { sessionID: 'ses_owned' } }, directory);
+    await Promise.resolve();
+    expect(events.slice(2)).toEqual(['primary', 'primary', 'primary']);
+    await runtime.drain();
+  });
   it('returns retryable 503 before initialization and records only accepted prompts', async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-web-harness-'));
     temporaryDirectories.push(directory);

@@ -7,6 +7,15 @@ preparation. Final Electron packaging waits for all three verified inputs.
 Intel (x64) macOS builds were dropped in 1.2.10 to shorten the release; the
 local `--x64` packaging paths remain but are not released.
 
+Version 2.0.0 ships the macOS Apple silicon desktop app only. Tag-triggered
+releases default to `desktop-macos-arm64`; manual runs expose the same scope
+choice. This scope skips web/npm publication and its tarball requirement while
+retaining every desktop, updater, signed Bot image, packaging and hosted
+migration gate. A manual `full` release retains the universal web platform
+requirements and refuses publication while those native artifacts are missing.
+Discord announcements require the explicit manual `announce` input; releases
+do not dispatch updates to an upstream website.
+
 Release install steps set `DEVRYAN_SKIP_INSTALL_PREPARE=1`. Without it, Bun runs
 the Electron workspace `prepare` script (a full web build plus native helpers)
 during every install, duplicating the shared web artifact and the explicit
@@ -49,11 +58,12 @@ every workspace's build script. Full validation remains separate from compilatio
    manifest, then runs all existing packaged artifact gates.
 5. Merge update metadata and finalize the release only after every gate succeeds.
 
-macOS preparation restores the content-addressed companion build described in
-[Concurrent Revert](CONCURRENT_REVERT.md#build-and-rollout). Caches saved by a
-tag-triggered run are visible only to that tag, so `release-cache.yml` saves it
-from `main` whenever the companion changes. Keys in the two workflows must
-match. Do not cache the Bun package store: on 2026-09-23, restoring the ~800 MB
+macOS preparation builds and verifies the pinned native v2 runtime with Bun
+1.3.14. `release-cache.yml` now verifies those same inputs from `main`, without
+restoring an old companion. Fresh checkouts first restore the oversized Claude
+executable through `scripts/hydrate-reviewed-claude.mjs`, which checks the exact
+npm archive and executable digests before installation. Do not cache the Bun
+package store: on 2026-09-23, restoring the ~800 MB
 archive took longer than downloading packages (ARM 163s before, 62s restore +
 188s install after). Jobs have timeouts, so a stalled native fixture fails the
 release instead of holding it open.

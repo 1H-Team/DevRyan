@@ -3,6 +3,11 @@
 ## Purpose
 This module owns server-side notification classification, template preparation, and fanout for native shells, connected UI runtimes, and web push. Message preparation includes text truncation, plain-text normalization, and optional summarization.
 
+The trigger owner's terminal `holdForCheckpoint()` stops new timers and event
+work, clears scheduled callbacks, and joins admitted summarization and final push
+promises. Failed asynchronous tails remain an explicit unsettled refusal; closing
+an HTTP response or event stream does not establish completion.
+
 ## Entrypoints and structure
 - `packages/web/server/lib/notifications/index.js`: public entrypoint imported by `packages/web/server/index.js`.
 - `packages/web/server/lib/notifications/routes.js`: route registration for push, visibility, and session status/attention endpoints.

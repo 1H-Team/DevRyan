@@ -1,5 +1,6 @@
 import fs from 'fs';
 import os from 'os';
+import { selectedRuntimeBundle } from './runtime-host/runtime-bundle-binding.js';
 import path from 'path';
 import crypto from 'crypto';
 import { isDeepStrictEqual } from 'node:util';
@@ -33,7 +34,7 @@ function validateMcpName(name) {
  * List all MCP server configs from user-level opencode.json
  */
 const OFFICIAL_USER_CONFIG_FILE = path.join(OPENCODE_CONFIG_DIR, 'opencode.json');
-const OPENCODE_DATA_DIR = path.join(os.homedir(), '.local', 'share', 'opencode');
+const OPENCODE_DATA_DIR = selectedRuntimeBundle?.descriptor.launch.global.data ?? path.join(os.homedir(), '.local', 'share', 'opencode');
 const MCP_AUTH_FILE = path.join(OPENCODE_DATA_DIR, 'mcp-auth.json');
 const USER_CONFIG_PATHS = [
   CONFIG_FILE,

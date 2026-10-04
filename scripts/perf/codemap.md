@@ -1,5 +1,56 @@
 # scripts/perf/
 
+`managed-wake-attribution.mjs` accepts existing actual native client/managed
+fixture/control owners and a constructor-supplied authenticated SSE opener. Its
+six AB/BA/AB children compare projected event hints against bounded polling;
+it measures exact child Step.Ended to parent wait Tool.Success on one monotonic
+observer, verifies actual committed task and writer proof, and preserves the
+original separate Revert qualification. Optional operation counts and the
+existing owned process sampler must be available for the predeclared retention
+gate; early child completion or absent resource evidence is inconclusive. This
+small attribution cohort does not satisfy the full upgrade matrix operation
+quota. Its contract tests use synthetic records and make no runtime claim.
+
+`../opencode-v2-native/package-managed-interval-lane.mjs --artifact-root <verified-repo-artifact>`
+uses the existing package bootstrap for six fresh compiled arms in
+750/1500/1500/750/750/1500 ms order. Both arms forward original projected SSE;
+the real child final provider reply waits for the exact parent wait call, then
+holds for 4500 ms. Canonical GET counts, monotonic terminal-to-wait timing,
+durable task/writer receipts and the existing process sampler form the separate
+prospective diagnostic. Its declared read, latency and resource criteria never
+qualify production retention or replace the 21 calibration + 42 paired matrix.
+Missing writer/process identities are inconclusive. Missed-event, deadline and
+cancellation correctness at both intervals remain separate required evidence.
+Finite exited-process diagnostics do not discard otherwise valid sampled CPU or
+RSS. The exact receipt writer must still join a sampled PID/start identity;
+an unrelated helper exit does not satisfy or invalidate that required join.
+The fixture and managed arm notify the sampler once per handle/PID at the
+existing native writer `read`/`started` observation. These non-awaited hints
+request coalesced, serialized whole-tree samples with writer PIDs prioritized;
+the original periodic interval stays 250 ms. The sampler owns subscription
+disposal. A thrown start observer latches a fixed failure code without changing
+the writer result; the fixture check or managed arm's post-sampler check refuses
+the measurement. This extra observation work must use the same frozen source in both
+comparison arms; it is neither zero-overhead nor a runtime scheduling gain.
+Unavailable receipt joins retain finite stage/count diagnostics without
+changing the original sampling or availability requirements. The CLI enters
+an async main without top-level await because the package verifier imports
+this module; its late verifier import must not block module evaluation. The
+original CLI subprocess test uses an empty owned artifact directory and
+requires exit 1 with one failed 750 ms arm and no native/provider observations.
+The command must wait for the final functional baseline; it is not part of the
+ordinary package acceptance run or the seven benchmark workloads.
+
+`../opencode-v2-native/package-human-queue-lane.mjs` is a separate functional
+package acceptance lane. A real managed parent completes without waiting while
+its original child prompt/provider response is held. Loss of the original
+idle-proof ACK and a real child becoming busy across that proof's await must
+refuse human FIFO input without replacing the primary objective. The same ID
+is admitted once after actual child writer settlement; explicit manual steer
+uses a separate root and records the old child's actual disposition. Native
+unknown-isActive defects remain source-graph coverage, not a compiled claim.
+All fixture transport/call wrappers restore before ordinary owner cleanup.
+
 ## Responsibility
 
 Owns reproducible, benchmark-only Electron measurements and focused web-host
@@ -8,18 +59,45 @@ behavior.
 
 ## Design
 
+- `native-upgrade-benchmark.mjs` measures the explicit compiled v2 runtime in
+  three fresh runs of every declared scenario. Canonical operation quotas,
+  exact writer receipts, source identity and owned-process cleanup remain
+  mandatory. `../opencode-v2-native/performance-fixture.mjs` prepares v2 directly
+  from a private empty setup seed with the real SDK initializer; no old conversations, journals or v1 process launches.
+  Results need a reviewed v2 regression baseline for comparison. Archived v1
+  numbers remain historical evidence and cannot establish a current improvement.
+  Native primary enrollment, actual process sampling and separate compaction
+  qualification retain their existing contracts.
+
+- `runtime-upgrade-comparison.mjs` is an offline v2-to-v2 comparator; it starts no runtime. It requires matching semantic fixture/protocol,
+  environment and verified native execution/configuration fingerprints. The
+  explicit `native-process-tree` kind uses matched owned-process conditions;
+  the UI kind keeps visible Chromium conditions. Each active launch needs at
+  least 100 receipt-backed completions; idle needs zero work and actual observation
+  duration/samples/hash. Counts cannot be pooled. Arm IDs and artifact/source/configuration hashes are explicit. Same-artifact configuration studies are permitted; only frozen exact leaf deltas and declared per-side plugin hashes may differ. Producers verify raw evidence, while this
+  comparator verifies recorded bindings. Numeric deltas remain descriptive.
+  Its separate `freezeRuntimeUpgradePolicy` consumes 21 independent baseline
+  arms; `gradeRuntimeUpgradePolicy` checks the immutable prospective bands on
+  42 sequential AB/BA/AB arms. Missing mandatory metrics/receipt-to-process
+  sampling joins, changed freeze, noisy calibration or baseline drift are
+  inconclusive. Exact burst tool timestamps and throughput cost are mandatory;
+  optional SSE attribution remains descriptive. This observed headless scope
+  never qualifies a complete CPU census, confinement, providers or UI behavior.
+  Measured writer tokens join only exact supervisor identities present in actual
+  samples: native v2 binds its
+  started PID to the canonical handle scope and lease paths. Missing, conflicting
+  or unsampled writers remain unavailable; command text is discarded. Peak and
+  settled tree RSS use same-sample host plus descendant sums.
+  See the Stage E performance note for units, absolute idle budgets and hashes.
+
 - `harness-resource-benchmark.mjs` compares credential-free ledger/vector fixtures against an explicit checkout in alternating three-pair order. Independent retention/full-sort outcomes and non-increasing serialization/decode/offset work gate PRs; process CPU, wall time and forced-GC whole-worker heap are descriptive. Every trial records fixture/protocol/runtime/source identities. `harness-comparison.mjs` joins deterministic reports with optional live one-factor paired agent reports. Missing token, retry, CPU or memory evidence stays unavailable; no comparison command enables a runtime policy.
 
-- `loopback-opencode-fixture.mjs` serves one selected parent and three child
-  sessions with deterministic message/status/SSE fixtures on loopback. Its bounded
-  `replayRecoveryVisual` helper replaces fixture-owned canonical rows and publishes
-  validated task events for the recovery-card QA scenario.
-  `appendVisualPartDelta` emits actual text/reasoning delta events while updating
-  only fixture-owned history, allowing streaming Plan QA to assert before any
-  message/part completion and verify the same content after reload.
-  Seeded responses use numbered ASCII segments and retain their configured byte
-  size through the production fetched-text normalizer, so history workloads
-  measure the full payload instead of deduplicated repeated filler.
+- `fixture-session-seeds.mjs` contains stable synthetic session IDs only.
+  `loopback-opencode-fixtures.mjs` accepts generation 2 exclusively and loads
+  `loopback-opencode-v2-fixture.mjs`: schema-encoded native HTTP/SSE records,
+  bounded history, progressive deltas and explicit fixture-owned visual control
+  routes. Generation 1 is rejected before listening; old database rows used by
+  migration tests are data fixtures, never a selectable server.
 - `electron-resource-benchmark.mjs` launches a packaged DevRyan binary with
   isolated app and Chromium data, controls the renderer through CDP, samples
   Electron app metrics through `/api/debug/memory`, and captures Chromium
@@ -161,20 +239,42 @@ behavior.
   and control-call timings for `--iterations` rounds, optionally after a
   `--prewarm`, with RSS/CPU. `--fixture-files N` clones a deterministic
   synthetic repository (built once under `.cache/perf/ledger-fixtures`),
-  `--parallel K` adds a burst of concurrent calls, and `--restamp` times the
-  call after every tracked file is rewritten with identical bytes. Direct calls write synthetic `termination.json`
+  `--parallel K` adds a burst of concurrent calls (distinct sessions by
+  default; `--same-session` makes it one assistant step of the warm session,
+  as production bursts are, reported as `burstMode`), and `--restamp` times the
+  call after every tracked file is rewritten with identical bytes.
+  `--seed-calls N` (up to 200000) first replays N direct read/glob/grep/skill
+  receipts through the runtime's `admitDirect`/`finishDirect` (the host's
+  direct-receipt path) over five synthetic sessions, eight per step, and
+  reports seeding time, per-call cost at the end of the seed and the ledger's
+  state-tree entry count by kind (a read-only `ls-tree` of
+  `refs/devryan/state`; the runtime exposes no count). Seeding is one ledger
+  commit per call, so large seeds take hours; direct receipts write no file
+  records, so seed after `--prewarm` (the benchmark warns otherwise). The
+  seed's background ledger maintenance is awaited before the timed calls
+  (`seed.maintenanceDrainMs`). `--deferred-cleanup` starts lease cleanup
+  without awaiting it on the timed path, as `session-execution-host.js` does;
+  later timed calls overlap it and the remainder is drained after the last
+  timed call and before the control call (`drainMs`), so `controlMs` stays the
+  round-trip reference. Every iteration awaits `runtime.drain()` (ledger
+  repack/prune) before counting entries and removing the clone
+  (`maintenanceDrainMs`). Direct calls write synthetic `termination.json`
   evidence and run no provider. Its `--profile` mode launches `ledger-profile-worker.mjs` in a
   fresh process per cold/warm/metadata-only/changed-content case (three trials
   by default), recording prewarm separately, existing admission phases,
-  benchmark-only Git/copy observers, CPU/RSS and verified cleanup. Add
-  `--companion` for the same cases through the verified repository companion
-  and `qa/revert-model-fixture.mjs` loopback model. Trial timeouts retain partial
-  evidence. Nested phase totals overlap; host CPU/RSS do not include children,
-  and companion RSS is sampled. Native macOS lease sockets retain their normal
-  guarded `/private/tmp` location and must be verified removed; project,
-  config, data, logs and reports stay under the repository cache. See the
-  [preparation profile](../../docs/LEDGER_PREPARATION_PROFILE_2026-09-27.md)
-  for measurement boundaries and the first retained results.
+  benchmark-only Git/copy observers, CPU/RSS and verified cleanup; in ledger
+  mode `--parallel K [--same-session]` adds a measured burst after each case's
+  call with its own Git process, tree-write and ledger-commit counts
+  (`burst*` metrics). `--seed-calls`, `--deferred-cleanup` and `--restamp`
+  remain call-benchmark only, and `--fixture-files` now applies to profiling
+  too (profiles recorded before 2026-09-30 with `--fixture-files` measured the
+  repository clone; check the report's `repo`). Trial timeouts retain partial
+  evidence. Nested phase totals overlap; direct ledger receipts are synthetic
+  and do not claim runtime dispatch qualification. `--companion` is retired.
+  Native macOS lease sockets retain their guarded `/private/tmp` location;
+  project, config, data, logs and reports stay under the repository cache.
+  See the [preparation profile](../../docs/LEDGER_PREPARATION_PROFILE_2026-09-27.md)
+  for measurement boundaries and historical results.
 - `multi-session-report.mjs` turns a run into `report.md` (per-role peaks and
   growth slopes, child-process churn as memory-time, responsiveness
   percentiles, busy-session buckets, Docker, system competitors, timeline) and
@@ -283,3 +383,11 @@ The optional `thinkingModels` fixture catalog is used only by the thinking-slide
 QA scenario; ordinary performance and mobile fixture catalogs remain unchanged.
 
 - `ui-session-cookie.mjs` validates the full instance cookie pair for authenticated samplers. Use the actual listening-port cookie name, including behind proxies; credentials are never included in output.
+
+`native-upgrade-benchmark.mjs --arm-id control` collects an independent 21-launch
+calibration. `--comparison-arms <repo-json>` accepts exactly two explicit
+`{id, artifactRoot, eventReconcileIntervalMs?}` arms and schedules 42 fresh
+launches in AB/BA/AB order across all seven scenarios. The existing effective
+reconcile default is 750 ms; an experiment records its exact value in the
+configuration fingerprint. No comparator or collector changes that production
+default or derives acceptance bands from candidate measurements.

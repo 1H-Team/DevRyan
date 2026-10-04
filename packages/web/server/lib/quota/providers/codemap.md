@@ -20,3 +20,5 @@ Provider adapter registry for quota retrieval across OpenAI/Claude/Codex/Copilot
 - Consumed by `lib/quota` route layer.
 - Depends on `quota/providers/google/**`, shared `quota/utils/**` helpers, and cross-host provider adapters in `@openchamber/shared-runtime`.
 - External dependencies are provider APIs and local auth artifacts under opencode config/data directories.
+
+Claude proxy discovery reads the native-v2 application provider catalog for an explicit directory. Meridian quota/telemetry requests use that validated service origin independently of the OpenCode runtime protocol.

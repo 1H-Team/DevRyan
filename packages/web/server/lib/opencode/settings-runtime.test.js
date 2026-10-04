@@ -77,6 +77,44 @@ const createRuntime = (initialSettings, { projectIconStore } = {}) => {
 };
 
 describe('settings runtime', () => {
+  it('holds new operations while an admitted migrating read finishes all writes', async () => {
+    const { runtime, fsPromises } = createRuntime({});
+    const read = fsPromises.readFile.getMockImplementation();
+    const started = Promise.withResolvers(), release = Promise.withResolvers();
+    fsPromises.readFile.mockImplementationOnce(async (...args) => {
+      started.resolve(); await release.promise; return read(...args);
+    });
+    const reading = runtime.readSettingsFromDiskMigrated();
+    await started.promise;
+    const draining = runtime.holdForCheckpoint();
+    expect(runtime.holdForCheckpoint()).toBe(draining);
+    let drained = false; void draining.then(() => { drained = true; });
+    await expect(runtime.readSettingsFromDiskMigrated()).rejects.toMatchObject({ code: 'settings_checkpoint_held' });
+    await expect(runtime.persistSettings({ chatWidth: 500 })).rejects.toMatchObject({ code: 'settings_checkpoint_held' });
+    await expect(runtime.writeSettingsToDisk({})).rejects.toMatchObject({ code: 'settings_checkpoint_held' });
+    expect(drained).toBe(false);
+    release.resolve(); await reading; await draining;
+    expect(fsPromises.rename).toHaveBeenCalled();
+    expect(drained).toBe(true);
+  });
+
+  it('keeps checkpoint held when an admitted durable write fails', async () => {
+    const { runtime, fsPromises } = createRuntime({});
+    const started = Promise.withResolvers(), release = Promise.withResolvers();
+    fsPromises.rename.mockImplementationOnce(async () => {
+      started.resolve(); await release.promise;
+      throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+    });
+    const writing = runtime.persistSettings({ chatWidth: 500 });
+    await started.promise;
+    const draining = runtime.holdForCheckpoint();
+    const checks = [expect(writing).rejects.toMatchObject({ code: 'ENOSPC' }),
+      expect(draining).rejects.toMatchObject({ code: 'ENOSPC' })];
+    release.resolve(); await Promise.all(checks);
+    await expect(runtime.persistSettings({ chatWidth: 700 })).rejects.toMatchObject({ code: 'settings_checkpoint_held' });
+    expect(runtime.holdForCheckpoint()).toBe(draining);
+  });
+
   it('removes its temporary file when a settings write fails', async () => {
     const { runtime, fsPromises } = createRuntime({});
     fsPromises.rename.mockRejectedValueOnce(Object.assign(new Error('disk full'), { code: 'ENOSPC' }));

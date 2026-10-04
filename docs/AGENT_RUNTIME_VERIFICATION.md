@@ -35,20 +35,15 @@ location.reload();
 Calling it again with the other email switches roles; `POST /auth/logout`
 (with the CSRF header) ends the session.
 
-**Verification server recipe.** Only one DevRyan runtime may own managed
-OpenCode orchestration per data directory. If the user's own app is running,
-do not fight it — start a second server against an isolated data directory
-(copy `supabase.json` into it so multi-user mode is enabled) on a spare port:
+**Isolated verification.** Only one DevRyan runtime may own a selected bundle. Keep the user's running app and its data untouched. Use the repository-owned private profiles in `scripts/qa/native-profile-factory.mjs` and `scripts/qa/native-profile-preparation.mjs`, as described in [QA.md](QA.md#interpreting-an-incomplete-acceptance-run). Their copied setup manifest, explicit credential-owner callback, selected bundle and private home cover both web and Electron. Overriding only `OPENCHAMBER_DATA_DIR` is insufficient: native bundle selection also uses the state root, and provider owners have their own configuration.
+
+Build the current source before verification (`bun run build` and the native artifact build required by the QA profile). The credential-free factory diagnostic is:
 
 ```bash
-mkdir -p ~/.config/openchamber-verify
-cp ~/.config/openchamber/supabase.json ~/.config/openchamber-verify/
-OPENCHAMBER_DATA_DIR=~/.config/openchamber-verify bun packages/web/server/index.js --port 3101
+bun scripts/qa/native-profile-factory-diagnostic.mjs --artifact-root "$PWD/.cache/v2-validation/native-artifact"
 ```
 
-Build first (`bun run build:ui && bun run build:web`) so the served UI matches
-the working tree. Prefer the in-app browser preview tooling over raw shells
-for the server so logs stay inspectable.
+Use a fresh verified artifact directory in place of the example. This checks isolated startup, not personal provider access or managed-user authorization. Live checks need the reviewed setup and their explicit account bootstrap; never construct credential files by hand.
 
 ## Diagnostic journal (check it before theorizing)
 
@@ -101,6 +96,31 @@ stable OS start identities, and recover after the winning child exits. It does
 not inspect the user's installed runtime. This does not replace packaged
 launchd, signing, or physical-reboot acceptance.
 
+### OpenCode runtime selection (storage writers)
+
+The entrypoint prepares and binds the selected native generation-2 bundle before importing data owners. The authoritative selector is `selection.json` under `DEVRYAN_RUNTIME_BUNDLE_ROOT`, or the default `$XDG_STATE_HOME/devryan/runtime-bundles` (`~/.local/state/devryan/runtime-bundles` without that override). It pins a selection revision, bundle ID and prepared-manifest hash. The selected `bundles/<id>/descriptor.json` supplies the database, configuration, web-data, journal and Global paths. Do not infer the active database from timestamps, old `opencode-runtime-selection.json` files or an installed standalone executable.
+
+First startup preserves validated setup while creating fresh conversations and journals. Old databases remain unused and do not block startup; later starts reuse the valid v2 selection and retain new work. The native selector, admission owner and mutation ledger govern updates, removal and rollback. A stale selection revision or unresolved rollback reconciliation refuses admission. Legacy database inspection helpers remain read-only for native v2 files; the old event-pruning pass is not a native maintenance operation.
+
+For an incident, capture the non-secret selected bundle ID, revision, artifact hash and owner process identity before inspecting that bundle's journal. Never delete the selector, database or ownership files to manufacture successful recovery.
+
+A durable pending rollback intent also holds startup when `selection.json`
+still points to the candidate. The recovery process exposes loopback reads only.
+After the original runtime process has exited, use
+`openchamber runtime bundle resume --expected-revision N` in the original
+control-root environment, or the cold Electron recovery page's native Resume
+action. Both require the original checkpoint/drain/physical-exit proof and
+unchanged candidate state, increment the revision even when resuming the already
+selected candidate, and require a fresh composition. Partial prior-bundle state
+remains available for inspection. Missing proof cannot be replaced by PID absence.
+
+Claude verification uses independently enrolled DevRyan profiles for automatic
+renewal mechanics. Enrollment is available in Providers through the prepared
+vendor login; profile selection is a separate explicit action. Shared CLI
+profiles and the default live acceptance lane remain access-only and refuse at
+expiry. Quota and status inspection never renew credentials. Renewal fault tests
+use isolated synthetic credential backends and the original native KV owner.
+
 ### Error Log correlation and journal coverage
 
 When the report starts with an Error Log event UUID, treat that UUID as a durable administrative locator, not as the detailed execution record:
@@ -111,9 +131,9 @@ When the report starts with an Error Log event UUID, treat that UUID as a durabl
 4. Do not expect the Error Log UUID itself to appear in journal records. Error Logs and the journal are separate stores correlated through session and tool/message/task identifiers: Error Logs provide durable administrative indexing, classification, and bounded sanitized summaries; the journal is the source for prompts, tool output, lifecycle ordering, recovery behavior, and detailed failure evidence.
 5. If the relevant host journal is unavailable, expired, or contains a qualifying gap, report that limitation instead of reconstructing missing detail.
 
-- Location (web/Electron): `~/.config/openchamber/harness/journal/` (data-root override: `$OPENCHAMBER_DATA_DIR`). Pass `--dir <journal-dir>` to the CLI for either host.
+- Location (web/Electron): `<selected descriptor launch.webDataDirectory>/harness/journal/`. Binding sets `OPENCHAMBER_DATA_DIR` to this bundle-owned data root. Pass `--dir <journal-dir>` to the CLI for either host; old journals under `~/.config/openchamber/` do not describe the new runtime.
 - Layout: `index.json` summarizes `sessions/<sessionID>/manifest.json`; closed chunks are `*.ndjson.gz`, the active crash-safe chunk is plain `*.ndjson.open`, large strings are `blobs/<sha256>.txt.gz`, and records without a resolvable session are under `runtime/`. The directory's generated `README.md` is the self-describing format guide.
-- Legacy root `*.ndjson` segments coexist during the transition. They remain readable, are listed as `legacy`, are pruned before session buckets, and are removed by Clear All Data; they are never regrouped.
+- Legacy root `*.ndjson` segments remain readable by offline tools and are listed as `legacy`. Fresh v2 startup does not import them; historical journal evidence cannot qualify a current v2 journey.
 - `message.part.delta` is intentionally absent. Repeated `message.part.updated` and `session.updated` records are last-write-wins; `coalesced` reports how many source events a stored record represents. These trims are not data-loss gaps. `gap` still means queue overflow, sanitization failure, or parse failure and must qualify conclusions.
 - Record types remain `open_code_event`, `prompt`, `control`, `lifecycle`, `worktree_transition`, `evidence_transition`, `connection`, `timing`, `log`, and `gap`. Resolved session IDs are stamped at the top level before storage.
 - `control` records with `action: "abort"` carry `payload.source`, which names the UI path that stopped the session (`stop_button`, `double_escape`, `steered_send`, `session_removal`, `revert`, `redo`, `abort_guard`, `provider_retry`, `stall_watchdog`, `status_row`). A missing or unrecognized value is recorded as `unknown`, for example an older client or a direct API call. Controls are journaled before primary recovery handles them, so primary-session aborts are recorded too. Use this to explain an unexpected `MessageAbortedError` or `Tool execution aborted`.

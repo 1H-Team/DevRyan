@@ -50,7 +50,7 @@ describe('mobile chat layout refinement', () => {
         expect(indicatorStart).toBeGreaterThan(-1);
         expect(indicator).toContain('resolveSidebarWorkingStatus');
         expect(indicator).toContain('resolveSidebarIndicator');
-        expect(indicator).toContain('resolveMobileSessionIndicatorPresentation');
+        expect(indicator).toContain('resolveSessionLeadingIndicatorPresentation');
         expect(indicator).toContain('state.index.session.unseenHasError[sessionId]');
         expect(indicator).toContain('state.index.session.unseenHasCompletion[session.id]');
         expect(indicator).toContain('state.sessionCompletionIndicator.has(session.id)');
@@ -65,13 +65,10 @@ describe('mobile chat layout refinement', () => {
         const indicatorEnd = source.indexOf('function SessionItem', indicatorStart);
         const indicator = source.slice(indicatorStart, indicatorEnd);
 
-        expect(indicator).toContain("presentation.kind === 'status'");
-        expect(indicator).toContain('presentation.indicator.className');
-        expect(indicator).toContain("presentation.kind === 'working'");
-        expect(indicator).toContain('aria-label={label}');
-        expect(indicator).toContain('title={label}');
-        expect(indicator).toContain('border-[var(--surface-mutedForeground)]');
-        expect(indicator).toContain('aria-hidden="true"');
+        expect(indicator).toContain('<SessionStatusDot');
+        expect(indicator).toContain('resolveSessionLeadingIndicatorLabelKey(presentation)');
+        expect(indicator).toContain('label={labelKey ? t(labelKey) : undefined}');
+        expect(indicator).not.toContain('animate-spin');
     });
 
     test('mobile composer shows agent before model and omits the command button', () => {

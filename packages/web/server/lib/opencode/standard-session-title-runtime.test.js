@@ -4,8 +4,6 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createWebHarnessRuntime } from '../harness/runtime.js';
-
 import { createFileSessionTitleOutbox, createMemorySessionTitleOutbox } from './session-title-outbox.js';
 import {
   SESSION_TITLE_HELPER_SESSION_TITLE,
@@ -133,6 +131,7 @@ const createRuntime = ({
   ...options
 }) => (
   createStandardSessionTitleRuntime({
+    openCodeClient: createFakeOpenCodeClient(fake),
     fetchImpl: fake.fetchImpl,
     buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
     getOpenCodeAuthHeaders: () => ({}),
@@ -203,201 +202,18 @@ afterEach(async () => {
 });
 
 describe('standard session title runtime', () => {
-  it.each([
-    [{ name: 'APIError', data: { statusCode: 403 } }, 'unauthorized'],
-    [{ name: 'APIError', data: { statusCode: 403, message: 'Free tier can only be used with OpenCode' } }, 'free_tier_rejected'],
-    [{ name: 'ProviderModelNotFoundError' }, 'model_unavailable'],
-  ])('settles permanent provider rejection without repair or a generation retry', async (error, reason) => {
+  it('refuses the retired blocking helper-session path and derives the title without admission or retry', async () => {
     const fake = createFakeOpenCode();
-    const originalFetch = fake.fetchImpl;
-    const helperRequests = [];
-    fake.fetchImpl = vi.fn((url, options = {}) => {
-      if (String(url).includes('/ses_helper/message')) {
-        helperRequests.push(options.method || 'GET');
-        return Promise.resolve(response({ data: { info: { error }, parts: [] } }));
-      }
-      return originalFetch(url, options);
-    });
-    const projected = [];
-    const diagnostics = [];
+    const projected = [], diagnostics = [];
     const { timers, setTimer, clearTimer } = captureTimers();
     const runtime = createRuntime({ fake, projected, diagnostics, setTimer, clearTimer, generateSessionModelTitle: null });
     await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
     await runtime.dispose();
-    expect(helperRequests).toEqual(['POST']);
+    expect(fake.fetchImpl).not.toHaveBeenCalled();
+    expect(fake.state.sessions.has('ses_helper')).toBe(false);
     expect(timers.filter(({ delay }) => delay === 60_000)).toEqual([]);
     expect(projected[0]).toMatchObject({ title: 'Reliable Session Title Summaries', source: 'derived' });
-    expect(diagnostics.map(({ payload }) => payload)).toContainEqual(expect.objectContaining({ stage: 'helper_response', reason }));
-    expect(fake.state.sessions.has('ses_helper')).toBe(false);
-  });
-
-  it.each([401, 403, 404])('settles HTTP %s without retrying the rejected request', async (status) => {
-    const fake = createFakeOpenCode();
-    const originalFetch = fake.fetchImpl;
-    let requests = 0;
-    fake.fetchImpl = vi.fn((url, options = {}) => {
-      if (String(url).includes('/ses_helper/message')) {
-        requests += 1;
-        return Promise.resolve(response(null, { ok: false, status }));
-      }
-      return originalFetch(url, options);
-    });
-    const projected = [];
-    const { timers, setTimer, clearTimer } = captureTimers();
-    const runtime = createRuntime({ fake, projected, setTimer, clearTimer, generateSessionModelTitle: null });
-    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
-    expect(requests).toBe(1);
-    expect(projected[0]?.source).toBe('derived');
-    expect(timers.filter(({ delay }) => delay === 60_000)).toEqual([]);
-    await runtime.dispose();
-  });
-
-  it.each([429, 503])('retries transient provider status %s without a repair prompt', async (statusCode) => {
-    const fake = createFakeOpenCode();
-    const originalFetch = fake.fetchImpl;
-    let requests = 0;
-    fake.fetchImpl = vi.fn((url, options = {}) => {
-      if (String(url).includes('/ses_helper/message') && requests++ === 0) {
-        return Promise.resolve(response({ info: { error: { name: 'APIError', data: { statusCode } } }, parts: [] }));
-      }
-      return originalFetch(url, options);
-    });
-    const projected = [];
-    const { timers, setTimer, clearTimer } = captureTimers();
-    const runtime = createRuntime({ fake, projected, setTimer, clearTimer, generateSessionModelTitle: null });
-    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
-    expect(requests).toBe(1);
-    expect(projected).toEqual([]);
-    timers.find(({ delay }) => delay === 60_000).callback();
-    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
-    expect(requests).toBe(2);
-    expect(projected[0]?.source).toBe('session_model');
-    await runtime.dispose();
-  });
-
-  it('repairs invalid successful text within the same generation attempt', async () => {
-    const fake = createFakeOpenCode();
-    const originalFetch = fake.fetchImpl;
-    let requests = 0;
-    fake.fetchImpl = vi.fn((url, options = {}) => {
-      if (String(url).includes('/ses_helper/message') && options.method === 'POST' && requests++ === 0) {
-        return Promise.resolve(response({ parts: [{ type: 'text', text: 'This title is much too long to be accepted as a valid generated title' }] }));
-      }
-      return originalFetch(url, options);
-    });
-    const projected = [];
-    const runtime = createRuntime({ fake, projected, generateSessionModelTitle: null });
-    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
-    expect(requests).toBe(2);
-    expect(projected[0]?.title).toBe('Selected Model Session Title');
-    await runtime.dispose();
-  });
-
-  it('accepts a model response after ten seconds without waiting for slow cleanup', async () => {
-    vi.useFakeTimers();
-    const fake = createFakeOpenCode();
-    const originalFetch = fake.fetchImpl;
-    let deleteSignal;
-    fake.fetchImpl = vi.fn(async (url, options = {}) => {
-      if (options.method === 'DELETE') {
-        deleteSignal = options.signal;
-        return new Promise(() => {});
-      }
-      if (options.method === 'POST' && String(url).includes('/message')) {
-        await new Promise((resolve) => setTimeout(resolve, 15_000));
-      }
-      return originalFetch(url, options);
-    });
-    const projected = [];
-    const runtime = createRuntime({ fake, projected, generateSessionModelTitle: null });
-    const scheduled = runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
-    await vi.advanceTimersByTimeAsync(10_001);
-    expect(projected).toEqual([]);
-    await vi.advanceTimersByTimeAsync(5_000);
-    await scheduled;
-    expect(projected[0]?.title).toBe('Selected Model Session Title');
-    expect(deleteSignal.aborted).toBe(false);
-    const disposing = runtime.dispose();
-    await vi.advanceTimersByTimeAsync(5_000);
-    await disposing;
-    expect(deleteSignal.aborted).toBe(true);
-  });
-
-  it('recovers a completed answer with a separate budget after cancelling a timed-out POST', async () => {
-    vi.useFakeTimers();
-    const fake = createFakeOpenCode();
-    const originalFetch = fake.fetchImpl;
-    let postSignal;
-    fake.fetchImpl = vi.fn(async (url, options = {}) => {
-      if (String(url).includes('/ses_helper/message')) {
-        if (options.method === 'POST') {
-          postSignal = options.signal;
-          return new Promise(() => {});
-        }
-        await new Promise((resolve) => setTimeout(resolve, 2_000));
-        return response([{ info: { role: 'assistant', finish: 'stop' }, parts: [{ type: 'text', text: 'Clinic Profile Field Alignment' }] }]);
-      }
-      return originalFetch(url, options);
-    });
-    const projected = [];
-    const diagnostics = [];
-    const runtime = createRuntime({ fake, projected, diagnostics, generateSessionModelTitle: null });
-    const scheduled = runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
-    await vi.advanceTimersByTimeAsync(30_000);
-    expect(postSignal.aborted).toBe(true);
-    expect(projected).toEqual([]);
-    await vi.advanceTimersByTimeAsync(2_001);
-    await scheduled;
-    expect(projected[0]?.title).toBe('Clinic Profile Field Alignment');
-    expect(stageOutcomes(diagnostics, 'recovery')).toEqual(['recovery:complete']);
-    await runtime.dispose();
-  });
-
-  it.each([
-    ['', 'empty_response'],
-    ['This response has far too many words to be accepted as a concise title', 'validation_rejection'],
-  ])('classifies invalid helper output and rejects unfinished recovery text', async (text, reason) => {
-    const fake = createFakeOpenCode();
-    const originalFetch = fake.fetchImpl;
-    fake.fetchImpl = vi.fn((url, options = {}) => {
-      if (String(url).includes('/ses_helper/message')) {
-        return Promise.resolve(response(options.method === 'POST'
-          ? { parts: [{ type: 'text', text }] }
-          : [{ info: { role: 'assistant' }, parts: [{ type: 'text', text: 'Unfinished Title Must Not Win' }] }]));
-      }
-      return originalFetch(url, options);
-    });
-    const projected = [];
-    const diagnostics = [];
-    const runtime = createRuntime({ fake, projected, diagnostics, generateSessionModelTitle: null });
-    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
-    expect(projected).toEqual([]);
-    expect(diagnostics.map(({ payload }) => payload)).toContainEqual(expect.objectContaining({ stage: 'session_model', reason }));
-    await runtime.dispose();
-  });
-
-  it('bounds a stalled recovery read independently of generation', async () => {
-    vi.useFakeTimers();
-    const fake = createFakeOpenCode();
-    const originalFetch = fake.fetchImpl;
-    let recoverySignal;
-    fake.fetchImpl = vi.fn((url, options = {}) => {
-      if (String(url).includes('/ses_helper/message')) {
-        if (options.method !== 'POST') recoverySignal = options.signal;
-        return new Promise(() => {});
-      }
-      return originalFetch(url, options);
-    });
-    const diagnostics = [];
-    const runtime = createRuntime({ fake, diagnostics, generateSessionModelTitle: null });
-    const scheduled = runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
-    await vi.advanceTimersByTimeAsync(30_000);
-    expect(recoverySignal.aborted).toBe(false);
-    await vi.advanceTimersByTimeAsync(2_500);
-    await scheduled;
-    expect(recoverySignal.aborted).toBe(true);
-    expect(stageOutcomes(diagnostics, 'recovery')).toEqual(['recovery:failed']);
-    await runtime.dispose();
+    expect(diagnostics.map(({ payload }) => payload)).toContainEqual(expect.objectContaining({ stage: 'helper_create', reason: 'capability_unavailable' }));
   });
 
   it('cancels generation on shutdown and ignores its late answer', async () => {
@@ -439,72 +255,6 @@ describe('standard session title runtime', () => {
     await runtime.dispose();
   });
 
-  it('writes correlated failure diagnostics through the real harness journal', async () => {
-    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-title-journal-'));
-    tempDirectories.push(directory);
-    const harness = createWebHarnessRuntime({ dataDirectory: directory, runtime: 'test' });
-    await harness.initialize();
-    const prompt = 'Private example request must not appear in title diagnostics';
-    const fake = createFakeOpenCode({ prompt });
-    const originalFetch = fake.fetchImpl;
-    fake.fetchImpl = vi.fn((url, options = {}) => (
-      String(url).includes('/ses_helper/message') && options.method === 'POST'
-        ? Promise.resolve(response(null, { status: 503, ok: false })) : originalFetch(url, options)
-    ));
-    const runtime = createRuntime({ fake, generateSessionModelTitle: null, recordDiagnostic: harness.record });
-    try {
-      await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
-      await runtime.dispose();
-      await harness.journal.flush();
-      const records = (await harness.journal.readRecords()).filter((record) => record.event === 'session_title_generation');
-      expect(records).toContainEqual(expect.objectContaining({
-        type: 'lifecycle', sessionID: 'ses_1',
-        payload: expect.objectContaining({ helperSessionID: 'ses_helper', reason: 'http_failure', status: 503 }),
-      }));
-      expect(records).toContainEqual(expect.objectContaining({ payload: expect.objectContaining({ reason: 'recovery_failure' }) }));
-      expect(JSON.stringify(records)).not.toContain(prompt);
-    } finally {
-      await harness.drain();
-    }
-  });
-
-  it.each([
-    ['In /dashboard/clinic/profile the core details fields are misaligned. Fix the form layout.', 'Clinic Profile Field Alignment'],
-    ['Could you investigate why my sidebar titles copy the beginning of my prompt?', 'Sidebar Title Generation Reliability'],
-  ])('accepts a concise summary of a contextual request', (prompt, title) => {
-    expect(normalizeGeneratedSessionTitle(title, prompt)).toBe(title);
-    const fallback = deriveLocalSessionTitle(prompt);
-    expect(fallback.length).toBeLessThanOrEqual(80);
-    expect(fallback.split(/\s+/).length).toBeLessThanOrEqual(7);
-  });
-
-  it.each(['explorer', 'designer'])('recovers the reserved %s child placeholder using the brief, then persists on idle', async (agent) => {
-    const placeholder = `Managed ${agent} task`;
-    const fake = createFakeOpenCode({ sessions: [{ id: 'ses_1', parentID: 'ses_root', agent, title: placeholder }] });
-    const brief = 'Fix profile review summaries and return navigation';
-    fake.state.messages.set('ses_1', [userMessage([
-      '[devryan-agent-contract:v1] Runtime instructions.\nDo not summarize these rules.',
-      // Legacy tag from retired Context Mode; stored child sessions still carry it.
-      '[devryan-context-mode-routing:v1] Tool routing instructions.',
-      '[devryan-managed-read-only:v1] Inspect only.',
-      brief,
-    ].join('\n\n'))]);
-    const generateSessionModelTitle = vi.fn(async () => 'Profile Reviews and Return Navigation');
-    const projected = [];
-    const outbox = createMemorySessionTitleOutbox();
-    const runtime = createRuntime({ fake, projected, outbox, generateSessionModelTitle });
-    await runtime.schedulePlaceholderRecovery({ directory: '/tmp/project' });
-    expect(generateSessionModelTitle).toHaveBeenCalledWith(expect.objectContaining({ text: brief }));
-    expect(projected.at(-1).title).toBe('Profile Reviews and Return Navigation');
-    expect(fake.state.patches).toEqual([]);
-    // The original placeholder remains canonical while busy, including restart.
-    const persisted = await outbox.list();
-    await runtime.dispose();
-    const restored = createRuntime({ fake, outbox: createMemorySessionTitleOutbox({ initialJobs: persisted }) });
-    await restored.processOpenCodeEvent(idleEvent());
-    expect(fake.state.sessions.get('ses_1').title).toBe('Profile Reviews and Return Navigation');
-    await restored.dispose();
-  });
 
   it('does not classify root titles, explicit child labels, or another agent name as generated placeholders', async () => {
     const fake = createFakeOpenCode({ sessions: [
@@ -677,35 +427,13 @@ describe('standard session title runtime', () => {
     await runtime.dispose();
   });
 
-  it('uses a hidden no-tools helper without inheriting the session variant', async () => {
-    const fake = createFakeOpenCode();
-    const projected = [];
-    const runtime = createRuntime({
-      fake,
-      projected,
-      generateSessionModelTitle: null,
-    });
-
-    await runtime.schedule({
-      sessionID: 'ses_1',
-      directory: '/tmp/project',
-      providerID: 'openai',
-      modelID: 'gpt-5.6-sol',
-      variant: 'high',
-    });
-
-    const helperPrompt = fake.state.calls.find((call) => call.target === '/session/ses_helper/message' && call.method === 'POST');
-    const body = JSON.parse(String(helperPrompt?.body));
-    expect(body).toMatchObject({
-      agent: 'devryan-title',
-      model: { providerID: 'openai', modelID: 'gpt-5.6-sol' },
-      tools: {},
-    });
-    expect(body.variant).toBeUndefined();
-    expect(projected.map(({ source, title }) => ({ source, title }))).toEqual([
-      { source: 'session_model', title: 'Selected Model Session Title' },
-    ]);
+  it('does not create a retired hidden helper when no native generator is supplied', async () => {
+    const fake = createFakeOpenCode(), projected = [];
+    const runtime = createRuntime({ fake, projected, generateSessionModelTitle: null });
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project', providerID: 'openai', modelID: 'gpt-5.6-sol', variant: 'high' });
+    expect(fake.fetchImpl).not.toHaveBeenCalled();
     expect(fake.state.sessions.has('ses_helper')).toBe(false);
+    expect(projected[0]).toMatchObject({ source: 'derived', title: 'Reliable Session Title Summaries' });
     await runtime.dispose();
   });
 
@@ -750,7 +478,7 @@ describe('standard session title runtime', () => {
   });
 
   it('publishes only the successful retry title, even when the session is idle', async () => {
-    const fake = createFakeOpenCode({ status: 'idle' });
+    const fake = createFakeOpenCode({ status: 'idle', completed: true });
     const outbox = createMemorySessionTitleOutbox();
     const { timers, setTimer, clearTimer } = captureTimers();
     const generateSessionModelTitle = vi.fn(async () => null);
@@ -775,7 +503,7 @@ describe('standard session title runtime', () => {
   });
 
   it('never upgrades a user-typed title', async () => {
-    const fake = createFakeOpenCode({ status: 'idle' });
+    const fake = createFakeOpenCode({ status: 'idle', completed: true });
     const outbox = createMemorySessionTitleOutbox();
     const { timers, setTimer, clearTimer } = captureTimers();
     const generateSessionModelTitle = vi.fn(async () => null);
@@ -813,7 +541,8 @@ describe('standard session title runtime', () => {
       onTitleGenerated: undefined,
     });
     const directRuntime = createStandardSessionTitleRuntime({
-      fetchImpl: fake.fetchImpl,
+      openCodeClient: createFakeOpenCodeClient(fake),
+    fetchImpl: fake.fetchImpl,
       buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
       generateSessionModelTitle: vi.fn(async () => 'Reliable Session Title Summaries'),
       outbox,
@@ -1162,10 +891,7 @@ describe('standard session title runtime', () => {
       now: () => 1_000,
     });
     const runtime = createStandardSessionTitleRuntime({
-      fetchImpl: vi.fn(),
-      buildOpenCodeUrl: vi.fn(() => {
-        throw new Error('OpenCode port is not available');
-      }),
+      openCodeClient: { generation: () => 2, sessions: { get: vi.fn(async () => { throw clientError(503); }), status: vi.fn(async () => { throw clientError(503); }) } },
       outbox,
       watchdogEnabled: true,
       retryDelaysMs: [1_000],
@@ -1260,5 +986,230 @@ describe('standard session title runtime', () => {
     expect(deriveLocalSessionTitle(
       'Explain why idempotent cache invalidation matters in one sentence, without using tools.',
     )).toBe('Idempotent Cache Invalidation Matters');
+  });
+});
+
+// Gen 2 (DESIGN C.1, E item 13b): the same fake OpenCode state behind an
+// openCodeClient, as the gen-2 client returns it (v1 domain shapes; statuses
+// omit idle sessions; refusals are errors carrying `statusCode`).
+const clientError = (statusCode) => Object.assign(new Error(`client failure ${statusCode}`), { statusCode });
+
+const createFakeOpenCodeClient = (fake, { generation = 2 } = {}) => {
+  const { state } = fake;
+  const record = (operation, ...args) => state.calls.push({ target: `client:${operation}`, method: operation, args });
+  const readSession = (sessionID) => {
+    const session = state.sessions.get(sessionID);
+    if (!session) throw clientError(404);
+    return { ...session };
+  };
+  return {
+    generation: typeof generation === 'function' ? generation : () => generation,
+    sessions: {
+      get: vi.fn(async (sessionID, options) => {
+        record('get', sessionID, options);
+        if (state.sessionReadHangs > 0) {
+          state.sessionReadHangs -= 1;
+          return new Promise(() => {});
+        }
+        if (state.sessionReadFailures > 0) {
+          state.sessionReadFailures -= 1;
+          throw clientError(503);
+        }
+        return readSession(sessionID);
+      }),
+      list: vi.fn(async (query, options) => {
+        record('list', query, options);
+        return [...state.sessions.values()].map((session) => ({ ...session }));
+      }),
+      status: vi.fn(async (query, options) => {
+        record('status', query, options);
+        return Object.fromEntries([...state.statuses]
+          .filter(([, value]) => value && value !== 'idle')
+          .map(([id, value]) => [id, { type: value }]));
+      }),
+      messages: vi.fn(async (sessionID, page, options) => {
+        record('messages', sessionID, page, options);
+        readSession(sessionID);
+        return { records: state.messages.get(sessionID) || [], cursor: undefined };
+      }),
+      update: vi.fn(async (sessionID, patch, options) => {
+        record('update', sessionID, patch, options);
+        state.patches.push({ sessionID, ...patch });
+        if (state.patchFailures > 0) {
+          state.patchFailures -= 1;
+          throw clientError(503);
+        }
+        const session = state.sessions.get(sessionID);
+        if (!session) throw clientError(404);
+        session.title = patch.title;
+        return { ...session };
+      }),
+      remove: vi.fn(async (sessionID, options) => {
+        record('remove', sessionID, options);
+        if (!state.sessions.delete(sessionID)) throw clientError(404);
+        state.messages.delete(sessionID);
+        state.statuses.delete(sessionID);
+        return true;
+      }),
+    },
+  };
+};
+
+const waitForPatches = async (fake, count) => {
+  for (let index = 0; index < 20 && fake.state.patches.length < count; index += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+};
+
+describe('standard session title runtime on OpenCode 2 (openCodeClient)', () => {
+  it('persists the resolved title through the client without URL requests', async () => {
+    const fake = createFakeOpenCode();
+    const openCodeClient = createFakeOpenCodeClient(fake);
+    const outbox = createMemorySessionTitleOutbox();
+    const projected = [];
+    const runtime = createRuntime({ fake, outbox, projected, openCodeClient });
+
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    await runtime.processOpenCodeEvent(idleEvent());
+
+    expect(fake.state.patches).toEqual([{ sessionID: 'ses_1', title: 'Reliable Session Title Summaries' }]);
+    expect(fake.state.sessions.get('ses_1').title).toBe('Reliable Session Title Summaries');
+    expect(projected[0]).toMatchObject({ title: 'Reliable Session Title Summaries', source: 'session_model' });
+    expect(await outbox.list()).toEqual([]);
+    expect(fake.fetchImpl).not.toHaveBeenCalled();
+    expect(openCodeClient.sessions.update).toHaveBeenCalledWith(
+      'ses_1',
+      { title: 'Reliable Session Title Summaries' },
+      expect.objectContaining({ directory: '/tmp/project', signal: expect.any(AbortSignal) }),
+    );
+    await runtime.dispose();
+  });
+
+  it('retries a refused client PATCH without losing the durable job', async () => {
+    const fake = createFakeOpenCode({ patchFailures: 1 });
+    const outbox = createMemorySessionTitleOutbox();
+    const runtime = createRuntime({ fake, outbox, retryDelaysMs: [20], openCodeClient: createFakeOpenCodeClient(fake) });
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    await runtime.processOpenCodeEvent(idleEvent());
+    expect(fake.state.patches).toHaveLength(1);
+    expect(await outbox.list()).toHaveLength(1);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    await runtime.processOpenCodeEvent(idleEvent());
+    expect(fake.state.patches).toHaveLength(2);
+    expect(await outbox.list()).toEqual([]);
+    expect(fake.fetchImpl).not.toHaveBeenCalled();
+    await runtime.dispose();
+  });
+
+  it('drops the job when the client reports the session missing (404)', async () => {
+    const fake = createFakeOpenCode();
+    const outbox = createMemorySessionTitleOutbox();
+    const diagnostics = [];
+    const runtime = createRuntime({ fake, outbox, diagnostics, openCodeClient: createFakeOpenCodeClient(fake) });
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    expect(await outbox.list()).toHaveLength(1);
+    fake.state.sessions.delete('ses_1');
+    await runtime.processOpenCodeEvent(idleEvent());
+    expect(await outbox.list()).toEqual([]);
+    expect(stageOutcomes(diagnostics, 'persistence')).toContain('persistence:session_deleted');
+    await runtime.dispose();
+  });
+
+  it('times out and retries a stalled client read', async () => {
+    const fake = createFakeOpenCode();
+    const outbox = createMemorySessionTitleOutbox();
+    const runtime = createRuntime({
+      fake, outbox, retryDelaysMs: [1], openCodeRequestTimeoutMs: 5, openCodeClient: createFakeOpenCodeClient(fake),
+    });
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    for (let index = 0; index < 10 && !fake.state.calls.some(({ target }) => target === 'client:status'); index += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    fake.state.sessionReadHangs = 1;
+    await runtime.processOpenCodeEvent(idleEvent());
+    expect(fake.state.patches).toEqual([]);
+    expect(await outbox.list()).toHaveLength(1);
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    await runtime.processOpenCodeEvent(idleEvent());
+    expect(fake.state.patches).toHaveLength(1);
+    expect(await outbox.list()).toEqual([]);
+    await runtime.dispose();
+  });
+
+  it('recovers from completed history when the client status map omits the idle session', async () => {
+    const fake = createFakeOpenCode({ status: 'idle', completed: true });
+    const runtime = createRuntime({ fake, openCodeClient: createFakeOpenCodeClient(fake) });
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    await waitForPatches(fake, 1);
+    expect(fake.state.patches).toHaveLength(1);
+    expect(fake.state.calls.some(({ target }) => target === 'client:messages')).toBe(true);
+    await runtime.dispose();
+  });
+
+  it('reports the built-in helper generator as unavailable and settles on the derived title', async () => {
+    const fake = createFakeOpenCode();
+    const projected = [];
+    const diagnostics = [];
+    const { timers, setTimer, clearTimer } = captureTimers();
+    const runtime = createRuntime({
+      fake, projected, diagnostics, setTimer, clearTimer, generateSessionModelTitle: null,
+      openCodeClient: createFakeOpenCodeClient(fake),
+    });
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project', providerID: 'openai', modelID: 'gpt-5.6-sol' });
+    expect(projected[0]).toMatchObject({ title: 'Reliable Session Title Summaries', source: 'derived' });
+    expect(timers.filter(({ delay }) => delay === 60_000)).toEqual([]);
+    expect(diagnostics.map(({ payload }) => payload)).toContainEqual(
+      expect.objectContaining({ stage: 'helper_create', outcome: 'failed', reason: 'capability_unavailable' }),
+    );
+    expect(fake.state.sessions.has('ses_helper')).toBe(false);
+    expect(fake.fetchImpl).not.toHaveBeenCalled();
+    await runtime.dispose();
+  });
+
+  it('removes only idle legacy helper sessions through the client', async () => {
+    const fake = createFakeOpenCode({
+      sessions: [
+        { id: 'ses_helper_idle', title: SESSION_TITLE_HELPER_SESSION_TITLE },
+        { id: 'ses_helper_busy', title: SESSION_TITLE_HELPER_SESSION_TITLE },
+        { id: 'ses_visible', title: 'Visible Session' },
+      ],
+    });
+    fake.state.statuses.set('ses_helper_idle', 'idle');
+    fake.state.statuses.set('ses_helper_busy', 'busy');
+    const openCodeClient = createFakeOpenCodeClient(fake);
+    const runtime = createRuntime({ fake, openCodeClient });
+    await expect(runtime.cleanupStaleHelpers({ directory: '/tmp/project' })).resolves.toBe(1);
+    expect(fake.state.sessions.has('ses_helper_idle')).toBe(false);
+    expect(fake.state.sessions.has('ses_helper_busy')).toBe(true);
+    expect(fake.state.sessions.has('ses_visible')).toBe(true);
+    expect(openCodeClient.sessions.list).toHaveBeenCalledWith({ directory: '/tmp/project' }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(fake.fetchImpl).not.toHaveBeenCalled();
+    await runtime.dispose();
+  });
+
+  it('refuses generation 1 without reading or patching', async () => {
+    const fake = createFakeOpenCode();
+    const openCodeClient = createFakeOpenCodeClient(fake, { generation: 1 });
+    const runtime = createRuntime({ fake, openCodeClient });
+    await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' });
+    await runtime.processOpenCodeEvent(idleEvent());
+    expect(fake.state.patches).toEqual([]);
+    expect(fake.fetchImpl).not.toHaveBeenCalled();
+    expect(fake.state.calls.some(({ target }) => target.startsWith('client:'))).toBe(false);
+    await runtime.dispose();
+  });
+
+  it('sends no request and keeps the job when the client generation is unknown (fail closed)', async () => {
+    const fake = createFakeOpenCode();
+    const outbox = createMemorySessionTitleOutbox();
+    const openCodeClient = createFakeOpenCodeClient(fake, {
+      generation: () => { throw clientError(503); },
+    });
+    const runtime = createRuntime({ fake, outbox, openCodeClient });
+    await expect(runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project' })).resolves.toBe(false);
+    expect(fake.fetchImpl).not.toHaveBeenCalled();
+    expect(fake.state.calls).toEqual([]);
+    expect(fake.state.patches).toEqual([]);
+    await runtime.dispose();
   });
 });

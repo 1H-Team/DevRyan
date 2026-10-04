@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "packages": [
+    {
+      "directory": "opencode-with-claude",
+      "name": "opencode-with-claude",
+      "version": "1.8.0",
+      "license": "MIT"
+    },
+    {
+      "directory": "@rynfar/meridian-plugin-opencode-scrub",
+      "name": "@rynfar/meridian-plugin-opencode-scrub",
+      "version": "0.2.0",
+      "license": "MIT"
+    },
+    {
+      "directory": "@rynfar/meridian",
+      "name": "@rynfar/meridian",
+      "version": "1.62.6",
+      "license": "MIT"
+    },
+    {
+      "directory": "jsonc-parser",
+      "name": "jsonc-parser",
+      "version": "3.3.1",
+      "license": "MIT"
+    },
+    {
+      "directory": "@anthropic-ai/claude-agent-sdk",
+      "name": "@anthropic-ai/claude-agent-sdk",
+      "version": "0.2.141",
+      "license": "SEE LICENSE IN README.md"
+    }
+  ],
+  "meridianPatches": {
+    "source": "packages/web/server/lib/opencode/meridian-http-hotfix.js",
+    "files": [
+      {
+        "path": "@rynfar/meridian/dist/devryan-meridian-http-server.js",
+        "sha256": "a8812f39f18e13b5bf041c14b758edecd828b6eb195c4e9381ced25c801bfc17"
+      },
+      {
+        "path": "@rynfar/meridian/dist/devryan-meridian-passthrough-handoff.js",
+        "sha256": "cb8cd2306c2602e10ff1a50604ecbfdf4452f93b70b2be650dc4665499361675"
+      },
+      {
+        "path": "@rynfar/meridian/dist/devryan-session-provider-spawn.js",
+        "sha256": "b0b4dd45fbae18e015e6598f68187bcd4f2d9bf25396e0aec2ed7a00ecad4980"
+      }
+    ]
+  },
+  "excluded": "Unused @anthropic-ai/claude-agent-sdk platform executable; selected Claude Code2.1.251 binary is the exact runtime asset."
+}

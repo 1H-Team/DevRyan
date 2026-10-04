@@ -1,5 +1,5 @@
 import fs from 'fs';
-import os from 'os';
+import { getRuntimeHome } from './runtime-host/runtime-bundle-binding.js';
 import path from 'path';
 import {
   AGENT_SCOPE,
@@ -183,7 +183,7 @@ function getRecoveryMcpSources(workingDirectory) {
 
 function getCursorMcpSources() {
   const cursorPaths = [
-    path.join(os.homedir(), '.cursor', 'mcp.json'),
+    path.join(getRuntimeHome(), '.cursor', 'mcp.json'),
   ];
 
   return cursorPaths

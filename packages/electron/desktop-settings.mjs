@@ -1,9 +1,10 @@
 import path from 'node:path';
 import { persistWindowState } from './window-state-persistence.mjs';
 
-export function createDesktopSettings({ fs, fsp, os, process, log, getMainWindow, minWidth, minHeight, LOCAL_HOST_ID, setTimeout = globalThis.setTimeout }) {
+export function createDesktopSettings({ fs, fsp, os, process, log, getMainWindow, minWidth, minHeight, LOCAL_HOST_ID, setTimeout = globalThis.setTimeout, resolveDataDirectory }) {
   const windowGeometryRevisions = new Map();
   const settingsFilePath = () => {
+    if (resolveDataDirectory) return path.join(resolveDataDirectory(), 'settings.json');
     if (typeof process.env.OPENCHAMBER_DATA_DIR === 'string' && process.env.OPENCHAMBER_DATA_DIR.trim()) {
       return path.join(process.env.OPENCHAMBER_DATA_DIR.trim(), 'settings.json');
     }
@@ -38,8 +39,8 @@ export function createDesktopSettings({ fs, fsp, os, process, log, getMainWindow
     }
   };
 
-  const readSettingsRoot = () => {
-    const root = readJsonFile(settingsFilePath());
+  const readSettingsRoot = (filePath = settingsFilePath()) => {
+    const root = readJsonFile(filePath);
     return root && typeof root === 'object' && !Array.isArray(root) ? root : {};
   };
 
@@ -49,16 +50,31 @@ export function createDesktopSettings({ fs, fsp, os, process, log, getMainWindow
   // RMW pairs interleave across awaits, letting one writer's stale copy
   // overwrite another writer's just-persisted changes.
   let settingsMutationChain = Promise.resolve();
+  let checkpointHeld = false;
+  let checkpointFailure;
+  let checkpointDrain;
   const mutateSettingsRoot = (mutator) => {
+    if (checkpointHeld) return Promise.reject(Object.assign(new Error('bundle_desktop_settings_held'), { code: 'bundle_desktop_settings_held' }));
     const next = settingsMutationChain.then(async () => {
-      const current = readSettingsRoot();
+      const filePath = settingsFilePath();
+      const current = readSettingsRoot(filePath);
       const result = await mutator(current);
       const nextRoot = result ?? current;
-      await writeJsonFile(settingsFilePath(), nextRoot);
+      await writeJsonFile(filePath, nextRoot);
     });
     // Keep the chain alive even if one mutator throws.
-    settingsMutationChain = next.catch(() => {});
+    settingsMutationChain = next.catch((error) => { checkpointFailure = error; });
     return next;
+  };
+  const holdForCheckpoint = () => {
+    checkpointHeld = true;
+    // Already scheduled geometry callbacks become no-ops. Already admitted
+    // mutations remain in the same original chain until their rename settles.
+    windowGeometryRevisions.clear();
+    checkpointDrain ??= settingsMutationChain.then(() => {
+      if (checkpointFailure) throw Object.assign(new Error('bundle_desktop_settings_unsettled'), { code: 'bundle_desktop_settings_unsettled' });
+    });
+    return checkpointDrain;
   };
 
   const normalizeHostUrl = (raw) => {
@@ -139,7 +155,7 @@ export function createDesktopSettings({ fs, fsp, os, process, log, getMainWindow
   };
 
   const debounceWindowStatePersist = (browserWindow, immediate = false) => {
-    if (!browserWindow || browserWindow.isDestroyed()) return;
+    if (checkpointHeld || !browserWindow || browserWindow.isDestroyed()) return;
     const key = String(browserWindow.id);
     const revision = (windowGeometryRevisions.get(key) || 0) + 1;
     windowGeometryRevisions.set(key, revision);
@@ -162,5 +178,5 @@ export function createDesktopSettings({ fs, fsp, os, process, log, getMainWindow
     }, 300);
   };
 
-    return { settingsFilePath, readSettingsRoot, mutateSettingsRoot, normalizeHostUrl, readDesktopHostsConfig, writeDesktopHostsConfig, readWindowState, writeWindowState, debounceWindowStatePersist };
+    return { settingsFilePath, readSettingsRoot, mutateSettingsRoot, normalizeHostUrl, readDesktopHostsConfig, writeDesktopHostsConfig, readWindowState, writeWindowState, debounceWindowStatePersist, holdForCheckpoint };
 }

@@ -4,9 +4,9 @@
 Feature sections for the Settings experience (providers, projects, behavior, desktop native settings, etc.).
 
 ## Design
-Section-per-domain pattern with shared primitives for consistency. The About surface keeps the DevRyan updater independent from the read-only OpenCode version comparison, which shows active, latest stable, and DevRyan-supported runtime versions without mutating or restarting OpenCode.
+Section-per-domain pattern with shared primitives for consistency. The About surface shows verified bundled OpenCode identity and readiness. Runtime updates ship through the existing DevRyan updater.
 
-Session defaults, the per-agent model summary, the OpenCode binary path and
+Session defaults, the per-agent model summary, bundled runtime information and
 Agent Browser Control are composed by `components/sections/agents/` (Session
 Defaults and Runtime entries of Settings → Agents); the components they reuse
 from this folder keep their own loading and persistence.
@@ -66,7 +66,7 @@ managed GitHub account controls in User Management.
 `AgentBrowserControlSettings.tsx` is local-Electron-only. Its existing enable toggle remains independent from the managed `agent-browser` installation status. The section reads expected/installed versions and repair issues through local-sender-gated desktop IPC, invokes Repair through IPC rather than HTTP, shows the global active-lease count, and surfaces concise managed-skill conflict/issue messages without exposing filesystem paths. Leases start hidden and each receives a separate local-only capability.
 
 ## Integration
-Integrated with views, lib adapters, and settings/auth stores. `OpenCodeVersionSection.tsx` consumes `/api/config/opencode-resolution` for active runtime metadata and `/api/opencode/update-check` for explicit upstream checks; `openCodeVersionState.ts` keeps its view-state resolution independently testable.
+Integrated with views, lib adapters, and settings/auth stores. `OpenCodeVersionSection.tsx` reads only verified bundle metadata from `/api/config/opencode-resolution`; `openCodeVersionState.ts` rejects unsupported identities and keeps unavailable readiness explicit. OpenCode updates ship through the existing DevRyan updater. `OpenCodeCliSettings.tsx` retains its compatibility component name but presents bundled runtime information, with no standalone binary selection.
 
 ## Loading boundaries
 

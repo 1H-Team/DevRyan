@@ -2,14 +2,18 @@ import assert from 'node:assert/strict';
 import { evaluate } from './cdp.mjs';
 
 export const QA_COMPACTION_COMPOSER = 'textarea[data-chat-input="true"]';
-export const QA_QUEUE_MODE_CONTROL = '[role="checkbox"][aria-label="Queue Messages by Default"]';
+export const QA_QUEUE_MODE_CONTROL = '[data-settings-view] [role="switch"][aria-labelledby]';
 export const QA_QUEUE_MODE_STATE = `(() => {
-  const controls=[...document.querySelectorAll(${JSON.stringify(QA_QUEUE_MODE_CONTROL)})];
+  const controls=[...document.querySelectorAll(${JSON.stringify(QA_QUEUE_MODE_CONTROL)})].filter(control=>{
+    const style=getComputedStyle(control);
+    if(!control.getClientRects().length||style.display==='none'||style.visibility==='hidden')return false;
+    const labels=(control.getAttribute('aria-labelledby')||'').split(/\\s+/).filter(Boolean);
+    return labels.map(id=>document.getElementById(id)?.textContent||'').join(' ').trim()==='Queue Messages by Default';
+  });
   if(controls.length!==1)return null;
-  const checkbox=controls[0], group=checkbox.closest('[role="button"][aria-pressed]');
-  const checked=checkbox.getAttribute('aria-checked'), pressed=group?.getAttribute('aria-pressed');
-  if(!['true','false'].includes(checked)||checked!==pressed)return null;
-  return {enabled:checked==='true',checked,pressed};
+  const control=controls[0],checked=control.getAttribute('aria-checked');
+  if(!control.id||!['true','false'].includes(checked))return null;
+  return {enabled:checked==='true',checked,controlID:control.id};
 })()`;
 
 // This reads the mounted React control; persisted preferences are not live state.

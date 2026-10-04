@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bundleElectronMain } from '../../packages/electron/scripts/bundle-main.mjs';
 import { captureQaArtifactIdentity, captureQaSourceIdentity } from './artifact-evidence.mjs';
+import { restoreRevertRuntimeExecutableModes } from '../verify-revert-runtime-artifacts.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const electronRoot = path.join(root, 'packages/electron');
@@ -56,6 +57,10 @@ export async function packageQaElectron({ webDist, nativeSourceApp } = {}) {
   const staging = path.join(output, 'staging');
   const before = await captureQaSourceIdentity(root);
   const main = await bundleElectronMain({ outdir: path.join(staging, 'dist-bundle') });
+  const mainInputsPath = path.join(path.dirname(main), 'main.inputs.json');
+  const mainInputsBytes = await readFile(mainInputsPath), mainInputs = JSON.parse(mainInputsBytes);
+  if (mainInputs.workingDirectory !== canonicalRoot || mainInputs.mainSha256 !== sha256(await readFile(main))
+    || !Array.isArray(mainInputs.inputs) || !mainInputs.inputs.length) throw new Error('Electron main input closure is invalid');
   const web = await captureQaArtifactIdentity(canonicalDist);
   const { build, Platform, Arch } = requireElectron('electron-builder');
   const productName = 'DevRyan QA';
@@ -97,9 +102,15 @@ export async function packageQaElectron({ webDist, nativeSourceApp } = {}) {
     throw new Error(`Candidate source changed while Electron was packaging: ${changed.slice(0, 30).join(', ')}`);
   }
   const resources = path.join(appPath, 'Contents/Resources');
+  await restoreRevertRuntimeExecutableModes({ directory: path.join(resources, 'revert-runtime') });
   const archive = path.join(resources, 'app.asar');
   const packagedMain = asar.extractFile(archive, 'dist-bundle/main.mjs');
   if (sha256(packagedMain) !== sha256(await readFile(main))) throw new Error('Packaged Electron main differs from the fresh bundle');
+  for (const input of mainInputs.inputs) {
+    const absolute = path.resolve(canonicalRoot, input.file);
+    if (!inside(canonicalRoot, absolute) || sha256(await readFile(absolute)) !== input.sha256) throw new Error('Electron main input changed during packaging');
+  }
+  if (sha256(await readFile(mainInputsPath)) !== sha256(mainInputsBytes)) throw new Error('Electron main input receipt changed during packaging');
   const verifiedShellFiles = [];
   for (const [directory, files] of [
     [electronRoot, ['preload.mjs', 'origin-policy.mjs', 'browser-webview-policy.mjs', 'browser-cdp-bridge.mjs']],
@@ -148,7 +159,8 @@ export async function packageQaElectron({ webDist, nativeSourceApp } = {}) {
   const evidence = { schemaVersion: 1, purpose: 'actual packaged Electron Coding Agents QA with isolated test bootstrap',
     output, binary, appPath, electronVersion: installedElectron, platform: process.platform, arch: process.arch,
     source: before, webArtifact: web, packagedWebArtifact: packagedWeb, verifiedShellFiles, verifiedWorkspaceFiles,
-    mainSha256: sha256(packagedMain), preloadSha256: sha256(asar.extractFile(archive, 'preload.mjs')),
+    mainSha256: sha256(packagedMain), mainInputClosure: { path: mainInputsPath, sha256: sha256(mainInputsBytes), ...mainInputs },
+    preloadSha256: sha256(asar.extractFile(archive, 'preload.mjs')),
     archiveSha256: sha256(await readFile(archive)), bootstrapSha256: sha256(asar.extractFile(archive, 'packaged-host.mjs')),
     bootstrapPolicySha256: sha256(asar.extractFile(archive, 'packaged-host-policy.mjs')),
     packagerSha256: sha256(await readFile(fileURLToPath(import.meta.url))),

@@ -250,35 +250,9 @@ export const resolveProviderModelVariant = (
         return cleanedVariant;
     }
 
-    const normalizedVariant = normalizeVariantKey(cleanedVariant ?? '');
-    const thinkingVariants = getModelVariants(provider, model);
-    if (normalizedVariant === FAST_VARIANT_KEY) {
-        const pairedFastModelId = getPairedFastModelId(modelId);
-        const pairedFastModel = pairedFastModelId === modelId
-            ? undefined
-            : findProviderModel(provider, pairedFastModelId);
-        if (pairedFastModel || modelId.endsWith(FAST_MODEL_SUFFIX)) {
-            return resolveThinkingVariant(undefined, thinkingVariants);
-        }
-
-        const explicitFastVariant = findVariantKey(model.variants, cleanedVariant);
-        if (explicitFastVariant && normalizeVariantKey(explicitFastVariant) === FAST_VARIANT_KEY) {
-            return explicitFastVariant;
-        }
-
-        return resolveThinkingVariant(undefined, thinkingVariants);
-    }
-
-    if (normalizedVariant === 'none' && isOpenAIProvider(provider.id)) {
-        return resolveThinkingVariant(cleanedVariant, thinkingVariants, { providerId: provider.id });
-    }
-
-    const matchedVariant = findVariantKey(model.variants, cleanedVariant);
-    if (matchedVariant) {
-        return matchedVariant;
-    }
-
-    return resolveThinkingVariant(cleanedVariant, thinkingVariants);
+    // Catalog refreshes describe availability; they do not replace explicit intent.
+    // A missing effort must reach dispatch unchanged so the runtime can refuse it.
+    return findVariantKey(model.variants, cleanedVariant) ?? cleanedVariant;
 };
 
 export const getModelVariantDisplayState = (

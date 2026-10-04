@@ -151,6 +151,17 @@ describe('SessionNodeItem status selectors', () => {
     expect(source).toContain('managedOrchestrationSelectors.hasActiveTasksForRoot(');
     expect(source).toContain('isSessionWorking || hasWorkingDescendant || hasActiveManagedSubtask');
   });
+
+  test('shows working as the leading status dot instead of a trailing spinner', () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'SessionNodeItem.tsx'), 'utf8');
+
+    expect(source).toContain('resolveSessionLeadingIndicatorPresentation({');
+    expect(source).toContain('isWorking: sidebarIsWorking,');
+    expect(source).toContain('<SessionStatusDot');
+    expect(source).not.toContain('SidebarSpinner');
+    expect(source).not.toContain('activeStatusMarker');
+    expect(source).not.toContain('workingStatusPaddingClass');
+  });
 });
 
 describe('session sidebar quick hover actions', () => {
@@ -390,5 +401,15 @@ describe('session export outcome wiring', () => {
     expect(source).toContain('saveSessionExportMarkdown(\n        preparedExportPromise.then((prepared) => prepared.markdown),');
     expect(source.indexOf('const saveResult = await saveSessionExportMarkdown('))
       .toBeLessThan(source.indexOf('const preparedExport = await preparedExportPromise;'));
+  });
+});
+
+describe('session share menu capability gating', () => {
+  test('shows copy-link and unshare only when the runtime supports sharing', () => {
+    const testDir = dirname(fileURLToPath(import.meta.url));
+    const source = readFileSync(join(testDir, 'SessionNodeItem.tsx'), 'utf8');
+
+    expect(source).toContain("const shareAvailable = useRuntimeCapability('share');");
+    expect(source).toContain('{shareAvailable && resolvedSession.share ? (');
   });
 });

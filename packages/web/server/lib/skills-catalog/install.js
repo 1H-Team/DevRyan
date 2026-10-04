@@ -1,6 +1,8 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { getRuntimeHome } from '../opencode/runtime-host/runtime-bundle-binding.js';
+import { OPENCODE_CONFIG_DIR } from '../opencode/shared.js';
 
 import { assertGitAvailable, looksLikeAuthError, runGit } from './git.js';
 import { parseSkillRepoSource } from './source.js';
@@ -9,8 +11,8 @@ const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/;
 
 function normalizeUserSkillDir(userSkillDir) {
   if (!userSkillDir) return null;
-  const legacySkillDir = path.join(os.homedir(), '.config', 'opencode', 'skill');
-  const pluralSkillDir = path.join(os.homedir(), '.config', 'opencode', 'skills');
+  const legacySkillDir = path.join(OPENCODE_CONFIG_DIR, 'skill');
+  const pluralSkillDir = path.join(OPENCODE_CONFIG_DIR, 'skills');
   if (userSkillDir === legacySkillDir) {
     if (fs.existsSync(legacySkillDir) && !fs.existsSync(pluralSkillDir)) return legacySkillDir;
     return pluralSkillDir;
@@ -133,7 +135,7 @@ function getTargetSkillDir({ scope, targetSource, workingDirectory, userSkillDir
 
   if (scope === 'user') {
     if (source === 'agents') {
-      return path.join(os.homedir(), '.agents', 'skills', skillName);
+      return path.join(getRuntimeHome(), '.agents', 'skills', skillName);
     }
     return path.join(userSkillDir, skillName);
   }

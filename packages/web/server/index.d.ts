@@ -2,6 +2,13 @@ import type { Express } from "express";
 import type { Server } from "http";
 
 export interface WebUiServerController {
+  runtimeBundle: {
+    inspect(): Promise<{ state: string; reason: string | null; bundleID: string; previousBundleID: string | null;
+      revision: number; reconciliationRequired: boolean; restartRequired: boolean; availableManifestSha256?: string }>;
+    upgrade(input: { expectedRevision: number }): Promise<unknown>;
+    rollback(input: { expectedRevision: number }): Promise<unknown>;
+    recompose?(): Promise<void>;
+  };
   issueLocalOwnerSession: () => Promise<{ name: string; value: string; maxAge: number } | null> | null;
   expressApp: Express;
   httpServer: Server;
@@ -71,6 +78,7 @@ export interface StartWebUiServerOptions {
   attachSignals?: boolean;
   exitOnShutdown?: boolean;
   onRestartHost?: () => Promise<void>;
+  onRuntimeBundleCheckpoint?: () => Promise<void>;
   uiPassword?: string | null;
   getIsWindowFocused?: () => boolean;
   getBrowserCdpDiscoveryToken?: () => string;

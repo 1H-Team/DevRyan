@@ -13,6 +13,7 @@ for (const scenario of [
   test(`release smoke forwards actual build arguments for ${scenario.name}`, (t) => {
     const root = mkdtempSync(path.join(os.tmpdir(), 'devryan-release-args-'));
     t.after(() => rmSync(root, { recursive: true, force: true }));
+    writeFileSync(path.join(root, 'package.json'), '{"type":"commonjs"}\n');
     mkdirSync(path.join(root, 'scripts'));
     mkdirSync(path.join(root, 'bin'));
     // Run the production script with disposable tool doubles. No build, install,

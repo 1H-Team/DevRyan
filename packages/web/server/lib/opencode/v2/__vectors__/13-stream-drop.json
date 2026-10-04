@@ -1,0 +1,107 @@
+{
+ "vector": "13-stream-drop",
+ "title": "D13/F7: SubscriberOverflow on a paused subscriber",
+ "design": "D13 (+F7)",
+ "opencode": "2.0.20",
+ "capturedWith": "g2trace on the G1 embedded host (ServerFetch.make + Bun listener), simulation backend; see README.md",
+ "normalization": {
+  "ids": 18,
+  "timestamps": 14,
+  "sha256": 0,
+  "sha1": 0,
+  "slugs": 1,
+  "timestampBase": 1767225600000,
+  "timestampStep": 1000
+ },
+ "frames": [
+  "data: {\"id\":\"evt_000000000001normalized0000\",\"created\":1767225601000,\"type\":\"session.created\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"slug\":\"slug-1\",\"version\":\"0.0.0-spike\",\"projectID\":\"global\",\"location\":{\"directory\":\"<home>/workspace\"},\"subpath\":\"\",\"title\":\"Overflow\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":0,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000003normalized0000\",\"created\":1767225602000,\"type\":\"session.renamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"title\":\"flood 0\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":1,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000004normalized0000\",\"created\":1767225603000,\"type\":\"session.renamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"title\":\"flood 32\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":2,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000005normalized0000\",\"created\":1767225604000,\"type\":\"session.renamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"title\":\"flood 1\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":3,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000006normalized0000\",\"created\":1767225605000,\"type\":\"session.renamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"title\":\"flood 2\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":4,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000007normalized0000\",\"created\":1767225606000,\"type\":\"session.renamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"title\":\"flood 3\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":5,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000enormalized0000\",\"created\":1767225612000,\"type\":\"session.renamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"title\":\"gated 4996\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":15997,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000fnormalized0000\",\"created\":1767225613000,\"type\":\"session.renamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"title\":\"gated 4997\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":15998,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000010normalized0000\",\"created\":1767225613000,\"type\":\"session.renamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"title\":\"gated 4998\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":15999,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000011normalized0000\",\"created\":1767225614000,\"type\":\"session.renamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"title\":\"gated 4999\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":16000,\"version\":1}}\n\n"
+ ],
+ "rest": [
+  {
+   "label": "session.create",
+   "method": "POST",
+   "path": "/api/session",
+   "request": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "title": "Overflow"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffffenormalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1767225601000,
+      "updated": 1767225601000
+     },
+     "title": "Overflow",
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  }
+ ],
+ "llm": [],
+ "notes": {
+  "flood": {
+   "total": 6000,
+   "statuses": {
+    "204": 6000
+   },
+   "concurrency": 32
+  },
+  "pausedSubscriber": {
+   "bytes": 1822111,
+   "dataFrames": 6001,
+   "socketEvents": [],
+   "endsWithChunkedTerminator": false,
+   "head": "HTTP/1.1 200 OK\r\nCache-Control: no-cache, no-transform\r\nX-Content-Type-Options: nosniff\r\nContent-Type: text/event-stream\r\nVary: Origin\r\nx-accel-buffering: no\r\nDate: <date>\r\nTransfer-Encoding: chunked\r\n\r\n60\r\ndata: {\"id\":\"evt_000000000002normalized0000\",\"type\":\"server.connected\",\"data\":{}}\n\n: heartbeat\n\n\r\n166\r\ndata: {\"id\":\"evt_000000000003normalized0000\",\"created\":1767225602000,\"type\":\"session.renamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"title\":\"flood 0\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\"",
+   "tail": "a: {\"id\":\"evt_000000000008normalized0000\",\"created\":1767225607000,\"type\":\"session.renamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"title\":\"flood 5998\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":5999,\"version\":1}}\n\n\r\n16c\r\ndata: {\"id\":\"evt_000000000009normalized0000\",\"created\":1767225608000,\"type\":\"session.renamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"title\":\"flood 5999\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":6000,\"version\":1}}\n\n\r\n",
+   "stillOpenAfterResume": true
+  },
+  "readingSubscriber": {
+   "framesDuringFlood": 6000,
+   "renamedFrames": 6000
+  },
+  "handlerUnreadBody": {
+   "status": 200,
+   "flood": 5000,
+   "dataFramesRead": 4116,
+   "outcome": "error EventFeed.SubscriberOverflow: ",
+   "tail": "\ndata: {\"id\":\"evt_00000000000anormalized0000\",\"created\":1767225609000,\"type\":\"session.renamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"title\":\"unread 4114\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":10115,\"version\":1}}\n\n"
+  },
+  "listenerGatedTcp": {
+   "flood": 5000,
+   "bytes": 1254597,
+   "dataFrames": 4117,
+   "socketEvents": [],
+   "endsWithChunkedTerminator": true,
+   "head": "HTTP/1.1 200 OK\r\nCache-Control: no-cache, no-transform\r\nX-Content-Type-Options: nosniff\r\nContent-Type: text/event-stream\r\nVary: Origin\r\nx-accel-buffering: no\r\nDate: <date>\r\nTransfer-Encoding: chunked\r\n\r\n1ca\r\ndata: {\"id\":\"evt_00000000000bnormalized0000\",\"type\":\"server.connected\",\"data\":{}}\n\n: heartbeat\n\ndata: {\"id\":\"evt_00000000000cnormalized0000\",\"created\":1767225610000,\"typ",
+   "tail": "\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":15115,\"version\":1}}\n\n\r\n16d\r\ndata: {\"id\":\"evt_00000000000dnormalized0000\",\"created\":1767225611000,\"type\":\"session.renamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"title\":\"gated 4115\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":15116,\"version\":1}}\n\n\r\n0\r\n\r\n"
+  },
+  "framesTrimmed": true
+ }
+}

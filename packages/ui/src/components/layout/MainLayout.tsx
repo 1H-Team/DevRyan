@@ -116,8 +116,12 @@ export const MainLayout: React.FC = () => {
     const responsiveRightSidebarChangeRef = React.useRef<ResponsivePanelAction | null>(null);
     const responsiveBottomTerminalChangeRef = React.useRef<ResponsivePanelAction | null>(null);
 
-    // Mobile drawer state
-    const [mobileLeftDrawerOpen, setMobileLeftDrawerOpen] = React.useState(false);
+    // Header, swipes and session/project actions share the same drawer owner.
+    const mobileLeftDrawerOpen = isSessionSwitcherOpen;
+    const setMobileLeftDrawerOpen = React.useCallback((next: React.SetStateAction<boolean>) => {
+        const state = useUIStore.getState();
+        state.setSessionSwitcherOpen(typeof next === 'function' ? next(state.isSessionSwitcherOpen) : next);
+    }, []);
     const mobileRightDrawerOpenRef = React.useRef(false);
 
     // Left drawer motion value
@@ -190,13 +194,6 @@ export const MainLayout: React.FC = () => {
         return () => animation.stop();
     }, [isMobile, isRightSidebarOpen, screenWidth, rightDrawerX]);
 
-    // Sync session switcher state to left drawer (one-way)
-    useEffect(() => {
-        if (isMobile) {
-            setMobileLeftDrawerOpen(isSessionSwitcherOpen);
-        }
-    }, [isSessionSwitcherOpen, isMobile]);
-
     // Ensure mobile drawers are closed when opening full-screen settings
     useEffect(() => {
         if (!isMobile || !isSettingsDialogOpen) {
@@ -204,13 +201,10 @@ export const MainLayout: React.FC = () => {
         }
 
         setMobileLeftDrawerOpen(false);
-        if (isSessionSwitcherOpen) {
-            useUIStore.getState().setSessionSwitcherOpen(false);
-        }
         if (isRightSidebarOpen) {
             setRightSidebarOpen(false);
         }
-    }, [isMobile, isSettingsDialogOpen, isSessionSwitcherOpen, isRightSidebarOpen, setRightSidebarOpen]);
+    }, [isMobile, isSettingsDialogOpen, isSessionSwitcherOpen, isRightSidebarOpen, setRightSidebarOpen, setMobileLeftDrawerOpen]);
 
     // Sync right drawer and git sidebar state
     useEffect(() => {
@@ -224,14 +218,14 @@ export const MainLayout: React.FC = () => {
             setRightSidebarOpen(false);
         }
         setMobileLeftDrawerOpen((open) => !open);
-    }, [isRightSidebarOpen, setRightSidebarOpen]);
+    }, [isRightSidebarOpen, setRightSidebarOpen, setMobileLeftDrawerOpen]);
 
     const toggleMobileRightDrawer = React.useCallback(() => {
         if (mobileLeftDrawerOpen) {
             setMobileLeftDrawerOpen(false);
         }
         setRightSidebarOpen(!isRightSidebarOpen);
-    }, [isRightSidebarOpen, mobileLeftDrawerOpen, setRightSidebarOpen]);
+    }, [isRightSidebarOpen, mobileLeftDrawerOpen, setRightSidebarOpen, setMobileLeftDrawerOpen]);
 
     // Trigger initial update check shortly after mount, then repeat using server-suggested cadence.
     const checkForUpdates = useUpdateStore((state) => state.checkForUpdates);
@@ -579,8 +573,10 @@ export const MainLayout: React.FC = () => {
                             } else {
                                 if (currentX > -drawerWidthPx / 2) {
                                     leftDrawerX.set(0);
+                                    setMobileLeftDrawerOpen(true);
                                 } else {
                                     leftDrawerX.set(-drawerWidthPx);
+                                    setMobileLeftDrawerOpen(false);
                                 }
                             }
                         }}

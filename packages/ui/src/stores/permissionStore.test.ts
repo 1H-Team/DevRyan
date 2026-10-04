@@ -19,7 +19,9 @@ mock.module("@/sync/sync-refs", () => ({
   }),
 }))
 
+const actualOpencodeClientModule = await import("@/lib/opencode/client")
 mock.module("@/lib/opencode/client", () => ({
+  ...actualOpencodeClientModule,
   opencodeClient: {
     getDirectory: () => "/repo",
     listPendingPermissions: mock(async (opts?: { directories?: Array<string | null | undefined> }) => {

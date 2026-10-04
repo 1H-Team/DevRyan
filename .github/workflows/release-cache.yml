@@ -1,14 +1,14 @@
-name: Warm release caches
+name: Verify native release inputs
 
-# Caches saved by a tag-triggered release are visible only to that tag. Saving
-# the verified companion build from the default branch lets every release
-# restore it. The key must match release.yml exactly.
 on:
   push:
     branches: [main]
     paths:
-      - packages/web/server/lib/opencode/companion/**
-      - scripts/build-revert-runtime.mjs
+      - packages/web/server/lib/opencode/runtime-host/**
+      - packages/harness-runtime/native/**
+      - scripts/build-native-runtime.mjs
+      - scripts/native-runtime-assets.mjs
+      - bun.lock
       - .github/workflows/release-cache.yml
   workflow_dispatch:
 
@@ -16,30 +16,28 @@ permissions:
   contents: read
 
 concurrency:
-  group: warm-release-caches
+  group: verify-native-release-inputs
   cancel-in-progress: true
 
 jobs:
   macos:
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-26
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [macos-26]
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-        id: bun
+        with:
+          bun-version: '1.3.14'
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Restore verified companion build
-        uses: actions/cache@v4
-        with:
-          path: .cache/revert-runtime-companion
-          key: revert-companion-${{ runner.os }}-${{ runner.arch }}-bun${{ steps.bun.outputs.bun-version }}-${{ hashFiles('packages/web/server/lib/opencode/companion/manifest.json', 'packages/web/server/lib/opencode/companion/*.patch') }}
-      - name: Build verified companion
+      - name: Install exact native dependencies
         env:
-          DEVRYAN_REVERT_COMPANION_ONLY: '1'
-        run: bun run build:revert-runtime
+          DEVRYAN_SKIP_INSTALL_PREPARE: '1'
+        run: bun install --frozen-lockfile --cpu '*' --os darwin
+      # Missing reviewed assets fail visibly; an old companion or development
+      # manifest cannot substitute for verified native release inputs.
+      - name: Restore exact reviewed Claude executable
+        run: node scripts/hydrate-reviewed-claude.mjs
+      - name: Build and verify native v2 runtime
+        run: bun scripts/build-native-runtime.mjs

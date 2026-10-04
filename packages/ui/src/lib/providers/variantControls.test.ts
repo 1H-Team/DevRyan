@@ -66,7 +66,7 @@ describe('provider variant controls', () => {
       .toEqual(['none', 'low', 'medium', 'high']);
   });
 
-  test('migrates stale OpenAI none selections to Light', () => {
+  test('displays the supported Light control while preserving explicit none intent', () => {
     const provider = {
       id: 'openai',
       models: [{ id: 'gpt-5.6-luna', variants: { none: {}, low: {}, medium: {}, high: {} } }],
@@ -75,10 +75,10 @@ describe('provider variant controls', () => {
     const state = getModelVariantControlState(provider, 'gpt-5.6-luna', 'none');
     expect(state?.selectedVariant).toBe('low');
     expect(state?.visibleVariantOptions).toEqual(['low', 'medium', 'high']);
-    expect(resolveProviderModelVariant(provider, 'gpt-5.6-luna', 'none')).toBe('low');
+    expect(resolveProviderModelVariant(provider, 'gpt-5.6-luna', 'none')).toBe('none');
   });
 
-  test('never returns OpenAI none when a malformed catalog has no Light variant', () => {
+  test('preserves explicit none intent when a malformed catalog has no Light variant', () => {
     const provider = {
       id: 'openai',
       models: [{ id: 'gpt-5.6-custom', variants: { none: {}, high: {} } }],
@@ -87,7 +87,7 @@ describe('provider variant controls', () => {
     const state = getModelVariantControlState(provider, 'gpt-5.6-custom', 'none');
     expect(state?.selectedVariant).toBe('high');
     expect(state?.visibleVariantOptions).toEqual(['high']);
-    expect(resolveProviderModelVariant(provider, 'gpt-5.6-custom', 'none')).toBe('high');
+    expect(resolveProviderModelVariant(provider, 'gpt-5.6-custom', 'none')).toBe('none');
   });
 
   test('derives a fast toggle from an explicit paired fast model and preserves thinking when possible', () => {
@@ -187,7 +187,7 @@ describe('provider variant controls', () => {
       modelId: 'gpt-5.5',
       variant: 'fast',
     });
-    expect(resolveProviderModelVariant(provider, 'gpt-5.5', 'fast')).toBe(undefined);
+    expect(resolveProviderModelVariant(provider, 'gpt-5.5', 'fast')).toBe('fast');
   });
 
   test('does not derive implicit OpenAI fast toggles for mini or nano model families', () => {
@@ -201,8 +201,8 @@ describe('provider variant controls', () => {
 
     expect(getModelVariantControlState(provider, 'gpt-5.5-mini', undefined)).toBeNull();
     expect(getModelVariantControlState(provider, 'gpt-5.5-nano', undefined)).toBeNull();
-    expect(resolveProviderModelVariant(provider, 'gpt-5.5-mini', 'fast')).toBe(undefined);
-    expect(resolveProviderModelVariant(provider, 'gpt-5.5-nano', 'fast')).toBe(undefined);
+    expect(resolveProviderModelVariant(provider, 'gpt-5.5-mini', 'fast')).toBe('fast');
+    expect(resolveProviderModelVariant(provider, 'gpt-5.5-nano', 'fast')).toBe('fast');
   });
 
   test('treats a real fast variant as a toggle instead of a thinking level', () => {
@@ -231,7 +231,7 @@ describe('provider variant controls', () => {
     expect(resolveProviderModelVariant(provider, 'agent-model', 'fast')).toBe('fast');
   });
 
-  test('drops stale fast variants for paired fast models because fast is represented by model id', () => {
+  test('retains stale fast intent while paired mode controls use model identity', () => {
     const provider = {
       id: 'custom',
       models: [
@@ -244,8 +244,8 @@ describe('provider variant controls', () => {
       modelId: 'agent-model-fast',
       variant: 'medium',
     });
-    expect(resolveProviderModelVariant(provider, 'agent-model', 'fast')).toBeUndefined();
-    expect(resolveProviderModelVariant(provider, 'agent-model-fast', 'fast')).toBeUndefined();
+    expect(resolveProviderModelVariant(provider, 'agent-model', 'fast')).toBe('fast');
+    expect(resolveProviderModelVariant(provider, 'agent-model-fast', 'fast')).toBe('fast');
   });
 
   test('hides paired fast models only when the base model exists', () => {
@@ -263,7 +263,7 @@ describe('provider variant controls', () => {
     expect(shouldHidePairedFastModel(provider, 'standalone-fast')).toBe(false);
   });
 
-  test('drops unsupported fast variants for providers without fast metadata', () => {
+  test('retains unsupported fast intent for dispatch validation', () => {
     const provider = {
       id: 'anthropic',
       models: [
@@ -271,6 +271,6 @@ describe('provider variant controls', () => {
       ],
     };
 
-    expect(resolveProviderModelVariant(provider, 'claude-sonnet-4-5', 'fast')).toBe(undefined);
+    expect(resolveProviderModelVariant(provider, 'claude-sonnet-4-5', 'fast')).toBe('fast');
   });
 });

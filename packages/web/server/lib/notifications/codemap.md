@@ -19,3 +19,4 @@ Notification subsystem for browser push and in-app streaming: subscription lifec
 - Registered by `server/index.js`; consumed by `src/api/notifications.ts` and `src/api/push.ts`.
 - Depends on `ui-auth` session tokens and OpenCode event/session state.
 - Integrates with `web-push` and text summarization/LLM helpers for payload quality.
+- Session and message reads require the typed native-v2 application client. Missing or unsupported runtime identity never selects an HTTP fallback; unavailable lineage does not inherit a parent auto-accept preference.

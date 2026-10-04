@@ -736,3 +736,53 @@ describe("createEventPipeline", () => {
     expect(attempts).toBe(1)
   })
 })
+
+test('routes authenticated integration events outside transcript batches with their source directory', async () => {
+  const event = { type: 'openchamber:integration', properties: { kind: 'images-skipped', directory: '/repo', sessionID: 'ses_1', eventID: '12345678-1234-1234-1234-123456789abc' } } as unknown as OpencodeEvent
+  let finish!: () => void
+  const consumed = new Promise<void>(resolve => { finish = resolve })
+  const routed: unknown[][] = [], transcript: unknown[] = []
+  const pipeline = createEventPipeline({ sdk: createSdk([event], finish), transport: 'sse',
+    onEvent: (_directory, payload) => { transcript.push(payload) },
+    onBatch: (_directory, payload) => { transcript.push(payload) },
+    onIntegrationEvent: (directory, payload) => { routed.push([directory, payload]) },
+  })
+  try { await Promise.race([consumed, failAfter(1000)]); expect(routed).toEqual([['/repo', event]]); expect(transcript).toEqual([]) }
+  finally { pipeline.cleanup() }
+})
+
+test('original SDK quiet ACK reconnects without a cursor through bounded replay before input readiness', async () => {
+  const { createOpencodeClient } = await import('@opencode-ai/sdk/v2');
+  const { opencodeClient } = await import('@/lib/opencode/client');
+  const requests: Headers[] = [];
+  const delivered: OpencodeEvent[] = [];
+  let release: () => void = () => {};
+  let deliveredPrefix: () => void = () => {};
+  const prefix = new Promise<void>(resolve => { deliveredPrefix = resolve; });
+  let gaps = 0;
+  const ready = 'event: devryan.subscription-ready\ndata: {"type":"ready","scope":"global"}\n\n';
+  const sdk = createOpencodeClient({ baseUrl: 'http://fixture/api', fetch: async request => {
+    if (!(request instanceof Request)) throw Error('Expected original SDK Request');
+    requests.push(request.headers);
+    if (requests.length === 1) return new Response(ready, { headers: { 'content-type': 'text/event-stream' } });
+    return new Response(new ReadableStream<Uint8Array>({ start(controller) {
+      controller.enqueue(new TextEncoder().encode('event: devryan.replay-gap\ndata: {"replayGap":{"scope":"global"}}\n\n'
+        + `id: first-prefix\ndata: ${JSON.stringify({ directory: '/repo', payload: deltaEvent('QA response chunk 1.') })}\n\n` + ready));
+      release = () => { try { controller.close(); } catch { /* Already cancelled by the original SDK. */ } };
+      request.signal.addEventListener('abort', release, { once: true });
+    } }), { headers: { 'content-type': 'text/event-stream' } });
+  } });
+  const pipeline = createEventPipeline({ sdk, transport: 'sse', reconnectDelayMs: 0,
+    onReplayGap: () => { gaps++; }, onEvent: (_directory, event) => { delivered.push(event); deliveredPrefix(); } });
+  try {
+    await Promise.race([prefix, failAfter(500)]);
+    (await opencodeClient.awaitInputSubscription())();
+    expect(requests).toHaveLength(2);
+    expect(requests[0].get('X-DevRyan-Replay-Unanchored')).toBeNull();
+    expect(requests[1].get('X-DevRyan-Replay-Unanchored')).toBe('1');
+    expect(requests[1].get('Last-Event-ID')).toBeNull();
+    expect(gaps).toBe(1);
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toMatchObject(deltaEvent('QA response chunk 1.'));
+  } finally { pipeline.cleanup(); release(); }
+});

@@ -1,10 +1,13 @@
+import { generateCursorHelperText } from './text-generation.js';
 import { assertWorkerPayloadBytes } from './worker-payload.js';
 import process from 'node:process';
+import os from 'node:os';
+import path from 'node:path';
 import {
   normalizeCursorSdkAgentDefinitions,
   pinCursorSdkSubagentModels,
 } from './agent-definitions.js';
-import { configureCursorSdkRipgrep } from './ripgrep-path.js';
+import { configureCursorSdkRipgrep, resolveCursorRipgrepPath } from './ripgrep-path.js';
 import {
   generateCursorSessionTitle,
 } from './title-generation.js';
@@ -135,7 +138,7 @@ const main = async () => {
   const modelSelection = normalizeModelSelection(input.modelSelection, modelID);
   const agents = pinCursorSdkSubagentModels(normalizeCursorSdkAgentDefinitions(input.agents), modelSelection);
   const mcpServers = isPlainObject(input.mcpServers) ? input.mcpServers : null;
-  const prompt = trimString(input.type === 'title' ? input.text : input.prompt);
+  const prompt = trimString(['title', 'text'].includes(input.type) ? input.text : input.prompt);
   const images = Array.isArray(input.images)
     ? input.images
       .filter((image) => (
@@ -158,10 +161,35 @@ const main = async () => {
   if (!apiKey) throw new Error('Cursor SDK API key is not configured.');
   if (!prompt) throw new Error('Cursor prompt is required.');
 
+  if (process.env.DEVRYAN_EXECUTION_WORKER === '1') {
+    const ripgrep = resolveCursorRipgrepPath({ env: process.env });
+    // The pinned local runtime consumes this environment field; the SDK's
+    // public entry does not export configureRipgrepPath in every build.
+    if (ripgrep.path) process.env.CURSOR_RIPGREP_PATH = ripgrep.path;
+  }
   const cursorSdk = await import('@cursor/sdk');
   configureCursorSdkRipgrep(cursorSdk, { env: process.env });
+  if (process.env.DEVRYAN_EXECUTION_WORKER === '1') {
+    const home = os.homedir();
+    if (!path.isAbsolute(home) || !process.env.TMPDIR || path.resolve(home) !== path.resolve(process.env.TMPDIR)) {
+      throw new Error('Confined Cursor scratch directory is required.');
+    }
+    // The default SDK path repeats the full workspace beneath HOME and can
+    // exceed SQLite's path budget for a deep private lease. Keep the original
+    // SQLite store in this call's existing writable scratch instead.
+    const { SqliteLocalAgentStore } = await import('@cursor/sdk/sqlite');
+    const store = await SqliteLocalAgentStore.open({ workspaceRef: directory || process.cwd(), stateRoot: path.join(home, 'cursor-sdk-state') });
+    cursorSdk.configureCursorSdk({ local: { store } });
+  }
   const { Agent } = cursorSdk;
   const model = modelSelection;
+  if (input.type === 'text') {
+    const text = await generateCursorHelperText({ Agent, apiKey, text: prompt, directory, model,
+      onUsage: observation => writeEvent({ type: 'usage-observation', observation }) });
+    writeEvent({ type: 'text-result', text });
+    setTimeout(() => process.exit(0), 25).unref?.();
+    return;
+  }
   if (input.type === 'title') {
     const title = await generateCursorSessionTitle({
       Agent,

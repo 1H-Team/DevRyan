@@ -82,7 +82,7 @@ describe('ModelControls Cursor fast-only controls', () => {
         const code = source();
 
         expect(
-            /if \(!contextHydrated\) \{\s*return;\s*\}\s*if \(!currentAgentName\) \{[\s\S]*?if \(!currentSessionId\) \{\s*return;/.test(code),
+            /if \(!contextHydrated\) \{\s*return;\s*\}[\s\S]*?if \(!currentAgentName\) \{[\s\S]*?if \(!currentSessionId\) \{\s*return;/.test(code),
         ).toBe(true);
     });
 });

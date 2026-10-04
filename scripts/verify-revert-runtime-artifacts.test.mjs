@@ -1,81 +1,49 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { verifyRevertRuntimeArtifacts, restoreRevertRuntimeExecutableModes } from './verify-revert-runtime-artifacts.mjs';
+import { verifyRevertRuntimeArtifacts, restoreRevertRuntimeExecutableModes, SUPPORTED_NATIVE_RUNTIME_TARGETS } from './verify-revert-runtime-artifacts.mjs';
 
-test('packaging refuses changed, unverified and mismatched Revert artifacts', async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'revert-artifacts-'));
-  const location = path.join(root, 'darwin-arm64');
-  const binary = 'DevRyan-execution-darwin-arm64', companion = 'DevRyan-opencode-darwin-arm64';
-  const sha256 = createHash('sha256').update('fixture').digest('hex');
-  const contract = JSON.parse(await fs.readFile(new URL('../packages/web/server/lib/opencode/companion/manifest.json', import.meta.url)));
-  const native = { version: 1, policy: 2, acceptance: true, platform: 'darwin', arch: 'arm64', binary, sha256,
-    spawnLibrary: binary + '-spawn.dylib', spawnSha256: sha256 };
-  const runtime = { ...contract.capability, acceptance: true, platform: 'darwin', arch: 'arm64', binary: companion,
-    sha256, patchSha256: contract.patchSha256, baseCommit: contract.baseCommit, upstreamVersion: contract.upstreamVersion,
-    buildInputsSha256: createHash('sha256').update('build inputs').digest('hex') };
-  const verify = () => verifyRevertRuntimeArtifacts({ directory: root, platform: 'darwin', arch: 'arm64' });
-  try {
-    await fs.mkdir(location);
-    for (const file of [binary, native.spawnLibrary, companion]) await fs.writeFile(path.join(location, file), 'fixture');
-    await fs.writeFile(path.join(location, binary + '.json'), JSON.stringify(native));
-    await fs.writeFile(path.join(location, 'companion.json'), JSON.stringify(runtime));
-    await verify();
-    if (process.platform !== 'win32') {
-      for (const file of [binary, native.spawnLibrary, companion]) await fs.chmod(path.join(location, file), 0o644);
-      await restoreRevertRuntimeExecutableModes({ directory: root, platform: 'darwin', arch: 'arm64' });
-      for (const file of [binary, native.spawnLibrary, companion]) {
-        assert.equal((await fs.stat(path.join(location, file))).mode & 0o777, 0o755);
-      }
-      await fs.chmod(path.join(location, companion), 0o644);
-    }
-    await fs.writeFile(path.join(location, companion), 'changed');
-    await assert.rejects(verify(), /companion artifact/);
-    await assert.rejects(restoreRevertRuntimeExecutableModes({ directory: root, platform: 'darwin', arch: 'arm64' }), /companion artifact/);
-    if (process.platform !== 'win32') assert.equal((await fs.stat(path.join(location, companion))).mode & 0o777, 0o644);
-    await fs.writeFile(path.join(location, companion), 'fixture');
-    await fs.writeFile(path.join(location, 'companion.json'), JSON.stringify({ ...runtime, acceptance: false }));
-    await assert.rejects(verify(), /companion artifact/);
-    await fs.writeFile(path.join(location, 'companion.json'), JSON.stringify({ ...runtime, patchSha256: 'unreviewed' }));
-    await assert.rejects(verify(), /companion artifact/);
-    await fs.writeFile(path.join(location, 'companion.json'), JSON.stringify({ ...runtime, upstreamVersion: '0.0.0' }));
-    await assert.rejects(verify(), /companion artifact/);
-    const { buildInputsSha256: _omitted, ...withoutBuildInputs } = runtime;
-    await fs.writeFile(path.join(location, 'companion.json'), JSON.stringify(withoutBuildInputs));
-    await assert.rejects(verify(), /companion artifact/);
-    await fs.writeFile(path.join(location, 'companion.json'), JSON.stringify(runtime));
-    await fs.writeFile(path.join(location, native.spawnLibrary), 'changed');
-    await assert.rejects(verify(), /spawn library/);
-  } finally { await fs.rm(root, { recursive: true, force: true }); }
+const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+test('native packaging rejects retired runtime artifacts and unavailable targets before payload reads', async t => {
+  assert.deepEqual(SUPPORTED_NATIVE_RUNTIME_TARGETS, ['darwin-arm64']);
+  const directory = await fs.mkdtemp(path.resolve('.cache/native-packaging-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  await assert.rejects(verifyRevertRuntimeArtifacts({ directory, platform: 'darwin', arch: 'x64' }), /unavailable/);
+  await assert.rejects(verifyRevertRuntimeArtifacts({ directory, platform: 'linux', arch: 'arm64' }), /unavailable/);
+  if (process.platform !== 'darwin' || process.arch !== 'arm64') return;
+  const location = path.join(directory, 'darwin-arm64'); await fs.mkdir(location);
+  await fs.writeFile(path.join(location, 'companion.json'), '{"acceptance":true}');
+  await assert.rejects(verifyRevertRuntimeArtifacts({ directory }), { code: 'ENOENT' });
+  const manifest = { schema: 1, opencodeVersion: '1.18.33', target: 'bun-darwin-arm64', files: [] };
+  await fs.writeFile(path.join(location, 'native-bundle.json'), JSON.stringify(manifest));
+  await assert.rejects(verifyRevertRuntimeArtifacts({ directory }), /inventory invalid/);
 });
 
-test('distribution requires every declared architecture and all paired capabilities', async () => {
-  const { verifySupportedRevertRuntimeArtifacts } = await import('./verify-revert-runtime-artifacts.mjs');
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'required-runtime-'));
-  const contract = JSON.parse(await fs.readFile(new URL('../packages/web/server/lib/opencode/companion/manifest.json', import.meta.url)));
-  const hash = createHash('sha256').update('fixture').digest('hex');
-  try {
-    const missing = contract.supportedArtifacts.at(-1);
-    for (const target of contract.supportedArtifacts) {
-      if (target === missing) await assert.rejects(verifySupportedRevertRuntimeArtifacts({ directory }));
-      const [platform, arch] = target.split('-'), extension = platform === 'win32' ? '.exe' : '';
-      const location = path.join(directory, target), binary = `DevRyan-execution-${target}${extension}`, companion = `DevRyan-opencode-${target}${extension}`;
-      await fs.mkdir(location);
-      const native = { version: 1, policy: 2, acceptance: true, platform, arch, binary, sha256: hash,
-        spawnLibrary: binary + '-spawn.dylib', spawnSha256: hash };
-      const runtime = { ...contract.capability, acceptance: true, platform, arch, binary: companion,
-        baseCommit: contract.baseCommit, patchSha256: contract.patchSha256, upstreamVersion: contract.upstreamVersion,
-        buildInputsSha256: hash, sha256: hash };
-      for (const name of [binary, companion, native.spawnLibrary]) await fs.writeFile(path.join(location, name), 'fixture');
-      await fs.writeFile(path.join(location, binary + '.json'), JSON.stringify(native));
-      await fs.writeFile(path.join(location, 'companion.json'), JSON.stringify(runtime));
-    }
-    await verifySupportedRevertRuntimeArtifacts({ directory });
-    const file = path.join(directory, missing, 'companion.json'), runtime = JSON.parse(await fs.readFile(file));
-    delete runtime.executionPreparation; await fs.writeFile(file, JSON.stringify(runtime));
-    await assert.rejects(verifySupportedRevertRuntimeArtifacts({ directory }), /companion artifact/);
-  } finally { await fs.rm(directory, { recursive: true, force: true }); }
+test('mode restoration refuses changed or unmanifested bytes before mutating any payload', async t => {
+  if (process.platform !== 'darwin' || process.arch !== 'arm64') { t.skip('Actual native target unavailable'); return; }
+  const directory = await fs.mkdtemp(path.resolve('.cache/native-modes-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const location = path.join(directory, 'darwin-arm64'); await fs.mkdir(location);
+  const filename = 'DevRyan-native-controller', target = path.join(location, filename);
+  const policyName = 'DevRyan-execution-darwin-arm64.json', policy = path.join(location, policyName);
+  await fs.writeFile(policy, 'policy'); await fs.chmod(policy, 0o644);
+  const manifest = { schema: 1, opencodeVersion: '2.0.20', target: 'bun-darwin-arm64',
+    files: [{ path: policyName, role: 'asset', mode: 0o600, size: 6, sha256: hash('policy') },
+      { path: filename, role: 'controller', mode: 0o755, size: 7, sha256: hash('fixture') }] };
+  await fs.writeFile(target, 'changed'); await fs.chmod(target, 0o644);
+  await fs.writeFile(path.join(location, 'native-bundle.json'), JSON.stringify(manifest));
+  await assert.rejects(restoreRevertRuntimeExecutableModes({ directory }), /payload changed/);
+  assert.equal((await fs.stat(target)).mode & 0o777, 0o644);
+  assert.equal((await fs.stat(policy)).mode & 0o777, 0o644);
+  await fs.writeFile(target, 'fixture');
+  await fs.writeFile(path.join(location, 'DevRyan-opencode-darwin-arm64'), 'retired');
+  await assert.rejects(restoreRevertRuntimeExecutableModes({ directory }), /Unmanifested/);
+  assert.equal((await fs.stat(target)).mode & 0o777, 0o644);
+  assert.equal((await fs.stat(policy)).mode & 0o777, 0o644);
+  await fs.rm(path.join(location, 'DevRyan-opencode-darwin-arm64'));
+  manifest.files[1].path = 'DevRyan-opencode-darwin-arm64';
+  await fs.writeFile(path.join(location, 'native-bundle.json'), JSON.stringify(manifest));
+  await assert.rejects(restoreRevertRuntimeExecutableModes({ directory }), /inventory invalid/);
 });

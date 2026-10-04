@@ -2530,6 +2530,10 @@ describe('Cursor SDK runtime', () => {
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
       env: {},
       emitEvent: () => {},
+      loadSdk: async () => ({ Cursor: { models: { list: async () => [{
+        id: 'grok-4.5', displayName: 'Grok 4.5', parameters: [],
+        variants: [{ displayName: 'Grok 4.5', isDefault: true, params: [] }],
+      }] } } }),
       createPromptRun: async () => ({
         cancel: async () => {},
         stream: async function* stream() {

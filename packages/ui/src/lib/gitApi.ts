@@ -924,6 +924,8 @@ const runJsonGenerationInActiveSession = async ({
   }
 
   const response = await opencodeClient.withDirectory(directory, async () => {
+    const assertSubscription = await opencodeClient.awaitInputSubscription();
+    assertSubscription();
     return opencodeClient.getApiClient().session.prompt({
       sessionID: generationSession.sessionId,
       ...(trimmedDirectory.length > 0 ? { directory: trimmedDirectory } : {}),

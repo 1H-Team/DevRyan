@@ -5,6 +5,9 @@ Shared Cursor SDK runtime for DevRyan hosts. It keeps Cursor model execution, SD
 
 ## Design
 - `index.js`: ESM runtime and credential helpers.
+- `getDeclaredVirtualProvider()` returns fresh original offline capability
+  declarations for native readiness; it does not discover accounts or providers.
+  `getCachedVirtualProvider()` remains the separate mutable discovery cache.
 - `cursor-question-runtime.js`: authenticated, loopback-only Streamable HTTP MCP server for primary Builder/Orchestrator question calls. It owns session-scoped credentials with immutable per-run generations, pending request/event lifecycle, answer/Skip settlement, directory filtering, transport-disconnect cleanup, and abort/supersede/provider-failure/run-completion/delete/dispose revocation. Opaque scope-identity matching prevents late cleanup—even for a same-message retry—from invalidating a replacement run.
 - `ripgrep-path.js`: resolves and configures the Cursor SDK platform `rg` binary for direct, one-shot worker, and persistent worker execution without exposing absolute paths in runtime status.
 - `interaction-update-normalize.js`: one shared adapter for the SDK's raw `onDelta` interaction updates across direct, one-shot, and persistent execution. It preserves terminal result-union errors and projects the SDK's one-level `tool-call-delta` subagent stream without accepting deeper nesting.
@@ -54,3 +57,5 @@ Shared Cursor SDK runtime for DevRyan hosts. It keeps Cursor model execution, SD
 - Partial native publication appends a durable conflict notice to the final assistant message before the session becomes idle. Provider success cannot hide preserved foreign file contents or the retained proposed changes.
 
 - `worker-payload.js` enforces a 16 MiB UTF-8 wire bound. Owned one-shot prompt/title input freezes before preparation, includes full prompt history, and finalizes via `inputForLease` before native launch. `workerInput` carries the exact checked payload; `node-worker.mjs` bounds its reader too. No history truncation is used.
+
+- `text-generation.js` and the one-shot worker `text` mode preserve supplied prompt and raw multiline result with the selected SDK model/variant, `tools: []` and `settingSources: []`. They do not create/resume an Agent session or apply title normalization. `generateText` waits for physical owned cancellation receipts before releasing its scope. Native detached titles use the title-only owner and existing declared/cached model selection without borrowing a detached catalog credential grant.

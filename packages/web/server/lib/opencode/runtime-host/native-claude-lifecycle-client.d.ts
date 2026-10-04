@@ -1,0 +1,3 @@
+import type {ClaudeLifecycleClient,ClaudeLifecycleOperation} from './native-claude-lifecycle.js';
+export interface NativeClaudeLifecycleController {readonly instanceID:string;call(command:{readonly action:'claude-lifecycle-read-owned';readonly controllerInstanceID:string}|{readonly action:'claude-lifecycle-transition-owned';readonly controllerInstanceID:string;readonly expectedRevision:number;readonly operation:ClaudeLifecycleOperation}):Promise<unknown>}
+export function createNativeClaudeLifecycleClient(options:{readonly controller:()=>NativeClaudeLifecycleController;readonly isCurrent:()=>boolean}):ClaudeLifecycleClient;

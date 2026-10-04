@@ -1,6 +1,7 @@
 export const createSettingsNormalizationRuntime = (dependencies) => {
   const {
     os,
+    homeDirectory = os.homedir(),
     path,
     processLike,
     tunnelBootstrapTtlDefaultMs,
@@ -22,11 +23,11 @@ export const createSettingsNormalizationRuntime = (dependencies) => {
     }
 
     if (trimmed === '~') {
-      return os.homedir();
+      return homeDirectory;
     }
 
     if (trimmed.startsWith('~/') || trimmed.startsWith('~\\')) {
-      return path.join(os.homedir(), trimmed.slice(2));
+      return path.join(homeDirectory, trimmed.slice(2));
     }
 
     return trimmed;

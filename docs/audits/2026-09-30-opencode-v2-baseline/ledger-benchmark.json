@@ -1,0 +1,480 @@
+{
+  "version": 1,
+  "runtime": "/Users/zoubair/Repositories/DevRyan/packages/harness-runtime/lib",
+  "repo": "/Users/zoubair/Repositories/DevRyan/.cache/perf/ledger-fixtures/files-12000",
+  "iterations": 2,
+  "warmCalls": 3,
+  "prewarm": true,
+  "parallel": 8,
+  "restamp": false,
+  "fixtureFiles": 12000,
+  "seedCalls": 2000,
+  "sameSession": true,
+  "burstMode": "same-session",
+  "deferredCleanup": true,
+  "switches": {},
+  "platform": "darwin-arm64",
+  "node": "v26.0.0",
+  "summary": {
+    "files": {
+      "count": 2,
+      "min": 12002,
+      "p50": 12002,
+      "max": 12002
+    },
+    "prewarmMs": {
+      "count": 2,
+      "min": 168487,
+      "p50": 169874.5,
+      "max": 171262
+    },
+    "seedMs": {
+      "count": 2,
+      "min": 486105,
+      "p50": 496155.5,
+      "max": 506206
+    },
+    "seedLastCallMs": {
+      "count": 2,
+      "min": 244,
+      "p50": 244.5,
+      "max": 245
+    },
+    "seedLedgerEntries": {
+      "count": 2,
+      "min": 42238,
+      "p50": 42238,
+      "max": 42238
+    },
+    "ledgerEntries": {
+      "count": 2,
+      "min": 42332,
+      "p50": 42332,
+      "max": 42332
+    },
+    "drainMs": {
+      "count": 2,
+      "min": 4521,
+      "p50": 5415.5,
+      "max": 6310
+    },
+    "maintenanceDrainMs": {
+      "count": 2,
+      "min": 0,
+      "p50": 0,
+      "max": 0
+    },
+    "seedMaintenanceDrainMs": {
+      "count": 2,
+      "min": 0,
+      "p50": 0,
+      "max": 0
+    },
+    "firstBeginMs": {
+      "count": 2,
+      "min": 3233,
+      "p50": 3776,
+      "max": 4319
+    },
+    "firstFinishMs": {
+      "count": 2,
+      "min": 1502,
+      "p50": 1606.5,
+      "max": 1711
+    },
+    "warmBeginMs": {
+      "count": 6,
+      "min": 3489,
+      "p50": 3516.5,
+      "max": 3961
+    },
+    "warmFinishMs": {
+      "count": 6,
+      "min": 1446,
+      "p50": 1552,
+      "max": 1750
+    },
+    "warmCleanupMs": {
+      "count": 6,
+      "min": 1115,
+      "p50": 1282,
+      "max": 3133
+    },
+    "burstSpanMs": {
+      "count": 2,
+      "min": 27296,
+      "p50": 29103,
+      "max": 30910
+    },
+    "burstBeginMs": {
+      "count": 16,
+      "min": 6224,
+      "p50": 16052,
+      "max": 19006
+    },
+    "burstFinishMs": {
+      "count": 16,
+      "min": 2582,
+      "p50": 4965,
+      "max": 8570
+    },
+    "burstCleanupMs": {
+      "count": 16,
+      "min": 1046,
+      "p50": 5979.5,
+      "max": 10364
+    },
+    "restampBeginMs": {
+      "count": 0,
+      "min": null,
+      "p50": null,
+      "max": null
+    },
+    "controlMs": {
+      "count": 2,
+      "min": 1054,
+      "p50": 1122.5,
+      "max": 1191
+    },
+    "maxRssMiB": {
+      "count": 2,
+      "min": 401,
+      "p50": 401,
+      "max": 401
+    }
+  },
+  "rows": [
+    {
+      "iteration": 0,
+      "files": 12002,
+      "prewarmMs": 171262,
+      "seed": {
+        "calls": 2000,
+        "sessions": 5,
+        "ms": 486105,
+        "cpuMs": 27599,
+        "firstCallMs": 1691,
+        "callMs": {
+          "count": 1999,
+          "min": 219,
+          "p50": 238,
+          "max": 1749
+        },
+        "lastCallsMs": {
+          "count": 50,
+          "min": 241,
+          "p50": 244,
+          "max": 261
+        },
+        "maintenanceDrainMs": 0,
+        "ledgerEntries": {
+          "total": 42238,
+          "byKind": {
+            "calls": 2000,
+            "files": 12002,
+            "leases": 2000,
+            ".": 1,
+            "operations": 2000,
+            "prompts": 250,
+            "revisions": 12002,
+            "runs": 11978,
+            "sessions": 5
+          }
+        }
+      },
+      "first": {
+        "beginMs": 3233,
+        "beginCpuMs": 6122,
+        "finishMs": 1502,
+        "finishCpuMs": 789,
+        "cleanupMs": 1150,
+        "cleanupDeferred": true
+      },
+      "warm": [
+        {
+          "beginMs": 3528,
+          "beginCpuMs": 6538,
+          "finishMs": 1449,
+          "finishCpuMs": 748,
+          "cleanupMs": 1133,
+          "cleanupDeferred": true
+        },
+        {
+          "beginMs": 3489,
+          "beginCpuMs": 6442,
+          "finishMs": 1451,
+          "finishCpuMs": 730,
+          "cleanupMs": 1115,
+          "cleanupDeferred": true
+        },
+        {
+          "beginMs": 3489,
+          "beginCpuMs": 6552,
+          "finishMs": 1446,
+          "finishCpuMs": 683,
+          "cleanupMs": 2683,
+          "cleanupDeferred": true
+        }
+      ],
+      "burst": {
+        "mode": "same-session",
+        "spanMs": 27296,
+        "calls": [
+          {
+            "beginMs": 6224,
+            "beginCpuMs": 12827,
+            "finishMs": 2582,
+            "finishCpuMs": 7278,
+            "cleanupMs": 1046,
+            "cleanupDeferred": true
+          },
+          {
+            "beginMs": 11810,
+            "beginCpuMs": 28939,
+            "finishMs": 3459,
+            "finishCpuMs": 6869,
+            "cleanupMs": 4919,
+            "cleanupDeferred": true
+          },
+          {
+            "beginMs": 13154,
+            "beginCpuMs": 32581,
+            "finishMs": 4218,
+            "finishCpuMs": 3731,
+            "cleanupMs": 4368,
+            "cleanupDeferred": true
+          },
+          {
+            "beginMs": 14053,
+            "beginCpuMs": 34549,
+            "finishMs": 5946,
+            "finishCpuMs": 7032,
+            "cleanupMs": 6638,
+            "cleanupDeferred": true
+          },
+          {
+            "beginMs": 15955,
+            "beginCpuMs": 36556,
+            "finishMs": 4395,
+            "finishCpuMs": 5595,
+            "cleanupMs": 7985,
+            "cleanupDeferred": true
+          },
+          {
+            "beginMs": 16149,
+            "beginCpuMs": 36606,
+            "finishMs": 6043,
+            "finishCpuMs": 8430,
+            "cleanupMs": 6335,
+            "cleanupDeferred": true
+          },
+          {
+            "beginMs": 16340,
+            "beginCpuMs": 36615,
+            "finishMs": 6938,
+            "finishCpuMs": 8756,
+            "cleanupMs": 5431,
+            "cleanupDeferred": true
+          },
+          {
+            "beginMs": 16540,
+            "beginCpuMs": 36625,
+            "finishMs": 7858,
+            "finishCpuMs": 9124,
+            "cleanupMs": 4521,
+            "cleanupDeferred": true
+          }
+        ]
+      },
+      "restamp": null,
+      "control": {
+        "totalMs": 1054
+      },
+      "drainMs": 4521,
+      "maintenanceDrainMs": 0,
+      "ledgerEntries": {
+        "total": 42332,
+        "byKind": {
+          "calls": 2013,
+          "files": 12010,
+          "leases": 2013,
+          "materializations": 12,
+          ".": 1,
+          "operations": 2013,
+          "prompts": 256,
+          "publications": 12,
+          "revisions": 12010,
+          "runs": 11986,
+          "sessions": 6
+        }
+      },
+      "maxRssMiB": 401
+    },
+    {
+      "iteration": 1,
+      "files": 12002,
+      "prewarmMs": 168487,
+      "seed": {
+        "calls": 2000,
+        "sessions": 5,
+        "ms": 506206,
+        "cpuMs": 29171,
+        "firstCallMs": 1959,
+        "callMs": {
+          "count": 1999,
+          "min": 220,
+          "p50": 240,
+          "max": 2697
+        },
+        "lastCallsMs": {
+          "count": 50,
+          "min": 241,
+          "p50": 245,
+          "max": 308
+        },
+        "maintenanceDrainMs": 0,
+        "ledgerEntries": {
+          "total": 42238,
+          "byKind": {
+            "calls": 2000,
+            "files": 12002,
+            "leases": 2000,
+            ".": 1,
+            "operations": 2000,
+            "prompts": 250,
+            "revisions": 12002,
+            "runs": 11978,
+            "sessions": 5
+          }
+        }
+      },
+      "first": {
+        "beginMs": 4319,
+        "beginCpuMs": 6804,
+        "finishMs": 1711,
+        "finishCpuMs": 849,
+        "cleanupMs": 1087,
+        "cleanupDeferred": true
+      },
+      "warm": [
+        {
+          "beginMs": 3505,
+          "beginCpuMs": 6466,
+          "finishMs": 1653,
+          "finishCpuMs": 738,
+          "cleanupMs": 1392,
+          "cleanupDeferred": true
+        },
+        {
+          "beginMs": 3961,
+          "beginCpuMs": 6723,
+          "finishMs": 1750,
+          "finishCpuMs": 675,
+          "cleanupMs": 1172,
+          "cleanupDeferred": true
+        },
+        {
+          "beginMs": 3674,
+          "beginCpuMs": 6566,
+          "finishMs": 1670,
+          "finishCpuMs": 817,
+          "cleanupMs": 3133,
+          "cleanupDeferred": true
+        }
+      ],
+      "burst": {
+        "mode": "same-session",
+        "spanMs": 30910,
+        "calls": [
+          {
+            "beginMs": 7246,
+            "beginCpuMs": 13526,
+            "finishMs": 3053,
+            "finishCpuMs": 7996,
+            "cleanupMs": 1244,
+            "cleanupDeferred": true
+          },
+          {
+            "beginMs": 15486,
+            "beginCpuMs": 35637,
+            "finishMs": 4417,
+            "finishCpuMs": 3801,
+            "cleanupMs": 3872,
+            "cleanupDeferred": true
+          },
+          {
+            "beginMs": 13802,
+            "beginCpuMs": 31214,
+            "finishMs": 3782,
+            "finishCpuMs": 7853,
+            "cleanupMs": 5649,
+            "cleanupDeferred": true
+          },
+          {
+            "beginMs": 18083,
+            "beginCpuMs": 39872,
+            "finishMs": 4486,
+            "finishCpuMs": 6187,
+            "cleanupMs": 10364,
+            "cleanupDeferred": true
+          },
+          {
+            "beginMs": 18370,
+            "beginCpuMs": 39884,
+            "finishMs": 5444,
+            "finishCpuMs": 6575,
+            "cleanupMs": 9354,
+            "cleanupDeferred": true
+          },
+          {
+            "beginMs": 18790,
+            "beginCpuMs": 39905,
+            "finishMs": 7524,
+            "finishCpuMs": 7306,
+            "cleanupMs": 7348,
+            "cleanupDeferred": true
+          },
+          {
+            "beginMs": 18581,
+            "beginCpuMs": 39895,
+            "finishMs": 6475,
+            "finishCpuMs": 6928,
+            "cleanupMs": 8325,
+            "cleanupDeferred": true
+          },
+          {
+            "beginMs": 19006,
+            "beginCpuMs": 39916,
+            "finishMs": 8570,
+            "finishCpuMs": 7682,
+            "cleanupMs": 6310,
+            "cleanupDeferred": true
+          }
+        ]
+      },
+      "restamp": null,
+      "control": {
+        "totalMs": 1191
+      },
+      "drainMs": 6310,
+      "maintenanceDrainMs": 0,
+      "ledgerEntries": {
+        "total": 42332,
+        "byKind": {
+          "calls": 2013,
+          "files": 12010,
+          "leases": 2013,
+          "materializations": 12,
+          ".": 1,
+          "operations": 2013,
+          "prompts": 256,
+          "publications": 12,
+          "revisions": 12010,
+          "runs": 11986,
+          "sessions": 6
+        }
+      },
+      "maxRssMiB": 401
+    }
+  ]
+}

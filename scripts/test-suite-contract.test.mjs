@@ -18,6 +18,14 @@ describe('full test-suite contract', () => {
     assert.ok(files.includes('scripts/verify-release-assets.test.mjs'));
     assert.ok(files.includes('scripts/verify-bot-runtime-images.test.mjs'));
     assert.ok(files.includes('scripts/test-suite-contract.test.mjs'));
+    assert.ok(files.includes('scripts/opencode-v2-native/bootstrap.test.ts'));
+    assert.ok(files.includes('packages/web/runtime/reviewed-inputs/slim-2.2.25/src/skills/codemap/scripts/codemap.test.ts'));
+    const web = JSON.parse(readFileSync(path.join(repositoryRoot, 'packages/web/package.json'), 'utf8'));
+    assert.match(web.scripts.test, /--exclude 'runtime\/reviewed-inputs\/\*\*'/);
+    for (const file of ['server/lib/opencode/runtime-host/native-helper.test.js', 'server/lib/opencode/runtime-host/native-retention-quiet.test.ts', 'server/lib/opencode/runtime-host/native-queued-input.test.ts']) {
+      assert.ok(web.scripts.test.includes(`--exclude '${file}'`));
+      assert.ok(web.scripts.test.split('&& bun test ')[1]?.split(' ').includes(file));
+    }
     assert.deepEqual(files, [...files].sort());
   });
 
@@ -104,6 +112,7 @@ describe('full test-suite contract', () => {
     for (const file of allTests) {
       if (file.startsWith('.opencode/agents/')) assert.equal(scriptTests.has(file), true, `undiscovered: ${file}`);
       if (file.startsWith('.opencode/plugins/')) assert.equal(scriptTests.has(file), true, `undiscovered: ${file}`);
+      if (file.startsWith('packages/web/runtime/reviewed-inputs/')) assert.equal(scriptTests.has(file), true, `undiscovered: ${file}`);
       if (file.startsWith('scripts/')) assert.equal(scriptTests.has(file), true, `undiscovered: ${file}`);
       if (file.startsWith('packages/electron/')) assert.equal(electronTests.has(file), true, `undiscovered: ${file}`);
       if (file.startsWith('packages/ui/')) assert.equal(uiTests.has(file), true, `undiscovered: ${file}`);

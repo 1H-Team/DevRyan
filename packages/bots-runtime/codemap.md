@@ -23,9 +23,11 @@ Dependency-free, JSON-only policy contracts shared by every Production Bots host
   pinned ChatGPT image-generation plugin.
 - `docker/opencode/`: pinned non-root OpenCode image and serve entrypoint for a
   server-compiled read-only runtime config. `launch-opencode.mjs` imports the
-  fixed per-run environment JSON without shell evaluation; the legacy
+  fixed per-run environment JSON without shell evaluation and starts the native
+  2.0.20 server under pinned Bun; the legacy
   initializer remains a fixture-only image command.
-- `opencode/oauth.integration.mjs` / `oauth-fixture.mjs`: disposable Docker acceptance with no internet, fixture TLS/OAuth/provider endpoints, managed host plus two Bot processes, forced refreshes and the real pinned image plugin. No production login, container or image tag is modified.
+- `opencode/native-server.test.mjs`, `native-image-tool.test.mjs`, `native-tool-policy.test.mjs`: disposable native graph, private route, persistence, structured-output, permission and original image executor checks.
+- `opencode/oauth.integration.mjs` / `oauth-fixture.mjs`: disposable Docker acceptance with no internet, fixture TLS/OAuth/provider endpoints, host coordinator plus two native Bot processes, forced refreshes and native execution of the pinned image plugin. No production login, container or image tag is modified.
 
 ## Invariants
 

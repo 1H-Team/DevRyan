@@ -28,6 +28,7 @@ export function isManagedModelAvailableInCatalog(
   payload: unknown,
   providerId: unknown,
   modelId: unknown,
+  variant?: string | null,
 ): boolean | null;
 export function isXaiProviderID(providerID: unknown): boolean;
 export function listXaiModelIds(providerPayload: unknown): string[];
@@ -279,6 +280,8 @@ export interface ManagedTaskResultEnvelope {
   /** Provider reset hint (epoch ms) reported with a usage-limit failure. */
   providerResetAt: number | null;
   autoResume: ManagedTaskAutoResume | null;
+  /** Model prompt observed this terminal revision; never result collection. */
+  promptObserved?: { attempt:number;sequence:number;observedAt:number };
 }
 
 export type ManagedResultMode = 'eager' | 'reference' | 'compact';
@@ -387,7 +390,7 @@ export interface ManagedTaskExecutor {
   resume?(task: ManagedTaskRecord, control: ManagedTaskControl): Promise<ManagedTaskExecutorResult>;
   retryInPlace?(task: ManagedTaskRecord, control: ManagedTaskControl): Promise<ManagedTaskExecutorResult>;
   observe?(task: ManagedTaskRecord, control: ManagedTaskControl): Promise<ManagedTaskExecutorResult>;
-  abort(task: ManagedTaskRecord, options?: { signal?: AbortSignal }): Promise<{
+  abort(task: ManagedTaskRecord, options?: { signal?: AbortSignal; /** Constructor-owned native removal settlement only. */ nativeSettled?: boolean }): Promise<{
     aborted: boolean;
     failureReason?: string;
   }>;
@@ -402,16 +405,21 @@ export interface ManagedOpenCodeTransportInput {
   sessionId: string;
   directory: string;
   providerId: string;
+  signal?: AbortSignal;
 }
 
 export interface ManagedOpenCodeTransport {
   createSession(input: {
+    taskId: string;
+    leaseToken: string | null;
     directory: string;
     parentSessionId: string;
     parentCallID?: string;
     title: string;
   }): Promise<{ id?: string } | null>;
   promptSession(input: ManagedOpenCodeTransportInput & {
+    taskId: string;
+    leaseToken: string | null;
     signal?: AbortSignal;
     modelId: string;
     agent: string;
@@ -455,12 +463,15 @@ export interface ManagedOpenCodeTransport {
 export interface ManagedOpenCodeExecutorOptions {
   transport: ManagedOpenCodeTransport;
   subscribeAssistantActivity?: ManagedAssistantActivitySubscribe;
+  bindAssistantActivity?: ManagedAssistantActivityBind;
+  subscribeSessionChanges?: (input: { sessionId: string; directory: string }, onChange: () => void) => () => void;
   onFirstAssistantActivity?: (activity: ManagedAssistantActivity & {
     taskId: string;
     childSessionId: string;
     source: 'event' | 'transcript';
   }) => void | Promise<void>;
   pollIntervalMs?: number;
+  eventReconcileIntervalMs?: number;
   idleStablePolls?: number;
   retryStopMaxAborts?: number;
   retryStopPollLimit?: number;
@@ -756,11 +767,17 @@ export interface ManagedTaskScheduler {
     sessionId: string,
     reason: 'session_deleted' | 'cancelled',
   ): Promise<{ cancelledTaskIds: string[] }>;
+  /** Constructor-only; restore the native ledger's fence before recovery. */
+  cancelSessionsForRemoval(input: { directory: string; sessions: string[]; intentID: string } & (
+    { phase: 'fence' } | { phase: 'settle'; settled: { terminated: true; sessions: readonly string[] } | null; absentSessions: readonly string[] }
+  )): Promise<{ fenced: true; sessions: string[] } | { settled: true; sessions: string[]; taskIDs: string[] }>;
   releaseModeLease(rootSessionId: string, mode: ManagedTaskMode): Promise<boolean>;
   flush(): Promise<void>;
   shutdown(): Promise<void>;
   getTask(taskId: string): ManagedTaskRecord | null;
+  verifyTaskDispatch(taskId: string, leaseToken: string | null): Promise<ManagedTaskRecord>;
   listTasks(options?: { rootSessionId?: string }): ManagedTaskRecord[];
+  withNativePromptContext<A>(input:{rootSessionId:string;directory:string;authorize:()=>Promise<void>},action:(state:{tasks:ManagedTaskRecord[];envelopes:ManagedTaskResultEnvelope[];markPromptObserved:(receipt:{taskId:string;attempt:number;sequence:number})=>void})=>Promise<A>):Promise<A>;
   getSnapshot(): ManagedOrchestrationState;
   getResultEnvelope(taskId: string): ManagedTaskResultEnvelope | null;
   listResultEnvelopes(options?: { rootSessionId?: string }): ManagedTaskResultEnvelope[];
@@ -891,8 +908,9 @@ export function readManagedResultReference(input: {
   resultEnvelope: ManagedTaskResultEnvelope;
   resultCursor: string;
 }): ManagedResultReference;
+export function waitForSharedOperation<T>(operation: T | PromiseLike<T>, options?: { signal?: AbortSignal }): Promise<T>;
 export function createKeyedSingleFlight(): {
-  run<T>(key: string, operation: () => T | PromiseLike<T>): Promise<T>;
+  run<T>(key: string, operation: () => T | PromiseLike<T>, options?: { signal?: AbortSignal }): Promise<T>;
 };
 export function classifyProviderRetryFailure(value: unknown): ManagedTaskFailureKind;
 export function classifyProviderRetryStatus(value: unknown): ManagedTaskFailureKind;
@@ -1009,15 +1027,26 @@ export interface ManagedAssistantActivity {
   messageId: string;
   observedAt: number;
 }
-export type ManagedAssistantActivitySubscribe = (input: {
+export interface ManagedAssistantActivityScope {
   sessionId: string;
   directory?: string;
   after: number;
   excludedMessageId?: string | null;
-}, onActivity: (activity: ManagedAssistantActivity) => void) => () => void;
+}
+export interface ManagedAssistantActivityBinding {
+  messageId: string;
+  createdAt: number;
+  completedAt?: number;
+}
+export type ManagedAssistantActivityBind = (input: ManagedAssistantActivityScope,
+  assistants: readonly ManagedAssistantActivityBinding[]) => void;
+export type ManagedAssistantActivitySubscribe = (input: ManagedAssistantActivityScope, onActivity: (activity: ManagedAssistantActivity) => void,
+onProgress?: (activity: ManagedAssistantActivity) => void) => () => void;
 export function isManagedAssistantActivityPart(part: unknown): boolean;
 export function createManagedAssistantActivityRegistry(options?: { now?: () => number }): {
   subscribe: ManagedAssistantActivitySubscribe;
+  bind: ManagedAssistantActivityBind;
+  subscribeChanges: NonNullable<ManagedOpenCodeExecutorOptions['subscribeSessionChanges']>;
   observe(payload: unknown, directory?: string | null): void;
   clear(): void;
 };

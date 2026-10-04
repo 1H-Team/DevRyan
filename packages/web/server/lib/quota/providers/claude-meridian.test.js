@@ -1,7 +1,13 @@
+import { createNativeConsumerFixture } from '../../opencode/test-native-consumer-client.js';
+const createClaudeProxyBaseUrlResolver = (options = {}) => createClaudeProxyBaseUrlResolverNative({
+  ...options, openCodeClient: options.openCodeClient ?? createNativeConsumerFixture({
+    readFixture: options.fetchImpl ?? ((...args) => globalThis.fetch(...args)), headers: options.getOpenCodeAuthHeaders,
+  }),
+});
 import { describe, expect, it, vi } from 'vitest';
 
 import {
-  createClaudeProxyBaseUrlResolver,
+  createClaudeProxyBaseUrlResolver as createClaudeProxyBaseUrlResolverNative,
   createMeridianClaudeContextUsageClient,
   extractMeridianClaudeResetSignal,
   fetchMeridianClaudeQuota,
@@ -90,7 +96,7 @@ describe('Claude Meridian quota', () => {
       .resolves.toEqual(['http://127.0.0.1:3456', 'http://127.0.0.1:3456']);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(fetchImpl).toHaveBeenCalledWith(
-      'http://127.0.0.1:4096/config/providers?directory=%2Fworkspace',
+      'http://opencode.test/config/providers?directory=%2Fworkspace',
       expect.objectContaining({
         method: 'GET',
         headers: expect.objectContaining({ Accept: 'application/json', authorization: 'Bearer token' }),
@@ -98,7 +104,7 @@ describe('Claude Meridian quota', () => {
     );
     await expect(resolver.resolve('/other')).resolves.toBe('http://127.0.0.1:3456');
     expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(fetchImpl.mock.calls[1][0]).toBe('http://127.0.0.1:4096/config/providers?directory=%2Fother');
+    expect(fetchImpl.mock.calls[1][0]).toBe('http://opencode.test/config/providers?directory=%2Fother');
 
     at += 59_000;
     await expect(resolver.resolve('/workspace')).resolves.toBe('http://127.0.0.1:3456');
@@ -123,8 +129,7 @@ describe('Claude Meridian quota', () => {
     });
     await expect(resolver.resolve('')).resolves.toBeNull();
     await expect(resolver.resolve(null)).resolves.toBeNull();
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(fetchImpl.mock.calls[0][0]).toBe('http://127.0.0.1:4096/config/providers');
+    expect(fetchImpl).not.toHaveBeenCalled();
 
     const external = createClaudeProxyBaseUrlResolver({
       buildOpenCodeUrl: (pathname) => `http://127.0.0.1:4096${pathname}`,
@@ -133,7 +138,7 @@ describe('Claude Meridian quota', () => {
     });
     await expect(external.resolve('/workspace')).resolves.toBeNull();
     await expect(createClaudeProxyBaseUrlResolver({ fetchImpl }).resolve('/workspace')).resolves.toBeNull();
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
 
     const failing = createClaudeProxyBaseUrlResolver({
       buildOpenCodeUrl: (pathname) => pathname,

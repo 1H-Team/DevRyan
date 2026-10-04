@@ -8,6 +8,7 @@ import {
   compareLifecycleSummaries,
   assertPerfPackageEvidenceUnchanged,
   lifecycleProtocolIdentity,
+  fixtureProtocolIdentity,
   interactiveProtocolIdentity,
   injectPlanSkeleton,
   median,
@@ -29,6 +30,38 @@ const sample = (tabCpu, gpuCpu, tabMemory, browserMemory = 200) => ({
 });
 
 describe('Electron resource benchmark metrics', () => {
+  it('selects only the v2 fixture explicitly and follows only the verified default target', () => {
+    const prior = process.env.DEVRYAN_QA_OPENCODE_VERSION;
+    try {
+      delete process.env.DEVRYAN_QA_OPENCODE_VERSION;
+      assert.equal(parseBenchmarkArguments([]).generation, 2);
+      process.env.DEVRYAN_QA_OPENCODE_VERSION = '2.0.20';
+      assert.equal(parseBenchmarkArguments([]).generation, 2);
+      assert.throws(() => parseBenchmarkArguments(['--generation', '1']));
+      assert.equal(parseBenchmarkArguments(['--generation', '2']).generation, 2);
+      for (const generation of ['0', '3', '2suffix', 'latest']) {
+        assert.throws(() => parseBenchmarkArguments(['--generation', generation]));
+      }
+    } finally {
+      if (prior === undefined) delete process.env.DEVRYAN_QA_OPENCODE_VERSION;
+      else process.env.DEVRYAN_QA_OPENCODE_VERSION = prior;
+    }
+  });
+
+  it('records generation-specific fixture protocol identity and forbids cross-generation optimization comparisons', async () => {
+    const files = [];
+    const read = async file => { files.push(file); return Buffer.from(file); };
+    await assert.rejects(fixtureProtocolIdentity(1, read), /Unsupported/);
+    assert.deepEqual(files, []);
+    const generation2 = await fixtureProtocolIdentity(2, read);
+    assert.match(generation2, /^[a-f0-9]{64}$/);
+    assert.ok(files.includes('loopback-opencode-v2-fixture.mjs'));
+    assert.ok(files.some(file => file.endsWith('openapi-2.0.20.json')));
+    for (const compare of [compareBenchmarkSummaries, compareLifecycleSummaries]) {
+      assert.throws(() => compare({ fixtureGeneration: 1 }, { fixtureGeneration: 2 }), /matching fixtureGeneration/);
+    }
+  });
+
   it('waits for the requested new loader and document body even when the old document is ready', async () => {
     const url = 'http://127.0.0.1:3100/?session=ses_perfparent';
     const frame = { id: 'main', loaderId: 'new-loader', url };
@@ -164,7 +197,7 @@ describe('Electron resource benchmark metrics', () => {
 
   it('invalidates every scenario protocol when the fixture or owned-process dependencies change', async () => {
     const original = await lifecycleProtocolIdentity(async () => 'original module bytes');
-    for (const changed of ['loopback-opencode-fixture.mjs', '../qa/history-scroll.mjs', '../qa/process.mjs', '../qa/process-ownership.mjs', '../dev-child-utils.mjs']) {
+    for (const changed of ['fixture-session-seeds.mjs', '../qa/history-scroll.mjs', '../qa/process.mjs', '../qa/process-ownership.mjs', '../dev-child-utils.mjs']) {
       const current = await lifecycleProtocolIdentity(async file => file === changed ? 'changed module bytes' : 'original module bytes');
       assert.notEqual(current, original, `Missing protocol dependency: ${changed}`);
     }
@@ -229,7 +262,7 @@ describe('Electron resource benchmark metrics', () => {
     assert.equal(new Set(identities).size, 4);
     assert.equal(await interactiveProtocolIdentity(undefined, undefined, read), identities[0]);
     for (const changed of ['electron-interactive-benchmark.mjs', 'electron-lifecycle-benchmark.mjs',
-      'loopback-opencode-fixture.mjs', '../qa/process.mjs', '../qa/process-ownership.mjs', '../dev-child-utils.mjs']) {
+      'fixture-session-seeds.mjs', '../qa/process.mjs', '../qa/process-ownership.mjs', '../dev-child-utils.mjs']) {
       assert.notEqual(await interactiveProtocolIdentity('foreground', 'typing', async file => file === changed ? 'changed' : read()), identities[3]);
     }
     await assert.rejects(interactiveProtocolIdentity('unknown', 'typing', read), /startupMode/);

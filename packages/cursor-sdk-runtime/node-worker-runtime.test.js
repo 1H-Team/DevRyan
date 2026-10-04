@@ -126,7 +126,8 @@ const createFakeTitleWorkerSpawn = (capture) => (command, args, options) => {
     final(callback) {
       capture.input = JSON.parse(rawInput);
       queueMicrotask(() => {
-        child.stdout.push(`${JSON.stringify({ type: 'title-result', title: '# Worker Generated Title.' })}\n`);
+        if(capture.hold)return;
+        child.stdout.push(`${JSON.stringify(capture.input.type==='text'?{type:'text-result',text:'# Raw multiline\n\nBody preserved.'}:{ type: 'title-result', title: '# Worker Generated Title.' })}\n`);
         child.stdout.push(null);
         child.exitCode = 0;
         child.emit('close', 0, null);
@@ -135,7 +136,7 @@ const createFakeTitleWorkerSpawn = (capture) => (command, args, options) => {
     },
   });
   child.kill = (signal) => {
-    child.killed = true;
+    child.killed = true;child.stdout.push(null);
     child.exitCode = signal === 'SIGKILL' ? 137 : 130;
     queueMicrotask(() => child.emit('close', child.exitCode, signal));
     return true;
@@ -310,6 +311,126 @@ describe('Cursor SDK worker runtime config', () => {
     });
   });
 
+  test('owned prompt retains original scope through physical settlement and final persistence', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-owned-lifetime-'));
+    const capture = { calls: [], input: null }, phases = [];
+    let publish, persisted, releasePersist;
+    const publication = new Promise(resolve => { publish = resolve; });
+    const finalPersistence = new Promise(resolve => { releasePersist = resolve; });
+    let current = false, catalog = false, closed = 0;
+    const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: { CURSOR_API_KEY: 'forbidden-environment-fallback' },
+      readAuth: () => { throw new Error('Owned native prompt must not read compatibility auth'); },
+      ownedReadOnly: async (scope, action) => {
+        expect(scope).toEqual({ kind: 'catalog', directory: tempDir });catalog = true;
+        try { return await action(); } finally { catalog = false; }
+      },
+      loadSdk: async () => ({ Cursor: { models: { list: async input => {
+        expect(catalog).toBe(true);expect(input.apiKey).toBe('native-selected-fixture-key');return [{ id: 'composer-2.5' }];
+      } } } }),
+      resolveApiKey: async input => {
+        if (input.kind === 'catalog') {
+          expect(catalog).toBe(true);expect(current).toBe(false);expect(input.directory).toBe(tempDir);
+          phases.push('catalog-key');return 'native-selected-fixture-key';
+        }
+        if (input.kind !== 'prompt') throw new Error('No read-only grant in this prompt fixture');
+        expect(current).toBe(true);expect(input.userMessageID).toBe('msg_owned_lifetime');
+        phases.push('key');return 'native-selected-fixture-key';
+      },
+      useNodeWorkerForPrompts: true, getWorkspaceDiff: async () => '',
+      ownedPrompt: async input => {
+        expect(input.userMessageID).toBe('msg_owned_lifetime');
+        expect(input.modelID).toBe('composer-2.5');
+        phases.push('captured');
+        return { run: async action => { current = true; return action(); }, close: async () => { current = false; closed++; phases.push('closed'); } };
+      },
+      onPersistRecord: async ({ record }) => {
+        expect(current).toBe(true);
+        phases.push(record.info.role);
+        if (record.info.role === 'assistant' && record.info.time.completed) {
+          persisted = record; await finalPersistence;
+        }
+      },
+      executionAdapter: { beforePrompt: async () => null,
+        start: async ({ command, args, inputForLease }) => {
+          expect(current).toBe(true);
+          expect(JSON.parse(inputForLease({ workingDirectory: tempDir })).apiKey).toBe('native-selected-fixture-key');
+          return { workerInput: inputForLease({ workingDirectory: tempDir }),
+            child: createFakeWorkerSpawn(capture)(command, args, { cwd: tempDir }),
+            lease: { workingDirectory: tempDir }, result: publication, cancel: () => {} };
+        } },
+    });
+    try {
+      const response = await runtime.handlePromptAsync({ sessionID: 'ses_owned_lifetime', directory: tempDir,
+        body: { messageID: 'msg_owned_lifetime', model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, parts: [{ type: 'text', text: 'owned' }] } });
+      expect(response.status).toBe(204);
+      await waitFor(() => capture.input);
+      expect(closed).toBe(0); expect(phases.slice(0, 5)).toEqual(['catalog-key', 'captured', 'key', 'user', 'assistant']);
+      publish({});
+      await waitFor(() => persisted);
+      expect(closed).toBe(0);
+      releasePersist();
+      await waitFor(() => closed === 1);
+      expect(current).toBe(false); expect(phases.at(-1)).toBe('closed');
+    } finally { publish({}); releasePersist(); await runtime.dispose(); }
+  });
+
+  test('owned cancellation waits for final persistence and owned cleanup, preserving cleanup failure', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-owned-cancel-'));
+    for (const cleanupFails of [false, true]) {
+      const capture = { calls: [], input: null };
+      const publication = Promise.withResolvers(), cleanup = Promise.withResolvers();
+      let finalPersisted = false, closing = false;
+      const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: {},
+        readAuth: () => ({ 'cursor-acp': { key: 'fixture-key' } }), getWorkspaceDiff: async () => '',
+        useNodeWorkerForPrompts: true,
+        ownedPrompt: async () => ({ run: action => action(), close: async () => {
+          expect(finalPersisted).toBe(true); closing = true; await cleanup.promise;
+        } }),
+        onPersistRecord: async ({ record }) => { if (record.info.role === 'assistant' && record.info.time.completed) finalPersisted = true; },
+        executionAdapter: { beforePrompt: async () => null, start: async ({ command, args, inputForLease }) => ({
+          child: createFakeWorkerSpawn(capture)(command, args, { cwd: tempDir }),
+          workerInput: inputForLease({ workingDirectory: tempDir }), lease: { workingDirectory: tempDir },
+          result: publication.promise, cancel: () => {},
+        }) },
+      });
+      const sessionID = `ses_owned_cancel_${cleanupFails}`;
+      try {
+        expect((await runtime.handlePromptAsync({ sessionID, directory: tempDir,
+          body: { model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, parts: [{ type: 'text', text: 'owned cancellation' }] } })).status).toBe(204);
+        await waitFor(() => capture.input);
+        publication.reject(Object.assign(new Error('execution_cancelled'), { code: 'execution_cancelled' }));
+        await waitFor(() => closing);
+        let completed = false;
+        const stopped = runtime.abortAndWait(sessionID).finally(() => { completed = true; });
+        void stopped.catch(() => {});
+        await new Promise(resolve => setTimeout(resolve, 10));
+        expect(completed).toBe(false);
+        if (cleanupFails) {
+          const uncertain = Object.assign(new Error('actual cleanup uncertainty'), { nativeProcessUnsettled: true });
+          cleanup.reject(uncertain); await expect(stopped).rejects.toBe(uncertain);
+        } else {
+          cleanup.resolve(); await expect(stopped).resolves.toEqual({ terminated: true, sessions: [sessionID] });
+        }
+      } finally { cleanup.resolve(); await runtime.dispose(); }
+    }
+  });
+
+  test('owned prompt closes after initial persistence failure without creating a worker', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-owned-persist-failure-'));
+    let closed = 0, runs = 0;
+    const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: {},
+      readAuth: () => ({ 'cursor-acp': { key: 'fixture-key' } }), getWorkspaceDiff: async () => '',
+      ownedPrompt: async () => ({ run: async action => action(), close: async () => { closed++; } }),
+      onPersistRecord: async () => { throw Error('actual fixture persistence failure'); },
+      executionAdapter: { beforePrompt: async () => null, start: async () => { runs++; throw Error('must not start'); } },
+    });
+    try {
+      expect((await runtime.handlePromptAsync({ sessionID: 'ses_owned_fail', directory: tempDir,
+        body: { messageID: 'msg_owned_fail', model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, parts: [{ type: 'text', text: 'owned' }] } })).status).toBe(204);
+      expect(closed).toBe(1); expect(runs).toBe(0);
+    } finally { await runtime.dispose(); }
+  });
+
   test('persists one conflict notice after native publication before reporting a successful Cursor run idle', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-publication-conflict-'));
     const capture = { calls: [], input: null };
@@ -398,6 +519,35 @@ describe('Cursor SDK worker runtime config', () => {
     expect(user?.info.id).toMatch(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
     expect(assistant?.info.parentID).toBe(user?.info.id);
     await runtime.dispose();
+  });
+
+  test('raw helper worker preserves selected model and settles owned cancellation before release', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-helper-worker-'));
+    const capture = { calls: [], input: null, hold: true }; let finish, closed = false, scope;
+    const receipt = new Promise(resolve => { finish = resolve; });
+    const runtime = createCursorSdkRuntime({ storageDir: tempDir, env: {}, readAuth: () => ({'cursor-acp':{key:'fixture'}}),
+      loadSdk: async () => ({Cursor:{models:{list:async()=>[{id:'chosen',displayName:'Chosen'}]}}}),
+      ownedReadOnly: async (value, action) => { if(value.kind==='catalog')return action();scope=value;try{return await action();}finally{closed=true;} },
+      executionAdapter: { startReadOnly: async ({command,args,inputForLease}) => {
+        const child=createFakeTitleWorkerSpawn(capture)(command,args,{});
+        return {child,workerInput:inputForLease({workingDirectory:tempDir}),result:receipt,cancel:()=>{child.kill('SIGTERM');}};
+      } },
+    });
+    try {
+      const controller=new AbortController();let completed=false;
+      const work=runtime.generateText({text:'  exact raw prompt  ',directory:tempDir,modelID:'chosen',signal:controller.signal}).catch(error=>{completed=true;return error;});
+      await waitFor(()=>capture.input);expect(capture.input).toMatchObject({type:'text',modelID:'chosen',modelSelection:{id:'chosen'},text:'  exact raw prompt  '});
+      expect(scope.kind).toBe('text');controller.abort(Error('caller stop'));await new Promise(resolve=>setTimeout(resolve,10));expect(completed).toBe(false);expect(closed).toBe(false);
+      finish({terminated:true,confined:true,cancelled:true});expect((await work).code).toBe('execution_cancelled');expect(closed).toBe(true);
+    } finally { finish({terminated:true,confined:true,cancelled:true});await runtime.dispose(); }
+  });
+  test('raw Cursor title helper uses title owner without detached catalog refresh or title normalization', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-helper-title-'));const capture={calls:[],input:null};const scopes=[];
+    const runtime=createCursorSdkRuntime({storageDir:tempDir,env:{},readAuth:()=>({'cursor-acp':{key:'fixture'}}),
+      ownedReadOnly:async(scope,action)=>{scopes.push(scope);return action();},loadSdk:async()=>{throw Error('Detached title must not refresh catalog');},spawnImpl:createFakeTitleWorkerSpawn(capture)});
+    try{expect(await runtime.generateText({text:'Exact title prompt',directory:tempDir,sessionID:'ses_title',modelID:'auto',titleHelper:true})).toBe('# Raw multiline\n\nBody preserved.');
+      expect(scopes).toEqual([{kind:'title',directory:tempDir,sessionID:'ses_title',modelID:'auto'}]);expect(capture.input.type).toBe('text');
+    }finally{await runtime.dispose();}
   });
 
   test('generates titles through an ephemeral one-shot Cursor Auto worker request', async () => {

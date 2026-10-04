@@ -1,4 +1,16 @@
+// DevRyan's question routes: Cursor questions merged with OpenCode's, the
+// orphaned-question guard on reply, and Skip (reject) as a best-judgment reply.
+//
+// With an `openCodeClient` on generation 2, OpenCode questions are 2.0.20 forms
+// read through the client's interaction projection (forms that cannot be
+// answered as questions are cancelled there), and Skip replies through the
+// client. Replies and plain rejects still fall through to the generation's
+// native facade (`next()`). Unsupported runtime identities contact nothing.
+
 import express from 'express';
+
+import { OPENCODE_CLIENT_ERROR_CODES } from './opencode-client/index.js';
+import { resolveOpenCodeGeneration } from './opencode-generation.js';
 
 export const QUESTION_PARTIAL_HEADER = 'X-DevRyan-Question-Partial';
 const DEFAULT_UPSTREAM_TIMEOUT_MS = 1000;
@@ -33,25 +45,6 @@ const mergeQuestions = (openCodeQuestions, cursorQuestions) => {
   return [...byIdentity.values()];
 };
 
-const buildQuestionListPath = (directory) => {
-  if (!directory) return '/question';
-  const query = new URLSearchParams({ directory });
-  return `/question?${query.toString()}`;
-};
-
-const buildQuestionReplyPath = (requestID, directory) => {
-  const path = `/question/${encodeURIComponent(requestID)}/reply`;
-  if (!directory) return path;
-  const query = new URLSearchParams({ directory });
-  return `${path}?${query.toString()}`;
-};
-
-const buildSessionStatusPath = (directory) => {
-  if (!directory) return '/session/status';
-  const query = new URLSearchParams({ directory });
-  return `/session/status?${query.toString()}`;
-};
-
 const OPEN_CODE_SKIP_ANSWER = 'Skip: continue using your best judgment and explicitly state the assumption you made.';
 
 export const QUESTION_ORPHANED_CODE = 'question_orphaned';
@@ -62,17 +55,22 @@ export const QUESTION_ORPHANED_CODE = 'question_orphaned';
 // session OpenCode does not report busy/retry proves the request is orphaned.
 const isRunningSessionStatus = (status) => status?.type === 'busy' || status?.type === 'retry';
 
-const readResponsePayload = async (response) => {
-  const text = await response.text();
-  if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
-};
+const isClientError = (error) => (
+  error !== null && typeof error === 'object' && typeof error.code === 'string' && Number.isInteger(error.statusCode)
+);
+
+// A gen-2 client failure keeps the client's status and typed code; anything
+// else (timeout, transport) is the generic unavailable answer.
+const clientFailure = (error) => (isClientError(error)
+  ? { response: null, status: error.statusCode, payload: { error: error.message, code: error.code }, error }
+  : { response: null, payload: null, error });
 
 const sendUpstreamFailure = (res, failure) => {
+  if (Number.isInteger(failure.status)) {
+    return res.status(failure.status).json(failure.payload ?? {
+      error: `OpenCode question listing failed with status ${failure.status}`,
+    });
+  }
   if (failure.response) {
     const payload = failure.payload;
     if (typeof payload === 'string') {
@@ -88,13 +86,45 @@ const sendUpstreamFailure = (res, failure) => {
 export const registerQuestionRoutes = (app, dependencies) => {
   const {
     cursorSdkRuntime,
-    buildOpenCodeUrl,
-    getOpenCodeAuthHeaders = () => ({}),
-    fetchImpl = fetch,
+    openCodeClient,
     logger = console,
     upstreamTimeoutMs = DEFAULT_UPSTREAM_TIMEOUT_MS,
     slowRequestThresholdMs = DEFAULT_SLOW_REQUEST_THRESHOLD_MS,
   } = dependencies;
+
+  const generation = () => resolveOpenCodeGeneration(openCodeClient);
+
+  // Gen 2: one client call bounded by the same upstream budget as gen 1.
+  const withinUpstreamBudget = async (timeoutMessage, task) => {
+    const upstreamAbortController = new AbortController();
+    const timeout = setTimeout(
+      () => upstreamAbortController.abort(new Error(timeoutMessage)),
+      Math.max(1, Number(upstreamTimeoutMs) || DEFAULT_UPSTREAM_TIMEOUT_MS),
+    );
+    timeout.unref?.();
+    try {
+      return await task(upstreamAbortController.signal);
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+
+  const listOpenCodeQuestionsV2 = async (directory) => {
+    try {
+      const questions = await withinUpstreamBudget('OpenCode question listing timed out.', (signal) => (
+        openCodeClient.interaction.questions.list(directory ? { directory } : {}, { signal })
+      ));
+      if (!Array.isArray(questions)) {
+        return {
+          questions: [],
+          failure: { response: null, payload: { error: 'OpenCode returned an invalid question list' } },
+        };
+      }
+      return { questions, failure: null };
+    } catch (error) {
+      return { questions: [], failure: clientFailure(error) };
+    }
+  };
 
   // Latency attribution for question traffic. The same req/res objects flow
   // through the Cursor fall-through, the readiness-hold gate, and the generic
@@ -119,60 +149,11 @@ export const registerQuestionRoutes = (app, dependencies) => {
   });
 
   const listOpenCodeQuestions = async (directory) => {
-    const upstreamAbortController = new AbortController();
-    const timeout = setTimeout(
-      () => upstreamAbortController.abort(new Error('OpenCode question listing timed out.')),
-      Math.max(1, Number(upstreamTimeoutMs) || DEFAULT_UPSTREAM_TIMEOUT_MS),
-    );
-    timeout.unref?.();
     try {
-      const response = await fetchImpl(buildOpenCodeUrl(buildQuestionListPath(directory), ''), {
-        method: 'GET',
-        signal: upstreamAbortController.signal,
-        headers: {
-          Accept: 'application/json',
-          ...getOpenCodeAuthHeaders(),
-        },
-      });
-      const payload = await readResponsePayload(response);
-      if (!response.ok) return { questions: [], failure: { response, payload } };
-      if (!Array.isArray(payload)) {
-        return {
-          questions: [],
-          failure: {
-            response: null,
-            payload: { error: 'OpenCode returned an invalid question list' },
-          },
-        };
-      }
-      return { questions: payload, failure: null };
+      generation();
+      return listOpenCodeQuestionsV2(directory);
     } catch (error) {
-      return { questions: [], failure: { response: null, payload: null, error } };
-    } finally {
-      clearTimeout(timeout);
-    }
-  };
-
-  const readJsonWithinBudget = async (path) => {
-    const upstreamAbortController = new AbortController();
-    const timeout = setTimeout(
-      () => upstreamAbortController.abort(new Error('OpenCode read timed out.')),
-      Math.max(1, Number(upstreamTimeoutMs) || DEFAULT_UPSTREAM_TIMEOUT_MS),
-    );
-    timeout.unref?.();
-    try {
-      const response = await fetchImpl(buildOpenCodeUrl(path, ''), {
-        method: 'GET',
-        signal: upstreamAbortController.signal,
-        headers: {
-          Accept: 'application/json',
-          ...getOpenCodeAuthHeaders(),
-        },
-      });
-      if (!response.ok) return null;
-      return await readResponsePayload(response);
-    } finally {
-      clearTimeout(timeout);
+      return { questions: [], failure: clientFailure(error) };
     }
   };
 
@@ -182,11 +163,20 @@ export const registerQuestionRoutes = (app, dependencies) => {
   // today's pass-through behaviour. Residual: an orphan whose session already
   // runs a newer turn is still forwarded; the DevRyan client discards orphans
   // before it starts a new turn, so only other clients can produce that state.
+  //
+  // Gen 2 reads every active session (no directory filter): the client filters
+  // by session location, and a busy session whose location is not known yet
+  // must never make a live question look orphaned.
+  const readSessionStatuses = () => {
+    generation();
+    return withinUpstreamBudget('OpenCode read timed out.', (signal) => openCodeClient.sessions.status({}, { signal }));
+  };
+
   const findOrphanedOpenCodeQuestion = async (requestID, directory) => {
     try {
       const [{ questions, failure }, statuses] = await Promise.all([
         listOpenCodeQuestions(directory),
-        readJsonWithinBudget(buildSessionStatusPath(directory)).catch(() => null),
+        readSessionStatuses(directory).catch(() => null),
       ]);
       if (failure || !statuses || typeof statuses !== 'object' || Array.isArray(statuses)) return null;
       const request = questions.find((entry) => entry?.id === requestID);
@@ -194,6 +184,28 @@ export const registerQuestionRoutes = (app, dependencies) => {
       return isRunningSessionStatus(statuses[request.sessionID]) ? null : request;
     } catch {
       return null;
+    }
+  };
+
+  // Gen 2 Skip: the best-judgment text answers every asked field of the form
+  // (question-tool forms accept free text). A form whose fields only take
+  // fixed options cannot carry it; it falls through to the plain reject, which
+  // cancels the form.
+  const skipOpenCodeQuestionV2 = async (req, res, next, { request, directory }) => {
+    try {
+      await openCodeClient.interaction.questions.reply(
+        req.params.requestID,
+        { answers: request.questions.map(() => [OPEN_CODE_SKIP_ANSWER]) },
+        { directory: directory ?? undefined, sessionID: request.sessionID },
+      );
+      return res.json(true);
+    } catch (error) {
+      if (error?.code === OPENCODE_CLIENT_ERROR_CODES.invalidInput) return next();
+      logger.error?.('[questions] Failed to skip a question:', error);
+      if (!isClientError(error)) {
+        return res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to skip question' });
+      }
+      return res.status(error.statusCode).json({ error: error.message, code: error.code });
     }
   };
 
@@ -252,23 +264,8 @@ export const registerQuestionRoutes = (app, dependencies) => {
         return next();
       }
 
-      const response = await fetchImpl(
-        buildOpenCodeUrl(buildQuestionReplyPath(req.params.requestID, directory), ''),
-        {
-          method: 'POST',
-          headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-            ...getOpenCodeAuthHeaders(),
-          },
-          body: JSON.stringify({
-            answers: request.questions.map(() => [OPEN_CODE_SKIP_ANSWER]),
-          }),
-        },
-      );
-      const payload = await readResponsePayload(response);
-      if (typeof payload === 'string') return res.status(response.status).send(payload);
-      return res.status(response.status).json(payload ?? response.ok);
+      generation();
+      return await skipOpenCodeQuestionV2(req, res, next, { request, directory });
     } catch (error) {
       logger.error?.('[questions] Failed to skip a question:', error);
       return res.status(500).json({

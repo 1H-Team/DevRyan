@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createDiagnosticSanitizer } from '@openchamber/harness-runtime';
 import { registerCommonRequestMiddleware } from './core-routes.js';
 import { registerOpenCodeProxy } from './proxy.js';
+import { createNativeConsumerFixture } from './test-native-consumer-client.js';
 import { beginSessionCreationTrace } from './session-creation.js';
 
 const servers = [];
@@ -25,7 +26,7 @@ const proxy = (url, { ready = true, records = [], intercept, preparationMs = 0 }
   app.use('/api/session', (req, _res, next) => { beginSessionCreationTrace(req, (record) => records.push(record)); next(); });
   if (preparationMs) app.use('/api/session', (_req, _res, next) => setTimeout(next, preparationMs));
   if (intercept) app.post('/api/session', intercept);
-  registerOpenCodeProxy(app, { fs: {}, os: {}, path, OPEN_CODE_READY_GRACE_MS: 0,
+  registerOpenCodeProxy(app, { openCodeClient: createNativeConsumerFixture({ baseUrl: url, readFixture: fetch }), fs: {}, os: {}, path, OPEN_CODE_READY_GRACE_MS: 0,
     getRuntime: () => ({ openCodePort: Number(new URL(url).port), isOpenCodeReady: ready,
       openCodeNotReadySince: 0, isRestartingOpenCode: !ready }),
     buildOpenCodeUrl: (requestPath) => url + requestPath, getOpenCodeAuthHeaders: () => ({}), ensureOpenCodeApiPrefix: () => {} });

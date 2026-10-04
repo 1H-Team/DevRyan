@@ -674,6 +674,7 @@ const setManagedDeveloper = () => setAuthPrincipal({
 
 describe("session-ui-store send routing", () => {
   beforeEach(async () => {
+    testOpencodeClient.registerInputSubscriptionGate(async () => () => {});
     const { useSessionCreationStore } = await import('./session-creation')
     useSessionCreationStore.setState({ attempts: {} })
     restoreOpencodeClientMock()
@@ -4662,7 +4663,7 @@ describe("session-ui-store send routing", () => {
     expect(state.draftOrder).not.toContain("draft-send")
   })
 
-  test("draft sends preserve the selected agent and scalar model without inheriting stale thinking", async () => {
+  test("draft sends preserve the selected agent and scalar model with its explicitly selected effort", async () => {
     mockCreatedSession = { id: "session-new", directory: "/repo" }
     mockConfigState = {
       currentAgentName: "builder",
@@ -4704,7 +4705,7 @@ describe("session-ui-store send routing", () => {
     expect(sendMessageCalls[0]?.agent).toBe("builder")
     expect(sendMessageCalls[0]?.providerID).toBe("provider-selected")
     expect(sendMessageCalls[0]?.modelID).toBe("model-selected")
-    expect(sendMessageCalls[0]?.variant).toBeNull()
+    expect(sendMessageCalls[0]?.variant).toBe("fast")
     expect(savedSessionAgents.some((entry) =>
       entry.sessionId === "session-new"
       && entry.agent === "builder"
@@ -4726,7 +4727,7 @@ describe("session-ui-store send routing", () => {
       && entry.agent === "builder"
       && entry.providerID === "provider-selected"
       && entry.modelID === "model-selected"
-      && entry.variant === null
+      && entry.variant === "fast"
     )).toBe(true)
   })
 
@@ -4782,7 +4783,7 @@ describe("session-ui-store send routing", () => {
     expect(sendMessageCalls[0]?.agent).toBe("builder")
     expect(sendMessageCalls[0]?.providerID).toBe("provider-selected")
     expect(sendMessageCalls[0]?.modelID).toBe("model-selected")
-    expect(sendMessageCalls[0]?.variant).toBeNull()
+    expect(sendMessageCalls[0]?.variant).toBe("fast")
     expect(savedSessionModels.some((entry) =>
       entry.sessionId === "session-new"
       && entry.providerID === "provider-selected"

@@ -32,10 +32,13 @@ export function createSessionRevertCoordinator(options: {
   directory: string;
   runtime: SessionMutationRuntime;
   conversation: {
-    capabilities(input: { directory: string }): Promise<{ legacyConversationRevert?: number }>;
+    capabilities(input: { directory: string }): Promise<{ conversationOnlyRevert?: number }>;
     get(input: MutationSessionReference): Promise<MutationSession>;
-    revert(input: MutationSessionReference & { messageID: string; partID?: string; files: false }): Promise<MutationSession>;
-    unrevert(input: MutationSessionReference): Promise<MutationSession>;
+    revert(input: MutationSessionReference & { messageID: string; partID?: string; files: false; transactionID: string }): Promise<MutationSession>;
+    unrevert(input: MutationSessionReference & { transactionID: string }): Promise<MutationSession>;
+    /** Called only after the durable transaction has committed or cancelled. */
+    releaseHolds?(input: MutationTerminationRequest): Promise<void>;
+    recoverHolds?(input: { directory: string }): Promise<void>;
     /** Required with `legacy`: direct children and one message for adopted conversations. */
     children?(input: MutationSessionReference): Promise<Array<{ id: string }>>;
     message?(input: MutationSessionReference & { messageID: string }): Promise<{ info: { id: string; role: string; time: { created: number } } }>;

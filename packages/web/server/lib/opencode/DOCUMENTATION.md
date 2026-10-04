@@ -5,26 +5,26 @@ This module provides OpenCode server integration utilities for the web server ru
 
 ## Concurrent Revert integration
 
-With an ordinary external runtime, the legacy route requires same-directory foreign tasks to be idle because
-it invokes native file restoration. Its activity check now verifies returned
-session identity and canonical directory, skips deleted sessions and other
-projects, and reports unverifiable activity separately. Revert/Redo lifecycle
-diagnostics are bounded and omit file contents.
-Tasks started in different subdirectories of one Git worktree still share the
-legacy restore boundary and retain its guard; separate worktrees do not.
+Only the selected native generation-2 bundle can execute work. Scoped Revert/Redo routes validate the request, capture client-disconnect cancellation and invoke the injected ownership coordinator. There is no generic OpenCode HTTP/snapshot restore fallback.
 
-`createScopedRevertCoordinator` adapts the shared mutation coordinator to the
-legacy OpenCode HTTP API. It discovers `legacyConversationRevert: 1` at
-`GET /session/revert-capabilities` and sends `files: false`; its required
-execution owner must prove complete confinement. The existing routes accept
-this coordinator through dependency injection while preserving response
-envelopes. Bootstrap verifies the exact companion patch and native acceptance
-artifacts before connecting execution capture, this coordinator, Cursor, managed
-descendants and file Undo/Redo. Unrelated sessions then continue running during
-Revert. The newer native V2 revert API does not
-replace this legacy-history contract. See the
-[execution contract](../../../../../docs/CONCURRENT_REVERT.md) and
-[verification audit](../../../../../docs/audits/2026-09-20-concurrent-revert/README.md).
+The native conversation port uses stage/clear with `files: false`, under an exact current mutation-ledger transaction and admission-owner permission. The ledger owns file publication, acknowledged target cancellation, conflict checks and recovery. Unrelated sessions can continue during qualified owned reverts. Imported history and receipts remain inspectable, but pre-capture edits without a native ledger transaction cannot be undone or redone. An interrupted compatibility-only record remains recovery-required; it does not authorize replay on the native runtime.
+
+See the [execution contract](../../../../../docs/CONCURRENT_REVERT.md). Historical verification audits describe their original runtime, not current native qualification.
+
+## Native Stop during primary handoff
+
+A Stop durably fences the primary objective before native interruption. If that
+fence races a committed `Step.Started` handoff, only the verified selected
+artifact contract `devryan.primary-step-stop/1` permits a finite interruption
+reply. The host checks the exact live permit, controller, canonical assistant,
+objective/execution lineage, one Stop generation advance and unchanged final
+cancelled record. It admits no work and acknowledges no continuation. The native
+mapper strictly validates that reply, rechecks the permit and invokes its
+constructor-owned raw user interrupt before delivering Effect interruption.
+This preserves aborted assistant completion, interrupted idle and claim release.
+Missing callbacks, legacy artifacts, malformed replies and stale/foreign/held
+authority retain the original refusal path. The original HTTP graph exercises
+the pending handoff independently of physical-stream Stop qualification.
 
 ## Context usage contract
 
@@ -59,7 +59,7 @@ Every probe uses `SIGKILL` for timeout termination and rejects execution errors,
 - `packages/web/server/lib/opencode/openai-model-availability.js`: annotates managed OpenAI provider catalogs with sanitized `authType` metadata. For ChatGPT/Codex OAuth, standalone GPT-5.6 and GPT-5.6 Pro derivatives are unavailable while the exact Sol/Terra/Luna base/fast rows remain selectable; API-key and external OpenCode catalogs remain provider-driven. Credentials and model IDs are never remapped or exposed.
 - `packages/web/server/default-config/plugins/openai-gpt-5-6-models.mjs`: pins Codex OAuth context windows to 1,050,000 for GPT-5.4/5.5/5.6 and 400,000 for GPT-5.4 mini, with a 256,000 auto-compaction threshold for those rows. GPT-5.3 Codex Spark retains its 121,600 context and 115,200 threshold. Its internal `limit.input` includes the resolved OpenCode compaction reservation so OpenCode's subtraction lands on the threshold; shared UI uses the official `limit.context` for these exact OAuth rows. Direct API-key, unknown model, and non-OpenAI catalogs remain provider-driven.
 - `packages/web/server/lib/opencode/github-copilot-models.js`: account-specific GitHub Copilot model discovery using stored OpenCode Copilot auth, success-only in-memory caching, and emergency fallback model metadata. Discovery prefers `model_picker_enabled` models when present. When a modern account payload marks every model non-picker, it retains only API-returned GitHub utility models instead of guessing that every chat row is manually selectable; legacy payloads without capability metadata retain their compatibility behavior. Configured provider catalogs also receive the canonical selectable `auto` model (`api.id = "auto"`) with the complete limits/capability contract required by OpenCode provider listing, and all entries receive runnable `api` metadata.
-- `packages/web/server/lib/opencode/lifecycle.js`: OpenCode process lifecycle runtime (startup, restart, readiness, health monitoring). Configuration-triggered restarts coalesce and wait until live agents are idle. Before replacing a managed child, restart pauses browser-lease admission, drains and releases the old epoch, holds admission closed for the complete child replacement, and resumes in a `finally` path; external-runtime re-probes do not touch the managed browser host. Restart decisions combine the event-driven activity snapshot with authoritative `/session/status` queries for known project directories; if live status cannot be verified, the current process is preserved and the check is retried. Health checks never kill a still-running busy process solely because its health endpoint timed out. An unexpected exit of a ready managed server triggers an immediate health check (and so a restart) instead of waiting for the next poll, and every exit is reported through the optional `onManagedProcessExit({ pid, code, signal, uptimeMs, expected, stderrTail })` with a bounded (16 KiB) stderr tail kept after readiness, because a runtime panic prints only there; `server/index.js` journals it as `opencode_process_exit`. `onOpenCodeRestarted` receives `{ restartStartedAt }`, and the managed instance exposes its spawn time as `startedAt`. On POSIX every managed server is tied to its owner by `parent-death-watchdog.js` (SIGTERM, then SIGKILL after about three seconds, because a busy runtime can ignore SIGTERM). A watchdog that cannot start is reported as `managed_opencode_watchdog_unavailable` and the launch is refused. When the server exits, its process group is killed so MCP children cannot outlive it; all group signals go through the injectable `signalManagedProcessGroup`.
+- `packages/web/server/lib/opencode/lifecycle.js`: OpenCode process lifecycle runtime (startup, restart, readiness, health monitoring). Configuration-triggered restarts coalesce and wait until live agents are idle. Before replacing a managed child, restart pauses browser-lease admission, drains and releases the old epoch, and holds admission closed for the complete replacement. It resumes leases only after successful startup and reconciliation. An unconditional finalizer clears restart flags and the shared promise even when pause or resume fails; the actual lease fence remains held so a later restart can recover. Applied settings come from the successfully ready controller snapshot, never a later mutable settings read. Restart decisions combine the event-driven activity snapshot with authoritative `/session/status` queries for known project directories; if live status cannot be verified, the current process is preserved and the check is retried. Health checks never kill a still-running busy process solely because its health endpoint timed out. An unexpected exit of a ready managed server triggers an immediate health check (and so a restart) instead of waiting for the next poll, and every exit is reported through the optional `onManagedProcessExit({ pid, code, signal, uptimeMs, expected, stderrTail })` with a bounded (16 KiB) stderr tail kept after readiness, because a runtime panic prints only there; `server/index.js` journals it as `opencode_process_exit`. `onOpenCodeRestarted` receives `{ restartStartedAt }`, and the managed instance exposes its spawn time as `startedAt`. On POSIX every managed server is tied to its owner by `parent-death-watchdog.js` (SIGTERM, then SIGKILL after about three seconds, because a busy runtime can ignore SIGTERM). A watchdog that cannot start is reported as `managed_opencode_watchdog_unavailable` and the launch is refused. When the server exits, its process group is killed so MCP children cannot outlive it; all group signals go through the injectable `signalManagedProcessGroup`.
 - Managed OpenCode startup receives only the private loopback `DEVRYAN_ORCHESTRATION_URL`/`DEVRYAN_ORCHESTRATION_TOKEN` pair and fixed `DEVRYAN_ORCHESTRATION_ACCOUNT_DEFAULTS=1` capability marker from the web owner. The private plugin requests root-owner agent execution before plan-safe checks, and scheduler admission repeats owner resolution. Personal account defaults are never written into generated OpenCode overlays or host agent files. Owner-conflict and lost-ownership errors from that callback continue spawn without the bridge instead of aborting OpenCode. User or shell values for those names are removed, external OpenCode receives no bridge, and the bridge owner stops before Cursor/OpenCode teardown.
 - Managed Electron startup may additionally inject the exact `DEVRYAN_BROWSER_CDP_DISCOVERY_URL`/`DEVRYAN_BROWSER_CDP_TOKEN`/`DEVRYAN_AGENT_BROWSER_BIN` triple. The discovery URL must be the private IPv4 loopback endpoint and the binary must be absolute. Inherited values for these names and every `AGENT_BROWSER_*` variable are scrubbed; standalone web, external OpenCode, and legacy Tauri receive none of this contract.
 - Managed OpenCode startup owns skill-source flags: it removes an inherited `OPENCODE_DISABLE_EXTERNAL_SKILLS` value so `.agents` skills remain available and forces `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1` so `.claude` skills are not registered. `resolveApprovedSkills` is authoritative for Settings, warmup, preflight inputs, and managed-agent permissions: locally discovered OpenCode and `.agents` paths establish identity, live runtime metadata may enrich exact matches only, and upstream-only, `.cursor`, `.codex`, `.claude`, hidden, retired, and cache skills are rejected. Every skill-capable managed agent receives the same deny-by-default exact-name/directory policy; explicit complete denial is preserved. Configured external OpenCode runtimes remain read-only and preflight warns that enforcement cannot be guaranteed.
@@ -115,7 +115,7 @@ The optional Superpowers bundle is registered for normal on-demand skill loading
 - `packages/web/server/lib/opencode/static-routes-runtime.js`: static asset/SPA fallback route registration and manifest route wiring.
 - `packages/web/server/lib/opencode/feature-routes-runtime.js`: feature route composition runtime for dynamic import-backed config/skill/provider route registration.
 - `packages/web/server/lib/opencode/opencode-resolution-runtime.js`: OpenCode binary resolution snapshot runtime for settings routes and diagnostics.
-- `packages/web/server/lib/opencode/opencode-update-runtime.js`: Version normalization/comparison plus the bounded, success-cached canonical stable-release lookup used by About settings across web/Electron.
+- `packages/web/server/lib/opencode/opencode-update-runtime.js`: Pure historical version normalization for offline QA; no runtime updater or network lookup.
 - `packages/web/server/lib/opencode/version-policy.js`: Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.33 and surfaces the upstream install command. On Unix, managed startup prefers the canonical `~/.opencode/bin/opencode` installer path over PATH shadows, while explicit settings/environment overrides remain authoritative.
 - `packages/web/server/lib/opencode/tunnel-wiring-runtime.js`: tunnel service/routes composition runtime and active-port wiring for main server startup.
 - `packages/web/server/lib/opencode/startup-pipeline-runtime.js`: server startup tail orchestration runtime for terminal/proxy/static/start-listen flow.
@@ -134,12 +134,12 @@ The optional Superpowers bundle is registered for normal on-demand skill loading
 - `packages/web/server/lib/opencode/settings-helpers.js`: Settings payload sanitization/format helpers runtime for response shaping and persisted merge prep.
 - `packages/web/server/lib/opencode/settings-normalization-runtime.js`: path/settings/tunnel normalization and sanitization helpers runtime used by settings/routes/config wiring.
 - `packages/web/server/lib/opencode/theme-runtime.js`: custom theme JSON validation and theme directory loading runtime for settings utility routes.
-- `packages/web/server/lib/opencode/proxy.js`: OpenCode API/SSE forwarding and readiness-gate route registration. MCP connect/disconnect actions are forwarded explicitly before the generic proxy so upstream empty-body failures and network errors return structured JSON diagnostics to the UI. The proxy also records first-reply send/accept timing for `prompt_async` without reading or logging prompt bodies. `/api/event` and `/api/global/event` are re-framed per SSE block through `createSseDiffStripper`: only blocks whose data mentions `"diffs"` are parsed and trimmed with `stripEventDiffContent` (id/event/comment lines preserved); heartbeats, comments, unparsable blocks and the partial tail at stream end pass through verbatim, and a block over 256 MB streams through raw so the connection never stalls.
+- `packages/web/server/lib/opencode/proxy.js`: native API readiness gating, scoped-revert registration, projected SSE routes, and the typed browser facade. Missing or unsupported runtime identities fail before dispatch. Prompt timing records send and successful acceptance without logging bodies. Transcript responses and hub events drop diff patch text before delivery; unknown routes terminate locally. No legacy generic HTTP/SSE forwarding remains.
 - `packages/web/server/lib/opencode/diff-summary.js`: diff-snapshot trimming shared by HTTP responses and the live stream. `stripMessageDiffSummary` drops `info.summary` outright for managed orchestration, `stripMessageDiffContent`/`stripSessionDiffContent` keep file/status/additions/deletions but remove `patch`/`before`/`after`/`from`/`to` bodies, and `stripEventDiffContent` applies the same trim to `message.updated`/`session.updated` SSE payloads (identity for every other event type, same reference when nothing changed). It is the `transformEventPayload` of the global message hub in `server/index.js` and `event-stream/runtime.js`, so replay and fan-out never carry patch bodies.
 - `packages/web/server/lib/opencode/db-maintenance-core.js`: dependency-free, synchronous OpenCode database maintenance. `performOpenCodeDbMaintenance` guards the schema with `PRAGMA table_info` (`event`, `event_sequence`, `session`, `session_context_epoch`; anything else aborts `schema_mismatch`), sets `busy_timeout = 5000`, checkpoints the WAL, deletes `event` + `event_sequence` rows of `ses_` aggregates whose session no longer exists, prunes `event` rows of sessions idle longer than `idleHours` down to the newest `keepSeqPerAggregate` seqs (transactions of 20 sessions, `event_sequence` untouched so seq continuity holds, optional time budget → `partial`), and VACUUMs per `decideVacuum` (`force`, or `auto` above a 15 % freelist; both need free disk ≥ 1.2× the file and no other OpenCode process). Every mutation (deletes included) is refused with `status: 'skipped'` / `error: 'other_opencode_process'` while another OpenCode process is alive or the process listing failed, because a long delete would outlast OpenCode's own 5 s `busy_timeout` and fail a live session's writes; counts are still reported. `message`/`part`/`session` are never written; dry runs open read-only. `inspectOpenCodeDb` is the read-only size/row summary. `resolveSqliteDriver` loads `better-sqlite3` lazily, falls back to `node:sqlite` when the native binding does not match the Node ABI, then to `bun:sqlite` when the server runs under Bun; with no driver at all a run is a quiet `skipped` / `no_sqlite_driver`.
 - `packages/web/server/lib/opencode/db-maintenance.js`: facade — default `<XDG data>/opencode/opencode.db`, worker-thread executor (`db-maintenance-worker.js`, so deletes/VACUUM never block the server loop; if the worker cannot start — module resolution, packaged archive — the idempotent pass runs in-process instead), `listOtherOpenCodeProcessesDefault` (managed-process registry of other owners + `ps` rows whose executable is `opencode`), `checkFreeDiskBytesDefault` (`fs.statfsSync`), `createOpenCodeDbCompactionScheduler` (one-shot forced VACUUM flag shared by the Compact route and the pre-launch hook), persistence to `<dataDir>/opencode-db-maintenance.json` (`lastRun` / `lastDryRun`) and a harness-journal `opencode_db_maintenance` entry per run. Concurrent `run()` calls coalesce.
 - `packages/web/server/lib/opencode/db-maintenance-routes.js`: `GET /api/storage/opencode-db` (inspection + `opencodeDbMaintenance` settings + `managedRuntime`/`compactionPending`) and `POST /api/storage/opencode-db/compact` (`{ dryRun: true }` → read-only pass with the VACUUM decision previewed; otherwise schedules the forced pass, restarts OpenCode in the background and answers `202 { scheduled: true }`; `409 external_runtime` when OpenCode is not managed here).
-- `packages/web/server/lib/opencode/session-scoped-revert.js`: OpenChamber-owned safe session revert route that scopes filesystem restoration to the clicked chat session while preserving unrelated worktree changes. In addition to current Git-status paths, it protects absent/untracked paths found in the active unrevert snapshot and the target turn's initial patch snapshot, preventing another session's reverted file from being resurrected by OpenCode's broad revert. Moving an existing boundary earlier reverses only the newly hidden message interval, and added/deleted file reconstruction preserves unified-diff no-final-newline markers. The complete lock/fetch/Git/snapshot/restore lifecycle has a 30-second deadline, client disconnects abort work, and every exit releases its directory lock. On interruption, the lock remains authoritative through a bounded cleanup window while the upstream revert is allowed to settle; if it remains stalled, its transport is aborted before protected files are restored a final time. A failed final restoration returns `SCOPED_REVERT_ROLLBACK_FAILED` instead of claiming a safe timeout rollback. Protected-file reads and restores use bounded concurrency, restoration compares current bytes/existence before writing, and identical paths are left untouched. Deadline responses use HTTP `504` with code `SCOPED_REVERT_TIMEOUT`; slow-operation diagnostics contain only phase durations and aggregate file/byte/rewrite counts.
+- `packages/web/server/lib/opencode/session-scoped-revert.js`: route validation, disconnect cancellation and lifecycle diagnostics for native ownership-coordinator Revert/Redo. Missing coordinator capability refuses mutations before runtime or filesystem effects. The retained unified-patch parser/application helpers are pure utilities; they do not connect to a legacy runtime or restore OpenCode snapshots.
 - `packages/web/server/lib/opencode/session-runtime.js`: session status/attention/activity runtime for OpenCode SSE events.
 - `packages/web/server/lib/opencode/watcher.js`: global SSE watcher runtime and sole owner of canonical raw-event side effects. WebSocket/SSE bridges only transport hub entries and cannot journal, time, audit, cache, or process evidence.
 - `packages/web/server/lib/opencode/shared.js`: shared utilities for config, markdown, skills, and git helpers.
@@ -217,7 +217,6 @@ Do not run a second independent refresh owner against the shared login.
   - `GET /api/config/settings`
   - `PUT /api/config/settings`
   - `GET /api/config/opencode-resolution`
-  - `GET /api/opencode/update-check`
   - `POST /api/opencode/directory`
   - `GET /api/behavior/agents-md`
   - `PUT /api/behavior/agents-md`
@@ -231,7 +230,7 @@ Do not run a second independent refresh owner against the shared login.
 - `DELETE /api/provider/:providerId/auth`
 - Owns lazy auth library loading for provider auth checks/removal; tests may inject the auth library through `registerOpenCodeRoutes` dependencies to keep route behavior independent from module-cache ordering.
 - Keeps route behavior independent from composition root; `index.js` now supplies dependencies only.
-- `GET /api/opencode/update-check` uses the active health-reported version for managed and external runtimes, returns current/latest/supported version status, and never installs or restarts OpenCode.
+- `GET /api/config/opencode-resolution` reports verified bundled runtime identity and readiness. The standalone runtime update endpoint is retired; OpenCode updates ship through DevRyan updates.
 - Global behavior routes delegate to `global-agents-md-runtime.js`. The runtime reads and writes `~/.config/opencode/AGENTS.md`, appends a missing final newline, removes the file for whitespace-only content, enforces a one-MiB UTF-8 limit, and persists before refreshing managed OpenCode. Refresh failures return saved content with `runtimeApplied: false` and a warning; external OpenCode connections are read-only.
 - `GET /api/provider/anthropic/claude-cli` reports Claude Code installation and structured authentication state without making a model request.
 - `POST /api/provider/anthropic/check-oauth` verifies Claude Code with bounded `claude auth status --json`, returns deterministic unavailable, signed-out, timeout, and execution-failure semantics, writes the reviewed `opencode-with-claude` proxy config to the active project config when possible (user config otherwise), and refreshes OpenCode only when it changes config.
@@ -267,7 +266,7 @@ Do not run a second independent refresh owner against the shared login.
   - `dispose()`
 
 ## Public exports (lifecycle.js)
-- `createOpenCodeLifecycleRuntime(dependencies)`: creates lifecycle runtime for managed/external OpenCode process orchestration. The optional `onOpenCodeRestarted` callback fires without blocking after a creator-path restart succeeds and is skipped after failed restarts. The optional `beforeManagedSpawn({ reason: 'startup' | 'restart' })` hook is awaited right before a managed spawn while no managed child exists (`server/index.js` runs the OpenCode database maintenance pass there); a rejection is logged and never blocks the launch.
+- `createOpenCodeLifecycleRuntime(dependencies)`: starts/replaces only the explicitly verified native generation-2 owner and waits for its catalog. Replacement drains the exact owned child and browser leases. Missing artifacts, legacy/external configuration and inherited process identity fail closed; no PATH discovery, installer or arbitrary-port process termination remains.
 - Returned API:
   - `startOpenCode()`
   - `restartOpenCode()`
@@ -276,8 +275,6 @@ Do not run a second independent refresh owner against the shared login.
   - `applyOpenCodeConfigChanges({ scopes, changes })`
   - `bootstrapOpenCodeAtStartup()`
   - `startHealthMonitoring(healthCheckIntervalMs)`
-  - `waitForPortRelease(port, timeoutMs, hostname?)`
-  - `killProcessOnPort(port)`
 
 ## Session creation (session-creation.js)
 
@@ -611,13 +608,10 @@ explicitly; nothing else reads the default.
 ## Public exports (opencode-resolution-runtime.js)
 - `createOpenCodeResolutionRuntime(dependencies)`: creates runtime for OpenCode binary/source snapshot resolution.
 - Returned API:
-  - `getOpenCodeResolutionSnapshot(settings)`: returns configured/resolved OpenCode binary details, target version policy, install command, any already-detected runtime version, and effective managed-launch fields (`launchBinary`, `launchArgs`, `launchWrapperType`) when applicable.
+  - `getOpenCodeResolutionSnapshot()`: returns verified native bundle version, artifact path and already-detected runtime version; it never probes standalone executables or offers an install command.
 
 ## Public exports (opencode-update-runtime.js)
-- `normalizeOpenCodeVersion(value)`: accepts strict semantic versions with an optional leading `v`, prerelease, and build metadata.
-- `compareOpenCodeVersions(left, right)`: deterministically compares stable and prerelease versions and returns `null` for invalid input.
-- `buildOpenCodeUpdateInfo(input)`: builds the read-only current/latest/supported contract and independent update/support statuses.
-- `createOpenCodeUpdateRuntime(options)`: creates a latest stable GitHub release checker with a 10-second timeout, five-minute success cache, in-flight deduplication, and safe errors.
+- `openCodeBaseVersion(value)`: preserves pure historical version identity for offline QA evidence. The standalone update checker and its route are retired.
 
 ## Public exports (tunnel-wiring-runtime.js)
 - `createTunnelWiringRuntime(dependencies)`: creates runtime for tunnel service construction and tunnel route registration.
@@ -724,7 +718,7 @@ in `docs/PROVIDER_RECOVERY.md`.
 
 ## Session change summaries
 
-The revisioned summary and card Undo/Redo routes are owned by the shared harness session-change host, composed in `server/index.js`. `computeScopedSessionChanges` is only a conservative legacy fallback: it returns incomplete historical coverage and never adopts worktree-wide turn diffs. The scoped routes select the shared ownership coordinator when verified companion artifacts are present. File Undo/Redo shares that coordinator; the old broad native restore remains only in the legacy runtime path. See `docs/CONCURRENT_REVERT.md` for execution capture, recovery, provisioning and explicit compatibility limits. See `docs/SESSION_CHANGES.md` for the shared contract.
+The revisioned summary and card Undo/Redo routes are owned by the shared harness session-change host, composed in `server/index.js`. Canonical observations require the native client; file mutations require the native restore owner. `computeScopedSessionChanges` returns incomplete historical coverage and never attributes worktree-wide diffs to a session. Imported pre-capture receipts remain inspectable, while mutation without a real native ledger transaction is unavailable. See `docs/CONCURRENT_REVERT.md` and `docs/SESSION_CHANGES.md`.
 
 ### Meridian passthrough continuity and default thinking metadata
 

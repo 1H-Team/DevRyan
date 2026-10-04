@@ -21,7 +21,7 @@ export function createWebPrimaryRecoveryRuntime(options) {
     middleware: async (req, res, next) => {
       const result = await host.handleRequest(req.method, req.originalUrl, req.body, { owner: ownerHash(req) });
       if (result) { res.status(result.status).json(result.body); return; }
-      next();
+      return host.withPromptAdmissionContext(req.method, req.originalUrl, { owner: ownerHash(req) }, next);
     },
   };
 }

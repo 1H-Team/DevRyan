@@ -1,0 +1,5 @@
+import type { OperationPermit } from './native-admission-contract.js';
+export type PonytailMode = 'off' | 'lite' | 'full' | 'ultra' | 'review';
+export interface NativePonytailCommand { readonly command: string; readonly arguments: string; readonly directory: string; readonly sessionID: string; readonly permit: OperationPermit }
+export interface NativePonytailOwner { readonly statePath: string; readMode(directory: string): Promise<PonytailMode>; contextInstructions(directory: string): Promise<string>; applyCommand(input: NativePonytailCommand): Promise<{ kind: 'ignored' } | { kind: 'status' | 'help' | 'changed'; mode: PonytailMode }> }
+export function createNativePonytailOwner(options: { readonly configDirectory: string; readonly directories: readonly string[]; readonly defaultMode: Exclude<PonytailMode, 'review'>; readonly instructions: Readonly<Record<Exclude<PonytailMode, 'off'>, string>>; readonly assertCommand: (input: NativePonytailCommand) => Promise<void> }): NativePonytailOwner;

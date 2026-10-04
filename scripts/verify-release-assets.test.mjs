@@ -10,6 +10,16 @@ import {
 } from './verify-release-assets.mjs';
 
 describe('release asset verification', () => {
+  it('desktop-only scope retains every desktop, updater and Bot manifest requirement', () => {
+    const desktop = requiredReleaseAssetNames('2.0.0', 'desktop-macos-arm64');
+    assert.deepEqual(desktop, requiredReleaseAssetNames('2.0.0').filter(name => name !== 'DevRyan-web-2.0.0.tgz'));
+    assert.deepEqual(missingRequiredReleaseAssets(desktop, '2.0.0', 'desktop-macos-arm64'), []);
+    assert.deepEqual(missingRequiredReleaseAssets(desktop, '2.0.0'), ['DevRyan-web-2.0.0.tgz']);
+    for (const asset of desktop) {
+      assert.deepEqual(missingRequiredReleaseAssets(desktop.filter(name => name !== asset), '2.0.0', 'desktop-macos-arm64'), [asset]);
+    }
+    assert.throws(() => requiredReleaseAssetNames('2.0.0', 'unknown'), /Unknown release distribution scope/);
+  });
   it('rejects extension packages and their download artifacts regardless of branding', () => {
     assert.deepEqual(unsupportedExtensionAssets([
       'DevRyan-1.1.13.vsix',

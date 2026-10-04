@@ -16,17 +16,17 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(
 
 // A disposable "server" process owns a fake `serve --port N` child through the
 // watchdog, reports both PIDs, then is SIGKILLed like a crashed Electron main.
-const startOwner = async ({ port, childArgs }) => {
+const startOwner = async ({ port, nativeInstanceID, providerInstanceID, childArgs }) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-watchdog-'));
   cleanups.push(() => fs.rm(directory, { recursive: true, force: true }));
   const script = path.join(directory, 'owner.mjs');
   await fs.writeFile(script, `
     import { spawn } from 'node:child_process';
     import { startParentDeathWatchdog } from ${JSON.stringify(watchdogModule)};
-    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', ...${JSON.stringify(childArgs)}],
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', '--', ...${JSON.stringify(childArgs)}],
       { detached: true, stdio: 'ignore' });
     child.unref();
-    startParentDeathWatchdog({ childPid: child.pid, port: ${port} });
+    startParentDeathWatchdog({ childPid: child.pid, port: ${port}, nativeInstanceID: ${JSON.stringify(nativeInstanceID)}, providerInstanceID: ${JSON.stringify(providerInstanceID)} });
     process.stdout.write(JSON.stringify({ child: child.pid }) + '\\n');
     setInterval(() => {}, 1000);
   `);
@@ -57,10 +57,29 @@ describe.skipIf(process.platform === 'win32')('managed OpenCode parent-death wat
     expect(await waitFor(() => !alive(child))).toBe(true);
   }, 15_000);
 
+  it('stops only the exact owned provider worker nonce after parent death', async () => {
+    const providerInstanceID = 'c'.repeat(32);
+    const { owner, child } = await startOwner({ providerInstanceID, childArgs: ['--provider-worker', '--native-instance', providerInstanceID] });
+    expect(alive(child)).toBe(true);
+    owner.kill('SIGKILL');
+    expect(await waitFor(() => !alive(child))).toBe(true);
+  });
+
   it('never signals a process it cannot identify as the owned server', async () => {
     const { owner, child } = await startOwner({ port: 47124, childArgs: ['serve', '--port', '47125'] });
     owner.kill('SIGKILL');
     await new Promise((resolve) => setTimeout(resolve, 1_500));
     expect(alive(child)).toBe(true);
+  }, 15_000);
+
+  it('owns a native child before it binds a port using its exact private instance', async () => {
+    const nativeInstanceID = 'a'.repeat(32);
+    const { owner, child } = await startOwner({ nativeInstanceID, childArgs: ['serve', '--native-instance', nativeInstanceID] });
+    owner.kill('SIGKILL');
+    expect(await waitFor(() => !alive(child))).toBe(true);
+    const other = await startOwner({ nativeInstanceID, childArgs: ['serve', '--native-instance', 'b'.repeat(32)] });
+    other.owner.kill('SIGKILL');
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    expect(alive(other.child)).toBe(true);
   }, 15_000);
 });

@@ -1,0 +1,637 @@
+# Native OpenCode host
+
+`native-setup-source.js` owns the private sibling fresh seed, including canonical
+ownership checks, mode repair before any native launch, and complete removal only
+after verified selection. Failed preparation retains the complete seed and its
+atomic `native-setup-seed.json` pins. Custom configuration remains a separate
+`native-custom-config.json` layer; Slim JSONC, declarative tunnel registration,
+prompt overrides and logical local-owner identities retain their original owners.
+
+`retained-native-artifacts.js` retains every verified manifest-owned file under
+the existing bundle control root before application Resources can be replaced,
+including the reviewed Claude host credential module. `runtime-bundle.js` clones
+the current coherent V2 database and stores through `source.kind='bundle'`, under
+`bundle-checkpoint.js`'s original controller/admission/drain fence. It retains the
+original import receipt as provenance rather than presenting a new V1 import.
+`native-boot-migration.js` binds cloned receipt provenance through the selected
+prepared manifest, descriptor and clone hashes to the new bundle/database/artifact.
+Its prepared hash comes from the frozen selection, never from a resealed file.
+It reads no source bundle and preserves exact non-clone receipt checks. Sealed
+bundle documents share the original 32MiB bound; the boot envelope stays 4MiB.
+The checkpoint scope expires after copying and rejects a replacement controller.
+
+`native-bundle-credential-contract.js` is the finite private recovery boundary;
+`native-bundle-credential-process.js` verifies retained artifacts and closed scope,
+then uses bounded private pipes and confirmed process exit. Capture may use a
+verified new controller against compatible old data; projection always requires
+the target's own compiled contract. `native-bundle-credentials.ts` uses the
+original Credential/Database/KV services for exact credentials, active choices,
+removals, host refresh-block state and Claude lifecycle metadata under
+`devryan.bundle.credentials/2`. Its durable private intent permits recovery
+after native commit but refuses changed baselines or newer ambiguity. Bundle
+manifests and rollback receipts contain hashes only. Known incompatible rollback
+targets refuse before closing current admission. Once projection begins, an
+unresolved transition holds both bundles for inspection with candidate work preserved.
+`bundle-credential-owner-guard.js` seals checkpoint fingerprints for Meridian
+profiles/settings and account files, managed quota connections, and paired
+authorization/branch-preview vaults. Only typed account-directory relocation is
+normalized; preserved Keychain identity and all other semantics remain exact.
+Host-owner protocol `devryan.bundle.credential-owners/2` compares the multi-user
+vault through its original authenticated codec, excluding only validated local
+root-session ownership while retaining every owner, login token, policy, expiry,
+unknown record and the exact paired key. It never imports candidate ownership
+into the old bundle. Historical `/1` rollback baselines refuse reinterpretation;
+sealed boot evidence retains strict recognition of either version. New clone
+preparation requires that exact `/2` compiled contract on the verified target
+before checkpointing or copying, including when artifact manifests match.
+Existing nonclone legacy imports and rollback targets retain their old receipts.
+Activation compares a clone against its current source. Rollback compares both
+bundles against the sealed source baseline before and after native projection;
+missing, changed or unreadable owner evidence selects held inspection with
+`bundle_credential_owner_unsupported`. It never merges secret files or grants.
+
+This candidate embeds the pinned OpenCode 2.0.20 SDK in Bun. Production
+activation remains gated by integrated native acceptance and agent parity.
+The Node web process retains the existing ledger, supervisor and scheduler.
+
+`runtime-bundle-lifecycle.js` connects verified application-resource updates to
+the real application owner: close admission, stop producers, drain credential
+resolution and mutations, obtain controller quiescence/exit and drain stores
+before copying. Administrator HTTP mutations accept only an expected selector
+revision. The returned server handle exposes the same lifecycle for Electron;
+new selection needs host recomposition. `runtime-bundle-recovery.js` is the cold
+held startup path: loopback status and an explanatory page, with no provider,
+feature-store or controller startup and no fabricated checkpoint acknowledgement.
+`bundle-rollback-intent.js` publishes the digest-bound checkpoint, drain, owner-exit
+and retained-state proof before projection, and seals completion before selection.
+`runtime-bundle-binding.js` recognizes pending intent even when selection still
+names B. `runtime-bundle-resume.js` verifies that original proof and unchanged B
+before incrementing the selector revision and clearing the hold for a fresh
+composition. The CLI `runtime bundle resume --expected-revision N` and trusted
+Electron IPC use this same core. Recovery HTTP exposes no mutation route.
+
+- `runtime-bundle-binding.js` reads only the explicitly selected bundle before
+  the web store owners initialize. It binds copied configuration and data without
+  changing the parent process's HOME. Unresolved rollback state refuses execution;
+  explicit held inspection permits only the recovery application to read the
+  selection before feature owners are imported. `runtime-bundle.js` owns offline legacy-data copy preparation into generation 2, verification and
+  the atomic selection pointer. Runnable descriptors and activation targets are generation 2 only;
+  a legacy source is data paths under an actual quiesced checkpoint, never a selectable controller.
+  Rollback requires reconciled current-2/prior-2 selection and retains candidate work.
+  The sealed importer receipt permits an absent migration marker only when the SDK
+  reported not-needed for an empty source inventory; nonempty imports require completion.
+  Its coherent setup-home copy includes exact Meridian profile/settings and account credential files, preserving original Keychain identity while relocating account directories, plus existing user
+  skill data roots `global.home/.agents/skills` and `.opencode/{skill,skills}`;
+  ancestor/leaf symlinks are refused, and unrelated home data is excluded. These
+  bytes enter the existing prepared manifest while remaining mutable settings
+  after activation. `bundle-checkpoint.js` keeps source admission
+  closed through controller exit, producer/store drain and the complete copy.
+  `migration-mode.ts` runs offline against an explicit copied database; the
+  inventory modules verify relocated IDs, permissions, attachments and harness
+  references. Import never starts the agent runtime. Import preflight refuses
+  every Revert marker; generation-2 resume can retain a completed conversation-only
+  marker with a same-session native boundary. Resume still rejects incomplete
+  migration, unproved pending input, prepared ledger transactions, materialization
+  and unsettled execution receipts; a retained marker grants no mutation authority.
+  `bundle-owned-continuations.js` reads bounded original provider-recovery
+  envelopes and native schema/projection evidence for the selected generation-2
+  bundle's existing TODO/collection reservation. Queued payloads use the same
+  accepted-prompt fingerprint as admission. Pre-dispatch reservations and native
+  promotion before the primary ACK retain their existing recovery path. Only the
+  exact unchanged recovery file's continuation ID occurrences can reference an
+  uncommitted reservation; other files/fields cannot borrow it. SQL and file pins
+  are rechecked, `session_pending` remains closed, and copy/import/selection checks
+  retain strict pending refusal. This offline proof opens no admission; the fresh
+  controller's capture and authorization remain the sole dispatch authority.
+- `runtime-entry-bootstrap.js` initializes the application binding before store-owner imports.
+  `native-default-bundle.js` verifies the bundled native controller, writer and supervisor,
+  creates a private never-started empty source for a fresh install, and uses the same
+  offline importer/checkpoint/atomic selector. A selected generation-2 bundle is reused.
+  An existing unproved legacy database fails with `bundle_legacy_source_requires_quiescence`;
+  startup never guesses external-writer quiescence or modifies the old source. Missing
+  artifacts and external/skip/binary overrides fail deterministically. The fresh reviewed
+  location is launch cwd; further locations require reviewed bundle configuration.
+- `native-recovered-input.js` reconstructs typed queued/promoted input and incomplete
+  canonical work before every controller spawn. Only startup-affected sessions
+  are fenced; selected recovery summaries are bounded and full contents are read
+  lazily. `bundle-recovered-inputs.js` permits constructor-owned native resume
+  integrity checks, never execution. Explicit same-ID adoption pins current DB
+  encoding, selection/tools, owner, revision and epoch; automatic TODO/shell work
+  requires its original exact prompt/receipt proof. Grants remain through native
+  delivery/Step settlement. Recovery polling defers canonical-missing uncertainty
+  only for the existing live dispatch/grant's current owner, cancellation and
+  controller scope plus exact sealed accepted-item hash. The committed acceptance
+  pins automatic fallback hashes in the existing objective liveness entry; these
+  status proofs are neither persisted nor execution authority. Explicit grants
+  precede durable adoption and survive the promotion/Step gap; failed dispatch,
+  failed idle, Stop and replacement close the proof. The sole `primary-step.ts` Bus decorator checks the
+  whole guarded batch before publishing, using local inbox observation under its
+  original mutex and Node-only fresh owner rechecks. Stop cleanup remains allowed.
+  `native-input-cancellation-receipt.ts` retains a bounded hash-only witness in
+  the existing native event table, atomically inside the original cancellation
+  projector and transaction. The SDK normally projects without persisting events;
+  this selective receipt uses a derived aggregate to coexist with optional native
+  event retention. Receipts are local operational evidence, never native log
+  exports, live SSE publications, or replay inputs. Session deletion clears that aggregate in its own original
+  transaction. `native-input-cancellation.js` validates the exact native event
+  identity/version/sequence, accepted enqueue/type/delivery/hash and canonical
+  absence, then pins receipt bytes; existing recovery dispositions
+  retain canceled reference evidence through replacement and fresh admission.
+  Missing refs are exempt only at exact unchanged owning file occurrences. Resolved
+  cancellation proofs also permit reactivation; pending import/copy/rollback and
+  `session_pending` remain closed. The strict boot field rejects older controllers
+  before SDK import, and unfenced sessions resume normal queue/steer behavior.
+  Exact cancellation additionally requires the receipt version and enqueue sequence
+  at the strict command parser, preventing an older controller from canceling
+  without proof. Shell automatic recovery uses the immutable final sealed item
+  hash and delivery in its existing native shell lease, with fresh termination
+  receipt authorization; it does not require retained enqueue events. A queued
+  shell notification reference is admitted only at its exact settled Git lease
+  occurrence when the pinned pending item hash/delivery and current lease generation
+  agree; other namespaces cannot borrow it. Exact Discard supports queued user
+  inputs; shell and other non-user inputs stay inspectable under their existing
+  owner's lifecycle, without creating a cross-owner disposition.
+- `native-runtime-owner.js` composes the selected descriptor with the existing
+  execution, primary and task owners. Every bundle controller uses its verified
+  artifact supervisor; caller options can add denied read roots but cannot
+  disable confinement or replace the launcher. `native-process.js` owns the compiled
+  child's bounded stdin/stdout protocol, exact instance nonce, watchdog and
+  registry. Replacement awaits OS exit, supervisor/publication settlement and
+  the admission owner's ACK barrier. Its stderr drain retains only a finite
+  observation-failure marker, reports it once to the existing journal and keeps
+  it in the process exit record; raw provider/plugin output is never persisted.
+  `native-migration-process.js` separately
+  requires an offline process exit and matching persisted migration receipt.
+- `native-artifacts.js` verifies every packaged output, the accepted supervisor,
+  pinned SDK/Bun identity and real Darwin signatures before launch. Source
+  files and installed packages are build inputs, never runtime verification
+  dependencies. `controller-entry.ts` handles boot, offline migration and asset
+  verification; `native-process-protocol.js` bounds and validates each message.
+- `native-authorization.js` retains the original web principal and rechecks
+  managed grants before effects. Integration and provider-configuration grants
+  also recheck current provider/MCP settings read or edit permissions; chat
+  grants remain independent. `native-web-operation.js` binds normalized
+  requests to their exact native effects inside the existing admission owner.
+  Detached runners use canonical session ownership and reviewed registration
+  provenance; a missing HTTP principal grants no web authority. Each location
+  retains its own allowed roots.
+  Existing local and tunnel authenticators privately bind the original principal
+  to a live grant before the native owner copies its identity. Expiry, owner or
+  mode changes, logout/revocation and disposal invalidate the captured check;
+  copied identity fields cannot create one. Legacy UI JWT authentication retains
+  its existing expiry/reset/disposal revocation behavior. Detached work in
+  configured Off mode separately requires the active enrolled administrator and
+  a canonical session in a pinned location; repair provenance is not an access gate.
+  Authorization is checked again after asynchronous canonical, ledger and
+  Revert reads; managed grants also revalidate the original login last.
+  Configured commands derive one prompt at the sealed `opencode.config.command`
+  executor. `command-derivation.ts` clears its private marker before session
+  hooks; the owner compares the prepared command and selection with the final
+  native message identity. Constructor-only `withCommandSelection` admits only
+  the exact HTTP agent, model and permission changes before command dispatch.
+  Raw native deletion stays unavailable because it recurses through a local
+  undecorated facade. The private `native-session-removal.js` coordinator owns
+  the sealed subtree and deletion progress in the existing mutation ledger.
+  Scheduler fences precede actual native/OS settlement; only private controls
+  remove settled leaves. Recovery distinguishes live sessions from verified
+  absence after a lost acknowledgement and preserves published workspace bytes.
+
+- `controller-startup.ts` composes provider physical-request ownership inside
+  the observation owner's single `SessionModelRequest` decorator. Meridian
+  middleware, scope lifetime and observation IDs therefore share the actual
+  native request service; separate original-node replacements must not erase
+  either wrapper. Queue prepare and terminal-wake callbacks filter their exact native
+  event types before reading the captured host: cold original Project resolution
+  runs during catalog initialization, before the host promise returns. Relevant
+  inbox publications without a ready host still fail closed.
+
+- `bootstrap.ts` builds the private loopback server and owns startup, holds
+  and disposal. Mandatory overrides are applied last so plugin replacements
+  cannot replace the admission gate. The private bridge stays alive until
+  native scopes and executions have drained.
+  Authenticated `GET /devryan/tools?directory=...` exposes native wire IDs
+  from one current sealed `Tool.snapshot`. The Tool acquisition captures the
+  final Model dependency without replacing its reviewed provider read view; both
+  catalog handles expire with that same location scope. Paired `providerID`/`modelID`
+  validate the actual location's model catalog and include native JSON-schema
+  definitions; the shared v2 client projects compatibility names. Unknown or
+  noncanonical locations, expired acquisitions and unsupported execution tools
+  remain closed. This route performs no tool execution. Model reads retain the existing owned
+  selected-account resolution and refresh boundary.
+  `native-runtime-owner.js` joins `session-execution-host.settleController()`
+  after controller exit: old acquisitions, workers, receipts, publication and
+  the keeper settle before a fresh host lifetime opens. Missing termination
+  evidence keeps acquisitions fenced. Final `drain()` remains terminal; a
+  concurrent controller-exit callback joins that same drain without reopening.
+  The selected owner opens private recovery before advertising HTTP readiness
+  or issuing fresh web grants. Execution may settle during recovery; public
+  readiness opens only after durable removal, hold and continuation recovery.
+  `native-model-catalog.ts` feeds the original ModelsDev file parser the exact
+  reviewed `DevRyan-model-catalog.json` embedded by Bun. Explicit file mode
+  skips KV; fetching and SDK snapshot fallback are disabled. Missing, corrupt
+  or empty data fails closed and explicit refresh is refused.
+  `native-configuration-snapshot.js` derives each location's model/variant
+  requirements from effective roles, commands, ordered Council and Slim chains.
+  `startup-catalog.ts` checks those exact tuples against the actual location
+  catalog and returns typed per-source availability. Missing saved models or
+  efforts, unavailable catalogs and an empty connected-provider catalog leave
+  setup usable; malformed configuration, artifact integrity and required
+  registration failures still refuse startup. Physical admission rechecks the
+  complete selected tuple and never substitutes default effort.
+  Non-OK catalog reads reuse the request-scoped host refusal owner and retain
+  only a fixed route key, actual HTTP status and recognized error identifier in
+  the existing boot error code. Without that authoritative refusal, diagnostics
+  report `cause_unavailable` and do not inspect response bodies. Raw messages,
+  paths and configuration are never retained. The SDK may convert defects to an
+  empty 500 before this read.
+  Catalog availability does not establish credentials or quota availability. Native
+  Claude quota/status inspection uses the same selected credential owner and
+  shared mutation queue with original web read authorization and constructor
+  profile/config/controller checks before and after asynchronous work. A single
+  explicit profile is required; absent/ambiguous selection returns unavailable,
+  without CLI/PATH/default-account probing or an inference permit. Explicit
+  `oauth-token` profiles may opt into `credentialPolicy: "access-only"` with
+  `oauthTokenExpiresAt` held only by the host. Marked profiles use the existing
+  selected-account IPC before SDK dispatch, refuse missing/expired tokens and
+  authentication retry, and never read Keychain or renew. Unmarked legacy
+  token/API dispatch remains unchanged. Shared Claude Max profiles use their
+  preserved service and validated unexpired access token, with no renewal or
+  credential writes. Dedicated DevRyan enrollment alone authorizes renewal.
+  Status and quota reads never renew either kind of profile.
+  Snapshot agent requirements combine explicit reviewed requirements with
+  enabled translated agents. Original `disable` and native `disabled` flags
+  use the existing translator; a dormant agent is not implicitly required,
+  while an explicitly required disabled or missing agent still blocks startup.
+  Cursor requirements use a separate, finite `cursorCatalog` boot projection
+  from the actual external SDK runtime's fresh `getDeclaredVirtualProvider()`.
+  This is only a startup availability view. Before a physical Cursor request,
+  its existing SDK discovers the actual selected account's model and effort,
+  then rechecks account identity and epoch after discovery. Offline declarations
+  cannot prove a saved effort unsupported or authorize a request. Unavailable
+  selections retain their saved intent for later account setup or explicit edit.
+  The compiled Cursor fixture declares original `composer-2.5`, correcting its
+  former synthetic `composer` alias without substituting any user selection.
+- `child-session-route.ts` validates the host-owned child-create request, retains
+  its parent permit and checks the requested directory against the native parent
+  before the decorated session service creates the child.
+- `controller-integrations.ts` composes the single native Credential service and
+  each actual location's Integration acquisition. `native-integration-owner.js`
+  retains original browser grants and joins credential commits and OAuth refresh
+  to the existing host mutation queue. A timed-out reverse command holds that
+  queue until actual controller exit. Global Credential HTTP routes cannot lend
+  a location: manual key creation, label updates, selection and removal use the
+  private acquisition-bound command. Account metadata contains no secret values.
+  `controller-cursor-credentials.ts` applies this same queue to Cursor API keys,
+  including in-process mutations. Its fixed key Integration exists even without
+  a saved provider stanza; the existing external SDK still owns Cursor models
+  and execution. No native model transport or mirrored auth file is introduced.
+  `native-openai.ts` checks each physical inference attempt and final transport
+  headers; `remote-mcp.ts` binds tools, OAuth and selected-credential refresh to
+  their exact catalog acquisition and configuration digest. Reload expires old
+  closures before cleanup; it does not delete unrelated credentials.
+  `controller-provider-credentials.ts` preserves original native XAI device
+  OAuth and XAI/OpenCode/Go key registrations. Owned credential resolution
+  requires the actual SessionRunnerModel permit (including native title,
+  compaction and reviewed secondary generation through SessionContext). Key
+  resolution performs fresh selected-account and caller reads; OAuth resolution
+  holds the same queue through original refresh, exact Credential.update and
+  finalizers. Active reverse calls are never evicted; only bounded settled
+  replay receipts expire, while the bridge's private actions remain single-use.
+  Exact full-record observations are weakly keyed to the original permit object;
+  model/request/WebSocket hooks recheck selection, acquisition and caller after
+  original hooks. Unknown credential writes and foreign OAuth implementations
+  fail closed. Native Console background policy/config acquisition is refused
+  before sending a selected Zen key; its builtin catalog still registers. No
+  legacy auth.json mirror or token-import wire exists: absent native OAuth
+  records require fresh authorized original OAuth. Anthropic/Claude retains its
+  separate supervised SDK authority; this finite fence does not claim all
+  provider transports.
+- `native-provider-configuration-operation.js` preserves provider Disconnect
+  for selected generation-2 OpenAI/Cursor/XAI/OpenCode/Go accounts and copied configuration.
+  It derives editable files only from the selected descriptor and explicit
+  reviewed project, validates JSONC/source and backup identities before native
+  credential effects, and rechecks the original caller's current provider
+  settings policy through commit. Exact native credential metadata/CAS owns
+  account removal; JSONC-preserving source replacements retain byte backups.
+  Routes report acknowledged removals and uncertain partial failures, mark the
+  existing configuration apply revision, and never invent rollback. Apply
+  rebuilds a stamped native snapshot on the existing settled restart path.
+  Source/status reads use fresh metadata without exposing or mirroring keys.
+- `configuration.ts` supplies explicit configuration and disables ambient
+  plugin, instruction, snapshot and warming discovery. `controller-processes.ts`
+  denies uncontrolled controller subprocesses and PTYs. Raw config skill,
+  instruction, reference and MCP sources are refused until an owned adapter
+  supplies reviewed resources; native directory scans follow symlinks.
+- `native-configuration-snapshot.js` captures one coherent, provider-free
+  revision of mutable copied settings beneath the immutable reviewed registration
+  policy. Node and Bun use the same source stamp, digest, per-location roles,
+  providers, commands and skill/resource inventory for a controller lifetime.
+  Reloading saved settings requires controller recomposition; it does not amend
+  prepared executable evidence. The sealed `reviewed-configuration-entry.ts`
+  asset exposes original pure package resolvers and finite owned factories.
+  The captured file/environment Slim preset supplies the original base layer;
+  it is not a TUI runtime preset switch. Explicit saved roles and host selections
+  keep their original precedence, including effort, Council order and fallback
+  arrays.
+- `native-slim-runtime.ts` composes the actual reviewed Slim setup per active
+  location. `controller-slim.ts` supplies original path, interview, taskboard,
+  image and retry adapters through current hook authority, rather than a second
+  plugin state machine. Hook authority captures the actual permit, native event,
+  location and AbortSignal at execution and expires after settlement. Owned
+  failures remain sticky across original bridge catches. Taskboard replacement
+  mutates the original message array in place and retains native media references.
+  Original commands require private derivation and the exact compiled declaration;
+  a public marker or matching command name cannot authorize an effect.
+  `controller-startup.ts` passes Slim and Ponytail declarations to the native
+  host using their already-verified compiled registration origins, matching the
+  Node owner's sealed registry. Missing or mismatched declarations still refuse.
+  `native-slim-context-owner.js` obtains task state from the existing scheduler;
+  prompt-observed terminal CAS does not acknowledge or change result disposition.
+  The original fallback selector reserves one existing primary recovery attempt,
+  retaining the objective tuple and recording separate recovery execution.
+  An exact active read-only fallback preserves Slim context without taskboard
+  insertion or terminal-observation receipts. Existing recovery and hook grants
+  recheck its owner; canonical native Step ownership, or bounded history before
+  that Step, proves the current objective despite SDK presentation-only user rows.
+- `controller-webfetch.ts` captures the actual native location and global LLM
+  scopes. Each original webfetch invocation has its own cache, fresh permission,
+  immediate progress and cancellation/settlement channel under an owned control
+  lease. Secondary summarization uses actual SessionContext, transcript,
+  model-request hooks and LLMClient under a private derived permit, without
+  changing the session's saved model. The sealed original JSDOM extractor and
+  WX binary allocator remain package behavior. Binary scratch files live only
+  beneath the exact per-location owned temp root, with bounded bytes, symlink
+  checks and cleanup after failed authorization; they are not project publication.
+- `controller-interview.ts` binds the original context bridge to private accepted
+  command proof and the true hook AbortSignal, including active-interview reads.
+  `native-controller-interview.js` composes the original service and same-origin
+  UI handler with existing web authorization, admission and supervised document
+  owners. No standalone original dashboard listener or ambient auth file runs.
+  Its owner-minted `statusOnly` metadata is interpreted only on native synthetic rows by the shared message-status predicate; visible notices do not replace the accepted turn in REST/live projection or recovery observation.
+  Its private status-only notification uses `native-notification.ts` and the
+  original durable `SessionEvent.Synthetic` projector, after canonical session
+  checks and a final permit recheck. It does not admit inbox input or wake an
+  active runner. Admission captures the final Bus through the Session graph,
+  retaining primary-step, Cursor and observation publication decorators.
+  Explicit interview continuation and shell completion retain their owned
+  admission paths.
+  Cancellation settlement remains awaited separately from the interrupted RPC.
+  Focused SDK/leaf evidence and remaining integration qualifications are recorded
+  in [the Slim compatibility note](../../../../../../docs/audits/2026-10-02-opencode-v2-slim/README.md).
+- `native-slim-owner.js` keeps original path-rescue metadata reads under the
+  actual running tool and fresh hook grant. Only the native `read` tool may
+  stat or resolve an exact snapshot skill file after its hash, size and symlink
+  checks; parent directories, other tools and text reads retain ordinary root
+  guards. The actual file read still requires native permission and the direct
+  ledger fence in `execution-routing.ts`.
+- `native-cursor-owner.js` retains the original admitted caller throughout the
+  existing Cursor SDK run. `native-cursor-ingress.ts` publishes its exact user,
+  assistant and cumulative content through the native Bus and projector, retaining
+  original part and call IDs. The SDK's owned-prompt callback covers its stream,
+  process and persistence queues. Terminal content waits for the existing ledger
+  lease to reach published or cancelled after real process settlement.
+  `controller-startup.ts` composes Cursor store and Bus captures inside the final
+  mandatory replacements; independent replacements would silently discard them.
+  Read-only execution activity combines native runners with owned Cursor scopes.
+  A separate finite cleanup grant may finish an interrupted assistant after a
+  hold or caller revocation, but cannot add content, claim or wake a runner.
+  Actual HTTP/REST/SSE and owner checks cover these contracts; full confined SDK
+  lifecycle and controller-death recovery qualification remain required.
+- `native-imagegen-plugin.ts` and `native-imagegen-worker.ts` use the sealed
+  original image schema, Responses transport and versioned output allocator.
+  Native registration declares the original string output; the SDK validates
+  it before projecting exact text content and preserving image metadata.
+  Each physical request obtains the current native OpenAI account through
+  `native-integration-owner.js`, bound to the actual process lease. Request/result
+  files are private and bounded; cancellation settles transport and process before
+  publication or discard. `native-image-runtime.js` and `controller-images.ts`
+  separately route existing prompt images through the original image-context
+  worker and match replacement notices by exact content hash and media identity.
+  Its private bounded canonical page keeps genuine native user attachment rows
+  separate from the latest raw turn parent (user, owned synthetic, or compaction),
+  excluding private status-only notices. Context IDs must contain that canonical
+  anchor; attachments are filtered to the current context before the worker.
+  Constructor capture seals the raw anchor fingerprint and canonical user parts,
+  rechecks both through publication, and permits summary-only empty user input
+  through the original algorithm without inventing a user/tool identity.
+- `registration-origin.ts`, `native-plugin-registry.ts` and
+  `trusted-plugins.ts` bind reviewed registration provenance to native and
+  explicitly supplied plugin code. Plugin IDs and tool names alone grant
+  no execution authority. SDK activation clears its Effect services, so the
+  trusted wrapper captures the core-supplied location before registration.
+  Tools keep that location rather than taking one from execution input.
+  SDK plugin permission assertions remain closed without a native permission
+  owner. Arbitrary JavaScript plugins are not sandboxed.
+- `admission-gates.ts` decorates native sessions, tools, inference, inbox,
+  startup recovery and hooks. `native-admission-contract.ts` defines the
+  private permit contract. `host-refusal.ts` preserves typed refusals across
+  native request error handling. Inbox preflight and admission hold the native
+  inbox lock; committed host verification runs after its release and remains
+  awaited, because owned completion may reenter that same lock.
+  Persisted skill aliases are translated only within a current native Permission
+  evaluation. Stored rows and ordering are unchanged. The view expires after
+  evaluation or location reload; an always-reply may reevaluate only sessions
+  from the original native pending registry in that same location.
+- `native-admission-owner.js` and `native-admission-bridge.ts` connect the
+  Bun gates to Node ownership. Durable holds and deferred continuation
+  records live in the existing session ledger; transient permits do not
+  replace it. A shell continuation stays durable after wake registration and
+  native Job marker removal. Only a canonical step plus the actual termination
+  receipt, or startup reconciliation against raw native message sequence, can
+  acknowledge its consumption. Already consumed notices are cleaned up without
+  another wake; a newer ordinary input awaiting its assistant blocks an old wake.
+  `invalidateController()` rejects the old controller's permits and in-flight
+  authorization without changing durable holds. Call it only after verified
+  controller exit and settlement of all owned processes and publications, and
+  await it before replacement or disposal. It closes new owner operations and
+  acknowledgements, then waits for admitted ledger acknowledgements to finish
+  their full commit before rotating the epoch. Disposal refuses a pending
+  acknowledgement or replacement barrier.
+  Owned shell continuation refreshes canonical parent lineage before wake.
+  Native `Store.claim` uses that captured lineage inside its SQLite callback;
+  it cannot reread native HTTP there. Replacement clears the cache, so recovery
+  must rebuild the binding before it can claim work.
+  Queued notices use native wake. An exact promoted, unconsumed notice uses
+  scoped resume only after the inbox lock verifies no newer input or active
+  runner. The lock is released before waiting for independently authorized
+  runner admission; failure to transfer the continuation remains an error.
+  Redo's deferred `execution.wake` uses a separate private capability. It
+  acknowledges the durable intent only after native inbox/runner inspection
+  proves idle or a normal wake reaches independent runner admission, with an
+  atomic ledger revision check. It never resumes completed history. Unknown
+  continuation operations remain closed.
+- `execution-routing.ts`, `writer-worker.ts` and `worker-protocol.ts`
+  route exact reviewed native writers, reads and shell jobs through
+  `../session-execution-host.js`. Writer permissions and progress cross the
+  bridge; publication waits for real supervisor settlement and the existing
+  ledger transaction. Failed writes discard their private execution view.
+  Original Slim AST leaves use this same worker/publication path. The complete
+  reviewed plugin origin and the separately verified branded AST executable are
+  constructor inputs; execution payloads cannot select an executable. The
+  original package is transformed only at inventoried, hash-guarded seams.
+- `execution-read-guard.ts` resolves read targets against explicit allowed
+  roots and protected paths, including symlink targets and Git metadata.
+  Reads remain subject to native permissions and the ledger generation fence.
+  Reviewed skill support files have exact per-location snapshot grants. The
+  Environment replacement returns bytes from the verified file descriptor;
+  parent directories, unlisted files, changed bytes and symlinks gain no grant.
+  Explicit native instruction loads are closed until reviewed resource
+  registration. Supervised scans exclude Git metadata and refuse followed
+  symlinks or directories containing protected roots.
+- `managed-task.ts` registers the candidate managed tool and binds its
+  reviewed provenance to `managed-task-owner.js`. That adapter delegates to
+  the existing scheduler after `../harness-task-context.js` verifies the
+  current root Orchestrator, exact native turn/call and durable Plan objective.
+  The initial acceptance surface is start, status, wait and cancel; remaining
+  task actions and plugin behavior are still required for complete parity.
+  Private `nativeManagedControl` and `nativeManagedChild` methods validate
+  actual native invocation and durable parent-control lineage. Deferred child
+  creation and prompting use `withManagedTaskDispatch` with a fresh scheduler
+  lease, parent ledger generation and exact saved execution tuple. They do not
+  inherit the completed parent tool's permit. The legacy plugin bridge stays
+  closed for generation two.
+- `primary-step.ts` observes the committed native `SessionEvent.Step.Started`
+  synchronously before tool dispatch. `primary-step-owner.js` checks its live
+  runner permit, canonical sequence and existing objective before updating the
+  existing primary controller; it creates no parallel primary record store.
+  Original Slim retry and Step handoff capture the same native attempt span and
+  private runner permit. A retry before the SDK lazily creates its assistant
+  retains a pending choice in that owner; the real canonical Started binds it
+  before failure settlement. Its first lazy retry uses the existing canonical
+  `helloNative` version handshake under the captured hook grant, since no Step
+  has yet performed that read. The live controller getter fences replaced boots.
+  Native Step, Slim retry and both TODO scan/startup recovery callers pass that
+  constructor guard through the shared host; its final synchronous instance
+  check precedes the existing handshake write after awaited authorization.
+  When the original SDK lazily publishes Started while settling an already
+  interrupted fiber, the wrapper proves delivered interruption through Effect's
+  public interruptibility/Exit APIs and preserves the native publication without
+  a new primary handoff. It repeats that proof after a rejected handoff to cover
+  Stop racing the reply; ordinary held or unavailable handoffs still fail closed.
+  The verified selected artifact's `devryan.primary-step-stop/1` contract enables
+  an exact pending-handoff Stop disposition. The host requires the same live
+  permit, controller, objective, execution lineage and canonical assistant,
+  exactly one Stop generation advance, and a final unchanged cancelled snapshot.
+  It acknowledges no continuation. The strict native mapper invokes its
+  constructor-owned raw execution interrupt before delivering Effect interruption,
+  preserving user-interrupted idle and claim release without waiting on itself.
+  Historical adapters without that contract retain the original refusal path.
+  A constructor-only callback disposition omits that cleanup's step-link RPC.
+  Prepared/physical observations remain visible as unmatched cancelled attempts;
+  reasoning coverage continues to require successful user turns, while native
+  aborted assistants, interrupted idle and settled transport prove cancellation.
+  Its direct `helloNative()` handshake verifies the pinned native `/api/info`
+  version through the bounded client. It does not grant public readiness or
+  provider-recovery eligibility; ordinary plugin handshakes retain those gates.
+  `native-shell-continuation.js` proves background continuation from the current
+  ledger, real termination receipt and exact native user/assistant/call chain.
+  The primary controller adopts that user only at the next native step, retaining
+  the original objective and saved provider/model/effort through compaction.
+- `native-session-context.ts` and `native-session-context-owner.js` bind TODO
+  tools, compaction anchors and primary tool observations to current native
+  calls. TODO metadata replaces only `metadata.devryan.todo` under the existing
+  session lock through a private, exact metadata derivative. Reads use the
+  privileged client's bounded, session/directory-matched native metadata map;
+  the ordinary facade intentionally strips these internal fields. Idle events use the
+  existing harness event feed to request the existing primary continuation
+  planner. Its durable reservation keeps the same message ID after a lost ACK;
+  only canonical Step.Started consumes it. Held intents remain pending. This
+  does not establish parity for legacy compaction retention settings.
+- `native-browser-plugin.ts` registers the hash-guarded original browser schema;
+  the complete tool runs in one supervised worker. `native-browser-owner.js`
+  checks the current native assistant/tool/user chain and original permit for
+  every private lease operation, then delegates to `browser-cdp/lease-runtime.js`.
+  A grant lost during acquisition releases that exact lease. `native-browser-assets.js`
+  seals the injected existing Electron installation and optional verified FFmpeg;
+  it never installs or probes executables. An absent desktop installation omits
+  the browser registration. Worker publication and real Electron behavior still
+  require their acceptance evidence.
+- `controller-effects.ts` keeps logs from private native Effect calls on stderr;
+  stdout remains the strict JSON-lines process protocol. Credential operations
+  separately suppress native logging and use the existing structured diagnostics.
+- Native interruption retains the missing-job no-op in `Job.cancel(sessionID)`
+  so the native interrupted event can release its claim. Actual job cancellation
+  remains owned. Acceptance checks canonical interrupted-idle and released
+  suspension/retry state before sending another prompt.
+- `native-observation.ts` observes actual prepared model options, final HTTP/WS
+  reasoning controls, the original `SessionStep.attempt` trace, and committed Bus
+  events. `native-observation-owner.js` binds canonical turn identity and the
+  current snapshot before using the existing diagnostic journal. The shared
+  finite contract lives in `packages/shared-runtime/lib/native-observation.js`;
+  sanitized worktree witnesses use a separate strict parser. Missing tracing,
+  unsupported wire bodies and refused/dropped observations are evidence gaps.
+  Constructor-owned Cursor ingress remains outside native `SessionStep.attempt`
+  linkage: its private WeakSet scope excludes only projected `Step.Started`
+  from that observation RPC. External primary tracking, canonical events and
+  supervised receipts still apply; copied Cursor metadata cannot skip observation.
+  They do not change native model or compaction behavior. Final controls use one
+  JSON parse per materialized send, bounded to 64 MiB by actual UTF-8 bytes;
+  unsupported/oversized bodies remain unqualified. Stage E includes that cost.
+- `native-compaction-observation.ts` has a scoped WeakMap keyed by the actual
+  native trigger. `scripts/native-compaction-observation-transform.mjs` permits
+  only the pinned 2.0.20 source hash and one insertion after its original budget
+  calculation. The insertion captures actual settings/revision, estimates,
+  threshold and checkpoint positions without changing a decision. Public
+  compaction interfaces expose configuration writes but no exact read; a later
+  mirrored read could observe a different revision. Original early skips do no
+  diagnostic hashing or RPC. Raw Started/Ended event sequence and time retain
+  the running compaction ID; manual input IDs bind Starts outside compact scope.
+- `tsconfig.json` checks the native host and native acceptance TypeScript
+  against the installed SDK interfaces. Bun tests live in
+  `scripts/opencode-v2-native/`; Node-owner tests remain beside their sources.
+
+The acceptance runner uses repository-owned HOME/XDG/temp/database/project
+paths, a simulated native model and the accepted Darwin arm64 supervisor.
+Simulation changes model responses; it does not replace native tool execution,
+receipts, publication or task ownership.
+
+- Fresh application startup uses `native-default-bundle.js` and the existing private empty-source prepare/select flow. Old conversation databases and diagnostic journals do not enter the new bundle and cannot block it. A valid native selection is reused with all current state on subsequent boots. `native-setup-seed.js` copies a bounded setup allowlist: preferences/registered projects, declarative agents/commands/skills/roles/Council/provider configuration, connection setup and exact account inputs. Session pointers, tasks, recovery/receipt authority, permits and caches are excluded; published project files remain unchanged. Symlinks, changed files and tampered retry pins fail closed. `native-setup-credential-data.js` is the shared pure auth projection. `native-setup-credentials.ts` imports its bounded envelope through the original Credential/KV/Database services before decoration; original activation and the one-time native KV stamp share a transaction. Later native account choices are never reset, and the transient active seed is removed only after commit.
+- `runtime-entry-bootstrap.js` runs before the thin `server/index.js` dynamically imports `server/application.js`, so no feature store can capture the old data/config paths while provisioning is pending.
+
+- `native-helper-owner.js` and `controller-helper-text.ts` own authenticated, constructor-issued title/Git text requests. `controller-webfetch.ts` reuses the captured native location, model resolver and decorated SessionModelRequest/LLM graph with exact selected model/variant, bounded output and final tools empty. There is no helper Session, Inbox, Step or history write. `native-helper-context.ts` exposes transient correlation only to the matching plugin session read within the provider Effect. A bounded cancellation response may report `native_helper_unsettled`; its original permit remains held until actual provider acknowledgement or confirmed owning controller exit. The owner never kills unrelated conversations for that timeout. Reverse settlement compares the exact token/session/revision field set independently of JSON key order, so the original controller header reconstruction can acknowledge cancellation without accepting foreign or extra fields. One caller-created logical operation ID spans repairs, model/account rotation and title retries. Pending/unsettled IDs reject overlap and late publication; four unsettled helpers block new helpers until real settlement frees capacity. Native provider HTTP statuses remain classified without exposing upstream bodies.
+- Detached titles use the existing canonical session owner checks, distinct from ordinary directory helpers. `native-helper-title.ts` pins the previous title inside the sole native Bus transaction before the original rename projector; concurrent manual renames win. Cursor raw helpers retain selected models, no tools/settings, and wait for owned worker receipts. Meridian transport keeps each copied account's original constructor-owned keychain service identity.
+
+- Claude's supervised worker requests credentials for the concrete Meridian
+  active/priority/sticky profile before acquiring its SDK concurrency slot.
+  `native-provider-process.js` validates the bounded reverse credential protocol;
+  `native-provider-runtime-owner.js` resolves private profile paths/service names
+  and rechecks live attempt, account, generation and admission before and after
+  credential work through the existing mutation queue. The manifest-verified
+  `DevRyan-Claude-credentials.mjs` asset supplies the captured renewal algorithm
+  and explicit Keychain read/write identity. Only request-local access token and
+  expiry cross to the worker; ambient worker renewal is disabled. Exact reviewed
+  signed-out health is degraded availability, while listener, version and protocol
+  failures still refuse startup. Tokens never enter browser responses or diagnostic
+  records. Independent access-only QA profiles fail at expiry without refresh.
+
+- `native-claude-lifecycle.js`, `native-claude-lifecycle-kv.ts` and the private
+  client keep versioned nonsecret enrollment/generation bindings and the bounded
+  unresolved-grant ledger in the existing native durable KV service. Revision
+  checked transitions persist issuer intent, then the canonical replacement
+  fingerprint before credential persistence. Only that exact replacement can
+  settle interrupted work; uncertain issuer results remain fenced. Recognized
+  legacy markers enter the ledger before enrollment, without vendor writes.
+  Controller KV finalizers do not call back into the host mutation queue; close
+  drains the queue while the controller is still alive.
+- `native-claude-enrollment.js` prepares the reviewed vendor login in an unused,
+  private stable directory under the bundle control root. Original principal,
+  directory, grant, configuration and controller bindings are rechecked through
+  publication. `native-claude-profile-publication.js` preserves existing settings
+  and priority, performs raw-byte CAS and selects only on the explicit Use action.
+  `native-claude-enrollment-directory.js` validates path ownership; it grants no
+  renewal authority. `native-setup-profiles.js` preserves stable directory and
+  service identity on clone only with exact lifecycle authorization.
+- `native-claude-worker-profiles.js` projects stable external enrollments to
+  empty private worker configuration directories inside the existing worker
+  roots. The host keeps the original profile/service and resolves credentials;
+  external credential files never enter the worker. Missing compiled Claude
+  support refuses before projection, worker launch or credential authorization,
+  leaving core startup and other providers available.
+- The credential reply channel retains timed-out and closed request IDs/profile
+  bindings until one validated reply or process exit. Active and retired entries
+  share the 64-request limit; valid late credentials are discarded immediately.
+  Unknown, duplicate, malformed and foreign-profile replies fail the channel.
+
+- `native-retention.js` and `native-retention-quiet.ts` reuse the existing admission and removal owners. Constructor-issued automatic cleanup holds the full subtree under original Inbox mutexes plus the SQLite transaction, refuses queued/pending/claimed/running work, and rechecks Node-only selected/managed/ledger policy without calling the child back. Archival preserves native metadata and publishes every member in that transaction. Deletion atomically transfers the exact current-boot hold into a quiet removal intent; quiet removal never invokes cancellation or Stop. Failed/uncommitted decisions are abandoned without waking, committed decisions keep existing disposition/ACK recovery. Startup releases abandoned automatic holds before opening recovery; the strict private command parser rejects unsupported artifacts.
+
+- `native-queued-input.ts` owns bounded native subtree proof for resolved human FIFO input. The existing primary-step Bus wrapper checks before publication and again in the original enqueue/delivery transaction, so busy, claimed, pending or unknown descendants cannot authorize input across awaits. Manual steer and native control continuations retain their own contracts. The accepted native owner stages primary admission until actual enqueue commit under the original Inbox mutex; its existing final write guard retains caller, cancellation and controller identity. Queued slash commands preserve their private command provenance and reuse the same callback after enqueue, while command preselection reads require the exact existing command owner. The native publication witness pins the actual selected tuple, including inherited variants, and the transaction rejects a concurrent selection change. Failed post-commit callbacks retain the exact item; same-ID retries require the current primary owner instead of silently readmitting it. Terminal native execution events use the existing deferred wake after true idle; no new polling owner is created.

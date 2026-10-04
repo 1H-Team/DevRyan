@@ -23,6 +23,8 @@ try {
     [`${root}/packages/web/server/lib/bots`, '/src/bots'],
     [`${root}/packages/bot-egress/src`, '/src/egress'],
     [`${root}/packages/bots-runtime`, '/src/node_modules/@openchamber/bots-runtime'],
+    [`${root}/packages/web/server/lib`, '/fixture-repository/packages/web/server/lib'],
+    [`${root}/packages/shared-runtime`, '/fixture-repository/packages/shared-runtime'],
     [`${root}/packages/bots-runtime/opencode/oauth-fixture.mjs`, '/opt/devryan/oauth-fixture.mjs'],
     ...(!baked ? [
       [`${root}/packages/bots-runtime/opencode/devryan-bot-tools.mjs`, '/opt/devryan/devryan-bot-tools.mjs'],

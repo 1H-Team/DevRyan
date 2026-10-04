@@ -3,6 +3,8 @@ import {
   resolveQueuedAutoSendStatusType,
   resolveQueuedSessionStatusType,
   shouldDispatchQueuedSession,
+  resolveQueuedSessionScopeIds,
+  resolveQueuedSubtreeStatusType,
 } from "./queuedMessageAutoSendStatus"
 
 describe("queued message auto-send status resolution", () => {
@@ -22,6 +24,22 @@ describe("queued message auto-send status resolution", () => {
   test("keeps a queued session unknown until any live status source has observed it", () => {
     expect(resolveQueuedSessionStatusType("session-b", {})).toBe("unknown")
     expect(resolveQueuedAutoSendStatusType("session-b", {}, undefined)).toBe("unknown")
+  })
+
+  test("unknown and malformed child statuses never authorize a loaded subtree", () => {
+    const sessions = [{ id: 'root' }, { id: 'child', parentID: 'root' }, { id: 'leaf', parentID: 'child' }, { id: 'other' }]
+    const scope = resolveQueuedSessionScopeIds('root', sessions)
+    expect(scope).toEqual(['child', 'leaf', 'root'])
+    expect(resolveQueuedSessionScopeIds('missing', sessions)).toBeNull()
+    expect(resolveQueuedSessionScopeIds('child', sessions)).toEqual(['child'])
+    const read = () => undefined
+    const blockers = () => 0
+    const idle = { root: { type: 'idle' }, child: { type: 'idle' }, leaf: { type: 'idle' } }
+    expect(resolveQueuedSubtreeStatusType(scope, { ...idle, leaf: undefined }, read, blockers)).toBe('unknown')
+    expect(resolveQueuedSubtreeStatusType(scope, { ...idle, leaf: { type: 'unavailable' } }, read, blockers)).toBe('unknown')
+    expect(resolveQueuedSubtreeStatusType(scope, idle, () => ({ type: 4 }), blockers)).toBe('unknown')
+    expect(resolveQueuedSubtreeStatusType(scope, idle, read, id => id === 'leaf' ? 1 : 0)).toBe('blocked')
+    expect(resolveQueuedSubtreeStatusType(scope, { ...idle, other: { type: 'busy' } }, read, blockers)).toBe('idle')
   })
 
   test("uses any-directory busy status before aggregated idle status", () => {

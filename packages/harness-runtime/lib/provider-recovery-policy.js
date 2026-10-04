@@ -1,3 +1,4 @@
+import { isNativeStatusRecord } from '../../shared-runtime/lib/native-message-status.js';
 import { validateBuilderTodoGuard, validateObjectiveProgress, validateObjectiveRejections } from './objective-progress.js';
 import { currentObjectiveUser, isNativeCompactionRecord } from './objective-identity.js';
 
@@ -68,6 +69,66 @@ export function classifyPrimaryTransportError(error, runtimeVersion) {
 }
 
 export function validatePrimaryRecoveryRecord(value) {
+  const hash=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
+  const input=value?.recoveredInput;
+  if(input!==undefined&&(!input||Object.keys(input).some(key=>!['inputID','payloadHash','enqueuedSeq','delivery','phase'].includes(key))
+    || !/^msg_[A-Za-z0-9]+$/.test(input.inputID??'')||!hash(input.payloadHash)||!Number.isSafeInteger(input.enqueuedSeq)
+    ||input.enqueuedSeq<0||!['queue','steer'].includes(input.delivery)||input.phase!=='adopted'))throw recoveryError('invalid_recovered_input');
+  const dispositions=value?.recoveredInputDispositions;
+  if(dispositions!==undefined&&(!Array.isArray(dispositions)||dispositions.length>128
+    ||new Set(dispositions.map(item=>item?.inputID)).size!==dispositions.length
+    ||dispositions.some(item=>!item||Object.keys(item).some(key=>!['inputID','payloadHash','enqueuedSeq','type','delivery','phase','eventID','eventSeq'].includes(key))
+      ||!/^msg_[A-Za-z0-9]+$/.test(item.inputID??'')||!hash(item.payloadHash)||!Number.isSafeInteger(item.enqueuedSeq)||item.enqueuedSeq<0
+      ||!['user','synthetic','compaction','move'].includes(item.type)||!['queue','steer'].includes(item.delivery)
+      ||!['requested','cancelled'].includes(item.phase)||item.phase==='requested'&&(item.eventID!==undefined||item.eventSeq!==undefined)||item.phase==='cancelled'&&(!/^evt_[A-Za-z0-9]+$/.test(item.eventID??'')
+        ||!Number.isSafeInteger(item.eventSeq)||item.eventSeq<=item.enqueuedSeq))))throw recoveryError('invalid_recovered_input_disposition');
+  const fallback = value?.nativeFallback;
+  const validExecution = execution => execution && ['providerID','modelID','agent','variant'].every(key => typeof execution[key] === 'string' && execution[key].length > 0 && execution[key].length <= 256) && execution.agent === value.agent;
+  const validWitness = witness => witness && Object.keys(witness).every(key => ['attempt','permitSha256'].includes(key))
+    && witness.attempt && Object.keys(witness.attempt).length === 2
+    && ['traceID','spanID'].every(key => typeof witness.attempt[key] === 'string' && /^[a-f0-9]{1,128}$/.test(witness.attempt[key]))
+    && typeof witness.permitSha256 === 'string' && /^[a-f0-9]{64}$/.test(witness.permitSha256);
+  const pendingChoice = fallback?.pending;
+  if (value?.nativeStepWitness !== undefined && (value.executionGeneration !== 2 || !validWitness(value.nativeStepWitness))) throw recoveryError('invalid_native_fallback');
+  if (pendingChoice !== undefined && (!pendingChoice || fallback.stepID !== null
+    || Object.keys(pendingChoice).some(key => !['instanceID','cancellationGeneration','previousStepID','attempt','permitSha256','currentExecution'].includes(key))
+    || !validWitness({attempt:pendingChoice.attempt,permitSha256:pendingChoice.permitSha256})
+    || typeof pendingChoice.instanceID !== 'string' || !pendingChoice.instanceID || pendingChoice.instanceID.length > 256
+    || !Number.isSafeInteger(pendingChoice.cancellationGeneration) || pendingChoice.cancellationGeneration < 0
+    || pendingChoice.previousStepID !== null && !/^msg_[a-zA-Z0-9]+$/.test(pendingChoice.previousStepID ?? '')
+    || !validExecution(pendingChoice.currentExecution)
+    || ['providerID','modelID','agent','variant'].some(key => pendingChoice.currentExecution[key] !== value[key]) || value.recoveryID || value.recoveryExecution)) throw recoveryError('invalid_native_fallback');
+  if (fallback !== undefined && (value.executionGeneration !== 2 || !fallback || !(pendingChoice ? fallback.stepID === null : /^msg_[a-zA-Z0-9]+$/.test(fallback.stepID ?? ''))
+    || !/^msg_[a-zA-Z0-9]+$/.test(fallback.userMessageID ?? '') || !Array.isArray(fallback.tried) || fallback.tried.length > 128
+    || fallback.tried.some(item => typeof item !== 'string' || item.length > 512) || ![0,1,2].includes(fallback.exhaustion)
+    || (fallback.execution !== undefined && !validExecution(fallback.execution)))) throw recoveryError('invalid_native_fallback');
+  if (value?.recoveryExecution !== undefined && (value.executionGeneration !== 2 || !value.recoveryID || !validExecution(value.recoveryExecution)
+    || JSON.stringify(value.recoveryExecution) !== JSON.stringify(fallback?.execution)
+    || value.recoveryPrompt?.messageID !== value.recoveryID || value.recoveryPrompt?.model?.providerID !== value.recoveryExecution.providerID
+    || value.recoveryPrompt?.model?.modelID !== value.recoveryExecution.modelID || value.recoveryPrompt?.agent !== value.agent
+    || value.recoveryPrompt?.variant !== value.recoveryExecution.variant || !Array.isArray(value.recoveryPrompt?.parts)
+    || !value.recoveryPrompt?.tools || Object.values(value.recoveryPrompt.tools).some(item=>typeof item!=='boolean')
+    || Buffer.byteLength(JSON.stringify(value.recoveryPrompt))>64*1024)) throw recoveryError('invalid_native_fallback');
+  const pending = value?.nativeContinuation;
+  if (pending !== undefined && (!pending || value.executionGeneration !== 2
+    || pending.messageID !== value.continuationID || !/^msg_[a-zA-Z0-9]+$/.test(pending.messageID ?? '')
+    || !/^msg_[a-zA-Z0-9]+$/.test(pending.sourceUserMessageID ?? '')
+    || !/^msg_[a-zA-Z0-9]+$/.test(pending.sourceAssistantMessageID ?? '')
+    || !Number.isSafeInteger(pending.cancellationGeneration) || pending.cancellationGeneration < 0
+    || !['builder_todo','orchestrator_todo','collect'].includes(pending.kind)
+    || pending.prompt?.messageID !== pending.messageID || pending.prompt.agent !== value.agent
+    || pending.prompt.model?.providerID !== value.providerID || pending.prompt.model?.modelID !== value.modelID
+    || pending.prompt.variant !== value.variant || pending.prompt.objectiveID !== (value.objectiveID ?? value.anchorID)
+    || JSON.stringify(pending.prompt.tools) !== JSON.stringify(value.tools)
+    || !Array.isArray(pending.prompt.parts) || !pending.prompt.parts.length
+    || pending.prompt.parts.some(part => part?.type !== 'text' || part.synthetic !== true || typeof part.text !== 'string')
+    || Buffer.byteLength(JSON.stringify(pending.prompt)) > 64 * 1024)) throw recoveryError('invalid_native_primary_continuation');
+  if (value?.executionGeneration !== undefined && (value.executionGeneration !== 2
+    || typeof value.variant !== 'string' || value.variant.length === 0)) throw recoveryError('invalid_recovery_execution_selection');
+  const owned = value?.ownedNativeContinuation;
+  if (owned !== undefined && (!owned || !['native-shell', 'native-compaction'].includes(owned.kind)
+    || !/^msg_[a-zA-Z0-9]+$/.test(owned.sourceUserMessageID ?? '') || !/^msg_[a-zA-Z0-9]+$/.test(owned.userMessageID ?? '')
+    || !/^msg_[a-zA-Z0-9]+$/.test(owned.assistantMessageID ?? ''))) throw recoveryError('invalid_native_continuation');
   const wake = value?.collectionWake;
   if (wake !== undefined && (!wake || !/^dvr_task_[a-zA-Z0-9]+$/.test(wake.taskId)
     || !/^dvr_result_[a-zA-Z0-9_]+$/.test(wake.envelopeId) || !/^msg_[a-zA-Z0-9]+$/.test(wake.messageID)
@@ -116,7 +177,7 @@ export function inspectRecoveryTurn(record, observation, { allowSettledToolFailu
   if (anchorIndex < 0) throw recoveryError('recovery_anchor_unavailable');
   const tail = messages.slice(anchorIndex);
   const expectedUser = currentObjectiveUser(record);
-  const users = tail.filter((m) => m.info.role === 'user' && (!isNativeCompactionRecord(m) || m.info.id === expectedUser));
+  const users = tail.filter((m) => m.info.role === 'user' && !isNativeStatusRecord(m) && (!isNativeCompactionRecord(m) || m.info.id === expectedUser));
   const currentUser = users.at(-1)?.info.id;
   const originalUser = record.recoverySourceUserID ?? record.activeUserID ?? record.continuationID ?? record.anchorID;
   const recoveryAccepted = Boolean(record.recoveryID && currentUser === expectedUser);

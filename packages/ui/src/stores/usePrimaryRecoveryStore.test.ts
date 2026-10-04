@@ -60,3 +60,32 @@ test('an exact pre-execution rejection pause stays host-owned on Grok with trans
   expect(usePrimaryRecoveryStore.getState().snapshots.ses_test.record?.revision).toBe(5);
   expect(hostOwnsPrimaryRecovery('ses_test')).toBe(false);
 });
+
+test('retained input stays host-owned without a primary record or watchdog support', () => {
+  const retained = { ...snapshot(), supported: false, enforced: false, mode: 'off', record: null,
+    recoveredInput: { revision: 'a'.repeat(64), state: 'paused', inputs: [{ messageID: 'msg_pending', payloadHash: 'b'.repeat(64),
+      type: 'user', delivery: 'queue', location: 'queued', preview: 'First request', attachmentCount: 0,
+      canResume: true, canDiscard: true, reason: null }] } };
+  usePrimaryRecoveryStore.getState().accept('ses_test', retained);
+  expect(hostOwnsPrimaryRecovery('ses_test')).toBe(true);
+  expect(hostOwnsPrimaryRecovery('ses_other')).toBe(false);
+  const previous = usePrimaryRecoveryStore.getState().snapshots.ses_test;
+  usePrimaryRecoveryStore.getState().accept('ses_test', retained);
+  expect(usePrimaryRecoveryStore.getState().snapshots.ses_test).toBe(previous);
+  usePrimaryRecoveryStore.getState().accept('ses_test', { ...retained,
+    recoveredInput: { ...retained.recoveredInput, inputs: Array(129).fill(retained.recoveredInput.inputs[0]) } });
+  expect(usePrimaryRecoveryStore.getState().snapshots.ses_test).toBe(previous);
+});
+
+test('partial record events preserve retained inventory until a full host snapshot confirms clearance', () => {
+  const current = { ...snapshot(), recoveredInput: { revision: 'a'.repeat(64), state: 'paused', inputs: [] } };
+  usePrimaryRecoveryStore.getState().accept('ses_test', current);
+  const inventory = usePrimaryRecoveryStore.getState().snapshots.ses_test.recoveredInput;
+  usePrimaryRecoveryStore.getState().accept('ses_test', { ...snapshot(2, 'cancelled'), recoveredInputPartial: true });
+  expect(usePrimaryRecoveryStore.getState().snapshots.ses_test.recoveredInput).toBe(inventory);
+  expect(hostOwnsPrimaryRecovery('ses_test')).toBe(true);
+  usePrimaryRecoveryStore.getState().accept('ses_test', { ...snapshot(2, 'cancelled'), record: null });
+  expect(usePrimaryRecoveryStore.getState().snapshots.ses_test.recoveredInput).toBeUndefined();
+  expect(usePrimaryRecoveryStore.getState().snapshots.ses_test.recoveredInputPartial).toBeUndefined();
+  expect(hostOwnsPrimaryRecovery('ses_test')).toBe(false);
+});

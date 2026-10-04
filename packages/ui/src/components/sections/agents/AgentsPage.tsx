@@ -877,13 +877,15 @@ export const AgentsPage: React.FC = () => {
       ? rowAvailableVariants.find((entry) => entry === value.trim())
         ?? rowAvailableVariants.find((entry) => entry.trim().toLowerCase() === value.trim().toLowerCase())
       : undefined;
-    const selectValue = selectedVariant ?? NO_VARIANT_VALUE;
+    const retainedVariant = typeof value === 'string' && value.trim() ? value.trim() : undefined;
+    const unlistedVariant = retainedVariant && !selectedVariant ? retainedVariant : undefined;
+    const selectValue = selectedVariant ?? retainedVariant ?? NO_VARIANT_VALUE;
     const rowVariantDisplayState = parsedRowModel
       ? getModelVariantDisplayState(rowProvider, parsedRowModel.modelId, value)
       : null;
     const rowFastEnabled = Boolean(rowVariantDisplayState?.fastEnabled);
-    const rowEffortLabel = selectedVariant
-      ? formatEffortLabel(selectedVariant, { providerId: parsedRowModel?.providerId })
+    const rowEffortLabel = selectedVariant || retainedVariant
+      ? formatEffortLabel(selectedVariant ?? retainedVariant, { providerId: parsedRowModel?.providerId })
       : (
         rowVariantDisplayState?.selectedVariant && rowAvailableVariants.length > 0
           ? formatVisibleEffortLabel(rowVariantDisplayState.selectedVariant, rowAvailableVariants, { providerId: parsedRowModel?.providerId })
@@ -915,7 +917,7 @@ export const AgentsPage: React.FC = () => {
               }
               applyVariantUpdate({ variant: nextValue });
             }}
-            disabled={!canEditSelectedModel || isSavingModelOverride || (!rowSupportsVariants && !rowCanToggleFast)}
+            disabled={!canEditSelectedModel || isSavingModelOverride || (!rowSupportsVariants && !rowCanToggleFast && !unlistedVariant)}
           >
             <SelectTrigger className="w-fit min-w-[120px]">
               <SelectValue placeholder={t('settings.agents.page.field.thinkingPlaceholder')}>
@@ -945,6 +947,7 @@ export const AgentsPage: React.FC = () => {
                 </>
               ) : null}
               <SelectItem value={NO_VARIANT_VALUE}>{formatEffortLabel(undefined)}</SelectItem>
+              {unlistedVariant ? <SelectItem value={unlistedVariant}>{formatEffortLabel(unlistedVariant)} (Not in Current Catalog)</SelectItem> : null}
               {rowAvailableVariants.map((availableVariant) => (
                 <SelectItem key={availableVariant} value={availableVariant}>
                   {formatEffortLabel(availableVariant, { providerId: parsedRowModel?.providerId })}
@@ -952,6 +955,7 @@ export const AgentsPage: React.FC = () => {
               ))}
             </SelectContent>
           </Select>
+          {unlistedVariant ? <span className="typography-meta text-[var(--status-warning)]">Saved selection: {unlistedVariant}. Availability is not confirmed by the current catalog.</span> : null}
         </div>
       </div>
     );

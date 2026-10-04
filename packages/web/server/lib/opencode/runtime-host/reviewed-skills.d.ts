@@ -1,0 +1,10 @@
+export interface ReviewedSkillResource { readonly relativePath: string; readonly canonicalPath: string; readonly sha256: string; readonly size: number }
+export interface ReviewedSkill { readonly id: string; readonly name: string; readonly path: string; readonly content: string; readonly description: string; readonly source: string; readonly scope: string; readonly bodySha256: string; readonly fileSha256: string; readonly fileSize?:number; readonly resources: readonly ReviewedSkillResource[] }
+export interface SkillResourceSnapshot { readonly digest: string; readonly locations: readonly { readonly directory: string; readonly skills: readonly ReviewedSkill[] }[] }
+export function captureReviewedSkill(input: { readonly directory: string; readonly skill: { readonly name: string; readonly path: string; readonly source?: string; readonly scope?: string }; readonly allowedRoots: readonly string[]; readonly parseMarkdown: (path: string) => { body: string; frontmatter: Record<string, unknown> } }): Promise<ReviewedSkill>;
+export function readReviewedSkillResource(snapshot: SkillResourceSnapshot, input: { readonly snapshotDigest: string; readonly directory: string; readonly skillID: string; readonly relativePath: string }): Promise<Buffer>;
+export function reviewedSkillAliases(skills: readonly ReviewedSkill[]): readonly {readonly name:string;readonly targetID:string}[];
+export function buildReviewedSkillAliasIndex(skills: readonly ReviewedSkill[]): {readonly canonical:ReadonlyMap<string,string|null>;readonly normalized:ReadonlyMap<string,string|null>};
+export function resolveReviewedSkillAlias(snapshot:SkillResourceSnapshot,directory:string,requested:unknown):string|null;
+export interface ReviewedSkillResourceLookup{readonly snapshotDigest:string;readonly directory:string;readonly skillID:string;readonly relativePath:string}
+export function lookupReviewedSkillResourcePath(snapshot:SkillResourceSnapshot,input:{readonly snapshotDigest:string;readonly directory:string;readonly targetPath:unknown}):ReviewedSkillResourceLookup|null;

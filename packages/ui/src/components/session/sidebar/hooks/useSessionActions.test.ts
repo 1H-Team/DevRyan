@@ -41,3 +41,15 @@ describe('session archive expansion lifecycle', () => {
     expect(source).toContain('description: resolveSessionDeleteFailureDescription(\n            failures,');
   });
 });
+
+describe('session share capability gating', () => {
+  test('share handlers refuse without a request when the runtime has no share route', () => {
+    const source = readFileSync(join(testDir, 'useSessionActions.ts'), 'utf8');
+
+    expect(source).toContain("const shareAvailable = useRuntimeCapability('share');");
+    expect(source.indexOf('if (!shareAvailable) {'))
+      .toBeLessThan(source.indexOf('const result = await args.shareSession(session.id);'));
+    expect(source.lastIndexOf('if (!shareAvailable) {'))
+      .toBeLessThan(source.indexOf('const result = await args.unshareSession(sessionId);'));
+  });
+});

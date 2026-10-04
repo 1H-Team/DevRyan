@@ -7,7 +7,7 @@ This module contains the OpenChamber message-stream WebSocket protocol and runti
 - `packages/web/server/lib/event-stream/index.js`: public entrypoint re-exporting protocol and runtime helpers.
 - `packages/web/server/lib/event-stream/global-hub.js`: shared global upstream SSE hub for server-side subscribers and browser WS fan-out.
 - `packages/web/server/lib/event-stream/global-ws-bridge.js`: browser-facing global WS bridge that subscribes clients to the shared global hub.
-- `packages/web/server/lib/event-stream/directory-ws-bridge.js`: browser-facing per-directory WS bridge that owns one scoped upstream reader per connection.
+- `packages/web/server/lib/event-stream/directory-ws-bridge.js`: browser-facing per-directory WS bridge that filters the shared native hub.
 - `packages/web/server/lib/event-stream/protocol.js`: path constants, SSE envelope parsing, and WebSocket frame serialization helpers.
 - `packages/web/server/lib/event-stream/upstream-reader.js`: reusable upstream SSE reader with event-id tracking, stall recovery, and reconnect handling.
 - `packages/web/server/lib/event-stream/runtime.js`: thin WebSocket server runtime for upgrade handling and path dispatch to the global/directory bridges.
@@ -28,7 +28,7 @@ This module contains the OpenChamber message-stream WebSocket protocol and runti
 - `sendMessageStreamWsEvent(socket, payload, options)`: sends an event frame with optional `eventId` and `directory`.
 
 ### Runtime helpers
-- `createGlobalMessageStreamHub(...)`: creates a shared `/global/event` upstream SSE hub with event/status subscribers and bounded event-id replay.
+- `createGlobalMessageStreamHub(...)`: creates a shared native `/api/event` upstream SSE hub with event/status subscribers and bounded event-id replay.
 - `createGlobalUiEventBroadcaster({ sseClients, wsClients, writeSseEvent })`: returns a broadcaster that fans out the same synthetic UI event to SSE and WS clients.
 - `createMessageStreamWsRuntime(...)`: mounts the message-stream WS server, upgrade handler, and SSE-to-WS bridge onto the web HTTP server.
 
@@ -40,10 +40,10 @@ This module contains the OpenChamber message-stream WebSocket protocol and runti
 ## Runtime behavior
 - Browser clients connect to the WS endpoints above.
 - OpenChamber still fetches OpenCode upstream event streams over SSE.
-- The web server creates one shared global message-stream hub. OpenCode watcher side effects and global WS clients subscribe to that hub, so there is one upstream `/global/event` SSE reader for both server-side processing and browser fan-out.
-- The global hub keeps a bounded replay buffer keyed by SSE `eventId` so reconnecting browser clients can receive buffered events after their requested `Last-Event-ID`.
-- Directory WS clients still attach one upstream `/event?directory=...` SSE reader per connection because directory streams are scoped.
-- If an upstream SSE stream stalls after the browser WS is already ready, the reader aborts that upstream fetch and reconnects upstream with `Last-Event-ID`, keeping the browser WS alive when recovery is fast.
+- The web server creates one shared global message-stream hub. OpenCode watcher side effects and global WS clients subscribe to that hub, so there is one upstream `/api/event` SSE reader for both server-side processing and browser fan-out.
+- The global hub keeps a bounded local replay buffer keyed by projected event ID so reconnecting browser clients can receive buffered events after their requested `Last-Event-ID`.
+- Directory WS clients subscribe to that same hub with directory and principal filters. No legacy upstream stream is opened.
+- If an upstream SSE stream stalls after the browser WS is already ready, the reader aborts that upstream fetch and reconnects without upstream `Last-Event-ID`, emits a gap, and reconciles active native sessions, keeping the browser WS alive when recovery is fast.
 - Health checks are reserved for initial upstream connect failures and explicit upstream-unavailable responses, not for ordinary stall recovery on an already-established stream.
 - Global synthetic events such as `openchamber:session-status`, `openchamber:session-activity`, `openchamber:notification`, and `openchamber:heartbeat` are preserved on the WS path, but heartbeat frames are emitted only while an upstream SSE stream is actively attached.
 - Global UI broadcasts are fan-out capable across both SSE and WS clients.
@@ -61,4 +61,4 @@ This module contains the OpenChamber message-stream WebSocket protocol and runti
 - Run `bun test packages/web/server/lib/event-stream/upstream-reader.test.js`
 - Run `bun test packages/web/server/lib/event-stream/runtime.test.js`
 - Run `bun test packages/web/server/lib/event-stream/canonical-ingestion.test.js`
-- Run repo validation before finalizing: `bun run type-check`, `bun run lint`, `bun run build`
+- Use the repository impact-based validation policy; runtime changes require `bun run validate:full`.

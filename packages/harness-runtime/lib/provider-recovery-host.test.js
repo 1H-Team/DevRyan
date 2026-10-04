@@ -6,188 +6,331 @@ import { createPrimaryRecoveryHost } from './provider-recovery-host.js';
 
 const cleanup = [];
 afterEach(async () => { for (const f of cleanup.splice(0).reverse()) await f(); });
-async function setup(overrides = {}) {
-  const dataDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'primary-host-'));
-  cleanup.push(() => fs.rm(dataDirectory, { recursive: true, force: true }));
-  const calls = [];
+async function nativeSelectionHost(overrides = {}) {
+  const prompts = [];
   const messages = [
-    { info: { id: 'msg_user', role: 'user' }, parts: [{ type: 'text', text: 'Original input' }] },
-    { info: { id: 'msg_assistant', role: 'assistant', parentID: 'msg_user', time: { completed: 1 },
-      error: { name: 'UnknownError', data: { message: 'The operation timed out.' } } }, parts: [] },
+    { info: { id: 'msg_user', sessionID: 'ses_test', role: 'user' }, parts: [{ type: 'text', text: 'Original request' }] },
+    { info: { id: 'msg_assistant', sessionID: 'ses_test', role: 'assistant', parentID: 'msg_user', time: { completed: 1 } }, parts: [] },
   ];
-  const fetchImpl = async (input, init) => {
-    const url = new URL(input); calls.push({ url, init });
-    if (overrides.response) { const result = overrides.response(url, init); if (result) return result; }
-    let data;
-    if (url.pathname === '/global/health') data = { healthy: true, version: '1.18.25' };
-    else if (url.pathname === '/session/ses_test') data = { id: 'ses_test', directory: '/project' };
-    else if (url.pathname === '/session/status') data = {};
-    else if (url.pathname.endsWith('/message')) data = messages;
-    else if (url.pathname === '/permission' || url.pathname === '/question') data = [];
-    else if (url.pathname === '/experimental/tool/ids') data = ['read', 'glob', 'grep', 'bash', 'write', 'devryan_task'];
-    else if (url.pathname.endsWith('/prompt_async')) return new Response(null, { status: 204 });
-    else if (url.pathname.endsWith('/abort')) data = true;
-    else throw new Error(`Unexpected fixture path ${url.pathname}`);
-    return Response.json(data);
+  const client = { generation: () => 2,
+    health: { probe: async () => ({ ready: true, version: '2.0.20' }),
+      runtimeInfo: async () => ({ version: '2.0.20' }) },
+    sessions: { get: async () => ({ id: 'ses_test', directory: '/project' }), status: async () => ({}),
+      messages: async () => ({ records: messages }), todo: async () => [], abort: async () => true },
+    interaction: { permissions: { list: async () => [] }, questions: { list: async () => [] } },
+    catalog: { tools: async () => ({ ids: ['read'] }) },
+    prompts: { prompt: async (_id, body, options) => {
+      prompts.push(body);
+      await options.beforePromptDispatch?.({ sessionID: 'ses_test', messageID: body.messageID, directory: '/project', body,
+        execution: { providerID: body.model.providerID, modelID: body.model.modelID, agent: body.agent, variant: body.variant } });
+      return null;
+    } },
   };
-  const host = createPrimaryRecoveryHost({ dataDirectory, mode: 'enforce', isManaged: () => true,
-    buildOpenCodeUrl: (pathname) => `http://fixture.invalid${pathname}`, fetchImpl,
-    authorize: async () => true, managedBarrier: async () => ({ state: 'clear' }), ...overrides });
+  const dataDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'native-primary-selection-'));
+  cleanup.push(() => fs.rm(dataDirectory, { recursive: true, force: true }));
+  const host = createPrimaryRecoveryHost({ dataDirectory, isManaged: () => true, mode: 'enforce', openCodeClient: client,
+    buildOpenCodeUrl: () => { throw new Error('v1 transport unavailable'); }, authorize: async () => true,
+    managedBarrier: async () => ({ state: 'clear' }), progressTimeoutMs: false, ...overrides });
   await host.initialize(); cleanup.push(() => host.drain());
-  await host.plugin({ action: 'hello', policyVersion: 1, instanceID: 'fixture', transport: 'fetch' });
-  const body = { messageID: 'msg_user', model: { providerID: 'openai', modelID: 'gpt-5.6-sol' }, agent: overrides.agent ?? 'orchestrator', variant: 'xhigh' };
-  const admit = await host.handleRequest('POST', '/api/session/ses_test/prompt_async?directory=/project', body);
-  expect(admit).toBeNull();
-  return { host, calls, messages, body, fail: async () => {
-    const r = await host.readRecord('ses_test');
-    if (r.state === 'observing' && r.requestedAt === null) await host.plugin({ action: 'step', instanceID: 'fixture',
-      sessionID: 'ses_test', userMessageID: 'msg_user', assistantMessageID: overrides.stepID ?? messages.at(-1).info.id });
-    return host.observe({ type: 'session.error', properties: { sessionID: 'ses_test', error: messages.at(-1).info.error } });
-  } };
+  return { host, prompts, messages, client };
 }
 
-test('Builder admission fetches canonical TODOs in the same bounded observation and requires a current-objective write', async () => {
-  const todos = [{ content: 'Finish implementation', status: 'pending', priority: 'high' }];
-  const f = await setup({ agent: 'builder', response: url => url.pathname.endsWith('/todo') ? Response.json(todos) : null });
-  delete f.messages.at(-1).info.error;
-  f.messages.at(-1).parts.push({ type: 'tool', tool: 'todowrite', callID: 'call_todos',
-    state: { status: 'completed', input: { todos } } });
-  const result = await f.host.plugin({ action: 'continuation', instanceID: 'fixture', sessionID: 'ses_test',
-    directory: '/project', anchorUserMessageID: 'msg_user', userMessageID: 'msg_builder', kind: 'builder_todo',
-    execution: { providerID: 'openai', modelID: 'gpt-5.6-sol', agent: 'builder', variant: 'xhigh' } });
-  expect(result.allowed).toBe(true);
-  const read = f.calls.find(call => call.url.pathname.endsWith('/todo'));
-  expect(read.url.searchParams.get('directory')).toBe('/project');
-  expect(read.init.signal).toBeInstanceOf(AbortSignal);
-  expect(read.init.includeTodos).toBeUndefined();
+test('private native hello verifies the canonical pin without asserting readiness or enabling recovery', async () => {
+  const f = await nativeSelectionHost();
+  const reads = [];
+  f.client.health.probe = async () => ({ ready: false, version: null, reason: 'ready_route_missing' });
+  f.client.health.runtimeInfo = async options => {
+    reads.push(options);
+    return { version: '2.0.20' };
+  };
+  // Public plugin callers cannot choose the private version-only path.
+  await expect(f.host.plugin({ action: 'hello', policyVersion: 1, instanceID: 'forged', transport: 'native-v2' }))
+    .rejects.toMatchObject({ code: 'recovery_runtime_unverified' });
+  expect(reads).toHaveLength(0);
+  const hello = await f.host.helloNative({ policyVersion: 1, instanceID: 'native-owner' });
+  expect(hello).toMatchObject({ instanceID: 'native-owner', supported: false, enforced: false });
+  expect(reads).toHaveLength(1);
+  expect(reads[0].signal).toBeInstanceOf(AbortSignal);
+  expect(reads[0].maxResponseBytes).toBe(16 * 1024 * 1024);
+  expect(typeof reads[0].onResponseRead).toBe('function');
 });
 
-test.each(['/api/session/ses_test/recovery', '/session/ses_test/recovery'])(
-  'web/Electron path contract: %s', async (endpoint) => {
-    const f = await setup(); await f.fail();
-    const result = await f.host.handleRequest('GET', endpoint, null);
-    expect(result.status).toBe(200); expect(result.body.schemaVersion).toBe(1);
-    expect(result.body.record).toMatchObject({ attemptCount: 1, readOnly: true, variant: 'xhigh' });
-    const prompt = f.calls.find((call) => call.url.pathname.endsWith('/prompt_async'));
-    expect(JSON.parse(prompt.init.body).tools).toMatchObject({ read: true, bash: false, write: false, devryan_task: false });
+test('private native hello rejects unknown, malformed, mismatched and replaced runtime evidence', async () => {
+  const f = await nativeSelectionHost();
+  for (const version of [null, 'unknown', '1.18.25', '2.0.21', '2.0.20-dev', ' 2.0.20 ', 2]) {
+    f.client.health.runtimeInfo = async () => ({ version });
+    await expect(f.host.helloNative({ policyVersion: 1, instanceID: 'native-owner' }))
+      .rejects.toMatchObject({ code: 'recovery_runtime_unverified' });
+  }
+  f.client.health.runtimeInfo = async () => null;
+  await expect(f.host.helloNative({ policyVersion: 1, instanceID: 'native-owner' }))
+    .rejects.toMatchObject({ code: 'recovery_runtime_unverified' });
+  f.client.health.runtimeInfo = async () => { throw Object.assign(new Error('changed'), { code: 'opencode_runtime_changed' }); };
+  await expect(f.host.helloNative({ policyVersion: 1, instanceID: 'native-owner' }))
+    .rejects.toMatchObject({ code: 'opencode_runtime_changed' });
+  f.client.health.runtimeInfo = async options => { options.onResponseRead({ phase: 'chunk', bytes: 16 * 1024 * 1024 + 1 }); };
+  await expect(f.host.helloNative({ policyVersion: 1, instanceID: 'native-owner' }))
+    .rejects.toMatchObject({ code: 'recovery_response_too_large' });
+  f.client.generation = () => 1;
+  await expect(f.host.helloNative({ policyVersion: 1, instanceID: 'native-owner' }))
+    .rejects.toMatchObject({ code: 'opencode_generation_invalid' });
+});
+
+const selectionReceipt = (id, variant = 'default') => ({ sessionID: 'ses_test', directory: '/project', messageID: id,
+  body: { messageID: id, agent: 'orchestrator', model: { providerID: 'openai', modelID: 'm1' }, parts: [{ type: 'text', text: 'Original request' }] },
+  execution: { providerID: 'openai', modelID: 'm1', agent: 'orchestrator', variant } });
+
+test('generation2 defers primary ownership until accepted selection and keeps request contexts isolated', async () => {
+  const f = await nativeSelectionHost();
+  const receipt = selectionReceipt('msg_first', 'high');
+  expect(await f.host.handleRequest('POST', '/api/session/ses_test/prompt_async', receipt.body, { owner: 'first' })).toBeNull();
+  expect(await f.host.readRecord('ses_test')).toBeNull();
+  await f.host.admitNativePrompt(receipt);
+  expect(await f.host.readRecord('ses_test')).toBeNull();
+  await f.host.withPromptAdmissionContext('POST', '/api/session/ses_test/prompt_async', { owner: 'first' }, async () => {
+    await Promise.resolve();
+    await f.host.admitNativePrompt(receipt);
   });
-
-test('successful status omission is idle only with a finalized canonical turn', async () => {
-  const f = await setup(); await f.fail();
-  expect(f.calls.filter((call) => call.url.pathname.endsWith('/prompt_async'))).toHaveLength(1);
-  const invalid = await setup({ response: (url) => url.pathname === '/session/status' ? Response.json([]) : null });
-  await invalid.fail();
-  expect(invalid.calls.filter((call) => call.url.pathname.endsWith('/prompt_async'))).toHaveLength(0);
+  const original = await f.host.readRecord('ses_test');
+  expect(original).toMatchObject({ anchorID: 'msg_first', variant: 'high', owner: 'first', executionGeneration: 2 });
+  await f.host.admitNativePrompt(selectionReceipt('msg_unrelated'), { owner: 'second', sessionID: 'ses_other' });
+  expect(await f.host.readRecord('ses_test')).toEqual(original);
+  await expect(f.host.admitNativePrompt({ ...selectionReceipt('msg_refused'), execution: null }, { owner: 'second' }))
+    .rejects.toMatchObject({ code: 'recovery_execution_selection_required' });
+  expect(await f.host.readRecord('ses_test')).toEqual(original);
 });
 
-test('duplicate prompt admission is rejected; a message ID is not POST idempotency', async () => {
-  const f = await setup();
-  const result = await f.host.handleRequest('POST', '/session/ses_test/prompt_async', f.body);
-  expect(result).toMatchObject({ status: 409, body: { code: 'prompt_already_admitted' } });
+test('generation2 explicit continuation replays frozen default and admits only inside dispatch selection callback', async () => {
+  const f = await nativeSelectionHost();
+  await f.host.admitNativePrompt(selectionReceipt('msg_user'), { owner: 'owner' });
+  const record = await f.host.readRecord('ses_test');
+  const result = await f.host.handleRequest('POST', '/api/session/ses_test/recovery/continue', {
+    revision: record.revision, messageID: 'msg_continue',
+  });
+  expect(result.status).toBe(200);
+  expect(f.prompts).toHaveLength(1);
+  expect(f.prompts[0]).toMatchObject({ messageID: 'msg_continue', variant: 'default', agent: 'orchestrator',
+    model: { providerID: 'openai', modelID: 'm1' } });
+  expect(await f.host.readRecord('ses_test')).toMatchObject({ anchorID: 'msg_continue', objectiveID: 'msg_user',
+    variant: 'default', executionGeneration: 2, owner: 'owner' });
 });
 
-test('queue intent cancels undispatched recovery while leaving original work admitted', async () => {
-  const f = await setup();
-  const snapshot = await f.host.getSnapshot('ses_test');
-  const intent = await f.host.handleRequest('POST', '/session/ses_test/recovery/intent', { revision: snapshot.record.revision });
-  expect(intent.status).toBe(200);
-  await f.fail();
-  expect(f.calls.filter((call) => call.url.pathname.endsWith('/prompt_async'))).toHaveLength(0);
+test('lost native dispatch acknowledgement is explicit and does not roll back or overwrite another primary', async () => {
+  const f = await nativeSelectionHost();
+  await f.host.admitNativePrompt(selectionReceipt('msg_user'), { owner: 'owner' });
+  await f.host.markNativePromptUncertain(selectionReceipt('msg_other'));
+  expect((await f.host.readRecord('ses_test')).state).toBe('observing');
+  await f.host.markNativePromptUncertain(selectionReceipt('msg_user'));
+  expect(await f.host.readRecord('ses_test')).toMatchObject({ state: 'needs_attention', reason: 'prompt_dispatch_uncertain',
+    anchorID: 'msg_user', variant: 'default' });
 });
 
-test('Stop persists cancellation and still aborts primary if descendant cancellation fails', async () => {
-  const f = await setup({ cancelDescendants: async () => { throw new Error('child unavailable'); } });
-  const result = await f.host.handleRequest('POST', '/session/ses_test/abort', {});
-  expect(result.status).toBe(409);
-  expect((await f.host.getSnapshot('ses_test')).record.state).toBe('cancelled');
-  expect(f.calls.some((call) => call.url.pathname.endsWith('/abort'))).toBe(true);
+
+test('native primary boundary preserves unmanaged, child and implicit-selection opt-outs', async () => {
+  const unmanaged = await nativeSelectionHost({ isManaged: () => false });
+  const managed = await nativeSelectionHost();
+  const receipt = { ...selectionReceipt('msg_optout'), execution: null };
+  await unmanaged.host.admitNativePrompt(receipt, { owner: 'owner' });
+  await managed.host.admitNativePrompt({ ...receipt, parentID: 'ses_parent' }, { owner: 'owner' });
+  await managed.host.admitNativePrompt({ ...receipt, body: { messageID: 'msg_optout', parts: [] } }, { owner: 'owner' });
+  expect(await unmanaged.host.readRecord('ses_test')).toBeNull();
+  expect(await managed.host.readRecord('ses_test')).toBeNull();
+  expect(unmanaged.host.requiresNativePromptSelection()).toBe(false);
+  expect(managed.host.requiresNativePromptSelection()).toBe(false);
+  await managed.host.withPromptAdmissionContext('POST', '/api/session/ses_test/prompt_async', { owner: 'owner' }, async () => {
+    expect(managed.host.requiresNativePromptSelection()).toBe(true);
+    await expect(managed.host.admitNativePrompt(receipt)).rejects.toMatchObject({ code: 'recovery_execution_selection_required' });
+  });
+  await managed.host.admitNativePrompt(selectionReceipt('msg_user'), { owner: 'owner' });
+  const prior = await managed.host.readRecord('ses_test');
+  await managed.host.admitNativePrompt({ ...receipt, body: { messageID: 'msg_other', parts: [] } }, { owner: 'owner' });
+  await expect(managed.host.admitNativePrompt({ ...receipt, messageID: 'msg_other' }, { owner: 'owner' }))
+    .rejects.toMatchObject({ code: 'recovery_execution_selection_required' });
+  expect(await managed.host.readRecord('ses_test')).toEqual(prior);
 });
 
-test('stale control versions cannot cancel a newer user turn', async () => {
-  const f = await setup();
-  const result = await f.host.handleRequest('POST', '/session/ses_test/recovery/cancel', { revision: 9999 });
-  expect(result).toMatchObject({ status: 409, body: { code: 'recovery_revision_conflict' } });
-  expect(f.calls.some((call) => call.url.pathname.endsWith('/abort'))).toBe(false);
+test('reserved native TODO admission preserves the original owner, objective and budget instead of admitting a new root',async()=>{
+ const f=await nativeSelectionHost();
+ await f.host.helloNative({instanceID:'native',policyVersion:1});
+ await f.host.admitNativePrompt(selectionReceipt('msg_user'),{owner:'original-owner'});
+ Object.assign(f.messages[1].info,{agent:'orchestrator',providerID:'openai',modelID:'m1',variant:'default'});
+ f.messages[1].turnOwnership={source:'native-sequence',userMessageID:'msg_user'};
+ await f.host.plugin({action:'step',instanceID:'native',sessionID:'ses_test',userMessageID:'msg_user',assistantMessageID:'msg_assistant'});
+ const prompt={messageID:'msg_todo',agent:'orchestrator',model:{providerID:'openai',modelID:'m1'},variant:'default',tools:{},objectiveID:'msg_user',
+  parts:[{type:'text',synthetic:true,text:'[devryan-open-todo-continuation:v1]\nContinue the same open TODO.'}]};
+ await f.host.reserveNativeContinuation({instanceID:'native',sessionID:'ses_test',directory:'/project',anchorUserMessageID:'msg_user',
+  assistantMessageID:'msg_assistant',userMessageID:'msg_todo',kind:'orchestrator_todo',execution:{providerID:'openai',modelID:'m1',agent:'orchestrator',variant:'default'}},prompt);
+ const before=await f.host.readRecord('ses_test');
+ await f.host.admitNativePrompt({...selectionReceipt('msg_todo'),body:prompt},{owner:'different-inherited-request'});
+ expect(await f.host.readRecord('ses_test')).toEqual(before);
+ await expect(f.host.admitNativePrompt({...selectionReceipt('msg_todo'),body:{...prompt,parts:[{type:'text',synthetic:true,text:'Forged continuation'}]}}))
+  .rejects.toMatchObject({code:'native_primary_continuation_fenced'});
+ expect(before).toMatchObject({owner:'original-owner',anchorID:'msg_user',continuationID:'msg_todo',todoContinuationCount:1});
+ await expect(f.host.admitNativePrompt({...selectionReceipt('msg_todo'),execution:{providerID:'openai',modelID:'changed',agent:'orchestrator',variant:'default'}},{owner:'original-owner'}))
+  .rejects.toMatchObject({code:'native_primary_continuation_fenced'});
+ expect(await f.host.readRecord('ses_test')).toEqual(before);
 });
 
-test('Stop fences durable state before any request to an unavailable OpenCode', async () => {
-  let offline = false;
-  const f = await setup({ response: () => offline ? new Response(null, { status: 503 }) : null });
-  offline = true;
-  const result = await f.host.handleRequest('POST', '/session/ses_test/abort', {});
-  expect(result).toMatchObject({ status: 409, body: { code: 'provider_stop_unconfirmed' } });
-  const status = await f.host.handleRequest('GET', '/session/ses_test/recovery');
-  expect(status).toMatchObject({ status: 200, body: { record: { state: 'cancelled' } } });
-  offline = false; await f.fail();
-  expect(f.calls.some((call) => call.url.pathname.endsWith('/prompt_async'))).toBe(false);
+test('native fallback dispatch uses fresh exact constructor authority and receipt leaves objective budgets intact',async()=>{
+ let dispatched;
+ const f=await nativeSelectionHost({isNativeFallbackError:error=>error?.statusCode===429,dispatchNativeRecovery:async(record,prompt)=>{dispatched={record,prompt};}});
+ await f.host.helloNative({policyVersion:1,instanceID:'native-owner'});await f.host.admitNativePrompt(selectionReceipt('msg_user'),{owner:'original'});
+ await f.host.plugin({action:'step',sessionID:'ses_test',userMessageID:'msg_user',assistantMessageID:'msg_assistant',instanceID:'native-owner'});
+ f.messages.at(-1).info.error={statusCode:429};
+ const before=await f.host.readRecord('ses_test');
+ await f.host.reserveNativeFallback({sessionID:'ses_test',userMessageID:'msg_user',assistantMessageID:'msg_assistant',instanceID:'native-owner',currentExecution:{providerID:before.providerID,modelID:before.modelID,agent:before.agent,variant:before.variant}},
+  {authorize:async()=>{},choose:async()=>({tried:['openai/gpt-5.6-sol'],exhaustion:0,execution:{providerID:'saved',modelID:'fallback',agent:'orchestrator',variant:'default'}})});
+ await f.host.observe({type:'session.status',properties:{sessionID:'ses_test',status:{type:'idle'}}});
+ expect(dispatched).toBeDefined();expect(f.prompts).toHaveLength(0);
+ const record=await f.host.readRecord('ses_test');const captured=await f.host.captureNativeRecoveryDispatch({sessionID:'ses_test',directory:'/project',messageID:record.recoveryID});expect(captured.prompt).toEqual(dispatched.prompt);
+ const receipt={...selectionReceipt(record.recoveryID),body:dispatched.prompt,execution:record.recoveryExecution};
+ await f.host.admitNativePrompt(receipt,{owner:'unrelated-inherited-context'});expect(await f.host.readRecord('ses_test')).toEqual(record);
+ await expect(f.host.admitNativePrompt({...receipt,body:{...receipt.body,tools:{read:true}}})).rejects.toMatchObject({code:'native_fallback_fenced'});
+ await f.host.control('ses_test','stop');await expect(captured.recheck()).rejects.toMatchObject({code:'native_fallback_fenced'});
 });
 
-test('unsupported external and WebSocket runtimes retain manual recovery', async () => {
-  const f = await setup();
-  await f.host.plugin({ action: 'hello', policyVersion: 1, instanceID: 'fixture', transport: 'websocket-unverified' });
-  await f.fail(); expect((await f.host.getSnapshot('ses_test')).enforced).toBe(false);
-  expect(f.calls.some((call) => call.url.pathname.endsWith('/prompt_async'))).toBe(false);
+test('native command admission keeps local owner and opt-outs while fencing the exact durable write',async()=>{
+ const f=await nativeSelectionHost();let checks=0;
+ const receipt=selectionReceipt('msg_command');
+ await f.host.admitNativePrompt(receipt,{owner:null,sessionID:'ses_test',authorizeWrite:async()=>{checks++;}});
+ expect(await f.host.readRecord('ses_test')).toMatchObject({anchorID:'msg_command',owner:null,variant:'default'});
+ expect(checks).toBe(2);
+ const prior=await f.host.readRecord('ses_test');
+ let reads=0;
+ await expect(f.host.admitNativePrompt(selectionReceipt('msg_revoked'),{owner:'original',authorizeWrite:async()=>{
+  if(++reads===2)throw Object.assign(Error('revoked'),{code:'revoked'});
+ }})).rejects.toMatchObject({code:'revoked'});
+ expect(await f.host.readRecord('ses_test')).toEqual(prior);
+ await f.host.markNativePromptUncertain(selectionReceipt('msg_revoked'));
+ expect(await f.host.readRecord('ses_test')).toEqual(prior);
+ await f.host.admitNativePrompt({...selectionReceipt('msg_child'),parentID:'ses_parent'},{owner:null,authorizeWrite:async()=>{throw Error('child must opt out');}});
+ const unmanaged=await nativeSelectionHost({isManaged:()=>false});
+ await unmanaged.host.admitNativePrompt(receipt,{owner:null,authorizeWrite:async()=>{throw Error('unmanaged must opt out');}});
+ expect(await unmanaged.host.readRecord('ses_test')).toBeNull();
 });
 
-test('custom inspection-tool overrides are explicitly disabled in recovery prompts', async () => {
-  const f = await setup({ response: (url) => url.pathname === '/experimental/tool/ids' ? Response.json(['read', 'read', 'glob', 'grep', 'bash']) : null });
-  await f.fail();
-  const prompt = f.calls.find((call) => call.url.pathname.endsWith('/prompt_async'));
-  expect(JSON.parse(prompt.init.body).tools).toMatchObject({ read: false, glob: true, bash: false });
-});
+const retainedIdentity = { revision: 'a'.repeat(64), messageID: 'msg_retained', payloadHash: 'b'.repeat(64) };
+const retainedSnapshot = () => ({ revision: retainedIdentity.revision, state: 'paused', inputs: [{
+  messageID: retainedIdentity.messageID, payloadHash: retainedIdentity.payloadHash, type: 'user', delivery: 'queue',
+  location: 'queued', preview: 'Saved input', attachmentCount: 0, canResume: true, canDiscard: true, reason: null,
+}] });
+const attachRetainedOwner = (host, overrides = {}) => host.setRecoveredInputOwner({ has: id => id === 'ses_test',
+  snapshot: async id => id === 'ses_test' ? retainedSnapshot() : undefined,
+  details: async (_id, input) => ({ ...input, type: 'user', delivery: 'queue', location: 'queued', text: 'Full saved input', files: [] }),
+  action: async () => {}, ...overrides });
 
-test('complete turn fetch follows pagination beyond the loaded page', async () => {
-  const f = await setup({ stepID: 'msg_tail', response: (url) => {
-    if (!url.pathname.endsWith('/message') || url.searchParams.has('before')) return null;
-    return Response.json([{ info: { id: 'msg_tail', role: 'assistant', parentID: 'msg_user', time: { completed: 5 },
-      error: { name: 'TimeoutError', message: 'The operation timed out.' } }, parts: [] }], { headers: { 'x-next-cursor': 'older' } });
+test('retained input is inspectable without a primary record or watchdog and full text is lazy', async () => {
+  const f = await nativeSelectionHost();
+  const details = [];
+  attachRetainedOwner(f.host, { details: async (id, identity) => {
+    details.push({ id, identity }); return { ...identity, text: 'Full saved input', files: [] };
   } });
-  await f.fail();
-  expect(f.calls.some((call) => call.url.searchParams.get('before') === 'older')).toBe(true);
-  expect(f.calls.filter((call) => call.url.pathname.endsWith('/prompt_async'))).toHaveLength(1);
+  const result = await f.host.handleRequest('GET', '/api/session/ses_test/recovery');
+  expect(result).toMatchObject({ status: 200, body: { record: null, supported: false, recoveredInput: retainedSnapshot() } });
+  expect(details).toHaveLength(0);
+  expect(JSON.stringify(result.body)).not.toContain('Full saved input');
+  const query = new URLSearchParams(retainedIdentity);
+  const full = await f.host.handleRequest('GET', `/api/session/ses_test/recovery/input?${query}`);
+  expect(full).toMatchObject({ status: 200, body: { text: 'Full saved input' } });
+  expect(details).toEqual([{ id: 'ses_test', identity: retainedIdentity }]);
+  expect(f.prompts).toHaveLength(0);
+});
+
+test('retained actions bind exact ID/hash/revision and fresh owner, then reread the inventory', async () => {
+  const f = await nativeSelectionHost();
+  const calls = []; let retained = retainedSnapshot();
+  attachRetainedOwner(f.host, { snapshot: async () => retained, action: async (id, action, identity, context) => {
+    calls.push({ id, action, identity, context });
+    if (identity.revision !== retainedIdentity.revision) throw Object.assign(Error('stale'), { code: 'recovery_revision_conflict', statusCode: 409 });
+    retained = undefined;
+    return { ignored: true };
+  } });
+  for (const action of ['resume-input', 'discard-input']) {
+    retained = retainedSnapshot();
+    const result = await f.host.handleRequest('POST', `/api/session/ses_test/recovery/${action}`, retainedIdentity, { owner: 'fresh-owner' });
+    expect(result).toMatchObject({ status: 200, body: { record: null, recoveredInput: undefined } });
+    expect(result.body.ignored).toBeUndefined();
+  }
+  expect(calls).toEqual(['resume-input','discard-input'].map(action => ({ id: 'ses_test', action, identity: retainedIdentity, context: { owner: 'fresh-owner' } })));
+  const stale = await f.host.handleRequest('POST', '/api/session/ses_test/recovery/resume-input', { ...retainedIdentity, revision: 'c'.repeat(64) });
+  expect(stale).toMatchObject({ status: 409, body: { code: 'recovery_revision_conflict' } });
+  expect(f.prompts).toHaveLength(0);
+});
+
+test('paused inventory fences old Continue and intent before mutation while session Stop remains available', async () => {
+  const f = await nativeSelectionHost();
+  await f.host.admitNativePrompt(selectionReceipt('msg_user'), { owner: 'original' });
+  attachRetainedOwner(f.host);
+  const before = await f.host.readRecord('ses_test');
+  for (const action of ['continue', 'intent']) {
+    const result = await f.host.handleRequest('POST', `/api/session/ses_test/recovery/${action}`, { revision: before.revision, messageID: 'msg_new' });
+    expect(result).toMatchObject({ status: 409, body: { code: 'recovered_input_pending' } });
+    expect(await f.host.readRecord('ses_test')).toEqual(before);
+  }
+  expect(f.prompts).toHaveLength(0);
+  let aborts = 0; f.client.sessions.abort = async () => { aborts++; return true; };
+  const stopped = await f.host.handleRequest('POST', '/api/session/ses_test/recovery/cancel', { revision: before.revision });
+  expect(stopped).toMatchObject({ status: 200, body: { stopConfirmed: false, record: { state: 'cancelled' }, recoveredInput: retainedSnapshot() } });
+  expect(aborts).toBe(1);
+  expect(f.prompts).toHaveLength(0);
+});
+
+test('retained routes reject malformed or duplicated identities before calling the owner', async () => {
+  const f = await nativeSelectionHost(); let calls = 0;
+  attachRetainedOwner(f.host, { details: async () => { calls++; }, action: async () => { calls++; } });
+  for (const identity of [{}, { ...retainedIdentity, messageID: 'msg_wrong/route' }, { ...retainedIdentity, payloadHash: 'bad' },
+    { ...retainedIdentity, revision: 1 }, { ...retainedIdentity, extra: 'authority' }]) {
+    const result = await f.host.handleRequest('POST', '/api/session/ses_test/recovery/discard-input', identity);
+    expect(result).toMatchObject({ status: 400, body: { code: 'recovered_input_identity_required' } });
+  }
+  const query = new URLSearchParams(retainedIdentity); query.append('messageID', 'msg_other');
+  expect(await f.host.handleRequest('GET', `/api/session/ses_test/recovery/input?${query}`))
+    .toMatchObject({ status: 400, body: { code: 'recovered_input_identity_required' } });
+  expect(calls).toBe(0);
+});
+
+test('constructor-only recovered owner reauthorization never reads the native transport', async () => {
+  let allowed = false, calls = 0;
+  const f = await nativeSelectionHost({ authorize: async record => { calls++; expect(record.owner).toBe('original'); return allowed; } });
+  const record = { owner: 'original', sessionID: 'ses_test', directory: '/project' };
+  f.client.sessions.get = async () => { throw Error('native observation is forbidden'); };
+  await expect(f.host.authorizeRecoveredInputOwner(record)).rejects.toMatchObject({ code: 'native_recovered_input_fenced', statusCode: 403 });
+  allowed = true; await f.host.authorizeRecoveredInputOwner(record);
+  expect(calls).toBe(2);
+  expect(await f.host.nativeStartupRecords()).toEqual([]);
+});
+
+test('controller events are explicitly partial even after the native inventory resolves', async () => {
+  const events = []; let inventoryReads = 0;
+  const f = await nativeSelectionHost({ publishEvent: event => events.push(event) });
+  attachRetainedOwner(f.host, { has: () => false, snapshot: async () => { inventoryReads++; return undefined; } });
+  await f.host.admitNativePrompt(selectionReceipt('msg_user'), { owner: 'original' });
+  expect(events.at(-1)).toMatchObject({ properties: { sessionID: 'ses_test', recovery: { recoveredInputPartial: true } } });
+  expect(inventoryReads).toBe(0);
+  const full = await f.host.handleRequest('GET', '/api/session/ses_test/recovery');
+  expect(full.status).toBe(200);
+  expect(full.body.recoveredInputPartial).toBeUndefined();
+  expect(full.body.recoveredInput).toBeUndefined();
+  expect(inventoryReads).toBe(1);
 });
 
 
-test('Claude mode environment override does not bypass production conformance', async () => {
-  const previous = process.env.DEVRYAN_ANTHROPIC_RECOVERY_MODE;
-  process.env.DEVRYAN_ANTHROPIC_RECOVERY_MODE = 'enforce';
-  try {
-    const f = await setup({ mode: 'off' });
-    const body = { ...f.body, messageID: 'msg_claude', model: { providerID: 'anthropic', modelID: 'claude-opus-5' } };
-    expect(await f.host.handleRequest('POST', '/session/ses_test/prompt_async', body)).toBeNull();
-    expect(await f.host.getSnapshot('ses_test')).toMatchObject({ mode: 'enforce', supported: false, enforced: false });
-  } finally {
-    if (previous === undefined) delete process.env.DEVRYAN_ANTHROPIC_RECOVERY_MODE;
-    else process.env.DEVRYAN_ANTHROPIC_RECOVERY_MODE = previous;
+test('unsupported identities never fall back to raw recovery transport', async () => {
+  for (const openCodeClient of [undefined, {}, { generation: () => 1 }, { generation: () => 3 }]) {
+    let requests = 0;
+    const f = await nativeSelectionHost({ openCodeClient, fetchImpl: () => { requests++; throw Error('raw runtime forbidden'); } });
+    await expect(f.host.helloNative({ policyVersion: 1, instanceID: 'owned' })).rejects.toMatchObject({ code: 'opencode_generation_invalid' });
+    expect(requests).toBe(0);
+    expect(await f.host.readRecord('ses_test')).toBeNull();
   }
 });
-
-
-test('a retained result offers explicit parent continuation but never bypasses a pending permission', async () => {
-  let waiting = false;
-  const f = await setup({ managedBarrier: async () => ({ state: 'awaiting_acknowledgement' }),
-    response: url => url.pathname === '/permission' && waiting ? Response.json([{ id: 'permission_1', sessionID: 'ses_test' }]) : null });
-  await expect(f.host.plugin({ action: 'continuation', instanceID: 'fixture', sessionID: 'ses_test', directory: '/project',
-    anchorUserMessageID: 'msg_user', userMessageID: 'msg_collection', kind: 'collect',
-    collection: { taskId: 'dvr_task_recovered', claimantId: 'plugin-one' },
-    execution: { providerID: 'openai', modelID: 'gpt-5.6-sol', agent: 'orchestrator', variant: 'xhigh' } }))
-    .rejects.toMatchObject({ code: 'managed_collection_unverified' });
-  let snapshot = await f.host.getSnapshot('ses_test');
-  expect(snapshot.record.collectionIssue.taskId).toBe('dvr_task_recovered');
-  waiting = true;
-  expect(await f.host.handleRequest('POST', '/session/ses_test/recovery/continue', { revision: snapshot.record.revision, messageID: 'msg_explicit' }))
+test('Stop persists the native cancellation fence even if descendant settlement fails', async () => {
+  const f = await nativeSelectionHost({ cancelDescendants: async () => { throw Error('child unavailable'); } });
+  await f.host.admitNativePrompt(selectionReceipt('msg_user'), { owner: 'original' });
+  let aborts = 0; f.client.sessions.abort = async () => { aborts++; return true; };
+  const before = await f.host.readRecord('ses_test');
+  expect(await f.host.handleRequest('POST', '/api/session/ses_test/recovery/cancel', { revision: before.revision }))
     .toMatchObject({ status: 409, body: { code: 'provider_stop_unconfirmed' } });
-  expect(f.calls.filter(call => call.url.pathname.endsWith('/prompt_async'))).toHaveLength(0);
-  waiting = false;
-  snapshot = await f.host.getSnapshot('ses_test');
-  expect(await f.host.handleRequest('POST', '/session/ses_test/recovery/continue', { revision: snapshot.record.revision, messageID: 'msg_explicit' }))
-    .toMatchObject({ status: 200 });
-  const sent = f.calls.filter(call => call.url.pathname.endsWith('/prompt_async'));
-  expect(sent).toHaveLength(1);
-  expect(JSON.parse(sent[0].init.body).parts[0].text).toContain('dvr_task_recovered');
-  expect(JSON.parse(sent[0].init.body).tools).toEqual({});
-  expect((await f.host.getSnapshot('ses_test')).record.collectionIssue).toBeNull();
-  // The continuation is DevRyan-authored; compaction keeps the original objective.
-  const continued = await f.host.readRecord('ses_test');
-  expect(continued).toMatchObject({ anchorID: 'msg_explicit', objectiveID: 'msg_user' });
+  expect(await f.host.readRecord('ses_test')).toMatchObject({ state: 'cancelled' });
+  expect(aborts).toBe(1); expect(f.prompts).toHaveLength(0);
 });

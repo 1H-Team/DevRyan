@@ -255,6 +255,42 @@ describe('agent evaluation CLI configuration', () => {
     }
   });
 
+  test('accepts the runtime pairing factor with a bounded non-inferiority margin', () => {
+    const workspace = makeWorkspace();
+    const config = validConfig(workspace);
+    const pairing = { baselineConfig: 'baseline.json', pairs: 3, factor: 'runtime', targetMetric: 'input' };
+    const validate = (patch) => validateEvaluationConfig({ ...config, pairing: { ...pairing, ...patch } }, { repoRoot: workspace.root }).pairing;
+
+    const defaulted = validate({});
+    assert.equal(defaulted.factor, 'runtime');
+    assert.equal(defaulted.nonInferiorityMargin, 0.1);
+    assert.deepEqual(defaulted.runtimePluginMigrations, []);
+    assert.equal(defaulted.baselineConfig, path.join(workspace.root, 'baseline.json'));
+    assert.equal(Object.isFrozen(defaulted), true);
+    assert.equal(validate({ nonInferiorityMargin: 0 }).nonInferiorityMargin, 0);
+    assert.equal(validate({ nonInferiorityMargin: 1 }).nonInferiorityMargin, 1);
+    assert.equal(validate({ nonInferiorityMargin: 0.25 }).nonInferiorityMargin, 0.25);
+
+    for (const margin of [-0.01, 1.01, Number.NaN, Number.POSITIVE_INFINITY, '0.1', null]) {
+      assert.throws(() => validate({ nonInferiorityMargin: margin }), /pairing\.nonInferiorityMargin/, String(margin));
+    }
+    for (const factor of ['readOverlap', 'role']) {
+      assert.equal('nonInferiorityMargin' in validate({ factor }), false, factor);
+      assert.throws(() => validate({ factor, nonInferiorityMargin: 0.1 }), /only valid with factor runtime/, factor);
+    }
+    assert.throws(() => validate({ factor: 'runtimeVersion' }), /Invalid paired live comparison/);
+    const migration = { name: 'custom-plugin', baselineHash: 'a'.repeat(64), candidateHash: 'b'.repeat(64) };
+    const configured = validate({ runtimePluginMigrations: [migration] });
+    assert.deepEqual(configured.runtimePluginMigrations, [migration]);
+    assert.ok(Object.isFrozen(configured.runtimePluginMigrations) && Object.isFrozen(configured.runtimePluginMigrations[0]));
+    for (const migrations of [null, {}, [migration, migration], [{ ...migration, name: '' }], [{ ...migration, name: ' custom-plugin' }],
+      [{ ...migration, baselineHash: '*' }], [{ ...migration, candidateHash: migration.baselineHash }], [{ ...migration, extra: true }],
+      [{ name: migration.name, baselineHash: migration.baselineHash }]]) {
+      assert.throws(() => validate({ runtimePluginMigrations: migrations }), /runtimePluginMigrations/);
+    }
+    assert.throws(() => validate({ factor: 'role', runtimePluginMigrations: [] }), /only valid with factor runtime/);
+  });
+
   test('keeps the report directory outside the fixture and wires the root script', () => {
     const workspace = makeWorkspace();
     const config = validConfig(workspace);

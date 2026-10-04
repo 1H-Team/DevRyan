@@ -7,16 +7,20 @@ import { createDiagnosticSanitizer } from '../../packages/harness-runtime/lib/sa
 import { CdpConnection, discoverPageTarget, evaluate } from './cdp.mjs';
 import { createQaUiDriver } from './ui-driver.mjs';
 import { reservePort, startOwnedProcess } from './process.mjs';
-import { createLoopbackOpenCodeFixture, PERF_PARENT_SESSION_ID } from '../perf/loopback-opencode-fixture.mjs';
+import { PERF_PARENT_SESSION_ID } from '../perf/fixture-session-seeds.mjs';
+import { createLoopbackOpenCodeFixtureForGeneration } from '../perf/loopback-opencode-fixtures.mjs';
+import { resolveQaFixtureGeneration } from './runtime-target.mjs';
+import { createQaHostLaunchEnvironment } from './launch-environment.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const requireElectron = createRequire(new URL('../../packages/electron/package.json', import.meta.url));
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export async function runQa({ runtime = 'web', scenario = 'chat', outputRoot = path.join(root, '.cache/qa'), holdMs = 0 } = {}) {
+export async function runQa({ runtime = 'web', scenario = 'chat', generation, outputRoot = path.join(root, '.cache/qa'), holdMs = 0 } = {}) {
   if (!Number.isSafeInteger(holdMs) || holdMs < 0 || holdMs > 300000) throw new Error('QA inspection hold must be 0–300000 milliseconds');
   if (!['web', 'electron'].includes(runtime)) throw new Error('QA runtime must be web or electron');
   if (!['chat', 'mobile', 'recovery', 'thinking', 'grok-plan', 'session-changes', 'execution-failure', 'skill-loading', 'navigation'].includes(scenario) || (scenario === 'mobile' && runtime !== 'web')) throw new Error('QA scenario must be chat, recovery, thinking, grok-plan, session-changes, execution-failure, skill-loading, or mobile on web');
+  const fixtureGeneration = resolveQaFixtureGeneration(generation);
   if (runtime === 'electron') {
     const [webIndex, stagedIndex] = await Promise.all([
       readFile(path.join(root, 'packages/web/dist/index.html'), 'utf8'),
@@ -32,7 +36,7 @@ export async function runQa({ runtime = 'web', scenario = 'chat', outputRoot = p
   const workspace = path.join(temporary, 'workspace');
   await Promise.all([data, profile, workspace].map((directory) => mkdir(directory, { recursive: true, mode: 0o700 })));
   const evidence = { schemaVersion: 1, revision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
-    dirty: !!execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim(), runtime, scenario,
+    dirty: !!execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim(), runtime, scenario, fixtureGeneration,
     startedAt: new Date().toISOString(), outcome: 'failed', checks: [], consoleErrors: [], screenshots: [],
     liveProvider: 'not-run', physicalDevice: 'not-run', visualReview: 'pending' };
   const owned = [];
@@ -90,7 +94,7 @@ export async function runQa({ runtime = 'web', scenario = 'chat', outputRoot = p
       projects: [{ id: 'qa-project', path: workspace, label: 'QA workspace' }], activeProjectId: 'qa-project',
       desktopWindowState: { width: 1280, height: 800, maximized: false } }));
     const thinking = scenario === 'thinking' ? await import('./thinking-slider.mjs') : null;
-    fixture = await createLoopbackOpenCodeFixture({ directory: workspace, thinkingModels: thinking?.thinkingModels });
+    fixture = await createLoopbackOpenCodeFixtureForGeneration(fixtureGeneration, { directory: workspace, thinkingModels: thinking?.thinkingModels });
     const sessionChanges = scenario === 'session-changes' ? await import('./session-changes.mjs') : null;
     const preparedChanges = sessionChanges ? await sessionChanges.prepareSessionChangesQa({ fixture, directory: workspace, dataDirectory: data }) : null;
     const debugPort = await reservePort();
@@ -101,19 +105,22 @@ export async function runQa({ runtime = 'web', scenario = 'chat', outputRoot = p
       await writeFile(settingsPath, JSON.stringify({ ...JSON.parse(await readFile(settingsPath, 'utf8')), desktopLocalPort: port,
         ...(scenario === 'navigation' && process.env.DEVRYAN_QA_RUNTIME_SERVICE === '1' ? { productionBotsRuntimeMode: 'service' } : {}) }));
     }
-    const env = { ...process.env, OPENCHAMBER_DATA_DIR: data, OPENCHAMBER_ELECTRON_USER_DATA_DIR: profile,
+    const env = createQaHostLaunchEnvironment({}, { OPENCHAMBER_DATA_DIR: data, OPENCHAMBER_ELECTRON_USER_DATA_DIR: profile,
       OPENCHAMBER_DIST_DIR: path.join(root, 'packages/web/dist'), OPENCHAMBER_PORT: String(port),
       OPENCODE_HOST: fixture.origin, OPENCODE_SKIP_START: 'true', OPENCHAMBER_SKIP_OPENCODE_START: 'true',
-      OPENCHAMBER_ELECTRON_DEV: '1', NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1' };
+      OPENCHAMBER_ELECTRON_DEV: '1', NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1' });
     delete env.ELECTRON_RUN_AS_NODE;
-    if (scenario === 'navigation') {
+    {
       const qaHome = path.join(temporary, 'home');
       await mkdir(qaHome, { recursive: true, mode: 0o700 });
       await writeFile(path.join(qaHome, '.devryan-qa-home'), '', { mode: 0o600 });
       await writeFile(path.join(temporary, 'credentials.env.json'), '{}', { mode: 0o600 });
       Object.assign(env, { DEVRYAN_QA_HOME: qaHome, DEVRYAN_QA_RUNTIME_ROOT: temporary, DEVRYAN_QA_RUNTIME: runtime });
       for (const key of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|API_KEY/.test(key)) delete env[key];
-      env.GH_CONFIG_DIR = path.join(qaHome, 'gh');
+      Object.assign(env, { HOME: qaHome, OPENCODE_TEST_HOME: qaHome, XDG_CONFIG_HOME: path.join(qaHome, '.config'),
+        XDG_DATA_HOME: path.join(qaHome, '.local/share'), XDG_STATE_HOME: path.join(qaHome, '.local/state'), XDG_CACHE_HOME: path.join(qaHome, '.cache'),
+        OPENCODE_CONFIG_DIR: path.join(qaHome, '.config/opencode'), GH_CONFIG_DIR: path.join(qaHome, 'gh'), ...fixture.runtimeEnv });
+      for (const key of ['OPENCODE_CONFIG', 'OPENCODE_CONFIG_CONTENT', 'NODE_OPTIONS', 'CLAUDE_CONFIG_DIR', 'MERIDIAN_CONFIG_DIR', 'MERIDIAN_SESSION_DIR']) delete env[key];
     }
     const start = (command, args, environment = env) => {
       const process = startOwnedProcess(command, args, { cwd: root, env: environment });
@@ -128,13 +135,13 @@ export async function runQa({ runtime = 'web', scenario = 'chat', outputRoot = p
     if (runtime === 'web' || runtimeService) {
       if (runtimeService) {
         start(requireElectron('electron'), [`--inspect=127.0.0.1:${profilePort}`, 'scripts/qa/isolated-host.mjs', '--runtime-service']);
-      } else start('node', [...(profilePort ? [`--inspect=127.0.0.1:${profilePort}`] : []), ...(scenario === 'navigation' ? ['scripts/qa/isolated-host.mjs'] : ['packages/web/server/index.js', '--port', String(port)])]);
+      } else start('node', [...(profilePort ? [`--inspect=127.0.0.1:${profilePort}`] : []), 'scripts/qa/isolated-host.mjs']);
       await waitFor('web readiness', async () => fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(1000) }).then((r) => r.ok).catch(() => false), 60000);
       if (runtimeService) start(requireElectron('electron'), [...browserFlags, 'scripts/qa/isolated-host.mjs']);
       else start(requireElectron('electron'), [...browserFlags, 'scripts/qa/browser-shell.cjs'],
         { ...env, DEVRYAN_QA_ORIGIN: origin });
     } else if (runtime === 'electron') {
-      start(requireElectron('electron'), [...browserFlags, ...(profilePort ? [`--inspect=${profilePort}`] : []), scenario === 'navigation' ? 'scripts/qa/isolated-host.mjs' : 'packages/electron/main.mjs']);
+      start(requireElectron('electron'), [...browserFlags, ...(profilePort ? [`--inspect=${profilePort}`] : []), 'scripts/qa/isolated-host.mjs']);
     }
     evidence.inspection = { cdp: `http://127.0.0.1:${debugPort}`, fixture: fixture.origin };
     console.log(JSON.stringify({ output, runtime, scenario, ...evidence.inspection }));

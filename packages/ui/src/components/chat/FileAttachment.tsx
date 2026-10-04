@@ -163,6 +163,39 @@ const ImagePreview = memo(({ file, onRemove, onOpenPreview }: ImagePreviewProps)
     );
   }
 
+  if (alwaysShowActions) {
+    // Mobile touch minima must not expand the remove overlay across preview.
+    return (
+      <div className="flex items-center gap-1.5 flex-shrink-0">
+        <button
+          type="button"
+          onClick={onOpenPreview}
+          className="h-10 w-10 rounded-lg border border-border/40 bg-muted/10 overflow-hidden flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-primary"
+          aria-label={displayName}
+        >
+          <img
+            src={imageUrl}
+            alt={displayName}
+            className="h-full w-full object-cover"
+            loading="lazy"
+          />
+        </button>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onRemove();
+          }}
+          className="h-9 w-9 rounded-full bg-background/80 text-foreground hover:text-destructive flex items-center justify-center flex-shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          title={t('chat.fileAttachment.actions.removeImage')}
+          aria-label={t('chat.fileAttachment.actions.removeNamed', { name: displayName })}
+        >
+          <RiCloseLine className="h-4 w-4" />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="relative h-10 w-10 rounded-lg border border-border/40 bg-muted/10 overflow-hidden flex-shrink-0 group">
       <img

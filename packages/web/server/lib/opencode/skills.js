@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
+import { getRuntimeHome } from './runtime-host/runtime-bundle-binding.js';
 import { isDeepStrictEqual } from 'node:util';
 import {
   SKILL_DIR,
@@ -72,7 +72,7 @@ function isExistingFile(filePath) {
 }
 
 function getUserAgentsSkillDir(skillName) {
-  return path.join(os.homedir(), '.agents', 'skills', skillName);
+  return path.join(getRuntimeHome(), '.agents', 'skills', skillName);
 }
 
 function getUserAgentsSkillPath(skillName) {
@@ -136,7 +136,7 @@ function discoverSkills(workingDirectory) {
   const skills = new Map();
 
   for (const { dirName, source } of ALLOWED_EXTERNAL_SKILL_ROOTS) {
-    const homeRoot = path.join(os.homedir(), dirName, 'skills');
+    const homeRoot = path.join(getRuntimeHome(), dirName, 'skills');
     for (const skillMdPath of walkSkillMdFiles(homeRoot)) {
       addSkillFromMdFile(skills, skillMdPath, SKILL_SCOPE.USER, source);
     }
@@ -156,7 +156,7 @@ function discoverSkills(workingDirectory) {
   }
 
   const configDirectories = resolveSkillSearchDirectories(workingDirectory);
-  const homeOpencodeDir = path.resolve(path.join(os.homedir(), '.opencode'));
+  const homeOpencodeDir = path.resolve(path.join(getRuntimeHome(), '.opencode'));
   const customConfigDir = process.env.OPENCODE_CONFIG_DIR
     ? path.resolve(process.env.OPENCODE_CONFIG_DIR)
     : null;

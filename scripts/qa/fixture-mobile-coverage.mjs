@@ -1,13 +1,126 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { evaluate } from './cdp.mjs';
 import { revealQaFixtureTool } from './fixture-failures.mjs';
 import { createQaManagedTaskReadModel, installQaManagedTaskReadModel } from './fixture-managed-tasks.mjs';
-import { PERF_PARENT_SESSION_ID } from '../perf/loopback-opencode-fixture.mjs';
+import { PERF_PARENT_SESSION_ID } from '../perf/fixture-session-seeds.mjs';
 import { selectQaThinkingLevel } from './thinking-control.mjs';
+import { runQaRecoveredInputFixtureProof } from './fixture-recovered-inputs.mjs';
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const row = id => `[data-message-id=${JSON.stringify(id)}]`;
 const chat = '[data-scrollbar="chat"]';
+
+export function assertQaPhoneAttachmentParts(parts, expectedImage) {
+  const files = parts.filter(part => part.type === 'file');
+  const image = files.find(part => part.filename === expectedImage.name && part.mime === expectedImage.mime);
+  assert.ok(image, 'The exact owned image must remain a canonical file part');
+  assert.equal(files.filter(part => part.filename === expectedImage.name).length, 1, 'The owned image must not be duplicated');
+  assert.match(image.url, /^data:image\/png;base64,/);
+  assert.equal(createHash('sha256').update(Buffer.from(image.url.slice(image.url.indexOf(',') + 1), 'base64')).digest('hex'), expectedImage.sha256,
+    'Canonical image bytes must match the original owned fixture');
+}
+
+export function assertQaPhoneTextAttachment(parts, name, mime, text) {
+  const projected = `Attached file: ${name}\nMIME type: ${mime}\n\n<file_content>\n${text}\n</file_content>`;
+  assert.ok(parts.some(part => part.type === 'text' && part.synthetic === true && part.text === projected)
+    || parts.some(part => part.type === 'file' && part.filename === name && part.mime === mime
+      && part.url?.startsWith(`data:${mime};base64,`) && Buffer.from(part.url.slice(part.url.indexOf(',') + 1), 'base64').toString('utf8') === text),
+  'The original text attachment content and identity must survive its supported conversion');
+}
+
+export function readQaPhoneImagePreview(name) {
+  if (!document.querySelector('button[aria-label="Close Image Preview"]')) return null;
+  const image = [...document.querySelectorAll('img')].find(e => e.alt === name && e.getBoundingClientRect().width > 40);
+  if (!image?.complete || !image.naturalWidth) return null;
+  for (let e = image; e; e = e.parentElement) {
+    const style = getComputedStyle(e);
+    if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) < 0.99
+      || e.getAnimations().some(animation => animation.playState === 'running')) return null;
+  }
+  const r = image.getBoundingClientRect();
+  const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+  if (r.left < 0 || r.right > innerWidth || r.top < 0 || r.bottom > innerHeight || !hit || !image.contains(hit)) return null;
+  return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, loaded: true, visibleAncestors: true, animationsSettled: true, centerHitOwned: true };
+}
+
+// The fixture registers exactly one QA workspace. Use its real mobile drawer
+// action; the optional mobile status bar is not a draft-navigation prerequisite.
+export async function openQaPhoneAttachmentDraft({ cdp, ui }) {
+  const drawerSelector = 'aside[aria-hidden="false"]';
+  const draftSelector = drawerSelector + ' [data-project-header] button[aria-label="New Draft Session"]';
+  const alreadyOpen = await evaluate(cdp, `Boolean(document.querySelector(${JSON.stringify(drawerSelector)}))`);
+  if (!alreadyOpen) await ui.click({ label: 'Open Sessions', touch: true });
+  await ui.waitExpression('owned QA workspace phone draft action', `(() => {
+    const drawer=document.querySelector(${JSON.stringify(drawerSelector)});if(!drawer)return false;
+    const r=drawer.getBoundingClientRect();if(Math.abs(r.left)>1||r.width<=0||r.right>innerWidth+1)return false;
+    const headers=[...drawer.querySelectorAll('[data-project-header]')];
+    return headers.length===1&&headers[0].querySelector('button[aria-expanded] span.truncate')?.innerText==='QA workspace'
+      &&headers[0].querySelectorAll('button[aria-label="New Draft Session"]').length===1;
+  })()`);
+  await ui.click({ selector: draftSelector, touch: true });
+  await ui.waitExpression('phone project draft closes Sessions drawer', `!document.querySelector('button[aria-label="Close Sessions"]')
+    &&[...document.querySelectorAll('aside[aria-hidden="true"]')].every(e=>{const r=e.getBoundingClientRect();return r.right<=1||r.left>=innerWidth-1;})`);
+}
+
+async function runQaPhoneAttachmentProof({ theme, projectFixture, cdp, ui, api, fixture, send, idle, check, screenshot }) {
+  const attachments = projectFixture.attachments;
+  const image = attachments.find(file => file.mime === 'image/png');
+  const text = attachments.find(file => file.mime === 'text/plain');
+  assert.ok(image && text, 'Phone attachment proof requires the original owned text and image fixtures');
+  const imageName = path.basename(image.path), textName = path.basename(text.path);
+  const expectedImage = { name: imageName, mime: image.mime, sha256: createHash('sha256').update(await readFile(image.path)).digest('hex') };
+  const evidence = { theme, width: 390, height: 844, expectedImage, names: [textName, imageName] };
+  await check(`phone ${theme} owned attachment access remove and canonical send`, async () => {
+    await openQaPhoneAttachmentDraft({ cdp, ui });
+    await ui.attach([text.path, image.path]);
+    await ui.waitVisibleText(textName);
+    await ui.waitExpression('owned phone image loaded', `(() => {const e=document.querySelector('img[alt=${JSON.stringify(imageName)}]');return e?.complete&&e.naturalWidth>0;})()`);
+    const controls = await ui.waitExpression('phone attachment controls inside viewport', `(() => {
+      const names=${JSON.stringify([textName, imageName])};const values=names.map(name=>{
+        const e=[...document.querySelectorAll('[aria-label]')].find(e=>e.getAttribute('aria-label')==='Remove '+name);
+        if(!e)return null;const r=e.getBoundingClientRect();const hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
+        return{name,left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height,hitOwned:!!hit&&e.contains(hit)};
+      });return innerWidth===390&&innerHeight===844&&values.every(e=>e&&e.width>0&&e.height>0&&e.left>=0&&e.right<=innerWidth&&e.top>=0&&e.bottom<=innerHeight&&e.hitOwned)?values:null;
+    })()`);
+    evidence.controls = controls;
+    evidence.geometry = await evaluate(cdp, `(() => {const r=document.querySelector('textarea').getBoundingClientRect();return {width:innerWidth,height:innerHeight,dark:document.documentElement.classList.contains('dark'),scrollWidth:document.documentElement.scrollWidth,composer:{left:r.left,right:r.right,top:r.top,bottom:r.bottom}};})()`);
+    assert.equal(evidence.geometry.dark, theme === 'dark');
+    assert.ok(evidence.geometry.scrollWidth <= 391 && evidence.geometry.composer.left >= 0 && evidence.geometry.composer.right <= 391
+      && evidence.geometry.composer.top >= 0 && evidence.geometry.composer.bottom <= 845, 'Phone attachments must preserve document and composer geometry');
+    await screenshot(`fixture-phone-${theme}-attachments-added`);
+    await ui.click({ label: imageName, touch: true });
+    evidence.preview = await ui.waitExpression('owned phone image preview visible', `(${readQaPhoneImagePreview.toString()})(${JSON.stringify(imageName)})`);
+    await screenshot(`fixture-phone-${theme}-attachment-preview`);
+    await ui.click({ label: 'Close Image Preview', touch: true });
+    await ui.waitExpression('phone image preview closed', '!document.querySelector("button[aria-label=\\"Close Image Preview\\"]")');
+    for (const name of [textName, imageName]) {
+      const selector = `[aria-label=${JSON.stringify('Remove ' + name)}]`;
+      await ui.click({ selector, touch: true });
+      await ui.waitExpression('exact owned attachment removed', `!document.querySelector(${JSON.stringify(selector)})`);
+    }
+    await screenshot(`fixture-phone-${theme}-attachments-removed`);
+    await ui.attach([text.path, image.path]);
+    await ui.waitVisibleText(textName);
+    await ui.waitExpression('reattached owned phone image loaded', `(() => {const e=document.querySelector('img[alt=${JSON.stringify(imageName)}]');return e?.complete&&e.naturalWidth>0;})()`);
+    fixture.configureNextCreatedSessionPrompt({ chunks: 1, intervalMs: 10 });
+    const submitted = await send(`QA phone ${theme}: use the reattached owned requirements.`);
+    await idle(submitted.sessionID);
+    const rows = await api(`/api/session/${submitted.sessionID}/message?directory=${encodeURIComponent(projectFixture.fixtureRoot)}`);
+    const canonical = rows.filter(row => row.info.id === submitted.messageID && row.info.role === 'user');
+    assert.equal(canonical.length, 1, 'Phone attachment send must reconcile exactly one original user message');
+    assertQaPhoneAttachmentParts(canonical[0].parts, expectedImage);
+    // The original text-file owner may project inline text rather than a file;
+    // require its real content, without inventing another conversion contract.
+    const textBytes = await readFile(text.path, 'utf8');
+    assertQaPhoneTextAttachment(canonical[0].parts, textName, text.mime, textBytes);
+    evidence.sessionID = submitted.sessionID;evidence.userMessageID = submitted.messageID;evidence.canonicalImageMatched = true;evidence.canonicalTextMatched = true;
+    await screenshot(`fixture-phone-${theme}-attachments-submitted`);
+  });
+  return evidence;
+}
 
 const sidebarTargetsExpression = sessionID => `(() => {
   const row=document.querySelector(${JSON.stringify(`[data-session-row="${sessionID}"]`)}),title=row?.querySelector('span.truncate');
@@ -169,16 +282,11 @@ export async function verifyQaFixtureProjectHeader({ cdp, ui, screenshot, prefix
 }
 
 export async function runQaFixtureMobileCoverage({ cell, fixture, projectFixture, cdp, ui, api,
-  check, screenshot, send, idle, latestAssistant, setPlanMode, selectSession, outputEvidence = {} }) {
+  check, screenshot, send, idle, latestAssistant, setPlanMode, selectSession, outputEvidence = {}, consoleErrorOrdinal, expectedFailures }) {
   assert.ok(cell.transport === 'fixture' && cell.runtime === 'web' && cell.scenarioId === 'mobile');
   const directory = projectFixture.fixtureRoot;
   const evidence = Object.assign(outputEvidence, { source: 'actual shared mobile UI with deterministic loopback records; no scheduler execution or native mobile-device acceptance',
     viewports: [], childNavigation: [], permissions: [] });
-  const requests = async (url, input) => {
-    const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) });
-    assert.ok(response.ok, `Canonical fixture preparation failed: ${response.status}`);
-    return response.status === 204 ? null : response.json();
-  };
   const geometry = async () => evaluate(cdp, `(() => {
     const e=document.querySelector('textarea'),r=e?.getBoundingClientRect();
     return {width:innerWidth,height:innerHeight,scrollWidth:document.documentElement.scrollWidth,
@@ -341,13 +449,14 @@ export async function runQaFixtureMobileCoverage({ cell, fixture, projectFixture
   let interception;
   try {
     for (const [index, status] of ['running', 'completed'].entries()) {
-      const child = await requests(`${fixture.origin}/session`, { parentID: sessionID, title: `QA ${status} canonical child` });
+      const child = await api('/api/session', { method: 'POST',
+        body: JSON.stringify({ parentID: sessionID, title: `QA ${status} canonical child` }) });
       const userMessageID = `msg_qa_mobile_child_${index + 1}_${sessionID}`;
       fixture.configureNextPrompt(child.id, { hold: status === 'running', reasoning: 'text',
         reasoningText: `The canonical ${status} child checks responsive task controls.`, chunks: 1, intervalMs: 10,
         responseText: `QA ${status} child response is stored in the exact child session.` });
-      await requests(`${fixture.origin}/session/${child.id}/prompt_async`, { messageID: userMessageID, agent: 'build', variant: '',
-        model: { providerID: 'fixture', modelID: 'fixture-model' }, parts: [{ type: 'text', text: `QA ${status} canonical child request.` }] });
+      await api(`/api/session/${child.id}/prompt_async`, { method: 'POST', body: JSON.stringify({ messageID: userMessageID, agent: 'build', variant: '',
+        model: { providerID: 'fixture', modelID: 'fixture-model' }, parts: [{ type: 'text', text: `QA ${status} canonical child request.` }] }) });
       if (status === 'completed') await idle(child.id);
       const assistant = await latestAssistant(child.id);
       children.push({ sessionID: child.id, parentSessionID: sessionID, userMessageID, assistantMessageID: assistant.info.id, status, agent: 'build' });
@@ -358,6 +467,7 @@ export async function runQaFixtureMobileCoverage({ cell, fixture, projectFixture
     evidence.managedTasks = { source: model.source, records: model.records, interception: interception.evidence };
     for (const record of model.records) fixture.appendManagedTaskVisual({ sessionID, messageID: parentAssistant.info.id,
       task: record.task, resultEnvelope: record.resultEnvelope });
+    const disconnect = { kind: 'sse-disconnect', consoleStartOrdinal: consoleErrorOrdinal(), beforeConnections: fixture.getState().sseConnectionCount };
     fixture.disconnectEvents();
     // The host owns managed-task delivery separately from OpenCode SSE. A real
     // reload exercises its normal snapshot bootstrap through the scoped read
@@ -376,6 +486,10 @@ export async function runQaFixtureMobileCoverage({ cell, fixture, projectFixture
       await evaluate(cdp, `document.querySelector(${JSON.stringify(reasoning)}).focus()`);
       await ui.key('Enter', { code: 'Enter', windowsVirtualKeyCode: 13 });
     }
+    const afterConnections = fixture.getState().sseConnectionCount;
+    assert.ok(afterConnections > disconnect.beforeConnections, 'The injected disconnect must reconnect before its managed snapshot witness');
+    expectedFailures.push({ ...disconnect, consoleEndOrdinal: consoleErrorOrdinal(), afterConnections, recovery: 'managed-snapshot',
+      sessionID, messageID: held.messageID, assistantMessageID: parentAssistant.info.id });
     // A long genuine session title makes action/title crowding measurable.
     await api(`/api/session/${sessionID}?directory=${encodeURIComponent(directory)}`, { method: 'PATCH',
       body: JSON.stringify({ title: 'QA responsive review of task ordering and persistence' }) });
@@ -463,6 +577,10 @@ export async function runQaFixtureMobileCoverage({ cell, fixture, projectFixture
               : name === 'effort' ? '[aria-label="Thinking Options"]' : '[role="menu"]';
             const menu = await ui.waitExpression('responsive selector settled and visible', `(() => {const e=[...document.querySelectorAll(${JSON.stringify(panel)})].find(e=>e.getBoundingClientRect().width>0);if(!e||e.getAnimations({subtree:true}).some(a=>a.playState==='running'))return null;const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom};})()`);
             assert.ok(menu.left >= -1 && menu.right <= width + 1 && menu.top >= -1 && menu.bottom <= height + 1, `${name} menu must fit the viewport`);
+            // The native effort popover requests slider focus on the next animation frame.
+            if (!mobileControls && name === 'effort') {
+              await ui.waitExpression('native effort initial focus settled', `Boolean(document.activeElement?.closest(${JSON.stringify(panel)}))`);
+            }
             let tabSteps = 0;
             if (mobileControls || name === 'effort') {
               while (!await evaluate(cdp, `Boolean(document.activeElement?.closest(${JSON.stringify(panel)}))`) && tabSteps < 12) {
@@ -519,14 +637,40 @@ export async function runQaFixtureMobileCoverage({ cell, fixture, projectFixture
         await ui.click({ label: 'Stop Generating' });await idle(sessionID);
       } else {
         evidence.cleanupUsedFixtureAbort = true;
-        await requests(`${fixture.origin}/session/${sessionID}/abort`, {});
+        await api(`/api/session/${sessionID}/abort`, { method: 'POST', body: '{}' });
       }
       for (const child of children) {
-        if (child.status === 'running') await requests(`${fixture.origin}/session/${child.sessionID}/abort`, {});
+        if (child.status === 'running') await api(`/api/session/${child.sessionID}/abort`, { method: 'POST', body: '{}' });
       }
     } catch (error) {
       evidence.cleanupError = error.message;
       if (!evidence.failure) throw error;
+    }
+  }
+  evidence.phoneInputs = [];
+  let phoneTheme, phoneFailure;
+  try {
+    for (const theme of ['light', 'dark']) {
+      phoneTheme = theme;
+      await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: theme }] });
+      await mobileViewport();
+      const attachments = await runQaPhoneAttachmentProof({ theme, projectFixture, cdp, ui, api, fixture, send, idle, check, screenshot });
+      const retained = await runQaRecoveredInputFixtureProof({ cell, fixture, projectFixture, cdp, ui, api, check, screenshot, selectSession, phoneTheme: theme });
+      evidence.phoneInputs.push({ theme, attachments, retained });
+    }
+  } catch (error) {
+    phoneFailure = error;
+    // The screenshot callback retains the actual phone viewport before cleanup.
+    // An unavailable capture must not replace the original failed check.
+    try { await screenshot(`fixture-phone-${phoneTheme}-failure-active-viewport`); } catch { /* Original failure remains authoritative. */ }
+    throw error;
+  } finally {
+    try {
+      await desktopViewport();
+      await selectSession(sessionID);
+    } catch (error) {
+      if (!phoneFailure) throw error;
+      // Preserve the original phone failure if desktop cleanup also fails.
     }
   }
   return evidence;

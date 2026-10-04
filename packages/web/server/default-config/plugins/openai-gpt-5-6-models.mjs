@@ -200,7 +200,7 @@ const normalizeCodexContextLimits = (models, configuredReserved) => {
   return normalized;
 };
 
-const enforceDetailedOpenAIReasoningSummary = (input, output) => {
+export const enforceDetailedOpenAIReasoningSummary = (input, output) => {
   const model = input?.model;
   if (model?.providerID !== PROVIDER_ID || !isPlainObject(output)) return;
 
@@ -249,6 +249,20 @@ export const normalizeOpenAIOAuthGpt56Models = (models) => {
   return normalized;
 };
 
+// Shared data-only policy for the legacy plugin and the owned native adapter.
+export const normalizeOpenAIModels = (models, { oauth = false, compactionReserved } = {}) => {
+  const supported = removeNoneReasoningVariants(models);
+  const oauthModels = oauth ? normalizeOpenAIOAuthGpt56Models(supported) : supported;
+  const limited = oauth ? normalizeCodexContextLimits(oauthModels, compactionReserved) : oauthModels;
+  return normalizeReasoningSummaries(limited);
+};
+
+export const openAIModelHeaders = (model, oauth) => (
+  oauth && model?.providerID === PROVIDER_ID && model?.api?.id === LUNA_API_MODEL_ID
+    ? { originator: CODEX_ORIGINATOR, "User-Agent": CODEX_USER_AGENT }
+    : {}
+);
+
 export const OpenAIGpt56ModelsPlugin = async () => {
   let openAIOAuthActive = false;
   let configuredCompactionReserved;
@@ -261,29 +275,14 @@ export const OpenAIGpt56ModelsPlugin = async () => {
     provider: {
       id: PROVIDER_ID,
       async models(provider, ctx) {
-        const models = removeNoneReasoningVariants(provider?.models ?? {});
         openAIOAuthActive = ctx?.auth?.type === "oauth";
-        const oauthModels = openAIOAuthActive
-          ? normalizeOpenAIOAuthGpt56Models(models)
-          : models;
-        const normalizedModels = openAIOAuthActive
-          ? normalizeCodexContextLimits(oauthModels, configuredCompactionReserved)
-          : oauthModels;
-        return normalizeReasoningSummaries(normalizedModels);
+        return normalizeOpenAIModels(provider?.models ?? {}, {
+          oauth: openAIOAuthActive, compactionReserved: configuredCompactionReserved,
+        });
       },
     },
     "chat.headers": async (input, output) => {
-      const model = input?.model;
-      if (
-        !openAIOAuthActive
-        || model?.providerID !== PROVIDER_ID
-        || model?.api?.id !== LUNA_API_MODEL_ID
-      ) {
-        return;
-      }
-
-      output.headers.originator = CODEX_ORIGINATOR;
-      output.headers["User-Agent"] = CODEX_USER_AGENT;
+      Object.assign(output.headers, openAIModelHeaders(input?.model, openAIOAuthActive));
     },
     "chat.params": async (input, output) => {
       enforceDetailedOpenAIReasoningSummary(input, output);

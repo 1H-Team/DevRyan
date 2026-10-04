@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import os from 'node:os';
+import { getRuntimeHome, selectedRuntimeBundle } from './runtime-host/runtime-bundle-binding.js';
 import path from 'node:path';
 
 const POLICY_VERSION = 1;
@@ -55,8 +55,8 @@ const writeObjectFile = (fsApi, pathApi, filePath, value) => {
 
 const resolvePromptFeaturePaths = (options = {}) => {
   const pathApi = options.path || path;
-  const homedir = options.homedir || (() => os.homedir());
-  const configDirectory = options.configDirectory
+  const homedir = options.homedir || getRuntimeHome;
+  const configDirectory = options.configDirectory || selectedRuntimeBundle?.descriptor.launch.opencodeConfigDirectory
     || pathApi.join(homedir(), '.config', 'opencode');
   const meridianConfigDirectory = options.meridianConfigDirectory
     || pathApi.join(homedir(), '.config', 'meridian');

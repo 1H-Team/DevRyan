@@ -1,3 +1,4 @@
+import { isNativeStatusRecord } from '../../shared-runtime/lib/native-message-status.js';
 // Native history stays authoritative. Only these typed maintenance records
 // preserve an existing objective; ordinary synthetic user requests do not.
 export const isNativeCompactionRecord = (record) => record?.info?.role === 'user'
@@ -20,7 +21,7 @@ export const observesNativeContinuation = (record, observation, userMessageID) =
   if (!observation?.complete || observation.session?.id !== record.sessionID
     || observation.session.directory !== record.directory || observation.session.parentID
     || observation.session.time?.archived || !Array.isArray(observation.messages)) return false;
-  const users = observation.messages.filter((message) => message.info?.role === 'user');
+  const users = observation.messages.filter((message) => message.info?.role === 'user' && !isNativeStatusRecord(message));
   const previous = users.findIndex((message) => message.info.id === currentObjectiveUser(record));
   if (previous < 0 || !users.some((message) => message.info.id === record.anchorID)
     || users.at(-1)?.info.id !== userMessageID || previous === users.length - 1) return false;

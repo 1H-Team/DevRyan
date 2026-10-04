@@ -40,6 +40,14 @@ const PROCESS_SAMPLING_FIELDS = Object.freeze([
   'runs',
 ]);
 
+const PAIRING_FIELDS = Object.freeze(['baselineConfig', 'pairs', 'factor', 'targetMetric', 'nonInferiorityMargin', 'runtimePluginMigrations']);
+// Waste-reduction factors ask whether the candidate reduced the target metric.
+// The `runtime` factor compares the same cases on two OpenCode runtime versions
+// and asks only whether the candidate is non-inferior within a margin.
+export const PAIRING_FACTORS = Object.freeze(['readOverlap', 'waitAny', 'compactResults', 'contextProjection', 'role', 'runtime']);
+export const PAIRING_TARGET_METRICS = Object.freeze(['objectiveDurationMs', 'input', 'workspaceBarrierMs', 'resultConsumptionMs', 'toolExecutionMs', 'toolVolumeBytes']);
+export const DEFAULT_NON_INFERIORITY_MARGIN = 0.1;
+
 const USAGE = 'Usage: bun run agent:eval -- --config <path>';
 
 export class EvaluationConfigError extends Error {
@@ -163,6 +171,30 @@ const normalizeProcessSampling = (value) => {
   return normalized;
 };
 
+const normalizeNonInferiorityMargin = (pairing) => {
+  if (!Object.hasOwn(pairing, 'nonInferiorityMargin')) return DEFAULT_NON_INFERIORITY_MARGIN;
+  const margin = pairing.nonInferiorityMargin;
+  if (typeof margin !== 'number' || !Number.isFinite(margin) || margin < 0 || margin > 1) {
+    throw new EvaluationConfigError('pairing.nonInferiorityMargin config value must be a number from 0 through 1');
+  }
+  return margin;
+};
+
+export const normalizeRuntimePluginMigrations = (value = []) => {
+  const names = new Set();
+  if (!Array.isArray(value)) throw new EvaluationConfigError('pairing.runtimePluginMigrations must be an array of exact plugin hash pairs');
+  return Object.freeze(value.map((entry) => {
+    if (!isPlainObject(entry) || Object.keys(entry).some(key => !['name', 'baselineHash', 'candidateHash'].includes(key))
+      || typeof entry.name !== 'string' || !entry.name.trim() || entry.name !== entry.name.trim() || names.has(entry.name)
+      || ![entry.baselineHash, entry.candidateHash].every(hash => typeof hash === 'string' && /^[a-f0-9]{64}$/.test(hash))
+      || entry.baselineHash === entry.candidateHash) {
+      throw new EvaluationConfigError('pairing.runtimePluginMigrations requires unique names and distinct exact SHA-256 baselineHash/candidateHash values');
+    }
+    names.add(entry.name);
+    return Object.freeze({ name: entry.name, baselineHash: entry.baselineHash, candidateHash: entry.candidateHash });
+  }));
+};
+
 const isWithin = (parent, candidate) => {
   const relative = path.relative(parent, candidate);
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
@@ -253,13 +285,20 @@ export const validateEvaluationConfig = (value, options = {}) => {
   let pairing;
   if (value.pairing !== undefined) {
     const p = value.pairing;
-    if (!isPlainObject(p) || Object.keys(p).some((key) => !['baselineConfig', 'pairs', 'factor', 'targetMetric'].includes(key))
+    if (!isPlainObject(p) || Object.keys(p).some((key) => !PAIRING_FIELDS.includes(key))
       || ![3, 10].includes(p.pairs) || value.executionMode === 'deterministic' || value.processSampling
-      || !['readOverlap', 'waitAny', 'compactResults', 'contextProjection', 'role'].includes(p.factor)
-      || !['objectiveDurationMs', 'input', 'workspaceBarrierMs', 'resultConsumptionMs', 'toolExecutionMs', 'toolVolumeBytes'].includes(p.targetMetric)) {
+      || !PAIRING_FACTORS.includes(p.factor)
+      || !PAIRING_TARGET_METRICS.includes(p.targetMetric)) {
       throw new EvaluationConfigError('Invalid paired live comparison');
     }
-    pairing = Object.freeze({ baselineConfig: resolveRepoPath(p.baselineConfig, repoRoot, 'pairing.baselineConfig'), pairs: p.pairs, factor: p.factor, targetMetric: p.targetMetric });
+    if (p.factor !== 'runtime' && Object.hasOwn(p, 'nonInferiorityMargin')) {
+      throw new EvaluationConfigError('pairing.nonInferiorityMargin config is only valid with factor runtime');
+    }
+    if (p.factor !== 'runtime' && Object.hasOwn(p, 'runtimePluginMigrations')) {
+      throw new EvaluationConfigError('pairing.runtimePluginMigrations config is only valid with factor runtime');
+    }
+    pairing = Object.freeze({ baselineConfig: resolveRepoPath(p.baselineConfig, repoRoot, 'pairing.baselineConfig'), pairs: p.pairs, factor: p.factor, targetMetric: p.targetMetric,
+      ...(p.factor === 'runtime' ? { nonInferiorityMargin: normalizeNonInferiorityMargin(p), runtimePluginMigrations: normalizeRuntimePluginMigrations(p.runtimePluginMigrations) } : {}) });
   }
   if (value.variant !== null && (typeof value.variant !== 'string' || !value.variant.trim())) {
     throw new EvaluationConfigError('variant config must be a non-empty string or null');

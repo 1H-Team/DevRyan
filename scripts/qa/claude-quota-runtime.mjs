@@ -1,13 +1,8 @@
 // Real DevRyan/OpenCode transport in an owned profile. Credentials are supplied
 // only in child environments by the live runner; this module never reads them.
-import fs from 'node:fs/promises';
-import { constants } from 'node:fs';
 import path from 'node:path';
-import { repository, studyModel, studyEffort, requireCacheDirectory } from './claude-quota-fixture.mjs';
-import { createUserProfileProvisioningRuntime } from '../../packages/web/server/lib/opencode/user-profile-provisioning.js';
-import { assertQaLaunchEnvironmentOwned, prepareQaPluginHomeWrapper, pinQaAgents } from './profile-preparation.mjs';
-import { MERIDIAN_PREFIX_EDITS } from '../../packages/web/server/lib/opencode/meridian-passthrough-hotfix.js';
-import { reservePort, startOwnedProcess } from './process.mjs';
+import { repository } from './claude-quota-fixture.mjs';
+import { assertQaLaunchEnvironmentOwned } from './profile-preparation.mjs';
 
 const shim = path.join(repository, 'scripts/qa/isolated-home.mjs');
 
@@ -48,130 +43,13 @@ export function assertClaudeQuotaLaunchEnvironmentOwned(env, qaHome) {
   assertQaLaunchEnvironmentOwned(env, qaHome, { executables: ['MERIDIAN_CLAUDE_PATH'] });
 }
 
-export async function prepareClaudeQuotaRuntime({ fixture, installedModules, opencodeExecutable, claudeExecutable, arm }) {
-  if (!['control', 'candidate'].includes(arm) || !path.isAbsolute(opencodeExecutable) || !path.isAbsolute(claudeExecutable)) {
-    throw new Error('Expected explicit native runtime executables and a comparison arm');
-  }
-  await requireCacheDirectory(fixture.root);
-  await requireCacheDirectory(fixture.workspace);
-  const runtimeRoot = path.join(fixture.root, 'runtime');
-  const qaHome = path.join(runtimeRoot, 'home');
-  const config = path.join(qaHome, '.config/opencode');
-  const data = path.join(qaHome, '.config/openchamber');
-  const claude = path.join(qaHome, '.claude');
-  const env = createClaudeQuotaLaunchEnvironment({ runtimeRoot, qaHome, workspace: fixture.workspace, claudeExecutable });
-  for (const directory of [config, data, claude, env.TMPDIR, env.XDG_CACHE_HOME, env.XDG_DATA_HOME, env.MERIDIAN_CONFIG_DIR]) {
-    await fs.mkdir(directory, { recursive: true, mode: 0o700 });
-  }
-  await fs.writeFile(path.join(qaHome, '.devryan-qa-home'), 'owned QA home\n', { flag: 'wx', mode: 0o600 });
-  await fs.writeFile(path.join(qaHome, '.gitconfig'), '[user]\n\tname = Fixture\n\temail = fixture@example.invalid\n', { mode: 0o600 });
-  await fs.cp(installedModules, path.join(config, 'node_modules'), { recursive: true, verbatimSymlinks: true, mode: constants.COPYFILE_FICLONE });
-  const privateModules = await fs.realpath(path.join(config, 'node_modules'));
-  const checkLinks = async directory => {
-    for (const item of await fs.readdir(directory, { withFileTypes: true })) {
-      const file = path.join(directory, item.name);
-      if (item.isDirectory()) await checkLinks(file);
-      else if (item.isSymbolicLink() && !(await fs.realpath(file)).startsWith(`${privateModules}${path.sep}`)) {
-        throw new Error('A copied runtime dependency escapes the private installation');
-      }
-    }
-  };
-  await checkLinks(privateModules);
-  for (const name of ['package.json', 'bun.lock', 'bun.lockb']) {
-    try { await fs.copyFile(path.join(path.dirname(installedModules), name), path.join(config, name)); }
-    catch (error) { if (error.code !== 'ENOENT' || name === 'package.json') throw error; }
-  }
-  const provisioning = await createUserProfileProvisioningRuntime({
-    homedir: () => qaHome, configDirectory: config,
-    configRoot: path.join(repository, 'packages/web/server/default-config'),
-    profileRoot: path.join(repository, 'packages/web/server/default-config/user-profile'),
-    runCommand: async () => ({ ok: false, exitCode: 1, stdout: '', stderr: 'Quota fixture does not install dependencies' }),
-  }).provision();
-  if (!provisioning.ok || provisioning.installDegraded) throw new Error('Private Claude runtime provisioning failed or requires dependency installation');
-  if (arm === 'control') {
-    const entry = path.join(config, 'node_modules/@rynfar/meridian/dist/cli-wxk8xvd3.js');
-    let source = await fs.readFile(entry, 'utf8');
-    for (const [before, after] of MERIDIAN_PREFIX_EDITS) source = source.replace(after, before);
-    await fs.writeFile(entry, source);
-  }
-  const opencodeConfig = JSON.parse(await fs.readFile(path.join(config, 'opencode.json'), 'utf8'));
-  opencodeConfig.model = `anthropic/${studyModel}`;
-  opencodeConfig.enabled_providers = ['anthropic'];
-  opencodeConfig.provider = { anthropic: { options: { apiKey: 'meridian-loopback-fixture' } } };
-  opencodeConfig.mcp = {};
-  opencodeConfig.agent = { ...opencodeConfig.agent,
-    designer: { mode: 'subagent', model: `anthropic/${studyModel}`, variant: studyEffort, permission: 'allow' },
-    title: { disable: true },
-  };
-  await fs.writeFile(path.join(config, 'opencode.json'), JSON.stringify(opencodeConfig, null, 2));
-  const slimPath = path.join(config, 'oh-my-opencode-slim.json');
-  const slim = JSON.parse(await fs.readFile(slimPath, 'utf8'));
-  await fs.writeFile(slimPath, JSON.stringify(pinQaAgents(slim, {
-    providerId: 'anthropic', modelId: studyModel, variant: studyEffort,
-  }), null, 2));
-  // The compiled OpenCode binary needs these wrappers before plugin imports;
-  // its own paths use OPENCODE_TEST_HOME and the XDG directories above.
-  for (const plugin of opencodeConfig.plugin.filter(entry => entry.startsWith('./node_modules/'))) {
-    const entry = await fs.realpath(path.join(config, plugin));
-    if (!entry.startsWith(`${privateModules}${path.sep}`)) throw new Error('Private plugin escaped its installation');
-    await prepareQaPluginHomeWrapper(entry);
-  }
-  await fs.writeFile(path.join(env.MERIDIAN_CONFIG_DIR, 'sdk-features.json'), JSON.stringify({ opencode: {
-    codeSystemPrompt: true, clientSystemPrompt: false, memory: false, dreaming: false,
-  } }));
-  await fs.writeFile(path.join(runtimeRoot, 'credentials.env.json'), '{}\n', { mode: 0o600 });
-  await fs.writeFile(path.join(data, 'settings.json'), JSON.stringify({
-    lastDirectory: fixture.workspace, projects: [{ id: 'quota', path: fixture.workspace, label: 'Quota fixture' }], activeProjectId: 'quota',
-    messageStreamTransport: 'sse', showReasoningTraces: true,
-  }));
-  return { runtimeRoot, qaHome, config, claude, env, opencodeExecutable, provisioning };
+export async function prepareClaudeQuotaRuntime() {
+  throw Object.assign(new Error('The v1 quota runtime profile is retired; native v2 quota runtime qualification is unavailable in this historical lane'),
+    { code: 'qa_native_diagnostic_unavailable' });
 }
 
-export async function startClaudeQuotaRuntime(profile, { oauthToken, signal }) {
-  // Checked on the final env (with the quota profile id) before any process starts.
-  const launch = { ...profile.env, MERIDIAN_PROFILES: JSON.stringify([{ id: 'quota', type: 'oauth-token' }]), MERIDIAN_DEFAULT_PROFILE: 'quota' };
-  assertClaudeQuotaLaunchEnvironmentOwned(launch, profile.qaHome);
-  const owned = [];
-  const close = async () => {
-    const failures = [];
-    for (const process of [...owned].reverse()) {
-      try { await process.stop(); } catch (error) { failures.push(error); }
-    }
-    if (failures.length) throw new AggregateError(failures, 'Owned quota runtime cleanup failed');
-    return owned.map(process => process.getCleanupEvidence());
-  };
-  const ready = async (origin, route) => {
-    const deadline = Date.now() + 120_000;
-    while (Date.now() < deadline) {
-      signal?.throwIfAborted();
-      for (const process of owned) process.check();
-      try {
-        const response = await fetch(new URL(route, origin), { signal: AbortSignal.timeout(2_000) });
-        if (response.ok) return;
-      } catch { /* Only this owned loopback service is polled. */ }
-      await new Promise(resolve => setTimeout(resolve, 250));
-    }
-    throw new Error('Owned quota runtime readiness timed out');
-  };
-  try {
-    const opencodePort = await reservePort();
-    const webPort = await reservePort();
-    const meridianPort = await reservePort();
-    const opencodeOrigin = `http://127.0.0.1:${opencodePort}`;
-    const origin = `http://127.0.0.1:${webPort}`;
-    const env = { ...launch, CLAUDE_CODE_OAUTH_TOKEN: oauthToken, CLAUDE_PROXY_PORT: String(meridianPort) };
-    owned.push(startOwnedProcess(profile.opencodeExecutable, ['serve', '--hostname', '127.0.0.1', '--port', String(opencodePort), '--log-level', profile.logLevel ?? 'WARN'], {
-      cwd: profile.env.MERIDIAN_WORKDIR, env,
-    }));
-    await ready(opencodeOrigin, '/global/health');
-    owned.push(startOwnedProcess(process.execPath, [path.join(repository, 'scripts/qa/isolated-host.mjs')], {
-      cwd: repository, env: { ...env, OPENCODE_HOST: opencodeOrigin, OPENCODE_SKIP_START: 'true', OPENCHAMBER_SKIP_OPENCODE_START: 'true', OPENCHAMBER_PORT: String(webPort) },
-    }));
-    await ready(origin, '/api/health');
-    return { origin, opencodeOrigin, meridianOrigin: `http://127.0.0.1:${meridianPort}`, close,
-      logs: () => owned.map(process => process.getLog().split(oauthToken).join('[redacted]')) };
-  } catch (error) {
-    await close();
-    throw error;
-  }
+export async function startClaudeQuotaRuntime(profile) {
+  assertClaudeQuotaLaunchEnvironmentOwned(profile.env, profile.qaHome);
+  throw Object.assign(new Error('The v1 quota runtime launcher is retired; no runtime process was started'),
+    { code: 'qa_native_diagnostic_unavailable' });
 }

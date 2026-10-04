@@ -3,14 +3,20 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createPrimaryRecoveryController } from './provider-recovery.js';
-import { classifyPrimaryTransportError, PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS } from './provider-recovery-policy.js';
+import { classifyPrimaryTransportError, PROVIDER_RECOVERY_SUPPORTED_OPENCODE_VERSIONS, validatePrimaryRecoveryRecord } from './provider-recovery-policy.js';
 
 const cleanups = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
 const timeout = { name: 'UnknownError', data: { message: 'The operation timed out.' } };
 const identity = { sessionID: 'ses_test', userMessageID: 'msg_user', assistantMessageID: 'msg_failed', instanceID: 'runtime-test' };
 
-async function fixture(overrides = {}, providerID = 'openai', agent = 'orchestrator') {
+const nativeShellStep = { sessionID: identity.sessionID, userMessageID: 'msg_shell', assistantMessageID: 'msg_native', instanceID: identity.instanceID,
+  execution: { providerID: 'openai', modelID: 'gpt-5.6-sol', agent: 'orchestrator', variant: 'xhigh' } };
+const nativeAssistant = () => ({ info: { id: 'msg_native', sessionID: identity.sessionID, role: 'assistant', parentID: 'msg_shell',
+  agent: 'orchestrator', providerID: 'openai', modelID: 'gpt-5.6-sol', variant: 'xhigh', time: {} }, parts: [],
+  turnOwnership: { source: 'native-sequence', userMessageID: 'msg_shell' } });
+
+async function fixture(overrides = {}, providerID = 'openai', agent = 'orchestrator', executionGeneration) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-recovery-'));
   cleanups.push(() => fs.rm(directory, { recursive: true, force: true }));
   let time = 10_000;
@@ -30,7 +36,7 @@ async function fixture(overrides = {}, providerID = 'openai', agent = 'orchestra
   await controller.initialize();
   cleanups.push(() => controller.drain());
   await controller.plugin({ action: 'hello', instanceID: identity.instanceID, policyVersion: 1, version: '1.18.25' });
-  await controller.admit({ sessionID: identity.sessionID, directory: '/project', primary: true,
+  await controller.admit({ sessionID: identity.sessionID, directory: '/project', primary: true, ...(executionGeneration===undefined?{}:{executionGeneration}),
     body: { messageID: 'msg_user', agent, model: { providerID, modelID: providerID === 'anthropic' ? 'claude-opus-5' : 'gpt-5.6-sol' }, variant: 'xhigh' } });
   let requestHook;
   const fail = async () => {
@@ -42,7 +48,178 @@ async function fixture(overrides = {}, providerID = 'openai', agent = 'orchestra
     snapshot: () => controller.getSnapshot(identity.sessionID), onWait: (callback) => { onWait = callback; } };
 }
 
+test('Stop while queued final admission awaits its write guard preserves the previous objective',async()=>{
+ const f=await fixture({mode:'observe'},'openai','orchestrator',2),guard=await f.controller.captureNativePromptAdmission(identity.sessionID);
+ const entered=Promise.withResolvers(),released=Promise.withResolvers();let calls=0;
+ const admission=f.controller.admit({sessionID:identity.sessionID,directory:'/project',primary:true,executionGeneration:2,
+  body:{messageID:'msg_queued',agent:'orchestrator',model:{providerID:'openai',modelID:'gpt-5.6-sol'},variant:'xhigh'}},async()=>{calls++;entered.resolve();await released.promise;await guard();});
+ admission.catch(()=>{});await entered.promise;
+ const stop=f.controller.control(identity.sessionID,'cancel');released.resolve();
+ await expect(admission).rejects.toMatchObject({code:'native_queued_admission_revoked'});await stop;
+ expect(calls).toBe(1);const record=await f.controller.readRecord(identity.sessionID);
+ expect(record.anchorID).toBe('msg_user');expect(record.state).toBe('cancelled');
+});
+
+test('queued final admission guard fences real Stop/supersede and accepts its own admission invalidation',async()=>{
+ for(const action of ['cancel','supersede']){
+  const f=await fixture({mode:'observe'},'openai','orchestrator',2);
+  const guard=await f.controller.captureNativePromptAdmission(identity.sessionID);
+  await f.controller.control(identity.sessionID,action);
+  await expect(f.controller.admit({sessionID:identity.sessionID,directory:'/project',primary:true,executionGeneration:2,
+    body:{messageID:'msg_queued',agent:'orchestrator',model:{providerID:'openai',modelID:'gpt-5.6-sol'},variant:'xhigh'}},guard)).rejects.toMatchObject({code:'native_queued_admission_revoked'});
+  expect((await f.controller.readRecord(identity.sessionID)).anchorID).toBe('msg_user');
+ }
+ const f=await fixture({mode:'observe'},'openai','orchestrator',2);
+ const guard=await f.controller.captureNativePromptAdmission(identity.sessionID);
+ await f.controller.admit({sessionID:identity.sessionID,directory:'/project',primary:true,executionGeneration:2,
+  body:{messageID:'msg_queued',agent:'orchestrator',model:{providerID:'openai',modelID:'gpt-5.6-sol'},variant:'xhigh'}},guard);
+ expect((await f.controller.readRecord(identity.sessionID)).anchorID).toBe('msg_queued');
+});
+
+describe('private receipt-backed native primary continuation', () => {
+  test('status-only history does not supersede a tracked turn',async()=>{
+    const f=await fixture({mode:'observe'},'openai','orchestrator',2);
+    const notice={info:{id:'msg_status',sessionID:identity.sessionID,role:'user'},parts:[{type:'text',synthetic:true,text:'UI ready'}],nativeStatus:{source:'native-sequence',kind:'status-only'}};
+    f.state.messages.push(notice);
+    await f.fail();expect((await f.snapshot()).record.state).toBe('observing');
+    expect(f.sent).toHaveLength(0);
+  });
+
+  const trusted = async (_record, observation, target) => observation.complete && target === 'msg_shell' ? { kind: 'native-shell' } : null;
+  const appendShell = f => f.state.messages.push({ info: { id: 'msg_shell', sessionID: identity.sessionID, role: 'user' },
+    parts: [{ type: 'text', synthetic: true, text: 'Actual owned shell result' }] });
+
+  test('receipt arrival retains the current unfinished step until canonical next Step.Started', async () => {
+    const f = await fixture({ verifyOwnedNativeContinuation: trusted });
+    delete f.state.messages.at(-1).info.error; delete f.state.messages.at(-1).info.time.completed;
+    await f.controller.plugin({ action: 'step', ...identity });
+    const before = await f.controller.readRecord(identity.sessionID);
+    appendShell(f); f.state.status = 'busy';
+    await f.controller.observe({ type: 'session.status', properties: { sessionID: identity.sessionID, status: { type: 'idle' } } });
+    expect(await f.controller.readRecord(identity.sessionID)).toEqual(before);
+    f.state.messages.push(nativeAssistant());
+    await expect(f.controller.adoptOwnedNativeContinuation(nativeShellStep)).rejects.toMatchObject({ code: 'native_continuation_fenced' });
+    f.state.messages.find(message => message.info.id === identity.assistantMessageID).info.time.completed = 10_001;
+    const adopted = await f.controller.adoptOwnedNativeContinuation(nativeShellStep);
+    expect(adopted).toMatchObject({ anchorID: 'msg_user', activeUserID: 'msg_shell', state: 'observing', requestedAt: null, stepID: null,
+      providerID: before.providerID, modelID: before.modelID, variant: before.variant, tools: before.tools,
+      attemptCount: before.attemptCount, cancellationGeneration: before.cancellationGeneration });
+    await f.controller.plugin({ action: 'step', ...nativeShellStep });
+    expect((await f.controller.readRecord(identity.sessionID)).stepID).toBe('msg_native');
+    await expect(f.controller.plugin({ action: 'step', ...identity, userMessageID: 'msg_foreign' })).rejects.toThrow('fenced');
+    expect(f.sent).toEqual([]);
+  });
+
+  test('completed foreground replies allow exact owned adoption and restart replay without another revision', async () => {
+    const f = await fixture({ verifyOwnedNativeContinuation: trusted });
+    delete f.state.messages.at(-1).info.error;
+    await f.controller.plugin({ action: 'step', ...identity });
+    await f.controller.observe({ type: 'session.status', properties: { sessionID: identity.sessionID, status: { type: 'idle' } } });
+    expect((await f.controller.readRecord(identity.sessionID)).state).toBe('completed');
+    appendShell(f); f.state.messages.push(nativeAssistant()); f.state.status = 'busy';
+    const adopted = await f.controller.adoptOwnedNativeContinuation(nativeShellStep);
+    expect((await f.controller.adoptOwnedNativeContinuation(nativeShellStep)).revision).toBe(adopted.revision);
+    const foreign = nativeAssistant(); foreign.info.id = 'msg_other'; f.state.messages.push(foreign);
+    await expect(f.controller.adoptOwnedNativeContinuation({ ...nativeShellStep, assistantMessageID: 'msg_other' }))
+      .rejects.toMatchObject({ code: 'native_continuation_fenced' });
+    f.state.messages.pop();
+    await f.controller.drain();
+    const restarted = createPrimaryRecoveryController({ directory: f.directory, mode: 'off', isManaged: () => true, authorize: async () => true,
+      observeTurn: async () => structuredClone(f.state), verifyOwnedNativeContinuation: trusted,
+      abortSession: async () => {}, promptSession: async () => {} });
+    await restarted.initialize(); cleanups.push(() => restarted.drain());
+    await restarted.plugin({ action: 'hello', policyVersion: 1, instanceID: 'runtime-restarted', version: '1.18.25' });
+    expect((await restarted.adoptOwnedNativeContinuation({ ...nativeShellStep, instanceID: 'runtime-restarted' })).revision).toBe(adopted.revision);
+  });
+
+  test.each([undefined, async () => null, async () => ({ kind: 'caller-metadata' }), async () => { throw new Error('receipt unavailable'); }])
+    ('missing, malformed or unreadable receipt authority cannot adopt a synthetic user', async verifyOwnedNativeContinuation => {
+      const f = await fixture({ verifyOwnedNativeContinuation });
+      delete f.state.messages.at(-1).info.error;
+      await f.controller.plugin({ action: 'step', ...identity });
+      appendShell(f); f.state.messages.push(nativeAssistant());
+      await expect(f.controller.adoptOwnedNativeContinuation(nativeShellStep)).rejects.toThrow();
+      expect((await f.controller.readRecord(identity.sessionID)).activeUserID).toBeUndefined();
+    });
+
+  test('canonical completeness, exact saved selection and cancellation remain fences around trusted proof', async () => {
+    const f = await fixture({ verifyOwnedNativeContinuation: trusted });
+    delete f.state.messages.at(-1).info.error; await f.controller.plugin({ action: 'step', ...identity });
+    appendShell(f); f.state.messages.push(nativeAssistant());
+    await expect(f.controller.adoptOwnedNativeContinuation({ ...nativeShellStep, execution: { ...nativeShellStep.execution, variant: 'high' } }))
+      .rejects.toMatchObject({ code: 'native_continuation_fenced' });
+    f.state.complete = false;
+    await expect(f.controller.adoptOwnedNativeContinuation(nativeShellStep)).rejects.toThrow();
+    f.state.complete = true;
+    await f.controller.control(identity.sessionID, 'stop');
+    await expect(f.controller.adoptOwnedNativeContinuation(nativeShellStep)).rejects.toMatchObject({ code: 'native_continuation_fenced' });
+    await expect(f.controller.plugin({ action: 'adoptOwnedNativeContinuation', ...nativeShellStep })).rejects.toThrow('fenced');
+  });
+
+  test('a cancellation during receipt verification wins without changing objective ownership', async () => {
+    let entered, resolve; const started = new Promise(done => { entered = done; }); const waiting = new Promise(done => { resolve = done; });
+    const f = await fixture({ verifyOwnedNativeContinuation: async () => { entered(); return waiting; } });
+    delete f.state.messages.at(-1).info.error; await f.controller.plugin({ action: 'step', ...identity });
+    appendShell(f); f.state.messages.push(nativeAssistant());
+    const adoption = f.controller.adoptOwnedNativeContinuation(nativeShellStep);
+    await started;
+    const cancel = f.controller.control(identity.sessionID, 'stop');
+    resolve({ kind: 'native-shell' });
+    await expect(adoption).rejects.toMatchObject({ code: 'native_continuation_fenced' }); await cancel;
+    expect(await f.controller.readRecord(identity.sessionID)).toMatchObject({ anchorID: 'msg_user', state: 'cancelled' });
+  });
+
+  test('private adoption keeps the existing pure native compaction path without shell authority', async () => {
+    const f = await fixture(); delete f.state.messages.at(-1).info.error;
+    await f.controller.plugin({ action: 'step', ...identity });
+    f.state.messages.push({ info: { id: 'msg_shell', role: 'user' }, parts: [{ type: 'compaction', auto: true }] }, nativeAssistant());
+    const adopted = await f.controller.adoptOwnedNativeContinuation(nativeShellStep);
+    expect(adopted).toMatchObject({ anchorID: 'msg_user', activeUserID: 'msg_shell', attemptCount: 0,
+      ownedNativeContinuation: { kind: 'native-compaction', sourceUserMessageID: 'msg_user' } });
+    expect((await f.controller.adoptOwnedNativeContinuation(nativeShellStep)).revision).toBe(adopted.revision);
+    await f.controller.plugin({ action: 'step', ...nativeShellStep });
+  });
+
+  test('trusted shell-to-compaction proof uses the last canonical user and preserves existing budgets', async () => {
+    const targets = [];
+    const f = await fixture({ mode: 'off', verifyOwnedNativeContinuation: async (_record, _observation, target) => {
+      targets.push(target); return target === 'msg_shell' ? { kind: 'native-shell' } : null;
+    } });
+    delete f.state.messages.at(-1).info.error;
+    await f.controller.plugin({ action: 'continuation', ...identity, userMessageID: 'msg_todo', anchorUserMessageID: 'msg_user',
+      directory: '/project', kind: 'orchestrator_todo', execution: nativeShellStep.execution });
+    f.state.messages.push({ info: { id: 'msg_todo', role: 'user' }, parts: [] },
+      { info: { id: 'msg_todostep', role: 'assistant', parentID: 'msg_todo', time: { completed: 10_000 } }, parts: [] });
+    await f.controller.plugin({ action: 'step', ...identity, userMessageID: 'msg_todo', assistantMessageID: 'msg_todostep' });
+    const before = await f.controller.readRecord(identity.sessionID);
+    f.state.messages.push({ info: { id: 'msg_result', role: 'user' }, parts: [{ type: 'text', synthetic: true, text: 'Shell result' }] },
+      { info: { id: 'msg_shell', role: 'user' }, parts: [{ type: 'compaction' }] }, nativeAssistant());
+    await f.controller.observe({ type: 'session.status', properties: { sessionID: identity.sessionID, status: { type: 'idle' } } });
+    expect(targets).toContain('msg_shell');
+    const result = await f.controller.adoptOwnedNativeContinuation(nativeShellStep);
+    expect(result).toMatchObject({ anchorID: before.anchorID, continuationID: before.continuationID, activeUserID: 'msg_shell',
+      todoContinuationCount: 1, attemptCount: before.attemptCount, cancellationGeneration: before.cancellationGeneration, tools: before.tools });
+  });
+
+  test('an unanswered trusted receipt verifier has a finite fail-closed bound', async () => {
+    const f = await fixture({ verifyOwnedNativeContinuation: () => new Promise(() => {}) });
+    delete f.state.messages.at(-1).info.error; await f.controller.plugin({ action: 'step', ...identity });
+    appendShell(f); f.state.messages.push(nativeAssistant());
+    await expect(f.controller.adoptOwnedNativeContinuation(nativeShellStep)).rejects.toMatchObject({ code: 'native_continuation_verification_unavailable' });
+    expect((await f.controller.readRecord(identity.sessionID)).activeUserID).toBeUndefined();
+  }, 8000);
+});
+
 describe('failure classification', () => {
+  test('native rejection rechecks the original grant after the stored row read before durable writes',async()=>{
+    const f=await fixture();await f.controller.plugin({action:'step',...identity});
+    const before=await f.controller.readRecord(identity.sessionID);
+    const rejection={...identity,callID:'call_rejected',fingerprint:'c'.repeat(64),reason:'binary_read_blocked'};
+    await expect(f.controller.recordRejection(rejection,async()=>{throw Error('original_grant_revoked');})).rejects.toThrow('original_grant_revoked');
+    expect(await f.controller.readRecord(identity.sessionID)).toEqual(before);
+    expect(await f.controller.recordRejection(rejection,async()=>{})).toMatchObject({state:'correct-input',count:1});
+  });
+
   test.each(['openai', 'xai'])('stops exact rejected-input cycles for %s without replaying or spending transport attempts', async (provider) => {
     const f = await fixture({}, provider);
     await f.controller.plugin({ action: 'step', ...identity });
@@ -244,6 +421,28 @@ test.each(['tool', 'question', 'permission', 'retry'])('excludes verified %s pha
   else f.controller.observe({ type: `${phase}.asked`, properties: { sessionID: identity.sessionID, id: 'request' } });
   f.advance(600_000); await f.controller.reconcile();
   expect(f.aborted).toHaveLength(0);
+});
+
+test.each([
+  ['completed', identity.assistantMessageID, 'call_active', 0],
+  ['error', identity.assistantMessageID, 'call_active', 0],
+  ['completed', 'msg_other_step', 'call_active', 1],
+  ['error', 'msg_other_step', 'call_active', 1],
+  ['completed', identity.assistantMessageID, 'call_other', 1],
+  ['error', identity.assistantMessageID, 'call_other', 1],
+  ['running', identity.assistantMessageID, 'call_active', 1],
+])('terminal %s on %s/%s retains exactly %i live calls', async (status, messageID, callID, remaining) => {
+  const f = await fixture({ settlementMs: 1 });
+  await f.controller.plugin({ action: 'step', ...identity });
+  await f.controller.plugin({ action: 'tool_before', ...identity, callID: 'call_active', tool: 'read' });
+  f.controller.observe({ type: 'message.part.updated', properties: { part: { id: 'part_tool',
+    sessionID: identity.sessionID, messageID, type: 'tool', callID, tool: 'read',
+    state: { status, input: {}, output: '' } } } });
+  await f.fail();
+  expect(f.incidents.findLast(entry => entry.event === 'provider_recovery_candidate')?.executingTools).toBe(remaining);
+  // Clearing a terminal call merely removes liveness; normal canonical turn,
+  // outcome, settlement and recovery admission checks still run afterward.
+  expect(f.sent).toHaveLength(remaining ? 0 : 1);
 });
 
 test('progress resets the clock; repeated busy and accounting events do not', async () => {
@@ -1008,4 +1207,291 @@ describe('polling a record this runtime cannot act on', () => {
     await f.controller.observe({ type: 'session.status', properties: { sessionID: identity.sessionID, status: { type: 'idle' } } });
     expect((await f.snapshot()).record.state).toBe('completed');
   });
+});
+
+test('native frozen provider default survives automatic read-only recovery dispatch', async () => {
+  const f = await fixture();
+  await f.controller.admit({ sessionID: identity.sessionID, directory: '/project', primary: true, executionGeneration: 2,
+    body: { messageID: 'msg_default', agent: 'orchestrator', model: { providerID: 'openai', modelID: 'gpt-5.6-sol' }, variant: 'default' } });
+  f.state.messages[0].info.id = 'msg_default';
+  f.state.messages[1].info.parentID = 'msg_default';
+  await f.controller.plugin({ action: 'step', ...identity, userMessageID: 'msg_default',
+    execution: { providerID: 'openai', modelID: 'gpt-5.6-sol', agent: 'orchestrator', variant: 'default' } });
+  await f.fail();
+  expect(f.sent).toHaveLength(1);
+  expect(f.sent[0].variant).toBe('default');
+  expect(await f.controller.readRecord(identity.sessionID)).toMatchObject({ variant: 'default', executionGeneration: 2 });
+});
+
+
+describe('durable native TODO continuation dispatch', () => {
+  const scope = {sessionID:identity.sessionID,directory:'/project',messageID:'msg_todo',instanceID:identity.instanceID};
+  const input = {...identity,directory:'/project',anchorUserMessageID:'msg_user',userMessageID:scope.messageID,kind:'orchestrator_todo',
+    execution:{providerID:'openai',modelID:'gpt-5.6-sol',agent:'orchestrator',variant:'xhigh'}};
+  const prompt = {messageID:scope.messageID,agent:'orchestrator',model:{providerID:'openai',modelID:'gpt-5.6-sol'},variant:'xhigh',
+    tools:{},objectiveID:'msg_user',parts:[{type:'text',synthetic:true,text:'[devryan-open-todo-continuation:v1] Continue the open task.'}]};
+  const native = async overrides => {
+    const f=await fixture(overrides,'openai','orchestrator',2);
+    await f.controller.plugin({action:'hello',instanceID:identity.instanceID,policyVersion:1,version:'2.0.20',transport:'native-v2'});
+    f.state.messages[0].info.sessionID=identity.sessionID;
+    Object.assign(f.state.messages[1].info,{sessionID:identity.sessionID,error:undefined,agent:'orchestrator',providerID:'openai',modelID:'gpt-5.6-sol',variant:'xhigh'});
+    f.state.messages[1].turnOwnership={source:'native-sequence',userMessageID:'msg_user'};
+    await f.controller.plugin({action:'step',...identity});
+    const actual={...prompt,tools:(await f.controller.readRecord(identity.sessionID)).tools};
+    return {...f,prompt:actual,reserve:()=>f.controller.reserveNativeContinuation(input,actual)};
+  };
+  test('retains the same durable ID and budget through lost delivery ACK, then clears only on the actual step',async()=>{
+    const f=await native(); await f.reserve();
+    const first=await f.controller.captureNativeContinuationDispatch(scope);
+    await first.recheck();
+    expect(await f.controller.pendingNativeContinuations({directory:'/project'})).toEqual([{sessionID:identity.sessionID,directory:'/project',messageID:'msg_todo'}]);
+    await expect(f.reserve()).rejects.toMatchObject({code:'native_primary_continuation_invalid'});
+    expect((await f.controller.captureNativeContinuationDispatch(scope)).prompt).toEqual(first.prompt);
+    expect((await f.controller.readRecord(identity.sessionID)).todoContinuationCount).toBe(1);
+    f.state.messages.push({info:{id:'msg_todo',sessionID:identity.sessionID,role:'user'},parts:f.prompt.parts},
+      {info:{id:'msg_next',sessionID:identity.sessionID,role:'assistant',parentID:'msg_todo',time:{}},parts:[],
+        turnOwnership:{source:'native-sequence',userMessageID:'msg_todo'}});
+    await f.controller.plugin({action:'step',...identity,userMessageID:'msg_todo',assistantMessageID:'msg_next'});
+    expect((await f.controller.readRecord(identity.sessionID)).nativeContinuation).toBeUndefined();
+    await first.recheck();
+    expect(await f.controller.pendingNativeContinuations({directory:'/project'})).toEqual([]);
+  });
+  test('refuses forged scope, replaced selection, missing native ownership, and old controller closures',async()=>{
+    const f=await native(); await f.reserve();
+    await expect(f.controller.captureNativeContinuationDispatch({...scope,messageID:'msg_forged'})).rejects.toMatchObject({code:'native_primary_continuation_invalid'});
+    f.state.messages[1].turnOwnership.source='display';
+    await expect(f.controller.captureNativeContinuationDispatch(scope)).rejects.toMatchObject({code:'native_primary_continuation_fenced'});
+    f.state.messages[1].turnOwnership.source='native-sequence';
+    const captured=await f.controller.captureNativeContinuationDispatch(scope);
+    await f.controller.plugin({action:'hello',instanceID:'replacement',policyVersion:1,version:'2.0.20',transport:'native-v2'});
+    await expect(captured.recheck()).rejects.toMatchObject({code:'native_primary_continuation_fenced'});
+    await expect(f.controller.captureNativeContinuationDispatch({...scope,instanceID:'replacement'})).resolves.toMatchObject({prompt:f.prompt});
+    await f.controller.admit({sessionID:identity.sessionID,directory:'/project',primary:true,executionGeneration:2,
+      body:{messageID:'msg_new',agent:'orchestrator',model:{providerID:'openai',modelID:'different'},variant:'xhigh'}});
+    await expect(captured.recheck()).rejects.toMatchObject({code:'native_primary_continuation_fenced'});
+  });
+  test('recovers the persisted reservation through a new owner without minting another message',async()=>{
+    const f=await native();await f.reserve();const before=await f.controller.readRecord(identity.sessionID);
+    await f.controller.drain();
+    const replacement=createPrimaryRecoveryController({directory:f.directory,mode:'enforce',isManaged:()=>true,pollMs:1_000_000,
+      authorize:async()=>true,observeTurn:async()=>structuredClone(f.state),abortSession:async()=>{},promptSession:async()=>{throw Error('unowned replay');}});
+    await replacement.initialize();cleanups.push(()=>replacement.drain());
+    await replacement.plugin({action:'hello',instanceID:'replacement',policyVersion:1,version:'2.0.20',transport:'native-v2'});
+    const captured=await replacement.captureNativeContinuationDispatch({...scope,instanceID:'replacement'});
+    expect(captured.prompt).toEqual(before.nativeContinuation.prompt);
+    expect((await replacement.readRecord(identity.sessionID)).todoContinuationCount).toBe(1);
+    await captured.recheck();
+  });
+  test('does not accept a payload-native marker or a changed source at the durable reservation boundary',async()=>{
+    const f=await native();
+    await expect(f.controller.plugin({...input,action:'continuation',nativePrompt:f.prompt})).rejects.toMatchObject({code:'managed_continuation_fenced',fenceReason:'runtime_unsupported'});
+    f.state.messages[1].turnOwnership.source='display';
+    await expect(f.reserve()).rejects.toMatchObject({code:'managed_continuation_fenced',fenceReason:'native_source_changed'});
+    expect((await f.controller.readRecord(identity.sessionID)).nativeContinuation).toBeUndefined();
+    expect((await f.controller.readRecord(identity.sessionID)).todoContinuationCount??0).toBe(0);
+  });
+  test('rechecks original authorization after awaited canonical observation without spending a second reservation',async()=>{
+    let allowed=true, revokeOnRead=false;
+    const f=await native({authorize:async()=>allowed,observeTurn:async()=>{if(revokeOnRead)allowed=false;return structuredClone(f.state);}});
+    await f.reserve(); const captured=await f.controller.captureNativeContinuationDispatch(scope);
+    revokeOnRead=true;
+    await expect(captured.recheck()).rejects.toMatchObject({code:'native_primary_continuation_fenced'});
+    expect((await f.controller.readRecord(identity.sessionID)).nativeContinuation.messageID).toBe('msg_todo');
+    expect((await f.controller.readRecord(identity.sessionID)).todoContinuationCount).toBe(1);
+  });
+});
+
+describe('constructor-owned native fallback shares the primary recovery budget',()=>{
+ const execution={providerID:'openai',modelID:'gpt-5.6-sol',agent:'orchestrator',variant:'xhigh'};
+ const fallback={providerID:'saved',modelID:'fallback',agent:'orchestrator',variant:'high'};
+ const request={...identity,currentExecution:execution};
+ const eligible=error=>error?.statusCode===429;
+ const choice=async()=>({tried:['openai/gpt-5.6-sol'],exhaustion:0,execution:fallback});
+ const native=async overrides=>{const f=await fixture({isNativeFallbackError:eligible,getToolPolicy:async()=>({toolIDs:['read','glob','grep','shell'],allowedReadTools:['read','glob','grep']}),...overrides},'openai','orchestrator',2);
+  f.state.messages.at(-1).info.error={statusCode:429};await f.controller.plugin({action:'hello',policyVersion:1,instanceID:identity.instanceID,version:'2.0.20'});
+  await f.controller.plugin({action:'step',...identity,execution});return f;};
+ test('freezes original selection, settles failure, dispatches exact fallback once and accepts only its recovery step',async()=>{
+  const f=await native();const before=await f.controller.readRecord(identity.sessionID);
+  const reserved=await f.controller.reserveNativeFallback(request,{authorize:async()=>{},choose:choice});expect(reserved.reserved).toBe(true);expect(f.sent).toHaveLength(0);
+  await f.controller.observe({type:'session.error',properties:{sessionID:identity.sessionID}});
+  const record=await f.controller.readRecord(identity.sessionID);expect(record).toMatchObject({...execution,anchorID:before.anchorID,owner:before.owner,tools:before.tools,attemptCount:1,recoveryExecution:fallback});
+  expect(f.sent).toEqual([{messageID:'msg_recovery',model:{providerID:'saved',modelID:'fallback'},agent:'orchestrator',variant:'high',parts:[{type:'text',text:'Original request'}],tools:{read:true,glob:true,grep:true,shell:false,'*':false}}]);
+  await expect(f.controller.reserveNativeFallback(request,{authorize:async()=>{},choose:choice})).rejects.toMatchObject({code:'native_fallback_fenced'});
+  await f.controller.plugin({action:'step',...identity,userMessageID:'msg_recovery',assistantMessageID:'msg_fallback',execution:fallback});
+  await expect(f.controller.plugin({action:'step',...identity,userMessageID:'msg_recovery',assistantMessageID:'msg_fallback',execution})).rejects.toMatchObject({code:'recovery_execution_changed'});
+ });
+ test('polls during the owned pre-accept dispatch coalesce without classifying uncertainty before ACK',async()=>{
+  const entered=Promise.withResolvers(),gate=Promise.withResolvers();let queries=0;
+  const f=await native({promptSession:async()=>{entered.resolve();await gate.promise;},isNativeRecoveryDispatchPending:async()=>{queries++;return true;}});
+  await f.controller.reserveNativeFallback(request,{authorize:async()=>{},choose:choice});
+  const dispatch=f.controller.observe({type:'session.error',properties:{sessionID:identity.sessionID}});await entered.promise;
+  const poll=f.controller.observe({type:'session.status',properties:{sessionID:identity.sessionID,status:{type:'idle'}}});
+  expect((await f.controller.readRecord(identity.sessionID)).state).toBe('recovery_reserved');expect(queries).toBe(0);
+  gate.resolve();await Promise.all([dispatch,poll]);expect(queries).toBe(1);expect((await f.controller.readRecord(identity.sessionID)).state).toBe('recovering');
+ });
+ test('native dispatch ACK before canonical promotion defers uncertainty only for its current live proof',async()=>{
+  let valid=true;const calls=[];const f=await native({isNativeRecoveryDispatchPending:async(record,liveDispatch)=>{calls.push({liveDispatch:Boolean(liveDispatch),id:record.recoveryID});return Boolean(liveDispatch)&&valid;}});
+  await f.controller.reserveNativeFallback(request,{authorize:async()=>{},choose:choice});await f.controller.observe({type:'session.error',properties:{sessionID:identity.sessionID}});
+  await f.controller.observe({type:'session.status',properties:{sessionID:identity.sessionID,status:{type:'idle'}}});
+  expect(calls.at(-1)).toEqual({liveDispatch:true,id:'msg_recovery'});expect((await f.controller.readRecord(identity.sessionID)).state).toBe('recovering');expect(f.sent).toHaveLength(1);
+  valid=false;await f.controller.observe({type:'session.status',properties:{sessionID:identity.sessionID,status:{type:'idle'}}});
+  expect(await f.controller.readRecord(identity.sessionID)).toMatchObject({state:'needs_attention',reason:'recovery_dispatch_uncertain'});expect(f.sent).toHaveLength(1);
+ });
+ test('a replaced hello clears live dispatch status proof and Stop cannot be reopened by a pending observation',async()=>{
+  const f=await native({isNativeRecoveryDispatchPending:async(_record,liveDispatch)=>Boolean(liveDispatch)});
+  await f.controller.reserveNativeFallback(request,{authorize:async()=>{},choose:choice});await f.controller.observe({type:'session.error',properties:{sessionID:identity.sessionID}});
+  await f.controller.plugin({action:'hello',policyVersion:1,instanceID:'replacement',version:'2.0.20'});
+  await f.controller.observe({type:'session.status',properties:{sessionID:identity.sessionID,status:{type:'idle'}}});
+  expect(await f.controller.readRecord(identity.sessionID)).toMatchObject({state:'needs_attention',reason:'recovery_dispatch_uncertain'});
+  await f.controller.control(identity.sessionID,'stop');await f.controller.observe({type:'session.status',properties:{sessionID:identity.sessionID,status:{type:'idle'}}});
+  expect((await f.controller.readRecord(identity.sessionID)).state).toBe('cancelled');expect(f.sent).toHaveLength(1);
+ });
+ test('waits for true failed-step settlement and Stop fences outstanding selector before persistence',async()=>{
+  let enter,release;const started=new Promise(resolve=>enter=resolve),gate=new Promise(resolve=>release=resolve);
+  const f=await native();f.state.status='busy';delete f.state.messages.at(-1).info.time.completed;
+  const pending=f.controller.reserveNativeFallback(request,{authorize:async()=>{},choose:async()=>{enter();await gate;return choice();}});await started;
+  const stopped=f.controller.control(identity.sessionID,'stop');release();await expect(pending).rejects.toMatchObject({code:'native_fallback_fenced'});await stopped;
+  expect(await f.controller.readRecord(identity.sessionID)).toMatchObject({state:'cancelled',attemptCount:0});expect(f.sent).toHaveLength(0);
+ });
+ test('refuses changed current step, rejected grant, exhausted chain and unclassified canonical failure',async()=>{
+  const f=await native();await expect(f.controller.reserveNativeFallback({...request,assistantMessageID:'msg_foreign'},{authorize:async()=>{},choose:choice})).rejects.toMatchObject({code:'native_fallback_fenced'});
+  await expect(f.controller.reserveNativeFallback(request,{authorize:async()=>{throw new Error('revoked');},choose:choice})).rejects.toThrow('revoked');expect((await f.controller.readRecord(identity.sessionID)).nativeFallback).toBeUndefined();
+  const exhausted=await f.controller.reserveNativeFallback(request,{authorize:async()=>{},choose:async()=>({tried:['saved/fallback'],exhaustion:2})});expect(exhausted).toMatchObject({reserved:false,record:{state:'needs_attention',reason:'native_fallback_exhausted',attemptCount:0}});expect(f.sent).toHaveLength(0);
+  const other=await native();await other.controller.reserveNativeFallback(request,{authorize:async()=>{},choose:choice});other.state.messages.at(-1).info.error={message:'invalid request shape'};await other.controller.observe({type:'session.error',properties:{sessionID:identity.sessionID}});expect(other.sent).toHaveLength(0);
+ });
+ test('canonical step replacement before reconciliation cannot consume a reserved choice',async()=>{
+  const f=await native();await f.controller.reserveNativeFallback(request,{authorize:async()=>{},choose:choice});f.state.messages.push({info:{id:'msg_newstep',role:'assistant',parentID:'msg_user',error:{statusCode:429},time:{completed:10001}},parts:[]});await f.controller.observe({type:'session.error',properties:{sessionID:identity.sessionID}});expect(f.sent).toHaveLength(0);expect((await f.controller.readRecord(identity.sessionID)).attemptCount).toBe(0);
+ });
+});
+
+describe('startup recovered input owner CAS',()=>{
+ test('dedicated same-ID adoption retains original tools and fails stale owner/revision without dispatch',async()=>{
+  const f=await fixture({mode:'observe'},'openai','orchestrator',2),r=await f.controller.readRecord(identity.sessionID);
+  const input={sessionID:identity.sessionID,messageID:r.anchorID,payloadHash:'a'.repeat(64),recordRevision:r.revision,cancellationGeneration:r.cancellationGeneration,
+    previousOwner:r.owner,owner:'fresh-principal',instanceID:identity.instanceID,enqueuedSeq:1,delivery:'queue'};
+  await expect(f.controller.adoptRecoveredInput({...input,recordRevision:r.revision-1},async()=>{})).rejects.toMatchObject({code:'recovery_revision_conflict'});
+  await expect(f.controller.adoptRecoveredInput({...input,previousOwner:'foreign'},async()=>{})).rejects.toMatchObject({code:'recovery_revision_conflict'});
+  const adopted=await f.controller.adoptRecoveredInput(input,async()=>{});expect(adopted).toMatchObject({anchorID:r.anchorID,owner:'fresh-principal',tools:r.tools,attemptCount:0,recoveredInput:{inputID:r.anchorID,payloadHash:input.payloadHash,phase:'adopted'}});expect(f.sent).toHaveLength(0);
+ });
+ test('fallback discard evidence survives a later ordinary admission retaining guarded references',async()=>{
+  const f=await fixture({},'openai','orchestrator',2);await f.fail();const r=await f.controller.readRecord(identity.sessionID);expect(r.recoveryID).toBe('msg_recovery');
+  const scope={sessionID:identity.sessionID,messageID:r.recoveryID,payloadHash:'a'.repeat(64),enqueuedSeq:10,type:'user',delivery:'queue',recordRevision:r.revision,cancellationGeneration:r.cancellationGeneration,previousOwner:r.owner};
+  const requested=await f.controller.requestRecoveredInputDiscard(scope,async()=>{});expect(requested.recoveredInputDispositions[0].phase).toBe('requested');
+  const retry=await f.controller.requestRecoveredInputDiscard({...scope,recordRevision:requested.revision},async()=>{});expect(retry.revision).toBe(requested.revision);
+  await f.controller.settleRecoveredInputDiscard({...scope,eventID:'evt_exactCancel',eventSeq:11},async()=>{});
+  await f.controller.admit({sessionID:identity.sessionID,directory:'/project',primary:true,executionGeneration:2,body:{messageID:'msg_newPrimary',agent:r.agent,model:{providerID:r.providerID,modelID:r.modelID},variant:r.variant}});
+  const next=await f.controller.readRecord(identity.sessionID);expect(next.anchorID).toBe('msg_newPrimary');expect(next.guardedIDs).toContain(r.recoveryID);expect(next.recoveredInputDispositions).toEqual([{inputID:r.recoveryID,payloadHash:scope.payloadHash,enqueuedSeq:10,type:'user',delivery:'queue',phase:'cancelled',eventID:'evt_exactCancel',eventSeq:11}]);
+ });
+});
+
+describe('native fallback before lazy canonical Step.Started',()=>{
+ const execution={providerID:'openai',modelID:'gpt-5.6-sol',agent:'orchestrator',variant:'xhigh'};
+ const attempt={traceID:'a'.repeat(32),spanID:'b'.repeat(16)},permitSha256='c'.repeat(64);
+ const fallback={providerID:'saved',modelID:'backup',agent:'orchestrator',variant:'default'};
+ const choice=async()=>({tried:['openai/gpt-5.6-sol'],exhaustion:0,execution:fallback});
+ const setup=async(overrides={})=>{const f=await fixture({mode:'observe',isNativeFallbackError:error=>error?.statusCode===429,...overrides},'openai','orchestrator',2);
+  f.state.messages.splice(1);f.state.status='busy';await f.controller.plugin({action:'hello',policyVersion:1,instanceID:identity.instanceID,version:'2.0.20'});return f;};
+ const request=previousStepID=>({...identity,assistantMessageID:null,previousStepID,currentExecution:execution,attempt,permitSha256});
+ const assistant=id=>({info:{id,sessionID:identity.sessionID,role:'assistant',parentID:identity.userMessageID,...execution,time:{}},parts:[],turnOwnership:{source:'native-sequence',userMessageID:identity.userMessageID}});
+ const start=async(f,id='msg_lazy',overrides={})=>{f.state.messages.push(assistant(id));return f.controller.plugin({action:'step',...identity,assistantMessageID:id,execution,nativeAttempt:attempt,nativePermitSha256:permitSha256,...overrides});};
+ const reserve=(f,previous=null,choose=choice)=>f.controller.reserveNativeFallback(request(previous),{authorize:async()=>{},choose});
+ test('first lazy failure reserves without dispatch, binds real Step, and waits for real failure settlement',async()=>{
+  const f=await setup();const reserved=await reserve(f);expect(reserved.record).toMatchObject({state:'observing',stepID:null,instanceID:null,attemptCount:0,nativeFallback:{stepID:null,pending:{instanceID:identity.instanceID,previousStepID:null,attempt,permitSha256,currentExecution:execution}}});
+  await f.controller.observe({type:'session.error',properties:{sessionID:identity.sessionID}});expect(f.sent).toHaveLength(0);
+  await start(f);let r=await f.controller.readRecord(identity.sessionID);expect(r).toMatchObject({state:'observing',stepID:'msg_lazy',nativeFallback:{stepID:'msg_lazy'},nativeStepWitness:{attempt,permitSha256}});expect(r.nativeFallback.pending).toBeUndefined();expect(f.sent).toHaveLength(0);
+  f.state.messages.at(-1).info.error={statusCode:429};f.state.messages.at(-1).info.time.completed=10001;f.state.status='idle';
+  await f.controller.observe({type:'session.error',properties:{sessionID:identity.sessionID}});r=await f.controller.readRecord(identity.sessionID);expect(r).toMatchObject({attemptCount:1,failedID:'msg_lazy',recoveryExecution:fallback});expect(f.sent).toHaveLength(1);
+ });
+ test('later lazy attempt never binds a previously completed assistant',async()=>{
+  const f=await setup();await start(f,'msg_previous');f.state.messages.at(-1).info.time.completed=10001;
+  await reserve(f,'msg_previous');expect((await f.controller.readRecord(identity.sessionID)).nativeFallback.stepID).toBeNull();
+  await expect(f.controller.plugin({action:'step',...identity,assistantMessageID:'msg_previous',execution,nativeAttempt:attempt,nativePermitSha256:permitSha256})).rejects.toMatchObject({code:'native_fallback_fenced'});
+ });
+ test('later lazy attempt binds only its successor and defers unavailable attention until settled failure',async()=>{
+  const f=await setup();await start(f,'msg_previous');f.state.messages.at(-1).info.time.completed=10001;
+  await reserve(f,'msg_previous',async()=>({tried:['openai/gpt-5.6-sol'],exhaustion:2}));await start(f,'msg_successor');
+  expect(await f.controller.readRecord(identity.sessionID)).toMatchObject({state:'observing',stepID:'msg_successor',attemptCount:0});
+  f.state.messages.at(-1).info.error={statusCode:429};await f.controller.observe({type:'session.error',properties:{sessionID:identity.sessionID}});expect((await f.controller.readRecord(identity.sessionID)).state).toBe('observing');
+  f.state.messages.at(-1).info.time.completed=10002;f.state.status='idle';await f.controller.observe({type:'session.error',properties:{sessionID:identity.sessionID}});
+  expect(await f.controller.readRecord(identity.sessionID)).toMatchObject({state:'needs_attention',reason:'native_fallback_exhausted',attemptCount:0});expect(f.sent).toHaveLength(0);
+ });
+ test('pending choice refuses missing or changed attempt/permit, foreign source and changed tuple',async()=>{
+  for(const change of [{nativeAttempt:undefined},{nativeAttempt:{...attempt,spanID:'d'.repeat(16)}},{nativePermitSha256:'d'.repeat(64)},{execution:{...execution,modelID:'foreign'}}]){
+   const f=await setup();await reserve(f);await expect(start(f,'msg_lazy',change)).rejects.toMatchObject({code:'native_fallback_fenced'});expect((await f.controller.readRecord(identity.sessionID)).nativeFallback.stepID).toBeNull();expect(f.sent).toHaveLength(0);
+  }
+  const f=await setup();await expect(f.controller.reserveNativeFallback({...request(null),attempt:null},{authorize:async()=>{},choose:choice})).rejects.toMatchObject({code:'native_fallback_fenced'});
+ });
+ test('unfinished previous Step cannot be classified lazy and witnessed streamed choice rejects another attempt',async()=>{
+  const f=await setup();await start(f,'msg_streamed');await expect(reserve(f,'msg_streamed')).rejects.toMatchObject({code:'native_fallback_fenced'});
+  const bound={...request(null),assistantMessageID:'msg_streamed'};await expect(f.controller.reserveNativeFallback({...bound,permitSha256:'d'.repeat(64)},{authorize:async()=>{},choose:choice})).rejects.toMatchObject({code:'native_fallback_fenced'});
+  expect((await f.controller.reserveNativeFallback(bound,{authorize:async()=>{},choose:choice})).reserved).toBe(true);expect(f.sent).toHaveLength(0);
+ });
+ test('later binding rechecks predecessor canonical ownership and execution',async()=>{
+  for(const change of [previous=>{previous.info.modelID='foreign';},previous=>{previous.turnOwnership.source='foreign';},previous=>{previous.info.parentID='msg_foreign';}]){
+   const f=await setup();await start(f,'msg_previous');f.state.messages.at(-1).info.time.completed=10001;await reserve(f,'msg_previous');change(f.state.messages.at(-1));
+   await expect(start(f,'msg_successor')).rejects.toMatchObject({code:'native_fallback_fenced'});expect((await f.controller.readRecord(identity.sessionID)).nativeFallback.stepID).toBeNull();expect(f.sent).toHaveLength(0);
+  }
+ });
+ test('unknown original provider defers unavailable attention until its genuine canonical failure',async()=>{
+  const original={...execution,providerID:'devryan-smoke'};
+  const f=await fixture({mode:'observe',isNativeFallbackError:error=>error?.statusCode===429},original.providerID,'orchestrator',2);f.state.messages.splice(1);f.state.status='busy';
+  await f.controller.plugin({action:'hello',policyVersion:1,instanceID:identity.instanceID,version:'2.0.20'});
+  await f.controller.reserveNativeFallback({...request(null),currentExecution:original},{authorize:async()=>{},choose:async()=>({tried:['devryan-smoke/gpt-5.6-sol'],exhaustion:0})});
+  f.state.messages.push({...assistant('msg_lazy'),info:{...assistant('msg_lazy').info,...original}});
+  await f.controller.plugin({action:'step',...identity,assistantMessageID:'msg_lazy',execution:original,nativeAttempt:attempt,nativePermitSha256:permitSha256});
+  expect((await f.controller.readRecord(identity.sessionID)).state).toBe('observing');f.state.messages.at(-1).info.error={statusCode:429};f.state.messages.at(-1).info.time.completed=10001;f.state.status='idle';
+  await f.controller.observe({type:'session.error',properties:{sessionID:identity.sessionID}});expect(await f.controller.readRecord(identity.sessionID)).toMatchObject({state:'needs_attention',reason:'native_fallback_unavailable',attemptCount:0});expect(f.sent).toHaveLength(0);
+ });
+ test('Stop during binding observation or final write authorization cannot persist the stale choice',async()=>{
+  for(const phase of ['observation','write']){
+   let f,paused=false,authCalls=0,enter,release;const entered=new Promise(resolve=>enter=resolve),gate=new Promise(resolve=>release=resolve);
+   f=await fixture({mode:'observe',isNativeFallbackError:error=>error?.statusCode===429,
+    observeTurn:async()=>{if(paused&&phase==='observation'){enter();await gate;}return structuredClone(f.state);},
+    authorize:async()=>{if(paused&&phase==='write'&&++authCalls===3){enter();await gate;}return true;}},'openai','orchestrator',2);
+   f.state.messages.splice(1);f.state.status='busy';await f.controller.plugin({action:'hello',policyVersion:1,instanceID:identity.instanceID,version:'2.0.20'});await reserve(f);
+   paused=true;const starting=start(f);await entered;const stopping=f.controller.control(identity.sessionID,'stop');release();await expect(starting).rejects.toMatchObject({code:'native_fallback_fenced'});await stopping;
+   expect(await f.controller.readRecord(identity.sessionID)).toMatchObject({state:'cancelled',stepID:null,nativeFallback:{stepID:null},attemptCount:0});expect(f.sent).toHaveLength(0);
+  }
+ });
+ test('durable pending schema rejects missing witnesses, invalid predecessor and changed original selection',async()=>{
+  const f=await setup();const {record}=await reserve(f);expect(()=>validatePrimaryRecoveryRecord(record)).not.toThrow();
+  for(const mutate of [r=>{delete r.nativeFallback.pending;},r=>{r.nativeFallback.pending.permitSha256=5;},r=>{delete r.nativeFallback.pending.attempt.spanID;},r=>{r.nativeFallback.pending.previousStepID='foreign';},r=>{r.nativeFallback.pending.currentExecution.modelID='foreign';}]){
+   const changed=structuredClone(record);mutate(changed);expect(()=>validatePrimaryRecoveryRecord(changed)).toThrow();
+  }
+ });
+ test('same-instance version change during final authorization cannot bind the pending choice',async()=>{
+  let paused=false,calls=0,enter,release;const entered=new Promise(resolve=>enter=resolve),gate=new Promise(resolve=>release=resolve);
+  const f=await setup({authorize:async()=>{if(paused&&++calls===3){enter();await gate;}return true;}});await reserve(f);paused=true;const starting=start(f);await entered;
+  await f.controller.plugin({action:'hello',policyVersion:1,instanceID:identity.instanceID,version:'1.18.25'});release();
+  await expect(starting).rejects.toMatchObject({code:'native_fallback_fenced'});expect(await f.controller.readRecord(identity.sessionID)).toMatchObject({state:'observing',stepID:null,nativeFallback:{stepID:null},attemptCount:0});expect(f.sent).toHaveLength(0);
+ });
+ test('only fresh explicit original-input adoption retires an old pending choice; compaction cannot inherit it',async()=>{
+  const compacting=await setup();await reserve(compacting);compacting.state.messages.push({info:{id:'msg_compaction',role:'user'},parts:[{type:'compaction',auto:true}]},{info:{id:'msg_native',role:'user'},parts:[{type:'text',synthetic:true,metadata:{compaction_continue:true},text:'Continue.'}]});
+  await expect(compacting.controller.plugin({action:'message',...identity,userMessageID:'msg_native'})).rejects.toMatchObject({code:'provider_recovery_fenced'});expect((await compacting.controller.readRecord(identity.sessionID)).activeUserID).toBeUndefined();
+  const f=await setup();await reserve(f);await expect(f.controller.adoptOwnedNativeContinuation({...identity,userMessageID:'msg_compaction',assistantMessageID:'msg_summary',execution})).rejects.toMatchObject({code:'native_continuation_fenced'});
+  await f.controller.plugin({action:'hello',policyVersion:1,instanceID:'replacement',version:'2.0.20'});await f.controller.observe({type:'session.error',properties:{sessionID:identity.sessionID}});
+  const r=await f.controller.readRecord(identity.sessionID);expect(r).toMatchObject({state:'needs_attention',reason:'native_fallback_dispatch_uncertain',attemptCount:0});expect(r.nativeFallback.pending).toBeDefined();expect(f.sent).toHaveLength(0);
+  await f.controller.adoptRecoveredInput({sessionID:identity.sessionID,messageID:r.anchorID,payloadHash:'a'.repeat(64),enqueuedSeq:1,delivery:'queue',recordRevision:r.revision,cancellationGeneration:r.cancellationGeneration,previousOwner:r.owner,owner:'fresh-owner',instanceID:'replacement'},async()=>{});
+  const adopted=await f.controller.readRecord(identity.sessionID);expect(adopted).toMatchObject({state:'observing',stepID:null,attemptCount:0,tools:r.tools,owner:'fresh-owner'});expect(adopted.nativeFallback).toBeUndefined();
+  await start(f,'msg_afteradoption',{instanceID:'replacement',nativeAttempt:{traceID:'d'.repeat(32),spanID:'e'.repeat(16)},nativePermitSha256:'f'.repeat(64)});expect((await f.controller.readRecord(identity.sessionID)).stepID).toBe('msg_afteradoption');expect(f.sent).toHaveLength(0);
+ });
+ test('late old native hello cannot overwrite the fresh replacement handshake',async()=>{
+  const f=await setup();let currentInstance=identity.instanceID,enter,release;const entered=new Promise(resolve=>enter=resolve),gate=new Promise(resolve=>release=resolve);
+  const old=f.controller.plugin({action:'hello',policyVersion:1,instanceID:identity.instanceID,version:'2.0.20'},undefined,undefined,{authorize:async()=>{enter();await gate;},isCurrent:()=>currentInstance===identity.instanceID});
+  await entered;currentInstance='replacement';await f.controller.plugin({action:'hello',policyVersion:1,instanceID:currentInstance,version:'2.0.20'},undefined,undefined,{authorize:async()=>{},isCurrent:()=>currentInstance==='replacement'});release();
+  await expect(old).rejects.toMatchObject({code:'recovery_owner_mismatch'});
+  await expect(f.controller.reserveNativeFallback({...request(null),instanceID:currentInstance},{authorize:async()=>{},choose:choice})).resolves.toMatchObject({reserved:true,record:{nativeFallback:{pending:{instanceID:currentInstance}}}});
+  await start(f,'msg_fresh',{instanceID:currentInstance});expect(await f.controller.readRecord(identity.sessionID)).toMatchObject({stepID:'msg_fresh',instanceID:currentInstance,nativeFallback:{stepID:'msg_fresh'}});expect(f.sent).toHaveLength(0);
+ });
+ test('Stop, replacement, and new primary admission cannot inherit pending choice',async()=>{
+  const stopped=await setup();await reserve(stopped);await stopped.controller.control(identity.sessionID,'stop');await expect(start(stopped)).rejects.toMatchObject({code:'provider_recovery_fenced'});
+  const replaced=await setup();await reserve(replaced);await replaced.controller.plugin({action:'hello',policyVersion:1,instanceID:'replacement',version:'2.0.20'});
+  // Hello starts its sweep asynchronously. Await the same reconciler before
+  // testing the attention-state fence rather than its earlier pending fence.
+  await replaced.controller.observe({type:'session.error',properties:{sessionID:identity.sessionID}});
+  expect(await replaced.controller.readRecord(identity.sessionID)).toMatchObject({state:'needs_attention',reason:'native_fallback_dispatch_uncertain',attemptCount:0});
+  await expect(start(replaced,'msg_lazy',{instanceID:'replacement'})).rejects.toMatchObject({code:'provider_recovery_fenced'});
+  expect(replaced.sent).toHaveLength(0);
+  const newer=await setup();await reserve(newer);await newer.controller.admit({sessionID:identity.sessionID,directory:'/project',primary:true,executionGeneration:2,body:{messageID:'msg_newuser',agent:execution.agent,model:{providerID:execution.providerID,modelID:execution.modelID},variant:execution.variant}});expect((await newer.controller.readRecord(identity.sessionID)).nativeFallback).toBeUndefined();expect(newer.sent).toHaveLength(0);
+ });
 });

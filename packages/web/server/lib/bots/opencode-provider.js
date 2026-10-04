@@ -1,6 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises';
-import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 import { classifyProviderTransportFailure } from '@openchamber/orchestration-runtime';
+import { createBotNativeClient } from './native-client.js';
+import { readResponseBody } from '../opencode/opencode-client/envelope.js';
 
 import { BOT_GATEWAY_OPERATIONS } from './gateway-host.js';
 import { createBotFailureRecorder } from './failure-diagnostics.js';
@@ -30,21 +31,7 @@ const TRANSIENT_OAUTH_READINESS_FAILURES = new Set([
   'provider_queue_timeout',
 ]);
 
-const defaultSubscribeToEvents = async ({ client, signal, onEvent }) => {
-  if (typeof client?.event?.subscribe !== 'function') return;
-  const result = await client.event.subscribe(
-    { directory: WORKSPACE_DIRECTORY },
-    {
-      signal,
-      sseMaxRetryAttempts: 0,
-      onSseEvent: (event) => onEvent(event?.data),
-    },
-  );
-  for await (const _ of result.stream) {
-    void _;
-    if (signal.aborted) break;
-  }
-};
+const defaultSubscribeToEvents = ({ client, signal, onEvent }) => client.subscribeEvents({ signal, onEvent });
 
 export class BotOpenCodeProviderError extends Error {
   constructor(message, code = 'bot_opencode_unavailable', statusCode = 503, diagnostics = null) {
@@ -177,17 +164,19 @@ const unwrap = (result, operation, {
   return result?.data;
 };
 
-const defaultWaitForReady = async ({ endpoint, fetchImpl, timeoutMs = DEFAULT_READY_TIMEOUT_MS, signal }) => {
+const defaultWaitForReady = async ({ endpoint, token, fetchImpl, timeoutMs = DEFAULT_READY_TIMEOUT_MS, signal }) => {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     signal?.throwIfAborted();
     try {
-      const response = await fetchImpl(`${endpoint}/global/health`, {
-        headers: { accept: 'application/json' },
+      const requestSignal = botRequestSignal(signal, null, 1_000);
+      const response = await fetchImpl(`${endpoint}/devryan/bot/ready`, {
+        headers: { accept: 'application/json', authorization: `Bearer ${token}` },
         redirect: 'error',
-        signal: botRequestSignal(signal, null, 1_000),
+        signal: requestSignal,
       });
-      if (response.ok) return;
+      const { value } = await readResponseBody(response, { maxResponseBytes: 16 * 1024, signal: requestSignal });
+      if (response.ok && value?.ready === true && value.generation === 2 && value.version === '2.0.20') return;
     } catch {
     }
     await delay(200, undefined, { signal });
@@ -300,19 +289,6 @@ const recordText = (record) => (Array.isArray(record?.parts) ? record.parts : []
   .map((part) => part.text)
   .join('');
 
-const structuredOutputText = (record) => {
-  const structured = record?.info?.structured;
-  if (structured !== undefined && structured !== null) {
-    if (typeof structured === 'string') return structured;
-    try {
-      return JSON.stringify(structured);
-    } catch {
-      // Fall through to the text parts when the value is not serializable.
-    }
-  }
-  return recordText(record);
-};
-
 const SUCCESSFUL_TOOL_STATUSES = new Set(['completed', 'complete', 'done']);
 
 const generatedImageDescriptor = (part, index) => {
@@ -395,7 +371,7 @@ export function createBotOpenCodeProvider({
   gatewayHost,
   artifactService,
   environmentSecrets,
-  createClient = createOpencodeClient,
+  createClient = createBotNativeClient,
   fetchImpl = fetch,
   waitForReady = defaultWaitForReady,
   readyTimeoutMs = DEFAULT_READY_TIMEOUT_MS,
@@ -483,6 +459,7 @@ export function createBotOpenCodeProvider({
   const stopActive = async (active) => {
     active.eventController?.abort();
     active.requestController?.abort();
+    active.client.close?.();
     const ownsScope = activeRunByScope.get(active.scopeKey) === active.runId;
     try {
       if (ownsScope) {
@@ -547,57 +524,22 @@ export function createBotOpenCodeProvider({
       'Bot structured-output system prompt',
       { maximum: 16 * 1024 },
     );
-    const cleanupSession = async (sessionId) => {
-      if (typeof active.client.session?.delete !== 'function') return;
-      const cleanupSignal = AbortSignal.timeout(5_000);
-      await withBotAbort(active.client.session.delete({
-        sessionID: sessionId, directory: WORKSPACE_DIRECTORY,
-      }, { signal: cleanupSignal }), cleanupSignal).catch(() => undefined);
-    };
-    const creation = active.client.session.create({
-      directory: WORKSPACE_DIRECTORY,
-      title,
-    }, { signal });
-    let sessionId = null;
-    try {
-      const created = unwrap(await withBotAbort(creation, signal), 'Bot structured-output session creation', { logger });
-      sessionId = normalizeSessionId(created?.id);
-      await modelCredentialBroker.assertRuntimeReady?.(active.runId);
-      if (typeof active.client.session?.prompt !== 'function') {
-        fail('Bot structured output is unavailable', 'bot_opencode_structured_unavailable', 502);
-      }
-      const response = unwrap(await withBotAbort(active.client.session.prompt({
-        sessionID: sessionId,
-        directory: WORKSPACE_DIRECTORY,
-        agent: 'bot',
-        model: {
-          providerID: active.model.providerId,
-          modelID: active.model.modelId,
-        },
-        ...(active.model.variant ? { variant: active.model.variant } : {}),
-        tools: { '*': false },
-        format: { type: 'json_schema', schema, retryCount: 2 },
-        system,
-        parts: [{ type: 'text', text: prompt }],
-      }, { signal }), signal), 'Bot structured output', { logger });
-      // The agent validates the JSON it returns under `structured`; the text
-      // parts may carry prose around it. Prefer the validated value.
-      const output = structuredOutputText(response);
-      if (!output || Buffer.byteLength(output, 'utf8') > 128 * 1024) {
-        fail('Bot structured output returned invalid output', 'bot_opencode_response_invalid', 502, {
-          validator: output ? 'structured_output_size' : 'structured_output_empty',
-        });
-      }
-      return output;
-    } finally {
-      if (sessionId) await cleanupSession(sessionId);
-      else if (signal.aborted) {
-        // A client that ignores cancellation can still create a session later.
-        void Promise.resolve(creation).then((result) => cleanupSession(normalizeSessionId(
-          unwrap(result, 'Bot structured-output session creation', { logger })?.id,
-        ))).catch(() => undefined);
-      }
+    await modelCredentialBroker.assertRuntimeReady?.(active.runId);
+    if (typeof active.client.structured !== 'function') {
+      fail('Bot structured output is unavailable', 'bot_opencode_structured_unavailable', 502);
     }
+    const value = unwrap(await withBotAbort(active.client.structured({
+      model: { providerID: active.model.providerId, id: active.model.modelId,
+        ...(active.model.variant ? { variant: active.model.variant } : {}) },
+      prompt, schema, title, system,
+    }, { signal }), signal), 'Bot structured output', { logger });
+    const output = JSON.stringify(value);
+    if (!output || Buffer.byteLength(output, 'utf8') > 128 * 1024) {
+      fail('Bot structured output returned invalid output', 'bot_opencode_response_invalid', 502, {
+        validator: output ? 'structured_output_size' : 'structured_output_empty',
+      });
+    }
+    return output;
   };
 
   return Object.freeze({
@@ -747,6 +689,7 @@ export function createBotOpenCodeProvider({
           runtimeStage = 'readiness';
           await waitForReady({
             endpoint: ensured.endpoint.baseUrl,
+            token: capability.token,
             fetchImpl,
             timeoutMs: readyTimeoutMs,
             signal: normalized.signal,
@@ -760,7 +703,7 @@ export function createBotOpenCodeProvider({
           mode: normalized.mode,
         });
         normalized.signal?.throwIfAborted();
-        client = createClient({ baseUrl: ensured.endpoint.baseUrl });
+        client = createClient({ baseUrl: ensured.endpoint.baseUrl, token: capability.token, runId, fetchImpl, recordDiagnostic });
         if (prepared.coordinatedOAuth) {
           // Health is available before plugins initialize. Provider discovery
           // loads the transport without submitting a message or running a tool.
@@ -824,6 +767,7 @@ export function createBotOpenCodeProvider({
           });
         }
       } catch (error) {
+        client?.close?.();
         recordFailure({
           event: 'bot.provider.failed', run: normalized.run,
           stage: runtimeStage, error,

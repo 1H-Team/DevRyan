@@ -273,4 +273,99 @@ describe('createUpstreamSseReader', () => {
     // The top-level stop listener remains; the reconnect-delay listener should be removed.
     expect(tracked.getListenerCount()).toBe(1);
   });
+
+  it('neither sends nor records Last-Event-ID when resumption is off (gen 2)', async () => {
+    const fetchLastEventIds = [];
+    const events = [];
+    let attempt = 0;
+    let resume = true;
+    let reader;
+
+    reader = createUpstreamSseReader({
+      buildUrl: () => 'http://127.0.0.1:4096/api/event',
+      reconnectDelayMs: 0,
+      resumeWithLastEventId: () => resume,
+      fetchImpl: async (_url, options) => {
+        fetchLastEventIds.push(options.headers['Last-Event-ID'] ?? null);
+        attempt += 1;
+        if (attempt === 1) {
+          return createSseResponse({ signal: options.signal, blocks: ['id: evt-1\ndata: {"type":"server.connected","properties":{}}\n\n'] });
+        }
+        return createSseResponse({ signal: options.signal, blocks: ['id: evt-3\ndata: {"type":"session.updated","properties":{}}\n\n'] });
+      },
+      onEvent(event) {
+        events.push(event.eventId);
+        // The next connection resolves resumption off (a gen-2 connection).
+        resume = false;
+        if (event.eventId === 'evt-3') reader.stop();
+      },
+    });
+
+    await reader.start();
+
+    expect(events).toEqual(['evt-1', 'evt-3']);
+    expect(fetchLastEventIds).toEqual([null, null]);
+    expect(reader.getLastEventId()).toBe('');
+  });
+
+  it('reports keepalive blocks without emitting events and keeps a commented stream alive', async () => {
+    const events = [];
+    let keepalives = 0;
+    let attempts = 0;
+    const encoder = new TextEncoder();
+    let reader;
+
+    reader = createUpstreamSseReader({
+      buildUrl: () => 'http://127.0.0.1:4096/api/event',
+      stallTimeoutMs: () => 40,
+      reconnectDelayMs: 0,
+      parseBlock: (block) => (block.startsWith(':') ? { keepalive: true } : { eventId: null, directory: null, payload: { block } }),
+      fetchImpl: async (_url, options) => {
+        attempts += 1;
+        let reads = 0;
+        return {
+          ok: true,
+          status: 200,
+          body: {
+            getReader() {
+              return {
+                async read() {
+                  reads += 1;
+                  // Comments every 15 ms for 150 ms: longer than the 40 ms stall window.
+                  if (reads <= 10) {
+                    await new Promise((resolve) => setTimeout(resolve, 15));
+                    return { value: encoder.encode(': heartbeat\n\n'), done: false };
+                  }
+                  if (reads === 11) return { value: encoder.encode('data: {}\n\n'), done: false };
+                  return new Promise((_resolve, reject) => {
+                    options.signal.addEventListener('abort', () => {
+                      const error = new Error('Aborted');
+                      error.name = 'AbortError';
+                      reject(error);
+                    }, { once: true });
+                  });
+                },
+              };
+            },
+          },
+        };
+      },
+      onKeepalive() {
+        keepalives += 1;
+      },
+      onEvent(event) {
+        events.push(event.payload);
+      },
+      onDisconnect({ reason }) {
+        if (reason === 'upstream_stalled') reader.stop();
+      },
+    });
+
+    await reader.start();
+
+    expect(keepalives).toBe(10);
+    expect(events).toEqual([{ block: 'data: {}' }]);
+    // One connection survived the comments; it stalled only after they stopped.
+    expect(attempts).toBe(1);
+  });
 });

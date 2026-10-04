@@ -32,10 +32,21 @@ test('signed sessions bind to their issued port and legacy cookies cannot authen
         const login=response();await auth.handleSessionCreate(req,login);
         const cookie=login.headers['Set-Cookie'].split(';')[0];
         assert(cookie.startsWith('oc_ui_session_3001='));
+        const authenticated={...req,headers:{...req.headers,cookie}};
+        const check=await auth.captureAuthorization(authenticated);assert.equal(check(),true);
+        const now=Date.now;Date.now=()=>now()+8*24*60*60*1000;
+        try {assert.equal(check(),false);} finally {Date.now=now;}
         for (const [port,value,allowed] of [[3001,cookie,true],[3002,cookie,false],[3002,cookie.replace('_3001=','_3002='),false],[3001,cookie.replace('_3001=','='),false]]) {
           const result=response();await auth.handleSessionStatus({...req,socket:{localPort:port},headers:{...req.headers,cookie:value}},result);
           assert.equal(result.body.authenticated,allowed);
         }
+        const reset=response();auth.handleResetAuth(authenticated,reset);assert.equal(reset.body.signedOutEverywhere,true);
+        assert.equal(check(),false);assert.equal(await auth.captureAuthorization(authenticated),null);
+        const second=response();await auth.handleSessionCreate(req,second);
+        const secondCheck=await auth.captureAuthorization({...authenticated,headers:{cookie:second.headers['Set-Cookie'].split(';')[0]}});
+        assert.equal(secondCheck(),true);auth.dispose();assert.equal(secondCheck(),false);
+        const passwordless=createUiAuth();const local=passwordless.captureAuthorization();assert.equal(local(),true);
+        passwordless.dispose();assert.equal(local(),false);
       } finally {auth.dispose();}`;
     await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], {
       env: { ...process.env, OPENCHAMBER_DATA_DIR: directory, OPENCODE_JWT_SECRET: undefined }, timeout: 15_000,

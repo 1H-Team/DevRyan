@@ -1,10 +1,106 @@
 # Isolated Electron and web QA
 
+## OpenCode 2 native writer slice
+
+The explicit Darwin arm64 command below exercises the pinned 2.0.20 native
+simulation transport and product host against the real web private bridge,
+execution supervisor and mutation ledger:
+
+```sh
+node scripts/verify-opencode-v2-native.mjs
+```
+
+It requires installed native package pins, the accepted packaged Darwin
+supervisor and the reviewed repository-local ripgrep artifact. Inputs, Git
+configuration, HOME/XDG/database and temporary files are private to a new
+`.cache/v2-validation/native-*/` directory. No live provider or installed app
+profile participates. The controller scripts model output only; native tools
+execute through the product registry without simulated tool attachment.
+
+The runner attempts a reviewed direct read with its ledger generation fence,
+a supervised grep process, fresh write/edit/patch workers, missing and
+ambiguous old text, failed partial patches and removals, and eight concurrent writer calls. It then
+checks protected paths, BOM/CRLF and formatter behavior, competing writers,
+permissions, shells, cancellation, interrupted publication, controller restart,
+and managed child completion with conversation Revert/Redo. Independent
+project hashes and ledger leases establish publication or discard; actual
+confined termination must precede every process outcome. Failed attempts retain
+`result.json` and `native.log`, and cleanup retains owned process identities.
+Package trees, product sources and configuration are hashed before boot; source
+or artifact changes invalidate the acceptance cohort. The emitted
+`remainingMandatoryGate` lists implemented lanes that did not complete and
+contracts without integrated assertions. A diagnostic attempt always leaves the
+final source-stable cohort pending. A passing implemented lane
+does not complete Stage B or qualify a release.
+
+The pending background restart case withholds only model output before the
+first continuation chunk. It requires the exact native terminal KV marker to
+exist before acknowledgement and disappear afterward, with a durable delivered
+notice and retained web continuation intent but no assistant consumption. After
+the owned controller exits and its supervisors settle, the replacement finishes
+that same notice once and acknowledges the canonical assistant in the ledger.
+The detached-child cancellation fixture uses Node's fork fallback under Darwin
+confinement; it proves a live detached-spawn attempt is terminated, without
+claiming that confinement allowed the child to escape its process group.
+Each cancelled writer or shell also requires its exact completed aborted native
+assistant to be followed by an interrupted idle record. The native session must
+release its runner claim and reset resume attempts before hold release or another
+prompt; a web process termination receipt alone does not establish this state.
+
 For manual reclamation of superseded QA application binaries while preserving
 reports and required native donors, see [local storage cleanup](STORAGE_CLEANUP.md).
 New packages record creation/completion and optional retention pins in
 `storage-retention.json`. Historical or partially removed packages cannot be used
 as runnable acceptance artifacts; rebuild them or select a retained package.
+
+## OpenCode 2 compiled package
+
+Build a fresh candidate and run the separate package qualification with pinned
+Bun 1.3.14 on Darwin arm64:
+
+```sh
+bun scripts/build-native-runtime.mjs --output-root .cache/v2-validation/native-artifact-candidate
+node scripts/verify-opencode-v2-package.mjs --artifact-root .cache/v2-validation/native-artifact-candidate
+```
+
+The output directory must be new. The build records the actual linked source
+and dependency graph, asset rewrites, output hashes and signing state. It copies
+the previously accepted execution supervisor without changing its bytes.
+Development ad-hoc signing does not establish release signing or support on
+another platform.
+
+Package qualification uses the compiled controller and writer with the real
+web admission owner, scheduler, ledger and supervisor. Only HTTP model responses
+are fixture data. Separate assertions cover asset initialization and full server
+execution while the supervisor denies reads of the repository's `packages`,
+`scripts` and `node_modules`. The importer works on consistent disposable copies,
+with relocated projects and private configuration/data roots. Results and failed
+attempts remain under `.cache/v2-validation/package-*/result.json`; incomplete
+mandatory lanes, changed source or incomplete cleanup keep the exit nonzero.
+This command does not activate a bundle in the installed app.
+
+The migration fixture contains two independent relocated Git projects, exact
+conversation/tool IDs, compaction dispositions, attachment bytes, ordered
+permissions, and separate web/native configuration trees. A lost import
+acknowledgement must recover from the real persisted importer receipt on an
+exact preparation retry. Rollback first quiesces the actual candidate; its
+synthetic-copy reconciliation requires unchanged independent baseline roots
+and retains the complete candidate and project work. The selected baseline
+then launches the accepted generation-one companion through the production
+lifecycle, with offline model fetch and automatic update disabled, and reads
+all fixture sessions through real HTTP routes.
+
+The package also exercises the configured command executor, native manual
+compaction, formatter subprocess, per-location read boundaries, and a tracked
+primary background notice resumed after controller replacement. The latter
+requires the original objective and saved selection, a fresh runtime handshake,
+exactly one canonical continuation, and another real writer after replacement.
+The separate parent-death fixture waits for a real confined shell, kills only
+its owned Node process, and checks every observed descendant plus both real
+controller and worker termination receipts before requiring no publication.
+Its explicit constructor-owned local grant is smoke-test policy; it does not
+substitute for production authentication contract tests. Release signing and
+other-platform support remain separate qualification gates.
 
 Run from the repository root using the Node and Bun versions declared in `package.json`. Install the lockfile dependencies with `bun install --frozen-lockfile`. No extra QA dependency is required; the browser driver reuses Electron and `ws` already installed in its workspace.
 
@@ -49,7 +145,7 @@ Launch the returned executable directly with the existing fixture/live profile's
 
 ## Fresh-checkout packaged bootstrap
 
-This is a source-checked recipe, not a completed clean-room build. It uses the existing Bun, Electron rebuild and electron-builder dependencies. The current QA packager supports macOS arm64 only. Prerequisites are Git, Bun 1.3.14, Node >=22.13 with npm and Node N-API headers, and Xcode Command Line Tools providing `xcrun swiftc`, `xcrun clang++`, `lipo`, and the macOS SDK. Python and a working native compiler toolchain are needed if the existing native rebuild cannot use a prebuilt binding. Network access is needed for locked dependencies, Electron/native headers and the pinned OpenCode npm archive.
+This is a source-checked recipe, not a completed clean-room build. It uses the existing Bun, Electron rebuild and electron-builder dependencies. The current QA packager supports macOS arm64 only. Prerequisites are Git, Bun 1.3.14, Node >=22.13 with npm and Node N-API headers, and Xcode Command Line Tools providing `xcrun swiftc`, `xcrun clang++`, `lipo`, and the macOS SDK. Python and a working native compiler toolchain are needed if the existing native rebuild cannot use a prebuilt binding. Network access is needed for locked dependencies, Electron/native headers and the pinned native OpenCode packages.
 
 Run from the root of a clean, committed DevRyan checkout. Use a separate disposable worktree with its own copied dependencies for the Electron ABI rebuild. Rebuilding native modules in the checkout used by web QA would replace its Node bindings with Electron bindings.
 
@@ -106,49 +202,24 @@ DEVRYAN_QA_DIST_DIR="$qaWebDist" bun scripts/qa/package-electron.mjs
 
 The first app is only a native-binary donor and must not be launched or treated as an acceptance artifact. Its recipe deliberately omits release resources and the release afterPack hook. The real QA packager subsequently checks the donor's Electron version, module versions, arm64 architecture and copied hashes, packages the current source plus selected UI, and runs actual SQLite and PTY ABI smoke checks. Retain the final emitted `package-evidence.json` path for QA/performance commands. The donor worktree and its local dependency tree may be retained until verification is complete; do not reuse that dependency tree for Node/web runs. No signing, notarization, publication, installed-app replacement or global runtime installation is requested. The production `bun run electron:build` is unsuitable here because it requires a verified Bot release manifest and invokes the release packaging path.
 
-Install the exact live-QA OpenCode runtime only in the ignored path expected by profile preparation:
+Managed hosts launch the verified native v2 controller and writer bundle. Build the native artifact with the repository's `scripts/build-native-runtime.mjs` and retain its manifest hash. Readiness and natural-threshold checks require pinned OpenCode 2.0.20. QA uses private empty initialization seeds, preserves reviewed setup and workspace inputs, and starts a fresh diagnostic journal. No standalone v1 executable or old conversation import is required.
 
-```sh
-mkdir -p .cache/qa/opencode-1.18.33
-npm pack opencode-darwin-arm64@1.18.33 \
-  --pack-destination "$PWD/.cache/qa/opencode-1.18.33" --json \
-  > .cache/qa/opencode-1.18.33/pack-metadata.json
-
-node --input-type=module <<'NODE'
-import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
-
-const directory = path.resolve('.cache/qa/opencode-1.18.33');
-const metadata = JSON.parse(await readFile(path.join(directory, 'pack-metadata.json'), 'utf8'));
-assert.equal(metadata.length, 1);
-const entry = metadata[0];
-assert.equal(entry.name, 'opencode-darwin-arm64');
-assert.equal(entry.version, '1.18.33');
-assert.equal(path.basename(entry.filename), entry.filename);
-const archive = path.join(directory, entry.filename);
-assert.equal(`sha512-${createHash('sha512').update(await readFile(archive)).digest('base64')}`, entry.integrity);
-execFileSync('tar', ['-xzf', archive, '-C', directory], { stdio: 'inherit' });
-const pkg = JSON.parse(await readFile(path.join(directory, 'package/package.json'), 'utf8'));
-assert.equal(pkg.name, 'opencode-darwin-arm64');
-assert.equal(pkg.version, '1.18.33');
-const version = execFileSync(path.join(directory, 'package/bin/opencode'), ['--version'], { encoding: 'utf8' }).trim();
-assert.equal(version, '1.18.33');
-console.log(`Verified cached OpenCode ${version}`);
-NODE
-```
-
-Managed hosts always launch the bundled companion runtime, which reports `<pin>-devryan.<n>`; live readiness and natural-threshold checks compare its base version with the pin. The profile's CLI executable is recorded by hash only. To use an already installed executable instead of the cached archive, set `DEVRYAN_QA_OPENCODE_BINARY=/absolute/path/to/opencode` for `scripts/qa/run.mjs`; its hash still enters the profile evidence.
-
-The archive's integrity is checked against npm pack's retained metadata, and the installed package identity and executable version are checked after extraction. This does not modify the user's OpenCode installation or install a package globally. The package identity and layout must match the `.cache/qa/opencode-1.18.33/package/package.json` and `profile-preparation.mjs` contract.
+Fresh Stage F preparation uses `scripts/qa/stage-f-preparation.mjs` with explicit current source, artifact, web-build and packaged-app hashes and produces seven v2 wire cells plus two actual-backend cells. Historical build9/G1 recipes do not qualify current source.
 
 A fresh checkout alone still cannot run live-provider QA. `prepareQaProfile` also requires the user's existing supported OpenCode configuration directory, its installed dependency tree/package manifest and managed provider/agent configuration. It copies those installed dependencies into each owned private profile and provisions candidate defaults there. It projects only supported unexpired access credentials without refresh tokens; Anthropic requires the existing Claude CLI credential source. Establish these through their canonical owners. Fixture QA needs no provider credentials or cached OpenCode executable. Do not suggest hand-written credential files or a global install as a bootstrap substitute.
 
 Validation performed for this proposal: read root/workspace package scripts, both native-helper builders, native rebuild resolver, bundler and QA packager; checked installed Bun's `--frozen-lockfile`, `--backend=copyfile`, `--cache-dir` syntax and npm's `pack --pack-destination --json` syntax. Builder options and explicit config-file behavior match the existing QA packager. No dependency install, native rebuild, donor package build or provider request was executed for this task.
 
 ## Interpreting an incomplete acceptance run
+
+Generation-2 live matrices require programmatic `runQaMatrix(configPath, { prepareCellInputs })` preparation. Each live cell supplies `nativePreparation` with a canonical repo-owned copied `sourceHome`, a complete file/digest manifest, a verified native artifact root, `prepareSource`, and `bootstrapCredentials`. Preparation creates a private empty setup seed and delegates bundle initialization, checkpoints and selection to the existing production owners. It does not launch or import an old runtime. Before copying, the runner validates the private database, both configuration trees, web data and every Global root. It checks the complete source manifest after preparation and again after full cell execution, including failures. A changed original input fails the cell and preserves its runtime.
+
+The UI runner prepares and selects a fresh v2 candidate bundle. Separate assembled package acceptance creates genuine prior-v2 conversations, quiesces their actual owners, then verifies candidate-v2 work and rollback. The UI runner launches its selected bundle through `DEVRYAN_RUNTIME_BUNDLE_ROOT` and the existing `isolated-host.mjs`, with its private home preload and no inherited runtime, config or account environment. Rollback must retain candidate work and refuse stale revisions or unresolved ownership. Before cleanup the runner archives bounded, sanitized `native-controller.jsonl` lifecycle facts from the verified selected log root; missing, malformed or oversized native logs make cleanup incomplete.
+
+`createQaNativePreparationFactory({preparedInput, mirror, bootstrapCredentials})` supplies the concrete `nativePreparation` for each programmatic cell. Mirror paths are relative to the explicit manifest-covered `sourceHome`: `reviewedNativeFile`, `reviewedPluginFile`, `opencodeConfigDirectory`, `webConfigDirectory`, and optional `homeDirectory`. The factory verifies accepted native artifacts, creates the private empty schema using the pinned initial SDK migration, and delegates copying/checkpoints/initialization to production owners. Account acquisition remains a required constructor callback. The isolated `native-profile-factory-diagnostic.mjs --artifact-root <repo-artifact-root>` uses a synthetic profile and disposable original-owner OAuth; success proves factory/host startup only. It does not qualify the saved personal graph or live accounts.
+
+
+The original sealed resolver must preserve saved role models, effort, prompts and ordered Council members. Cells that ask for different saved selections fail instead of rewriting every role to a QA model. Credential bootstrap must return secret-free evidence bound to the selected bundle and control root. Native providers require the original authorized acquisition and shared owner, with the actual selected credential ID, fingerprint and value type. Anthropic requires the original Meridian loader's selected profile ID, configuration fingerprint and auth kind; its supervised SDK account is not a native Credential row. OAuth-derived access must cover the cell timeout plus ten minutes; API keys record that expiry is not applicable. An unavailable acquisition or original profile check is a prerequisite failure; writing OAuth rows or mirroring a second `auth.json` is not a substitute. Current tests use synthetic repo-owned files, verify the real private home preload, and prove that the actual isolated host rejects missing bundle selection before readiness. They do not establish successful native web startup or live account access. Installed account reads and actual live-provider execution still require their separate authorization and qualified host/artifact checks. Ordinary synthetic matrices remain unchanged.
 
 Grade recorded checks and evidence, not just the process exit code or screenshot filename. A partial fixture run does not qualify later steps. Direct use of an existing shared scenario can supply separately labeled coverage; retain the failed original and record the exact source, helper and served artifact identities before/after. Inspect every original screenshot, correlate journal records, and independently verify retained PID/start identities are absent before removing a private profile.
 
@@ -203,7 +274,7 @@ All shown fields are required; unknown fields fail validation. The optional `pro
 | `mobile` | Web | Viewport/theme and touch checks with the core journey; it is not a physical-device test. |
 | `project-work` | Live; web or Electron | Attached project requirements, revisions, Plan approval, independent domain/API/restart probes and browser behavior. |
 | `compaction-manual` | Live; web or Electron | Two composer `/compact` boundaries, current saved-plan restoration and approved implementation. |
-| `compaction-natural` | Live; Electron | Two automatic native boundaries reached by ordinary project context growth, followed by restoration and approved implementation. |
+| `compaction-natural` | Live; web or Electron | Two automatic native boundaries reached by ordinary project context growth, followed by restoration and approved implementation. |
 
 The matrix fixture's `core-journey` also changes the Agent Runtime language-server
 switch through the shared Settings UI, reloads, checks the saved value, and
@@ -212,6 +283,17 @@ and restart state must remain unknown; managed readiness is verified separately
 by lifecycle tests. Its Stop controls operate on main sessions. The fixture does
 not launch managed children, so managed-child Stop is covered by the real
 registry/executor integration suite rather than claimed as UI acceptance.
+
+The constructor-only `runNativeBackendUiDiagnostic` in
+`scripts/qa/native-backend-ui-diagnostic.mjs` accepts `runtime-fixture` cells for
+the actual v2 web and Electron backends. This isolated loopback profile uses
+only `devryan-smoke/smoke-write` at High, with `core-journey` and Plan disabled.
+It verifies canonical read/write calls, a committed publication lease, a real
+successful confinement/termination receipt and exact file bytes in addition to
+the UI journey. Its ledger reader never initializes or recovers state. No
+accounts or personal setup are copied; saved-role, live-provider, managed-task
+and compaction qualification remain separate. Ordinary matrix launches refuse
+this transport without the explicit profile constructor.
 
 To cover manual Electron compaction within selected existing project journeys, set `"projectCompaction": "manual"` on a live Electron cell whose `scenarioIds` is exactly `["project-work"]`. This opt-in keeps one run, owned project, session and pinned model/agent/Plan/thinking selection. It uses the manual adapter's attached diagnosis, two saved plan revisions and unfinished implementation pause, then two actual composer `/compact` boundaries with steering and reload before approval and implementation. It retains the project's seeded-failure gate and final canonical task/browser graders. Each boundary has a separate continuation record for its restored native summary, independently checked paused project and exact revised state. `projectComposition` requires both distinct ordered native cycles, both continuation records, one session through implementation, operational continuity and the independent implementation grade. The browser grade remains separate and mandatory. Omitting the option leaves existing project journeys unchanged; adding `compaction-manual` to `scenarioIds` instead would create another fresh run. Make prospective configurations with an appropriate full-journey timeout; do not relabel historical results or count an unexecuted composition as coverage.
 
@@ -229,7 +311,7 @@ Before and after an Electron cell, the loader verifies the app archive, shipped 
 
 Initial low-level health readiness does not imply that native plugins, providers, and agents have finished initializing. Only the first cold reload therefore has a separate 180-second bootstrap ceiling, additionally capped by the cell's remaining deadline. Its document-load event shares that ceiling; the reload command and all later ordinary reloads retain their 30-second limits. The gate requires initialized UI provider/agent state, visible enabled composer and New Chat controls, populated model/agent controls, and the exact pinned model and requested primary agent in the real connected native catalogs. Five-second bounded catalog requests retry transient startup failures; unavailable selections and permanent API failures fail explicitly. `initial-bootstrap.json` retains phase timings, request attempts, and the last UI snapshot, including on failure. All subsequent ordinary reloads keep their 30-second limit, and the later exact provider, agent, variant, and canonical submission checks still run.
 
-Each cell receives an owned Git project, private home marker, managed data directory and Chromium profile. Live profile preparation provisions candidate defaults and plugins into that private installation, copies installed dependencies from the existing OpenCode configuration, and pins primary and delegated agent models. It expects the verified OpenCode 1.18.33 executable at `.cache/qa/opencode-1.18.33/package/bin/opencode`. Available API credentials or unexpired OAuth access credentials are projected into private files; refresh tokens and personal skills are not copied. The user's installed OpenCode ripgrep (`~/.cache/opencode/bin/rg`) is copied into the private `XDG_CACHE_HOME`, because OpenCode's read, grep and skill tools fail with `ripgrep execution failed` when its lazy download cannot run; `profile-evidence.json` records `ripgrep` as `copied` with its hash or `not-installed`. Claude access comes from the existing CLI credential source. The launch environment sets `HOME`, `CLAUDE_CONFIG_DIR`, `MERIDIAN_CONFIG_DIR` and `MERIDIAN_SESSION_DIR` inside the private home and drops inherited Meridian/Claude path overrides. Meridian runs inside the compiled Bun OpenCode host, where the preload shim cannot redirect named `homedir` imports; Meridian 1.62.x derives its oauth-token profile `CLAUDE_CONFIG_DIR` (`~/.config/meridian/profiles/<id>`) and other state from that home, so without a private `HOME` Claude Code writes the owner's real Meridian profile. Preparation fails before provisioning if any such path resolves outside the private home, and it writes a private `.gitconfig` with the `DevRyan QA` identity. Do not put credentials in matrix JSON or handcraft the profile environment. The runner records credential availability and installed/plugin fingerprints without exposing secret values; missing dependencies, unsupported credentials or unavailable model access fail explicitly. Immediately after preparing each fresh live profile and before starting any host, the runner requires the copied selected-provider OAuth/Claude access expiry to cover the configured cell timeout plus ten minutes. It records the successful admission timestamp and budget; unavailable, expired, insufficient or unknown OAuth/Claude expiry fails the cell and follows normal private-profile cleanup. Existing OpenAI/xAI API-key admission is preserved with `expiryCheck: 'not-applicable-to-api-key'`; this makes no credential-lifetime guarantee. Other providers do not determine admission, and this check never refreshes credentials.
+Each cell receives an owned Git project, private home marker, selected native bundle, managed data directory and Chromium profile. Live preparation uses the manifest-covered configuration and original provider-owner callbacks described above. It preserves saved primary/delegated models, variants, prompts, ordered Council members and project overrides; it does not replace them with a QA model. `profile-evidence.json` records the pinned native artifact and effective configuration identities. Keep runtime assets such as ripgrep inside the owned profile and retain their hashes. The launch environment isolates `HOME`, Claude and Meridian paths and drops inherited overrides. Establish credentials through the original owner: the native Credential/Integration graph for supported native providers, and the existing Meridian or Cursor owner for their accounts. A copied legacy `auth.json` is not native credential provisioning. No credential belongs in matrix JSON or logs. Admission requires the selected account to cover the cell timeout plus ten minutes when expiry applies; API keys record that expiry is not applicable. Missing acquisition, unsupported credentials, expired access or unavailable exact models fail explicitly. A failed preflight cannot be replaced by another provider or model.
 
 For focused specialist diagnostics, the `prepareQaProfile` / `pinQaAgents` APIs accept an optional `agentAssignments` map for known specialist roles, for example `{ explorer: { providerId: 'openai', modelId: 'gpt-5.3-codex-spark', variant: 'high' } }`. Assignments require the primary provider and an explicit nullable variant by default. The explicit option `allowCrossProviderAssignments: true` additionally permits Builder and known managed specialists pinned to OpenAI, Anthropic, xAI or OpenCode Zen; it projects only those admitted providers into the private profile and preserves each exact model/effort. Unknown providers, ambiguous roles and missing efforts still fail before writes. Verify advertised availability and copied-access duration for every assigned provider before a managed live trial; primary matrix adapters remain unchanged. Explicitly assigning a disabled specialist also fails instead of recording an ineffective assignment. Primary defaults remain pinned to the original cell. Profile evidence records the actual `agentModels` map and each role's model and nullable variant in `agentSelections`. Live matrix cells also accept `agentAssignments` and `allowCrossProviderAssignments`. The matrix verifies copied-access duration for all assigned providers and checks each native role against the live model/variant catalog before submission. It records start/finish harness fingerprints. Availability and correct configuration do not establish successful specialist execution: inspect actual child results and parent reconciliation too. It changes only the owned QA profile.
 
@@ -241,11 +323,11 @@ Project instructions require the agent to run the native causal failing/passing 
 
 A rejected native permission can end a QA turn before its deadline only when the observer's typed request/reply IDs match a failed canonical tool in the completed assistant directly parented by the current submitted request. The same completed assistant and canonical idle state must appear in two fresh polls. The runner records the correlation evidence and fails explicitly; it never grants permission or resumes the agent. Error prose, historical rejections, active work and unproven continuation parents cannot trigger this guard.
 
-The live observer records whitelisted controls at native `chat.message` and final `chat.params` hooks after configured plugins and before the provider adapter. The grader correlates the tracked user-message IDs, provider/model and explicit variant selection with the advertised control values. Historical Default evidence must contain an explicit cleared variant; current chat journeys select an advertised level. Native adapter defaults are reported separately. These records are not provider wire capture. Inspect `reasoningControls.turns` for the exact graded turn set, including any declared gaps.
+The generation-1 live observer records whitelisted controls at native `chat.message` and final `chat.params` hooks after configured plugins and before the provider adapter. The grader correlates the tracked user-message IDs, provider/model and explicit variant selection with the advertised control values. Historical Default evidence must contain an explicit cleared variant; current chat journeys select an advertised level. Native adapter defaults are reported separately. These records are not provider wire capture. Inspect `reasoningControls.turns` for the exact graded turn set, including any declared gaps. Generation 2 consumes the existing sanitized diagnostic journal instead: accepted user intent and saved selection must match actual post-hook Prepared controls, final physical named wire controls using exact pinned adapter spellings, physical request identity and the real attempt span linked to a canonical durable assistant step. Cancelled requests that did not reach a step remain separate diagnostics. Final reading uses the existing authenticated diagnostics export to flush, then checks journal health and bounded complete records; missing native observations, schema failures and finite native observation warnings fail the cell. Synthetic grader tests do not qualify a live profile or provider.
 
 The initial manual/natural planning request explicitly makes the revision-1 brief authoritative for the proposed priority sorting while preserving the user-note file as historical input. Revision 2 then rejects that sorting and requires creation order. This avoids an unrelated ambiguity before the compaction workload; it does not answer questions after compaction, change the saved-plan checks, or authorize implementation early.
 
-Manual compaction requires both canonical summary linkage and independently observed native lifecycle events at each boundary. It verifies revision 2 remains saved, the paused project stays unchanged, and implementation resumes from the current approval surface. With Plan enabled, the reference is the app's saved session revision, identified by its original human request, source message, session directory, creation time and slug. Its raw path, byte count and hash remain pinned. Every exact revision read must stay inside the project-plan directory derived from the prepared runtime's own data root, reject symlinks and match the file's bytes to the API response. With Plan disabled, the reference remains the existing `.opencode/plans/qa-current.md` file in the owned project. Both references are checked at every paused boundary and before approval; a later Plan card cannot replace the baseline. Fresh approval requests contain the existing path and require an observed successful native read before a new full canonical Plan response. The harness does not copy the file, refeed its contents or count an unreadable reference as continuity. Natural compaction additionally requires OpenCode 1.18.31's unchanged configured model limits, measured usage at the threshold, `auto: true` and no provider-overflow substitute. It sends labelled synthetic project audit data through the ordinary composer, bounded to 256 KiB per batch, 40 batches per boundary and 32 MiB total, within the cell deadline. Reaching a workload bound without two verified boundaries fails; one boundary, a forced summary or a fixture result cannot stand in for natural coverage.
+Manual compaction requires both canonical summary linkage and independently observed native lifecycle events at each boundary. It verifies revision 2 remains saved, the paused project stays unchanged, and implementation resumes from the current approval surface. With Plan enabled, the reference is the app's saved session revision, identified by its original human request, source message, session directory, creation time and slug. Its raw path, byte count and hash remain pinned. Every exact revision read must stay inside the project-plan directory derived from the prepared runtime's own data root, reject symlinks and match the file's bytes to the API response. With Plan disabled, the reference remains the existing `.opencode/plans/qa-current.md` file in the owned project. Both references are checked at every paused boundary and before approval; a later Plan card cannot replace the baseline. Fresh approval requests contain the existing path and require an observed successful native read before a new full canonical Plan response. The harness does not copy the file, refeed its contents or count an unreadable reference as continuity. Natural compaction additionally requires pinned OpenCode 2.0.20's unchanged configured model limits, measured usage at the threshold, `auto: true` and no provider-overflow substitute. It sends labelled synthetic project audit data through the ordinary composer, bounded to 256 KiB per batch, 40 batches per boundary and 32 MiB total, within the cell deadline. Reaching a workload bound without two verified boundaries fails; one boundary, a forced summary or a fixture result cannot stand in for natural coverage.
 
 Manual Orchestrator coverage keeps its mixed first-boundary policy: two distinct seeded task/child/dispatch identities, one actually running child and one completed result with its exact undispositioned envelope. Both must be observed across native start and canonical summary completion. The active child may finish naturally during compaction while its result stays pending. Collection follows that exit observation; both exact results must remain completed through the second boundary. Missing, failed, consumed, replaced or ambiguous witnesses fail coverage.
 
@@ -477,3 +559,46 @@ Run `DEVRYAN_QA_SCENARIO=execution-failure bun scripts/qa/run.mjs` (and add `DEV
 Use `DEVRYAN_QA_SCENARIO=skill-loading bun run qa` (plus `DEVRYAN_QA_RUNTIME=electron` for desktop) for the isolated skill-loading, preparation-failure, reload and loaded-state journey. It retains the shared chat smoke checks and uses only the loopback fixture.
 
 For incident reproduction with the user’s actual orchestration setup, use the opt-in live profile/cell field `preserveOrchestration: true` without `agentAssignments` or cross-provider overrides. It preserves the saved role graph, effort, presets, fallbacks and agent backup selections in the private profile. Select the requested OpenAI orchestrator model through the composer; do not change the source profile. Confined tool workers retain their per-call scratch home; the QA home shim only redirects provider/host processes, so sibling workers cannot contend on shared QA plugin state. Credential evidence explicitly records unavailable specialist providers. A run requiring an unavailable provider remains a failed/unavailable journey, never a substituted-model pass. Saved-provider access must be checked in addition to parent access, and acceptance requires child/result identity evidence plus independent inspection and tests of produced edits.
+
+To qualify live QA, including an OpenCode upgrade, against the owner's personal setup, `prepareQaProfile` also accepts the opt-in `mirrorPersonalSetup`, which requires `preserveOrchestration: true`. `true` means `{ plugins: true, skills: true, mcp: 'definitions' }`. An object may use only `plugins`, `skills` (booleans) and `mcp` (`'off' | 'definitions' | 'live'`); omitted parts stay off, and any other value fails before writes.
+
+- `plugins` mirrors the source `plugin` entries that provisioning does not carry, in the owner's registration order (hooks run in registration order, so order is part of the effective setup); provisioned entries the owner never listed come last. DevRyan-managed and retired specs are left to provisioning, and duplicates are dropped. Absolute or `file://` registrations inside the source config are rewritten to config-relative form; a registration outside the owner's OpenCode configuration cannot be isolated and fails preparation. `./node_modules/` entries get the same QA home wrapper and containment guard as provisioned ones.
+- `plugins` also copies the non-managed contents of `plugins/` and `plugin/` (for example a dormant `ECC/` directory) with symlinks kept as-is. It skips `.DS_Store`, `*.devryan-slim-backup-*` and the retired `cursor-acp.js`. A local registration outside those directories fails preparation.
+- `skills` copies `~/.config/opencode/skills`, `~/.claude/skills` and `~/.agents/skills` to the same paths under the private HOME. Evidence then sets `isolation.personalSkillsCopied: true`.
+- `mcp: 'definitions'` writes the owner's MCP entries with `enabled: false`, so catalogs and parity checks see them but no external connection or OAuth flow starts. `'live'` writes them unchanged. `'off'` keeps `mcp: {}`. MCP auth state is never copied, so live OAuth servers start unauthenticated.
+- Whenever mirroring is on, the top-level `agent` config is merged with provisioning's precedence (managed entries win) and `commands/` is copied. `lsp` stays owned by the managed overlay.
+
+`profile-evidence.json` records `mirrorPersonalSetup: { requested, plugins: [{ entry, kind, hasOptions }], pluginOrder, pluginDirectories: [{ directory, name, type }], skills: { '<root>': count | null }, commands, mcp: [{ id, type, sourceEnabled, enabled }], configKeys }`. Plugin options, MCP URLs and OAuth fields are never recorded. Default preparation without the option is unchanged.
+
+### Qualifying a candidate OpenCode runtime
+
+By default, live QA expects the runtime to report the host pin (`TARGET_OPENCODE_VERSION` in `packages/web/server/lib/opencode/version-policy.js`). To qualify a candidate runtime before the pin moves, set an exact version for the run:
+
+```sh
+DEVRYAN_QA_OPENCODE_VERSION=2.0.20 <usual QA command>
+```
+
+- The value must be an exact version (`2.0.20`, not `2.0` or `latest`). An invalid value fails the cell before any owned process starts.
+- Do not add the companion suffix: the check removes `-devryan.<n>` from the version the runtime reports, and compares that exactly to the target.
+- Evidence records the target the run was checked against as `runtimeTarget: { version, source }`, next to `runtimeVersion`. `source` is `host-pin` or `DEVRYAN_QA_OPENCODE_VERSION`. Evidence with `source: DEVRYAN_QA_OPENCODE_VERSION` qualifies a candidate only. It is not evidence for the pin.
+- This applies to matrix-cell evidence, the natural-compaction `policy` evidence, the compaction-retrieval diagnostic and the duplicate-serializer probe (which also records `pluginSdkVersion`). The probe needs the installed `@opencode-ai/plugin` in `packages/web/node_modules` to equal the target version, and fails with the installed and required versions otherwise.
+- The packaged-profile smoke check (`scripts/smoke-packaged-orchestration-config.mjs`) always checks the `@opencode-ai/plugin` pin against the host pin and ignores the QA override.
+
+### Parity manifest (runtime upgrade baseline)
+
+`scripts/qa/parity-manifest.mjs` records the effective agent runtime catalog of a running isolated host (started by `scripts/qa/isolated-host.mjs`; take `origin` from its `ready.json`) through DevRyan's proxied OpenCode API, using GET requests only.
+
+```sh
+node scripts/qa/parity-manifest.mjs --origin http://127.0.0.1:<port> --directory <fixture workspace> \
+  --qa-home <private QA home> --out .artifacts/parity/baseline-v2.json
+# candidate runtime: set DEVRYAN_QA_OPENCODE_VERSION=<v> or pass --expect-runtime <v>
+node scripts/qa/parity-manifest.mjs --diff .artifacts/parity/baseline-v2.json \
+  --origin http://127.0.0.1:<port> --directory <fixture workspace> --qa-home <private QA home> --out .artifacts/parity/candidate.json
+# or compare two saved captures: --diff <baseline.json> --candidate <candidate.json>
+```
+
+Sections: DevRyan health (an allowlisted set of fields); agents (permission rules, model/variant, prompt hash); commands (template hash); config (an allowlist only; provider and MCP secrets, headers, env and OAuth are never read); MCP status; tool ids, plus tool definitions for the default agent's model or `--provider`/`--model`; OpenCode `/skill` and DevRyan `/api/config/skills`; DevRyan Slim status; and the Slim section (the package version and dist hash from `--slim-package` or `<qa-home>`, plus the Slim 2.2.25 behaviour checklist: commands and tools are confirmed from the live lists, hooks and behaviours are `static`, and each entry says whether DevRyan relies on it or already hides, strips, disables or never uses it).
+
+Bodies (prompts, templates, skills, tool descriptions) are stored only as sha256 plus length, after per-run folders are replaced with `<directory>`, `<qa-home>` and `<home>`. When the host is unready or the base runtime version differs from the expected one, the capture stops without writing a manifest. A route that returns 404 is recorded as `skipped`; any other failure is recorded as `error` and the run exits 1. `--diff` reads the baseline before anything is written and exits 0 only when every section matches; runtime identity and `capturedAt` are reported but never count as a difference.
+
+Generation-2 manual and natural compaction grading reads the same journal. Each boundary requires the actual native trigger, budget and outcome, committed Started/Ended event IDs, sequence and timestamps, and the running compaction message linked to its REST summary. Summary text must match the raw-event digest; an empty textual summary requires an actual native provider-state/context checkpoint witness. Task-cohort brackets use raw committed time because REST summary times may be clamped. Prefill scheduling uses actual Prepared model limits and frozen native settings as an explicit estimate, so skipped native checks need no fabricated budget. Natural acceptance requires two actual automatic due full-context estimates at the same unchanged native ceiling; provider overflow, projected summaries alone and measured anchor-token proxies cannot establish it. Existing plan, pending-child identity, disposition and project continuity checks still apply. No live boundary has been qualified by the deterministic consumer tests.

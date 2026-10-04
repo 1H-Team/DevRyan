@@ -1,0 +1,741 @@
+{
+ "vector": "06-permission",
+ "title": "D6: write tool asks edit permission; once, then reject; diff afterwards",
+ "design": "D6 (+F8)",
+ "opencode": "2.0.20",
+ "capturedWith": "g2trace on the G1 embedded host (ServerFetch.make + Bun listener), simulation backend; see README.md",
+ "normalization": {
+  "ids": 55,
+  "timestamps": 41,
+  "sha256": 4,
+  "sha1": 0,
+  "slugs": 1,
+  "timestampBase": 1767225600000,
+  "timestampStep": 1000
+ },
+ "frames": [
+  "data: {\"id\":\"evt_000000000001normalized0000\",\"created\":1767225601000,\"type\":\"session.created\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"slug\":\"slug-1\",\"version\":\"0.0.0-spike\",\"projectID\":\"global\",\"location\":{\"directory\":\"<home>/workspace\"},\"subpath\":\"\",\"title\":\"Permission\",\"permissions\":[{\"action\":\"edit\",\"resource\":\"*\",\"effect\":\"ask\"}]},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":0,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000002normalized0000\",\"created\":1767225602000,\"type\":\"session.inbox.enqueued\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"inboxID\":\"msg_000000000001normalized0000\",\"sessionID\":\"ses_fffffffffffenormalized0000\",\"item\":{\"type\":\"user\",\"payload\":{\"text\":\"Write notes.txt\"},\"delivery\":\"steer\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":1,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000003normalized0000\",\"created\":1767225603000,\"type\":\"session.execution.started\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":2,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000004normalized0000\",\"created\":1767225604000,\"metadata\":{\"instructions\":{\"initial\":true}},\"type\":\"session.instructions.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"delta\":{\"core/codemode\":\"0000000000000000000000000000000000000000000000000000000000000001\",\"core/skill-guidance\":\"0000000000000000000000000000000000000000000000000000000000000002\",\"core/date\":\"0000000000000000000000000000000000000000000000000000000000000003\",\"core/environment\":\"0000000000000000000000000000000000000000000000000000000000000004\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":3,\"version\":2}}\n\n",
+  "data: {\"id\":\"evt_000000000005normalized0000\",\"created\":1767225605000,\"type\":\"session.inbox.delivered\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"inboxID\":\"msg_000000000001normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":4,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000006normalized0000\",\"created\":1767225607000,\"type\":\"session.step.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"agent\":\"build\",\"model\":{\"id\":\"m1\",\"providerID\":\"sim\"},\"assistantMessageID\":\"msg_000000000002normalized0000\",\"started\":1767225606000},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":5,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000007normalized0000\",\"created\":1767225608000,\"type\":\"session.tool.input.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s06_write\",\"name\":\"write\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":6,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000008normalized0000\",\"created\":1767225609000,\"type\":\"session.tool.input.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s06_write\",\"text\":\"{\\\"path\\\":\\\"notes.txt\\\",\\\"content\\\":\\\"line one\\\\nline two\\\\n\\\"}\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":7,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000009normalized0000\",\"created\":1767225610000,\"type\":\"session.tool.called\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s06_write\",\"input\":{\"path\":\"notes.txt\",\"content\":\"line one\\nline two\\n\"},\"executed\":false},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":8,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000anormalized0000\",\"created\":1767225610000,\"type\":\"session.step.streamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":9,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000bnormalized0000\",\"created\":1767225611000,\"type\":\"permission.asked\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"id\":\"per_000000000001normalized0000\",\"sessionID\":\"ses_fffffffffffenormalized0000\",\"action\":\"edit\",\"resources\":[\"notes.txt\"],\"save\":[\"*\"],\"metadata\":{\"files\":[{\"file\":\"notes.txt\",\"patch\":\"Index: notes.txt\\n===================================================================\\n--- notes.txt\\n+++ notes.txt\\n@@ -0,0 +1,2 @@\\n+line one\\n+line two\\n\",\"status\":\"added\",\"additions\":2,\"deletions\":0}]},\"source\":{\"type\":\"tool\",\"messageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s06_write\"}}}\n\n",
+  "data: {\"id\":\"evt_00000000000cnormalized0000\",\"created\":1767225612000,\"type\":\"permission.replied\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"requestID\":\"per_000000000001normalized0000\",\"reply\":\"once\"}}\n\n",
+  "data: {\"id\":\"evt_00000000000dnormalized0000\",\"created\":1767225613000,\"type\":\"session.tool.success\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"id\":\"call_s06_write\",\"content\":[{\"type\":\"text\",\"text\":\"Created file successfully: notes.txt\"}],\"metadata\":{\"truncated\":false},\"executed\":false},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":10,\"version\":2}}\n\n",
+  "data: {\"id\":\"evt_00000000000enormalized0000\",\"created\":1767225614000,\"type\":\"session.step.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"finish\":\"tool-calls\",\"rawFinish\":\"tool_calls\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":11,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000fnormalized0000\",\"created\":1767225614000,\"type\":\"session.usage.updated\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}\n\n",
+  "data: {\"id\":\"evt_000000000010normalized0000\",\"created\":1767225616000,\"type\":\"session.step.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"agent\":\"build\",\"model\":{\"id\":\"m1\",\"providerID\":\"sim\"},\"assistantMessageID\":\"msg_000000000003normalized0000\",\"started\":1767225615000},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":12,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000011normalized0000\",\"created\":1767225617000,\"type\":\"session.text.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000003normalized0000\",\"ordinal\":0},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":13,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000012normalized0000\",\"created\":1767225618000,\"type\":\"session.text.delta\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000003normalized0000\",\"ordinal\":0,\"delta\":\"Wrote the file.\"}}\n\n",
+  "data: {\"id\":\"evt_000000000013normalized0000\",\"created\":1767225618000,\"type\":\"session.text.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000003normalized0000\",\"ordinal\":0,\"text\":\"Wrote the file.\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":14,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000014normalized0000\",\"created\":1767225619000,\"type\":\"session.step.streamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000003normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":15,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000015normalized0000\",\"created\":1767225620000,\"type\":\"session.step.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000003normalized0000\",\"finish\":\"stop\",\"rawFinish\":\"stop\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":16,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000016normalized0000\",\"created\":1767225620000,\"type\":\"session.usage.updated\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}\n\n",
+  "data: {\"id\":\"evt_000000000017normalized0000\",\"created\":1767225621000,\"type\":\"session.execution.succeeded\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":17,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000018normalized0000\",\"created\":1767225622000,\"type\":\"session.inbox.enqueued\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"inboxID\":\"msg_000000000005normalized0000\",\"sessionID\":\"ses_fffffffffffenormalized0000\",\"item\":{\"type\":\"user\",\"payload\":{\"text\":\"Write it again\"},\"delivery\":\"steer\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":18,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000019normalized0000\",\"created\":1767225623000,\"type\":\"session.execution.started\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":19,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001anormalized0000\",\"created\":1767225624000,\"type\":\"session.inbox.delivered\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"inboxID\":\"msg_000000000005normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":20,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001bnormalized0000\",\"created\":1767225626000,\"type\":\"session.step.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"agent\":\"build\",\"model\":{\"id\":\"m1\",\"providerID\":\"sim\"},\"assistantMessageID\":\"msg_000000000006normalized0000\",\"started\":1767225625000},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":21,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001cnormalized0000\",\"created\":1767225627000,\"type\":\"session.tool.input.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000006normalized0000\",\"id\":\"call_s06_write2\",\"name\":\"write\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":22,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001dnormalized0000\",\"created\":1767225628000,\"type\":\"session.tool.input.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000006normalized0000\",\"id\":\"call_s06_write2\",\"text\":\"{\\\"path\\\":\\\"notes.txt\\\",\\\"content\\\":\\\"rejected\\\\n\\\"}\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":23,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001enormalized0000\",\"created\":1767225629000,\"type\":\"session.tool.called\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000006normalized0000\",\"id\":\"call_s06_write2\",\"input\":{\"path\":\"notes.txt\",\"content\":\"rejected\\n\"},\"executed\":false},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":24,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001fnormalized0000\",\"created\":1767225630000,\"type\":\"session.step.streamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000006normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":25,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000020normalized0000\",\"created\":1767225631000,\"type\":\"permission.asked\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"id\":\"per_000000000002normalized0000\",\"sessionID\":\"ses_fffffffffffenormalized0000\",\"action\":\"edit\",\"resources\":[\"notes.txt\"],\"save\":[\"*\"],\"metadata\":{\"files\":[{\"file\":\"notes.txt\",\"patch\":\"Index: notes.txt\\n===================================================================\\n--- notes.txt\\n+++ notes.txt\\n@@ -1,2 +1,1 @@\\n-line one\\n-line two\\n+rejected\\n\",\"status\":\"modified\",\"additions\":1,\"deletions\":2}]},\"source\":{\"type\":\"tool\",\"messageID\":\"msg_000000000006normalized0000\",\"id\":\"call_s06_write2\"}}}\n\n",
+  "data: {\"id\":\"evt_000000000021normalized0000\",\"created\":1767225632000,\"type\":\"permission.replied\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"requestID\":\"per_000000000002normalized0000\",\"reply\":\"reject\"}}\n\n",
+  "data: {\"id\":\"evt_000000000022normalized0000\",\"created\":1767225633000,\"type\":\"session.tool.failed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000006normalized0000\",\"id\":\"call_s06_write2\",\"error\":{\"type\":\"permission.rejected\",\"message\":\"not now\"},\"executed\":false},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":26,\"version\":2}}\n\n",
+  "data: {\"id\":\"evt_000000000023normalized0000\",\"created\":1767225634000,\"type\":\"session.step.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000006normalized0000\",\"finish\":\"tool-calls\",\"rawFinish\":\"tool_calls\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":27,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000024normalized0000\",\"created\":1767225634000,\"type\":\"session.usage.updated\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}\n\n",
+  "data: {\"id\":\"evt_000000000025normalized0000\",\"created\":1767225636000,\"type\":\"session.step.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"agent\":\"build\",\"model\":{\"id\":\"m1\",\"providerID\":\"sim\"},\"assistantMessageID\":\"msg_000000000007normalized0000\",\"started\":1767225635000},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":28,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000026normalized0000\",\"created\":1767225637000,\"type\":\"session.text.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000007normalized0000\",\"ordinal\":0},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":29,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000027normalized0000\",\"created\":1767225638000,\"type\":\"session.text.delta\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000007normalized0000\",\"ordinal\":0,\"delta\":\"Permission was rejected.\"}}\n\n",
+  "data: {\"id\":\"evt_000000000028normalized0000\",\"created\":1767225638000,\"type\":\"session.text.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000007normalized0000\",\"ordinal\":0,\"text\":\"Permission was rejected.\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":30,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000029normalized0000\",\"created\":1767225639000,\"type\":\"session.step.streamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000007normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":31,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000002anormalized0000\",\"created\":1767225640000,\"type\":\"session.step.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"assistantMessageID\":\"msg_000000000007normalized0000\",\"finish\":\"stop\",\"rawFinish\":\"stop\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":32,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000002bnormalized0000\",\"created\":1767225641000,\"type\":\"session.usage.updated\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}\n\n",
+  "data: {\"id\":\"evt_00000000002cnormalized0000\",\"created\":1767225641000,\"type\":\"session.execution.succeeded\",\"data\":{\"sessionID\":\"ses_fffffffffffenormalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffffenormalized0000\",\"seq\":33,\"version\":1}}\n\n"
+ ],
+ "rest": [
+  {
+   "label": "session.create",
+   "method": "POST",
+   "path": "/api/session",
+   "request": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "title": "Permission",
+    "permissions": [
+     {
+      "action": "edit",
+      "resource": "*",
+      "effect": "ask"
+     }
+    ]
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffffenormalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1767225601000,
+      "updated": 1767225601000
+     },
+     "title": "Permission",
+     "permissions": [
+      {
+       "action": "edit",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "Write notes.txt"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000001normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225602000
+     },
+     "type": "user",
+     "payload": {
+      "text": "Write notes.txt"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "permission.request.list.pending",
+   "method": "GET",
+   "path": "/api/permission/request",
+   "headers": {
+    "x-opencode-directory": "%3Chome%3E%2Fworkspace"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "data": [
+     {
+      "id": "per_000000000001normalized0000",
+      "sessionID": "ses_fffffffffffenormalized0000",
+      "action": "edit",
+      "resources": [
+       "notes.txt"
+      ],
+      "save": [
+       "*"
+      ],
+      "metadata": {
+       "files": [
+        {
+         "file": "notes.txt",
+         "patch": "Index: notes.txt\n===================================================================\n--- notes.txt\n+++ notes.txt\n@@ -0,0 +1,2 @@\n+line one\n+line two\n",
+         "status": "added",
+         "additions": 2,
+         "deletions": 0
+        }
+       ]
+      },
+      "source": {
+       "type": "tool",
+       "messageID": "msg_000000000002normalized0000",
+       "id": "call_s06_write"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "session.permission.list.pending",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/permission",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "per_000000000001normalized0000",
+      "sessionID": "ses_fffffffffffenormalized0000",
+      "action": "edit",
+      "resources": [
+       "notes.txt"
+      ],
+      "save": [
+       "*"
+      ],
+      "metadata": {
+       "files": [
+        {
+         "file": "notes.txt",
+         "patch": "Index: notes.txt\n===================================================================\n--- notes.txt\n+++ notes.txt\n@@ -0,0 +1,2 @@\n+line one\n+line two\n",
+         "status": "added",
+         "additions": 2,
+         "deletions": 0
+        }
+       ]
+      },
+      "source": {
+       "type": "tool",
+       "messageID": "msg_000000000002normalized0000",
+       "id": "call_s06_write"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "session.permission.get.pending",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/permission/per_000000000001normalized0000",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "per_000000000001normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "action": "edit",
+     "resources": [
+      "notes.txt"
+     ],
+     "save": [
+      "*"
+     ],
+     "metadata": {
+      "files": [
+       {
+        "file": "notes.txt",
+        "patch": "Index: notes.txt\n===================================================================\n--- notes.txt\n+++ notes.txt\n@@ -0,0 +1,2 @@\n+line one\n+line two\n",
+        "status": "added",
+        "additions": 2,
+        "deletions": 0
+       }
+      ]
+     },
+     "source": {
+      "type": "tool",
+      "messageID": "msg_000000000002normalized0000",
+      "id": "call_s06_write"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.permission.reply.once",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/permission/per_000000000001normalized0000/reply",
+   "request": {
+    "decision": "once"
+   },
+   "status": 204,
+   "contentType": null,
+   "body": null
+  },
+  {
+   "label": "session.messages.asc.afterWrite",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/message?order=asc",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "msg_000000000001normalized0000",
+      "time": {
+       "created": 1767225605000
+      },
+      "text": "Write notes.txt",
+      "type": "user"
+     },
+     {
+      "id": "msg_000000000002normalized0000",
+      "time": {
+       "created": 1767225606000,
+       "streamed": 1767225610000,
+       "completed": 1767225614000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "tool",
+        "id": "call_s06_write",
+        "name": "write",
+        "executed": false,
+        "state": {
+         "status": "completed",
+         "input": {
+          "path": "notes.txt",
+          "content": "line one\nline two\n"
+         },
+         "content": [
+          {
+           "type": "text",
+           "text": "Created file successfully: notes.txt"
+          }
+         ],
+         "metadata": {
+          "truncated": false
+         }
+        },
+        "time": {
+         "created": 1767225608000,
+         "ran": 1767225610000,
+         "completed": 1767225613000
+        }
+       }
+      ],
+      "finish": "tool-calls",
+      "rawFinish": "tool_calls",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000003normalized0000",
+      "time": {
+       "created": 1767225615000,
+       "streamed": 1767225619000,
+       "completed": 1767225620000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "Wrote the file."
+       }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000004normalized0000",
+      "time": {
+       "created": 1767225621000
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+     }
+    ],
+    "cursor": {
+     "previous": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDFub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoicHJldmlvdXMifQ",
+     "next": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDRub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoibmV4dCJ9"
+    }
+   }
+  },
+  {
+   "label": "session.diff.default",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/diff",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": []
+   }
+  },
+  {
+   "label": "session.diff.fromUser.context3",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/diff?from=msg_000000000001normalized0000&context=3",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": []
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/prompt",
+   "request": {
+    "text": "Write it again"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000005normalized0000",
+     "sessionID": "ses_fffffffffffenormalized0000",
+     "time": {
+      "created": 1767225622000
+     },
+     "type": "user",
+     "payload": {
+      "text": "Write it again"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.permission.reply.reject",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffffenormalized0000/permission/per_000000000002normalized0000/reply",
+   "request": {
+    "decision": "reject",
+    "message": "not now"
+   },
+   "status": 204,
+   "contentType": null,
+   "body": null
+  },
+  {
+   "label": "session.get",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffffenormalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "outcome": "succeeded",
+     "time": {
+      "created": 1767225601000,
+      "updated": 1767225622000,
+      "idle": 1767225641000
+     },
+     "title": "Permission",
+     "permissions": [
+      {
+       "action": "edit",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.messages.asc",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/message?limit=200&order=asc",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "msg_000000000001normalized0000",
+      "time": {
+       "created": 1767225605000
+      },
+      "text": "Write notes.txt",
+      "type": "user"
+     },
+     {
+      "id": "msg_000000000002normalized0000",
+      "time": {
+       "created": 1767225606000,
+       "streamed": 1767225610000,
+       "completed": 1767225614000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "tool",
+        "id": "call_s06_write",
+        "name": "write",
+        "executed": false,
+        "state": {
+         "status": "completed",
+         "input": {
+          "path": "notes.txt",
+          "content": "line one\nline two\n"
+         },
+         "content": [
+          {
+           "type": "text",
+           "text": "Created file successfully: notes.txt"
+          }
+         ],
+         "metadata": {
+          "truncated": false
+         }
+        },
+        "time": {
+         "created": 1767225608000,
+         "ran": 1767225610000,
+         "completed": 1767225613000
+        }
+       }
+      ],
+      "finish": "tool-calls",
+      "rawFinish": "tool_calls",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000003normalized0000",
+      "time": {
+       "created": 1767225615000,
+       "streamed": 1767225619000,
+       "completed": 1767225620000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "Wrote the file."
+       }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000004normalized0000",
+      "time": {
+       "created": 1767225621000
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+     },
+     {
+      "id": "msg_000000000005normalized0000",
+      "time": {
+       "created": 1767225624000
+      },
+      "text": "Write it again",
+      "type": "user"
+     },
+     {
+      "id": "msg_000000000006normalized0000",
+      "time": {
+       "created": 1767225625000,
+       "streamed": 1767225630000,
+       "completed": 1767225634000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "tool",
+        "id": "call_s06_write2",
+        "name": "write",
+        "executed": false,
+        "state": {
+         "status": "error",
+         "input": {
+          "path": "notes.txt",
+          "content": "rejected\n"
+         },
+         "error": {
+          "type": "permission.rejected",
+          "message": "not now"
+         }
+        },
+        "time": {
+         "created": 1767225627000,
+         "ran": 1767225629000,
+         "completed": 1767225633000
+        }
+       }
+      ],
+      "finish": "tool-calls",
+      "rawFinish": "tool_calls",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000007normalized0000",
+      "time": {
+       "created": 1767225635000,
+       "streamed": 1767225639000,
+       "completed": 1767225640000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "Permission was rejected."
+       }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000008normalized0000",
+      "time": {
+       "created": 1767225641000
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+     }
+    ],
+    "cursor": {
+     "previous": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDFub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoicHJldmlvdXMifQ",
+     "next": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDhub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoibmV4dCJ9"
+    }
+   }
+  },
+  {
+   "label": "session.diff.after",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffffenormalized0000/diff",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": []
+   }
+  }
+ ],
+ "llm": [
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 2,
+   "lastRole": "user",
+   "lastText": "Write notes.txt"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 4,
+   "lastRole": "tool",
+   "lastText": "Created file successfully: notes.txt"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 6,
+   "lastRole": "user",
+   "lastText": "Write it again"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 8,
+   "lastRole": "tool",
+   "lastText": "{\"error\":{\"type\":\"permission.rejected\",\"message\":\"not now\"},\"content\":[]}"
+  }
+ ],
+ "notes": {
+  "terminal": "session.execution.succeeded"
+ }
+}

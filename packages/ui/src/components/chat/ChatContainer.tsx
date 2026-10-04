@@ -36,6 +36,8 @@ import { useRetryVisibility } from './lib/turns/retryVisibility';
 import { ManagedTaskCompactionContinuity } from './ManagedTaskCompactionContinuity';
 import { getLatestCompactionBoundaryAt } from './managedTaskCompactionProjection';
 import { SessionChangesCard } from './SessionChangesCard';
+import { HostPrimaryRecovery } from './HostPrimaryRecovery';
+import { usePrimaryRecoveryStore } from '@/stores/usePrimaryRecoveryStore';
 
 // New sync system imports
 import { useSessionUIStore } from '@/sync/session-ui-store';
@@ -354,6 +356,12 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
     const openNewSessionDraft = useSessionUIStore((s) => s.openNewSessionDraft);
     const setCurrentSession = useSessionUIStore((s) => s.setCurrentSession);
     const newSessionDraft = useSessionUIStore((s) => s.newSessionDraft);
+    const hasRetainedInput = usePrimaryRecoveryStore(
+        React.useCallback(
+            (state) => Boolean(currentSessionId && state.snapshots[currentSessionId]?.recoveredInput),
+            [currentSessionId],
+        ),
+    );
     const currentSessionDirectory = useSessionUIStore(
         React.useCallback(
             (s) => (currentSessionId ? s.getDirectoryForSession(currentSessionId) : null),
@@ -815,6 +823,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
 				</div>
 				) : null}
                 <div
+                    key="chat-composer"
                     className={cn(
                         'relative z-10',
 						isDesktopExpandedInput
@@ -822,7 +831,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
 							: 'bg-background'
 					)}
 				>
-						<ChatInput scrollToBottom={resumeToLatestInstant} />
+						<ChatInput key="chat-input" scrollToBottom={resumeToLatestInstant} />
 				</div>
 			</div>
         );
@@ -850,7 +859,17 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
                         Retry
                     </Button>
                 </div>
-                <ChatInput scrollToBottom={resumeToLatestInstant} />
+                <div
+                    key="chat-composer"
+                    className={cn(
+                        'relative z-10',
+                        isDesktopExpandedInput
+                            ? 'flex-1 min-h-0 bg-background'
+                            : 'bg-background'
+                    )}
+                >
+                    <ChatInput key="chat-input" scrollToBottom={resumeToLatestInstant} />
+                </div>
             </div>
         );
     }
@@ -898,6 +917,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
                     </div>
                 </div>
                 <div
+                    key="chat-composer"
                     className={cn(
                         'relative z-10',
 						isDesktopExpandedInput
@@ -905,7 +925,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
 							: 'bg-background'
 					)}
 				>
-					<ChatInput scrollToBottom={resumeToLatestInstant} />
+					<ChatInput key="chat-input" scrollToBottom={resumeToLatestInstant} />
 				</div>
             </div>
         );
@@ -924,7 +944,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
                     )}
                     aria-hidden={isDesktopExpandedInput}
                 >
-                    {!isDesktopExpandedInput ? (
+                    {!isDesktopExpandedInput && !hasRetainedInput ? (
                         <div className="absolute inset-0 flex items-center justify-center">
                             <ChatEmptyState />
                         </div>
@@ -932,13 +952,23 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
                 </div>
                 <div
                     className={cn(
+                        'relative min-h-0 overflow-y-auto overflow-x-hidden',
+                        isDesktopExpandedInput && 'max-h-[50%]'
+                    )}
+                    style={CHAT_SCROLL_STYLE}
+                >
+                    <HostPrimaryRecovery key={currentSessionId} sessionId={currentSessionId} />
+                </div>
+                <div
+                    key="chat-composer"
+                    className={cn(
                         'relative z-10',
 						isDesktopExpandedInput
 							? 'flex-1 min-h-0 bg-background'
-							: 'bg-background'
+							: 'shrink-0 bg-background'
 					)}
 				>
-					<ChatInput scrollToBottom={resumeToLatestInstant} />
+					<ChatInput key="chat-input" scrollToBottom={resumeToLatestInstant} />
 				</div>
             </div>
         );
@@ -971,6 +1001,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
             />
 
             <div
+                key="chat-composer"
                 className={cn(
                     'relative z-10',
                     isDesktopExpandedInput
@@ -984,7 +1015,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
                         onClick={navigation.resumeToLatest}
                     />
                 )}
-                <ChatInput scrollToBottom={resumeToLatestInstant} />
+                <ChatInput key="chat-input" scrollToBottom={resumeToLatestInstant} />
             </div>
 
             <DeferredChatDialog active={isTimelineDialogOpen}>

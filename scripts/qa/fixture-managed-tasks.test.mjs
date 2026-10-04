@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
 import { createQaManagedTaskReadModel, createQaManagedTaskFetchScript, installQaManagedTaskReadModel, resolveQaManagedTaskRead } from './fixture-managed-tasks.mjs';
-import { createLoopbackOpenCodeFixture, PERF_PARENT_SESSION_ID } from '../perf/loopback-opencode-fixture.mjs';
+import { createLoopbackOpenCodeV2Fixture, PERF_PARENT_SESSION_ID } from '../perf/loopback-opencode-v2-fixture.mjs';
+import { createOpenCodeClient } from '../../packages/web/server/lib/opencode/opencode-client/index.js';
 
 const children = () => ['running', 'completed'].map((status, index) => ({ sessionID: `ses_child${index}`,
   parentSessionID: 'ses_root', userMessageID: `msg_user${index}`, assistantMessageID: `msg_assistant${index}`, status }));
@@ -94,19 +95,25 @@ test('read adapter requires the isolated fixture page and records failures acros
 });
 
 test('managed visual tool parts require owned canonical child/root/assistant and unique dispatch calls', async () => {
-  const fixture = await createLoopbackOpenCodeFixture({ directory: '/qa-task-visual' });
-  const post = (route, body) => fetch(fixture.origin + route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const fixture = await createLoopbackOpenCodeV2Fixture({ directory: '/qa-task-visual' });
+  const directory = '/qa-task-visual';
+  const client = createOpenCodeClient({ getRuntime: () => ({ generation: 2, baseUrl: fixture.origin }), getAuthHeaders: () => fixture.authHeaders });
+  const post = async (id, body) => {
+    const response = await fetch(`${fixture.origin}/api/session/${id}/prompt`, { method: 'POST', headers: { ...fixture.authHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    assert.equal(response.status, 200);
+  };
+  const rows = async id => (await client.sessions.messages(id, {}, { directory })).records;
   try {
     fixture.configureNextPrompt(PERF_PARENT_SESSION_ID, { hold: true });
-    await post(`/session/${PERF_PARENT_SESSION_ID}/prompt_async`, { messageID: 'msg_visual_parent', parts: [{ type: 'text', text: 'Visual parent' }] });
-    const parent = (await fetch(`${fixture.origin}/session/${PERF_PARENT_SESSION_ID}/message`).then(response => response.json())).at(-1);
+    await post(PERF_PARENT_SESSION_ID, { id: 'msg_visual_parent', text: 'Visual parent' });
+    const parent = (await rows(PERF_PARENT_SESSION_ID)).at(-1);
     const childRecords = [];
     for (const [index, status] of ['running', 'completed'].entries()) {
-      const child = await post('/session', { parentID: PERF_PARENT_SESSION_ID, title: 'Visual child' }).then(response => response.json());
+      const child = await client.sessions.create({ parentID: PERF_PARENT_SESSION_ID, title: 'Visual child' }, { directory });
       fixture.configureNextPrompt(child.id, { hold: status === 'running', chunks: 1, intervalMs: 10 });
-      await post(`/session/${child.id}/prompt_async`, { messageID: `msg_visual_child_${index}`, parts: [{ type: 'text', text: 'Visual child' }] });
+      await post(child.id, { id: `msg_visual_child_${index}`, text: 'Visual child' });
       if (status === 'completed') await new Promise(resolve => setTimeout(resolve, 25));
-      const assistant = (await fetch(`${fixture.origin}/session/${child.id}/message`).then(response => response.json())).at(-1);
+      const assistant = (await rows(child.id)).at(-1);
       childRecords.push({ sessionID: child.id, parentSessionID: PERF_PARENT_SESSION_ID, status,
         userMessageID: assistant.info.parentID, assistantMessageID: assistant.info.id });
     }
@@ -119,7 +126,7 @@ test('managed visual tool parts require owned canonical child/root/assistant and
     assert.throws(() => append({ ...data.records[0], task: { ...data.records[0].task, childSessionId: 'ses_foreign', dispatchCallId: 'call_wrong_child' } }), /owned canonical/);
     assert.throws(() => append({ ...data.records[1], task: { ...data.records[1].task, canonicalRefs: [] } }), /do not match/);
     append(data.records[1]);
-    const saved = (await fetch(`${fixture.origin}/session/${PERF_PARENT_SESSION_ID}/message`).then(response => response.json())).at(-1);
+    const saved = (await rows(PERF_PARENT_SESSION_ID)).at(-1);
     assert.equal(saved.parts.filter(part => part.type === 'tool' && part.tool === 'devryan_task').length, 2);
   } finally { await fixture.close(); }
 });

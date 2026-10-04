@@ -1,4 +1,4 @@
-import { createOpencodeClient } from '@opencode-ai/sdk/v2';
+import { resolveOpenCodeGeneration } from '../opencode/opencode-generation.js';
 import { DateTime } from 'luxon';
 import parser from 'cron-parser';
 
@@ -221,8 +221,6 @@ export const createScheduledTasksRuntime = (deps) => {
     projectConfigRuntime,
     listProjects,
     listManagedProjectIDs,
-    buildOpenCodeUrl,
-    getOpenCodeAuthHeaders,
     waitForOpenCodeReady,
     emitTaskRunEvent,
     emitProjectMetadataChanged,
@@ -233,10 +231,27 @@ export const createScheduledTasksRuntime = (deps) => {
     maxGlobalConcurrency = DEFAULT_GLOBAL_CONCURRENCY,
     maxProjectConcurrency = DEFAULT_PROJECT_CONCURRENCY,
     maxRunDurationMs = DEFAULT_MAX_RUN_MS,
-    createClient = createOpencodeClient,
+    openCodeClient,
   } = deps;
+  if (typeof openCodeClient?.generation !== 'function') {
+    throw new TypeError('openCodeClient must be an openCodeClient');
+  }
 
   let started = false;
+  let checkpointHeld = false, checkpointFailed = false;
+  const checkpointWork = new Set();
+  const ownCheckpointWork = (operation, recordFailure = false) => {
+    checkpointWork.add(operation);
+    operation.then(() => checkpointWork.delete(operation), () => {
+      if (recordFailure) checkpointFailed = true;
+      checkpointWork.delete(operation);
+    });
+    return operation;
+  };
+  const admitCheckpointWork = (action) => (...args) => {
+    if (checkpointHeld) return Promise.reject(Object.assign(new Error('bundle_scheduled_tasks_held'), { code: 'bundle_scheduled_tasks_held' }));
+    return ownCheckpointWork(Promise.resolve().then(() => action(...args)), true);
+  };
   const tasksByProject = new Map();
   const projectPathByID = new Map();
   const timersByTaskKey = new Map();
@@ -278,6 +293,7 @@ export const createScheduledTasksRuntime = (deps) => {
   };
 
   const scheduleTask = (projectID, taskID, nextRunAt) => {
+    if (checkpointHeld) return;
     const taskKey = buildTaskKey(projectID, taskID);
     clearTimerForKey(taskKey);
 
@@ -507,56 +523,50 @@ export const createScheduledTasksRuntime = (deps) => {
     ],
   });
 
-  const runPromptAsync = async ({ baseUrl, authHeaders, sessionID, projectPath, task }) => {
-    const promptUrl = new URL(`${baseUrl}/session/${encodeURIComponent(sessionID)}/prompt_async`);
-    promptUrl.searchParams.set('directory', projectPath);
-    const response = await fetch(promptUrl.toString(), {
-      method: 'POST',
-      headers: {
-        ...authHeaders,
-        'content-type': 'application/json',
-        accept: 'application/json',
-      },
-      body: JSON.stringify(buildPromptAsyncPayload(task)),
-    });
+  const buildCommandPayload = (task, parsed) => ({
+    command: parsed.command,
+    arguments: parsed.arguments,
+    ...(task.execution.agent ? { agent: task.execution.agent } : {}),
+    model: `${task.execution.providerID}/${task.execution.modelID}`,
+    ...(task.execution.variant ? { variant: task.execution.variant } : {}),
+  });
 
-    if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      throw new Error(`prompt_async failed (${response.status})${body ? `: ${body}` : ''}`);
-    }
-  };
-
-  const runScheduledCommandIfApplicable = async ({ client, projectPath, sessionID, task }) => {
-    const parsed = parseScheduledCommandPrompt(task?.execution?.prompt);
-    if (!parsed) {
-      return false;
-    }
-
-    let commands = [];
-    try {
-      const response = await client.command.list({ directory: projectPath });
-      commands = Array.isArray(response?.data) ? response.data : [];
-    } catch {
-      return false;
-    }
-
-    const hasMatchingCommand = commands.some((command) => command?.name === parsed.command);
-    if (!hasMatchingCommand) {
-      return false;
-    }
-
-    await client.session.command({
-      sessionID,
-      directory: projectPath,
-      command: parsed.command,
-      arguments: parsed.arguments,
-      ...(task.execution.agent ? { agent: task.execution.agent } : {}),
-      model: `${task.execution.providerID}/${task.execution.modelID}`,
-      ...(task.execution.variant ? { variant: task.execution.variant } : {}),
-    });
-
-    return true;
-  };
+  /**
+   * Native session operations through the application client; prompt and
+   * command bodies go through its admission owner.
+   * @param {{ sessions: { create: Function, remove: Function }, prompts: { prompt: Function, command: Function },
+   *   catalog: { commands: Function } }} client
+   */
+  const createTaskSessionOps = (client) => ({
+    async createSession({ projectPath, title }) {
+      const session = await client.sessions.create({ directory: projectPath, title }, { directory: projectPath });
+      return session?.id;
+    },
+    async deleteSession({ projectPath, sessionID }) {
+      await client.sessions.remove(sessionID, { directory: projectPath, allowNotFound: true });
+    },
+    async runCommandIfApplicable({ projectPath, sessionID, task }) {
+      const parsed = parseScheduledCommandPrompt(task?.execution?.prompt);
+      if (!parsed) {
+        return false;
+      }
+      let commands = [];
+      try {
+        const listed = await client.catalog.commands({ directory: projectPath });
+        commands = Array.isArray(listed) ? listed : [];
+      } catch {
+        return false;
+      }
+      if (!commands.some((command) => command?.name === parsed.command)) {
+        return false;
+      }
+      await client.prompts.command(sessionID, buildCommandPayload(task, parsed), { directory: projectPath });
+      return true;
+    },
+    async prompt({ projectPath, sessionID, task }) {
+      await client.prompts.prompt(sessionID, buildPromptAsyncPayload(task), { directory: projectPath });
+    },
+  });
 
   const runTaskWithWatchdog = async (projectID, task, reason) => {
     const startedAt = Date.now();
@@ -581,18 +591,11 @@ export const createScheduledTasksRuntime = (deps) => {
       await waitForOpenCodeReady(10_000, 250);
     }
 
-    const baseUrl = buildOpenCodeUrl('/', '').replace(/\/$/, '');
-    const authHeaders = getOpenCodeAuthHeaders();
-    const client = createClient({
-      baseUrl,
-      headers: authHeaders,
-    });
+    // Recheck after readiness and target resolution, before any session exists.
+    resolveOpenCodeGeneration(openCodeClient);
+    const ops = createTaskSessionOps(openCodeClient);
 
-    const sessionResponse = await client.session.create({
-      directory: projectPath,
-      title,
-    });
-    const sessionID = sessionResponse?.data?.id;
+    const sessionID = await ops.createSession({ projectPath, title });
     if (!sessionID) {
       throw new Error('failed to create session');
     }
@@ -609,7 +612,7 @@ export const createScheduledTasksRuntime = (deps) => {
           sessionId: sessionID,
         });
       } catch (error) {
-        await client.session.delete({ sessionID, directory: projectPath }).catch(() => {});
+        await ops.deleteSession({ projectPath, sessionID }).catch(() => {});
         throw error;
       }
     }
@@ -626,18 +629,15 @@ export const createScheduledTasksRuntime = (deps) => {
     } catch {
     }
 
-    const executedAsCommand = await runScheduledCommandIfApplicable({
-      client,
+    const executedAsCommand = await ops.runCommandIfApplicable({
       projectPath,
       sessionID,
       task,
     });
     if (!executedAsCommand) {
-      await runPromptAsync({
-        baseUrl,
-        authHeaders,
-        sessionID,
+      await ops.prompt({
         projectPath,
+        sessionID,
         task,
       });
     }
@@ -750,7 +750,7 @@ export const createScheduledTasksRuntime = (deps) => {
     }
   };
 
-  const runTask = async (projectID, taskID, reason, scheduledFor) => {
+  const runTask = admitCheckpointWork(async (projectID, taskID, reason, scheduledFor) => {
     const taskMap = tasksByProject.get(projectID);
     const initialTask = taskMap?.get(taskID);
     if (!initialTask || !initialTask.enabled) {
@@ -822,7 +822,9 @@ export const createScheduledTasksRuntime = (deps) => {
       let errorMessage;
 
       try {
-        const runPromise = runTaskWithWatchdog(projectID, task, reason);
+        // Keep the original operation after a watchdog timeout releases its
+        // display/concurrency slot; that timeout does not stop its writes.
+        const runPromise = ownCheckpointWork(runTaskWithWatchdog(projectID, task, reason));
         let timeoutID;
         const timeoutPromise = new Promise((_, reject) => {
           timeoutID = setTimeout(() => {
@@ -874,6 +876,7 @@ export const createScheduledTasksRuntime = (deps) => {
           updateInMemoryTask(projectID, stateTask);
         }
       } catch (error) {
+        checkpointFailed = true;
         persistError = safeErrorMessage(error);
         logger.warn?.('[ScheduledTasks] terminal state persistence failed', {
           projectID,
@@ -908,7 +911,7 @@ export const createScheduledTasksRuntime = (deps) => {
     } finally {
       releaseRunningSlot(projectID, taskKey);
     }
-  };
+  });
 
   const pumpQueue = () => {
     if (!started) {
@@ -1047,13 +1050,20 @@ export const createScheduledTasksRuntime = (deps) => {
   };
 
   return {
-    start,
+    start: admitCheckpointWork(start),
     stop,
-    syncAllProjects,
-    syncProject,
-    removeTasksForRevokedAccess,
-    runNow,
+    syncAllProjects: admitCheckpointWork(syncAllProjects),
+    syncProject: admitCheckpointWork(syncProject),
+    removeTasksForRevokedAccess: admitCheckpointWork(removeTasksForRevokedAccess),
+    runNow: admitCheckpointWork(runNow),
     getStatus,
-    refreshStatus,
+    refreshStatus: admitCheckpointWork(refreshStatus),
+    holdForCheckpoint() {
+      checkpointHeld = true;
+      stop();
+      if (checkpointWork.size || checkpointFailed) {
+        throw Object.assign(new Error('bundle_scheduled_tasks_unsettled'), { code: 'bundle_scheduled_tasks_unsettled' });
+      }
+    },
   };
 };

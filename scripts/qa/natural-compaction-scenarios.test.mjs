@@ -7,8 +7,10 @@ import { findQaSeededInvestigationStarts, createQaNaturalWorkload, createQaNatur
   qaNativeTokenUsage, qaVisibleUserText, runQaNaturalCompaction } from './natural-compaction-scenarios.mjs';
 import { readQaSavedPlanRevision } from './compaction-approval.mjs';
 import { createQaProjectFixture, removeQaProjectFixture } from './project-fixture.mjs';
+import { resolveQaTargetOpenCodeVersion, TARGET_OPENCODE_VERSION } from '../../packages/web/server/lib/opencode/version-policy.js';
 
-const nativePolicy = overrides => deriveQaNativeCompactionPolicy({ version: '1.18.33',
+const hostPin = { version: TARGET_OPENCODE_VERSION, source: 'host-pin' };
+const nativePolicy = overrides => deriveQaNativeCompactionPolicy({ version: TARGET_OPENCODE_VERSION, target: hostPin,
   modelLimits: { context: 1050000, input: 276000, output: 128000 }, ...overrides });
 const rows = () => [
   { info: { id: 'msg_usage', role: 'assistant', time: { created: 50, completed: 90 },
@@ -29,79 +31,75 @@ test('natural workload identity ignores synthetic Plan instructions and native c
   assert.equal(qaVisibleUserText({parts:[{type:'compaction',auto:true}]}),'');
 });
 
-test('native input reserve controls the pinned OpenAI threshold, including effective overrides', () => {
+test('natural compaction refuses retired v1 policies and uses the native v2 host pin', () => {
   const policy = nativePolicy();
-  assert.equal(policy.threshold, 256000);
-  assert.equal(policy.thresholdBasis, 'input-minus-reserved');
-  assert.equal(policy.maximumOutput, 32000);
-  assert.equal(nativePolicy({ compaction: { reserved: 10000 } }).threshold, 266000);
-  assert.equal(nativePolicy({ outputTokenMax: '8000' }).threshold, 268000);
-  assert.equal(nativePolicy({ modelLimits: { context: 200000, input: null, output: 64000 } }).threshold, 168000);
-  assert.equal(nativePolicy({ modelLimits: { context: 200000, input: 0, output: 4000 } }).threshold, 196000);
-  assert.equal(nativePolicy({ modelLimits: { context: 200000, output: 0 } }).maximumOutput, 32000);
-  // The shipped companion runtime is the pinned release plus DevRyan's execution patch.
-  assert.equal(nativePolicy({ version: '1.18.33-devryan.1' }).threshold, policy.threshold);
-  for (const override of [{ version: '1.18.27' }, { version: '1.18.27-devryan.3' }, { version: '1.18.33-beta.1' }, { compaction: { auto: false } }, { modelLimits: undefined },
-    { modelLimits: { context: 0, output: 1000 } }, { outputTokenMax: 'not-a-number' }, { compaction: { reserved: -1 } }]) {
-    assert.throws(() => nativePolicy(override));
+  assert.equal(policy.threshold, 248400);
+  assert.equal(policy.thresholdBasis, 'input-minus-buffer');
+  assert.deepEqual(policy.runtimeTarget, hostPin);
+  for (const version of ['1.18.31', '1.18.32', '1.18.33']) {
+    assert.throws(() => nativePolicy({ version }), /does not match/);
+    assert.throws(() => qaNativeTokenUsage({ total: 100 }, { version }), /has not been verified/);
+    assert.throws(() => findNaturalCompactionBoundaries(rows(), { ...options(), version }), /has not been verified/);
+  }
+  for (const override of [{ compaction: { auto: false } }, { modelLimits: undefined }, { modelLimits: { context: 0 } }]) assert.throws(() => nativePolicy(override));
+});
+
+test('v2 ceiling follows its input/context buffer policy and never silently applies it to an unverified version', () => {
+  const candidate = { version: '2.0.20', source: 'DEVRYAN_QA_OPENCODE_VERSION' };
+  const policy = overrides => nativePolicy({ version: candidate.version, target: candidate, ...overrides });
+  assert.equal(policy({ compaction: { buffer: 10000 } }).threshold, 266000);
+  assert.equal(policy({ compaction: { buffer: 0 } }).threshold, 276000);
+  assert.equal(policy({ compaction: { reserved: 1000 }, outputTokenMax: '8000' }).threshold, 248400);
+  for (const [context, threshold] of [[31999, 28800], [32000, 16000], [100000, 84000], [200000, 180000]]) {
+    const projected = policy({ modelLimits: { context, output: 4000 } });
+    assert.equal(projected.threshold, threshold);
+    assert.equal(projected.thresholdBasis, 'context-minus-buffer');
+  }
+  assert.equal(policy({ modelLimits: { context: 0, input: 100000 } }).threshold, 84000);
+  for (const buffer of [-1, null, '1000', NaN, Infinity, 276000]) assert.throws(() => policy({ compaction: { buffer } }));
+  for (const version of ['1.18.30', '2.0.21', '3.0.0']) {
+    assert.throws(() => nativePolicy({ version, target: { ...candidate, version } }), /has not been verified|exact OpenCode version/);
   }
 });
 
-test('usage follows the native total-or-components contract without inventing missing values', () => {
-  assert.equal(qaNativeTokenUsage({ total: 258000 }), 258000);
-  assert.equal(qaNativeTokenUsage({ total: 0, input: 200000, output: 4000, cache: { read: 50000, write: 2000 } }), 256000);
-  assert.equal(qaNativeTokenUsage({ input: 200000, output: 1 }), null);
-  assert.equal(qaNativeTokenUsage(undefined), null);
-});
-
-test('natural boundary requires typed automatic compaction and an exact completed summary', () => {
-  const boundary = findNaturalCompactionBoundaries(rows(), options())[0];
-  assert.equal(boundary.eventId, 'prt_auto');
-  assert.equal(boundary.summaryMessageId, 'msg_summary');
-  assert.equal(boundary.usageMessageId, 'msg_usage');
-  assert.equal(boundary.thresholdReached, true);
-  assert.equal(boundary.nativeLifecycle, 'observed');
-  assert.match(boundary.summarySha256, /^[a-f0-9]{64}$/);
-  assert.deepEqual(findNaturalCompactionBoundaries(rows(), { ...options(), previousPartIds: ['prt_auto'] }), []);
-  for (const mutate of [
-    value => { value[1].parts = [{ type: 'text', text: 'Automatic summary recap' }]; },
-    value => { value[1].parts[0].auto = false; },
-    value => { value[2].info.parentID = 'other'; },
-    value => { value[2].info.summary = false; },
-    value => { delete value[2].info.time.completed; },
-    value => { value[2].info.error = { name: 'APIError' }; },
-    value => { value[2].parts[0].text = ' '; },
-  ]) {
-    const value = rows(); mutate(value);
-    assert.deepEqual(findNaturalCompactionBoundaries(value, options()), []);
-  }
-});
-
-test('threshold and lifecycle claims use the adjacent turn and exact native session window', () => {
+test('v2 measured usage includes separate reasoning and cannot prove a native estimated-context trigger', () => {
+  const version = '2.0.20';
+  assert.equal(qaNativeTokenUsage({ total: 999, input: 1, output: 2, reasoning: 3, cache: { read: 4, write: 5 } }, { version }), 15);
+  assert.equal(qaNativeTokenUsage({ total: 999, input: 1, output: 2, cache: { read: 4, write: 5 } }, { version }), null);
   const value = rows();
-  value.unshift({ info: { id: 'historical', role: 'assistant', time: { completed: 10 }, tokens: { total: 999999 } }, parts: [] });
-  value[1].info.tokens = { total: 100000 };
-  value[2].parts[0].overflow = true;
-  const boundary = findNaturalCompactionBoundaries(value, options())[0];
-  assert.equal(boundary.thresholdReached, false);
-  assert.equal(boundary.overflow, true);
-  assert.equal(boundary.usageAtTrigger, 100000);
-  for (const observations of [[], [{ kind: 'native.compacting', sessionID: 'other', at: 102 },
-    { kind: 'native.session.compacted', sessionID: 'other', at: 205 }],
-  [{ kind: 'native.compacting', sessionID: 'ses_root', at: 20 }, { kind: 'native.session.compacted', sessionID: 'ses_root', at: 30 }],
-  [{ kind: 'native.compacting', sessionID: 'ses_root', at: 6000 }, { kind: 'native.session.compacted', sessionID: 'ses_root', at: 6001 }],
-  [{ kind: 'native.session.compacted', sessionID: 'ses_root', at: 110 }, { kind: 'native.compacting', sessionID: 'ses_root', at: 190 }],
-  [{ kind: 'native.compacting', sessionID: 'ses_root', at: 210 }, { kind: 'native.session.compacted', sessionID: 'ses_root', at: 220 }]]) {
-    assert.equal(findNaturalCompactionBoundaries(rows(), { ...options(), observations })[0].nativeLifecycle, 'missing');
+  value[0].info.tokens.reasoning = 50000;
+  assert.equal(qaNativeTokenUsage(value[0].info.tokens, { version }), 306000);
+  assert.deepEqual(findNaturalCompactionBoundaries(value, { ...options(), version, threshold: 248400 }), [],
+    'Measured usage and a projected summary cannot replace native trigger evidence');
+});
+
+test('v2 natural QA records unavailable native evidence before sending any provider prompt', async () => {
+  const fixture = createQaProjectFixture({ caseId: 'v2-natural-evidence-unavailable' });
+  const priorTarget = process.env.DEVRYAN_QA_OPENCODE_VERSION;
+  process.env.DEVRYAN_QA_OPENCODE_VERSION = '2.0.20';
+  try {
+    await mkdir(fixture.evidenceDirectory, { recursive: true });
+    await assert.rejects(runQaNaturalCompaction({
+      cell: { transport: 'live', runtime: 'electron', scenarioId: 'compaction-natural', agent: 'builder', planMode: false },
+      projectFixture: fixture,
+      api: async route => { assert.equal(route, '/api/health'); return { openCodeVersion: '2.0.20' }; },
+      sendTurn: async () => assert.fail('unsupported evidence must not spend provider usage'),
+      check: async () => assert.fail('unsupported evidence must fail before any live checks'),
+    }), { code: 'qa_native_compaction_evidence_unavailable' });
+    const evidence = JSON.parse(await readFile(path.join(fixture.evidenceDirectory, 'natural-compaction-evidence.json'), 'utf8'));
+    assert.equal(evidence.outcome, 'unavailable');
+    assert.equal(evidence.triggerEvidence.state, 'unavailable');
+    assert.deepEqual(evidence.boundaries, []);
+  } finally {
+    if (priorTarget === undefined) delete process.env.DEVRYAN_QA_OPENCODE_VERSION;
+    else process.env.DEVRYAN_QA_OPENCODE_VERSION = priorTarget;
+    removeQaProjectFixture(fixture);
+    await rm(fixture.evidenceDirectory, { recursive: true, force: true });
   }
 });
 
-test('two natural boundaries cannot reuse one observed native lifecycle cycle', () => {
-  const value=rows();const second=structuredClone(value.slice(1));
-  second[0].info.id='msg_auto_2';second[0].parts[0].id='prt_auto_2';
-  second[1].info.id='msg_summary_2';second[1].info.parentID='msg_auto_2';second[1].info.time.completed=202;
-  const found=findNaturalCompactionBoundaries([...value,...second],options());
-  assert.deepEqual(found.map(boundary=>boundary.nativeLifecycle),['observed','missing']);
+test('historical summary rows and v1 lifecycle events cannot qualify a native v2 boundary', () => {
+  assert.deepEqual(findNaturalCompactionBoundaries(rows(), options()), []);
 });
 
 test('replay workloads are bounded, deterministic, varied, and semantically checkable', () => {
@@ -122,15 +120,15 @@ test('replay workloads are bounded, deterministic, varied, and semantically chec
   assert.throws(() => createQaNaturalWorkload({ batch: 1, maximumBytes: 1024 * 1024 }));
 });
 
-test('natural acceptance cannot run against fixture, web, or manual cells', async () => {
+test('natural acceptance cannot run against fixture, unsupported host, or manual cells', async () => {
   for (const cell of [{ transport: 'fixture', runtime: 'electron', scenarioId: 'compaction-natural' },
-    { transport: 'live', runtime: 'web', scenarioId: 'compaction-natural' },
+    { transport: 'live', runtime: 'unsupported', scenarioId: 'compaction-natural' },
     { transport: 'live', runtime: 'electron', scenarioId: 'compaction-manual' }]) {
-    await assert.rejects(runQaNaturalCompaction({ cell }), /live Electron natural matrix cell/);
+    await assert.rejects(runQaNaturalCompaction({ cell }), /live web or Electron natural matrix cell/);
   }
 });
 
-test('natural Plan captures bind both revisions to exact newly submitted human messages', async () => {
+for (const runtime of ['web', 'electron']) test(`natural ${runtime} Plan captures bind both revisions to exact newly submitted human messages`, async () => {
   const fixture = createQaProjectFixture({ runId: 'natural-submitted-plan' });
   const sessionID = 'ses_natural_submission';
   const ownedPlansRoot = path.join(fixture.evidenceDirectory, 'app-data', 'plans');
@@ -162,7 +160,8 @@ test('natural Plan captures bind both revisions to exact newly submitted human m
     }
     const api = async (route, options) => {
       requests.push(route);
-      if (route === '/api/health') return { openCodeVersion: '1.18.33' };
+      // runQaNaturalCompaction checks against the resolved QA target, so the mock reports it.
+      if (route === '/api/health') return { openCodeVersion: resolveQaTargetOpenCodeVersion().version };
       if (route === `/api/config?directory=${encodeURIComponent(fixture.fixtureRoot)}`) return { compaction: { auto: true } };
       const url = new URL(route, 'http://qa.invalid');
       const index = savedPlans.findIndex(saved => url.pathname === `/api/session/${sessionID}/plan-revisions/${saved.sourceMessageID}`);
@@ -173,9 +172,9 @@ test('natural Plan captures bind both revisions to exact newly submitted human m
       return { path: savedPlans[index].canonicalPath, content: contents[index] };
     };
     await assert.rejects(runQaNaturalCompaction({
-      cell: { transport: 'live', runtime: 'electron', scenarioId: 'compaction-natural', planMode: true,
+      cell: { transport: 'live', runtime, scenarioId: 'compaction-natural', planMode: true,
         agent: 'builder', providerId: 'qa-provider', modelId: 'qa-model', variant: null, timeoutMs: 5000 },
-      projectFixture: fixture, nativeAgent: 'build', api,
+      projectFixture: fixture, nativeObservationScope: { directory: fixture.fixtureRoot, configurationDigest: 'c'.repeat(64), compaction: { auto: true } }, nativeAgent: 'build', api,
       ui: { attach: async files => assert.deepEqual(files, fixture.attachments.map(item => item.path)) },
       getSessionID: () => sessionID,
       messages: async () => messages,
@@ -211,8 +210,9 @@ test('natural Plan captures bind both revisions to exact newly submitted human m
         return savedPlans[index];
       },
       readSavedRevision: revision => readQaSavedPlanRevision(api, revision, ownedPlansRoot),
-      readProviderObservation: async () => [{ kind: 'chat.params', sessionID, providerID: 'qa-provider', modelID: 'qa-model',
-        modelLimits: { context: 200000, output: 32000 } }],
+      readProviderObservation: async () => [{ stage: 'model-prepared', kind: 'primary', sessionID,
+        directory: `<WORKTREE_${createHash('sha256').update(fixture.fixtureRoot).digest('hex').slice(0, 12)}>`, configurationDigest: 'c'.repeat(64),
+        requestID: 'prepared_unit_only', modelLimits: { context: 200000, output: 32000 } }],
       screenshot: async name => { screenshots.push(name); },
       check: async (name, action) => {
         checks.push(name);

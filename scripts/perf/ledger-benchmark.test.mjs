@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import path from 'node:path';
-import { fixtureEntries, parseLedgerBenchmarkArgs, summarize } from './ledger-benchmark.mjs';
+import { SEED_SESSIONS, burstCallIdentity, burstModeFor, drainRuntime, fixtureEntries, parseLedgerBenchmarkArgs, seedCallIdentity, summarize } from './ledger-benchmark.mjs';
 import { phaseTotals, parseProcessSample } from './ledger-profile-worker.mjs';
 
 test('parses benchmark options and rejects invalid counts or unknown flags', () => {
@@ -30,6 +30,60 @@ test('burst, re-stamp and synthetic fixture options are bounded', () => {
   assert.throws(() => parseLedgerBenchmarkArgs(['--profile', '--restamp']), /not --profile/);
 });
 
+test('seeded history, same-session bursts and deferred cleanup are opt-in and bounded', () => {
+  const defaults = parseLedgerBenchmarkArgs([]);
+  assert.equal(defaults.seedCalls, 0);
+  assert.equal(defaults.sameSession, false);
+  assert.equal(defaults.deferredCleanup, false);
+  assert.equal(burstModeFor(defaults), null);
+  const options = parseLedgerBenchmarkArgs(['--seed-calls', '40000', '--parallel', '8', '--same-session', '--deferred-cleanup']);
+  assert.equal(options.seedCalls, 40000);
+  assert.equal(options.sameSession, true);
+  assert.equal(options.deferredCleanup, true);
+  assert.equal(burstModeFor(options), 'same-session');
+  assert.equal(burstModeFor(parseLedgerBenchmarkArgs(['--parallel', '8'])), 'distinct-sessions');
+  assert.equal(parseLedgerBenchmarkArgs(['--seed-calls', '200000']).seedCalls, 200000);
+  for (const value of ['-1', '200001', '1.5', 'many']) assert.throws(() => parseLedgerBenchmarkArgs(['--seed-calls', value]), /--seed-calls/);
+  assert.throws(() => parseLedgerBenchmarkArgs(['--seed-calls']), /requires a value/);
+  assert.throws(() => parseLedgerBenchmarkArgs(['--same-session']), /--parallel burst/);
+  assert.throws(() => parseLedgerBenchmarkArgs(['--same-session', '--parallel', '1']), /--parallel burst/);
+  for (const flag of [['--seed-calls', '10'], ['--deferred-cleanup']]) {
+    assert.throws(() => parseLedgerBenchmarkArgs(['--profile', ...flag]), /not --profile/);
+  }
+});
+
+test('a profiled burst is ledger-only', () => {
+  const options = parseLedgerBenchmarkArgs(['--profile', '--parallel', '8', '--same-session']);
+  assert.equal(options.parallel, 8);
+  assert.equal(burstModeFor(options), 'same-session');
+  assert.throws(() => parseLedgerBenchmarkArgs(['--profile', '--companion', '--parallel', '4']), /retired/);
+});
+
+test('burst and seed identities follow the production step shape', () => {
+  assert.deepEqual(burstCallIdentity(3, true), { session: 's1', user: 'ub', call: 'bc3' });
+  assert.deepEqual(burstCallIdentity(3, true, 'profile'), { session: 'profile', user: 'ub', call: 'bc3' });
+  assert.deepEqual(burstCallIdentity(3, false), { session: 'b3', user: 'bu3', call: 'bc3' });
+  const seeded = Array.from({ length: 200 }, (_, index) => seedCallIdentity(index));
+  assert.equal(new Set(seeded.map((row) => row.callID)).size, 200);
+  assert.equal(new Set(seeded.map((row) => row.sessionID)).size, SEED_SESSIONS);
+  // Each assistant step (session, user message) carries eight calls.
+  const steps = Map.groupBy(seeded, (row) => `${row.sessionID}/${row.userMessageID}`);
+  assert.deepEqual(new Set([...steps.values()].map((rows) => rows.length)), new Set([8]));
+  for (const row of seeded) assert.equal(row.messageID, `${row.userMessageID}-assistant`);
+});
+
+test('the runtime drain awaits maintenance scheduled on the next tick and tolerates older runtimes', async () => {
+  assert.equal(await drainRuntime(null), null);
+  assert.equal(await drainRuntime({}), null);
+  // Mirrors noteLedgerCommit: maintenance registers via setImmediate after the
+  // commit returns, so a drain that did not yield first would miss it.
+  let running = null, finished = false;
+  setImmediate(() => { running = new Promise((resolve) => setTimeout(resolve, 20)).then(() => { finished = true; }); });
+  const ms = await drainRuntime({ drain: () => Promise.allSettled([running].filter(Boolean)) });
+  assert.equal(finished, true);
+  assert.ok(Number.isFinite(ms));
+});
+
 test('the synthetic fixture is deterministic and mixes depths, links and executables', () => {
   const entries = fixtureEntries(1000);
   assert.deepEqual(entries, fixtureEntries(1000));
@@ -39,13 +93,11 @@ test('the synthetic fixture is deterministic and mixes depths, links and executa
   assert.deepEqual(new Set(entries.map((entry) => entry.file.split('/').length)), new Set([3, 4, 5, 6]));
 });
 
-test('profile bounds and companion opt-in are explicit', () => {
-  const options = parseLedgerBenchmarkArgs(['--profile', '--companion', '--timeout-ms', '60000']);
-  assert.equal(options.profile, true);
-  assert.equal(options.companion, true);
-  assert.equal(options.timeoutMs, 60000);
-  assert.throws(() => parseLedgerBenchmarkArgs(['--companion']), /requires --profile/);
-  assert.throws(() => parseLedgerBenchmarkArgs(['--profile', '--companion', '--runtime', 'another-runtime']), /alternate --runtime/);
+test('profile bounds retain isolated ledger mode and reject the retired companion option', () => {
+  const options = parseLedgerBenchmarkArgs(['--profile', '--timeout-ms', '60000']);
+  assert.equal(options.profile, true); assert.equal(options.timeoutMs, 60000);
+  assert.throws(() => parseLedgerBenchmarkArgs(['--companion']), /retired/);
+  assert.throws(() => parseLedgerBenchmarkArgs(['--profile', '--companion']), /retired/);
   for (const timeout of ['0', '999', '900001', 'oops']) assert.throws(() => parseLedgerBenchmarkArgs(['--timeout-ms', timeout]), /--timeout-ms/);
 });
 

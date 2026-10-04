@@ -18,28 +18,28 @@ describe('chat thinking policy', () => {
     }
     test('uses exact provider keys and never changes the settings resolver', () => {
         const catalog = provider(['Low', 'Medium', 'High']);
-        expect(resolveChatThinkingVariant(catalog, 'model', null)).toBe('Medium');
+        expect(resolveChatThinkingVariant(catalog, 'model', undefined)).toBe('Medium');
         expect(resolveChatThinkingVariant(catalog, 'model', 'high')).toBe('High');
         expect(resolveProviderModelVariant(catalog, 'model', null)).toBeUndefined();
         expect(resolveChatThinkingVariant(provider([]), 'model', null)).toBeUndefined();
     });
-    test('OpenAI keeps native none remapping and Fast remains a separate mode', () => {
+    test('OpenAI preserves explicit none intent and Fast remains a separate mode', () => {
         const catalog = provider(['none', 'low', 'medium', 'high', 'fast'], 'openai');
         expect(getChatThinkingState(catalog, 'model', null).levels).toEqual(['low', 'medium', 'high']);
-        expect(resolveChatThinkingVariant(catalog, 'model', 'none')).toBe('low');
+        expect(resolveChatThinkingVariant(catalog, 'model', 'none')).toBe('none');
         expect(resolveChatThinkingVariant(catalog, 'model', 'fast')).toBe('fast');
         expect(getChatThinkingState(catalog, 'model', 'fast')).toEqual({ levels: [], selected: undefined });
     });
     test('Cursor preserves native compound keys, including thinking-only effort catalogs', () => {
         const catalog = provider(['thinking-low', 'thinking-medium', 'thinking-high', 'thinking-xhigh'], 'cursor-acp');
-        expect(resolveChatThinkingVariant(catalog, 'model', null)).toBe('thinking-medium');
+        expect(resolveChatThinkingVariant(catalog, 'model', undefined)).toBe('thinking-medium');
         expect(resolveChatThinkingVariant(catalog, 'model', 'thinking-xhigh')).toBe('thinking-xhigh');
         expect(getChatThinkingState(catalog, 'model', 'thinking-xhigh').selected).toBe('extra-high');
     });
     test('Cursor without Medium uses the lower middle native effort and preserves paired fast model identity', () => {
         const catalog = provider(['low', 'high', 'xhigh', 'max'], 'cursor-acp');
         catalog.models.push({ ...catalog.models[0]!, id: 'model-fast' });
-        expect(resolveChatThinkingVariant(catalog, 'model-fast', null)).toBe('high');
+        expect(resolveChatThinkingVariant(catalog, 'model-fast', undefined)).toBe('high');
     });
 });
 
@@ -50,6 +50,20 @@ test('extra-high aliases sort before max and ultra without changing their native
 
 test('Cursor mode-only defaults resolve to a real effort, and missing compounds keep the requested stop', () => {
     const catalog = provider(['low', 'medium', 'extra-high', 'thinking', 'thinking-medium'], 'cursor-acp');
-    expect(resolveChatThinkingVariant(catalog, 'model', 'thinking')).toBe('thinking-medium');
+    expect(resolveChatThinkingVariant(catalog, 'model', 'thinking')).toBe('thinking');
     expect(resolveCursorAcpVariantSelection(catalog, 'model', 'thinking-medium', { effort: 'extra-high' }).variant).toBe('extra-high');
+});
+
+test('an unavailable saved effort remains visible instead of displaying another level', () => {
+    const catalog = provider(['low', 'medium'], 'cursor-acp');
+    expect(resolveChatThinkingVariant(catalog, 'model', 'high')).toBe('high');
+    expect(getChatThinkingState(catalog, 'model', 'high').selected).toBe('high');
+    expect(getChatThinkingState(undefined, 'model', 'high')).toEqual({ levels: [], selected: 'high' });
+});
+
+test('provider default stays distinct from an unset chat effort', () => {
+    const catalog = provider(['low', 'medium', 'high']);
+    expect(resolveChatThinkingVariant(catalog, 'model', null)).toBeUndefined();
+    expect(getChatThinkingState(catalog, 'model', null).selected).toBeNull();
+    expect(resolveChatThinkingVariant(catalog, 'model', undefined)).toBe('medium');
 });

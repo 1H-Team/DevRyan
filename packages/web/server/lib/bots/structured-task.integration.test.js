@@ -37,15 +37,10 @@ const run = (id = RUN_ID) => ({
 
 const createHarness = (output) => {
   const client = {
+    structured: vi.fn(async () => ({ data: JSON.parse(output) })),
     provider: { list: vi.fn(async () => ({ data: { all: [] } })) },
     session: {
       create: vi.fn(async () => ({ data: { id: 'ses_structured_1' } })),
-      prompt: vi.fn(async () => ({
-        data: {
-          info: { id: 'msg_structured_1', role: 'assistant' },
-          parts: [{ type: 'text', text: output }],
-        },
-      })),
       delete: vi.fn(async () => ({ data: true })),
       abort: vi.fn(async () => ({ data: true })),
       promptAsync: vi.fn(async () => ({ data: true })),
@@ -138,10 +133,12 @@ describe('Bot structured task OpenCode integration', () => {
       messageIds: [USER_MESSAGE_ID, ASSISTANT_MESSAGE_ID],
       transcript: 'Remember nothing from this turn.',
     })).toMatchObject({ accepted: [], rejected: [] });
-    expect(harness.client.session.prompt).toHaveBeenCalledWith(expect.objectContaining({
-      tools: { '*': false },
-      format: { type: 'json_schema', schema: BOT_MEMORY_EXTRACTION_SCHEMA, retryCount: 2 },
+    expect(harness.client.structured).toHaveBeenCalledWith(expect.objectContaining({
+      model: { providerID: 'openai', id: 'gpt-5.6-sol', variant: 'high' },
+      schema: BOT_MEMORY_EXTRACTION_SCHEMA,
     }), { signal: expect.any(AbortSignal) });
+    expect(harness.client.session.create).not.toHaveBeenCalled();
+    expect(harness.client.session.promptAsync).not.toHaveBeenCalled();
   });
 
   it('drafts a reviewed routine through the same no-tools structured chain', async () => {
@@ -188,9 +185,11 @@ describe('Bot structured task OpenCode integration', () => {
         timezone: 'Africa/Casablanca',
       },
     });
-    expect(harness.client.session.prompt).toHaveBeenCalledWith(expect.objectContaining({
-      tools: { '*': false },
-      format: expect.objectContaining({ type: 'json_schema' }),
+    expect(harness.client.structured).toHaveBeenCalledWith(expect.objectContaining({
+      model: { providerID: 'openai', id: 'gpt-5.6-sol', variant: 'high' },
+      schema: expect.objectContaining({ type: 'object' }),
     }), { signal: expect.any(AbortSignal) });
+    expect(harness.client.session.create).not.toHaveBeenCalled();
+    expect(harness.client.session.promptAsync).not.toHaveBeenCalled();
   });
 });

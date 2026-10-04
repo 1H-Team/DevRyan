@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createRuntimeIdentityReader, DUPLICATE_OUTPUT_PROFILES, duplicatePolicyVector, qualifyDuplicateOutputs, readDuplicatePluginInventory, resolveDuplicateOutputPolicy } from './harness-duplicate-qualification.js';
 import { createHarnessRunFingerprintReader } from './harness-run-fingerprint.js';
+import { createNativeConsumerFixture } from './test-native-consumer-client.js';
 import { DUPLICATE_PROVIDER_ROUTES } from './duplicate-provider-route.js';
 import { __test } from '../../default-config/plugins/devryan-harness-context.mjs';
 
@@ -113,7 +114,7 @@ describe('duplicate output release qualification', () => {
     const f = await fixture(), records = [];
     const reader = createHarnessRunFingerprintReader({ isManaged: () => true, environment: { DEVRYAN_DUPLICATE_OUTPUTS: '1' },
       getRuntimeBinary: () => f.file, duplicateProfiles: [f.profile], buildOpenCodeUrl: route => `http://127.0.0.1:12345${route}`,
-      fetchImpl: async url => Response.json(new URL(url).pathname === '/config' ? f.config : { version: '1.18.31' }),
+      openCodeClient: createNativeConsumerFixture({ readFixture: async url => Response.json(new URL(url).pathname === '/config' ? f.config : { version: f.profile.runtimeVersion }) }),
       recordDiagnostic: record => records.push(record) });
     expect((await reader.qualifyDuplicates({ directory: f.root, ...f.input.selection, inventory: f.input.inventory })).qualified).toBe(true);
     expect((await reader.read({ directory: f.root, ...f.input.selection })).plugins.inventory).toEqual(f.input.inventory);
@@ -145,7 +146,7 @@ describe('duplicate output release qualification', () => {
     const reader = createHarnessRunFingerprintReader({ isManaged: () => true, environment: { DEVRYAN_DUPLICATE_OUTPUTS: '1' },
       getDuplicateProviderRoute: () => providerRoute,
       getRuntimeBinary: () => f.file, duplicateProfiles: [profile], buildOpenCodeUrl: route => `http://127.0.0.1:12345${route}`,
-      fetchImpl: async url => Response.json(new URL(url).pathname === '/config' ? f.config : { version: '1.18.31' }) });
+      openCodeClient: createNativeConsumerFixture({ readFixture: async url => Response.json(new URL(url).pathname === '/config' ? f.config : { version: f.profile.runtimeVersion }) }) });
     const context = { directory: f.root, ...f.input.selection, inventory };
     expect((await reader.qualifyDuplicates(context)).qualified).toBe(true);
     providerRoute = 'fixture-api';

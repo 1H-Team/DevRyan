@@ -1,6 +1,7 @@
+import { createNativeConsumerFixture } from './test-native-consumer-client.js';
 import express from 'express';
 import request from '../../test-supertest.js';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -15,6 +16,7 @@ import {
 import { registerOpenCodeRoutes } from './routes.js';
 
 vi.mock('./auth.js', () => ({
+  OPENCODE_DATA_DIR: `${process.cwd()}/.cache/provider-auth-fixture`,
   readAuthFile: vi.fn(() => ({})),
   writeAuthFile: vi.fn(),
   getProviderAuth: vi.fn(() => null),
@@ -23,6 +25,41 @@ vi.mock('./auth.js', () => ({
 
 const COPILOT_AUTO_MODEL = GITHUB_COPILOT_AUTO_MODEL;
 
+describe('dedicated Claude enrollment routes',()=>{
+  it('requires administrator and CSRF before any enrollment work',async()=>{
+    const begin=vi.fn();const owner={begin};
+    const denied=createApp({getClaudeEnrollmentOwner:()=>owner,isProviderAdministrator:()=>false,useJsonParser:false});
+    expect((await request(denied.app).post('/api/provider/anthropic/enrollment').set('Content-Type','application/json').send('{')).status).toBe(403);
+    const allowed=createApp({getClaudeEnrollmentOwner:()=>owner,isProviderAdministrator:()=>true,useJsonParser:false});
+    expect((await request(allowed.app).post('/api/provider/anthropic/enrollment').send({})).status).toBe(403);
+    expect(begin).not.toHaveBeenCalled();
+  });
+  it('uses original resolved directory/context and a separate explicit selection',async()=>{
+    const begin=vi.fn(async context=>{expect(context.directory).toBe('/tmp/project');expect(context.request.method).toBe('POST');return{enrollmentID:'synthetic-enrollment',status:'pending',url:'https://claude.com/cai/oauth/authorize'};});
+    const select=vi.fn(async()=>({status:'selected'})),complete=vi.fn(async()=>({status:'enrolled'}));
+    const app=createApp({getClaudeEnrollmentOwner:()=>({begin,complete,select}),isProviderAdministrator:()=>true});
+    expect((await request(app.app).post('/api/provider/anthropic/enrollment').set('x-devryan-csrf','1').send({})).status).toBe(200);
+    expect(select).not.toHaveBeenCalled();
+    expect((await request(app.app).post('/api/provider/anthropic/enrollment/id/complete').set('x-devryan-csrf','1').send({code:'fixture-code',state:'fixture-state'})).status).toBe(200);
+    expect(select).not.toHaveBeenCalled();
+    expect((await request(app.app).post('/api/provider/anthropic/enrollment/id/select').set('x-devryan-csrf','1').send({})).status).toBe(200);
+    expect(select).toHaveBeenCalledOnce();
+  });
+  it('refuses client-provided selection authority and sanitizes owner errors',async()=>{
+    const select=vi.fn();const begin=vi.fn(async()=>{throw new Error('sensitive-issuer-body');});
+    const app=createApp({getClaudeEnrollmentOwner:()=>({select,begin}),isProviderAdministrator:()=>true,useJsonParser:false});
+    const rejected=await request(app.app).post('/api/provider/anthropic/enrollment/id/select').set('x-devryan-csrf','1').send({service:'foreign'});
+    expect(rejected.status).toBe(400);expect(select).not.toHaveBeenCalled();
+    const failed=await request(app.app).post('/api/provider/anthropic/enrollment').set('x-devryan-csrf','1').send({});
+    expect(failed.status).toBe(409);expect(failed.body).toEqual({code:'native_claude_enrollment_refused'});
+  });
+  it('keeps setup usable with typed update requirement before capability is installed',async()=>{
+    const app=createApp({isProviderAdministrator:()=>true,getClaudeEnrollmentOwner:()=>null});
+    const response=await request(app.app).get('/api/provider/anthropic/enrollment');
+    expect(response.status).toBe(409);expect(response.body).toEqual({code:'native_claude_enrollment_update_required'});
+  });
+});
+
 const createApp = (overrides = {}) => {
   const app = express();
   if (overrides.useJsonParser !== false) {
@@ -30,6 +67,8 @@ const createApp = (overrides = {}) => {
   }
 
   const dependencies = {
+    openCodeClient: createNativeConsumerFixture({ readFixture: (...args) => globalThis.fetch(...args) }),
+
     clientReloadDelayMs: 0,
     getOpenCodeResolutionSnapshot: vi.fn(async () => ({})),
     formatSettingsResponse: vi.fn((settings) => settings),
@@ -38,6 +77,7 @@ const createApp = (overrides = {}) => {
     persistSettings: vi.fn(async (settings) => settings),
     sanitizeProjects: vi.fn((projects) => projects),
     validateDirectoryPath: vi.fn(async (directory) => ({ ok: true, directory })),
+    ensureNativeDirectory: vi.fn(async () => {}),
     resolveProjectDirectory: vi.fn(async () => ({ directory: '/tmp/project' })),
     getProviderSources: vi.fn(() => ({
       sources: {
@@ -125,6 +165,23 @@ const createApp = (overrides = {}) => {
     })),
     ...overrides,
   };
+  if (!Object.hasOwn(overrides, 'getNativeRuntimeOwner')) {
+    const owner = {
+      verifyConfiguration: vi.fn(async () => {}), recheck: vi.fn(async () => {}),
+      readAuthenticationSource: vi.fn(async () => ({ exists: dependencies.cursorSdkRuntime?.getRuntimeStatus?.()?.sdkAuthConfigured === true, path: null })),
+      readSources: vi.fn(() => dependencies.getProviderSources().sources),
+      listRemainingConfigSources: vi.fn(() => []),
+      disconnectCredentials: vi.fn(async (committed, started) => { started(); committed(); }),
+      removeConfiguration: vi.fn(async () => {}),
+    };
+    dependencies.getNativeRuntimeOwner = () => ({ withProviderConfigurationAuthorization: async (_input, run) => run(owner) });
+  }
+  if (!Object.hasOwn(overrides, 'openCodeClient')) {
+    dependencies.openCodeClient = createNativeConsumerFixture({ readFixture: (...args) => globalThis.fetch(...args), headers: dependencies.getOpenCodeAuthHeaders });
+    dependencies.openCodeClient.sessions.archive = vi.fn(async (id, archived) => ({ id, time: { archived } }));
+  }
+  dependencies.cursorSessionTitleRuntime ??= { schedule: vi.fn(async () => false) };
+  dependencies.standardSessionTitleRuntime ??= { schedule: vi.fn(async () => false), processOpenCodeEvent: vi.fn() };
   delete dependencies.useJsonParser;
   if (overrides.useCommonRequestMiddleware === true) {
     registerCommonRequestMiddleware(app, { express });
@@ -136,6 +193,83 @@ const createApp = (overrides = {}) => {
 };
 
 describe('OpenCode provider routes', () => {
+  const nativeFixture = (overrides = {}) => {
+    const owner = {
+      verifyConfiguration: vi.fn(async () => {}), recheck: vi.fn(async () => {}),
+      readSources: vi.fn(() => ({ user: { exists: false, path: null }, project: { exists: false, path: null }, custom: { exists: false, path: null } })),
+      readAuthenticationSource: vi.fn(async () => ({ exists: false, path: null })),
+      listRemainingConfigSources: vi.fn(() => []),
+      disconnectCredentials: vi.fn(async (committed, started) => { started(); committed(); }),
+      removeConfiguration: vi.fn(async committed => { committed('user'); }), ...overrides,
+    };
+    const run = vi.fn(async (_input, action) => action(owner));
+    return { ...createApp({ openCodeClient: { generation: () => 2 }, getNativeRuntimeOwner: () => ({ withProviderConfigurationAuthorization: run }) }), owner, run };
+  };
+  it('combines native credentials and selected config removal through the existing apply owner', async () => {
+    const f = nativeFixture(), response = await request(f.app).delete('/api/provider/openai/auth?scope=all&directory=/tmp/project');
+    expect(response.status).toBe(200); expect(response.body.removedSources).toEqual({ auth: true, user: true, project: false, custom: false });
+    expect(f.run).toHaveBeenCalledWith({ providerID: 'openai', scope: 'all', directory: '/tmp/project' }, expect.any(Function));
+    expect(f.dependencies.markConfigChange).toHaveBeenCalledWith('provider openai disconnected (all)', { providerId: 'openai', scope: 'all', partial: false }, true);
+    expect(f.dependencies.removeProviderConfig).not.toHaveBeenCalled(); expect(authModule.removeProviderAuth).not.toHaveBeenCalled();
+  });
+  it('validates all configuration before credential effects', async () => {
+    const f = nativeFixture({ verifyConfiguration: vi.fn(async () => { throw Object.assign(new Error('invalid config'), { code: 'INVALID_JSONC', statusCode: 409 }); }) });
+    const response = await request(f.app).delete('/api/provider/openai/auth?scope=all');
+    expect(response.status).toBe(409); expect(response.body.partial).toBe(false); expect(f.owner.disconnectCredentials).not.toHaveBeenCalled(); expect(f.dependencies.markConfigChange).not.toHaveBeenCalled();
+  });
+  it('retains pending apply revision and partial outcome after a source commit failure', async () => {
+    const f = nativeFixture({ removeConfiguration: vi.fn(async () => { throw Object.assign(new Error('changed config'), { code: 'native_provider_configuration_changed', statusCode: 409 }); }) });
+    const response = await request(f.app).delete('/api/provider/cursor-acp/auth?scope=all');
+    expect(response.status).toBe(409); expect(response.body.partial).toBe(true); expect(response.body.removedSources.auth).toBe(true); expect(response.body.applyRevision).toBe(1); expect(response.body.success).toBe(false); expect(f.dependencies.markConfigChange).toHaveBeenCalledTimes(1);
+  });
+  it('reports uncertain credential ACK without claiming successful removal', async () => {
+    const f = nativeFixture({ disconnectCredentials: vi.fn(async (_committed, started) => { started(); throw Object.assign(new Error('lost ACK'), { code: 'native_credential_commit_uncertain', statusCode: 503 }); }) });
+    const response = await request(f.app).delete('/api/provider/openai/auth?scope=all');
+    expect(response.status).toBe(503); expect(response.body.partial).toBe(true); expect(response.body.removedSources.auth).toBe(false); expect(response.body.applyRevision).toBe(1); expect(f.owner.removeConfiguration).not.toHaveBeenCalled();
+  });
+  it('retains failure when existing apply marker rejects after actual mutation', async () => {
+    const f = nativeFixture(); f.dependencies.markConfigChange.mockRejectedValue(new Error('apply store unavailable'));
+    const response = await request(f.app).delete('/api/provider/openai/auth?scope=all');
+    expect(response.status).toBe(500); expect(response.body.recoveryRequired).toBe(true); expect(response.body.removedSources.auth).toBe(true); expect(response.body.success).toBe(false);
+  });
+  it('reads native Cursor source/status through fresh exact-directory metadata', async () => {
+    const f = nativeFixture({ readAuthenticationSource: vi.fn(async () => ({ exists: true, path: null })) });
+    const source = await request(f.app).get('/api/provider/cursor-acp/source?directory=/tmp/project');
+    expect(source.status).toBe(200); expect(source.body.sources.auth).toEqual({ exists: true, path: null });
+    const status = await request(f.app).get('/api/provider/cursor-acp/runtime-status?directory=/tmp/project');
+    expect(status.status).toBe(200); expect(status.body.sdkAuthConfigured).toBe(true); expect(status.body.authObservation).toBe('known');
+    expect(f.run.mock.calls.every(([input]) => input.directory === '/tmp/project' && input.scope === 'read')).toBe(true);
+  });
+
+  it('archives through the gen-2 client and rejects unrelated metadata mutations', async () => {
+    const archive = vi.fn(async (id, at) => ({ id, time: { archived: at } }));
+    const { app } = createApp({ openCodeClient: { generation: () => 2, sessions: { archive } } });
+    const response = await request(app).patch('/api/session/ses_1').send({ time: { archived: 42 } });
+    expect(response.status).toBe(200);
+    expect(response.body.time.archived).toBe(42);
+    expect(archive).toHaveBeenCalledWith('ses_1', 42, { directory: '/tmp/project' });
+    for (const body of [{ time: { archived: -1 } }, { time: { archived: 2, other: true } }, { time: { archived: 0 }, metadata: {} }]) {
+      expect((await request(app).patch('/api/session/ses_1').send(body)).status).toBe(400);
+    }
+    expect(archive).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves gen-2 Cursor message cursors and rejects invalid page queries without replay', async () => {
+    const messages = vi.fn(async () => ({ records: [{ info: { id: 'msg_a' }, parts: [] }], cursor: 'v2:opaque' }));
+    const { app } = createApp({
+      openCodeClient: { generation: () => 2, sessions: { messages } },
+      cursorSdkRuntime: { getSessionMessages: async () => [{ info: { id: 'msg_b' }, parts: [] }] },
+    });
+    const response = await request(app).get('/api/session/ses_1/message?limit=2');
+    expect(response.status).toBe(200);
+    expect(response.body.map((record) => record.info.id)).toEqual(['msg_a', 'msg_b']);
+    expect(response.headers['x-next-cursor']).toBe('v2:opaque');
+    expect((await request(app).get('/api/session/ses_1/message?limit=bad')).status).toBe(400);
+    messages.mockRejectedValueOnce(Object.assign(new Error('runtime changed'), { statusCode: 503, code: 'opencode_runtime_changed' }));
+    expect((await request(app).get('/api/session/ses_1/message?limit=2')).status).toBe(503);
+    expect(messages).toHaveBeenCalledTimes(2);
+  });
+
   it('returns display-only default thinking metadata without changing model options', async () => {
     const options = { reasoningEffort: 'high' };
     const original = { id: 'gpt-5.5', api: { id: 'gpt-5.5', npm: '@ai-sdk/openai' }, variants: { low: {}, medium: {}, high: {} }, options };
@@ -194,6 +328,16 @@ describe('OpenCode provider routes', () => {
       .expect(200);
 
     expect(response.body.sources.auth.exists).toBe(true);
+  });
+
+  it('refuses uncomposed gen-2 OpenAI disconnect without touching legacy auth or configuration', async () => {
+    const { app, dependencies } = createApp({ openCodeClient: { generation: () => 2 }, getNativeRuntimeOwner: () => null });
+    app.delete('/api/provider/:providerId/auth', (_req, res) => res.json({ ownedNative: true }));
+    const response = await request(app).delete('/api/provider/openai/auth?scope=all');
+    expect(response.status).toBe(503); expect(response.body.code).toBe('native_provider_configuration_owner_required');
+    expect(authModule.removeProviderAuth).not.toHaveBeenCalled();
+    expect(dependencies.removeProviderConfig).not.toHaveBeenCalled();
+    expect(dependencies.markConfigChange).not.toHaveBeenCalled();
   });
 
   it('does not remove project provider config for global disconnect-all requests', async () => {
@@ -321,52 +465,26 @@ describe('OpenCode provider routes', () => {
     expect(removeProviderConfig).not.toHaveBeenCalled();
   });
 
-  it('writes Claude OAuth provider config to the supplied project directory', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'openchamber-claude-route-'));
-    const fakeBinDir = join(tempDir, 'bin');
-    const fakeClaude = join(fakeBinDir, 'claude');
-    mkdirSync(fakeBinDir, { recursive: true });
-    writeFileSync(
-      fakeClaude,
-      '#!/bin/sh\n[ "$1 $2" = "auth status" ] || exit 9\necho \'{"loggedIn":true,"authMethod":"claude.ai","subscriptionType":"pro"}\'\n',
-      'utf8',
-    );
-    chmodSync(fakeClaude, 0o755);
-
-    const ensureAnthropicOAuthProviderConfig = vi.fn(() => ({
-      changed: false,
-      path: '/tmp/user-config.json',
-      config: {},
-    }));
-    const { app } = createApp({
-      buildAugmentedPath: vi.fn(() => fakeBinDir),
-      resolveProjectDirectory: vi.fn(async () => ({ directory: '/tmp/project' })),
-      ensureAnthropicOAuthProviderConfig,
-    });
-
-    await request(app)
-      .post('/api/provider/anthropic/check-oauth?directory=%2Ftmp%2Fproject')
-      .expect(200);
-
-    expect(ensureAnthropicOAuthProviderConfig).toHaveBeenCalledWith({ workingDirectory: '/tmp/project' });
+  it('checks native selected credentials without CLI execution or config mutation', async () => {
+    const inspectClaude=vi.fn(async input=>{expect(input).toEqual({kind:'status',directory:'/tmp/project'});return {installed:true,path:null,loggedIn:true,authStatus:'authenticated'};});
+    const {app,dependencies}=createApp({getNativeRuntimeOwner:()=>({inspectClaude})});
+    const status=await request(app).get('/api/provider/anthropic/claude-cli').expect(200);
+    expect(status.body.loggedIn).toBe(true);
+    const connected=await request(app).post('/api/provider/anthropic/check-oauth?directory=%2Ftmp%2Fproject').expect(200);
+    expect(connected.body).toMatchObject({success:true,configured:true,changed:false});
+    expect(dependencies.resolveClaudeCodeLaunch).not.toHaveBeenCalled();expect(dependencies.buildAugmentedPath).not.toHaveBeenCalled();
+    expect(dependencies.ensureAnthropicOAuthProviderConfig).not.toHaveBeenCalled();expect(dependencies.markConfigChange).not.toHaveBeenCalled();
   });
 
-  it('returns a deterministic code when Claude CLI OAuth is unavailable', async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'openchamber-claude-route-'));
-    const fakeClaude = join(tempDir, 'claude');
-    writeFileSync(fakeClaude, '#!/bin/sh\necho \'{"loggedIn":false}\'\nexit 1\n', 'utf8');
-    chmodSync(fakeClaude, 0o755);
-    const { app } = createApp({ buildAugmentedPath: vi.fn(() => tempDir) });
-
-    const response = await request(app)
-      .post('/api/provider/anthropic/check-oauth')
-      .expect(400);
-
-    expect(response.body).toEqual({
-      code: 'claude_cli_unauthenticated',
-      error: 'Claude Code is not signed in. Run `claude auth login` and try again.',
-      reason: 'claude_not_authenticated',
-    });
+  it('missing or expired configured credentials remain unavailable and never probe ambient CLI',async()=>{
+    for(const code of ['claude_credentials_missing','claude_credentials_expired','native_claude_account_ambiguous']){
+      const {app,dependencies}=createApp({getNativeRuntimeOwner:()=>({inspectClaude:async()=>{throw Object.assign(new Error('private contents must not escape'),{code,status:401});}})});
+      const status=await request(app).get('/api/provider/anthropic/claude-cli').expect(200);
+      expect(status.body).toMatchObject({loggedIn:false,authStatus:'unavailable',errorCode:code,path:null});
+      const check=await request(app).post('/api/provider/anthropic/check-oauth').expect(400);expect(check.body.code).toBe(code);
+      expect(JSON.stringify(status.body)).not.toContain('private contents');expect(dependencies.resolveClaudeCodeLaunch).not.toHaveBeenCalled();
+    }
+    const {app,dependencies}=createApp();await request(app).get('/api/provider/anthropic/claude-cli').expect(503);expect(dependencies.resolveClaudeCodeLaunch).not.toHaveBeenCalled();
   });
 
   it('reads and updates the managed Claude prompt mode without exposing configuration data', async () => {
@@ -446,7 +564,7 @@ describe('OpenCode provider routes', () => {
 
     expect(ensureDefaultCursorAcpProviderConfig).not.toHaveBeenCalled();
     expect(markConfigChange).not.toHaveBeenCalled();
-    expect(verifyConnection).toHaveBeenCalledWith();
+    expect(verifyConnection).toHaveBeenCalledWith({ directory: '/tmp/project' });
     expect(response.body).toMatchObject({
       success: true,
       configured: true,
@@ -588,7 +706,7 @@ describe('OpenCode provider routes', () => {
       },
     ]);
     expect(getCachedVirtualProvider).toHaveBeenCalledWith();
-    expect(refreshVirtualProvider).toHaveBeenCalledWith({ reason: 'providers_route' });
+    expect(refreshVirtualProvider).toHaveBeenCalledWith({ reason: 'providers_route', directory: '/tmp/project' });
     expect(getVirtualProvider).not.toHaveBeenCalled();
 
     fetchSpy.mockRestore();
@@ -1275,11 +1393,8 @@ describe('OpenCode provider routes', () => {
       .expect(200);
 
     expect(response.body).toMatchObject({ success: true, removed: true });
-    expect(writeAuthFile).toHaveBeenCalledWith({
-      'cursor-acp': {
-        usageSessionToken: 'cursor-session-token',
-      },
-    });
+    expect(writeAuthFile).not.toHaveBeenCalled();
+    expect(readAuthFile()).toMatchObject({ 'cursor-acp': { usageSessionToken: 'cursor-session-token' } });
   });
 
   it('requires the server common middleware JSON parser for Cursor usage auth saves', async () => {
@@ -1346,7 +1461,6 @@ describe('OpenCode provider routes', () => {
         tools: {
           keep_enabled: true,
           task: false,
-          invalid: false,
         },
       },
       directory: '/tmp/project',
@@ -1423,8 +1537,10 @@ describe('OpenCode provider routes', () => {
         time: { archived: 0 },
       })),
     });
+    const archive = vi.fn(async () => ({ id: 'ses_1', time: { archived: 0 } }));
     const handlePromptAsync = vi.fn(async () => ({ handled: true, status: 204 }));
     const { app } = createApp({
+      openCodeClient: { generation: () => 2, sessions: { archive } },
       buildOpenCodeUrl: vi.fn((requestPath) => `http://opencode.test${requestPath}`),
       getOpenCodeAuthHeaders: vi.fn(() => ({ authorization: 'Bearer test' })),
       cursorSdkRuntime: {
@@ -1446,17 +1562,8 @@ describe('OpenCode provider routes', () => {
       })
       .expect(204);
 
-    expect(fetchSpy).toHaveBeenCalledWith(
-      'http://opencode.test/session/ses_1?directory=%2Ftmp%2Fproject',
-      expect.objectContaining({
-        method: 'PATCH',
-        headers: expect.objectContaining({
-          authorization: 'Bearer test',
-          'Content-Type': 'application/json',
-        }),
-        body: JSON.stringify({ time: { archived: 0 } }),
-      }),
-    );
+    expect(archive).toHaveBeenCalledWith('ses_1', 0, { directory: '/tmp/project' });
+    expect(fetchSpy).not.toHaveBeenCalled();
 
     fetchSpy.mockRestore();
   });
@@ -1536,7 +1643,6 @@ describe('OpenCode provider routes', () => {
       tools: {
         keep_enabled: true,
         task: false,
-        invalid: false,
       },
     });
   });
@@ -1784,5 +1890,41 @@ describe('OpenCode provider routes', () => {
     });
 
     fetchSpy.mockRestore();
+  });
+});
+
+
+describe('native project directory preparation', () => {
+  it('does not publish project-open success until the exact registered directory is prepared', async () => {
+    let settings = { activeProjectId: 'old', lastDirectory: '/old', projects: [] }; let release;
+    const ensureNativeDirectory = vi.fn(() => new Promise(resolve => { release = resolve; }));
+    const persistSettings = vi.fn(async patch => (settings = { ...settings, ...patch }));
+    const setOpenCodeWorkingDirectory = vi.fn();
+    const { app } = createApp({ readSettingsFromDisk: async () => settings, persistSettings, ensureNativeDirectory, setOpenCodeWorkingDirectory });
+    let finished = false;
+    const pending = request(app).post('/api/opencode/directory').send({ path: '/new' }).then(response => { finished = true; return response; });
+    await vi.waitFor(() => expect(ensureNativeDirectory).toHaveBeenCalledWith('/new'));
+    expect(settings.projects).toContainEqual(expect.objectContaining({ path: '/new' }));
+    expect(finished).toBe(false); expect(setOpenCodeWorkingDirectory).not.toHaveBeenCalled();
+    release(); const response = await pending; expect(response.status).toBe(200);
+    expect(setOpenCodeWorkingDirectory).toHaveBeenCalledWith('/new');
+  });
+  it.each([undefined, async () => { throw Object.assign(Error('protected'), { code: 'native_project_directory_protected', statusCode: 403 }); }])('restores the prior activation when native preparation refuses: %j', async ensureNativeDirectory => {
+    let settings = { activeProjectId: 'old', lastDirectory: '/old', projects: [] };
+    const setOpenCodeWorkingDirectory = vi.fn();
+    const { app } = createApp({ readSettingsFromDisk: async () => settings, persistSettings: async patch => (settings = { ...settings, ...patch }), ensureNativeDirectory, setOpenCodeWorkingDirectory });
+    const response = await request(app).post('/api/opencode/directory').send({ path: '/new' });
+    expect(response.status).toBe(ensureNativeDirectory ? 403 : 503);
+    expect(response.body.success).toBeUndefined();
+    expect(settings).toMatchObject({ activeProjectId: 'old', lastDirectory: '/old' });
+    expect(settings.projects).toContainEqual(expect.objectContaining({ path: '/new' }));
+    expect(setOpenCodeWorkingDirectory).not.toHaveBeenCalled();
+  });
+  it('does not rewind a newer active project after a refused preparation', async () => {
+    let settings = { activeProjectId: 'old', lastDirectory: '/old', projects: [] };
+    const { app } = createApp({ readSettingsFromDisk: async () => settings, persistSettings: async patch => (settings = { ...settings, ...patch }),
+      ensureNativeDirectory: async () => { settings = { ...settings, activeProjectId: 'newer', lastDirectory: '/newer' }; throw Object.assign(Error('conflict'), { statusCode: 409 }); } });
+    expect((await request(app).post('/api/opencode/directory').send({ path: '/new' })).status).toBe(409);
+    expect(settings).toMatchObject({ activeProjectId: 'newer', lastDirectory: '/newer' });
   });
 });

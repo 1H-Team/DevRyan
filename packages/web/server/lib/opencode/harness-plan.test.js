@@ -2,8 +2,15 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createHarnessTaskContextHost } from './harness-task-context.js';
+import { createHarnessTaskContextHost as createHarnessTaskContextHostNative } from './harness-task-context.js';
+import { createNativeConsumerFixture } from './test-native-consumer-client.js';
 import { readPlanRevision, resolveSessionPlanRevision } from '../plans/revisions.js';
+
+const createHarnessTaskContextHost = (options = {}) => createHarnessTaskContextHostNative({
+  ...options, openCodeClient: options.openCodeClient ?? createNativeConsumerFixture({
+    readFixture: options.fetchImpl, headers: options.getOpenCodeAuthHeaders,
+  }),
+});
 
 describe('selected saved-plan root authority', () => {
   let root, directory, scope, primary, routes, marker, revision, hosts, events, diagnostics, owners, projects;
@@ -43,6 +50,7 @@ describe('selected saved-plan root authority', () => {
       '/session/ses_plan/message/msg_plan': { info: { id: 'msg_plan', sessionID: 'ses_plan', role: 'assistant' }, parts: [] },
       '/session/ses_root/message/msg_user': { info: { id: 'msg_user', sessionID: 'ses_root', role: 'user' }, parts: [] },
       '/session/ses_root/message/msg_assistant': { info: { id: 'msg_assistant', sessionID: 'ses_root', role: 'assistant', parentID: 'msg_user' },
+        turnOwnership: { source: 'native-sequence', userMessageID: 'msg_user' },
         parts: [{ type: 'tool', tool: 'devryan_task', callID: 'call_plan', state: { status: 'running' } }] },
       '/session/ses_root/todo': [],
     };
@@ -228,6 +236,7 @@ describe('selected saved-plan root authority', () => {
     const value = host();
     for (const activeUserID of ['msg_maintenance', 'msg_answer', 'msg_compaction', 'msg_explicit']) {
       primary = { ...primary, activeUserID, objectiveID: 'msg_user' }; assistant().info.parentID = activeUserID;
+      assistant().turnOwnership.userMessageID = activeUserID;
       expect((await rpc(value)).path).toBe(revision.path);
     }
   });

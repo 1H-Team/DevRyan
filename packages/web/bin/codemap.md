@@ -1,5 +1,10 @@
 # packages/web/bin/
 
+- `runtime-bundle-command.js` dispatches the fully specified local
+  `openchamber runtime bundle resume --expected-revision N` recovery operation.
+  It uses the same original-proof, owner-exit, unchanged-candidate and revision
+  checks in every output/TTY mode, without HTTP mutation or runtime bootstrap.
+
 ## Responsibility
 Node CLI surface for launching and operating DevRyan/OpenChamber server features (serve lifecycle, tunnel workflows, status/log-style output).
 
@@ -18,4 +23,9 @@ Node CLI surface for launching and operating DevRyan/OpenChamber server features
 ## Integration
 - Package `bin` entry (`openchamber`) points here.
 - Imports tunnel capability metadata from `server/lib/tunnels/providers/cloudflare.js`.
-- Uses same server runtime as Electron/web deployment for behavior parity.
+- Uses the same verified native generation-2 server runtime as Electron/web deployment.
+  Serve no longer probes PATH or requires a separately installed OpenCode CLI; the
+  Help describes bundled runtime updates through DevRyan and exposes no external
+  OpenCode connection or standalone launch environment controls. The
+  server entrypoint provisions/binds the bundled native runtime and fails on absent
+  or corrupt artifacts. CLI TTY/quiet/JSON validation and exit semantics are retained.

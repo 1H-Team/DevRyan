@@ -3,6 +3,9 @@ import { parseSseEventEnvelope } from './protocol.js';
 export const DEFAULT_UPSTREAM_STALL_TIMEOUT_MS = 20_000;
 export const UPSTREAM_STALL_TIMEOUT_CONCURRENT_MS = DEFAULT_UPSTREAM_STALL_TIMEOUT_MS * 3;
 export const DEFAULT_UPSTREAM_RECONNECT_DELAY_MS = 250;
+// Gen 2 (OpenCode 2.x) heartbeats every 15 s with comment frames, so a 20 s
+// window would trip on one late heartbeat (DESIGN.md B.7).
+export const GEN2_UPSTREAM_STALL_TIMEOUT_MS = 45_000;
 // Hard cap for the partial-frame accumulator (a legitimate SSE frame stays far
 // below this; see the drop logic in the read loop).
 export const MAX_UPSTREAM_FRAME_BYTES = 32 * 1024 * 1024;
@@ -34,6 +37,11 @@ function waitForReconnectDelay(ms, signal) {
   });
 }
 
+function resolveFlag(value, fallback) {
+  const resolved = typeof value === 'function' ? value() : value;
+  return typeof resolved === 'boolean' ? resolved : fallback;
+}
+
 function normalizeHeaders(headers) {
   if (!headers || typeof headers !== 'object') {
     return {};
@@ -57,7 +65,11 @@ export function createUpstreamSseReader({
   signal,
   stallTimeoutMs = DEFAULT_UPSTREAM_STALL_TIMEOUT_MS,
   reconnectDelayMs = DEFAULT_UPSTREAM_RECONNECT_DELAY_MS,
+  // Gen 1 resumes with `Last-Event-ID`; gen 2 has no replay, so a connection
+  // that resolves this to false neither sends nor records event ids.
+  resumeWithLastEventId = true,
   onEvent,
+  onKeepalive,
   onConnect,
   onDisconnect,
   onError,
@@ -112,13 +124,18 @@ export function createUpstreamSseReader({
 
         try {
           const url = buildUrl();
+          // Resolved after buildUrl, which may select the connection's generation.
+          const resume = resolveFlag(resumeWithLastEventId, true);
+          if (!resume) {
+            lastEventId = '';
+          }
           const headers = {
             Accept: 'text/event-stream',
             'Cache-Control': 'no-cache',
             Connection: 'keep-alive',
             ...normalizeHeaders(getHeaders()),
           };
-          if (lastEventId) {
+          if (resume && lastEventId) {
             headers['Last-Event-ID'] = lastEventId;
           }
 
@@ -143,6 +160,26 @@ export function createUpstreamSseReader({
           const decoder = new TextDecoder();
           const reader = response.body.getReader();
           let buffer = '';
+          const handleBlock = (block) => {
+            const envelope = parseBlock(block);
+            if (envelope?.keepalive === true) {
+              onKeepalive?.();
+              return;
+            }
+            if (!envelope?.payload) {
+              return;
+            }
+            if (resume && typeof envelope.eventId === 'string' && envelope.eventId.length > 0) {
+              lastEventId = envelope.eventId;
+            }
+            onEvent?.({
+              block,
+              envelope,
+              payload: envelope.payload,
+              eventId: envelope.eventId,
+              directory: envelope.directory,
+            });
+          };
 
           resetStallTimer();
 
@@ -169,38 +206,13 @@ export function createUpstreamSseReader({
             while (separatorIndex !== -1 && !stopped && !signal?.aborted) {
               const block = buffer.slice(0, separatorIndex);
               buffer = buffer.slice(separatorIndex + 2);
-              const envelope = parseBlock(block);
-              if (envelope?.payload) {
-                if (typeof envelope.eventId === 'string' && envelope.eventId.length > 0) {
-                  lastEventId = envelope.eventId;
-                }
-                onEvent?.({
-                  block,
-                  envelope,
-                  payload: envelope.payload,
-                  eventId: envelope.eventId,
-                  directory: envelope.directory,
-                });
-              }
+              handleBlock(block);
               separatorIndex = buffer.indexOf('\n\n');
             }
           }
 
           if (!stopped && !signal?.aborted && buffer.trim().length > 0) {
-            const block = buffer.trim();
-            const envelope = parseBlock(block);
-            if (envelope?.payload) {
-              if (typeof envelope.eventId === 'string' && envelope.eventId.length > 0) {
-                lastEventId = envelope.eventId;
-              }
-              onEvent?.({
-                block,
-                envelope,
-                payload: envelope.payload,
-                eventId: envelope.eventId,
-                directory: envelope.directory,
-              });
-            }
+            handleBlock(buffer.trim());
           }
         } catch (error) {
           if (!stopped && !signal?.aborted && abortReason !== 'upstream_stalled') {

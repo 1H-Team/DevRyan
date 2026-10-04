@@ -7,7 +7,9 @@ let listAgentsStrictImpl: () => Promise<unknown>
 let providerCallOptions: Array<{ directory?: string | null } | undefined>
 let settingsDefaultAgent: string | undefined
 
+const actualOpencodeClientModule = await import("@/lib/opencode/client")
 mock.module("@/lib/opencode/client", () => ({
+  ...actualOpencodeClientModule,
   opencodeClient: {
     setDirectory: () => {},
     getDirectory: () => "/repo",

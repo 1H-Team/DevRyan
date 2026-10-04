@@ -421,7 +421,13 @@ const isLivenessHttpStatus = (status) => (status >= 200 && status <= 299) || isA
 
 export class ElectronSshManager {
   constructor(options) {
-    this.settingsFilePath = options.settingsFilePath;
+    this.resolveSettingsFilePath = typeof options.settingsFilePath === 'function' ? options.settingsFilePath : () => options.settingsFilePath;
+    this.mutateSettingsRoot = options.mutateSettingsRoot ?? (async (mutator) => {
+      const filePath = this.resolveSettingsFilePath();
+      const root = readJsonRoot(filePath);
+      const result = await mutator(root);
+      await writeJsonRoot(filePath, result ?? root);
+    });
     this.appVersion = options.appVersion;
     this.emit = options.emit;
     this.logs = new Map();
@@ -579,47 +585,47 @@ export class ElectronSshManager {
   }
 
   readInstances() {
-    const root = readJsonRoot(this.settingsFilePath);
+    const root = readJsonRoot(this.resolveSettingsFilePath());
     return { instances: Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances : [] };
   }
 
   async setInstances(config) {
-    const root = readJsonRoot(this.settingsFilePath);
-    const previousSshIds = new Set(
-      (Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances : [])
-        .map((entry) => String(entry?.id || '').trim())
-        .filter((id) => id && id !== LOCAL_HOST_ID)
-    );
-    const instances = Array.isArray(config?.instances) ? config.instances.map((instance) => this.sanitizeInstance(instance)) : [];
-    root.desktopSshInstances = instances;
+    await this.mutateSettingsRoot((root) => {
+      const previousSshIds = new Set(
+        (Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances : [])
+          .map((entry) => String(entry?.id || '').trim())
+          .filter((id) => id && id !== LOCAL_HOST_ID)
+      );
+      const instances = Array.isArray(config?.instances) ? config.instances.map((instance) => this.sanitizeInstance(instance)) : [];
+      root.desktopSshInstances = instances;
 
-    const hosts = Array.isArray(root.desktopHosts) ? root.desktopHosts.filter(Boolean) : [];
-    const nextIds = new Set(instances.map((instance) => instance.id));
+      const hosts = Array.isArray(root.desktopHosts) ? root.desktopHosts.filter(Boolean) : [];
+      const nextIds = new Set(instances.map((instance) => instance.id));
 
-    const filteredHosts = hosts.filter((entry) => {
-      const id = String(entry?.id || '').trim();
-      return id && id !== LOCAL_HOST_ID && !(previousSshIds.has(id) && !nextIds.has(id));
-    });
+      const filteredHosts = hosts.filter((entry) => {
+        const id = String(entry?.id || '').trim();
+        return id && id !== LOCAL_HOST_ID && !(previousSshIds.has(id) && !nextIds.has(id));
+      });
 
-    for (const instance of instances) {
-      const label = instance.nickname?.trim() || instance.sshParsed?.destination || instance.id;
-      const existing = filteredHosts.find((entry) => entry?.id === instance.id);
-      if (existing) {
-        existing.label = label;
-        if (!existing.url || !String(existing.url).trim()) {
-          existing.url = 'http://127.0.0.1/';
+      for (const instance of instances) {
+        const label = instance.nickname?.trim() || instance.sshParsed?.destination || instance.id;
+        const existing = filteredHosts.find((entry) => entry?.id === instance.id);
+        if (existing) {
+          existing.label = label;
+          if (!existing.url || !String(existing.url).trim()) {
+            existing.url = 'http://127.0.0.1/';
+          }
+        } else {
+          filteredHosts.push({ id: instance.id, label, url: 'http://127.0.0.1/' });
         }
-      } else {
-        filteredHosts.push({ id: instance.id, label, url: 'http://127.0.0.1/' });
       }
-    }
 
-    root.desktopHosts = filteredHosts;
-    if (typeof root.desktopDefaultHostId === 'string' && previousSshIds.has(root.desktopDefaultHostId) && !nextIds.has(root.desktopDefaultHostId)) {
-      root.desktopDefaultHostId = LOCAL_HOST_ID;
-    }
+      root.desktopHosts = filteredHosts;
+      if (typeof root.desktopDefaultHostId === 'string' && previousSshIds.has(root.desktopDefaultHostId) && !nextIds.has(root.desktopDefaultHostId)) {
+        root.desktopDefaultHostId = LOCAL_HOST_ID;
+      }
 
-    await writeJsonRoot(this.settingsFilePath, root);
+    });
   }
 
   sanitizeStoredSecret(secret) {
@@ -704,29 +710,29 @@ export class ElectronSshManager {
   }
 
   async updateHostUrl(instanceId, label, localUrl) {
-    const root = readJsonRoot(this.settingsFilePath);
-    const hosts = Array.isArray(root.desktopHosts) ? root.desktopHosts : [];
-    const existing = hosts.find((entry) => entry?.id === instanceId);
-    if (existing) {
-      existing.label = label;
-      existing.url = localUrl;
-    } else {
-      hosts.push({ id: instanceId, label, url: localUrl });
-    }
-    root.desktopHosts = hosts;
-    await writeJsonRoot(this.settingsFilePath, root);
+    await this.mutateSettingsRoot((root) => {
+      const hosts = Array.isArray(root.desktopHosts) ? root.desktopHosts : [];
+      const existing = hosts.find((entry) => entry?.id === instanceId);
+      if (existing) {
+        existing.label = label;
+        existing.url = localUrl;
+      } else {
+        hosts.push({ id: instanceId, label, url: localUrl });
+      }
+      root.desktopHosts = hosts;
+    });
   }
 
   async persistLocalPort(instanceId, localPort) {
-    const root = readJsonRoot(this.settingsFilePath);
-    const instances = Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances : [];
-    for (const instance of instances) {
-      if (instance?.id !== instanceId) continue;
-      instance.localForward = instance.localForward && typeof instance.localForward === 'object' ? instance.localForward : {};
-      instance.localForward.preferredLocalPort = localPort;
-    }
-    root.desktopSshInstances = instances;
-    await writeJsonRoot(this.settingsFilePath, root);
+    await this.mutateSettingsRoot((root) => {
+      const instances = Array.isArray(root.desktopSshInstances) ? root.desktopSshInstances : [];
+      for (const instance of instances) {
+        if (instance?.id !== instanceId) continue;
+        instance.localForward = instance.localForward && typeof instance.localForward === 'object' ? instance.localForward : {};
+        instance.localForward.preferredLocalPort = localPort;
+      }
+      root.desktopSshInstances = instances;
+    });
   }
 
   async resolveSshConfig(parsed) {
@@ -746,7 +752,7 @@ export class ElectronSshManager {
   }
 
   ensureSessionDir(id) {
-    const base = path.join(path.dirname(this.settingsFilePath), 'ssh', id);
+    const base = path.join(path.dirname(this.resolveSettingsFilePath()), 'ssh', id);
     fs.mkdirSync(base, { recursive: true });
     return base;
   }

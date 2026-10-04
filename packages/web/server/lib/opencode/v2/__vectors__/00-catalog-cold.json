@@ -1,0 +1,5321 @@
+{
+ "vector": "00-catalog",
+ "title": "Catalog, config, location and openapi snapshots",
+ "design": "catalog (first touch of a new location)",
+ "opencode": "2.0.20",
+ "capturedWith": "g2trace on the G1 embedded host (ServerFetch.make + Bun listener), simulation backend; see README.md",
+ "normalization": {
+  "ids": 12,
+  "timestamps": 12,
+  "sha256": 0,
+  "sha1": 0,
+  "slugs": 0,
+  "timestampBase": 1767225600000,
+  "timestampStep": 1000
+ },
+ "frames": [
+  "data: {\"id\":\"evt_000000000001normalized0000\",\"created\":1767225602000,\"type\":\"worktree.resolved\",\"data\":{\"projectID\":\"global\",\"directory\":\"<home>/workspace\",\"previous\":\"global\"},\"durable\":{\"aggregateID\":\"global\",\"seq\":0,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000002normalized0000\",\"created\":1767225604000,\"type\":\"project.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"id\":\"global\",\"canonical\":\"<home>/workspace\",\"vcs\":\"git\",\"time\":{\"created\":1767225601000,\"updated\":1767225601000,\"active\":1767225603000},\"sandboxes\":[]}}\n\n",
+  "data: {\"id\":\"evt_000000000003normalized0000\",\"created\":1767225605000,\"type\":\"integration.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000004normalized0000\",\"created\":1767225606000,\"type\":\"provider.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000005normalized0000\",\"created\":1767225607000,\"type\":\"model.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000006normalized0000\",\"created\":1767225608000,\"type\":\"vcs.branch.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"branch\":\"main\"}}\n\n",
+  "data: {\"id\":\"evt_000000000007normalized0000\",\"created\":1767225608000,\"type\":\"agent.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000008normalized0000\",\"created\":1767225609000,\"type\":\"command.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000009normalized0000\",\"created\":1767225609000,\"type\":\"skill.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_00000000000anormalized0000\",\"created\":1767225610000,\"type\":\"websearch.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_00000000000bnormalized0000\",\"created\":1767225611000,\"type\":\"reference.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_00000000000cnormalized0000\",\"created\":1767225612000,\"type\":\"plugin.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n"
+ ],
+ "rest": [
+  {
+   "label": "server.info",
+   "method": "GET",
+   "path": "/api/info",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "version": "0.0.0-spike",
+    "pid": 0,
+    "urls": [],
+    "paths": {
+     "tmp": "<home>/tmp/opencode"
+    }
+   }
+  },
+  {
+   "label": "agent.list",
+   "method": "GET",
+   "path": "/api/agent",
+   "headers": {
+    "x-opencode-directory": "%3Chome%3E%2Fworkspace"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "data": []
+   }
+  },
+  {
+   "label": "provider.list",
+   "method": "GET",
+   "path": "/api/provider",
+   "headers": {
+    "x-opencode-directory": "%3Chome%3E%2Fworkspace"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "data": []
+   }
+  },
+  {
+   "label": "model.list",
+   "method": "GET",
+   "path": "/api/model",
+   "headers": {
+    "x-opencode-directory": "%3Chome%3E%2Fworkspace"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "data": []
+   }
+  },
+  {
+   "label": "model.default",
+   "method": "GET",
+   "path": "/api/model/default",
+   "headers": {
+    "x-opencode-directory": "%3Chome%3E%2Fworkspace"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "data": null
+   }
+  },
+  {
+   "label": "integration.list",
+   "method": "GET",
+   "path": "/api/integration",
+   "headers": {
+    "x-opencode-directory": "%3Chome%3E%2Fworkspace"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "data": [
+     {
+      "id": "302ai",
+      "name": "302.AI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "302AI_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "abacus",
+      "name": "Abacus",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ABACUS_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "abliteration-ai",
+      "name": "abliteration.ai",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ABLIT_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "above",
+      "name": "above.dev",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ABOVE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "agentrouter",
+      "name": "AgentRouter",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "AGENTROUTER_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "agnes",
+      "name": "Agnes AI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "AGNES_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "ai-router",
+      "name": "AI-ROUTER",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "AI_ROUTER_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "aiand",
+      "name": "ai&",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "AIAND_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "ai21",
+      "name": "AI21 Labs",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "AI21_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "aihubmix",
+      "name": "AIHubMix",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "AIHUBMIX_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "ainetcafe",
+      "name": "ainetcafe",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "AINETCAFE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "aixy",
+      "name": "Aixy",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "AIXY_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "aki-io",
+      "name": "AKI.IO",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "AKI_IO_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "alibaba",
+      "name": "Alibaba",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "DASHSCOPE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "alibaba-cn",
+      "name": "Alibaba (China)",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "DASHSCOPE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "alibaba-coding-plan",
+      "name": "Alibaba Coding Plan",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ALIBABA_CODING_PLAN_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "alibaba-coding-plan-cn",
+      "name": "Alibaba Coding Plan (China)",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ALIBABA_CODING_PLAN_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "alibaba-token-plan",
+      "name": "Alibaba Token Plan",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ALIBABA_TOKEN_PLAN_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "alibaba-token-plan-cn",
+      "name": "Alibaba Token Plan (China)",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ALIBABA_TOKEN_PLAN_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "amazon-bedrock",
+      "name": "Amazon Bedrock",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "AWS_BEARER_TOKEN_BEDROCK"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "ambient",
+      "name": "Ambient",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "AMBIENT_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "amd",
+      "name": "AMD",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "AMD_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "anthropic",
+      "name": "Anthropic",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ANTHROPIC_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "anyapi",
+      "name": "AnyAPI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ANYAPI_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "arcee",
+      "name": "Arcee",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ARCEE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "atomic-chat",
+      "name": "Atomic Chat",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ATOMIC_CHAT_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "auriko",
+      "name": "Auriko",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "AURIKO_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "azure",
+      "name": "Azure",
+      "methods": [
+       {
+        "type": "key",
+        "label": "API key",
+        "form": [
+         {
+          "key": "resourceName",
+          "title": "Enter Azure Resource Name",
+          "required": true,
+          "type": "string",
+          "placeholder": "e.g. my-models"
+         }
+        ]
+       },
+       {
+        "type": "env",
+        "names": [
+         "AZURE_API_KEY",
+         "AZURE_COGNITIVE_SERVICES_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "bailing",
+      "name": "Bailing",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "BAILING_API_TOKEN"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "baseten",
+      "name": "Baseten",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "BASETEN_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "bee",
+      "name": "Bee by HEOSSI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "BEE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "berget",
+      "name": "Berget.AI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "BERGET_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "blueclaw",
+      "name": "Blue Claw",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "BLUECLAW_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "bothub",
+      "name": "Bothub",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "BOTHUB_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "cerebras",
+      "name": "Cerebras",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "CEREBRAS_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "hyper",
+      "name": "Charm Hyper",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "HYPER_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "chutes",
+      "name": "Chutes",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "CHUTES_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "clarifai",
+      "name": "Clarifai",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "CLARIFAI_PAT"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "claudinio",
+      "name": "Claudinio",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "CLAUDINIO_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "cline-pass",
+      "name": "ClinePass",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "CLINE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "cloudferro-sherlock",
+      "name": "CloudFerro Sherlock",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "CLOUDFERRO_SHERLOCK_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "cloudflare-ai-gateway",
+      "name": "Cloudflare AI Gateway",
+      "methods": [
+       {
+        "type": "key",
+        "label": "Gateway API token",
+        "form": [
+         {
+          "key": "accountId",
+          "title": "Enter your Cloudflare Account ID",
+          "required": true,
+          "type": "string",
+          "placeholder": "e.g. 1234567890abcdef1234567890abcdef"
+         },
+         {
+          "key": "gatewayId",
+          "title": "Enter your Cloudflare AI Gateway ID",
+          "required": true,
+          "type": "string",
+          "placeholder": "e.g. my-gateway"
+         }
+        ]
+       },
+       {
+        "type": "env",
+        "names": [
+         "CLOUDFLARE_API_TOKEN",
+         "CLOUDFLARE_ACCOUNT_ID",
+         "CLOUDFLARE_GATEWAY_ID"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "cloudflare-workers-ai",
+      "name": "Cloudflare Workers AI",
+      "methods": [
+       {
+        "type": "key",
+        "label": "API key",
+        "form": [
+         {
+          "key": "accountId",
+          "title": "Enter your Cloudflare Account ID",
+          "required": true,
+          "type": "string",
+          "placeholder": "e.g. 1234567890abcdef1234567890abcdef"
+         }
+        ]
+       },
+       {
+        "type": "env",
+        "names": [
+         "CLOUDFLARE_API_KEY",
+         "CLOUDFLARE_WORKERS_AI_TOKEN",
+         "CLOUDFLARE_API_TOKEN"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "cohere",
+      "name": "Cohere",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "COHERE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "coralbricks",
+      "name": "CoralBricks",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "CORAL_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "wandb",
+      "name": "CoreWeave",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "WANDB_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "cortecs",
+      "name": "Cortecs",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "CORTECS_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "crof",
+      "name": "CrofAI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "CROF_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "crossmodel",
+      "name": "CrossModel",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "CROSSMODEL_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "crusoe",
+      "name": "Crusoe",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "CRUSOE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "drun",
+      "name": "D.Run (China)",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "DRUN_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "daoxe",
+      "name": "DaoXE",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "DAOXE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "databricks",
+      "name": "Databricks",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "DATABRICKS_HOST",
+         "DATABRICKS_TOKEN"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "deepinfra",
+      "name": "Deep Infra",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "DEEPINFRA_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "DEEPSEEK_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "llmgateway",
+      "name": "DevPass (LLM Gateway)",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "LLMGATEWAY_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "digitalocean",
+      "name": "DigitalOcean",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "DIGITALOCEAN_ACCESS_TOKEN"
+        ]
+       },
+       {
+        "id": "browser",
+        "type": "oauth",
+        "label": "Login with DigitalOcean"
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "dinference",
+      "name": "DInference",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "DINFERENCE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "ebcloud",
+      "name": "EBCloud",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "EBCLOUD_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "echo",
+      "name": "Echo",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ECHO_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "edenai",
+      "name": "Eden AI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "EDENAI_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "empiriolabs",
+      "name": "EmpirioLabs AI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "EMPIRIOLABS_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "evroc",
+      "name": "evroc",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "EVROC_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "exa",
+      "name": "Exa",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "EXA_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "fastrouter",
+      "name": "FastRouter",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "FASTROUTER_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "firecrawl",
+      "name": "Firecrawl",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "FIRECRAWL_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "fireworks-ai",
+      "name": "Fireworks AI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "FIREWORKS_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "freemodel",
+      "name": "FreeModel",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "FREEMODEL_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "friendli",
+      "name": "Friendli",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "FRIENDLI_TOKEN"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "frogbot",
+      "name": "FrogBot",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "FROGBOT_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "github-copilot",
+      "name": "GitHub Copilot",
+      "methods": [
+       {
+        "type": "env",
+        "names": [
+         "GITHUB_TOKEN"
+        ]
+       },
+       {
+        "id": "device",
+        "type": "oauth",
+        "label": "Login with GitHub Copilot",
+        "form": [
+         {
+          "key": "deploymentType",
+          "title": "Select GitHub deployment type",
+          "required": true,
+          "type": "string",
+          "options": [
+           {
+            "value": "github.com",
+            "label": "GitHub.com",
+            "description": "Public"
+           },
+           {
+            "value": "enterprise",
+            "label": "GitHub Enterprise",
+            "description": "Data residency or self-hosted"
+           }
+          ]
+         },
+         {
+          "key": "enterpriseUrl",
+          "title": "Enter your GitHub Enterprise URL or domain",
+          "required": true,
+          "when": [
+           {
+            "key": "deploymentType",
+            "op": "eq",
+            "value": "enterprise"
+           }
+          ],
+          "type": "string",
+          "placeholder": "company.ghe.com or https://company.ghe.com"
+         }
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "gitlab",
+      "name": "GitLab Duo",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "GITLAB_TOKEN"
+        ]
+       },
+       {
+        "id": "pkce",
+        "type": "oauth",
+        "label": "Login with GitLab (OAuth)",
+        "form": [
+         {
+          "key": "instanceUrl",
+          "title": "GitLab instance URL",
+          "description": "Leave the default to use gitlab.com, or enter your self-managed GitLab URL.",
+          "type": "string",
+          "pattern": "^https?://\\S+$",
+          "placeholder": "https://gitlab.com",
+          "default": "https://gitlab.com"
+         }
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "gmicloud",
+      "name": "GMI Cloud",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "GMICLOUD_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "google",
+      "name": "Google",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "GOOGLE_API_KEY",
+         "GOOGLE_GENERATIVE_AI_API_KEY",
+         "GEMINI_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "greenpt",
+      "name": "GreenPT",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "GREENPT_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "groq",
+      "name": "Groq",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "GROQ_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "helicone",
+      "name": "Helicone",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "HELICONE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "hetzner",
+      "name": "Hetzner",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "HETZNER_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "hpc-ai",
+      "name": "HPC-AI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "HPC_AI_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "huggingface",
+      "name": "Hugging Face",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "HF_TOKEN"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "iflowcn",
+      "name": "iFlow",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "IFLOW_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "impossibl",
+      "name": "Impossibl",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "IMPOSSIBL_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "inception",
+      "name": "Inception",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "INCEPTION_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "inceptron",
+      "name": "Inceptron",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "INCEPTRON_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "inco",
+      "name": "Inco",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "INCO_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "infer",
+      "name": "Infer by Flow7",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "INFER_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "inference",
+      "name": "Inference",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "INFERENCE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "inferx",
+      "name": "InferX",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "INFERX_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "infomaniak",
+      "name": "Infomaniak",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "INFOMANIAK_API_KEY",
+         "INFOMANIAK_PRODUCT_ID"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "io-net",
+      "name": "IO.NET",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "IOINTELLIGENCE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "iteracompute",
+      "name": "IteraCompute",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ITERACOMPUTE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "jalapeno",
+      "name": "Jalapeno Cloud",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "JALAPENO_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "jiekou",
+      "name": "Jiekou.AI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "JIEKOU_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "kenari",
+      "name": "Kenari",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "KENARI_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "kilo",
+      "name": "Kilo Gateway",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "KILO_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "kimi-code-plan-global",
+      "name": "Kimi For Coding (kimi.ai)",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "KIMI_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "kimi-code-plan-cn",
+      "name": "Kimi For Coding (kimi.com)",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "KIMI_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "klokintegration",
+      "name": "klokintegration.se",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "KLOKINTEGRATION_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "kosmik",
+      "name": "Kosmik Compute",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "KOSMIK_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "kuae-cloud-coding-plan",
+      "name": "KUAE Cloud Coding Plan",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "KUAE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "lilac",
+      "name": "Lilac",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "LILAC_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "llama",
+      "name": "Llama",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "LLAMA_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "llmgateway-providers",
+      "name": "LLM Gateway",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "LLMGATEWAY_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "llmtech",
+      "name": "LLM Tech",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "LLMTECH_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "llmtr",
+      "name": "LLMTR",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "LLMTR_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "lmstudio",
+      "name": "LMStudio",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "LMSTUDIO_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "longcat",
+      "name": "LongCat",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "LONGCAT_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "lucidquery",
+      "name": "LucidQuery",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "LUCIDQUERY_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "lynkr",
+      "name": "Lynkr",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "LYNKR_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "meganova",
+      "name": "Meganova",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "MEGANOVA_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "melious",
+      "name": "Melious",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "MELIOUS_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "merge-gateway",
+      "name": "Merge Gateway",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "MERGE_GATEWAY_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "meta",
+      "name": "Meta",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "META_MODEL_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "minimax-cn",
+      "name": "MiniMax (minimax.cn)",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "MINIMAX_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "minimax",
+      "name": "MiniMax (minimax.io)",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "MINIMAX_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "minimax-cn-coding-plan",
+      "name": "MiniMax Token Plan (minimax.cn)",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "MINIMAX_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "minimax-coding-plan",
+      "name": "MiniMax Token Plan (minimax.io)",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "MINIMAX_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "mistral",
+      "name": "Mistral",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "MISTRAL_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "mixlayer",
+      "name": "Mixlayer",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "MIXLAYER_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "moark",
+      "name": "Moark",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "MOARK_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "modal",
+      "name": "Modal",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "MODAL_PROXY_TOKEN"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "model-oracle-ai",
+      "name": "Model Oracle AI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "MODEL_ORACLE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "modelis",
+      "name": "Modelis",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "MODELIS_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "modelscope",
+      "name": "ModelScope",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "MODELSCOPE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "moonshotai",
+      "name": "Moonshot AI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "MOONSHOT_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "moonshotai-cn",
+      "name": "Moonshot AI (China)",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "MOONSHOT_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "morph",
+      "name": "Morph",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "MORPH_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "nan",
+      "name": "NaN",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "NAN_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "nano-gpt",
+      "name": "NanoGPT",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "NANO_GPT_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "nearai",
+      "name": "NEAR AI Cloud",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "NEARAI_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "nebius",
+      "name": "Nebius Token Factory",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "NEBIUS_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "neon",
+      "name": "Neon",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "NEON_AI_GATEWAY_BASE_URL",
+         "NEON_AI_GATEWAY_TOKEN"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "neosmith",
+      "name": "NeoSmith",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "NEOSMITH_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "neuralwatt",
+      "name": "Neuralwatt",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "NEURALWATT_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "nova",
+      "name": "Nova",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "NOVA_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "novita-ai",
+      "name": "NovitaAI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "NOVITA_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "nvidia",
+      "name": "Nvidia",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "NVIDIA_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "oci",
+      "name": "OCI Generative AI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "OCI_GENAI_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "ofox",
+      "name": "Ofox",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "OFOX_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "ollama-cloud",
+      "name": "Ollama Cloud",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "OLLAMA_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "openai",
+      "name": "OpenAI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "OPENAI_API_KEY"
+        ]
+       },
+       {
+        "id": "chatgpt-token-sharing",
+        "type": "oauth",
+        "label": "Sign in with ChatGPT"
+       },
+       {
+        "id": "chatgpt-browser",
+        "type": "oauth",
+        "label": "ChatGPT Pro/Plus (browser)"
+       },
+       {
+        "id": "chatgpt-headless",
+        "type": "oauth",
+        "label": "ChatGPT Pro/Plus (headless)"
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "opencode",
+      "name": "OpenCode Console",
+      "methods": [
+       {
+        "type": "key",
+        "label": "API key (service account)"
+       },
+       {
+        "type": "env",
+        "names": [
+         "OPENCODE_API_KEY"
+        ]
+       },
+       {
+        "id": "device",
+        "type": "oauth",
+        "label": "OpenCode Console account",
+        "form": [
+         {
+          "key": "server",
+          "hidden": true,
+          "type": "string",
+          "format": "uri",
+          "default": "https://opencode.ai/console"
+         }
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "opencode-go",
+      "name": "OpenCode Go",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "OPENCODE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "openreason",
+      "name": "OpenReason",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "OPENREASON_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "OPENROUTER_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "opper",
+      "name": "Opper",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "OPPER_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "orcarouter",
+      "name": "OrcaRouter",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ORCAROUTER_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "ovhcloud",
+      "name": "OVHcloud AI Endpoints",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "OVHCLOUD_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "parallel",
+      "name": "Parallel",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "PARALLEL_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "pareto",
+      "name": "Pareto Inference",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "PARETO_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "pendra",
+      "name": "Pendra",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "PENDRA_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "perplexity",
+      "name": "Perplexity",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "PERPLEXITY_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "perplexity-agent",
+      "name": "Perplexity Agent",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "PERPLEXITY_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "pioneer",
+      "name": "Pioneer",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "PIONEER_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "poe",
+      "name": "Poe",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "POE_API_KEY"
+        ]
+       },
+       {
+        "id": "browser",
+        "type": "oauth",
+        "label": "Login with Poe (browser)"
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "poolside",
+      "name": "Poolside",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "POOLSIDE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "privatemode-ai",
+      "name": "Privatemode AI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "PRIVATEMODE_API_KEY",
+         "PRIVATEMODE_ENDPOINT"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "qihang-ai",
+      "name": "QiHang",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "QIHANG_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "qiniu-ai",
+      "name": "Qiniu",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "QINIU_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "qvac",
+      "name": "QVAC",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "QVAC_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "regolo-ai",
+      "name": "Regolo AI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "REGOLO_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "requesty",
+      "name": "Requesty",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "REQUESTY_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "routing-run",
+      "name": "routing.run",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ROUTING_RUN_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "runinfra",
+      "name": "RunInfra",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "RUNINFRA_GATEWAY_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "sakana",
+      "name": "Sakana AI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "SAKANA_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "salad-cloud",
+      "name": "SaladCloud AI Gateway",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "SALAD_CLOUD_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "sap-ai-core",
+      "name": "SAP AI Core",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "AICORE_SERVICE_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "sarvam",
+      "name": "Sarvam AI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "SARVAM_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "scaleway",
+      "name": "Scaleway",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "SCALEWAY_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "scnet-token-plan",
+      "name": "SCNet Token Plan",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "SCNET_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "scx-ai",
+      "name": "SCX.ai",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "SCX_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "sensenova",
+      "name": "SenseNova (China)",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "SENSENOVA_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "siliconflow",
+      "name": "SiliconFlow",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "SILICONFLOW_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "siliconflow-cn",
+      "name": "SiliconFlow (China)",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "SILICONFLOW_CN_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "sim",
+      "name": "Simulated",
+      "methods": [
+       {
+        "type": "key",
+        "label": "Manually enter API Key"
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "snowflake-cortex",
+      "name": "Snowflake Cortex",
+      "methods": [
+       {
+        "type": "key",
+        "label": "Paste PAT or bearer token",
+        "form": [
+         {
+          "key": "account",
+          "title": "Snowflake account",
+          "required": true,
+          "type": "string",
+          "placeholder": "myorg-myaccount"
+         }
+        ]
+       },
+       {
+        "type": "env",
+        "names": [
+         "SNOWFLAKE_CORTEX_TOKEN",
+         "SNOWFLAKE_CORTEX_PAT"
+        ]
+       },
+       {
+        "id": "browser",
+        "type": "oauth",
+        "label": "Login with Snowflake (External Browser)",
+        "form": [
+         {
+          "key": "account",
+          "title": "Snowflake account",
+          "required": true,
+          "type": "string",
+          "placeholder": "myorg-myaccount"
+         },
+         {
+          "key": "role",
+          "title": "Snowflake role (optional)",
+          "type": "string"
+         }
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "stackit",
+      "name": "STACKIT",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "STACKIT_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "standardcompute",
+      "name": "Standard Compute",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "STANDARDCOMPUTE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "stepfun",
+      "name": "StepFun (China)",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "STEPFUN_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "stepfun-ai",
+      "name": "StepFun (Global)",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "STEPFUN_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "stepfun-step-plan",
+      "name": "StepFun Step Plan (China)",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "STEPFUN_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "stepfun-ai-step-plan",
+      "name": "StepFun Step Plan (Global)",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "STEPFUN_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "subconscious",
+      "name": "Subconscious",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "SUBCONSCIOUS_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "submodel",
+      "name": "submodel",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "SUBMODEL_INSTAGEN_ACCESS_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "synthetic",
+      "name": "Synthetic",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "SYNTHETIC_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "tavily",
+      "name": "Tavily",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "TAVILY_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "tempr",
+      "name": "Tempr",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "TEMPR_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "tencent-coding-plan",
+      "name": "Tencent Coding Plan (China)",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "TENCENT_CODING_PLAN_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "tencent-token-plan",
+      "name": "Tencent Token Plan",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "TENCENT_TOKEN_PLAN_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "tencent-tokenhub",
+      "name": "Tencent TokenHub",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "TENCENT_TOKENHUB_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "tensorx",
+      "name": "TensorX",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "TENSORX_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "the-grid-ai",
+      "name": "The Grid AI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "THEGRID_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "thinkingmachines",
+      "name": "Thinking Machines",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "TINKER_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "tinfoil",
+      "name": "Tinfoil",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "TINFOIL_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "tinyfish",
+      "name": "TinyFish",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "TINYFISH_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "togetherai",
+      "name": "Together AI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "TOGETHER_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "tokengo",
+      "name": "TokenGo",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "TOKENGO_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "tokenrouter",
+      "name": "TokenRouter",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "TOKENROUTER_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "trustedrouter",
+      "name": "TrustedRouter",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "TRUSTEDROUTER_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "umans-ai",
+      "name": "Umans AI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "UMANS_AI_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "umans-ai-coding-plan",
+      "name": "Umans AI Coding Plan",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "UMANS_AI_CODING_PLAN_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "unorouter",
+      "name": "UnoRouter",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "UNOROUTER_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "upstage",
+      "name": "Upstage",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "UPSTAGE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "v0",
+      "name": "v0",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "V0_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "vancine",
+      "name": "Vancine",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "VANCINE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "venice",
+      "name": "Venice AI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "VENICE_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "vercel",
+      "name": "Vercel AI Gateway",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "AI_GATEWAY_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "google-vertex",
+      "name": "Vertex",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "GOOGLE_VERTEX_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "vispark",
+      "name": "Vispark",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "VISPARK_LAB_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "vivgrid",
+      "name": "Vivgrid",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "VIVGRID_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "volcengine",
+      "name": "Volcengine Ark",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ARK_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "volcengine-coding-plan",
+      "name": "Volcengine Ark Coding Plan",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ARK_CODING_PLAN_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "vultr",
+      "name": "Vultr",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "VULTR_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "wafer.ai",
+      "name": "Wafer",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "WAFER_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "wallaby",
+      "name": "Wallaby",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "WALLABY_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "watsonx",
+      "name": "watsonx.ai",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "WATSONX_AI_APIKEY",
+         "WATSONX_AI_PROJECT_ID"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "xai",
+      "name": "xAI",
+      "methods": [
+       {
+        "type": "key",
+        "label": "Manually enter API Key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "XAI_API_KEY"
+        ]
+       },
+       {
+        "id": "device",
+        "type": "oauth",
+        "label": "SuperGrok Subscription"
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "xiaomi",
+      "name": "Xiaomi",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "XIAOMI_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "xiaomi-token-plan-cn",
+      "name": "Xiaomi Token Plan (China)",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "XIAOMI_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "xiaomi-token-plan-ams",
+      "name": "Xiaomi Token Plan (Europe)",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "XIAOMI_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "xiaomi-token-plan-sgp",
+      "name": "Xiaomi Token Plan (Singapore)",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "XIAOMI_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "xpersona",
+      "name": "Xpersona",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "XPERSONA_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "zai",
+      "name": "Z.AI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ZHIPU_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "zai-coding-plan",
+      "name": "Z.AI Coding Plan",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ZHIPU_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "zeldoc",
+      "name": "Zeldoc",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ZELDOC_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "zenifra",
+      "name": "Zenifra",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ZENIFRA_AI_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "zenmux",
+      "name": "ZenMux",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ZENMUX_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "zhipuai",
+      "name": "Zhipu AI",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ZHIPU_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     },
+     {
+      "id": "zhipuai-coding-plan",
+      "name": "Zhipu AI Coding Plan",
+      "methods": [
+       {
+        "type": "key"
+       },
+       {
+        "type": "env",
+        "names": [
+         "ZHIPU_API_KEY"
+        ]
+       }
+      ],
+      "connections": []
+     }
+    ]
+   }
+  },
+  {
+   "label": "command.list",
+   "method": "GET",
+   "path": "/api/command",
+   "headers": {
+    "x-opencode-directory": "%3Chome%3E%2Fworkspace"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "data": [
+     {
+      "name": "init",
+      "description": "guided AGENTS.md setup"
+     },
+     {
+      "name": "review",
+      "description": "review changes [commit|branch|pr], defaults to uncommitted"
+     },
+     {
+      "name": "probe",
+      "description": "Trace probe command"
+     }
+    ]
+   }
+  },
+  {
+   "label": "skill.list",
+   "method": "GET",
+   "path": "/api/skill",
+   "headers": {
+    "x-opencode-directory": "%3Chome%3E%2Fworkspace"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "data": [
+     {
+      "id": "opencode",
+      "name": "OpenCode",
+      "description": "Use this skill for any question about OpenCode itself, including how OpenCode works, using or configuring it, migrating from V1 to V2, troubleshooting it, developing plugins or integrations, using the OpenCode SDK, clients, server, or API, and contributing to the OpenCode codebase. Also use it for OpenCode agents, commands, skills, tools, permissions, MCP servers, providers, models, themes, keybinds, formatters, the CLI, TUI, desktop app, and web app.",
+      "path": "/builtin/opencode.md",
+      "content": "# OpenCode\n\nUse this guide as the starting point for work involving OpenCode itself. It\ncovers the core concepts needed to configure and customize OpenCode, extend it\nwith plugins, and build integrations with the OpenCode SDK, clients, and API.\n\nFull documentation is available at <https://opencode.ai/v2/docs/>. This overview is\nonly an index of core concepts. Before answering a question about a topic below,\nfetch the URL named in that section and use the full page as the source of\ntruth. Follow links from that page when the question needs more detail. Fetch\n<https://opencode.ai/v2/docs/> first when you need to discover the relevant\ndocumentation page.\n\nA machine-readable documentation index is available at\n<https://opencode.ai/v2/llms.txt>.\n\n## Version policy\n\nAlways answer for OpenCode V2 unless the user explicitly asks about V1,\nlegacy OpenCode, or migrating from V1.\n\nUse only <https://opencode.ai/v2/docs/> documentation as the source of truth for V2.\nDo not use <https://opencode.ai/docs/>, which documents V1, and do not use\ngeneral web search to resolve a V2 documentation question when the V2 docs or\nlinked pages cover it. The schema served from\n<https://opencode.ai/config.json> may describe V1 even though V2 configuration\nfiles include that URL for editor integration. Never use it to infer V2 field\nnames or shapes. If V2 documentation is missing or contradictory, state the\nuncertainty or ask for clarification instead of falling back to V1.\n\nV1 documentation and syntax may be consulted only when the user explicitly\nasks about V1 or when needed as migration input. Outputs and recommendations\nmust still use V2 unless the user specifically requests a V1 result.\n\n## [CLI](https://opencode.ai/v2/docs/cli)\n\nFor questions about the terminal interface, command-line invocation, `run`,\n`mini`, terminal providers, or other CLI behavior, fetch the\n[CLI guide](https://opencode.ai/v2/docs/cli) and the relevant page linked from\nthat section.\n\nCLI and TUI preferences are separate from OpenCode's server and project\nconfiguration. They live in the global `~/.config/opencode/cli.json`, or\n`$XDG_CONFIG_HOME/opencode/cli.json` when `XDG_CONFIG_HOME` is set. There is no\nproject-local CLI configuration. Set `OPENCODE_CLI_CONFIG_CONTENT` to merge\ninline JSON over the global settings. Most preferences can also be changed from\nthe TUI by pressing `Ctrl+P` and selecting **Open settings**.\n\n### [Settings](https://opencode.ai/v2/docs/cli/config)\n\nFetch the full [CLI settings reference](https://opencode.ai/v2/docs/cli/config)\nbefore editing `cli.json`. It documents every terminal-only setting, accepted\nvalues, and examples, including themes, input, sessions, tabs, diffs, alerts,\nMini, keybindings, terminal plugins, and debugging. Do not put these settings\nin `opencode.json(c)`.\n\n### [Keybinds](https://opencode.ai/v2/docs/cli/keybinds)\n\nConfigure keybindings under `keybinds` in `cli.json`. The leader key is the\n`keybinds.leader` entry; leader timing is configured separately under\n`leader.timeout`. Bindings can use a string, an array of strings, or an object\nwhen event behavior such as `preventDefault` is required. Disable a binding\nwith `\"none\"` or `false`.\n\nNever guess a command ID, default binding, or accepted key syntax. Fetch the\nfull [keybind reference](https://opencode.ai/v2/docs/cli/keybinds), which lists\nthe current IDs and defaults, before answering or editing a binding.\n\n## [OpenCode configuration](https://opencode.ai/v2/docs/config)\n\nOpenCode's server and project configuration uses JSON or JSONC. Include the\npublished schema so the user's editor can validate fields and provide\nautocomplete:\n\n```jsonc\n{\n  \"$schema\": \"https://opencode.ai/config.json\",\n}\n```\n\nGlobal configuration lives at `~/.config/opencode/opencode.json(c)` and applies\nto every project for that user. Project configuration can live in any directory\nas `opencode.json(c)` or `.opencode/opencode.json(c)`, including nested packages\nin a monorepo.\n\nDuring ordinary project discovery, OpenCode searches the current Location\ndirectory and every ancestor through the filesystem root, including directories\nabove the detected project or repository root. It merges direct\n`opencode.json(c)` files from the farthest ancestor to the current directory,\nthen does the same for `.opencode/opencode.json(c)` files. This means every\ndiscovered `.opencode` config overrides every discovered direct config. Global\nfilesystem configuration has lower precedence than these discovered documents.\n\nCommon configuration fields include `model`, `default_agent`, `permissions`,\n`agents`, `commands`, `plugins`, `providers`, `mcp`, `skills`, `instructions`,\n`references`, `formatter`, and `lsp`.\n\nThis configuration is distinct from `cli.json`. Use the\n[CLI settings reference](https://opencode.ai/v2/docs/cli/config) for terminal\npreferences, especially themes and keybindings.\n\nDo not guess field names or shapes. Fetch the V2 configuration guide and its\nlinked topic guide as the source of truth, and preserve unrelated settings when\nediting an existing file. Keep the published `$schema` URL in configuration\nexamples, but do not fetch it to determine the V2 configuration shape.\n\nSee the [full configuration guide](https://opencode.ai/v2/docs/config) for\nevery field, examples, config locations, and links to dedicated feature guides.\n\n## [MCP servers](https://opencode.ai/v2/docs/mcp-servers)\n\nConfigure MCP servers under `mcp.servers`. Prefer the CLI because it preserves\nunrelated configuration. Use `--global` when the user asks to set up a service\nfor themselves without limiting it to the current project; omit it when they\nexplicitly want project-local configuration.\n\n```sh\nopencode mcp add <name> --global --url <remote-url>\nopencode mcp list\n```\n\nRemote servers use OAuth by default. If `mcp list` reports that a server needs\nauthentication, tell the user to run `/mcps`, select the server, and sign in.\nDo not run `opencode mcp auth` through the shell tool: it starts an interactive\nflow whose authorization link can be hidden in background process output.\nUse the user-facing MCP interface instead.\n\nReport the server as configured but awaiting sign-in until its connection\nstatus confirms it is connected.\n\nOAuth credentials are stored outside the OpenCode configuration. Do not ask for or\nstore an API key when the server supports OAuth. Use header-based credentials\nonly when OAuth is unavailable or the user explicitly requires them, and use an\nenvironment substitution such as `{env:MCP_API_KEY}` instead of writing a\nsecret into configuration.\n\n## [V1 to V2 migration](https://opencode.ai/v2/docs/migrate-v1)\n\nFor any request to migrate OpenCode configuration, agents, commands, skills,\nplugins, integrations, or other behavior from V1 to V2, read the full\n[migration guide](https://opencode.ai/v2/docs/migrate-v1) before acting. In\nthe repository, its source is `services/www/src/docs/content/migrate-v1.mdx`.\n\nV1 config files and `.opencode/` definitions are intended to remain compatible.\nThe only intentional breaking changes are the server API and plugin API. Native\nV2 config uses more ergonomic shapes, but conversion is optional. When the user\nrequests conversion, inspect the complete configuration, preserve behavior and\nunrelated settings, and apply only the relevant migrations from the guide. For\nplugin migrations, fetch and follow both the migration guide and the full\n[plugins guide](https://opencode.ai/v2/docs/build/plugins). If non-API V1\nfunctionality fails in V2, use the `report` skill to file it as a compatibility\nbug.\n\n## [Plugins](https://opencode.ai/v2/docs/build/plugins)\n\nFor questions about creating, configuring, loading, publishing, or migrating\nplugins, fetch the full [plugins guide](https://opencode.ai/v2/docs/build/plugins)\nbefore answering. Refer to this guide when the user wants to build a plugin. It\ncovers hooks, transforms, tools, plugin context capabilities, and package\nentrypoints. Plugins can also extend the TUI; for those, fetch the\n[CLI plugin guide](https://opencode.ai/v2/docs/build/plugins/cli).\nFor custom methods and events shared with other plugins or clients, fetch the\n[RPC guide](https://opencode.ai/v2/docs/build/plugins/rpc).\n\n## [Service](https://opencode.ai/v2/docs/troubleshooting#check-the-background-service)\n\nOpenCode uses a client-server architecture. Interfaces such as the TUI connect\nto a background OpenCode service, which owns sessions, configuration, plugins,\npermissions, and tool execution.\n\nOpenCode normally discovers or starts the shared background service\nautomatically. If the service is stuck or unhealthy, restart it:\n\n```sh\nopencode service restart\n```\n\nCheck its status after restarting:\n\n```sh\nopencode service status\n```\n\n## [API](https://opencode.ai/v2/docs/api)\n\nOpenCode exposes an HTTP API from its server. The API is described by an\nOpenAPI document available from the running server at `/openapi.json`.\n\nUse OpenCode's built-in `api` command for local requests. It uses the same\ndiscovery and authentication flow as the TUI and may start the background\nservice when no compatible healthy service is available. It accepts either an\nHTTP method and path or an OpenAPI operation ID.\n\nCall an endpoint with an HTTP method and path:\n\n```sh\nopencode api get /api/info\n```\n\nPass a request body with `--data` or `-d`, and additional headers with\n`--header` or `-H`:\n\n```sh\nopencode api post /api/example --data '{\"key\":\"value\"}'\nopencode api get /api/example --header 'X-Example:value'\n```\n\nRequest bodies default to `Content-Type: application/json`. When OpenCode is\nconnected to an explicit server instead of its managed background service, use\nthe same configured server and authentication context rather than constructing\nan unauthenticated request separately.\n\nSee the [full API reference](https://opencode.ai/v2/docs/api) for available\nendpoints, parameters, request bodies, and response schemas. The\nraw [OpenAPI specification](https://opencode.ai/v2/openapi.json) is also\navailable for code generation and other tooling.\n\n## [Client](https://opencode.ai/v2/docs/build/client)\n\nFor questions about connecting an application to OpenCode over the network,\nfetch the full [client guide](https://opencode.ai/v2/docs/build/client) before\nanswering.\n\n`@opencode/client` is the generated TypeScript client for the OpenCode HTTP\nAPI. Its methods and types come from the same contract as the API reference.\nThe default entrypoint exposes Promise-based resource clients and async\niterables for streaming endpoints. The `@opencode/client/effect` entrypoint\nexposes typed Effects, Streams, and decoded OpenCode schema values. Its\n`Service` API can discover, start, stop, and authenticate with the local\nbackground service from a Node application.\n\n## [SDK](https://opencode.ai/v2/docs/build/sdk)\n\nFor questions about embedding OpenCode directly in an application, fetch the\nfull [SDK guide](https://opencode.ai/v2/docs/build/sdk) before answering. The SDK\nhosts OpenCode in the application without opening an HTTP listener.\n\nUse the [Effect SDK guide](https://opencode.ai/v2/docs/build/sdk/effect) for\nEffect applications. For Cloudflare Durable Objects, use the\n[Cloudflare SDK guide](https://opencode.ai/v2/docs/build/sdk/cloudflare).\n\n## [Troubleshooting](https://opencode.ai/v2/docs/troubleshooting)\n\nOpenCode runs a client and a background server. Start by determining whether a\nproblem belongs to the client, the shared server, or one project.\n\n- Check the service with `opencode service status` and verify the API with\n  `opencode api get /api/info`.\n- Compare with `opencode --standalone`, which runs the TUI with a private\n  server, to isolate shared-service issues.\n- Inspect `~/.local/share/opencode/log/opencode.log`. Filter `role=cli` for\n  client startup and `role=server` for sessions, providers, plugins,\n  permissions, and tools.\n- Run one reproduction with `OPENCODE_LOG_LEVEL=DEBUG` when normal logs are not\n  sufficient.\n- Do not delete or edit the database, service registration, or service config\n  while diagnosing a problem. Back up persistent data before inspecting it\n  with external tools.\n- Redact API keys, authorization headers, prompts, file contents, and other\n  sensitive data before sharing diagnostics.\n\nSee the [full troubleshooting guide](https://opencode.ai/v2/docs/troubleshooting)\nfor service lifecycle commands, API inspection, log locations, explicit server\nconnections, issue-reporting details, and local development paths.\n"
+     },
+     {
+      "id": "report",
+      "name": "Report",
+      "description": "Use when the user wants to report an opencode issue or bug. Collect standard diagnostics, add user-specific reproduction context, and publish the issue with GitHub CLI.",
+      "path": "/builtin/report.md",
+      "content": "<!--\n  Built-in skill. Name and description are registered in code at\n  packages/core/src/plugin/skill.ts. The body below becomes the skill's\n  content.\n-->\n\n# Report an opencode Issue\n\nUse this skill when the user wants to report an opencode issue or bug. Your job\nis to turn the user's problem into a useful GitHub issue with standard\ndiagnostics plus the context needed to reproduce and resolve it.\n\n## Workflow\n\n1. Collect the standard diagnostics below.\n2. Ask only for missing details that are necessary to reproduce or understand\n   impact.\n3. Draft the issue in the standard format below.\n4. Publish it with GitHub CLI after the user confirms the title and body.\n\nDo not publish an issue without user confirmation. If GitHub CLI is not\ninstalled or not authenticated, explain the blocker and provide the exact issue\ntitle/body for the user.\n\n## Standard Diagnostics\n\nCollect these values when possible:\n\n- opencode version: run `opencode --version`.\n- Operating system: run `uname -a` on Unix-like systems, or `ver` on Windows.\n- Terminal: inspect `$TERM`, `$TERM_PROGRAM`, `$COLORTERM`, and any obvious\n  terminal app context the user provides.\n- Shell: inspect `$SHELL` on Unix-like systems, or `%COMSPEC%`/`$ComSpec` on\n  Windows when relevant.\n- Install/channel context: include whether this appears to be local, dev, beta,\n  or release if the version output or environment reveals it.\n- Active plugins: inspect opencode config for configured plugins when possible.\n  Check likely config locations such as `opencode.json`, `opencode.jsonc`,\n  `.opencode/opencode.json`, and `~/.config/opencode/opencode.json`. Record\n  configured plugin entries, local plugin files under `.opencode/plugin/` or\n  `.opencode/plugins/`, and note if plugin status could not be determined.\n\nIf a diagnostic command fails, include `Unavailable` with the reason instead of\nguessing.\n\n## User-Specific Context\n\nCapture the details that make the issue actionable:\n\n- What the user was trying to do.\n- What happened.\n- What the user expected to happen.\n- Reproduction steps, ideally minimal and numbered.\n- Relevant logs, stack traces, screenshots, terminal output, or config snippets.\n- Whether the issue is reproducible consistently, intermittently, or only once.\n- Recent changes that may be related, such as updating opencode, changing\n  config, installing a plugin, changing terminal, or switching workspace.\n- Workarounds tried and whether they helped.\n\nAvoid pasting secrets. Redact tokens, API keys, private URLs, usernames, and\nproject-specific confidential data unless the user explicitly says it is safe.\n\n## Issue Format\n\nUse this exact structure unless the repository issue template requires\notherwise:\n\n```markdown\n## Summary\n\n<!-- One or two sentences describing the bug and impact. -->\n\n## Environment\n\n- opencode version: <!-- value or Unavailable: reason -->\n- OS: <!-- value or Unavailable: reason -->\n- Terminal: <!-- value or Unavailable: reason -->\n- Shell: <!-- value or Unavailable: reason -->\n- Install/channel: <!-- value or Unavailable: reason -->\n- Active plugins: <!-- list, none found, or Unavailable: reason -->\n\n## Reproduction\n\n1. <!-- step -->\n2. <!-- step -->\n3. <!-- step -->\n\n## Expected Behavior\n\n<!-- What should have happened. -->\n\n## Actual Behavior\n\n<!-- What happened instead. Include exact errors when available. -->\n\n## Additional Context\n\n<!-- Logs, config snippets, screenshots, frequency, workarounds, related notes. -->\n```\n\nKeep the title short and searchable. Prefer the form:\n\n```text\n<area>: <specific failure or symptom>\n```\n\nExamples: `tui: skills dialog crashes outside location provider`,\n`cli: local service config writes release filename`.\n\n## Publishing With GitHub CLI\n\nUse GitHub CLI from the repository checkout when available:\n\n```sh\ngh issue create --title \"<title>\" --body-file <file>\n```\n\nWrite the body to a temporary markdown file first so quoting, newlines, logs,\nand code fences are preserved. If the issue belongs in a specific repository,\nuse `--repo owner/name`. If labels are obvious and the repo accepts them, add\n`--label bug`; otherwise omit labels rather than guessing.\n\nAfter publishing, report the created issue URL to the user and mention any\ndiagnostics that were unavailable.\n\n\n## Runtime Diagnostics Snapshot\n\nThese values were captured when the built-in report skill was registered. Verify them before publishing.\n\n- opencode version: 0.0.0-spike\n- install/channel: unknown\n- OS: Darwin 27.0.0 (darwin arm64)\n- Terminal: Unavailable: terminal environment variables are not set\n- Shell: /bin/zsh\n- Active plugins: None found in config"
+     },
+     {
+      "id": "probe-skill",
+      "name": "probe-skill",
+      "description": "Trace probe skill",
+      "path": "<home>/overlay/skills/probe-skill/SKILL.md",
+      "content": "\nProbe skill body.\n"
+     }
+    ]
+   }
+  },
+  {
+   "label": "mcp.list",
+   "method": "GET",
+   "path": "/api/mcp",
+   "headers": {
+    "x-opencode-directory": "%3Chome%3E%2Fworkspace"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "data": []
+   }
+  },
+  {
+   "label": "config.get",
+   "method": "GET",
+   "path": "/api/config",
+   "headers": {
+    "x-opencode-directory": "%3Chome%3E%2Fworkspace"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": [
+    {
+     "type": "directory",
+     "path": "<home>/overlay"
+    },
+    {
+     "type": "document",
+     "info": {
+      "model": {
+       "providerID": "sim",
+       "model": "m1"
+      },
+      "update": "disable",
+      "share": "disabled",
+      "snapshots": false,
+      "providers": {
+       "sim": {
+        "name": "Simulated",
+        "package": "@ai-sdk/openai-compatible",
+        "settings": {
+         "baseURL": "https://api.openai.com/v1",
+         "apiKey": "<redacted>"
+        },
+        "models": {
+         "m1": {
+          "name": "sim m1",
+          "limit": {
+           "context": 200000,
+           "output": 32000
+          }
+         },
+         "m2": {
+          "name": "sim m2",
+          "limit": {
+           "context": 200000,
+           "output": 32000
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "label": "location.get",
+   "method": "GET",
+   "path": "/api/location",
+   "headers": {
+    "x-opencode-directory": "%3Chome%3E%2Fworkspace"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "directory": "<home>/workspace",
+    "project": {
+     "id": "global",
+     "directory": "<home>/workspace",
+     "canonical": "<home>/workspace"
+    }
+   }
+  },
+  {
+   "label": "project.list",
+   "method": "GET",
+   "path": "/api/project",
+   "headers": {
+    "x-opencode-directory": "%3Chome%3E%2Fworkspace"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": [
+    {
+     "id": "global",
+     "canonical": "<home>/workspace",
+     "vcs": "git",
+     "time": {
+      "created": 1767225601000,
+      "updated": 1767225601000,
+      "active": 1767225603000
+     },
+     "sandboxes": []
+    }
+   ]
+  },
+  {
+   "label": "vcs.get",
+   "method": "GET",
+   "path": "/api/vcs",
+   "headers": {
+    "x-opencode-directory": "%3Chome%3E%2Fworkspace"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "data": {
+     "provider": "git",
+     "branch": {
+      "current": "main"
+     }
+    }
+   }
+  },
+  {
+   "label": "plugin.list",
+   "method": "GET",
+   "path": "/api/plugin",
+   "headers": {
+    "x-opencode-directory": "%3Chome%3E%2Fworkspace"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "data": [
+     {
+      "id": "opencode.tool.input.repair",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.config.worktree",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.browser",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.config.mcp",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.mcp.codemode.defaults",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.wellknown",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.vcs.git",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.agent",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.plan",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.command",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.skill",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.vcs.hg",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.models.dev",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.amazon.bedrock",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.azure",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.cerebras",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.chatgpt",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.cloudflare.ai.gateway",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.cloudflare.workers.ai",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.cohere",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.digitalocean",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.gateway",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.github.copilot",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.gitlab",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.google.vertex",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.kilo",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.llmgateway",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.lmstudio",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.modal",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.nvidia",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.ollama",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.opencode",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.snowflake.cortex",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.openai",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.openrouter",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.perplexity",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.poe",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.prompt-cache-key",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.sap.ai.core",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.vercel",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.venice",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.vllm",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.xai",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.zenmux",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.provider.dynamic",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.websearch.exa",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.websearch.firecrawl",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.websearch.parallel",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.websearch.tavily",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.websearch.tinyfish",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.tool.patch",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.prompt.openai",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.prompt.anthropic",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.prompt.kimi",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.prompt.arcee",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.prompt.meta",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.prompt.verbosity",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.prompt.identity",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.tool.edit",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.tool.glob",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.tool.grep",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.tools",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.tools.mcp-resources",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.tool.question",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.tool.read",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.tool.shell",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.tool.skill",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.tool.subagent",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.tool.webfetch",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.tool.websearch",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.tool.write",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.warming",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.simulation.tools",
+      "source": {
+       "type": "sdk"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "g2trace.todo-probe",
+      "source": {
+       "type": "local",
+       "path": "<home>/overlay/plugins/todo-probe.ts"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.config.instruction",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.config.reference",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.config.agent",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.config.command",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.config.compaction",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.config.formatter",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.config.image",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.config.location-watcher",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.config.shell",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.config.snapshot",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.config.tool-output",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.config.compatibility",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.config.skill",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.config.provider",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.config.websearch",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     },
+     {
+      "id": "opencode.config.policy",
+      "source": {
+       "type": "builtin"
+      },
+      "features": {
+       "server": true
+      },
+      "state": {
+       "status": "active"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "form.list",
+   "method": "GET",
+   "path": "/api/form",
+   "headers": {
+    "x-opencode-directory": "%3Chome%3E%2Fworkspace"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "data": []
+   }
+  },
+  {
+   "label": "permission.request.list",
+   "method": "GET",
+   "path": "/api/permission/request",
+   "headers": {
+    "x-opencode-directory": "%3Chome%3E%2Fworkspace"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "location": {
+     "directory": "<home>/workspace"
+    },
+    "data": []
+   }
+  },
+  {
+   "label": "session.active",
+   "method": "GET",
+   "path": "/api/session/active",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {}
+   }
+  },
+  {
+   "label": "session.list.empty",
+   "method": "GET",
+   "path": "/api/session?directory=%3Chome%3E%2Fworkspace",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [],
+    "cursor": {
+     "previous": null,
+     "next": null
+    }
+   }
+  }
+ ],
+ "llm": [],
+ "notes": {
+  "workspace": "<home>/workspace"
+ }
+}

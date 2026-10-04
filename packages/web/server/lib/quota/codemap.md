@@ -6,7 +6,7 @@ Provider-agnostic quota reporting module for model/provider usage limits, exposi
 ## Design
 - **Provider registry pattern**: runtime resolves configured quota providers and dispatches by `providerId`.
 - **Directory-scoped resolution**: routes accept header/query project directory hints and normalize via shared resolver.
-- **Active-runtime proxy resolution**: managed Claude proxy quota uses the effective Anthropic `baseURL` from the active OpenCode provider catalog; external runtimes never fall back to the host's local Claude account.
+- **Native Claude inspection**: quota and OAuth status use the constructor-bound native provider credential owner and original route read authorization. Only a single explicit configured profile is unambiguous; absent/multiple profiles return typed unavailable. No native request executes Claude CLI auth/status, `/usage` inference, PATH discovery or a default account fallback. The original OAuth usage mapper formats a bounded read-only HTTP response; cancellation/hold drains the owned request within the credential mutation queue. External runtimes do not inspect the host account.
 - **Error contract discipline**: route layer wraps provider exceptions into HTTP status/error payloads.
 - **Managed secrets**: `credentials/store.js` owns allowlisted private atomic files for OpenCode Zen, Ollama Cloud, and Cursor plus narrow retirement of the legacy OpenCode Go file; `credentials/providers.js` owns exact active shapes and safe status; `credentials/cursor-import.js` owns explicit read-only Cursor import.
 - **Cross-host parity**: OpenCode Zen, z.ai, Kimi, Codex, xAI, DeepSeek, and OpenCode Go delegate requests and normalization to `@openchamber/shared-runtime`; host modules own credential discovery and persistence only.

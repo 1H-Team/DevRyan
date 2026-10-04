@@ -1,3 +1,9 @@
+import { createNativeConsumerFixture } from '../opencode/test-native-consumer-client.js';
+const createImageAssetsRuntime = (options = {}) => createImageAssetsRuntimeNative({
+  ...options, openCodeClient: options.openCodeClient ?? createNativeConsumerFixture({
+    readFixture: options.fetchImpl ?? ((...args) => globalThis.fetch(...args)), headers: options.getOpenCodeAuthHeaders,
+  }),
+});
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import fsPromises from 'node:fs/promises';
@@ -9,7 +15,7 @@ import { assistantImageSyntaxFixtures } from '../../../../shared-runtime/testing
 import {
   MAX_IMAGE_BYTES,
   createImageAssetGrantStore,
-  createImageAssetsRuntime,
+  createImageAssetsRuntime as createImageAssetsRuntimeNative,
   extractAuthorizedAssistantImageSources,
 } from './runtime.js';
 
@@ -41,7 +47,7 @@ const imageToolPart = (source) => ({
   },
 });
 
-const createHarness = ({ message, ownsSession = async () => true, now } = {}) => {
+const createHarness = ({ message, ownsSession = async () => true, now, openCodeClient } = {}) => {
   const fetchImpl = vi.fn(async () => ({
     ok: true,
     status: 200,
@@ -58,6 +64,7 @@ const createHarness = ({ message, ownsSession = async () => true, now } = {}) =>
     ownsSession,
     fetchImpl,
     ...(now ? { now } : {}),
+    ...(openCodeClient ? { openCodeClient } : {}),
   });
   const app = express();
   app.use((req, _res, next) => {
@@ -294,5 +301,90 @@ describe('path-bound assistant image grants', () => {
     expect(store.authorize({ token, principal, canonicalPath: '/tmp/image.png' })).toBe(true);
     currentTime = 111;
     expect(store.authorize({ token, principal, canonicalPath: '/tmp/image.png' })).toBe(false);
+  });
+});
+
+// Gen 2 (DESIGN C.1, E item 13b): the message read goes through openCodeClient.
+describe('assistant image preparation on OpenCode 2 (openCodeClient)', () => {
+  const createClient = (message, { generation = 2 } = {}) => ({
+    generation: typeof generation === 'function' ? generation : () => generation,
+    sessions: { message: typeof message === 'function' ? vi.fn(message) : vi.fn(async () => message) },
+  });
+
+  it('prepares a workspace image from the projected message read through the client', async () => {
+    const directories = await createFixtureDirectories();
+    const workspaceImage = path.join(directories.workspace, 'workspace.png');
+    await fsPromises.writeFile(workspaceImage, PNG_HEADER);
+    const message = Object.assign(assistantMessage({
+      workspace: directories.workspace,
+      parts: [textPart(`![Workspace](<${workspaceImage}>)`)],
+    }), { generatedRoot: directories.generatedRoot });
+    const openCodeClient = createClient(message);
+    const { app, fetchImpl } = createHarness({ message, openCodeClient });
+
+    const response = await postPrepare(app, { messageId: 'message-1', sources: [workspaceImage] });
+
+    expect(response.status).toBe(200);
+    expect(response.body.results[0]).toMatchObject({ source: workspaceImage, status: 'ready', mimeType: 'image/png' });
+    expect(openCodeClient.sessions.message).toHaveBeenCalledWith('session-1', 'message-1', { timeoutMs: 15_000, allowNotFound: true });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('checks ownership before the client read', async () => {
+    const directories = await createFixtureDirectories();
+    const message = Object.assign(assistantMessage({ workspace: directories.workspace }), { generatedRoot: directories.generatedRoot });
+    const openCodeClient = createClient(message);
+    const { app } = createHarness({ message, openCodeClient, ownsSession: async () => false });
+
+    const response = await postPrepare(app, { messageId: 'message-1', sources: ['image.png'] });
+
+    expect(response.status).toBe(404);
+    expect(openCodeClient.sessions.message).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 for a missing or refused message and 502 for a transport failure', async () => {
+    const directories = await createFixtureDirectories();
+    const message = Object.assign(assistantMessage({ workspace: directories.workspace }), { generatedRoot: directories.generatedRoot });
+
+    const missing = createHarness({ message, openCodeClient: createClient(null) });
+    expect((await postPrepare(missing.app, { messageId: 'message-1', sources: ['image.png'] })).status).toBe(404);
+
+    const refused = createHarness({
+      message,
+      openCodeClient: createClient(async () => { throw Object.assign(new Error('unavailable'), { statusCode: 503 }); }),
+    });
+    expect((await postPrepare(refused.app, { messageId: 'message-1', sources: ['image.png'] })).status).toBe(404);
+
+    const transport = createHarness({
+      message,
+      openCodeClient: createClient(async () => { throw new TypeError('fetch failed'); }),
+    });
+    expect((await postPrepare(transport.app, { messageId: 'message-1', sources: ['image.png'] })).status).toBe(502);
+  });
+
+  it('refuses generation 1 without fetching the message', async () => {
+    const directories = await createFixtureDirectories();
+    const message = Object.assign(assistantMessage({ workspace: directories.workspace, id: 'other-message' }), {
+      generatedRoot: directories.generatedRoot,
+    });
+    const openCodeClient = createClient(message, { generation: 1 });
+    const { app, fetchImpl } = createHarness({ message, openCodeClient });
+
+    expect((await postPrepare(app, { messageId: 'message-1', sources: ['image.png'] })).status).toBe(502);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(openCodeClient.sessions.message).not.toHaveBeenCalled();
+  });
+
+  it('fails closed without any request when the client generation is unknown', async () => {
+    const directories = await createFixtureDirectories();
+    const message = Object.assign(assistantMessage({ workspace: directories.workspace }), { generatedRoot: directories.generatedRoot });
+    const openCodeClient = createClient(message, {
+      generation: () => { throw Object.assign(new Error('unknown generation'), { statusCode: 503 }); },
+    });
+    const { app, fetchImpl } = createHarness({ message, openCodeClient });
+
+    expect((await postPrepare(app, { messageId: 'message-1', sources: ['image.png'] })).status).toBe(502);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(openCodeClient.sessions.message).not.toHaveBeenCalled();
   });
 });

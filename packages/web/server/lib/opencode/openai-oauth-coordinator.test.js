@@ -27,6 +27,108 @@ function fixture(options = {}) {
   return { coordinator, fetchImpl, write, diagnostic, get: () => record, set: (next) => { record = next; } };
 }
 
+describe('explicit native async storage', () => {
+  it('persists crash ambiguity by token hash while allowing a genuinely new login token', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'native-oauth-crash-'));
+    cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const stateFile = path.join(dir, 'state.json');
+    let record = { ...originalAuth(), credentialID: 'native-a', methodID: 'chatgpt-browser' };
+    let startedResolve, finish;
+    const started = new Promise(resolve => { startedResolve = resolve; });
+    const pending = new Promise(resolve => { finish = resolve; });
+    const storage = { readAuth: async () => structuredClone(record), compareAndSwap: async () => false };
+    const first = createOpenAiOAuthCoordinator({ now: () => clock, stateFile, readAuth: () => null, asyncStorage: storage,
+      fetchImpl: async () => { startedResolve(); await pending; throw new Error('fixture controller ended'); } });
+    first.markReady();
+    const request = first.access().catch(() => {});
+    await started;
+    const bytes = fs.readFileSync(stateFile, 'utf8');
+    expect(bytes).not.toContain(record.refresh);
+    expect(JSON.parse(bytes)).toMatchObject({ refreshing: true, refreshFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/) });
+    record = { ...record, credentialID: 'native-alias' };
+    const fetchImpl = vi.fn(async () => refreshed());
+    const restarted = createOpenAiOAuthCoordinator({ now: () => clock, stateFile, readAuth: () => null, asyncStorage: storage, fetchImpl });
+    restarted.markReady();
+    await expect(restarted.access()).rejects.toMatchObject({ code: 'bot_opencode_provider_authentication' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    record = { ...record, refresh: 'genuinely-new-login-token', access: 'new-login-access', expires: clock + 3600000 };
+    expect((await restarted.access()).accessToken).toBe('new-login-access');
+    first.markStopped(); finish(); await request;
+  });
+  it('uses the existing owner queue without changing legacy storage or inspectors', async () => {
+    const legacy = fixture();
+    let release, entered;
+    const waiting = new Promise(resolve => { release = resolve; });
+    const started = new Promise(resolve => { entered = resolve; });
+    const owned = legacy.coordinator.withAuthMutation(async () => { entered(); await waiting; });
+    await started;
+    let record = { ...originalAuth(), credentialID: 'native-a', methodID: 'chatgpt-browser' };
+    const fetchImpl = vi.fn(async () => refreshed());
+    const native = createOpenAiOAuthCoordinator({ now: () => clock, readAuth: () => null, fetchImpl,
+      withMutationQueue: legacy.coordinator.withAuthMutation, asyncStorage: {
+        readAuth: async () => structuredClone(record), compareAndSwap: async (_expected, next) => { record = next; return true; },
+      } });
+    native.markReady();
+    const access = native.access({ expectedAccountId: 'account-a' });
+    await Promise.resolve(); await Promise.resolve();
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(legacy.coordinator.usesOAuth()).toBe(true);
+    expect(legacy.coordinator.getBinding()).toMatchObject({ accountId: 'account-a' });
+    expect(legacy.fetchImpl).not.toHaveBeenCalled();
+    release(); await owned;
+    expect((await access).accessToken).toBe('new-access');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(legacy.get().access).toBe('old-access');
+  });
+  it('never falls back to legacy credentials after native controller loss', async () => {
+    const readAuth = vi.fn(() => ({ ...originalAuth(), expires: clock + 3600000 }));
+    const nativeRead = vi.fn(async () => originalAuth());
+    const coordinator = createOpenAiOAuthCoordinator({ readAuth, asyncStorage: {
+      isActive: () => false, readAuth: nativeRead, compareAndSwap: async () => false,
+    } });
+    coordinator.markReady();
+    expect(coordinator.usesOAuth()).toBe(false);
+    await expect(coordinator.access()).rejects.toMatchObject({ code: 'bot_oauth_coordinator_unavailable' });
+    await expect(coordinator.usesOAuthAsync()).rejects.toMatchObject({ code: 'bot_oauth_coordinator_unavailable' });
+    expect(readAuth).not.toHaveBeenCalled(); expect(nativeRead).not.toHaveBeenCalled();
+  });
+  it('does not unblock ambiguous refresh by changing credential ID with the same token', async () => {
+    let record = { ...originalAuth(), credentialID: 'native-a', methodID: 'chatgpt-browser' };
+    const fetchImpl = vi.fn(async () => { throw new Error('fixture connection lost after rotation'); });
+    const coordinator = createOpenAiOAuthCoordinator({ now: () => clock, fetchImpl,
+      readAuth: () => ({ type: 'api', key: 'legacy-fixture' }),
+      asyncStorage: { readAuth: async () => structuredClone(record), compareAndSwap: async () => false } });
+    coordinator.markReady();
+    await expect(coordinator.access()).rejects.toMatchObject({ code: 'bot_oauth_refresh_unavailable' });
+    record = { ...record, credentialID: 'native-b' };
+    await expect(coordinator.access()).rejects.toMatchObject({ code: 'bot_opencode_provider_authentication' });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(coordinator.usesOAuth()).toBe(false);
+    expect(await coordinator.getAuthStateAsync()).toBe('reauth_required');
+  });
+  it('does not replace a concurrently switched selected credential on refresh completion', async () => {
+    let record = { ...originalAuth(), credentialID: 'native-a', methodID: 'chatgpt-browser' };
+    let release;
+    const pending = new Promise(resolve => { release = resolve; });
+    let startedResolve;
+    const started = new Promise(resolve => { startedResolve = resolve; });
+    const cas = vi.fn(async (expected, next) => {
+      if (JSON.stringify(record) !== JSON.stringify(expected)) return false;
+      record = next; return true;
+    });
+    const coordinator = createOpenAiOAuthCoordinator({ now: () => clock, fetchImpl: async () => { startedResolve(); await pending; return refreshed(); },
+      readAuth: () => null, asyncStorage: { readAuth: async () => structuredClone(record), compareAndSwap: cas } });
+    coordinator.markReady();
+    const access = coordinator.access({ expectedAccountId: 'account-a' });
+    await started;
+    record = { ...originalAuth(), accountId: 'account-b', credentialID: 'native-b', methodID: 'chatgpt-browser', refresh: 'different-refresh' };
+    release();
+    await expect(access).rejects.toMatchObject({ code: 'bot_opencode_provider_authentication' });
+    expect(cas).not.toHaveBeenCalled();
+    expect(record.accountId).toBe('account-b');
+  });
+});
+
 describe('managed OpenAI OAuth owner', () => {
   it('persists ten-day rotated credentials and reloads the unblocked generation', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-oauth-'));

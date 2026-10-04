@@ -1,0 +1,75 @@
+import {test,expect} from 'bun:test';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {pathToFileURL} from 'node:url';
+import {prepareReviewedNativeInputs,reviewedNativeInputPlugin} from '../native-runtime-assets.mjs';
+import {createNativeAssetFixturePlugin,writeNativeFixtureOutputs} from './native-asset-fixture.mjs';
+const repository=path.resolve(import.meta.dirname,'../..');
+
+test('controller webfetch uses actual native selection/hooks/provider with frozen secondary model and owned scratch',async()=>{
+ const root=await fs.mkdtemp(path.join(repository,'.cache/v2-validation/controller-fetch-')),home=path.join(root,'home'),tmp=path.join(home,'tmp'),directory=path.join(root,'project');
+ await fs.mkdir(tmp,{recursive:true});await fs.mkdir(directory);await fs.writeFile(path.join(tmp,'package.json'),'{}\n');let child:ReturnType<typeof Bun.spawn>|undefined;
+ try{
+  const host=path.join(repository,'packages/web/server/lib/opencode/runtime-host');
+  const source=`
+   import assert from 'node:assert/strict';import fs from 'node:fs/promises';import path from 'node:path';
+   import {Effect,Layer,Logger,ErrorReporter,Context} from 'effect';import {Global} from '@opencode/util/global';import {Plugin} from '@opencode/core/plugin';import {PluginHooks} from '@opencode/core/plugin/hooks';import {Location} from '@opencode/core/location';
+   const {ServerFetch}=await import(${JSON.stringify(pathToFileURL(path.join(repository,'packages/web/node_modules/@opencode/server/dist/fetch.js')).href)});
+   const {OperationPermitRef}=await import(${JSON.stringify(pathToFileURL(path.join(host,'native-admission-contract.ts')).href)});
+   const {configurationOverrides}=await import(${JSON.stringify(pathToFileURL(path.join(host,'configuration.ts')).href)});
+   import * as original from ${JSON.stringify(path.join(repository,'packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js'))};
+   import {helperPluginContext} from ${JSON.stringify(path.join(host,'native-helper-context.ts'))};
+   import {createControllerWebfetch} from ${JSON.stringify(path.join(host,'controller-webfetch.ts'))};
+   import {createOwnedSlimWebfetch} from ${JSON.stringify(path.join(host,'native-slim-webfetch.ts'))};
+   const tmp=${JSON.stringify(tmp)},directory=${JSON.stringify(directory)},home=${JSON.stringify(home)};
+   const bodies=[],hooks=[],wrapped=[],asks=[];let valid=true,expiredOwners;
+   const server=Bun.serve({hostname:'127.0.0.1',port:0,async fetch(request){const url=new URL(request.url);if(url.pathname==='/html')return new Response('<!doctype html><html><head><title>Owned actual parser</title></head><body><main><h1>Exact original heading</h1><p>'+Array.from({length:70},(_,i)=>'original'+i).join(' ')+'</p><script>throw Error("ambient script")</script></main></body></html>',{headers:{'content-type':'text/html'}});if(url.pathname==='/binary')return new Response(new Uint8Array([1,2,3]),{headers:{'content-type':'image/png'}});const body=await request.json();bodies.push(body);if(JSON.stringify(body).includes('Real helper rate limit'))return Response.json({error:{message:'Fixture rate limit'}},{status:429});return new Response([{id:'owned',object:'chat.completion.chunk',created:1,model:body.model,choices:[{index:0,delta:{role:'assistant',content:'Actual secondary '+body.model},finish_reason:null}]},{id:'owned',object:'chat.completion.chunk',created:1,model:body.model,choices:[{index:0,delta:{},finish_reason:'stop'}],usage:{prompt_tokens:2,completion_tokens:2,total_tokens:4}}].map(value=>'data: '+JSON.stringify(value)+'\\n\\n').join('')+'data: [DONE]\\n\\n',{headers:{'content-type':'text/event-stream'}});}});
+   const owners=createControllerWebfetch({tmpDirectory:tmp,originals:original,fetch:(value,init)=>{const local=new URL(value);local.hostname='127.0.0.1';local.protocol='http:';return fetch(local,init);},withSecondary:(invocation,request,execute)=>Effect.gen(function*(){assert.equal(invocation.toolID,'webfetch');assert.ok(Object.isFrozen(request));assert.ok(Object.isFrozen(request.model));wrapped.push(request.model);return yield* execute.pipe(Effect.provideService(OperationPermitRef,{token:'c'.repeat(64),sessionID:request.sessionID,revision:0}));})});
+   let location,capturedHooks,plugins,helperContext;const correlations=[];
+   const capture=Plugin.node.replace(Plugin.node.mapLayer(layer=>Layer.effect(Plugin.Service,Effect.gen(function*(){const plugin=yield* Plugin.Service;plugins=plugin;location=yield* Location.Service;capturedHooks=yield* PluginHooks.Service;yield* capturedHooks.register('session','model.request',event=>Effect.gen(function*(){const permit=yield* OperationPermitRef;assert.equal(permit?.token,'c'.repeat(64));hooks.push({kind:event.kind,model:event.model.id,secondaryAuthority:true});if(event.sessionID.startsWith('ses_helper_')){const seen=yield* helperContext.session.get({sessionID:event.sessionID});assert.equal(seen.id,event.sessionID);correlations.push(seen.id);}if(event.sessionID==='ses_helper_rejected')event.tools.forbidden={};}));return {...plugin,activate:(entries,failures)=>plugin.activate(entries.map(entry=>({...entry,effect:ctx=>{helperContext=helperPluginContext(ctx);return entry.effect(helperContext)}})),failures)};})).pipe(Layer.provide(layer))));
+   try{await Effect.runPromise(Effect.scoped(Effect.gen(function*(){
+    const handler=yield* ServerFetch.make({database:{path:':memory:'},config:{project:false},models:{fetch:false,snapshot:false},fs:{filewatcher:false,fff:false},events:{persist:false}},{overrides:[
+     ...configurationOverrides({model:'owned/m1',default_agent:'build',providers:{owned:{package:'@opencode/ai/providers/openai-compatible',env:[],settings:{baseURL:server.url.toString()+'v1',apiKey:'owned-fixture'},models:Object.fromEntries(['m1','m2'].map(id=>[id,{capabilities:{tools:true,input:['text'],output:['text']},limit:{context:32768,input:16384,output:4096},variants:[{id:'high',settings:{temperature:0.1}}]}]))}},agents:{build:{model:{providerID:'owned',model:'m1'}},'devryan-title':{mode:'subagent',system:'Title helper fixture'}},snapshots:false,warming:false}),
+     Global.node.replace(Global.layerWith({home,config:home+'/config',data:home+'/data',state:home+'/state',cache:home+'/cache',tmp,bin:home+'/bin',log:home+'/log',repos:home+'/repos'})),...owners.overrides,capture]});
+    const httpContext=Context.make(ErrorReporter.CurrentErrorReporters,new Set([ErrorReporter.make(({cause})=>console.error('NATIVE_CAUSE',cause))])).pipe(Context.add(Logger.CurrentLoggers,new Set()));
+    const call=(route,body)=>Effect.promise(async()=>{const response=await handler(new Request('http://opencode.local'+route,{method:body===undefined?'GET':'POST',headers:{'content-type':'application/json','x-opencode-directory':directory},...body===undefined?{}:{body:JSON.stringify(body)}}),httpContext);const text=await response.text();assert.equal(response.status,200,text);return JSON.parse(text).data;});
+    yield* call('/api/agent');yield* plugins.awaitActivation;assert.ok(location);const controller=new AbortController();
+    const initial=yield* Effect.promise(()=>owners.generateHelper({directory,agent:'devryan-title',providerID:'owned',modelID:'m2',prompt:'Fresh directory helper',maxOutputTokens:128},{token:'c'.repeat(64),sessionID:'ses_helper_fresh',revision:0},controller.signal,async()=>{}));assert.equal(initial.text,'Actual secondary m2');assert.equal((yield* call('/api/session')).length,0,'Fresh helper must not require a persisted session');bodies.splice(0);hooks.splice(0);
+    const session=yield* call('/api/session',{location:{directory},agent:'build',model:{providerID:'owned',id:'m1'}});
+    const context={sessionID:session.id,abort:controller.signal,ask:async request=>asks.push(request),metadata:()=>{}};
+    const invocation={toolID:'webfetch',provenance:{kind:'plugin',id:'devryan.slim',manifestDigest:'a'.repeat(64),capabilities:['network']},input:{},nativeContext:{sessionID:session.id,messageID:'msg_owned',id:'call_owned',agent:'build',progress:()=>Effect.void},location,existingPermit:{token:'b'.repeat(64),sessionID:session.id,revision:0},recheckPermit:()=>Effect.sync(()=>{if(!valid)throw Error('original_grant_revoked')}),nativePermissionAssert:()=>Effect.void,executeNative:()=>Effect.die(Error('original_unsafe'))};
+    const owned=yield* Effect.promise(()=>owners.ownersFor(invocation,context));expiredOwners=owned;
+    const secondary=yield* Effect.promise(()=>owned.secondary({sessionID:session.id,model:{providerID:'owned',modelID:'m2',variant:'high'},prompt:'Exact requested secondary',signal:controller.signal}));
+    assert.equal(secondary,'Actual secondary m2');assert.equal(bodies.length,1);assert.equal(bodies[0].model,'m2');assert.ok(JSON.stringify(bodies[0]).includes('Exact requested secondary'));assert.deepEqual(wrapped,[{providerID:'owned',modelID:'m2',variant:'high'}]);assert.ok(hooks.some(event=>event.kind==='generate'&&event.model==='m2'));
+    assert.equal((yield* call('/api/session/'+session.id)).model.id,'m1','Secondary must not change the durable objective selection');
+    const helper=yield* Effect.promise(()=>owners.generateHelper({directory,agent:'devryan-title',providerID:'owned',modelID:'m2',variant:'high',prompt:'Exact helper prompt',maxOutputTokens:128},{token:'c'.repeat(64),sessionID:'ses_helper_fixture',revision:0},controller.signal,async()=>{}));
+    assert.equal(helper.text,'Actual secondary m2');assert.equal(bodies.length,2);assert.ok(!bodies[1].tools?.length);assert.equal(bodies[1].max_tokens??bodies[1].max_completion_tokens,128);assert.ok(JSON.stringify(bodies[1]).includes('Exact helper prompt'));
+    assert.equal((yield* call('/api/session')).length,1,'Helper must not create any durable or observable session');
+    const parallel=yield* Effect.promise(()=>Promise.all(['first','second'].map(id=>owners.generateHelper({directory,agent:'devryan-title',providerID:'owned',modelID:'m2',prompt:'Concurrent '+id,maxOutputTokens:128},{token:'c'.repeat(64),sessionID:'ses_helper_'+id,revision:0},controller.signal,async()=>{}))));assert.equal(parallel.length,2);assert.ok(correlations.includes('ses_helper_first')&&correlations.includes('ses_helper_second'));
+    const outside=yield* Effect.exit(helperContext.session.get({sessionID:'ses_helper_first'}));assert.ok(outside._tag==='Failure','Helper correlation must not leak outside its Effect');
+    const beforeRejected=bodies.length;yield* Effect.promise(()=>assert.rejects(()=>owners.generateHelper({directory,agent:'devryan-title',providerID:'owned',modelID:'m2',prompt:'Rejected tool mutation',maxOutputTokens:128},{token:'c'.repeat(64),sessionID:'ses_helper_rejected',revision:0},controller.signal,async()=>{})));assert.equal(bodies.length,beforeRejected,'Tool-bearing hooks must fail before provider inference');
+    assert.equal((yield* call('/api/session')).length,1,'Concurrent helpers must not publish sessions');
+    yield* Effect.promise(()=>assert.rejects(()=>owners.generateHelper({directory,agent:'devryan-title',providerID:'owned',modelID:'m2',prompt:'Real helper rate limit',maxOutputTokens:128},{token:'c'.repeat(64),sessionID:'ses_helper_rate',revision:0},controller.signal,async()=>{}),error=>error.reason?.http?.status===429));
+    const tool=createOwnedSlimWebfetch({originals:original,configuration:{},binaryDirectory:owners.binaryDirectory(directory),ownersFor:()=>Promise.resolve(owned)});
+    const text=yield* Effect.promise(()=>tool.execute({url:'http://fixture.invalid:'+server.port+'/html',prefer_llms_txt:'never'},context));assert.ok(text.includes('Owned actual parser'));assert.ok(text.includes('Exact original heading'));assert.ok(!text.includes('ambient script'));
+    const saveRequest={directory:owners.binaryDirectory(directory),data:new Uint8Array([4,5,6]),contentType:'image/png',filename:'exact.png',signal:controller.signal,recheck:owned.assertCurrent};
+    const saved=yield* Effect.promise(()=>owned.saveBinary(saveRequest));assert.deepEqual([...(yield* Effect.promise(()=>fs.readFile(saved)))],[4,5,6]);assert.ok(path.dirname(saved).startsWith(owners.binaryDirectory(directory)+'/owned-'));
+    yield* Effect.promise(()=>assert.rejects(()=>owned.saveBinary({...saveRequest,filename:'../escape.png'}),/native_webfetch_binary_invalid/));
+    const other=yield* Effect.promise(()=>owners.ownersFor(invocation,context));assert.notEqual(other.cache,owned.cache);
+    let commits=0;const failed=yield* Effect.promise(()=>owned.saveBinary({...saveRequest,recheck:async()=>{if(++commits===2)valid=false;}}).then(()=>false,()=>true));assert.equal(failed,true);valid=true;
+    const files=yield* Effect.promise(()=>fs.readdir(owners.binaryDirectory(directory)));assert.equal(files.length,1,'Revoked write must remove only its partial owned directory');
+    valid=false;yield* Effect.promise(()=>assert.rejects(()=>owned.secondary({sessionID:session.id,model:{providerID:'owned',modelID:'m2'},prompt:'Revoked',signal:controller.signal}),/original_grant_revoked/));valid=true;
+   }).pipe(Effect.provideService(ErrorReporter.CurrentErrorReporters,new Set([ErrorReporter.make(({cause})=>console.error('NATIVE_CAUSE',cause))])),Effect.provide(Logger.layer([],{mergeWithExisting:false})))));
+   await assert.rejects(()=>expiredOwners.assertCurrent(),/native_webfetch_location_expired/);process.stdout.write(JSON.stringify({models:bodies.map(body=>body.model),hooks,asks:asks.length}));
+   }finally{server.stop(true);}
+  `;
+  // LayerNode replacement symbols are graph-local: compile the actual server,
+  // overrides and reviewed original together, rather than mixing bundle/source services.
+  const entry=path.join(root,'fixture.ts'),fixture=path.join(root,'fixture.mjs');await fs.writeFile(entry,source);
+  const build=await Bun.build({entrypoints:[entry],target:'bun',outdir:root,naming:{entry:'fixture.mjs',asset:'[name]-[hash].[ext]'},plugins:[await createNativeAssetFixturePlugin(repository),reviewedNativeInputPlugin(await prepareReviewedNativeInputs(repository))]});
+  if(!build.success)throw new AggregateError(build.logs,'Controller webfetch reviewed build failed');await writeNativeFixtureOutputs(build.outputs);
+  child=Bun.spawn([process.execPath,fixture],{cwd:repository,env:{PATH:'/usr/bin:/bin',HOME:home,TMPDIR:tmp,XDG_CONFIG_HOME:home+'/config',XDG_DATA_HOME:home+'/data',XDG_STATE_HOME:home+'/state',XDG_CACHE_HOME:home+'/cache',GIT_CEILING_DIRECTORIES:root},stdout:'pipe',stderr:'pipe'});
+  if(!child.stdout||typeof child.stdout==='number'||!child.stderr||typeof child.stderr==='number')throw new Error('Fixture pipes required');const [stdout,stderr,code]=await Promise.all([new Response(child.stdout).text(),new Response(child.stderr).text(),child.exited]);await fs.writeFile(path.join(repository,'.cache/v2-validation/stage-d-controller-webfetch-child.log'),stderr);
+  expect({code,stderr}).toEqual({code:0,stderr:''});expect(JSON.parse(stdout).models).toEqual(['m2','m2','m2','m2','m2']);expect(JSON.parse(stdout).asks).toBeGreaterThan(0);
+ }finally{if(child&&child.exitCode===null){child.kill();await child.exited;}await fs.rm(root,{recursive:true,force:true});}
+},60000);

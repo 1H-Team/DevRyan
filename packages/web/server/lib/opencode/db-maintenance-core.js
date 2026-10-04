@@ -5,8 +5,14 @@
 // (`/sync/*`) and the V2 session `events`/`history` API. Nothing in OpenCode
 // prunes it, and every user message's `message.updated` event carries the full
 // diff patch bodies, so on a busy machine the table dominates the database
-// (12.9 of 15.4 GB observed). DevRyan only uses the v1 API and the live SSE
-// stream, neither of which reads `event` rows.
+// (12.9 of 15.4 GB observed). This pass is for that v1 database only:
+// DevRyan's v1 runtime uses the v1 API and the live SSE stream, neither of
+// which reads `event` rows. An OpenCode v2 database (a `kv` table, where v2
+// records its `migration.v1-v2` import; v1 through 1.18.33 has none) builds
+// its projections from `event`, so it is detected on a read-only connection
+// and never opened for writing; mutations also require the caller to name the
+// runtime generation (1) that owns the file. Note that v1 1.18.x itself keeps
+// a `migration` table (TEXT ids), so that table is not a v2 signal.
 //
 // Reader check (v1.18.27 source):
 //   * `event` rows are read by `/sync/history` (multi-device sync),
@@ -265,6 +271,32 @@ export const checkOpenCodeDbSchema = (db) => {
   return { ok: missing.length === 0, missing };
 };
 
+const hasTable = (db, name) => Boolean(
+  db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(name),
+);
+
+/**
+ * Which OpenCode generation wrote this database.
+ *
+ * 2: a `kv` table. OpenCode v1 through 1.18.33 creates no `kv` table; v2's
+ *    importer records its `migration.v1-v2` marker there. Any `kv` table is
+ *    treated as v2 (fail closed), marker or not.
+ * 1: a v1 migration journal (`migration` with TEXT ids, which v1 1.18.x
+ *    creates, or the older drizzle `__drizzle_migrations`) together with
+ *    `session_context_epoch`.
+ * 'unknown': anything else; the schema guard then decides.
+ *
+ * A `migration` table alone does not identify v2: every 1.18.x database has
+ * one (the companion's `opencode-devryan.db` has it without
+ * `__drizzle_migrations`).
+ */
+export const detectOpenCodeDbGeneration = (db) => {
+  if (hasTable(db, 'kv')) return 2;
+  const hasV1Journal = hasTable(db, 'migration') || hasTable(db, '__drizzle_migrations');
+  if (hasV1Journal && hasTable(db, 'session_context_epoch')) return 1;
+  return 'unknown';
+};
+
 /**
  * VACUUM policy. `force` is the explicit Compact action, `auto` is the
  * opportunistic path; both still refuse to run next to another live OpenCode
@@ -316,6 +348,7 @@ const readSnapshot = (db, dbPath) => {
 const emptyInspection = (dbPath) => ({
   dbPath,
   exists: false,
+  generation: 'unknown',
   schema: 'unknown',
   dbBytes: 0,
   walBytes: 0,
@@ -334,14 +367,10 @@ const openDatabase = (driver, dbPath, { readonly = false } = {}) => {
   return db;
 };
 
-const openPreferReadonly = (driver, dbPath) => {
-  try {
-    return openDatabase(driver, dbPath, { readonly: true });
-  } catch {
-    // A WAL database without a writable -shm can refuse read-only opens.
-    return openDatabase(driver, dbPath);
-  }
-};
+// Strictly read-only: closing a read-write connection checkpoints the WAL
+// into the main file, which is a write. The generation is always probed here
+// first so a v2 file is never opened for writing, not even by a skip.
+const openReadonly = (driver, dbPath) => openDatabase(driver, dbPath, { readonly: true });
 
 /** Read-only size/row summary. Never writes; safe while OpenCode is running. */
 export const inspectOpenCodeDb = ({ driver, dbPath }) => {
@@ -353,7 +382,12 @@ export const inspectOpenCodeDb = ({ driver, dbPath }) => {
 
   let db = null;
   try {
-    db = openPreferReadonly(driver, dbPath);
+    db = openReadonly(driver, dbPath);
+    result.generation = detectOpenCodeDbGeneration(db);
+    if (result.generation === 2) {
+      result.error = 'v2_database';
+      return result;
+    }
     const schema = checkOpenCodeDbSchema(db);
     if (!schema.ok) {
       result.schema = 'mismatch';
@@ -382,6 +416,7 @@ const createRunResult = ({ at, reason, dryRun, vacuum }) => ({
   dryRun,
   status: 'ok',
   schema: 'ok',
+  generation: 'unknown',
   driver: null,
   durationMs: 0,
   before: null,
@@ -406,7 +441,10 @@ const createRunResult = ({ at, reason, dryRun, vacuum }) => ({
  * One maintenance pass. Synchronous by design; the facade runs it inside a
  * worker thread so the server stays responsive.
  *
- * Order: schema guard -> checkpoint -> orphan purge (session aggregates whose
+ * Mutations need `runtimeGeneration: 1` (the selected runtime that owns the
+ * file); anything else skips before the file is opened unless `dryRun`.
+ *
+ * Order: v2 guard (read-only connection) -> schema guard -> checkpoint -> orphan purge (session aggregates whose
  * session no longer exists: `event` + `event_sequence`) -> idle prune (for
  * sessions idle longer than `idleHours`, delete `event` rows with
  * `seq <= latest - keepSeqPerAggregate`; `event_sequence` untouched) ->
@@ -424,6 +462,7 @@ export const performOpenCodeDbMaintenance = ({
   freeDiskBytes = null,
   otherProcesses = [],
   reason = 'manual',
+  runtimeGeneration = null,
 }) => {
   const startedAt = now();
   const vacuumMode = normalizeVacuumMode(vacuum);
@@ -439,6 +478,14 @@ export const performOpenCodeDbMaintenance = ({
     typeof timeBudgetMs === 'number' && Number.isFinite(timeBudgetMs) && now() - startedAt > timeBudgetMs
   );
 
+  if (!result.dryRun && runtimeGeneration !== 1) {
+    result.status = 'skipped';
+    result.error = runtimeGeneration === null || runtimeGeneration === undefined
+      ? 'runtime_generation_unknown'
+      : 'runtime_generation_unsupported';
+    return finish();
+  }
+
   if (!fs.existsSync(dbPath)) {
     result.status = 'skipped';
     result.error = 'missing_database';
@@ -446,21 +493,50 @@ export const performOpenCodeDbMaintenance = ({
   }
 
   let db = null;
-  try {
-    db = result.dryRun ? openPreferReadonly(driver, dbPath) : openDatabase(driver, dbPath);
-  } catch (error) {
+  const openFailed = (error) => {
     result.status = 'error';
     result.error = `open_failed: ${error instanceof Error ? error.message : String(error)}`;
     return finish();
+  };
+  try {
+    db = openReadonly(driver, dbPath);
+  } catch (error) {
+    return openFailed(error);
   }
 
   try {
+    // Positive v2 detection on the read-only connection, before the file is
+    // ever opened for writing: v2 derives its projections from `event`, and
+    // even closing a read-write connection checkpoints the WAL.
+    result.generation = detectOpenCodeDbGeneration(db);
+    if (result.generation === 2) {
+      result.status = 'skipped';
+      result.schema = 'unknown';
+      result.error = 'v2_database';
+      return finish();
+    }
+    // The schema guard also runs on the read-only connection: a file that is
+    // neither positively v1 nor v2 is never opened for writing either.
     const schema = checkOpenCodeDbSchema(db);
     if (!schema.ok) {
       result.status = 'skipped';
       result.schema = 'mismatch';
       result.error = `schema_mismatch: ${schema.missing.join(', ')}`;
       return finish();
+    }
+    if (result.generation !== 1) {
+      result.status = 'skipped';
+      result.error = 'database_generation_unknown';
+      return finish();
+    }
+    if (!result.dryRun) {
+      db.close();
+      db = null;
+      try {
+        db = openDatabase(driver, dbPath);
+      } catch (error) {
+        return openFailed(error);
+      }
     }
 
     if (!result.dryRun) {

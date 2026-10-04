@@ -1,10 +1,16 @@
+import { createNativeConsumerFixture } from '../opencode/test-native-consumer-client.js';
+const createBrowserLeaseRuntime = (options = {}) => createBrowserLeaseRuntimeNative({
+  ...options, openCodeClient: options.openCodeClient ?? createNativeConsumerFixture({
+    readFixture: options.fetchImpl ?? ((...args) => globalThis.fetch(...args)), headers: options.getOpenCodeAuthHeaders,
+  }),
+});
 import { describe, expect, it, vi } from 'vitest';
 
 import {
   BROWSER_LEASE_RESOLVE_PATH,
   BROWSER_LEASES_PATH,
   BrowserLeaseError,
-  createBrowserLeaseRuntime,
+  createBrowserLeaseRuntime as createBrowserLeaseRuntimeNative,
 } from './lease-runtime.js';
 
 const scope = (overrides = {}) => ({
@@ -77,6 +83,35 @@ const createRuntime = (overrides = {}) => {
 };
 
 describe('browser lease runtime', () => {
+  it('checkpoint waits actual pending creation and its host release acknowledgement', async () => {
+    let created, releaseCreation, releaseCleanup;
+    const entered = new Promise(resolve => { created = resolve; });
+    const creation = new Promise(resolve => { releaseCreation = resolve; });
+    const cleanup = new Promise(resolve => { releaseCleanup = resolve; });
+    const releaseBrowserLease = vi.fn(() => cleanup);
+    const { runtime } = createRuntime({ createBrowserLease: async () => {
+      created(); await creation; return { wsUrl: 'ws://127.0.0.1:54321/devtools/page/fixture' };
+    }, releaseBrowserLease });
+    const acquisition = runtime.acquire(scope());
+    const rejected = expect(acquisition).rejects.toMatchObject({ code: 'browser_runtime_stopping' });
+    await entered;
+    let drained = false; const drain = runtime.holdForCheckpoint().then(() => { drained = true; });
+    await Promise.resolve(); expect(drained).toBe(false);
+    releaseCreation();
+    await vi.waitFor(() => expect(releaseBrowserLease).toHaveBeenCalledOnce());
+    expect(drained).toBe(false);
+    releaseCleanup(); await rejected; await drain; expect(drained).toBe(true);
+    expect(runtime.getSnapshot()).toEqual([]);
+  });
+
+  it('checkpoint refuses an unacknowledged host release instead of accepting removed metadata', async () => {
+    const { runtime } = createRuntime({ releaseBrowserLease: async () => { throw Error('host unavailable'); } });
+    await runtime.acquire(scope());
+    await expect(runtime.holdForCheckpoint()).rejects.toThrow('host unavailable');
+    expect(runtime.getSnapshot()).toEqual([]);
+    await expect(runtime.acquire(scope())).rejects.toMatchObject({ code: 'browser_runtime_stopping' });
+  });
+
   it('resolves child lineage and reuses exactly one lease for a session turn', async () => {
     const { runtime, createBrowserLease } = createRuntime();
 
@@ -775,5 +810,92 @@ describe('browser lease runtime', () => {
     }));
     expect(runtime.getSnapshot()).toEqual([]);
     expect(new BrowserLeaseError('x', 'y', 418)).toMatchObject({ statusCode: 418 });
+  });
+});
+
+// Gen 2 (DESIGN C.1, E item 13b): session lineage is read through openCodeClient.
+describe('browser lease lineage on OpenCode 2 (openCodeClient)', () => {
+  const clientError = (statusCode) => Object.assign(new Error(`client failure ${statusCode}`), { statusCode });
+
+  const createClient = ({ generation = 2, get } = {}) => ({
+    generation: typeof generation === 'function' ? generation : () => generation,
+    sessions: {
+      get: vi.fn(get ?? (async (sessionID) => (sessionID === 'ses_child'
+        ? { id: 'ses_child', parentID: 'ses_root', directory: '/workspace' }
+        : { id: sessionID, directory: '/workspace' }))),
+    },
+  });
+
+  it('resolves child lineage through the client and leases the root session', async () => {
+    const openCodeClient = createClient();
+    const { runtime, fetchImpl, createBrowserLease } = createRuntime({ runtime: { openCodeClient } });
+
+    await expect(runtime.acquire(scope())).resolves.toMatchObject({ leaseId: 'dvr_lease_1', created: true });
+
+    expect(createBrowserLease).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ rootSessionId: 'ses_root', opencodeSessionID: 'ses_child' }),
+    }));
+    expect(openCodeClient.sessions.get.mock.calls.map(([id]) => id)).toEqual(['ses_child', 'ses_root']);
+    expect(openCodeClient.sessions.get).toHaveBeenCalledWith('ses_child', { directory: '/workspace', signal: expect.any(AbortSignal) });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('retries transient client failures but never an authoritative missing session', async () => {
+    let attempts = 0;
+    const transient = createClient({
+      get: async (sessionID) => {
+        attempts += 1;
+        if (sessionID === 'ses_child' && attempts <= 2) throw clientError(503);
+        return sessionID === 'ses_child' ? { id: sessionID, parentID: 'ses_root' } : { id: sessionID };
+      },
+    });
+    const transientRuntime = createRuntime({ runtime: { openCodeClient: transient, lineageRetryDelaysMs: [0, 0] } }).runtime;
+    await expect(transientRuntime.resolveRootSessionID(scope())).resolves.toBe('ses_root');
+    expect(transient.sessions.get).toHaveBeenCalledTimes(4);
+
+    const missing = createClient({ get: async () => { throw clientError(404); } });
+    const missingRuntime = createRuntime({ runtime: { openCodeClient: missing, lineageRetryDelaysMs: [0, 0] } }).runtime;
+    await expect(missingRuntime.resolveRootSessionID(scope())).rejects.toMatchObject({
+      code: 'lineage_unavailable',
+      statusCode: 503,
+      message: 'Cannot resolve session lineage (404)',
+    });
+    expect(missing.sessions.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a transport failure as transient and a mismatched record as unavailable', async () => {
+    const transport = createClient({ get: async () => { throw new TypeError('fetch failed'); } });
+    const transportRuntime = createRuntime({ runtime: { openCodeClient: transport, lineageRetryDelaysMs: [0] } }).runtime;
+    await expect(transportRuntime.resolveRootSessionID(scope())).rejects.toMatchObject({ code: 'lineage_unavailable' });
+    expect(transport.sessions.get).toHaveBeenCalledTimes(2);
+
+    const mismatched = createClient({ get: async () => ({ id: 'ses_other' }) });
+    const mismatchedRuntime = createRuntime({ runtime: { openCodeClient: mismatched } }).runtime;
+    await expect(mismatchedRuntime.resolveRootSessionID(scope())).rejects.toMatchObject({
+      code: 'lineage_unavailable',
+      message: 'OpenCode returned mismatched session lineage metadata',
+    });
+  });
+
+  it('refuses generation 1 before lineage I/O', async () => {
+    const openCodeClient = createClient({ generation: 1 });
+    const { runtime, fetchImpl } = createRuntime({ runtime: { openCodeClient } });
+
+    await expect(runtime.resolveRootSessionID(scope())).rejects.toMatchObject({ code: 'lineage_unavailable', statusCode: 503 });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(openCodeClient.sessions.get).not.toHaveBeenCalled();
+  });
+
+  it('fails closed without any request when the client generation is unknown', async () => {
+    const openCodeClient = createClient({ generation: () => { throw clientError(503); } });
+    const { runtime, fetchImpl } = createRuntime({ runtime: { openCodeClient, lineageRetryDelaysMs: [0, 0] } });
+
+    await expect(runtime.resolveRootSessionID(scope())).rejects.toMatchObject({
+      code: 'lineage_unavailable',
+      statusCode: 503,
+      message: 'Session lineage is unavailable in this runtime',
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(openCodeClient.sessions.get).not.toHaveBeenCalled();
   });
 });

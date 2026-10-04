@@ -70,6 +70,7 @@ export function createTunnelAccessControl({ now = Date.now } = {}) {
   let mutation = Promise.resolve();
   const connections = new Set();
   const attempts = new Map();
+  const ownerAuthorizations = new WeakMap();
   const currentOwner = () => connection?.ownerPrincipal()?.id || null;
   const currentMode = () => connection?.authenticationMode || (connection?.enabled ? 'managed-accounts' : 'local-owner');
   const bound = () => !blocked && state && state.ownerId === currentOwner() && state.authMode === currentMode()
@@ -196,7 +197,8 @@ export function createTunnelAccessControl({ now = Date.now } = {}) {
       && session.generation === state.generation && session.ownerId === state.ownerId
       && session.profileId === state.profile.id && session.hostname === state.profile.hostname) || null;
   };
-  const principalFor = (session) => session.access === 'owner' ? Object.freeze({
+  const principalFor = (session) => {
+    const principal = session.access === 'owner' ? Object.freeze({
     ...connection.ownerPrincipal(), localOwner: false, policy: ROLE_POLICY_DEFAULTS.admin,
     tunnelGrant: Object.freeze({ id: session.grantId, sessionId: session.sessionId, expiresAt: session.expiresAt }),
   }) : Object.freeze({
@@ -207,7 +209,19 @@ export function createTunnelAccessControl({ now = Date.now } = {}) {
       manageGlobalSettings: false, manageGit: false, push: false, github: false },
     tunnelGrant: Object.freeze({ id: session.grantId, sessionId: session.sessionId, ownerId: session.ownerId,
       profileId: session.profileId, generation: session.generation, botIds: Object.freeze([...session.botIds]), expiresAt: session.expiresAt }),
-  });
+    });
+    if (session.access === 'owner' && state?.sessions.includes(session)) {
+      const identity = { sessionId: session.sessionId, grantId: session.grantId, generation: session.generation,
+        ownerId: session.ownerId, profileId: session.profileId, hostname: session.hostname, expiresAt: session.expiresAt };
+      ownerAuthorizations.set(principal, () => Boolean(canUseOwnerLogin() && active && connection.isLocalAccessActive()
+        && principal.id === currentOwner() && state.profile?.mode === 'managed-remote'
+        && state.sessions.some(row => row.access === 'owner' && row.expiresAt > now()
+          && Object.entries(identity).every(([key, value]) => row[key] === value)
+          && row.generation === state.generation && row.ownerId === state.ownerId
+          && row.profileId === state.profile.id && row.hostname === state.profile.hostname)));
+    }
+    return principal;
+  };
   const requireTunnelSession = (req, res, next) => {
     const session = getTunnelSessionFromRequest(req);
     if (!session) { setCookie(res, '', 0); return res.status(401).json({ error: 'Tunnel authentication required', tunnelLocked: true }); }
@@ -272,6 +286,7 @@ export function createTunnelAccessControl({ now = Date.now } = {}) {
     initialize, refreshOwner, classifyRequestScope, setActiveTunnel, clearActiveTunnel, suspendActiveTunnel,
     revokeTunnelArtifacts, revokeGrant, validateSelection, issueBootstrapToken, exchangeBootstrapToken, getTunnelSessionFromRequest, requireTunnelSession,
     registerConnection, principalFor, isDirectLocalRequest, canUseOwnerLogin,
+    captureAuthorization: principal => ownerAuthorizations.get(principal) ?? null,
     getActiveTunnelId: () => active ? state?.profile?.id : null,
     getActiveTunnelHost: () => active ? state?.profile?.hostname : null,
     getActiveTunnelMode: () => active ? state?.profile?.mode : null,

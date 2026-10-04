@@ -1,0 +1,171 @@
+{
+ "opencode": "2.0.20",
+ "vectors": [
+  {
+   "file": "00-catalog-cold.json",
+   "vector": "00-catalog",
+   "title": "Catalog, config, location and openapi snapshots",
+   "design": "catalog (first touch of a new location)",
+   "frames": 12,
+   "rest": 18
+  },
+  {
+   "file": "openapi.json",
+   "vector": "openapi",
+   "title": "GET /openapi.json exactly as served (plus a trailing newline)",
+   "design": "C.3 route table source"
+  },
+  {
+   "file": "f9-location-query.json",
+   "vector": "f9-location-query",
+   "title": "F9: location routes with directory query, location[directory], header, and no location",
+   "design": "F9",
+   "frames": 22,
+   "rest": 8
+  },
+  {
+   "file": "01-two-step-tool-turn.json",
+   "vector": "01-two-step-tool-turn",
+   "title": "D1: reasoning+text, streamed tool input, tool progress, two steps",
+   "design": "D1 (+F11 usage)",
+   "frames": 32,
+   "rest": 19
+  },
+  {
+   "file": "f1-frame-order.json",
+   "vector": "f1-frame-order",
+   "title": "F1: 50 reasoning+text turns, recording ephemeral vs durable frame order",
+   "design": "F1 (D1 deltaFirst)",
+   "frames": 16,
+   "rest": 51
+  },
+  {
+   "file": "02-retry.json",
+   "vector": "02-retry",
+   "title": "D2: retryable provider error before output, then success",
+   "design": "D2 (+F2)",
+   "frames": 15,
+   "rest": 6
+  },
+  {
+   "file": "03-abort.json",
+   "vector": "03-abort",
+   "title": "D3: interrupt while the model is streaming",
+   "design": "D3",
+   "frames": 12,
+   "rest": 7
+  },
+  {
+   "file": "04-failure.json",
+   "vector": "04-failure",
+   "title": "D4: provider authentication error (step.failed + execution.failed)",
+   "design": "D4",
+   "frames": 8,
+   "rest": 4
+  },
+  {
+   "file": "04b-tool-failed.json",
+   "vector": "04b-tool-failed",
+   "title": "Tool call with invalid arguments fails; the next step answers",
+   "design": "tool.failed (invalid arguments)",
+   "frames": 21,
+   "rest": 4
+  },
+  {
+   "file": "05-question-form.json",
+   "vector": "05-question-form",
+   "title": "D5: question tool form answered, typed form replied, external-field form cancelled",
+   "design": "D5",
+   "frames": 27,
+   "rest": 15
+  },
+  {
+   "file": "05b-question-dismissed.json",
+   "vector": "05b-question-dismissed",
+   "title": "D5 variant: question tool form cancelled while the turn waits",
+   "design": "D5 (dismissed)",
+   "frames": 27,
+   "rest": 8
+  },
+  {
+   "file": "06-permission.json",
+   "vector": "06-permission",
+   "title": "D6: write tool asks edit permission; once, then reject; diff afterwards",
+   "design": "D6 (+F8)",
+   "frames": 44,
+   "rest": 14
+  },
+  {
+   "file": "07-compaction.json",
+   "vector": "07-compaction",
+   "title": "D7: POST compact after one turn",
+   "design": "D7",
+   "frames": 32,
+   "rest": 9
+  },
+  {
+   "file": "08-revert.json",
+   "vector": "08-revert",
+   "title": "D8: revert stage, clear, stage, commit",
+   "design": "D8",
+   "frames": 30,
+   "rest": 12
+  },
+  {
+   "file": "09-rename-metadata.json",
+   "vector": "09-rename-metadata",
+   "title": "D9: generated title, rename, metadata patches, permissions patch, in-process metadata write, fork inheritance",
+   "design": "D9 (+F4, F5)",
+   "frames": 41,
+   "rest": 21
+  },
+  {
+   "file": "10-child.json",
+   "vector": "10-child",
+   "title": "D10: subagent tool creates a child session; parent metadata set before",
+   "design": "D10 (+F4 child inheritance)",
+   "frames": 35,
+   "rest": 8
+  },
+  {
+   "file": "11-synthetic.json",
+   "vector": "11-synthetic",
+   "title": "D11: POST synthetic on an idle session (default resume), then with resume:false",
+   "design": "D11 (+F3, F6)",
+   "frames": 25,
+   "rest": 10
+  },
+  {
+   "file": "12-steer-queue-switch.json",
+   "vector": "12-steer-queue-switch",
+   "title": "D12: steer + queue prompts and switchModel while a tool is running",
+   "design": "D12 (+F12)",
+   "frames": 33,
+   "rest": 9
+  },
+  {
+   "file": "15-catalog-warm.json",
+   "vector": "15-catalog-warm",
+   "title": "Catalog snapshots after the location is warm",
+   "design": "catalog (warm location)",
+   "frames": 0,
+   "rest": 22
+  },
+  {
+   "file": "14-location-shutdown.json",
+   "vector": "14-location-shutdown",
+   "title": "D14: location reload and debug evict",
+   "design": "D14",
+   "frames": 43,
+   "rest": 4
+  },
+  {
+   "file": "13-stream-drop.json",
+   "vector": "13-stream-drop",
+   "title": "D13/F7: SubscriberOverflow on a paused subscriber",
+   "design": "D13 (+F7)",
+   "frames": 10,
+   "rest": 1
+  }
+ ]
+}

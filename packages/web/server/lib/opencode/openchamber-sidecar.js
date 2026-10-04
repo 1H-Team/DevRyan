@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { selectedRuntimeBundle } from './runtime-host/runtime-bundle-binding.js';
 
 const OPENCHAMBER_CONFIG_KEY = 'openchamber';
-const DEFAULT_SIDECAR_DIR = path.join(os.homedir(), '.config', 'opencode', '.openchamber');
+const DEFAULT_SIDECAR_DIR = path.join(selectedRuntimeBundle?.descriptor.launch.opencodeConfigDirectory ?? path.join(os.homedir(), '.config', 'opencode'), '.openchamber');
 const DEFAULT_SIDECAR_PATH = path.join(DEFAULT_SIDECAR_DIR, 'config.json');
 
 function isPlainObject(value) {

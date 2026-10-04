@@ -17,6 +17,66 @@ const createRuntimeForModels = (models) => createCursorSdkRuntime({
 });
 
 describe('Cursor SDK model discovery', () => {
+  test('native catalogs resolve the current account before TTL reuse and keep warming disabled', async () => {
+    let key = 'owned-account-a';
+    let allowed = true;
+    const calls = [], scopes = [];
+    const runtime = createCursorSdkRuntime({
+      env: { CURSOR_API_KEY: 'forbidden-ambient-key' },
+      readAuth: () => { throw new Error('Legacy auth must remain unread'); },
+      resolveApiKey: async scope => {
+        scopes.push(scope);
+        if (!allowed) throw new Error('original caller revoked');
+        return key;
+      },
+      ownedReadOnly: async (scope, action) => {
+        expect(scope.directory).toBe('/owned/project');
+        return action();
+      },
+      nativeWarming: false,
+      modelDiscoveryTtlMs: 60_000,
+      loadSdk: async () => ({ Cursor: { models: { list: async input => {
+        calls.push(input.apiKey);
+        return [{ id: input.apiKey, displayName: input.apiKey }];
+      } } } }),
+    });
+    try {
+      expect((await runtime.getVirtualProvider({ directory: '/owned/project' })).models[key]).toBeDefined();
+      await runtime.getVirtualProvider({ directory: '/owned/project' });
+      expect(calls).toEqual(['owned-account-a']);
+      expect(scopes).toHaveLength(2);
+      key = 'owned-account-b';
+      const changed = await runtime.getVirtualProvider({ directory: '/owned/project' });
+      expect(changed.models[key]).toBeDefined();
+      expect(changed.models['owned-account-a']).toBeUndefined();
+      expect(calls).toEqual(['owned-account-a', 'owned-account-b']);
+      allowed = false;
+      await expect(runtime.getVirtualProvider({ directory: '/owned/project' })).rejects.toThrow('original caller revoked');
+      const reads = scopes.length;
+      expect(await runtime.prewarm()).toMatchObject({ disabled: true, reason: 'native_warming_disabled' });
+      expect(await runtime.prewarmSession({ sessionID: 'ses_owned', directory: '/owned/project' })).toMatchObject({ disabled: true, reason: 'native_warming_disabled' });
+      expect(scopes).toHaveLength(reads);
+      expect(runtime.getRuntimeStatus()).toMatchObject({ authSource: 'native-credential', authObservation: 'unknown', sdkAuthConfigured: false });
+    } finally { await runtime.dispose(); }
+  });
+
+  test('native verification loads the SDK before selecting the current key and preserves the requested directory', async () => {
+    const phases = [];
+    const runtime = createCursorSdkRuntime({
+      resolveApiKey: async scope => { phases.push(`key:${scope.kind}:${scope.directory}`); return 'owned-current-key'; },
+      ownedReadOnly: async (scope, action) => { phases.push(`scope:${scope.kind}`); return action(); },
+      nativeWarming: false,
+      loadSdk: async () => { phases.push('sdk'); return { Cursor: {
+        me: async input => { expect(input.apiKey).toBe('owned-current-key'); phases.push('me'); },
+        models: { list: async input => { expect(input.apiKey).toBe('owned-current-key'); phases.push('models'); return []; } },
+      } }; },
+    });
+    try {
+      expect(await runtime.verifyConnection({ directory: '/owned/project' })).toMatchObject({ ok: true, configured: true });
+      expect(phases).toEqual(['scope:verify', 'sdk', 'key:verify:/owned/project', 'me', 'scope:catalog', 'sdk', 'key:catalog:/owned/project', 'models']);
+    } finally { await runtime.dispose(); }
+  });
+
   test('maps fallback Composer fast rows to SDK fast parameter selections', async () => {
     const runtime = createRuntimeForModels([]);
 
@@ -589,4 +649,103 @@ test('Composer 2.5 sequential prompts switch SDK mode and restore saved Fast sel
     await runtime.dispose();
     await rm(storageDir, { recursive: true, force: true });
   }
+});
+
+test('native prompt selections refresh account-specific SDK parameters while preserving requested effort and directory', async () => {
+  const root = path.resolve(import.meta.dir, '../../.cache');await mkdir(root, { recursive: true });
+  const directory = await mkdtemp(path.join(root, 'native-cursor-model-selection-'));
+  let key = 'owned-a';const requests = [], selections = [], scopes = [];
+  const runtime = createCursorSdkRuntime({
+    storageDir: directory, env: { CURSOR_API_KEY: 'forbidden-ambient' },
+    readAuth: () => { throw Error('Native selection must not read legacy auth'); },
+    resolveApiKey: async scope => { expect(scope.directory).toBe(directory);return key; },
+    ownedReadOnly: async (scope, action) => { expect(scope).toEqual({ kind: 'catalog', directory });scopes.push(scope);return action(); },
+    nativeWarming: false, modelDiscoveryTtlMs: 60_000, getWorkspaceDiff: async () => '',
+    loadSdk: async () => ({
+      Cursor: { models: { list: async input => { requests.push(input.apiKey);return [{
+        id: 'composer-2.5', variants: [{ params: [{ id: 'effort', value: 'high' }, { id: 'context', value: input.apiKey === 'owned-a' ? '200k' : '400k' }] }],
+      }]; } } },
+      Agent: { create: async input => {
+        selections.push({ key: input.apiKey, model: input.model });return { agentId: `agent_${selections.length}`, send: async () => ({
+          status: 'finished', wait: async () => ({ status: 'finished', result: 'done' }), async *stream() { yield { type: 'status', status: 'FINISHED' }; },
+        }) };
+      } },
+    }),
+  });
+  try {
+    await runtime.getVirtualProvider({ directory });
+    for (const [index, account] of ['owned-a', 'owned-b'].entries()) {
+      key = account;
+      await runtime.handlePromptAsync({ sessionID: `ses_native_${index}`, directory, body: {
+        model: { providerID: 'cursor-acp', modelID: 'composer-2.5-fast' }, variant: 'high', messageID: `msg_owned_${index}`, parts: [{ type: 'text', text: 'Owned prompt' }],
+      } });
+      const deadline = Date.now() + 3000;
+      while (selections.length <= index || runtime.getSessionStatus()[`ses_native_${index}`]?.type !== 'idle') {
+        if (Date.now() > deadline) throw Error('Native SDK selection fixture did not settle');
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      expect(selections[index]).toEqual({ key: account, model: { id: 'composer-2.5', params: [
+        { id: 'effort', value: 'high' }, { id: 'context', value: index === 0 ? '200k' : '400k' }, { id: 'fast', value: 'true' },
+      ] } });
+    }
+    expect(requests).toEqual(['owned-a', 'owned-b']);expect(scopes).toHaveLength(3);
+  } finally { await runtime.dispose();await rm(directory, { recursive: true, force: true }); }
+});
+
+test('native exact effort failures and unknown catalogs never create an agent or helper worker', async () => {
+  const cacheRoot = path.resolve(import.meta.dir, '../../.cache');
+  await mkdir(cacheRoot, { recursive: true });
+  const directory = await mkdtemp(path.join(cacheRoot, 'cursor-exact-unavailable-'));
+  try {
+    for (const mode of ['unsupported', 'empty', 'failed']) {
+      let physicalCalls = 0;
+      const runtime = createCursorSdkRuntime({
+        storageDir: directory, env: {}, nativeWarming: false,
+        resolveApiKey: async () => 'owned-fixture-account', ownedReadOnly: async (_scope, action) => action(),
+        getWorkspaceDiff: async () => '', spawnImpl: () => { physicalCalls++; throw new Error('Helper dispatch must not start'); },
+        loadSdk: async () => ({
+          Cursor: { models: { list: async () => {
+            if (mode === 'failed') throw new Error('Fixture catalog unavailable');
+            return mode === 'empty' ? [] : [{ id: 'composer-2.5', variants: [{ params: [{ id: 'effort', value: 'medium' }] }] }];
+          } } },
+          Agent: { create: async () => { physicalCalls++; throw new Error('Agent dispatch must not start'); } },
+        }),
+      });
+      try {
+        const code = mode === 'failed' ? 'cursor_model_catalog_unavailable' : 'cursor_model_unavailable';
+        const selection = Object.freeze({ modelID: 'composer-2.5', variant: 'high', directory });
+        expect(await runtime.validateModelSelection(selection)).toBe(mode === 'failed' ? null : false);
+        await expect(runtime.handlePromptAsync({ sessionID: 'ses_unavailable', directory, body: {
+          model: { providerID: 'cursor-acp', modelID: selection.modelID }, variant: selection.variant,
+          messageID: 'msg_unavailable', parts: [{ type: 'text', text: 'Must not execute' }],
+        } })).rejects.toMatchObject({ code });
+        await expect(runtime.generateText({ ...selection, text: 'Must not execute' })).rejects.toMatchObject({ code });
+        expect(selection.variant).toBe('high');
+        expect(physicalCalls).toBe(0);
+        expect(await runtime.getSessionMessages('ses_unavailable')).toEqual([]);
+      } finally { await runtime.dispose(); }
+    }
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('changing the selected account between discovery and prompt dispatch refuses the frozen selection', async () => {
+  const cacheRoot = path.resolve(import.meta.dir, '../../.cache');
+  await mkdir(cacheRoot, { recursive: true });
+  const directory = await mkdtemp(path.join(cacheRoot, 'cursor-selection-binding-'));
+  let physicalCalls = 0;
+  const runtime = createCursorSdkRuntime({
+    storageDir: directory, env: {}, nativeWarming: false,
+    resolveApiKey: async scope => scope.kind === 'catalog' ? 'owned-fixture-a' : 'owned-fixture-b',
+    ownedReadOnly: async (_scope, action) => action(), getWorkspaceDiff: async () => '',
+    loadSdk: async () => ({ Cursor: { models: { list: async () => [{ id: 'composer-2.5', variants: [{ params: [{ id: 'effort', value: 'high' }] }] }] } },
+      Agent: { create: async () => { physicalCalls++; throw new Error('Changed account must not execute'); } } }),
+  });
+  try {
+    await expect(runtime.handlePromptAsync({ sessionID: 'ses_changed', directory, body: {
+      model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, variant: 'high', messageID: 'msg_changed',
+      parts: [{ type: 'text', text: 'Must remain bound to the selected account' }],
+    } })).rejects.toMatchObject({ code: 'cursor_model_account_changed' });
+    expect(physicalCalls).toBe(0);
+    expect(await runtime.getSessionMessages('ses_changed')).toEqual([]);
+  } finally { await runtime.dispose(); await rm(directory, { recursive: true, force: true }); }
 });

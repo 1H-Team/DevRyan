@@ -12,3 +12,5 @@ short-lived path-bound grants for the existing raw-file route.
 3. Match requested sources against its Markdown and finalized image metadata.
 4. Canonicalize and validate workspace or generated temporary files.
 5. Return ordinary raw URLs or principal/path-bound grant URLs.
+
+Canonical message reads require the typed native-v2 application client; missing or unsupported runtime identity cannot fall back to raw runtime HTTP.

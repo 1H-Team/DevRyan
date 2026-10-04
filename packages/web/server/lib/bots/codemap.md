@@ -169,6 +169,15 @@ must preserve those checks. A grant never inherits global administrator access.
 - `opencode-reasoning-adapter.js`: OpenCode session/segment/event translation,
   recovery, cancellation, warm leases (absent-run release permits joined cold
   fallback), image export, and structured completion.
+- `native-client.js`: run-capability-authenticated v2 client, queued prompt and
+  private structured-generation transport with request cancellation.
+- `native-server.mjs`: pinned native ServerFetch graph inside the existing Bot
+  container; workspace-bound native routes, explicit native credential seeding,
+  host-owned OAuth refresh, readiness and no-history structured generation.
+- `native-image-tool.mjs`: scoped I/O and cancellation adapter around the
+  source-gated original image executor and existing native image transport.
+- `native-tool-policy.js`: separate revision write/edit grants in native tool
+  filtering and execution, retaining the original SDK file executors.
 - `ag-ui-reasoning-adapter.js`: pinned `@ag-ui/core@0.0.58` reviewed SSE subset,
   exact event ordering/size/replay checks, the `devryan_bot` gateway and
   OAuth-gated primary-agent `devryan_image` tool contracts,

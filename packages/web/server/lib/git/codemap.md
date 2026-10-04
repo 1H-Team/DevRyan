@@ -45,3 +45,5 @@ Git service layer for repository operations, direct commit-message and PR-descri
 - `status-details.js` computes separate staged/unstaged counts and file versions, bounds untracked enumeration and reports truncation. Combined `diffStats` remains compatible.
 - `index-queue.js` serializes index-changing service and integration operations. `hunk-validation.js` regenerates the canonical current single-file patch under that lock and rejects stale/ambiguous hunks before applying.
 - `push-result.js` reports actual porcelain destinations/ref results; explicit and configured push-remote precedence preserves managed-branch policy.
+
+- Worktree add/remove updates host project metadata only. There is no write to the retired OpenCode 1 `project.sandboxes` SQLite table.

@@ -7,6 +7,8 @@
 ## Modules
 
 - `lib/usage-observation.js` / `.d.ts` — optional content-free UsageObservationV1, source-aware token semantics and explicitly priced API-equivalent estimates; separate from context occupancy and quotas.
+- `lib/native-message-status.js` / `.d.ts` — canonical status-only synthetic provenance and turn-parent predicates; only private interview no-reply notices are excluded, while real user and maintenance input remain parents.
+- `lib/native-observation.js` / `.d.ts` — finite native request and compaction evidence shared by the controller, host owner, diagnostic sanitizer and QA; private paths and sanitized directory witnesses have separate parsers.
 - `lib/cache-efficiency-policy.js` / `.d.ts` — shared loopback classification and default-off, exact-route qualification for repository QA title-effort and conversation-affinity experiments. See `docs/CACHE_EFFICIENCY.md`.
 
 - `lib/plan-storage-id.js` — shared filesystem-safe plan project directory identity; existing short project IDs remain unchanged.

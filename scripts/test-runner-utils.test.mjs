@@ -7,12 +7,21 @@ import { describe, test } from 'node:test';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-import { discoverTestFiles, isIsolatedUiTestSource } from './test-runner-utils.mjs';
+import { discoverTestFiles, isBunTestSource, isIsolatedUiTestSource } from './test-runner-utils.mjs';
 import { discoverElectronTestFiles, planElectronTests } from './test-electron.mjs';
 import { discoverScriptTestFiles } from './test-scripts.mjs';
 import { buildPlan } from './validate.mjs';
 
 const repoRoot = new URL('..', import.meta.url);
+
+describe('script framework dispatch', () => {
+  test('keeps Node tests that generate Bun fixtures in the real Node runner', () => {
+    assert.equal(isBunTestSource(readFileSync(new URL(import.meta.url), 'utf8')), false);
+    assert.equal(isBunTestSource("import { test } from 'node:test'; const fixture = `import { test } from 'bun:test';`;"), false);
+    assert.equal(isBunTestSource("import { test } from 'bun:test';"), true);
+    assert.equal(isBunTestSource("import { test } from 'node:test';"), false);
+  });
+});
 
 describe('isIsolatedUiTestSource', () => {
   test('isolates source that mutates global window through supported patterns', () => {

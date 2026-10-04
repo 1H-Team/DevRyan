@@ -672,7 +672,13 @@ export class SessionMessageLoader {
         partsByMessageID.set(record.info.id, (record.parts ?? []).filter((part) => Boolean(part?.id)))
       }
       const cursor = result.response?.headers?.get?.("x-next-cursor") ?? undefined
-      const complete = !cursor || records.length < requestLimit
+      // Gen 2 scans a bounded number of native rows; discarded switch/idle
+      // rows can leave a short or empty page with older history still present.
+      const nativeCursor = cursor?.startsWith("v2:") === true
+      if (nativeCursor && cursor === before) {
+        throw new Error("Session message history cursor did not advance")
+      }
+      const complete = !cursor || (!nativeCursor && records.length < requestLimit)
       finish("complete", { retryCount: Math.max(0, attempts - 1), recordCount })
       return { session: orderedSession, partsByMessageID, cursor: complete ? undefined : cursor, complete }
     } catch (error) {

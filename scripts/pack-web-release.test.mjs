@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { planWorkspaceBundle } from './pack-web-release.mjs';
+import { planWorkspaceBundle, packWebRelease } from './pack-web-release.mjs';
 
 test('published package closes private workspace dependencies without changing external ranges', () => {
   const workspaces = new Map([
@@ -16,4 +16,12 @@ test('published package closes private workspace dependencies without changing e
   assert.equal(source.dependencies['@local/a'], 'workspace:*');
   assert.throws(() => planWorkspaceBundle({ dependencies: { '@local/missing': 'workspace:*' } }, workspaces), /Unsupported/);
   assert.throws(() => planWorkspaceBundle({ dependencies: { '@local/a': 'workspace:*', external: '^5.0.0' } }, workspaces), /Conflicting/);
+});
+
+test('universal web publication refuses missing native platforms before staging or packing', async () => {
+  await assert.rejects(packWebRelease({ root: '/never-read', destination: '/never-written' }), error => {
+    assert.equal(error.code, 'native_web_release_unavailable');
+    assert.deepEqual(error.missingTargets, ['darwin-x64', 'linux-arm64', 'linux-x64', 'win32-arm64', 'win32-x64']);
+    return true;
+  });
 });

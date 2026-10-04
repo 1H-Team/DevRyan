@@ -1,12 +1,12 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs';
-import { homedir } from 'os';
+import { getRuntimeHome } from '../../opencode/runtime-host/runtime-bundle-binding.js';
 import { dirname, join } from 'path';
 
 import { isPlainObject } from '../../opencode/shared.js';
 import { CLAUDE_CODE_STATUS_PATH } from './claude-code-status.js';
 
-export const CLAUDE_CODE_STATUS_SCRIPT_PATH = join(homedir(), '.cache', 'openchamber', 'claude-code-status-line.sh');
-export const CLAUDE_CODE_SETTINGS_PATH = join(homedir(), '.claude', 'settings.json');
+export const CLAUDE_CODE_STATUS_SCRIPT_PATH = join(getRuntimeHome(), '.cache', 'openchamber', 'claude-code-status-line.sh');
+export const CLAUDE_CODE_SETTINGS_PATH = join(getRuntimeHome(), '.claude', 'settings.json');
 export const CLAUDE_CODE_USAGE_PENDING_CODE = 'claude_code_usage_pending';
 export const CLAUDE_CODE_STATUS_LINE_CUSTOM_CODE = 'claude_code_status_line_custom';
 export const CLAUDE_CODE_STATUS_SETUP_FAILED_CODE = 'claude_code_status_setup_failed';

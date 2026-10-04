@@ -2,8 +2,9 @@ import crypto from 'node:crypto';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { selectedRuntimeBundle } from './runtime-host/runtime-bundle-binding.js';
 
-const OPENCODE_DATA_DIR = path.join(os.homedir(), '.local', 'share', 'opencode');
+const OPENCODE_DATA_DIR = selectedRuntimeBundle?.descriptor.launch.global.data ?? path.join(os.homedir(), '.local', 'share', 'opencode');
 const AUTH_FILE = path.join(OPENCODE_DATA_DIR, 'auth.json');
 const MAX_AUTH_FILE_BYTES = 1024 * 1024;
 const MAX_PROVIDER_AUTH_BYTES = 256 * 1024;

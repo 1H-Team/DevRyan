@@ -299,6 +299,13 @@ describe('Bot runtime image build metadata', () => {
     assert.equal(metadata.schemaVersion, '20260908182901');
     assert.match(metadata.pluginHash, /^sha256:[0-9a-f]{64}$/);
     assert.deepEqual(new Set(Object.values(metadata.packageVersions)), new Set([currentVersion]));
+    const changed = await readBotRuntimeReleaseMetadata({ root: repositoryRoot, version: currentVersion,
+      fsPromises: { ...fs, async readFile(file, ...args) {
+        const bytes = await fs.readFile(file, ...args);
+        return file.endsWith('/imagegen-model-hotfix.js') ? Buffer.concat([Buffer.from(bytes), Buffer.from('\n// changed fixture\n')]) : bytes;
+      } },
+    });
+    assert.notEqual(changed.pluginHash, metadata.pluginHash, 'Shared image hotfix must invalidate the Bot runtime input digest');
   });
 
   test('passes the command-line dry run and manifest verifier', async () => {

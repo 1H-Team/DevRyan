@@ -56,7 +56,6 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       abortActiveSessionsForConfigRestart,
       auditForceConfigRestart,
       getOpenCodeResolutionSnapshot,
-      checkForOpenCodeUpdates,
       formatSettingsResponse,
       readSettingsFromDisk,
       readSettingsFromDiskMigrated,
@@ -66,6 +65,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       sanitizeHiddenSkills,
       isUnsafeSkillRelativePath,
       buildOpenCodeUrl,
+      openCodeClient,
       getOpenCodeAuthHeaders,
       cursorSdkRuntime,
       standardSessionTitleRuntime,
@@ -86,6 +86,8 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       resolveZenModelNonBlocking,
       xaiToolCatalogRuntime,
       recordCommitTiming,
+      generateHelperText,
+      cursorTextRuntime,
       resolveManagedProject,
       ownsSession,
       resolveOwnedSessionPlanContext,
@@ -119,10 +121,13 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     const processesRuntime = createProcessesRuntime({ dataDir: openchamberDataDir });
 
     registerOpenCodeRoutes(app, {
+      openCodeClient,
+      getNativeRuntimeOwner: routeDependencies.getNativeRuntimeOwner,
+      getClaudeEnrollmentOwner: () => routeDependencies.getNativeRuntimeOwner?.()?.getClaudeEnrollmentOwner?.(),
+      isProviderAdministrator: routeDependencies.isProviderAdministrator,
       crypto,
       clientReloadDelayMs,
       getOpenCodeResolutionSnapshot,
-      checkForOpenCodeUpdates,
       formatSettingsResponse,
       readSettingsFromDisk,
       readSettingsFromDiskMigrated,
@@ -278,6 +283,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     const { getProfiles, getProfile } = await import('../git/index.js');
 
     registerSkillRoutes(app, {
+      openCodeClient,
       fs,
       path,
       os,
@@ -319,6 +325,8 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     });
 
     registerQuotaRoutes(app, {
+      getNativeRuntimeOwner: routeDependencies.getNativeRuntimeOwner,
+      openCodeClient,
       getQuotaProviders,
       resolveProjectDirectory,
       buildOpenCodeUrl,
@@ -330,6 +338,9 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     registerGitHubRoutes(app);
     registerProcessesRoutes(app, { runtime: processesRuntime });
     registerGitRoutes(app, {
+      openCodeClient,
+      generateHelperText,
+      cursorRuntime: cursorTextRuntime,
       recordCommitTiming,
       // Native Zen helper sessions, plus PR description tier 2 (session model).
       buildOpenCodeUrl,
@@ -356,6 +367,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       readCanonicalPlanIdentity,
     });
     const imageAssetsRuntime = createImageAssetsRuntime({
+      openCodeClient,
       fsPromises,
       path,
       os,

@@ -29,3 +29,4 @@ Browser control and observation boundary: private desktop-only, session-turn-sco
 - Electron injects create/touch/release callbacks; standalone web omit them and receive 404.
 - App-bound Electron injects observation snapshot/stream callbacks directly. Runtime-service mode reaches the foreground Electron host through its authenticated desktop-host broker; an absent or older host fails the view only and never disturbs the lease.
 - `packages/web/server/default-config/plugins/devryan-browser.mjs` is the only managed model-facing lease client.
+- Canonical lineage reads require the typed native-v2 application client and retain exact directory/cancellation scope. No legacy runtime or raw HTTP lineage source is selectable.

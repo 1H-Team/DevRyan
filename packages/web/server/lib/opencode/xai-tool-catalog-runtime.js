@@ -4,6 +4,8 @@ import {
   listXaiModelIds,
 } from '@openchamber/orchestration-runtime';
 
+import { resolveGen2OpenCodeClient } from './opencode-client-seam.js';
+
 // Re-warm just under the cache's 15-minute TTL so an active directory never
 // falls back to the in-request cold-start wait. Directories decay out of the
 // periodic set once nothing has used them for the active window.
@@ -32,9 +34,7 @@ const waitForSignal = (job, signal) => {
 };
 
 const createXaiToolCatalogRuntime = ({
-  fetchImpl = fetch,
-  buildOpenCodeUrl,
-  getOpenCodeAuthHeaders = () => ({}),
+  openCodeClient = null,
   cache = createXaiToolCatalogCache(),
   logger = console,
 } = {}) => {
@@ -49,33 +49,7 @@ const createXaiToolCatalogRuntime = ({
     directoryLastUse.set(normalizeString(directory), Date.now());
   };
 
-  const buildUrl = (requestPath, directory, providerID, modelID) => {
-    if (typeof buildOpenCodeUrl !== 'function') return null;
-    const url = new URL(buildOpenCodeUrl(requestPath, ''));
-    if (normalizeString(directory)) url.searchParams.set('directory', normalizeString(directory));
-    if (normalizeString(providerID)) url.searchParams.set('provider', normalizeString(providerID));
-    if (normalizeString(modelID)) url.searchParams.set('model', normalizeString(modelID));
-    return url.toString();
-  };
-
-  const readJson = async (url, signal) => {
-    if (!url) return null;
-    const authHeaders = await getOpenCodeAuthHeaders();
-    signal.throwIfAborted();
-    const response = await fetchImpl(url, {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-        ...authHeaders,
-      },
-      signal,
-    });
-    signal.throwIfAborted();
-    if (!response?.ok) return null;
-    return response.json().catch(() => null);
-  };
-
-  const readJsonWithinDeadline = async (url, callerSignal) => {
+  const readWithinDeadline = async (load, callerSignal) => {
     const controller = new AbortController();
     const signal = callerSignal ? AbortSignal.any([controller.signal, callerSignal]) : controller.signal;
     ownedControllers.add(controller);
@@ -84,11 +58,32 @@ const createXaiToolCatalogRuntime = ({
     try {
       // Race the whole read, including headers and JSON parsing. Some injected
       // transports ignore abort; they must still release this job on time.
-      return await waitForSignal(readJson(url, signal), signal);
+      return await waitForSignal(load(signal), signal);
     } finally {
       clearTimeout(timer);
       ownedControllers.delete(controller);
     }
+  };
+
+  const gen2 = () => resolveGen2OpenCodeClient(openCodeClient);
+
+  // Async, so an unknown generation (gen2() throws) is a rejected refresh.
+  const readModelCatalog = async (directory, providerID, modelID) => {
+    const client = gen2();
+    return readWithinDeadline(async (signal) => {
+      const snapshot = await client.catalog.tools({
+        directory: normalizeString(directory) || undefined,
+        providerID: normalizeString(providerID),
+        modelID,
+      }, { signal });
+      return snapshot?.definitions ?? null;
+    });
+  };
+
+  const readProviderPayload = async (directory, callerSignal) => {
+    const client = gen2();
+    return readWithinDeadline((signal) => client.catalog.providers({ directory: normalizeString(directory) || undefined }, { signal }),
+      callerSignal);
   };
 
   const refreshModel = ({ directory, providerID = 'xai', modelID, signal } = {}) => {
@@ -99,7 +94,7 @@ const createXaiToolCatalogRuntime = ({
     const existing = inflight.get(key);
     if (existing) return waitForSignal(existing, signal);
 
-    const job = readJsonWithinDeadline(buildUrl('/experimental/tool', directory, providerID, normalizedModelID))
+    const job = readModelCatalog(directory, providerID, normalizedModelID)
       .then((catalog) => {
         if (disposed || !Array.isArray(catalog)) return null;
         return cache.remember({ directory, providerID, modelID: normalizedModelID, catalog }) ?? {};
@@ -136,7 +131,7 @@ const createXaiToolCatalogRuntime = ({
     try {
       // Discovery is private to this call, so its wait and transport may share
       // the caller's cancellation. The subsequent model jobs stay independent.
-      const payload = await readJsonWithinDeadline(buildUrl('/config/providers', directory), signal);
+      const payload = await readProviderPayload(directory, signal);
       if (!payload || typeof payload !== 'object') return false;
       return refreshProviderPayload({ directory, payload, signal });
     } catch (error) {

@@ -1,7 +1,7 @@
 import { evaluate } from './cdp.mjs';
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-const visible = `e => { const r=e.getBoundingClientRect(); if(r.width<=0||r.height<=0)return false;for(let p=e;p;p=p.parentElement){const s=getComputedStyle(p);if(s.display==='none'||s.visibility==='hidden'||Number(s.opacity)<0.95)return false;}return true; }`;
+const visible = `e => { const r=e.getBoundingClientRect(); if(r.width<=0||r.height<=0)return false;for(let p=e;p;p=p.parentElement){const s=getComputedStyle(p);if(s.display==='none'||s.visibility==='hidden'||Number(s.opacity)<=0)return false;}return true; }`;
 
 export const isQaReadOnlyRevealHit = (target, hit, allowDisabled, pointerEvents) => Boolean(target && hit
   && (target.contains(hit) || (allowDisabled && target.disabled === true && pointerEvents === 'none' && hit === target.parentElement)));
@@ -30,7 +30,7 @@ export function createQaUiDriver(cdp, { timeoutMs = 30000, checkAlive = () => {}
       if(!node.textContent.includes(${JSON.stringify(text)})) continue;
       let visible=true;
       for(let e=node.parentElement;e;e=e.parentElement) {
-        const style=getComputedStyle(e);if(style.display==='none'||style.visibility==='hidden'||Number(style.opacity)<0.95){visible=false;break;}
+        const style=getComputedStyle(e);if(style.display==='none'||style.visibility==='hidden'||Number(style.opacity)<=0){visible=false;break;}
       }
       if(!visible)continue; const range=document.createRange();range.selectNodeContents(node);
       for(const r of range.getClientRects()) {

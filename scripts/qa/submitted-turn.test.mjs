@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { assertQaSubmittedPlanMode, findQaSubmittedUser, findQaTurnAssistants, findQaCompletedTurnAssistant } from './submitted-turn.mjs';
+import { assertQaSubmittedPlanMode, findQaSubmittedUser, findQaTurnAssistants, findQaCompletedTurnAssistant, isQaKnownSessionSettled } from './submitted-turn.mjs';
 import { createQaTerminalPermissionGuard } from './terminal-permission.mjs';
 
 test('native compaction and continuation do not replace the submitted human identity', () => {
@@ -61,6 +61,22 @@ const completedTurn = () => {
     finish: 'stop', time: { created: 110, completed: 150 } }, parts: [] };
   return { rows: [user, answer], previousIds: new Set(), submittedUser: user, sessionID: 'ses_test', status: {} };
 };
+
+test('native omitted idle requires a known session and exact completed tail, never unknown or malformed live state', () => {
+  const input={...completedTurn(),session:{id:'ses_test'}};
+  assert.equal(isQaKnownSessionSettled(input),true);
+  assert.equal(isQaKnownSessionSettled({...input,status:{ses_test:{type:'idle'}}}),true);
+  for(const status of [null,[],{ses_test:{type:'busy'}},{ses_test:{type:'retry'}},{ses_test:{type:'failed'}},{ses_foreign:{type:'unknown'}},{ses_test:null}]) {
+    assert.equal(isQaKnownSessionSettled({...input,status}),false);
+  }
+  assert.equal(isQaKnownSessionSettled({...input,session:null}),false);
+  assert.equal(isQaKnownSessionSettled({...input,session:{id:'ses_foreign'}}),false);
+  assert.equal(isQaKnownSessionSettled({...input,rows:[]}),false);
+  assert.equal(isQaKnownSessionSettled({...input,rows:input.rows.slice(0,1)}),false);
+  for(const change of [{parentID:'msg_foreign'},{sessionID:'ses_foreign'},{time:{created:110}},{time:{completed:NaN}},{time:{completed:90}}]) {
+    assert.equal(isQaKnownSessionSettled({...input,rows:[input.rows[0],{...input.rows[1],info:{...input.rows[1].info,...change}}]}),false);
+  }
+});
 
 test('only a fresh completed canonical tail settles the exact human turn while idle', () => {
   const input = completedTurn();

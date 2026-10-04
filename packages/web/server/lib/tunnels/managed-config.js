@@ -16,6 +16,24 @@ export const createManagedTunnelConfigRuntime = (deps) => {
   } = constants;
 
   let persistManagedRemoteTunnelConfigLock = Promise.resolve();
+  const pendingOperations = new Set();
+  let checkpointHeld = false;
+  let checkpointDrain;
+  const runOwned = (action) => {
+    if (checkpointHeld) return Promise.reject(Object.assign(new Error('tunnel_config_checkpoint_held'), { code: 'tunnel_config_checkpoint_held' }));
+    const operation = Promise.resolve().then(action);
+    pendingOperations.add(operation);
+    operation.then(() => pendingOperations.delete(operation), () => pendingOperations.delete(operation));
+    return operation;
+  };
+  const holdForCheckpoint = () => {
+    checkpointHeld = true;
+    checkpointDrain ??= (async () => {
+      await Promise.all([...pendingOperations]);
+      await persistManagedRemoteTunnelConfigLock;
+    })();
+    return checkpointDrain;
+  };
 
   const sanitizeManagedRemoteTunnelConfigEntries = (value) => {
     if (!Array.isArray(value)) {
@@ -226,10 +244,11 @@ export const createManagedTunnelConfigRuntime = (deps) => {
   };
 
   return {
-    readManagedRemoteTunnelConfigFromDisk,
-    syncManagedRemoteTunnelConfigWithPresets,
-    upsertManagedRemoteTunnelToken,
-    resolveManagedRemoteTunnelPreset,
-    resolveManagedRemoteTunnelToken,
+    readManagedRemoteTunnelConfigFromDisk: (...args) => runOwned(() => readManagedRemoteTunnelConfigFromDisk(...args)),
+    syncManagedRemoteTunnelConfigWithPresets: (...args) => runOwned(() => syncManagedRemoteTunnelConfigWithPresets(...args)),
+    upsertManagedRemoteTunnelToken: (...args) => runOwned(() => upsertManagedRemoteTunnelToken(...args)),
+    resolveManagedRemoteTunnelPreset: (...args) => runOwned(() => resolveManagedRemoteTunnelPreset(...args)),
+    resolveManagedRemoteTunnelToken: (...args) => runOwned(() => resolveManagedRemoteTunnelToken(...args)),
+    holdForCheckpoint,
   };
 };

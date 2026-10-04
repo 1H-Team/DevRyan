@@ -1,3 +1,4 @@
+import { createNativeConsumerFixture } from '../opencode/test-native-consumer-client.js';
 import express from 'express';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -290,6 +291,11 @@ describe('Claude quota runtime resolution', () => {
       })),
     });
     registerQuotaRoutes(app, {
+      openCodeClient: createNativeConsumerFixture({
+        baseUrl: 'http://127.0.0.1:4096',
+        readFixture: (...args) => fetch(...args),
+        headers: () => ({ Authorization: 'Basic redacted' }),
+      }),
       getQuotaProviders: async () => ({
         listConfiguredQuotaProviders: () => [],
         fetchQuotaForProvider: async () => ({}),
@@ -301,7 +307,7 @@ describe('Claude quota runtime resolution', () => {
     });
 
     const response = await request(app)
-      .get('/api/session/session-a/context-usage?refreshSession=true')
+      .get('/api/session/session-a/context-usage?refreshSession=true&directory=%2Fworkspace')
       .expect(200);
     expect(response.body.activeInputTokens).toBe(127040);
     expect(fetchContextUsage).toHaveBeenCalledWith(expect.objectContaining({
@@ -315,6 +321,11 @@ describe('Claude quota runtime resolution', () => {
   it('degrades context usage to the message fallback for external runtimes', async () => {
     const app = express();
     registerQuotaRoutes(app, {
+      openCodeClient: createNativeConsumerFixture({
+        baseUrl: 'http://127.0.0.1:4096',
+        readFixture: (...args) => fetch(...args),
+        headers: () => ({ Authorization: 'Basic redacted' }),
+      }),
       getQuotaProviders: async () => ({
         listConfiguredQuotaProviders: () => [],
         fetchQuotaForProvider: async () => ({}),
@@ -344,6 +355,11 @@ describe('Claude quota runtime resolution', () => {
       })),
     });
     registerQuotaRoutes(app, {
+      openCodeClient: createNativeConsumerFixture({
+        baseUrl: 'http://127.0.0.1:4096',
+        readFixture: (...args) => fetch(...args),
+        headers: () => ({ Authorization: 'Basic redacted' }),
+      }),
       getQuotaProviders: async () => ({
         listConfiguredQuotaProviders,
         fetchQuotaForProvider: async () => ({}),
@@ -352,70 +368,27 @@ describe('Claude quota runtime resolution', () => {
       isExternalOpenCode: () => false,
     });
 
-    const response = await request(app).get('/api/quota/providers').expect(200);
+    const response = await request(app).get('/api/quota/providers?directory=%2Fworkspace').expect(200);
     expect(response.body).toEqual({ providers: ['claude'] });
     expect(listConfiguredQuotaProviders).toHaveBeenCalledWith({
-      workingDirectory: null,
+      workingDirectory: '/workspace',
       isExternalRuntime: false,
       claudeProxyBaseUrl: 'http://127.0.0.1:55201/v1',
     });
     fetchSpy.mockRestore();
   });
 
-  it('passes the active managed OpenCode Anthropic proxy URL to the provider', async () => {
-    const app = express();
-    const binDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-quota-path-'));
-    const claudeExecutable = path.join(binDirectory, 'claude');
-    fs.writeFileSync(claudeExecutable, '#!/bin/sh\n', { mode: 0o755 });
-    fs.chmodSync(claudeExecutable, 0o755);
-    const resolveClaudeCodeLaunch = vi.fn(({ pathValue }) => ({
-      executable: path.join(pathValue, 'claude'),
-      pathValue,
-      source: 'path',
-    }));
-    const fetchQuotaForProvider = vi.fn(async (_providerId, options) => ({
-      providerId: 'claude',
-      proxyBaseUrl: options.claudeProxyBaseUrl,
-      forceRefresh: options.forceRefresh,
-      isExternalRuntime: options.isExternalRuntime,
-      claudeExecutable: options.claudeCodeLaunch?.executable,
-    }));
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      json: vi.fn(async () => ({
-        providers: [{
-          id: 'anthropic',
-          options: { baseURL: 'http://127.0.0.1:55201' },
-        }],
-      })),
-    });
-    registerQuotaRoutes(app, {
-      getQuotaProviders: async () => ({
-        listConfiguredQuotaProviders: () => ['claude'],
-        fetchQuotaForProvider,
-      }),
-      buildOpenCodeUrl: (requestPath) => `http://127.0.0.1:4096${requestPath}`,
-      getOpenCodeAuthHeaders: () => ({ Authorization: 'Basic redacted' }),
-      isExternalOpenCode: () => false,
-      buildAugmentedPath: () => binDirectory,
-      resolveClaudeCodeLaunch,
-    });
+  it('uses native profile inspection rather than proxy, PATH or quota CLI fallback',async()=>{
+    const app=express();const getQuotaProviders=vi.fn(async()=>{throw new Error('must not discover ambient credentials');});const resolveClaudeCodeLaunch=vi.fn();
+    const inspectClaude=vi.fn(async input=>{expect(input).toEqual({kind:'quota',directory:'/workspace'});return {providerId:'claude',ok:true,configured:true};});
+    registerQuotaRoutes(app,{getQuotaProviders,getNativeRuntimeOwner:()=>({inspectClaude}),resolveClaudeCodeLaunch});
+    expect((await request(app).get('/api/quota/claude?refresh=true&directory=%2Fworkspace').expect(200)).body).toEqual({providerId:'claude',ok:true,configured:true});
+    expect(getQuotaProviders).not.toHaveBeenCalled();expect(resolveClaudeCodeLaunch).not.toHaveBeenCalled();
+  });
 
-    const response = await request(app).get('/api/quota/claude?refresh=true').expect(200);
-    expect(response.body).toEqual({
-      providerId: 'claude',
-      proxyBaseUrl: 'http://127.0.0.1:55201',
-      forceRefresh: true,
-      isExternalRuntime: false,
-      claudeExecutable,
-    });
-    expect(fetchSpy).toHaveBeenCalledWith(
-      'http://127.0.0.1:4096/config/providers',
-      expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Basic redacted' }) }),
-    );
-    expect(resolveClaudeCodeLaunch).toHaveBeenCalledWith({ pathValue: binDirectory });
-    fetchSpy.mockRestore();
-    fs.rmSync(binDirectory, { recursive: true, force: true });
+  it('refuses revoked inspection authorization without leaking private credential errors',async()=>{
+    const app=express();const getQuotaProviders=vi.fn();registerQuotaRoutes(app,{getQuotaProviders,getNativeRuntimeOwner:()=>({inspectClaude:async()=>{throw Object.assign(new Error('synthetic-private-token'),{code:'permission_denied',status:403});}})});
+    const result=await request(app).get('/api/quota/anthropic').expect(403);expect(result.body.code).toBe('permission_denied');expect(JSON.stringify(result.body)).not.toContain('synthetic-private-token');expect(getQuotaProviders).not.toHaveBeenCalled();
   });
 
   it('does not query or resolve a local proxy for external OpenCode', async () => {
@@ -428,6 +401,11 @@ describe('Claude quota runtime resolution', () => {
     }));
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     registerQuotaRoutes(app, {
+      openCodeClient: createNativeConsumerFixture({
+        baseUrl: 'http://127.0.0.1:4096',
+        readFixture: (...args) => fetch(...args),
+        headers: () => ({ Authorization: 'Basic redacted' }),
+      }),
       getQuotaProviders: async () => ({
         listConfiguredQuotaProviders: () => [],
         fetchQuotaForProvider,
@@ -437,12 +415,7 @@ describe('Claude quota runtime resolution', () => {
     });
 
     const response = await request(app).get('/api/quota/claude').expect(200);
-    expect(response.body).toEqual({
-      providerId: 'claude',
-      proxyBaseUrl: null,
-      isExternalRuntime: true,
-      claudeCodeLaunch: null,
-    });
+    expect(response.body).toMatchObject({providerId:'claude',ok:false,errorCode:'native_claude_external_unavailable'});
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });

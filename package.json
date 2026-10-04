@@ -1,6 +1,6 @@
 {
   "name": "openchamber-monorepo",
-  "version": "1.2.22",
+  "version": "2.0.0",
   "description": "OpenChamber monorepo workspace for web, ui, and desktop runtimes",
   "private": true,
   "type": "module",
@@ -105,6 +105,12 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@opencode/ai": "2.0.20",
+    "@opencode/core": "2.0.20",
+    "@opencode/plugin": "2.0.20",
+    "@opencode/schema": "2.0.20",
+    "@opencode/simulation": "2.0.20",
+    "@opencode/util": "2.0.20",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/dom-speech-recognition": "^0.0.7",
     "@types/node": "^24.13.3",
@@ -113,6 +119,8 @@
     "@vitejs/plugin-react": "^5.2.0",
     "babel-plugin-react-compiler": "^1.0.0",
     "concurrently": "^9.2.4",
+    "effect": "4.0.0-rc.112",
+    "electron": "41.2.1",
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.26",
@@ -125,7 +133,6 @@
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.69.0",
     "vite": "^7.3.6",
-    "yaml": "^2.9.0",
-    "electron": "41.2.1"
+    "yaml": "^2.9.0"
   }
 }

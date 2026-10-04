@@ -15,10 +15,10 @@ describe("ModelControls recovered subtask restoration", () => {
       "const currentSessionMessagesResolved = useSessionMessagesResolved(",
     )
     expect(source).toContain(
-      "providers.length === 0 || !currentSessionMessagesResolved || !latestLoadedUserChoice?.providerID",
+      "!contextHydrated || !currentSessionMessagesResolved || !latestLoadedUserChoice?.providerID",
     )
     expect(source).not.toContain(
-      "providers.length === 0 || !hasRenderableCurrentSessionSnapshot || !latestLoadedUserChoice?.providerID",
+      "providers.length === 0 || !currentSessionMessagesResolved || !latestLoadedUserChoice?.providerID",
     )
     expect(
       /applyModelSelectionWithVariant\(\s*latestLoadedUserChoice\.providerID,\s*latestLoadedUserChoice\.modelID,\s*latestLoadedUserChoice\.variant,\s*restoredAgent \|\| currentAgentName \|\| undefined,/.test(source),

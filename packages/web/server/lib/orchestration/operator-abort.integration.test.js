@@ -1,5 +1,12 @@
 import { expect, it } from 'vitest';
-import { createWebManagedOrchestrationRuntime } from './runtime.js';
+import { createWebManagedOrchestrationRuntime as createNativeOrchestrationRuntime } from './runtime.js';
+import { createNativeConsumerFixture } from '../opencode/test-native-consumer-client.js';
+
+const createWebManagedOrchestrationRuntime = options => createNativeOrchestrationRuntime({
+  ...options,
+  openCodeClient: createNativeConsumerFixture({ readFixture: options.fetchImpl, headers: options.getOpenCodeAuthHeaders,
+    baseUrl: () => options.buildOpenCodeUrl('/') }),
+});
 
 // Exercise the current HTTP adapter and operator registry, including Stop
 // arriving after the loop's registry poll while a transcript read is pending.
@@ -28,6 +35,9 @@ it.each(['after-prompt', 'during-transcript-read'])('settles a user Stop %s with
     getOpenCodeAuthHeaders: () => ({}),
     fetchImpl: async (url, init) => {
       const pathname = new URL(url).pathname;
+      if (pathname === '/config/providers') return Response.json({ providers: [{ id: 'anthropic', models: {
+        'claude-opus-5': { id: 'claude-opus-5', variants: { medium: {} } },
+      } }] });
       if (pathname === '/agent') return Response.json([{ name: 'designer', mode: 'subagent' }]);
       if (pathname === '/session' && init.method === 'POST') return Response.json({ id: 'ses_stop' });
       if (pathname.endsWith('/prompt_async')) {
@@ -68,7 +78,8 @@ it.each(['after-prompt', 'during-transcript-read'])('settles a user Stop %s with
       if (Date.now() > deadline) throw new Error('Operator stop fixture did not settle');
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    expect(state.tasks[0]).toMatchObject({ status: 'aborted', failureReason: 'Stopped by the user' });
+    expect(state.tasks[0]).toMatchObject({ status: 'aborted', failureReason: 'Stopped by the user',
+      providerId: 'anthropic', modelId: 'claude-opus-5', agent: 'designer', variant: 'medium' });
     expect(prompts).toHaveLength(1);
   } finally {
     await runtime.shutdown();

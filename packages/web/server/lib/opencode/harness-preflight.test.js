@@ -1,14 +1,15 @@
+import { createNativeConsumerFixture } from './test-native-consumer-client.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from '../../test-supertest.js';
 
 import {
   auditPackagedPromptContext,
-  createHarnessAnthropicUsageReader,
-  createHarnessPreflight,
+  createHarnessAnthropicUsageReader as createHarnessAnthropicUsageReaderNative,
+  createHarnessPreflight as createHarnessPreflightNative,
   extractAnthropicUsageFromMessages,
   lintAgentHarness,
   registerHarnessPreflightRoute,
@@ -737,7 +738,7 @@ describe('harness preflight', () => {
     expect(result.harness.status).toBe('warning');
   });
 
-  it('preserves available IDs while marking a rejected model catalog unavailable', async () => {
+  it('marks the whole sealed native snapshot unavailable when its model catalog is rejected', async () => {
     const preflight = createHarnessPreflight({
       getAgents: () => [],
       getSkills: () => [],
@@ -762,9 +763,7 @@ describe('harness preflight', () => {
     });
 
     expect(result.contextBudget.tools.ids).toEqual(expect.objectContaining({
-      availability: 'available',
-      itemCount: 1,
-      byteCount: 4,
+      availability: 'unavailable', itemCount: null, byteCount: null,
     }));
     expect(result.contextBudget.tools.descriptions).toEqual({
       availability: 'unavailable',
@@ -863,7 +862,7 @@ describe('harness preflight', () => {
     expect(JSON.stringify(result)).not.toContain('opencode.test');
   });
 
-  it('times out only the never-settling full catalog endpoint while preserving IDs', async () => {
+  it('times out the whole sealed native snapshot if the catalog never settles', async () => {
     const deadline = Symbol('deadline');
     const signals = new Map();
     const preflight = createHarnessPreflight({
@@ -903,14 +902,11 @@ describe('harness preflight', () => {
 
     expect(result).not.toBe(deadline);
     expect(signals.get('/experimental/tool/ids')).toBeInstanceOf(AbortSignal);
-    expect(signals.get('/experimental/tool/ids').aborted).toBe(false);
+    expect(signals.get('/experimental/tool/ids').aborted).toBe(true);
     expect(signals.get('/experimental/tool')).toBeInstanceOf(AbortSignal);
     expect(signals.get('/experimental/tool').aborted).toBe(true);
     expect(result.contextBudget.tools.ids).toEqual(expect.objectContaining({
-      availability: 'available',
-      itemCount: 1,
-      byteCount: 4,
-      duplicateIds: [],
+      availability: 'unavailable', itemCount: null, byteCount: null,
     }));
     expect(result.toolManifest.availability.catalog).toEqual({
       availability: 'unavailable',
@@ -1390,3 +1386,107 @@ describe('Anthropic context budget projection', () => {
     expect(JSON.stringify(journalRecords[0])).not.toContain('/Users/private');
   });
 });
+
+describe('harness preflight on OpenCode 2', () => {
+  const assistantRecords = [{
+    info: {
+      role: 'assistant',
+      providerID: 'anthropic',
+      tokens: { input: 6, output: 14, cache: { read: 0, write: 58_035 } },
+    },
+  }];
+  const meridianFetch = (calls) => async (url) => {
+    calls.push(new URL(url).pathname);
+    if (url.pathname === '/v1/sessions/session-a/recover') {
+      return { ok: true, json: async () => ({ claudeSessionId: 'sdk-session' }) };
+    }
+    if (url.pathname === '/telemetry/requests') {
+      return { ok: true, json: async () => [{ sdkSessionId: 'sdk-session', toolCount: 80, deferredToolCount: 74 }] };
+    }
+    return { ok: false, json: async () => ({}) };
+  };
+  const createClient = ({ generation = 2 } = {}) => ({
+    generation: () => generation,
+    sessions: {
+      messages: vi.fn(async () => ({ records: assistantRecords, cursor: undefined })),
+    },
+    catalog: {
+      providers: vi.fn(async () => ({
+        providers: [{ id: 'anthropic', options: { baseURL: 'http://127.0.0.1:3456' } }],
+        default: {},
+      })),
+      tools: vi.fn(async () => ({ ids: ['read', 'read', 'é_tool'], definitions: null })),
+    },
+  });
+
+  it('reads the session transcript and provider catalog through the client; only Meridian is fetched', async () => {
+    const calls = [];
+    const client = createClient();
+    const reader = createHarnessAnthropicUsageReader({ fetchImpl: meridianFetch(calls), openCodeClient: () => client });
+
+    const usage = await reader({ sessionID: 'session-a', directory: '/repo' });
+
+    expect(usage).toMatchObject({
+      firstTurnProviderUsage: { cacheCreationInputTokens: 58_035 },
+      tooling: { rawToolCount: 80, eagerToolCount: 6, deferredToolCount: 74 },
+    });
+    expect(client.sessions.messages).toHaveBeenCalledWith('session-a', { limit: 500 },
+      expect.objectContaining({ directory: '/repo', signal: expect.any(AbortSignal) }));
+    expect(client.catalog.providers.mock.calls[0][0]).toEqual({ directory: '/repo' });
+    expect(calls).toEqual(['/v1/sessions/session-a/recover', '/telemetry/requests']);
+  });
+
+  it('reads no usage on unknown or generation 1 identities', async () => {
+    const calls = [];
+    const unknown = createHarnessAnthropicUsageReader({
+      fetchImpl: meridianFetch(calls),
+      buildOpenCodeUrl: (pathname) => new URL(pathname, 'http://127.0.0.1:4096'),
+      openCodeClient: { generation: () => { throw new Error('The OpenCode runtime generation is unknown'); } },
+    });
+    expect(await unknown({ sessionID: 'session-a', directory: '/repo' })).toBeNull();
+    expect(calls).toEqual([]);
+
+    const client = createClient({ generation: 1 });
+    const legacy = createHarnessAnthropicUsageReader({
+      fetchImpl: meridianFetch(calls),
+      buildOpenCodeUrl: (pathname) => new URL(pathname, 'http://127.0.0.1:4096'),
+      openCodeClient: client,
+    });
+    await legacy({ sessionID: 'session-a', directory: '/repo' });
+    expect(client.sessions.messages).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
+  });
+
+  it('builds the runtime tool manifest from the host tool snapshot', async () => {
+    const client = createClient();
+    const preflight = createHarnessPreflight({
+      getAgents: () => [],
+      getSkills: () => [],
+      getHiddenSkills: () => [],
+      getStaleOverrides: () => [],
+      getPackagedAgents: () => [],
+      openCodeClient: () => client,
+    });
+
+    const result = await preflight.run({ directory: '/repo' });
+
+    expect(client.catalog.tools.mock.calls[0][0]).toEqual({ directory: '/repo' });
+    expect(result.toolManifest.toolIds).toEqual(['read', 'read', 'é_tool']);
+    expect(result.toolManifest.availability).toEqual({
+      ids: { availability: 'available' },
+      catalog: { availability: 'notRequested' },
+    });
+  });
+});
+
+const createHarnessPreflight = (options = {}) => createHarnessPreflightNative({
+    ...options, ...(options.openCodeClient || typeof options.fetchImpl !== 'function' ? {} : {
+      openCodeClient: createNativeConsumerFixture({ readFixture: options.fetchImpl, headers: options.getOpenCodeAuthHeaders }),
+    }),
+  });
+
+const createHarnessAnthropicUsageReader = (options = {}) => createHarnessAnthropicUsageReaderNative({
+    ...options, ...(options.openCodeClient || typeof options.fetchImpl !== 'function' ? {} : {
+      openCodeClient: createNativeConsumerFixture({ readFixture: options.fetchImpl, headers: options.getOpenCodeAuthHeaders }),
+    }),
+  });

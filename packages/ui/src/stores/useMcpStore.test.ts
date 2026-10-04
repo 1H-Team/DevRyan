@@ -5,6 +5,7 @@ import { getSafeStorage } from './utils/safeStorage';
 let statusData: Record<string, McpStatus> = {};
 let connectError: Error | null = null;
 let clientDirectory: string | undefined;
+const authCalls: Array<'start' | 'callback' | 'remove'> = [];
 
 const api = {
   mcp: {
@@ -18,14 +19,25 @@ const api = {
       return { data: true };
     }),
     auth: {
-      start: mock(async () => ({ data: { authorizationUrl: 'https://example.test/auth' } })),
-      callback: mock(async () => ({ data: true })),
-      remove: mock(async () => ({ data: true })),
+      start: mock(async () => {
+        authCalls.push('start');
+        return { data: { authorizationUrl: 'https://example.test/auth' } };
+      }),
+      callback: mock(async () => {
+        authCalls.push('callback');
+        return { data: true };
+      }),
+      remove: mock(async () => {
+        authCalls.push('remove');
+        return { data: true };
+      }),
     },
   },
 };
 
+const actualOpencodeClientModule = await import('@/lib/opencode/client');
 mock.module('@/lib/opencode/client', () => ({
+  ...actualOpencodeClientModule,
   opencodeClient: {
     setDirectory: (directory: string | undefined) => {
       clientDirectory = directory;
@@ -187,5 +199,50 @@ describe('useMcpStore issue memory', () => {
       '/repo/one': { github: 'needs_auth' },
       '/repo/two': { linear: 'needs_client_registration' },
     });
+  });
+});
+
+const capabilities = await import('@/lib/opencode/runtime-capabilities');
+
+describe('useMcpStore MCP OAuth capability gating', () => {
+  const setHealth = (health: unknown) => {
+    capabilities.resetRuntimeCapabilitiesForTests();
+    capabilities.useRuntimeCapabilityStore.setState({
+      snapshot: capabilities.parseRuntimeCapabilitySnapshot(health),
+      status: 'loaded',
+    });
+  };
+
+  beforeEach(() => {
+    authCalls.length = 0;
+  });
+
+  test('an explicit gen 2 OAuth grant enables the actions', async () => {
+    setHealth({ openCode: { generation: 2, capabilities: { mcpOAuth: true } } });
+
+    expect(await useMcpStore.getState().startAuth('linear', '/repo/one')).toBe('https://example.test/auth');
+    await useMcpStore.getState().completeAuth('linear', 'code', '/repo/one');
+    await useMcpStore.getState().clearAuth('linear', '/repo/one');
+
+    expect(authCalls).toEqual(['start', 'callback', 'remove']);
+  });
+
+  test('gen 2 refuses every OAuth action before any request', async () => {
+    setHealth({ openCode: { generation: 2, capabilities: { share: false, mcpOAuth: false, sessionShell: false, lsp: false, messageEdit: false } } });
+
+    const outcomes = await Promise.allSettled([
+      useMcpStore.getState().startAuth('linear', '/repo/one'),
+      useMcpStore.getState().completeAuth('linear', 'code', '/repo/one'),
+      useMcpStore.getState().clearAuth('linear', '/repo/one'),
+    ]);
+
+    for (const outcome of outcomes) {
+      expect(outcome.status).toBe('rejected');
+      if (outcome.status === 'rejected') {
+        expect(outcome.reason).toBeInstanceOf(capabilities.RuntimeCapabilityUnavailableError);
+      }
+    }
+    expect(authCalls).toEqual([]);
+    capabilities.resetRuntimeCapabilitiesForTests();
   });
 });

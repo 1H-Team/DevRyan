@@ -101,7 +101,6 @@ import {
 } from '@/lib/providers/variantControls';
 import { sortProviderTreeForPicker } from '@/lib/providers/sorting';
 import { getProviderDisplayName as getSharedProviderDisplayName } from '@/lib/providers/display';
-import { isProviderModelAvailable } from '@/lib/providers/modelAvailability';
 import { useIsTextTruncated } from '@/hooks/useIsTextTruncated';
 import {
     formatAgentLabel,
@@ -879,17 +878,9 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             }
 
             const provider = providers.find(p => p.id === providerId);
-            if (!provider) {
-                return 'provider-missing';
-            }
-
-            const providerModels = Array.isArray(provider.models) ? provider.models : [];
+            const providerModels = Array.isArray(provider?.models) ? provider.models : [];
             const modelExists = providerModels.find((m: ProviderModel) => m.id === modelId);
-            if (!modelExists || !isProviderModelAvailable(modelExists)) {
-                return 'model-missing';
-            }
-
-            if (isHiddenProviderModelRef(hiddenModels, providerId, modelExists)) {
+            if (modelExists && isHiddenProviderModelRef(hiddenModels, providerId, modelExists)) {
                 return 'model-missing';
             }
 
@@ -899,6 +890,9 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 });
             }
 
+            if (variant === undefined && currentSessionId && agentName) {
+                variant = useSelectionStore.getState().getAgentModelVariantForSession(currentSessionId, agentName, providerId, modelId);
+            }
             const draftModelProvenance = options?.modelProvenance ?? 'agent-default';
             const providerMatches = currentProviderId === providerId;
             const modelMatches = currentModelId === modelId;
@@ -1049,7 +1043,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         const variantControlState = getGenericModelVariantControlState(provider, modelId, variant);
         const resolvedVariant = resolveChatThinkingVariant(provider, modelId, variant);
         const effectiveAgentName = agentNameOverride ?? resolveLiveAgentName();
-        const concreteVariant = resolvedVariant ?? null;
+        const concreteVariant = variant === null ? null : resolvedVariant ?? null;
         if (currentSessionId && options?.modelProvenance === 'explicit') {
             useSelectionStore.getState().markSessionModelSelectionIntent(currentSessionId, {
                 providerID: providerId, modelID: modelId, agent: effectiveAgentName ?? undefined, variant: concreteVariant,
@@ -1101,7 +1095,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             preserveSelectedProvider?: boolean;
         },
     ) => {
-        variant = resolveChatThinkingVariant(providers.find((entry) => entry.id === providerId), modelId, variant) ?? null;
+        variant = variant === null ? null : resolveChatThinkingVariant(providers.find((entry) => entry.id === providerId), modelId, variant) ?? null;
         const effectiveAgentName = agentNameOverride ?? resolveLiveAgentName() ?? undefined;
         const result = tryApplyModelSelection(providerId, modelId, effectiveAgentName, variant, options);
         if (result !== 'applied') {
@@ -1174,7 +1168,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             return;
         }
 
-        if (!contextHydrated || providers.length === 0 || !currentSessionMessagesResolved || !latestLoadedUserChoice?.providerID || !latestLoadedUserChoice.modelID) {
+        if (!contextHydrated || !currentSessionMessagesResolved || !latestLoadedUserChoice?.providerID || !latestLoadedUserChoice.modelID) {
             return;
         }
 
@@ -1400,6 +1394,10 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             return;
         }
 
+        const liveSelection = useConfigStore.getState();
+        if (liveSelection.currentProviderId !== currentProviderId || liveSelection.currentModelId !== currentModelId
+            || liveSelection.currentVariant !== currentVariant) return;
+
         if (!currentAgentName) {
             // On reload the persisted draft model/variant can hydrate before the
             // draft agent. Preserve that explicit choice until agent restoration
@@ -1474,7 +1472,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     savedVariant,
                     availableVariants,
                     { providerId: currentProviderId },
-                ))
+                ) ?? savedVariant)
             : resolveProviderModelVariant(provider, currentModelId, savedVariant);
 
         setCurrentVariant(resolvedSaved);
@@ -3388,13 +3386,15 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const renderVariantSelector = () => {
         if (!isReady) return null;
         const provider = providers.find((entry) => entry.id === currentProviderId);
-        const normalized = resolveChatThinkingVariant(provider, currentModelId, currentVariant);
+        const normalized = currentVariant === null ? null : resolveChatThinkingVariant(provider, currentModelId, currentVariant);
         const cursor = getCursorAcpVariantState(provider, currentModelId, normalized);
         const generic = cursor ? null : getGenericModelVariantControlState(provider, currentModelId, normalized);
         const { levels, selected } = getChatThinkingState(provider, currentModelId, normalized);
         const fastState = cursor ?? generic;
-        if (!levels.length && !fastState?.canToggleFast) return null;
-        const display = selected ? formatEffortLabel(selected, { providerId: currentProviderId }) : 'Fast';
+        const selectedModel = provider?.models.find(model => model.id === currentModelId);
+        const unconfirmed = typeof normalized === 'string' && !Object.hasOwn(selectedModel?.variants ?? {}, normalized);
+        if (!levels.length && !fastState?.canToggleFast && !unconfirmed) return null;
+        const display = currentVariant === null ? 'Default' : selected ? formatEffortLabel(selected, { providerId: currentProviderId }) : 'Fast';
         const apply = (updates: { effort?: string; fastEnabled?: boolean }) => {
             const selection = cursor
                 ? resolveCursorAcpVariantSelection(provider, currentModelId, normalized, updates)
@@ -3402,9 +3402,10 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             applyModelSelectionWithVariant(currentProviderId, selection.modelId, selection.variant, undefined, { modelProvenance: 'explicit' });
         };
         const trigger = <button type="button" aria-label={t('chat.modelControls.thinking')}
+            title={unconfirmed ? `Saved selection: ${normalized}. Availability is not confirmed by the current catalog.` : undefined}
             onClick={isCompact ? () => setActiveMobilePanel('variant') : undefined}
             className={cn('model-controls__variant-trigger flex min-w-0 shrink-0 items-center gap-1 border-0 bg-transparent p-0 text-left text-muted-foreground hover:opacity-70', buttonHeight)}>
-            <span className={cn('model-controls__variant-label truncate text-[10px] font-medium leading-[14px] -my-[2px] py-[2px]', variantLabelAlignmentClass, isDesktop && 'max-w-[90px]')}>{display}</span>
+            <span className={cn('model-controls__variant-label truncate text-[10px] font-medium leading-[14px] -my-[2px] py-[2px]', variantLabelAlignmentClass, isDesktop && 'max-w-[90px]', unconfirmed && 'text-[var(--status-warning)]')}>{display}{unconfirmed ? ' · Unconfirmed' : ''}</span>
             {fastState?.fastEnabled ? <RiFlashlightFill aria-label="Fast Mode" className="h-3.5 w-3.5 text-[var(--status-warning)]" /> : null}
         </button>;
         if (isCompact) return trigger;

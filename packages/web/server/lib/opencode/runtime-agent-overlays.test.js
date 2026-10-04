@@ -124,6 +124,8 @@ describe('syncRuntimeAgentOverlays', () => {
   beforeEach(async () => {
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-runtime-agent-overlays-'));
     projectDirectory = path.join(tempRoot, 'project');
+    // Give this fixture its own repository boundary even when TMPDIR is inside a checkout.
+    await fs.mkdir(path.join(projectDirectory, '.git'), { recursive: true });
     packagedAgentDirectory = path.join(tempRoot, 'packaged-agents');
     packagedPluginDirectory = path.join(tempRoot, 'packaged-plugins');
     overlayRoot = path.join(tempRoot, 'runtime-overlays');
@@ -863,6 +865,8 @@ describe('syncRuntimeAgentOverlays', () => {
   it('updates stale project-directory allows when the working directory changes', async () => {
     const firstDirectory = path.join(tempRoot, 'project-one');
     const secondDirectory = path.join(tempRoot, 'project-two');
+    await fs.mkdir(path.join(firstDirectory, '.git'), { recursive: true });
+    await fs.mkdir(path.join(secondDirectory, '.git'), { recursive: true });
     const targetConfigDirectoryOverride = path.join(overlayRoot, 'stable-project-key');
     await writeAgent(packagedAgentDirectory, 'explorer', [
       'mode: subagent',

@@ -24,6 +24,7 @@ import {
 } from '../packages/web/server/lib/opencode/managed-plugins.js';
 import { createUserProfileProvisioningRuntime } from '../packages/web/server/lib/opencode/user-profile-provisioning.js';
 import { syncRuntimeAgentOverlays } from '../packages/web/server/lib/opencode/runtime-agent-overlays.js';
+const pluginSdkPin = JSON.parse(fs.readFileSync(new URL('../packages/web/package.json', import.meta.url), 'utf8')).devDependencies['@opencode-ai/plugin'];
 
 const readJson = (filePath) => JSON.parse(fs.readFileSync(filePath, 'utf8'));
 const requireFile = (filePath, label) => {
@@ -77,8 +78,9 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
   if (profilePackage.dependencies['opencode-with-claude'] !== '1.8.0') {
     throw new Error(`Missing default Claude dependency: ${ANTHROPIC_OAUTH_PLUGIN_SPEC}`);
   }
+  // The packaged plugin SDK follows its compatibility dependency pin.
   for (const [packageName, version] of Object.entries({
-    '@opencode-ai/plugin': '1.18.33',
+    '@opencode-ai/plugin': pluginSdkPin,
     'adm-zip': '0.6.0',
     'mammoth': '1.12.1',
     'unpdf': '1.8.0',

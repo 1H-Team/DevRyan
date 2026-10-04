@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   checkOpenCodeDbSchema,
   decideVacuum,
+  detectOpenCodeDbGeneration,
   inspectOpenCodeDb,
   normalizeOpenCodeDbMaintenanceSettings,
   performOpenCodeDbMaintenance,
@@ -21,6 +22,10 @@ import {
   isOpenCodeProcessCommand,
   listOtherOpenCodeProcessesDefault,
 } from './db-maintenance.js';
+import {
+  resolveOpenCodeDatabaseSelection,
+  writeOpenCodeRuntimeSelection,
+} from './runtime-selection.js';
 
 // Captured from OpenCode v1.18.27 `packages/core/src/database/migration/*`
 // (final shape after every ALTER): only the tables the module reads or writes,
@@ -60,6 +65,15 @@ CREATE TABLE session_context_epoch (
   session_id text PRIMARY KEY, baseline text NOT NULL, snapshot text NOT NULL, baseline_seq integer NOT NULL,
   CONSTRAINT fk_session_context_epoch_session_id_session_id_fk FOREIGN KEY (session_id) REFERENCES session(id) ON DELETE CASCADE
 );
+`;
+
+// Every OpenCode 1.18.x database carries this migration journal (TEXT ids);
+// DDL and first/last ids as a 1.18.x companion `opencode-devryan.db` has them
+// (no `__drizzle_migrations`; an older `opencode.db` has both). No `kv` table.
+const V1_MIGRATION_SQL = `
+CREATE TABLE "migration" (id TEXT PRIMARY KEY, time_completed INTEGER NOT NULL);
+INSERT INTO migration (id, time_completed) VALUES ('20260127222353_familiar_lady_ursula', 1769552633000);
+INSERT INTO migration (id, time_completed) VALUES ('20260622202450_simplify_session_input', 1782160290000);
 `;
 
 const HOUR = 60 * 60 * 1000;
@@ -107,14 +121,16 @@ const addSession = (db, id, { timeUpdated, events, bytes = 64, parent = null } =
  * Fixture: an active session (100 events), an idle session (100 events, big
  * payloads), a small idle session (10 events), an orphan `ses_` aggregate
  * whose session was deleted (20 events + sequence), a sequence-only orphan,
- * and a non-session aggregate (`prj_`) that must never be touched.
+ * and a non-session aggregate (`prj_`) that must never be touched. Carries
+ * the real 1.18.x `migration` journal unless `v1Journal: false`.
  */
-const createFixtureDb = (dir, { idleBytes = 64, now = NOW } = {}) => {
+const createFixtureDb = (dir, { idleBytes = 64, now = NOW, v1Journal = true } = {}) => {
   const dbPath = path.join(dir, 'opencode.db');
   fs.writeFileSync(dbPath, '');
   const db = openDb(dbPath);
   db.pragma('journal_mode = WAL');
   db.exec(SCHEMA_SQL);
+  if (v1Journal) db.exec(V1_MIGRATION_SQL);
   db.prepare('INSERT INTO project (id, worktree, time_created, time_updated) VALUES (?, ?, ?, ?)').run('prj_1', '/work', now, now);
   addSession(db, 'ses_active', { timeUpdated: now - HOUR, events: 100 });
   addSession(db, 'ses_idle', { timeUpdated: now - 48 * HOUR, events: 100, bytes: idleBytes });
@@ -153,8 +169,47 @@ const runCore = (dbPath, options = {}) => performOpenCodeDbMaintenance({
   now: () => NOW,
   freeDiskBytes: 1e12,
   otherProcesses: [],
+  runtimeGeneration: 1,
   ...options,
 });
+
+// A v2 database migrated in place: the v1 tables the pass would otherwise
+// prune (and v1's own `migration` journal) plus a `kv` table, with the
+// importer's `migration.v1-v2` marker or without it (fail closed).
+const createV2FixtureDb = (dir, { marker = 'kv-marker' } = {}) => {
+  const dbPath = createFixtureDb(dir);
+  const db = openDb(dbPath);
+  db.exec('CREATE TABLE kv (key text PRIMARY KEY, value text NOT NULL)');
+  if (marker === 'kv-marker') {
+    db.prepare('INSERT INTO kv (key, value) VALUES (?, ?)').run('migration.v1-v2', '{}');
+  }
+  db.close();
+  return dbPath;
+};
+
+// Records every open so a test can assert a file was never opened for writing.
+const recordingDriver = () => {
+  const opens = [];
+  return {
+    opens,
+    driver: {
+      name: driver.name,
+      open: (dbPath, options = {}) => {
+        opens.push({ dbPath, readonly: options.readonly === true });
+        return driver.open(dbPath, options);
+      },
+    },
+  };
+};
+
+// Native launches only write generation 2. Legacy core tests inject their
+// disposable database explicitly; they do not manufacture a runnable v1 host.
+const recordSelection = (dataDir, dbPath, { ownerPid = process.pid } = {}) => writeOpenCodeRuntimeSelection({
+  version: 1, writtenAt: NOW, ownerPid,
+  runtime: { generation: 2, kind: 'host', binary: '/fixture/native-controller', channel: 'opencode' },
+  opencode: { dataDirectory: path.dirname(dbPath), databasePath: dbPath, configDirectory: null, databaseSource: 'OPENCODE_DB' },
+}, { dataDir });
+const legacyFixtureSelection = dbPath => ({ path: dbPath, source: 'selection', selection: { runtime: { generation: 1 } } });
 
 describe('normalizeOpenCodeDbMaintenanceSettings', () => {
   it('defaults, clamps and honours the opt-out', () => {
@@ -383,6 +438,109 @@ describe('performOpenCodeDbMaintenance', () => {
     expect(result.vacuumed).toBe(false);
     expect(counts(dbPath).perAggregate.ses_idle.n).toBe(100);
   });
+
+  it.each(['kv-marker', 'kv-table'])('refuses to write a v2 database (%s) and deletes nothing', (marker) => {
+    const dbPath = createV2FixtureDb(makeTempDir(), { marker });
+    const before = counts(dbPath);
+    const { driver: recorded, opens } = recordingDriver();
+
+    const result = runCore(dbPath, { driver: recorded, keepSeqPerAggregate: 8, vacuum: 'force' });
+
+    expect(result).toMatchObject({
+      status: 'skipped',
+      error: 'v2_database',
+      generation: 2,
+      deletedEvents: 0,
+      deletedOrphanEvents: 0,
+      prunedEvents: 0,
+      vacuumed: false,
+      before: null,
+    });
+    expect(counts(dbPath)).toEqual(before);
+    expect(before.events).toBe(235);
+    // Never opened read-write: closing such a connection would checkpoint the WAL.
+    expect(opens).toEqual([{ dbPath, readonly: true }]);
+    expect(runCore(dbPath, { driver: recorded, dryRun: true })).toMatchObject({ status: 'skipped', error: 'v2_database', generation: 2 });
+    expect(opens.every((entry) => entry.readonly)).toBe(true);
+  });
+
+  it('still maintains a real-shaped 1.18.x database (v1 `migration` journal, no drizzle table)', () => {
+    const dbPath = createFixtureDb(makeTempDir());
+    const { driver: recorded, opens } = recordingDriver();
+
+    const result = runCore(dbPath, { driver: recorded, keepSeqPerAggregate: 64 });
+
+    expect(result).toMatchObject({ status: 'ok', generation: 1, schema: 'ok', deletedEvents: 56, error: null });
+    expect(counts(dbPath).events).toBe(179);
+    // Generation probed read-only first, then reopened for the writes.
+    expect(opens).toEqual([{ dbPath, readonly: true }, { dbPath, readonly: false }]);
+  });
+
+  it('never opens a file read-write that is not positively a v1 database', () => {
+    // Schema-complete but without any v1 migration journal: neither v1 nor v2.
+    const dbPath = createFixtureDb(makeTempDir(), { v1Journal: false });
+    const before = counts(dbPath);
+    const { driver: recorded, opens } = recordingDriver();
+
+    const result = runCore(dbPath, { driver: recorded, keepSeqPerAggregate: 8, vacuum: 'force' });
+
+    expect(result).toMatchObject({ status: 'skipped', error: 'database_generation_unknown', generation: 'unknown', deletedEvents: 0, vacuumed: false, before: null });
+    expect(counts(dbPath)).toEqual(before);
+    expect(opens).toEqual([{ dbPath, readonly: true }]);
+  });
+
+  it('mutates only for a named generation-1 runtime; dry runs need none', () => {
+    const dbPath = createFixtureDb(makeTempDir());
+    const before = counts(dbPath);
+
+    expect(runCore(dbPath, { runtimeGeneration: null, vacuum: 'force' }))
+      .toMatchObject({ status: 'skipped', error: 'runtime_generation_unknown', deletedEvents: 0, vacuumed: false });
+    expect(runCore(dbPath, { runtimeGeneration: undefined }))
+      .toMatchObject({ status: 'skipped', error: 'runtime_generation_unknown' });
+    expect(runCore(dbPath, { runtimeGeneration: 2 }))
+      .toMatchObject({ status: 'skipped', error: 'runtime_generation_unsupported', deletedEvents: 0 });
+    expect(counts(dbPath)).toEqual(before);
+
+    expect(runCore(dbPath, { runtimeGeneration: null, dryRun: true }))
+      .toMatchObject({ status: 'ok', orphanEvents: 20, prunableEvents: 36, deletedEvents: 0 });
+    expect(counts(dbPath)).toEqual(before);
+  });
+});
+
+describe('detectOpenCodeDbGeneration', () => {
+  const generationOf = (dbPath, mutate = () => {}) => {
+    const db = openDb(dbPath);
+    try {
+      mutate(db);
+      return detectOpenCodeDbGeneration(db);
+    } finally {
+      db.close();
+    }
+  };
+
+  it('recognises every 1.18.x shape as v1; a `migration` table alone is not v2', () => {
+    // Companion `opencode-devryan.db`: `migration` + `session_context_epoch`, no drizzle table.
+    expect(generationOf(createFixtureDb(makeTempDir()))).toBe(1);
+    // Older `opencode.db`: both journals.
+    expect(generationOf(createFixtureDb(makeTempDir()), (db) => {
+      db.exec('CREATE TABLE __drizzle_migrations (id integer PRIMARY KEY, hash text NOT NULL, created_at numeric)');
+    })).toBe(1);
+    // Drizzle journal only.
+    expect(generationOf(createFixtureDb(makeTempDir(), { v1Journal: false }), (db) => {
+      db.exec('CREATE TABLE __drizzle_migrations (id integer PRIMARY KEY, hash text NOT NULL, created_at numeric)');
+    })).toBe(1);
+  });
+
+  it('reports unknown without a v1 journal or without session_context_epoch', () => {
+    expect(generationOf(createFixtureDb(makeTempDir(), { v1Journal: false }))).toBe('unknown');
+    expect(generationOf(createFixtureDb(makeTempDir()), (db) => db.exec('DROP TABLE session_context_epoch'))).toBe('unknown');
+  });
+
+  it('recognises v2 by its kv table, with or without the migration.v1-v2 marker', () => {
+    for (const marker of ['kv-marker', 'kv-table']) {
+      expect(generationOf(createV2FixtureDb(makeTempDir(), { marker }))).toBe(2);
+    }
+  });
 });
 
 describe('inspectOpenCodeDb', () => {
@@ -391,7 +549,7 @@ describe('inspectOpenCodeDb', () => {
 
     const inspection = inspectOpenCodeDb({ driver, dbPath });
 
-    expect(inspection).toMatchObject({ dbPath, exists: true, schema: 'ok', eventRows: 235, orphanEventRows: 20, error: null });
+    expect(inspection).toMatchObject({ dbPath, exists: true, generation: 1, schema: 'ok', eventRows: 235, orphanEventRows: 20, error: null });
     expect(inspection.dbBytes).toBeGreaterThan(0);
     expect(inspection.pageSize).toBeGreaterThan(0);
     expect(inspection.reclaimableBytes).toBe(inspection.freelistPages * inspection.pageSize);
@@ -412,15 +570,26 @@ describe('inspectOpenCodeDb', () => {
     expect(inspection.schema).toBe('mismatch');
     expect(inspection.error).toContain('schema_mismatch');
   });
+
+  it('reports the database generation and stops at a v2 file, opening it read-only', () => {
+    const v2Path = createV2FixtureDb(makeTempDir());
+    const { driver: recorded, opens } = recordingDriver();
+    expect(inspectOpenCodeDb({ driver: recorded, dbPath: v2Path })).toMatchObject({ exists: true, generation: 2, error: 'v2_database', eventRows: 0 });
+    expect(opens).toEqual([{ dbPath: v2Path, readonly: true }]);
+
+    const v1Path = createFixtureDb(makeTempDir());
+    expect(inspectOpenCodeDb({ driver, dbPath: v1Path })).toMatchObject({ generation: 1, schema: 'ok', eventRows: 235, error: null });
+  });
 });
 
 describe('createOpenCodeDbMaintenance', () => {
-  const createRuntime = (dbPath, dataDir, overrides = {}) => {
+  const createRuntime = (dbPath, dataDir, { selection = true, ...overrides } = {}) => {
     const journal = vi.fn();
     const logger = { log: vi.fn(), warn: vi.fn() };
     const maintenance = createOpenCodeDbMaintenance({
-      dbPath,
       dataDir,
+      resolveDatabase: () => selection ? legacyFixtureSelection(dbPath)
+        : resolveOpenCodeDatabaseSelection({ dataDir, opencodeDataPath: path.dirname(dbPath) }),
       now: () => NOW,
       checkFreeDiskBytes: () => 1e12,
       listOtherOpenCodeProcesses: () => [],
@@ -548,6 +717,78 @@ describe('createOpenCodeDbMaintenance', () => {
     expect(maintenance.isRunning()).toBe(false);
   });
 
+  it('refuses mutations without a runtime selection, persisting and journaling the skip', async () => {
+    const dir = makeTempDir();
+    const dbPath = createFixtureDb(dir);
+    const before = counts(dbPath);
+    // Legacy fallback over the fixture directory only (never the real data dir).
+    const resolveDatabase = () => resolveOpenCodeDatabaseSelection({ dataDir: dir, opencodeDataPath: dir });
+    const { maintenance, journal } = createRuntime(dbPath, dir, { selection: false, resolveDatabase });
+
+    const result = await maintenance.run({ vacuum: 'force', reason: 'startup' });
+
+    expect(result).toMatchObject({
+      status: 'skipped',
+      error: 'runtime_selection_unavailable',
+      dbSource: 'legacy-newest',
+      runtimeGeneration: null,
+      deletedEvents: 0,
+      vacuumed: false,
+    });
+    expect(counts(dbPath)).toEqual(before);
+    expect(maintenance.readState().lastRun).toMatchObject({ status: 'skipped', error: 'runtime_selection_unavailable' });
+    expect(journal).toHaveBeenCalledWith(expect.objectContaining({
+      event: OPENCODE_DB_MAINTENANCE_JOURNAL_EVENT,
+      payload: expect.objectContaining({ error: 'runtime_selection_unavailable' }),
+    }));
+
+    // Read-only views may still use the legacy guess, and say so.
+    const dry = await maintenance.run({ dryRun: true });
+    expect(dry).toMatchObject({ status: 'ok', dbSource: 'legacy-newest', orphanEvents: 20, deletedEvents: 0 });
+    const inspection = await maintenance.inspect();
+    expect(inspection).toMatchObject({ dbPath, dbSource: 'legacy-newest', runtimeGeneration: null, eventRows: 235 });
+    expect(counts(dbPath)).toEqual(before);
+  });
+
+  it('treats a record written by another server process as no selection', async () => {
+    const dir = makeTempDir();
+    const dbPath = createFixtureDb(dir);
+    const before = counts(dbPath);
+    recordSelection(dir, dbPath, { ownerPid: process.pid + 1 });
+    const { maintenance } = createRuntime(dbPath, dir, { selection: false });
+
+    expect(await maintenance.run({ vacuum: 'force' }))
+      .toMatchObject({ status: 'skipped', error: 'runtime_selection_unavailable', runtimeGeneration: null, deletedEvents: 0 });
+    expect(counts(dbPath)).toEqual(before);
+  });
+
+  it('passes the native selected generation to the core and refuses legacy pruning', async () => {
+    const dir = makeTempDir();
+    const dbPath = createFixtureDb(dir);
+    recordSelection(dir, dbPath);
+    const { maintenance } = createRuntime(dbPath, dir, { selection: false });
+
+    expect(maintenance.dbPath).toBe(dbPath);
+    expect(await maintenance.inspect()).toMatchObject({ dbPath, dbSource: 'selection', runtimeGeneration: 2 });
+    const eventsBefore = counts(dbPath).events;
+    expect(await maintenance.run({ keepSeqPerAggregate: 8 }))
+      .toMatchObject({ status: 'skipped', error: 'runtime_generation_unsupported', runtimeGeneration: 2, deletedEvents: 0 });
+    expect(counts(dbPath).events).toBe(eventsBefore);
+  });
+
+  it('never prunes a v2 database even when the legacy core fixture names it', async () => {
+    const dir = makeTempDir();
+    const dbPath = createV2FixtureDb(dir);
+    const before = counts(dbPath);
+    const { maintenance } = createRuntime(dbPath, dir);
+
+    const result = await maintenance.run({ vacuum: 'force', keepSeqPerAggregate: 8, reason: 'compact' });
+
+    expect(result).toMatchObject({ status: 'skipped', error: 'v2_database', generation: 2, deletedEvents: 0, vacuumed: false });
+    expect(counts(dbPath)).toEqual(before);
+    expect(maintenance.readState().lastRun).toMatchObject({ error: 'v2_database' });
+  });
+
   it('runs end-to-end through the worker-thread executor', async () => {
     const dir = makeTempDir();
     // The real worker has its own clock; keep its active/idle fixtures relative
@@ -555,8 +796,8 @@ describe('createOpenCodeDbMaintenance', () => {
     const dbPath = createFixtureDb(dir, { idleBytes: 8 * 1024, now: Date.now() });
     const journal = vi.fn();
     const maintenance = createOpenCodeDbMaintenance({
-      dbPath,
       dataDir: dir,
+      resolveDatabase: () => legacyFixtureSelection(dbPath),
       checkFreeDiskBytes: () => 1e12,
       listOtherOpenCodeProcesses: () => [],
       journal,
@@ -584,7 +825,7 @@ describe('createOpenCodeDbMaintenance', () => {
       workerUrl: new URL('./db-maintenance-worker.missing.js', import.meta.url),
     });
 
-    const result = await execute({ dbPath, dryRun: false, idleHours: 24, keepSeqPerAggregate: 64, vacuum: 'never', timeBudgetMs: null, reason: 'startup', freeDiskBytes: 1e12, otherProcesses: [] });
+    const result = await execute({ dbPath, dryRun: false, idleHours: 24, keepSeqPerAggregate: 64, vacuum: 'never', timeBudgetMs: null, reason: 'startup', freeDiskBytes: 1e12, otherProcesses: [], runtimeGeneration: 1 });
 
     expect(result).toMatchObject({ status: 'ok', deletedEvents: 56 });
     expect(logger.warn).toHaveBeenCalledWith(

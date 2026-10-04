@@ -117,21 +117,21 @@ describe("send config resolution", () => {
     }).variant).toBeNull()
   })
 
-  test("falls back from a stale session model that is absent from the provider catalog", () => {
+  test("preserves a saved session model absent from the provider catalog", () => {
     const result = resolveSessionSendConfigSnapshot(snapshot({
       sessionModelSelection: { providerId: "codex", modelId: "gpt-5.4" },
     }))
 
     expect(result).toEqual({
-      providerID: "openai",
-      modelID: "gpt-5.5",
+      providerID: "codex",
+      modelID: "gpt-5.4",
       agent: "builder",
       variant: "medium",
       planMode: false,
     })
   })
 
-  test("does not route a send through an explicitly unavailable model", () => {
+  test("captures an unavailable tuple unchanged for dispatch validation", () => {
     const result = resolveSessionSendConfigSnapshot(snapshot({
       currentProviderId: "openai",
       currentModelId: "gpt-5.6-luna",
@@ -145,9 +145,9 @@ describe("send config resolution", () => {
       }],
     }))
 
-    expect(result.providerID).toBe(undefined)
-    expect(result.modelID).toBe(undefined)
-    expect(result.variant).toBe(undefined)
+    expect(result.providerID).toBe("openai")
+    expect(result.modelID).toBe("gpt-5.6-luna")
+    expect(result.variant).toBe("high")
   })
 
   test("preserves the OpenAI Luna model and supported reasoning variant", () => {
@@ -173,7 +173,7 @@ describe("send config resolution", () => {
     })
   })
 
-  test("migrates a stale OpenAI none variant to Light before sending", () => {
+  test("preserves an explicit OpenAI none variant before dispatch", () => {
     const result = resolveSessionSendConfigSnapshot(snapshot({
       currentProviderId: "openai",
       currentModelId: "gpt-5.6-luna",
@@ -191,7 +191,7 @@ describe("send config resolution", () => {
       providerID: "openai",
       modelID: "gpt-5.6-luna",
       agent: "builder",
-      variant: "low",
+      variant: "none",
       planMode: false,
     })
   })
@@ -715,7 +715,7 @@ describe("send config resolution", () => {
     expect(result.variant).toBe("ultra")
   })
 
-  test("drops stale current variants when provider metadata is unavailable", () => {
+  test("preserves captured current variants when provider metadata is unavailable", () => {
     useConfigStore.setState({
       currentProviderId: "openai",
       currentModelId: "gpt-5.5",
@@ -728,12 +728,12 @@ describe("send config resolution", () => {
       providerID: "openai",
       modelID: "gpt-5.5",
       agent: "builder",
-      variant: undefined,
+      variant: "medium",
       planMode: false,
     })
   })
 
-  test("drops stale session variants when provider metadata is unavailable", () => {
+  test("preserves captured session variants when provider metadata is unavailable", () => {
     const result = resolveSessionSendConfigSnapshot(snapshot({
       currentProviderId: "openai",
       currentModelId: "gpt-5.5",
@@ -746,12 +746,12 @@ describe("send config resolution", () => {
       providerID: "openai",
       modelID: "gpt-5.5",
       agent: "builder",
-      variant: undefined,
+      variant: "medium",
       planMode: false,
     })
   })
 
-  test("drops unadvertised OpenAI fast mode for current draft sends", () => {
+  test("preserves unadvertised OpenAI fast mode for current draft sends", () => {
     useConfigStore.setState({
       currentProviderId: "openai",
       currentModelId: "gpt-5.5",
@@ -773,12 +773,12 @@ describe("send config resolution", () => {
       providerID: "openai",
       modelID: "gpt-5.5",
       agent: "builder",
-      variant: null,
+      variant: "fast",
       planMode: false,
     })
   })
 
-  test("drops persisted draft fast send config for unadvertised OpenAI fast models", () => {
+  test("preserves persisted draft fast send config for unadvertised OpenAI fast models", () => {
     const result = resolveDraftSendSelection({
       requestedAgent: undefined,
       currentAgent: "builder",
@@ -806,11 +806,11 @@ describe("send config resolution", () => {
       agent: "builder",
       providerID: "openai",
       modelID: "gpt-5.5",
-      variant: null,
+      variant: "fast",
     })
   })
 
-  test("drops session fast selections for unadvertised OpenAI fast models", () => {
+  test("preserves session fast selections for unadvertised OpenAI fast models", () => {
     const result = resolveSessionSendConfigSnapshot(snapshot({
       currentProviderId: "openai",
       currentModelId: "gpt-5.5",
@@ -829,12 +829,12 @@ describe("send config resolution", () => {
       providerID: "openai",
       modelID: "gpt-5.5",
       agent: "builder",
-      variant: null,
+      variant: "fast",
       planMode: false,
     })
   })
 
-  test("drops unsupported fast selections before send", () => {
+  test("preserves unsupported fast selections before send", () => {
     const result = resolveSessionSendConfigSnapshot(snapshot({
       currentProviderId: "anthropic",
       currentModelId: "claude-sonnet-4-5",
@@ -850,7 +850,7 @@ describe("send config resolution", () => {
       providerID: "anthropic",
       modelID: "claude-sonnet-4-5",
       agent: "builder",
-      variant: null,
+      variant: "fast",
       planMode: false,
     })
   })
@@ -934,16 +934,16 @@ describe("send config resolution", () => {
 
 
 describe("new chat thinking captures", () => {
-  test("freezes Medium without mutating provider defaults or an existing queue snapshot", () => {
+  test("preserves explicit provider default in new and queued chat snapshots", () => {
     const state = snapshot()
     const legacy = Object.freeze({ providerID: "openai", modelID: "gpt-5.5", agent: "builder", variant: null, planMode: false })
     const captured = normalizeNewChatSendConfig(legacy, state.providers)
-    expect(captured.variant).toBe("medium")
+    expect(captured.variant).toBeNull()
     expect(legacy.variant).toBeNull()
     expect(resolveSessionSendConfigSnapshot(state, legacy).variant).toBeNull()
     state.currentVariant = "high"
-    expect(captured.variant).toBe("medium")
-    expect(resolveSessionSendConfigSnapshot(state, captured).variant).toBe("medium")
+    expect(captured.variant).toBeNull()
+    expect(resolveSessionSendConfigSnapshot(state, captured).variant).toBeNull()
   })
   test("keeps explicit effort and native no-thinking models unchanged", () => {
     const state = snapshot()

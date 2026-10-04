@@ -1,58 +1,12 @@
-import { describe, expect, test } from 'bun:test';
-import { resolveOpenCodeVersionViewStatus } from './openCodeVersionState';
-
-const state = {
-  checked: false,
-  checking: false,
-  error: null,
-  currentVersion: '1.18.10',
-  latestVersion: null,
-  updateAvailable: null,
-};
-
-describe('OpenCode version section states', () => {
-  test('covers initial and checking states', () => {
-    expect(resolveOpenCodeVersionViewStatus(state)).toBe('idle');
-    expect(resolveOpenCodeVersionViewStatus({ ...state, checking: true })).toBe('checking');
-  });
-
-  test('reports available, current, and newer-than-latest versions distinctly', () => {
-    expect(resolveOpenCodeVersionViewStatus({
-      ...state,
-      checked: true,
-      latestVersion: '1.18.10',
-      updateAvailable: true,
-    })).toBe('updateAvailable');
-
-    expect(resolveOpenCodeVersionViewStatus({
-      ...state,
-      checked: true,
-      latestVersion: '1.18.10',
-      updateAvailable: false,
-    })).toBe('upToDate');
-
-    expect(resolveOpenCodeVersionViewStatus({
-      ...state,
-      checked: true,
-      currentVersion: '1.18.11',
-      latestVersion: '1.18.10',
-      updateAvailable: false,
-    })).toBe('newerThanLatest');
-  });
-
-  test('keeps unknown-version and failure states explicit', () => {
-    expect(resolveOpenCodeVersionViewStatus({
-      ...state,
-      checked: true,
-      currentVersion: null,
-      latestVersion: '1.18.10',
-      updateAvailable: null,
-    })).toBe('currentUnavailable');
-
-    expect(resolveOpenCodeVersionViewStatus({
-      ...state,
-      checked: true,
-      error: 'Unable to check',
-    })).toBe('error');
-  });
+import {describe,expect,test} from 'bun:test';
+import {parseBundledRuntimeVersion} from './openCodeVersionState';
+describe('bundled runtime version metadata',()=>{
+ test('uses verified native metadata while retaining unavailable readiness',()=>{
+  expect(parseBundledRuntimeVersion({source:'verified-native-bundle',targetVersion:'2.0.20',detectedVersion:'2.0.20'})).toEqual({version:'2.0.20',ready:true});
+  expect(parseBundledRuntimeVersion({source:'verified-native-bundle',targetVersion:'2.0.20',detectedVersion:null})).toEqual({version:'2.0.20',ready:false});
+  expect(parseBundledRuntimeVersion({source:'verified-native-bundle',targetVersion:'2.0.20',detectedVersion:'1.18.31'})).toEqual({version:'2.0.20',ready:false});
+ });
+ test('rejects unverified or unsupported identities',()=>{
+  for(const value of [null,{}, {source:'PATH',targetVersion:'2.0.20',detectedVersion:'2.0.20'}, {source:'verified-native-bundle',targetVersion:'1.18.31'}])expect(parseBundledRuntimeVersion(value)).toBeNull();
+ });
 });

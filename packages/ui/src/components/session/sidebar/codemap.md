@@ -23,6 +23,10 @@ Coding Agents owns drafts/projects/sessions/search/multi-run/scheduled actions,
 while Bots owns only `components/bots/sidebar/`. Bot selection coalesces owner
 channel creation without clearing the ordinary session/draft/main-tab state;
 switching back restores it. `SessionNodeItem.tsx` remains Bot-unaware.
+Each row's single leading status slot (question/working/plan/error/completion,
+or an idle ring) is resolved in `sessionIndicator.ts` and drawn by
+`SessionStatusDot.tsx`, which the mobile session status bar reuses; working is a
+slow gray blink there rather than a trailing spinner.
 Active root rows and automatic worktree groups consume the low-frequency latest
 visible user-prompt projection. Pinned and manual ordering remain authoritative;
 assistant streaming, status, title, and `session.time.updated` churn never move

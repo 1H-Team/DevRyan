@@ -1,4 +1,9 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeEach, afterEach, describe, expect, test } from 'bun:test';
+
+import { opencodeClient } from './opencode/client';
+let releaseGate: (() => void) | undefined;
+beforeEach(() => { releaseGate = opencodeClient.registerInputSubscriptionGate(async () => () => {}); });
+afterEach(() => releaseGate?.());
 
 import { createManagedOrchestrationApi, ManagedOrchestrationApiError } from './orchestrationApi';
 

@@ -333,6 +333,7 @@ export const createUiAuth = ({
   readSettingsFromDiskMigrated,
 } = {}) => {
   const normalizedPassword = normalizePassword(password);
+  let disposed = false;
   const sessionCookie = (req) => {
     const name = cookieName ?? requestUiSessionCookieName(req);
     if (!name) throw new Error('The UI session listening port is unavailable');
@@ -364,6 +365,7 @@ export const createUiAuth = ({
 
     return {
       enabled: false,
+      captureAuthorization: () => () => !disposed,
       requireAuth: (_req, _res, next) => next(),
       handleSessionStatus: (_req, res) => {
         res.json({ authenticated: true, disabled: true });
@@ -400,7 +402,7 @@ export const createUiAuth = ({
       },
       ensureSessionToken,
       dispose: () => {
-
+        disposed = true;
       },
     };
   }
@@ -488,6 +490,19 @@ export const createUiAuth = ({
     } catch {
       return false;
     }
+  };
+  // Capture verified claims and the current signing generation, not a bearer.
+  // Secret rotation, expiry and disposal revoke already-issued native grants.
+  const captureAuthorization = async (req) => {
+    const token = getTokenFromRequest(req);
+    if (disposed || !token) return null;
+    try {
+      const { jwtVerify } = await loadJose(), secret = jwtSecret;
+      const { payload } = await jwtVerify(token, secret, { audience: sessionCookie(req) });
+      if (!Number.isFinite(payload.exp)) return null;
+      const expiresAt = payload.exp * 1000;
+      return () => !disposed && secret === jwtSecret && Date.now() < expiresAt;
+    } catch { return null; }
   };
 
   const issueSession = async (req, res, { trustDevice = false } = {}) => {
@@ -659,6 +674,7 @@ export const createUiAuth = ({
   };
 
   const dispose = () => {
+    disposed = true;
     loginRateLimiter.clear();
     if (rateLimitCleanupTimer) {
       clearInterval(rateLimitCleanupTimer);
@@ -669,6 +685,7 @@ export const createUiAuth = ({
 
   return {
     enabled: true,
+    captureAuthorization,
     requireAuth,
     handleSessionStatus,
     handleSessionCreate,

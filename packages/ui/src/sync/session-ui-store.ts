@@ -368,6 +368,9 @@ async function routeMessage(params: {
     throwIfAborted(params.lifecycleCallbacks?.signal)
     await params.lifecycleCallbacks?.awaitTransportGate?.()
     assertTransportAllowed()
+    const assertSubscription = await opencodeClient.awaitInputSubscription(params.lifecycleCallbacks?.signal)
+    assertTransportAllowed()
+    assertSubscription()
     const sdk = opencodeClient.getSdkClient()
     await sdk.session.shell({
       sessionID: params.sessionId,
@@ -470,6 +473,7 @@ async function routeMessage(params: {
           variant: params.variant,
           files: params.files,
           messageId: messageID,
+          delivery: params.lifecycleCallbacks?.delivery,
           directory: messageDirectory,
           signal: params.lifecycleCallbacks?.signal,
           beforeTransport: assertTransportAllowed,
@@ -522,6 +526,7 @@ async function routeMessage(params: {
         files: params.files,
         additionalParts,
         messageId: messageID,
+        delivery: params.lifecycleCallbacks?.delivery,
         directory: messageDirectory,
         signal: params.lifecycleCallbacks?.signal,
         beforeTransport: assertTransportAllowed,
@@ -589,6 +594,7 @@ export type ViewportAnchor = {
 }
 
 type SendLifecycleCallbacks = {
+  delivery?: 'queue' | 'steer'
   messageID?: string
   directory?: string
   onMessageID?: (messageID: string) => void

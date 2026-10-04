@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { createSessionChangeRuntime } from './session-changes.js';
 import { createSessionChangeHost } from './session-changes-host.js';
 import { openChangeStore, changeKey } from './session-changes-store.js';
+import { createNativeConsumerFixture } from '../../web/server/lib/opencode/test-native-consumer-client.js';
 
 const test = (name, run) => bunTest(name, run, 60_000);
 let base, directory, storage, runtime, events;
@@ -135,7 +136,7 @@ test('child receipts notify ancestors absent from the UI and survive deletion of
 });
 
 const makeHost = (fetchImpl) => createSessionChangeHost({ dataDirectory: base,
-  buildOpenCodeUrl: (pathname) => `http://fixture${pathname}`, fetchImpl });
+  openCodeClient: createNativeConsumerFixture({ readFixture: fetchImpl, baseUrl: 'http://fixture' }) });
 const endpoint = () => `/api/openchamber/session/ses_root/changes?directory=${encodeURIComponent(directory)}`;
 
 test('hook resolution follows history pages and later uses canonical message identity', async () => {

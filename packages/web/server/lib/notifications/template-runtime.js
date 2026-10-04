@@ -1,14 +1,15 @@
 import { isPlanControlTitle, summarizeText as summarizeSharedText } from '../text/summarization.js';
 import { stripMessageDiffContent, stripSessionDiffContent } from '../opencode/diff-summary.js';
 import { createFreeZenModelCatalog } from '@openchamber/shared-runtime';
+import { openCodeClientErrorStatus, resolveGen2OpenCodeClient } from '../opencode/opencode-client-seam.js';
 
 export const createNotificationTemplateRuntime = (deps) => {
   const {
     readSettingsFromDisk,
     persistSettings,
-    buildOpenCodeUrl,
-    getOpenCodeAuthHeaders,
     resolveGitBinaryForSpawn,
+    // Runtime reads use the required native application client.
+    openCodeClient,
   } = deps;
 
   const NOTIFICATION_BODY_MAX_CHARS = 1000;
@@ -260,21 +261,9 @@ export const createNotificationTemplateRuntime = (deps) => {
     if (!sessionId) return [];
 
     try {
-      const url = buildOpenCodeUrl(`/session/${encodeURIComponent(sessionId)}/message`, '');
-      const response = await fetch(`${url}?limit=${encodeURIComponent(limit)}`, {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          ...getOpenCodeAuthHeaders(),
-        },
-        signal: AbortSignal.timeout(3000),
-      });
-
-      if (!response.ok) return [];
-      const messages = await response.json().catch(() => null);
-      // Diff snapshots can dominate the payload (~92MB observed); notification
-      // templates only read message text/metadata, never patch bodies.
-      return Array.isArray(messages) ? messages.map(stripMessageDiffContent) : [];
+      const client = resolveGen2OpenCodeClient(openCodeClient);
+      const page = await client.sessions.messages(sessionId, { limit }, { timeoutMs: 3000 });
+      return Array.isArray(page?.records) ? page.records.map(stripMessageDiffContent) : [];
     } catch {
       return [];
     }
@@ -343,6 +332,19 @@ export const createNotificationTemplateRuntime = (deps) => {
     cacheSessionInfo(info.id, info);
   };
 
+  // The raw session record, or null when OpenCode refuses the read (logged).
+  const readOpenCodeSessionInfo = async (sessionId) => {
+    const client = resolveGen2OpenCodeClient(openCodeClient);
+    try {
+      return await client.sessions.get(sessionId, { timeoutMs: 2000 });
+    } catch (error) {
+      const status = openCodeClientErrorStatus(error);
+      if (!status) throw error;
+      console.warn(`[Notification] fetchSessionInfo: ${status} for session ${sessionId}`);
+      return null;
+    }
+  };
+
   const fetchSessionInfo = async (sessionId) => {
     if (!sessionId) return null;
 
@@ -352,20 +354,7 @@ export const createNotificationTemplateRuntime = (deps) => {
     }
 
     try {
-      const url = buildOpenCodeUrl(`/session/${encodeURIComponent(sessionId)}`, '');
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          ...getOpenCodeAuthHeaders(),
-        },
-        signal: AbortSignal.timeout(2000),
-      });
-      if (!response.ok) {
-        console.warn(`[Notification] fetchSessionInfo: ${response.status} for session ${sessionId}`);
-        return null;
-      }
-      const rawData = await response.json().catch(() => null);
+      const rawData = await readOpenCodeSessionInfo(sessionId);
       if (rawData && typeof rawData === 'object') {
         // Session objects can carry a top-level diff summary; drop patch bodies
         // before caching so the cache holds metadata, not workspace diffs.

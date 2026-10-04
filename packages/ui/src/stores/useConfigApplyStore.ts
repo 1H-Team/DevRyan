@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { invalidateRuntimeCapabilities, refreshRuntimeCapabilities } from '@/lib/opencode/runtime-capabilities';
 
 import { finishConfigUpdate, startConfigUpdate } from '@/lib/configUpdate';
 import { opencodeClient } from '@/lib/opencode/client';
@@ -198,6 +199,10 @@ export const useConfigApplyStore = create<ConfigApplyStore>((set, get) => {
     const previous = get().status;
     set({ status: next, hydrated: true, requestError: null });
     syncRestartOverlay(next);
+    if (next.state === 'applying' && previous?.state !== 'applying') invalidateRuntimeCapabilities();
+    if (previous && next.appliedRevision > previous.appliedRevision && !next.pending) {
+      void refreshRuntimeCapabilities();
+    }
 
     const fallbackScopes = previous?.pending
       && !next.pending

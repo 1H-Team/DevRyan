@@ -9,7 +9,7 @@ import { executionSocketDirectory, NODE_SPAWN_PRELOAD, ownedPrivateDirectory, pr
 
 const roots = [], leases = [];
 afterEach(async () => {
-  await Promise.all(leases.splice(0).map((lease) => removeExecutionSocketDirectory(lease)));
+  for (const lease of leases.splice(0)) await removeExecutionSocketDirectory(lease);
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 const prepareTracked = (root, viewDirectory) => {
@@ -294,4 +294,30 @@ darwinTest('the sweep removes only stale hash-named socket directories', async (
   await fs.utimes(path.join(root, '0123abcd'), old, old); await fs.utimes(path.join(root, 'not-a-lease'), old, old);
   expect(await sweepExecutionSocketDirectories({ root })).toBe(1);
   expect((await fs.readdir(root)).sort()).toEqual(['fedc9876', 'not-a-lease']);
+});
+
+test('explicit lease-local socket policy survives restart and rejects forged cleanup paths', async () => {
+  const root = await fs.realpath(await fs.mkdtemp(path.join(process.env.TMPDIR, 'native-private-socket-'))); roots.push(root);
+  const viewDirectory = path.join(root, 'worktree'); await fs.mkdir(viewDirectory, { mode: 0o700 });
+  const lease = { viewDirectory }, socketDirectory = path.join(root, 'scratch', 's');
+  const prepared = await prepareSessionExecution({ launcher: path.join(root, 'launcher'), lease, socketDirectory, workerBrowsers: false });
+  expect(prepared.socketDirectory).toBe(socketDirectory);
+  expect(await fs.readFile(prepared.profile, 'utf8')).toContain(`(remote unix-socket (subpath ${JSON.stringify(socketDirectory)}))`);
+  expect(JSON.parse(await fs.readFile(path.join(root, 'no-execution-socket.json'), 'utf8'))).toEqual({ version: 1, directory: socketDirectory });
+  await fs.writeFile(path.join(socketDirectory, 'owned-daemon-state'), 'owned');
+  await removeExecutionSocketDirectory(lease); // No constructor option survives a restart.
+  expect(await fs.lstat(socketDirectory).catch(error => error.code)).toBe('ENOENT');
+  await removeExecutionSocketDirectory(lease); // Lost cleanup ACK is idempotent.
+  const outside = await fs.realpath(await fs.mkdtemp(path.join(process.env.TMPDIR, 'foreign-socket-'))); roots.push(outside);
+  await fs.writeFile(path.join(outside, 'preserve'), 'foreign');
+  const policy = path.join(root, 'no-execution-socket.json');
+  await fs.writeFile(policy, JSON.stringify({ version: 1, directory: outside }));
+  await expect(removeExecutionSocketDirectory(lease)).rejects.toMatchObject({ code: 'invalid_execution_path' });
+  expect(await fs.readFile(path.join(outside, 'preserve'), 'utf8')).toBe('foreign');
+  await fs.symlink(outside, socketDirectory);
+  await fs.writeFile(policy, JSON.stringify({ version: 1, directory: socketDirectory }));
+  await expect(removeExecutionSocketDirectory(lease)).rejects.toMatchObject({ code: 'invalid_execution_path' });
+  expect(await fs.readFile(path.join(outside, 'preserve'), 'utf8')).toBe('foreign');
+  await expect(prepareSessionExecution({ launcher: path.join(root, 'launcher'), lease, socketDirectory: outside, workerBrowsers: false }))
+    .rejects.toMatchObject({ code: 'invalid_execution_path' });
 });

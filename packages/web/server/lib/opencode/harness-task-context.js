@@ -1,41 +1,33 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createTaskContextRuntime, planReference } from '@openchamber/harness-runtime';
 import { currentObjectiveUser } from '@openchamber/harness-runtime/lib/objective-identity.js';
 import { planError, readPlanRevision, writePlanRevision } from '../plans/revisions.js';
 import { resolveSelectedPlanRevision, assertGlobalPlanProjectScope } from '../plans/selected-revision.js';
 import { fingerprintCheckContent } from '../orchestration/required-check-observer.js';
+import { resolveGen2OpenCodeClient } from './opencode-client-seam.js';
 
 const identifier = (value) => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,256}$/.test(value);
 const fault = (code) => Object.assign(new Error(code), { code, statusCode: 503 });
 const managedToolMethods = new Set(['submit', 'status', 'wait', 'wait_any', 'wait_result_action', 'cancel', 'read_result', 'acknowledge', 'set_auto_resume']);
 
 export const createHarnessTaskContextHost = (options) => {
-  const request = async (pathname, directory) => {
-    const url = new URL(options.buildOpenCodeUrl(pathname));
-    url.searchParams.set('directory', directory);
-    const response = await (options.fetchImpl ?? fetch)(url, { headers: options.getOpenCodeAuthHeaders?.() ?? {}, signal: AbortSignal.timeout(5000) });
-    if (!response.ok || !response.body) throw fault('context_canonical_source_unavailable');
-    const reader = response.body.getReader();
-    const chunks = []; let bytes = 0;
-    try {
-      for (;;) {
-        const { done, value } = await reader.read(); if (done) break;
-        bytes += value.byteLength;
-        if (bytes > 8 * 1024 * 1024) throw fault('context_canonical_source_too_large');
-        chunks.push(value);
-      }
-      return { data: JSON.parse(Buffer.concat(chunks).toString('utf8')), next: response.headers.get('x-next-cursor') };
-    } finally { await reader.cancel().catch(() => {}); }
+  const nativeWrites = new AsyncLocalStorage();
+  const canonical = async (read) => {
+    let client;
+    try { client = resolveGen2OpenCodeClient(options.openCodeClient); } catch { throw fault('context_canonical_source_unavailable'); }
+    try { return await read(client); } catch { throw fault('context_canonical_source_unavailable'); }
   };
   const readMessage = async ({ sessionID, directory, messageID }) => {
     if (!identifier(sessionID) || !identifier(messageID)) throw fault('context_invalid_identity');
-    const { data } = await request(`/session/${sessionID}/message/${messageID}`, directory);
+    const data = await canonical((client) => client.sessions.message(sessionID, messageID, { directory, timeoutMs: 5000, maxResponseBytes: 8 * 1024 * 1024 }));
     if (data?.info?.id !== messageID || data.info.sessionID !== sessionID || !Array.isArray(data.parts)) throw fault('context_message_scope_mismatch');
     return data;
   };
-  const readSession = async (sessionID, directory) => (await request(`/session/${sessionID}`, directory)).data;
-  const readProject = async (directory) => (await request('/project/current', directory)).data;
+  const readSession = async (sessionID, directory) => canonical((client) => client.sessions.get(sessionID, { directory, timeoutMs: 5000, maxResponseBytes: 8 * 1024 * 1024 }));
+  const readProject = async (directory) => canonical((client) => client.catalog.project({ directory }, { timeoutMs: 5000 }));
+  const readTodos = async (sessionID, directory) => canonical((client) => client.sessions.todo(sessionID, { directory, timeoutMs: 5000, maxResponseBytes: 8 * 1024 * 1024 }));
   const readCanonicalPlanIdentity = async ({ sessionID, sourceMessageID, directory }) => {
     if (!identifier(sessionID) || !identifier(sourceMessageID) || typeof directory !== 'string' || !path.isAbsolute(directory)) {
       throw planError(400, 'plan_identity_invalid');
@@ -96,6 +88,37 @@ export const createHarnessTaskContextHost = (options) => {
         { code: 'managed_orchestrator_authority_required', statusCode: 403 });
     }
   };
+  const authorizeNativeTaskInvocation = async (input) => {
+    if (!identifier(input?.messageID) || !identifier(input?.callID)) {
+      throw fault('native_task_identity_required');
+    }
+    const tool = input.tool ?? 'devryan_task';
+    if (!['devryan_task', 'council_session'].includes(tool)) throw fault('native_task_identity_required');
+    await authorizePrivateRpc({ method: 'submit', params: { rootSessionId: input.sessionID, directory: input.directory } });
+    const primary = await options.readPrimaryRecord(input.sessionID);
+    const objectiveID = primary?.objectiveID ?? primary?.anchorID;
+    const [assistant, anchor] = await Promise.all([readMessage(input), readMessage({ ...input, messageID: objectiveID })]);
+    if (primary?.stepID !== input.messageID || assistant.info.role !== 'assistant' || assistant.info.time?.completed
+      || assistant.turnOwnership?.source !== 'native-sequence' || assistant.turnOwnership.userMessageID !== currentObjectiveUser(primary)
+      || assistant.info.parentID !== currentObjectiveUser(primary) || anchor.info.role !== 'user'
+      || !assistant.parts.some(part => part.type === 'tool' && part.tool === tool && part.callID === input.callID
+        && part.state?.status === 'running')) throw fault('native_task_call_stale');
+    return { objectiveID, readOnly: anchor.info.metadata?.openchamberPlanMode === true };
+  };
+  const authorizeNativeTodoInvocation = async (input) => {
+    if (!identifier(input?.messageID) || !identifier(input?.callID)
+      || !['todoread','todowrite'].includes(input.tool)) throw fault('native_todo_identity_required');
+    const context=await readScope(input),primary=await options.readPrimaryRecord(input.sessionID);
+    if(context.session.parentID||context.session.time?.archived||primary?.sessionID!==input.sessionID||primary.directory!==input.directory
+      ||!['build','builder','orchestrator'].includes(primary.agent?.toLowerCase())
+      ||['stopping','reconciling','recovery_reserved','recovering','superseded','cancelled','needs_attention'].includes(primary.state)
+      ||primary.recoveryID||primary.guardedIDs?.includes(currentObjectiveUser(primary)))throw fault('native_todo_root_authority_required');
+    const assistant=await readMessage(input);
+    if(primary.stepID!==input.messageID||assistant.info.role!=='assistant'||assistant.info.time?.completed
+      ||assistant.turnOwnership?.source!=='native-sequence'||assistant.turnOwnership.userMessageID!==currentObjectiveUser(primary)
+      ||assistant.info.parentID!==currentObjectiveUser(primary)||!assistant.parts.some(part=>part.type==='tool'&&part.tool===input.tool
+        &&part.callID===input.callID&&part.state?.status==='running'))throw fault('native_todo_call_stale');
+  };
   const readPlanAuthority = async (input) => {
     const context = await readScope(input), primary = await options.readPrimaryRecord(input.sessionID);
     if (context.session.parentID || context.session.time?.archived || primary?.sessionID !== input.sessionID
@@ -105,6 +128,8 @@ export const createHarnessTaskContextHost = (options) => {
       || primary.recoveryID || primary.guardedIDs?.includes(currentObjectiveUser(primary))) throw planError(403, 'plan_root_authority_required');
     const objectiveID = primary.objectiveID ?? primary.anchorID;
     const [anchor, assistant] = await Promise.all([readMessage({ ...input, messageID: objectiveID }), readMessage(input)]);
+    if ((assistant.turnOwnership?.source !== 'native-sequence'
+      || assistant.turnOwnership.userMessageID !== assistant.info.parentID)) throw planError(409, 'plan_call_stale');
     if (primary.stepID !== input.messageID || assistant.info.role !== 'assistant' || assistant.info.time?.completed
       || assistant.info.parentID !== currentObjectiveUser(primary) || !assistant.parts.some((part) => part.type === 'tool'
         && part.tool === 'devryan_task' && part.callID === input.callID && part.state?.status === 'running')) throw planError(409, 'plan_call_stale');
@@ -112,7 +137,7 @@ export const createHarnessTaskContextHost = (options) => {
     if (!plan) throw planError(409, 'plan_selection_required', 'Select a saved plan with Implement before using plan tools');
     return { primary, objectiveID, currentUser: currentObjectiveUser(primary), ...await resolvePlan(plan, context) };
   };
-  const handlePlanRpc = async (input) => {
+  const handlePlanRpc = async (input, recheck) => {
     try {
       if (!input || !['plan_read', 'plan_update'].includes(input.action) || !identifier(input.sessionID) || !identifier(input.messageID)
         || !identifier(input.callID) || Object.keys(input).some((key) => !['action', 'sessionID', 'directory', 'messageID', 'callID', 'expectedVersion', 'text'].includes(key))) {
@@ -125,8 +150,12 @@ export const createHarnessTaskContextHost = (options) => {
           || current.currentUser !== selected.currentUser || current.ownerKey !== selected.ownerKey || current.revision.path !== selected.revision.path) {
           throw planError(409, 'plan_authority_changed');
         }
+        await recheck?.();
       };
-      if (input.action === 'plan_read') return await readPlanRevision(selected.revision, { fsApi: options.fsApi });
+      if (input.action === 'plan_read') {
+        const result = await readPlanRevision(selected.revision, { fsApi: options.fsApi });
+        await authorize(); return result;
+      }
       const result = await writePlanRevision(selected.revision, { text: input.text, expectedVersion: input.expectedVersion, authorize, fsApi: options.fsApi });
       options.recordDiagnostic?.({ type: 'lifecycle', event: 'session_plan_write', sessionID: input.sessionID,
         messageID: input.messageID, payload: { outcome: 'saved', callID: input.callID, version: result.version } });
@@ -143,6 +172,7 @@ export const createHarnessTaskContextHost = (options) => {
   };
   const runtime = createTaskContextRuntime({ ...options,
     fingerprintFiles: fingerprintCheckContent, readMessage, readPlanOutline, readChildAssignment, readScope,
+    async authorizeWrite(input) { await options.authorizeWrite?.(input); await nativeWrites.getStore()?.(); },
     async readTaskState(context) {
       const sessionID = context.session.id, directory = context.session.directory;
       const primary = await options.readPrimaryRecord(sessionID);
@@ -151,9 +181,9 @@ export const createHarnessTaskContextHost = (options) => {
       if (!primary || primary.sessionID !== sessionID || primary.directory !== directory || !identifier(primary.anchorID)) throw fault('context_objective_owner_unavailable');
       // An explicit continuation keeps the objective it continued.
       const objectiveID = identifier(primary.objectiveID) ? primary.objectiveID : primary.anchorID;
-      const [anchor, { data: todos }, managed] = await Promise.all([
+      const [anchor, todos, managed] = await Promise.all([
         readMessage({ sessionID, directory, messageID: objectiveID }),
-        request(`/session/${sessionID}/todo`, directory),
+        readTodos(sessionID, directory),
         options.getManagedRuntime().handleRpc({ method: 'context_state', params: { rootSessionId: sessionID, directory } }),
       ]);
       if (!Array.isArray(todos)) throw fault('context_todos_unavailable');
@@ -161,14 +191,12 @@ export const createHarnessTaskContextHost = (options) => {
     },
   });
   const planOperations = new Set();
-  return { ...runtime, authorizePrivateRpc, readCanonicalPlanIdentity,
-    handlePlanRpc(input) {
-      const operation = handlePlanRpc(input); planOperations.add(operation);
-      void operation.finally(() => planOperations.delete(operation)).catch(() => {});
-      return operation;
-    },
-    async drain() { while (planOperations.size) await Promise.allSettled([...planOperations]); await runtime.drain(); },
-    async handleRpc(input) {
+  const trackPlan = (input, recheck) => {
+    const operation = handlePlanRpc(input, recheck); planOperations.add(operation);
+    void operation.finally(() => planOperations.delete(operation)).catch(() => {});
+    return operation;
+  };
+  const handleContextRpc = async (input) => {
     // Compaction re-anchoring is always on (host kill switch only); it never
     // writes records or exposes model-visible checkpoint tools.
     if (input.action === 'compaction_anchor') {
@@ -181,5 +209,24 @@ export const createHarnessTaskContextHost = (options) => {
     if (input.action === 'remember_decision') return { decision: await runtime.rememberDecision(input) };
     if (input.action === 'decisions') return { decisions: await runtime.decisions(input) };
     throw fault('context_action_invalid');
-  } };
+  };
+  return { ...runtime, authorizePrivateRpc, authorizeNativeTaskInvocation, authorizeNativeTodoInvocation, readCanonicalPlanIdentity,
+    async authorizeNativePlanInvocation(input) {
+      resolveGen2OpenCodeClient(options.openCodeClient);
+      await readPlanAuthority(input);
+    },
+    handleNativePlanRpc(input, recheck) {
+      if (typeof recheck !== 'function') throw fault('native_task_authority_required');
+      return trackPlan(input, recheck);
+    },
+    handleNativeContextRpc(input, recheck) {
+      if (typeof recheck !== 'function') throw fault('native_task_authority_required');
+      return nativeWrites.run(recheck, () => handleContextRpc(input));
+    },
+    handlePlanRpc(input) {
+      return trackPlan(input);
+    },
+    async drain() { while (planOperations.size) await Promise.allSettled([...planOperations]); await runtime.drain(); },
+    handleRpc: handleContextRpc,
+  };
 };

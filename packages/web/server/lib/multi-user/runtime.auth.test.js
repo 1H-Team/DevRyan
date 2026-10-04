@@ -6,7 +6,8 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createMultiUserRuntime } from './runtime.js';
+import { createMultiUserRuntime as createMultiUserRuntimeNative } from './runtime.js';
+import { createNativeConsumerFixture } from '../opencode/test-native-consumer-client.js';
 import { createSessionVault } from './vault.js';
 import { getOpenCodeDataPath } from '../git/service.js';
 
@@ -44,6 +45,34 @@ const registerAdminRoutes = (harness, extras = {}) => {
   ]));
   harness.runtime.registerRoutes(app, extras);
   return handlers;
+};
+
+const createMultiUserRuntime = async (options) => {
+  const runtime = await createMultiUserRuntimeNative(options);
+  const registerRoutes = runtime.registerRoutes;
+  runtime.registerRoutes = (app, dependencies = {}) => registerRoutes({ ...app, use: app.use ?? (() => {}),
+    get: (route, ...handlers) => {
+      app.get(route, ...handlers);
+      if (route === '/api/experimental/session') {
+        // This existing route joins the registration-time reconciliation before
+        // fixture deletion. dispose drains other owners, not this Git writer.
+        fixtureReconciliationDrains.push(() => handlers.at(-1)({
+          principal: { scope: 'managed', id: USER_IDS.developer }, query: {},
+        }, makeResponse(), vi.fn()));
+      }
+    },
+  }, {
+    ...dependencies, openCodeClient: dependencies.openCodeClient ?? createNativeConsumerFixture({ readFixture: options.fetchImpl }),
+  });
+  return runtime;
+};
+
+const domainClient = (harness) => {
+  const client = createNativeConsumerFixture({ readFixture: harness.fetchImpl });
+  const list = client.sessions.list;
+  client.sessions.list = async (query = {}, options) => (await list(query, options))
+    .filter((session) => query.archived === undefined || Boolean(session.time?.archived) === query.archived);
+  return client;
 };
 
 const USER_IDS = {
@@ -159,8 +188,10 @@ const waitForCondition = async (predicate) => {
 
 const temporaryDirectories = [];
 const activeRuntimes = [];
+const fixtureReconciliationDrains = [];
 
 afterEach(async () => {
+  await Promise.all(fixtureReconciliationDrains.splice(0).map((drain) => drain()));
   vi.restoreAllMocks();
   await Promise.all(activeRuntimes.splice(0).map((runtime) => runtime.authController.dispose()));
   await Promise.all(temporaryDirectories.splice(0).map((directory) => (
@@ -252,7 +283,7 @@ const createHarness = async ({
           const session = {
             id: `created-session-${openCodeSessionCreateCount}`,
             title: body?.title || `New session - ${new Date().toISOString()}`,
-            directory: body?.directory || '',
+            directory: url.searchParams.get('directory') || '',
             ...(body?.parentID ? { parentID: body.parentID } : {}),
             time: { created: Date.now(), updated: Date.now() },
           };
@@ -690,7 +721,10 @@ const createHarness = async ({
         return jsonResponse([]);
       }
       const match = [...sessions.values()].find((session) => (
-        !tokenHashFilter || session.session_token_hash === tokenHashFilter.replace(/^eq\./, '')
+        (!tokenHashFilter || session.session_token_hash === tokenHashFilter.replace(/^eq\./, ''))
+        && (!idFilter || session.id === idFilter.replace(/^eq\./, ''))
+        && (!url.searchParams.has('user_id') || session.user_id === url.searchParams.get('user_id').replace(/^eq\./, ''))
+        && (!url.searchParams.has('expires_at') || Date.parse(session.expires_at) > Date.parse(url.searchParams.get('expires_at').replace(/^gt\./, '')))
       ));
       return jsonResponse(match && !match.revoked_at ? [match] : []);
     }
@@ -736,6 +770,7 @@ const createHarness = async ({
     getOwnershipWriteAttemptCount: () => ownershipWriteAttemptCount,
     getProfile: (userId) => profileById(userId),
     getOwnership: (sessionId) => mutableOwnershipRows.find((row) => row.session_id === sessionId) || null,
+    getAppSession: (sessionId) => sessions.get(sessionId),
     getOpenCodeSession: (sessionId) => mutableOpenCodeSessions.find((session) => session.id === sessionId) || null,
     getGitHubAccount: (accountId) => githubAccountsById.get(accountId) || null,
     runtime,
@@ -853,6 +888,9 @@ describe('multi-user failure projection runtime', () => {
   it('uses the authoritative managed worktree for paths and appends recovery after continuation and idle', async () => {
     const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-active-worktree-'));
     temporaryDirectories.push(repositoryPath);
+    // An empty repository has no root commit, so project-ID discovery falls
+    // back to the managed ID instead of discovering the enclosing checkout.
+    await git(repositoryPath, 'init', '-b', 'main');
     const projectId = '43333333-3333-4333-8333-333333333333';
     const activeDirectory = path.join(getOpenCodeDataPath(), 'worktree', projectId, 'massine');
     const missingTarget = path.join(
@@ -1147,7 +1185,7 @@ describe('multi-user authentication runtime', () => {
     })).resolves.toBe(false);
   });
 
-  it('keeps one root session provisional while retrying ownership against the same id', async () => {
+  it.each([2])('keeps one root session provisional while retrying ownership against the same id (generation %s)', async (generation) => {
     const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-session-create-'));
     temporaryDirectories.push(repositoryPath);
     const project = {
@@ -1179,6 +1217,7 @@ describe('multi-user authentication runtime', () => {
       (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app, {
+      openCodeClient: domainClient(harness),
       buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
       getOpenCodeAuthHeaders: () => ({}),
     });
@@ -1242,7 +1281,7 @@ describe('multi-user authentication runtime', () => {
     );
   });
 
-  it('fails and rolls back a fork whose ownership write stays unavailable instead of holding the request', async () => {
+  it.each([2])('fails and rolls back a fork whose ownership write stays unavailable instead of holding the request (generation %s)', async (generation) => {
     const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-session-fork-'));
     temporaryDirectories.push(repositoryPath);
     const project = {
@@ -1265,7 +1304,8 @@ describe('multi-user authentication runtime', () => {
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
       method, (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
-    harness.runtime.registerRoutes(app, { buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`, getOpenCodeAuthHeaders: () => ({}) });
+    harness.runtime.registerRoutes(app, {
+      openCodeClient: domainClient(harness), buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`, getOpenCodeAuthHeaders: () => ({}) });
     const principal = { scope: 'managed', id: USER_IDS.admin, role: 'admin', assignments: [{
       projectId: project.id, branchName: 'main', publicDirectory: '/projects/fork/main', repositoryPath, isDefault: true }] };
     const response = makeResponse();
@@ -1385,6 +1425,47 @@ describe('multi-user authentication runtime', () => {
     expect(JSON.stringify(recordCreationTiming.mock.calls)).not.toContain('PRIVATE TITLE');
   });
 
+  it.each([
+    ['revoked', 'ses-owned'], ['expired', 'ses-owned'],
+    ['revoked', undefined], ['expired', undefined],
+  ])('refuses a native caller %s during an awaited grant read (session %s)', async (invalidation, sessionID) => {
+    const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-native-auth-race-'));
+    temporaryDirectories.push(repositoryPath);
+    const project = { id: '33333333-3333-4333-8333-333333333333', label: 'Native Auth Project',
+      repository_path: repositoryPath, remote_url: null, default_branch: 'main', status: 'active' };
+    const harness = await createHarness({
+      projects: [project],
+      accessRows: [{ user_id: USER_IDS.developer, project_id: project.id, is_default: true, github_account_id: null }],
+      branchRows: [{ user_id: USER_IDS.developer, project_id: project.id, branch_name: 'main',
+        workspace_path: repositoryPath, is_default: true }],
+      ownershipRows: [{ session_id: 'ses-owned', user_id: USER_IDS.developer, project_id: project.id,
+        branch_name: 'main', public_directory: repositoryPath, archived_at: null }],
+    });
+    const login = await passwordLogin(harness);
+    const principal = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
+    const grantReadStarted = deferred(), grantReadRelease = deferred();
+    const previousFetch = harness.fetchImpl.getMockImplementation();
+    let appSessionReads = 0;
+    harness.fetchImpl.mockImplementation(async (url, options) => {
+      if (String(url).includes('/rest/v1/app_sessions')) appSessionReads += 1;
+      const response = await previousFetch(url, options);
+      if (String(url).includes('/rest/v1/user_project_access')) {
+        grantReadStarted.resolve();
+        await grantReadRelease.promise;
+      }
+      return response;
+    });
+    const pending = harness.runtime.resolveCurrentNativeOperationContext({ principal, sessionID, directory: repositoryPath });
+    await grantReadStarted.promise;
+    expect(appSessionReads).toBe(1);
+    const appSession = harness.getAppSession(principal.appSessionId);
+    if (invalidation === 'revoked') appSession.revoked_at = new Date().toISOString();
+    else appSession.expires_at = new Date(0).toISOString();
+    grantReadRelease.resolve();
+    await expect(pending).resolves.toBeNull();
+    expect(appSessionReads).toBe(2);
+  });
+
   it('allows owned-plan routes for developers without opening generic filesystem access', async () => {
     const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-plan-policy-'));
     const outsidePath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-plan-policy-outside-'));
@@ -1474,12 +1555,46 @@ describe('multi-user authentication runtime', () => {
       directory: repositoryPath, projectId: project.id, branchName: 'main',
     });
     await expect(harness.runtime.resolveCurrentOwnedSessionPlanContext(principal, 'ses-foreign', repositoryPath)).resolves.toBeNull();
+    const nativeRequest = { principal, sessionID: 'ses-owned', directory: repositoryPath };
+    const nativeContext = { directory: repositoryPath, projectId: project.id, branchName: 'main' };
+    await expect(harness.runtime.resolveCurrentNativeOperationContext(nativeRequest)).resolves.toEqual(nativeContext);
+    await expect(harness.runtime.resolveCurrentNativeOperationContext({ ...nativeRequest, sessionID: undefined })).resolves.toEqual(nativeContext);
+    const policyFetch = harness.fetchImpl.getMockImplementation();
+    let providerPermission = { read: true, edit: true };
+    harness.fetchImpl.mockImplementation(async (url, options) => String(url).includes('/rest/v1/user_policies')
+      ? jsonResponse([{ user_id: principal.id, settings_permission_overrides: { providers: providerPermission } }])
+      : policyFetch(url, options));
+    const settingsRequest = { ...nativeRequest, settingsAccess: { page: 'providers', mode: 'edit' } };
+    await expect(harness.runtime.resolveCurrentNativeOperationContext(settingsRequest)).resolves.toEqual(nativeContext);
+    providerPermission = { read: true, edit: false };
+    await expect(harness.runtime.resolveCurrentNativeOperationContext(settingsRequest)).resolves.toBeNull();
+    await expect(harness.runtime.resolveCurrentNativeOperationContext({ ...settingsRequest, settingsAccess: { page: 'providers', mode: 'read' } })).resolves.toEqual(nativeContext);
+    providerPermission = { read: false, edit: false };
+    await expect(harness.runtime.resolveCurrentNativeOperationContext({ ...settingsRequest, settingsAccess: { page: 'providers', mode: 'read' } })).resolves.toBeNull();
+    // A settings revocation does not revoke independent chat access.
+    await expect(harness.runtime.resolveCurrentNativeOperationContext(nativeRequest)).resolves.toEqual(nativeContext);
+    await expect(harness.runtime.resolveCurrentNativeOperationContext({ ...settingsRequest, settingsAccess: { page: 'unknown', mode: 'edit' } })).resolves.toBeNull();
+    harness.fetchImpl.mockImplementation(policyFetch);
+    for (const sessionID of ['ses-foreign', 'ses-archived', 'ses-revoked', 'ses-missing']) {
+      await expect(harness.runtime.resolveCurrentNativeOperationContext({ ...nativeRequest, sessionID })).resolves.toBeNull();
+    }
+    await expect(harness.runtime.resolveCurrentNativeOperationContext({ ...nativeRequest, directory: outsidePath })).resolves.toBeNull();
+    await expect(harness.runtime.resolveCurrentNativeOperationContext({ ...nativeRequest,
+      principal: { ...principal, appSessionId: crypto.randomUUID() } })).resolves.toBeNull();
+    const appSession = harness.getAppSession(principal.appSessionId), expiresAt = appSession.expires_at;
+    appSession.expires_at = new Date(0).toISOString();
+    await expect(harness.runtime.resolveCurrentNativeOperationContext(nativeRequest)).resolves.toBeNull();
+    appSession.expires_at = expiresAt; appSession.revoked_at = new Date().toISOString();
+    await expect(harness.runtime.resolveCurrentNativeOperationContext(nativeRequest)).resolves.toBeNull();
+    appSession.revoked_at = null;
+    await expect(harness.runtime.resolveCurrentNativeOperationContext(nativeRequest)).resolves.toEqual(nativeContext);
     const previousFetch = harness.fetchImpl.getMockImplementation();
     harness.fetchImpl.mockImplementation(async (url, options) => String(url).includes('/rest/v1/user_project_access')
       ? jsonResponse([]) : previousFetch(url, options));
     // The request's earlier assignments remain populated after grants change.
     expect(principal.assignments).not.toEqual([]);
     await expect(harness.runtime.resolveCurrentOwnedSessionPlanContext(principal, 'ses-owned', repositoryPath)).resolves.toBeNull();
+    await expect(harness.runtime.resolveCurrentNativeOperationContext(nativeRequest)).resolves.toBeNull();
     harness.fetchImpl.mockImplementation(previousFetch);
 
     const allowedResponse = makeResponse();
@@ -1712,7 +1827,7 @@ describe('multi-user authentication runtime', () => {
     expect(deniedResponse.payload.error).toBe('Host configuration is restricted to administrators');
   });
 
-  it('filters global session pages and permits only owner lifecycle mutations for both roles', async () => {
+  it.each([2])('filters global session pages and permits only owner lifecycle mutations for both roles (generation %s)', async (generation) => {
     const lifecycleRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-lifecycle-'));
     temporaryDirectories.push(lifecycleRoot);
     const adminDirectory = path.join(lifecycleRoot, 'admin');
@@ -1775,6 +1890,7 @@ describe('multi-user authentication runtime', () => {
       (route, ...routeHandlers) => handlers.set(`${method.toUpperCase()} ${route}`, routeHandlers.at(-1)),
     ]));
     harness.runtime.registerRoutes(app, {
+      openCodeClient: domainClient(harness),
       buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
       getOpenCodeAuthHeaders: () => ({}),
     });

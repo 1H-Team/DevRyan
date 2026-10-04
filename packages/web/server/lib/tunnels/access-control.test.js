@@ -107,6 +107,22 @@ async function fixture(mode = 'absent', ownerAccess = false) {
 }
 
 describe('managed remote owner access with Supabase Off', () => {
+  it('captures a real owner grant without trusting copied principals and rechecks revocation, profile and expiry', async () => {
+    const f = await fixture('off', true);
+    const mint = async () => {
+      const link = await f.controller.issueBootstrapToken({ access: 'owner' });
+      const login = await f.exchange(link.token);
+      const req = { headers: { host: remote.Host, cookie: login.headers['set-cookie'][0].split(';')[0] } };
+      const principal = f.controller.principalFor(f.controller.getTunnelSessionFromRequest(req));
+      const check = f.controller.captureAuthorization(principal);
+      expect(check()).toBe(true); expect(f.controller.captureAuthorization(structuredClone(principal))).toBeNull();
+      return { principal, check };
+    };
+    const first = await mint(); await f.controller.revokeGrant(first.principal.tunnelGrant.id); expect(first.check()).toBe(false);
+    const second = await mint(); await f.controller.setActiveTunnel({ publicUrl: 'https://other.example.test', mode: 'managed-remote' }); expect(second.check()).toBe(false);
+    await f.controller.setActiveTunnel({ publicUrl: 'https://bots.example.test', mode: 'managed-remote' });
+    const third = await mint(); f.advance(TUNNEL_SESSION_TTL_MS + 1); expect(third.check()).toBe(false);
+  });
   it.each(['off', 'absent'])('authenticates the owner without cloud or Bot dependencies with configuration %s', async (mode) => {
     const f = await fixture(mode, true);
     const link = await f.controller.issueBootstrapToken({ access: 'owner' });

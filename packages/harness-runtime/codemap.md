@@ -2,6 +2,12 @@
 
 ## Responsibility
 
+Native OpenCode admission uses the existing session ledger for lineage
+revisions, durable holds and deferred continuation records. The Revert
+coordinator passes its durable transaction identity to conversation-only
+stage/clear operations and releases native holds only after ledger commit or
+cancellation. Recovery also retries hold cleanup for settled transactions.
+
 Dependency-free shared Node runtime for durable DevRyan harness state,
 diagnostics, lifecycle correlation, worktree operations, and optional turn
 evidence. Web/Electron are hosts; the renderer consumes only host
@@ -27,10 +33,22 @@ API contracts.
 
 - Session-owned tool captures, cumulative revisions, stored diffs and conflict-checked restore: `lib/session-changes.js`; authenticated host HTTP/plugin adapter: `lib/session-changes-host.js`. `lib/session-changes-tools.js` owns shared tool/receipt normalization; `lib/session-changes-receipts.js` persists exact evidence and immutable segments. Snapshot observations never establish ownership. Call-scoped repair, monotonic exact evidence, retained descendant lineage and pending reconciliation are covered by `lib/session-changes-recovery.test.js`; the host acknowledges private Cursor execution receipts after persistence. `lib/session-changes-git.js` streams Git I/O; `lib/session-changes-snapshot.js` owns scoped capture and the bounded stat cache; `lib/session-changes-store.js` owns individually indexed metadata and atomic publication. `lib/session-changes-scale.test.js` covers large capture, pagination, migration and collection. See `docs/SESSION_CHANGES.md`.
 
+- Startup recovered inputs reuse the primary recovery owner: dedicated same-ID
+  adoption and pre-cancel/event-backed disposition CAS preserve tools and fallback
+  attempt budget. The host constructor adapter exposes bounded descriptors,
+  lazy exact contents and explicit Resume/Discard; ordinary Continue/intent cannot
+  mutate a paused backlog. Stop remains session settlement. Controller SSE is
+  explicitly a partial record projection; full GET/action snapshots authoritatively
+  refresh or clear the recovered inventory without native callbacks under owner locks.
 - Primary OpenAI/Claude liveness, provider mode/conformance gates, durable attempt/cancellation fences and read-only recovery: `lib/provider-recovery.js`, `lib/provider-recovery-policy.js`; shared host HTTP adapter: `lib/provider-recovery-host.js`.
+- Native retry before the SDK's lazy `Step.Started` reserves an inert choice in the existing provider recovery record. The first genuine canonical Step binds the same current turn, controller, cancellation generation, native attempt and original operation permit; an earlier completed Step cannot supply authority. Replacement leaves the choice closed; fresh explicit adoption of the same original input retires that stale choice. Failed publication settles before unavailable/exhausted attention or the existing single read-only fallback dispatch.
+- Generation-2 primary admission uses a trusted effective-selection receipt from the server admission owner. `provider-recovery-host.js` carries request ownership through `AsyncLocalStorage`; canonical provider/model/agent/effort are persisted before dispatch and explicitly reused for continuation. Missing selection evidence or an uncertain dispatch stays closed. Private native continuation adoption requires canonical sequence and host proof, preserving the original user anchor and budgets.
+- The direct host-only `helloNative()` method verifies the pinned native runtime through bounded, generation-fenced `/api/info` evidence. Public plugin handshakes still require full readiness even when a caller supplies a native transport label; native version observation does not enable provider recovery.
+- `provider-recovery-host.js` and `session-changes-host.js` require an explicitly identified generation-2 client or getter. They use projected session, history, status, interaction and catalog operations; unsupported identities fail closed without HTTP fallback. Streaming read options preserve the 16 MiB response limit, cancellation/deadlines and change-host response metrics, with a second bound on projected records. Recovery retains its 32 MiB transcript and existing owner/conformance gates. Native file Undo/Redo requires `restoreOwned`; status omission never grants filesystem mutation authority.
+- `session-revert-coordinator.js` accepts only conversation-only native markers under its existing ledger transaction. Imported history/blob readers remain inspectable; old receipt-only or interrupted compatibility records cannot authorize native markers or file publication. They refuse mutation or require explicit recovery instead of replaying the retired companion path.
 - Managed continuation ownership across providers: the same primary controller reserves a real-user-scoped continuation before dispatch. `lib/objective-identity.js` recognizes maintenance without replacing the user anchor; `lib/objective-progress.js` persists exact pre-execution rejection limits and report-only progress evidence. Collection does not spend repair attempts. Transport replay remains separately provider/conformance gated.
 - `lib/builder-todo-continuation.js` admits managed Builder nudges only when current canonical open TODOs match a completed native write since the objective anchor. Hashes, stagnation and structural-progress watermarks persist in the existing recovery record; two unchanged nudges exhaust stagnation allowance without changing the objective's total budget. The host fetches current TODOs only for this admission path. Missing owner records require a new real user instruction and emit `managed_objective_unavailable`.
-- Derived task checkpoints and project-scoped canonical user decisions: `lib/task-context.js`. Existing atomic record stores hold bounded, regenerable task views and provenance/validity-qualified decisions; neither view authorizes execution or replaces native history. Compaction anchors spend their 12 KiB final budget on the objective and mandatory scope before optional detail, retain incomplete-scope guidance, and pass the remaining encoded budget to the child assignment owner.
+- Derived task checkpoints and project-scoped canonical user decisions: `lib/task-context.js`. Overlapping checkpoint reads share only an exact session/directory/project/query key; each caller rechecks scope and its own write authorization before committing. Existing atomic record stores hold bounded, regenerable task views and provenance/validity-qualified decisions; neither view authorizes execution or replaces native history. Compaction anchors spend their 12 KiB final budget on the objective and mandatory scope before optional detail, retain incomplete-scope guidance, and pass the remaining encoded budget to the child assignment owner.
 
 - Atomic private persistence and cross-process file locking: `lib/atomic-file.js`, `lib/record-store.js`
 - Host storage layout: `lib/paths.js`
@@ -40,6 +58,10 @@ API contracts.
 - Session attribution: `lib/session-id.js`. Exact DevRyan-owned managed-task events resolve to their root and establish their canonical child relation even when native session-created history has expired. Conflicting explicit session IDs and unknown ownership cannot add child scope; same-directory foreign roots remain excluded from task exports.
 - Hot-event trim/coalescing policy: `lib/journal-trim.js`
 - Sanitization/session-partitioned journal/export: `lib/sanitizer.js`, `lib/journal.js`, `lib/export.js`
+  Native request/compaction evidence uses the finite shared `native-observation`
+  contract, stable hashed directory witnesses and dedicated journal/export
+  projection. Prompt/reasoning content and arbitrary provider options remain
+  excluded; malformed evidence becomes a journal gap.
   Question settlement records retain request IDs for exact asked/replied correlation; credentials remain excluded.
   Bot event connection records retain subscription correlation, snapshot bytes,
   stage/timing and safe failure metadata through a narrow content-free allowlist.
@@ -82,3 +104,13 @@ API contracts.
 - `lib/provider-recovery.js` polls only what it can act on: a progress cutoff is evaluated only for a record this runtime enforces, an unfinished recovery's fallback poll backs off from 5 s to 5 min while the record is unchanged (its events still settle it at once), and a failed observation no longer marks the recovery storage unhealthy (only a failed store write does). `DEVRYAN_RECOVERY_ADVISORY_PLUGIN=0` restores the one-second poll of every record.
 
 `execution-admission.js` exposes the remaining request budget for bounded host polls; completed workspace enumeration, stamp checks and reconciliation batches advance preparation progress. Typed stall and cleanup failures remain distinguishable in diagnostic phases.
+
+- Native shell notification binding retains an immutable schema-encoded completion
+  item hash and delivery from the exact sealed preflight in the existing process
+  lease. Replacement shell recovery verifies that proof with the fresh terminated
+  confined process receipt; SDK event retention is optional and supplies no shell
+  authority. Earlier leases without this proof remain closed for automatic replay.
+
+- Automatic native retention uses an exact current-boot marker on the existing admission hold. `beginNativeRemoval` may atomically transfer that sole hold into a quiet removal intent. Only an own preparing quiet intent with no disposition/removed member may be abandoned; committed removals retain the existing member-generation and native ACK recovery contract. No retention scheduler or separate authority store is introduced.
+
+Queued native primary admission captures the existing controller cancellation epoch before enqueue and forwards its final write guard through the host. Stop/supersede during awaited callbacks fences the write; the guard permits only admission's own single invalidation. No new execution grant or durable queue owner is introduced.

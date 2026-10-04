@@ -81,6 +81,7 @@ export const generateCursorSessionTitle = async ({ Agent, apiKey, text, director
     result = await Agent.prompt(buildCursorSessionTitlePrompt(promptText), {
       apiKey: trimString(apiKey),
       model: { id: 'auto' },
+      tools: [],
       local: {
         ...(normalizedDirectory ? { cwd: normalizedDirectory } : {}),
         settingSources: [],

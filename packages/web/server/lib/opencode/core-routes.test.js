@@ -5,6 +5,7 @@ import {
   registerAuthAndAccessRoutes,
   registerCommonRequestMiddleware,
   registerServerStatusRoutes,
+  resolveHealthOpenCodeGeneration,
   resolveSharedJsonBodyLimit,
 } from './core-routes.js';
 import { createTunnelAuth } from './tunnel-auth.js';
@@ -48,6 +49,65 @@ describe('core-routes', () => {
     });
     expect(response.headers['x-devryan-instance-id']).toBe('instance-test-id');
     expect(response.text).not.toContain('<!doctype html>');
+  });
+
+  it('adds the OpenCode runtime generation and capability block to the health snapshot', async () => {
+    const { app } = createApp();
+    const response = await request(app).get('/health');
+    expect(response.status).toBe(200);
+    expect(response.body.openCode).toEqual({
+      generation: 2,
+      runtimeIdentity: null,
+      capabilities: { share: false, mcpOAuth: false, sessionShell: false, lsp: false, messageEdit: false },
+    });
+  });
+
+  it('turns every capability off for a gen-2 runtime', async () => {
+    const app = express();
+    registerServerStatusRoutes(app, {
+      express,
+      process,
+      gracefulShutdown: vi.fn(async () => {}),
+      getHealthSnapshot: () => ({ openCodeRunning: true, openCodeGeneration: 2, openCodeRuntimeIdentity: 'server:2' }),
+      openchamberVersion: '1.0.0',
+      runtimeName: 'test',
+      serverStartedAt: '2026-01-01T00:00:00.000Z',
+      runtimeInstanceId: 'instance-test-id',
+      uiAuthController: null,
+    });
+    const response = await request(app).get('/api/health');
+    expect(response.body).toMatchObject({ openCodeRunning: true, openCodeGeneration: 2 });
+    expect(response.body.openCode).toEqual({
+      generation: 2,
+      runtimeIdentity: 'server:2',
+      capabilities: { share: false, mcpOAuth: false, sessionShell: false, lsp: false, messageEdit: false },
+    });
+  });
+
+  it('enables MCP OAuth only for the ready owned native facade and clears it during replacement', async () => {
+    const { app, dependencies } = createApp();
+    let ready = true;
+    dependencies.getHealthSnapshot = () => ({ openCodeRunning: true, openCodeGeneration: 2 });
+    // The route captures dependencies at registration, so construct its owned surface directly.
+    const nativeApp = express();
+    registerServerStatusRoutes(nativeApp, { ...dependencies,
+      getNativeRuntimeOwner: () => ({ isReady: () => ready, getConfigurationSnapshot: () => ({ locations: [] }),
+        withIntegrationOperation: () => {}, credentialOperation: () => {}, credentialMetadata: () => {} }) });
+    expect((await request(nativeApp).get('/health')).body.openCode.capabilities).toEqual({
+      share: false, mcpOAuth: true, sessionShell: false, lsp: false, messageEdit: false,
+    });
+    ready = false;
+    expect((await request(nativeApp).get('/health')).body.openCode.capabilities.mcpOAuth).toBe(false);
+    expect((await request(app).get('/health')).body.openCode.generation).toBe(2);
+  });
+
+  it('resolves the reported generation from the observed runtime, then the external declaration', () => {
+    expect(resolveHealthOpenCodeGeneration({ openCodeGeneration: 2 }, { DEVRYAN_OPENCODE_GENERATION: '1' })).toBe(2);
+    expect(resolveHealthOpenCodeGeneration({}, { DEVRYAN_OPENCODE_GENERATION: '2' })).toBe(2);
+    expect(resolveHealthOpenCodeGeneration({}, {})).toBe(2);
+    expect(resolveHealthOpenCodeGeneration({ openCodeGeneration: 1 }, { DEVRYAN_OPENCODE_GENERATION: '2' })).toBeNull();
+    expect(resolveHealthOpenCodeGeneration({ openCodeGeneration: 'x' }, {})).toBeNull();
+    expect(resolveHealthOpenCodeGeneration({ openCodeGeneration: 'x' }, { DEVRYAN_OPENCODE_GENERATION: 'bad' })).toBeNull();
   });
 
   it.each([

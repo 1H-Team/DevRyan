@@ -1,10 +1,10 @@
-import { homedir } from 'os';
+import { getRuntimeHome } from '../../opencode/runtime-host/runtime-bundle-binding.js';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { buildResult, toUsageWindow, toNumber, formatMoney } from '../utils/index.js';
 import { readManagedQuotaCredential } from '../credentials/providers.js';
 
-const COOKIE_PATH = join(homedir(), '.config', 'ollama-quota', 'cookie');
+const COOKIE_PATH = join(getRuntimeHome(), '.config', 'ollama-quota', 'cookie');
 
 export const providerId = 'ollama-cloud';
 export const providerName = 'Ollama Cloud';

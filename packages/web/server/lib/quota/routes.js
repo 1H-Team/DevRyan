@@ -1,3 +1,4 @@
+import {inspectClaudeRequest,isClaudeInspectionUnavailable,unavailableClaudeInspection,sendClaudeInspectionError} from '../opencode/runtime-host/native-claude-inspection.js';
 import express from 'express';
 
 import { importCursorManagedCredential } from './credentials/cursor-import.js';
@@ -146,6 +147,8 @@ export function registerQuotaRoutes(app, {
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders = () => ({}),
   isExternalOpenCode = () => false,
+  openCodeClient = null,
+  getNativeRuntimeOwner = () => null,
   buildAugmentedPath,
   resolveClaudeCodeLaunch = resolveClaudeCodeLaunchDefault,
   ownsSession,
@@ -184,6 +187,7 @@ export function registerQuotaRoutes(app, {
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     isExternalOpenCode,
+    openCodeClient,
     ttlMs: 0,
   });
   const resolveClaudeProxyBaseUrl = (workingDirectory) => claudeProxyBaseUrls.resolve(workingDirectory);
@@ -351,6 +355,15 @@ export function registerQuotaRoutes(app, {
     try {
       const { providerId } = req.params;
       if (!providerId) return res.status(400).json({ error: 'Provider ID is required' });
+      if(isAnthropicProviderId(providerId)){
+        try{
+          const directory=await resolveQuotaDirectory(req);
+          return res.json(await inspectClaudeRequest({req,res,kind:'quota',directory,getNativeRuntimeOwner,isExternalOpenCode}));
+        }catch(error){
+          if(isClaudeInspectionUnavailable(error?.code))return res.json(unavailableClaudeInspection('quota',error.code));
+          return sendClaudeInspectionError(res,error);
+        }
+      }
       const { fetchQuotaForProvider } = await getQuotaProviders();
       const forceRefresh = req.query.refresh === 'true';
       const workingDirectory = await resolveQuotaDirectory(req);

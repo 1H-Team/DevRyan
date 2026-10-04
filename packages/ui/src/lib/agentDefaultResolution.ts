@@ -1,5 +1,4 @@
 import type { AgentModelSelection } from '@/lib/agentModelSelection';
-import { resolveAvailableProviderModel, isProviderModelAvailable } from '@/lib/providers/modelAvailability';
 import { resolveProviderModelVariant } from '@/lib/providers/variantControls';
 
 export type AgentDefaultSource = 'personal' | 'inherited' | 'host-managed' | 'availability-fallback';
@@ -45,22 +44,6 @@ export const isSingleModelAgentDefault = (agent: AgentDefaultAgent | undefined):
   return !Array.isArray(agent.modelRefs) || agent.modelRefs.length <= 1;
 };
 
-const findAvailableModel = (
-  providers: AgentDefaultProvider[],
-  providerId: string,
-  modelId: string,
-) => {
-  const provider = providers.find((entry) => entry.id === providerId);
-  const model = provider?.models?.find((entry) => entry.id === modelId);
-  return provider && model && isProviderModelAvailable(model) ? { provider, model } : null;
-};
-
-const findCatalogModel = (providers: AgentDefaultProvider[], providerId: string, modelId: string) => {
-  const provider = providers.find((entry) => entry.id === providerId);
-  const model = provider?.models?.find((entry) => entry.id === modelId);
-  return { provider, model };
-};
-
 export const resolveAgentDefaultSelection = ({
   agentName,
   agents,
@@ -83,55 +66,13 @@ export const resolveAgentDefaultSelection = ({
   const personal = isSingleModelAgentDefault(agent)
     ? findAgentDefaultOverride(personalSelections, agent.name)
     : null;
-  const candidates = [
-    ...(personal ? [{ ...personal, variant: clean(personal.variant) || null, source: 'personal' as const }] : []),
-    {
-      providerId: hostProviderId,
-      modelId: hostModelId,
-      variant: clean(agent.variant) || null,
-      source: isSingleModelAgentDefault(agent) ? 'inherited' as const : 'host-managed' as const,
-    },
-  ];
-
-  for (const candidate of candidates) {
-    if (providers.length === 0) return { ...candidate, agentName: agent.name };
-    const available = findAvailableModel(providers, candidate.providerId, candidate.modelId);
-    if (available) {
-      const variant = resolveProviderModelVariant(available.provider, candidate.modelId, candidate.variant);
-      return {
-        providerId: candidate.providerId,
-        modelId: candidate.modelId,
-        variant: variant ?? null,
-        agentName: agent.name,
-        source: candidate.source,
-      };
-    }
-
-    const catalog = findCatalogModel(providers, candidate.providerId, candidate.modelId);
-    if (candidate.source === 'personal') {
-      // A known provider without this model, or an explicitly unavailable row,
-      // invalidates only the personal override. A missing provider can be a
-      // bootstrap race, so keep the captured account default until hydration.
-      if (catalog.provider) continue;
-      return { ...candidate, agentName: agent.name };
-    }
-    // Host agent config remains authoritative when the provider snapshot is
-    // incomplete. Only an explicit unavailable marker triggers fallback.
-    if (!catalog.model || isProviderModelAvailable(catalog.model)) {
-      return { ...candidate, agentName: agent.name };
-    }
-  }
-
-  const fallback = resolveAvailableProviderModel(providers, personal?.providerId ?? hostProviderId, personal?.modelId ?? hostModelId);
-  if (!fallback) return null;
-  const available = findAvailableModel(providers, fallback.providerId, fallback.modelId);
-  const variant = available
-    ? resolveProviderModelVariant(available.provider, fallback.modelId, undefined)
-    : undefined;
-  return {
-    ...fallback,
-    variant: variant ?? null,
-    agentName: agent.name,
-    source: 'availability-fallback',
+  const candidate = personal ? { ...personal, variant: clean(personal.variant) || null, source: 'personal' as const } : {
+    providerId: hostProviderId,
+    modelId: hostModelId,
+    variant: clean(agent.variant) || null,
+    source: isSingleModelAgentDefault(agent) ? 'inherited' as const : 'host-managed' as const,
   };
+  const provider = providers.find(entry => entry.id === candidate.providerId);
+  return { ...candidate, variant: resolveProviderModelVariant(provider, candidate.modelId, candidate.variant) ?? null,
+    agentName: agent.name };
 };

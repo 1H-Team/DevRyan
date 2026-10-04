@@ -5,6 +5,7 @@ import request from '../../test-supertest.js';
 import { createBrowserCdpDiscoveryRuntime } from '../browser-cdp/discovery-runtime.js';
 import { createBrowserLeaseRuntime } from '../browser-cdp/lease-runtime.js';
 import { createBootstrapRuntime } from './bootstrap-runtime.js';
+import { createNativeConsumerFixture } from './test-native-consumer-client.js';
 import {
   registerAuthAndAccessRoutes,
   registerCommonRequestMiddleware,
@@ -35,18 +36,19 @@ const createTestApp = ({ desktopCallbacks = true } = {}) => {
   const getDiscoveryToken = () => (desktopCallbacks ? PRIVATE_TOKEN : '');
   const browserLeaseRuntime = createBrowserLeaseRuntime({
     getDiscoveryToken,
-    buildOpenCodeUrl: (route) => `http://opencode.test${route}`,
-    getOpenCodeAuthHeaders: () => ({ authorization: 'Basic internal' }),
-    fetchImpl: vi.fn(async (url) => {
-      const sessionID = decodeURIComponent(new URL(url).pathname.split('/').at(-1));
-      const session = sessionID === 'ses_child'
-        ? { id: 'ses_child', parentID: 'ses_root' }
-        : { id: 'ses_root' };
-      return {
-        ok: true,
-        status: 200,
-        json: async () => session,
-      };
+    openCodeClient: createNativeConsumerFixture({
+      headers: () => ({ authorization: 'Basic internal' }),
+      readFixture: vi.fn(async (url) => {
+        const sessionID = decodeURIComponent(new URL(url).pathname.split('/').at(-1));
+        const session = sessionID === 'ses_child'
+          ? { id: 'ses_child', parentID: 'ses_root' }
+          : { id: 'ses_root' };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => session,
+        };
+      }),
     }),
     createLeaseID: () => 'dvr_lease_test',
     createFence: () => 'dvr_lease_fence_test',

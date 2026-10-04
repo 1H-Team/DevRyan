@@ -2,6 +2,25 @@ import { selectionIngress, markSelectionTiming } from './selection-timing.js';
 import { sshManagedIdentity, authorizeSshManagedShutdown } from './ssh-managed-identity.js';
 import { getTunnelOwnerPrincipal } from '../tunnels/access-control.js';
 import { runWithRequestPrincipal } from '../multi-user/request-context.js';
+import {
+  describeOpenCodeRuntimeCapabilities,
+  parseOpenCodeGeneration,
+  resolveExternalOpenCodeGeneration,
+} from './readiness-probe.js';
+
+/**
+ * The runtime generation `/health` reports: the generation the lifecycle
+ * observed (`openCodeGeneration` in the health snapshot) when present, else
+ * the external declaration (`DEVRYAN_OPENCODE_GENERATION`), else gen 2. An
+ * invalid declaration reports `null`, and with it no capability.
+ */
+export const resolveHealthOpenCodeGeneration = (snapshot, env = process.env) => {
+  if (snapshot?.openCodeGeneration !== undefined && snapshot.openCodeGeneration !== null) {
+    return parseOpenCodeGeneration(snapshot.openCodeGeneration);
+  }
+  return resolveExternalOpenCodeGeneration(env).generation;
+};
+
 export const registerServerStatusRoutes = (app, dependencies) => {
   const {
     express,
@@ -12,6 +31,7 @@ export const registerServerStatusRoutes = (app, dependencies) => {
     runtimeInstanceId,
     gracefulShutdown,
     getHealthSnapshot,
+    getNativeRuntimeOwner,
     uiAuthController,
   } = dependencies;
   const requireSystemAdmin = (req, res, next) => {
@@ -157,10 +177,22 @@ export const registerServerStatusRoutes = (app, dependencies) => {
     if (typeof runtimeInstanceId === 'string' && runtimeInstanceId.length > 0) {
       res.set('X-DevRyan-Instance-ID', runtimeInstanceId);
     }
+    const snapshot = getHealthSnapshot();
+    const nativeOwner = getNativeRuntimeOwner?.();
+    const mcpOAuthAvailable = nativeOwner?.isReady?.() === true
+      && Array.isArray(nativeOwner.getConfigurationSnapshot?.()?.locations)
+      && typeof nativeOwner.withIntegrationOperation === 'function'
+      && typeof nativeOwner.credentialOperation === 'function'
+      && typeof nativeOwner.credentialMetadata === 'function';
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
-      ...getHealthSnapshot(),
+      ...snapshot,
+      // Native integrations require the current owned host, including during replacement.
+      openCode: {
+        ...describeOpenCodeRuntimeCapabilities(resolveHealthOpenCodeGeneration(snapshot, process.env), { mcpOAuthAvailable }),
+        runtimeIdentity: typeof snapshot.openCodeRuntimeIdentity === 'string' ? snapshot.openCodeRuntimeIdentity : null,
+      },
       sshManaged: sshManagedIdentity(req, { env: process.env, version: openchamberVersion, runtimeInstanceId }),
     });
   };

@@ -1,3 +1,4 @@
+import { opencodeClient } from './opencode/client';
 import type {
   ManagedTaskEventRecord,
   ManagedTaskResultAction,
@@ -294,7 +295,10 @@ export const createManagedOrchestrationApi = (options: {
         body,
       );
     },
-    acknowledgeTask(taskId, body) {
+    async acknowledgeTask(taskId, body) {
+      if (body.action === 'retry' || body.action === 'resume' || body.action === 'retry_in_place') {
+        (await opencodeClient.awaitInputSubscription())();
+      }
       return postJson<ManagedTaskAcknowledgementResponse>(
         `/api/orchestration/task/${encodeURIComponent(taskId)}/acknowledge`,
         body,

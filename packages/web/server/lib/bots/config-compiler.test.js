@@ -1,3 +1,6 @@
+import { Schema } from 'effect';
+import { Config } from '@opencode/schema/config';
+import { toV1ToolName } from '../opencode/v2/projection/tools.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -5,6 +8,19 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createBotConfigCompiler } from './config-compiler.js';
+
+const permissionMap = (agent) => {
+  const result = {};
+  for (const rule of agent.permissions) {
+    const action = toV1ToolName(rule.action);
+    if (rule.resource === '*' && !['skill', 'subagent'].includes(rule.action)) result[action] = rule.effect;
+    else {
+      if (typeof result[action] !== 'object') result[action] = {};
+      result[action][rule.resource] = rule.effect;
+    }
+  }
+  return result;
+};
 
 const CHANNEL_ID = 'c0000000-0000-4000-8000-000000000001';
 const REVISION_ID = 'd0000000-0000-4000-8000-000000000001';
@@ -69,6 +85,18 @@ const contract = (overrides = {}) => ({
 });
 
 describe('Bot immutable revision config compiler', () => {
+  it.each([{ fileTools: ['write'] }, { fileTools: ['edit'] }, { fileTools: [] }])('keeps native mutation filters exact for $fileTools file tools', async ({ fileTools }) => {
+    const compiler = createBotConfigCompiler({ dataDirectory: await makeDirectory() });
+    const compiled = await compiler.compile({ channelId: CHANNEL_ID, revisionId: REVISION_ID,
+      contract: contract({ fileTools, runtimeTools: [] }) });
+    const config = JSON.parse(await fs.readFile(path.join(compiled.directory, 'opencode.json'), 'utf8'));
+    expect(() => Schema.decodeUnknownSync(Config.Info)(config, { onExcessProperty: 'error' })).not.toThrow();
+    expect(permissionMap(config.agents.bot)).toMatchObject({
+      edit: fileTools.length ? 'allow' : 'deny',
+      devryan_bot_write: fileTools.includes('write') ? 'allow' : 'deny',
+      devryan_bot_edit: fileTools.includes('edit') ? 'allow' : 'deny',
+    });
+  });
   it('hashes every runtime-bearing policy field and writes a private immutable channel directory', async () => {
     const dataDirectory = await makeDirectory();
     const compiler = createBotConfigCompiler({ dataDirectory });
@@ -85,13 +113,14 @@ describe('Bot immutable revision config compiler', () => {
       first.compiledHash,
     ));
     const config = JSON.parse(await fs.readFile(path.join(first.directory, 'opencode.json'), 'utf8'));
-    expect(config.agent.bot).toMatchObject({
-      prompt: 'You are the private operations Bot.',
-      model: 'openai/gpt-5.6-sol',
-      variant: 'high',
-      permission: { read: 'allow', write: 'allow', edit: 'deny', bash: 'deny' },
+    expect(config.agents.bot).toMatchObject({
+      system: 'You are the private operations Bot.',
+      model: { providerID: 'openai', model: 'gpt-5.6-sol', variant: 'high' },
     });
-    expect(config.plugin).toEqual(['/opt/devryan/devryan-bot-tools.mjs']);
+    expect(() => Schema.decodeUnknownSync(Config.Info)(config, { onExcessProperty: 'error' })).not.toThrow();
+    expect(permissionMap(config.agents.bot)).toMatchObject({ read: 'allow', write: 'allow', edit: 'allow', bash: 'deny',
+      devryan_bot_write: 'allow', devryan_bot_edit: 'deny' });
+    expect(config.plugins).toEqual([]);
     expect((await fs.stat(first.directory)).mode & 0o777).toBe(0o500);
     expect((await fs.stat(path.join(first.directory, 'opencode.json'))).mode & 0o777).toBe(0o400);
 
@@ -142,10 +171,10 @@ describe('Bot immutable revision config compiler', () => {
       'utf8',
     ));
     expect(structured.compiledHash).not.toBe(first.compiledHash);
-    expect(structuredConfig.agent.bot.prompt).toContain('Objectives:\n- Review the assigned queue');
-    expect(structuredConfig.agent.bot.prompt).toContain('Operating instructions:\nUse only reviewed tools.');
-    expect(structuredConfig.agent.bot.prompt).toContain('Prohibited behavior:\nNever bypass approval.');
-    expect(structuredConfig.agent.bot.prompt).toContain('State uncertainty explicitly.');
+    expect(structuredConfig.agents.bot.system).toContain('Objectives:\n- Review the assigned queue');
+    expect(structuredConfig.agents.bot.system).toContain('Operating instructions:\nUse only reviewed tools.');
+    expect(structuredConfig.agents.bot.system).toContain('Prohibited behavior:\nNever bypass approval.');
+    expect(structuredConfig.agents.bot.system).toContain('State uncertainty explicitly.');
   });
 
   it('puts the soul first in the prompt and writes it as a read-only soul.md', async () => {
@@ -166,11 +195,11 @@ describe('Bot immutable revision config compiler', () => {
       path.join(compiled.directory, 'opencode.json'),
       'utf8',
     ));
-    expect(config.agent.bot.prompt.startsWith(soul)).toBe(true);
+    expect(config.agents.bot.system.startsWith(soul)).toBe(true);
     // Voice lives in the soul now, so the legacy tone section is not emitted.
-    expect(config.agent.bot.prompt).not.toContain('Tone:\n');
-    expect(config.agent.bot.prompt.indexOf(soul))
-      .toBeLessThan(config.agent.bot.prompt.indexOf('Objectives:'));
+    expect(config.agents.bot.system).not.toContain('Tone:\n');
+    expect(config.agents.bot.system.indexOf(soul))
+      .toBeLessThan(config.agents.bot.system.indexOf('Objectives:'));
 
     const soulPath = path.join(compiled.directory, 'soul.md');
     expect(await fs.readFile(soulPath, 'utf8')).toBe(`${soul}\n`);
@@ -201,7 +230,7 @@ describe('Bot immutable revision config compiler', () => {
       path.join(compiled.directory, 'opencode.json'),
       'utf8',
     ));
-    expect(config.agent.bot.prompt).toContain('Tone:\nDirect and calm');
+    expect(config.agents.bot.system).toContain('Tone:\nDirect and calm');
     await expect(fs.lstat(path.join(compiled.directory, 'soul.md'))).rejects.toMatchObject({
       code: 'ENOENT',
     });
@@ -238,7 +267,7 @@ describe('Bot immutable revision config compiler', () => {
     });
     expect(repaired).toEqual(first);
     expect(JSON.parse(await fs.readFile(path.join(first.directory, 'opencode.json'), 'utf8')))
-      .toHaveProperty('agent.bot.prompt', 'You are the private operations Bot.');
+      .toHaveProperty('agents.bot.system', 'You are the private operations Bot.');
     await expect(fs.lstat(path.join(first.directory, 'unexpected.txt'))).rejects.toMatchObject({
       code: 'ENOENT',
     });
@@ -358,13 +387,13 @@ describe('Bot immutable revision config compiler', () => {
       }),
     });
     const config = JSON.parse(await fs.readFile(path.join(compiled.directory, 'opencode.json'), 'utf8'));
-    expect(config.agent.bot.permission).toMatchObject({
+    expect(permissionMap(config.agents.bot)).toMatchObject({
       read: 'allow',
       write: 'deny',
       edit: 'deny',
       devryan_write: 'allow',
     });
-    expect(config.agent.bot.prompt).toContain('Use devryan_write for every workspace file change.');
+    expect(config.agents.bot.system).toContain('Use devryan_write for every workspace file change.');
   });
 
   it('compiles autonomous runtime tools and scoped non-recursive native subagents', async () => {
@@ -386,17 +415,17 @@ describe('Bot immutable revision config compiler', () => {
     ]);
 
     expect(manifest.version).toBe(2);
-    expect(config.agent.bot.permission).toMatchObject({
+    expect(permissionMap(config.agents.bot)).toMatchObject({
       read: 'allow', glob: 'allow', grep: 'allow', edit: 'allow', write: 'allow',
-      bash: 'allow', terminal: 'allow', git: 'allow', task: 'allow',
+      bash: 'allow', terminal: 'allow', git: 'allow', task: { '*': 'deny', explore: 'allow', general: 'allow' },
       devryan_bot: 'allow', browser: 'deny', devryan_browser: 'deny',
       mcp: 'deny', external_directory: 'deny', devryan_task: 'deny',
     });
     for (const name of ['explore', 'general']) {
-      expect(config.agent[name]).toMatchObject({ mode: 'subagent' });
-      expect(config.agent[name].permission).toMatchObject({
+      expect(config.agents[name]).toMatchObject({ mode: 'subagent' });
+      expect(permissionMap(config.agents[name])).toMatchObject({
         read: 'allow', edit: 'allow', write: 'allow', bash: 'allow', terminal: 'allow', git: 'allow',
-        task: 'deny', devryan_task: 'deny', devryan_bot: 'deny', browser: 'deny',
+        task: { '*': 'deny' }, devryan_task: 'deny', devryan_bot: 'deny', browser: 'deny',
         devryan_browser: 'deny', mcp: 'deny', external_directory: 'deny',
       });
     }
@@ -410,11 +439,11 @@ describe('Bot immutable revision config compiler', () => {
       path.join(optedOut.directory, 'opencode.json'),
       'utf8',
     ));
-    expect(optedOutConfig.agent.bot.permission).toMatchObject({
-      read: 'allow', edit: 'deny', write: 'deny', bash: 'allow', terminal: 'deny', git: 'deny', task: 'deny',
+    expect(permissionMap(optedOutConfig.agents.bot)).toMatchObject({
+      read: 'allow', edit: 'deny', write: 'deny', bash: 'allow', terminal: 'deny', git: 'deny', task: { '*': 'deny' },
     });
-    expect(optedOutConfig.agent.explore).toEqual({ disable: true });
-    expect(optedOutConfig.agent.general).toEqual({ disable: true });
+    expect(optedOutConfig.agents.explore).toEqual({ disabled: true });
+    expect(optedOutConfig.agents.general).toEqual({ disabled: true });
   });
 
   it('preserves legacy hashes while materializing newly assigned skills read-only', async () => {
@@ -429,7 +458,7 @@ describe('Bot immutable revision config compiler', () => {
     expect(legacy.contract).not.toHaveProperty('skillBindings');
     expect(legacy.contract).not.toHaveProperty('mcpBindings');
     const legacyConfig = JSON.parse(await fs.readFile(path.join(legacy.directory, 'opencode.json'), 'utf8'));
-    expect(legacyConfig.agent.bot.permission).not.toHaveProperty('skill');
+    expect(permissionMap(legacyConfig.agents.bot)).not.toHaveProperty('skill');
     expect(await fs.readdir(path.join(legacy.directory, 'skills'))).toEqual([]);
 
     const skillContent = '# Review queue\n\nUse the provided reference file.\n';
@@ -469,7 +498,7 @@ describe('Bot immutable revision config compiler', () => {
     });
     expect(assigned.compiledHash).not.toBe(legacy.compiledHash);
     const assignedConfig = JSON.parse(await fs.readFile(path.join(assigned.directory, 'opencode.json'), 'utf8'));
-    expect(assignedConfig.agent.bot.permission.skill).toEqual({
+    expect(permissionMap(assignedConfig.agents.bot).skill).toEqual({
       '*': 'deny',
       'review-queue': 'allow',
     });

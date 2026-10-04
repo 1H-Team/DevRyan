@@ -17,6 +17,7 @@ const packageVerifierSource = fs.readFileSync(
   new URL('../scripts/verify-runtime-service-package.mjs', import.meta.url),
   'utf8',
 );
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
 describe('runtime-service desktop bootstrap source contract', () => {
   test('post-update registration and connection failures share guarded startup recovery', () => {
@@ -27,18 +28,49 @@ describe('runtime-service desktop bootstrap source contract', () => {
     assert.match(preparation, /try \{\s+await resumeBackgroundRuntimeAfterAppUpdate\(\);\s+await ensureRuntimeServiceRegistered\(\{ registration: getRuntimeServiceRegistration\(\), log \}\);\s+await waitForRuntimeServiceConnection\(\);\s+\} catch \(error\) \{\s+await recoverStartupToAppBound\(error\);/);
   });
 
-  test('background mode owns the server and returns before creating a window', () => {
-    const readyBranch = mainSource.slice(
-      mainSource.indexOf('app.whenReady().then(async () => {'),
-      mainSource.indexOf('nativeTheme.themeSource = readThemeSource();'),
-    );
-
-    assert.match(readyBranch, /if \(isRuntimeServiceMode\)/);
-    assert.match(readyBranch, /acquireRuntimeOwner\('service'\)/);
-    assert.match(readyBranch, /await spawnLocalServer\(\)/);
-    assert.match(readyBranch, /prepareBotRuntimeInBackground\(\)/);
-    assert.match(readyBranch, /return;/);
-    assert.doesNotMatch(readyBranch, /createBrowserWindow\(/);
+  test('ordinary and held background startup own the server without opening a recovery window', async () => {
+    const marker = 'app.whenReady().then(async () => {';
+    const start = mainSource.indexOf(marker);
+    const end = mainSource.indexOf('nativeTheme.themeSource = readThemeSource();', start);
+    assert.notEqual(start, -1);
+    assert.ok(end > start);
+    const ready = new AsyncFunction('owners', `
+      const { app, log, APP_VERSION, process, isRuntimeServiceControlProbe,
+        isRuntimeServiceMode, runtimeBundleRecoveryRequired, holdDesktopSettingsForCheckpoint,
+        performConfirmedQuit, state, createBrowserWindow, startDesktopRuntime,
+        acquireRuntimeOwner, spawnLocalServer, prepareBotRuntimeInBackground,
+        shutdownOwnedRuntimeService } = owners;
+      ${mainSource.slice(start + marker.length, end)}
+      throw new Error('startup did not return before ordinary foreground setup');
+    `);
+    for (const serviceMode of [true, false]) for (const held of [false, true]) {
+      if (!serviceMode && !held) continue; // Ordinary foreground startup follows the remaining body.
+      const calls = [], signals = [], state = {};
+      const window = {};
+      await ready({
+        app: { isPackaged: true, setActivationPolicy: () => calls.push('accessory') },
+        log: { info: () => {} }, APP_VERSION: 'fixture',
+        process: { platform: 'darwin', arch: 'arm64', once: name => signals.push(name) },
+        isRuntimeServiceControlProbe: false, isRuntimeServiceMode: serviceMode,
+        runtimeBundleRecoveryRequired: held, state,
+        holdDesktopSettingsForCheckpoint: async () => calls.push('settings-held'),
+        performConfirmedQuit: () => {},
+        createBrowserWindow: () => {
+          assert.equal(serviceMode, false, 'Background recovery must not create a window');
+          calls.push('window'); return window;
+        },
+        startDesktopRuntime: async () => calls.push('foreground-recovery'),
+        acquireRuntimeOwner: async mode => calls.push(`owner:${mode}`),
+        spawnLocalServer: async () => calls.push('server'),
+        prepareBotRuntimeInBackground: () => calls.push('background-preparation'),
+        shutdownOwnedRuntimeService: async () => {},
+      });
+      assert.deepEqual(signals, ['SIGTERM', 'SIGINT']);
+      assert.deepEqual(calls, serviceMode
+        ? [...(held ? ['settings-held'] : []), 'accessory', 'owner:service', 'server', 'background-preparation']
+        : ['settings-held', 'window', 'foreground-recovery']);
+      assert.equal(state.mainWindow, serviceMode ? undefined : window);
+    }
   });
 
   test('headless service processes stay out of the macOS Dock; the foreground app does not', () => {
@@ -128,4 +160,76 @@ describe('runtime-service desktop bootstrap source contract', () => {
     assert.match(packageVerifierSource, /must be signed with a Developer ID identity/);
     assert.match(packageVerifierSource, /native bridge is not executable/);
   });
+});
+
+test('service publication distinguishes held recovery from ordinary deferred startup', async () => {
+  const start = mainSource.indexOf('  state.serverHandle = handle;');
+  assert.notEqual(start, -1);
+  const end = mainSource.indexOf('\n  // Managed startup', start);
+  assert.ok(end > start);
+  const publish = new AsyncFunction('isRuntimeServiceMode', 'state', 'handle', 'port', 'url', 'log',
+    'holdDesktopSettingsForCheckpoint', 'session', mainSource.slice(start, end));
+  for (const bundleStatus of [{ reconciliationRequired: false }, { reconciliationRequired: true },
+    { state: 'held', reconciliationRequired: false }]) {
+    const held = bundleStatus.state === 'held' || bundleStatus.reconciliationRequired;
+    const publications = [], logs = [], ordering = [];
+    let inspections = 0;
+    await publish(true, { runtimeServiceCoordinator: { start: async value => {
+      ordering.push('published'); publications.push(value);
+    } } }, {
+      isReady: () => false, // Ordinary startup defers native readiness too.
+      runtimeBundle: { inspect: async () => { inspections++; ordering.push('inspected'); return bundleStatus; } },
+      issueLocalOwnerSession: () => assert.fail('Service startup must not mint an owner cookie'),
+      issueBotOwnerSession: () => assert.fail('Service startup must not mint a Bot cookie'),
+    }, 41234, 'http://127.0.0.1:41234', { info: (...args) => logs.push(args) },
+    async () => ordering.push('settings-held'), {});
+    assert.equal(inspections, 1);
+    assert.deepEqual(ordering, held ? ['inspected', 'settings-held', 'published'] : ['inspected', 'published']);
+    assert.deepEqual(publications, [{ port: 41234, health: held ? 'degraded' : 'healthy' }]);
+    assert.match(logs[0][0], held ? /recovery-only.*listening/ : /background runtime is listening/);
+    assert.doesNotMatch(logs[0][0], /is healthy/);
+  }
+  const foreground = { runtimeServiceCoordinator: { start: () => assert.fail('Foreground recovery must not publish a service') } };
+  let settingsHeld = false;
+  const recoveryUrl = 'http://127.0.0.1:41234';
+  assert.equal(await publish(false, foreground, {
+    runtimeBundle: { inspect: async () => ({ state: 'held' }) },
+    issueLocalOwnerSession: () => assert.fail('Held recovery must not mint an owner cookie'),
+    issueBotOwnerSession: () => assert.fail('Held recovery must not mint a Bot cookie'),
+  }, 41234, recoveryUrl, { info: () => assert.fail('Foreground recovery must not log service publication') },
+  async () => { settingsHeld = true; }, {}), recoveryUrl);
+  assert.equal(settingsHeld, true);
+  assert.equal(foreground.runtimeServiceOwnsServer, false);
+  let published = false;
+  await assert.rejects(publish(true, { runtimeServiceCoordinator: { start: async () => { published = true; } } }, {
+    runtimeBundle: { inspect: async () => { throw Error('bundle_binding_invalid'); } },
+  }, 41234, 'http://127.0.0.1:41234', { info: () => {} }, () => assert.fail('Invalid inspection must not hold settings'), {}), /bundle_binding_invalid/);
+  assert.equal(published, false);
+  await assert.rejects(publish(true, { runtimeServiceCoordinator: { start: async () => { published = true; } } }, {
+    runtimeBundle: { inspect: async () => ({ state: 'held' }) },
+  }, 41234, 'http://127.0.0.1:41234', { info: () => {} }, async () => { throw Error('settings_hold_failed'); }, {}), /settings_hold_failed/);
+  assert.equal(published, false, 'A failed settings hold must not publish the service');
+});
+
+test('background checkpoint refuses without a foreground drain ACK; app-bound checkpoint awaits settings', async () => {
+  const start = mainSource.indexOf('    onRuntimeBundleCheckpoint: async () => {');
+  const end = mainSource.indexOf('\n    onRestartHost:', start);
+  assert.notEqual(start, -1);
+  const factory = new Function('isRuntimeServiceMode', 'holdDesktopSettingsForCheckpoint',
+    `return ({${mainSource.slice(start, end)}}).onRuntimeBundleCheckpoint;`);
+  let calls = 0;
+  // There is deliberately no lease argument: expired or absent leases cannot
+  // establish that another process's settings writer has drained.
+  await assert.rejects(factory(true, async () => { calls++; })(), { code: 'bundle_service_requires_app_bound', status: 503 });
+  assert.equal(calls, 0);
+  const release = Promise.withResolvers();
+  const checkpoint = factory(false, () => { calls++; return release.promise; });
+  let settled = false;
+  const draining = checkpoint().then(() => { settled = true; });
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  assert.equal(settled, false);
+  release.resolve();
+  await draining;
+  assert.equal(settled, true);
 });

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { normalizeQaMirrorPersonalSetup } from './profile-preparation.mjs';
 
 export const QA_SCENARIO_IDS = Object.freeze([
   'core-journey', 'project-work', 'compaction-manual', 'compaction-natural', 'mobile',
@@ -61,7 +62,7 @@ export const validateQaMatrixConfig = (value, { repoRoot = REPO_ROOT } = {}) => 
   const ids = new Set();
   let runCount = 0;
   const cells = value.cells.map((cell) => {
-    objectWithFields(cell, CELL_FIELDS, 'cell', ['projectCompaction', 'agentAssignments', 'allowCrossProviderAssignments', 'windowSize', 'preserveOrchestration']);
+    objectWithFields(cell, CELL_FIELDS, 'cell', ['projectCompaction', 'agentAssignments', 'allowCrossProviderAssignments', 'windowSize', 'preserveOrchestration', 'mirrorPersonalSetup', 'theme']);
     const id = pinned(cell.id, 'cell.id', /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/);
     if (ids.has(id)) fail('cell IDs must be unique');
     ids.add(id);
@@ -73,8 +74,9 @@ export const validateQaMatrixConfig = (value, { repoRoot = REPO_ROOT } = {}) => 
       windowSize = Object.freeze({ width: integer(cell.windowSize.width, 600, 2560, 'window width'),
         height: integer(cell.windowSize.height, 600, 1600, 'window height') });
     }
-    const transport = oneOf(cell.transport, ['fixture', 'live'], 'transport');
-    const providerId = oneOf(cell.providerId, transport === 'live' ? ['openai', 'anthropic', 'xai'] : ['fixture'], 'providerId for transport');
+    const transport = oneOf(cell.transport, ['fixture', 'live', 'runtime-fixture'], 'transport');
+    const providerId = oneOf(cell.providerId, transport === 'live' ? ['openai', 'anthropic', 'xai']
+      : transport === 'runtime-fixture' ? ['devryan-smoke'] : ['fixture'], 'providerId for transport');
     const modelId = pinned(cell.modelId, 'modelId');
     const agent = oneOf(cell.agent, ['builder', 'orchestrator'], 'agent');
     if (typeof cell.planMode !== 'boolean') fail('planMode must be a boolean');
@@ -84,6 +86,14 @@ export const validateQaMatrixConfig = (value, { repoRoot = REPO_ROOT } = {}) => 
       fail('preserveOrchestration requires live transport without agent assignment overrides');
     }
     const assignments = {};
+    let mirrorPersonalSetup;
+    if (Object.hasOwn(cell, 'mirrorPersonalSetup')) {
+      if (transport !== 'live') fail('mirrorPersonalSetup requires live transport');
+      try { mirrorPersonalSetup = normalizeQaMirrorPersonalSetup(cell.mirrorPersonalSetup,
+        { preserveOrchestration: cell.preserveOrchestration }); }
+      catch (error) { fail(error.message); }
+      if (mirrorPersonalSetup) Object.freeze(mirrorPersonalSetup);
+    }
     if (Object.hasOwn(cell, 'allowCrossProviderAssignments') && typeof cell.allowCrossProviderAssignments !== 'boolean') {
       fail('allowCrossProviderAssignments must be an explicit boolean');
     }
@@ -104,9 +114,18 @@ export const validateQaMatrixConfig = (value, { repoRoot = REPO_ROOT } = {}) => 
     if (!Array.isArray(cell.scenarioIds) || !cell.scenarioIds.length) fail('scenarioIds must be a nonempty array');
     const scenarioIds = cell.scenarioIds.map((scenario) => oneOf(scenario, QA_SCENARIO_IDS, 'scenarioId'));
     if (new Set(scenarioIds).size !== scenarioIds.length) fail('scenarioIds must be unique');
+    if (transport === 'runtime-fixture' && (modelId !== 'smoke-write' || variant !== 'high' || cell.planMode
+      || scenarioIds.length !== 1 || scenarioIds[0] !== 'core-journey')) {
+      fail('runtime-fixture requires the declared smoke-write/high core journey with Plan off');
+    }
+    let theme;
+    if (Object.hasOwn(cell,'theme')) {
+      theme=oneOf(cell.theme,['light','dark'],'desktop theme');
+      if(scenarioIds.some(scenario=>scenario!=='core-journey'))fail('Explicit desktop theme requires core-journey; mobile owns its two-theme sweep');
+    }
     if (scenarioIds.includes('mobile') && runtime !== 'web') fail('mobile requires web');
-    if (scenarioIds.includes('compaction-natural') && (runtime !== 'electron' || transport !== 'live')) {
-      fail('compaction-natural requires live Electron');
+    if (scenarioIds.includes('compaction-natural') && (transport !== 'live')) {
+      fail('compaction-natural requires live web or Electron');
     }
     if (scenarioIds.some(scenario => scenario.startsWith('compaction-retrieval-'))
       && (runtime !== 'electron' || transport !== 'live' || agent !== 'builder' || cell.planMode !== false)) {
@@ -121,7 +140,9 @@ export const validateQaMatrixConfig = (value, { repoRoot = REPO_ROOT } = {}) => 
     runCount += repetitions * scenarioIds.length;
     return Object.freeze({ id, runtime, transport, providerId, modelId, agent, planMode: cell.planMode,
       variant, scenarioIds: Object.freeze(scenarioIds), repetitions, timeoutMs,
+      ...(theme ? {theme} : {}),
       ...(Object.hasOwn(cell, 'preserveOrchestration') ? { preserveOrchestration: cell.preserveOrchestration } : {}),
+      ...(Object.hasOwn(cell, 'mirrorPersonalSetup') ? { mirrorPersonalSetup } : {}),
       ...(windowSize ? { windowSize } : {}),
       ...(Object.hasOwn(cell, 'agentAssignments') ? { agentAssignments: Object.freeze(assignments) } : {}),
       ...(Object.hasOwn(cell, 'allowCrossProviderAssignments') ? { allowCrossProviderAssignments: cell.allowCrossProviderAssignments } : {}),

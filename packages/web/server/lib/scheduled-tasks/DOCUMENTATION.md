@@ -2,6 +2,11 @@
 
 Server-owned scheduled task runtime and routes for OpenChamber-only automation.
 
+`holdForCheckpoint()` closes new timer, run and mutation admission. Its pending
+set retains the original run promise after a watchdog timeout; timeout of the
+caller is not settlement. Pending work or uncertain persistence refuses a bundle
+checkpoint until the owner has actually settled, with the hold kept in place.
+
 ## Scope
 
 - Per-project scheduled task persistence is owned by `packages/web/server/lib/projects/project-config.js`.

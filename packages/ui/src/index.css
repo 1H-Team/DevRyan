@@ -1679,6 +1679,12 @@ input[aria-label="Terminal input"] {
   animation: oc-busy-pulse 1.2s ease-in-out infinite;
 }
 
+/* Sidebar/mobile session "working" dot: a slow blink. Keep the duration in sync
+   with SESSION_WORKING_BLINK_DURATION_MS (SessionStatusDot.tsx). */
+.animate-session-working-blink {
+  animation: oc-busy-pulse 2.4s ease-in-out infinite;
+}
+
 @keyframes bot-typing-dot {
   0%, 60%, 100% {
     opacity: 0.35;
@@ -1793,6 +1799,10 @@ input[aria-label="Terminal input"] {
   }
 
   .animate-busy-pulse {
+    animation: none;
+  }
+
+  .animate-session-working-blink {
     animation: none;
   }
 

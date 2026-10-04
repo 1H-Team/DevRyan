@@ -1,6 +1,7 @@
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { projectUsageObservation, runtimeUsageObservation } from '../../shared-runtime/lib/usage-observation.js';
+import { parseNativeObservation, parseNativeJournalObservation } from '../../shared-runtime/lib/native-observation.js';
 
 const REDACTED = '[REDACTED]';
 
@@ -296,6 +297,17 @@ export const createDiagnosticSanitizer = (options = {}) => {
     return output;
   };
 
+  // The finite native schema contains identities, settings and counts only.
+  // Keep it separate from transcript fields, especially private reasoning text.
+  const redactNativeObservation = (observation) => {
+    const visit = value => {
+      if (typeof value === 'string') return redactString(value, { highEntropy: false, paths: false });
+      if (asObject(value)) return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, visit(nested)]));
+      return value;
+    };
+    return parseNativeJournalObservation(visit(observation));
+  };
+
   const sanitizeRecord = (candidate) => {
     const object = asObject(candidate);
     if (!object) throw new TypeError('diagnostic record must be an object');
@@ -304,10 +316,29 @@ export const createDiagnosticSanitizer = (options = {}) => {
     const allowed = RECORD_FIELDS[type];
     if (!allowed) throw new TypeError(`unsupported diagnostic record type: ${type || 'missing'}`);
     const output = {};
+    let nativeObservation;
+    if (type === 'lifecycle' && object.event === 'native_observation') {
+      const parsed = parseNativeObservation(object.payload);
+      if (object.directory !== parsed.directory || object.sessionID !== parsed.sessionID) throw new TypeError('native observation scope mismatch');
+      const suffix = crypto.createHash('sha256').update(path.resolve(parsed.directory)).digest('hex').slice(0, 12);
+      nativeObservation = redactNativeObservation({ ...parsed, directory: `<WORKTREE_${suffix}>` });
+    }
     for (const [key, value] of Object.entries(object)) {
       if (key === 'usageObservation') continue;
       if (!allowed.has(key)) {
         report.droppedFields += 1;
+        continue;
+      }
+      if (nativeObservation && (key === 'payload' || key === 'directory')) {
+        output[key] = key === 'payload' ? nativeObservation : nativeObservation.directory;
+        continue;
+      }
+      if (key === 'payload' && type === 'lifecycle' && object.event === 'native_observation_gap') {
+        const gap = asObject(value);
+        output[key] = { code: 'native_observation_unavailable',
+          ...(['accepted-user', 'controller'].includes(gap?.stage) ? { stage: gap.stage } : {}),
+          ...(typeof gap?.controllerInstanceID === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(gap.controllerInstanceID)
+            ? { controllerInstanceID: redactString(gap.controllerInstanceID, { highEntropy: false }) } : {}) };
         continue;
       }
       if (key === 'payload' && type === 'lifecycle' && object.event === 'opencode_process_exit') {
@@ -395,6 +426,10 @@ export const createDiagnosticSanitizer = (options = {}) => {
       seen.add(object);
       const output = {};
       for (const [key, nested] of Object.entries(object)) {
+        if (key === 'payload' && object.type === 'lifecycle' && object.event === 'native_observation') {
+          output[key] = redactNativeObservation(parseNativeJournalObservation(nested));
+          continue;
+        }
         if ((object.type === 'reasoning' && ['text', 'content', 'data'].includes(key))
           || (['reasoning', 'reasoningText'].includes(key) && typeof nested !== 'number')
           || ['providerMetadata', 'providerOptions', 'signature', 'encrypted_content'].includes(key)) continue;

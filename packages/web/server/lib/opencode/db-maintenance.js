@@ -11,6 +11,11 @@
 // `vacuum: 'never'` and a time budget while no managed OpenCode process
 // exists; the Settings → Storage "Compact now" action schedules a one-shot
 // forced run that the same hook consumes across the restart it triggers.
+//
+// The database comes from the runtime selection manifest the lifecycle writes
+// before every managed launch (`runtime-selection.js`). Without one, runs
+// refuse to mutate (`runtime_selection_unavailable`); inspection and dry runs
+// fall back to the legacy newest-by-mtime guess and report `dbSource`.
 // ---------------------------------------------------------------------------
 
 import fs from 'node:fs';
@@ -20,7 +25,7 @@ import { Worker } from 'node:worker_threads';
 
 import { getOpenCodeDataPath } from '../git/service.js';
 import { isProcessRunning, readManagedOpenCodeRegistry } from './managed-process-registry.js';
-import { resolveOpenCodeDbPath } from './opencode-db-path.js';
+import { resolveOpenCodeDatabaseSelection } from './runtime-selection.js';
 import {
   NO_SQLITE_DRIVER_PREFIX,
   OPENCODE_DB_MAINTENANCE_DEFAULTS,
@@ -42,10 +47,15 @@ export const OPENCODE_DB_MAINTENANCE_STATE_FILE = 'opencode-db-maintenance.json'
 export const OPENCODE_DB_MAINTENANCE_JOURNAL_EVENT = 'opencode_db_maintenance';
 const STATE_FILE_VERSION = 1;
 
-// The database the managed runtime writes. Maintaining `opencode.db` while the
-// companion writes `opencode-devryan.db` pruned a stale file and left the live
-// one to grow (489 MB, 87 % event log, on 2026-09-30).
-export const resolveDefaultOpenCodeDbPath = () => resolveOpenCodeDbPath(getOpenCodeDataPath());
+// The database the managed runtime writes, as the runtime selection records
+// it. Guessing by mtime once maintained `opencode.db` while the companion wrote
+// `opencode-devryan.db` (489 MB, 87 % event log, on 2026-09-30), and a v2
+// runtime's `opencode.db` must never be pruned.
+export const resolveDefaultOpenCodeDatabase = ({ dataDir } = {}) => resolveOpenCodeDatabaseSelection({
+  dataDir,
+  opencodeDataPath: getOpenCodeDataPath(),
+});
+export const resolveDefaultOpenCodeDbPath = (options = {}) => resolveDefaultOpenCodeDatabase(options).path;
 
 const OPENCODE_EXECUTABLE_PATTERN = /^opencode(?:-[a-z0-9.-]+)?(?:\.exe)?$/i;
 const OPENCODE_SERVE_PATTERN = /(?:^|[\s/\\])opencode(?:\.exe)?\s+serve\b/i;
@@ -207,6 +217,7 @@ const emptyRun = ({ at, reason, dryRun, status, error, vacuum = 'never', duratio
   dryRun,
   status,
   schema: 'unknown',
+  generation: 'unknown',
   driver: null,
   durationMs,
   before: null,
@@ -227,12 +238,15 @@ const emptyRun = ({ at, reason, dryRun, status, error, vacuum = 'never', duratio
   error,
 });
 
-const summarizeRun = (result) => ({
+const summarizeRun = (result, database) => ({
   at: result.at,
   reason: result.reason,
   dryRun: result.dryRun,
   status: result.status,
   schema: result.schema ?? 'unknown',
+  generation: result.generation ?? 'unknown',
+  dbSource: database.source,
+  runtimeGeneration: database.selection?.runtime.generation ?? null,
   driver: result.driver ?? null,
   durationMs: result.durationMs,
   deletedEvents: result.deletedEvents,
@@ -275,8 +289,9 @@ export const createOpenCodeDbCompactionScheduler = () => {
 };
 
 export const createOpenCodeDbMaintenance = ({
-  dbPath = resolveDefaultOpenCodeDbPath(),
   dataDir,
+  // () => { path, source: 'selection' | 'legacy-newest', selection }, read per call.
+  resolveDatabase = () => resolveDefaultOpenCodeDatabase({ dataDir }),
   loadDriver = resolveSqliteDriver,
   now = Date.now,
   checkFreeDiskBytes = checkFreeDiskBytesDefault,
@@ -342,6 +357,8 @@ export const createOpenCodeDbMaintenance = ({
 
   const inspect = async () => {
     const state = readState();
+    const database = resolveDatabase();
+    const dbPath = database.path;
     let inspection;
     try {
       inspection = inspectOpenCodeDb({ driver: loadDriver(), dbPath });
@@ -358,10 +375,18 @@ export const createOpenCodeDbMaintenance = ({
         freelistPages: 0,
         eventRows: 0,
         orphanEventRows: 0,
+        generation: 'unknown',
         error: error instanceof Error ? error.message : String(error),
       };
     }
-    return { ...inspection, lastRun: state.lastRun, lastDryRun: state.lastDryRun, running: inFlight !== null };
+    return {
+      ...inspection,
+      dbSource: database.source,
+      runtimeGeneration: database.selection?.runtime.generation ?? null,
+      lastRun: state.lastRun,
+      lastDryRun: state.lastDryRun,
+      running: inFlight !== null,
+    };
   };
 
   const run = async (options = {}) => {
@@ -370,8 +395,25 @@ export const createOpenCodeDbMaintenance = ({
       const dryRun = options.dryRun === true;
       const reason = typeof options.reason === 'string' && options.reason ? options.reason : (dryRun ? 'dry_run' : 'manual');
       const startedAt = now();
+      const database = resolveDatabase();
+      const dbPath = database.path;
+      if (!dryRun && !database.selection) {
+        // No record of the runtime that owns the file: never mutate a guess.
+        const summary = summarizeRun(emptyRun({
+          at: startedAt,
+          reason,
+          dryRun,
+          status: 'skipped',
+          error: 'runtime_selection_unavailable',
+          vacuum: normalizeVacuumMode(options.vacuum),
+        }), database);
+        persist(summary);
+        record(summary);
+        logger?.log?.(`[OpenCode] Database maintenance run (${reason}) skipped: no runtime selection recorded`);
+        return summary;
+      }
       if (!fs.existsSync(dbPath)) {
-        return summarizeRun(emptyRun({ at: startedAt, reason, dryRun, status: 'skipped', error: 'missing_database' }));
+        return summarizeRun(emptyRun({ at: startedAt, reason, dryRun, status: 'skipped', error: 'missing_database' }), database);
       }
 
       let otherProcesses = [];
@@ -396,6 +438,7 @@ export const createOpenCodeDbMaintenance = ({
         vacuum: normalizeVacuumMode(options.vacuum),
         timeBudgetMs: typeof options.timeBudgetMs === 'number' && Number.isFinite(options.timeBudgetMs) ? options.timeBudgetMs : null,
         reason,
+        runtimeGeneration: database.selection?.runtime.generation ?? null,
         freeDiskBytes,
         otherProcesses: Array.isArray(otherProcesses) ? otherProcesses.map((entry) => ({
           pid: entry?.pid ?? null,
@@ -423,7 +466,7 @@ export const createOpenCodeDbMaintenance = ({
         });
       }
 
-      const summary = summarizeRun(result);
+      const summary = summarizeRun(result, database);
       persist(summary);
       record(summary);
       const level = summary.status === 'error' ? 'warn' : 'log';
@@ -449,7 +492,9 @@ export const createOpenCodeDbMaintenance = ({
   };
 
   return {
-    dbPath,
+    get dbPath() {
+      return resolveDatabase().path;
+    },
     statePath,
     inspect,
     run,

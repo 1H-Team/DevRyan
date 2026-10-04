@@ -1,9 +1,9 @@
 import { existsSync, readFileSync, statSync } from 'fs';
-import { homedir } from 'os';
+import { getRuntimeHome } from '../../opencode/runtime-host/runtime-bundle-binding.js';
 import { join } from 'path';
 import { toNumber, toTimestamp, toUsageWindow } from '../utils/index.js';
 
-export const CLAUDE_CODE_STATUS_PATH = join(homedir(), '.cache', 'openchamber', 'claude-code-status.json');
+export const CLAUDE_CODE_STATUS_PATH = join(getRuntimeHome(), '.cache', 'openchamber', 'claude-code-status.json');
 export const CLAUDE_CODE_USAGE_UNAVAILABLE_CODE = 'claude_code_usage_pending';
 export const CLAUDE_CODE_USAGE_UNAVAILABLE_MESSAGE = 'Claude Code usage data has not been emitted yet.';
 

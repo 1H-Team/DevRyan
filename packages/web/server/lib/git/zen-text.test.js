@@ -1,111 +1,33 @@
-import http from 'node:http';
-import { once } from 'node:events';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createFreeZenCooldowns } from '@openchamber/shared-runtime';
-import { GIT_GENERATION_ZEN_MODEL, GIT_GENERATION_ZEN_VARIANT, createGitZenTextTransport } from './zen-text.js';
-import { generateCommitMessageDirect } from './commit-message.js';
-import { generatePullRequestDescriptionDirect } from './pr-description.js';
-
-const context = { selectedFiles: [{ path: 'fixture.ts', index: 'M', workingDir: ' ' }], stagedOnly: true };
-const drafts = {
-  commit: JSON.stringify({ subject: 'fix: recover native generation', details: ['Rotate failed models', 'Clean up helper sessions'] }),
-  pr: JSON.stringify({ title: 'Recover native generation', body: '## Summary\n- Rotate failed models\n## Testing\n- Isolated HTTP' }),
-};
-
-describe('native OpenCode Git generation transport', () => {
-  let server;
-  let origin;
-  let calls;
-  let message;
-  let count;
-  beforeEach(async () => {
-    calls = [];
-    count = 0;
-    server = http.createServer(async (req, res) => {
-      const chunks = [];
-      for await (const chunk of req) chunks.push(chunk);
-      const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : null;
-      const url = new URL(req.url, 'http://localhost');
-      calls.push({ path: url.pathname, method: req.method, directory: url.searchParams.get('directory'), body });
-      res.setHeader('Content-Type', 'application/json');
-      if (url.pathname === '/session' && req.method === 'POST') res.end(JSON.stringify({ id: `ses_${++count}` }));
-      else if (url.pathname.endsWith('/message') && req.method === 'POST') message(res, body);
-      else if (url.pathname.endsWith('/abort') || req.method === 'DELETE') res.end('true');
-      else res.writeHead(404).end();
-    });
-    server.listen(0, '127.0.0.1');
-    await once(server, 'listening');
-    origin = `http://127.0.0.1:${server.address().port}`;
+import {describe,expect,it,vi} from 'vitest';
+import {OPENCODE_CAPABILITY_ABSENT} from '../opencode/opencode-generation.js';
+import {createFreeZenCooldowns} from '@openchamber/shared-runtime';
+import {GIT_GENERATION_ZEN_MODEL,GIT_GENERATION_ZEN_VARIANT,createGitZenTextTransport} from './zen-text.js';
+import {generateCommitMessageDirect} from './commit-message.js';
+import {generatePullRequestDescriptionDirect} from './pr-description.js';
+const context={selectedFiles:[{path:'fixture.ts',index:'M',workingDir:' '}],stagedOnly:true};
+const drafts={commit:JSON.stringify({subject:'fix: recover native generation',details:['Preserve native settlement']}),pr:JSON.stringify({title:'Recover native generation',body:'## Summary\n- Native helper\n## Testing\n- Isolated graph'})};
+const client={generation:()=>2};
+describe('admitted native Git text transport',()=>{
+ it('pins DeepSeek V4.1 Flash at low reasoning effort',()=>{expect(GIT_GENERATION_ZEN_MODEL).toBe('deepseek-v4.1-flash');expect(GIT_GENERATION_ZEN_VARIANT).toBe('low');});
+ it.each(['commit','pr'])('%s retains provider/agent/variant and rotates only after actual helper settlement',async kind=>{
+  let running=false;const settled=[],generateHelperText=vi.fn(async input=>{
+   expect(running).toBe(false);running=true;expect(input.providerID).toBe('opencode');expect(input.variant).toBe('low');expect(input.agent).toBe(kind==='commit'?'devryan-commit':'devryan-pr');
+   try{await Promise.resolve();if(input.modelID==='a')throw Object.assign(new Error('private upstream detail'),{statusCode:429});return {text:input.modelID==='b'?'{}':drafts[kind]};}
+   finally{running=false;settled.push(input.modelID);}
   });
-  afterEach(async () => {
-    const closed = once(server, 'close');
-    server.close();
-    server.closeAllConnections();
-    await closed;
-  });
-  const generate = (kind, extra = {}) => {
-    const options = {
-      ...createGitZenTextTransport({ buildOpenCodeUrl: (url) => `${origin}${url}`, directory: '/isolated/fixture', agent: kind === 'commit' ? 'devryan-commit' : 'devryan-pr' }),
-      models: ['a', 'b', 'c'], cooldowns: createFreeZenCooldowns(), ...extra,
-    };
-    return kind === 'commit'
-      ? generateCommitMessageDirect({ context, ...options })
-      : generatePullRequestDescriptionDirect({ prompt: 'Describe the fixture', ...options });
-  };
-
-  it('pins DeepSeek V4.1 Flash at low reasoning effort', () => {
-    expect(GIT_GENERATION_ZEN_MODEL).toBe('deepseek-v4.1-flash');
-    expect(GIT_GENERATION_ZEN_VARIANT).toBe('low');
-  });
-
-  it.each(['commit', 'pr'])('%s uses native Zen models with hidden tools, rejects embedded provider errors, and deletes all helpers', async (kind) => {
-    message = (res, body) => {
-      expect(body.model.providerID).toBe('opencode');
-      expect(body.variant).toBe(GIT_GENERATION_ZEN_VARIANT);
-      expect(body.agent).toBe(kind === 'commit' ? 'devryan-commit' : 'devryan-pr');
-      if (body.model.modelID === 'a') res.end(JSON.stringify({ info: { role: 'assistant', error: { name: 'APIError', data: { statusCode: 429, message: 'private upstream detail' } } }, parts: [] }));
-      else res.end(JSON.stringify({ info: { role: 'assistant' }, parts: [{ type: 'text', text: body.model.modelID === 'b' ? '{}' : drafts[kind] }] }));
-    };
-    const attempts = [];
-    const result = await generate(kind, { onAttempt: (attempt) => attempts.push(attempt) });
-    expect(result._generation).toMatchObject({ model: 'c', attempts: 3 });
-    expect(attempts.map(({ reason }) => reason)).toEqual(['rate_limited', 'invalid_output', undefined]);
-    // A lone blanket deny hides every tool; the paid model needs no advertised tools.
-    const helperPermission = [{ permission: '*', pattern: '*', action: 'deny' }];
-    expect(calls.filter(({ path }) => path === '/session').map(({ body }) => body.permission)).toEqual([
-      helperPermission, helperPermission, helperPermission,
-    ]);
-    expect(calls.filter(({ method }) => method === 'DELETE').map(({ path }) => path)).toEqual(['/session/ses_1', '/session/ses_2', '/session/ses_3']);
-    expect(calls.every(({ directory }) => directory === '/isolated/fixture')).toBe(true);
-    expect(JSON.stringify(attempts)).not.toContain('private');
-  });
-
-  it.each(['commit', 'pr'])('%s aborts and deletes a timed-out helper before creating the next one', async (kind) => {
-    message = (res, body) => {
-      if (body.model.modelID === 'a') return;
-      res.end(JSON.stringify({ info: { role: 'assistant' }, parts: [{ type: 'text', text: drafts[kind] }] }));
-    };
-    const result = await generate(kind, { timeoutMs: 100 });
-    expect(result._generation).toMatchObject({ model: 'b', attempts: 2 });
-    expect(calls.map(({ method, path }) => `${method} ${path}`)).toEqual([
-      'POST /session', 'POST /session/ses_1/message', 'POST /session/ses_1/abort', 'DELETE /session/ses_1',
-      'POST /session', 'POST /session/ses_2/message', 'DELETE /session/ses_2',
-    ]);
-  });
-
-  it.each(['commit', 'pr'])('%s stops after one free-tier policy rejection', async (kind) => {
-    message = (res) => res.end(JSON.stringify({ info: { role: 'assistant', error: { name: 'APIError', data: { statusCode: 403, message: "Error from provider (Console): OpenCode's free tier can only be used from within OpenCode" } } }, parts: [] }));
-    const cooldowns = createFreeZenCooldowns();
-    const attempts = [];
-    const outcome = await generate(kind, { cooldowns, onAttempt: (attempt) => attempts.push(attempt) }).catch((error) => error);
-    expect(attempts.map(({ model, reason }) => [model, reason])).toEqual([['a', 'free_tier_rejected']]);
-    expect(cooldowns.snapshot()).toEqual([]);
-    expect(calls.filter(({ path }) => path === '/session')).toHaveLength(1);
-    if (kind === 'commit') {
-      expect(outcome._generation).toMatchObject({ source: 'local_fallback', providerOutcome: 'free_tier_rejected', attempts: 1 });
-      expect(outcome._generation.warning).toBe('Free Zen rejected the request; created a local commit draft');
-    } else {
-      expect(outcome).toMatchObject({ code: 'FREE_ZEN_EXHAUSTED', attempts: 1 });
-    }
-  });
+  const options={...createGitZenTextTransport({openCodeClient:client,generateHelperText,directory:'/fixture',agent:kind==='commit'?'devryan-commit':'devryan-pr'}),models:['a','b','c'],cooldowns:createFreeZenCooldowns()};
+  const attempts=[];const result=kind==='commit'?await generateCommitMessageDirect({context,...options,onAttempt:attempt=>attempts.push(attempt)}):await generatePullRequestDescriptionDirect({prompt:'Describe fixture',...options,onAttempt:attempt=>attempts.push(attempt)});
+  expect(result._generation).toMatchObject({model:'c',attempts:3});expect(settled).toEqual(['a','b','c']);expect(attempts.map(item=>item.reason)).toEqual(['rate_limited','invalid_output',undefined]);expect(JSON.stringify(attempts)).not.toContain('private');expect(running).toBe(false);
+  expect(new Set(generateHelperText.mock.calls.map(([input])=>input.operationID)).size).toBe(1);
+ });
+ it('ends model rotation when the owner returns an unsettled helper',async()=>{
+  const generateHelperText=vi.fn(async()=>{throw Object.assign(Error('held'),{code:'native_helper_unsettled',statusCode:503});});
+  const options={...createGitZenTextTransport({openCodeClient:client,generateHelperText,directory:'/fixture',agent:'devryan-commit'}),models:['a','b'],cooldowns:createFreeZenCooldowns()};
+  await expect(generateCommitMessageDirect({context,...options})).rejects.toMatchObject({reason:'unsettled',code:'native_helper_unsettled'});
+  expect(generateHelperText).toHaveBeenCalledTimes(1);
+ });
+ it('refuses a missing native helper before any old session or provider request',async()=>{
+  const transport=createGitZenTextTransport({openCodeClient:client,directory:'/fixture',agent:'devryan-commit'});
+  await expect(transport.requestText({prompt:'fixture',zenModel:'a',timeoutMs:10})).rejects.toMatchObject({reason:OPENCODE_CAPABILITY_ABSENT});await transport.afterAttempt();
+ });
 });

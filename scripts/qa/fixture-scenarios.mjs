@@ -4,12 +4,17 @@ import { createHash } from 'node:crypto';
 import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createLoopbackOpenCodeFixture, PERF_PARENT_SESSION_ID } from '../perf/loopback-opencode-fixture.mjs';
+import { PERF_PARENT_SESSION_ID } from '../perf/fixture-session-seeds.mjs';
+import { createLoopbackOpenCodeFixtureForGeneration } from '../perf/loopback-opencode-fixtures.mjs';
+import { resolveQaFixtureGeneration } from './runtime-target.mjs';
 import { evaluate } from './cdp.mjs';
 import { captureQaCompactionProjectPlan } from './compaction-approval.mjs';
 import { findQaPlanApprovalUser } from './compaction-scenarios.mjs';
-import { assertQaSubmittedPlanMode } from './submitted-turn.mjs';
-import { runQaFixtureFailureRecovery } from './fixture-failures.mjs';
+import { assertQaSubmittedPlanMode, isQaKnownSessionSettled } from './submitted-turn.mjs';
+import { runQaRecoveredInputFixtureProof } from './fixture-recovered-inputs.mjs';
+import { prepareRuntimeUiProfile } from './native-backend-ui-diagnostic.mjs';
+import { createQaFixtureHostFacade } from './fixture-host-facade.mjs';
+import { revealQaFixtureTool, runQaFixtureFailureRecovery } from './fixture-failures.mjs';
 import { runQaFixtureMobileCoverage } from './fixture-mobile-coverage.mjs';
 import { selectQaThinkingLevel } from './thinking-control.mjs';
 import { QA_COMPACTION_COMPOSER, QA_QUEUE_MODE_CONTROL, QA_QUEUE_MODE_STATE,
@@ -29,12 +34,15 @@ const canonicalTarget = async (target) => {
   }
 };
 
-export async function prepareQaFixtureProfile({runtimeRoot,workspace,cell}) {
+export async function prepareQaFixtureProfile({runtimeRoot,workspace,cell,generation,artifactRoot,
+  prepareNativeProfile = prepareRuntimeUiProfile}) {
   if (cell?.transport !== 'fixture' || cell.providerId !== 'fixture' || cell.modelId !== 'fixture-model'
     || !['web','electron'].includes(cell.runtime) || !['core-journey','mobile'].includes(cell.scenarioId)
     || !['builder','orchestrator'].includes(cell.agent) || typeof cell.planMode !== 'boolean'
     || ![null,'low','high'].includes(cell.variant)
     || (cell.scenarioId === 'mobile' && cell.runtime !== 'web')) throw new Error('Unsupported QA fixture matrix selection');
+  const fixtureGeneration=resolveQaFixtureGeneration(generation);
+  if (!path.isAbsolute(artifactRoot ?? '')) throw new Error('QA wire fixtures require explicit native artifacts');
   const cache=path.join(await realpath(root),'.cache');
   if (!path.isAbsolute(runtimeRoot) || !path.isAbsolute(workspace) || !within(cache,path.resolve(runtimeRoot))
     || !within(cache,await realpath(workspace)) || !within(cache,await canonicalTarget(runtimeRoot))) throw new Error('Fixture profile must use an owned repository cache workspace');
@@ -67,34 +75,62 @@ export async function prepareQaFixtureProfile({runtimeRoot,workspace,cell}) {
     desktopWindowState:{width:1280,height:800,maximized:false}}),{mode:0o600});
   // A distinct native agent fallback makes explicit Default/High restoration
   // observable when a later synthetic user omits its variant.
-  const fixture=await createLoopbackOpenCodeFixture({directory:workspace,agentVariant:modelSelection.variant});
+  const fixture=await createLoopbackOpenCodeFixtureForGeneration(fixtureGeneration,{directory:workspace,agentVariant:modelSelection.variant});
+  let nativeProfile,facade;
   try {
     fixture.seedHistory(PERF_PARENT_SESSION_ID,{turns:180,textBytes:256});
-    const env={DEVRYAN_QA_RUNTIME_ROOT:runtimeRoot,DEVRYAN_QA_HOME:home,DEVRYAN_QA_RUNTIME:cell.runtime,
-      OPENCODE_TEST_HOME:home,XDG_CONFIG_HOME:path.join(home,'.config'),XDG_DATA_HOME:path.join(home,'.local/share'),
-      OPENCODE_CONFIG_DIR:path.join(home,'.config/opencode'),GH_CONFIG_DIR:path.join(home,'.config/gh'),
+    nativeProfile=await prepareNativeProfile({runtimeRoot,workspace,artifactRoot,targetGeneration:2,
+      cell:{...cell,transport:'runtime-fixture',providerId:'devryan-smoke',modelId:'smoke-write',agent:'builder',variant:'high',planMode:false}});
+    const nativeData=nativeProfile.env.OPENCHAMBER_DATA_DIR;
+    if (!within(runtimeRoot,nativeData) || await realpath(nativeData)!==nativeData
+      || !nativeProfile.env.DEVRYAN_RUNTIME_BUNDLE_ROOT || typeof nativeProfile.verifyInputs!=='function') throw new Error('QA wire native profile invalid');
+    await writeFile(path.join(nativeData,'settings.json'),await readFile(path.join(data,'settings.json')),{mode:0o600});
+    const env={...nativeProfile.env,DEVRYAN_QA_RUNTIME:cell.runtime,GH_CONFIG_DIR:path.join(home,'.config/gh'),
       GIT_CONFIG_GLOBAL:path.join(home,'.gitconfig'),GIT_CONFIG_NOSYSTEM:'1',GH_TOKEN:'',GITHUB_TOKEN:'',
-      XDG_STATE_HOME:path.join(home,'.local/state'),XDG_CACHE_HOME:path.join(home,'.cache'),TMPDIR:path.join(home,'tmp'),
-      OPENCHAMBER_DATA_DIR:data,OPENCHAMBER_ELECTRON_USER_DATA_DIR:browserProfile,
       OPENCHAMBER_DIST_DIR:path.join(root,'packages/web/dist'),OPENCHAMBER_ELECTRON_DEV:'1',
-      OPENCODE_HOST:fixture.origin,OPENCODE_SKIP_START:'true',OPENCHAMBER_SKIP_OPENCODE_START:'true',
-      NODE_OPTIONS:`--import=${JSON.stringify(fileURLToPath(new URL('./isolated-home.mjs',import.meta.url)))}`,
       NO_PROXY:'localhost,127.0.0.1',no_proxy:'localhost,127.0.0.1'};
-    return {env,bootstrapPath:fileURLToPath(new URL('./isolated-host.mjs',import.meta.url)),fixture,close:() => fixture.close(),
-      evidence:{transport:'fixture',version:'perf-fixture',credentialsCopied:false,globalConfigurationRead:false,
+    return {env,bootstrapPath:nativeProfile.bootstrapPath,fixture,verifyInputs:nativeProfile.verifyInputs,nativeLogRoot:nativeProfile.nativeLogRoot,
+      startFacade:async realOrigin => {
+        if(facade)throw new Error('QA wire facade already started');
+        const local=new URL(realOrigin);
+        if(local.protocol!=='http:'||local.hostname!=='127.0.0.1'||!local.port||local.pathname!=='/'||local.search||local.hash||local.username||local.password)throw new Error('QA wire host must be an exact loopback origin');
+        // Electron chooses its local server port from owned settings, rather
+        // than OPENCHAMBER_PORT. Pin the same reserved port before main starts.
+        const settingsPath=path.join(nativeData,'settings.json');
+        const settings=JSON.parse(await readFile(settingsPath,'utf8'));
+        await writeFile(settingsPath,JSON.stringify({...settings,desktopLocalPort:Number(local.port)}),{mode:0o600});
+        facade=await createQaFixtureHostFacade({fixture,realOrigin,workspace,dataDirectory:nativeData,userConfigPath:path.join(home,'.config/opencode/opencode.json')});
+        return facade;
+      },
+      close:async()=>{const results=await Promise.allSettled([facade?.close(),fixture.close(),nativeProfile.close()]);
+        const errors=results.filter(row=>row.status==='rejected').map(row=>row.reason);
+        const details=results.flatMap((row,index)=>row.status==='rejected'
+          ? [`${['facade','fixture','native-profile'][index]}: ${String(row.reason?.message ?? row.reason).slice(0,512)}`] : []);
+        if(errors.length)throw new AggregateError(errors,`QA wire cleanup failed: ${details.join('; ')}`);},
+      evidence:{transport:'fixture',version:'2.0.20',generation:2,fixtureGeneration,credentialsCopied:false,globalConfigurationRead:false,
+        inputDigest:nativeProfile.evidence.inputDigest,nativeBundle:nativeProfile.evidence.nativeBundle,
+        runtimeOwner:'actual-private-native-bundle',uiTransport:'production-v2-facade-with-synthetic-wire',
+        electronHostMode:cell.runtime==='electron'?'remote-loopback-facade':'not-applicable',localElectronIPC:'not-qualified-by-wire',
         agentFallbackVariant:modelSelection.variant,applicationAgentFallbackVariant:modelSelection.variant,modelSelection,history:{sessionID:PERF_PARENT_SESSION_ID,turns:180},
-        isolation:{home,data,browserProfile,workspace},managedScheduler:'not-simulated'}};
-  } catch (error) {await fixture.close();throw error;}
+        isolation:{home:nativeProfile.env.HOME,data:nativeData,browserProfile,workspace},managedScheduler:'not-simulated'}};
+  } catch (error) {const results=await Promise.allSettled([facade?.close(),fixture.close(),nativeProfile?.close()]);
+    const errors=results.filter(row=>row.status==='rejected').map(row=>row.reason);
+    const details=results.flatMap((row,index)=>row.status==='rejected'
+      ? [`${['facade','fixture','native-profile'][index]}: ${String(row.reason?.message ?? row.reason).slice(0,512)}`] : []);
+    if(errors.length)throw new AggregateError([error,...errors],`QA wire preparation and cleanup failed: ${details.join('; ')}`);throw error;}
 }
 
-export async function runQaFixtureScenario({cell,fixture,projectFixture,cdp,ui,api,check,screenshot,runDeadline}) {
+export async function runQaFixtureScenario({cell,fixture,projectFixture,cdp,ui,api,check,screenshot,runDeadline,consoleErrorOrdinal}) {
   if (cell?.transport !== 'fixture' || !['core-journey','mobile'].includes(cell.scenarioId)
     || (cell.scenarioId === 'mobile' && cell.runtime !== 'web')) throw new Error('Unsupported QA fixture scenario');
   const evidence={sessionIDs:[],expectedFailures:[],managedScheduler:'not-tested'};
   const rows = (id) => api(`/api/session/${id}/message?directory=${encodeURIComponent(projectFixture.fixtureRoot)}`);
   const idle = (id) => ui.waitFor('fixture turn idle',async () => {
-    const status=await api(`/api/session/status?directory=${encodeURIComponent(projectFixture.fixtureRoot)}`);
-    return status[id]?.type === 'idle';
+    const [session, status, history] = await Promise.all([
+      api(`/api/session/${id}?directory=${encodeURIComponent(projectFixture.fixtureRoot)}`),
+      api(`/api/session/status?directory=${encodeURIComponent(projectFixture.fixtureRoot)}`), rows(id),
+    ]);
+    return isQaKnownSessionSettled({ sessionID:id, session, status, rows:history });
   });
   const visibleRow = (id) => `[data-message-id=${JSON.stringify(id)}]`;
   const selectedSession = () => evaluate(cdp,"new URL(location.href).searchParams.get('session')");
@@ -136,7 +172,7 @@ export async function runQaFixtureScenario({cell,fixture,projectFixture,cdp,ui,a
   };
   const expectPlanMode = async (expected,name) => {
     await ui.click({selector:'button:has(.model-controls__agent-label)'});
-    const current=await ui.waitExpression('restored Plan mode control',planModeControl);
+    const current=await ui.waitExpression('restored Plan mode control',`(() => {const current=(${planModeControl});return current?.enabled===${expected}?current:false;})()`);
     assert.equal(current.enabled,expected,'Reload must restore the canonical Plan preference');
     if(name) {
       await ui.waitExpression('Plan menu animation settled',"[...document.querySelectorAll('[role=\"menu\"]')].every(e=>e.getAnimations({subtree:true}).every(a=>a.playState!=='running'))");
@@ -226,14 +262,7 @@ export async function runQaFixtureScenario({cell,fixture,projectFixture,cdp,ui,a
     const selector=visibleRow(assistant.info.id);
     const text=await evaluate(cdp,`document.querySelector(${JSON.stringify(selector)})?.innerText || ''`);
     assert.match(text,/Ran 1 command|fixture tests|npm test|Bash|bash/);
-    if(await evaluate(cdp,`Boolean(document.querySelector(${JSON.stringify(selector + ' button[aria-expanded="false"]')}))`)) {
-      await ui.click({selector:selector + ' button[aria-expanded="false"]'});
-    }
-    if(!await evaluate(cdp,`document.querySelector(${JSON.stringify(selector)})?.innerText.includes('Fixture tests passed.')`)) {
-      const toolHeader=selector + ' [role="button"]';
-      await ui.waitExpression('focusable tool disclosure',`(() => {const e=[...document.querySelectorAll(${JSON.stringify(toolHeader)})].find(e=>e.innerText.includes('npm test'));if(!e)return false;e.focus();return document.activeElement===e;})()`);
-      await ui.key('Enter',{code:'Enter',windowsVirtualKeyCode:13});
-    }
+    await revealQaFixtureTool({cdp,ui,assistant,expectedText:'Fixture tests passed.'});
     await ui.waitVisibleText('Fixture tests passed.',selector);
     await screenshot('fixture-tool-completed');
   });
@@ -269,8 +298,13 @@ export async function runQaFixtureScenario({cell,fixture,projectFixture,cdp,ui,a
     const sent=await send('QA reconnect then cancel this stream.');
     const assistant=await latestAssistant(sessionID);const selector=visibleRow(assistant.info.id);
     await ui.waitExpression('streamed text before reconnect',`document.querySelector(${JSON.stringify(selector)})?.innerText.includes('QA response chunk 1.')`);
+    const disconnect = {kind:'sse-disconnect',consoleStartOrdinal:consoleErrorOrdinal(),beforeConnections:fixture.getState().sseConnectionCount};
     fixture.disconnectEvents();
     await ui.waitExpression('streamed text after reconnect',`document.querySelector(${JSON.stringify(selector)})?.innerText.includes('QA response chunk 8.')`,30000);
+    const afterConnections=fixture.getState().sseConnectionCount;
+    assert.ok(afterConnections>disconnect.beforeConnections,'The injected disconnect must reconnect before its stream-tail witness');
+    evidence.expectedFailures.push({...disconnect,consoleEndOrdinal:consoleErrorOrdinal(),afterConnections,recovery:'stream-tail',
+      sessionID,messageID:sent.messageID,assistantMessageID:assistant.info.id});
     await ui.click({label:'Stop Generating'});await idle(sessionID);
     const saved=await latestAssistant(sessionID);const finalText=saved.parts.find((part) => part.type==='text').text;
     await ui.reload();
@@ -294,7 +328,7 @@ export async function runQaFixtureScenario({cell,fixture,projectFixture,cdp,ui,a
   });
 
   evidence.failureRecovery = await runQaFixtureFailureRecovery({ cell, fixture, cdp, ui, api, check, screenshot,
-    sessionID, directory: projectFixture.fixtureRoot, send, idle, latestAssistant });
+    sessionID, directory: projectFixture.fixtureRoot, send, idle, latestAssistant, consoleErrorOrdinal, expectedFailures: evidence.expectedFailures });
 
   await check('loading older messages preserves the visible history anchor',async () => {
     await selectSession(PERF_PARENT_SESSION_ID);
@@ -450,7 +484,7 @@ export async function runQaFixtureScenario({cell,fixture,projectFixture,cdp,ui,a
     const markers=implementation.parts.filter(part=>part.type==='text'&&part.synthetic===true&&part.text.startsWith(prefix));
     assert.equal(markers.length,1);
     const marker=JSON.parse(markers[0].text.slice(prefix.length));
-    assert.deepEqual(marker,{action:'implement',sourceSessionId:sessionID,sourceMessageId:source.info.id,planIndex:0});
+    assert.deepEqual(marker,{action:'implement',sourceSessionId:sessionID,sourceMessageId:source.info.id,planIndex:0,projectDirectory:projectFixture.fixtureRoot});
     assert.ok(implementation.parts.some(part=>part.type==='text'&&part.synthetic===true&&part.text.includes(saved.path)),
       'Implementation instructions must refer to the authoritative saved plan path');
     assert.equal(implementation.parts.some(part=>part.type==='text'&&part.synthetic===true&&part.text.trim().startsWith('User has requested to enter plan mode')),false);
@@ -537,7 +571,7 @@ export async function runQaFixtureScenario({cell,fixture,projectFixture,cdp,ui,a
     await ui.click({selector,text:'Implement Plan'});
     await ui.waitFor('fresh source implementation submitted',()=>fixture.getState().receivedPrompts[previous]);await idle(sessionID);
     const user=findQaPlanApprovalUser(await rows(sessionID),beforeIds,{sessionID,sourceMessageID:prepared.savedPlan.sourceMessageID,
-      cell:{...cell,variant:'high'},nativeAgent:requested.agent});
+      projectDirectory:projectFixture.fixtureRoot,cell:{...cell,variant:'high'},nativeAgent:requested.agent});
     assert.ok(user);await expectPlanMode(false);
     evidence.freshPlanApproval={...prepared.evidence,boundaries,previousCardDisabledReason:'Superseded by a newer plan.',previousCardVisibility,
       implementationUserMessageID:user.info.id,source:'actual UI policy and stored fixture records; no native compaction claim'};
@@ -557,7 +591,7 @@ export async function runQaFixtureScenario({cell,fixture,projectFixture,cdp,ui,a
         if(boundary?.continuationUserMessageID) {
           const continuation=(await rows(sessionID)).find(row=>row.info.id===boundary.continuationUserMessageID);
           assert.ok(continuation.parts.every(part=>part.synthetic===true));
-          assert.equal(continuation.parts[0].metadata.compaction_continue,true);
+          assert.equal(continuation.info.metadata.compaction_continue,true);
           assert.equal(continuation.info.model.variant,'high');
         }
         await ui.reload();await expectPlanMode(expected,`fixture-plan-${expected?'on':'off'}-${kind}-restored`);
@@ -593,6 +627,8 @@ export async function runQaFixtureScenario({cell,fixture,projectFixture,cdp,ui,a
           await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true});await pause(500);
           await check(`fixture mobile ${theme} ${width}x${height}`,async () => {
             const bounds=await evaluate(cdp,"(()=>{const r=document.querySelector('textarea').getBoundingClientRect();return{width:innerWidth,height:innerHeight,scrollWidth:document.documentElement.scrollWidth,composer:{x:r.x,y:r.y,width:r.width,height:r.height}}})()");
+            assert.equal(bounds.width,width,'Mobile viewport width must match the requested CDP geometry');
+            assert.equal(bounds.height,height,'Mobile viewport height must match the requested CDP geometry');
             assert.equal(await evaluate(cdp,"document.documentElement.classList.contains('dark')"),theme==='dark','The requested system theme must actually be rendered');
             assert.ok(bounds.scrollWidth<=width+1 && bounds.composer.width>0 && bounds.composer.x>=0 && bounds.composer.x+bounds.composer.width<=width+1
               && bounds.composer.y>=0 && bounds.composer.y+bounds.composer.height<=height+1,'Mobile composer overflow');
@@ -615,7 +651,7 @@ export async function runQaFixtureScenario({cell,fixture,projectFixture,cdp,ui,a
     }
     evidence.mobileRich={};
     await runQaFixtureMobileCoverage({cell,fixture,projectFixture,cdp,ui,api,check,screenshot,
-      send,idle,latestAssistant,setPlanMode,selectSession,outputEvidence:evidence.mobileRich});
+      send,idle,latestAssistant,setPlanMode,selectSession,outputEvidence:evidence.mobileRich,consoleErrorOrdinal,expectedFailures:evidence.expectedFailures});
     evidence.sessionIDs.push(evidence.mobileRich.sessionID,...evidence.mobileRich.managedTasks.records.map(record=>record.child.sessionID));
   }
   if(cell.scenarioId==='core-journey') {
@@ -625,6 +661,11 @@ export async function runQaFixtureScenario({cell,fixture,projectFixture,cdp,ui,a
       await screenshot('fixture-manual-submission-proof');
       await selectSession(sessionID);
     });
+  }
+  if (cell.scenarioId === 'core-journey' && fixture.generation === 2) {
+    evidence.recoveredInputs = await runQaRecoveredInputFixtureProof({ cell, fixture, projectFixture, cdp, ui, api, check, screenshot, selectSession });
+    evidence.sessionIDs.push(evidence.recoveredInputs.sessionID);
+    await selectSession(sessionID);
   }
   evidence.transportState=fixture.getState();
   return evidence;
@@ -650,7 +691,7 @@ export async function runQaAgentRuntimeSettingsFixtureProof({cell,ui,api,screens
     await ui.click({label:'Settings'});
     opened=true;
     await ui.click({selector:'[data-settings-view] button',text:'Agents'});
-    await ui.click({selector:'[data-settings-view] button',text:'Global Agent Behavior'});
+    await ui.click({selector:'[data-settings-view] button',text:'Runtime',exact:false});
     await ui.reveal(switchSelector,undefined,{direction:'down'});
   };
   const closeSettings=()=>ui.click({selector:'[data-settings-view] button',label:'Back'});
@@ -677,8 +718,25 @@ export async function runQaAgentRuntimeSettingsFixtureProof({cell,ui,api,screens
   return evidence;
 }
 
-// Uses actual ChatInput against the fixture's existing unsupported summarize
-// route. A 404 proves command routing only; no native boundary is synthesized.
+export function gradeQaManualFixtureSubmission({busy,submission,before,after,beforeRows,afterRows}) {
+  assert.equal(submission.matchingRequestCount,1);
+  assert.equal(submission.requests[0]?.response?.status,busy?409:200);
+  assert.equal(submission.failure,busy?'summarize-http-rejected':undefined);
+  assert.equal(after.receivedPrompts.length,before.receivedPrompts.length,'Compact was submitted as an ordinary prompt');
+  assert.equal(after.abortedPrompts,before.abortedPrompts,'Compact aborted an active prompt');
+  assert.deepEqual(after.unknownRoutes,before.unknownRoutes,'Manual compact reached an unsupported native route');
+  const previous=new Set(beforeRows.map(row=>row.id));
+  const compact=afterRows.filter(row=>row.type==='compaction'&&!previous.has(row.id));
+  assert.equal(compact.length,busy?0:1);
+  assert.equal((after.eventCounts['session.compaction.started']??0)-(before.eventCounts['session.compaction.started']??0),busy?0:1);
+  if(busy)return {outcome:'passed-command-routing-with-busy-conflict'};
+  assert.equal(compact[0].status,'completed');assert.equal(compact[0].reason,'manual');
+  assert.ok(compact[0].summary.length>0);
+  return {outcome:'passed-command-routing-with-fixture-compaction',compactionID:compact[0].id};
+}
+
+// Actual ChatInput and original v2 admission reach the fixture's /compact.
+// Idle acceptance and busy conflict are wire proofs, not native compaction.
 export async function runQaManualSubmissionFixtureProof({cell,fixture,projectFixture,cdp,ui,runDeadline}) {
   assert.ok(cell?.transport==='fixture' && cell.scenarioId==='core-journey', 'Queue mutation is restricted to the private desktop fixture');
   const evidence={source:'actual-shared-ui-with-fixture-transport',nativeCompactionAcceptance:false,attempts:[]};
@@ -690,7 +748,7 @@ export async function runQaManualSubmissionFixtureProof({cell,fixture,projectFix
     try {
       await ui.click({selector:'[data-settings-view] button',text:'Appearance'});
       const current=await ui.waitExpression('fixture queue preference',QA_QUEUE_MODE_STATE);
-      if(current.enabled!==enabled) await ui.click({selector:`[role="button"][aria-pressed]:has(${QA_QUEUE_MODE_CONTROL})`});
+      if(current.enabled!==enabled) await ui.click({selector:`${QA_QUEUE_MODE_CONTROL}[id=${JSON.stringify(current.controlID)}]`});
       return await ui.waitExpression('fixture queue preference applied',`(() => {const state=${QA_QUEUE_MODE_STATE};return state?.enabled===${enabled}?state:null;})()`);
     } finally {
       await ui.click({selector:'[data-settings-view] button',label:'Back'});
@@ -707,6 +765,7 @@ export async function runQaManualSubmissionFixtureProof({cell,fixture,projectFix
         if(startsBusy) fixture.startScenario('one-stream'); else fixture.stopScenario();
         await waitActivity(startsBusy);
         const before=fixture.getState();
+        const beforeRows=fixture.wireMessages(PERF_PARENT_SESSION_ID);
         const attempt={transition,queueModeObservation,submission:{},otherSessionMutations:[]};
         evidence.attempts.push(attempt);
         const unsubscribe=cdp.on('Network.requestWillBeSent',event=>{
@@ -721,31 +780,27 @@ export async function runQaManualSubmissionFixtureProof({cell,fixture,projectFix
           }
         });
         try {
-          await assert.rejects(withQaManualCompactionSubmission({cdp,ui,origin:original.origin,sessionID:PERF_PARENT_SESSION_ID,
+          const submit=()=>withQaManualCompactionSubmission({cdp,ui,origin:original.origin,sessionID:PERF_PARENT_SESSION_ID,
             queueModeEnabled:queueModeObservation.enabled,deadline:runDeadline,receipt:attempt.submission,persist,
             beforeKey:async()=>{
               if(startsBusy)fixture.stopScenario();else fixture.startScenario('one-stream');
               await waitActivity(!startsBusy);
               attempt.activityTransitionObservedAt=Date.now();
-            }},observer=>observer.waitForAcknowledgement()),error=>{
+            }},observer=>observer.waitForAcknowledgement());
+          if(startsBusy)await submit();else await assert.rejects(submit(),error=>{
             assert.match(error.message,/Manual compaction submission failed/);
             assert.equal(attempt.submission.failure,'summarize-http-rejected');
-            assert.equal(attempt.submission.requests[0]?.response?.status,404);
+            assert.equal(attempt.submission.requests[0]?.response?.status,409);
             return true;
           });
-          await ui.waitExpression('rejected compact command consumed without queue entry',
+          await ui.waitExpression('compact command consumed without queue entry',
             `document.querySelector(${JSON.stringify(QA_COMPACTION_COMPOSER)})?.value==='' && !document.querySelector('button[aria-label="Remove from Queue"]')`);
           fixture.stopScenario();
           await waitActivity(false);
           const after=fixture.getState();
-          assert.equal(attempt.submission.matchingRequestCount,1);
           assert.equal(attempt.otherSessionMutationCount??0,0,'Manual compact must not abort or submit an ordinary prompt');
-          assert.equal(after.receivedPrompts.length,before.receivedPrompts.length,'Compact was submitted as an ordinary prompt');
-          assert.equal(after.abortedPrompts,before.abortedPrompts,'Compact aborted an active prompt');
-          const summarizeRoutes=after.unknownRoutes.slice(before.unknownRoutes.length).filter(route=>route.method==='POST'
-            && route.path===`/session/${PERF_PARENT_SESSION_ID}/summarize`);
-          assert.equal(summarizeRoutes.length,1,'Fixture did not receive the exact summarize route once');
-          attempt.outcome='passed-command-routing-with-expected-404';
+          Object.assign(attempt,gradeQaManualFixtureSubmission({busy:!startsBusy,submission:attempt.submission,before,after,
+            beforeRows,afterRows:fixture.wireMessages(PERF_PARENT_SESSION_ID)}));
         } finally { unsubscribe(); await persist(); }
       }
     }

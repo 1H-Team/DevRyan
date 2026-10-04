@@ -935,13 +935,11 @@ describe('DevRyan loopback evaluation client', () => {
     assert.equal(bodies[1].tools, undefined);
     assert.deepEqual(bodies[2].tools, {
       task: false,
-      invalid: false,
     });
     assert.deepEqual(bodies[3].tools, {
       'resend_*': false,
       'mcp__resend__*': false,
       task: false,
-      invalid: false,
     });
     assert.equal(bodies[4].tools['*'], false);
     assert.equal(bodies[4].tools.read, true);

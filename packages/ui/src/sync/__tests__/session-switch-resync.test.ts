@@ -28,7 +28,9 @@ const deferred = () => {
   return { promise, resolve }
 }
 
+const actualOpencodeClientModule = await import("@/lib/opencode/client")
 mock.module("@/lib/opencode/client", () => ({
+  ...actualOpencodeClientModule,
   opencodeClient: {
     listPendingQuestions: mock(async (opts?: { directories?: Array<string | null | undefined> }) => {
       listPendingQuestionsCalls.push(opts ?? {})

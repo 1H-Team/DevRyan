@@ -1,7 +1,9 @@
+import { projectedFrame, createProjectedStreamClient } from './test-projected-stream.js';
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createGlobalMessageStreamHub } from './global-hub.js';
+import { createGlobalMessageStreamWsBridge } from './global-ws-bridge.js';
 import {
   createGlobalMessageStreamSseHandler,
   createGlobalUiEventBroadcaster,
@@ -138,6 +140,9 @@ function createMockSseResponse() {
       if (chunk) this.write(chunk);
       this.writableEnded = true;
     },
+    destroy() {
+      this.destroyed = true;
+    },
     get body() {
       return this.chunks.join('');
     },
@@ -208,6 +213,7 @@ describe('event stream broadcaster', () => {
   it('publishes synthetic broadcasts into the global hub replay buffer', () => {
     const received = [];
     const hub = createGlobalMessageStreamHub({
+      openCodeClient: createProjectedStreamClient(),
       buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
       getOpenCodeAuthHeaders: () => ({}),
       upstreamReconnectDelayMs: 100,
@@ -255,6 +261,50 @@ describe('event stream broadcaster', () => {
 });
 
 describe('global message stream SSE handler', () => {
+  function readinessHub({ connected = false, replay = [] } = {}) {
+    const events = new Set(), statuses = new Set();
+    const hub = {
+      events, statuses,
+      subscribeEvent(listener) { events.add(listener); return () => events.delete(listener); },
+      subscribeStatus(listener) { statuses.add(listener); return () => statuses.delete(listener); },
+      isConnected: () => connected,
+      replayAfter: () => ({ events: replay, gap: false }),
+      start() {},
+      status(type) {
+        if (type === 'connect') connected = true;
+        if (type === 'disconnect') connected = false;
+        for (const listener of [...statuses]) listener({ type });
+      },
+    };
+    return hub;
+  }
+  it('revokes global WS readiness on upstream disconnect and replays a cursor-free replacement through the same authorized queue', async () => {
+    const hub = readinessHub({ connected: true }), wsClients = new Set();
+    hub.replayAfter = (_cursor, { unanchored }) => unanchored ? { gap: true, events: [
+      { eventId: 'hidden', directory: '/hidden', payload: { type: 'message.part.delta' } },
+      { eventId: 'first-lost', directory: '/visible', payload: { type: 'message.part.delta' } },
+    ] } : { gap: false, events: [] };
+    const bridge = createGlobalMessageStreamWsBridge({ globalHub: hub, ownsGlobalHub: false, wsClients,
+      heartbeatIntervalMs: 60_000, eventFilter: async (_principal, entry) => entry.directory === '/visible' });
+    const first = new FakeSocket();
+    bridge.accept(first);
+    expect(first.sent).toEqual([{ type: 'ready', scope: 'global' }]);
+    hub.status('disconnect');
+    expect(first.closeCalls).toEqual([{ code: 1012, reason: 'OpenCode event stream disconnected' }]);
+    expect(wsClients.size).toBe(0);
+    const replacement = new FakeSocket();
+    bridge.accept(replacement, { unanchoredReplay: true });
+    expect(replacement.sent).toEqual([]);
+    hub.status('connect');
+    await waitForCondition(() => replacement.sent.some(frame => frame.eventId === 'first-lost'));
+    expect(replacement.sent.filter(frame => frame.type === 'ready')).toHaveLength(1);
+    expect(replacement.sent.some(frame => frame.type === 'gap' && frame.lastEventId === '')).toBe(true);
+    expect(replacement.sent.some(frame => frame.eventId === 'hidden')).toBe(false);
+    expect(replacement.sent.filter(frame => frame.eventId === 'first-lost')).toHaveLength(1);
+    replacement.close(); bridge.close();
+    expect(hub.events.size).toBe(0);
+    expect(hub.statuses.size).toBe(0);
+  });
   it('sends an opted-in cursor-free gap marker before authorized replay and leaves old clients unchanged', async () => {
     for (const optedIn of [false, true]) {
       const hub = { subscribeEvent: () => () => {}, start() {}, replayAfter: () => ({ gap: true, events: [
@@ -277,6 +327,7 @@ describe('global message stream SSE handler', () => {
   });
   it('replays synthetic global hub events as SSE envelopes after Last-Event-ID', async () => {
     const hub = createGlobalMessageStreamHub({
+      openCodeClient: createProjectedStreamClient(),
       buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
       getOpenCodeAuthHeaders: () => ({}),
       upstreamReconnectDelayMs: 100,
@@ -338,6 +389,7 @@ describe('message stream websocket runtime', () => {
     let fetchCalls = 0;
 
     const runtime = createMessageStreamWsRuntime({
+      openCodeClient: createProjectedStreamClient(),
       server,
       uiAuthController: null,
       isRequestOriginAllowed: async () => true,
@@ -354,7 +406,7 @@ describe('message stream websocket runtime', () => {
           signal: options.signal,
           holdOpen: true,
           blocks: [
-            'id: evt-1\ndata: {"type":"server.connected","properties":{}}\n\n',
+            projectedFrame({"type": "server.connected", "properties": {}}, {"id": "evt-1"}),
           ],
         });
       },
@@ -394,6 +446,7 @@ describe('message stream websocket runtime', () => {
     let fetchCalls = 0;
 
     const runtime = createMessageStreamWsRuntime({
+      openCodeClient: createProjectedStreamClient(),
       server,
       uiAuthController: null,
       isRequestOriginAllowed: async () => true,
@@ -411,8 +464,8 @@ describe('message stream websocket runtime', () => {
             signal: options.signal,
             holdOpen: true,
             blocks: [
-              'id: evt-1\ndata: {"type":"server.connected","properties":{}}\n\n',
-              'id: evt-2\ndata: {"type":"session.updated","properties":{"directory":"/tmp/project"}}\n\n',
+              projectedFrame({"type": "server.connected", "properties": {}}, {"id": "evt-1"}),
+              projectedFrame({"type": "session.updated", "properties": {"directory": "/tmp/project"}}, {"id": "evt-2"}),
             ],
           });
         }
@@ -448,12 +501,14 @@ describe('message stream websocket runtime', () => {
     await runtime.close();
   });
 
-  it('keeps directory websocket streams on separate upstream readers', async () => {
+  it('shares the native global stream across directory websocket clients', async () => {
     const server = new EventEmitter();
     const wsClients = new Set();
     const fetchUrls = [];
+    const fetchSignals = [];
 
     const runtime = createMessageStreamWsRuntime({
+      openCodeClient: createProjectedStreamClient(),
       server,
       uiAuthController: null,
       isRequestOriginAllowed: async () => true,
@@ -466,11 +521,12 @@ describe('message stream websocket runtime', () => {
       upstreamReconnectDelayMs: 0,
       fetchImpl: async (url, options) => {
         fetchUrls.push(url);
+        fetchSignals.push(options.signal);
         return createSseResponse({
           signal: options.signal,
           holdOpen: true,
           blocks: [
-            'id: evt-1\ndata: {"type":"server.connected","properties":{}}\n\n',
+            projectedFrame({"type": "server.connected", "properties": {}}, {"id": "evt-1"}),
           ],
         });
       },
@@ -483,14 +539,18 @@ describe('message stream websocket runtime', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 5));
 
-    expect(fetchUrls).toHaveLength(2);
-    expect(new URL(fetchUrls[0]).searchParams.get('directory')).toBe('/tmp/one');
-    expect(new URL(fetchUrls[1]).searchParams.get('directory')).toBe('/tmp/two');
+    expect(fetchUrls).toEqual(['http://127.0.0.1:4096/api/event']);
     expect(firstSocket.sent).toContainEqual({ type: 'ready', scope: 'directory' });
     expect(secondSocket.sent).toContainEqual({ type: 'ready', scope: 'directory' });
 
+    const globalSocket = new FakeSocket();
+    runtime.wsServer.emit('connection', globalSocket, { url: '/api/global/event/ws' });
+    globalSocket.close();
+    expect(fetchSignals[0].aborted).toBe(false);
     firstSocket.close();
+    expect(fetchSignals[0].aborted).toBe(false);
     secondSocket.close();
+    expect(fetchSignals[0].aborted).toBe(true);
     await runtime.close();
   });
 
@@ -500,6 +560,7 @@ describe('message stream websocket runtime', () => {
     let triggerHealthCheckCalls = 0;
 
     const runtime = createMessageStreamWsRuntime({
+      openCodeClient: createProjectedStreamClient(),
       server,
       uiAuthController: null,
       isRequestOriginAllowed: async () => true,
@@ -556,9 +617,7 @@ describe('message stream websocket runtime', () => {
       rejectWebSocketUpgrade() {
         throw new Error('upgrade should not be used in this test');
       },
-      buildOpenCodeUrl() {
-        throw new Error('missing OpenCode port');
-      },
+      openCodeClient: { generation: () => 2, events: { url() { throw new Error('missing OpenCode port'); } } },
       getOpenCodeAuthHeaders: () => ({}),
       wsClients,
       triggerHealthCheck: () => {
@@ -594,7 +653,7 @@ describe('message stream websocket runtime', () => {
     await runtime.close();
   });
 
-  it('reconnects a stalled upstream SSE stream and resumes from the last event id', async () => {
+  it('closes stale global readiness and reconnects a stalled native stream without upstream replay', async () => {
     const server = new EventEmitter();
     const wsClients = new Set();
     let triggerHealthCheckCalls = 0;
@@ -602,6 +661,7 @@ describe('message stream websocket runtime', () => {
     let upstreamAttempt = 0;
 
     const runtime = createMessageStreamWsRuntime({
+      openCodeClient: createProjectedStreamClient(),
       server,
       uiAuthController: null,
       isRequestOriginAllowed: async () => true,
@@ -615,7 +675,7 @@ describe('message stream websocket runtime', () => {
         triggerHealthCheckCalls += 1;
       },
       heartbeatIntervalMs: 50,
-      upstreamStallTimeoutMs: 20,
+      generation2StallTimeoutMs: 20,
       upstreamReconnectDelayMs: 0,
       fetchImpl: async (_url, options) => {
         const lastEventId = options?.headers?.['Last-Event-ID'] ?? null;
@@ -627,16 +687,16 @@ describe('message stream websocket runtime', () => {
             signal: options.signal,
             holdOpen: true,
             blocks: [
-              'id: evt-1\ndata: {"type":"server.connected","properties":{}}\n\n',
+              projectedFrame({"type": "server.connected", "properties": {}}, {"id": "evt-1"}),
             ],
           });
         }
 
         return createSseResponse({
           signal: options.signal,
-          holdOpen: false,
+          holdOpen: true,
           blocks: [
-            'id: evt-2\ndata: {"type":"server.connected","properties":{}}\n\n',
+            projectedFrame({"type": "server.connected", "properties": {}}, {"id": "evt-2"}),
           ],
         });
       },
@@ -645,20 +705,23 @@ describe('message stream websocket runtime', () => {
     const socket = new FakeSocket();
     runtime.wsServer.emit('connection', socket, { url: '/api/global/event/ws' });
 
-    await waitForCondition(() => (
-      socket.sent.filter((frame) => frame.type === 'ready').length === 1
-      && socket.sent.filter((frame) => frame.type === 'event' && frame.payload?.type === 'server.connected').length >= 2
-    ));
+    await waitForCondition(() => socket.readyState === 3);
+    expect(socket.closeCalls).toEqual([{ code: 1012, reason: 'OpenCode event stream disconnected' }]);
+    const replacement = new FakeSocket();
+    runtime.wsServer.emit('connection', replacement, { url: '/api/global/event/ws' });
+    await waitForCondition(() => replacement.sent.some(frame => frame.type === 'event' && frame.payload?.type === 'server.connected'));
 
     const readyFrames = socket.sent.filter((frame) => frame.type === 'ready');
     const eventFrames = socket.sent.filter((frame) => frame.type === 'event' && frame.payload?.type === 'server.connected');
 
     expect(readyFrames).toHaveLength(1);
-    expect(eventFrames.length).toBeGreaterThanOrEqual(2);
-    expect(fetchCalls.slice(0, 2)).toEqual([null, 'evt-1']);
+    expect(eventFrames).toHaveLength(1);
+    expect(replacement.sent.filter(frame => frame.type === 'ready')).toHaveLength(1);
+    expect(replacement.sent.filter(frame => frame.type === 'event' && frame.payload?.type === 'server.connected')).toHaveLength(1);
+    expect(fetchCalls.slice(0, 2)).toEqual([null, null]);
     expect(triggerHealthCheckCalls).toBe(0);
 
-    socket.close();
+    replacement.close();
     await runtime.close();
   });
 
@@ -667,6 +730,7 @@ describe('message stream websocket runtime', () => {
     const wsClients = new Set();
     const processForwardedEventPayload = vi.fn();
     const globalEventHub = createGlobalMessageStreamHub({
+      openCodeClient: createProjectedStreamClient(),
       buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
       getOpenCodeAuthHeaders: () => ({}),
       upstreamReconnectDelayMs: 0,
@@ -674,12 +738,13 @@ describe('message stream websocket runtime', () => {
         signal: options.signal,
         holdOpen: true,
         blocks: [
-          'id: evt-1\ndata: {"type":"session.updated","properties":{"directory":"/tmp/project"}}\n\n',
+          projectedFrame({"type": "session.updated", "properties": {"directory": "/tmp/project"}}, {"id": "evt-1"}),
         ],
       }),
     });
 
     const runtime = createMessageStreamWsRuntime({
+      openCodeClient: createProjectedStreamClient(),
       server,
       uiAuthController: null,
       isRequestOriginAllowed: async () => true,
@@ -727,6 +792,7 @@ describe('message stream websocket runtime', () => {
     const rejectWebSocketUpgrade = vi.fn();
     const ensureSessionToken = vi.fn(async () => null);
     const runtime = createMessageStreamWsRuntime({
+      openCodeClient: createProjectedStreamClient(),
       server,
       uiAuthController: { ensureSessionToken },
       isRequestOriginAllowed: async () => true,
@@ -763,6 +829,7 @@ describe('message stream websocket runtime', () => {
     let revoke = null;
     const unregister = vi.fn();
     const globalEventHub = {
+      resolveGeneration: () => 2,
       subscribeEvent: () => () => {},
       subscribeStatus: () => () => {},
       replayAfter: () => ({ events: [], gap: false }),
@@ -771,6 +838,7 @@ describe('message stream websocket runtime', () => {
       isConnected: () => false,
     };
     const runtime = createMessageStreamWsRuntime({
+      openCodeClient: createProjectedStreamClient(),
       server,
       uiAuthController: {
         registerConnection(_principal, close) {

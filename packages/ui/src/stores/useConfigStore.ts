@@ -1170,16 +1170,9 @@ export const useConfigStore = create<ConfigStore>()(
                                 nextState.providersLoadStatus = commitOptions?.incomplete ? "error" : "ready";
                                 nextState.providersLoadError = commitOptions?.incomplete ? PROVIDER_CATALOG_INCOMPLETE_ERROR : undefined;
 
-                                // Ensure a valid model stays selected after (re)loading providers.
-                                // Otherwise switching to an uncached directory (which blanks the
-                                // selection in activateDirectory) leaves the composer stuck on
-                                // "Not selected" even though a model is available. Only resolve a
-                                // default when the current selection is missing/unavailable — never
-                                // override a still-valid explicit choice.
-                                const selectionIsValid = Boolean(state.currentProviderId)
-                                    && Boolean(state.currentModelId)
-                                    && processedProviders.some((p) => p.id === state.currentProviderId
-                                        && p.models.some((m) => m.id === state.currentModelId && isProviderModelAvailable(m)));
+                                // Catalog refresh must preserve a captured selection, including one
+                                // currently unavailable. Choose a default only before any model is set.
+                                const selectionIsValid = Boolean(state.currentProviderId) && Boolean(state.currentModelId);
                                 if (!selectionIsValid) {
                                     let resolved: { providerId: string; modelId: string } | null = null;
                                     const agentDefault = resolveAgentDefaultSelection({
@@ -1352,11 +1345,7 @@ export const useConfigStore = create<ConfigStore>()(
                 },
 
                 setProviderModel: (providerId, modelId, variant, options) => {
-                    const { providers } = get();
-                    const provider = providers.find((p) => p.id === providerId);
-                    if (!provider?.models.some((model) => model.id === modelId && isProviderModelAvailable(model))) {
-                        return;
-                    }
+                    if (!providerId || !modelId) return;
 
                     set((state) => {
                         const directoryKey = state.activeDirectoryKey;
@@ -1801,7 +1790,7 @@ export const useConfigStore = create<ConfigStore>()(
                     if (agentName && options?.preserveCurrentModel !== true) {
                         if (currentSessionId) {
                             const existingAgentModel = useSelectionStore.getState().getAgentModelForSession(currentSessionId, agentName);
-                            if (existingAgentModel && hasProviderModel(providers, existingAgentModel.providerId, existingAgentModel.modelId)) {
+                            if (existingAgentModel) {
                                 resolvedModel = {
                                     providerId: existingAgentModel.providerId,
                                     modelId: existingAgentModel.modelId,
@@ -1827,7 +1816,7 @@ export const useConfigStore = create<ConfigStore>()(
                             if (accountDefault) resolvedModel = accountDefault;
                         }
 
-                        if (!resolvedModel && !hasProviderModel(providers, currentProviderId, currentModelId)) {
+                        if (!resolvedModel && (!currentProviderId || !currentModelId)) {
                             const fallback = resolveAvailableProviderModel(providers, currentProviderId, currentModelId);
                             if (fallback) resolvedModel = fallback;
                         }

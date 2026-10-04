@@ -107,7 +107,7 @@ function resolveVariantForModel(
 ): string | null {
   const cleanedVariant = clean(variant)
   const providerModel = findProviderModel(providers, providerID, modelID)
-  if (!providerModel) return null
+  if (!providerModel) return cleanedVariant ?? null
 
   return resolveProviderModelVariant(providerModel.provider, modelID, cleanedVariant) ?? null
 }
@@ -118,17 +118,15 @@ function hasOwn(object: object | null | undefined, key: keyof SendConfig): boole
 
 function resolveAgentVariantForModel(
   agent: SendConfigAgent | undefined,
-  model: SendConfigProviderModel | null | undefined,
+  _model: SendConfigProviderModel | null | undefined,
   providerID?: string,
   modelID?: string,
 ): string | undefined {
-  if (!agent || !model || !providerID || !modelID) return undefined
+  if (!agent || !providerID || !modelID) return undefined
   if (agent.model?.providerID !== providerID || agent.model?.modelID !== modelID) return undefined
   const agentVariant = clean(agent.variant)
   if (!agentVariant) return undefined
-  return model.variants && Object.prototype.hasOwnProperty.call(model.variants, agentVariant)
-    ? agentVariant
-    : undefined
+  return agentVariant
 }
 
 export function resolveDraftSendSelection(params: {
@@ -164,15 +162,9 @@ export function resolveDraftSendSelection(params: {
   // agent-default means the account's personal-or-inherited agent default wins
   // over persisted draft maps. Explicit and legacy drafts retain their picks.
   const honorPersistedDraftModel = normalizeSendConfigModelProvenance(params.draftSendConfig?.modelProvenance) !== "agent-default"
-  const explicitModel = honorPersistedDraftModel
-    ? findProviderModel(params.providers, params.draftSendConfig?.providerID, params.draftSendConfig?.modelID)
-    : null
-  const draftAgentModel = honorPersistedDraftModel && agent
-    ? findProviderModel(params.providers, params.draftAgentModelSelection?.providerId, params.draftAgentModelSelection?.modelId)
-    : null
-  const draftModel = honorPersistedDraftModel
-    ? findProviderModel(params.providers, params.draftModelSelection?.providerId, params.draftModelSelection?.modelId)
-    : null
+  const explicitModel = honorPersistedDraftModel && clean(params.draftSendConfig?.providerID) && clean(params.draftSendConfig?.modelID)
+  const draftAgentModel = honorPersistedDraftModel && agent && params.draftAgentModelSelection
+  const draftModel = honorPersistedDraftModel && params.draftModelSelection
   const accountAgentDefault = agent ? resolveAgentDefaultSelection({
     agentName: agent.name,
     agents: params.agents,
@@ -198,16 +190,16 @@ export function resolveDraftSendSelection(params: {
     providerID = params.draftSendConfig?.providerID
     modelID = params.draftSendConfig?.modelID
     variant = params.draftSendConfig?.variant
-    selectedModel = explicitModel.model
+    selectedModel = findProviderModel(params.providers, providerID, modelID)?.model ?? null
   } else if (draftAgentModel) {
     providerID = params.draftAgentModelSelection?.providerId
     modelID = params.draftAgentModelSelection?.modelId
     variant = params.draftAgentModelVariant
-    selectedModel = draftAgentModel.model
+    selectedModel = findProviderModel(params.providers, providerID, modelID)?.model ?? null
   } else if (draftModel) {
     providerID = params.draftModelSelection?.providerId
     modelID = params.draftModelSelection?.modelId
-    selectedModel = draftModel.model
+    selectedModel = findProviderModel(params.providers, providerID, modelID)?.model ?? null
   } else if (agentModel) {
     providerID = accountAgentDefault?.providerId
     modelID = accountAgentDefault?.modelId
@@ -217,14 +209,16 @@ export function resolveDraftSendSelection(params: {
     providerID = accountAgentDefault.providerId
     modelID = accountAgentDefault.modelId
     variant = accountAgentDefault.variant
-  } else if (inputModel) {
+  } else if (params.inputProviderID && params.inputModelID) {
     providerID = params.inputProviderID
     modelID = params.inputModelID
-    selectedModel = inputModel.model
-  } else if (currentModel) {
+    variant = params.inputVariant
+    selectedModel = inputModel?.model ?? null
+  } else if (params.currentProviderID && params.currentModelID) {
     providerID = params.currentProviderID
     modelID = params.currentModelID
-    selectedModel = currentModel.model
+    variant = params.currentVariant
+    selectedModel = currentModel?.model ?? null
   } else {
     providerID = params.inputProviderID
     modelID = params.inputModelID
@@ -263,65 +257,18 @@ export function resolveSessionSendConfigSnapshot(
     : null
   const sessionModel = snapshot.sessionModelSelection ?? snapshot.contextSessionModelSelection
 
-  if (snapshot.providers.length === 0) {
-    return {
-      providerID: requestedProviderID
-        ?? agentModel?.providerId
-        ?? sessionModel?.providerId
-        ?? clean(snapshot.currentProviderId)
-        ?? snapshot.lastUsedProvider?.providerID,
-      modelID: requestedModelID
-        ?? agentModel?.modelId
-        ?? sessionModel?.modelId
-        ?? clean(snapshot.currentModelId)
-        ?? snapshot.lastUsedProvider?.modelID,
-      agent,
-      variant: requested.variant === null ? null : clean(requested.variant),
-      planMode: requested.planMode ?? snapshot.planMode,
-    }
-  }
-
-  const requestedModel = findProviderModel(snapshot.providers, requestedProviderID, requestedModelID)
-  const storedAgentModel = findProviderModel(snapshot.providers, agentModel?.providerId, agentModel?.modelId)
-  const storedSessionModel = findProviderModel(snapshot.providers, sessionModel?.providerId, sessionModel?.modelId)
-  const currentModel = findProviderModel(
-    snapshot.providers,
-    clean(snapshot.currentProviderId),
-    clean(snapshot.currentModelId),
-  )
-  const lastUsedModel = findProviderModel(
-    snapshot.providers,
-    snapshot.lastUsedProvider?.providerID,
-    snapshot.lastUsedProvider?.modelID,
-  )
-
-  if ((requestedProviderID || requestedModelID) && !requestedModel) {
-    return {
-      providerID: undefined,
-      modelID: undefined,
-      agent,
-      variant: undefined,
-      planMode: requested.planMode ?? snapshot.planMode,
-    }
-  }
-
-  const selected = requestedModel
-    ?? storedAgentModel
-    ?? storedSessionModel
-    ?? currentModel
-    ?? lastUsedModel
-  const providerID = selected?.provider.id
-  const modelID = selected?.model.id
-
-  if (!providerID || !modelID) {
-    return {
-      providerID: undefined,
-      modelID: undefined,
-      agent,
-      variant: undefined,
-      planMode: requested.planMode ?? snapshot.planMode,
-    }
-  }
+  // A captured tuple is intent, even while its provider or model is absent.
+  // Dispatch validates availability; hydration must not choose another tuple.
+  const selected = requestedProviderID || requestedModelID
+    ? { providerId: requestedProviderID, modelId: requestedModelID }
+    : agentModel ?? sessionModel
+      ?? (snapshot.currentProviderId && snapshot.currentModelId
+        ? { providerId: snapshot.currentProviderId, modelId: snapshot.currentModelId }
+        : snapshot.lastUsedProvider
+          ? { providerId: snapshot.lastUsedProvider.providerID, modelId: snapshot.lastUsedProvider.modelID }
+          : null)
+  const providerID = selected?.providerId
+  const modelID = selected?.modelId
 
   // Null is an intentional provider default; only missing values inherit.
   const requestedOrStoredVariant = [
@@ -330,7 +277,7 @@ export function resolveSessionSendConfigSnapshot(
     snapshot.currentVariant,
   ].find((value) => value !== undefined)
   const selectedAgent = snapshot.agents.find((entry) => entry.name === agent)
-  const inheritedVariant = resolveAgentVariantForModel(selectedAgent, selected?.model, providerID, modelID)
+  const inheritedVariant = resolveAgentVariantForModel(selectedAgent, findProviderModel(snapshot.providers, providerID, modelID)?.model, providerID, modelID)
   const variant = resolveVariantForModel(snapshot.providers, providerID, modelID,
     requestedOrStoredVariant === undefined ? inheritedVariant : requestedOrStoredVariant)
 
@@ -441,7 +388,9 @@ export function resolveCurrentSendConfig(sessionId: string | null | undefined): 
 /** Normalize only new chat captures; persisted queues and history retain their wire choice. */
 export function normalizeNewChatSendConfig(config: SendConfig, providers: SendConfigProvider[]): SendConfig {
   const provider = providers.find((entry) => entry.id === config.providerID)
-  const variant = resolveChatThinkingVariant(provider, config.modelID, config.variant) ?? null
+  const variant = config.variant !== undefined
+    ? clean(config.variant) ?? null
+    : resolveChatThinkingVariant(provider, config.modelID, config.variant) ?? null
   return variant === config.variant ? config : { ...config, variant }
 }
 

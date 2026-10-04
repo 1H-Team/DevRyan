@@ -121,6 +121,9 @@ export const createManagedOrchestrationPrivateHost = (options = {}) => {
         const controller = new AbortController();
         requestControllers.add(controller);
         request.once('aborted', () => controller.abort(new Error('RPC request aborted')));
+        response.once('close', () => {
+          if (!response.writableEnded) controller.abort(new Error('RPC response disconnected'));
+        });
         try {
           const body = await readBody(request, maxBodyBytes);
           if (body.tooLarge) {

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createSessionChangeHost } from '../../packages/harness-runtime/lib/session-changes-host.js';
 import { normalizeInteractionUpdateToSdkMessage } from '../../packages/cursor-sdk-runtime/interaction-update-normalize.js';
 import { mergeCursorNativeTaskActivity } from '../../packages/cursor-sdk-runtime/cursor-native-task.js';
-import { PERF_PARENT_SESSION_ID, PERF_CHILD_SESSION_IDS } from '../perf/loopback-opencode-fixture.mjs';
+import { PERF_PARENT_SESSION_ID, PERF_CHILD_SESSION_IDS } from '../perf/fixture-session-seeds.mjs';
 import { evaluate } from './cdp.mjs';
 import { createQaUiDriver } from './ui-driver.mjs';
 

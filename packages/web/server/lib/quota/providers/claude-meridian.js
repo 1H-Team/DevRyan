@@ -1,5 +1,6 @@
 import { createKeyedSingleFlight } from '@openchamber/orchestration-runtime';
 
+import { openCodeClientErrorStatus, resolveGen2OpenCodeClient } from '../../opencode/opencode-client-seam.js';
 import { toNumber, toTimestamp, toUsageWindow } from '../utils/index.js';
 
 export const CLAUDE_MERIDIAN_UNAVAILABLE_CODE = 'claude_meridian_unavailable';
@@ -40,31 +41,18 @@ export const CLAUDE_PROXY_BASE_URL_TTL_MS = 60_000;
  * Answers are cached per directory for `ttlMs` (0 disables caching) and
  * overlapping lookups for the same directory share one `/config/providers`
  * request. Transport failures propagate so each caller decides how to degrade.
+ * `openCodeClient` (the client or a getter) serves the lookup on OpenCode 2.
  */
 export const createClaudeProxyBaseUrlResolver = ({
-  buildOpenCodeUrl,
-  getOpenCodeAuthHeaders = () => ({}),
   isExternalOpenCode = () => false,
-  fetchImpl,
+  openCodeClient = null,
   now = Date.now,
   ttlMs = CLAUDE_PROXY_BASE_URL_TTL_MS,
 } = {}) => {
   const cache = new Map();
   const singleFlight = createKeyedSingleFlight();
 
-  const lookup = async (workingDirectory) => {
-    const query = workingDirectory
-      ? `?directory=${encodeURIComponent(workingDirectory)}`
-      : '';
-    const response = await (fetchImpl ?? globalThis.fetch)(buildOpenCodeUrl(`/config/providers${query}`, ''), {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-        ...getOpenCodeAuthHeaders(),
-      },
-    });
-    if (!response.ok) return null;
-    const payload = await response.json().catch(() => null);
+  const anthropicBaseUrl = (payload) => {
     const providers = Array.isArray(payload?.providers) ? payload.providers : [];
     const anthropic = providers.find((provider) => provider?.id === 'anthropic');
     const baseUrl = anthropic?.options?.baseURL ?? anthropic?.baseURL;
@@ -73,8 +61,26 @@ export const createClaudeProxyBaseUrlResolver = ({
       : null;
   };
 
+  // Read the application provider view through the native client. Refused
+  // reads are unavailable; transport failures propagate. Catalogs require
+  // an explicit directory.
+  const lookupThroughClient = async (client, workingDirectory) => {
+    if (!workingDirectory) return null;
+    try {
+      return anthropicBaseUrl(await client.catalog.providers({ directory: workingDirectory }));
+    } catch (error) {
+      if (openCodeClientErrorStatus(error) > 0) return null;
+      throw error;
+    }
+  };
+
+  const lookup = async (workingDirectory) => {
+    const client = resolveGen2OpenCodeClient(openCodeClient);
+    return lookupThroughClient(client, workingDirectory);
+  };
+
   const resolve = async (workingDirectory) => {
-    if (isExternalOpenCode() || typeof buildOpenCodeUrl !== 'function') return null;
+    if (isExternalOpenCode()) return null;
     const key = typeof workingDirectory === 'string' ? workingDirectory : '';
     const cached = cache.get(key);
     if (cached && cached.expiresAt > now()) return cached.value;

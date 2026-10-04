@@ -3,7 +3,8 @@ import http from 'node:http';
 import path from 'node:path';
 import { test } from 'node:test';
 import vm from 'node:vm';
-import { createLoopbackOpenCodeFixture } from './loopback-opencode-fixture.mjs';
+import { createLoopbackOpenCodeV2Fixture } from './loopback-opencode-v2-fixture.mjs';
+import { createOpenCodeClient } from '../../packages/web/server/lib/opencode/opencode-client/index.js';
 import { createQaUiDriver } from '../qa/ui-driver.mjs';
 import {
   captureFirstDocumentStartup,
@@ -37,16 +38,16 @@ test('a buffered history reveal must prove older canonical content in the exact 
 });
 
 test('fixture preparation owns four independent histories without submitting prompts', async () => {
-  const fixture = await createLoopbackOpenCodeFixture({ directory: path.resolve('.cache/perf/lifecycle-unit-workspace') });
+  const fixture = await createLoopbackOpenCodeV2Fixture({ directory: path.resolve('.cache/perf/lifecycle-unit-workspace') });
   try {
+    const client = createOpenCodeClient({ getRuntime: () => ({ generation: 2, baseUrl: fixture.origin }), getAuthHeaders: () => fixture.authHeaders });
     const sessions = await prepareMemorySessions(fixture);
     assert.equal(sessions.length, 4);
     assert.equal(new Set(sessions.map(session => session.id)).size, 4);
     for (const session of sessions) {
-      const response = await fetch(`${fixture.origin}/session/${session.id}/message?limit=1000`);
-      const rows = await response.json();
+      const rows = (await client.sessions.messages(session.id, { limit: 1000 }, { directory: fixture.directory })).records;
       assert.equal(rows.length, SESSION_MEMORY_FIXTURE.turns * 2);
-      assert.equal(rows.at(-1).parts[0].text.length, SESSION_MEMORY_FIXTURE.textBytes);
+      assert.equal(rows.at(-1).parts.find(part => part.type === 'text').text.length, SESSION_MEMORY_FIXTURE.textBytes);
       assert.equal(rows[0].info.sessionID, session.id);
     }
     assert.equal(fixture.getState().receivedPrompts.length, 0);

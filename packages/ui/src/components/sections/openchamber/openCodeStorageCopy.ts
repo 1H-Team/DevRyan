@@ -46,6 +46,11 @@ export const describeRunFailure = (t: Translate, error: string | null): string =
   if (error === 'missing_database') return t('settings.openchamber.storage.reason.missing_database');
   if (error === 'other_opencode_process') return t('settings.openchamber.storage.vacuumReason.other_opencode_process');
   if (error === 'no_sqlite_driver') return t('settings.openchamber.storage.reason.no_sqlite_driver');
+  if (error === 'runtime_selection_unavailable') return t('settings.openchamber.storage.reason.runtime_selection_unavailable');
+  if (error === 'v2_database') return t('settings.openchamber.storage.reason.v2_database');
+  if (error === 'runtime_generation_unknown') return t('settings.openchamber.storage.reason.runtime_generation_unknown');
+  if (error === 'runtime_generation_unsupported') return t('settings.openchamber.storage.reason.runtime_generation_unsupported');
+  if (error === 'database_generation_unknown') return t('settings.openchamber.storage.reason.database_generation_unknown');
   if (error.startsWith('schema_mismatch')) return t('settings.openchamber.storage.reason.schema_mismatch');
   return error;
 };

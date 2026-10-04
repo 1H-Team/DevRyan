@@ -11,6 +11,8 @@ import {
 
 import { validateBotActionPolicy, validateBotBrowserPolicy } from './policy-engine.js';
 import { validateUuid } from './validation.js';
+import { toV2ToolName } from '../opencode/v2/projection/tools.js';
+import { nativeBotFilePermissions } from './native-tool-policy.js';
 
 export const BOT_COMPILED_CONFIG_VERSION = 2;
 export const BOT_REVISION_CONTRACT_VERSION = 3;
@@ -463,15 +465,18 @@ const normalizeResolvedSkillPackages = (contract, packages) => {
 };
 
 const buildOpenCodeConfig = (contract, skillNames = []) => {
+  const nativeDefaults = { plugins: [], mcp: { servers: {} }, snapshots: false,
+    warming: false, update: 'disable', share: 'disabled' };
+  const nativePermissions = (rules) => Object.entries(nativeBotFilePermissions(rules)).flatMap(([tool, value]) => (
+    Object.entries(typeof value === 'string' ? { '*': value } : value)
+      .map(([resource, effect]) => ({ action: toV2ToolName(tool), resource, effect }))
+  ));
   if (contract.agent?.kind === 'ag_ui') {
     // The compiler remains the single integrity boundary for every revision,
     // but AG-UI execution never launches this inert compatibility config.
     return {
-      $schema: 'https://opencode.ai/config.json',
-      default_agent: 'bot',
-      plugin: [],
-      mcp: {},
-      agent: { bot: { disable: true } },
+      ...nativeDefaults,
+      agents: { bot: { disabled: true } },
     };
   }
   const reviewedWorkspaceWrites = REVIEWED_WORKSPACE_WRITE_PLUGIN_VERSIONS.has(
@@ -485,10 +490,11 @@ const buildOpenCodeConfig = (contract, skillNames = []) => {
     '*': 'deny',
     devryan_bot: 'allow',
     devryan_image: 'allow',
+    devryan_ask: 'allow',
     bash: runtimeTools.includes('bash') ? 'allow' : 'deny',
     terminal: runtimeTools.includes('terminal') ? 'allow' : 'deny',
     git: runtimeTools.includes('git') ? 'allow' : 'deny',
-    task: runtimeTools.includes('task') ? 'allow' : 'deny',
+    task: runtimeTools.includes('task') ? { '*': 'deny', explore: 'allow', general: 'allow' } : 'deny',
     devryan_task: 'deny',
     browser: 'deny',
     devryan_browser: 'deny',
@@ -544,6 +550,8 @@ const buildOpenCodeConfig = (contract, skillNames = []) => {
     devryan_task: 'deny',
     devryan_bot: 'deny',
     devryan_image: 'deny',
+    devryan_write: 'deny',
+    devryan_ask: 'deny',
     browser: 'deny',
     devryan_browser: 'deny',
     mcp: 'deny',
@@ -551,36 +559,34 @@ const buildOpenCodeConfig = (contract, skillNames = []) => {
     ...assignedSkillPermission,
   };
   return {
-    $schema: 'https://opencode.ai/config.json',
-    default_agent: 'bot',
-    plugin: [BOT_GATEWAY_PLUGIN_PATH],
-    mcp: {},
-    agent: {
+    ...nativeDefaults,
+    permissions: [{ action: '*', resource: '*', effect: 'deny' }],
+    agents: {
       bot: {
         mode: 'primary',
         description: 'Scoped DevRyan Production Bot runtime',
-        prompt: promptSections.join('\n\n'),
-        model: `${primary.providerId}/${primary.modelId}`,
-        ...(primary.variant ? { variant: primary.variant } : {}),
-        permission: {
+        system: promptSections.join('\n\n'),
+        model: { providerID: primary.providerId, model: primary.modelId,
+          ...(primary.variant ? { variant: primary.variant } : {}) },
+        permissions: nativePermissions({
           ...permissions,
           ...assignedSkillPermission,
-        },
+        }),
       },
       ...(autonomousRuntime && runtimeTools.includes('task') ? {
         explore: {
           mode: 'subagent',
           description: 'Scoped Bot research subagent',
-          permission: subagentPermissions,
+          permissions: nativePermissions(subagentPermissions),
         },
         general: {
           mode: 'subagent',
           description: 'Scoped Bot execution subagent',
-          permission: subagentPermissions,
+          permissions: nativePermissions(subagentPermissions),
         },
       } : {
-        explore: { disable: true },
-        general: { disable: true },
+        explore: { disabled: true },
+        general: { disabled: true },
       }),
     },
   };

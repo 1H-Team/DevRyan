@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { loadRuntimeCapabilities, resetRuntimeCapabilitiesForTests, useRuntimeCapabilityStore } from '@/lib/opencode/runtime-capabilities';
 
 import { finishConfigUpdate, getConfigUpdateSnapshot } from '@/lib/configUpdate';
 import { getConfigApplyStatusText } from '@/components/views/config-apply/configApplyPresentation';
@@ -27,6 +28,7 @@ const status = (overrides: Partial<ConfigApplyStatus> = {}): ConfigApplyStatus =
 const originalFetch = globalThis.fetch;
 
 beforeEach(() => {
+  resetRuntimeCapabilitiesForTests();
   while (getConfigUpdateSnapshot().isUpdating) finishConfigUpdate();
   useConfigApplyStore.setState({
     status: null,
@@ -41,6 +43,26 @@ afterEach(() => {
 });
 
 describe('configuration apply UI projection', () => {
+  test('confirmed apply refreshes runtime identity and applying revokes cached capabilities', async () => {
+    await loadRuntimeCapabilities({ fetchImpl: async () => new Response(JSON.stringify({ openCode: {
+      generation: 1, runtimeIdentity: 'before',
+    } }), { headers: { 'Content-Type': 'application/json' } }) });
+    recordConfigMutationResponse({ applyStatus: status({ state: 'applying', scopes: [] }) });
+    expect(useRuntimeCapabilityStore.getState().snapshot.capabilities.share).toBe(false);
+    const requests: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      requests.push(String(input));
+      return new Response(JSON.stringify({ openCode: { generation: 2, runtimeIdentity: 'after' } }),
+        { headers: { 'Content-Type': 'application/json' } });
+    }) as typeof fetch;
+    recordConfigMutationResponse({ applyStatus: status({ state: 'clean', pending: false, scopes: [], appliedRevision: 3 }) });
+    await loadRuntimeCapabilities();
+    expect(requests).toEqual(['/health']);
+    expect(useRuntimeCapabilityStore.getState().snapshot.runtimeIdentity).toBe('after');
+    recordConfigMutationResponse({ applyStatus: status({ state: 'clean', pending: false, scopes: [], appliedRevision: 3 }) });
+    expect(requests).toHaveLength(1);
+  });
+
   test('parses the fixed status contract and rejects unknown scopes', () => {
     expect(parseConfigApplyStatus(status())).toEqual(status());
     expect(parseConfigApplyStatus({ ...status(), scopes: ['secret-provider-name'] })).toBeNull();

@@ -4,8 +4,25 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { createSkill, deleteSkill, discoverSkills, getSkillSources } from './skills.js';
+import { readSkillSupportingFile, writeSkillSupportingFile, deleteSkillSupportingFile } from './shared.js';
 
 describe('skill discovery', () => {
+  it('refuses final and parent symlink escapes for supporting file reads, writes and deletes', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-symlink-'));
+    try {
+      const skill = path.join(root, 'skill'), outside = path.join(root, 'outside');
+      fs.mkdirSync(skill); fs.mkdirSync(outside);
+      const secret = path.join(outside, 'resource.txt'); fs.writeFileSync(secret, 'outside');
+      fs.symlinkSync(secret, path.join(skill, 'resource.txt'));
+      fs.symlinkSync(outside, path.join(skill, 'linked-directory'));
+      for (const action of [() => readSkillSupportingFile(skill, 'resource.txt'),
+        () => writeSkillSupportingFile(skill, 'resource.txt', 'changed'),
+        () => deleteSkillSupportingFile(skill, 'resource.txt'),
+        () => writeSkillSupportingFile(skill, 'linked-directory/new.txt', 'changed')]) expect(action).toThrow('Access to file denied');
+      expect(fs.readFileSync(secret, 'utf8')).toBe('outside');
+      expect(fs.existsSync(path.join(outside, 'new.txt'))).toBe(false);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
   it('does not treat non-file discovered skill paths as editable markdown sources', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-runtime-skill-'));
 

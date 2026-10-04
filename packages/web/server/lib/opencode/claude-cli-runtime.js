@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import os from 'node:os';
+import { getRuntimeHome, selectedRuntimeBundle } from './runtime-host/runtime-bundle-binding.js';
 import path from 'node:path';
 
 const CLAUDE_CODE_PACKAGE_SEGMENTS = ['@anthropic-ai', 'claude-code'];
@@ -87,9 +87,9 @@ const prependExecutableDirectory = (pathValue, executable, pathApi = path) => {
 export const resolveClaudeCodeLaunch = ({
   env = process.env,
   pathValue = env.PATH || '',
-  configDirectory,
+  configDirectory = selectedRuntimeBundle?.descriptor.launch.opencodeConfigDirectory,
   fsApi = fs,
-  homedir = os.homedir,
+  homedir = getRuntimeHome,
   pathApi = path,
   platform = process.platform,
 } = {}) => {

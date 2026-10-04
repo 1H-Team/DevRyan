@@ -22,5 +22,8 @@ Scheduled automation subsystem for project tasks: schedule computation, runtime 
    so hidden orphan records cannot retain timers or inflate desktop quit risk.
 
 ## Integration
-- Depends on settings/project config runtimes and OpenCode SDK client creation for task execution.
+- Depends on settings/project config runtimes and the host-owned native OpenCode
+  application client. Execution rechecks its explicit generation-2 identity after
+  readiness and target resolution, before creating a session; missing or legacy
+  clients cannot dispatch. Commands and prompts use the same admission owner.
 - Consumed by UI scheduled-task management screens and background server startup lifecycle.

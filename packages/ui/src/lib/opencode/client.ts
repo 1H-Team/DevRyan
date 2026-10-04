@@ -27,6 +27,7 @@ import {
 import { resolveProviderPromptTools } from "./provider-prompt-tools";
 import { getSdkErrorMessage } from './sdk-error';
 import { CURSOR_ACP_PROVIDER_ID } from '../providers/cursorAcp';
+import { beginRuntimeCapabilityRead, failRuntimeCapabilityRead, observeRuntimeCapabilityHealth } from './runtime-capabilities';
 
 // Use relative path by default (works with both dev and nginx proxy server)
 // Can be overridden with VITE_OPENCODE_URL for absolute URLs in special deployments
@@ -277,11 +278,6 @@ const resolveDesktopBaseUrl = (): string | null => {
   return `${origin}/api`;
 };
 
-interface App {
-  version?: string;
-  [key: string]: unknown;
-}
-
 export type FilesystemEntry = {
   name: string;
   path: string;
@@ -328,15 +324,6 @@ type ImmediateSubtaskAdditionalPart = {
   text: string;
   synthetic?: boolean;
   files?: Array<FileInputLite>;
-};
-
-export type DirectorySwitchResult = {
-  success: boolean;
-  restarted: boolean;
-  path: string;
-  agents?: Agent[];
-  providers?: Provider[];
-  models?: unknown[];
 };
 
 const normalizeFsPath = (path: string): string => path.replace(/\\/g, "/");
@@ -755,7 +742,18 @@ export async function requestSessionTreeChanges({
   return parseSessionTreeChanges(payload);
 }
 
+export class InputSubscriptionUnavailableError extends Error {
+  readonly code = 'EVENT_SUBSCRIPTION_UNAVAILABLE';
+  constructor(message = 'Live event subscription is not ready. Please try again.', aborted = false, readonly knownBeforeTransport = true) {
+    super(message);
+    this.name = aborted ? 'AbortError' : 'InputSubscriptionUnavailableError';
+  }
+}
+
+export type InputSubscriptionGate = (signal?: AbortSignal, timeoutMs?: number) => Promise<() => void>;
+
 class OpencodeService {
+  private inputSubscriptionGate: InputSubscriptionGate | undefined;
   private client: OpencodeClient;
   private baseUrl: string;
   private noStoreFetch: typeof fetch = createNoStoreApiFetch();
@@ -771,6 +769,33 @@ class OpencodeService {
     const requestedBaseUrl = desktopBase || baseUrl;
     this.baseUrl = ensureAbsoluteBaseUrl(requestedBaseUrl);
     this.client = createOpencodeClient({ baseUrl: this.baseUrl, fetch: this.noStoreFetch });
+  }
+
+  /** Constructor-owned event pipeline seam; HTTP health cannot authorize sends. */
+  registerInputSubscriptionGate(gate: InputSubscriptionGate): () => void {
+    const baseUrl = this.baseUrl;
+    const ownedGate: InputSubscriptionGate = async (signal, timeoutMs) => {
+      if (this.baseUrl !== baseUrl) throw new InputSubscriptionUnavailableError();
+      const verify = await gate(signal, timeoutMs);
+      return () => {
+        if (this.baseUrl !== baseUrl) throw new InputSubscriptionUnavailableError();
+        verify();
+      };
+    };
+    this.inputSubscriptionGate = ownedGate;
+    return () => { if (this.inputSubscriptionGate === ownedGate) this.inputSubscriptionGate = undefined; };
+  }
+
+  async awaitInputSubscription(signal?: AbortSignal, timeoutMs = 10_000): Promise<() => void> {
+    const gate = this.inputSubscriptionGate;
+    if (!gate) throw new InputSubscriptionUnavailableError();
+    const verify = await gate(signal, timeoutMs);
+    const assertCurrent = () => {
+      if (this.inputSubscriptionGate !== gate) throw new InputSubscriptionUnavailableError();
+      verify();
+    };
+    assertCurrent();
+    return assertCurrent;
   }
 
   getBaseUrl(): string {
@@ -1066,72 +1091,12 @@ class OpencodeService {
     };
   }
 
-  async getSession(id: string, directory?: string | null): Promise<Session> {
-    const targetDirectory = this.normalizeCandidatePath(directory) ?? this.currentDirectory;
-    const response = await this.client.session.get({
-      sessionID: id,
-      ...(targetDirectory ? { directory: targetDirectory } : {})
-    });
-    if (!response.data) throw new Error('Session not found');
-    return response.data;
-  }
-
   async deleteSession(id: string): Promise<boolean> {
     const response = await this.client.session.delete({
       sessionID: id,
       ...(this.currentDirectory ? { directory: this.currentDirectory } : {})
     });
     return response.data || false;
-  }
-
-  async updateSession(id: string, title?: string): Promise<Session> {
-    const response = await this.client.session.update({
-      sessionID: id,
-      ...(this.currentDirectory ? { directory: this.currentDirectory } : {}),
-      title
-    });
-    if (!response.data) throw new Error('Failed to update session');
-    return response.data;
-  }
-
-  async getSessionMessages(id: string, limit?: number): Promise<{ info: Message; parts: Part[] }[]> {
-    const response = await this.client.session.messages({
-      sessionID: id,
-      ...(this.currentDirectory ? { directory: this.currentDirectory } : {}),
-      ...(typeof limit === 'number' ? { limit } : {}),
-    });
-    return response.data || [];
-  }
-
-  async getSessionTodos(sessionId: string): Promise<Array<{ id: string; content: string; status: string; priority: string }>> {
-    try {
-      const base = this.baseUrl.replace(/\/$/, "");
-      const url = new URL(`${base}/session/${encodeURIComponent(sessionId)}/todo`);
-
-      if (this.currentDirectory && this.currentDirectory.length > 0) {
-        url.searchParams.set("directory", this.currentDirectory);
-      }
-
-      const response = await this.noStoreFetch(url.toString(), {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-        },
-      });
-
-      if (!response.ok) {
-        return [];
-      }
-
-      const data = await response.json().catch(() => null);
-      if (!data || !Array.isArray(data)) {
-        return [];
-      }
-
-      return data as Array<{ id: string; content: string; status: string; priority: string }>;
-    } catch {
-      return [];
-    }
   }
 
   /**
@@ -1426,6 +1391,8 @@ class OpencodeService {
     if (params.signal?.aborted) {
       throw new DOMException('Aborted', 'AbortError');
     }
+    const assertSubscription = await this.awaitInputSubscription(params.signal);
+    assertSubscription();
     params.beforeTransport?.();
 
     const base = this.baseUrl.replace(/\/+$/, '');
@@ -1434,6 +1401,7 @@ class OpencodeService {
       url.searchParams.set('directory', targetDirectory);
     }
 
+    assertSubscription();
     const response = await fetch(url.toString(), {
       method: 'POST',
       headers: {
@@ -1464,6 +1432,7 @@ class OpencodeService {
   }
 
   async sendMessage(params: {
+    delivery?: 'queue' | 'steer';
     id: string;
     providerID: string;
     modelID: string;
@@ -1647,6 +1616,7 @@ class OpencodeService {
 
     assertProviderCircuitClosed(params.providerID);
 
+    let requestStarted = false;
     let response!: Response;
     postTurnTimingMark({
       sessionId: params.id,
@@ -1658,8 +1628,12 @@ class OpencodeService {
 
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
+        const assertSubscription = await this.awaitInputSubscription(params.signal);
+        assertSubscription();
         params.beforeTransport?.();
         const tools = resolveProviderPromptTools(params.providerID, params.agent);
+        assertSubscription();
+        requestStarted = true;
         response = await fetch(url.toString(), {
           method: 'POST',
           headers: {
@@ -1680,6 +1654,7 @@ class OpencodeService {
               ? (params.providerID === CURSOR_ACP_PROVIDER_ID ? undefined : '')
               : params.variant,
             messageID: messageId,
+            ...(params.delivery ? { delivery: params.delivery } : {}),
             ...(params.format ? { format: params.format } : {}),
             ...(tools ? { tools } : {}),
             parts,
@@ -1687,7 +1662,10 @@ class OpencodeService {
           signal: params.signal,
         });
       } catch (error) {
-        if (params.signal?.aborted) {
+        if (error instanceof InputSubscriptionUnavailableError && requestStarted) {
+          throw new InputSubscriptionUnavailableError('Live events disconnected after an unconfirmed send. Refresh before retrying.', false, false);
+        }
+        if (params.signal?.aborted || error instanceof InputSubscriptionUnavailableError) {
           throw error;
         }
         if (attempt < 2 && isRetryableFetchError(error)) {
@@ -1759,6 +1737,7 @@ class OpencodeService {
     variant?: string | null;
     files?: Array<FileInputLite>;
     messageId?: string;
+    delivery?: 'queue' | 'steer';
     directory?: string | null;
     signal?: AbortSignal;
     beforeTransport?: () => void;
@@ -1782,6 +1761,8 @@ class OpencodeService {
     if (params.signal?.aborted) {
       throw new DOMException('Aborted', 'AbortError');
     }
+    const assertSubscription = await this.awaitInputSubscription(params.signal);
+    assertSubscription();
     params.beforeTransport?.();
 
     const payload: Record<string, unknown> = {
@@ -1794,8 +1775,10 @@ class OpencodeService {
         : {}),
       ...(parts.length > 0 ? { parts } : {}),
       messageID: tempMessageId,
+      ...(params.delivery ? { delivery: params.delivery } : {}),
     };
 
+    assertSubscription();
     const response = await fetch(url.toString(), {
       method: 'POST',
       headers: {
@@ -1818,28 +1801,6 @@ class OpencodeService {
     }
 
     return tempMessageId;
-  }
-
-  async abortSession(id: string): Promise<boolean> {
-    const response = await this.client.session.abort(
-      {
-        sessionID: id,
-        ...(this.currentDirectory ? { directory: this.currentDirectory } : {})
-      },
-      { throwOnError: true }
-    );
-    return Boolean(response.data);
-  }
-
-  async revertSession(sessionId: string, messageId: string, partId?: string): Promise<Session> {
-    const response = await this.client.session.revert({
-      sessionID: sessionId,
-      ...(this.currentDirectory ? { directory: this.currentDirectory } : {}),
-      messageID: messageId,
-      partID: partId
-    });
-    if (!response.data) throw new Error('Failed to revert session');
-    return response.data;
   }
 
   /**
@@ -1933,29 +1894,6 @@ class OpencodeService {
       segmentCount: reviewMode === 'segments' && typeof body.segmentCount === 'number' ? body.segmentCount : 0, segment: selected };
   }
 
-  async unrevertSession(sessionId: string): Promise<Session> {
-    const response = await this.client.session.unrevert({
-      sessionID: sessionId,
-      ...(this.currentDirectory ? { directory: this.currentDirectory } : {})
-    });
-    if (!response.data) throw new Error('Failed to unrevert session');
-    return response.data;
-  }
-
-  async forkSession(sessionId: string, messageId?: string): Promise<Session> {
-    const response = await this.client.session.fork({
-      sessionID: sessionId,
-      ...(this.currentDirectory ? { directory: this.currentDirectory } : {}),
-      messageID: messageId
-    });
-
-    if (!response.data) {
-      throw new Error('Failed to fork session');
-    }
-
-    return response.data;
-  }
-
   async getSessionStatus(): Promise<SessionStatusMap> {
     return (await this.getSessionStatusForDirectory(this.currentDirectory ?? null)) ?? {};
   }
@@ -1998,38 +1936,6 @@ class OpencodeService {
     return (await this.getSessionStatusForDirectory(null)) ?? {};
   }
 
-  /**
-   * Get session activity from web server's in-memory tracking.
-   * This is more reliable than getGlobalSessionStatus on visibility restore
-   * because the web server tracks activity even when UI is not listening to SSE.
-   */
-  async getWebServerSessionActivity(): Promise<
-    Record<string, { type: string }> | null
-  > {
-    try {
-      // Web server endpoint - use relative path that works with both dev and prod
-      const response = await this.noStoreFetch('/api/session-activity', {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        return null;
-      }
-
-      const data = await response.json().catch(() => null);
-      if (!data || typeof data !== 'object') {
-        return null;
-      }
-
-      return data as Record<string, { type: string }>;
-    } catch {
-      return null;
-    }
-  }
-
   // Tools
   async listToolIds(options?: { directory?: string | null }): Promise<string[]> {
     try {
@@ -2046,20 +1952,6 @@ class OpencodeService {
   }
 
   // Permissions
-  async replyToPermission(
-    requestId: string,
-    reply: 'once' | 'always' | 'reject',
-    options?: { message?: string }
-  ): Promise<boolean> {
-    const result = await this.client.permission.reply({
-      requestID: requestId,
-      ...(this.currentDirectory ? { directory: this.currentDirectory } : {}),
-      reply,
-      ...(options?.message ? { message: options.message } : {}),
-    });
-    return result.data || false;
-  }
-
   async listPendingPermissions(options?: { directories?: Array<string | null | undefined> }): Promise<PermissionRequest[]> {
     const fetches: Array<Promise<PermissionRequest[]>> = [];
 
@@ -2108,25 +2000,6 @@ class OpencodeService {
   }
 
   // Questions ("ask" tool)
-  async replyToQuestion(requestId: string, answers: string[] | string[][]): Promise<boolean> {
-    const normalizedAnswers: string[][] = (() => {
-      if (!Array.isArray(answers) || answers.length === 0) {
-        return [];
-      }
-      if (Array.isArray(answers[0])) {
-        return answers as string[][];
-      }
-      return [answers as string[]];
-    })();
-
-    const result = await this.client.question.reply({
-      requestID: requestId,
-      ...(this.currentDirectory ? { directory: this.currentDirectory } : {}),
-      answers: normalizedAnswers,
-    });
-    return result.data || false;
-  }
-
   async rejectQuestion(requestId: string): Promise<boolean> {
     const result = await this.client.question.reject({
       requestID: requestId,
@@ -2183,55 +2056,6 @@ class OpencodeService {
   }
 
   // Configuration
-  async getConfig(): Promise<Config> {
-    try {
-      const response = await this.client.config.get();
-      return unwrapSdkData(response as SdkResult<Config>, "config.get");
-    } catch (error) {
-      throw formatSdkError("config.get", error);
-    }
-  }
-
-  async updateConfig(config: Record<string, unknown>): Promise<Config> {
-    // IMPORTANT: Do NOT pass directory parameter for config updates
-    // The config should be global, not directory-specific
-    const url = `${this.baseUrl}/config`;
-
-    const response = await fetch(url, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(config)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[OpencodeClient] Failed to update config:', response.status, errorText);
-      throw new Error(`Failed to update config: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    return data;
-  }
-
-  /**
-   * Update config with a partial modification function.
-   * This handles the GET-modify-PATCH pattern required by the upstream API.
-   *
-   * NOTE: This method must not be used for agent configuration.
-   * DevRyan treats agents as packaged/project markdown files and exposes them read-only.
-   *
-   * @param modifier Function that receives current config and returns modified config
-   * @returns Updated config from server
-   */
-  async updateConfigPartial(modifier: (config: Config) => Config): Promise<Config> {
-    const currentConfig = await this.getConfig();
-    const updatedConfig = modifier(currentConfig);
-    const result = await this.updateConfig(updatedConfig);
-    return result;
-  }
-
   async getProviders(options?: { directory?: string | null }): Promise<{
     providers: Provider[];
     default: { [key: string]: string };
@@ -2257,25 +2081,6 @@ class OpencodeService {
     }
   }
 
-  // App Management - using config endpoint since /app doesn't exist in this version
-  async getApp(): Promise<App> {
-    // Return basic app info from config
-    const config = await this.getConfig();
-    return {
-      version: "0.0.3", // from the OpenAPI spec
-      config
-    };
-  }
-
-  async initApp(): Promise<boolean> {
-    try {
-      // Just check if we can connect since there's no init endpoint
-      return await this.checkHealth();
-    } catch {
-      return false;
-    }
-  }
-
   // Agent Management
   async listAgentsStrict(): Promise<Agent[]> {
     try {
@@ -2285,14 +2090,6 @@ class OpencodeService {
       return unwrapSdkData(response as SdkResult<Agent[]>, "app.agents");
     } catch (error) {
       throw formatSdkError("app.agents", error);
-    }
-  }
-
-  async listAgents(): Promise<Agent[]> {
-    try {
-      return await this.listAgentsStrict();
-    } catch {
-      return [];
     }
   }
 
@@ -2327,29 +2124,6 @@ class OpencodeService {
     }
   }
 
-  async listFiles(directory?: string): Promise<Record<string, unknown>[]> {
-    try {
-      const targetDir = directory || this.currentDirectory || '/';
-      const response = await fetch(`${this.baseUrl}/files/list`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ directory: targetDir })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to list files: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      return data;
-    } catch {
-      // Return mock data for development
-      return [];
-    }
-  }
-
   // Command Management
   async listCommandsForDirectory(directory: string | null, signal?: AbortSignal) {
     const response = await this.client.command.list({ directory: directory ?? undefined }, { signal });
@@ -2357,24 +2131,6 @@ class OpencodeService {
       throw new Error('Commands could not be loaded. Retry sending your message.');
     }
     return response.data;
-  }
-
-  async listCommands(): Promise<Array<{ name: string; description?: string; agent?: string; model?: string }>> {
-    try {
-      const response = await this.client.command.list(
-        this.currentDirectory ? { directory: this.currentDirectory } : undefined
-      );
-      // Return only lightweight info for autocomplete
-      return (response.data || []).map((cmd: Record<string, unknown>) => ({
-        name: cmd.name as string,
-        description: cmd.description as string | undefined,
-        agent: cmd.agent as string | undefined,
-        model: cmd.model as string | undefined
-        // Intentionally excluding template to keep memory usage low
-      }));
-    } catch {
-      return [];
-    }
   }
 
   async listCommandsWithDetails(): Promise<Array<{ name: string; description?: string; agent?: string; model?: string; template?: string }>> {
@@ -2395,32 +2151,9 @@ class OpencodeService {
     }
   }
 
-  async getCommandDetails(name: string): Promise<{ name: string; template: string; description?: string; agent?: string; model?: string } | null> {
-    try {
-      const response = await this.client.command.list(
-        this.currentDirectory ? { directory: this.currentDirectory } : undefined
-      );
-
-      if (response.data) {
-        const command = response.data.find((cmd: Record<string, unknown>) => cmd.name === name);
-        if (command) {
-          return {
-            name: command.name as string,
-            template: command.template as string,
-            description: command.description as string | undefined,
-            agent: command.agent as string | undefined,
-            model: command.model as string | undefined
-          };
-        }
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  }
-
   // Health Check - using /health endpoint for detailed status
   async checkHealth(): Promise<boolean> {
+    const capabilityRevision = beginRuntimeCapabilityRead();
     try {
       // Health endpoint is at root, not under /api
       let healthUrl: string;
@@ -2435,18 +2168,16 @@ class OpencodeService {
       }
       const response = await this.noStoreFetch(healthUrl);
       if (!response.ok) {
+        failRuntimeCapabilityRead(capabilityRevision);
         return false;
       }
 
       const healthData = await response.json();
+      observeRuntimeCapabilityHealth(healthData, capabilityRevision);
 
-      // Check if the upstream API is ready (not just OpenChamber server)
-      if (healthData.isOpenCodeReady === false) {
-        return false;
-      }
-
-      return true;
+      return healthData?.openCode?.generation === 2 && healthData.isOpenCodeReady === true;
     } catch {
+      failRuntimeCapabilityRead(capabilityRevision);
       return false;
     }
   }
@@ -2674,50 +2405,6 @@ class OpencodeService {
       return null;
     }
   }
-
-  async setOpenCodeWorkingDirectory(directoryPath: string | null | undefined): Promise<DirectorySwitchResult | null> {
-    if (!directoryPath || typeof directoryPath !== 'string' || !directoryPath.trim()) {
-      console.warn('[OpencodeClient] setOpenCodeWorkingDirectory: invalid path', directoryPath);
-      return null;
-    }
-
-    const url = `${this.baseUrl}/opencode/directory`;
-    console.log('[OpencodeClient] POST', url, 'with path:', directoryPath);
-
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ path: directoryPath })
-      });
-
-      const payload = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        const error = payload ?? {};
-        const message =
-          typeof error.error === 'string' && error.error.length > 0
-            ? error.error
-            : 'Failed to update OpenCode working directory';
-        throw new Error(message);
-      }
-
-      if (payload && typeof payload === 'object') {
-        return payload as DirectorySwitchResult;
-      }
-
-      return {
-        success: true,
-        restarted: false,
-        path: directoryPath
-      };
-    } catch (error) {
-      console.warn('Failed to update OpenCode working directory:', error);
-      throw error;
-    }
-  }
 }
 
 // Exported singleton instance
@@ -2725,4 +2412,3 @@ export const opencodeClient = new OpencodeService();
 
 // Exported types
 export type { Session, Message, Part, Provider, Config, Model };
-export type { App };

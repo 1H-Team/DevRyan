@@ -40,6 +40,26 @@ and desktop-host broker bridges.
   clear command remains available. Window hangs, recoveries, renderer exits,
   and main-frame load failures are recorded as content-free lifecycle logs.
 - **Native state controllers**: `keep-awake-controller.mjs` wraps `powerSaveBlocker` with idempotent apply/stop semantics for the desktop Keep Awake setting.
+- **Bundle settings checkpoint**: `desktop-settings.mjs` joins the server's
+  constructor-only `onRuntimeBundleCheckpoint` callback. It rejects new settings
+  mutations, cancels pending geometry callbacks and awaits admitted atomic writes.
+  Failed writes keep the transition held. `native-settings-directory.mjs` permits
+  settings path inspection for cold held recovery without opening execution.
+  The main entry captures the original shell data root before dynamically loading
+  the bundle binding, whose module evaluation relocates the server environment.
+  Service ownership, discovery, registration and discovered-app caches keep that
+  shell root, outside selected runtime bundles, including during cold recovery.
+  All app relaunch callbacks hand this root to Electron's synchronous relaunch
+  helper, then restore the parent's runtime environment in `finally`; strict
+  host restarts still require successful drain and owner release first.
+  SSH settings writes share this same admission/drain chain. The recovery window
+  loads the canonical local URL without splash query parameters, preserving the
+  Resume IPC gate's exact origin, root path, empty query and empty fragment.
+  Background-service bundle transitions refuse with `bundle_service_requires_app_bound`:
+  the existing app-bound handoff is required because even an expired desktop lease
+  cannot acknowledge a separate foreground settings writer. A recovery-only runtime
+  service advertises degraded health from the verified bundle reconciliation state;
+  ordinary deferred OpenCode startup retains normal service health.
 - **Docker Desktop launch**: `docker-desktop-launcher.mjs` starts Docker Desktop by its fixed bundle identifier for `desktop_open_docker_desktop`. The command takes no renderer input, is local-UI only, always runs in the foreground process, and reports `{ opened, code }` instead of throwing; DevRyan never starts Docker Desktop on its own.
 - **Bot key ownership**: `bot-secret-store.mjs` creates one 32-byte deployment
   key, seals it with Electron `safeStorage`, and exposes only a defensive-copy
@@ -332,9 +352,21 @@ service generation change. See [connection behavior](../../docs/SUPABASE_CONNECT
 - `main.mjs` reports each window's visibility to its page (`openchamber:window-visibility`, `{ visible }`, on show, hide, minimize, restore and after load). Background throttling stays off so streams and timers keep their pace, which also leaves `document.visibilityState` at `visible` for a hidden or minimized window; the page pauses its animations and tickers on this report instead (`packages/ui/src/hooks/useDocumentAnimationState.ts`).
 - `runtime-service-startup.mjs` `ensureRuntimeServiceRegistered` runs before the foreground waits for the background service: a missing registration is registered first, and a registration that cannot start the service (approval pending, not found, unavailable) fails at once with `runtime_service_not_registered`, so startup falls back to the app-bound runtime without the 60-second wait. An unknown state keeps the ordinary wait.
 
-- Concurrent Revert executables ship as `Resources/revert-runtime/<platform>-<arch>`. `scripts/package-prepared.mjs` requires verified artifacts; `scripts/adhoc-sign-macos-app.mjs` verifies them before signing, updates signed digests and reseals the app. Build contracts: [Concurrent Revert](../../docs/CONCURRENT_REVERT.md).
+- Native v2 controller/writer/assets and the accepted execution launcher ship as `Resources/revert-runtime/<platform>-<arch>`. `scripts/package-prepared.mjs` requires actual platform verification; old OpenCode executables and companion manifests are excluded. `scripts/adhoc-sign-macos-app.mjs` validates immutable native bytes, restores manifest-owned modes lost during resource copying, and performs full native verification first, holds it outside Electron deep signing, signs owned executables while preserving sealed vendor bytes/signatures, refreshes native digests and reseals the app. Unavailable platform/signing checks fail closed. Build contracts: [Concurrent Revert](../../docs/CONCURRENT_REVERT.md).
 
 - `ssh-managed-probe.mjs` validates the remote ownership challenge, runtime version and actual loopback binding before `ssh-manager.mjs` installs credentials. Shutdown signatures pin the instance, owner, port, timestamp and one-use nonce.
 - `quit-cleanup.mjs` provides the updater's bounded owned-process cleanup. `main.mjs` leaves installation ownership with the updater and blocks installation if cleanup fails or times out; unrelated runtime-service/Bot owners remain outside foreground cleanup.
 
 - Managed SSH version mismatch permits signed shutdown after ownership verification. Installation waits for confirmed listener absence; ambiguous ownership or shutdown failures prevent upgrade/start.
+
+- `native-settings-directory.mjs` resolves the existing verified native selection for desktop preferences without launching a controller. Fresh transition reads the original setup until provisioning selects v2; subsequent boots read the selected bundle immediately. `desktop-settings.mjs` captures one settings path throughout each asynchronous mutation, and SSH preferences use the same resolver. The shell separately retains its original runtime-service/Bot data root, so selecting private application storage does not move those owners.
+- An unresolved bundle transition enters recovery before normal shell startup.
+  Settings writes, provider/browser/Bot startup, automatic updates and deferred
+  controller launch remain held while the loopback recovery page is displayed.
+  `runtime-bundle-recovery.mjs` validates the exact selector revision and original
+  recovery proof before and after the native confirmation dialog. Only the main
+  window's local main frame can invoke `desktop_runtime_bundle_resume`; success
+  requests fresh host composition. Recovery HTTP remains read-only.
+- `scripts/bundle-main.mjs` builds the main entry from the repository root so
+  generated path comments are deterministic. Qualification pins raw bundled
+  entry bytes and the complete input closure.

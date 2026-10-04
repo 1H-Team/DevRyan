@@ -1,4 +1,4 @@
-import os from 'os';
+import { getRuntimeHome } from './runtime-host/runtime-bundle-binding.js';
 import path from 'path';
 
 import { buildDevRyanDefaultPluginInventory } from './default-plugins.js';
@@ -137,7 +137,7 @@ const listPluginFilesForScope = (fs, pathApi, scope, pluginDir) => {
 export const createPluginReadModel = (dependencies = {}) => {
   const fs = dependencies.fs;
   const pathApi = dependencies.path || path;
-  const homedir = dependencies.homedir || (() => os.homedir());
+  const homedir = dependencies.homedir || getRuntimeHome;
   const env = dependencies.env || process.env;
   const readConfigFile = dependencies.readConfigFile || defaultReadConfigFile;
 

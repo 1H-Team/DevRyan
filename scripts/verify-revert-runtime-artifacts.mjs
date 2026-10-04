@@ -1,65 +1,101 @@
+// Compatibility command name; all packaged execution artifacts are native v2.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { verifyNativeRuntimeArtifacts } from '../packages/web/server/lib/opencode/runtime-host/native-artifacts.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const digest = async (file) => createHash('sha256').update(await fs.readFile(file)).digest('hex');
+const digest = async file => createHash('sha256').update(await fs.readFile(file)).digest('hex');
+const exec = promisify(execFile);
+export const SUPPORTED_NATIVE_RUNTIME_TARGETS = Object.freeze(['darwin-arm64']);
+// The universal web package retains its platform contract. A host-specific
+// artifact cannot satisfy missing platform and signature qualification.
+export const REQUIRED_WEB_NATIVE_RUNTIME_TARGETS = Object.freeze([
+  'darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64', 'win32-arm64', 'win32-x64',
+]);
+export function assertUniversalNativeReleaseAvailable() {
+  const missingTargets = REQUIRED_WEB_NATIVE_RUNTIME_TARGETS.filter(target => !SUPPORTED_NATIVE_RUNTIME_TARGETS.includes(target));
+  if (missingTargets.length) throw Object.assign(new Error(`Universal native web release unavailable; verified artifacts required for ${missingTargets.join(', ')}`),
+    { code: 'native_web_release_unavailable', missingTargets });
+}
+
+
+async function inventory({ directory = path.join(root, 'packages/web/runtime'), platform = process.platform, arch = process.arch } = {}) {
+  const target = `${platform}-${arch}`;
+  if (!SUPPORTED_NATIVE_RUNTIME_TARGETS.includes(target) || platform !== process.platform || arch !== process.arch) {
+    throw new Error(`Native runtime verification unavailable for ${target} on this host`);
+  }
+  const location = path.resolve(directory, target), manifestPath = path.join(location, 'native-bundle.json');
+  const stat = await fs.lstat(manifestPath);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4 * 1024 * 1024) throw new Error('Native bundle manifest unavailable');
+  const bytes = await fs.readFile(manifestPath), manifest = JSON.parse(bytes.toString());
+  if (manifest.schema !== 1 || manifest.opencodeVersion !== '2.0.20' || manifest.target !== `bun-${target}`
+    || !Array.isArray(manifest.files) || !manifest.files.length || manifest.files.length > 256) throw new Error('Native bundle inventory invalid');
+  const names = new Set(['native-bundle.json']);
+  for (const file of manifest.files) {
+    if (!file || typeof file.path !== 'string' || !/^DevRyan-[A-Za-z0-9._-]+$/.test(file.path)
+      || file.path.startsWith('DevRyan-opencode') || names.has(file.path) || !/^[a-f0-9]{64}$/.test(file.sha256)
+      || !Number.isSafeInteger(file.size) || file.size < 0 || !Number.isInteger(file.mode) || file.mode < 0 || file.mode > 0o777) throw new Error('Native bundle inventory invalid');
+    names.add(file.path);
+    const actual = await fs.lstat(path.join(location, file.path));
+    if (!actual.isFile() || actual.isSymbolicLink() || actual.size !== file.size || await digest(path.join(location, file.path)) !== file.sha256) throw new Error('Native bundle payload changed');
+  }
+  if ((await fs.readdir(location)).some(name => !names.has(name))) throw new Error('Unmanifested native runtime artifact');
+  const launcherName = `DevRyan-execution-${target}`;
+  if (manifest.acceptedLauncher?.path !== launcherName || !names.has(launcherName) || !names.has(launcherName + '.json')) throw new Error('Native bundle launcher invalid');
+  return { location, manifestPath, manifest, manifestSha256: createHash('sha256').update(bytes).digest('hex'), launcher: path.join(location, launcherName) };
+}
+
+export async function verifyRevertRuntimeArtifacts(options) {
+  const verified = await inventory(options);
+  const native = await verifyNativeRuntimeArtifacts({ manifestPath: verified.manifestPath, manifestSha256: verified.manifestSha256, launcher: verified.launcher });
+  return { ...verified, native };
+}
 
 export async function verifySupportedRevertRuntimeArtifacts({ directory } = {}) {
-  const contract = JSON.parse(await fs.readFile(path.join(root, 'packages/web/server/lib/opencode/companion/manifest.json')));
-  if (!Array.isArray(contract.supportedArtifacts) || !contract.supportedArtifacts.length) throw new Error('Missing supported execution artifact policy');
-  for (const target of contract.supportedArtifacts) {
-    const match = /^(darwin|linux|win32)-(arm64|x64)$/.exec(target);
-    if (!match) throw new Error('Invalid supported execution artifact policy');
-    await verifyRevertRuntimeArtifacts({ directory, platform: match[1], arch: match[2] });
+  for (const target of SUPPORTED_NATIVE_RUNTIME_TARGETS) {
+    const [platform, arch] = target.split('-');
+    await verifyRevertRuntimeArtifacts({ directory, platform, arch });
   }
 }
 
-export async function verifyRevertRuntimeArtifacts({ directory = path.join(root, 'packages/web/runtime'),
-  platform = process.platform, arch = process.arch } = {}) {
-  const location = path.join(directory, `${platform}-${arch}`);
-  const extension = platform === 'win32' ? '.exe' : '';
-  const launcher = `DevRyan-execution-${platform}-${arch}${extension}`;
-  const companion = `DevRyan-opencode-${platform}-${arch}${extension}`;
-  const contract = JSON.parse(await fs.readFile(path.join(root, 'packages/web/server/lib/opencode/companion/manifest.json')));
-  const native = JSON.parse(await fs.readFile(path.join(location, launcher + '.json')));
-  const runtime = JSON.parse(await fs.readFile(path.join(location, 'companion.json')));
-  if (native.acceptance !== true || native.policy !== 2 || native.version !== 1 || native.binary !== launcher
-    || native.platform !== platform || native.arch !== arch || native.sha256 !== await digest(path.join(location, launcher))) {
-    throw new Error('Revert native confinement artifact is missing, changed, or unverified');
-  }
-  if (platform === 'darwin' && (native.spawnLibrary !== launcher + '-spawn.dylib'
-    || native.spawnSha256 !== await digest(path.join(location, native.spawnLibrary)))) throw new Error('Revert spawn library changed');
-  if (runtime.acceptance !== true || Object.entries(contract.capability).some(([name, value]) => runtime[name] !== value)
-    || runtime.platform !== platform || runtime.arch !== arch || runtime.binary !== companion
-    || runtime.patchSha256 !== contract.patchSha256 || runtime.baseCommit !== contract.baseCommit
-    || runtime.upstreamVersion !== contract.upstreamVersion || !/^[a-f0-9]{64}$/.test(runtime.buildInputsSha256 ?? '')
-    || runtime.sha256 !== await digest(path.join(location, companion))) throw new Error('Revert companion artifact is missing, changed, or unverified');
-  return { location, native, runtime };
-}
-
-// CI artifact downloads may normalize all files to 0644. Restore only the
-// executables whose contents and acceptance manifests have just been verified.
+// Downloaded archives may lose modes. Check every immutable payload before
+// restoring only manifest-owned modes, then perform full signature verification.
 export async function restoreRevertRuntimeExecutableModes(options) {
-  const verified = await verifyRevertRuntimeArtifacts(options);
-  for (const file of [verified.native.binary, verified.runtime.binary, verified.native.spawnLibrary].filter(Boolean)) {
-    await fs.chmod(path.join(verified.location, file), 0o755);
-  }
-  return verified;
+  const verified = await inventory(options);
+  for (const file of verified.manifest.files) await fs.chmod(path.join(verified.location, file.path), file.mode);
+  return verifyRevertRuntimeArtifacts(options);
 }
 
-// Call only after verifying the original payload, then applying the owned
-// packaging codesign operation. Never use this to accept unknown artifacts.
-export async function refreshSignedRevertDigests({ location, native, runtime }) {
-  native.sha256 = await digest(path.join(location, native.binary));
-  if (native.spawnLibrary) native.spawnSha256 = await digest(path.join(location, native.spawnLibrary));
-  runtime.sha256 = await digest(path.join(location, runtime.binary));
-  await fs.writeFile(path.join(location, native.binary + '.json'), JSON.stringify(native, null, 2) + '\n');
-  await fs.writeFile(path.join(location, 'companion.json'), JSON.stringify(runtime, null, 2) + '\n');
+// Receives the exact pre-signing verification result. The caller signs this
+// owned payload before refreshing signatures and resealing the enclosing app.
+export async function refreshSignedRevertDigests({ location, manifest, manifestPath, launcher }) {
+  if (process.platform !== 'darwin') throw new Error('Native signature refresh requires macOS');
+  const launcherPolicyPath = launcher + '.json';
+  const policy = JSON.parse(await fs.readFile(launcherPolicyPath, 'utf8'));
+  policy.sha256 = await digest(launcher);
+  if (policy.spawnLibrary) policy.spawnSha256 = await digest(path.join(location, policy.spawnLibrary));
+  await fs.writeFile(launcherPolicyPath, JSON.stringify(policy, null, 2) + '\n');
+  for (const file of manifest.files) {
+    const target = path.join(location, file.path);
+    if (file.mode & 0o111) {
+      await exec('/usr/bin/codesign', ['--verify', '--strict', target]);
+      const { stderr } = await exec('/usr/bin/codesign', ['-d', '--verbose=4', target]);
+      const cdhash = /^CDHash=(.+)$/m.exec(stderr)?.[1], teamID = /^TeamIdentifier=(.+)$/m.exec(stderr)?.[1];
+      if (!/^[a-f0-9]{40,64}$/.test(cdhash ?? '')) throw new Error('Native signed artifact identity unavailable');
+      file.signing = { mode: teamID && teamID !== 'not set' ? 'release' : 'adhoc', verified: true, cdhash,
+        ...(teamID && teamID !== 'not set' ? { teamID } : {}) };
+    }
+    file.sha256 = await digest(target); file.size = (await fs.stat(target)).size;
+  }
+  await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+  await verifyRevertRuntimeArtifacts({ directory: path.dirname(location) });
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   await verifyRevertRuntimeArtifacts();
-  console.log('Revert runtime artifacts verified');
+  console.log('Native v2 runtime artifacts verified');
 }

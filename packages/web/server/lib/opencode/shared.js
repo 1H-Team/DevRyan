@@ -3,10 +3,11 @@ import path from 'path';
 import os from 'os';
 import yaml from 'yaml';
 import { isInvalidJsoncError, parseConfigJsonc, removeJsoncKeyPaths } from './jsonc-config.js';
+import { selectedRuntimeBundle, getRuntimeHome } from './runtime-host/runtime-bundle-binding.js';
 
 // ============== PATH CONSTANTS ==============
 
-const OPENCODE_CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode');
+const OPENCODE_CONFIG_DIR = selectedRuntimeBundle?.descriptor.launch.opencodeConfigDirectory ?? path.join(os.homedir(), '.config', 'opencode');
 const AGENT_DIR = path.join(OPENCODE_CONFIG_DIR, 'agents');
 const COMMAND_DIR = path.join(OPENCODE_CONFIG_DIR, 'commands');
 const SKILL_DIR = path.join(OPENCODE_CONFIG_DIR, 'skills');
@@ -474,7 +475,7 @@ function resolveSkillSearchDirectories(workingDirectory) {
     projectDirs.forEach(pushDir);
   }
 
-  pushDir(path.join(os.homedir(), '.opencode'));
+  pushDir(path.join(getRuntimeHome(), '.opencode'));
 
   const customConfigDir = process.env.OPENCODE_CONFIG_DIR
     ? path.resolve(process.env.OPENCODE_CONFIG_DIR)
@@ -519,7 +520,14 @@ function assertPathWithinSkillDir(skillDir, relativePath) {
   const relative = path.relative(root, target);
   const isWithin = relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 
-  if (!isWithin) {
+  // For writes, resolve the nearest existing parent too. Otherwise a final
+  // symlink (or a symlink directory before a new file) escapes this root.
+  let existing = target;
+  while (!fs.existsSync(existing) && existing !== path.dirname(existing)) existing = path.dirname(existing);
+  const canonical = fs.realpathSync(existing);
+  const canonicalRelative = path.relative(root, canonical);
+  const canonicalWithin = canonicalRelative === '' || (canonicalRelative !== '..' && !canonicalRelative.startsWith(`..${path.sep}`) && !path.isAbsolute(canonicalRelative));
+  if (!isWithin || !canonicalWithin) {
     const error = new Error('Access to file denied');
     error.code = 'EACCES';
     throw error;

@@ -29,36 +29,60 @@ export function createSessionChangeHost(options) {
     callMessages.delete(key); callMessages.set(key, messageID);
     while (callMessages.size > 256) callMessages.delete(callMessages.keys().next().value);
   };
-  const request = async (pathname, directory, deadline = Date.now() + 15_000) => {
-    const url = new URL(options.buildOpenCodeUrl(pathname));
-    if (directory) url.searchParams.set('directory', directory);
-    const response = await (options.fetchImpl ?? fetch)(url, {
-      headers: options.getOpenCodeAuthHeaders?.(), signal: AbortSignal.any([
-        AbortSignal.timeout(Math.max(1, Math.min(15_000, deadline - Date.now()))),
-        ...(readContext.getStore()?.signal ? [readContext.getStore().signal] : []),
-      ]),
-    });
-    if (!response.ok) throw error('session_observation_unavailable', response.status === 404 ? 404 : 503);
-    const reader = response.body?.getReader();
-    if (!reader) throw error('session_observation_unavailable', 503);
-    const chunks = [];
+  const gen2Client = () => {
+    const client = typeof options.openCodeClient === 'function' ? options.openCodeClient() : options.openCodeClient;
+    const generation = typeof client?.generation === 'function' ? client.generation() : undefined;
+    if (generation !== 2) throw error('opencode_generation_invalid', 503);
+    return client;
+  };
+  const requestDomain = async (client, pathname, directory, signal) => {
+    const url = new URL(pathname, 'http://session-changes.invalid');
     let bytes = 0;
-    responseMetrics.activeResponses++;
+    const readOptions = { directory, signal, maxResponseBytes: 16 * 1024 * 1024,
+      onResponseRead: ({ phase, bytes: count }) => {
+        if (phase === 'start') responseMetrics.activeResponses++;
+        else if (phase === 'end') { responseMetrics.activeResponses--; responseMetrics.responseBytes -= count; }
+        else if (phase === 'chunk') {
+          bytes += count;
+          responseMetrics.responseBytes += count;
+          responseMetrics.peakResponseBytes = Math.max(responseMetrics.peakResponseBytes, responseMetrics.responseBytes);
+          if (bytes > 16 * 1024 * 1024) throw error('history_limit', 503);
+        }
+      } };
+    const match = url.pathname.match(/^\/session\/([^/]+)(?:\/(children|message)(?:\/([^/]+))?)?$/);
+    let data, cursor;
     try {
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        bytes += value.byteLength;
-        responseMetrics.responseBytes += value.byteLength;
-        responseMetrics.peakResponseBytes = Math.max(responseMetrics.peakResponseBytes, responseMetrics.responseBytes);
-        if (bytes > 16 * 1024 * 1024) throw error('history_limit', 503);
-        chunks.push(value);
+      if (url.pathname === '/session/status') data = await client.sessions.status({ directory }, readOptions);
+      else if (match) {
+        const [, id, action, messageID] = match;
+        if (!action) data = await client.sessions.get(id, readOptions);
+        else if (action === 'children') data = await client.sessions.children(id, readOptions);
+        else if (messageID) data = await client.sessions.message(id, messageID, readOptions);
+        else {
+          const page = await client.sessions.messages(id, { limit: Number(url.searchParams.get('limit')) || 100,
+            before: url.searchParams.get('before') ?? undefined }, readOptions);
+          data = page.records; cursor = page.cursor;
+        }
+      } else throw error('session_observation_unavailable', 503);
+      signal.throwIfAborted();
+      const projectedBytes = Buffer.byteLength(JSON.stringify(data ?? null));
+      if (projectedBytes > 16 * 1024 * 1024) throw error('history_limit', 503);
+      return { data, cursor, bytes: Math.max(bytes, projectedBytes) };
+    } catch (cause) {
+      if (cause?.code === 'opencode_response_too_large') throw error('history_limit', 503);
+      if (cause?.code === 'history_limit' || cause?.code === 'opencode_runtime_changed' || cause?.code === 'opencode_generation_invalid') {
+        if (cause.status === undefined) cause.status = cause.statusCode ?? 503;
+        throw cause;
       }
-      return { data: JSON.parse(Buffer.concat(chunks).toString()), bytes, cursor: response.headers.get('x-next-cursor') };
-    } finally {
-      responseMetrics.activeResponses--; responseMetrics.responseBytes -= bytes;
-      await reader.cancel().catch(() => {});
+      throw Object.assign(error('session_observation_unavailable', cause?.statusCode === 404 ? 404 : 503), { cause });
     }
+  };
+  const request = async (pathname, directory, deadline = Date.now() + 15_000) => {
+    const client = gen2Client();
+    return requestDomain(client, pathname, directory, AbortSignal.any([
+      AbortSignal.timeout(Math.max(1, Math.min(15_000, deadline - Date.now()))),
+      ...(readContext.getStore()?.signal ? [readContext.getStore().signal] : []),
+    ]));
   };
   const session = async (id, directory) => {
     if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(id)) throw error('invalid_session_id', 400);
@@ -318,12 +342,7 @@ export function createSessionChangeHost(options) {
           if (summary.revision !== body?.revision) throw error('summary_revision_changed');
         }
         if (method === 'POST' && ['undo', 'redo'].includes(action)) {
-          if (!options.restoreOwned) {
-            const { data: statuses } = await request('/session/status', directory);
-            if (!statuses || typeof statuses !== 'object' || Array.isArray(statuses)
-              || Object.values(statuses).some((status) => !['idle', 'busy', 'retry'].includes(status?.type))) throw error('session_status_unavailable', 503);
-            if (Object.values(statuses).some((status) => ['busy', 'retry'].includes(status.type))) throw error('directory_busy');
-          }
+          if (typeof options.restoreOwned !== 'function') throw error('mutation_runtime_unsupported');
           const result = await runtime.restore({ directory, rootSessionID, revision: body?.revision, redo: action === 'redo' });
           return { status: 200, body: result };
         }

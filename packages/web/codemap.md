@@ -16,9 +16,19 @@ Web runtime package that ships the main app plus mini-chat and detachable-browse
 4. Shared UI talks to web APIs (terminal, git, files, settings, notifications, GitHub, push, tools).
 
 ## Integration
+- **Test runners**: `test` runs web contracts in Vitest, then the original native helper, quiet-retention, and queued-input service graphs in Bun. These `bun:test` files are excluded from Vitest and included in the same package gate; `scripts/test-suite-contract.test.mjs` verifies that dispatch.
 - Exposes package entrypoints: `main`/`types` => `server/index.js`, `bin` => `bin/cli.js`.
 - Serves `@openchamber/ui` frontend runtime and consumes `@opencode-ai/sdk` via server-side OpenCode integration.
 - Used directly by Electron desktop shell (in-process server boot) and standalone CLI/web deployments.
 - Browser build output is measured from `dist/.vite/manifest.json` by the root bundle-budget checker; generated `dist` files remain untracked build artifacts.
 
 - `vite-terminal-assets.ts` verifies vendored terminal binary digests and includes its license/provenance files in `dist/licenses/terminal` for web and Electron packaging.
+
+Native v2 packaging uses only manifest-listed `DevRyan-*` controller/writer/assets
+and the accepted execution launcher under `runtime/<platform>-<arch>`. No v1
+executable or companion manifest enters the npm closure. The current reviewed
+build/signature platform is Darwin ARM64; universal web publication remains
+unavailable until every required native platform has reviewed build/verification
+evidence. This does not restrict the package's declared user platforms or treat
+missing platform checks as passes. `scripts/pack-web-release.mjs` gates both the
+source and unpacked artifact before release.

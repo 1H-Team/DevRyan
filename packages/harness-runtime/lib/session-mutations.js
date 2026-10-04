@@ -700,6 +700,292 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     await recover(repo);
     return files;
   };
+  // Native holds live in the same committed session rows as Revert ownership.
+  // The sum is monotonic along a fixed lineage; sibling holds do not revoke it.
+  const nativeAdmission = async (repo, sessionID) => {
+    const holds = [], seen = new Set();
+    let revision = 0, reverting = false;
+    for (let id = sessionID; id;) {
+      if (seen.has(id)) throw changeError('invalid_session_lineage');
+      seen.add(id);
+      const session = await repo.db.get(key('sessions', id));
+      if (!session) break;
+      if (session.directory && session.directory !== repo.logicalDirectory) throw changeError('session_directory_mismatch');
+      const state = session.nativeAdmission ?? { revision: 0, holds: [] };
+      if (!Number.isSafeInteger(state.revision) || state.revision < 0 || !Array.isArray(state.holds)) throw changeError('invalid_change_record');
+      revision += state.revision;
+      reverting ||= Boolean(session.pending);
+      holds.push(...state.holds.map((hold) => ({ ...hold, sessionID: id })));
+      id = session.parentID;
+    }
+    return { revision, held: reverting || holds.length > 0, reverting, holds };
+  };
+  const assertNativeAdmission = async (repo, sessionID) => {
+    const state = await nativeAdmission(repo, sessionID);
+    if (state.reverting) throw changeError('session_reverting');
+    if (state.held) throw changeError('native_session_held');
+    return state;
+  };
+  const removalHold = (session, intent) => {
+    const state = session.nativeAdmission ?? { revision: 0, holds: [] };
+    const ownerID = `native-removal:${intent.id}`;
+    if (!state.holds.some(hold => hold.ownerID === ownerID)) session.nativeAdmission = {
+      ...state, revision: state.revision + 1, holds: [...state.holds, { id: randomUUID(), ownerID, removalID: intent.id }],
+    };
+  };
+  const beginNativeRemoval = input => locked(input.directory, async repo => {
+    if (!validID(input.rootSessionID) || !validID(input.ownerID)) throw changeError('invalid_capture_identity', 400);
+    const session = await repo.db.get(key('sessions', input.rootSessionID));
+    if (!session || session.pending) throw changeError('mutation_history_unavailable');
+    for await (const { value } of repo.db.entries('native-removals')) {
+      if (value.rootSessionID === input.rootSessionID && value.state !== 'completed') {
+        if (value.ownerID !== input.ownerID) throw changeError('native_removal_owner_mismatch');
+        return value;
+      }
+    }
+    const quietHold=input.quietHold;
+    if(quietHold){
+      const state=session.nativeAdmission;
+      if(session.pending||!state||state.revision!==quietHold.revision||state.holds.length!==1
+        ||state.holds[0].id!==quietHold.id||state.holds[0].ownerID!==input.ownerID
+        ||state.holds[0].retentionInstanceID!==quietHold.retentionInstanceID)throw changeError('native_retention_hold_changed');
+      session.nativeAdmission={...state,revision:state.revision+1,holds:[]};
+    }else await assertNativeAdmission(repo,input.rootSessionID);
+    const intent = { id: randomUUID(), directory: input.directory, rootSessionID: input.rootSessionID,
+      ownerID: input.ownerID, state: 'preparing', ...(quietHold?{quiet:true}:{}), members: [{ id: session.id, parentID: session.parentID ?? null,
+        directory: input.directory, generation: session.generation }], removed: [], dispositions: [] };
+    removalHold(session, intent); repo.db.set(key('sessions', session.id), session);
+    repo.db.set(key('native-removals', intent.id), intent); return intent;
+  });
+  const nativeRemoval = input => snapshotOrLocked(input.directory, repo => repo.db.get(key('native-removals', input.intentID)));
+  const nativeRemovals = input => snapshotOrLocked(input.directory, async repo => {
+    const result = [];
+    for await (const { value } of repo.db.entries('native-removals')) if (value.state !== 'completed') result.push(value);
+    return result;
+  });
+  const commitNativeRemoval = input => locked(input.directory, async repo => {
+    const intent = await repo.db.get(key('native-removals', input.intentID));
+    if (!intent || intent.ownerID !== input.ownerID || intent.state !== 'preparing') throw changeError('native_removal_state_conflict');
+    if (!Array.isArray(input.members) || !input.members.length || input.members.length > 10000) throw changeError('native_removal_tree_invalid');
+    const byID = new Map(input.members.map(member => [member.id, member]));
+    if (byID.size !== input.members.length || !byID.has(intent.rootSessionID)) throw changeError('native_removal_tree_invalid');
+    const root = await repo.db.get(key('sessions', intent.rootSessionID));
+    if (!root || root.generation !== intent.members.find(member => member.id === intent.rootSessionID)?.generation || root.pending) throw changeError('native_removal_generation_changed');
+    const members = [], records = [];
+    for (const member of input.members) {
+      if (!validID(member.id) || member.directory !== input.directory) throw changeError('native_removal_tree_invalid');
+      const seen = new Set();
+      for (let current = member; current.id !== intent.rootSessionID; current = byID.get(current.parentID)) {
+        if (seen.has(current.id) || !byID.has(current.parentID)) throw changeError('native_removal_tree_invalid');
+        seen.add(current.id);
+      }
+      let session = await repo.db.get(key('sessions', member.id));
+      const captured = intent.members.find(item => item.id === member.id);
+      if (session && (session.pending || (session.parentID ?? null) !== (member.parentID ?? null)
+        || captured && captured.generation !== session.generation)) throw changeError('native_removal_tree_changed');
+      session ??= { id: member.id, parentID: member.parentID ?? null, generation: 0, pending: null, directory: input.directory };
+      records.push(session);
+      members.push({ id: member.id, parentID: member.parentID ?? null, directory: input.directory, generation: session.generation });
+    }
+    // Authorization is checked after all asynchronous ledger reads, inside the
+    // existing owner lock, immediately before sealing the terminal decision.
+    if (input.prepareOnly !== true) await input.beforeCommit?.();
+    for (const session of records) { removalHold(session, intent); repo.db.set(key('sessions', session.id), session); }
+    intent.members = members; intent.state = input.prepareOnly === true ? 'preparing' : 'committed'; repo.db.set(key('native-removals', intent.id), intent); return intent;
+  });
+  const acknowledgeNativeRemoval = input => locked(input.directory, async repo => {
+    const intent = await repo.db.get(key('native-removals', input.intentID));
+    if (!intent || intent.state !== 'committed' || intent.ownerID !== input.ownerID
+      || !intent.members.some(member => member.id === input.sessionID)) throw changeError('native_removal_state_conflict');
+    if (!Array.isArray(input.inboxIDs) || !Array.isArray(input.pendingIDs)
+      || [...input.inboxIDs, ...input.pendingIDs].some(id => !validID(id))) throw changeError('invalid_capture_identity');
+    const disposition = intent.dispositions.find(item => item.sessionID === input.sessionID);
+    if (!disposition) throw changeError('native_removal_disposition_missing');
+    if (JSON.stringify(disposition.inboxIDs) !== JSON.stringify(input.inboxIDs)
+      || JSON.stringify(disposition.pendingIDs) !== JSON.stringify(input.pendingIDs)) throw changeError('native_removal_disposition_changed');
+    if (!intent.removed.includes(input.sessionID)) {
+      intent.removed.push(input.sessionID);
+      const session = await repo.db.get(key('sessions', input.sessionID));
+      session.nativeAdmission = { ...session.nativeAdmission, continuations: [] };
+      session.nativeRemoved = intent.id;
+      repo.db.set(key('sessions', input.sessionID), session);
+      repo.db.set(key('native-removals', intent.id), intent);
+    }
+    return intent;
+  });
+  const stageNativeRemovalMember = input => locked(input.directory, async repo => {
+    const intent = await repo.db.get(key('native-removals', input.intentID));
+    if (!intent || intent.state !== 'committed' || intent.ownerID !== input.ownerID
+      || !intent.members.some(member => member.id === input.sessionID)) throw changeError('native_removal_state_conflict');
+    if (!Array.isArray(input.inboxIDs) || !Array.isArray(input.pendingIDs)
+      || [...input.inboxIDs, ...input.pendingIDs].some(id => !validID(id))) throw changeError('invalid_capture_identity');
+    const previous = intent.dispositions.find(item => item.sessionID === input.sessionID);
+    const next = { sessionID: input.sessionID, inboxIDs: input.inboxIDs, pendingIDs: input.pendingIDs };
+    if (previous && JSON.stringify(previous) !== JSON.stringify(next)) throw changeError('native_removal_disposition_changed');
+    if (!previous) { intent.dispositions.push(next); repo.db.set(key('native-removals', intent.id), intent); }
+    return intent;
+  });
+  const completeNativeRemoval = input => locked(input.directory, async repo => {
+    const intent = await repo.db.get(key('native-removals', input.intentID));
+    if (!intent || intent.ownerID !== input.ownerID || intent.removed.length !== intent.members.length) throw changeError('native_removal_incomplete');
+    intent.state = 'completed'; repo.db.set(key('native-removals', intent.id), intent); return intent;
+  });
+  const abandonQuietNativeRemoval=input=>locked(input.directory,async repo=>{
+    const intent=await repo.db.get(key('native-removals',input.intentID));
+    if(!intent||intent.ownerID!==input.ownerID||!intent.quiet||intent.state!=='preparing'||intent.dispositions.length||intent.removed.length)throw changeError('native_removal_state_conflict');
+    for(const member of intent.members){
+      const file=key('sessions',member.id),session=await repo.db.get(file),state=session?.nativeAdmission;
+      if(!state)continue;
+      session.nativeAdmission={...state,revision:state.revision+1,holds:state.holds.filter(hold=>hold.ownerID!==`native-removal:${intent.id}`)};repo.db.set(file,session);
+    }
+    repo.db.remove(key('native-removals',intent.id));
+  });
+  const nativeRetentionHolds=input=>snapshotOrLocked(input.directory,async repo=>{
+    const result=[];
+    for await(const {value:session}of repo.db.entries('sessions'))for(const hold of session.nativeAdmission?.holds??[])if(hold.ownerID===input.ownerID&&hold.retentionInstanceID){
+      if(result.length>=512)throw changeError('native_retention_tree_unbounded');result.push({...hold,sessionID:session.id,revision:session.nativeAdmission.revision});
+    }
+    return result;
+  });
+  const registerNativeSession = (input) => locked(input.directory, async (repo) => {
+    if (!validID(input.sessionID) || (input.parentID !== undefined && input.parentID !== null && !validID(input.parentID))) throw changeError('invalid_capture_identity', 400);
+    const sessionKey = key('sessions', input.sessionID), previous = await repo.db.get(sessionKey);
+    if (previous && previous.parentID !== (input.parentID ?? null)) throw changeError('invalid_session_lineage');
+    if (previous?.directory && previous.directory !== repo.logicalDirectory) throw changeError('session_directory_mismatch');
+    if (input.parentID && !await repo.db.get(key('sessions', input.parentID))) throw changeError('mutation_parent_unavailable');
+    if (!previous && input.parentID) await assertNativeAdmission(repo, input.parentID);
+    if (!previous) repo.db.set(sessionKey, { id: input.sessionID, parentID: input.parentID ?? null, generation: 0, pending: null, directory: repo.logicalDirectory });
+    return nativeAdmission(repo, input.sessionID);
+  });
+  const nativeAdmissionState = (input) => snapshotOrLocked(input.directory, async (repo) => {
+    if (!validID(input.sessionID)) throw changeError('invalid_capture_identity', 400);
+    return nativeAdmission(repo, input.sessionID);
+  });
+  const holdNativeAdmission = (input) => locked(input.directory, async (repo) => {
+    if (!validID(input.sessionID) || !validID(input.ownerID)) throw changeError('invalid_capture_identity', 400);
+    const sessionKey = key('sessions', input.sessionID), session = await repo.db.get(sessionKey);
+    if (!session) throw changeError('mutation_history_unavailable');
+    const state = session.nativeAdmission ?? { revision: 0, holds: [] };
+    const previous = state.holds.find((hold) => hold.ownerID === input.ownerID);
+    if(input.retentionInstanceID&&(!validID(input.retentionInstanceID)||previous&&previous.retentionInstanceID!==input.retentionInstanceID))throw changeError('native_hold_owner_mismatch');
+    if (previous && (!session.pending || previous.transactionID === session.pending)) return { ...previous, revision: state.revision };
+    const hold = previous ? { ...previous, transactionID: session.pending }
+      : { id: randomUUID(), ownerID: input.ownerID, ...(input.retentionInstanceID?{retentionInstanceID:input.retentionInstanceID}:{}), ...(session.pending ? { transactionID: session.pending } : {}) };
+    session.nativeAdmission = { ...state, revision: state.revision + 1,
+      holds: previous ? state.holds.map((item) => item === previous ? hold : item) : [...state.holds, hold] };
+    repo.db.set(sessionKey, session);
+    return { ...hold, revision: session.nativeAdmission.revision };
+  });
+  const releaseNativeAdmission = (input) => locked(input.directory, async (repo) => {
+    if (!validID(input.sessionID) || !validID(input.ownerID) || !validID(input.holdID) || !Number.isSafeInteger(input.expectedRevision)) throw changeError('invalid_capture_identity', 400);
+    const sessionKey = key('sessions', input.sessionID), session = await repo.db.get(sessionKey), state = session?.nativeAdmission;
+    if (!state || state.revision !== input.expectedRevision) throw changeError('native_hold_revision_conflict');
+    const hold = state.holds.find((entry) => entry.id === input.holdID && entry.ownerID === input.ownerID);
+    if (!hold) throw changeError('native_hold_owner_mismatch');
+    session.nativeAdmission = { ...state, revision: state.revision + 1, holds: state.holds.filter((entry) => entry !== hold) };
+    repo.db.set(sessionKey, session);
+    // Revert pending state is deliberately preserved by this generic release.
+    return nativeAdmission(repo, input.sessionID);
+  });
+  const deferNativeContinuation = (input) => locked(input.directory, async (repo) => {
+    if (!validID(input.sessionID) || !validID(input.operation)) throw changeError('invalid_capture_identity', 400);
+    const sessionKey = key('sessions', input.sessionID), session = await repo.db.get(sessionKey);
+    if (!session) throw changeError('mutation_history_unavailable');
+    const state = session.nativeAdmission ?? { revision: 0, holds: [] };
+    session.nativeAdmission = { ...state, continuations: [...new Set([...(state.continuations ?? []), input.operation])] };
+    repo.db.set(sessionKey, session);
+  });
+  const nativeContinuations = (input) => snapshotOrLocked(input.directory, async (repo) => {
+    const session = await repo.db.get(key('sessions', input.sessionID));
+    return [...(session?.nativeAdmission?.continuations ?? [])];
+  });
+  const nativeShellContinuations = (input) => snapshotOrLocked(input.directory, async (repo) => {
+    const result = [];
+    for await (const { value: session } of repo.db.entries('sessions')) {
+      for (const operation of session.nativeAdmission?.continuations ?? []) {
+        if (operation.startsWith('shell.complete:')) result.push({ sessionID: session.id, operation });
+      }
+    }
+    return result;
+  });
+  const nativeTransactionHolds = (input) => snapshotOrLocked(input.directory, async (repo) => {
+    const result = [];
+    for await (const { value: session } of repo.db.entries('sessions')) {
+      for (const hold of session.nativeAdmission?.holds ?? []) {
+        if (hold.ownerID !== input.ownerID || !hold.transactionID) continue;
+        const tx = await repo.db.get(key('transactions', hold.transactionID));
+        if (tx && ['committed', 'cancelled'].includes(tx.state) && tx.members.includes(session.id)) {
+          result.push({ transactionID: tx.id, sessions: tx.members });
+        }
+      }
+    }
+    return result.filter((entry, index) => result.findIndex((candidate) => candidate.transactionID === entry.transactionID) === index);
+  });
+  const bindNativeShellJob = (input) => locked(input.directory, async (repo) => {
+    if (![input.token, input.jobID, input.sessionID, input.messageID, input.callID].every(validID)
+      || typeof input.command !== 'string' || !input.command || input.command.length > 1024 * 1024) throw changeError('invalid_capture_identity', 400);
+    const leaseKey = key('leases', input.token), lease = await repo.db.get(leaseKey);
+    if (!lease || lease.executionKind !== 'process' || !['ready', 'published'].includes(lease.state)
+      || lease.scope.sessionID !== input.sessionID || lease.scope.messageID !== input.messageID || lease.scope.callID !== input.callID) throw changeError('capture_identity_mismatch');
+    await assertNativeAdmission(repo, input.sessionID);
+    const session = await repo.db.get(key('sessions', input.sessionID));
+    if (session.generation !== lease.generation) throw changeError('execution_reverted');
+    const binding = { jobID: input.jobID, command: input.command }, pointerKey = key('native-shell-jobs', `${input.sessionID}\0${input.jobID}`);
+    const previous = await repo.db.get(pointerKey);
+    if (previous && previous.token !== input.token || lease.nativeShellJob
+      && (lease.nativeShellJob.jobID !== binding.jobID || lease.nativeShellJob.command !== binding.command)) throw changeError('native_shell_job_conflict');
+    lease.nativeShellJob ??= binding;
+    repo.db.set(leaseKey, lease); repo.db.set(pointerKey, { token: lease.token });
+    return lease;
+  });
+  const nativeShellJob = (input) => snapshotOrLocked(input.directory, async (repo) => {
+    if (![input.sessionID, input.jobID].every(validID)) throw changeError('invalid_capture_identity', 400);
+    const pointer = await repo.db.get(key('native-shell-jobs', `${input.sessionID}\0${input.jobID}`));
+    const lease = pointer && await repo.db.get(key('leases', pointer.token));
+    if (!lease || lease.scope.sessionID !== input.sessionID || lease.nativeShellJob?.jobID !== input.jobID) throw changeError('native_shell_job_unavailable');
+    const session = await repo.db.get(key('sessions', input.sessionID));
+    if (!session || session.generation !== lease.generation || session.pending) throw changeError('execution_reverted');
+    return lease;
+  });
+  const bindNativeShellNotification = (input) => locked(input.directory, async (repo) => {
+    if (![input.sessionID, input.jobID, input.notificationID].every(validID)) throw changeError('invalid_capture_identity', 400);
+    const pointer = await repo.db.get(key('native-shell-jobs', `${input.sessionID}\0${input.jobID}`));
+    const lease = pointer && await repo.db.get(key('leases', pointer.token));
+    if (!lease || lease.scope.sessionID !== input.sessionID || lease.nativeShellJob?.jobID !== input.jobID) throw changeError('native_shell_job_unavailable');
+    const previous = lease.nativeShellJob.notificationID;
+    if (previous && previous !== input.notificationID) throw changeError('native_shell_job_conflict');
+    if(input.itemDelivery!==undefined&&input.itemHash===undefined||input.itemHash!==undefined&&(typeof input.itemHash!=='string'||!/^[a-f0-9]{64}$/.test(input.itemHash)||!['queue','steer'].includes(input.itemDelivery)||lease.nativeShellJob.itemHash&&(lease.nativeShellJob.itemHash!==input.itemHash||lease.nativeShellJob.itemDelivery!==input.itemDelivery)))throw changeError('native_shell_job_conflict');
+    lease.nativeShellJob = { ...lease.nativeShellJob, notificationID: input.notificationID,...input.itemHash?{itemHash:input.itemHash,itemDelivery:input.itemDelivery}:{} };
+    repo.db.set(key('leases', lease.token), lease);
+  });
+  const acknowledgeNativeShellCompletion = (input) => locked(input.directory, async (repo) => {
+    const pointer = await repo.db.get(key('native-shell-jobs', `${input.sessionID}\0${input.jobID}`));
+    const lease = pointer && await repo.db.get(key('leases', pointer.token));
+    if (!lease || lease.scope.sessionID !== input.sessionID || lease.nativeShellJob?.notificationID !== input.notificationID
+      || !['published', 'cancelled'].includes(lease.state)) throw changeError('native_shell_job_unavailable');
+    lease.nativeShellJob = { ...lease.nativeShellJob, deliveredID: input.notificationID };
+    repo.db.set(key('leases', lease.token), lease);
+  });
+  const acknowledgeNativeContinuation = (input) => locked(input.directory, async (repo) => {
+    const sessionKey = key('sessions', input.sessionID), session = await repo.db.get(sessionKey);
+    if (!session?.nativeAdmission) throw changeError('mutation_history_unavailable');
+    const admission = await assertNativeAdmission(repo, input.sessionID);
+    if (input.operation === 'execution.wake' && (!Number.isSafeInteger(input.expectedRevision) || admission.revision !== input.expectedRevision)) {
+      throw changeError('native_hold_revision_conflict');
+    }
+    if (input.operation.startsWith('shell.complete:')) {
+      if (!Number.isSafeInteger(input.expectedRevision) || admission.revision !== input.expectedRevision) throw changeError('native_hold_revision_conflict');
+      const jobID = input.operation.slice('shell.complete:'.length), pointer = await repo.db.get(key('native-shell-jobs', `${input.sessionID}\0${jobID}`));
+      const lease = pointer && await repo.db.get(key('leases', pointer.token));
+      if (!lease || lease.scope.sessionID !== input.sessionID || !lease.nativeShellJob?.deliveredID
+        || lease.generation !== session.generation || !['published', 'cancelled'].includes(lease.state)) throw changeError('native_shell_job_unavailable');
+      if (!validID(input.assistantMessageID) || lease.nativeShellJob.deliveredID !== input.userMessageID) throw changeError('native_continuation_started_proof_required');
+      lease.nativeShellJob = { ...lease.nativeShellJob, continuedID: input.userMessageID, continuedAssistantID: input.assistantMessageID };
+      repo.db.set(key('leases', lease.token), lease);
+    }
+    session.nativeAdmission = { ...session.nativeAdmission, continuations: (session.nativeAdmission.continuations ?? []).filter((operation) => operation !== input.operation) };
+    repo.db.set(sessionKey, session);
+  });
   const register = async (repo, input) => {
     if (!validID(input.sessionID) || !validID(input.userMessageID)) throw changeError('invalid_capture_identity', 400);
     const sessionKey = key('sessions', input.sessionID);
@@ -709,6 +995,8 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     session.directory = repo.logicalDirectory;
     if (input.parentID && session.parentID && input.parentID !== session.parentID) throw changeError('capture_identity_mismatch');
     session.parentID ??= input.parentID ?? null;
+    await assertNativeAdmission(repo, input.sessionID);
+    if (session.parentID) await assertNativeAdmission(repo, session.parentID);
     const visited = new Set([session.id]);
     const origins = {};
     let child = session;
@@ -758,6 +1046,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   });
   const assertAdmission = (input) => snapshotOrLocked(input.directory, async (repo) => {
     if (!validID(input.sessionID)) throw changeError('invalid_capture_identity', 400);
+    await assertNativeAdmission(repo, input.sessionID);
     let session = await repo.db.get(key('sessions', input.sessionID));
     if (session?.directory && session.directory !== repo.logicalDirectory) throw changeError('session_directory_mismatch');
     const seen = new Set();
@@ -774,6 +1063,10 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     if (input.executionFingerprint !== undefined && !/^[a-f0-9]{64}$/.test(input.executionFingerprint)) {
       throw changeError('invalid_capture_identity', 400);
     }
+    if(input.publicationPolicy!==undefined&&(!['context-images','interview-document'].includes(input.publicationPolicy)||input.kind==='control'))throw changeError('invalid_publication_policy',400);
+    if(input.publicationPolicy==='interview-document'&&(!safeChangePath(input.publicationPath)||!input.publicationPath.endsWith('.md')
+      ||input.publicationPath.split('/').some(part=>part.toLowerCase()==='.git')))throw changeError('invalid_publication_policy',400);
+    if(input.publicationPolicy!=='interview-document'&&input.publicationPath!==undefined)throw changeError('invalid_publication_policy',400);
     return locked(input.directory, async (repo) => {
       const { session, prompt } = await register(repo, input);
       if (session.pending) throw changeError('session_reverting');
@@ -785,6 +1078,8 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         if (!old || scopeFields.some((field) => old.scope[field] !== input[field])
           || old.parentCallID !== (input.parentCallID ?? null)
           || old.executionFingerprint !== input.executionFingerprint
+          || old.publicationPolicy !== input.publicationPolicy
+          || old.publicationPath !== input.publicationPath
           || (old.preparation === 'none') !== (input.kind === 'control')) throw changeError('capture_identity_mismatch');
         if (['preparing', 'published', 'ready'].includes(old.state)) return old;
         throw changeError('execution_cancelled');
@@ -800,6 +1095,8 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         origins: prompt.origins,
         promptSequence: prompt.sequence, viewDirectory, state: 'preparing', parentCallID: input.parentCallID ?? null,
         executionFingerprint: input.executionFingerprint, reservedAt: Date.now(),
+        ...(input.publicationPolicy?{publicationPolicy:input.publicationPolicy}:{}),
+        ...(input.publicationPath?{publicationPath:input.publicationPath}:{}),
         ...(input.ownerID ? { ownerID: input.ownerID } : {}), ...(control ? { preparation: 'none' } : {}) };
       repo.db.set(key('leases', token), result);
       repo.db.set(key('calls', scopeKey), { token });
@@ -817,6 +1114,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   // `uncertain`, exactly as a missing lease does today.
   const admitDirect = (input) => snapshotOrLocked(input.directory, async (repo) => {
     if (!scopeFields.every((field) => validID(input[field]))) throw changeError('invalid_capture_identity', 400);
+    await assertNativeAdmission(repo, input.sessionID);
     let session = await repo.db.get(key('sessions', input.sessionID));
     if (session?.directory && session.directory !== repo.logicalDirectory) throw changeError('session_directory_mismatch');
     const generation = session?.generation ?? 0;
@@ -1095,6 +1393,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       if (lease.state === 'published') return lease.result;
       const session = await repo.db.get(key('sessions', lease.scope.sessionID));
       if (session.generation !== lease.generation || session.pending) throw changeError('execution_reverted');
+      await assertNativeAdmission(repo, lease.scope.sessionID);
       if (lease.state !== 'ready') throw changeError('execution_not_ready');
       if (lease.preparation === 'none') {
         if (lease.executionKind !== 'control') throw changeError('execution_not_ready');
@@ -1106,6 +1405,19 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         return lease.result;
       }
       const touched = [...new Set([...base.keys(), ...files.keys()])].filter((file) => !equal(base.get(file)?.entry, files.get(file)));
+      if(lease.publicationPolicy!==undefined){
+        if(!['context-images','interview-document'].includes(lease.publicationPolicy))throw changeError('invalid_publication_policy');
+        const relative=path.relative(lease.viewDirectory,lease.workingDirectory);
+        if(relative==='..'||relative.startsWith(`..${path.sep}`)||path.isAbsolute(relative))throw changeError('invalid_publication_policy');
+        const prefix=relative?relative.split(path.sep).join('/')+'/':'';
+        if(lease.publicationPolicy==='interview-document'&&(!safeChangePath(lease.publicationPath)||!lease.publicationPath.endsWith('.md')
+          ||lease.publicationPath.split('/').some(part=>part.toLowerCase()==='.git')))throw changeError('invalid_publication_policy');
+        const allowed=file=>lease.publicationPolicy==='interview-document'?file===prefix+lease.publicationPath:file.startsWith(prefix+'.opencode/images/')||file===prefix+'.opencode/.gitignore'
+          ||file===prefix+'.opencode/.gitignore.oh-my-opencode-slim-legacy';
+        // This runs before reconcile or any publication decision. The private
+        // worker has terminated; a refused contribution remains unpublished.
+        if(touched.some(file=>!allowed(file)||files.get(file)?.mode==='120000')||ignoredInputs.length)throw changeError(lease.publicationPolicy==='interview-document'?'interview_document_output_denied':'context_asset_output_denied');
+      }
       await reconcile(repo, touched);
       const renamed = new Map(), sources = new Set();
       if (!Array.isArray(renames)) throw changeError('invalid_rename_receipt');
@@ -1237,10 +1549,11 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     }
     const members = new Set([input.sessionID]), sessions = [];
     for await (const { value } of repo.db.entries('sessions')) sessions.push(value);
+    if (sessions.find(session => session.id === input.sessionID)?.nativeRemoved) throw changeError('native_session_removed');
     if (input.scope !== 'session') {
       for (let grew = true; grew;) {
         grew = false;
-        for (const session of sessions) if (members.has(session.parentID) && !members.has(session.id)) { members.add(session.id); grew = true; }
+        for (const session of sessions) if (!session.nativeRemoved && members.has(session.parentID) && !members.has(session.id)) { members.add(session.id); grew = true; }
       }
     }
     const selected = [], targets = new Map([[input.sessionID, { id: input.sessionID, targetMessageID: input.messageID }]]);
@@ -1267,6 +1580,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     for (const session of sessions) {
       if (!members.has(session.id)) continue;
       if (session.pending) throw changeError('session_reverting');
+      if (session.nativeAdmission?.holds?.some(hold => hold.removalID)) throw changeError('native_removal_in_progress');
       session.generation++; session.pending = id; repo.db.set(key('sessions', session.id), session);
     }
     const tx = { id, rootSessionID: input.sessionID, boundarySequence: prompt.sequence,
@@ -1330,6 +1644,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     return tx.result;
   });
   const prepareRedo = (input) => locked(input.directory, async (repo) => {
+    if ((await repo.db.get(key('sessions', input.sessionID)))?.nativeRemoved) throw changeError('native_session_removed');
     const pending = (await repo.db.get(key('sessions', input.sessionID)))?.pending;
     if (pending) {
       const previous = await repo.db.get(key('transactions', pending));
@@ -1358,6 +1673,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     for (const member of tx.members) {
       const session = await repo.db.get(key('sessions', member));
       if (session.pending) throw changeError('session_reverting');
+      if (session.nativeRemoved || session.nativeAdmission?.holds?.some(hold => hold.removalID)) throw changeError('native_removal_in_progress');
       session.generation++; session.pending = id; repo.db.set(key('sessions', member), session);
     }
     await repo.db.setList(`transactions/${id}/operations`, operations);
@@ -1406,6 +1722,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     for (const member of members) {
       const session = await repo.db.get(key('sessions', member));
       if (!session || session.pending) throw changeError('session_reverting');
+      if (session.nativeRemoved || session.nativeAdmission?.holds?.some(hold => hold.removalID)) throw changeError('native_removal_in_progress');
       session.generation++; session.pending = id; repo.db.set(key('sessions', member), session);
     }
     const tx = { id, kind: 'files', rootSessionID: input.sessionID, members: [...members], targets: [],
@@ -1482,6 +1799,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     if (!['control', 'process'].includes(input.kind) || lease?.state !== 'ready' || lease.executionKind) throw changeError('execution_already_started');
     if (lease.preparation === 'none' && input.kind !== 'control') throw changeError('capture_identity_mismatch');
     const session = await repo.db.get(key('sessions', lease.scope.sessionID));
+    await assertNativeAdmission(repo, lease.scope.sessionID);
     if (session?.pending || session?.generation !== lease.generation) throw changeError('execution_reverted');
     lease.executionKind = input.kind;
     repo.db.set(key('leases', input.token), lease); return lease;
@@ -1489,6 +1807,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   const registerChild = (input) => locked(input.directory, async (repo) => {
     if (!validID(input.sessionID) || !validID(input.parentID) || !validID(input.parentCallID)) throw changeError('invalid_capture_identity');
     const parent = await repo.db.get(key('sessions', input.parentID));
+    await assertNativeAdmission(repo, input.parentID);
     const call = await repo.db.get(key('calls', `${input.parentID}\0${input.parentCallID}`));
     const lease = call && await repo.db.get(key('leases', call.token));
     if (!parent || parent.pending || !lease || lease.generation !== parent.generation || !['ready', 'published'].includes(lease.state)) {
@@ -1557,7 +1876,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     const session = await repo.db.get(key('sessions', input.sessionID));
     let pending = Boolean(session?.pending);
     if (!pending) for await (const { value } of repo.db.entries('transactions')) if (value.state === 'prepared') { pending = true; break; }
-    return { captured: Boolean(session), pending };
+    return { captured: Boolean(session), pending, ...(session && !pending ? { generation: session.generation } : {}) };
   }, { requireExisting: true });
   const pendingTransactions = (input) => locked(input.directory, async (repo) => {
     const entries = [];
@@ -1609,7 +1928,11 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     return directories;
   };
   return { projectDirectories, projectDirectory: (input) => locked(input.directory, (repo) => repo.directory),
-    assertAdmission, registerPrompt, registerChild, reserve, prepare, warm, begin, admitDirect, finishDirect, claimLease, finish, cleanupLease, executionReceipt, aliasCalls, prepareRevert, prepareRedo, prepareFileRestore, settleRevert, leaseForCall,
+    assertAdmission, registerNativeSession, nativeAdmissionState, holdNativeAdmission, releaseNativeAdmission,
+    beginNativeRemoval, abandonQuietNativeRemoval, nativeRetentionHolds, commitNativeRemoval, prepareNativeRemovalMembers: input => commitNativeRemoval({...input,prepareOnly:true}), nativeRemoval, nativeRemovals, stageNativeRemovalMember, acknowledgeNativeRemoval, completeNativeRemoval,
+    deferNativeContinuation, nativeContinuations, nativeShellContinuations, nativeTransactionHolds, acknowledgeNativeContinuation,
+    bindNativeShellJob, nativeShellJob, bindNativeShellNotification, acknowledgeNativeShellCompletion,
+    registerPrompt, registerChild, reserve, prepare, warm, begin, admitDirect, finishDirect, claimLease, finish, cleanupLease, executionReceipt, aliasCalls, prepareRevert, prepareRedo, prepareFileRestore, settleRevert, leaseForCall,
     transaction, updateTransaction, pendingTransactions, capturedSessionState, restoreForeign, cancelLease, cancelUnstartedCall, activeLeases, pendingCleanup, executionOutcomes,
     maintainLedger: ({ directory }) => resolveRepository(directory).then(({ directory: project }) => maintainLedger(rootFor(project))),
     drain: () => Promise.allSettled([...preparations.values(), ...settlements.values(), ...queues.values(),

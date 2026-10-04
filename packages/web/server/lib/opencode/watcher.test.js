@@ -1,6 +1,13 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { projectedFrame, createProjectedStreamClient } from '../event-stream/test-projected-stream.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+
+import { createLoopbackOpenCodeFixtureForGeneration } from '../../../../../scripts/perf/loopback-opencode-fixtures.mjs';
 import { createGlobalMessageStreamHub } from '../event-stream/global-hub.js';
+import { createOpenCodeClient } from './opencode-client/index.js';
 import { createOpenCodeWatcherRuntime } from './watcher.js';
 
 function createSseResponse({ blocks = [], signal, holdOpen = false }) {
@@ -43,13 +50,14 @@ describe('createOpenCodeWatcherRuntime', () => {
     vi.restoreAllMocks();
   });
 
-  it('waits for OpenCode readiness and forwards unwrapped global SSE payloads', async () => {
+  it('waits for OpenCode readiness and forwards projected native payloads', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const payloads = [];
     const directories = [];
     const fetchCalls = [];
 
     const watcher = createOpenCodeWatcherRuntime({
+      openCodeClient: createProjectedStreamClient(),
       waitForOpenCodePort: async () => {
         await new Promise((resolve) => setTimeout(resolve, 1));
       },
@@ -64,7 +72,7 @@ describe('createOpenCodeWatcherRuntime', () => {
         return createSseResponse({
           signal: options.signal,
           blocks: [
-            'id: evt-1\ndata: {"directory":"/tmp/project","payload":{"type":"session.updated","properties":{"sessionID":"ses_1"}}}\n\n',
+            projectedFrame({"type": "session.updated", "properties": {"sessionID": "ses_1"}}, {"id": "evt-1", "directory": "/tmp/project"}),
           ],
         });
       },
@@ -76,7 +84,7 @@ describe('createOpenCodeWatcherRuntime', () => {
     expect(directories).toEqual(['/tmp/project']);
     expect(fetchCalls).toEqual([
       {
-        url: 'http://127.0.0.1:4096/global/event',
+        url: 'http://127.0.0.1:4096/api/event',
         headers: {
           Accept: 'text/event-stream',
           'Cache-Control': 'no-cache',
@@ -103,11 +111,13 @@ describe('createOpenCodeWatcherRuntime', () => {
     const unsubscribeEvent = vi.fn();
     const unsubscribeStatus = vi.fn();
     const globalEventHub = {
+      resolveGeneration: () => 2,
       start: vi.fn(),
       subscribeEvent: vi.fn(() => unsubscribeEvent),
       subscribeStatus: vi.fn(() => unsubscribeStatus),
     };
     const watcher = createOpenCodeWatcherRuntime({
+      openCodeClient: createProjectedStreamClient(),
       waitForOpenCodePort,
       buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
       getOpenCodeAuthHeaders: () => ({}),
@@ -128,13 +138,14 @@ describe('createOpenCodeWatcherRuntime', () => {
     expect(unsubscribeStatus).toHaveBeenCalledTimes(1);
   });
 
-  it('resumes watcher reconnects with Last-Event-ID after a stalled upstream stream', async () => {
+  it('reconnects a stalled native watcher without Last-Event-ID', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const fetchLastEventIds = [];
     const payloads = [];
     let attempt = 0;
 
     const watcher = createOpenCodeWatcherRuntime({
+      openCodeClient: createProjectedStreamClient(),
       waitForOpenCodePort: async () => {},
       buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
       getOpenCodeAuthHeaders: () => ({}),
@@ -153,7 +164,7 @@ describe('createOpenCodeWatcherRuntime', () => {
             signal: options.signal,
             holdOpen: true,
             blocks: [
-              'id: evt-1\ndata: {"type":"server.connected","properties":{}}\n\n',
+              projectedFrame({"type": "server.connected", "properties": {}}, {"id": "evt-1"}),
             ],
           });
         }
@@ -161,11 +172,11 @@ describe('createOpenCodeWatcherRuntime', () => {
         return createSseResponse({
           signal: options.signal,
           blocks: [
-            'id: evt-2\ndata: {"type":"session.updated","properties":{}}\n\n',
+            projectedFrame({"type": "session.updated", "properties": {}}, {"id": "evt-2"}),
           ],
         });
       },
-      upstreamStallTimeoutMs: 10,
+      generation2StallTimeoutMs: 10,
       upstreamReconnectDelayMs: 0,
     });
 
@@ -173,7 +184,7 @@ describe('createOpenCodeWatcherRuntime', () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
 
     expect(payloads).toEqual(['server.connected', 'session.updated']);
-    expect(fetchLastEventIds.slice(0, 2)).toEqual([null, 'evt-1']);
+    expect(fetchLastEventIds.slice(0, 2)).toEqual([null, null]);
   });
 
   it('subscribes to a shared global event hub instead of opening its own upstream stream', async () => {
@@ -183,6 +194,7 @@ describe('createOpenCodeWatcherRuntime', () => {
     let watcherFetchCalls = 0;
 
     const globalEventHub = createGlobalMessageStreamHub({
+      openCodeClient: createProjectedStreamClient(),
       buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
       getOpenCodeAuthHeaders: () => ({}),
       upstreamReconnectDelayMs: 0,
@@ -192,13 +204,14 @@ describe('createOpenCodeWatcherRuntime', () => {
           signal: options.signal,
           holdOpen: true,
           blocks: [
-            'id: evt-1\ndata: {"payload":{"type":"session.updated","properties":{"sessionID":"ses_1"}}}\n\n',
+            projectedFrame({"type": "session.updated", "properties": {"sessionID": "ses_1"}}, {"id": "evt-1"}),
           ],
         });
       },
     });
 
     const watcher = createOpenCodeWatcherRuntime({
+      openCodeClient: createProjectedStreamClient(),
       waitForOpenCodePort: async () => {},
       buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
       getOpenCodeAuthHeaders: () => ({}),
@@ -226,6 +239,7 @@ describe('createOpenCodeWatcherRuntime', () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 10));
 
+    globalEventHub.stop();
     expect(hubFetchCalls).toBe(1);
     expect(watcherFetchCalls).toBe(0);
     expect(payloads).toEqual([
@@ -245,6 +259,7 @@ describe('createOpenCodeWatcherRuntime', () => {
     let stopCalls = 0;
 
     const globalEventHub = {
+      resolveGeneration: () => 2,
       start() {
         startCalls += 1;
       },
@@ -266,6 +281,7 @@ describe('createOpenCodeWatcherRuntime', () => {
     };
 
     const watcher = createOpenCodeWatcherRuntime({
+      openCodeClient: createProjectedStreamClient(),
       waitForOpenCodePort: async () => {},
       buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
       getOpenCodeAuthHeaders: () => ({}),
@@ -288,7 +304,7 @@ it('retains the shared hub directory for exact receipt ingestion', async () => {
   let accept;
   const onPayload = vi.fn();
   const watcher = createOpenCodeWatcherRuntime({ waitForOpenCodePort: async () => {}, onPayload,
-    globalEventHub: { start() {}, subscribeEvent(callback) { accept = callback; return () => {}; }, subscribeStatus() { return () => {}; } },
+    globalEventHub: { resolveGeneration: () => 2, start() {}, subscribeEvent(callback) { accept = callback; return () => {}; }, subscribeStatus() { return () => {}; } },
   });
   await watcher.start();
   const payload = { type: 'message.part.updated', properties: { part: { sessionID: 'ses_1', messageID: 'msg_1', type: 'tool' } } };
@@ -297,4 +313,164 @@ it('retains the shared hub directory for exact receipt ingestion', async () => {
   accept({ payload, directory: 'global' });
   expect(onPayload).toHaveBeenLastCalledWith(payload, null);
   watcher.stop();
+});
+
+describe('createOpenCodeWatcherRuntime gen 2', () => {
+  let directory;
+  let fixture;
+
+  beforeAll(async () => {
+    directory = mkdtempSync(path.join(tmpdir(), 'devryan-watcher-v2-'));
+    fixture = await createLoopbackOpenCodeFixtureForGeneration(2, { directory, heartbeatMs: 50 });
+  });
+
+  afterAll(async () => {
+    await fixture?.close();
+    if (directory) rmSync(directory, { recursive: true, force: true });
+  });
+
+  const waitFor = async (assertion) => {
+    const deadline = Date.now() + 2000;
+    let lastError;
+    while (Date.now() < deadline) {
+      try {
+        assertion();
+        return;
+      } catch (error) {
+        lastError = error;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    }
+    throw lastError;
+  };
+
+  const runtimeDeps = () => {
+    const fetchPaths = [];
+    const getRuntime = () => ({ generation: 2, baseUrl: fixture.origin });
+    const getAuthHeaders = () => ({ ...fixture.authHeaders });
+    const fetchImpl = (url, init) => {
+      fetchPaths.push(new URL(url).pathname);
+      return globalThis.fetch(url, init);
+    };
+    return {
+      fetchPaths,
+      getRuntime,
+      getAuthHeaders,
+      fetchImpl,
+      openCodeClient: createOpenCodeClient({ getRuntime, getAuthHeaders, fetchImpl }),
+    };
+  };
+
+  it('projects the raw 2.0.20 stream through a private hub when no shared hub exists', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { fetchPaths, getRuntime, getAuthHeaders, fetchImpl, openCodeClient } = runtimeDeps();
+    const received = [];
+    const watcher = createOpenCodeWatcherRuntime({
+      waitForOpenCodePort: async () => {},
+      buildOpenCodeUrl: () => {
+        throw new Error('the gen-1 stream must not be built');
+      },
+      getOpenCodeAuthHeaders: getAuthHeaders,
+      fetchImpl,
+      upstreamReconnectDelayMs: 10,
+      openCodeClient,
+      getOpenCodeRuntime: getRuntime,
+      onPayload(payload, payloadDirectory) {
+        received.push({ payload, directory: payloadDirectory });
+      },
+    });
+    try {
+      await watcher.start();
+      await waitFor(() => expect(received.some(({ payload }) => payload.type === 'server.connected')).toBe(true));
+      const played = fixture.playSequence('two-step-tool-turn', { until: 'session.execution.succeeded' });
+      const [sessionID] = played.sessionIDs;
+      await waitFor(() => expect(received.some(({ payload }) => payload.type === 'session.status'
+        && payload.properties.sessionID === sessionID && payload.properties.status.type === 'busy')).toBe(true));
+      // The v1 vocabulary only, routed by the session's location.
+      expect(received.some(({ payload }) => payload.type.startsWith('session.step.') || payload.type.startsWith('session.text.'))).toBe(false);
+      expect(received.filter(({ payload }) => payload.properties?.sessionID === sessionID).every((entry) => entry.directory === directory)).toBe(true);
+      expect(fetchPaths).toContain('/api/event');
+      expect(fetchPaths).not.toContain('/global/event');
+
+      // A SubscriberOverflow drop: the reconnect reconciles the busy session from /api/session/active.
+      const before = received.length;
+      fixture.playSequence('stream-drop');
+      await waitFor(() => {
+        const after = received.slice(before);
+        expect(after.some(({ payload }) => payload.type === 'session.status' && payload.properties.sessionID === sessionID)).toBe(true);
+      });
+      // The hub's gap control entry never reaches the canonical consumers.
+      expect(received.some(({ payload }) => payload.type === 'devryan.stream.gap')).toBe(false);
+      played.resume();
+      await waitFor(() => expect(received.some(({ payload }) => payload.type === 'session.idle' && payload.properties.sessionID === sessionID)).toBe(true));
+    } finally {
+      watcher.stop();
+    }
+  });
+
+  it('skips hub gap control entries on a shared gen-2 hub', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { getRuntime, getAuthHeaders, fetchImpl, openCodeClient } = runtimeDeps();
+    const hub = createGlobalMessageStreamHub({
+      buildOpenCodeUrl: () => {
+        throw new Error('the gen-1 stream must not be built');
+      },
+      getOpenCodeAuthHeaders: getAuthHeaders,
+      fetchImpl,
+      upstreamReconnectDelayMs: 10,
+      openCodeClient,
+      getOpenCodeRuntime: getRuntime,
+    });
+    const statuses = [];
+    hub.subscribeStatus((status) => { statuses.push(status.type); });
+    const received = [];
+    const watcher = createOpenCodeWatcherRuntime({
+      openCodeClient: createProjectedStreamClient(),
+      waitForOpenCodePort: async () => {},
+      globalEventHub: hub,
+      onPayload(payload) {
+        received.push(payload.type);
+      },
+    });
+    try {
+      await watcher.start();
+      await waitFor(() => expect(received).toContain('server.connected'));
+      fixture.dropEventStream({ afterFrames: 0 });
+      await waitFor(() => expect(statuses).toContain('gap'));
+      await waitFor(() => expect(received.filter((type) => type === 'server.connected')).toHaveLength(2));
+      expect(received).not.toContain('devryan.stream.gap');
+    } finally {
+      watcher.stop();
+      hub.stop();
+    }
+  });
+
+  it('never opens a stream on an unknown runtime generation and retries until it is known (fail closed)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const fetchImpl = vi.fn(async (_url, init) => new Promise((_resolve, reject) => {
+      init.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+    }));
+    let generation = 3;
+    const watcher = createOpenCodeWatcherRuntime({
+      waitForOpenCodePort: async () => {},
+      buildOpenCodeUrl: (pathname) => `http://127.0.0.1:4096${pathname}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      fetchImpl,
+      upstreamReconnectDelayMs: 5,
+      openCodeClient: createOpenCodeClient({ getRuntime: () => ({ generation, baseUrl: 'http://127.0.0.1:4096' }) }),
+      onPayload() {},
+    });
+    const started = watcher.start();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
+    generation = 1;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fetchImpl).not.toHaveBeenCalled();
+    generation = 2;
+    await started;
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledWith('http://127.0.0.1:4096/api/event', expect.any(Object)));
+    watcher.stop();
+  });
 });

@@ -1,6 +1,12 @@
+import { createNativeConsumerFixture } from '../opencode/test-native-consumer-client.js';
+const createNotificationTemplateRuntime = (options = {}) => createNotificationTemplateRuntimeNative({
+  ...options, openCodeClient: options.openCodeClient ?? createNativeConsumerFixture({
+    readFixture: options.fetchImpl ?? ((...args) => globalThis.fetch(...args)), headers: options.getOpenCodeAuthHeaders,
+  }),
+});
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createNotificationTemplateRuntime } from './template-runtime.js';
+import { createNotificationTemplateRuntime as createNotificationTemplateRuntimeNative } from './template-runtime.js';
 
 const createRuntime = (settings = {}) => createNotificationTemplateRuntime({
   readSettingsFromDisk: async () => settings,
@@ -194,7 +200,7 @@ describe('notification template runtime session variables', () => {
     const variables = await runtime.buildTemplateVariables({ type: 'message.updated', properties: { info: {} } }, 'ses_1');
 
     expect(variables.session_name).toBe('Fix notification timing');
-    expect(fetchMock).toHaveBeenCalledWith('http://opencode.local/session/ses_1', expect.objectContaining({
+    expect(fetchMock).toHaveBeenCalledWith('http://opencode.test/session/ses_1', expect.objectContaining({
       headers: expect.objectContaining({ Authorization: 'Bearer token' }),
     }));
   });
@@ -294,5 +300,87 @@ describe('notification template runtime session variables', () => {
       cost: 3,
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Gen 2 (DESIGN C.1, E item 13b): OpenCode reads go through openCodeClient.
+describe('notification template runtime on OpenCode 2 (openCodeClient)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const createClientRuntime = (openCodeClient) => createNotificationTemplateRuntime({
+    readSettingsFromDisk: async () => ({}),
+    persistSettings: vi.fn(async () => {}),
+    buildOpenCodeUrl: (path) => path,
+    getOpenCodeAuthHeaders: () => ({}),
+    resolveGitBinaryForSpawn: () => 'git',
+    openCodeClient,
+  });
+
+  const createClient = (generation, sessions) => ({ generation: () => generation, sessions });
+
+  it('reads session info through the client and strips diff patches', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const get = vi.fn(async () => ({
+      id: 'ses_1',
+      title: 'Fix the flaky build',
+      directory: '/workspace',
+      summary: { diffs: [{ file: 'a.ts', additions: 1, deletions: 0, patch: 'x'.repeat(64) }] },
+    }));
+    const runtime = createClientRuntime(createClient(2, { get }));
+
+    const info = await runtime.fetchSessionInfo('ses_1');
+
+    expect(get).toHaveBeenCalledWith('ses_1', { timeoutMs: 2000 });
+    expect(info).toMatchObject({ id: 'ses_1', title: 'Fix the flaky build' });
+    expect(JSON.stringify(info)).not.toContain('x'.repeat(64));
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('treats a refused client read as a missing session', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const get = vi.fn(async () => { throw Object.assign(new Error('not found'), { statusCode: 404 }); });
+    const runtime = createClientRuntime(createClient(2, { get }));
+
+    await expect(runtime.fetchSessionInfo('ses_missing')).resolves.toBeNull();
+  });
+
+  it('reads the latest message page through the client', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const records = [
+      { info: { id: 'msg_user', role: 'user' }, parts: [{ type: 'text', text: 'Do it' }] },
+      { info: { id: 'msg_assistant', role: 'assistant', finish: 'stop' }, parts: [{ type: 'text', text: 'All done' }] },
+    ];
+    const messages = vi.fn(async () => ({ records, cursor: 'v2:next' }));
+    const runtime = createClientRuntime(createClient(2, { messages }));
+
+    await expect(runtime.fetchSessionMessages('ses_1', 7)).resolves.toEqual(records);
+    expect(messages).toHaveBeenCalledWith('ses_1', { limit: 7 }, { timeoutMs: 3000 });
+    await expect(runtime.fetchLastAssistantMessageText('ses_1')).resolves.toBe('All done');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('refuses generation 1 without a request', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => [] });
+    const messages = vi.fn();
+    const runtime = createClientRuntime(createClient(1, { messages }));
+
+    await expect(runtime.fetchSessionMessages('ses_1', 5)).resolves.toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(messages).not.toHaveBeenCalled();
+  });
+
+  it('sends no request when the client generation is unknown (fail closed)', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const runtime = createClientRuntime({
+      generation: () => { throw Object.assign(new Error('unknown generation'), { statusCode: 503 }); },
+      sessions: { get: vi.fn(), messages: vi.fn() },
+    });
+
+    await expect(runtime.fetchSessionMessages('ses_1', 5)).resolves.toEqual([]);
+    await expect(runtime.fetchSessionInfo('ses_1')).resolves.toBeNull();
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

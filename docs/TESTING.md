@@ -68,7 +68,7 @@ in [runtime verification](AGENT_RUNTIME_VERIFICATION.md).
 
 | Surface | Command or runner | Ownership |
 | --- | --- | --- |
-| Repository, release, and project-plugin tooling | `bun run test:scripts` | `scripts/**/*.test.mjs` and `.opencode/plugins/**/*.test.mjs`, recursively discovered by `scripts/test-scripts.mjs` |
+| Repository, release, and project-plugin tooling | `bun run test:scripts` | Recursive script tests and `.opencode/plugins/**/*.test.mjs`; `scripts/test-scripts.mjs` routes declared `bun:test` suites to Bun, including the native OpenCode host checks and tests shipped in the pinned reviewed runtime inputs |
 | Harness runtime | `bun run --cwd packages/harness-runtime test` | Diagnostics journal, evidence, worktree, lifecycle, and process contracts |
 | Managed orchestration | `bun run --cwd packages/orchestration-runtime test` | Shared managed-task admission, scheduling, cancellation, and recovery |
 | Production Bots runtime | `bun run --cwd packages/bots-runtime test` | Strict JSON contracts, lifecycle/policy state, scope isolation, leases, action hashing, and routine recovery |
@@ -79,7 +79,7 @@ in [runtime verification](AGENT_RUNTIME_VERIFICATION.md).
 | Electron | `bun run --cwd packages/electron test` | Recursively discovers Electron `*.test.*` outside generated/package output; dispatches Node, Bun, and Vitest suites to their declared runner, isolates Bun module/global mocks, and leaves Docker acceptance behind its explicit opt-in below |
 | Legacy Tauri | `bun run --cwd packages/desktop test` | Locked Rust unit and local integration tests in `src-tauri` |
 | Shared UI | `bun run --cwd packages/ui test` | UI, store, sync, Git, tool presentation, and policy tests; global mocks run in isolated processes |
-| Web | `bun run --cwd packages/web test` | Web runtime adapters, Express APIs, libraries, CLI, packaging, and integration contracts |
+| Web | `bun run --cwd packages/web test` | Web runtime adapters, Express APIs, libraries, CLI, packaging, and integration contracts; reviewed runtime input tests run through `test:scripts` with their declared runner |
 
 Runner, discovery, validation-selection, and release-gate changes belong to `scripts/`. Feature tests belong beside their source unless an integration contract spans packages.
 

@@ -1,7 +1,8 @@
+import {inspectClaudeRequest,isClaudeInspectionUnavailable,unavailableClaudeInspection,sendClaudeInspectionError} from './runtime-host/native-claude-inspection.js';
 import express from 'express';
 import { createProjectIdFromPath } from '../projects/project-id.js';
 import fs from 'fs';
-import os from 'os';
+import { OPENCODE_CONFIG_DIR } from './shared.js';
 import path from 'path';
 import {
   clearCursorSdkAuth,
@@ -23,10 +24,10 @@ import { discoverGitHubCopilotModels } from './github-copilot-models.js';
 import { createCursorSessionTitleRuntime } from './cursor-session-title-runtime.js';
 import { createStandardSessionTitleRuntime } from './standard-session-title-runtime.js';
 import { registerQuestionRoutes } from './question-routes.js';
+import { resolveGen2OpenCodeClient } from './opencode-client-seam.js';
+import { readFacadeMessagePage, resolveFacadeDirectory, sendOpenCodeFacadeError, validateFacadeBody } from './v2/facade-routes.js';
 import { createGlobalAgentsMdRuntime } from './global-agents-md-runtime.js';
 import { registerGlobalAgentsMdRoutes } from './global-agents-md-routes.js';
-import { runClaudeCodeAuthStatus } from './claude-auth-status.js';
-import { resolveClaudeCodeLaunch as resolveClaudeCodeLaunchDefault } from './claude-cli-runtime.js';
 import {
   readMeridianPromptMode,
   setMeridianPromptCompatibilityMode,
@@ -73,39 +74,18 @@ const removeAntigravityAccounts = async (listAccountsPaths) => {
   return removed;
 };
 
-export const createOpenCodeUpdateCheckHandler = ({
-  readSettingsFromDiskMigrated,
-  getOpenCodeResolutionSnapshot,
-  checkForOpenCodeUpdates,
-}) => async (_req, res) => {
-  try {
-    const settings = await readSettingsFromDiskMigrated();
-    const resolution = await getOpenCodeResolutionSnapshot(settings);
-    const updateInfo = await checkForOpenCodeUpdates({
-      currentVersion: resolution.detectedVersion,
-      supportedVersion: resolution.targetVersion,
-    });
-    res.json(updateInfo);
-  } catch (error) {
-    console.error('Failed to check for OpenCode updates:', error);
-    res.status(502).json({
-      error: error instanceof Error ? error.message : 'Unable to check the latest OpenCode version',
-    });
-  }
-};
-
 export const registerOpenCodeRoutes = (app, dependencies) => {
   const {
     crypto,
     clientReloadDelayMs,
     getOpenCodeResolutionSnapshot,
-    checkForOpenCodeUpdates,
     formatSettingsResponse,
     readSettingsFromDisk,
     readSettingsFromDiskMigrated,
     persistSettings,
     sanitizeProjects,
     validateDirectoryPath,
+    ensureNativeDirectory,
     resolveProjectDirectory,
     getProviderSources,
     removeAntigravityProviderConfig = () => false,
@@ -114,10 +94,12 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     getProviderEnvironmentSnapshot = () => ({}),
     // Injected in tests so they never touch the user's real account files.
     listAntigravityAccountsPaths = listDefaultAntigravityAccountsPaths,
-    ensureAnthropicOAuthProviderConfig,
     markConfigChange,
-    buildAugmentedPath,
     buildOpenCodeUrl,
+    openCodeClient,
+    getNativeRuntimeOwner = () => null,
+    getClaudeEnrollmentOwner = () => null,
+    isProviderAdministrator = () => false,
     getOpenCodeAuthHeaders = () => ({}),
     getOpenCodeWorkingDirectory = () => null,
     setOpenCodeWorkingDirectory = () => {},
@@ -133,10 +115,10 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     authLibrary: injectedAuthLibrary = null,
     readClaudePromptMode = readMeridianPromptMode,
     setClaudePromptCompatibilityMode = setMeridianPromptCompatibilityMode,
-    resolveClaudeCodeLaunch = resolveClaudeCodeLaunchDefault,
   } = dependencies;
 
   const cursorSessionTitleRuntime = injectedCursorSessionTitleRuntime || createCursorSessionTitleRuntime({
+    openCodeClient,
     cursorSdkRuntime,
     fetchImpl: fetch,
     buildOpenCodeUrl,
@@ -144,13 +126,14 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     logger: console,
   });
   const standardSessionTitleRuntime = injectedStandardSessionTitleRuntime || createStandardSessionTitleRuntime({
+    openCodeClient,
     fetchImpl: fetch,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     logger: console,
   });
   const globalAgentsMdRuntime = injectedGlobalAgentsMdRuntime || createGlobalAgentsMdRuntime({
-    agentsMdPath: path.join(os.homedir(), '.config', 'opencode', 'AGENTS.md'),
+    agentsMdPath: path.join(OPENCODE_CONFIG_DIR, 'AGENTS.md'),
     refreshRuntime: ({ changed } = {}) => markConfigChange(
       'global behavior (AGENTS.md) updated',
       {},
@@ -160,6 +143,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
   });
 
   registerQuestionRoutes(app, {
+    openCodeClient,
     cursorSdkRuntime,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
@@ -214,7 +198,20 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     return removed;
   };
 
+  const nativeProviderOwner = (providerId) => {
+    if (!['openai', CURSOR_ACP_PROVIDER_ID, 'xai', 'opencode', 'opencode-go'].includes(providerId)) return null;
+    resolveGen2OpenCodeClient(openCodeClient);
+    const owner = getNativeRuntimeOwner();
+    if (typeof owner?.withProviderConfigurationAuthorization !== 'function') {
+      throw Object.assign(new Error('Native provider configuration owner unavailable'), { code: 'native_provider_configuration_owner_required', statusCode: 503 });
+    }
+    return owner;
+  };
   const readProviderSourceSnapshot = async (providerId, directory) => {
+    const native = nativeProviderOwner(providerId);
+    if (native) return native.withProviderConfigurationAuthorization({ providerID: providerId, directory, scope: 'read' }, async owner => ({
+      ...owner.readSources(), auth: await owner.readAuthenticationSource(),
+    }));
     const result = getProviderSources(providerId, directory);
     const { getProviderAuth } = await getAuthLibrary();
     const authLookupIds = ANTHROPIC_PROVIDER_IDS.has(providerId)
@@ -353,12 +350,6 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     }
   });
 
-  app.get('/api/opencode/update-check', createOpenCodeUpdateCheckHandler({
-    readSettingsFromDiskMigrated,
-    getOpenCodeResolutionSnapshot,
-    checkForOpenCodeUpdates,
-  }));
-
   app.put('/api/config/settings', async (req, res) => {
     console.log('[API:PUT /api/config/settings] Received request');
     try {
@@ -452,47 +443,40 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     }
   });
 
-  app.get('/api/provider/anthropic/claude-cli', async (_req, res) => {
+  app.get('/api/provider/anthropic/claude-cli', async (req, res) => {
     try {
-      const pathValue = typeof buildAugmentedPath === 'function'
-        ? buildAugmentedPath()
-        : process.env.PATH || '';
-      const launch = resolveClaudeCodeLaunch({ pathValue });
-      if (!launch) {
-        return res.json({
-          installed: false,
-          path: null,
-          loggedIn: false,
-          authStatus: 'unavailable',
-        });
-      }
-
-      const authCheck = await runClaudeCodeAuthStatus({
-        executable: launch.executable,
-        pathValue: launch.pathValue,
-      });
-      const auth = authCheck.auth ?? null;
-      return res.json({
-        installed: true,
-        path: launch.executable,
-        loggedIn: authCheck.ok,
-        authStatus: authCheck.ok
-          ? 'authenticated'
-          : authCheck.code === 'claude_not_authenticated'
-            ? 'signed_out'
-            : 'error',
-        ...(auth?.authMethod ? { authMethod: auth.authMethod } : {}),
-        ...(auth?.apiProvider ? { apiProvider: auth.apiProvider } : {}),
-        ...(auth?.subscriptionType ? { subscriptionType: auth.subscriptionType } : {}),
-        ...(!authCheck.ok && authCheck.code !== 'claude_not_authenticated'
-          ? { error: authCheck.error, errorCode: authCheck.code }
-          : {}),
-      });
-    } catch (error) {
-      console.error('Failed to check Claude Code availability:', error);
-      return res.status(500).json({ error: error.message || 'Failed to check Claude Code availability' });
+      const directory=await resolveRequestDirectory(req);
+      return res.json(await inspectClaudeRequest({req,res,kind:'status',directory,getNativeRuntimeOwner,isExternalOpenCode}));
+    } catch(error) {
+      if(isClaudeInspectionUnavailable(error?.code))return res.json(unavailableClaudeInspection('status',error.code));
+      return sendClaudeInspectionError(res,error);
     }
   });
+
+  const enrollmentAdmin=(req,res,next)=>isProviderAdministrator(req)?next():res.status(403).json({code:'native_claude_enrollment_administrator_required'});
+  const enrollmentCsrf=(req,res,next)=>req.get('x-devryan-csrf')==='1'?next():res.status(403).json({code:'native_claude_enrollment_csrf_required'});
+  const enrollmentBody=limit=>{const parse=express.json({limit});return(req,res,next)=>parse(req,res,error=>error?res.status(400).json({code:'native_claude_enrollment_request_invalid'}):next());};
+  const emptyEnrollmentBody=body=>body===undefined||body!==null&&typeof body==='object'&&!Array.isArray(body)&&Object.keys(body).length===0;
+  const enrollmentReply=async(req,res,action)=>{
+    try{
+      const owner=getClaudeEnrollmentOwner();if(!owner) return res.status(409).json({code:'native_claude_enrollment_update_required'});
+      const context={request:req,directory:await resolveRequestDirectory(req)};
+      res.json(await action(owner,context));
+    }catch(error){
+      const code=/^native_claude_enrollment_[a-z_]+$/.test(error?.code??'')?error.code:'native_claude_enrollment_refused';
+      res.status([400,403,404,409,503].includes(error?.status)?error.status:409).json({code});
+    }
+  };
+  app.get('/api/provider/anthropic/enrollment',enrollmentAdmin,(req,res)=>enrollmentReply(req,res,async(owner,context)=>({accounts:await owner.list(context)})));
+  app.post('/api/provider/anthropic/enrollment',enrollmentAdmin,enrollmentCsrf,enrollmentBody('12kb'),(req,res)=>enrollmentReply(req,res,async(owner,context)=>{
+    if(!emptyEnrollmentBody(req.body))throw Object.assign(new Error('native_claude_enrollment_request_invalid'),{code:'native_claude_enrollment_request_invalid',status:400});
+    return owner.begin(context);
+  }));
+  app.post('/api/provider/anthropic/enrollment/:id/complete',enrollmentAdmin,enrollmentCsrf,enrollmentBody('12kb'),(req,res)=>enrollmentReply(req,res,(owner,context)=>owner.complete(req.params.id,req.body,context)));
+  app.post('/api/provider/anthropic/enrollment/:id/select',enrollmentAdmin,enrollmentCsrf,enrollmentBody('1kb'),(req,res)=>enrollmentReply(req,res,(owner,context)=>{
+    if(!emptyEnrollmentBody(req.body))throw Object.assign(new Error('native_claude_enrollment_request_invalid'),{code:'native_claude_enrollment_request_invalid',status:400});
+    return owner.select(req.params.id,context);
+  }));
 
   app.get('/api/provider/anthropic/prompt-mode', (_req, res) => {
     if (isExternalOpenCode()) {
@@ -541,75 +525,29 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
 
   app.post('/api/provider/anthropic/check-oauth', async (req, res) => {
     try {
-      const pathValue = typeof buildAugmentedPath === 'function'
-        ? buildAugmentedPath()
-        : process.env.PATH || '';
-      const launch = resolveClaudeCodeLaunch({ pathValue });
-      if (!launch) {
-        return res.status(400).json({
-          code: 'claude_cli_unavailable',
-          error: 'Claude Code is not installed or is not available on PATH.',
-        });
-      }
-
-      const authCheck = await runClaudeCodeAuthStatus({
-        executable: launch.executable,
-        pathValue: launch.pathValue,
-      });
-      if (!authCheck.ok) {
-        return res.status(400).json({
-          code: authCheck.code === 'claude_not_authenticated'
-            ? 'claude_cli_unauthenticated'
-            : 'claude_cli_auth_check_failed',
-          reason: authCheck.code,
-          error: authCheck.error || 'Claude Code authentication check failed.',
-        });
-      }
-
-      const headerDirectory = typeof req.get === 'function' ? req.get('x-opencode-directory') : null;
-      const queryDirectory = Array.isArray(req.query?.directory)
-        ? req.query.directory[0]
-        : req.query?.directory;
-      const requestedDirectory = headerDirectory || queryDirectory || null;
-      let directory = null;
-      if (requestedDirectory) {
-        const resolved = await resolveProjectDirectory(req);
-        if (!resolved.directory) {
-          return res.status(400).json({ error: resolved.error });
-        }
-        directory = resolved.directory;
-      }
-
-      const result = ensureAnthropicOAuthProviderConfig({ workingDirectory: directory });
-      const applyResult = await markConfigChange(
-        'anthropic oauth provider configured',
-        {},
-        result.changed,
-      );
-
-      return res.json({
-        success: true,
-        configured: true,
-        changed: result.changed,
-        path: result.path,
-        ...applyResult,
-        auth: authCheck.auth,
-      });
-    } catch (error) {
-      console.error('Failed to check Claude OAuth:', error);
-      return res.status(500).json({ error: error.message || 'Failed to check Claude OAuth' });
+      const directory=await resolveRequestDirectory(req);
+      const auth=await inspectClaudeRequest({req,res,kind:'status',directory,getNativeRuntimeOwner,isExternalOpenCode});
+      return res.json({success:true,configured:true,changed:false,auth});
+    } catch(error) {
+      if(isClaudeInspectionUnavailable(error?.code))return res.status(400).json({code:error.code,error:'Selected Claude account is unavailable.'});
+      return sendClaudeInspectionError(res,error);
     }
   });
 
-  app.get('/api/provider/cursor-acp/runtime-status', async (_req, res) => {
+  app.get('/api/provider/cursor-acp/runtime-status', async (req, res) => {
     try {
       if (!cursorSdkRuntime || typeof cursorSdkRuntime.getRuntimeStatus !== 'function') {
         return res.status(500).json({ error: 'Cursor SDK runtime is unavailable.' });
       }
-      return res.json(cursorSdkRuntime.getRuntimeStatus());
+      const status = cursorSdkRuntime.getRuntimeStatus();
+      const native = nativeProviderOwner(CURSOR_ACP_PROVIDER_ID);
+      if (!native) return res.json(status);
+      const directory = await resolveRequestDirectory(req);
+      const auth = await native.withProviderConfigurationAuthorization({ providerID: CURSOR_ACP_PROVIDER_ID, directory, scope: 'read' }, owner => owner.readAuthenticationSource());
+      return res.json({ ...status, sdkAuthConfigured: auth.exists, authObservation: 'known' });
     } catch (error) {
       console.error('Failed to read Cursor runtime status:', error);
-      return res.status(500).json({ error: error.message || 'Failed to read Cursor runtime status' });
+      return res.status(error.statusCode ?? error.status ?? 500).json({ error: error.message || 'Failed to read Cursor runtime status', code: error.code });
     }
   });
 
@@ -668,13 +606,13 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     }
   });
 
-  app.post('/api/provider/cursor-acp/configure', async (_req, res) => {
+  app.post('/api/provider/cursor-acp/configure', async (req, res) => {
     try {
       if (!cursorSdkRuntime || typeof cursorSdkRuntime.verifyConnection !== 'function') {
         return res.status(500).json({ error: 'Cursor SDK runtime is unavailable.' });
       }
 
-      const result = await cursorSdkRuntime.verifyConnection();
+      const result = await cursorSdkRuntime.verifyConnection({ directory: await resolveRequestDirectory(req) });
       const status = typeof cursorSdkRuntime.getRuntimeStatus === 'function'
         ? cursorSdkRuntime.getRuntimeStatus()
         : {};
@@ -696,16 +634,8 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
   });
 
   const resolveRequestDirectory = async (req) => {
-    const headerDirectory = typeof req.get === 'function' ? req.get('x-opencode-directory') : null;
-    const queryDirectory = Array.isArray(req.query?.directory)
-      ? req.query.directory[0]
-      : req.query?.directory;
-    const requestedDirectory = headerDirectory || queryDirectory || null;
-    if (!requestedDirectory) {
-      return getOpenCodeWorkingDirectory();
-    }
-    const resolved = await resolveProjectDirectory(req);
-    return resolved.directory || null;
+    resolveGen2OpenCodeClient(openCodeClient);
+    return resolveFacadeDirectory(req, getOpenCodeWorkingDirectory);
   };
 
   app.get('/api/session', async (req, res, next) => {
@@ -722,7 +652,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     }
   });
 
-  const mergeCursorProvider = async (payload) => {
+  const mergeCursorProvider = async (payload, scope = {}) => {
     if (
       !cursorSdkRuntime
       || (
@@ -735,7 +665,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     const virtualProvider = (() => {
       if (typeof cursorSdkRuntime.getCachedVirtualProvider === 'function') {
         if (typeof cursorSdkRuntime.refreshVirtualProvider === 'function') {
-          cursorSdkRuntime.refreshVirtualProvider({ reason: 'providers_route' }).catch((error) => {
+          cursorSdkRuntime.refreshVirtualProvider({ reason: 'providers_route',...scope }).catch((error) => {
             console.warn('[CursorSDK] Failed to refresh Cursor provider metadata:', error);
           });
         }
@@ -743,7 +673,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       }
       return null;
     })() || (typeof cursorSdkRuntime.getVirtualProvider === 'function' ? await Promise.race([
-      cursorSdkRuntime.getVirtualProvider(),
+      cursorSdkRuntime.getVirtualProvider(scope),
       new Promise((resolve) => {
         const timeout = setTimeout(() => resolve(null), 250);
         timeout.unref?.();
@@ -789,55 +719,28 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       const auth = readAuthFile();
       withOpenAIAvailability = annotateOpenAIModelAvailability(withGitHubCopilot, auth?.openai);
     }
-    return mergeCursorProvider(withOpenAIAvailability);
+    return mergeCursorProvider(withOpenAIAvailability, { directory: await resolveRequestDirectory(req) });
   };
 
   const touchOpenCodeSessionForCursorPrompt = async ({ sessionID, directory }) => {
-    if (typeof buildOpenCodeUrl !== 'function') {
-      return;
-    }
-
-    const query = typeof directory === 'string' && directory.trim()
-      ? `?directory=${encodeURIComponent(directory.trim())}`
-      : '';
-    try {
-      await fetch(buildOpenCodeUrl(`/session/${encodeURIComponent(sessionID)}${query}`, ''), {
-        method: 'PATCH',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-          ...getOpenCodeAuthHeaders(),
-        },
-        body: JSON.stringify({ time: { archived: 0 } }),
-      });
-    } catch (error) {
-      console.warn('[CursorSDK] Failed to refresh OpenCode session metadata:', error);
-    }
+    const client = resolveGen2OpenCodeClient(openCodeClient);
+    await client.sessions.archive(sessionID, 0, { directory });
   };
 
   app.get('/api/config/providers', async (req, res) => {
     let upstreamPayload = { providers: [], default: {} };
     let upstreamOk = false;
-    if (typeof buildOpenCodeUrl === 'function') {
+    {
       try {
-        const query = req.originalUrl?.includes('?') ? `?${req.originalUrl.split('?').slice(1).join('?')}` : '';
-        const response = await fetch(buildOpenCodeUrl(`/config/providers${query}`, ''), {
-          method: 'GET',
-          headers: {
-            Accept: 'application/json',
-            ...getOpenCodeAuthHeaders(),
-          },
-        });
-        if (response.ok) {
-          const parsed = await response.json().catch(() => null);
-          if (parsed && typeof parsed === 'object') {
-            upstreamPayload = parsed;
-            upstreamOk = true;
-            void xaiToolCatalogRuntime?.refreshProviderPayload?.({
-              directory: typeof req.query?.directory === 'string' ? req.query.directory : undefined,
-              payload: parsed,
-            });
-          }
+        const client = resolveGen2OpenCodeClient(openCodeClient);
+        const parsed = await client.catalog.providers({ directory: await resolveRequestDirectory(req) });
+        if (parsed && typeof parsed === 'object') {
+          upstreamPayload = parsed;
+          upstreamOk = true;
+          void xaiToolCatalogRuntime?.refreshProviderPayload?.({
+            directory: typeof req.query?.directory === 'string' ? req.query.directory : undefined,
+            payload: parsed,
+          });
         }
       } catch {
         // Cursor remains visible even if OpenCode provider discovery is unavailable.
@@ -858,57 +761,14 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     }
   });
 
-  app.get('/api/session/status', async (req, res, next) => {
+  app.get('/api/session/status', async (req, res) => {
     try {
+      const client = resolveGen2OpenCodeClient(openCodeClient);
       const cursorStatuses = cursorSdkRuntime && typeof cursorSdkRuntime.getSessionStatus === 'function'
-        ? cursorSdkRuntime.getSessionStatus()
-        : {};
-      const hasCursorStatuses = cursorStatuses && Object.keys(cursorStatuses).length > 0;
-      if (typeof buildOpenCodeUrl !== 'function') {
-        return hasCursorStatuses ? res.json(cursorStatuses) : next();
-      }
-
-      const upstreamPath = req.originalUrl?.startsWith('/api')
-        ? req.originalUrl.slice(4) || '/'
-        : req.originalUrl || '/session/status';
-      let upstreamStatuses = {};
-      let upstreamResponded = false;
-      try {
-        const response = await fetch(buildOpenCodeUrl(upstreamPath, ''), {
-          method: 'GET',
-          headers: {
-            Accept: 'application/json',
-            ...getOpenCodeAuthHeaders(),
-          },
-        });
-        upstreamResponded = true;
-        if (response.ok) {
-          const payload = await response.json().catch(() => null);
-          if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
-            upstreamStatuses = payload;
-          }
-        } else if (!hasCursorStatuses) {
-          const text = await response.text().catch(() => '');
-          return res.status(response.status).send(text);
-        }
-      } catch {
-        if (!hasCursorStatuses) {
-          return next();
-        }
-      }
-
-      if (!upstreamResponded && !hasCursorStatuses) {
-        return next();
-      }
-
-      return res.json({
-        ...upstreamStatuses,
-        ...cursorStatuses,
-      });
-    } catch (error) {
-      console.error('Failed to merge Cursor SDK session status:', error);
-      return next(error);
-    }
+        ? cursorSdkRuntime.getSessionStatus() : {};
+      const upstream = await client.sessions.status({ directory: await resolveRequestDirectory(req) });
+      return res.json({ ...upstream, ...cursorStatuses });
+    } catch (error) { return sendOpenCodeFacadeError(res, error); }
   });
 
   app.post('/api/session/:sessionID/prompt_async', (req, _res, next) => {
@@ -1087,8 +947,25 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     return next();
   });
 
+  app.patch('/api/session/:sessionID', async (req, res, next) => {
+    try {
+      const client = resolveGen2OpenCodeClient(openCodeClient);
+      if (req.body?.time === undefined) return next();
+      validateFacadeBody(req.body, ['time']);
+      validateFacadeBody(req.body.time, ['archived']);
+      const at = req.body.time.archived;
+      if (!Number.isSafeInteger(at) || at < 0) {
+        throw Object.assign(new Error('time.archived must be a nonnegative integer'), { statusCode: 400, code: 'opencode_invalid_input' });
+      }
+      const session = await client.sessions.archive(req.params.sessionID, at, { directory: await resolveRequestDirectory(req) });
+      return res.json(session);
+    } catch (error) { return sendOpenCodeFacadeError(res, error); }
+  });
+
   app.all('/api/session/:sessionID/message', async (req, res, next) => {
     try {
+      const client = resolveGen2OpenCodeClient(openCodeClient);
+      if (req.method !== 'GET') return next();
       if (!cursorSdkRuntime || typeof cursorSdkRuntime.getSessionMessages !== 'function') {
         return next();
       }
@@ -1097,31 +974,9 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         return next();
       }
 
-      let upstreamRecords = [];
-      if (typeof buildOpenCodeUrl === 'function') {
-        try {
-          const upstreamPath = req.originalUrl.startsWith('/api')
-            ? req.originalUrl.slice(4) || '/'
-            : req.originalUrl;
-          const response = await fetch(buildOpenCodeUrl(upstreamPath, ''), {
-            method: req.method,
-            headers: {
-              Accept: 'application/json',
-              'Content-Type': 'application/json',
-              ...getOpenCodeAuthHeaders(),
-            },
-            body: req.method === 'GET' || req.method === 'HEAD'
-              ? undefined
-              : JSON.stringify(req.body || {}),
-          });
-          if (response.ok) {
-            const payload = await response.json().catch(() => null);
-            upstreamRecords = Array.isArray(payload) ? payload : [];
-          }
-        } catch {
-          upstreamRecords = [];
-        }
-      }
+      const page = await client.sessions.messages(req.params.sessionID, readFacadeMessagePage(req), { directory: await resolveRequestDirectory(req) });
+      let upstreamRecords = page?.records ?? [];
+      if (page?.cursor) res.setHeader('x-next-cursor', page.cursor);
 
       // This route shadows the proxy's stripping route for Cursor-backed
       // sessions, so it must apply the same diff-body strip: a workspace diff
@@ -1140,8 +995,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         String(left?.info?.id || '').localeCompare(String(right?.info?.id || ''))
       )));
     } catch (error) {
-      console.error('Failed to merge Cursor SDK messages:', error);
-      return next();
+      return sendOpenCodeFacadeError(res, error);
     }
   });
 
@@ -1229,11 +1083,11 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       });
     } catch (error) {
       console.error('Failed to get provider sources:', error);
-      return res.status(500).json({ error: error.message || 'Failed to get provider sources' });
+      return res.status(error.statusCode ?? error.status ?? 500).json({ error: error.message || 'Failed to get provider sources', code: error.code });
     }
   });
 
-  app.delete('/api/provider/:providerId/auth', async (req, res) => {
+  app.delete('/api/provider/:providerId/auth', async (req, res, next) => {
     try {
       const { providerId } = req.params;
       if (!providerId) {
@@ -1257,6 +1111,45 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
           return res.status(400).json({ error: resolved.error });
         }
         directory = resolved.directory;
+      }
+
+      const native = nativeProviderOwner(providerId);
+      if (native) {
+        if (requestedDirectory && !directory) {
+          const resolved = await resolveProjectDirectory(req);
+          if (!resolved.directory) return res.status(400).json({ error: resolved.error });
+          directory = resolved.directory;
+        }
+        const removedSources = { auth: false, user: false, project: false, custom: false };
+        let mutationStarted = false, applyResult, failure;
+        try {
+          const result = await native.withProviderConfigurationAuthorization({ providerID: providerId, directory, scope }, async owner => {
+            try {
+              await owner.verifyConfiguration();
+              if (scope === 'auth' || scope === 'all') await owner.disconnectCredentials(
+                () => { removedSources.auth = true; }, () => { mutationStarted = true; });
+              await owner.removeConfiguration(source => { removedSources[source] = true; mutationStarted = true; });
+            } catch (error) { failure = error; }
+            // A lost credential ACK is also a possibly changed source. Retain
+            // a pending revision even when its exact removed flag is uncertain.
+            if (!failure || mutationStarted) {
+              try { applyResult = await markConfigChange(`provider ${providerId} disconnected (${scope})`, { providerId, scope, partial: Boolean(failure) }, true); }
+              catch (error) { failure ??= error; }
+            }
+            if (failure) throw failure;
+            const sources = { ...owner.readSources(), auth: await owner.readAuthenticationSource() };
+            const stillProvidedBy = scope === 'all' ? owner.listRemainingConfigSources() : [];
+            if (scope === 'all' && sources.auth.exists) stillProvidedBy.push({ type: 'auth', path: null });
+            if (scope === 'all') for (const name of listProviderCredentialEnvKeys(providerId, { ...(getProviderEnvironmentSnapshot() || {}), ...process.env })) stillProvidedBy.push({ type: 'env', name });
+            await owner.recheck();
+            return { success: true, removed: Object.values(removedSources).some(Boolean), removedSources, sources, stillProvidedBy, ...applyResult,
+              message: stillProvidedBy.length ? 'Provider is still configured elsewhere' : 'Provider configuration removed; runtime refresh requested' };
+          });
+          return res.json(result);
+        } catch (error) {
+          return res.status(error.statusCode ?? error.status ?? 500).json({ success: false, error: error.message || 'Failed to disconnect provider', code: error.code ?? 'PROVIDER_DISCONNECT_FAILED',
+            partial: mutationStarted, removedSources, ...applyResult, recoveryRequired: mutationStarted && !applyResult });
+        }
       }
 
       const removedSources = {
@@ -1325,7 +1218,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       });
     } catch (error) {
       console.error('Failed to disconnect provider:', error);
-      return res.status(500).json({ error: error.message || 'Failed to disconnect provider' });
+      return res.status(error.statusCode ?? error.status ?? 500).json({ error: error.message || 'Failed to disconnect provider', code: error.code });
     }
   });
 
@@ -1365,6 +1258,20 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         activeProjectId,
         lastDirectory: resolvedPath,
       });
+      try {
+        if (typeof ensureNativeDirectory !== 'function') throw Object.assign(new Error('Native project preparation is unavailable'),
+          { code: 'native_runtime_not_ready', statusCode: 503 });
+        await ensureNativeDirectory(resolvedPath);
+      } catch (cause) {
+        // Keep registration inspectable, but do not announce an active location
+        // whose native owner failed preparation. A newer selection wins.
+        const latest = await readSettingsFromDisk();
+        if (latest.activeProjectId === activeProjectId && latest.lastDirectory === resolvedPath) {
+          await persistSettings({ activeProjectId: currentSettings.activeProjectId ?? null,
+            lastDirectory: currentSettings.lastDirectory ?? null });
+        }
+        throw cause;
+      }
       if (!directoriesMatch(getOpenCodeWorkingDirectory(), resolvedPath)) {
         setOpenCodeWorkingDirectory(resolvedPath);
       }
@@ -1377,7 +1284,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       });
     } catch (error) {
       console.error('Failed to update OpenCode working directory:', error);
-      return res.status(500).json({ error: error.message || 'Failed to update working directory' });
+      return res.status(error.statusCode ?? error.status ?? 500).json({ error: error.message || 'Failed to update working directory', code: error.code });
     }
   });
 

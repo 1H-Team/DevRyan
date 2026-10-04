@@ -7,7 +7,7 @@ import { createGzip } from 'node:zlib';
 import { evaluate } from '../qa/cdp.mjs';
 import { createQaUiDriver } from '../qa/ui-driver.mjs';
 import { assertStartupMode, historyCoverage, projectRendererMemory } from './electron-lifecycle-benchmark.mjs';
-import { PERF_PARENT_SESSION_ID } from './loopback-opencode-fixture.mjs';
+import { PERF_PARENT_SESSION_ID } from './fixture-session-seeds.mjs';
 
 export const INTERACTIVE_PROTOCOL = Object.freeze({
   version: 2,

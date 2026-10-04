@@ -113,12 +113,22 @@ export function registerGitRoutes(app, {
   generatePullRequestDescription = generatePullRequestDescriptionDirect,
   generateTextWithSessionModel = generateTextWithSessionModelDefault,
   listConfigAgents,
+  generateHelperText,
+  cursorRuntime,
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
+  // The client or a getter; forwarded so OpenCode helpers pick the runtime generation.
+  openCodeClient = null,
   recordCommitTiming = () => {},
   loadGitLibraries,
 } = {}) {
   registerCommitTemplateRoutes(app);
+
+  const resolveOpenCodeClient = () => (typeof openCodeClient === 'function' ? openCodeClient() : openCodeClient) ?? null;
+  const openCodeClientArgs = () => {
+    const client = resolveOpenCodeClient();
+    return client ? { openCodeClient: client } : {};
+  };
 
   let gitLibraries = null;
   const getGitLibraries = async () => {
@@ -213,7 +223,7 @@ export function registerGitRoutes(app, {
       message = await generateCommitMessage({
         context,
         guidance,
-        ...createGitZenTextTransport({ buildOpenCodeUrl, getOpenCodeAuthHeaders, directory, agent: 'devryan-commit' }),
+        ...createGitZenTextTransport({ generateHelperText, cursorRuntime, buildOpenCodeUrl, getOpenCodeAuthHeaders, ...openCodeClientArgs(), directory, agent: 'devryan-commit' }),
         models: [GIT_GENERATION_ZEN_MODEL],
         catalogState: GIT_GENERATION_MODEL_STATE,
         cooldowns: null,
@@ -1109,7 +1119,7 @@ export function registerGitRoutes(app, {
   // Tier 2 model: the Builder agent's configured model for this directory,
   // else the model the client sent along (its own Builder/session resolution).
   const resolvePullRequestSessionModel = async (directory, body) => {
-    if (typeof buildOpenCodeUrl !== 'function') return null;
+    if (typeof buildOpenCodeUrl !== 'function' && !resolveOpenCodeClient()) return null;
     try {
       const builder = executionFromManagedAgent(findManagedAgent(await listAgentsForDirectory(directory), 'builder'));
       if (builder) return { ...builder, source: 'builder' };
@@ -1187,7 +1197,7 @@ export function registerGitRoutes(app, {
       let tierOneError;
       try {
         const generated = await generatePullRequestDescription({
-          ...createGitZenTextTransport({ buildOpenCodeUrl, getOpenCodeAuthHeaders, directory, agent: PR_SESSION_HELPER_AGENT }),
+          ...createGitZenTextTransport({ generateHelperText, cursorRuntime, buildOpenCodeUrl, getOpenCodeAuthHeaders, ...openCodeClientArgs(), directory, agent: PR_SESSION_HELPER_AGENT }),
           prompt: fullPrompt,
           models: [GIT_GENERATION_ZEN_MODEL],
           cooldowns: null,
@@ -1219,8 +1229,11 @@ export function registerGitRoutes(app, {
       }
       const sessionModel = `${selection.providerId}/${selection.modelId}`;
       const sessionResult = await generateTextWithSessionModel({
+        generateHelperText,
+        cursorRuntime,
         buildOpenCodeUrl,
         getOpenCodeAuthHeaders,
+        ...openCodeClientArgs(),
         directory,
         providerID: selection.providerId,
         modelID: selection.modelId,

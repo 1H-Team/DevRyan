@@ -5,10 +5,12 @@ import { readConfigLayers } from '../../opencode/shared.js';
 import { fetchQuota, isConfigured } from './zhipuai-coding-plan.js';
 
 vi.mock('../../opencode/auth.js', () => ({
+  OPENCODE_DATA_DIR: new URL('../../../../../../.cache/v2-validation/quota-fixtures/zhipuai/data', import.meta.url).pathname,
   readAuthFile: vi.fn(() => ({}))
 }));
 
 vi.mock('../../opencode/shared.js', () => ({
+  OPENCODE_CONFIG_DIR: new URL('../../../../../../.cache/v2-validation/quota-fixtures/zhipuai/config', import.meta.url).pathname,
   readConfigLayers: vi.fn(() => ({ mergedConfig: {} }))
 }));
 

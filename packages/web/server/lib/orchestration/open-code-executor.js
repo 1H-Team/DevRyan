@@ -1,9 +1,12 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import {
   createKeyedSingleFlight,
+  waitForSharedOperation,
   createManagedOpenCodeExecutor,
 } from '@openchamber/orchestration-runtime';
 import { CURSOR_PROVIDER_ID } from '@openchamber/cursor-sdk-runtime';
 
+import { resolveGen2OpenCodeClient } from '../opencode/opencode-client-seam.js';
 import { stripMessageDiffSummary } from '../opencode/diff-summary.js';
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
@@ -20,45 +23,11 @@ const DEFAULT_MESSAGES_REQUEST_TIMEOUT_MS = 120_000;
 // client-side, orphaning the child session and leaving the orchestrator to
 // re-dispatch — one of the ways duplicate subagents appear.
 const DEFAULT_DISPATCH_REQUEST_TIMEOUT_MS = 30_000;
-const MAX_ERROR_BODY_LENGTH = 2_000;
-
-const appendDirectory = (pathname, directory, extra = {}) => {
-  const query = new URLSearchParams(extra);
-  if (typeof directory === 'string' && directory.trim()) {
-    query.set('directory', directory.trim());
-  }
-  const serialized = query.toString();
-  return serialized ? `${pathname}?${serialized}` : pathname;
-};
-
-const unwrapPayload = (value) => (
-  value && typeof value === 'object' && !Array.isArray(value) && 'data' in value
-    ? value.data
-    : value
-);
-
-const createHttpError = async (response, label) => {
-  const body = (await response.text().catch(() => '')).slice(0, MAX_ERROR_BODY_LENGTH).trim();
-  const error = new Error(
-    `${label} failed (${response.status})${body ? `: ${body}` : ''}`,
-  );
-  error.code = 'opencode_http_error';
-  error.statusCode = response.status;
-  return error;
-};
-
 const CHILD_REGISTRATION_ATTEMPTS = 3;
 const TRANSIENT_CHILD_REGISTRATION_CODES = new Set(['local_execution_timeout', 'execution_preparation_stalled',
   'LOCK_TIMEOUT', 'mutation_runtime_unavailable', 'execution_owner_unavailable']);
 
 export const createWebManagedOpenCodeExecutor = (options = {}) => {
-  if (typeof options.buildOpenCodeUrl !== 'function') {
-    throw new TypeError('buildOpenCodeUrl is required');
-  }
-  if (typeof options.getOpenCodeAuthHeaders !== 'function') {
-    throw new TypeError('getOpenCodeAuthHeaders is required');
-  }
-  const fetchImpl = options.fetchImpl ?? fetch;
   const childRegistrationRetryDelayMs = options.childRegistrationRetryDelayMs ?? 500;
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   const messagesRequestTimeoutMs = options.messagesRequestTimeoutMs
@@ -66,40 +35,11 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
   const dispatchRequestTimeoutMs = options.dispatchRequestTimeoutMs
     ?? DEFAULT_DISPATCH_REQUEST_TIMEOUT_MS;
   const cursorSdkRuntime = options.cursorSdkRuntime ?? null;
+  const openCodeClient = options.openCodeClient ?? null;
+  if (openCodeClient !== null && typeof openCodeClient?.generation !== 'function') {
+    throw new TypeError('openCodeClient must be an openCodeClient');
+  }
   const statusSingleFlight = createKeyedSingleFlight();
-
-  const requestJsonUrl = async (url, requestOptions = {}) => {
-    const response = await fetchImpl(url, {
-      method: requestOptions.method ?? 'GET',
-      headers: {
-        accept: 'application/json',
-        'content-type': 'application/json',
-        ...options.getOpenCodeAuthHeaders(),
-      },
-      ...(requestOptions.body === undefined
-        ? {}
-        : { body: JSON.stringify(requestOptions.body) }),
-      signal: requestOptions.signal
-        ?? AbortSignal.timeout(requestOptions.timeoutMs ?? requestTimeoutMs),
-    });
-    if (requestOptions.allowNotFound && response.status === 404) return null;
-    if (!response.ok) throw await createHttpError(response, requestOptions.label ?? 'OpenCode request');
-    if (response.status === 204) return null;
-    const text = await response.text();
-    if (!text.trim()) return null;
-    try {
-      return unwrapPayload(JSON.parse(text));
-    } catch {
-      const error = new Error(`${requestOptions.label ?? 'OpenCode request'} returned invalid JSON`);
-      error.code = 'opencode_invalid_response';
-      error.statusCode = 502;
-      throw error;
-    }
-  };
-
-  const requestJson = async (pathname, requestOptions = {}) => (
-    await requestJsonUrl(options.buildOpenCodeUrl(pathname, ''), requestOptions)
-  );
 
   const buildPromptBody = (input) => ({
     ...(input.messageId ? { messageID: input.messageId } : {}),
@@ -117,15 +57,16 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
 
   const transport = {
     async createSession(input) {
-      const child = await requestJson(appendDirectory('/session', input.directory), {
-        method: 'POST',
-        label: 'session.create',
-        timeoutMs: dispatchRequestTimeoutMs,
-        body: {
+      const client = resolveGen2OpenCodeClient(openCodeClient);
+      const createNative = () => client.sessions.create({
+          directory: input.directory,
           title: input.title,
           ...(input.parentSessionId ? { parentID: input.parentSessionId } : {}),
-        },
-      });
+        }, { directory: input.directory, timeoutMs: dispatchRequestTimeoutMs });
+      const child = await (options.nativeTaskDispatch
+        ? options.nativeTaskDispatch({ operation: 'create', taskId: input.taskId, leaseToken: input.leaseToken,
+          directory: input.directory, parentID: input.parentSessionId, parentCallID: input.parentCallID }, createNative)
+        : createNative());
       if (input.parentSessionId && input.parentCallID && options.registerExecutionChild) {
         const registration = { directory: input.directory, sessionID: child.id,
           parentID: input.parentSessionId, parentCallID: input.parentCallID };
@@ -148,9 +89,7 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
         } catch (error) {
           // A definitively unregistered child can never be admitted; remove it.
           if (!ambiguous) {
-            await requestJson(appendDirectory(`/session/${encodeURIComponent(child.id)}`, input.directory), {
-              method: 'DELETE', allowNotFound: true, label: 'session.delete',
-            }).catch(() => {});
+            await client.sessions.remove(child.id, { directory: input.directory, allowNotFound: true, timeoutMs: requestTimeoutMs }).catch(() => {});
           }
           throw error;
         }
@@ -158,6 +97,7 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
       return child;
     },
     async promptSession(input) {
+      const client = resolveGen2OpenCodeClient(openCodeClient);
       const body = buildPromptBody(input);
       if (input.providerId === CURSOR_PROVIDER_ID) {
         if (!cursorSdkRuntime || typeof cursorSdkRuntime.handlePromptAsync !== 'function') {
@@ -184,55 +124,56 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
         }
         return;
       }
-      await requestJson(
-        appendDirectory(`/session/${encodeURIComponent(input.sessionId)}/prompt_async`, input.directory),
-        {
-          method: 'POST',
-          label: 'session.prompt_async',
-          timeoutMs: dispatchRequestTimeoutMs,
-          ...(input.signal ? { signal: AbortSignal.any([input.signal, AbortSignal.timeout(dispatchRequestTimeoutMs)]) } : {}),
-          body,
-        },
-      );
+      // Gen 2: the admission module (B.5) owns selection switching and the
+      // prompt; the dispatch budget and the caller's signal both apply.
+      const promptNative = () => client.prompts.prompt(input.sessionId, body, {
+        directory: input.directory,
+        timeoutMs: dispatchRequestTimeoutMs,
+        ...(input.signal ? { signal: input.signal } : {}),
+      });
+      if (options.nativeTaskDispatch) await options.nativeTaskDispatch({ operation: 'prompt',
+        taskId: input.taskId, leaseToken: input.leaseToken, directory: input.directory, sessionID: input.sessionId,
+        providerId: input.providerId, modelId: input.modelId, agent: input.agent, variant: input.variant }, promptNative);
+      else await promptNative();
+      return;
     },
     async readSession(input) {
-      return await requestJson(
-        appendDirectory(`/session/${encodeURIComponent(input.sessionId)}`, input.directory),
-        {
-          allowNotFound: true,
-          label: 'session.get',
-        },
-      );
+      const client = resolveGen2OpenCodeClient(openCodeClient);
+      return await client.sessions.get(input.sessionId, {
+        directory: input.directory, allowNotFound: true, timeoutMs: requestTimeoutMs,
+      });
     },
     async readStatus(input) {
+      const client = resolveGen2OpenCodeClient(openCodeClient);
       if (input.providerId === CURSOR_PROVIDER_ID) {
         const statuses = cursorSdkRuntime && typeof cursorSdkRuntime.getSessionStatus === 'function'
           ? cursorSdkRuntime.getSessionStatus()
           : {};
         return statuses?.[input.sessionId] ?? null;
       }
-      const pathname = appendDirectory('/session/status', input.directory);
-      const statusUrl = String(options.buildOpenCodeUrl(pathname, ''));
-      const statuses = await statusSingleFlight.run(statusUrl, async () => (
-        await requestJsonUrl(statusUrl, { label: 'session.status' })
-      ));
+      const directory = typeof input.directory === 'string' ? input.directory.trim() : '';
+      // Keep overlapping status reads within the same directory and runtime incarnation.
+      const runtimeKey = () => JSON.stringify([directory, options.readRuntimeStartedAt?.(), client.events?.url?.()]);
+      const key = runtimeKey();
+      const statuses = await statusSingleFlight.run(key, async () => (
+        await client.sessions.status(directory ? { directory } : {}, { timeoutMs: requestTimeoutMs })
+      ), { signal: input.signal });
+      if (runtimeKey() !== key) throw Object.assign(new Error('Managed runtime changed during status observation'), { code: 'managed_observation_runtime_changed' });
       return statuses?.[input.sessionId] ?? null;
     },
     async readMessages(input) {
+      const client = resolveGen2OpenCodeClient(openCodeClient);
       if (input.providerId === CURSOR_PROVIDER_ID) {
         if (!cursorSdkRuntime || typeof cursorSdkRuntime.getSessionMessages !== 'function') return [];
-        return await cursorSdkRuntime.getSessionMessages(input.sessionId);
+        return await waitForSharedOperation(cursorSdkRuntime.getSessionMessages(input.sessionId), { signal: input.signal });
       }
-      const messages = await requestJson(
-        appendDirectory(`/session/${encodeURIComponent(input.sessionId)}/message`, input.directory, {
-          limit: '100',
-        }),
-        { label: 'session.messages', timeoutMs: messagesRequestTimeoutMs },
-      );
-      // Drop the diff snapshot immediately. Managed observation only reads
-      // role/id/error/finish/time and parts, while `summary.diffs` carries the
-      // bulk of the payload and would otherwise be retained for the whole poll.
-      return Array.isArray(messages) ? messages.map(stripMessageDiffSummary) : [];
+      const page = await client.sessions.messages(input.sessionId, { limit: 100 }, {
+        directory: input.directory,
+        timeoutMs: messagesRequestTimeoutMs,
+        ...(input.signal ? { signal: input.signal } : {}),
+      });
+      const records = page?.records;
+      return Array.isArray(records) ? records.map(stripMessageDiffSummary) : [];
     },
     ...(typeof options.readTerminalError === 'function' ? {
       async readTerminalError(input) {
@@ -251,21 +192,20 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
       },
     } : {}),
     async abortSession(input) {
+      const client = resolveGen2OpenCodeClient(openCodeClient);
       if (input.providerId === CURSOR_PROVIDER_ID) {
         if (!cursorSdkRuntime || typeof cursorSdkRuntime.abortSession !== 'function') return false;
         return await cursorSdkRuntime.abortSession(input.sessionId);
       }
-      await requestJson(
-        appendDirectory(`/session/${encodeURIComponent(input.sessionId)}/abort`, input.directory),
-        {
-          method: 'POST',
-          label: 'session.abort',
-          signal: input.signal,
-        },
-      );
+      // The caller's signal replaces the request budget.
+      await client.sessions.abort(input.sessionId, {
+        directory: input.directory,
+        ...(input.signal ? { signal: input.signal } : { timeoutMs: requestTimeoutMs }),
+      });
       return true;
     },
     async deleteSession(input) {
+      const client = resolveGen2OpenCodeClient(openCodeClient);
       const failures = [];
       if (
         input.providerId === CURSOR_PROVIDER_ID
@@ -279,14 +219,9 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
         }
       }
       try {
-        await requestJson(
-          appendDirectory(`/session/${encodeURIComponent(input.sessionId)}`, input.directory),
-          {
-            method: 'DELETE',
-            allowNotFound: true,
-            label: 'session.delete',
-          },
-        );
+        await client.sessions.remove(input.sessionId, {
+          directory: input.directory, allowNotFound: true, timeoutMs: requestTimeoutMs,
+        });
       } catch (error) {
         failures.push(error instanceof Error ? error : new Error(String(error)));
       }
@@ -297,12 +232,25 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
     },
   };
 
+  if (options.nativeTaskDispatch) {
+    // The scheduler can outlive the submitting tool. Capture host setup so
+    // registration, observation and cleanup never inherit its expired permit.
+    // Native create/prompt still install fresh task authority inside the call.
+    const runInHostContext = AsyncLocalStorage.snapshot();
+    for (const [name, operation] of Object.entries(transport)) {
+      transport[name] = (...args) => runInHostContext(operation, ...args);
+    }
+  }
+
   return createManagedOpenCodeExecutor({
     transport,
     subscribeAssistantActivity: options.subscribeAssistantActivity,
+    bindAssistantActivity: options.bindAssistantActivity,
+    subscribeSessionChanges: options.subscribeSessionChanges,
     onFirstAssistantActivity: options.onFirstAssistantActivity,
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.pollIntervalMs === undefined ? {} : { pollIntervalMs: options.pollIntervalMs }),
+    ...(options.eventReconcileIntervalMs === undefined ? {} : { eventReconcileIntervalMs: options.eventReconcileIntervalMs }),
     ...(options.idleStablePolls === undefined ? {} : { idleStablePolls: options.idleStablePolls }),
     ...(options.sleep === undefined ? {} : { sleep: options.sleep }),
     ...(options.maxAssistantTurns === undefined ? {} : { maxAssistantTurns: options.maxAssistantTurns }),

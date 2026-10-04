@@ -58,7 +58,7 @@ for (const [name, value] of entries) {
 
 for (const [name, value] of entries) process.env[name] = value;
 
-const child = spawn('/opt/devryan/node_modules/.bin/opencode', process.argv.slice(2), {
+const child = spawn('/usr/local/bin/bun', ['/opt/devryan/packages/web/server/lib/bots/native-server.mjs'], {
   env: process.env,
   stdio: 'inherit',
 });

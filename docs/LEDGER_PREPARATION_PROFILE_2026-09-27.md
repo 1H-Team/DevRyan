@@ -278,3 +278,19 @@ Other validation jobs were paused during measured intervals. Three short test
 windows occurred only after a worker had exited and completed cleanup, while
 the benchmark parent was paused. No measured worker overlapped those tests.
 No installed app state, real provider, or credentials were used.
+
+## Production-shaped runs (added 2026-09-30, Phase 0 of the OpenCode v2 plan)
+
+The call benchmark can now reproduce production-shaped ledgers:
+
+```sh
+node scripts/perf/ledger-benchmark.mjs --fixture-files 12000 --prewarm --seed-calls 2000 \
+  --parallel 8 --same-session --deferred-cleanup --out .cache/perf/ledger-v1-baseline.json
+```
+
+- `--seed-calls N` (0-200000) replays N direct read/glob/grep/skill receipts through `admitDirect`/`finishDirect` over five synthetic sessions, eight per assistant step, before the timed calls. This is the host's ledger-only direct-receipt path. Each seeded call is one ledger commit, and commit cost grows with the entry count: 300 calls on a 200-file prewarmed ledger took about 30 s (about 83 ms per call at 1.5k entries), so seeds in the tens of thousands take hours. Pick the seed size for the question you are asking. The report records seeding duration, the per-call cost at the end of the seed (`seed.lastCallsMs`) and the state-tree entry count by kind (`seed.ledgerEntries`, `ledgerEntries`, from a read-only `ls-tree` of `refs/devryan/state`). Direct receipts write no file records, so seed after `--prewarm`; without it the benchmark prints a warning. The seed's background ledger maintenance is awaited before the timed calls (`seed.maintenanceDrainMs`).
+- `--same-session` runs the `--parallel` burst as one assistant step of one session, as production bursts do. The default is still distinct sessions, and `burstMode` records which ran.
+- `--deferred-cleanup` does not await lease cleanup on the timed path, matching `DEVRYAN_DEFERRED_LEASE_CLEANUP`. Later timed calls overlap the pending cleanups. Whatever remains after the last timed call is drained before the control call and reported as `drainMs`, so `controlMs` stays the uncontended round-trip reference.
+- Every iteration awaits the runtime's ledger maintenance (repack/prune) before counting entries and removing the clone (`maintenanceDrainMs`).
+- `--profile --parallel K [--same-session]` (ledger mode only) adds a measured burst after each case, with `burstGitProcesses`, `burstGitTreeWrites` and `burstLedgerCommitCount`.
+- `--profile --fixture-files N` now profiles the synthetic fixture. Profiles recorded with that flag before 2026-09-30 measured the DevRyan repository clone instead; check the report's `repo` before comparing against them.

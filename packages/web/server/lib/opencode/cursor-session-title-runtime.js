@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+import { openCodeClientErrorStatus, resolveGen2OpenCodeClient } from './opencode-client-seam.js';
+
 const CURSOR_PROVIDER_ID = 'cursor-acp';
 const GENERATED_NEW_SESSION_TITLE_PATTERN = /^new session\s*-\s*\d{4}-\d{2}-\d{2}t\d{2}:\d{2}:\d{2}(?:\.\d+)?z$/i;
 const CURSOR_ERROR_TITLE_PATTERN = /^cursor-acp\s+error\s*:/i;
@@ -43,48 +45,27 @@ const isEligibleCursorTitle = (title, firstUserText) => {
 
 export const createCursorSessionTitleRuntime = ({
   cursorSdkRuntime,
-  fetchImpl = fetch,
-  buildOpenCodeUrl,
-  getOpenCodeAuthHeaders = () => ({}),
   logger = console,
+  openCodeClient = null,
 } = {}) => {
   const pendingBySession = new Map();
   const generatedBySession = new Map();
 
-  const buildSessionUrl = (sessionID, directory) => {
-    if (typeof buildOpenCodeUrl !== 'function') return null;
-    const query = trimString(directory) ? `?directory=${encodeURIComponent(trimString(directory))}` : '';
-    return buildOpenCodeUrl(`/session/${encodeURIComponent(sessionID)}${query}`, '');
+  const refusedAs = (fallback) => (error) => {
+    if (openCodeClientErrorStatus(error)) return fallback;
+    throw error;
   };
 
   const readSession = async (sessionID, directory) => {
-    const url = buildSessionUrl(sessionID, directory);
-    if (!url) return null;
-    const response = await fetchImpl(url, {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-        ...getOpenCodeAuthHeaders(),
-      },
-    });
-    if (!response?.ok) return null;
-    const payload = await response.json().catch(() => null);
-    return payload && typeof payload === 'object' ? payload : null;
+    const client = resolveGen2OpenCodeClient(openCodeClient);
+    const session = await client.sessions.get(sessionID, { directory }).catch(refusedAs(null));
+    return session && typeof session === 'object' ? session : null;
   };
 
   const updateSessionTitle = async (sessionID, directory, title) => {
-    const url = buildSessionUrl(sessionID, directory);
-    if (!url) return false;
-    const response = await fetchImpl(url, {
-      method: 'PATCH',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        ...getOpenCodeAuthHeaders(),
-      },
-      body: JSON.stringify({ title }),
-    });
-    return Boolean(response?.ok);
+    const client = resolveGen2OpenCodeClient(openCodeClient);
+    const updated = await client.sessions.update(sessionID, { title }, { directory }).catch(refusedAs(null));
+    return updated !== null && updated !== undefined;
   };
 
   const run = async ({ sessionID, directory }) => {

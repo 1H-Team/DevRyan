@@ -12,6 +12,9 @@ export const createHmrStateRuntime = (dependencies) => {
         openCodeProcess: null,
         openCodePort: null,
         openCodeVersion: null,
+        openCodeGeneration: null,
+        openCodeEpoch: 0,
+        openCodePaths: {},
         openCodeWorkingDirectory: os.homedir(),
         appliedAgentRuntimeSettings: null,
         isShuttingDown: false,
@@ -55,6 +58,9 @@ export const createHmrStateRuntime = (dependencies) => {
     hmrState.openCodeProcess = runtime.openCodeProcess;
     hmrState.openCodePort = runtime.openCodePort;
     hmrState.openCodeVersion = runtime.openCodeVersion;
+    hmrState.openCodeGeneration = runtime.openCodeGeneration;
+    hmrState.openCodeEpoch = runtime.openCodeEpoch;
+    hmrState.openCodePaths = runtime.openCodePaths;
     hmrState.openCodeBaseUrl = runtime.openCodeBaseUrl;
     hmrState.isShuttingDown = runtime.isShuttingDown;
     hmrState.signalsAttached = runtime.signalsAttached;
@@ -69,6 +75,9 @@ export const createHmrStateRuntime = (dependencies) => {
       openCodeProcess: hmrState.openCodeProcess,
       openCodePort: hmrState.openCodePort,
       openCodeVersion: hmrState.openCodeVersion ?? null,
+      openCodeGeneration: hmrState.openCodeGeneration ?? null,
+      openCodeEpoch: hmrState.openCodeEpoch ?? 0,
+      openCodePaths: hmrState.openCodePaths ?? {},
       openCodeBaseUrl: hmrState.openCodeBaseUrl ?? null,
       isShuttingDown: hmrState.isShuttingDown,
       signalsAttached: hmrState.signalsAttached,

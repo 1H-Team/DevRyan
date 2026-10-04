@@ -49,6 +49,7 @@ const LOCAL_ONLY_BOT_RUNTIME_COMMANDS = new Set([
   'desktop_runtime_service_enable',
   'desktop_runtime_service_disable',
   'desktop_runtime_service_open_settings',
+  'desktop_runtime_bundle_resume',
   'desktop_open_docker_desktop',
 ]);
 

@@ -1,12 +1,14 @@
+import { findQaNativeCompactionBoundaries } from './native-compaction-evidence.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { gradeQaProject } from './acceptance-graders.mjs';
+import { resolveQaTargetOpenCodeVersion } from '../../packages/web/server/lib/opencode/version-policy.js';
 import { openCodeBaseVersion } from '../../packages/web/server/lib/opencode/opencode-update-runtime.js';
-import { TARGET_OPENCODE_VERSION } from '../../packages/web/server/lib/opencode/version-policy.js';
-import { findQaNativeCompactionCycle, findQaPlanApprovalUser, projectCompactionTaskSnapshot } from './compaction-scenarios.mjs';
+import { assertQaCandidateRuntimeVersion } from './runtime-target.mjs';
+import { findQaPlanApprovalUser, projectCompactionTaskSnapshot } from './compaction-scenarios.mjs';
 import { QA_PROJECT_PROTECTED_PATHS } from './project-fixture.mjs';
 import { gradeCompactionOperationalContinuity, gradeQaNaturalCompactionOperationalContinuity, isQaCompactionPostSummaryCohortPreserved, projectQaCompactionSummaryExit, mergeCompactionActions, projectCompactionActions, projectQaCompactionBoundaryBracket, projectQaCompactionBoundaryCohort, QA_COMPACTION_INVESTIGATION_MARKERS } from './compaction-action-evidence.mjs';
 import { projectQaPlanChildPolicy } from './live-task-evidence.mjs';
@@ -47,68 +49,61 @@ export const findQaSeededInvestigationStarts = (rows, knownCallIds = new Set()) 
     && typeof part.callID === 'string' && !knownCallIds.has(part.callID))
   .map(part => part.callID);
 
-// OpenCode 1.18.31's native Is/Dl and maxOutputTokens functions, verified
-// against the pinned executable; 1.18.32 and 1.18.33 leave overflow.ts,
-// compaction.ts and the LLM request paths unchanged. Input limits take precedence over context.
-// This projects the existing policy; it never writes config or model limits.
-export function deriveQaNativeCompactionPolicy({ version, modelLimits, compaction, outputTokenMax }) {
-  assert.equal(openCodeBaseVersion(version), TARGET_OPENCODE_VERSION, 'Natural threshold evidence requires the verified OpenCode version');
-  assert.ok(numeric(modelLimits?.context) && numeric(modelLimits?.output), 'Native model limits are unavailable');
+const v2TriggerEvidenceUnavailable = 'Actual native trigger reason, context estimate and checkpoint journal evidence is required';
+const verifiedCompactionGeneration = version => {
+  const base = openCodeBaseVersion(version);
+  if (base === '2.0.20') return 2;
+  throw new Error(`Native compaction policy has not been verified for OpenCode ${version}`);
+};
+
+// Version-pinned native v2 ceiling projection. It never changes runtime limits.
+export function deriveQaNativeCompactionPolicy({ version, modelLimits, compaction, target = resolveQaTargetOpenCodeVersion() }) {
+  const runtimeTarget = assertQaCandidateRuntimeVersion(version, target);
+  const generation = verifiedCompactionGeneration(runtimeTarget.version);
+  assert.ok(numeric(modelLimits?.context), 'Native model limits are unavailable');
   assert.notEqual(compaction?.auto, false, 'Native automatic compaction is disabled');
-  assert.ok(modelLimits.context > 0, 'The selected model has no native context threshold');
-  const configuredMax = outputTokenMax === undefined || outputTokenMax === '' ? 32000 : Number(outputTokenMax);
-  assert.ok(Number.isSafeInteger(configuredMax) && configuredMax > 0, 'Native output-token cap is invalid');
-  const maximumOutput = Math.min(modelLimits.output, configuredMax) || configuredMax;
-  const reserved = compaction?.reserved ?? Math.min(20000, maximumOutput);
-  assert.ok(numeric(reserved), 'Native compaction reserve is invalid');
   if (modelLimits.input !== null && modelLimits.input !== undefined) assert.ok(numeric(modelLimits.input), 'Native input limit is invalid');
-  const usesInputLimit = !!modelLimits.input;
-  const threshold = Math.max(0, usesInputLimit ? modelLimits.input - reserved : modelLimits.context - maximumOutput);
+  const window = modelLimits.input || modelLimits.context;
+  assert.ok(window > 0, 'The selected model has no native context threshold');
+  const buffer = compaction?.buffer === undefined ? Math.max(Math.floor(window * 0.1), window >= 32000 ? 16000 : 0) : compaction.buffer;
+  assert.ok(numeric(buffer), 'Native compaction buffer is invalid');
+  const threshold = window - buffer;
   assert.ok(threshold > 0, 'A positive natural compaction threshold is required');
-  return { version, source: 'verified-native-1.18.31-policy', modelLimits, maximumOutput, reserved,
-    automatic: compaction?.auto ?? 'native-default', configuredReserved: compaction?.reserved ?? null,
-    configuredOutputTokenMax: outputTokenMax === undefined || outputTokenMax === '' ? null : configuredMax,
-    threshold, thresholdBasis: usesInputLimit ? 'input-minus-reserved' : 'context-minus-maximum-output' };
+  return { version, generation, source: 'verified-native-2.0.20-policy', runtimeTarget, modelLimits,
+    automatic: compaction?.auto ?? 'native-default', configuredBuffer: compaction?.buffer ?? null, buffer, threshold,
+    thresholdBasis: modelLimits.input ? 'input-minus-buffer' : 'context-minus-buffer',
+    triggerEvidence: { state: 'unavailable', reason: v2TriggerEvidenceUnavailable } };
 }
 
-export function qaNativeTokenUsage(tokens) {
-  if (numeric(tokens?.total) && tokens.total > 0) return tokens.total;
-  if (![tokens?.input, tokens?.output, tokens?.cache?.read, tokens?.cache?.write].every(numeric)) return null;
-  return tokens.input + tokens.output + tokens.cache.read + tokens.cache.write;
+export function qaNativeTokenUsage(tokens, { version = resolveQaTargetOpenCodeVersion().version } = {}) {
+  verifiedCompactionGeneration(version);
+  // Measured usage cannot substitute for the native estimated-context trigger.
+  if (![tokens?.input, tokens?.output, tokens?.reasoning, tokens?.cache?.read, tokens?.cache?.write].every(numeric)) return null;
+  return tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write;
 }
 
-export function findNaturalCompactionBoundaries(rows, { previousPartIds = [], threshold, observations = [], sessionID, startedAt = 0 } = {}) {
-  const previous = new Set(previousPartIds);
-  const found = [];
-  const claimedCycles = new Set();
-  for (const [index, row] of rows.entries()) {
-    if (row.info?.role !== 'user') continue;
-    const part = row.parts?.find(item => item.type === 'compaction' && item.auto === true && !previous.has(item.id));
-    if (!part) continue;
-    const summary = rows.find(item => item.info?.role === 'assistant' && item.info.parentID === row.info.id
-      && item.info.summary === true && item.info.time?.completed && !item.info.error && textOf(item).trim());
-    if (!summary) continue;
-    const preceding = rows.slice(0, index).toReversed().find(item => item.info?.role === 'assistant'
-      && item.info.summary !== true && item.info.time?.completed && !item.info.error);
-    const usage = qaNativeTokenUsage(preceding?.info.tokens);
-    const lowerBound = Math.max(startedAt, row.info.time?.created ?? 0);
-    const nativeEvents = observations.filter(item => item.sessionID === sessionID && item.at >= lowerBound
-      && item.at <= summary.info.time.completed + 5000
-      && ['native.compacting', 'native.session.compacted', 'native.compaction.autocontinue'].includes(item.kind));
-    let nativeCycle = findQaNativeCompactionCycle(nativeEvents, summary.info.time.completed);
-    if (nativeCycle) {
-      const cycleKey = `${nativeCycle.startedAt}:${nativeCycle.completedAt}`;
-      if (claimedCycles.has(cycleKey)) nativeCycle = null;
-      else claimedCycles.add(cycleKey);
-    }
-    const nativeLifecycle = nativeCycle ? 'observed' : 'missing';
-    found.push({ source: 'opencode', trigger: 'automatic', requestKind: 'ordinary-context-growth', eventId: part.id,
-      boundaryMessageId: row.info.id, summaryMessageId: summary.info.id, observedAt: summary.info.time.completed,
-      summarySha256: digest(textOf(summary)), summaryBytes: Buffer.byteLength(textOf(summary)),
-      auto: true, overflow: part.overflow === true, usageMessageId: preceding?.info.id ?? null,
-      usageAtTrigger: usage, threshold, thresholdReached: numeric(threshold) && usage !== null && usage >= threshold,
-      nativeLifecycle, nativeCycle, nativeEvents });
-  }
+// Native skipped checks have no trigger budget. Scheduling can use only the
+// pinned ceiling algorithm, actual prepared model limits and frozen settings.
+// This estimate never qualifies a boundary; its actual captured ceiling must
+// agree before the native due/context estimate is accepted.
+export function deriveQaNativeCompactionPrefillPolicy({ observations, sessionID, directory, configurationDigest, compaction,
+  version, target = resolveQaTargetOpenCodeVersion() }) {
+  const witness = `<WORKTREE_${digest(directory).slice(0, 12)}>`;
+  const prepared = observations.toReversed().find(item => item.stage === 'model-prepared' && item.kind === 'primary'
+    && item.sessionID === sessionID && item.directory === witness && item.configurationDigest === configurationDigest);
+  assert.ok(prepared, 'Actual native Prepared model limits are required for prefill scheduling');
+  assert.ok(compaction && typeof compaction === 'object' && !Array.isArray(compaction), 'Frozen native compaction settings are required');
+  const policy = deriveQaNativeCompactionPolicy({ version, target, modelLimits: prepared.modelLimits, compaction });
+  assert.equal(policy.generation, 2);
+  return { ...policy, source: 'qa-prefill-estimate-from-native-prepared-and-frozen-settings', requestID: prepared.requestID };
+}
+
+export function findNaturalCompactionBoundaries(rows, { previousPartIds = [], threshold, observations = [], sessionID, startedAt = 0,
+  version = resolveQaTargetOpenCodeVersion().version, nativeObservationScope } = {}) {
+  verifiedCompactionGeneration(version);
+  if (!nativeObservationScope) return [];
+  const found = findQaNativeCompactionBoundaries(rows, { ...nativeObservationScope, observations, sessionID, previousPartIds, startedAt, reason: 'auto' });
+  if (Number.isFinite(threshold)) assert.ok(found.every(item => item.threshold === threshold), 'Actual native ceiling changed from the frozen prefill policy');
   return found;
 }
 
@@ -157,19 +152,20 @@ export function deriveQaNaturalPrefillTarget(threshold) {
 
 export function projectQaEarlyNaturalBoundary(rows, { previousPartIds, previousNativeEvents = [], observations, sessionID, startedAt }) {
   const previous = new Set(previousPartIds);
-  const observedBefore = new Set(previousNativeEvents.map(item => JSON.stringify([item.kind, item.sessionID, item.at])));
+  const identity = item => item.stage === 'compaction-event' ? item.eventID : JSON.stringify([item.kind, item.sessionID, item.at]);
+  const observedBefore = new Set(previousNativeEvents.map(identity));
   return {
     partIds: rows.flatMap(row => (row.parts ?? []).filter(part => part.type === 'compaction' && !previous.has(part.id)).map(part => part.id)),
-    nativeEvents: observations.filter(item => item.sessionID === sessionID && item.at >= startedAt
-      && !observedBefore.has(JSON.stringify([item.kind, item.sessionID, item.at]))
-      && ['native.compacting', 'native.session.compacted', 'native.compaction.autocontinue'].includes(item.kind)),
+    nativeEvents: observations.filter(item => item.sessionID === sessionID && (item.created ?? item.at) >= startedAt
+      && !observedBefore.has(identity(item)) && (item.stage === 'compaction-event'
+        || ['native.compacting', 'native.session.compacted', 'native.compaction.autocontinue'].includes(item.kind))),
   };
 }
 
 export async function runQaNaturalCompaction({ cell, projectFixture, ui, api, check, screenshot, sendTurn,
-  messages, getSessionID, captureSavedPlan, readSavedRevision, readProviderObservation, nativeOutputTokenMax, nativeAgent }) {
-  if (cell?.transport !== 'live' || cell.runtime !== 'electron' || cell.scenarioId !== 'compaction-natural') {
-    throw new Error('Natural compaction requires a live Electron natural matrix cell');
+  messages, getSessionID, captureSavedPlan, readSavedRevision, readProviderObservation, nativeOutputTokenMax, nativeAgent, nativeObservationScope }) {
+  if (cell?.transport !== 'live' || !['web', 'electron'].includes(cell.runtime) || cell.scenarioId !== 'compaction-natural') {
+    throw new Error('Natural compaction requires a live web or Electron natural matrix cell');
   }
   const snapshotRecorder = createQaCompactionSnapshotRecorder();
   const actionSnapshotRecorder = createQaCompactionActionSnapshotRecorder();
@@ -287,6 +283,12 @@ export async function runQaNaturalCompaction({ cell, projectFixture, ui, api, ch
     }, cell.timeoutMs);
   };
   try {
+    const runtimeTarget = assertQaCandidateRuntimeVersion((await api('/api/health')).openCodeVersion);
+    evidence.runtimeTarget = runtimeTarget;
+    if (!nativeObservationScope) {
+      evidence.triggerEvidence = { state: 'unavailable', reason: v2TriggerEvidenceUnavailable };
+      throw Object.assign(new Error(v2TriggerEvidenceUnavailable), { code: 'qa_native_compaction_evidence_unavailable' });
+    }
     await check('investigate and save a paused plan before natural context growth', () => observeDuring('diagnosis', async () => {
       await ui.attach(projectFixture.attachments.map(item => item.path));
       const saved = await submitPlan('natural-plan-revision-1', 'Investigate Task Board and the attached requirements and visual reference. Read AGENTS.md, then successfully read src/tasks.mjs with native read. Only after that source read completes, run standalone `node --test test/tasks.test.mjs` with native bash and observe the initial failure. Keep these calls sequential, never run the initial test before or concurrently with the read. If core policy disables execution, complete the read now and defer the native failing test until immediately after approval and before edits. After authorized implementation, run the same standalone native bash command and verify it passes. Preserve numeric exit statuses. Propose the complete repair and persisted priority feature. '
@@ -308,11 +310,7 @@ export async function runQaNaturalCompaction({ cell, projectFixture, ui, api, ch
       assert.match(content, /creation order/i); assert.match(content, /priority filter/i);
       evidence.expectedPausedState = await pausedState(revisedPlan);
       const health = await api('/api/health');
-      const config = await api(`/api/config?directory=${encodeURIComponent(projectFixture.fixtureRoot)}`);
-      const observed = (await readProviderObservation()).toReversed().find(item => item.kind === 'chat.params'
-        && item.sessionID === getSessionID() && item.providerID === cell.providerId && item.modelID === cell.modelId);
-      evidence.policy = deriveQaNativeCompactionPolicy({ version: health.openCodeVersion, modelLimits: observed?.modelLimits,
-        compaction: config.compaction, outputTokenMax: nativeOutputTokenMax });
+      evidence.policy = deriveQaNativeCompactionPrefillPolicy({ ...nativeObservationScope, observations: await readProviderObservation(), sessionID: getSessionID(), version: health.openCodeVersion });
       await screenshot('natural-revised-plan');
     }));
     await captureActions('paused-action-baseline');
@@ -328,7 +326,8 @@ export async function runQaNaturalCompaction({ cell, projectFixture, ui, api, ch
       const early = projectQaEarlyNaturalBoundary(await messages(), {
         previousPartIds: [...originalParts, ...evidence.boundaries.map(item => item.eventId)],
         previousNativeEvents: evidence.boundaries.flatMap(item => item.nativeEvents),
-        observations: await readProviderObservation(), sessionID: getSessionID(), startedAt: growthStartedAt });
+        observations: await readProviderObservation(), sessionID: getSessionID(), startedAt: growthStartedAt,
+              version: evidence.runtimeTarget.version, nativeObservationScope });
       if (early.partIds.length || early.nativeEvents.length) {
         evidence.earlyBoundary = { stage, ...early }; await persist();
         assert.fail('A native compaction occurred before the required phase witness; the observation window cannot be restarted');
@@ -451,7 +450,8 @@ export async function runQaNaturalCompaction({ cell, projectFixture, ui, api, ch
           let candidates = [];
           await ui.waitFor('native observer records after context growth', async () => {
             candidates = findNaturalCompactionBoundaries(await messages(), { previousPartIds: knownParts,
-              threshold: evidence.policy.threshold, observations: await readProviderObservation(), sessionID: getSessionID(), startedAt: growthStartedAt });
+              threshold: evidence.policy.threshold, observations: await readProviderObservation(), sessionID: getSessionID(), startedAt: growthStartedAt,
+              version: evidence.runtimeTarget.version, nativeObservationScope });
             return candidates.length === 0 || candidates.every(item => item.nativeLifecycle === 'observed');
           }, 5000);
           if (candidates.length) {
@@ -459,7 +459,7 @@ export async function runQaNaturalCompaction({ cell, projectFixture, ui, api, ch
             boundary = candidates[0];
             evidence.boundaries.push(boundary);
             assert.equal(boundary.overflow, false, 'Provider overflow cannot stand in for reaching the measured native threshold');
-            assert.equal(boundary.thresholdReached, true, 'Automatic summary has no measured threshold crossing');
+            assert.equal(boundary.thresholdReached, true, 'Automatic summary has no actual native threshold crossing');
             assert.equal(boundary.nativeLifecycle, 'observed', 'Automatic summary has no independent native lifecycle evidence');
             if (witness) {
               const bracket = projectQaCompactionBoundaryBracket({ snapshots: decodeQaCompactionSnapshots(evidence.managedSnapshots), cohort: witness.cohort,
@@ -483,7 +483,8 @@ export async function runQaNaturalCompaction({ cell, projectFixture, ui, api, ch
         await screenshot(`natural-boundary-${index + 1}`);
         await ui.reload();
         const restored = findNaturalCompactionBoundaries(await messages(), { previousPartIds: knownParts, threshold: evidence.policy.threshold,
-          observations: await readProviderObservation(), sessionID: getSessionID(), startedAt: growthStartedAt });
+          observations: await readProviderObservation(), sessionID: getSessionID(), startedAt: growthStartedAt,
+              version: evidence.runtimeTarget.version, nativeObservationScope });
         assert.ok(restored.some(item => item.summaryMessageId === boundary.summaryMessageId), 'Reload lost the automatic compaction summary');
         const state = await pausedState(revisedPlan);
         boundary.restoredPausedState = state;
@@ -538,7 +539,7 @@ export async function runQaNaturalCompaction({ cell, projectFixture, ui, api, ch
         evidence.approvalSurface = 'latest-plan-card';
         await ui.waitFor('post-compaction plan-card implementation', async () => {
           const rows = await messages();
-          const submitted = findQaPlanApprovalUser(rows, beforeIds, { sessionID: getSessionID(), sourceMessageID: current.sourceMessageID, cell, nativeAgent });
+          const submitted = findQaPlanApprovalUser(rows, beforeIds, { sessionID: getSessionID(), sourceMessageID: current.sourceMessageID, projectDirectory: projectFixture.fixtureRoot, cell, nativeAgent });
           if (!submitted) return false;
           if (!evidence.submittedUserMessageIDs.includes(submitted.info.id)) evidence.submittedUserMessageIDs.push(submitted.info.id);
           const fresh = rows.filter(row => row.info?.role === 'assistant' && !beforeIds.has(row.info.id));
@@ -574,6 +575,10 @@ export async function runQaNaturalCompaction({ cell, projectFixture, ui, api, ch
     evidence.totalWorkloadBytes = totalBytes;
     evidence.outcome = 'passed-with-declared-coverage';
     return evidence;
-  } catch (error) { evidence.outcome = 'failed'; evidence.error = error.message; throw error; }
+  } catch (error) {
+    evidence.outcome = error.code === 'qa_native_compaction_evidence_unavailable' ? 'unavailable' : 'failed';
+    evidence.error = error.message;
+    throw error;
+  }
   finally { await persist(); }
 }

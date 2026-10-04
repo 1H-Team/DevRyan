@@ -27,6 +27,7 @@ import {
   createClaudeCompatibilityPreambleResolver,
   resolveManagedTaskTurnBudget,
 } from './claude-compatibility.js';
+import { resolveGen2OpenCodeClient } from '../opencode/opencode-client-seam.js';
 import { createWebManagedOpenCodeExecutor } from './open-code-executor.js';
 import { createManagedOrchestrationPrivateHost } from './private-host.js';
 import { createParentReadFreshness } from './parent-read-freshness.js';
@@ -120,6 +121,7 @@ const ERROR_STATUS_BY_CODE = Object.freeze({
   managed_orchestration_owner_conflict: 409,
   managed_orchestration_ownership_lost: 409,
   managed_runtime_unavailable: 503,
+  native_managed_task_lease_invalid: 403,
   missing_recovery_model: 400,
   missing_idempotency_key: 400,
   mode_lease_active: 409,
@@ -290,48 +292,24 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   const terminalErrors = options.terminalErrors ?? createManagedTerminalErrorRegistry({ now });
   const operatorAborts = options.operatorAborts ?? createManagedOperatorAbortRegistry({ now });
   const assistantActivity = createManagedAssistantActivityRegistry({ now });
+  const openCodeClient = options.openCodeClient ?? null;
+  if (openCodeClient !== null && typeof openCodeClient?.generation !== 'function') {
+    throw new TypeError('openCodeClient must be an openCodeClient');
+  }
   const validateAgentExecution = typeof options.validateAgentExecution === 'function'
     ? options.validateAgentExecution
-    : typeof options.buildOpenCodeUrl === 'function'
-      ? async ({ directory, providerId, modelId }) => {
-          if (providerId === 'cursor-acp') return null;
-          try {
-            const url = new URL(String(options.buildOpenCodeUrl('/config/providers', '')));
-            if (directory) url.searchParams.set('directory', directory);
-            const response = await (options.fetchImpl ?? fetch)(url, {
-              headers: {
-                accept: 'application/json',
-                ...options.getOpenCodeAuthHeaders?.(),
-              },
-              signal: AbortSignal.timeout(5_000),
-            });
-            if (!response.ok) return null;
-            return isManagedModelAvailableInCatalog(await response.json(), providerId, modelId);
-          } catch {
-            return null;
-          }
-        }
-      : null;
-  // A child prompt resolves its agent in the submitting project's OpenCode
-  // instance, so admission reads that directory-scoped catalog, never the
-  // unscoped /agent snapshot.
+    : async ({ directory, providerId, modelId, variant }) => {
+      if (providerId === 'cursor-acp') return options.cursorSdkRuntime?.validateModelSelection?.({ directory, modelID: modelId, variant }) ?? null;
+      const client = resolveGen2OpenCodeClient(openCodeClient);
+      try {
+        const catalog = await client.catalog.providers(directory ? { directory } : {}, { timeoutMs: 5_000 });
+        return isManagedModelAvailableInCatalog(catalog, providerId, modelId, variant);
+      } catch { return null; }
+    };
+  // Admission validates the agent against the submitting directory's catalog.
   const readAgentCatalog = typeof options.readAgentCatalog === 'function'
     ? options.readAgentCatalog
-    : typeof options.buildOpenCodeUrl === 'function'
-      ? async ({ directory }) => {
-          const url = new URL(String(options.buildOpenCodeUrl('/agent', '')));
-          url.searchParams.set('directory', directory);
-          const response = await (options.fetchImpl ?? fetch)(url, {
-            headers: {
-              accept: 'application/json',
-              ...options.getOpenCodeAuthHeaders?.(),
-            },
-            signal: AbortSignal.timeout(AGENT_CATALOG_TIMEOUT_MS),
-          });
-          if (!response.ok) throw new Error(`OpenCode agent catalog request failed (${response.status})`);
-          return await response.json();
-        }
-      : null;
+    : async ({ directory }) => resolveGen2OpenCodeClient(openCodeClient).catalog.agents({ directory }, { timeoutMs: AGENT_CATALOG_TIMEOUT_MS });
   // Returns the catalog's canonical agent name, or the submitted value when
   // validation is off: DEVRYAN_TASK_AGENT_VALIDATION=0, no catalog source (an
   // external runtime or fixture), or Council's host-constant private dispatch.
@@ -362,20 +340,22 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   const resolvePlannedAutoResumeBackup = async (params) => {
     const backup = await resolveAutoResumeBackupExecution(params);
     if (backup && validateAgentExecution && await validateAgentExecution({
-      directory: params.directory, providerId: backup.providerId, modelId: backup.modelId,
-    }) === false) return null;
+      directory: params.directory, providerId: backup.providerId, modelId: backup.modelId, variant: backup.variant ?? null,
+    }) !== true) return null;
     return backup;
   };
   const executor = options.executor ?? createWebManagedOpenCodeExecutor({
-    buildOpenCodeUrl: options.buildOpenCodeUrl,
-    getOpenCodeAuthHeaders: options.getOpenCodeAuthHeaders,
+    ...(options.eventReconcileIntervalMs === undefined ? {} : { eventReconcileIntervalMs: options.eventReconcileIntervalMs }),
     cursorSdkRuntime: options.cursorSdkRuntime,
     registerExecutionChild: options.registerExecutionChild,
-    fetchImpl: options.fetchImpl,
+    nativeTaskDispatch: options.nativeTaskDispatch,
+    ...(openCodeClient === null ? {} : { openCodeClient }),
     readTerminalError: (input) => terminalErrors.read(input),
     readOperatorAbort: (input) => operatorAborts.read(input),
     readRuntimeStartedAt: options.readRuntimeStartedAt,
     subscribeAssistantActivity: assistantActivity.subscribe,
+    bindAssistantActivity: assistantActivity.bind,
+    subscribeSessionChanges: assistantActivity.subscribeChanges,
     onFirstAssistantActivity: options.onFirstAssistantActivity,
     now,
     // Claude compatibility mode drops opencode's system prompt for Anthropic-routed
@@ -413,11 +393,11 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           return { outcome: 'rejected', code: 'backup_changed', message: 'The configured backup changed or was removed' };
         }
         if (validateAgentExecution) {
-          const available = await validateAgentExecution({ directory: task.directory, providerId: params.providerId, modelId: params.modelId });
+          const available = await validateAgentExecution({ directory: task.directory, providerId: params.providerId, modelId: params.modelId, variant: params.variant ?? null });
           if (available === false) {
             return { outcome: 'rejected', code: 'backup_unavailable', message: 'The configured backup model is unavailable' };
           }
-          if (available === null && params.providerId !== 'cursor-acp') {
+          if (available !== true) {
             if (envelope.autoResume.trigger !== 'provider_transport') {
               return { outcome: 'deferred', retryAfterMs: AUTO_RESUME_HOST_DEFER_MS, reason: 'backup_availability_unknown' };
             }
@@ -597,6 +577,35 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     return task;
   };
 
+  // Constructor-only native dispatch proof. Queued tasks never borrow the
+  // original tool's transient permit, and this method is absent from RPC.
+  const verifyNativeTaskDispatch = async (input) => {
+    assertAvailable();
+    if (!initialized || !ownershipAcquired || shutdownPromise) {
+      throw createRuntimeError('native_managed_task_lease_invalid', 'Native managed dispatch owner is unavailable', 403);
+    }
+    await persistence.verifyOwnership?.();
+    const task = typeof input?.taskId === 'string' ? await scheduler.verifyTaskDispatch(input.taskId, input.leaseToken) : null;
+    assertAvailable();
+    assertWorkAdmission();
+    if (shutdownPromise || !ownershipAcquired || !task || task.owner !== 'devryan' || !input.leaseToken || task.leaseToken !== input.leaseToken
+      || !['starting', 'running'].includes(task.status) || task.directory !== input.directory) {
+      throw createRuntimeError('native_managed_task_lease_invalid', 'Native managed dispatch has no current task lease', 403);
+    }
+    if (input.operation === 'create') {
+      if (task.status !== 'starting' || task.childSessionId || task.rootSessionId !== input.parentID
+        || !task.dispatchCallId || task.dispatchCallId !== input.parentCallID) {
+        throw createRuntimeError('native_managed_task_scope_invalid', 'Native child creation does not match its task', 403);
+      }
+    } else if (input.operation === 'prompt') {
+      if (!task.childSessionId || task.childSessionId !== input.sessionID
+        || ['providerId', 'modelId', 'agent', 'variant'].some(key => task[key] !== input[key])) {
+        throw createRuntimeError('native_managed_task_scope_invalid', 'Native child prompt does not match its task', 403);
+      }
+    } else throw createRuntimeError('native_managed_task_scope_invalid', 'Native task dispatch operation is unavailable', 403);
+    return task;
+  };
+
   const projectTaskResult = async (task, resultMode, envelope = scheduler.getResultEnvelope(task.taskId)) => {
     const result = projectManagedTaskResultForMode(
       projectTask(task, envelope),
@@ -657,12 +666,13 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         directory: params.directory,
         providerId: admitted.providerId,
         modelId: admitted.modelId,
+        variant: admitted.variant ?? null,
       });
-      if (available === false) {
+      if (available !== true) {
         throw createRuntimeError(
-          'managed_agent_model_unavailable',
-          `Managed model is unavailable: ${admitted.providerId}/${admitted.modelId}`,
-          409,
+          available === false ? 'managed_agent_model_unavailable' : 'managed_agent_model_availability_unknown',
+          `Managed selection could not be verified: ${admitted.providerId}/${admitted.modelId}${admitted.variant ? ` (${admitted.variant})` : ''}`,
+          available === false ? 409 : 503,
         );
       }
     }
@@ -1087,6 +1097,19 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     initialize,
     handleRpc,
     getSnapshot,
+    withNativePromptContext: async (input, action) => {
+      assertAvailable(); await ensureOwnership(); assertWorkAdmission();
+      return scheduler.withNativePromptContext({ ...input, authorize: async () => {
+        await persistence.verifyOwnership?.(); assertAvailable(); assertWorkAdmission();
+        await input.authorize();
+      } }, action);
+    },
+    verifyNativeTaskDispatch: input => verifyNativeTaskDispatch(input).catch(error => { throw normalizeRuntimeError(error); }),
+    cancelSessionsForRemoval: async input => {
+      assertAvailable();
+      await ensureOwnership();
+      return scheduler.cancelSessionsForRemoval(input);
+    },
     processOpenCodeEvent: (payload, directory = null) => {
       assistantActivity.observe(payload, directory);
       const observed = terminalErrors.observe(payload);

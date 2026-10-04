@@ -3,7 +3,8 @@ import {
   collectSessionIndicatorScopeIds,
   hasWorkingDescendantSession,
   resolveLeadingRailLayout,
-  resolveMobileSessionIndicatorPresentation,
+  resolveSessionLeadingIndicatorLabelKey,
+  resolveSessionLeadingIndicatorPresentation,
   resolveSidebarIndicator,
   resolveSidebarWorkingStatus,
   resolveSubtaskSidebarIndicator,
@@ -290,8 +291,8 @@ describe('collectSessionIndicatorScopeIds', () => {
   });
 });
 
-describe('resolveMobileSessionIndicatorPresentation', () => {
-  test('renders a working spinner before stale lifecycle attention', () => {
+describe('resolveSessionLeadingIndicatorPresentation', () => {
+  test('renders the working blink before stale lifecycle attention', () => {
     const indicator = resolveSidebarIndicator({
       isRootSession: true,
       isWorking: true,
@@ -303,42 +304,83 @@ describe('resolveMobileSessionIndicatorPresentation', () => {
       planState: null,
     });
 
-    expect(resolveMobileSessionIndicatorPresentation({
+    expect(resolveSessionLeadingIndicatorPresentation({
       indicator,
       isWorking: true,
-      planState: null,
+      isImplementingPlan: false,
     })).toEqual({
       kind: 'working',
       labelKey: 'sessions.sidebar.session.status.active',
     });
   });
 
+  test('keeps a pending question color over working', () => {
+    const working = resolveSidebarWorkingStatus({ isWorking: true, pendingQuestionCount: 1 });
+    const indicator = resolveSidebarIndicator({
+      isRootSession: true,
+      isWorking: working,
+      isActive: false,
+      hasUnreadCompletion: false,
+      hasCompletedStatus: false,
+      hasErrorStatus: false,
+      pendingQuestionCount: 1,
+      planState: null,
+    });
+
+    expect(resolveSessionLeadingIndicatorPresentation({
+      indicator,
+      isWorking: working,
+      isImplementingPlan: false,
+    })).toEqual({
+      kind: 'status',
+      indicator: {
+        className: 'bg-status-info',
+        labelKey: 'sessions.sidebar.session.status.questionRequired',
+      },
+    });
+  });
+
   test('labels ordinary and plan implementation work distinctly', () => {
-    expect(resolveMobileSessionIndicatorPresentation({
+    expect(resolveSessionLeadingIndicatorPresentation({
       indicator: null,
       isWorking: true,
-      planState: null,
+      isImplementingPlan: false,
     })).toEqual({
       kind: 'working',
       labelKey: 'sessions.sidebar.session.status.active',
     });
 
-    expect(resolveMobileSessionIndicatorPresentation({
+    expect(resolveSessionLeadingIndicatorPresentation({
       indicator: null,
       isWorking: true,
-      planState: 'implementing',
+      isImplementingPlan: true,
     })).toEqual({
       kind: 'working',
       labelKey: 'sessions.sidebar.session.status.planExecuting',
     });
   });
 
-  test('retains the mobile neutral marker when no lifecycle state is active', () => {
-    expect(resolveMobileSessionIndicatorPresentation({
+  test('falls back to the idle placeholder when no lifecycle state is active', () => {
+    expect(resolveSessionLeadingIndicatorPresentation({
       indicator: null,
       isWorking: false,
-      planState: null,
+      isImplementingPlan: false,
     })).toEqual({ kind: 'idle' });
+  });
+
+  test('exposes a label only for status and working markers', () => {
+    expect(resolveSessionLeadingIndicatorLabelKey({ kind: 'idle' })).toBeNull();
+    expect(resolveSessionLeadingIndicatorLabelKey({
+      kind: 'working',
+      labelKey: 'sessions.sidebar.session.status.planExecuting',
+    })).toBe('sessions.sidebar.session.status.planExecuting');
+    expect(resolveSessionLeadingIndicatorLabelKey({
+      kind: 'status',
+      indicator: {
+        className: 'bg-status-warning',
+        labelKey: 'sessions.sidebar.session.status.planReady',
+      },
+    })).toBe('sessions.sidebar.session.status.planReady');
   });
 });
 
@@ -400,7 +442,6 @@ describe('resolveLeadingRailLayout', () => {
   test('keeps status, pin, and parent chevron in left-to-right order', () => {
     expect(resolveLeadingRailLayout({
       hasChildren: true,
-      showLeadingStatus: true,
       isPinnedSession: true,
     })).toEqual({
       slots: ['status', 'pin', 'chevron'],
@@ -410,7 +451,6 @@ describe('resolveLeadingRailLayout', () => {
   test('keeps status immediately left of the parent chevron without a pin', () => {
     expect(resolveLeadingRailLayout({
       hasChildren: true,
-      showLeadingStatus: true,
       isPinnedSession: false,
     })).toEqual({
       slots: [null, 'status', 'chevron'],
@@ -420,7 +460,6 @@ describe('resolveLeadingRailLayout', () => {
   test('uses the middle status slot for an unpinned leaf session', () => {
     expect(resolveLeadingRailLayout({
       hasChildren: false,
-      showLeadingStatus: true,
       isPinnedSession: false,
     })).toEqual({
       slots: [null, 'status', null],
@@ -430,30 +469,9 @@ describe('resolveLeadingRailLayout', () => {
   test('keeps status and pin in independent slots for a pinned leaf session', () => {
     expect(resolveLeadingRailLayout({
       hasChildren: false,
-      showLeadingStatus: true,
       isPinnedSession: true,
     })).toEqual({
       slots: ['status', 'pin', null],
-    });
-  });
-
-  test('reserves only the pin slot for a pinned leaf session', () => {
-    expect(resolveLeadingRailLayout({
-      hasChildren: false,
-      showLeadingStatus: false,
-      isPinnedSession: true,
-    })).toEqual({
-      slots: [null, null, 'pin'],
-    });
-  });
-
-  test('keeps an unmarked leaf row empty while the fixed rail preserves title alignment', () => {
-    expect(resolveLeadingRailLayout({
-      hasChildren: false,
-      showLeadingStatus: false,
-      isPinnedSession: false,
-    })).toEqual({
-      slots: [null, null, null],
     });
   });
 });

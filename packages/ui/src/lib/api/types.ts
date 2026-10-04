@@ -932,6 +932,11 @@ export interface OpenCodeStorageRunSummary {
   dryRun: boolean;
   status: 'ok' | 'skipped' | 'error';
   schema?: 'ok' | 'mismatch' | 'unknown';
+  /** Which OpenCode generation wrote the database (2 is never maintained). */
+  generation?: 1 | 2 | 'unknown';
+  /** How the database was selected: the recorded runtime selection, or the legacy newest-file guess. */
+  dbSource?: 'selection' | 'legacy-newest';
+  runtimeGeneration?: 1 | 2 | null;
   driver?: string | null;
   durationMs: number;
   deletedEvents: number;
@@ -959,6 +964,9 @@ export interface OpenCodeStorageMaintenanceSettings {
 
 export interface OpenCodeStorageStatus {
   dbPath: string;
+  dbSource?: 'selection' | 'legacy-newest';
+  runtimeGeneration?: 1 | 2 | null;
+  generation?: 1 | 2 | 'unknown';
   exists: boolean;
   schema: 'ok' | 'mismatch' | 'unknown';
   dbBytes: number;

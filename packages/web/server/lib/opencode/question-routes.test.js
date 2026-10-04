@@ -1,7 +1,14 @@
+import { createNativeConsumerFixture } from './test-native-consumer-client.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 
+import { createLoopbackOpenCodeFixtureForGeneration } from '../../../../../scripts/perf/loopback-opencode-fixtures.mjs';
+import { PERF_CHILD_SESSION_IDS } from '../../../../../scripts/perf/fixture-session-seeds.mjs';
 import request from '../../test-supertest.js';
+import { createOpenCodeClient } from './opencode-client/index.js';
 import { registerQuestionRoutes } from './question-routes.js';
 
 const buildQuestion = (id, sessionID, label = id) => ({
@@ -43,6 +50,7 @@ const createApp = ({
 
   registerQuestionRoutes(app, {
     cursorSdkRuntime,
+    openCodeClient: createNativeConsumerFixture({ readFixture: fetchImpl, headers: () => ({ Authorization: 'Bearer upstream' }) }),
     buildOpenCodeUrl: (path) => `http://opencode.test${path}`,
     getOpenCodeAuthHeaders: () => ({ Authorization: 'Bearer upstream' }),
     fetchImpl,
@@ -146,7 +154,7 @@ describe('question routes', () => {
     });
 
     const response = await request(app).get('/api/question').expect(503);
-    expect(response.body).toEqual({ error: 'warming up' });
+    expect(response.body).toEqual({ error: 'Native fixture request refused', code: 'opencode_http_error' });
   });
 
   it('handles Cursor replies locally and leaves event publication to the runtime', async () => {
@@ -250,7 +258,7 @@ describe('question routes', () => {
       const target = String(url);
       if (target.startsWith('http://opencode.test/question?')) return json([toolQuestion]);
       if (target.startsWith('http://opencode.test/session/status')) {
-        expect(target).toBe('http://opencode.test/session/status?directory=%2Frepo');
+        expect(target).toBe('http://opencode.test/session/status');
         return json(statuses);
       }
       throw new Error(`unexpected upstream call ${target}`);
@@ -350,4 +358,179 @@ describe('question routes', () => {
 
     expect(slowRequestLogCalls(logger)).toHaveLength(0);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Generation 2: OpenCode questions are forms behind the client's interaction
+// projection (DESIGN.md B.6, E item 13c).
+
+describe('question routes (generation 2)', () => {
+  const clientError = (statusCode, code, message = `failed (${statusCode})`) => Object.assign(new Error(message), { statusCode, code });
+  const unexpectedFetch = vi.fn(async (url) => { throw new Error(`unexpected raw fetch ${url}`); });
+
+  const createFakeClient = ({ questions = [], statuses = {}, reply = async () => true } = {}) => ({
+    generation: () => 2,
+    interaction: {
+      questions: {
+        list: vi.fn(async () => {
+          if (questions instanceof Error) throw questions;
+          return questions;
+        }),
+        reply: vi.fn(reply),
+        reject: vi.fn(async () => true),
+      },
+    },
+    sessions: {
+      status: vi.fn(async () => {
+        if (statuses instanceof Error) throw statuses;
+        return statuses;
+      }),
+    },
+  });
+
+  const createV2App = ({ openCodeClient, cursorQuestions = [], upstreamTimeoutMs } = {}) => {
+    const app = express();
+    app.use(express.json());
+    const logger = { warn: vi.fn(), error: vi.fn() };
+    registerQuestionRoutes(app, {
+      cursorSdkRuntime: {
+        listPendingQuestions: vi.fn(() => cursorQuestions),
+        replyToQuestion: vi.fn(async () => false),
+        rejectQuestion: vi.fn(async () => false),
+      },
+      buildOpenCodeUrl: (path) => `http://opencode.test${path}`,
+      fetchImpl: unexpectedFetch,
+      openCodeClient,
+      logger,
+      upstreamTimeoutMs,
+    });
+    app.post('/api/question/:requestID/reply', (_req, res) => res.json({ upstream: 'reply' }));
+    app.post('/api/question/:requestID/reject', (_req, res) => res.json({ upstream: 'reject' }));
+    return { app, logger };
+  };
+
+  it('lists projected form questions through the client and merges Cursor questions', async () => {
+    const client = createFakeClient({ questions: [buildQuestion('frm_open', 'ses_open')] });
+    const { app } = createV2App({ openCodeClient: client, cursorQuestions: [buildQuestion('req_cursor', 'ses_cursor')] });
+
+    const response = await request(app).get('/api/question?directory=/repo').expect(200);
+
+    expect(response.body.map((entry) => entry.id)).toEqual(['frm_open', 'req_cursor']);
+    expect(client.interaction.questions.list).toHaveBeenCalledWith({ directory: '/repo' }, { signal: expect.any(AbortSignal) });
+    expect(unexpectedFetch).not.toHaveBeenCalled();
+  });
+
+  it('keeps the client status and typed code when the listing fails and Cursor has nothing', async () => {
+    const client = createFakeClient({ questions: clientError(400, 'opencode_location_required', 'questions.list: location required') });
+    const { app } = createV2App({ openCodeClient: client });
+
+    const response = await request(app).get('/api/question').expect(400);
+    expect(response.body).toEqual({ error: 'questions.list: location required', code: 'opencode_location_required' });
+
+    const partial = createV2App({ openCodeClient: createFakeClient({ questions: clientError(503, 'opencode_unavailable') }),
+      cursorQuestions: [buildQuestion('req_cursor', 'ses_cursor')] });
+    const merged = await request(partial.app).get('/api/question?directory=/repo').expect(200);
+    expect(merged.headers['x-devryan-question-partial']).toBe('opencode');
+    expect(merged.body.map((entry) => entry.id)).toEqual(['req_cursor']);
+  });
+
+  it('bounds a stalled client listing with the upstream budget', async () => {
+    let observedAbort = false;
+    const client = createFakeClient();
+    client.interaction.questions.list = vi.fn((_query, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => { observedAbort = true; reject(signal.reason); }, { once: true });
+    }));
+    const { app } = createV2App({ openCodeClient: client, upstreamTimeoutMs: 10 });
+
+    const response = await request(app).get('/api/question?directory=/repo').expect(502);
+    expect(observedAbort).toBe(true);
+    expect(response.body).toEqual({ error: 'OpenCode question listing is unavailable' });
+  });
+
+  it('refuses an orphaned reply from all active sessions and forwards a live one', async () => {
+    const question = buildQuestion('frm_open', 'ses_open');
+    const orphan = createFakeClient({ questions: [question], statuses: { ses_other: { type: 'busy' } } });
+    const refused = await request(createV2App({ openCodeClient: orphan }).app)
+      .post('/api/question/frm_open/reply?directory=/repo').send({ answers: [['A']] }).expect(409);
+    expect(refused.body).toMatchObject({ code: 'question_orphaned' });
+    // Every active session is read, never a directory-filtered map.
+    expect(orphan.sessions.status).toHaveBeenCalledWith({}, { signal: expect.any(AbortSignal) });
+    expect(orphan.interaction.questions.reply).not.toHaveBeenCalled();
+
+    for (const type of ['busy', 'retry']) {
+      const live = createFakeClient({ questions: [question], statuses: { ses_open: { type } } });
+      const forwarded = await request(createV2App({ openCodeClient: live }).app)
+        .post('/api/question/frm_open/reply?directory=/repo').send({ answers: [['A']] }).expect(200);
+      expect(forwarded.body).toEqual({ upstream: 'reply' });
+    }
+
+    const unknown = createFakeClient({ questions: [question], statuses: clientError(503, 'opencode_unavailable') });
+    const failOpen = await request(createV2App({ openCodeClient: unknown }).app)
+      .post('/api/question/frm_open/reply?directory=/repo').send({ answers: [['A']] }).expect(200);
+    expect(failOpen.body).toEqual({ upstream: 'reply' });
+  });
+
+  it('skips through a client reply with one best-judgment answer per question', async () => {
+    const question = {
+      ...buildQuestion('frm_open', 'ses_open'),
+      questions: [...buildQuestion('frm_open', 'ses_open').questions, ...buildQuestion('frm_open', 'ses_open', 'second').questions],
+    };
+    const client = createFakeClient({ questions: [question] });
+
+    const response = await request(createV2App({ openCodeClient: client }).app).post('/api/question/frm_open/reject?directory=/repo').expect(200);
+
+    expect(response.body).toBe(true);
+    expect(client.interaction.questions.reply).toHaveBeenCalledWith('frm_open', {
+      answers: [
+        ['Skip: continue using your best judgment and explicitly state the assumption you made.'],
+        ['Skip: continue using your best judgment and explicitly state the assumption you made.'],
+      ],
+    }, { directory: '/repo', sessionID: 'ses_open' });
+  });
+
+  it('falls through to the plain reject when the form cannot take free text, and reports other failures', async () => {
+    const question = buildQuestion('frm_open', 'ses_open');
+    const fixedOptions = createFakeClient({ questions: [question], reply: async () => { throw clientError(400, 'opencode_invalid_input'); } });
+    const fallThrough = await request(createV2App({ openCodeClient: fixedOptions }).app).post('/api/question/frm_open/reject?directory=/repo').expect(200);
+    expect(fallThrough.body).toEqual({ upstream: 'reject' });
+
+    const settled = createFakeClient({ questions: [question], reply: async () => { throw clientError(409, 'opencode_conflict', 'already settled'); } });
+    const conflict = await request(createV2App({ openCodeClient: settled }).app).post('/api/question/frm_open/reject?directory=/repo').expect(409);
+    expect(conflict.body).toEqual({ error: 'already settled', code: 'opencode_conflict' });
+
+    const unknown = await request(createV2App({ openCodeClient: createFakeClient() }).app).post('/api/question/frm_missing/reject').expect(200);
+    expect(unknown.body).toEqual({ upstream: 'reject' });
+  });
+
+  it('serves the routes against the gen-2 fixture through the real client', async () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'devryan-question-routes-'));
+    const fixture = await createLoopbackOpenCodeFixtureForGeneration(2, { directory, heartbeatMs: 50 });
+    try {
+      const openCodeClient = createOpenCodeClient({
+        getRuntime: () => ({ generation: 2, baseUrl: fixture.origin }),
+        getAuthHeaders: () => ({ ...fixture.authHeaders }),
+      });
+      const { app } = createV2App({ openCodeClient, upstreamTimeoutMs: 5_000 });
+      const [sessionID] = PERF_CHILD_SESSION_IDS;
+      const formID = fixture.askQuestion(sessionID);
+      const query = `directory=${encodeURIComponent(directory)}`;
+
+      const listed = await request(app).get(`/api/question?${query}`).expect(200);
+      expect(listed.body).toEqual([expect.objectContaining({ id: formID, sessionID })]);
+      expect(listed.body[0].questions[0]).toMatchObject({ question: 'Which implementation should be used?', custom: true });
+
+      // The fixture session runs no turn, so a reply would be lost.
+      const orphaned = await request(app).post(`/api/question/${formID}/reply?${query}`).send({ answers: [['Sort by priority']] }).expect(409);
+      expect(orphaned.body.code).toBe('question_orphaned');
+
+      await request(app).post(`/api/question/${formID}/reject?${query}`).expect(200);
+      const recorded = fixture.getState().replies.filter((reply) => reply.type === 'question');
+      expect(recorded).toEqual([expect.objectContaining({ requestID: formID, sessionID,
+        answers: [['Skip: continue using your best judgment and explicitly state the assumption you made.']] })]);
+      expect((await request(app).get(`/api/question?${query}`).expect(200)).body).toEqual([]);
+    } finally {
+      await fixture.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

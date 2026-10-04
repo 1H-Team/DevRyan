@@ -14,7 +14,7 @@ import {
 } from "./input-store"
 import { getSessionComposerTargetKey } from "./composer-target"
 import type { ChildStoreManager, DirectoryStore } from "./child-store"
-import { opencodeClient } from "@/lib/opencode/client"
+import { InputSubscriptionUnavailableError, opencodeClient } from "@/lib/opencode/client"
 import {
   beginGlobalSessionMembershipMutation,
   queueGlobalSessionsRefreshAfterMutation,
@@ -46,6 +46,7 @@ import { isQuestionOrphanedError } from "./question-orphan"
 import { abortSourceHeaders, type AbortSource } from "./abort-source"
 import { isTransientError, retry } from "./retry"
 import { getSdkErrorMessage } from "@/lib/opencode/sdk-error"
+import { resolveRuntimeCapability } from "@/lib/opencode/runtime-capabilities"
 import { useManagedOrchestrationStore } from "@/stores/useManagedOrchestrationStore"
 import { createClientMessageId } from "./client-message-id"
 import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
@@ -1681,6 +1682,8 @@ export async function updateSessionTitle(sessionId: string, title: string): Prom
 }
 
 export async function shareSession(sessionId: string): Promise<Session | null> {
+  // Gen 2 has no share route (DESIGN C.5); report failure without a request.
+  if (!(await resolveRuntimeCapability("share"))) return null
   const sessionDirectory = getSessionDirectory(sessionId)
   const result = await sdk().session.share({ sessionID: sessionId, directory: sessionDirectory })
   if (result.data) {
@@ -1690,6 +1693,7 @@ export async function shareSession(sessionId: string): Promise<Session | null> {
 }
 
 export async function unshareSession(sessionId: string): Promise<Session | null> {
+  if (!(await resolveRuntimeCapability("share"))) return null
   const sessionDirectory = getSessionDirectory(sessionId)
   const result = await sdk().session.unshare({ sessionID: sessionId, directory: sessionDirectory })
   if (result.data) {
@@ -1910,6 +1914,7 @@ export async function optimisticSend(input: {
     // not release the composer's newer explicit intent. Failures keep it too.
     useSelectionStore.getState().consumeSessionModelSelectionIntent(input.sessionId, manualSelection, input)
   } catch (error) {
+    if (error instanceof InputSubscriptionUnavailableError && error.knownBeforeTransport) transportGateFailed = true
     // Rollback via optimistic infrastructure
     if (optimisticAssistantMessage) {
       _optimisticRemove({
@@ -1939,7 +1944,9 @@ export async function optimisticSend(input: {
         // state, so restore that instead of masking a live busy/retry with idle.
         [input.sessionId]: transportGateFailed && statusBeforeSend
           ? statusBeforeSend
-          : { type: "idle" as const },
+          : error instanceof InputSubscriptionUnavailableError && !error.knownBeforeTransport
+            ? s.session_status[input.sessionId] ?? { type: "busy" as const }
+            : { type: "idle" as const },
       },
     })
     throw error

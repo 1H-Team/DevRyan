@@ -250,6 +250,13 @@ export const validateManagedTaskResultEnvelope = (envelope) => {
   if (envelope.providerResetAt !== undefined) {
     assertNullableTimestamp(envelope.providerResetAt, 'result providerResetAt');
   }
+  if (envelope.promptObserved !== undefined) {
+    const observed = envelope.promptObserved;
+    if (!isRecord(observed) || !Number.isSafeInteger(observed.attempt) || observed.attempt !== envelope.attempt
+      || !Number.isSafeInteger(observed.sequence) || observed.sequence < 1 || observed.sequence > envelope.sequence)
+      throw new TypeError('result promptObserved must bind its exact terminal attempt and sequence');
+    assertTimestamp(observed.observedAt, 'result promptObserved.observedAt');
+  }
   if (envelope.autoResume !== undefined) {
     validateManagedTaskAutoResume(envelope.autoResume);
   }

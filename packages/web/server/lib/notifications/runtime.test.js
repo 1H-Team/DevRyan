@@ -1,6 +1,12 @@
+import { createNativeConsumerFixture } from '../opencode/test-native-consumer-client.js';
+const createNotificationTriggerRuntime = (options = {}) => createNotificationTriggerRuntimeNative({
+  ...options, openCodeClient: options.openCodeClient ?? createNativeConsumerFixture({
+    readFixture: options.fetchImpl ?? ((...args) => globalThis.fetch(...args)), headers: options.getOpenCodeAuthHeaders,
+  }),
+});
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createNotificationTriggerRuntime } from './runtime.js';
+import { createNotificationTriggerRuntime as createNotificationTriggerRuntimeNative } from './runtime.js';
 import { createNotificationTemplateRuntime } from './template-runtime.js';
 
 const createCompletionPayload = (overrides = {}) => ({
@@ -190,7 +196,7 @@ const createRuntime = (settings = {}, options = {}) => {
     extractLastMessageText: mocks.extractLastMessageText,
     fetchSessionMessages: mocks.fetchSessionMessages,
     fetchSessionInfo: mocks.fetchSessionInfo,
-    fetchSessionMessage: mocks.fetchSessionMessage,
+    fetchSessionMessage: options.fetchSessionMessage === null ? undefined : mocks.fetchSessionMessage,
     fetchLastAssistantMessageText: mocks.fetchLastAssistantMessageText,
     resolveNotificationTemplate: mocks.resolveNotificationTemplate,
     shouldApplyResolvedTemplateMessage: mocks.shouldApplyResolvedTemplateMessage,
@@ -200,11 +206,44 @@ const createRuntime = (settings = {}, options = {}) => {
     buildOpenCodeUrl: (path) => path,
     getOpenCodeAuthHeaders: () => ({}),
     completionSettleMs: options.completionSettleMs ?? 0,
+    ...(options.openCodeClient ? { openCodeClient: options.openCodeClient } : {}),
     ...(mocks.getIsWindowFocused ? { getIsWindowFocused: mocks.getIsWindowFocused } : {}),
   });
 
   return { runtime, calls, mocks };
 };
+
+it('checkpoint clears pending notification timers and rejects later event admission', async () => {
+  vi.useFakeTimers();
+  const { runtime, calls } = createRuntime();
+  const question = { type: 'question.asked', properties: { sessionID: 'ses_1', questions: [{ question: 'Continue?' }] } };
+  await runtime.maybeSendPushForTrigger(question);
+  await runtime.holdForCheckpoint();
+  await runtime.maybeSendPushForTrigger(question);
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect(calls.desktop).toHaveLength(0); expect(calls.push).toHaveLength(0);
+});
+
+it('checkpoint waits the actual admitted notification push after its debounce timer has fired', async () => {
+  vi.useFakeTimers();
+  const { runtime, mocks } = createRuntime(); let release;
+  mocks.sendPushToAllUiSessions.mockImplementation(() => new Promise(resolve => { release = resolve; }));
+  await runtime.maybeSendPushForTrigger({ type: 'question.asked', properties: { sessionID: 'ses_1', questions: [{ question: 'Continue?' }] } });
+  await vi.advanceTimersByTimeAsync(500);
+  expect(mocks.sendPushToAllUiSessions).toHaveBeenCalledOnce();
+  let drained = false; const drain = runtime.holdForCheckpoint().then(() => { drained = true; });
+  await Promise.resolve(); expect(drained).toBe(false);
+  release(); await drain; expect(drained).toBe(true);
+});
+
+it('checkpoint reports a failed admitted notification tail even after timer error handling', async () => {
+  vi.useFakeTimers();
+  const { runtime, mocks } = createRuntime();
+  mocks.sendPushToAllUiSessions.mockRejectedValue(new Error('write refused'));
+  await runtime.maybeSendPushForTrigger({ type: 'question.asked', properties: { sessionID: 'ses_1', questions: [{ question: 'Continue?' }] } });
+  await vi.advanceTimersByTimeAsync(500);
+  await expect(runtime.holdForCheckpoint()).rejects.toMatchObject({ code: 'bundle_notifications_unsettled' });
+});
 
 const completeSession = async (runtime) => {
   await runtime.maybeSendPushForTrigger(createStatusPayload('busy'));
@@ -1086,5 +1125,118 @@ describe('notification trigger runtime completion gating', () => {
     expect(calls.desktop).toHaveLength(0);
     expect(calls.ui).toHaveLength(0);
     expect(calls.push).toHaveLength(0);
+  });
+});
+
+// Gen 2 (DESIGN C.1, E item 13b): OpenCode reads go through openCodeClient.
+const createFakeOpenCodeClient = (generation, sessions = {}) => ({
+  generation: typeof generation === 'function' ? generation : () => generation,
+  sessions: {
+    get: vi.fn(async () => { throw new Error('unexpected sessions.get'); }),
+    list: vi.fn(async () => []),
+    message: vi.fn(async () => { throw new Error('unexpected sessions.message'); }),
+    ...sessions,
+  },
+});
+
+const childPermissionPayload = {
+  type: 'permission.asked',
+  properties: { sessionID: 'ses_child', id: 'perm_child', permission: 'external_directory', patterns: ['/workspace/**'] },
+};
+
+describe('notification trigger runtime on OpenCode 2 (openCodeClient)', () => {
+  it('walks the auto-accept parent chain through the client', async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const openCodeClient = createFakeOpenCodeClient(2, {
+      get: vi.fn(async (sessionId) => (sessionId === 'ses_child'
+        ? { id: 'ses_child', title: 'Child', parentID: 'ses_parent' }
+        : { id: sessionId, title: 'Root' })),
+    });
+    const { runtime, calls } = createRuntime({ notifyOnPermission: true }, { openCodeClient });
+    runtime.setAutoAcceptSession('ses_parent', true);
+
+    await runtime.maybeSendPushForTrigger(childPermissionPayload);
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(openCodeClient.sessions.get).toHaveBeenCalledWith('ses_child', { timeoutMs: 2000 });
+    expect(calls.desktop).toHaveLength(0);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the client session list when the specific read fails', async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const openCodeClient = createFakeOpenCodeClient(2, {
+      get: vi.fn(async () => { throw Object.assign(new Error('unavailable'), { statusCode: 503 }); }),
+      list: vi.fn(async () => [{ id: 'ses_child', parentID: 'ses_parent' }, { id: 'ses_parent' }]),
+    });
+    const { runtime, calls } = createRuntime({ notifyOnPermission: true }, { openCodeClient });
+    runtime.setAutoAcceptSession('ses_parent', true);
+
+    await runtime.maybeSendPushForTrigger(childPermissionPayload);
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(openCodeClient.sessions.list).toHaveBeenCalledWith({}, { timeoutMs: 2000 });
+    expect(calls.desktop).toHaveLength(0);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('verifies a plan revision parent through the client message read', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const openCodeClient = createFakeOpenCodeClient(2, {
+      message: vi.fn(async (sessionId, messageId) => ({
+        info: { id: messageId, sessionID: sessionId, role: 'user', mode: 'plan' },
+        parts: [{ type: 'text', text: 'Make a plan.' }],
+      })),
+    });
+    const { runtime, calls } = createRuntime({}, { messages: createPlanMessages(), openCodeClient, fetchSessionMessage: null });
+
+    await completePlanSession(runtime);
+
+    expect(openCodeClient.sessions.message).toHaveBeenCalledWith('ses_1', 'user_plan_1', { timeoutMs: 2000 });
+    expect(calls.desktop).toHaveLength(1);
+    expect(calls.desktop[0].kind).toBe('plan-ready');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('refuses generation 1 without a request', async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 'ses_child', parentID: 'ses_parent' }),
+    });
+    const openCodeClient = createFakeOpenCodeClient(1);
+    const { runtime, calls } = createRuntime({ notifyOnPermission: true }, { openCodeClient });
+    runtime.setAutoAcceptSession('ses_parent', true);
+
+    await runtime.maybeSendPushForTrigger(childPermissionPayload);
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(openCodeClient.sessions.get).not.toHaveBeenCalled();
+    // Unknown lineage must not borrow the parent's auto-accept preference.
+    expect(calls.desktop).toHaveLength(1);
+    expect(calls.desktop[0].kind).toBe('permission');
+  });
+
+  it('sends no OpenCode request when the client generation is unknown (fail closed)', async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const openCodeClient = createFakeOpenCodeClient(() => {
+      throw Object.assign(new Error('The OpenCode runtime generation is unknown'), { statusCode: 503 });
+    });
+    const { runtime, calls } = createRuntime({ notifyOnPermission: true }, { openCodeClient });
+    runtime.setAutoAcceptSession('ses_parent', true);
+
+    await runtime.maybeSendPushForTrigger(childPermissionPayload);
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(openCodeClient.sessions.get).not.toHaveBeenCalled();
+    expect(openCodeClient.sessions.list).not.toHaveBeenCalled();
+    // The lineage is unknown, so the child is not treated as auto-accepting.
+    expect(calls.desktop).toHaveLength(1);
+    expect(calls.desktop[0].kind).toBe('permission');
   });
 });

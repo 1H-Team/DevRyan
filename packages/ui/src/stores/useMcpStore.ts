@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { devtools } from './utils/devtoolsGate';
 import type { McpStatus } from '@opencode-ai/sdk/v2';
 import { opencodeClient } from '@/lib/opencode/client';
+import { assertRuntimeCapability } from '@/lib/opencode/runtime-capabilities';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { getSafeStorage } from '@/stores/utils/safeStorage';
 
@@ -299,6 +300,8 @@ export const useMcpStore = create<McpStore>()(
       },
 
       startAuth: async (name, directory) => {
+        // Gen 2 has no MCP OAuth route (DESIGN C.5): fail before any request.
+        await assertRuntimeCapability('mcpOAuth');
         const normalized = normalizeDirectory(directory ?? useDirectoryStore.getState().currentDirectory);
         const api = getMcpApiClient(normalized);
         const result = await api.mcp.auth.start({ name }, { throwOnError: true });
@@ -312,6 +315,7 @@ export const useMcpStore = create<McpStore>()(
       },
 
       completeAuth: async (name, code, directory) => {
+        await assertRuntimeCapability('mcpOAuth');
         const normalized = normalizeDirectory(directory ?? useDirectoryStore.getState().currentDirectory);
         const api = getMcpApiClient(normalized);
         await api.mcp.auth.callback({ name, code }, { throwOnError: true });
@@ -319,6 +323,7 @@ export const useMcpStore = create<McpStore>()(
       },
 
       clearAuth: async (name, directory) => {
+        await assertRuntimeCapability('mcpOAuth');
         const normalized = normalizeDirectory(directory ?? useDirectoryStore.getState().currentDirectory);
         const api = getMcpApiClient(normalized);
         await api.mcp.auth.remove({ name }, { throwOnError: true });

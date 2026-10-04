@@ -36,6 +36,7 @@ import {
   resetDirectorySessionLifecycleOverlaysForTest,
   resetSessionMaterializationStateForTest,
   restorePersistedSessionIndicatorsForDirectory,
+  resyncDirectoryAfterReconnect,
   setActiveSession,
   setExternallyViewedSession,
 } from "./sync-context"
@@ -4079,4 +4080,190 @@ describe("sync plan lifecycle on message.part.delta", () => {
     expect(childStores.getChild(remoteDirectory)).toBe(undefined)
     expect(useGlobalSessionsStore.getState().archivedSessions).toEqual([])
   })
+})
+
+
+describe("reconnect snapshot lifetime", () => {
+  for (const scenario of ["omitted idle", "malformed map", "new busy during status", "same busy during status", "new busy during history", "same idle during status", "evicted observation"] as const) {
+    test(`active-only status snapshot respects live recovery fences: ${scenario}`, async () => {
+      resetDirectorySessionLifecycleOverlaysForTest()
+      const childStores = new ChildStoreManager()
+      const store = childStores.ensureChild(DIRECTORY)
+      const session = { id: `ses_status_snapshot_${scenario}`, title: "status", time: { created: 1, updated: 2 } } as Session
+      store.setState({ ...INITIAL_STATE, session: [session], sessionTotal: 1,
+        session_status: { [session.id]: { type: scenario === "new busy during status" || scenario === "same idle during status" ? "idle" : "busy" } } })
+      const initialStatuses = store.getState().session_status
+      const originalNow = Date.now
+      if (scenario === "same busy during status" || scenario === "same idle during status") Date.now = () => 100
+      const routingIndex = { sessionDirectoryById: new Map([[session.id, DIRECTORY]]),
+        messageSessionById: new Map<string, string>(), sessionMessageIdsById: new Map<string, Set<string>>() }
+      if (scenario === "same busy during status") {
+        applySyncEventForTest(DIRECTORY, { type: "session.status", properties: {
+          sessionID: session.id, status: { type: "busy" },
+        } } as Event, childStores, routingIndex)
+      }
+      let finish!: () => void
+      let started!: () => void
+      const begun = new Promise<void>(resolve => { started = resolve })
+      const held = new Promise<void>(resolve => { finish = resolve })
+      const original = opencodeClient.getScopedSdkClient
+      const questions = opencodeClient.listPendingQuestions
+      const permissions = opencodeClient.listPendingPermissions
+      Object.defineProperty(opencodeClient, "getScopedSdkClient", { configurable: true, value: () => ({ session: {
+        status: async () => {
+          if (scenario.endsWith("during status") || scenario === "evicted observation") { started(); await held }
+          return { data: scenario === "malformed map" ? { unrelated: { type: "unknown" } }
+            : scenario === "same idle during status" ? { [session.id]: { type: "busy" } } : {} }
+        },
+        get: async () => {
+          if (scenario === "new busy during history") { started(); await held }
+          return { data: session }
+        },
+        messages: async () => ({ data: [] }),
+      } }) })
+      opencodeClient.listPendingQuestions = async () => []
+      opencodeClient.listPendingPermissions = async () => []
+      try {
+        const request = resyncDirectoryAfterReconnect(DIRECTORY, store, routingIndex, { candidateSessionIds: [session.id] })
+        if (scenario.startsWith("new busy") || scenario.endsWith("during status") || scenario === "evicted observation") {
+          await begun
+          if (scenario === "same idle during status") {
+            applySyncEventForTest(DIRECTORY, { type: "session.idle", properties: { sessionID: session.id } } as Event, childStores, routingIndex)
+          } else applySyncEventForTest(DIRECTORY, { type: "session.status", properties: {
+            sessionID: session.id, status: { type: "busy" },
+          } } as Event, childStores, routingIndex)
+          if (scenario === "evicted observation") {
+            for (let index = 0; index < 501; index += 1) {
+              applySyncEventForTest(DIRECTORY, { type: "session.status", properties: {
+                sessionID: `ses_unrelated_status_${index}`, status: { type: "busy" },
+              } } as Event, childStores, routingIndex)
+            }
+          }
+          finish()
+        }
+        await request
+        expect(store.getState().session_status[session.id]).toEqual({ type: scenario === "omitted idle" || scenario === "same idle during status" ? "idle" : "busy" })
+        if (scenario === "malformed map") expect(store.getState().session_status).toBe(initialStatuses)
+      } finally {
+        Date.now = originalNow
+        finish?.()
+        Object.defineProperty(opencodeClient, "getScopedSdkClient", { configurable: true, value: original })
+        opencodeClient.listPendingQuestions = questions
+        opencodeClient.listPendingPermissions = permissions
+      }
+    })
+  }
+
+  for (const recreated of [false, true]) {
+  test(`late reconnect cannot restore deleted or recreated session (recreated=${recreated})`, async () => {
+    resetDirectorySessionLifecycleOverlaysForTest()
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    const session = { id: "ses_reseed_deleted", title: "old", time: { created: 1, updated: 2 } } as Session
+    store.setState({ ...INITIAL_STATE, session: [session], sessionTotal: 1 })
+    const routingIndex = { sessionDirectoryById: new Map([[session.id, DIRECTORY]]),
+      messageSessionById: new Map<string, string>(), sessionMessageIdsById: new Map<string, Set<string>>() }
+    let finish!: (result: { data: Session }) => void
+    let started!: () => void
+    const begun = new Promise<void>(resolve => { started = resolve })
+    const pending = new Promise<{ data: Session }>(resolve => { finish = resolve })
+    const original = opencodeClient.getScopedSdkClient
+    Object.defineProperty(opencodeClient, "getScopedSdkClient", { configurable: true, value: () => ({ session: {
+      status: async () => ({ data: {} }), get: () => { started(); return pending }, messages: async () => ({ data: [] }),
+    } }) })
+    try {
+      const request = resyncDirectoryAfterReconnect(DIRECTORY, store, routingIndex, { candidateSessionIds: [session.id] })
+      await begun
+      applySyncEventForTest(DIRECTORY, { type: "session.deleted", properties: { sessionID: session.id, info: session } } as Event, childStores, routingIndex)
+      const replacement = { ...session, title: "new lifetime", time: { created: 3, updated: 4 } }
+      if (recreated) applySyncEventForTest(DIRECTORY, { type: "session.created", properties: { info: replacement } } as Event, childStores, routingIndex)
+      finish({ data: session })
+      await request
+      expect(store.getState().session.find(item => item.id === session.id)?.title).toBe(recreated ? "new lifetime" : undefined)
+      expect(store.getState().message[session.id]).toBeUndefined()
+    } finally {
+      Object.defineProperty(opencodeClient, "getScopedSdkClient", { configurable: true, value: original })
+    }
+  })
+  }
+
+  test("overlapping reconnect reads keep the newer snapshot", async () => {
+    resetDirectorySessionLifecycleOverlaysForTest()
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    const session = { id: "ses_reseed_overlap", title: "before", time: { created: 1, updated: 2 } } as Session
+    store.setState({ ...INITIAL_STATE, session: [session], sessionTotal: 1 })
+    const routingIndex = { sessionDirectoryById: new Map([[session.id, DIRECTORY]]),
+      messageSessionById: new Map<string, string>(), sessionMessageIdsById: new Map<string, Set<string>>() }
+    let finishOld!: (result: { data: Session }) => void
+    let started!: () => void
+    const begun = new Promise<void>(resolve => { started = resolve })
+    const oldResult = new Promise<{ data: Session }>(resolve => { finishOld = resolve })
+    const original = opencodeClient.getScopedSdkClient
+    const questions = opencodeClient.listPendingQuestions
+    const permissions = opencodeClient.listPendingPermissions
+    let reads = 0
+    Object.defineProperty(opencodeClient, "getScopedSdkClient", { configurable: true, value: () => ({ session: {
+      status: async () => ({ data: {} }), get: () => ++reads === 1 ? (started(), oldResult)
+        : Promise.resolve({ data: { ...session, title: "new snapshot", time: { created: 1, updated: 4 } } }),
+      messages: async () => ({ data: [] }),
+    } }) })
+    opencodeClient.listPendingQuestions = async () => []
+    opencodeClient.listPendingPermissions = async () => []
+    try {
+      const old = resyncDirectoryAfterReconnect(DIRECTORY, store, routingIndex, { candidateSessionIds: [session.id] })
+      await begun
+      await resyncDirectoryAfterReconnect(DIRECTORY, store, routingIndex, { candidateSessionIds: [session.id] })
+      finishOld({ data: session })
+      await old
+      expect(store.getState().session[0].title).toBe("new snapshot")
+    } finally {
+      Object.defineProperty(opencodeClient, "getScopedSdkClient", { configurable: true, value: original })
+      opencodeClient.listPendingQuestions = questions
+      opencodeClient.listPendingPermissions = permissions
+    }
+  })
+})
+
+
+test("reconnect snapshots preserve message and part updates delivered while REST is pending", async () => {
+  resetDirectorySessionLifecycleOverlaysForTest()
+  const childStores = new ChildStoreManager()
+  const store = childStores.ensureChild(DIRECTORY)
+  const session = { id: SESSION_ID, title: "stream", time: { created: 1, updated: 2 } } as Session
+  const message = assistantMessage()
+  const part = { id: PART_ID, sessionID: SESSION_ID, messageID: ASSISTANT_MESSAGE_ID, type: "text", text: "before" } as Part
+  store.setState({ ...INITIAL_STATE, session: [session], sessionTotal: 1,
+    message: { [SESSION_ID]: [message] }, part: { [ASSISTANT_MESSAGE_ID]: [part] } })
+  const routingIndex = { sessionDirectoryById: new Map([[SESSION_ID, DIRECTORY]]),
+    messageSessionById: new Map([[ASSISTANT_MESSAGE_ID, SESSION_ID]]), sessionMessageIdsById: new Map([[SESSION_ID, new Set([ASSISTANT_MESSAGE_ID])]]) }
+  let finish!: (result: { data: Array<{ info: Message; parts: Part[] }> }) => void
+  let started!: () => void
+  const begun = new Promise<void>(resolve => { started = resolve })
+  const pending = new Promise<{ data: Array<{ info: Message; parts: Part[] }> }>(resolve => { finish = resolve })
+  const original = opencodeClient.getScopedSdkClient
+  const questions = opencodeClient.listPendingQuestions
+  const permissions = opencodeClient.listPendingPermissions
+  Object.defineProperty(opencodeClient, "getScopedSdkClient", { configurable: true, value: () => ({ session: {
+    status: async () => ({ data: {} }), get: async () => ({ data: session }), messages: () => { started(); return pending },
+  } }) })
+  opencodeClient.listPendingQuestions = async () => []
+  opencodeClient.listPendingPermissions = async () => []
+  try {
+    const request = resyncDirectoryAfterReconnect(DIRECTORY, store, routingIndex, { candidateSessionIds: [SESSION_ID] })
+    await begun
+    applySyncEventForTest(DIRECTORY, { type: "message.updated", properties: { info: { ...message, time: { created: 2, completed: 9 } } } } as Event, childStores, routingIndex)
+    applySyncEventForTest(DIRECTORY, { type: "message.part.updated", properties: { part: { ...part, text: "live completed text" } } } as Event, childStores, routingIndex)
+    const liveMessage = store.getState().message[SESSION_ID][0]
+    const liveParts = store.getState().part[ASSISTANT_MESSAGE_ID]
+    finish({ data: [{ info: message, parts: [part] }] })
+    await request
+    expect(store.getState().message[SESSION_ID][0]).toBe(liveMessage)
+    expect(store.getState().part[ASSISTANT_MESSAGE_ID]).toBe(liveParts)
+    expect((liveParts[0] as Part & { text: string }).text).toBe("live completed text")
+  } finally {
+    Object.defineProperty(opencodeClient, "getScopedSdkClient", { configurable: true, value: original })
+    opencodeClient.listPendingQuestions = questions
+    opencodeClient.listPendingPermissions = permissions
+  }
 })

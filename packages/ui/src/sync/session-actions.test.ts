@@ -33,6 +33,7 @@ const mockQuestionCounts: Record<string, number> = {}
 const sessionMessageCalls: Array<Record<string, unknown>> = []
 const sessionUnrevertCalls: Array<Record<string, unknown>> = []
 const sessionForkCalls: Array<Record<string, unknown>> = []
+const sessionShareCalls: Array<{ method: "share" | "unshare"; params: Record<string, unknown> }> = []
 type ScopedRevertOptions = { scope?: "tree" | "session"; rootSessionId?: string }
 const scopedRevertCalls: Array<{ sessionId: string; messageId: string; directory?: string; options?: ScopedRevertOptions }> = []
 const scopedUnrevertCalls: Array<{ sessionId: string; directory?: string }> = []
@@ -169,6 +170,14 @@ const mockSdk = {
     fork: mock((params: Record<string, unknown>) => {
       sessionForkCalls.push(params)
       return sessionForkHandler(params)
+    }),
+    share: mock((params: Record<string, unknown>) => {
+      sessionShareCalls.push({ method: "share", params })
+      return Promise.resolve({ data: { ...makeSession(String(params.sessionID)), share: { url: "https://share.test/s" } } })
+    }),
+    unshare: mock((params: Record<string, unknown>) => {
+      sessionShareCalls.push({ method: "unshare", params })
+      return Promise.resolve({ data: makeSession(String(params.sessionID)) })
     }),
   },
   permission: {
@@ -4920,3 +4929,82 @@ describe("session tree revert", () => {
     expect(thrown instanceof Error ? thrown.message : "").toBe("server rejected revert")
   })
 })
+
+describe("share actions follow the runtime share capability", () => {
+  const ALL_ON = { share: true, mcpOAuth: true, sessionShell: true, lsp: true, messageEdit: true }
+  const ALL_OFF = { share: false, mcpOAuth: false, sessionShell: false, lsp: false, messageEdit: false }
+
+  const setHealth = async (health: unknown) => {
+    const capabilities = await import("@/lib/opencode/runtime-capabilities")
+    capabilities.resetRuntimeCapabilitiesForTests()
+    capabilities.useRuntimeCapabilityStore.setState({
+      snapshot: capabilities.parseRuntimeCapabilitySnapshot(health),
+      status: "loaded",
+    })
+    return capabilities
+  }
+
+  beforeEach(() => {
+    sessionShareCalls.length = 0
+    globalUpsertCalls.length = 0
+  })
+
+  test("an explicit gen 2 share grant uses the app API", async () => {
+    const capabilities = await setHealth({ openCode: { generation: 2, capabilities: ALL_ON } })
+    const { setActionRefs, shareSession, unshareSession } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([]), () => "/test/project")
+
+    const shared = await shareSession("session-a")
+    const unshared = await unshareSession("session-a")
+
+    expect(shared?.share?.url).toBe("https://share.test/s")
+    expect(unshared?.id).toBe("session-a")
+    expect(sessionShareCalls.map((call) => call.method)).toEqual(["share", "unshare"])
+    expect(globalUpsertCalls).toHaveLength(2)
+    capabilities.resetRuntimeCapabilitiesForTests()
+  })
+
+  test("gen 2 reports failure without a share request", async () => {
+    const capabilities = await setHealth({ openCode: { generation: 2, capabilities: ALL_OFF } })
+    const { setActionRefs, shareSession, unshareSession } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([]), () => "/test/project")
+
+    expect(await shareSession("session-a")).toBeNull()
+    expect(await unshareSession("session-a")).toBeNull()
+    expect(sessionShareCalls).toEqual([])
+    expect(globalUpsertCalls).toEqual([])
+    capabilities.resetRuntimeCapabilitiesForTests()
+  })
+})
+
+for (const knownBeforeTransport of [true, false]) {
+  test(`subscription refusal ${knownBeforeTransport ? 'preserves pre-click retry' : 'keeps earlier POST uncertainty busy'} and restores optimistic input`, async () => {
+    mockConfigStoreState = {};
+    const retryStatus: SessionStatus = { type: 'retry', attempt: 1, message: 'retrying', next: 100 };
+    const store = createStore({}, [makeSession('session-a')]);
+    store.setState({ session_status: { 'session-a': retryStatus } });
+    const childStores = createChildStores([['/test/project', store]]);
+    const { setActionRefs, setOptimisticRefs, optimisticSend } = await import('./session-actions');
+    const { applyOptimisticAdd, applyOptimisticRemove } = await import('./optimistic');
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => '/test/project');
+    setOptimisticRefs(
+      input => store.setState(state => {
+        const draft = { message: { ...state.message }, part: { ...state.part } };
+        applyOptimisticAdd(draft, input); return draft;
+      }),
+      input => store.setState(state => {
+        const draft = { message: { ...state.message }, part: { ...state.part } };
+        applyOptimisticRemove(draft, input); return draft;
+      }),
+    );
+    let rollbackID: string | undefined;
+    await expect(optimisticSend({ sessionId: 'session-a', directory: '/test/project', content: 'retained draft',
+      providerID: 'fixture', modelID: 'exact', variant: 'high',
+      onMessageRollback: id => { rollbackID = id; },
+      send: async () => { throw new actualOpencodeClientModule.InputSubscriptionUnavailableError('Not ready', false, knownBeforeTransport); },
+    })).rejects.toMatchObject({ code: 'EVENT_SUBSCRIPTION_UNAVAILABLE', knownBeforeTransport });
+    expect(rollbackID).toBeDefined();
+    expect(store.getState().message['session-a'] ?? []).toEqual([]);
+    expect(store.getState().session_status['session-a']).toEqual(knownBeforeTransport ? retryStatus : { type: 'busy' });
+  });
+}

@@ -187,6 +187,68 @@ describe("SessionMessageLoader", () => {
     expect(loader.getSnapshot(target).complete).toBe(false)
   })
 
+  test("keeps gen-2 cursors through short and empty pages to reach older history", async () => {
+    const target = { directory: "/repo/native-pages", sessionID: "session-1" }
+    const calls: Array<string | undefined> = []
+    const older = message("msg_older", "user")
+    Object.defineProperty(opencodeClient, "getScopedSdkClient", { configurable: true,
+      value: () => ({ session: { messages: async ({ before }: { before?: string }) => {
+        calls.push(before)
+        if (before === undefined) return response([], "v2:first")
+        if (before === "v2:first") return response([], "v2:second")
+        return response([older])
+      } } }) })
+    useFeatureFlagsStore.getState().setSessionFastLoadEnabled(false)
+    const stores = new ChildStoreManager()
+    const loader = new SessionMessageLoader(stores)
+    try {
+      await loader.ensure(target)
+      expect(loader.getSnapshot(target)).toMatchObject({ complete: false, cursor: "v2:first" })
+      await loader.loadOlder(target)
+      expect(loader.getSnapshot(target)).toMatchObject({ complete: false, cursor: "v2:second" })
+      await loader.loadOlder(target)
+      expect(loader.getSnapshot(target)).toMatchObject({ complete: true, cursor: undefined })
+      expect(stores.getChild(target.directory)?.getState().message[target.sessionID]).toEqual([older])
+      expect(calls).toEqual([undefined, "v2:first", "v2:second"])
+    } finally {
+      loader.dispose()
+      stores.disposeAll()
+    }
+  })
+
+  test("rejects a repeated gen-2 cursor and preserves the previous history boundary", async () => {
+    const target = { directory: "/repo/native-cursor-repeat", sessionID: "session-1" }
+    Object.defineProperty(opencodeClient, "getScopedSdkClient", { configurable: true,
+      value: () => ({ session: { messages: async () => response([], "v2:same") } }) })
+    useFeatureFlagsStore.getState().setSessionFastLoadEnabled(false)
+    const stores = new ChildStoreManager()
+    const loader = new SessionMessageLoader(stores)
+    try {
+      await loader.ensure(target)
+      await loader.loadOlder(target)
+      expect(loader.getSnapshot(target)).toMatchObject({ status: "error", complete: false, cursor: "v2:same" })
+      expect(loader.getSnapshot(target).error?.message).toBe("Session message history cursor did not advance")
+    } finally {
+      loader.dispose()
+      stores.disposeAll()
+    }
+  })
+
+  test("retains gen-1 short-page completion even when the response includes a cursor", async () => {
+    const target = { directory: "/repo/legacy-short-page", sessionID: "session-1" }
+    Object.defineProperty(opencodeClient, "getScopedSdkClient", { configurable: true,
+      value: () => ({ session: { messages: async () => response([message("msg_only", "user")], "legacy-cursor") } }) })
+    const stores = new ChildStoreManager()
+    const loader = new SessionMessageLoader(stores)
+    try {
+      await loader.ensure(target)
+      expect(loader.getSnapshot(target)).toMatchObject({ complete: true, cursor: undefined })
+    } finally {
+      loader.dispose()
+      stores.disposeAll()
+    }
+  })
+
   test("escape hatch restores a 200-message first page and disables prefetch", async () => {
     const limits: number[] = []
     Object.defineProperty(opencodeClient, "getScopedSdkClient", {

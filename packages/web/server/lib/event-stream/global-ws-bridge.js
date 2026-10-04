@@ -23,6 +23,7 @@ export function createGlobalMessageStreamWsBridge({
 }) {
   const clients = new Set();
   const clientLastEventIds = new Map();
+  const clientUnanchoredReplay = new Map();
   const readyClients = new Set();
   const clientPrincipals = new Map();
   const clientQueues = new Map();
@@ -34,6 +35,7 @@ export function createGlobalMessageStreamWsBridge({
     clientTimers.delete(socket);
     clients.delete(socket);
     clientLastEventIds.delete(socket);
+    clientUnanchoredReplay.delete(socket);
     readyClients.delete(socket);
     clientPrincipals.delete(socket);
     clientQueues.delete(socket);
@@ -45,8 +47,9 @@ export function createGlobalMessageStreamWsBridge({
   };
 
   const replayEvents = (socket, requestedLastEventId) => {
-    const { events, gap } = globalHub.replayAfter(requestedLastEventId);
-    if (gap && requestedLastEventId) {
+    const unanchored = !requestedLastEventId && clientUnanchoredReplay.get(socket) === true;
+    const { events, gap } = globalHub.replayAfter(requestedLastEventId, { unanchored });
+    if (gap && (requestedLastEventId || unanchored)) {
       // Best-effort warning: the client's lastEventId rolled out of the
       // server-side buffer. The client should treat its cached directory
       // state as potentially stale and force a resync, but we still flush
@@ -117,6 +120,15 @@ export function createGlobalMessageStreamWsBridge({
   });
 
   const unsubscribeStatus = globalHub.subscribeStatus((status) => {
+    if (status.type === 'disconnect') {
+      // A ready socket no longer proves an upstream subscription. Reconnect
+      // through the same hub rather than admitting prompts on stale readiness.
+      for (const socket of Array.from(clients)) {
+        removeClient(socket);
+        try { socket.close(1012, 'OpenCode event stream disconnected'); } catch { /* Already closed. */ }
+      }
+      return;
+    }
     if (status.type === 'connect') {
       for (const socket of Array.from(clients)) {
         if (!readyClients.has(socket)) {
@@ -150,7 +162,7 @@ export function createGlobalMessageStreamWsBridge({
     }
   });
 
-  const accept = (socket, { requestedLastEventId = '', principal = null } = {}) => {
+  const accept = (socket, { requestedLastEventId = '', unanchoredReplay = false, principal = null } = {}) => {
     const pingInterval = setInterval(() => {
       if (socket.readyState !== 1) {
         return;
@@ -187,6 +199,7 @@ export function createGlobalMessageStreamWsBridge({
     clients.add(socket);
     clientPrincipals.set(socket, principal);
     clientLastEventIds.set(socket, requestedLastEventId);
+    clientUnanchoredReplay.set(socket, unanchoredReplay === true);
     clientQueues.set(socket, createBoundedEventQueue({
       getBufferedBytes: () => socket.bufferedAmount ?? 0,
       deliver: async (entry, signal) => {

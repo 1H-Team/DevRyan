@@ -1,0 +1,50 @@
+import {expect,test} from 'bun:test';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {execFileSync} from 'node:child_process';
+import {Effect,Exit,Fiber,Schema} from 'effect';
+import {LayerNode} from '@opencode/util/effect/layer-node';
+import {Global} from '@opencode/util/global';
+import {Bus} from '@opencode/core/bus';
+import {Database} from '@opencode/core/database/database';
+import {Project} from '@opencode/core/project';
+import {SessionInbox} from '@opencode/core/session/inbox';
+import {SessionProjector} from '@opencode/core/session/projector';
+import {SessionStore} from '@opencode/core/session/store';
+import {SessionEvent} from '@opencode/core/session/event';
+import {SessionSchema} from '@opencode/core/session/schema';
+import {SessionMessage} from '@opencode/core/session/message';
+import {AbsolutePath} from '@opencode/schema/schema';
+import {quietNativeRetention} from './native-retention-quiet.js';
+
+test('original native transaction/Inbox protect quiet archive and reject queued, claimed, changed subtrees',async()=>{
+ const root=await fs.mkdtemp(path.resolve('.cache/v2-validation/quiet-native-'));const directory=path.join(root,'project');await fs.mkdir(directory);execFileSync('git',['init','--quiet'],{cwd:directory});
+ const layer=LayerNode.compile(LayerNode.group([SessionInbox.node,SessionStore.node,SessionProjector.node,Bus.node,Database.node,Project.node]),{replacements:[Global.node.replace(Global.layerWith({home:root,data:root,cache:root,config:root,state:root,tmp:root,bin:root,log:root,repos:root}))]});
+ try{await Effect.runPromise(Effect.scoped(Effect.gen(function*(){
+  const bus=yield* Bus.Service,store=yield* SessionStore.Service,database=yield* Database.Service,inbox=yield* SessionInbox.Service;
+  const project=yield* (yield* Project.Service).resolve(AbsolutePath.make(directory));
+  const rootID=SessionSchema.ID.make('ses_quiet_root'),childID=SessionSchema.ID.make('ses_quiet_child');
+  for(const sessionID of [rootID,childID])yield* bus.publish(SessionEvent.Created,Schema.decodeUnknownSync(SessionEvent.Created.data)({sessionID,projectID:project.id,location:{directory},slug:'quiet',version:'2.0.20',...(sessionID===childID?{parentID:rootID}:{})}));
+  let authorized=0,active=false;
+  const permit={token:'a'.repeat(64),sessionID:rootID,revision:0};
+  const dependencies={store,database,execution:{isActive:()=>Effect.sync(()=>active)},session:{setMetadata:(input:typeof SessionEvent.MetadataUpdated.data.Type)=>bus.publish(SessionEvent.MetadataUpdated,input)},authorize:async()=>{authorized++;}};
+  const messageID=SessionMessage.ID.make('msg_quiet_input');
+  yield* inbox.admit({sessionID:childID,id:messageID,item:{type:'user',delivery:'queue',payload:Schema.decodeUnknownSync(SessionInbox.UserPayload)({text:'accepted work'})}});
+  expect(Exit.isFailure(yield* Effect.exit(quietNativeRetention(dependencies,{sessionID:rootID,permit,at:100})))).toBe(true);expect(authorized).toBe(0);
+  expect((yield* inbox.list(childID)).map(row=>row.id)).toEqual([messageID]);expect((yield* store.get(rootID))?.metadata).toBeUndefined();
+  yield* inbox.cancel({sessionID:childID,id:messageID});yield* store.claim(childID);
+  expect(Exit.isFailure(yield* Effect.exit(quietNativeRetention(dependencies,{sessionID:rootID,permit,at:100})))).toBe(true);expect(authorized).toBe(0);yield* store.release(childID);
+  active=true;expect(Exit.isFailure(yield* Effect.exit(quietNativeRetention(dependencies,{sessionID:rootID,permit,at:100})))).toBe(true);expect(authorized).toBe(0);active=false;
+  const revoked={...dependencies,authorize:async()=>{throw Error('selection changed');}};
+  expect(Exit.isFailure(yield* Effect.exit(quietNativeRetention(revoked,{sessionID:rootID,permit,at:100})))).toBe(true);expect((yield* store.get(rootID))?.metadata).toBeUndefined();
+  let enter!:()=>void,release!:()=>void;const entered=new Promise<void>(resolve=>{enter=resolve;}),waiting=new Promise<void>(resolve=>{release=resolve;});
+  const held={...dependencies,authorize:async()=>{enter();await waiting;}};
+  const archive=yield* Effect.forkScoped(quietNativeRetention(held,{sessionID:rootID,permit,at:100}));
+  yield* Effect.promise(()=>entered);let claimed=false;
+  const claim=yield* Effect.forkScoped(store.claim(childID).pipe(Effect.tap(()=>Effect.sync(()=>{claimed=true;}))));
+  yield* Effect.sleep('20 millis');expect(claimed).toBe(false);release();
+  const result=yield* Fiber.join(archive);expect(result.archived).toBe(true);expect(result.members.map(row=>row.id).sort()).toEqual([childID,rootID].sort());
+  yield* Fiber.join(claim);expect(claimed).toBe(true);yield* store.release(childID);
+  for(const id of [rootID,childID])expect((yield* store.get(id))?.metadata).toEqual({devryan:{archive:{sessionID:id,at:100}}});
+ })).pipe(Effect.provide(layer)));}finally{await fs.rm(root,{recursive:true,force:true});}
+});

@@ -4,7 +4,6 @@ const COPILOT_PROMPT_TOOL_OVERRIDES = Object.freeze({
 });
 const ORCHESTRATOR_PROMPT_TOOL_OVERRIDES = Object.freeze({
   task: false,
-  invalid: false,
 });
 const COPILOT_ORCHESTRATOR_PROMPT_TOOL_OVERRIDES = Object.freeze({
   ...COPILOT_PROMPT_TOOL_OVERRIDES,

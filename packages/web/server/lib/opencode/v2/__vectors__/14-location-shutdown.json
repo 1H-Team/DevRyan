@@ -1,0 +1,129 @@
+{
+ "vector": "14-location-shutdown",
+ "title": "D14: location reload and debug evict",
+ "design": "D14",
+ "opencode": "2.0.20",
+ "capturedWith": "g2trace on the G1 embedded host (ServerFetch.make + Bun listener), simulation backend; see README.md",
+ "normalization": {
+  "ids": 43,
+  "timestamps": 31,
+  "sha256": 0,
+  "sha1": 0,
+  "slugs": 0,
+  "timestampBase": 1767225600000,
+  "timestampStep": 1000
+ },
+ "frames": [
+  "data: {\"id\":\"evt_000000000001normalized0000\",\"created\":1767225601000,\"type\":\"location.shutdown\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000002normalized0000\",\"created\":1767225602000,\"type\":\"location.shutdown\",\"location\":{\"directory\":\"<home>\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000003normalized0000\",\"created\":1767225603000,\"type\":\"location.shutdown\",\"location\":{\"directory\":\"<home>/workspace-other\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000004normalized0000\",\"created\":1767225604000,\"type\":\"integration.updated\",\"location\":{\"directory\":\"<home>\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000005normalized0000\",\"created\":1767225605000,\"type\":\"provider.updated\",\"location\":{\"directory\":\"<home>\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000006normalized0000\",\"created\":1767225606000,\"type\":\"model.updated\",\"location\":{\"directory\":\"<home>\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000007normalized0000\",\"created\":1767225606000,\"type\":\"agent.updated\",\"location\":{\"directory\":\"<home>\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000008normalized0000\",\"created\":1767225606000,\"type\":\"command.updated\",\"location\":{\"directory\":\"<home>\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000009normalized0000\",\"created\":1767225606000,\"type\":\"skill.updated\",\"location\":{\"directory\":\"<home>\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_00000000000anormalized0000\",\"created\":1767225607000,\"type\":\"websearch.updated\",\"location\":{\"directory\":\"<home>\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_00000000000bnormalized0000\",\"created\":1767225607000,\"type\":\"reference.updated\",\"location\":{\"directory\":\"<home>\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_00000000000cnormalized0000\",\"created\":1767225607000,\"type\":\"plugin.updated\",\"location\":{\"directory\":\"<home>\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_00000000000dnormalized0000\",\"created\":1767225608000,\"type\":\"integration.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_00000000000enormalized0000\",\"created\":1767225609000,\"type\":\"provider.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_00000000000fnormalized0000\",\"created\":1767225610000,\"type\":\"model.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000010normalized0000\",\"created\":1767225611000,\"type\":\"integration.updated\",\"location\":{\"directory\":\"<home>/workspace-other\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000011normalized0000\",\"created\":1767225612000,\"type\":\"provider.updated\",\"location\":{\"directory\":\"<home>/workspace-other\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000012normalized0000\",\"created\":1767225613000,\"type\":\"model.updated\",\"location\":{\"directory\":\"<home>/workspace-other\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000013normalized0000\",\"created\":1767225614000,\"type\":\"vcs.branch.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"branch\":\"main\"}}\n\n",
+  "data: {\"id\":\"evt_000000000014normalized0000\",\"created\":1767225614000,\"type\":\"agent.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000015normalized0000\",\"created\":1767225615000,\"type\":\"command.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000016normalized0000\",\"created\":1767225615000,\"type\":\"skill.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000017normalized0000\",\"created\":1767225616000,\"type\":\"websearch.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000018normalized0000\",\"created\":1767225617000,\"type\":\"reference.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000019normalized0000\",\"created\":1767225618000,\"type\":\"vcs.branch.updated\",\"location\":{\"directory\":\"<home>/workspace-other\"},\"data\":{\"branch\":\"main\"}}\n\n",
+  "data: {\"id\":\"evt_00000000001anormalized0000\",\"created\":1767225618000,\"type\":\"agent.updated\",\"location\":{\"directory\":\"<home>/workspace-other\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_00000000001bnormalized0000\",\"created\":1767225618000,\"type\":\"command.updated\",\"location\":{\"directory\":\"<home>/workspace-other\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_00000000001cnormalized0000\",\"created\":1767225619000,\"type\":\"skill.updated\",\"location\":{\"directory\":\"<home>/workspace-other\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_00000000001dnormalized0000\",\"created\":1767225620000,\"type\":\"websearch.updated\",\"location\":{\"directory\":\"<home>/workspace-other\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_00000000001enormalized0000\",\"created\":1767225621000,\"type\":\"reference.updated\",\"location\":{\"directory\":\"<home>/workspace-other\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_00000000001fnormalized0000\",\"created\":1767225622000,\"type\":\"plugin.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000020normalized0000\",\"created\":1767225623000,\"type\":\"plugin.updated\",\"location\":{\"directory\":\"<home>/workspace-other\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000021normalized0000\",\"created\":1767225624000,\"type\":\"location.shutdown\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000022normalized0000\",\"created\":1767225625000,\"type\":\"integration.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000023normalized0000\",\"created\":1767225626000,\"type\":\"provider.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000024normalized0000\",\"created\":1767225627000,\"type\":\"model.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000025normalized0000\",\"created\":1767225628000,\"type\":\"vcs.branch.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"branch\":\"main\"}}\n\n",
+  "data: {\"id\":\"evt_000000000026normalized0000\",\"created\":1767225628000,\"type\":\"agent.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000027normalized0000\",\"created\":1767225629000,\"type\":\"command.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000028normalized0000\",\"created\":1767225629000,\"type\":\"skill.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_000000000029normalized0000\",\"created\":1767225630000,\"type\":\"websearch.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_00000000002anormalized0000\",\"created\":1767225630000,\"type\":\"reference.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n",
+  "data: {\"id\":\"evt_00000000002bnormalized0000\",\"created\":1767225631000,\"type\":\"plugin.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{}}\n\n"
+ ],
+ "rest": [
+  {
+   "label": "location.reload",
+   "method": "POST",
+   "path": "/api/location/reload",
+   "headers": {
+    "x-opencode-directory": "%3Chome%3E%2Fworkspace"
+   },
+   "request": {},
+   "status": 204,
+   "contentType": null,
+   "body": null
+  },
+  {
+   "label": "debug.location.get",
+   "method": "GET",
+   "path": "/api/debug/location",
+   "headers": {
+    "x-opencode-directory": "%3Chome%3E%2Fworkspace"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": [
+    {
+     "directory": "<home>/workspace"
+    },
+    {
+     "directory": "<home>"
+    },
+    {
+     "directory": "<home>/workspace-other"
+    }
+   ]
+  },
+  {
+   "label": "debug.location.evict",
+   "method": "DELETE",
+   "path": "/api/debug/location",
+   "headers": {
+    "x-opencode-directory": "%3Chome%3E%2Fworkspace"
+   },
+   "status": 204,
+   "contentType": null,
+   "body": null
+  },
+  {
+   "label": "location.get.afterEvict",
+   "method": "GET",
+   "path": "/api/location",
+   "headers": {
+    "x-opencode-directory": "%3Chome%3E%2Fworkspace"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "directory": "<home>/workspace",
+    "project": {
+     "id": "global",
+     "directory": "<home>/workspace",
+     "canonical": "<home>/workspace"
+    }
+   }
+  }
+ ],
+ "llm": [],
+ "notes": {
+  "heartbeatFramesDropped": 1
+ }
+}

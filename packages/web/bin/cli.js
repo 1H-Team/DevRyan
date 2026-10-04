@@ -7,6 +7,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath, pathToFileURL } from 'url';
+import {runRuntimeBundleCommand} from './runtime-bundle-command.js';
 import { isModuleCliExecution } from './cli-entry.js';
 import { prepareLocalOwnerEnrollment } from '../server/lib/multi-user/local-owner-bootstrap.js';
 import { createOwnerAuthenticatedTunnelFetch } from './tunnel-owner-auth.js';
@@ -658,6 +659,7 @@ function parseArgs(argv = process.argv.slice(2)) {
 
   const removedFlagErrors = [];
   const positional = [];
+  const optionNames=[];
   let helpRequested = false;
   let versionRequested = false;
 
@@ -681,7 +683,11 @@ function parseArgs(argv = process.argv.slice(2)) {
     }
 
     const { name, inlineValue, long } = parsedToken;
+    optionNames.push(name);
     switch (name) {
+      case 'expected-revision': {
+        const consumed=consumeValue(i,inlineValue);i=consumed.nextIndex;options.expectedRevision=consumed.value;break;
+      }
       case 'port':
       case 'p': {
         const { value: consumedValue, nextIndex: consumedIndex } = consumeValue(i, inlineValue);
@@ -903,11 +909,14 @@ function parseArgs(argv = process.argv.slice(2)) {
   }
 
   const command = positional[0] || 'serve';
+  if(command!=='runtime'&&optionNames.includes('expected-revision'))removedFlagErrors.push('`--expected-revision` requires: openchamber runtime bundle resume');
   const subcommand = command === 'tunnel' ? (positional[1] || 'help') : null;
   const tunnelAction = command === 'tunnel' ? (positional[2] || null) : null;
 
   return {
     command,
+    positionals:positional,
+    optionNames,
     subcommand,
     tunnelAction,
     options,
@@ -930,6 +939,7 @@ COMMANDS:
   restart        Stop and start the server
   status         Show server status
   tunnel         Tunnel lifecycle commands
+  runtime bundle resume --expected-revision N   Resume the retained runtime after blocked rollback
   enroll-owner   Create a two-minute local-owner enrollment link (--port)
   logs           Tail DevRyan logs
   update         Check for and install updates
@@ -947,10 +957,10 @@ ENVIRONMENT:
   OPENCHAMBER_HOST             Bind address (e.g. 0.0.0.0 for all interfaces)
   OPENCHAMBER_UI_PASSWORD      Alternative to --ui-password flag
   OPENCHAMBER_DATA_DIR         Override DevRyan data directory
-  OPENCODE_HOST               External OpenCode server base URL, e.g. http://hostname:4096
-  OPENCODE_PORT               Port of external OpenCode server to connect to
-  OPENCODE_SKIP_START          Skip starting OpenCode, use external server
-  OPENCHAMBER_OPENCODE_HOSTNAME  Bind hostname for managed OpenCode server (default: 127.0.0.1)
+
+RUNTIME:
+  DevRyan serves its bundled native OpenCode 2.0.20 runtime.
+  Update DevRyan to update the bundled runtime.
 
 EXAMPLES:
   openchamber                    # Start in daemon mode on default port 3000 (or free port)
@@ -1683,75 +1693,6 @@ const WINDOWS_EXTENSIONS = process.platform === 'win32'
       .filter(Boolean)
       .map((ext) => (ext.startsWith('.') ? ext : `.${ext}`))
   : [''];
-
-function isExecutable(filePath) {
-  try {
-    const stats = fs.statSync(filePath);
-    if (!stats.isFile()) {
-      return false;
-    }
-    if (process.platform === 'win32') {
-      return true;
-    }
-    fs.accessSync(filePath, fs.constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function resolveExplicitBinary(candidate) {
-  if (!candidate) {
-    return null;
-  }
-  if (candidate.includes(path.sep) || path.isAbsolute(candidate)) {
-    const resolved = path.isAbsolute(candidate) ? candidate : path.resolve(candidate);
-    return isExecutable(resolved) ? resolved : null;
-  }
-  return null;
-}
-
-function searchPathFor(command) {
-  const pathValue = process.env.PATH || '';
-  const segments = pathValue.split(path.delimiter).filter(Boolean);
-  for (const dir of segments) {
-    for (const ext of WINDOWS_EXTENSIONS) {
-      const fileName = process.platform === 'win32' ? `${command}${ext}` : command;
-      const candidate = path.join(dir, fileName);
-      if (isExecutable(candidate)) {
-        return candidate;
-      }
-    }
-  }
-  return null;
-}
-
-async function checkOpenCodeCLI(onNotice) {
-  if (process.env.OPENCODE_BINARY) {
-    const override = resolveExplicitBinary(process.env.OPENCODE_BINARY);
-    if (override) {
-      process.env.OPENCODE_BINARY = override;
-      return override;
-    }
-    const message = `OPENCODE_BINARY="${process.env.OPENCODE_BINARY}" is not an executable file. Falling back to PATH lookup.`;
-    if (typeof onNotice === 'function') {
-      onNotice({ level: 'warning', code: 'OPENCODE_BINARY_INVALID', message });
-    } else {
-      console.warn(`Warning: ${message}`);
-    }
-  }
-
-  const resolvedFromPath = searchPathFor('opencode');
-  if (resolvedFromPath) {
-    process.env.OPENCODE_BINARY = resolvedFromPath;
-    return resolvedFromPath;
-  }
-
-  throw new Error(
-    `Unable to locate the opencode CLI on PATH (${process.env.PATH || '<empty>'}). ` +
-    'Ensure the CLI is installed and reachable, or set OPENCODE_BINARY to its full path.'
-  );
-}
 
 async function isPortAvailable(port, host) {
   if (!Number.isFinite(port) || port <= 0) {
@@ -3206,7 +3147,6 @@ const commands = {
       }
     }
 
-    const opencodeBinary = await checkOpenCodeCLI(emitNotice);
     const serverPath = path.join(__dirname, '..', 'server', 'index.js');
     const preferredRuntime = getPreferredServerRuntime();
     const runtimeBin = preferredRuntime === 'bun' ? BUN_BIN : process.execPath;
@@ -3251,9 +3191,6 @@ const commands = {
       }
 
       // Propagate resolved values into env before importing the server module.
-      if (opencodeBinary) {
-        process.env.OPENCODE_BINARY = opencodeBinary;
-      }
       if (effectiveUiPassword) {
         process.env.OPENCHAMBER_UI_PASSWORD = effectiveUiPassword;
       }
@@ -3371,7 +3308,6 @@ const commands = {
       env: {
         ...process.env,
         OPENCHAMBER_PORT: String(targetPort),
-        OPENCODE_BINARY: opencodeBinary,
         ...(effectiveHost ? { OPENCHAMBER_HOST: effectiveHost } : {}),
         ...(effectiveUiPassword ? { OPENCHAMBER_UI_PASSWORD: effectiveUiPassword } : {}),
         ...(process.env.OPENCODE_SKIP_START ? { OPENCHAMBER_SKIP_OPENCODE_START: process.env.OPENCODE_SKIP_START } : {}),
@@ -5281,6 +5217,19 @@ async function main() {
 
   if (command === 'tunnel') {
     await commands.tunnel(options, subcommand, tunnelAction);
+    return;
+  }
+
+  if (command === 'runtime') {
+    try {
+      const result=await runRuntimeBundleCommand({positionals:parsed.positionals,optionNames:parsed.optionNames,expectedRevision:options.expectedRevision});
+      if(isJsonMode(options))printJson({status:'success',...result});
+      else console.log(isQuietMode(options)?String(result.revision):`Retained runtime resumed at revision ${result.revision}. Restart DevRyan to continue.`);
+    }catch(error){
+      const code=/^bundle_[a-z0-9_]+$/.test(error?.code??'')?error.code:'bundle_recovery_failed';
+      if(isJsonMode(options))printJson({status:'error',error:{code,message:code}});else console.error(code);
+      process.exitCode=EXIT_CODE.USAGE_ERROR;
+    }
     return;
   }
 

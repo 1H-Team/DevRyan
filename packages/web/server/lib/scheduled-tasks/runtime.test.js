@@ -103,13 +103,17 @@ const createTaskConfigRuntime = (initialTasks) => {
 };
 
 const createClient = () => ({
-  session: {
-    create: vi.fn(async () => ({ data: { id: 'session-1' } })),
-    command: vi.fn(async () => ({ data: true })),
-    delete: vi.fn(async () => ({ data: true })),
+  generation: vi.fn(() => 2),
+  sessions: {
+    create: vi.fn(async () => ({ id: 'session-1' })),
+    remove: vi.fn(async () => true),
   },
-  command: {
-    list: vi.fn(async () => ({ data: [{ name: 'wake' }] })),
+  prompts: {
+    prompt: vi.fn(async () => true),
+    command: vi.fn(async () => true),
+  },
+  catalog: {
+    commands: vi.fn(async () => [{ name: 'wake' }]),
   },
 });
 
@@ -119,6 +123,7 @@ const createRuntime = ({
   managedProjectIDs = [],
   resolveTaskExecutionContext,
   resolveScheduledTaskAccess,
+  maxRunDurationMs,
 } = {}) => {
   const projectConfigRuntime = createTaskConfigRuntime(tasks || []);
   const client = createClient();
@@ -127,17 +132,43 @@ const createRuntime = ({
     projectConfigRuntime,
     listProjects: vi.fn(async () => projects),
     listManagedProjectIDs: vi.fn(async () => managedProjectIDs),
-    buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
-    getOpenCodeAuthHeaders: () => ({}),
     waitForOpenCodeReady: vi.fn(async () => {}),
     resolveTaskExecutionContext,
     resolveScheduledTaskAccess,
     recordTaskSessionOwnership,
-    createClient: () => client,
+    maxRunDurationMs,
+    openCodeClient: client,
     logger: { info: vi.fn(), warn: vi.fn() },
   });
   return { runtime, projectConfigRuntime, client, recordTaskSessionOwnership };
 };
+
+it('checkpoint refuses a timed-out scheduled operation until its original promise settles', async () => {
+  vi.useFakeTimers();
+  const { runtime, client } = createRuntime({ tasks: [createTask()], projects: [{ id: 'project-1', path: '/fixture-project' }], maxRunDurationMs: 10 });
+  let release;
+  client.prompts.command.mockImplementation(() => new Promise(resolve => { release = resolve; }));
+  await runtime.start();
+  const run = runtime.runNow('project-1', 'task-1');
+  await vi.advanceTimersByTimeAsync(10);
+  expect(await run).toMatchObject({ ok: false, error: 'scheduled task run timed out' });
+  expect(runtime.getStatus().runningScheduledTasksCount).toBe(0);
+  expect(() => runtime.holdForCheckpoint()).toThrow('bundle_scheduled_tasks_unsettled');
+  await expect(runtime.runNow('project-1', 'task-1')).rejects.toMatchObject({ code: 'bundle_scheduled_tasks_held' });
+  release(); await vi.advanceTimersByTimeAsync(0);
+  expect(() => runtime.holdForCheckpoint()).not.toThrow();
+  runtime.stop();
+});
+
+it('checkpoint includes an admitted status refresh before any running task exists', async () => {
+  const { runtime } = createRuntime({ tasks: [createTask()], projects: [{ id: 'project-1', path: '/fixture-project' }] });
+  await runtime.start();
+  const refresh = runtime.refreshStatus();
+  expect(() => runtime.holdForCheckpoint()).toThrow('bundle_scheduled_tasks_unsettled');
+  await refresh;
+  expect(() => runtime.holdForCheckpoint()).not.toThrow();
+  runtime.stop();
+});
 
 afterEach(() => {
   vi.useRealTimers();
@@ -384,7 +415,7 @@ describe('scheduled-tasks managed project execution', () => {
 
     expect(result).toMatchObject({ ok: false, skipped: true, revoked: true });
     expect(projectConfigRuntime.deleteScheduledTask).toHaveBeenCalledWith('project-1', task.id);
-    expect(client.session.create).not.toHaveBeenCalled();
+    expect(client.sessions.create).not.toHaveBeenCalled();
     expect(runtime.getStatus().pendingScheduledTasksCount).toBe(0);
     runtime.stop();
   });
@@ -401,14 +432,14 @@ describe('scheduled-tasks managed project execution', () => {
       tasks: [task],
       projects: [{ id: 'project-1', path: '/repo' }],
     });
-    client.session.command.mockImplementation(() => runGate);
+    client.prompts.command.mockImplementation(() => runGate);
 
     await runtime.start();
     const run = runtime.runNow('project-1', task.id);
-    for (let attempt = 0; attempt < 20 && client.session.command.mock.calls.length === 0; attempt += 1) {
+    for (let attempt = 0; attempt < 20 && client.prompts.command.mock.calls.length === 0; attempt += 1) {
       await Promise.resolve();
     }
-    expect(client.session.command).toHaveBeenCalled();
+    expect(client.prompts.command).toHaveBeenCalled();
     expect(runtime.getStatus()).toMatchObject({
       pendingScheduledTasksCount: 0,
       hasRunningScheduledTasks: true,
@@ -445,10 +476,10 @@ describe('scheduled-tasks managed project execution', () => {
       branchName: 'main',
       taskId: task.id,
     });
-    expect(client.session.create).toHaveBeenCalledWith({
+    expect(client.sessions.create).toHaveBeenCalledWith({
       directory: '/managed/worktree',
       title: expect.stringContaining('Wake up '),
-    });
+    }, { directory: '/managed/worktree' });
     expect(recordTaskSessionOwnership).toHaveBeenCalledWith({
       ownerUserId: 'user-1',
       projectId: 'managed-project',
@@ -477,9 +508,9 @@ describe('scheduled-tasks managed project execution', () => {
     await vi.advanceTimersByTimeAsync(60_000);
 
     expect(resolveTaskExecutionContext).toHaveBeenCalledTimes(1);
-    expect(client.session.create).toHaveBeenCalledWith(expect.objectContaining({
+    expect(client.sessions.create).toHaveBeenCalledWith(expect.objectContaining({
       directory: '/managed/worktree',
-    }));
+    }), { directory: '/managed/worktree' });
     runtime.stop();
   });
 
@@ -502,7 +533,7 @@ describe('scheduled-tasks managed project execution', () => {
 
     expect(result.ok).toBe(false);
     expect(result.error).toBe('Scheduled task branch access has been revoked');
-    expect(client.session.create).not.toHaveBeenCalled();
+    expect(client.sessions.create).not.toHaveBeenCalled();
     runtime.stop();
   });
 
@@ -520,9 +551,9 @@ describe('scheduled-tasks managed project execution', () => {
 
     expect(result.ok).toBe(true);
     expect(resolveTaskExecutionContext).not.toHaveBeenCalled();
-    expect(client.session.create).toHaveBeenCalledWith(expect.objectContaining({
+    expect(client.sessions.create).toHaveBeenCalledWith(expect.objectContaining({
       directory: '/local/project',
-    }));
+    }), { directory: '/local/project' });
     runtime.stop();
   });
 });
@@ -552,10 +583,8 @@ describe('scheduled-tasks cross-process occurrence claims', () => {
     const createScheduler = (projectConfigRuntime, client) => createScheduledTasksRuntime({
       projectConfigRuntime,
       listProjects: vi.fn(async () => [{ id: 'project-1', path: '/repo' }]),
-      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
-      getOpenCodeAuthHeaders: () => ({}),
-      waitForOpenCodeReady: vi.fn(async () => {}),
-      createClient: () => client,
+          waitForOpenCodeReady: vi.fn(async () => {}),
+      openCodeClient: client,
       logger: { info: vi.fn(), warn: vi.fn() },
     });
     const firstScheduler = createScheduler(firstConfig, clients[0]);
@@ -588,7 +617,7 @@ describe('scheduled-tasks cross-process occurrence claims', () => {
       }, { timeout: 2_000 });
 
       const dispatchCount = clients.reduce(
-        (total, client) => total + client.session.create.mock.calls.length,
+        (total, client) => total + client.sessions.create.mock.calls.length,
         0,
       );
       expect(dispatchCount).toBe(1);
@@ -605,7 +634,7 @@ describe('scheduled-tasks cross-process occurrence claims', () => {
       const restartScheduler = createScheduler(createConfigRuntime(), restartClient);
       await restartScheduler.start();
       await vi.advanceTimersByTimeAsync(0);
-      expect(restartClient.session.create).not.toHaveBeenCalled();
+      expect(restartClient.sessions.create).not.toHaveBeenCalled();
       restartScheduler.stop();
     } finally {
       for (let attempt = 0; attempt < 200
@@ -642,7 +671,7 @@ describe('scheduled-tasks cross-process occurrence claims', () => {
       await Promise.resolve();
     }
 
-    expect(client.session.create).not.toHaveBeenCalled();
+    expect(client.sessions.create).not.toHaveBeenCalled();
     expect(projectConfigRuntime.updateScheduledTaskStateConditionally).toHaveBeenCalledTimes(2);
     expect(runtime.getStatus().runningScheduledTasksCount).toBe(0);
     runtime.stop();
@@ -666,9 +695,7 @@ describe('scheduled-tasks cross-process occurrence claims', () => {
     const createScheduler = (projectConfigRuntime, client) => createScheduledTasksRuntime({
       projectConfigRuntime,
       listProjects: vi.fn(async () => [{ id: 'project-1', path: '/repo' }]),
-      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
-      getOpenCodeAuthHeaders: () => ({}),
-      createClient: () => client,
+          openCodeClient: client,
       logger: { info: vi.fn(), warn: vi.fn() },
     });
     const schedulers = [
@@ -693,7 +720,7 @@ describe('scheduled-tasks cross-process occurrence claims', () => {
       await vi.advanceTimersByTimeAsync(0);
 
       expect(clients.reduce(
-        (total, client) => total + client.session.create.mock.calls.length,
+        (total, client) => total + client.sessions.create.mock.calls.length,
         0,
       )).toBe(1);
       expect(persistedTask.state.lastScheduledFor).toBe(dueAt);
@@ -736,4 +763,158 @@ describe('scheduled-tasks cross-process occurrence claims', () => {
     expect(runtime.getStatus().runningScheduledTasksCount).toBe(0);
     runtime.stop();
   });
+});
+
+describe('scheduled-tasks execution on gen 2 (openCodeClient)', () => {
+  const createOpenCodeClient = ({ generation = 2, commands = [{ name: 'wake' }] } = {}) => ({
+    generation: vi.fn(() => {
+      if (generation instanceof Error) throw generation;
+      return generation;
+    }),
+    sessions: {
+      create: vi.fn(async () => ({ id: 'ses_v2', version: '2' })),
+      remove: vi.fn(async () => true),
+    },
+    catalog: {
+      commands: vi.fn(async () => {
+        if (commands instanceof Error) throw commands;
+        return commands;
+      }),
+    },
+    prompts: {
+      prompt: vi.fn(async () => true),
+      command: vi.fn(async () => true),
+    },
+  });
+
+  const createGen2Runtime = ({ tasks, openCodeClient, recordTaskSessionOwnership = vi.fn(async () => {}), waitForOpenCodeReady = vi.fn(async () => {}) }) => {
+    const runtime = createScheduledTasksRuntime({
+      projectConfigRuntime: createTaskConfigRuntime(tasks),
+      listProjects: vi.fn(async () => [{ id: 'project-1', path: '/repo' }]),
+      listManagedProjectIDs: vi.fn(async () => []),
+          waitForOpenCodeReady,
+      recordTaskSessionOwnership,
+      openCodeClient,
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+    return { runtime, recordTaskSessionOwnership };
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each([undefined, null, { sessions: {} }])('rejects a missing or malformed client %j', openCodeClient => {
+    expect(() => createGen2Runtime({ tasks: [], openCodeClient }))
+      .toThrow('openCodeClient must be an openCodeClient');
+  });
+
+  it('creates the session and runs a matching slash command through the client', async () => {
+    const openCodeClient = createOpenCodeClient();
+    const task = createTask({ execution: { providerID: 'provider-1', modelID: 'model-1', prompt: '/wake now', agent: 'build', variant: 'high' } });
+    const { runtime } = createGen2Runtime({ tasks: [task], openCodeClient });
+    await runtime.start();
+
+    const result = await runtime.runNow('project-1', task.id);
+
+    expect(result).toMatchObject({ ok: true, sessionID: 'ses_v2' });
+    expect(openCodeClient.sessions.create).toHaveBeenCalledWith(
+      { directory: '/repo', title: expect.stringContaining('Wake up ') },
+      { directory: '/repo' },
+    );
+    expect(openCodeClient.catalog.commands).toHaveBeenCalledWith({ directory: '/repo' });
+    expect(openCodeClient.prompts.command).toHaveBeenCalledWith('ses_v2', {
+      command: 'wake',
+      arguments: 'now',
+      agent: 'build',
+      model: 'provider-1/model-1',
+      variant: 'high',
+    }, { directory: '/repo' });
+    expect(openCodeClient.prompts.prompt).not.toHaveBeenCalled();
+    runtime.stop();
+  });
+
+  it('prompts through the client when the prompt is not a known command', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const openCodeClient = createOpenCodeClient({ commands: new Error('catalog unavailable') });
+    const task = createTask({ execution: { providerID: 'provider-1', modelID: 'model-1', prompt: '/wake' } });
+    const plain = createTask({ id: 'task-2', execution: { providerID: 'provider-1', modelID: 'model-1', prompt: 'Summarize' } });
+    const { runtime } = createGen2Runtime({ tasks: [task, plain], openCodeClient });
+    await runtime.start();
+
+    await expect(runtime.runNow('project-1', task.id)).resolves.toMatchObject({ ok: true });
+    await expect(runtime.runNow('project-1', plain.id)).resolves.toMatchObject({ ok: true });
+
+    expect(openCodeClient.prompts.command).not.toHaveBeenCalled();
+    expect(openCodeClient.prompts.prompt).toHaveBeenNthCalledWith(1, 'ses_v2', {
+      model: { providerID: 'provider-1', modelID: 'model-1' },
+      parts: [{ type: 'text', text: '/wake' }],
+    }, { directory: '/repo' });
+    expect(openCodeClient.prompts.prompt).toHaveBeenNthCalledWith(2, 'ses_v2', {
+      model: { providerID: 'provider-1', modelID: 'model-1' },
+      parts: [{ type: 'text', text: 'Summarize' }],
+    }, { directory: '/repo' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    runtime.stop();
+  });
+
+  it('removes the session through the client when ownership cannot be recorded', async () => {
+    const openCodeClient = createOpenCodeClient();
+    const task = createTask({ ownerUserId: 'user-1', target: { branchName: 'main' } });
+    const runtime = createScheduledTasksRuntime({
+      projectConfigRuntime: createTaskConfigRuntime([task]),
+      listProjects: vi.fn(async () => []),
+      listManagedProjectIDs: vi.fn(async () => ['managed-project']),
+          resolveTaskExecutionContext: vi.fn(async () => ({ directory: '/managed/worktree' })),
+      recordTaskSessionOwnership: vi.fn(async () => { throw new Error('ownership store unavailable'); }),
+      openCodeClient,
+      logger: { info: vi.fn(), warn: vi.fn() },
+    });
+    await runtime.start();
+
+    const result = await runtime.runNow('managed-project', task.id);
+
+    expect(result).toMatchObject({ ok: false, error: 'ownership store unavailable' });
+    expect(openCodeClient.sessions.remove).toHaveBeenCalledWith('ses_v2', { directory: '/managed/worktree', allowNotFound: true });
+    expect(openCodeClient.prompts.prompt).not.toHaveBeenCalled();
+    expect(openCodeClient.prompts.command).not.toHaveBeenCalled();
+    runtime.stop();
+  });
+
+  it.each([1, 3, null, undefined])('refuses generation %s before session creation', async (generation) => {
+    const openCodeClient = createOpenCodeClient({ generation });
+    // The fixture default must not convert an absent identity to generation 2.
+    openCodeClient.generation.mockReturnValue(generation);
+    const { runtime } = createGen2Runtime({ tasks: [createTask()], openCodeClient });
+    await runtime.start();
+    await expect(runtime.runNow('project-1', 'task-1')).resolves.toMatchObject({
+      ok: false, error: 'The OpenCode runtime generation is unknown',
+    });
+    expect(openCodeClient.sessions.create).not.toHaveBeenCalled();
+    expect(openCodeClient.prompts.command).not.toHaveBeenCalled();
+    runtime.stop();
+  });
+
+  it('rechecks identity after readiness before creating a session', async () => {
+    const openCodeClient = createOpenCodeClient();
+    const { runtime } = createGen2Runtime({
+      tasks: [createTask()], openCodeClient,
+      waitForOpenCodeReady: async () => { openCodeClient.generation.mockReturnValue(1); },
+    });
+    await runtime.start();
+    await expect(runtime.runNow('project-1', 'task-1')).resolves.toMatchObject({ ok: false, error: 'The OpenCode runtime generation is unknown' });
+    expect(openCodeClient.sessions.create).not.toHaveBeenCalled();
+    expect(openCodeClient.prompts.prompt).not.toHaveBeenCalled();
+    runtime.stop();
+  });
+
+  it('propagates an identity failure before creating a session', async () => {
+    const openCodeClient = createOpenCodeClient({ generation: new Error('identity unavailable') });
+    const { runtime } = createGen2Runtime({ tasks: [createTask()], openCodeClient });
+    await runtime.start();
+    await expect(runtime.runNow('project-1', 'task-1')).resolves.toMatchObject({ ok: false, error: 'identity unavailable' });
+    expect(openCodeClient.sessions.create).not.toHaveBeenCalled();
+    runtime.stop();
+  });
+
 });

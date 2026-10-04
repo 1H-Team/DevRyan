@@ -1,3 +1,5 @@
+import { openCodeClientErrorStatus, resolveGen2OpenCodeClient } from './opencode-client-seam.js';
+
 const DEFAULT_PWA_APP_NAME = 'OpenChamber - AI Coding Assistant';
 const mapPwaOrientationToManifest = (value) => {
   if (value === 'portrait') {
@@ -13,11 +15,12 @@ export const registerPwaManifestRoute = (app, dependencies) => {
   const {
     process,
     resolveProjectDirectory,
-    buildOpenCodeUrl,
-    getOpenCodeAuthHeaders,
     readSettingsFromDiskMigrated,
     normalizePwaAppName,
     normalizePwaOrientation,
+    // Runtime reads use the required native application client.
+    // URL request below. The client or a getter returning it.
+    openCodeClient = null,
   } = dependencies;
 
   const recentPwaSessionsCache = new Map();
@@ -91,31 +94,15 @@ export const registerPwaManifestRoute = (app, dependencies) => {
     };
 
     const listSessions = async (directory) => {
-      const query = (() => {
-        if (typeof directory !== 'string' || directory.length === 0) {
-          return '';
-        }
-        const preparedDirectory = process.platform === 'win32'
-          ? directory.replace(/\//g, '\\\\')
-          : directory;
-        return `?directory=${encodeURIComponent(preparedDirectory)}`;
-      })();
-
-      const response = await fetch(buildOpenCodeUrl(`/session${query}`, ''), {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          ...getOpenCodeAuthHeaders(),
-        },
-        signal: AbortSignal.timeout(2500),
+      const client = resolveGen2OpenCodeClient(openCodeClient);
+      const sessions = await client.sessions.list(
+        typeof directory === 'string' && directory.length > 0 ? { directory } : {},
+        { timeoutMs: 2500 },
+      ).catch((error) => {
+        if (openCodeClientErrorStatus(error)) return [];
+        throw error;
       });
-
-      if (!response.ok) {
-        return [];
-      }
-
-      const payload = await response.json().catch(() => null);
-      return Array.isArray(payload) ? payload : [];
+      return Array.isArray(sessions) ? sessions : [];
     };
 
     try {

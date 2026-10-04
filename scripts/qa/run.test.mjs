@@ -8,4 +8,6 @@ test('invalid runtime/scenario fails before launching processes or writing artif
   await assert.rejects(runQa({ runtime: 'unknown' }), /QA runtime/);
   await assert.rejects(runQa({ runtime: 'electron', scenario: 'mobile' }), /QA scenario/);
   await assert.rejects(runQa({ scenario: 'unknown' }), /QA scenario/);
+  await assert.rejects(runQa({ generation: 'latest' }), /fixture generation/);
+  await assert.rejects(runQa({ generation: 3 }), /fixture generation/);
 });

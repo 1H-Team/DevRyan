@@ -8,6 +8,13 @@ const globalWindowMutationPattern = /(?:global(?:This|WithWindow)|\([^)]*globalT
 const globalSessionStorageMutationPattern = /(?:global(?:This|WithWindow)|\([^)]*globalThis[^)]*\))\.sessionStorage\s*=|Object\.defineProperty\s*\(\s*globalThis\s*,\s*['"]sessionStorage['"]|delete\s+(?:global(?:This|WithWindow)|\([^)]*globalThis[^)]*\))\.sessionStorage/;
 const globalFileReaderMutationPattern = /(?:global(?:This|WithWindow)|\([^)]*globalThis[^)]*\))\.FileReader\s*=|Object\.defineProperty\s*\(\s*globalThis\s*,\s*['"]FileReader['"]|delete\s+(?:global(?:This|WithWindow)|\([^)]*globalThis[^)]*\))\.FileReader/;
 
+export function isBunTestSource(source) {
+  // Node runner tests may contain Bun imports inside generated fixture source.
+  // Match Electron's declared Node-first dispatch before selecting Bun.
+  return !/\bfrom\s*['"]node:test['"]/.test(source)
+    && /\bfrom\s*['"]bun:test['"]/.test(source);
+}
+
 export function isIsolatedUiTestSource(source) {
   return mockModulePattern.test(source)
     || globalWindowMutationPattern.test(source)

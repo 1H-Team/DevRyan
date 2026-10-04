@@ -5,11 +5,23 @@ Workspace package for the shared React UI runtime used by web and Electron shell
 
 ## Design
 - **Runtime-agnostic UI package**: runtime differences are abstracted behind injected APIs (`window.__OPENCHAMBER_RUNTIME_APIS__`) and `lib/desktop` helpers.
+- **OpenCode capability lifetime**: `src/lib/opencode/runtime-capabilities.ts` accepts only an authoritative OpenCode 2 health identity and explicit capability grants; initial, missing, malformed and unsupported identities remain unavailable. Health reads share request fencing; disconnect and confirmed config apply invalidate capabilities, and reconnect refreshes them. An older asynchronous read cannot publish into a replacement lifetime. Capability subscribers remain narrow and unchanged flags preserve their snapshot reference.
 - **Store + sync split**: long-lived app/preferences state lives in Zustand stores (`src/stores/*`), while high-frequency live session/message state is handled by `src/sync/*` child stores and event reducers.
 - **Managed-task isolation**: low-frequency DevRyan-owned scheduler projections live in `src/stores/useManagedOrchestrationStore.ts`; they never enter provider-native tool projection or high-frequency session/message stores.
 - **Production Bot isolation**: `src/lib/botsApi.ts` and `src/lib/botsDesktopApi.ts` keep the server and local-Electron contracts explicit. `src/apps/BotsEventOwner.tsx` reconciles principal-filtered snapshot/sequence events into `useBotsStore`, `useBotChannelStore`, and `useBotOperationsStore`; `src/apps/botEventConnection.ts` owns the generation-guarded EventSource/reconnect contract and fresh-snapshot health gate. Ordinary OpenCode sync branches and global UI stores are not widened.
 - **Simplified Bot settings**: `src/components/sections/bots/BotEditor.tsx` owns Overview, Resources, Memory, Members, Routines, and Lifecycle. Overview combines the public profile with revision-backed Soul/personality, Standing Role, Objectives, and compact primary Provider/Model/Thinking controls; Resources combines persistent computer files, optional on-demand Skills/SOPs, protected provider credentials, and environment secrets. Advanced instruction controls and Bot MCP configuration are absent.
 - **Thin entrypoint**: `src/main.tsx` wires providers, hydration side effects, and mounts `App`.
+- **Model selection intent**: chat, agent defaults, backups, Council and session
+  creation preserve explicitly saved model/effort through hydration, catalog
+  refresh, settings save and send preparation. Availability is a separate read
+  view; an absent catalog option cannot clear effort or replace a saved tuple.
+- **Bundled runtime update and Claude enrollment**: Providers and setup share
+  `BundledRuntimeUpdate.tsx`, whose explicit administrator action uses the
+  authenticated, CSRF-protected expected-revision upgrade route. Catalog
+  unavailability does not hide it; startup reads never activate updates.
+  `ClaudeDedicatedEnrollment.tsx` drives the prepared vendor login and separate
+  explicit profile selection, fences asynchronous results by principal/project,
+  and clears transient authorization-code state after completion.
 - **Header usage composition**: reusable provider-tab and selected-provider quota panels live under `src/components/layout/usage/` and are shared by the desktop/mobile header menus.
 - **Self-describing preference rows**: `src/components/sections/shared/SettingsField.tsx` (label, visible description, badge, reset, switch rows) and `SettingsOptionCardGroup.tsx` (single choices as chips or illustrated cards) give settings pages one accessible, read-only-aware row pattern; Settings → Appearance (`sections/openchamber/appearance/`) builds its sections and live preview from them.
 - **Grouped settings destinations**: `src/lib/settings/navigation.ts` keeps Providers/Usage and Remote Tunnel/Remote Instances as permission-aware sidebar destinations while preserving their existing child slugs. `src/components/views/SettingsSectionTabs.tsx` renders the shared accessible workspace tabs used by the full and managed settings shells.

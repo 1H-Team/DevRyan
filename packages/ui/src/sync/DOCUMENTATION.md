@@ -70,6 +70,14 @@ shell does not erase the preceding completed measurement.
 
 ## Directory subscription bootstrap authority
 
+Reconnect REST recovery is fenced per child store and against the bounded
+directory lifecycle journal. An older overlapping read, deletion/recreation,
+or lifecycle change cannot publish stale sessions. Records whose live message
+or part references changed during the read retain that live state. Status
+baseline checks remain separate. Stream disconnect invalidates runtime
+capabilities; successful reconnect refreshes authoritative `/health` identity
+and flags without subscribing the provider root to capability state.
+
 Creating a directory store and bootstrapping its OpenCode runtime are separate
 operations. `useDirectoryStore()` and explicit-directory `useSession()` reads
 grant bootstrap authority only when the normalized requested directory equals
@@ -731,7 +739,7 @@ OpenCode ignores `session.abort` while a session sleeps between provider retry a
 - While active, `filterSessionStatusThroughAbortGuard` coerces incoming `retry` statuses to `idle` (live event reduction, reconnect status merge, and directory bootstrap snapshots all route through it) and schedules bounded, debounced re-aborts (max 3) so the server loop is cancelled when its next attempt creates an abortable in-flight request. Snapshot filtering preserves the original status-map reference when no guard changes a value.
 - Streaming derivation does not retain an incomplete assistant shell across that guarded `idle`; explicit idle is authoritative, so the composer unlocks without consulting historical message completion.
 - After a successful reconnect/bootstrap status snapshot, every listed session omitted from that snapshot is materialized as authoritative `idle`. Bootstrap explicitly settles any pre-existing streaming ownership for those sessions first, so a historical incomplete assistant shell cannot survive the snapshot as live activity or leave a plan card finishing forever.
-- The guard clears on authoritative idle (`session.idle`, `session.error`, idle `session.status`), on any new local send (`optimisticSend`, `usePromptSubmit`), and when an authoritative user message advances the cached user-turn boundary and proves that another connected surface started new work. Historical replay into an empty or newer cache cannot clear it.
+- The guard clears on authoritative idle (`session.idle`, `session.error`, idle `session.status`), on any new local send (`optimisticSend`), and when an authoritative user message advances the cached user-turn boundary and proves that another connected surface started new work. Historical replay into an empty or newer cache cannot clear it.
 - `useProviderErrorRecovery` creates root-session recovery records after an authoritative active-to-idle transition ends with a matching retryable terminal assistant error. On first observation after reconnect, authoritative idle plus a trailing incomplete root response also becomes an explicit interrupted-response recovery instead of historical live activity. A definite provider usage limit is stopped on its first live retry; other transient stream retry loops remain capped after three attempts. DevRyan first receives a successful abort acknowledgement, then offers the same explicit recovery card. Manual recovery waits for guard settlement before sending the captured provider/model/agent/variant, preventing an explicitly stopped retry loop from overlapping the replacement turn; no recovery is resent automatically. A newer authoritative user turn clears an older recovery record, and the retry action performs the same final check so stale cards disappear without surfacing a misleading “failed turn is no longer available” error.
 - When the current retry deadline plus its settlement window expires without idle, live server state wins again — the guard never permanently masks real activity.
 

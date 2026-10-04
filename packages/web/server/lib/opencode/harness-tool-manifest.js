@@ -1,3 +1,6 @@
+import { OPENCODE_CLIENT_ERROR_CODES } from './opencode-client/index.js';
+import { openCodeClientErrorStatus, resolveGen2OpenCodeClient } from './opencode-client-seam.js';
+
 const TOOL_PERMISSION_ALIAS_GROUPS = [
   ['edit', 'write', 'patch', 'apply_patch'],
   ['read'],
@@ -22,14 +25,6 @@ function buildAliases(toolIds) {
   return Object.fromEntries(toolIds.map((toolId) => [toolId, getToolPermissionAliases(toolId)]));
 }
 
-function appendQuery(url, entries) {
-  const next = new URL(url);
-  for (const [key, value] of Object.entries(entries)) {
-    if (value) next.searchParams.set(key, value);
-  }
-  return next.toString();
-}
-
 function unavailableEndpoint(error) {
   return {
     data: null,
@@ -38,48 +33,6 @@ function unavailableEndpoint(error) {
       error,
     },
   };
-}
-
-async function readJsonEndpoint({ fetchImpl, getUrl, headers, validate, timeoutMs }) {
-  const abortController = new AbortController();
-  let timedOut = false;
-  let timeoutHandle;
-  const timeoutResult = unavailableEndpoint({ kind: 'timeout' });
-  const timeoutPromise = new Promise((resolve) => {
-    timeoutHandle = setTimeout(() => {
-      timedOut = true;
-      resolve(timeoutResult);
-      abortController.abort();
-    }, timeoutMs);
-    timeoutHandle.unref?.();
-  });
-
-  try {
-    const requestPromise = (async () => {
-      const response = await fetchImpl(getUrl(), {
-        headers,
-        signal: abortController.signal,
-      });
-      if (!response.ok) {
-        return unavailableEndpoint({ kind: 'httpError', httpStatus: response.status });
-      }
-      const data = await response.json();
-      if (!validate(data)) {
-        return unavailableEndpoint({ kind: 'invalidPayload' });
-      }
-      return {
-        data,
-        availability: { availability: 'available' },
-      };
-    })();
-    return await Promise.race([requestPromise, timeoutPromise]);
-  } catch {
-    return timedOut
-      ? timeoutResult
-      : unavailableEndpoint({ kind: 'requestFailed' });
-  } finally {
-    clearTimeout(timeoutHandle);
-  }
 }
 
 function isToolIdPayload(value) {
@@ -96,10 +49,100 @@ function isToolCatalogPayload(value) {
   ));
 }
 
+// Client failures raised before any upstream answer (no usable status).
+const LOCAL_CLIENT_ERROR_CODES = new Set([
+  OPENCODE_CLIENT_ERROR_CODES.locationRequired,
+  OPENCODE_CLIENT_ERROR_CODES.locationInvalid,
+  OPENCODE_CLIENT_ERROR_CODES.routeDenied,
+  OPENCODE_CLIENT_ERROR_CODES.generationInvalid,
+  OPENCODE_CLIENT_ERROR_CODES.invalidResponse,
+]);
+
+function clientFailure(error) {
+  const status = openCodeClientErrorStatus(error);
+  if (status > 0 && !LOCAL_CLIENT_ERROR_CODES.has(error?.code)) {
+    return { kind: 'httpError', httpStatus: status };
+  }
+  if (error?.code === OPENCODE_CLIENT_ERROR_CODES.invalidResponse) return { kind: 'invalidPayload' };
+  return { kind: 'requestFailed' };
+}
+
+/**
+ * Gen 2: one read of the host's sealed tool snapshot (`catalog.tools`, the
+ * `GET /devryan/tools` host route, DESIGN.md C.6) yields both endpoints'
+ * availability. The snapshot already carries v1 tool names.
+ */
+async function readClientToolSnapshot({ client, directory, providerID, modelID, timeoutMs }) {
+  const withModel = Boolean(providerID && modelID);
+  const abortController = new AbortController();
+  let timeoutHandle;
+  const timedOut = { ids: unavailableEndpoint({ kind: 'timeout' }), catalog: unavailableEndpoint({ kind: 'timeout' }) };
+  const timeoutPromise = new Promise((resolve) => {
+    timeoutHandle = setTimeout(() => {
+      resolve(timedOut);
+      abortController.abort();
+    }, timeoutMs);
+    timeoutHandle.unref?.();
+  });
+  const requestPromise = (async () => {
+    try {
+      const snapshot = await client.catalog.tools(
+        withModel ? { directory, providerID, modelID } : { directory },
+        { signal: abortController.signal },
+      );
+      const ids = isToolIdPayload(snapshot?.ids)
+        ? { data: snapshot.ids, availability: { availability: 'available' } }
+        : unavailableEndpoint({ kind: 'invalidPayload' });
+      const catalog = isToolCatalogPayload(snapshot?.definitions)
+        ? { data: snapshot.definitions, availability: { availability: 'available' } }
+        : unavailableEndpoint({ kind: 'invalidPayload' });
+      return { ids, catalog };
+    } catch (error) {
+      const failed = unavailableEndpoint(clientFailure(error));
+      return { ids: failed, catalog: failed };
+    }
+  })();
+  try {
+    const result = await Promise.race([requestPromise, timeoutPromise]);
+    return {
+      ids: result.ids,
+      catalog: withModel ? result.catalog : { data: null, availability: { availability: 'notRequested' } },
+    };
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+
+function buildManifest({ directory, providerID, modelID, idsResult, catalogResult }) {
+  const toolIds = idsResult.data || [];
+  const catalog = catalogResult.data;
+  const aliases = buildAliases(toolIds);
+  const manifestTools = catalog || toolIds.map((id) => ({ id }));
+
+  return {
+    tools: manifestTools.map((tool) => ({
+      ...tool,
+      aliases: getToolPermissionAliases(tool.id),
+      sourceRuntime: 'server',
+      directory,
+    })),
+    toolIds: [...toolIds],
+    aliases,
+    sourceRuntime: 'server',
+    directory,
+    selector: {
+      mode: providerID && modelID ? 'providerModel' : 'idsOnly',
+      providerID,
+      modelID,
+    },
+    availability: {
+      ids: idsResult.availability,
+      catalog: catalogResult.availability,
+    },
+  };
+}
+
 function createHarnessToolManifestReader(dependencies = {}) {
-  const fetchImpl = dependencies.fetchImpl;
-  const buildOpenCodeUrl = dependencies.buildOpenCodeUrl;
-  const getOpenCodeAuthHeaders = dependencies.getOpenCodeAuthHeaders;
   const requestedTimeoutMs = Number(dependencies.toolRequestTimeoutMs);
   const toolRequestTimeoutMs = Number.isFinite(requestedTimeoutMs) && requestedTimeoutMs > 0
     ? Math.trunc(requestedTimeoutMs)
@@ -109,83 +152,22 @@ function createHarnessToolManifestReader(dependencies = {}) {
     const directory = normalizeOptionalString(context.directory);
     const providerID = normalizeOptionalString(context.providerID);
     const modelID = normalizeOptionalString(context.modelID);
-    let headers = {};
+    let client = null;
     try {
-      headers = typeof getOpenCodeAuthHeaders === 'function'
-        ? await getOpenCodeAuthHeaders()
-        : {};
+      client = resolveGen2OpenCodeClient(dependencies.openCodeClient);
     } catch {
-      const unavailable = {
-        availability: 'unavailable',
-        error: { kind: 'authHeadersUnavailable' },
-      };
-      return {
-        tools: [],
-        toolIds: [],
-        aliases: {},
-        sourceRuntime: 'server',
+      // An unknown generation never falls back to the gen-1 routes.
+      const failed = unavailableEndpoint({ kind: 'requestFailed' });
+      return buildManifest({
         directory,
-        selector: {
-          mode: providerID && modelID ? 'providerModel' : 'idsOnly',
-          providerID,
-          modelID,
-        },
-        availability: {
-          ids: unavailable,
-          catalog: providerID && modelID ? unavailable : { availability: 'notRequested' },
-        },
-      };
-    }
-    const idsRequest = readJsonEndpoint({
-      fetchImpl,
-      getUrl: () => appendQuery(buildOpenCodeUrl('/experimental/tool/ids'), { directory }),
-      headers,
-      validate: isToolIdPayload,
-      timeoutMs: toolRequestTimeoutMs,
-    });
-    const catalogRequest = providerID && modelID
-      ? readJsonEndpoint({
-          fetchImpl,
-          getUrl: () => appendQuery(buildOpenCodeUrl('/experimental/tool'), {
-            directory,
-            provider: providerID,
-            model: modelID,
-          }),
-          headers,
-          validate: isToolCatalogPayload,
-          timeoutMs: toolRequestTimeoutMs,
-        })
-      : Promise.resolve({
-          data: null,
-          availability: { availability: 'notRequested' },
-        });
-    const [idsResult, catalogResult] = await Promise.all([idsRequest, catalogRequest]);
-    const toolIds = idsResult.data || [];
-    const catalog = catalogResult.data;
-    const aliases = buildAliases(toolIds);
-    const manifestTools = catalog || toolIds.map((id) => ({ id }));
-
-    return {
-      tools: manifestTools.map((tool) => ({
-        ...tool,
-        aliases: getToolPermissionAliases(tool.id),
-        sourceRuntime: 'server',
-        directory,
-      })),
-      toolIds: [...toolIds],
-      aliases,
-      sourceRuntime: 'server',
-      directory,
-      selector: {
-        mode: providerID && modelID ? 'providerModel' : 'idsOnly',
         providerID,
         modelID,
-      },
-      availability: {
-        ids: idsResult.availability,
-        catalog: catalogResult.availability,
-      },
-    };
+        idsResult: failed,
+        catalogResult: providerID && modelID ? failed : { data: null, availability: { availability: 'notRequested' } },
+      });
+    }
+    const snapshot = await readClientToolSnapshot({ client, directory, providerID, modelID, timeoutMs: toolRequestTimeoutMs });
+    return buildManifest({ directory, providerID, modelID, idsResult: snapshot.ids, catalogResult: snapshot.catalog });
   };
 }
 

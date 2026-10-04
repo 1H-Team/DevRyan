@@ -99,8 +99,9 @@ bun run --cwd packages/bots-runtime test
 
 ## Scoped OpenCode runtime
 
-`docker/opencode/Dockerfile` pins both `opencode-ai` and its plugin API to
-1.18.26, pins the reviewed `opencode-gpt-imagegen@0.1.12`, and runs as UID/GID
+`docker/opencode/Dockerfile` pins the native OpenCode packages to 2.0.20,
+Bun to 1.3.14, the schema-only compatibility tool helper to 1.18.33,
+and the reviewed `opencode-gpt-imagegen@0.1.12`, and runs as UID/GID
 10001. The server compiles the single-agent config
 into an immutable host channel/hash directory; Electron verifies it and the
 supervisor mounts it read-only at `/runtime-config`. The reviewed gateway
@@ -112,7 +113,7 @@ used by the production supervisor path.
 
 The server-compiled `bot` agent starts from deny-by-default and then enables the
 revision's scoped file tools (`read`, `glob`, `grep`, `edit`, `write`) and
-runtime tools (`bash`, `terminal`, `git`, `task`). `task` exposes only the
+runtime tools (native `shell`, `terminal`, `git`, `subagent`). `subagent` exposes only the
 compiled `explore` and `general` subagents, which cannot delegate again. Raw
 browser/CDP, direct MCP, Docker, host orchestration, host credentials, and
 external directories remain denied; governed computer/MCP/actions use
@@ -151,4 +152,15 @@ to `process.env` without a shell. OpenCode tools and non-recursive subagents
 inherit the snapshot. The file is read-only, run-scoped, absent from computer
 containers, and removed by host cleanup on every terminal/startup/shutdown path.
 
-The OpenCode Docker build also applies the shared `imagegen-model-hotfix.js` source gate: `devryan_image` uses GPT-6 Astra with medium reasoning. The offline OAuth acceptance fixture checks both fields on the actual image request.
+The native server exposes capability-authenticated readiness, queued prompts,
+and schema-validated, tool-free structured generation. Its allowlisted native
+routes pin both query and header location to `/workspace`. Native credentials
+are seeded explicitly from the run mount; ChatGPT access always resolves
+through the existing host coordinator, which retains refresh ownership.
+
+The image adapter reuses the source-gated original schema, request/parser and
+versioned PNG executor with bounded workspace reads, exclusive writes and
+awaited cancellation. It retains GPT-6 Astra with medium reasoning. The offline
+Docker fixture checks both fields through actual native tool execution.
+Native write/edit/patch share an SDK permission action; the Bot adapter also
+checks the immutable revision's separate write/edit grants before execution.

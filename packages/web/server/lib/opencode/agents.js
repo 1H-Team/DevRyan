@@ -453,6 +453,15 @@ function applyAgentModelOverrideToRuntimeFrontmatter(frontmatter, override) {
   return next;
 }
 
+// Slim owns the coordinator selection, while the managed Council companion
+// has always retained the sidecar's ordered member selections independently.
+function applySlimCouncillorOverride(agent, override) {
+  if (agent.name !== 'council' || !Array.isArray(override?.councillors)) return agent;
+  const next = applyAgentModelOverride(agent, { councillors: override.councillors });
+  next.overrides = { ...agent.overrides, councillors: true };
+  return next;
+}
+
 function getDevRyanBaseConfigAgents(workingDirectory) {
   const agentsByName = new Map();
 
@@ -965,7 +974,9 @@ function listConfigAgents(workingDirectory, options = {}) {
   const overrides = listAgentModelOverrides(options);
   const backupModels = listAgentBackupModels(options);
   return getBaseConfigAgents(workingDirectory, options)
-    .map((agent) => {
+    .map((baseAgent) => {
+      const agent = baseAgent.source === SLIM_SCOPE || baseAgent.slimRuntimeModel
+        ? applySlimCouncillorOverride(baseAgent, overrides[baseAgent.name]) : baseAgent;
       if (agent.source === SLIM_SCOPE) return agent;
       if (!agent.slimRuntimeModel) return applyAgentModelOverride(agent, overrides[agent.name]);
       // Show the model that actually runs: a Slim entry without a model keeps
@@ -1140,7 +1151,7 @@ function getAgentConfig(agentName, workingDirectory, options = {}) {
     return {
       source: 'slim',
       scope: SLIM_SCOPE,
-      config: attachAgentBackupModel(slimAgents[agentName], backupModels),
+      config: attachAgentBackupModel(applySlimCouncillorOverride(slimAgents[agentName], overrides[agentName]), backupModels),
     };
   }
   const slimRuntimeAgents = getSlimRuntimeModelAgents(workingDirectory, options);
@@ -1149,7 +1160,7 @@ function getAgentConfig(agentName, workingDirectory, options = {}) {
   if (projectPath && fs.existsSync(projectPath)) {
     const baseConfig = parseAgentMdFile(projectPath, AGENT_SCOPE.PROJECT, path.join(workingDirectory, '.opencode', 'agents'));
     const modelConfig = applySlimModelMetadata(baseConfig, slimRuntimeAgents[agentName]);
-    const config = modelConfig.slimRuntimeModel ? modelConfig : applyAgentModelOverride(modelConfig, overrides[agentName]);
+    const config = modelConfig.slimRuntimeModel ? applySlimCouncillorOverride(modelConfig, overrides[agentName]) : applyAgentModelOverride(modelConfig, overrides[agentName]);
     return {
       source: 'md',
       scope: AGENT_SCOPE.PROJECT,
@@ -1170,7 +1181,7 @@ function getAgentConfig(agentName, workingDirectory, options = {}) {
       };
     applyParsedModelFields(baseConfig, packagedAgent.frontmatter.model);
     const modelConfig = applySlimModelMetadata(baseConfig, slimRuntimeAgents[agentName]);
-    const config = modelConfig.slimRuntimeModel ? modelConfig : applyAgentModelOverride(modelConfig, overrides[agentName]);
+    const config = modelConfig.slimRuntimeModel ? applySlimCouncillorOverride(modelConfig, overrides[agentName]) : applyAgentModelOverride(modelConfig, overrides[agentName]);
     return {
       source: 'md',
       scope: PACKAGED_AGENT_SCOPE,
@@ -1182,7 +1193,7 @@ function getAgentConfig(agentName, workingDirectory, options = {}) {
     return {
       source: 'slim',
       scope: SLIM_SCOPE,
-      config: attachAgentBackupModel(slimRuntimeAgents[agentName], backupModels),
+      config: attachAgentBackupModel(applySlimCouncillorOverride(slimRuntimeAgents[agentName], overrides[agentName]), backupModels),
     };
   }
 

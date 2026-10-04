@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { it } from 'node:test';
 import { startOwnedProcess } from './process.mjs';
 import { createQaProcessOwnership } from './process-ownership.mjs';
@@ -12,6 +14,44 @@ const until = async predicate => {
   }
   throw new Error('Timed out waiting for owned-process evidence');
 };
+
+it('OS snapshots exclude only their own actual observer process', async () => {
+  // Instrument the real promisified spawn in a disposable Node process, before
+  // loading the snapshot module. No process rows or executable are substituted.
+  const script = `
+    const cp = await import('node:child_process');
+    const {promisify} = await import('node:util');
+    const {syncBuiltinESMExports} = await import('node:module');
+    const original = cp.default.execFile;
+    const originalAsync = promisify(original);
+    const observerPids = [];
+    const wrapped = (...args) => original(...args);
+    wrapped[promisify.custom] = (...args) => {
+      const observation = originalAsync(...args);
+      observerPids.push(observation.child.pid);
+      return observation;
+    };
+    cp.default.execFile = wrapped;
+    syncBuiltinESMExports();
+    const {readQaProcessSnapshot} = await import(${JSON.stringify(new URL('./process-ownership.mjs', import.meta.url).href)});
+    const neighbour = cp.spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)']);
+    try {
+      await new Promise(resolve => neighbour.once('spawn', resolve));
+      const snapshot = await readQaProcessSnapshot();
+      console.log(JSON.stringify({observerPids, pids:snapshot.map(row=>row.pid), rootPid:process.pid, neighbourPid:neighbour.pid}));
+    } finally {
+      const stopped = new Promise(resolve => neighbour.once('exit', resolve));
+      neighbour.kill(); await stopped;
+    }
+  `;
+  const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], { timeout: 10_000 });
+  const evidence = JSON.parse(stdout);
+  assert.equal(evidence.observerPids.length, 1);
+  assert.ok(Number.isSafeInteger(evidence.observerPids[0]));
+  assert.equal(evidence.pids.includes(evidence.observerPids[0]), false);
+  assert.ok(evidence.pids.includes(evidence.rootPid));
+  assert.ok(evidence.pids.includes(evidence.neighbourPid), 'Another real child remains visible');
+});
 
 it('stops only the child group it owns and tolerates repeated cleanup', async () => {
   const first = startOwnedProcess(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {});

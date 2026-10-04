@@ -22,11 +22,9 @@ describe('provider prompt tool policy', () => {
   test('keeps managed delegation root-owned without hiding plugins or MCP tools', () => {
     expect(resolveProviderPromptTools('openai', 'orchestrator')).toEqual({
       task: false,
-      invalid: false,
     });
     expect(resolveProviderPromptTools('cursor-acp', ' Orchestrator ')).toEqual({
       task: false,
-      invalid: false,
     });
   });
 
@@ -35,7 +33,6 @@ describe('provider prompt tool policy', () => {
       'resend_*': false,
       'mcp__resend__*': false,
       task: false,
-      invalid: false,
     });
   });
 
@@ -68,7 +65,6 @@ describe('provider prompt tool policy', () => {
   test('adds no tool overrides for UI Plan Mode', () => {
     expect(resolveProviderPromptTools('openai', 'orchestrator', { planMode: true })).toEqual({
       task: false,
-      invalid: false,
     });
     expect(resolveProviderPromptTools('openai', 'plan', { planMode: true })).toBeUndefined();
   });

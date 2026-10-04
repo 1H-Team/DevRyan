@@ -1,3 +1,4 @@
+import { resolveGen2OpenCodeClient } from '../opencode/opencode-client-seam.js';
 import { detectPlanReadyRevision, isPlanReadySuppressedUserMessage, PLAN_READY_DEFAULT_TEMPLATE } from './plan-ready.js';
 
 export const SESSION_COMPLETION_NOTIFICATION_SETTLE_MS = 500;
@@ -33,10 +34,10 @@ export const createNotificationTriggerRuntime = (deps) => {
     emitDesktopNotification,
     broadcastUiNotification,
     sendPushToAllUiSessions,
-    buildOpenCodeUrl,
-    getOpenCodeAuthHeaders,
     fetchSessionInfo,
     forgetSessionCaches,
+    // Runtime reads use the required native application client.
+    openCodeClient,
   } = deps;
 
   let getIsWindowFocused = typeof deps.getIsWindowFocused === 'function'
@@ -88,6 +89,19 @@ export const createNotificationTriggerRuntime = (deps) => {
   const completionRetryTimers = new Map();
   const completionSettleTimers = new Map();
   const sessionProcessingById = new Map();
+  const pendingWork = new Set();
+  let checkpointHeld = false, checkpointFailed = false, checkpointDrain;
+  const ownWork = (operation) => {
+    pendingWork.add(operation);
+    operation.then(() => pendingWork.delete(operation), () => { checkpointFailed = true; pendingWork.delete(operation); });
+    return operation;
+  };
+  const scheduleNotification = (work, delay) => setTimeout(() => {
+    if (checkpointHeld) return;
+    void ownWork(Promise.resolve().then(work)).catch((error) => {
+      console.warn('[Notification] Scheduled notification failed:', error?.message || error);
+    });
+  }, delay);
   let planEventCacheChars = 0;
   let triggerEventOrder = 0;
 
@@ -271,18 +285,8 @@ export const createNotificationTriggerRuntime = (deps) => {
 
   const fetchSpecificSessionParentId = async (sessionId) => {
     try {
-      const response = await fetch(buildOpenCodeUrl(`/session/${encodeURIComponent(sessionId)}`, ''), {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          ...getOpenCodeAuthHeaders(),
-        },
-        signal: AbortSignal.timeout(2000),
-      });
-      if (!response.ok) {
-        return undefined;
-      }
-      const data = await response.json().catch(() => null);
+      const client = resolveGen2OpenCodeClient(openCodeClient);
+      const data = await client.sessions.get(sessionId, { timeoutMs: 2000 });
       const parentID = readSessionParentIdFromResponse(data);
       setCachedSessionParentId(sessionId, parentID);
       return parentID;
@@ -301,18 +305,8 @@ export const createNotificationTriggerRuntime = (deps) => {
     if (specificParentID !== undefined) return specificParentID;
 
     try {
-      const response = await fetch(buildOpenCodeUrl('/session', ''), {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          ...getOpenCodeAuthHeaders(),
-        },
-        signal: AbortSignal.timeout(2000),
-      });
-      if (!response.ok) {
-        return undefined;
-      }
-      const data = await response.json().catch(() => null);
+      const client = resolveGen2OpenCodeClient(openCodeClient);
+      const data = await client.sessions.list({}, { timeoutMs: 2000 });
       const sessions = Array.isArray(data)
         ? data
         : Array.isArray(data?.items)
@@ -725,25 +719,21 @@ export const createNotificationTriggerRuntime = (deps) => {
     });
   };
 
+  // One message record, or undefined when OpenCode refuses the read.
+  const fetchOpenCodeSessionMessage = async (sessionId, messageId) => {
+    const client = resolveGen2OpenCodeClient(openCodeClient);
+    return client.sessions.message(sessionId, messageId, { timeoutMs: 2000 });
+  };
+
   const verifyPlanRevisionParent = async (revision, sessionId, fetchedMessages = []) => {
     if (!revision?.sourceParentMessageId) return revision;
     const parentId = revision.sourceParentMessageId;
     try {
       let parent = fetchedMessages.find((message) => message?.info?.id === parentId);
       if (!parent) {
-        if (typeof fetchSessionMessage === 'function') {
-          parent = await fetchSessionMessage(sessionId, parentId);
-        } else {
-          const response = await fetch(buildOpenCodeUrl(
-            `/session/${encodeURIComponent(sessionId)}/message/${encodeURIComponent(parentId)}`, '',
-          ), {
-            method: 'GET',
-            headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
-            signal: AbortSignal.timeout(2000),
-          });
-          if (!response.ok) return undefined;
-          parent = await response.json();
-        }
+        parent = typeof fetchSessionMessage === 'function'
+          ? await fetchSessionMessage(sessionId, parentId)
+          : await fetchOpenCodeSessionMessage(sessionId, parentId);
       }
       if (parent?.info?.id !== parentId || parent.info.role !== 'user'
         || parent.info.sessionID !== sessionId || !Array.isArray(parent.parts)) return undefined;
@@ -956,7 +946,8 @@ export const createNotificationTriggerRuntime = (deps) => {
   };
 
   const enqueueSessionWork = (sessionId, work) => {
-    if (!sessionId) return Promise.resolve().then(work);
+    if (checkpointHeld) return Promise.resolve();
+    if (!sessionId) return ownWork(Promise.resolve().then(work));
     const previous = sessionProcessingById.get(sessionId) ?? Promise.resolve();
     const current = previous
       .catch(() => {})
@@ -967,11 +958,11 @@ export const createNotificationTriggerRuntime = (deps) => {
         }
       });
     sessionProcessingById.set(sessionId, current);
-    return current;
+    return ownWork(current);
   };
 
   const scheduleCompletionRetry = (sessionId, candidate, { metadata = false } = {}) => {
-    if (completionRetryTimers.has(sessionId)) return;
+    if (checkpointHeld || completionRetryTimers.has(sessionId)) return;
     const retryField = metadata ? 'metadataRetryCount' : 'retryCount';
     const retryCount = candidate[retryField] ?? 0;
     const delay = COMPLETION_RETRY_DELAYS_MS[Math.min(
@@ -1045,6 +1036,7 @@ export const createNotificationTriggerRuntime = (deps) => {
   };
 
   const maybeSchedulePendingCompletionForIdleSession = async (sessionId) => {
+    if (checkpointHeld) return;
     const candidate = completionCandidatesBySessionId.get(sessionId);
     if (!completionCanSettle(sessionId, candidate) || completionSettleTimers.has(sessionId)) return;
 
@@ -1204,7 +1196,8 @@ export const createNotificationTriggerRuntime = (deps) => {
         clearTimeout(existingTimer);
       }
 
-      const timer = setTimeout(async () => {
+      if (checkpointHeld) return;
+      const timer = scheduleNotification(async () => {
         pushQuestionDebounceTimers.delete(sessionId);
 
         if (await isHiddenNotificationSession(sessionId)) return;
@@ -1264,7 +1257,7 @@ export const createNotificationTriggerRuntime = (deps) => {
           });
         }
 
-        void sendPushToAllUiSessions(
+        await sendPushToAllUiSessions(
           {
             title,
             body,
@@ -1338,7 +1331,8 @@ export const createNotificationTriggerRuntime = (deps) => {
         clearTimeout(existingTimer.timer);
       }
 
-      const timer = setTimeout(async () => {
+      if (checkpointHeld) return;
+      const timer = scheduleNotification(async () => {
         pushPermissionDebounceTimers.delete(sessionId);
 
         if (await isHiddenNotificationSession(sessionId)) return;
@@ -1417,7 +1411,7 @@ export const createNotificationTriggerRuntime = (deps) => {
           rememberNotifiedPermissionRequest(requestKey);
         }
 
-        void sendPushToAllUiSessions(
+        await sendPushToAllUiSessions(
           {
             title,
             body,
@@ -1451,5 +1445,19 @@ export const createNotificationTriggerRuntime = (deps) => {
     setAutoAcceptSession,
     setGetIsWindowFocused,
     forgetSession,
+    holdForCheckpoint() {
+      checkpointHeld = true;
+      for (const timers of [pushQuestionDebounceTimers, completionRetryTimers, completionSettleTimers]) {
+        for (const timer of timers.values()) clearTimeout(timer);
+        timers.clear();
+      }
+      for (const { timer } of pushPermissionDebounceTimers.values()) clearTimeout(timer);
+      pushPermissionDebounceTimers.clear();
+      checkpointDrain ??= (async () => {
+        await Promise.allSettled([...pendingWork]);
+        if (checkpointFailed) throw Object.assign(new Error('bundle_notifications_unsettled'), { code: 'bundle_notifications_unsettled' });
+      })();
+      return checkpointDrain;
+    },
   };
 };

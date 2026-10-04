@@ -27,6 +27,8 @@ export type CursorRuntimeStatus = {
   providerId: string;
   bridge: { kind: 'cursor-sdk' };
   sdkAuthConfigured: boolean;
+  authSource?: 'native-credential';
+  authObservation?: 'unknown';
   usageAuthConfigured: boolean;
   ripgrepConfigured?: boolean;
   ripgrepSource?: 'explicit' | 'electron-resources' | 'package' | 'path' | 'unsupported' | 'missing';
@@ -146,7 +148,7 @@ export type CursorQuestionRequest = {
 export type CursorSdkRuntime = {
   reconcileSessionChanges(scope: { sessionID: string; directory: string }): Promise<{ pending: boolean; reasons: string[] }>;
   getRuntimeStatus(): CursorRuntimeStatus;
-  verifyConnection(): Promise<CursorRuntimeStatus & { ok: boolean; configured: boolean }>;
+  verifyConnection(scope?:{directory?:string}): Promise<CursorRuntimeStatus & { ok: boolean; configured: boolean }>;
   prewarm(): Promise<CursorRuntimeStatus & { ok: boolean; configured: boolean }>;
   prewarmSession(input: {
     sessionID: string;
@@ -156,9 +158,12 @@ export type CursorSdkRuntime = {
     agent?: string | null;
     messageID?: string | null;
   }): Promise<{ ok: boolean; agentID?: string; cacheHit?: boolean; error?: string }>;
-  getVirtualProvider(): Promise<{ id: string; name: string; models: Record<string, CursorModelRecord> }>;
+  getVirtualProvider(scope?: {directory?:string}): Promise<{ id: string; name: string; models: Record<string, CursorModelRecord> }>;
   getCachedVirtualProvider(): { id: string; name: string; models: Record<string, CursorModelRecord> };
-  refreshVirtualProvider(options?: { force?: boolean; reason?: string; timeoutMs?: number }): Promise<{ id: string; name: string; models: Record<string, CursorModelRecord> }>;
+  getDeclaredVirtualProvider(): { id: string; name: string; models: Record<string, CursorModelRecord> };
+  refreshVirtualProvider(options?: { force?: boolean; reason?: string; timeoutMs?: number; directory?:string }): Promise<{ id: string; name: string; models: Record<string, CursorModelRecord> }>;
+  validateModelSelection(input: { directory?: string; modelID: string; variant?: string | null }): Promise<boolean | null>;
+  generateText(input: { titleHelper?: boolean; text: string; directory: string; sessionID?: string; modelID: string; variant?: string; signal?: AbortSignal; timeoutMs?: number }): Promise<string | null>;
   generateTitle(input: {
     text: string;
     directory?: string | null;
@@ -228,6 +233,23 @@ export function resolveCursorSdkWorkerRuntimeConfig(options?: {
   workerEnv: Record<string, string>;
 };
 export function createCursorSdkRuntime(options: Record<string, unknown> & {
+  /** Native hosts resolve the current selected key for each operation. No
+   * compatibility auth or environment fallback runs when this is supplied. */
+  resolveApiKey?: (input:
+    | { kind: 'prompt'; sessionID: string; directory: string; userMessageID: string;
+      assistantMessageID: string; agent: string; modelID: string; variant?: string }
+    | { kind: 'title'; directory?: string | null; sessionID?: string | null }
+    | { kind: 'catalog' | 'verify'; directory?:string }
+    | { kind: 'prewarm'; directory?: string; sessionID?: string }
+  ) => Promise<string | null>;
+  ownedReadOnly?: <A>(input:{kind:'title'|'catalog'|'verify';directory?:string;sessionID?:string},action:()=>Promise<A>)=>Promise<A>;
+  nativeWarming?: false;
+  /** Retain the admitted caller through actual execution and persistence settlement. */
+  ownedPrompt?: (input: { sessionID: string; directory: string; userMessageID: string;
+    assistantMessageID: string; agent: string; modelID: string; variant?: string;
+    modelSelection: CursorSdkModelSelection }) => Promise<{
+      run<A>(action: () => Promise<A>): Promise<A>; close(): Promise<void>;
+    }>;
   onTitleUsageObservation?: (input: {
     sessionID: string | null; directory: string; observation: CursorRunUsageObservation;
   }) => void;

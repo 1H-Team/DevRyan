@@ -222,7 +222,7 @@ describe("useConfigStore default agent selection", () => {
     })
   })
 
-  test("managed fresh drafts retain settings default while new chat captures use Medium", () => {
+  test("managed fresh drafts preserve an explicitly captured provider default", () => {
     setManagedDeveloper()
     useSessionUIStore.setState({
       currentSessionId: null,
@@ -289,7 +289,7 @@ describe("useConfigStore default agent selection", () => {
       modelID: "gpt-5.6-sol",
       variant: null,
     })
-    expect(send.variant).toBe("medium")
+    expect(send.variant).toBeNull()
   })
 
   test("fresh drafts show a managed account's personal thinking default", () => {
@@ -369,7 +369,7 @@ describe("useConfigStore default agent selection", () => {
     expect(useConfigStore.getState().currentVariant).toBeNull()
   })
 
-  test("rejects unsupported managed variants without inventing an effort", () => {
+  test("preserves unsupported managed variants for availability validation", () => {
     setManagedDeveloper()
     useConfigStore.setState({
       providers: [{
@@ -395,10 +395,10 @@ describe("useConfigStore default agent selection", () => {
 
     useConfigStore.getState().applyDefaultsToCurrent()
 
-    expect(useConfigStore.getState().currentVariant).toBeNull()
+    expect(useConfigStore.getState().currentVariant).toBe("retired")
   })
 
-  test("falls back from an unavailable managed selection to the configured agent model and variant", () => {
+  test("preserves an unavailable managed selection instead of inheriting another tuple", () => {
     setManagedDeveloper()
     useConfigStore.setState({
       providers: [{
@@ -425,8 +425,8 @@ describe("useConfigStore default agent selection", () => {
 
     useConfigStore.getState().applyDefaultsToCurrent()
 
-    expect(useConfigStore.getState().currentModelId).toBe("gpt-5.6-sol")
-    expect(useConfigStore.getState().currentVariant).toBe("high")
+    expect(useConfigStore.getState().currentModelId).toBe("retired-model")
+    expect(useConfigStore.getState().currentVariant).toBe("low")
   })
 
   test("stores model and variant together for later managed-account persistence", () => {

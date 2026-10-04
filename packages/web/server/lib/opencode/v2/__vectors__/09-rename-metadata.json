@@ -1,0 +1,1679 @@
+{
+ "vector": "09-rename-metadata",
+ "title": "D9: generated title, rename, metadata patches, permissions patch, in-process metadata write, fork inheritance",
+ "design": "D9 (+F4, F5)",
+ "opencode": "2.0.20",
+ "capturedWith": "g2trace on the G1 embedded host (ServerFetch.make + Bun listener), simulation backend; see README.md",
+ "normalization": {
+  "ids": 63,
+  "timestamps": 69,
+  "sha256": 4,
+  "sha1": 0,
+  "slugs": 1,
+  "timestampBase": 1767225600000,
+  "timestampStep": 1000
+ },
+ "frames": [
+  "data: {\"id\":\"evt_000000000001normalized0000\",\"created\":1767225635000,\"type\":\"session.created\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"slug\":\"slug-1\",\"version\":\"0.0.0-spike\",\"projectID\":\"global\",\"location\":{\"directory\":\"<home>/workspace\"},\"subpath\":\"\"},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":0,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000002normalized0000\",\"created\":1767225636000,\"type\":\"session.inbox.enqueued\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"inboxID\":\"msg_000000000001normalized0000\",\"sessionID\":\"ses_fffffffffff3normalized0000\",\"item\":{\"type\":\"user\",\"payload\":{\"text\":\"hello\"},\"delivery\":\"steer\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":1,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000003normalized0000\",\"created\":1767225637000,\"type\":\"session.execution.started\",\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":2,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000004normalized0000\",\"created\":1767225638000,\"metadata\":{\"instructions\":{\"initial\":true}},\"type\":\"session.instructions.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"delta\":{\"core/codemode\":\"0000000000000000000000000000000000000000000000000000000000000001\",\"core/skill-guidance\":\"0000000000000000000000000000000000000000000000000000000000000002\",\"core/date\":\"0000000000000000000000000000000000000000000000000000000000000003\",\"core/environment\":\"0000000000000000000000000000000000000000000000000000000000000004\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":3,\"version\":2}}\n\n",
+  "data: {\"id\":\"evt_000000000005normalized0000\",\"created\":1767225639000,\"type\":\"session.inbox.delivered\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"inboxID\":\"msg_000000000001normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":4,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000006normalized0000\",\"created\":1767225641000,\"type\":\"session.step.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"agent\":\"build\",\"model\":{\"id\":\"m1\",\"providerID\":\"sim\"},\"assistantMessageID\":\"msg_000000000002normalized0000\",\"started\":1767225640000},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":5,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000007normalized0000\",\"created\":1767225642000,\"type\":\"session.text.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"ordinal\":0},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":6,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000008normalized0000\",\"created\":1767225643000,\"type\":\"session.usage.updated\",\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}\n\n",
+  "data: {\"id\":\"evt_000000000009normalized0000\",\"created\":1767225644000,\"type\":\"session.renamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"title\":\"Generated title\"},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":8,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000anormalized0000\",\"created\":1767225644000,\"type\":\"session.text.delta\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"ordinal\":0,\"delta\":\"hello back\"}}\n\n",
+  "data: {\"id\":\"evt_00000000000bnormalized0000\",\"created\":1767225645000,\"type\":\"session.text.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"ordinal\":0,\"text\":\"hello back\"},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":9,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000cnormalized0000\",\"created\":1767225645000,\"type\":\"session.step.streamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":10,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000dnormalized0000\",\"created\":1767225646000,\"type\":\"session.step.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"assistantMessageID\":\"msg_000000000002normalized0000\",\"finish\":\"stop\",\"rawFinish\":\"stop\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":11,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000000enormalized0000\",\"created\":1767225646000,\"type\":\"session.usage.updated\",\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}\n\n",
+  "data: {\"id\":\"evt_00000000000fnormalized0000\",\"created\":1767225646000,\"type\":\"session.execution.succeeded\",\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":12,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000010normalized0000\",\"created\":1767225647000,\"type\":\"session.renamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"title\":\"Renamed by user\"},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":13,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000011normalized0000\",\"created\":1767225648000,\"type\":\"session.metadata.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"metadata\":{\"a\":1,\"devryan\":{\"archive\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"at\":1767225601000}}}},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":14,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000012normalized0000\",\"created\":1767225649000,\"type\":\"session.metadata.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"metadata\":{\"b\":2,\"devryan\":{\"todo\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"items\":[{\"content\":\"x\",\"status\":\"pending\"}],\"rev\":1}}}},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":15,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000013normalized0000\",\"created\":1767225650000,\"type\":\"session.metadata.updated\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"metadata\":{\"a\":null}},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":16,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000014normalized0000\",\"created\":1767225651000,\"type\":\"session.permissions\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"permissions\":[{\"action\":\"edit\",\"resource\":\"*\",\"effect\":\"ask\"}]},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":17,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000015normalized0000\",\"created\":1767225652000,\"type\":\"session.inbox.enqueued\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"inboxID\":\"msg_000000000004normalized0000\",\"sessionID\":\"ses_fffffffffff3normalized0000\",\"item\":{\"type\":\"user\",\"payload\":{\"text\":\"write a todo\"},\"delivery\":\"steer\"}},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":18,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000016normalized0000\",\"created\":1767225653000,\"type\":\"session.execution.started\",\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":19,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000017normalized0000\",\"created\":1767225654000,\"type\":\"session.inbox.delivered\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"inboxID\":\"msg_000000000004normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":20,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000018normalized0000\",\"created\":1767225656000,\"type\":\"session.step.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"agent\":\"build\",\"model\":{\"id\":\"m1\",\"providerID\":\"sim\"},\"assistantMessageID\":\"msg_000000000005normalized0000\",\"started\":1767225655000},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":21,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000019normalized0000\",\"created\":1767225657000,\"type\":\"session.tool.input.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"assistantMessageID\":\"msg_000000000005normalized0000\",\"id\":\"call_s09_todo\",\"name\":\"todo_probe\"},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":22,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001anormalized0000\",\"created\":1767225658000,\"type\":\"session.tool.input.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"assistantMessageID\":\"msg_000000000005normalized0000\",\"id\":\"call_s09_todo\",\"text\":\"{\\\"rev\\\":7}\"},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":23,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001bnormalized0000\",\"created\":1767225659000,\"type\":\"session.tool.called\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"assistantMessageID\":\"msg_000000000005normalized0000\",\"id\":\"call_s09_todo\",\"input\":{\"rev\":7},\"executed\":false},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":24,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001cnormalized0000\",\"created\":1767225659000,\"type\":\"session.step.streamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"assistantMessageID\":\"msg_000000000005normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":25,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001dnormalized0000\",\"created\":1767225660000,\"type\":\"session.tool.success\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"assistantMessageID\":\"msg_000000000005normalized0000\",\"id\":\"call_s09_todo\",\"content\":[{\"type\":\"text\",\"text\":\"todo-written\"}],\"metadata\":{\"truncated\":false},\"executed\":false},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":26,\"version\":2}}\n\n",
+  "data: {\"id\":\"evt_00000000001enormalized0000\",\"created\":1767225661000,\"type\":\"session.step.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"assistantMessageID\":\"msg_000000000005normalized0000\",\"finish\":\"tool-calls\",\"rawFinish\":\"tool_calls\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":27,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_00000000001fnormalized0000\",\"created\":1767225661000,\"type\":\"session.usage.updated\",\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}\n\n",
+  "data: {\"id\":\"evt_000000000020normalized0000\",\"created\":1767225663000,\"type\":\"session.step.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"agent\":\"build\",\"model\":{\"id\":\"m1\",\"providerID\":\"sim\"},\"assistantMessageID\":\"msg_000000000006normalized0000\",\"started\":1767225662000},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":28,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000021normalized0000\",\"created\":1767225664000,\"type\":\"session.text.started\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"assistantMessageID\":\"msg_000000000006normalized0000\",\"ordinal\":0},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":29,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000022normalized0000\",\"created\":1767225665000,\"type\":\"session.text.delta\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"assistantMessageID\":\"msg_000000000006normalized0000\",\"ordinal\":0,\"delta\":\"todo written\"}}\n\n",
+  "data: {\"id\":\"evt_000000000023normalized0000\",\"created\":1767225665000,\"type\":\"session.text.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"assistantMessageID\":\"msg_000000000006normalized0000\",\"ordinal\":0,\"text\":\"todo written\"},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":30,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000024normalized0000\",\"created\":1767225666000,\"type\":\"session.step.streamed\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"assistantMessageID\":\"msg_000000000006normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":31,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000025normalized0000\",\"created\":1767225666000,\"type\":\"session.step.ended\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"assistantMessageID\":\"msg_000000000006normalized0000\",\"finish\":\"stop\",\"rawFinish\":\"stop\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":32,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000026normalized0000\",\"created\":1767225667000,\"type\":\"session.usage.updated\",\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}}\n\n",
+  "data: {\"id\":\"evt_000000000027normalized0000\",\"created\":1767225667000,\"type\":\"session.execution.succeeded\",\"data\":{\"sessionID\":\"ses_fffffffffff3normalized0000\"},\"durable\":{\"aggregateID\":\"ses_fffffffffff3normalized0000\",\"seq\":33,\"version\":1}}\n\n",
+  "data: {\"id\":\"evt_000000000028normalized0000\",\"created\":1767225668000,\"type\":\"session.forked\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff2normalized0000\",\"parentID\":\"ses_fffffffffff3normalized0000\",\"boundary\":{\"type\":\"before\",\"messageID\":\"msg_000000000004normalized0000\"},\"instructions\":{\"core/codemode\":\"0000000000000000000000000000000000000000000000000000000000000001\",\"core/skill-guidance\":\"0000000000000000000000000000000000000000000000000000000000000002\",\"core/date\":\"0000000000000000000000000000000000000000000000000000000000000003\",\"core/environment\":\"0000000000000000000000000000000000000000000000000000000000000004\"},\"instructionEntries\":[]},\"durable\":{\"aggregateID\":\"ses_fffffffffff2normalized0000\",\"seq\":0,\"version\":2}}\n\n",
+  "data: {\"id\":\"evt_000000000029normalized0000\",\"created\":1767225669000,\"type\":\"session.forked\",\"location\":{\"directory\":\"<home>/workspace\"},\"data\":{\"sessionID\":\"ses_fffffffffff1normalized0000\",\"parentID\":\"ses_fffffffffff3normalized0000\",\"boundary\":{\"type\":\"through\",\"messageID\":\"msg_000000000007normalized0000\"},\"instructions\":{\"core/codemode\":\"0000000000000000000000000000000000000000000000000000000000000001\",\"core/skill-guidance\":\"0000000000000000000000000000000000000000000000000000000000000002\",\"core/date\":\"0000000000000000000000000000000000000000000000000000000000000003\",\"core/environment\":\"0000000000000000000000000000000000000000000000000000000000000004\"},\"instructionEntries\":[]},\"durable\":{\"aggregateID\":\"ses_fffffffffff1normalized0000\",\"seq\":0,\"version\":2}}\n\n"
+ ],
+ "rest": [
+  {
+   "label": "session.create",
+   "method": "POST",
+   "path": "/api/session",
+   "request": {
+    "location": {
+     "directory": "<home>/workspace"
+    }
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffff3normalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1767225635000,
+      "updated": 1767225635000
+     },
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffff3normalized0000/prompt",
+   "request": {
+    "text": "hello"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000001normalized0000",
+     "sessionID": "ses_fffffffffff3normalized0000",
+     "time": {
+      "created": 1767225636000
+     },
+     "type": "user",
+     "payload": {
+      "text": "hello"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "session.get.generatedTitle",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffff3normalized0000",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffff3normalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "outcome": "succeeded",
+     "time": {
+      "created": 1767225635000,
+      "updated": 1767225644000,
+      "idle": 1767225646000
+     },
+     "title": "Generated title",
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.update.title",
+   "method": "PATCH",
+   "path": "/api/session/ses_fffffffffff3normalized0000",
+   "request": {
+    "title": "Renamed by user"
+   },
+   "status": 204,
+   "contentType": null,
+   "body": null
+  },
+  {
+   "label": "session.update.metadata.a",
+   "method": "PATCH",
+   "path": "/api/session/ses_fffffffffff3normalized0000",
+   "request": {
+    "metadata": {
+     "a": 1,
+     "devryan": {
+      "archive": {
+       "sessionID": "ses_fffffffffff3normalized0000",
+       "at": 1767225601000
+      }
+     }
+    }
+   },
+   "status": 204,
+   "contentType": null,
+   "body": null
+  },
+  {
+   "label": "after.a.session.get",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffff3normalized0000",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffff3normalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "outcome": "succeeded",
+     "time": {
+      "created": 1767225635000,
+      "updated": 1767225648000,
+      "idle": 1767225646000
+     },
+     "title": "Renamed by user",
+     "metadata": {
+      "a": 1,
+      "devryan": {
+       "archive": {
+        "sessionID": "ses_fffffffffff3normalized0000",
+        "at": 1767225601000
+       }
+      }
+     },
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.update.metadata.b",
+   "method": "PATCH",
+   "path": "/api/session/ses_fffffffffff3normalized0000",
+   "request": {
+    "metadata": {
+     "b": 2,
+     "devryan": {
+      "todo": {
+       "sessionID": "ses_fffffffffff3normalized0000",
+       "items": [
+        {
+         "content": "x",
+         "status": "pending"
+        }
+       ],
+       "rev": 1
+      }
+     }
+    }
+   },
+   "status": 204,
+   "contentType": null,
+   "body": null
+  },
+  {
+   "label": "after.b.session.get",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffff3normalized0000",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffff3normalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "outcome": "succeeded",
+     "time": {
+      "created": 1767225635000,
+      "updated": 1767225649000,
+      "idle": 1767225646000
+     },
+     "title": "Renamed by user",
+     "metadata": {
+      "b": 2,
+      "devryan": {
+       "todo": {
+        "sessionID": "ses_fffffffffff3normalized0000",
+        "items": [
+         {
+          "content": "x",
+          "status": "pending"
+         }
+        ],
+        "rev": 1
+       }
+      }
+     },
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.update.metadata.nullA",
+   "method": "PATCH",
+   "path": "/api/session/ses_fffffffffff3normalized0000",
+   "request": {
+    "metadata": {
+     "a": null
+    }
+   },
+   "status": 204,
+   "contentType": null,
+   "body": null
+  },
+  {
+   "label": "after.nullA.session.get",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffff3normalized0000",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffff3normalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "outcome": "succeeded",
+     "time": {
+      "created": 1767225635000,
+      "updated": 1767225650000,
+      "idle": 1767225646000
+     },
+     "title": "Renamed by user",
+     "metadata": {
+      "a": null
+     },
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.update.permissions",
+   "method": "PATCH",
+   "path": "/api/session/ses_fffffffffff3normalized0000",
+   "request": {
+    "permissions": [
+     {
+      "action": "edit",
+      "resource": "*",
+      "effect": "ask"
+     }
+    ]
+   },
+   "status": 204,
+   "contentType": null,
+   "body": null
+  },
+  {
+   "label": "after.permissions.session.get",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffff3normalized0000",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffff3normalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "outcome": "succeeded",
+     "time": {
+      "created": 1767225635000,
+      "updated": 1767225651000,
+      "idle": 1767225646000
+     },
+     "title": "Renamed by user",
+     "metadata": {
+      "a": null
+     },
+     "permissions": [
+      {
+       "action": "edit",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.prompt",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffff3normalized0000/prompt",
+   "request": {
+    "text": "write a todo"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "msg_000000000004normalized0000",
+     "sessionID": "ses_fffffffffff3normalized0000",
+     "time": {
+      "created": 1767225652000
+     },
+     "type": "user",
+     "payload": {
+      "text": "write a todo"
+     },
+     "delivery": "steer"
+    }
+   }
+  },
+  {
+   "label": "after.plugin.session.get",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffff3normalized0000",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffff3normalized0000",
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "outcome": "succeeded",
+     "time": {
+      "created": 1767225635000,
+      "updated": 1767225652000,
+      "idle": 1767225667000
+     },
+     "title": "Renamed by user",
+     "metadata": {
+      "a": null
+     },
+     "permissions": [
+      {
+       "action": "edit",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.messages.asc",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffff3normalized0000/message?order=asc",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "msg_000000000001normalized0000",
+      "time": {
+       "created": 1767225639000
+      },
+      "text": "hello",
+      "type": "user"
+     },
+     {
+      "id": "msg_000000000002normalized0000",
+      "time": {
+       "created": 1767225640000,
+       "streamed": 1767225645000,
+       "completed": 1767225646000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "hello back"
+       }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000003normalized0000",
+      "time": {
+       "created": 1767225646000
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+     },
+     {
+      "id": "msg_000000000004normalized0000",
+      "time": {
+       "created": 1767225654000
+      },
+      "text": "write a todo",
+      "type": "user"
+     },
+     {
+      "id": "msg_000000000005normalized0000",
+      "time": {
+       "created": 1767225655000,
+       "streamed": 1767225659000,
+       "completed": 1767225661000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "tool",
+        "id": "call_s09_todo",
+        "name": "todo_probe",
+        "executed": false,
+        "state": {
+         "status": "completed",
+         "input": {
+          "rev": 7
+         },
+         "content": [
+          {
+           "type": "text",
+           "text": "todo-written"
+          }
+         ],
+         "metadata": {
+          "truncated": false
+         }
+        },
+        "time": {
+         "created": 1767225657000,
+         "ran": 1767225659000,
+         "completed": 1767225660000
+        }
+       }
+      ],
+      "finish": "tool-calls",
+      "rawFinish": "tool_calls",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000006normalized0000",
+      "time": {
+       "created": 1767225662000,
+       "streamed": 1767225666000,
+       "completed": 1767225666000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "todo written"
+       }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000007normalized0000",
+      "time": {
+       "created": 1767225667000
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+     }
+    ],
+    "cursor": {
+     "previous": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDFub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoicHJldmlvdXMifQ",
+     "next": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDdub3JtYWxpemVkMDAwMCIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoibmV4dCJ9"
+    }
+   }
+  },
+  {
+   "label": "session.fork.before",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffff3normalized0000/fork",
+   "request": {
+    "before": "msg_000000000004normalized0000"
+   },
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffff2normalized0000",
+     "fork": {
+      "sessionID": "ses_fffffffffff3normalized0000",
+      "boundary": {
+       "type": "before",
+       "messageID": "msg_000000000004normalized0000"
+      }
+     },
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1767225668000,
+      "updated": 1767225668000
+     },
+     "title": "Renamed by user (fork #1)",
+     "metadata": {
+      "a": null
+     },
+     "permissions": [
+      {
+       "action": "edit",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "fork.session.get",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffff2normalized0000",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffff2normalized0000",
+     "fork": {
+      "sessionID": "ses_fffffffffff3normalized0000",
+      "boundary": {
+       "type": "before",
+       "messageID": "msg_000000000004normalized0000"
+      }
+     },
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1767225668000,
+      "updated": 1767225668000
+     },
+     "title": "Renamed by user (fork #1)",
+     "metadata": {
+      "a": null
+     },
+     "permissions": [
+      {
+       "action": "edit",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "fork.session.messages.asc",
+   "method": "GET",
+   "path": "/api/session/ses_fffffffffff2normalized0000/message?order=asc",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "msg_000000000008normalized0000_4",
+      "time": {
+       "created": 1767225639000
+      },
+      "text": "hello",
+      "type": "user"
+     },
+     {
+      "id": "msg_000000000008normalized0000_5",
+      "time": {
+       "created": 1767225640000,
+       "streamed": 1767225645000,
+       "completed": 1767225646000
+      },
+      "type": "assistant",
+      "agent": "build",
+      "model": {
+       "id": "m1",
+       "providerID": "sim"
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "hello back"
+       }
+      ],
+      "finish": "stop",
+      "rawFinish": "stop",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      }
+     },
+     {
+      "id": "msg_000000000008normalized0000_12",
+      "time": {
+       "created": 1767225646000
+      },
+      "type": "idle",
+      "outcome": "succeeded"
+     }
+    ],
+    "cursor": {
+     "previous": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDhub3JtYWxpemVkMDAwMF80Iiwib3JkZXIiOiJhc2MiLCJkaXJlY3Rpb24iOiJwcmV2aW91cyJ9",
+     "next": "eyJpZCI6Im1zZ18wMDAwMDAwMDAwMDhub3JtYWxpemVkMDAwMF8xMiIsIm9yZGVyIjoiYXNjIiwiZGlyZWN0aW9uIjoibmV4dCJ9"
+    }
+   }
+  },
+  {
+   "label": "session.fork.all",
+   "method": "POST",
+   "path": "/api/session/ses_fffffffffff3normalized0000/fork",
+   "request": {},
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": {
+     "id": "ses_fffffffffff1normalized0000",
+     "fork": {
+      "sessionID": "ses_fffffffffff3normalized0000",
+      "boundary": {
+       "type": "through",
+       "messageID": "msg_000000000007normalized0000"
+      }
+     },
+     "projectID": "global",
+     "cost": 0,
+     "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+       "read": 0,
+       "write": 0
+      }
+     },
+     "time": {
+      "created": 1767225669000,
+      "updated": 1767225669000
+     },
+     "title": "Renamed by user (fork #1)",
+     "metadata": {
+      "a": null
+     },
+     "permissions": [
+      {
+       "action": "edit",
+       "resource": "*",
+       "effect": "ask"
+      }
+     ],
+     "location": {
+      "directory": "<home>/workspace"
+     }
+    }
+   }
+  },
+  {
+   "label": "session.list.directory",
+   "method": "GET",
+   "path": "/api/session?directory=%3Chome%3E%2Fworkspace",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "ses_fffffffffff1normalized0000",
+      "fork": {
+       "sessionID": "ses_fffffffffff3normalized0000",
+       "boundary": {
+        "type": "through",
+        "messageID": "msg_000000000007normalized0000"
+       }
+      },
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "time": {
+       "created": 1767225669000,
+       "updated": 1767225669000
+      },
+      "title": "Renamed by user (fork #1)",
+      "metadata": {
+       "a": null
+      },
+      "permissions": [
+       {
+        "action": "edit",
+        "resource": "*",
+        "effect": "ask"
+       }
+      ],
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffff2normalized0000",
+      "fork": {
+       "sessionID": "ses_fffffffffff3normalized0000",
+       "boundary": {
+        "type": "before",
+        "messageID": "msg_000000000004normalized0000"
+       }
+      },
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "time": {
+       "created": 1767225668000,
+       "updated": 1767225668000
+      },
+      "title": "Renamed by user (fork #1)",
+      "metadata": {
+       "a": null
+      },
+      "permissions": [
+       {
+        "action": "edit",
+        "resource": "*",
+        "effect": "ask"
+       }
+      ],
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffff3normalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "succeeded",
+      "time": {
+       "created": 1767225635000,
+       "updated": 1767225652000,
+       "idle": 1767225667000
+      },
+      "title": "Renamed by user",
+      "metadata": {
+       "a": null
+      },
+      "permissions": [
+       {
+        "action": "edit",
+        "resource": "*",
+        "effect": "ask"
+       }
+      ],
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffff4normalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "succeeded",
+      "time": {
+       "created": 1767225632000,
+       "updated": 1767225634000,
+       "idle": 1767225633000
+      },
+      "title": "Revert",
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffff5normalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "succeeded",
+      "time": {
+       "created": 1767225629000,
+       "updated": 1767225630000,
+       "idle": 1767225631000
+      },
+      "title": "Compaction",
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffff6normalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "succeeded",
+      "time": {
+       "created": 1767225626000,
+       "updated": 1767225627000,
+       "idle": 1767225628000
+      },
+      "title": "Permission",
+      "permissions": [
+       {
+        "action": "edit",
+        "resource": "*",
+        "effect": "ask"
+       }
+      ],
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffff7normalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "succeeded",
+      "time": {
+       "created": 1767225623000,
+       "updated": 1767225624000,
+       "idle": 1767225625000
+      },
+      "title": "Question dismissed",
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffff8normalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "succeeded",
+      "time": {
+       "created": 1767225620000,
+       "updated": 1767225621000,
+       "idle": 1767225622000
+      },
+      "title": "Question",
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffff9normalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "succeeded",
+      "time": {
+       "created": 1767225617000,
+       "updated": 1767225618000,
+       "idle": 1767225619000
+      },
+      "title": "Tool failed",
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffffanormalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "failed",
+      "time": {
+       "created": 1767225614000,
+       "updated": 1767225615000,
+       "idle": 1767225616000
+      },
+      "title": "Failure",
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffffbnormalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "interrupted",
+      "time": {
+       "created": 1767225611000,
+       "updated": 1767225612000,
+       "idle": 1767225613000
+      },
+      "title": "Abort",
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffffcnormalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "succeeded",
+      "time": {
+       "created": 1767225608000,
+       "updated": 1767225609000,
+       "idle": 1767225610000
+      },
+      "title": "Retry",
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffffdnormalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "succeeded",
+      "time": {
+       "created": 1767225605000,
+       "updated": 1767225606000,
+       "idle": 1767225607000
+      },
+      "title": "Frame order",
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffffenormalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 800,
+       "output": 60,
+       "reasoning": 10,
+       "cache": {
+        "read": 1400,
+        "write": 0
+       }
+      },
+      "outcome": "succeeded",
+      "time": {
+       "created": 1767225602000,
+       "updated": 1767225603000,
+       "idle": 1767225604000
+      },
+      "title": "Two-step tool turn",
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     }
+    ],
+    "cursor": {
+     "previous": "eyJkaXJlY3RvcnkiOiI8aG9tZT4vd29ya3NwYWNlIiwiYW5jaG9yIjp7ImlkIjoic2VzX2ZmZmZmZmZmZmZmMW5vcm1hbGl6ZWQwMDAwIiwidGltZSI6MTc2NzIyNTY2OTAwMCwiZGlyZWN0aW9uIjoicHJldmlvdXMifX0",
+     "next": "eyJkaXJlY3RvcnkiOiI8aG9tZT4vd29ya3NwYWNlIiwiYW5jaG9yIjp7ImlkIjoic2VzX2ZmZmZmZmZmZmZmZW5vcm1hbGl6ZWQwMDAwIiwidGltZSI6MTc2NzIyNTYwMzAwMCwiZGlyZWN0aW9uIjoibmV4dCJ9fQ"
+    }
+   }
+  },
+  {
+   "label": "session.list.roots",
+   "method": "GET",
+   "path": "/api/session?parentID=null&directory=%3Chome%3E%2Fworkspace",
+   "status": 200,
+   "contentType": "application/json",
+   "body": {
+    "data": [
+     {
+      "id": "ses_fffffffffff1normalized0000",
+      "fork": {
+       "sessionID": "ses_fffffffffff3normalized0000",
+       "boundary": {
+        "type": "through",
+        "messageID": "msg_000000000007normalized0000"
+       }
+      },
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "time": {
+       "created": 1767225669000,
+       "updated": 1767225669000
+      },
+      "title": "Renamed by user (fork #1)",
+      "metadata": {
+       "a": null
+      },
+      "permissions": [
+       {
+        "action": "edit",
+        "resource": "*",
+        "effect": "ask"
+       }
+      ],
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffff2normalized0000",
+      "fork": {
+       "sessionID": "ses_fffffffffff3normalized0000",
+       "boundary": {
+        "type": "before",
+        "messageID": "msg_000000000004normalized0000"
+       }
+      },
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "time": {
+       "created": 1767225668000,
+       "updated": 1767225668000
+      },
+      "title": "Renamed by user (fork #1)",
+      "metadata": {
+       "a": null
+      },
+      "permissions": [
+       {
+        "action": "edit",
+        "resource": "*",
+        "effect": "ask"
+       }
+      ],
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffff3normalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "succeeded",
+      "time": {
+       "created": 1767225635000,
+       "updated": 1767225652000,
+       "idle": 1767225667000
+      },
+      "title": "Renamed by user",
+      "metadata": {
+       "a": null
+      },
+      "permissions": [
+       {
+        "action": "edit",
+        "resource": "*",
+        "effect": "ask"
+       }
+      ],
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffff4normalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "succeeded",
+      "time": {
+       "created": 1767225632000,
+       "updated": 1767225634000,
+       "idle": 1767225633000
+      },
+      "title": "Revert",
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffff5normalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "succeeded",
+      "time": {
+       "created": 1767225629000,
+       "updated": 1767225630000,
+       "idle": 1767225631000
+      },
+      "title": "Compaction",
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffff6normalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "succeeded",
+      "time": {
+       "created": 1767225626000,
+       "updated": 1767225627000,
+       "idle": 1767225628000
+      },
+      "title": "Permission",
+      "permissions": [
+       {
+        "action": "edit",
+        "resource": "*",
+        "effect": "ask"
+       }
+      ],
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffff7normalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "succeeded",
+      "time": {
+       "created": 1767225623000,
+       "updated": 1767225624000,
+       "idle": 1767225625000
+      },
+      "title": "Question dismissed",
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffff8normalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "succeeded",
+      "time": {
+       "created": 1767225620000,
+       "updated": 1767225621000,
+       "idle": 1767225622000
+      },
+      "title": "Question",
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffff9normalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "succeeded",
+      "time": {
+       "created": 1767225617000,
+       "updated": 1767225618000,
+       "idle": 1767225619000
+      },
+      "title": "Tool failed",
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffffanormalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "failed",
+      "time": {
+       "created": 1767225614000,
+       "updated": 1767225615000,
+       "idle": 1767225616000
+      },
+      "title": "Failure",
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffffbnormalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "interrupted",
+      "time": {
+       "created": 1767225611000,
+       "updated": 1767225612000,
+       "idle": 1767225613000
+      },
+      "title": "Abort",
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffffcnormalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "succeeded",
+      "time": {
+       "created": 1767225608000,
+       "updated": 1767225609000,
+       "idle": 1767225610000
+      },
+      "title": "Retry",
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffffdnormalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 0,
+       "output": 0,
+       "reasoning": 0,
+       "cache": {
+        "read": 0,
+        "write": 0
+       }
+      },
+      "outcome": "succeeded",
+      "time": {
+       "created": 1767225605000,
+       "updated": 1767225606000,
+       "idle": 1767225607000
+      },
+      "title": "Frame order",
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     },
+     {
+      "id": "ses_fffffffffffenormalized0000",
+      "projectID": "global",
+      "cost": 0,
+      "tokens": {
+       "input": 800,
+       "output": 60,
+       "reasoning": 10,
+       "cache": {
+        "read": 1400,
+        "write": 0
+       }
+      },
+      "outcome": "succeeded",
+      "time": {
+       "created": 1767225602000,
+       "updated": 1767225603000,
+       "idle": 1767225604000
+      },
+      "title": "Two-step tool turn",
+      "location": {
+       "directory": "<home>/workspace"
+      }
+     }
+    ],
+    "cursor": {
+     "previous": "eyJwYXJlbnRJRCI6Im51bGwiLCJkaXJlY3RvcnkiOiI8aG9tZT4vd29ya3NwYWNlIiwiYW5jaG9yIjp7ImlkIjoic2VzX2ZmZmZmZmZmZmZmMW5vcm1hbGl6ZWQwMDAwIiwidGltZSI6MTc2NzIyNTY2OTAwMCwiZGlyZWN0aW9uIjoicHJldmlvdXMifX0",
+     "next": "eyJwYXJlbnRJRCI6Im51bGwiLCJkaXJlY3RvcnkiOiI8aG9tZT4vd29ya3NwYWNlIiwiYW5jaG9yIjp7ImlkIjoic2VzX2ZmZmZmZmZmZmZmZW5vcm1hbGl6ZWQwMDAwIiwidGltZSI6MTc2NzIyNTYwMzAwMCwiZGlyZWN0aW9uIjoibmV4dCJ9fQ"
+    }
+   }
+  }
+ ],
+ "llm": [
+  {
+   "kind": "title",
+   "model": "m1",
+   "messages": 2,
+   "lastRole": "user",
+   "lastText": "hello"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 2,
+   "lastRole": "user",
+   "lastText": "hello"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 4,
+   "lastRole": "user",
+   "lastText": "write a todo"
+  },
+  {
+   "kind": "primary",
+   "model": "m1",
+   "messages": 6,
+   "lastRole": "tool",
+   "lastText": "todo-written"
+  }
+ ],
+ "notes": {
+  "f5MetadataUpdatedFromPlugin": false
+ }
+}

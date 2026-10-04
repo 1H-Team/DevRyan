@@ -130,7 +130,7 @@ describe('Electron startup splash', () => {
       source.indexOf('const startDesktopRuntime ='),
     );
 
-    expect(startupBlock).toContain('if (isLocalStartupTarget(startupContext)');
+    expect(startupBlock).toContain('if (!runtimeBundleRecoveryRequired && isLocalStartupTarget(startupContext))');
     expect(startupBlock).not.toContain('await requirePreparedBotRuntime();');
     expect(startupBlock.indexOf('await activateMainWindow('))
       .toBeLessThan(startupBlock.indexOf('prepareBotRuntimeInBackground()'));
@@ -140,5 +140,56 @@ describe('Electron startup splash', () => {
     expect(source).toContain("if (parsed.hostname === BOT_RUNTIME_CONTINUE_HOST) return 'continue-without-bots'");
     expect(source).toContain('log.warn(\'[bots] continuing current launch without a ready private Bot runtime\')');
     expect(source).toContain(': state.botRuntimeOperationSnapshot || getBotRuntimeManager().operationStatus()');
+  });
+
+  it('activates held recovery without resuming native startup, power hooks or Bot preparation', async () => {
+    const source = mainSource();
+    const start = source.indexOf('const startDesktopRuntime =');
+    const end = source.indexOf('const compareSemver =', start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const createStartup = new Function('owners', `
+      let desktopStartupPromise = null, desktopStartupFailed = false;
+      const { runtimeBundleRecoveryRequired, state, prepareForegroundRuntime,
+        resolveInitialUrl, activateMainWindow, installPowerResumeHook,
+        isLocalStartupTarget, readSettingsRoot, prepareBotRuntimeInBackground } = owners;
+      ${source.slice(start, end)}
+      return startDesktopRuntime;
+    `);
+    for (const held of [false, true]) {
+      const calls = [];
+      let releaseNativeStartup;
+      const nativeStartup = new Promise(resolve => { releaseNativeStartup = resolve; });
+      const context = { initialUrl: 'http://127.0.0.1:41234', localOrigin: 'http://127.0.0.1:41234',
+        bootOutcome: { target: 'local', status: 'ok' } };
+      const state = { pendingBotStartupContext: context, serverHandle: {
+        resumeDeferredOpenCodeStartup: () => { calls.push('resume-native'); return nativeStartup; },
+      } };
+      const startup = createStartup({
+        runtimeBundleRecoveryRequired: held, state,
+        prepareForegroundRuntime: async () => calls.push('prepare-foreground'),
+        resolveInitialUrl: async () => context,
+        activateMainWindow: async (...args) => {
+          expect(args).toEqual([context.initialUrl, context.localOrigin, context.bootOutcome]);
+          calls.push('activate');
+        },
+        installPowerResumeHook: () => calls.push('power-hook'),
+        isLocalStartupTarget: value => value === context,
+        readSettingsRoot: () => ({ productionBotsRuntimeMode: 'enabled' }),
+        prepareBotRuntimeInBackground: () => calls.push('prepare-bots'),
+      });
+      const pending = startup();
+      expect(startup()).toBe(pending);
+      await pending;
+      expect(state.pendingBotStartupContext).toBeNull();
+      expect(calls).toEqual(held
+        ? ['prepare-foreground', 'activate']
+        : ['prepare-foreground', 'activate', 'power-hook', 'resume-native']);
+      releaseNativeStartup();
+      await nativeStartup;
+      expect(calls).toEqual(held
+        ? ['prepare-foreground', 'activate']
+        : ['prepare-foreground', 'activate', 'power-hook', 'resume-native', 'prepare-bots']);
+    }
   });
 });

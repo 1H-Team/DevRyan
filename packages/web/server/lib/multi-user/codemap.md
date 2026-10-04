@@ -19,7 +19,11 @@ ownership, directory opacity, and audit control plane.
   human-only profile query used by User Management.
 - `config.js`, `supabase-client.js`, `vault.js`: private configuration,
   server-only Supabase/PostgREST plus bounded JSON and private Storage transport, and
-  encrypted token persistence. `runtime.js` injects that transport into the
+  encrypted token persistence. Its pure credential fingerprint uses the original
+  authenticated codec, retaining every credential and unknown record while
+  excluding only bounded, validated local root-session ownership. No vault
+  mutation or ownership transfer occurs during bundle comparison.
+  `runtime.js` injects that transport into the
   focused sibling `../bots/` control-plane module.
 - `branch-preview-vault.js`, `branch-previews.js`: dedicated encrypted
   Cloudflare service-token storage and the server-only per-grant preview domain
@@ -145,3 +149,5 @@ the tunnel boundary's private authenticated request map. The legacy auth wrapper
 uses the same map for unconfigured hosts. `principal-cache.js` coalesces refreshes
 with revocation fencing; `supabase-traffic.js` aggregates sanitized local byte and
 request estimates at the central transport. See [connection behavior](../../../../../docs/SUPABASE_CONNECTION.md).
+
+Managed session create/list/status/fork/remove/abort and inventory recovery use the required native-v2 application client. Native client absence or unsupported identity never enables raw runtime HTTP; unsupported file capabilities remain explicit.

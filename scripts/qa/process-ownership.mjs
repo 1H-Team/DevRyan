@@ -9,19 +9,23 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 export async function readQaProcessSnapshot() {
   if (process.platform === 'win32') {
     const script = 'Get-CimInstance Win32_Process | ForEach-Object { [PSCustomObject]@{ pid=$_.ProcessId; parentPid=$_.ParentProcessId; started=$_.CreationDate.ToFileTimeUtc().ToString() } } | ConvertTo-Json -Compress';
-    const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: 5000, maxBuffer: 4 * 1024 * 1024 });
+    const observation = execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: 5000, maxBuffer: 4 * 1024 * 1024 });
+    const observerPid = observation.child.pid;
+    const { stdout } = await observation;
     const parsed = JSON.parse(stdout);
-    return (Array.isArray(parsed) ? parsed : [parsed]).map(row => ({ pid: row.pid, parentPid: row.parentPid,
+    return (Array.isArray(parsed) ? parsed : [parsed]).filter(row => row.pid !== observerPid).map(row => ({ pid: row.pid, parentPid: row.parentPid,
       startIdentity: row.started, running: true }));
   }
-  const { stdout } = await execFileAsync('ps', ['-axo', 'pid=,ppid=,stat=,lstart='], {
+  const observation = execFileAsync('ps', ['-axo', 'pid=,ppid=,stat=,lstart='], {
     env: { ...process.env, LC_ALL: 'C' }, timeout: 5000, maxBuffer: 4 * 1024 * 1024,
   });
+  const observerPid = observation.child.pid;
+  const { stdout } = await observation;
   return stdout.split('\n').filter(line => line.trim()).map(line => {
     const match = line.trim().match(/^(\d+)\s+(\d+)\s+(\S+)\s+(.+)$/);
     if (!match || !Number.isFinite(Date.parse(match[4]))) throw new Error('QA process identity snapshot is malformed');
     return { pid: Number(match[1]), parentPid: Number(match[2]), startIdentity: match[4], running: !match[3].startsWith('Z') };
-  });
+  }).filter(row => row.pid !== observerPid);
 }
 
 // Retain descendants while the owned parent is alive, including children that

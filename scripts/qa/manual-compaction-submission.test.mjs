@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { Switch } from '@base-ui/react/switch';
 import { QA_COMPACTION_COMPOSER, qaManualCompactionKey, observeQaManualCompactionRequest,
-  readQaManualCompactionQueueMode, withQaManualCompactionSubmission } from './manual-compaction-submission.mjs';
+  QA_QUEUE_MODE_STATE, readQaManualCompactionQueueMode, withQaManualCompactionSubmission } from './manual-compaction-submission.mjs';
 
 const origin='http://127.0.0.1:3101';
 const sessionID='ses_manual123';
@@ -45,10 +49,46 @@ test('submission key matches each actual queue preference and rejects an absent 
 
 test('queue preference observation reads mounted control without changing it',async()=>{
   const cdp=new FakeCdp(),clicks=[];
-  const ui={click:async target=>clicks.push(target),waitExpression:async label=>label.startsWith('authoritative')?{enabled:true,checked:'true',pressed:'true'}:true};
+  const ui={click:async target=>clicks.push(target),waitExpression:async label=>label.startsWith('authoritative')?{enabled:true,checked:'true',controlID:'queue-mode'}:true};
   const observed=await readQaManualCompactionQueueMode({cdp,ui});
   assert.equal(observed.enabled,true);assert.equal(observed.source,'rendered-settings-control');assert.equal(observed.origin,origin);
   assert.deepEqual(clicks,[{label:'Settings'},{selector:'[data-settings-view] button',text:'Appearance'},{selector:'[data-settings-view] button',label:'Back'}]);
+});
+
+test('queue preference reads the original Base UI labelled switch and refuses ambiguous or malformed controls',()=>{
+  const read = (checked, patch = {}, count = 1) => {
+    const markup = renderToStaticMarkup(React.createElement(Switch.Root, {
+      id: 'queue-mode', checked, onCheckedChange: () => {}, 'aria-labelledby': 'queue-label',
+    }, React.createElement(Switch.Thumb)));
+    const attributes = Object.fromEntries([...markup.matchAll(/([\w-]+)="([^"]*)"/g)].map(match => [match[1], match[2]]));
+    // Evaluate the shipped browser expression against the actual primitive's
+    // rendered attributes; this substitution supplies only the DOM read APIs.
+    const controls = Array.from({ length: count }, () => ({
+      id: attributes.id,
+      getAttribute: name => ({ ...attributes, ...patch })[name] ?? null,
+      getClientRects: () => patch.hidden ? [] : [{}],
+    }));
+    const value = runInNewContext(QA_QUEUE_MODE_STATE, {
+      document: {
+        querySelectorAll: selector => controls.filter(control => {
+          const role = selector.match(/\[role="([^"]+)"\]/)?.[1];
+          return control.getAttribute('role') === role
+            && (!selector.includes('[aria-labelledby]') || control.getAttribute('aria-labelledby'))
+            && (!selector.includes('[aria-label=') || control.getAttribute('aria-label') === 'Queue Messages by Default');
+        }),
+        getElementById: id => id === 'queue-label' ? { textContent: 'Queue Messages by Default' } : null,
+      },
+      getComputedStyle: () => ({ display: 'inline-flex', visibility: 'visible' }),
+    });
+    return value === null ? null : JSON.parse(JSON.stringify(value));
+  };
+  for (const checked of [true, false]) {
+    assert.deepEqual(read(checked), { enabled: checked, checked: String(checked), controlID: 'queue-mode' });
+  }
+  assert.equal(read(true, {}, 2), null);
+  assert.equal(read(true, { hidden: true }), null);
+  assert.equal(read(true, { 'aria-checked': 'mixed' }), null);
+  assert.equal(read(true, { 'aria-labelledby': 'other-label' }), null);
 });
 
 test('collector excludes pre-arm traffic, other methods, origins, sessions and response identities',async()=>{

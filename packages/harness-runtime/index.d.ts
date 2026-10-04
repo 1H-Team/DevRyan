@@ -740,6 +740,43 @@ export function parseEvidenceNumstat(raw: string): Array<{
 
 export function toPublicEvidenceRecord(record: EvidenceRecord): Record<string, unknown>;
 export type PrimaryRecoveryState = 'observing' | 'stopping' | 'reconciling' | 'recovery_reserved' | 'recovering' | 'completed' | 'needs_attention' | 'cancelled' | 'superseded';
+export interface RecoveredInputIdentity { revision: string; messageID: string; payloadHash: string }
+export type RecoveredInputType = 'user' | 'synthetic' | 'compaction' | 'move';
+export interface RecoveredInputDescriptor {
+  messageID: string; payloadHash: string; type: RecoveredInputType; delivery: 'queue' | 'steer';
+  location: 'queued' | 'promoted'; preview: string; attachmentCount: number;
+  canResume: boolean; canDiscard: boolean; reason: string | null;
+}
+export interface RecoveredInputSnapshot {
+  revision: string; state: 'paused' | 'resuming' | 'discarding'; inputs: RecoveredInputDescriptor[];
+}
+export interface RecoveredInputDetails {
+  messageID: string; payloadHash: string; type: RecoveredInputType; delivery: 'queue' | 'steer';
+  location: 'queued' | 'promoted'; text: string;
+  files: Array<{ uri: string; name?: string; mime?: string }>;
+  agents?: Array<{ name: string }>; skills?: string[];
+}
+/** Native constructor-owned paused inventory; never supplied by a plugin or renderer. */
+export interface RecoveredInputOwner {
+  /** Constructor-only live dispatch status proof; never grants execution. */
+  isRecoveryDispatchPending?(record: PrimaryRecoveryExecutionRecord, liveDispatch?: { readonly itemHash?: string }): Promise<boolean>;
+  has(sessionID: string): boolean;
+  snapshot(sessionID: string): Promise<RecoveredInputSnapshot | undefined>;
+  details(sessionID: string, input: RecoveredInputIdentity): Promise<RecoveredInputDetails>;
+  action(sessionID: string, action: 'resume-input' | 'discard-input', input: RecoveredInputIdentity,
+    context: { owner?: string | null }): Promise<unknown>;
+}
+export interface RecoveredInputAdoption {
+  sessionID: string; messageID: string; payloadHash: string; recordRevision: number; cancellationGeneration: number;
+  previousOwner: string | null; owner: string | null; instanceID: string; enqueuedSeq: number; delivery: 'queue' | 'steer';
+}
+export interface RecoveredInputDiscardRequest {
+  sessionID: string; messageID: string; payloadHash: string; recordRevision: number; cancellationGeneration: number;
+  previousOwner: string | null; type: RecoveredInputType; delivery: 'queue' | 'steer'; enqueuedSeq: number;
+}
+export interface RecoveredInputDiscardSettlement {
+  sessionID: string; messageID: string; payloadHash: string; enqueuedSeq: number; eventID: string; eventSeq: number;
+}
 export interface PrimaryRecoverySnapshot {
   schemaVersion: 1;
   mode: 'off' | 'observe' | 'enforce';
@@ -747,6 +784,9 @@ export interface PrimaryRecoverySnapshot {
   enforced: boolean;
   progressTimeoutMs: number | false;
   stopConfirmed?: boolean;
+  /** Controller SSE updates only the record; inventory is confirmed by a full host snapshot. */
+  recoveredInputPartial?: true;
+  recoveredInput?: RecoveredInputSnapshot;
   record: null | {
     sessionID: string; anchorID: string; failedID: string | null; recoveryID: string | null;
     collectionIssue?: { taskId: string; code: string } | null;
@@ -756,7 +796,37 @@ export interface PrimaryRecoverySnapshot {
     progress: { policy: 'report-only'; lastUsefulAt: number | null; counts: Partial<Record<ObjectiveProgressKind, number>>; relevance: string };
   };
 }
+export interface NativeFallbackExecution {providerID:string;modelID:string;agent:string;variant:string}
+export interface NativeHelloOwner {authorize():Promise<void>;isCurrent():boolean}
+export interface NativeFallbackAttempt {traceID:string;spanID:string}
+export interface NativeFallbackWitness {attempt:NativeFallbackAttempt;permitSha256:string}
+export interface NativeFallbackPending extends NativeFallbackWitness {
+  instanceID:string;cancellationGeneration:number;previousStepID:string|null;currentExecution:NativeFallbackExecution;
+}
+export type NativeFallbackIdentity = {sessionID:string;userMessageID:string;instanceID:string;currentExecution:NativeFallbackExecution}
+  & ({assistantMessageID:string;attempt?:NativeFallbackAttempt;permitSha256?:string}
+    | {assistantMessageID:null;previousStepID:string|null;attempt:NativeFallbackAttempt;permitSha256:string});
+export interface NativeFallbackOwner {authorize():Promise<void>;choose(state:{tried:string[];exhaustion:0|1|2}):Promise<{tried:readonly string[];exhaustion:0|1|2;execution?:NativeFallbackExecution}>}
 export interface PrimaryRecoveryController {
+  /** Original accepted-item commit pins status proof in existing live dispatch state. */
+  bindNativeRecoveryDispatchInput(input:{sessionID:string;messageID:string;instanceID:string;itemHash:string}):void;
+  /** Constructor-only restart inspection/adoption/disposition; absent from plugin actions. */
+  nativeStartupRecords(): Promise<PrimaryRecoveryExecutionRecord[]>;
+  adoptRecoveredInput(input: RecoveredInputAdoption, authorizeWrite: () => Promise<void>): Promise<PrimaryRecoveryExecutionRecord | null>;
+  requestRecoveredInputDiscard(input: RecoveredInputDiscardRequest, authorizeWrite: () => Promise<void>): Promise<PrimaryRecoveryExecutionRecord | null>;
+  settleRecoveredInputDiscard(input: RecoveredInputDiscardSettlement, authorizeWrite: () => Promise<void>): Promise<PrimaryRecoveryExecutionRecord | null>;
+  /** Trusted native retry hook only; canonical settlement owns the single recovery dispatch. */
+  reserveNativeFallback(input:NativeFallbackIdentity,owner:NativeFallbackOwner):Promise<{reserved:boolean;record:PrimaryRecoveryExecutionRecord}>;
+  captureNativeRecoveryDispatch(input:{sessionID:string;directory:string;messageID:string;instanceID?:string}):Promise<{record:PrimaryRecoveryExecutionRecord;prompt:NonNullable<PrimaryRecoveryExecutionRecord['recoveryPrompt']>;recheck:()=>Promise<void>}>;
+  /** Constructor-only native continuation reservation and original owner reauthorization. */
+  reserveNativeContinuation(input: Record<string, unknown>, prompt: NativePrimaryContinuationPrompt): Promise<unknown>;
+  pendingNativeContinuations(input: {directory:string}): Promise<Array<{sessionID:string;directory:string;messageID:string}>>;
+  captureNativeContinuationDispatch(input: {sessionID:string;directory:string;messageID:string;instanceID?:string}): Promise<{
+    record: PrimaryRecoveryExecutionRecord; prompt: NativePrimaryContinuationPrompt; recheck:()=>Promise<void>}>;
+  /** Trusted host-only adoption at canonical native Step.Started; absent from plugin/HTTP actions. */
+  adoptOwnedNativeContinuation(input: { sessionID: string; userMessageID: string; assistantMessageID: string; instanceID: string;
+    execution: { providerID: string; modelID: string; agent: string; variant?: string | null } }): Promise<PrimaryRecoveryExecutionRecord>;
+  markPromptDispatchUncertain(input: { sessionID: string; messageID: string }): Promise<unknown>;
   observeProgress(input: { sessionID: string; messageID?: string; taskCreatedAt?: number; kind: ObjectiveProgressKind; identity: string }): Promise<unknown>;
   readRecord(sessionID: string): Promise<PrimaryRecoveryExecutionRecord | null>;
   initialize(): Promise<void>;
@@ -765,12 +835,72 @@ export interface PrimaryRecoveryController {
   reconcile(): Promise<void>;
   getSnapshot(sessionID: string): Promise<PrimaryRecoverySnapshot>;
   control(sessionID: string, action: string, expectedRevision?: number): Promise<PrimaryRecoverySnapshot>;
-  plugin(input: Record<string, unknown>): Promise<unknown>;
+  plugin(input: Record<string, unknown>, authorizeRejectionWrite?: () => Promise<void>, nativePrompt?: NativePrimaryContinuationPrompt, nativeHelloOwner?: NativeHelloOwner): Promise<unknown>;
+  /** Private native observation; the original caller is rechecked immediately before durable rejection counts change. */
+  recordRejection(input: Record<string, unknown>, authorizeWrite: () => Promise<void>): Promise<unknown>;
+}
+export interface NativePrimaryContinuationPrompt {
+  messageID:string;agent:string;model:{providerID:string;modelID:string};variant:string;tools:Record<string,boolean>;objectiveID:string;
+  parts:Array<{type:'text';text:string;synthetic:true}>;
+}
+export interface NativePromptSelectionReceipt {
+  sessionID: string; messageID: string; directory: string; parentID?: string;
+  body: Record<string, unknown>; objectiveID?: string; queuedAfterChildren?: boolean;
+  execution: { providerID: string; modelID: string; agent: string; variant: string } | null;
 }
 export interface PrimaryRecoveryHost extends PrimaryRecoveryController {
+  setRecoveredInputOwner(adapter: RecoveredInputOwner): void;
+  /** External owner recheck only; no native observation or execution. */
+  authorizeRecoveredInputOwner(record: PrimaryRecoveryExecutionRecord): Promise<void>;
+  /** Private native Step handoff; canonical pinned version only, not runtime readiness or recovery support. */
+  helloNative(input: { policyVersion: 1; instanceID: string }, owner?: NativeHelloOwner): Promise<unknown>;
+  captureNativePromptAdmission(sessionID:string):Promise<()=>Promise<void>>;
+  requiresNativePromptSelection(): boolean;
+  markNativePromptUncertain(receipt: NativePromptSelectionReceipt): Promise<unknown>;
+  admitNativePrompt(receipt: NativePromptSelectionReceipt, context?: { owner?: string | null; objectiveID?: string; sessionID?:string; authorizeWrite?:()=>Promise<void> }): Promise<void>;
+  withPromptAdmissionContext<T>(method: string, rawPath: string, context: { owner?: string | null }, action: () => T): T;
   handleRequest(method: string, path: string, body: unknown, context?: { owner?: string | null }): Promise<null | { status: number; body: unknown }>;
 }
+/** Required native transport supplied by the web/Electron host. */
+export interface HarnessOpenCodeReadOptions {
+  beforePromptDispatch?(receipt: NativePromptSelectionReceipt, context?: {authorizeWrite:()=>Promise<void>}): Promise<void>;
+  onPromptDispatchFailure?(receipt: NativePromptSelectionReceipt): Promise<unknown>;
+  directory?: string;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  /** Applied while streaming each upstream response, before full buffering. */
+  maxResponseBytes?: number;
+  /** Chunk bytes are increments; end bytes are the total released by that response. */
+  onResponseRead?(event: { phase: 'start' | 'chunk' | 'end'; bytes: number }): void;
+}
+export interface HarnessOpenCodeClient {
+  generation(): 2;
+  sessions: {
+    get(id: string, options?: HarnessOpenCodeReadOptions): Promise<unknown>;
+    children(id: string, options?: HarnessOpenCodeReadOptions): Promise<unknown>;
+    status(query?: { directory?: string }, options?: HarnessOpenCodeReadOptions): Promise<unknown>;
+    messages(id: string, page?: { limit?: number; before?: string }, options?: HarnessOpenCodeReadOptions): Promise<{ records: unknown[]; cursor?: string }>;
+    message(id: string, messageID: string, options?: HarnessOpenCodeReadOptions): Promise<unknown>;
+    todo(id: string, options?: HarnessOpenCodeReadOptions): Promise<unknown>;
+    abort(id: string, options?: HarnessOpenCodeReadOptions): Promise<unknown>;
+  };
+  interaction: {
+    permissions: { list(query?: { directory?: string }, options?: HarnessOpenCodeReadOptions): Promise<unknown> };
+    questions: { list(query?: { directory?: string }, options?: HarnessOpenCodeReadOptions): Promise<unknown> };
+  };
+  catalog: { tools(query?: { directory?: string }, options?: HarnessOpenCodeReadOptions): Promise<{ ids: string[] } | null> };
+  prompts: { prompt(id: string, body: unknown, options?: HarnessOpenCodeReadOptions): Promise<unknown> };
+  health: {
+    probe(options?: HarnessOpenCodeReadOptions): Promise<{ ready: boolean; version: string | null }>;
+    runtimeInfo(options?: HarnessOpenCodeReadOptions): Promise<{ version: string | null }>;
+  };
+}
 export interface PrimaryRecoveryHostOptions {
+  /** Constructor-owned original pinned Slim classifier; absent means native fallback cannot be reserved. */
+  isNativeFallbackError?(error:unknown):boolean;
+  /** Existing native dispatch owner must issue fresh exact recovery-message authority after settlement. */
+  dispatchNativeRecovery?(record:PrimaryRecoveryExecutionRecord,prompt:NonNullable<PrimaryRecoveryExecutionRecord['recoveryPrompt']>):Promise<unknown>;
+  openCodeClient: HarnessOpenCodeClient | (() => HarnessOpenCodeClient | null);
   executionOutcomes?: (input: { directory: string; sessionID: string; calls: Array<{ messageID: string; callID: string }> }) => Promise<Array<{
     sessionID: string; messageID: string; callID: string; outcome: 'never_started' | 'finished' | 'uncertain';
   }>>;
@@ -780,16 +910,15 @@ export interface PrimaryRecoveryHostOptions {
   anthropicMode?: 'off' | 'observe' | 'enforce';
   isAnthropicConformant?(record: PrimaryRecoveryExecutionRecord, runtimeVersion: string | undefined): boolean;
   progressTimeoutMs?: number | false;
-  buildOpenCodeUrl(pathname: string): string | URL;
-  getOpenCodeAuthHeaders?(): Record<string, string>;
   isManaged(): boolean;
   authorize(record: { owner: string | null; sessionID: string; directory: string }): Promise<boolean>;
   managedBarrier(sessionID: string): Promise<unknown>;
   cancelDescendants?(sessionID: string): Promise<void>;
   publishEvent?(event: unknown, options?: { directory: string }): void | Promise<void>;
   recordIncident?(incident: { event: string; sessionID?: string; messageID?: string; [key: string]: unknown }): void;
-  fetchImpl?: typeof fetch;
   verifyRecoveredCollection?(record: PrimaryRecoveryExecutionRecord, collection: { taskId: string; claimantId: string }): Promise<unknown>;
+  /** Complete canonical chain and actual ledger/termination proof; caller metadata grants no authority. */
+  verifyOwnedNativeContinuation?(record: PrimaryRecoveryExecutionRecord, observation: unknown, targetUserID: string): Promise<{ kind: 'native-shell' } | null>;
 }
 export function createPrimaryRecoveryHost(options: PrimaryRecoveryHostOptions): PrimaryRecoveryHost;
 export interface SessionChangeIdentity {
@@ -867,6 +996,8 @@ export interface SessionChangeHost {
   recordReceipt(input: SessionChangeReceipt): Promise<unknown>;
   acceptExecution(input: SessionChangeExecution): Promise<{ acknowledged: true }>;
   plugin(input: Record<string, unknown>): Promise<unknown>;
+  /** Private native observation; the original caller is rechecked immediately before durable rejection counts change. */
+  recordRejection(input: Record<string, unknown>, authorizeWrite: () => Promise<void>): Promise<unknown>;
   handleRequest(method: string, path: string, body?: unknown, context?: { signal?: AbortSignal }): Promise<null | { status: number; body: unknown }>;
   getReadDiagnostics(): { active: number; queued: number; scopes: number; activeResponses: number; responseBytes: number; peakResponseBytes: number };
   observe(event: unknown, directory?: string | null): Promise<void>;
@@ -876,7 +1007,7 @@ export interface SessionChangeHost {
     current: { mode: string; oid: string } | null; previous: { mode: string; oid: string } | null }>>;
   legacyBlob(input: { directory: string; oid: string }): Promise<Uint8Array>;
 }
-export function createSessionChangeHost(options: Pick<PrimaryRecoveryHostOptions, 'dataDirectory' | 'buildOpenCodeUrl' | 'getOpenCodeAuthHeaders' | 'fetchImpl' | 'publishEvent'> & {
+export function createSessionChangeHost(options: Pick<PrimaryRecoveryHostOptions, 'dataDirectory' | 'publishEvent' | 'openCodeClient'> & {
   restoreOwned?: (input: SessionOwnedRestoreRequest) => Promise<unknown>;
   /** Without the ownership ledger, rejects restoring a conversation the ledger owns. */
   assertLegacyRestore?: (input: { directory: string; sessionID: string }) => Promise<void>;
@@ -901,23 +1032,41 @@ export function isPrimaryRecoveryProvider(providerID: unknown): providerID is 'o
 export function primaryRecoveryMode(providerID: unknown, options: Pick<PrimaryRecoveryHostOptions, 'mode' | 'anthropicMode'>): 'off' | 'observe' | 'enforce';
 export function classifyPrimaryTransportError(error: unknown, runtimeVersion: string): null | { kind: string; source: string };
 export interface PrimaryRecoveryExecutionRecord {
+  recoveredInput?: { inputID: string; payloadHash: string; enqueuedSeq: number; delivery: 'queue' | 'steer'; phase: 'adopted' };
+  recoveredInputDispositions?: Array<{ inputID: string; payloadHash: string; enqueuedSeq: number;
+    type: RecoveredInputType; delivery: 'queue' | 'steer' } & ({ phase: 'requested' } | { phase: 'cancelled'; eventID: string; eventSeq: number })>;
+  stepID:string|null;requestedAt:number|null;instanceID:string|null;
+  nativeStepWitness?:NativeFallbackWitness;
+  nativeFallback?:{userMessageID:string;tried:readonly string[];exhaustion:0|1|2;execution?:NativeFallbackExecution}
+    & ({stepID:string;pending?:never}|{stepID:null;pending:NativeFallbackPending});
+  recoveryExecution?:NativeFallbackExecution;
+  recoveryPrompt?:{messageID:string;model:{providerID:string;modelID:string};agent:string;variant:string;parts:readonly unknown[];tools:Record<string,boolean>};
+  ownedNativeContinuation?: { kind: 'native-shell' | 'native-compaction'; sourceUserMessageID: string; userMessageID: string; assistantMessageID: string };
   rejections?: ObjectiveRejection[]; progress?: ObjectiveProgress; failureKind?: string | null;
   continuationID?: string; activeUserID?: string; recoverySourceUserID?: string; todoContinuationCount?: number;
+  nativeContinuation?: {messageID:string;sourceUserMessageID:string;sourceAssistantMessageID:string;cancellationGeneration:number;
+    kind:'builder_todo'|'orchestrator_todo'|'collect';prompt:NativePrimaryContinuationPrompt};
   /** The objective an explicit continuation continued; compaction re-anchors to it. */ objectiveID?: string;
   builderTodoGuard?: { taskSetHash: string; progressHash: string; stagnantCount: number; progressCounts: Partial<Record<ObjectiveProgressKind, number>> };
   sessionID: string; directory: string; anchorID: string; providerID: string; modelID: string;
   agent: string; variant: string | null; tools: Record<string, boolean>; owner: string | null;
   recoveryID: string | null; failedID: string | null; state: PrimaryRecoveryState; attemptCount: number;
   cancellationGeneration: number; reason?: string | null;
+  /** Native accepted effective tuple, distinct from original request intent. */
+  executionGeneration?: 2;
   revision: number; guardedIDs: string[]; createdAt: number; updatedAt: number;
 }
 export function createPrimaryRecoveryController(options: {
+  isNativeFallbackError?:PrimaryRecoveryHostOptions['isNativeFallbackError'];
   classifyFailure?(error: unknown): string | null;
   directory: string; mode?: 'off' | 'observe' | 'enforce'; progressTimeoutMs?: number | false;
   anthropicMode?: PrimaryRecoveryHostOptions['anthropicMode'];
   isAnthropicConformant?: PrimaryRecoveryHostOptions['isAnthropicConformant'];
   isManaged(): boolean;
   verifyRecoveredCollection?: PrimaryRecoveryHostOptions['verifyRecoveredCollection'];
+  verifyOwnedNativeContinuation?: PrimaryRecoveryHostOptions['verifyOwnedNativeContinuation'];
+  /** Status-only live native dispatch proof; cannot authorize admission. */
+  isNativeRecoveryDispatchPending?: (record: PrimaryRecoveryExecutionRecord, liveDispatch?: { readonly itemHash?: string }) => Promise<boolean>;
   authorize(record: PrimaryRecoveryExecutionRecord): Promise<boolean>;
   observeTurn(record: PrimaryRecoveryExecutionRecord, options?: { signal: AbortSignal; includeTodos?: boolean; includeExecutionOutcomes?: boolean }): Promise<unknown>;
   abortSession(record: PrimaryRecoveryExecutionRecord): Promise<unknown>;
@@ -928,7 +1077,7 @@ export function createPrimaryRecoveryController(options: {
   createMessageID?(): string;
   getToolPolicy?(record: PrimaryRecoveryExecutionRecord): Promise<{ toolIDs: string[]; allowedReadTools: string[] }>;
 }): PrimaryRecoveryController & {
-  admit(input: { sessionID: string; directory: string; primary: boolean; owner?: string | null; body: unknown }): Promise<unknown>;
+  admit(input: { sessionID: string; directory: string; primary: boolean; owner?: string | null; body: unknown; executionGeneration?: 2 }, authorizeWrite?:()=>Promise<void>): Promise<unknown>;
   readRecord(sessionID: string): Promise<PrimaryRecoveryExecutionRecord | null>;
 };
 
@@ -979,6 +1128,7 @@ export function formatCompactionAnchor(checkpoint: TaskCheckpoint, options?: { p
 export function formatChildCompactionAnchor(assignmentText: string): string;
 export function deriveTaskCheckpoint(input: TaskContextState & { session: TaskContextSession; projectKey: string; now?: number; sanitizeText?(value: string): string; decisions?: ProjectDecision[] }): TaskCheckpoint;
 export function createTaskContextRuntime(options: {
+  authorizeWrite?(input: { action: 'checkpoint' | 'remember_decision' | 'prune'; sessionID: string; directory: string }): Promise<void>;
   dataDirectory: string; store?: RecordStore<TaskContextRecord>; now?(): number; logger?: Pick<Console, 'warn'>;
   sanitizeText?(value: string): string; recordDiagnostic?(entry: Record<string, unknown>): unknown;
   withLock?<T>(key: string, run: () => Promise<T>): Promise<T>;

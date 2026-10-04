@@ -1,7 +1,8 @@
+import { rename } from 'node:fs/promises'
 import { readdirSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { spawnSync } from "node:child_process"
-import { verifyRevertRuntimeArtifacts, refreshSignedRevertDigests } from "../../../scripts/verify-revert-runtime-artifacts.mjs"
+import { restoreRevertRuntimeExecutableModes, refreshSignedRevertDigests } from "../../../scripts/verify-revert-runtime-artifacts.mjs"
 import { verifyPackagedNativeArtifacts } from "./packaged-native-modules.mjs"
 
 function run(command, args, options = {}) {
@@ -62,7 +63,7 @@ export default async function adhocSignMacosApp(context) {
   console.log(`[adhoc-sign] Verifying packaged native artifacts in ${appPath}`)
   verifyPackagedNativeArtifacts(appPath, context.arch)
 
-  const revert = await verifyRevertRuntimeArtifacts({ directory: join(appPath, "Contents", "Resources", "revert-runtime"),
+  const revert = await restoreRevertRuntimeExecutableModes({ directory: join(appPath, "Contents", "Resources", "revert-runtime"),
     arch: typeof context.arch === "string" ? context.arch : context.arch === 3 ? "arm64" : "x64" })
 
   console.log(`[adhoc-sign] Cleaning ${appPath}`)
@@ -71,8 +72,24 @@ export default async function adhocSignMacosApp(context) {
   console.log(`[adhoc-sign] Ad-hoc signing ${runtimeServiceBridgePath}`)
   run("codesign", ["--force", "--sign", "-", runtimeServiceBridgePath])
 
-  console.log(`[adhoc-sign] Ad-hoc signing ${appPath}`)
-  run("codesign", ["--force", "--deep", "--sign", "-", appPath])
+  // The reviewed vendor executables have immutable hashes and signatures.
+  // Sign the Electron tree while this already verified payload is outside it,
+  // then restore it before sealing the app resources.
+  const runtimeRoot = join(appPath, "Contents", "Resources", "revert-runtime")
+  const signingHold = join(context.appOutDir, `.${appName}-native-signing-${process.pid}`)
+  await rename(runtimeRoot, signingHold)
+  try {
+    console.log(`[adhoc-sign] Ad-hoc signing ${appPath}`)
+    run("codesign", ["--force", "--deep", "--sign", "-", appPath])
+  } finally {
+    await rename(signingHold, runtimeRoot)
+  }
+  const preserved = new Set([revert.native.reviewedAst?.path,
+    ...Object.values(revert.native.reviewedClaude ?? {}).map(asset => asset.path)])
+  for (const file of revert.manifest.files) {
+    const target = join(revert.location, file.path)
+    if ((file.mode & 0o111) && !preserved.has(target)) run("codesign", ["--force", "--sign", "-", target])
+  }
 
   await refreshSignedRevertDigests(revert)
   // Updating signed executable digests changes resources; reseal the app only.

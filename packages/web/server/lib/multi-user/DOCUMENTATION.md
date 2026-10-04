@@ -130,6 +130,11 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
 - Managed account passwords require at least six characters and have no
   letter, number, case, or symbol composition requirement.
 - Refresh/access tokens are AES-256-GCM encrypted in the host vault.
+- Fresh native setup uses `vault.js`'s logical owner projection, invoked by
+  `opencode/runtime-host/native-setup-local-owners.js` before feature owners load.
+  It preserves durable Bots/local administrator identities through the original
+  vault owner, excludes browser sessions and bearer grants, and restores only
+  matching identities. It does not copy or decrypt vault bytes outside that owner.
 - Every managed browser-origin `/api` request resolves one principal and runs
   in an AsyncLocalStorage request context. Electron's private browser discovery
   and lease routes are the narrow exception: they register before UI auth and

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
+import { parseV2EventBlock } from '../opencode/opencode-client/v2.js';
 import {
+  createMessageStreamGapControlPayload,
+  isMessageStreamControlPayload,
+  MESSAGE_STREAM_GAP_CONTROL_TYPE,
+  MESSAGE_STREAM_UPSTREAM_KEEPALIVE,
+  serializeMessageStreamWsEvent,
+  toUpstreamV2SseEvent,
   MESSAGE_STREAM_DIRECTORY_WS_PATH,
   MESSAGE_STREAM_GLOBAL_WS_PATH,
   MESSAGE_STREAM_WS_MAX_BUFFERED_BYTES,
@@ -178,5 +185,39 @@ describe('event stream protocol helpers', () => {
       eventId: 'evt-2',
       directory: '/tmp/project',
     });
+  });
+
+  it('adapts gen-2 data-only frames to the reader without an SSE id and comments to keepalive', () => {
+    const frame = 'data: {"id":"evt_1","created":1,"type":"session.renamed","location":{"directory":"/tmp/p"},"data":{"sessionID":"ses_1","title":"T"}}';
+    const adapted = toUpstreamV2SseEvent(parseV2EventBlock(frame));
+    expect(adapted).toEqual({
+      eventId: null,
+      upstreamEventId: 'evt_1',
+      directory: '/tmp/p',
+      payload: { id: 'evt_1', created: 1, type: 'session.renamed', location: { directory: '/tmp/p' }, data: { sessionID: 'ses_1', title: 'T' } },
+    });
+    expect(toUpstreamV2SseEvent(parseV2EventBlock(': heartbeat'))).toBe(MESSAGE_STREAM_UPSTREAM_KEEPALIVE);
+    expect(toUpstreamV2SseEvent(parseV2EventBlock('data: {"id":"evt_2","type":"server.connected","data":{}}'))).toMatchObject({
+      upstreamEventId: 'evt_2',
+      directory: null,
+    });
+    expect(toUpstreamV2SseEvent(parseV2EventBlock('data: not-json'))).toBeNull();
+    expect(toUpstreamV2SseEvent(null)).toBeNull();
+  });
+
+  it('serializes hub gap control payloads as top-level gap frames and never trusts the type string alone', () => {
+    const control = createMessageStreamGapControlPayload({ scope: 'global', reason: 'upstream_reconnect' });
+    expect(control.type).toBe(MESSAGE_STREAM_GAP_CONTROL_TYPE);
+    expect(isMessageStreamControlPayload(control)).toBe(true);
+    expect(JSON.parse(serializeMessageStreamWsEvent(control, { eventId: 'ignored', directory: 'global' })))
+      .toEqual({ type: 'gap', scope: 'global', reason: 'upstream_reconnect' });
+
+    const forged = { type: MESSAGE_STREAM_GAP_CONTROL_TYPE, properties: { scope: 'global' } };
+    expect(isMessageStreamControlPayload(forged)).toBe(false);
+    expect(JSON.parse(serializeMessageStreamWsEvent(forged))).toEqual({ type: 'event', payload: forged });
+
+    let raw = null;
+    expect(sendMessageStreamWsEvent({ readyState: 1, send(value) { raw = value; } }, createMessageStreamGapControlPayload())).toBe(true);
+    expect(JSON.parse(raw)).toEqual({ type: 'gap', scope: 'global' });
   });
 });

@@ -138,7 +138,7 @@ export async function readBotRuntimeReleaseMetadata({
     packageVersions[key] = packageJson.version;
   }
 
-  const [openCodeDockerfile, compatibilitySource, pluginBytes] = await Promise.all([
+  const [openCodeDockerfile, compatibilitySource] = await Promise.all([
     fsPromises.readFile(
       path.join(root, BOT_RUNTIME_IMAGE_DEFINITIONS.opencode.dockerfile),
       'utf8',
@@ -147,35 +147,37 @@ export async function readBotRuntimeReleaseMetadata({
       path.join(root, 'packages/web/server/lib/multi-user/auth-compat.js'),
       'utf8',
     ),
-    fsPromises.readFile(
-      path.join(root, 'packages/bots-runtime/opencode/devryan-bot-tools.mjs'),
-    ),
   ]).catch((error) => {
     fail('Bot runtime release source metadata cannot be read', 'bot_runtime_image_source_invalid', {
       cause: error,
     });
   });
-  const openCodeMatch = openCodeDockerfile.match(
-    /opencode-ai@(\d+\.\d+\.\d+)\s+@opencode-ai\/plugin@(\d+\.\d+\.\d+)/,
-  );
+  const nativePins = [...openCodeDockerfile.matchAll(/@opencode\/(server|core|ai|schema|plugin)@(\d+\.\d+\.\d+)/g)];
   const schemaMatch = compatibilitySource.match(
     /export const PRODUCTION_BOTS_MIGRATION = '(\d{14})';/,
   );
-  if (!openCodeMatch || openCodeMatch[1] !== openCodeMatch[2] || !schemaMatch) {
+  if (new Set(nativePins.map(match => match[1])).size !== 5 || !schemaMatch
+    || !openCodeDockerfile.includes('FROM oven/bun:1.3.14 AS bun-runtime')) {
     fail('Bot runtime release source metadata is inconsistent', 'bot_runtime_image_source_invalid');
   }
   // The Dockerfile keeps the literal pin; the shared Bot target constant is the
   // source of truth, so a drifted image pin fails the release build here.
-  if (openCodeMatch[1] !== BOT_TARGET_OPENCODE_VERSION) {
+  if (nativePins.some(match => match[2] !== BOT_TARGET_OPENCODE_VERSION)) {
     fail(
-      `Bot runtime image pins OpenCode ${openCodeMatch[1]} but BOT_TARGET_OPENCODE_VERSION is ${BOT_TARGET_OPENCODE_VERSION}`,
+      `Bot runtime image native pins differ from BOT_TARGET_OPENCODE_VERSION ${BOT_TARGET_OPENCODE_VERSION}`,
       'bot_runtime_image_source_invalid',
     );
   }
+  // Hash every repository file copied into the runtime, including shared OAuth,
+  // credential, catalog and image hotfix code; duplicate COPY targets count once.
+  const copiedInputs = [...new Set([...openCodeDockerfile.matchAll(/^COPY --chown=\S+ (\S+) \S+$/gm)].map(match => match[1]))].sort();
+  const inputs = await Promise.all([BOT_RUNTIME_IMAGE_DEFINITIONS.opencode.dockerfile, ...copiedInputs].map(async file => ({
+    file, sha256: sha256(await fsPromises.readFile(path.join(root, file))),
+  })));
   return Object.freeze({
-    openCodeVersion: openCodeMatch[1],
+    openCodeVersion: BOT_TARGET_OPENCODE_VERSION,
     schemaVersion: schemaMatch[1],
-    pluginHash: sha256(pluginBytes),
+    pluginHash: sha256(JSON.stringify(inputs)),
     packageVersions: Object.freeze(packageVersions),
   });
 }

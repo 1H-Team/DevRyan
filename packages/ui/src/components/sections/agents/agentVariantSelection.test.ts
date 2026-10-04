@@ -48,7 +48,7 @@ describe('agent Settings variant selection', () => {
     expect(resolveAgentVariantForSave(provider, 'opencode/deepseek-v4-flash-free', undefined)).toBe(undefined);
   });
 
-  test('preserves provider default when an agent has no valid saved thinking variant', () => {
+  test('preserves provider default or an explicit unlisted saved thinking variant', () => {
     const provider = {
       id: 'opencode',
       models: [
@@ -65,7 +65,7 @@ describe('agent Settings variant selection', () => {
       provider,
       'opencode/deepseek-v4-flash-free',
       'stale',
-    )).toBeUndefined();
+    )).toBe('stale');
   });
 
   test('normalizes selected thinking variants by provider metadata on save', () => {
@@ -77,6 +77,6 @@ describe('agent Settings variant selection', () => {
     };
 
     expect(resolveAgentVariantForSave(provider, 'opencode/deepseek-v4-flash-free', 'HIGH')).toBe('high');
-    expect(resolveAgentVariantForSave(provider, 'opencode/deepseek-v4-flash-free', 'stale')).toBe(undefined);
+    expect(resolveAgentVariantForSave(provider, 'opencode/deepseek-v4-flash-free', 'stale')).toBe('stale');
   });
 });

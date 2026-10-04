@@ -7,6 +7,7 @@ import { createQaProjectFixture } from './project-fixture.mjs';
 import { compareQaRetrievalPair, createQaRetrievalDiagnosticMatrix, projectQaDiagnosticQuestions, projectQaRetrievalBehavior,
   QA_RETRIEVAL_PLAN, QA_RETRIEVAL_PROBE, runQaRetrievalDiagnostic, summarizeQaRetrievalStudy } from './compaction-retrieval-diagnostic.mjs';
 import { expandQaMatrix, validateQaMatrixConfig } from './matrix-config.mjs';
+import { resolveQaTargetOpenCodeVersion } from '../../packages/web/server/lib/opencode/version-policy.js';
 
 const directory = '/fixture/project';
 const assistant = (id, parts, extra = {}) => ({ info: { id, role: 'assistant', ...extra }, parts });
@@ -172,7 +173,8 @@ async function exerciseAdapter(kind, { pendingQuestion = false, uncorrelated = f
     assert.equal(options, undefined, 'The diagnostic must not send API mutations');
     if (route.startsWith('/api/question')) return questions;
     if (route.startsWith('/api/session/status')) return {};
-    if (route === '/api/health') return { openCodeVersion: '1.18.33' };
+    // The diagnostic checks against the resolved QA target, so the mock reports it.
+    if (route === '/api/health') return { openCodeVersion: resolveQaTargetOpenCodeVersion().version };
     if (route.startsWith('/api/config?')) return {};
     if (route === '/api/diagnostics/status') return { gapRecords: 0, lastError: null };
     throw new Error('Unexpected diagnostic API: ' + route);
@@ -219,7 +221,8 @@ async function exerciseAdapter(kind, { pendingQuestion = false, uncorrelated = f
             { type: 'tool', tool: 'read', callID: 'call_source', state: { status: 'completed', input: { filePath: path.join(fixture.fixtureRoot, 'src/tasks.mjs') } } },
             { type: 'tool', tool: 'bash', callID: 'call_initial_test', state: { status: 'completed', input: { command: 'node --test test/tasks.test.mjs' }, metadata: { exit: 1 } } },
           ] : [{ type: 'text', text: 'Implementation remains paused.' }];
-          const response = assistant('msg_assistant_' + prompts.length, parts, { sessionID, parentID: id, time: { completed: 50 }, tokens: { total: 10000 } });
+          const response = assistant('msg_assistant_' + prompts.length, parts, { sessionID, parentID: id, time: { completed: 50 },
+            tokens: { input: 10000, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } });
           if (text === QA_RETRIEVAL_PROBE && pendingQuestion) {
             rows.push(assistant('msg_probe_glob', [glob()], { sessionID, parentID: id }));
             response.parts = [question(claim)];

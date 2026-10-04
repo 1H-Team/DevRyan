@@ -1,4 +1,5 @@
 import childProcess from 'node:child_process';
+import { createQaHostLaunchEnvironment } from '../qa/launch-environment.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync, realpathSync } from 'node:fs';
 import { readFile, rename, stat, writeFile } from 'node:fs/promises';
@@ -373,8 +374,8 @@ export async function runWebUpdateCheckBenchmark(input) {
         const config = { arm, source: options[arm === 'before' ? 'beforeSource' : 'afterSource'], nonce, runDirectory: directory };
         const bootstrap = path.join(directory, 'bootstrap.mjs');
         await writeFile(bootstrap, `import { installWebUpdateCheckInstrumentation } from ${JSON.stringify(import.meta.url)};\nawait installWebUpdateCheckInstrumentation(${JSON.stringify(config)});\nawait import(${JSON.stringify(pathToFileURL(profile.bootstrapPath).href)});\n`, { mode: 0o600 });
-        host = startOwnedProcess(process.execPath, [bootstrap], { cwd: ROOT, env: { ...process.env, ...profile.env,
-          OPENCHAMBER_PORT: String(port), OPENCHAMBER_DIST_DIR: options.uiDirectory, OPENCHAMBER_RUNTIME: 'web' } });
+        host = startOwnedProcess(process.execPath, [bootstrap], { cwd: ROOT, env: createQaHostLaunchEnvironment(profile.env, {
+          OPENCHAMBER_PORT: String(port), OPENCHAMBER_DIST_DIR: options.uiDirectory, OPENCHAMBER_RUNTIME: 'web' }) });
         entry.hostPid = host.child.pid; entry.profile = profile.evidence;
         entry.ready = await waitForQaHostReady({ origin, checkAlive: check });
         const indexResponse = await fetch(origin, { signal: AbortSignal.timeout(10000) });

@@ -19,7 +19,7 @@ import process from 'node:process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
-import { createLoopbackOpenCodeFixture } from '../../../scripts/perf/loopback-opencode-fixture.mjs';
+import { createLoopbackOpenCodeFixtureForGeneration } from '../../../scripts/perf/loopback-opencode-fixtures.mjs';
 import {
   discoverElectronPage,
   ElectronCdpConnection,
@@ -269,7 +269,7 @@ const runNativePointerSmoke = async (options) => {
     desktopWindowState: { width: 1280, height: 800, maximized: false },
   }, null, 2));
 
-  const fixture = await createLoopbackOpenCodeFixture({ directory: fixtureDirectory });
+  const fixture = await createLoopbackOpenCodeFixtureForGeneration(2, { directory: fixtureDirectory });
   const debugPort = await reserveLoopbackPort();
   let logs = '';
   const launchArguments = [
@@ -282,6 +282,7 @@ const runNativePointerSmoke = async (options) => {
     cwd: electronDirectory,
     env: {
       ...process.env,
+      ...fixture.runtimeEnv,
       ...(options.electronMode === 'raw' ? { OPENCHAMBER_ELECTRON_DEV: '1' } : {}),
       OPENCHAMBER_DATA_DIR: dataDirectory,
       OPENCHAMBER_ELECTRON_USER_DATA_DIR: userDataDirectory,

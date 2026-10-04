@@ -231,7 +231,7 @@ describe('ModelControls delayed user-part hydration', () => {
   }));
 
   test('preserves a newer unsent Low selection when older High user parts arrive', async () => withControls(async container => {
-    expect(variantTrigger(container).textContent).toBe('Medium');
+    expect(variantTrigger(container).textContent).toBe('Default');
     await choose(container, 'Low');
     expect(variantTrigger(container).textContent).toBe('Low');
     expect(resolveCurrentSendConfig(sessionID).variant).toBe('low');
@@ -254,7 +254,7 @@ describe('ModelControls delayed user-part hydration', () => {
   }));
 
   test('restores High on delayed user parts when no newer manual selection exists', async () => withControls(async container => {
-    expect(variantTrigger(container).textContent).toBe('Medium');
+    expect(variantTrigger(container).textContent).toBe('Default');
 
     await act(async () => { deliverPendingParts(); });
 
@@ -370,7 +370,7 @@ describe('ModelControls delayed user-part hydration', () => {
 });
 
 test('chat fallback ignores display-only provider metadata and preserves a legacy captured queue', async () => withControls(async (container, remount) => {
-  expect(variantTrigger(container).textContent).toBe('Medium');
+  expect(variantTrigger(container).textContent).toBe('Default');
   const queued = { ...currentChoice(), variant: null };
   await choose(container, 'Medium');
   await remount();
@@ -388,3 +388,36 @@ test('chat fallback ignores display-only provider metadata and preserves a legac
     })),
   }));
 }));
+
+
+test('retains an unconfirmed High effort through catalog loss, remount and actual send capture', async () => withControls(async (container, remount) => {
+  await choose(container, 'High');
+  await act(async () => { useConfigStore.setState(state => ({ providers: state.providers.map(provider => ({ ...provider,
+    models: provider.models.map(item => ({ ...item, variants: { medium: {} } })),
+  })) })); });
+  expect(variantTrigger(container).textContent).toBe('High · Unconfirmed');
+  expect(currentChoice().variant).toBe('high');
+  await act(async () => { useConfigStore.setState({ providers: [] }); });
+  await remount();
+  expect(variantTrigger(container).textContent).toBe('High · Unconfirmed');
+  const captured = currentChoice();
+  expect(captured).toMatchObject({ providerID: 'fixture', modelID: 'model', variant: 'high' });
+  let sentVariant: string | null | undefined;
+  await act(async () => { await dispatch(captured, async () => { sentVariant = captured.variant; }); });
+  expect(sentVariant).toBe('high');
+}));
+
+test('restores a missing historical model and effort without substituting the current catalog model', async () => withControls(async (container, remount) => {
+  expect(currentChoice()).toMatchObject({ providerID: 'fixture', modelID: 'retired-model', variant: 'high' });
+  expect(variantTrigger(container).textContent).toBe('High · Unconfirmed');
+  await remount();
+  expect(currentChoice()).toMatchObject({ providerID: 'fixture', modelID: 'retired-model', variant: 'high' });
+}, () => {
+  const saved = { ...user(pendingUserID, 'high'), model: { providerID: 'fixture', modelID: 'retired-model', variant: 'high' } };
+  directoryStore.setState({ message: { [sessionID]: [saved] }, part: { [pendingUserID]: [textPart(pendingUserID)] } });
+}));
+
+test('displays an explicit provider default without converting it to Medium', async () => withControls(async (container) => {
+  expect(variantTrigger(container).textContent).toBe('Default');
+  expect(currentChoice().variant).toBeNull();
+}, () => useConfigStore.setState({ currentVariant: null })));

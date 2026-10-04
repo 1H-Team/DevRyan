@@ -42,6 +42,8 @@ App entry mounts layout; feature regions receive data via context/hooks.
 ## Integration
 Integrated with views, sidebar/session/chat components, and global providers.
 
+Mobile `MainLayout` uses the existing `useUIStore.isSessionSwitcherOpen` leaf as the single left-drawer owner. Header/context toggles read the current leaf at invocation; backdrop, drag endpoints, right-drawer/settings actions and session/project draft or selection closes all publish to it. The desktop sidebar remains independently owned by `isSidebarOpen`. `MainLayout.mobileDrawer.test.tsx` mounts the layout and original project-draft handler to cover shared state, overlay release, repeated toggles and breakpoint/drag endpoints; browser QA owns physical geometry and composer interaction.
+
 Mobile `MainLayout` drawer offsets track `useDeviceInfo().screenWidth` in layout effects. A resize snaps to the new open/closed endpoint before paint; ordinary toggles retain the spring. This prevents stale closed-drawer strips after mobile viewport changes.
 
 `MainLayout` mounts the lightweight full/managed Settings frames synchronously.

@@ -197,8 +197,11 @@ mock.module("./magicPrompts", () => ({
   }),
 }))
 
+const actualOpencodeClientModule = await import("./opencode/client")
 mock.module("./opencode/client", () => ({
+  ...actualOpencodeClientModule,
   opencodeClient: {
+    awaitInputSubscription: async () => () => {},
     withDirectory: async (_directory: string, callback: () => Promise<unknown>) => callback(),
     getApiClient: () => ({
       session: {

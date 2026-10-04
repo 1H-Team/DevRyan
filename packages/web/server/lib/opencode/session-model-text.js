@@ -1,49 +1,11 @@
-/**
- * Generate text with a session-backed model (a provider the user has actually
- * configured) through a hidden OpenCode helper session.
- *
- * Modelled on the session-title helper: create a hidden session, post one
- * message with tools disabled, optionally post a repair prompt when the first
- * reply is unusable, recover a completed reply after a transport timeout, and
- * always delete the helper session again.
- */
+/** Bounded model text through the existing native provider or read-only Cursor owner. */
+
+import { OPENCODE_CAPABILITY_ABSENT, resolveOpenCodeGeneration } from './opencode-generation.js';
+import { randomUUID } from 'node:crypto';
 
 export const SESSION_MODEL_TEXT_TIMEOUT_MS = 60_000;
-export const SESSION_MODEL_TEXT_RECOVERY_TIMEOUT_MS = 2_500;
-export const SESSION_MODEL_TEXT_SESSION_TITLE = 'DevRyan text generation (internal)';
 
-// OpenCode hides a tool only when the last rule matching its permission is a
-// blanket `*` deny. This trailing deny's pattern matches no real tool input,
-// so tools stay advertised to the model while every call still resolves to the
-// preceding deny-all rule (and a call matching the sentinel is denied as well).
-export const SESSION_MODEL_TEXT_ADVERTISE_ONLY_PATTERN = '__devryan_helper_advertise_only__';
-const DENY_ALL_RULE = { permission: '*', pattern: '*', action: 'deny' };
-const ADVERTISE_ONLY_RULE = { permission: '*', pattern: SESSION_MODEL_TEXT_ADVERTISE_ONLY_PATTERN, action: 'deny' };
-// Zen's free tier rejects requests it does not recognize as OpenCode agent
-// traffic (for example, requests without OpenCode's tool definitions).
 const FREE_TIER_REJECTED_PATTERN = /free tier can only be used/i;
-
-const trimString = (value) => (typeof value === 'string' ? value.trim() : '');
-
-// Unlike the title helper this keeps line breaks: the callers expect markdown.
-const extractAssistantText = (payload) => {
-  const records = Array.isArray(payload) ? payload : [payload];
-  for (const record of records) {
-    const parts = Array.isArray(record?.parts) ? record.parts : [];
-    const text = parts
-      .filter((part) => part?.type === 'text')
-      .map((part) => trimString(part.text ?? part.content ?? part.value))
-      .filter(Boolean)
-      .join('\n')
-      .trim();
-    if (text) return text;
-  }
-  return '';
-};
-
-const isAssistantRecord = (record) => (
-  trimString(record?.info?.role ?? record?.role).toLowerCase() === 'assistant'
-);
 
 export const sessionModelFailureReasonForStatus = (status) => {
   const code = Number(status);
@@ -62,202 +24,45 @@ export const classifySessionModelProviderError = (error) => {
   return { reason, status };
 };
 
-const reasonForError = (error) => {
-  const name = String(error?.name || '');
-  const message = String(error?.message || error || '');
-  if (name === 'TimeoutError' || name === 'AbortError' || /timed out|timeout/i.test(message)) return 'timeout';
-  return 'request_failed';
-};
-
-export async function generateTextWithSessionModel({
-  buildOpenCodeUrl,
-  getOpenCodeAuthHeaders = () => ({}),
-  fetchImpl = fetch,
-  directory,
-  providerID,
-  modelID,
-  variant,
-  agent,
-  prompt,
-  repairPrompt,
-  accept = (text) => trimString(text) || null,
-  timeoutMs = SESSION_MODEL_TEXT_TIMEOUT_MS,
-  recoveryTimeoutMs = SESSION_MODEL_TEXT_RECOVERY_TIMEOUT_MS,
-  signal,
-  recoverOnError = true,
-  denyTools = false,
-  advertiseDeniedTools = false,
-  sessionTitle = SESSION_MODEL_TEXT_SESSION_TITLE,
-  now = () => Date.now(),
-  logger = console,
-} = {}) {
-  const provider = trimString(providerID);
-  const model = trimString(modelID);
-  const promptText = trimString(prompt);
-  const startedAt = now();
-  const helperAgent = trimString(agent);
-  const helperVariant = trimString(variant);
-  let attempts = 0;
-  const finish = (fields) => ({
-    ok: false,
-    value: null,
-    text: '',
-    reason: 'request_failed',
-    status: undefined,
-    attempts,
-    ...fields,
-    durationMs: Math.max(0, now() - startedAt),
-  });
-
-  if (typeof buildOpenCodeUrl !== 'function') return finish({ reason: 'runtime_unavailable' });
-  if (!provider || !model) return finish({ reason: 'model_unavailable' });
-  if (!promptText) return finish({ reason: 'invalid_input' });
-
-  const deadlineAt = startedAt + Math.max(1, Math.trunc(Number(timeoutMs)) || SESSION_MODEL_TEXT_TIMEOUT_MS);
-  const remainingMs = () => Math.max(1, deadlineAt - now());
-  const recoveryMs = Math.max(1, Math.trunc(Number(recoveryTimeoutMs)) || SESSION_MODEL_TEXT_RECOVERY_TIMEOUT_MS);
-  const query = trimString(directory) ? `?directory=${encodeURIComponent(trimString(directory))}` : '';
-  const buildUrl = (requestPath) => {
+/** Every attempt settles its admitted provider/worker before repair or model rotation. */
+export async function generateTextWithSessionModel({ openCodeClient, generateHelperText, cursorRuntime, directory, sessionID,
+  providerID, modelID, variant, agent, prompt, repairPrompt, system, maxOutputTokens = 2048, operationID = randomUUID(),
+  accept = text => text.trim() || null, timeoutMs = SESSION_MODEL_TEXT_TIMEOUT_MS, signal, now = () => Date.now() } = {}) {
+  const startedAt = now(); let attempts = 0;
+  const finish = fields => ({ ok: false, value: null, text: '', status: undefined, attempts,
+    ...fields, durationMs: Math.max(0, now() - startedAt) });
+  try { resolveOpenCodeGeneration(openCodeClient); }
+  catch (error) { return finish({ reason: 'runtime_unavailable', error }); }
+  const cursor = providerID === 'cursor-acp';
+  if (cursor ? typeof cursorRuntime?.generateText !== 'function' : typeof generateHelperText !== 'function') {
+    return finish({ reason: OPENCODE_CAPABILITY_ABSENT, capability: 'session_model_text' });
+  }
+  if (!providerID || !modelID) return finish({ reason: 'model_unavailable' });
+  if (typeof prompt !== 'string' || !prompt.trim() || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120000) return finish({ reason: 'invalid_input' });
+  const deadline = startedAt + timeoutMs;
+  for (const text of [prompt, repairPrompt].filter(value => typeof value === 'string' && value.trim())) {
+    if (signal?.aborted || now() >= deadline) return finish({ reason: 'timeout' });
+    attempts += 1;
     try {
-      return buildOpenCodeUrl(requestPath, '') || '';
-    } catch {
-      return '';
-    }
-  };
-  const headers = () => ({
-    Accept: 'application/json',
-    'Content-Type': 'application/json',
-    ...(getOpenCodeAuthHeaders?.() || {}),
-  });
-
-  const requestSignal = () => signal
-    ? AbortSignal.any([signal, AbortSignal.timeout(remainingMs())])
-    : AbortSignal.timeout(remainingMs());
-  let helperSessionID = '';
-  let completed = false;
-  try {
-    const createUrl = buildUrl(`/session${query}`);
-    if (!createUrl) return finish({ reason: 'runtime_unavailable' });
-    let createResponse;
-    try {
-      createResponse = await fetchImpl(createUrl, {
-        method: 'POST',
-        headers: headers(),
-        body: JSON.stringify({
-          title: sessionTitle,
-          ...(denyTools ? { permission: advertiseDeniedTools ? [DENY_ALL_RULE, ADVERTISE_ONLY_RULE] : [DENY_ALL_RULE] } : {}),
-        }),
-        signal: requestSignal(),
-      });
+      const remaining = Math.max(1, Math.ceil(deadline - now()));
+      const generated = cursor ? { text: await cursorRuntime.generateText({ text: system ? `${system}\n\n${text}` : text,
+        directory, ...(sessionID ? { sessionID } : {}), ...(agent === 'devryan-title' ? { titleHelper: true } : {}), modelID, ...(variant ? { variant } : {}), timeoutMs: remaining, signal }) }
+        : await generateHelperText({ operationID, directory, ...(sessionID ? { sessionID } : {}), providerID, modelID, agent,
+          ...(variant ? { variant } : {}), prompt: text, ...(system ? { system } : {}), timeoutMs: remaining, maxOutputTokens, signal });
+      signal?.throwIfAborted();
+      const output = typeof generated?.text === 'string' ? generated.text : '';
+      const value = output ? await accept(output) : null;
+      if (value) return finish({ ok: true, value, text: output, reason: null });
+      if (text === repairPrompt || !repairPrompt) return finish({ reason: output ? 'invalid_output' : 'empty_output' });
     } catch (error) {
-      return finish({ reason: reasonForError(error), error });
-    }
-    if (!createResponse?.ok) {
-      return finish({ reason: 'session_create_failed', status: createResponse?.status });
-    }
-    const created = await createResponse.json().catch(() => null);
-    helperSessionID = trimString(created?.id ?? created?.data?.id);
-    if (!helperSessionID) return finish({ reason: 'session_create_failed' });
-
-    const messageUrl = buildUrl(`/session/${encodeURIComponent(helperSessionID)}/message${query}`);
-    if (!messageUrl) return finish({ reason: 'runtime_unavailable' });
-
-    const succeed = (text, value) => {
-      completed = true;
-      return {
-        ok: true, value, text, reason: null, status: undefined, attempts,
-        durationMs: Math.max(0, now() - startedAt),
-      };
-    };
-
-    // After a transport timeout the model may still have finished: read the
-    // session back once before giving up on it.
-    const recoverCompletedReply = async () => {
-      try {
-        const response = await fetchImpl(messageUrl, {
-          headers: { Accept: 'application/json', ...(getOpenCodeAuthHeaders?.() || {}) },
-          signal: AbortSignal.timeout(recoveryMs),
-        });
-        if (!response?.ok) return null;
-        const records = await response.json().catch(() => null);
-        const assistants = (Array.isArray(records) ? records : [records]).filter(isAssistantRecord).reverse();
-        for (const record of assistants) {
-          const text = extractAssistantText(record);
-          const value = text ? await accept(text) : null;
-          if (value) return succeed(text, value);
-        }
-      } catch {
+      const status = error?.statusCode ?? error?.status ?? error?.data?.statusCode;
+      if (error?.code === 'native_helper_unsettled' || error?.code === 'native_helper_operation_pending') {
+        return finish({ reason: 'unsettled', status, code: error.code, error });
       }
-      return null;
-    };
-
-    let lastReason = 'request_failed';
-    let lastStatus;
-    let lastError = null;
-    for (const text of [promptText, trimString(repairPrompt)].filter(Boolean)) {
-      if (signal?.aborted || now() >= deadlineAt) {
-        lastReason = 'timeout';
-        break;
-      }
-      attempts += 1;
-      try {
-        const response = await fetchImpl(messageUrl, {
-          method: 'POST',
-          headers: headers(),
-          body: JSON.stringify({
-            ...(helperAgent ? { agent: helperAgent } : {}),
-            model: { providerID: provider, modelID: model },
-            ...(helperVariant ? { variant: helperVariant } : {}),
-            tools: {},
-            parts: [{ type: 'text', text }],
-          }),
-          signal: requestSignal(),
-        });
-        if (!response?.ok) {
-          lastReason = sessionModelFailureReasonForStatus(response?.status);
-          lastStatus = response?.status;
-          break;
-        }
-        const result = await response.json().catch(() => null);
-        const message = result?.data ?? result;
-        const providerError = message?.info?.error;
-        if (providerError) {
-          ({ reason: lastReason, status: lastStatus } = classifySessionModelProviderError(providerError));
-          break;
-        }
-        const replyText = extractAssistantText(message);
-        const value = replyText ? await accept(replyText) : null;
-        if (value) return succeed(replyText, value);
-        lastReason = replyText ? 'invalid_output' : 'empty_output';
-      } catch (error) {
-        lastError = error;
-        lastReason = reasonForError(error);
-        const recovered = recoverOnError && !signal?.aborted ? await recoverCompletedReply() : null;
-        if (recovered) return recovered;
-        break;
-      }
-    }
-    return finish({ reason: lastReason, status: lastStatus, error: lastError });
-  } finally {
-    if (helperSessionID) {
-      // Cancelling the HTTP request alone does not stop native inference.
-      // Git rotation waits for this bounded cleanup before trying another model.
-      if (denyTools && !completed) {
-        const abortUrl = buildUrl(`/session/${encodeURIComponent(helperSessionID)}/abort${query}`);
-        if (abortUrl) await fetchImpl(abortUrl, {
-          method: 'POST', headers: headers(), signal: AbortSignal.timeout(recoveryMs),
-        }).catch(() => {});
-      }
-      const deleteUrl = buildUrl(`/session/${encodeURIComponent(helperSessionID)}${query}`);
-      if (deleteUrl) {
-        await fetchImpl(deleteUrl, {
-          method: 'DELETE',
-          headers: { Accept: 'application/json', ...(getOpenCodeAuthHeaders?.() || {}) },
-          signal: AbortSignal.timeout(recoveryMs),
-        }).catch((error) => {
-          logger?.warn?.('[SessionModelText] Failed to clean up internal helper session:', error instanceof Error ? error.message : error);
-        });
-      }
+      const reason = signal?.aborted || error?.name === 'AbortError' || error?.name === 'TimeoutError' || /timeout|cancelled/i.test(error?.code ?? error?.message ?? '')
+        ? 'timeout' : classifySessionModelProviderError({ ...error, data: { ...error?.data, statusCode: status } }).reason;
+      return finish({ reason, status, error });
     }
   }
+  return finish({ reason: 'empty_output' });
 }

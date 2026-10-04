@@ -30,6 +30,14 @@ const getPromptBody = () => {
 }
 
 describe("opencode client sends", () => {
+  test('a synchronous final admission callback cannot send after subscription owner revocation', async () => {
+    const revoke = opencodeClient.registerInputSubscriptionGate(async () => () => {});
+    await expect(opencodeClient.sendMessage({ id: 'session-a', messageId: 'msg_same', text: 'kept',
+      providerID: 'fixture', modelID: 'exact', beforeTransport: revoke }))
+      .rejects.toMatchObject({ code: 'EVENT_SUBSCRIPTION_UNAVAILABLE', knownBeforeTransport: true });
+    expect(fetchCalls).toHaveLength(0);
+  });
+
   test("keeps partial file outcomes through both Revert response parsers", async () => {
     const fetchImpl: typeof fetch = mock(async () => Response.json({ session: { id: 'session-a' },
       outcome: 'partial', conflicts: [{ path: 'binary.dat' }, { path: 42 }] })) as typeof fetch
@@ -45,6 +53,7 @@ describe("opencode client sends", () => {
     waitForWorktreeBootstrapHandler = () => Promise.resolve()
     opencodeClient.setDirectory(undefined)
     ;(opencodeClient as unknown as { baseUrl: string }).baseUrl = "http://127.0.0.1:5180/api"
+    opencodeClient.registerInputSubscriptionGate(async () => () => {})
     globalThis.fetch = mock((url: string | URL | Request, init?: RequestInit) => {
       const request = typeof Request !== "undefined" && url instanceof Request ? url : undefined
       fetchCalls.push({ url: request?.url ?? String(url), init, request })
@@ -161,6 +170,17 @@ describe("opencode client sends", () => {
     const requestUrl = new URL(fetchCalls[0]?.url ?? "http://127.0.0.1:5180")
     expect(requestUrl.pathname).toBe("/api/config/providers")
     expect(requestUrl.searchParams.has("directory")).toBe(false)
+  })
+
+  test("sends an explicit queued delivery only when the caller requests it",async()=>{
+    await opencodeClient.sendMessage({id:"session-a",text:"Natural",providerID:"fixture",modelID:"exact",delivery:"queue"})
+    expect(getPromptBody().delivery).toBe("queue")
+    await opencodeClient.sendCommand({id:"session-a",command:"check",providerID:"fixture",modelID:"exact",delivery:"steer"})
+    const command=JSON.parse(String(fetchCalls.find(call=>call.url.includes("/command"))?.init?.body))
+    expect(command.delivery).toBe("steer")
+    fetchCalls.length=0
+    await opencodeClient.sendMessage({id:"session-a",text:"Manual",providerID:"fixture",modelID:"exact"})
+    expect(Object.hasOwn(getPromptBody(),"delivery")).toBe(false)
   })
 
   test("leaves Cursor provider-default transport unchanged", async () => {
@@ -340,7 +360,6 @@ describe("opencode client sends", () => {
       "resend_*": false,
       "mcp__resend__*": false,
       task: false,
-      invalid: false,
     })
   })
 
@@ -707,3 +726,20 @@ describe("opencode client sends", () => {
     expect(fetchCalls[0]?.init?.cache).toBe("no-store")
   })
 })
+
+test('an unconfirmed earlier POST cannot turn a retry readiness failure into known nonacceptance', async () => {
+  let attempts = 0;
+  opencodeClient.registerInputSubscriptionGate(async () => {
+    if (attempts > 0) throw new (await import('./client')).InputSubscriptionUnavailableError();
+    return () => {};
+  });
+  const originalFetch = globalThis.fetch;
+  const originalWarn = console.warn;
+  console.warn = () => {};
+  globalThis.fetch = async () => { attempts++; throw new TypeError('Failed to fetch'); };
+  try {
+    await expect(opencodeClient.sendMessage({ id: 'session-a', text: 'same uncertain input', providerID: 'fixture', modelID: 'exact', messageId: 'msg_same' }))
+      .rejects.toMatchObject({ code: 'EVENT_SUBSCRIPTION_UNAVAILABLE', knownBeforeTransport: false });
+    expect(attempts).toBe(1);
+  } finally { globalThis.fetch = originalFetch; console.warn = originalWarn; }
+});

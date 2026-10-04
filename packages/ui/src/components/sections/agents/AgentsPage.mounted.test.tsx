@@ -108,3 +108,48 @@ for (const selected of ['builder', 'council']) {
     }
   }));
 }
+
+
+for (const selected of ['builder', 'council']) {
+  test(`${selected} saves retain High on primary, backup and ordered Council rows after unavailable catalog refresh`, async () => withDom(async container => {
+    const { createRoot } = await import('react-dom/client');
+    const root = createRoot(container as unknown as Element);
+    const originalAgents = useAgentsStore.getState(), originalConfig = useConfigStore.getState();
+    const originalDirectory = useDirectoryStore.getState(), originalPrincipal = getAuthPrincipal();
+    const tools = spyOn(opencodeClient, 'listToolIds').mockResolvedValue([]);
+    const saves: unknown[] = [], backups: unknown[] = [];
+    const agent: AgentWithExtras = { name: selected, mode: 'all', options: {}, permission: [],
+      model: { providerID: 'cursor-acp', modelID: 'composer-2.5' }, variant: 'high', modelRefs: ['cursor-acp/composer-2.5'],
+      councillors: selected === 'council' ? [{ model: 'cursor-acp/composer-2.5', variant: 'high' }, { model: 'example/second', variant: 'ultra' }] : undefined,
+      backupModel: { providerID: 'cursor-acp', modelID: 'composer-2.5', variant: 'high' },
+    };
+    try {
+      setAuthPrincipal({ ...originalPrincipal, scope: 'local-admin', role: 'admin' });
+      useAgentsStore.setState({ agents: [agent], selectedAgentName: selected,
+        saveAgentModelOverride: async (name, config) => { saves.push({ name, config }); return null; },
+        saveAgentBackupModel: async (name, config) => { backups.push({ name, config }); return null; },
+      });
+      useConfigStore.setState({ providers: [] });
+      useDirectoryStore.setState({ currentDirectory: '/saved-availability-fixture' });
+      await act(async () => { root.render(<AgentsPage />); });
+      await act(async () => { useConfigStore.setState({ providers: [] }); });
+      expect(container.textContent).toContain('Saved selection: high.');
+      const save = container.find(node => node.tagName === 'BUTTON' && node.textContent.includes('settings.agents.page.actions.saveModelOverride'));
+      expect(save).not.toBeNull();
+      await act(async () => { save!.click(); });
+      expect(saves).toEqual([{ name: selected, config: { name: selected, model: 'cursor-acp/composer-2.5', variant: 'high',
+        councillors: selected === 'council' ? [{ model: 'cursor-acp/composer-2.5', variant: 'high' }, { model: 'example/second', variant: 'ultra' }] : undefined,
+      } }]);
+      if (selected === 'builder') {
+        const saveBackup = container.find(node => node.tagName === 'BUTTON' && node.textContent.includes('settings.agents.page.actions.saveBackupModel'));
+        expect(saveBackup).not.toBeNull();
+        await act(async () => { saveBackup!.click(); });
+        expect(backups).toEqual([{ name: selected, config: { model: 'cursor-acp/composer-2.5', variant: 'high' } }]);
+      }
+    } finally {
+      await act(async () => { root.unmount(); }); tools.mockRestore();
+      useAgentsStore.setState(originalAgents); useConfigStore.setState(originalConfig);
+      useDirectoryStore.setState(originalDirectory); setAuthPrincipal(originalPrincipal);
+    }
+  }));
+}

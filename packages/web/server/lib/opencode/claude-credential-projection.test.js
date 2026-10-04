@@ -53,6 +53,13 @@ describe('Claude credential projection for the confined transport', () => {
     await expect(read({ execFile: hex, readFile: missingFile })).resolves.toEqual({ token: TOKEN });
   });
 
+  it('preserves the constructor-owned original keychain identity after account relocation',async()=>{
+    const execFile=vi.fn(async()=>credentials());const relocated='/private/setup/accounts/owned';
+    expect(await read({account:relocated,keychainService:'Claude Code-credentials-deadbeef',execFile,readFile:missingFile})).toEqual({token:TOKEN});
+    expect(execFile).toHaveBeenCalledWith('/usr/bin/security',expect.arrayContaining(['Claude Code-credentials-deadbeef']),expect.any(Object));
+    execFile.mockClear();expect(await read({keychainService:'arbitrary-service',execFile,readFile:missingFile})).toEqual({reason:CLAUDE_CREDENTIALS_UNREADABLE});expect(execFile).not.toHaveBeenCalled();
+  });
+
   it('falls back to the credential file and never uses the keychain elsewhere', async () => {
     const readFile = vi.fn(async () => credentials());
     await expect(read({ execFile: keychainMiss, readFile })).resolves.toEqual({ token: TOKEN });

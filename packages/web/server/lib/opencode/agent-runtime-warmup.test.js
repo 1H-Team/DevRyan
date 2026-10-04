@@ -1,8 +1,30 @@
+import { createNativeConsumerFixture } from './test-native-consumer-client.js';
+const createAgentRuntimeWarmup = (options = {}) => createAgentRuntimeWarmupNative({
+  ...options, openCodeClient: options.openCodeClient ?? createNativeConsumerFixture({
+    readFixture: options.fetchImpl ?? ((...args) => globalThis.fetch(...args)), headers: options.getOpenCodeAuthHeaders,
+  }),
+});
 import { describe, expect, it, vi } from 'vitest';
 
-import { createAgentRuntimeWarmup } from './agent-runtime-warmup.js';
+import { createAgentRuntimeWarmup as createAgentRuntimeWarmupNative } from './agent-runtime-warmup.js';
 
 describe('agent runtime warmup', () => {
+  it('checkpoint waits timed-out task and ledger settlement and refuses new warmup', async () => {
+    let releaseTask, releaseLedger;
+    const pendingTask = new Promise(resolve => { releaseTask = resolve; });
+    const pendingLedger = new Promise(resolve => { releaseLedger = resolve; });
+    const warmup = createAgentRuntimeWarmup({ fetchImpl: async () => Response.json({ ok: true }),
+      warmXaiToolCatalog: () => pendingTask, warmLedger: () => pendingLedger });
+    await warmup.warm({ directory: '/fixture', timeoutMs: 10, commandTimeoutMs: 10, mcpTimeoutMs: 10, xaiTimeoutMs: 1 });
+    let drained = false;
+    const drain = warmup.holdForCheckpoint().then(() => { drained = true; });
+    await Promise.resolve(); expect(drained).toBe(false);
+    await expect(warmup.warm({ directory: '/later' })).rejects.toMatchObject({ code: 'bundle_warmup_held' });
+    releaseTask(); await Promise.resolve(); expect(drained).toBe(false);
+    releaseLedger(); await drain; expect(drained).toBe(true);
+    expect(warmup.holdForCheckpoint()).toBe(warmup.holdForCheckpoint());
+  });
+
   it('runs only safe read-only startup tasks', async () => {
     const requested = [];
     const warmup = createAgentRuntimeWarmup({
@@ -406,6 +428,7 @@ describe('agent runtime warmup', () => {
     const second = warmup.warm({ directory: '/project', timeoutMs: 5_000 });
 
     expect(second).toBe(first);
+    await Promise.resolve();
     expect(fetchImpl).toHaveBeenCalledTimes(8);
     releaseFetch();
     const [firstResult, secondResult] = await Promise.all([first, second]);
@@ -435,6 +458,7 @@ describe('agent runtime warmup', () => {
     const first = warmup.warm({ directory: '/project-a', timeoutMs: 1_000 });
     const second = warmup.warm({ directory: '/project-b', timeoutMs: 1_000 });
 
+    await Promise.resolve();
     expect(mcpStarts).toEqual(['/project-a', '/project-b']);
     releaseMcp();
     await Promise.all([first, second]);
@@ -454,5 +478,84 @@ describe('agent runtime warmup', () => {
     await warmup.warm({ directory: '/project', timeoutMs: 1_000 });
 
     expect(fetchImpl).toHaveBeenCalledTimes(16);
+  });
+});
+
+describe('agent runtime warmup on OpenCode 2', () => {
+  const createClient = ({ generation = 2, ready = true } = {}) => {
+    const calls = [];
+    const record = (name) => vi.fn(async (query, options) => {
+      calls.push({ name, query, signal: options?.signal ?? null });
+      return name === 'health.probe' ? { ready, reason: ready ? null : 'not_ready', version: '2.0.20' } : [];
+    });
+    return {
+      calls,
+      client: {
+        generation: () => generation,
+        health: { probe: vi.fn(async (options) => record('health.probe')(undefined, options)) },
+        sessions: { status: record('sessions.status') },
+        catalog: {
+          config: record('catalog.config'),
+          providers: record('catalog.providers'),
+          agents: record('catalog.agents'),
+          skills: record('catalog.skills'),
+          mcp: record('catalog.mcp'),
+          commands: record('catalog.commands'),
+        },
+      },
+    };
+  };
+
+  it('runs the same read-only checks through the client', async () => {
+    const { client, calls } = createClient();
+    const fetchImpl = vi.fn();
+    const warmup = createAgentRuntimeWarmup({ openCodeClient: () => client, fetchImpl, now: () => 1_000 });
+
+    const result = await warmup.warm({ directory: '/project', timeoutMs: 1_000 });
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result.tasks.map((task) => [task.name, task.status])).toEqual([
+      ['health', 'ready'], ['config', 'ready'], ['providers', 'ready'], ['agents', 'ready'], ['sessionStatus', 'ready'],
+      ['opencodeSkills', 'ready'], ['mcp', 'ready'], ['commands', 'ready'], ['skills', 'ready'],
+    ]);
+    expect(calls.map((call) => [call.name, call.query?.directory ?? null])).toEqual([
+      ['health.probe', null],
+      ['catalog.config', '/project'],
+      ['catalog.providers', '/project'],
+      ['catalog.agents', '/project'],
+      ['sessions.status', '/project'],
+      ['catalog.skills', '/project'],
+      ['catalog.mcp', '/project'],
+      ['catalog.commands', '/project'],
+    ]);
+    expect(calls.every((call) => call.signal instanceof AbortSignal)).toBe(true);
+  });
+
+  it('skips location-scoped reads without a directory and reports an unready host', async () => {
+    const { client, calls } = createClient({ ready: false });
+    const warmup = createAgentRuntimeWarmup({ openCodeClient: client, now: () => 1_000 });
+
+    const result = await warmup.warm({ timeoutMs: 1_000 });
+
+    expect(calls.map((call) => call.name)).toEqual(['health.probe', 'sessions.status']);
+    expect(result.tasks.find((task) => task.name === 'health')).toMatchObject({ status: 'error', error: 'OpenCode is not ready (not_ready)' });
+    expect(result.tasks.filter((task) => task.name !== 'health').every((task) => task.status === 'ready')).toBe(true);
+  });
+
+  it('fails every OpenCode check closed on unknown or generation 1 identities', async () => {
+    const unknown = { generation: () => { throw new Error('The OpenCode runtime generation is unknown'); } };
+    const fetchImpl = vi.fn(async () => Response.json({}));
+    const failing = createAgentRuntimeWarmup({ openCodeClient: unknown, fetchImpl, now: () => 1_000 });
+    const failed = await failing.warm({ directory: '/project', timeoutMs: 1_000 });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(failed.tasks.filter((task) => task.name !== 'skills').every((task) => task.status === 'error')).toBe(true);
+
+    const { client, calls } = createClient({ generation: 1 });
+    const legacy = createAgentRuntimeWarmup({
+      openCodeClient: client, fetchImpl, buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`, now: () => 1_000,
+    });
+    await legacy.warm({ directory: '/project', timeoutMs: 1_000 });
+    expect(calls).toEqual([]);
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

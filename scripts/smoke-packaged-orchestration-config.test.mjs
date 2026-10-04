@@ -10,6 +10,7 @@ import {
   MERIDIAN_HTTP_HOTFIX_INCOMPATIBLE,
   MERIDIAN_HTTP_HOTFIX_VERSION,
 } from '../packages/web/server/lib/opencode/meridian-http-hotfix.js';
+const compatibilityPluginPin = JSON.parse(await fs.readFile(new URL('../packages/web/package.json', import.meta.url), 'utf8')).devDependencies['@opencode-ai/plugin'];
 
 const sourceRoot = path.resolve('packages/web/server/default-config');
 
@@ -96,6 +97,13 @@ for (const [name, mutate, message] of [
     await fs.writeFile(packagePath, `${JSON.stringify(profilePackage, null, 2)}\n`);
   }, /Missing default document dependency/],
   ['sanitizer plugin', (root) => fs.rm(path.join(root, 'plugins', 'openai-tool-schema-sanitizer.mjs')), /Missing default OpenAI tool schema sanitizer plugin/],
+  // The packaged pure-tool SDK pin follows its manifest dependency, independently of the native runtime pin.
+  ['plugin SDK pin', async (root) => {
+    const packagePath = path.join(root, 'user-profile', 'package.json');
+    const profilePackage = JSON.parse(await fs.readFile(packagePath, 'utf8'));
+    profilePackage.dependencies['@opencode-ai/plugin'] = '0.0.0';
+    await fs.writeFile(packagePath, `${JSON.stringify(profilePackage, null, 2)}\n`);
+  }, new RegExp(`Missing default document dependency: @opencode-ai/plugin@${compatibilityPluginPin.replaceAll('.', '\\.')}`)],
 ]) {
   test(`reports an explicit missing ${name} failure without modifying repository defaults`, async () => {
     await assert.rejects(() => withConfig(mutate), message);

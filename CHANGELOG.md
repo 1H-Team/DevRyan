@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.0] - 2026-10-05
+
+- This release ships the macOS Apple silicon desktop app only. Web/npm, Intel macOS, Linux and Windows distributions await native runtime qualification.
+- Upgrade the bundled agent runtime to native OpenCode 2.0.20, with pinned, verified runtime assets and reviewed Slim, Ponytail, Claude, browser, document and image integrations.
+- Add explicit runtime bundle setup, update, resume and rollback controls. Existing configuration and project files are preserved; version 1 conversations remain in their original data store, and version 2 starts a separate conversation store.
+- Preserve managed task ownership, cancellation, recovery and conversation Undo/Redo through the native runtime, with stricter admission and retained recovery state across restarts.
+- Improve provider and model availability, saved effort selection, queued-message handling and dedicated Claude enrollment. Shared Claude CLI accounts remain access-only and require reconnecting when their grant expires.
+- Refine mobile chat and settings layouts, replace sidebar spinners with status dots, and improve startup and runtime recovery feedback.
+- Expand deterministic, compiled-runtime and isolated UI verification. Exact live-provider journeys and the full performance comparison remain unqualified; no performance improvement is claimed.
+
 ## [1.2.22] - 2026-09-30
 
 - Saved plans now support versioned edits from Plan View and the managed agent, with conflict detection, serialized saves and current ownership checks. Switching chats preserves each plan's draft, and implementation uses the selected saved revision.

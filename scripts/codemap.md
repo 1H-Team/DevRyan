@@ -5,6 +5,158 @@ Repository automation entrypoint for developer workflows: validation planning, l
 
 ## Design
 
+- **Compiled native package** (`build-native-runtime.mjs`,
+  `native-runtime-assets.mjs`, `verify-opencode-v2-package.mjs`): builds branded
+  controller/writer executables with pinned SDK, dependency, source and asset
+  digests. Exact hash-guarded asset rewrites cover dynamic package resolution
+  and the image WASM read; the accepted supervisor is copied unchanged.
+  `native-compaction-observation-transform.mjs` inserts a read-only observation
+  immediately after the pinned SDK's original budget calculation. Its private
+  settings have no exported read API. Exact original/transformed hashes enter
+  the artifact manifest; a mismatch refuses the build, and diagnostics cannot
+  change the native compaction decision.
+  The separate package verifier uses relocated disposable bundles, the actual
+  offline importer and an ordinary local HTTP provider. Its fixture responses
+  drive real compiled tools, supervisor receipts and publication.
+  `package-cold-recovery.mjs` observes the application's original durable pending
+  rollback intent and crashes only that exact host. A fresh production entry
+  must expose held recovery without feature owners; actual CLI calls verify
+  stale, missing and changed proof refusals, then resume unchanged B. Its optional
+  desktop hook inspects the same retained transition before resume. Negative
+  controls restore the original proof inode, bytes and mode.
+  The compiled credential rollback lane drains the verifier's B owners before
+  starting a separate selected-B lifecycle host. That host publishes the actual
+  lost-ACK rollback proof, refuses a held retry and same-host Resume, then exits
+  naturally. The parent resumes unchanged stopped B only after the original host
+  and controller identities are gone. A newly composed B host performs the
+  compatible rollback using the original SDK's persisted projection intent.
+  Full stopped B bytes are compared through Resume and within each checkpoint;
+  canonical A/B history, credential/lifecycle/refresh state, configuration, home,
+  immutable bundle metadata and project bytes are compared across fresh owners.
+  Asset initialization under source-read denial and full controller/tool execution
+  are recorded as separate assertions. `package-prompt-lanes.mjs` verifies the
+  prepared command executor and native manual compaction over HTTP;
+  opt-in `--browser` uses `package-browser-lane.mjs` and its isolated Electron
+  host and private HTTPS page to run the original Rust CLI against production CDP/surface and lease
+  owners, with compiled writer receipts and a published PNG. It requires the
+  reviewed repository-owned browser installation and an available desktop.
+  `package-document-lane.mjs` uploads two real DOCX attachments and exercises
+  the compiled original parser, cache, bounded reads and search through owned
+  control calls. Parser termination checks remain in the production owner.
+  `package-mcp-lane.mjs` supplies a private loopback MCP server, then requires
+  the compiled native registry, physical HTTP calls, canonical tool results and
+  host control receipts in both owned locations. OAuth remains a separate graph
+  and saved-account qualification.
+  `package-slim-tools-lane.mjs` checks original AST search, default preview and
+  replacement with exact worker receipts and workspace bytes, then original
+  webfetch over local text/HTML with its HTTPS fallback and owned control calls.
+  Its exact native permission rules use the verifier's constructor-owned
+  `admission.create` callback before primary enrollment; public session creation
+  continues to refuse permission and metadata configuration.
+  `package-restart-lane.mjs` preserves the tracked primary objective across
+  pending background recovery and a fresh controller handshake.
+  `package-todo-lane.mjs` loses a real queued TODO acknowledgement while
+  holding its old runner admission, then requires the same reserved continuation
+  to finish once through compiled startup recovery, preserving the objective,
+  model/effort, continuation budget and exact TODO revisions.
+  `package-recovered-input-lane.mjs` leaves real ordinary prompts queued across
+  controller death, then checks inert startup, exact inspection and explicit
+  same-ID resume. Multiple retained inputs require exact discard of the older
+  input before the current owner can resume. Losing the real native cancellation
+  acknowledgement exercises the existing owner's durable discard recovery.
+  The reviewed setup's two local models also drive a real HTTP 429 through the
+  original Slim retry hook: the existing host reserves its read-only fallback,
+  and replacement must retain that same input and one-attempt budget until the
+  explicit resume. Exact fallback discard also survives a fresh ordinary
+  admission and another replacement. Each completed case and controller exit
+  is retained if a later case fails. Fixture-owned model replies remain the
+  only simulated part.
+  `package-recovered-shell-lane.mjs` holds a real, acknowledged shell completion
+  notification in the native queue before controller death. Its sealed lease
+  and confined receipt must restore that same notification automatically;
+  another restart must preserve execution/publication counts, messages, lease,
+  receipt and file bytes. A bounded read-only query checks that the SDK did not
+  persist an enqueue event; no native rows are manufactured.
+  `recovered-input-publication.graph.test.ts` exercises the original native
+  Inbox, Bus and projector: whole-batch refusal precedes mutation, exact cancel
+  reads the pending snapshot without reacquiring the inbox mutex, and clearing
+  the startup fence preserves live queue and steer behavior. It also checks
+  atomic receipt rollback, both native event-persistence settings, strict
+  cancellation command fields and receipt cleanup during session deletion.
+  `package-failure-events.mjs` observes the actual initial controller's SSE
+  before commands. Bounded failure records retain native identities/times and
+  safe error codes; generic text is represented only by its hash and byte size.
+  Cleanup aborts and awaits the observer, and unexpected stream failures fail
+  the run. The observer closes after interview acceptance, before later
+  controller-replacement lanes; failed interviews retain the same cleanup.
+  `package-rollback-lane.mjs` retains the quiesced candidate and launches the
+  selected previous generation-two bundle through its real constructor-owned lifecycle, canonical inspection, kill/restart and confined exit receipts. Baseline and candidate are independently migrated from the same unchanged offline legacy data; no generation-one executable is selected.
+  `package-parent-death.mjs` kills only a fresh owned Node fixture and checks
+  the complete observed descendant tree plus independent supervisor receipts.
+  The production application lifecycle lane retains
+  `application-composition/application-lifecycle-evidence.json` after its owned
+  profile closes, including actual child exits and bounded upstream provider
+  request metadata on failure. Those buffered responder observations do not
+  establish downstream transport cancellation or native Stop settlement.
+  Failed drivers retain partial Stop identities, times and acknowledgement;
+  cleanup failures preserve the original nonzero assertion. Historical A and
+  candidate B each use the same canonical physical-stream Stop assertions after
+  an exact real text prefix. `package-application-stop-stream.mjs` observes the
+  authenticated production global SSE stream before submission and binds live
+  text deltas to the exact session, assistant and text part. A fresh REST read
+  independently requires that same current parent assistant to be unfinished
+  and busy; durable REST text may remain empty until completion. The observer
+  does not replace the canonical abort, interrupted-idle or provider assertions.
+  Early-handoff cancellation is a separate original
+  HTTP graph regression with strict refusal, interrupted idle and released-claim
+  checks, gated in new compiled artifacts by `devryan.primary-step-stop/1`.
+  Current linked build inputs and the broader web/auth source cohort are
+  checked separately from portable artifact verification; incomplete gates remain explicit.
+  `--preflight --reviewed-setup` reuses the same fresh bundle and owners for
+  both-location catalog/model/effort checks and existing read/write,
+  Council/managed, MCP, original Ponytail/Slim commands and the owned interview
+  notification/publication probe, followed by the ordinary/fallback retained-input
+  restart checks, before expensive
+  browser/document lanes.
+  Its `preflight-passed` result keeps full package qualification outstanding;
+  skill bodies, compaction, recovery and all other
+  default gates remain required. `package-preflight.mjs` owns the finite
+  catalog oracle; registered presence alone does not establish behavior.
+
+- **Native OpenCode acceptance** (`verify-opencode-v2-native.mjs`,
+  `opencode-v2-native/`): starts the pinned Bun host against the existing Node
+  execution owner, ledger and private bridge in repository-owned directories.
+  Drive simulates model responses while native tools and the accepted Darwin
+  supervisor produce real results and termination evidence. Failed attempts
+  and process cleanup remain in the report. `writer-edge-cases.mjs` checks
+  byte preservation, real formatter output, foreign edits and concurrent
+  same-file publication; `managed-fixture.mjs` composes the existing primary
+  and task owners for actual child completion. `removal-lanes.mjs` uses the
+  production removal coordinator, independent native row checks, real writer
+  cancellation and retained commit recovery; published workspace bytes stay
+  intact. Optional `--managed-wake-attribution` adds the finite same-runtime
+  event-hint comparison from `perf/managed-wake-attribution.mjs`, with actual
+  authenticated SSE, HTTP/RPC counts and owned process samples; missing causal
+  timing or resource evidence remains inconclusive. Native host unit tests declare
+  `bun:test` and are discovered by `test-scripts.mjs`; process acceptance is
+  a separate opt-in command documented in `docs/QA.md`.
+  `verify-opencode-v2-package.mjs --managed-correctness
+  --event-reconcile-interval-ms 750|1500` selects three focused compiled cases:
+  dropped projected hints with a real writer receipt, explicit managed
+  cancellation, and the original nonrenewable oracle deadline. The independent
+  interval option also reaches the regular package fixture without selecting
+  a performance arm; the default remains 750 ms. The adverse provider-only
+  children run no executable tools, and the original abort acknowledgement,
+  native interrupted idle, runner release and durable task disposition are
+  checked before completion is claimed. Deadline qualification uses the real
+  fifteen-minute minimum and bounded real text progress through an opt-in
+  HTTP fixture stream. Only the missed-hint case withholds projected events;
+  cancel and deadline cases deliver the original native projector output to
+  the managed activity registry. The native assistant completion timestamp
+  must reach the original deadline. Default buffered replies and saved roles
+  are unchanged.
+  This focused result does not replace full package or performance qualification.
+
 - **Local storage cleanup** (`storage.mjs`, `storage-policy.mjs`): dependency-free, preview-first inventory and manifest apply for superseded QA app payloads and aged Cargo caches. Preserves evidence, dependencies, native donors, source and registered worktrees; rechecks provenance, identities and process use before deletion. Policy and recovery: [storage cleanup](../docs/STORAGE_CLEANUP.md).
 - **Local Bot database feasibility** (`local-bots-spike/`): disposable, pinned PostgreSQL/PostgREST and isolated Supabase parity checks; unchanged migration replay, the three production repositories, encrypted-file storage, verified snapshot restoration and resource measurements. The runner fences project names and loopback listeners and never links a cloud project. Usage and limits: [local-bots-spike/README.md](local-bots-spike/README.md).
 - **Typecheck diagnostics** (`typecheck-diagnostics.mjs`): runs the UI or web TypeScript CLI in a measured Node process with a fresh disposable incremental cache. Reports compiler/runtime versions, effective heap limit, compiler diagnostics, duration and peak RSS without dumping environment values. Normal workspace checks run sequentially with separate persistent UI/web caches.
@@ -32,10 +184,10 @@ Repository automation entrypoint for developer workflows: validation planning, l
 - `verify-session-execution.mjs` verifies native write confinement and process
   termination in disposable roots, plus the spawn adapter through `/bin/sh` and
   a headless Chromium launch (CDP pipe and text rendering) that is skipped when
-  no Playwright `chromium_headless_shell` is installed. `verify-concurrent-revert-runtime.mjs` adds
-  the built companion OpenCode's real legacy HTTP API, restart, prompt cleanup,
-  Revert and Redo around a held-open native writer. These are explicit acceptance
-  commands with supplied binary paths, separate from deterministic unit suites.
+  no Playwright `chromium_headless_shell` is installed. Native package acceptance
+  owns real HTTP restart, prompt cleanup, selective Revert/Redo and held writer
+  proofs. The compatibility concurrent-Revert commands require a compiled native
+  artifact root and are separate from deterministic unit suites.
 1. Developer invokes a script via `bun run` or shell.
 2. Script resolves repo paths/env, validates prerequisites, and builds an execution plan.
 3. It runs one or more child commands (watchers/builds/checks), forwarding output and handling lifecycle events.
@@ -63,8 +215,10 @@ Repository automation entrypoint for developer workflows: validation planning, l
 
 - `verify-crash-memory.mjs` runs synthetic Electron history reconciliation in isolated app-bound and service ownership modes. The `--workload snapshots` option measures a large synthetic managed ledger separately. It writes numerical samples and synthetic allocation profiles beneath `.cache/`, with a default 95-minute soak; it never registers launchd, connects providers or reads installed-app state.
 
-- `build-revert-runtime.mjs` reproduces the pinned companion and native supervisor, runs acceptance, and stages manifests. `verify-revert-runtime-artifacts.mjs` validates packaging; `verify-concurrent-revert-execution.mjs` exercises real dispatch, native and managed descendants, Cursor and optional web/Electron journeys.
+- `build-native-runtime.mjs` builds the sealed native v2 controller/writer/assets plus accepted execution launcher into `packages/web/runtime/<platform>-<arch>`. The current reviewed build is Bun 1.3.14 on Darwin ARM64; other platforms remain unavailable. Default output replaces the platform directory atomically; explicit output roots are immutable. `build-revert-runtime.mjs` is a compatibility command alias and never builds a v1 executable.
 
-- `pack-web-release.mjs` gates source and staged runtime artifacts for every architecture declared by the companion contract. `verify-revert-runtime-artifacts.mjs` checks all paired capability versions in addition to native acceptance and digests.
+- `hydrate-reviewed-claude.mjs` restores the oversized reviewed Claude executable from the exact public npm archive before native CI builds. Archive SHA-512 and executable SHA-256/size must match; changed existing files are preserved and rejected. The executable stays outside Git, while its metadata, licenses and checksum inventory remain committed.
 
-- `perf/skill-loading-benchmark.mjs` compares two real companion artifacts with isolated loopback-model skill calls on small and repository-sized fixtures, records cold/warm timing and receipt actions, and requires the candidate warm median to improve by at least 80%. `qa/revert-ui.mjs` also verifies Learning Skill appears during a held receipt and clears on completion in web and packaged Electron.
+- `verify-revert-runtime-artifacts.mjs` is a compatibility filename for exact native manifest/hash/mode/registration/signature verification. Unmanifested files, old executable names and unavailable platform verification refuse packaging. `pack-web-release.mjs` additionally blocks universal publication while the other required native platforms lack reviewed artifacts; current-host acceptance does not satisfy that release gate. Desktop prepared exports include only the verified current-platform payload.
+
+- `verify-concurrent-revert-{runtime,execution}.mjs` are explicit `--artifact-root` aliases to full compiled native package acceptance. They are not additional deterministic-suite jobs. Old per-case runtime launchers, `qa/revert-ui.mjs`, `companion-upstream-check.mjs` and `perf/skill-loading-benchmark.mjs` are retired; no case-for-case equivalence or old performance improvement is claimed. The native package and generation-two UI journeys own live Revert and skill behavior qualification.

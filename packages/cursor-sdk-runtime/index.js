@@ -1181,9 +1181,9 @@ const addCompatibilityModelPairs = (records) => {
   return nextRecords;
 };
 
-const normalizeSdkModelRecords = (models) => {
+const normalizeSdkModelRecords = (models, { declaredFallback = true } = {}) => {
   if (!Array.isArray(models) || models.length === 0) {
-    return fallbackModelRecords();
+    return declaredFallback ? fallbackModelRecords() : {};
   }
 
   const records = {};
@@ -1194,9 +1194,10 @@ const normalizeSdkModelRecords = (models) => {
     addSdkModelRecord(records, model);
   }
 
+  const paired = addCompatibilityModelPairs(records);
   return Object.keys(records).length > 0
-    ? stripInternalCursorSdkScores(addNativeUltraCursorVariants(addCompatibilityModelPairs(records)))
-    : fallbackModelRecords();
+    ? stripInternalCursorSdkScores(declaredFallback ? addNativeUltraCursorVariants(paired) : paired)
+    : declaredFallback ? fallbackModelRecords() : {};
 };
 
 const buildVirtualProvider = (models) => ({
@@ -1223,6 +1224,7 @@ const getCursorSdkSelectionFromModelRecord = (record, variant) => {
   const variantRecord = resolveVariantRecord(record.variants, variant);
   const variantSelection = cloneCursorSdkModelSelection(variantRecord?.cursorSdkModel);
   if (variantSelection) return variantSelection;
+  if (trimString(variant) && variant !== 'default') return null;
   return cloneCursorSdkModelSelection(record.options?.cursorSdkModel);
 };
 
@@ -1627,6 +1629,11 @@ const defaultStorageDir = () => path.join(
 export function createCursorSdkRuntime(options = {}) {
   const readAuth = typeof options.readAuth === 'function' ? options.readAuth : () => ({});
   const env = isPlainObject(options.env) ? options.env : process.env;
+  const resolveApiKey = async (scope) => typeof options.resolveApiKey === 'function'
+    ? trimString(await options.resolveApiKey(scope)) || null
+    : getCursorSdkApiKey({ env, readAuth });
+  const withReadOnly = (scope, action) => typeof options.ownedReadOnly === 'function'
+    ? options.ownedReadOnly(scope, action) : action();
   const storageDir = trimString(options.storageDir) || defaultStorageDir();
   const executionOutbox = typeof options.onSessionChangeExecution === 'function'
     ? createCursorChangeOutbox({ directory: path.join(storageDir, 'change-outbox'), deliver: options.onSessionChangeExecution }) : null;
@@ -1849,12 +1856,14 @@ export function createCursorSdkRuntime(options = {}) {
   };
 
   const getStatus = () => {
-    const auth = readAuth();
-    const sdkAuthConfigured = Boolean(getCursorSdkApiKey({ env, readAuth }));
+    const nativeCredential = typeof options.resolveApiKey === 'function';
+    const auth = nativeCredential ? {} : readAuth();
+    const sdkAuthConfigured = nativeCredential ? false : Boolean(getCursorSdkApiKey({ env, readAuth }));
     return {
       providerId: CURSOR_PROVIDER_ID,
       bridge: { kind: 'cursor-sdk' },
       sdkAuthConfigured,
+      ...(nativeCredential ? { authSource: 'native-credential', authObservation: 'unknown' } : {}),
       usageAuthConfigured: isCursorUsageAuthConfigured(auth),
       ...(useNodeWorkerForPrompts && usePersistentWorkerForPrompts
         ? persistentWorkerRuntime.getStatus()
@@ -1898,14 +1907,54 @@ export function createCursorSdkRuntime(options = {}) {
     && (modelDiscoveryTtlMs === 0 || now() - lastModelRefreshCompletedAt < modelDiscoveryTtlMs)
   );
 
-  const refreshModels = async ({ force = false, reason = 'refresh' } = {}) => {
-    if (!force && isModelCacheFresh()) {
-      return lastModelRecords;
+  const nativeModelCatalogs = new Map();
+  const modelCatalogEvidence = new WeakMap();
+  const modelSelectionCredentials = new WeakMap();
+  const selectionError = (code, modelID, variant, statusCode = 409) => Object.assign(
+    new Error(`${code}: cursor-acp/${modelID}${variant ? ` (${variant})` : ''}`), { code, statusCode });
+  const assertSelectionCredential = (selection, apiKey) => {
+    const identity = modelSelectionCredentials.get(selection);
+    if (identity && identity !== credentialCacheIdentity(apiKey)) {
+      throw selectionError('cursor_model_account_changed', selection.id, undefined);
     }
-    if (modelRefreshInFlight) {
-      return modelRefreshInFlight;
+  };
+  const refreshModels = async ({ force = false, reason = 'refresh', directory } = {}) => {
+    if (typeof options.resolveApiKey === 'function') {
+      const { Cursor } = await loadSdk();
+      const apiKey = await resolveApiKey({ kind: 'catalog', directory });
+      const identity = apiKey ? credentialCacheIdentity(apiKey) : null;
+      const cached = identity ? nativeModelCatalogs.get(identity) : null;
+      if (!force && cached && (modelDiscoveryTtlMs === 0 || now() - cached.completedAt < modelDiscoveryTtlMs)) return cached.records;
+      const startedAt = now();
+      lastModelRefreshStartedAt = startedAt;
+      lastModelRefreshReason = reason;
+      lastModelRefreshTimedOut = false;
+      try {
+        if (!apiKey) throw new Error('Cursor SDK API key is not configured.');
+        const models = await Cursor.models.list({ apiKey });
+        if (!Array.isArray(models)) throw new Error('Cursor model catalog is unavailable.');
+        const records = normalizeSdkModelRecords(models, { declaredFallback: false });
+        modelCatalogEvidence.set(records, { identity });
+        nativeModelCatalogs.set(identity, { records, completedAt: now() });
+        if (nativeModelCatalogs.size > 32) nativeModelCatalogs.delete(nativeModelCatalogs.keys().next().value);
+        lastModelRecords = records;
+        lastModelsSource = 'sdk';
+        lastModelRefreshError = null;
+        return records;
+      } catch (error) {
+        if (identity) nativeModelCatalogs.delete(identity);
+        lastModelRecords = fallbackModelRecords();
+        lastModelsSource = 'fallback';
+        lastModelRefreshError = error instanceof Error ? error.message : 'Cursor model catalog is unavailable.';
+        lastError = lastModelRefreshError;
+        return lastModelRecords;
+      } finally {
+        lastModelRefreshCompletedAt = now();
+        lastModelRefreshDurationMs = Math.max(0, lastModelRefreshCompletedAt - startedAt);
+      }
     }
-
+    if (!force && isModelCacheFresh()) return lastModelRecords;
+    if (modelRefreshInFlight) return modelRefreshInFlight;
     const apiKey = getCursorSdkApiKey({ env, readAuth });
     if (!apiKey) {
       lastModelRecords = fallbackModelRecords();
@@ -1955,8 +2004,8 @@ export function createCursorSdkRuntime(options = {}) {
     return modelRefreshInFlight;
   };
 
-  const refreshVirtualProviderNow = async ({ force = false, reason = 'refresh', timeoutMs = 0 } = {}) => {
-    const refreshPromise = refreshModels({ force, reason });
+  const refreshVirtualProviderNow = async ({ force = false, reason = 'refresh', timeoutMs = 0, directory } = {}) => {
+    const refreshPromise = withReadOnly({ kind: 'catalog', directory }, () => refreshModels({ force, reason, directory }));
     const boundedTimeoutMs = Math.max(0, Number(timeoutMs) || 0);
     if (!boundedTimeoutMs) {
       const models = await refreshPromise;
@@ -1974,20 +2023,27 @@ export function createCursorSdkRuntime(options = {}) {
   };
 
   const refreshVirtualProviderInBackground = (options = {}) => {
-    if (!options.force && isModelCacheFresh()) return;
+    if (!options.force && isModelCacheFresh() && typeof options.resolveApiKey !== 'function') return;
     refreshModels(options).catch((error) => {
       lastError = error instanceof Error ? error.message : 'Failed to refresh Cursor models.';
       lastModelRefreshError = lastError;
     });
   };
 
-  const resolveCursorSdkModelSelection = async ({ modelID, variant }) => {
+  const resolveCursorSdkModelSelection = async ({ modelID, variant, directory }) => {
     const normalizedModelID = normalizeModelId(modelID);
-    if (!lastModelRecords || !isPlainObject(lastModelRecords[normalizedModelID])) {
-      refreshVirtualProviderInBackground({ reason: 'model_selection_miss' });
+    let records = lastModelRecords;
+    if (typeof options.resolveApiKey === 'function') {
+      records = (await refreshVirtualProviderNow({ directory, reason: 'model_selection' })).models;
+      if (!modelCatalogEvidence.has(records)) throw selectionError('cursor_model_catalog_unavailable', normalizedModelID, variant, 503);
+    } else if (!records || !isPlainObject(records[normalizedModelID])) {
+      records = (await refreshVirtualProviderNow({ directory, reason: 'model_selection_miss' })).models;
     }
-    const selected = getCursorSdkSelectionFromModelRecord(lastModelRecords?.[normalizedModelID], variant);
-    return selected || createFallbackCursorSdkModelSelection(normalizedModelID);
+    const selected = getCursorSdkSelectionFromModelRecord(records?.[normalizedModelID], variant);
+    if (!selected) throw selectionError('cursor_model_unavailable', normalizedModelID, variant);
+    const evidence = modelCatalogEvidence.get(records);
+    if (evidence) modelSelectionCredentials.set(selected, evidence.identity);
+    return selected;
   };
 
   const getOrCreateAgentResult = async ({
@@ -2000,6 +2056,7 @@ export function createCursorSdkRuntime(options = {}) {
     mcpServers,
     mcpServerIdentity,
   }) => {
+    assertSelectionCredential(modelSelection, apiKey);
     const model = cloneCursorSdkModelSelection(modelSelection) || createFallbackCursorSdkModelSelection(modelID);
     const agents = pinCursorSdkSubagentModels(cloneCursorSdkAgentDefinitions(agentDefinitions), model);
     const normalizedMcpServers = cloneCursorMcpServers(mcpServers);
@@ -2230,10 +2287,10 @@ export function createCursorSdkRuntime(options = {}) {
     };
   };
 
-  const generateDirectTitle = async ({ text, directory, onUsage }) => {
+  const generateDirectTitle = async ({ text, directory, sessionID, apiKey: selectedKey, onUsage }) => {
     const promptText = trimString(text);
     if (!promptText) return null;
-    const apiKey = getCursorSdkApiKey({ env, readAuth });
+    const apiKey = selectedKey ?? await resolveApiKey({ kind: 'title', directory, sessionID });
     if (!apiKey) return null;
 
     const { Agent } = await loadSdk();
@@ -2246,14 +2303,16 @@ export function createCursorSdkRuntime(options = {}) {
     });
   };
 
-  const generateNodeWorkerTitle = async ({ text, directory, onUsage }) => {
-    const promptText = trimString(text);
+  const generateNodeWorkerTitle = async ({ text, directory, sessionID, apiKey: selectedKey, onUsage, mode = 'title', keyKind = mode, modelSelection = { id: 'auto' }, signal }) => {
+    signal?.throwIfAborted();
+    const promptText = mode === 'text' ? text : trimString(text);
     if (!promptText) return null;
-    const apiKey = getCursorSdkApiKey({ env, readAuth });
+    const apiKey = selectedKey ?? await resolveApiKey({ kind: keyKind, directory, sessionID });
     if (!apiKey) return null;
+    assertSelectionCredential(modelSelection, apiKey);
 
-    const frozen = { type: 'title', apiKey, text: promptText, directory: trimString(directory),
-      modelID: 'auto', modelSelection: { id: 'auto' } };
+    const frozen = { type: mode, apiKey, text: promptText, directory: trimString(directory),
+      modelID: modelSelection.id, modelSelection };
     const preflightWire = serializeWorkerPayload(frozen);
     const inputForLease = (lease) => serializeWorkerPayload({ ...frozen, directory: lease.workingDirectory });
     const owned = options.executionAdapter ? await options.executionAdapter.startReadOnly({
@@ -2278,10 +2337,15 @@ export function createCursorSdkRuntime(options = {}) {
       child.on('error', (error) => resolve({ code: 1, signal: null, error }));
       child.on('close', (code, signal) => resolve({ code, signal, error: null }));
     });
+    let cancellation;
+    const abort = () => { cancellation ??= owned ? Promise.resolve().then(() => owned.cancel()).catch(error => error) : Promise.resolve(child.kill('SIGTERM')); };
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
     let title = null;
     let workerError = null;
     const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
-    for await (const line of lines) {
+    let streamError;
+    try { for await (const line of lines) {
       if (!trimString(line)) continue;
       let payload = null;
       try {
@@ -2289,17 +2353,29 @@ export function createCursorSdkRuntime(options = {}) {
       } catch {
         continue;
       }
-      if (payload?.type === 'title-result') {
+      if (mode === 'text' && payload?.type === 'text-result') {
+        if (typeof payload.text !== 'string' || Buffer.byteLength(payload.text) > 262144) workerError = 'Cursor helper output is invalid.';
+        else title = payload.text;
+      } else if (payload?.type === 'title-result') {
         title = normalizeCursorSessionTitle(payload.title);
       } else if (payload?.type === 'usage-observation') {
-        onUsage?.(payload.observation);
+        try { onUsage?.(payload.observation); } catch { /* Accounting cannot interrupt provider settlement. */ }
       } else if (payload?.type === 'error') {
         workerError = trimString(payload.error) || 'Cursor SDK title generation failed.';
       }
     }
 
+    } catch(error) { streamError=error;abort(); }
     const exit = await exitPromise;
-    if (owned) await owned.result;
+    signal?.removeEventListener('abort', abort);
+    const cancellationError = await cancellation;
+    if (cancellationError instanceof Error) throw cancellationError;
+    if (owned) {
+      const receipt = await owned.result;
+      if (receipt.cancelled) throw Object.assign(new Error('Cursor title execution was cancelled.'), { code: 'execution_cancelled' });
+    }
+    signal?.throwIfAborted();
+    if (streamError) throw streamError;
     if (workerError) throw new Error(workerError);
     if (exit.error) throw exit.error;
     if (exit.code && exit.code !== 0) {
@@ -3221,11 +3297,12 @@ export function createCursorSdkRuntime(options = {}) {
   const generateTitle = async (input = {}) => {
     const text = trimString(input.text);
     if (!text) return null;
-    const apiKey = getCursorSdkApiKey({ env, readAuth });
+    const apiKey = await resolveApiKey({ kind: 'title', directory: trimString(input.directory), sessionID: trimString(input.sessionID) });
     if (!apiKey) return null;
     const titleInput = {
       text,
       directory: trimString(input.directory),
+      sessionID: trimString(input.sessionID),
       apiKey,
       onUsage: (value) => {
         const observation = normalizeCursorUsageObservation(value);
@@ -3398,7 +3475,7 @@ export function createCursorSdkRuntime(options = {}) {
         modelID,
         modelSelection: cloneCursorSdkModelSelection(modelSelection),
         resolveModelSelection: async ({ modelID: nextModelID, variant: nextVariant } = {}) => (
-          resolveCursorSdkModelSelection({ modelID: nextModelID, variant: nextVariant })
+          resolveCursorSdkModelSelection({ modelID: nextModelID, variant: nextVariant, directory })
         ),
       }));
     } catch (error) {
@@ -3416,6 +3493,7 @@ export function createCursorSdkRuntime(options = {}) {
   };
 
   const prewarmCursorSession = async (input = {}) => {
+    if (options.nativeWarming === false) return { ok: false, configured: false, disabled: true, reason: 'native_warming_disabled' };
     const sessionID = trimString(input.sessionID);
     const directory = trimString(input.directory);
     const modelID = normalizeModelId(input.modelID);
@@ -3426,7 +3504,7 @@ export function createCursorSdkRuntime(options = {}) {
       return { ok: false, error: 'Session ID is required.' };
     }
 
-    const apiKey = getCursorSdkApiKey({ env, readAuth });
+    const apiKey = await resolveApiKey({ kind: 'prewarm', sessionID, directory });
     if (!apiKey) {
       return { ok: false, error: 'Cursor SDK API key is not configured.' };
     }
@@ -3442,7 +3520,7 @@ export function createCursorSdkRuntime(options = {}) {
     });
 
     try {
-      const modelSelection = await resolveCursorSdkModelSelection({ modelID, variant });
+      const modelSelection = await resolveCursorSdkModelSelection({ modelID, variant, directory });
       const agentDefinitions = await resolveCursorSdkAgentDefinitionsForPrompt({
         requestedAgent,
         directory,
@@ -3506,14 +3584,32 @@ export function createCursorSdkRuntime(options = {}) {
   };
 
   const runPromptImpl = async ({ sessionID, body, directory, signal }) => {
-    const apiKey = getCursorSdkApiKey({ env, readAuth });
-    if (!apiKey) {
+    let apiKey = typeof options.resolveApiKey === 'function' ? null : getCursorSdkApiKey({ env, readAuth });
+    if (!apiKey && typeof options.resolveApiKey !== 'function') {
       return {
         handled: true,
         status: 401,
         body: { error: 'Cursor SDK API key is not configured.' },
       };
     }
+
+    const {
+      executionText: prompt,
+      visibleText,
+      isPlanModePrompt,
+      planInstructionParts,
+    } = extractPromptPayload(body);
+    if (!prompt) {
+      return {
+        handled: true,
+        status: 400,
+        body: { error: 'Cursor prompts require at least one text part.' },
+      };
+    }
+
+    const modelID = normalizeModelId(body?.model?.modelID);
+    const variant = trimString(body?.variant);
+    const modelSelection = await resolveCursorSdkModelSelection({ modelID, variant, directory });
 
     // Defensive: if a prior run for this session is still active (e.g. a rapid
     // stop + model switch + resend before the previous run finished tearing
@@ -3536,23 +3632,6 @@ export function createCursorSdkRuntime(options = {}) {
     }
     executionDirectories.set(sessionID, directory);
 
-    const {
-      executionText: prompt,
-      visibleText,
-      isPlanModePrompt,
-      planInstructionParts,
-    } = extractPromptPayload(body);
-    if (!prompt) {
-      return {
-        handled: true,
-        status: 400,
-        body: { error: 'Cursor prompts require at least one text part.' },
-      };
-    }
-
-    const modelID = normalizeModelId(body?.model?.modelID);
-    const variant = trimString(body?.variant);
-    const modelSelection = await resolveCursorSdkModelSelection({ modelID, variant });
     const userMessageID = trimString(body?.messageID) || createId('msg');
     const assistantMessageID = createAssistantMessageId(userMessageID);
     let hasNativeChanges = false, changeCaptureFailed = false;
@@ -4299,6 +4378,19 @@ export function createCursorSdkRuntime(options = {}) {
       return true;
     };
 
+    // The optional host owns the original caller beyond the early HTTP 204.
+    const ownedPrompt = await options.ownedPrompt?.({ sessionID, directory, userMessageID,
+      assistantMessageID, agent: requestedAgent || 'build', modelID,
+      ...(variant ? { variant } : {}), modelSelection });
+    let lifetimeTransferred = false;
+    const dispatch = async () => {
+    try {
+    if (typeof options.resolveApiKey === 'function') {
+      apiKey = await resolveApiKey({ kind: 'prompt', sessionID, directory, userMessageID,
+        assistantMessageID, agent: requestedAgent || 'build', modelID, ...(variant ? { variant } : {}) });
+      if (!apiKey) return { handled: true, status: 401, body: { error: 'Cursor SDK API key is not configured.' } };
+    }
+    assertSelectionCredential(modelSelection, apiKey);
     sessionStatuses.set(sessionID, { type: 'busy' });
     emit({ type: 'session.status', properties: { sessionID, status: { type: 'busy' } } }, directory);
     try {
@@ -4870,9 +4962,22 @@ export function createCursorSdkRuntime(options = {}) {
     })();
 
     const pendingRuns = settlingRuns.get(sessionID) ?? new Set();
-    const settled = Promise.all([pump, run.settled]).finally(() => {
+    const completion = ownedPrompt ? Promise.allSettled([pump, run.settled]).then(async results => {
+      // A provider failure must not release authority while its process or final
+      // record is still settling. Both promises have completed at this point.
+      await persistQueues.get(sessionID);
+      const failures = results.filter(result => result.status === 'rejected').map(result => result.reason);
+      // Preserve the supervisor's expected cancellation classification only
+      // after the transcript pump has finished. The finally below still waits
+      // for the owned receipt/cleanup boundary before abortAndWait can accept it.
+      if (results[0].status === 'fulfilled' && results[1].status === 'rejected'
+        && ['execution_cancelled', 'execution_reverted'].includes(results[1].reason?.code)) throw results[1].reason;
+      if (failures.length) throw new AggregateError(failures, 'Cursor owned prompt did not settle cleanly');
+    }).finally(() => ownedPrompt.close()) : Promise.all([pump, run.settled]);
+    const settled = completion.finally(() => {
       pendingRuns.delete(settled); if (!pendingRuns.size) settlingRuns.delete(sessionID);
     });
+    lifetimeTransferred = true;
     pendingRuns.add(settled); settlingRuns.set(sessionID, pendingRuns);
     void settled.catch(() => {});
 
@@ -4886,6 +4991,13 @@ export function createCursorSdkRuntime(options = {}) {
       status: 204,
       body: null,
     };
+    } finally {
+      if (ownedPrompt && !lifetimeTransferred) {
+        try { await persistQueues.get(sessionID); } finally { await ownedPrompt.close(); }
+      }
+    }
+    };
+    return ownedPrompt ? ownedPrompt.run(dispatch) : dispatch();
   };
 
   const runPrompt = (input) => {
@@ -4938,8 +5050,10 @@ export function createCursorSdkRuntime(options = {}) {
     async rejectQuestion(requestID) {
       return questionRuntime.rejectQuestion(requestID);
     },
-    async verifyConnection() {
-      const apiKey = getCursorSdkApiKey({ env, readAuth });
+    async verifyConnection(scope = {}) {
+      return withReadOnly({ kind: 'verify', directory: scope.directory }, async () => {
+      const loadedSdk = typeof options.resolveApiKey === 'function' ? await loadSdk() : undefined;
+      const apiKey = await resolveApiKey({ kind: 'verify', directory: scope.directory });
       if (!apiKey) {
         return {
           ...getStatus(),
@@ -4950,14 +5064,15 @@ export function createCursorSdkRuntime(options = {}) {
       }
 
       try {
-        const { Cursor } = await loadSdk();
+        const { Cursor } = loadedSdk ?? await loadSdk();
         await Cursor.me({ apiKey });
         const provider = await refreshVirtualProviderNow({
           force: true,
           reason: 'verify_connection',
+          directory: scope.directory,
           timeoutMs: modelDiscoveryTimeoutMs,
         });
-        if (useNodeWorkerForPrompts && usePersistentWorkerForPrompts) {
+        if (options.nativeWarming !== false && useNodeWorkerForPrompts && usePersistentWorkerForPrompts) {
           persistentWorkerRuntime.prewarm({ apiKey }).catch((error) => {
             lastError = error instanceof Error ? error.message : 'Cursor SDK persistent worker prewarm failed.';
             logger.warn?.('[CursorSDK] persistent worker prewarm failed:', error);
@@ -4978,9 +5093,11 @@ export function createCursorSdkRuntime(options = {}) {
           error: lastError,
         };
       }
+      });
     },
     async prewarm() {
-      const apiKey = getCursorSdkApiKey({ env, readAuth });
+      if (options.nativeWarming === false) return { ...getStatus(), ok: false, disabled: true, reason: 'native_warming_disabled' };
+      const apiKey = await resolveApiKey({ kind: 'prewarm' });
       if (!apiKey) {
         return {
           ...getStatus(),
@@ -5001,8 +5118,9 @@ export function createCursorSdkRuntime(options = {}) {
     async prewarmSession(input) {
       return prewarmCursorSession(input);
     },
-    async getVirtualProvider() {
+    async getVirtualProvider(scope = {}) {
       return refreshVirtualProviderNow({
+        directory: scope.directory,
         reason: 'virtual_provider',
         timeoutMs: modelDiscoveryTimeoutMs,
       });
@@ -5010,11 +5128,36 @@ export function createCursorSdkRuntime(options = {}) {
     getCachedVirtualProvider() {
       return buildVirtualProvider(lastModelRecords);
     },
+    // Offline capability metadata must not inherit another account's discovery
+    // cache. Reuse the original declarations, with fresh records on every read.
+    getDeclaredVirtualProvider() {
+      return buildVirtualProvider(fallbackModelRecords());
+    },
     refreshVirtualProvider(options = {}) {
       return refreshVirtualProviderNow(options);
     },
+    async validateModelSelection(input) {
+      try { await resolveCursorSdkModelSelection(input); return true; }
+      catch (error) { return error?.code === 'cursor_model_unavailable' ? false : null; }
+    },
+    async generateText(input = {}) {
+      const directory = trimString(input.directory), sessionID = trimString(input.sessionID);
+      if (typeof input.text !== 'string' || !input.text.trim() || Buffer.byteLength(input.text) > 262144
+        || !trimString(input.modelID) || !Number.isSafeInteger(input.timeoutMs ?? 60000)
+        || (input.timeoutMs ?? 60000) < 1 || (input.timeoutMs ?? 60000) > 120000) throw new Error('cursor_helper_invalid');
+      const signal = input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(input.timeoutMs ?? 60000)]) : AbortSignal.timeout(input.timeoutMs ?? 60000);
+      signal.throwIfAborted();
+      // Resolve the catalog outside the text grant: credential grants remain exact by operation.
+      if (input.titleHelper && !sessionID) throw new Error('cursor_helper_title_session_required');
+      const modelSelection = await resolveCursorSdkModelSelection({ modelID: input.modelID, variant: input.variant, directory });
+      signal.throwIfAborted();
+      return withReadOnly({ kind: input.titleHelper ? 'title' : 'text', directory, ...(sessionID ? { sessionID } : {}), ...(input.titleHelper ? { modelID: input.modelID, ...(input.variant ? { variant: input.variant } : {}) } : {}) }, () => generateNodeWorkerTitle({
+        text: input.text, directory, sessionID, mode: 'text', keyKind: input.titleHelper ? 'title' : 'text', modelSelection, signal,
+        onUsage: observation => options.onTitleUsageObservation?.({ sessionID: sessionID || null, directory, observation }),
+      }));
+    },
     async generateTitle(input = {}) {
-      return generateTitle(input);
+      return withReadOnly({ kind: 'title', sessionID: trimString(input.sessionID), directory: trimString(input.directory) }, () => generateTitle(input));
     },
     async handlePromptAsync(input) {
       const providerID = trimString(input?.body?.model?.providerID);

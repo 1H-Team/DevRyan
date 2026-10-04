@@ -17,6 +17,8 @@ import {
   writeAgentModelOverride,
 } from './agents.js';
 import { DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC } from './slim-config.js';
+import { createHash } from 'node:crypto';
+import { createNativeConfigurationSnapshotResolver } from './runtime-host/native-configuration-snapshot.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../../../..');
@@ -835,4 +837,50 @@ describe('shadowed sidecar agent overrides', () => {
     expect(listManagedRuntimeAgentModelOverrides(projectDirectory, options).council.councillors).toHaveLength(2);
     expectMirrorsRuntime(shadowed);
   });
+
+  for (const plugin of [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC, 'oh-my-opencode-slim']) {
+    it(`preserves saved Council members through ${plugin} and native snapshot without replacing the coordinator`, async () => {
+      plugins=[plugin];
+      const councillors=[{model:'openai/gpt-5.5',variant:'xhigh'},
+        {model:'cursor-acp/composer-2.5',variant:'high'},
+        {model:'opencode/claude-opus-4-5',variant:null},
+        {model:'opencode/deepseek-v4-flash',variant:'max'}];
+      await writeProjectAgent(projectDirectory,'council',['mode: all','model: openai/gpt-5.5','variant: medium']);
+      const stale=[{model:'openai/gpt-5.5',variant:'medium'},{model:'opencode/claude-opus-4-5'},{model:'opencode/deepseek-v4-flash'}];
+      await writeJson(path.join(projectDirectory,'.opencode/agents/council.models.json'),{version:1,councillors:stale});
+      await writeSlimInstalledAgent(slimConfigDirectory,'council',['mode: all','model: openai/gpt-5.5','variant: medium']);
+      await writeJson(path.join(slimConfigDirectory,'agents/council.models.json'),{version:1,councillors:stale});
+      await writeSidecarOverrides({council:{model:'ignored/sidecar-coordinator',variant:'low',councillors}});
+      await writeSlimConfig({preset:'openai',presets:{openai:{council:{model:'ignored/preset-coordinator',variant:'low'}}},
+        agents:{council:{model:'openai/gpt-5.6-sol',variant:'medium'}}});
+      const read=()=>getAgentConfig('council',projectDirectory,options).config;
+      const config=read(),listed=listConfigAgents(projectDirectory,options).find(agent=>agent.name==='council');
+      for(const agent of [config,listed]){
+        expect(agent.councillors).toEqual(councillors);
+        expect(agent.modelRefs).toEqual(councillors.map(entry=>entry.model));
+        expect(agent.model).toEqual({providerID:'openai',modelID:'gpt-5.6-sol'});
+        expect(agent.variant).toBe('medium');
+        expect(agent.overrides.councillors).toBe(true);
+      }
+      const manifest={schema:1,plugins:[{id:'devryan.slim',legacySpecs:[plugin]}]};
+      const launch={opencodeConfigDirectory:slimConfigDirectory,global:{home:tempRoot},
+        reviewedPluginManifestPath:path.join(tempRoot,'reviewed-plugins.json'),reviewedNativeConfigPath:path.join(tempRoot,'reviewed-native.json')};
+      await writeJson(launch.reviewedPluginManifestPath,manifest);
+      await writeJson(launch.reviewedNativeConfigPath,{schema:1,locations:[{directory:projectDirectory}],catalogRequirements:{}});
+      const resolver=createNativeConfigurationSnapshotResolver({loadLocation:async()=>({legacy:{plugin:[plugin]},agents:{council:read()},commands:{},skills:[],
+        slim:{activePreset:'openai',mergedConfig:{agents:{council:{model:'openai/gpt-5.6-sol',variant:'medium'}}}},parseMarkdown:()=>({body:'',frontmatter:{}})}),
+        resolveSlimAgents:input=>({agents:input.hostConfiguration.agent})});
+      const snapshot=await resolver({binding:{descriptor:{generation:2,launch,projectMap:[{targetDirectory:projectDirectory}]}},revision:1,
+        expectedRegistrationDigest:createHash('sha256').update(await fs.readFile(launch.reviewedPluginManifestPath)).digest('hex')});
+      const location=snapshot.locations[0];
+      expect(location.compatibility.agents.council.councillors).toEqual(councillors);
+      expect(location.configuration.agents.council.model).toEqual({providerID:'openai',model:'gpt-5.6-sol',variant:'medium'});
+      expect(location.requiredCatalogs.models).toEqual([{providerID:'openai',id:'gpt-5.6-sol',variant:'medium'},
+        ...councillors.map(entry=>{const split=entry.model.indexOf('/');return {providerID:entry.model.slice(0,split),id:entry.model.slice(split+1),variant:entry.variant??'default'};})]);
+      await writeSidecarOverrides({});
+      expect(read().councillors).toEqual(stale);
+      await writeSidecarOverrides({council:{councillors:[]}});
+      expect(read().councillors).toEqual([]);
+    });
+  }
 });

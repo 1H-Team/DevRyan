@@ -1,31 +1,21 @@
-import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { constants, createReadStream } from 'node:fs';
-import { cp, mkdir, readFile, realpath, readdir, writeFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
-import os from 'node:os';
+import { cp, lstat, mkdir, readFile, realpath, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { promisify } from 'node:util';
-import { createUserProfileProvisioningRuntime } from '../../packages/web/server/lib/opencode/user-profile-provisioning.js';
-import { resolveSlimConfig } from '../../packages/web/server/lib/opencode/slim-config.js';
-import { isRuntimePluginFileName } from '../../packages/web/server/lib/opencode/default-config-assets.js';
+import { DEVRYAN_MANAGED_PROFILE_PLUGIN_FILES, getDevRyanManagedPluginForFile, getDevRyanManagedPluginForSpec, isDevRyanManagedLegacyPluginSpec } from '../../packages/web/server/lib/opencode/managed-plugins.js';
+import { qaPlatformEnvironment } from './launch-environment.mjs';
 
-const execute = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
-const { parse: parseJsonc } = createRequire(new URL('../../packages/web/package.json', import.meta.url))('jsonc-parser');
 const allowedProviders = ['openai', 'anthropic', 'xai'];
 const managedSpecialistProviders = [...allowedProviders, 'opencode'];
 const preservedProviders = [...managedSpecialistProviders, 'opencode-go', 'cursor-acp'];
 const homeShim = fileURLToPath(new URL('./isolated-home.mjs', import.meta.url));
 const providerObserver = fileURLToPath(new URL('./provider-observer.mjs', import.meta.url));
 
-const readOptionalJson = async (file) => {
-    try { return parseJsonc(await readFile(file, 'utf8')); }
-    catch (error) { if (error.code === 'ENOENT') return {}; throw new Error('Unable to read a QA source configuration'); }
-};
 const writePrivateJson = async (file, value) => writeFile(file, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
 const isInside = (parent, child) => child.startsWith(`${parent}${path.sep}`);
+const isRecord = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
 const canonicalFuturePath = async (target) => {
     try { return await realpath(target); }
@@ -37,20 +27,25 @@ const canonicalFuturePath = async (target) => {
     }
 };
 
-const validateOwnedPaths = async (runtimeRoot, workspace, cacheRoot) => {
-    const canonicalRepository = await realpath(repositoryRoot);
-    const canonicalCache = await canonicalFuturePath(cacheRoot);
-    const [canonicalRuntime, canonicalWorkspace] = await Promise.all([canonicalFuturePath(runtimeRoot), realpath(workspace)]);
-    if (!isInside(canonicalRepository, canonicalCache) || !isInside(canonicalCache, canonicalRuntime)
-        || !isInside(canonicalCache, canonicalWorkspace)) throw new Error('QA paths must resolve inside this repository cache');
-    let gitRoot;
-    try {
-        const { stdout } = await execute('git', ['-C', canonicalWorkspace, 'rev-parse', '--show-toplevel'], { timeout: 5_000, maxBuffer: 64 * 1024 });
-        gitRoot = await realpath(stdout.trim());
-    } catch { throw new Error('QA workspace must be its own Git repository root'); }
-    // A directory nested in DevRyan without its own Git root would inherit the
-    // user's project config. Disabling project config also disables AGENTS.md.
-    if (gitRoot !== canonicalWorkspace) throw new Error('QA workspace must be its own Git repository root');
+const ensurePrivateTreeLinks = async (directory, ownedRoot, label) => {
+    const root = await realpath(ownedRoot);
+    const visited = new Set();
+    const visit = async (current) => {
+        let resolved;
+        try { resolved = await realpath(current); }
+        catch (error) {
+            if (error.code === 'ENOENT' || error.code === 'ELOOP') throw new Error(`QA ${label} contains an unresolved symlink`);
+            throw error;
+        }
+        if (resolved !== root && !isInside(root, resolved)) throw new Error(`QA ${label} contains a symlink outside its private installation`);
+        if (visited.has(resolved)) return;
+        visited.add(resolved);
+        if (!(await lstat(resolved)).isDirectory()) return;
+        for (const entry of await readdir(resolved, { withFileTypes: true })) {
+            if (entry.isDirectory() || entry.isSymbolicLink()) await visit(path.join(resolved, entry.name));
+        }
+    };
+    await visit(directory);
 };
 
 const hashFile = async (file) => {
@@ -75,31 +70,6 @@ export const provisionQaRipgrep = async ({ sourceHome, cacheHome }) => {
     await mkdir(targetDirectory, { recursive: true, mode: 0o700 });
     await cp(source, path.join(targetDirectory, 'rg'), { mode: constants.COPYFILE_FICLONE });
     return { state: 'copied', sha256 };
-};
-
-const installedFingerprints = async (config, plugins, opencodeBinary) => {
-    const manifest = await readOptionalJson(path.join(config, 'package.json'));
-    const packageNames = new Set([...Object.keys(manifest.dependencies ?? {}), ...Object.keys(manifest.overrides ?? {}), '@opencode-ai/sdk']);
-    const packages = Object.fromEntries(await Promise.all([...packageNames].sort().map(async (name) => {
-        const installed = await readOptionalJson(path.join(config, 'node_modules', name, 'package.json'));
-        return [name, typeof installed.version === 'string' ? installed.version : null];
-    })));
-    const pluginEntries = await Promise.all(plugins.map(async (plugin) => {
-        const entry = path.resolve(config, plugin);
-        const original = entry.replace(/\.(m?js)$/, '.qa-original.$1');
-        let originalSha256 = null;
-        try { originalSha256 = await hashFile(original); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-        return { entry: plugin, sha256: await hashFile(entry), originalSha256 };
-    }));
-    const packagedRoot = path.join(repositoryRoot, 'packages/web/server/default-config/plugins');
-    const packagedEntries = (await readdir(packagedRoot, { withFileTypes: true })).filter((entry) => entry.isFile() && isRuntimePluginFileName(entry.name));
-    const packagedPluginSources = await Promise.all(packagedEntries.sort((a, b) => a.name.localeCompare(b.name)).map(async (entry) => ({
-        entry: path.relative(repositoryRoot, path.join(packagedRoot, entry.name)), sha256: await hashFile(path.join(packagedRoot, entry.name)),
-    })));
-    return { packages, pluginEntries, packagedPluginSources, binary: { sha256: await hashFile(opencodeBinary) },
-        observer: { entry: 'scripts/qa/provider-observer.mjs', sha256: await hashFile(providerObserver), configStage: 'final-inline-config' },
-        adapters: { openai: 'devryan-managed-openai-http-oauth', anthropic: 'opencode-with-claude-meridian-claude-sdk', xai: 'native-opencode-xai' },
-        source: 'prepared-private-installation; effective request metadata is recorded separately' };
 };
 
 export const projectQaAuth = (auth, now = Date.now(), providerIds = allowedProviders, { preserveOrchestration = false } = {}) => {
@@ -205,40 +175,6 @@ export const preserveQaOrchestration = (slim, sidecar) => ({
         Object.hasOwn(sidecar, key) ? [[key, sidecar[key]]] : []))),
 });
 
-const readClaudeAccess = async (sourceHome) => {
-    let credentials;
-    try {
-        const data = await readFile(path.join(sourceHome, '.claude', '.credentials.json'), 'utf8');
-        credentials = JSON.parse(data);
-    } catch (error) {
-        if (error.code !== 'ENOENT') return null;
-        if (process.platform !== 'darwin') return null;
-        try {
-            const { stdout } = await execute('/usr/bin/security', ['find-generic-password', '-s', 'Claude Code-credentials', '-a', os.userInfo().username, '-w'], { timeout: 5_000, maxBuffer: 1024 * 1024 });
-            try { credentials = JSON.parse(stdout.trim()); }
-            catch { credentials = JSON.parse(Buffer.from(stdout.trim(), 'hex').toString('utf8')); }
-        } catch { return null; }
-    }
-    const oauth = credentials?.claudeAiOauth;
-    if (typeof oauth?.accessToken !== 'string' || !oauth.accessToken || !Number.isFinite(oauth.expiresAt) || oauth.expiresAt <= Date.now() + 120_000) return null;
-    return { access: oauth.accessToken, expires: oauth.expiresAt };
-};
-
-const ensurePrivateDependencyLinks = async (directory) => {
-    const root = await realpath(directory);
-    const visit = async (current) => {
-        for (const entry of await readdir(current, { withFileTypes: true })) {
-            const target = path.join(current, entry.name);
-            if (entry.isDirectory()) await visit(target);
-            else if (entry.isSymbolicLink()) {
-                const resolved = await realpath(target);
-                if (!isInside(root, resolved)) throw new Error('QA dependency copy contains a symlink outside its private installation');
-            }
-        }
-    };
-    await visit(root);
-};
-
 export const prepareQaPluginHomeWrapper = async (entry) => {
     const original = entry.replace(/\.(m?js)$/, '.qa-original.$1');
     if (original === entry) throw new Error('QA plugin home wrapper requires an ESM JavaScript entrypoint');
@@ -257,6 +193,240 @@ export const prepareQaPluginHomeWrapper = async (entry) => {
     await writeFile(entry, `import ${JSON.stringify(homeShim)};\nexport * from ${JSON.stringify(`./${path.basename(original)}`)};\n${hasDefault ? `export { default } from ${JSON.stringify(`./${path.basename(original)}`)};\n` : ''}`);
 };
 
+// A plugin entry is a spec string or a [spec, options] tuple.
+export const qaPluginSpec = (entry) => {
+    const raw = Array.isArray(entry) ? entry[0] : entry;
+    return typeof raw === 'string' ? raw.trim().replace(/\\/g, '/') : '';
+};
+
+// Private package entry wrappers evaluate the same home shim before their
+// actual dependencies. The compiled OpenCode executable does not honor
+// NODE_OPTIONS preloads, while its own config honors OPENCODE_TEST_HOME.
+// Imagegen resolves its data paths from explicit XDG variables. Keep
+// imagegen's reviewed executable intact so the ordinary
+// provisioning hash check remains valid when the private host boots.
+export const wrapQaPackagePluginEntries = async (config, plugins) => {
+    const entries = plugins.map(qaPluginSpec).filter((entry) => entry.startsWith('./node_modules/'));
+    if (!entries.length) return;
+    const installation = await realpath(path.join(config, 'node_modules'));
+    for (const plugin of entries) {
+        const entry = await realpath(path.join(config, plugin));
+        if (!isInside(installation, entry)) throw new Error('QA plugin escaped the copied installation');
+        if (isInside(path.join(installation, 'opencode-gpt-imagegen'), entry)) continue;
+        await prepareQaPluginHomeWrapper(entry);
+    }
+};
+
+const mirroredMcpModes = ['off', 'definitions', 'live'];
+const mirrorOptionKeys = ['plugins', 'skills', 'mcp'];
+
+// `true` mirrors plugins, skills and inert MCP definitions. An object names
+// each part explicitly; omitted parts stay off. Mirroring copies personal
+// configuration only, so it requires the user's preserved orchestration.
+export const normalizeQaMirrorPersonalSetup = (value, { preserveOrchestration = false } = {}) => {
+    if (value === false) return false;
+    let normalized;
+    if (value === true) normalized = { plugins: true, skills: true, mcp: 'definitions' };
+    else if (isRecord(value) && Object.keys(value).every(key => mirrorOptionKeys.includes(key))
+        && ['plugins', 'skills'].every(key => value[key] === undefined || typeof value[key] === 'boolean')
+        && (value.mcp === undefined || mirroredMcpModes.includes(value.mcp))) {
+        normalized = { plugins: value.plugins ?? false, skills: value.skills ?? false, mcp: value.mcp ?? 'off' };
+    } else throw new Error("QA personal setup mirroring must be a boolean or { plugins?: boolean, skills?: boolean, mcp?: 'off' | 'definitions' | 'live' }");
+    if (preserveOrchestration !== true) throw new Error('QA personal setup mirroring requires preserved orchestration');
+    return normalized;
+};
+
+const personalCopyFilter = file => {
+    const name = path.basename(file);
+    return name !== '.DS_Store' && !name.includes('.devryan-slim-backup-');
+};
+
+// Provisioning writes the managed plugin files; the legacy Cursor plugin is
+// retired by provisioning and must not be restored by a mirror.
+const isManagedPluginFileName = name => DEVRYAN_MANAGED_PROFILE_PLUGIN_FILES.includes(name)
+    || Boolean(getDevRyanManagedPluginForFile(name)) || name === 'cursor-acp.js';
+
+export const selectQaPersonalPluginDirectoryEntries = names => names.filter(name => personalCopyFilter(name) && !isManagedPluginFileName(name));
+
+const pluginEntryKind = spec => spec.startsWith('./node_modules/') ? 'node-modules'
+    : spec.startsWith('./') || spec.startsWith('../') ? 'config-path'
+        : spec.startsWith('file:') || path.isAbsolute(spec) ? 'external-path' : 'package';
+
+// A local registration inside the source configuration is rewritten to its
+// config-relative spelling so it resolves inside the private copy.
+const relocatePluginSpec = (spec, sourceConfig) => {
+    let file = null;
+    try { file = spec.startsWith('file:') ? fileURLToPath(spec) : path.isAbsolute(spec) ? spec : null; } catch { file = null; }
+    if (!file || !isInside(path.resolve(sourceConfig), path.resolve(file))) return spec;
+    return `./${path.relative(path.resolve(sourceConfig), path.resolve(file)).split(path.sep).join('/')}`;
+};
+
+// Returns the source entries provisioning does not already carry. DevRyan-
+// managed and retired specs are provisioning's to own; duplicates are dropped.
+// Tuple options are kept in the config entry but never reported in evidence.
+// A registration outside the source configuration would keep the private
+// runtime reading the owner's real files, so it is refused rather than mirrored.
+export const classifyQaPersonalPluginEntries = (entries, { provisioned = [], sourceConfig }) => {
+    if (!Array.isArray(entries) || !Array.isArray(provisioned)) throw new Error('QA personal plugin entries must be arrays');
+    const seen = new Set(provisioned.map(qaPluginSpec).filter(Boolean));
+    const personal = [];
+    const managed = [];
+    const ordered = [];
+    for (const entry of entries) {
+        const original = qaPluginSpec(entry);
+        if (!original || (Array.isArray(entry) && entry.length > 2)) throw new Error('QA personal plugin entries must be specs or [spec, options] tuples');
+        const spec = relocatePluginSpec(original, sourceConfig);
+        const managedPlugin = getDevRyanManagedPluginForSpec(spec);
+        if (managedPlugin || isDevRyanManagedLegacyPluginSpec(spec)) {
+            managed.push(spec);
+            if (managedPlugin) ordered.push({ kind: 'managed', spec, plugin: managedPlugin });
+            continue;
+        }
+        if (seen.has(spec)) continue;
+        seen.add(spec);
+        const kind = pluginEntryKind(spec);
+        if (kind === 'external-path') throw new Error(`QA mirrored plugin entry ${spec} points outside the owner's OpenCode configuration and cannot be isolated`);
+        const item = { entry: Array.isArray(entry) ? [spec, ...entry.slice(1)] : spec, spec, kind, hasOptions: Array.isArray(entry) && entry.length > 1 };
+        personal.push(item);
+        ordered.push({ kind: 'personal', spec, item });
+    }
+    return { personal, managed, ordered };
+};
+
+// Plugin load order is part of the owner's effective setup (hooks run in
+// registration order), so the mirrored list follows the source order:
+// managed entries take their provisioned spelling, personal entries keep
+// their place, and provisioned entries the owner never listed come last.
+export const orderQaMirroredPlugins = (provisioned, ordered) => {
+    const byManaged = new Map();
+    for (const entry of provisioned) {
+        const plugin = getDevRyanManagedPluginForSpec(qaPluginSpec(entry));
+        if (plugin && !byManaged.has(plugin)) byManaged.set(plugin, entry);
+    }
+    const placed = new Set();
+    const merged = [];
+    for (const slot of ordered) {
+        if (slot.kind === 'personal') { merged.push(slot.item.entry); continue; }
+        const entry = byManaged.get(slot.plugin);
+        if (entry === undefined || placed.has(entry)) continue;
+        placed.add(entry);
+        merged.push(entry);
+    }
+    for (const entry of provisioned) if (!placed.has(entry)) { placed.add(entry); merged.push(entry); }
+    return merged;
+};
+
+// 'definitions' keeps every server visible to catalogs but disabled, so no
+// external connection or OAuth flow starts. Auth state is never copied.
+export const buildQaMirroredMcp = (sourceMcp, mode) => {
+    if (!mirroredMcpModes.includes(mode)) throw new Error('QA MCP mirroring mode must be off, definitions or live');
+    if (sourceMcp !== undefined && !isRecord(sourceMcp)) throw new Error('QA personal MCP configuration must be an object');
+    if (mode === 'off') return { config: {}, evidence: [] };
+    const config = {};
+    const evidence = [];
+    for (const [id, definition] of Object.entries(sourceMcp ?? {})) {
+        if (!isRecord(definition)) throw new Error('QA personal MCP definitions must be objects');
+        const sourceEnabled = definition.enabled !== false;
+        config[id] = mode === 'definitions' ? { ...structuredClone(definition), enabled: false } : structuredClone(definition);
+        evidence.push({ id, type: typeof definition.type === 'string' ? definition.type : null, sourceEnabled, enabled: mode === 'live' && sourceEnabled });
+    }
+    return { config, evidence };
+};
+
+// Copies a personal tree, following only a symlinked root. Returns the number
+// of top-level entries copied, or null when the source root is absent.
+const copyPersonalTree = async (source, target) => {
+    let root;
+    let names;
+    try { root = await realpath(source); names = await readdir(root); }
+    catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+    await mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
+    await cp(root, target, { recursive: true, verbatimSymlinks: true, errorOnExist: true, force: false, filter: personalCopyFilter });
+    return names.filter(personalCopyFilter).length;
+};
+
+export const qaPersonalSkillRoots = Object.freeze(['.config/opencode/skills', '.claude/skills', '.agents/skills']);
+const pluginDirectoryNames = ['plugins', 'plugin'];
+
+export const emptyQaMirrorEvidence = requested => ({ requested, plugins: [], pluginDirectories: [], skills: {}, commands: null, mcp: [], configKeys: [] });
+
+// Mirrors the owner's personal plugins, skills, MCP definitions, built-in agent
+// overrides and commands into the private profile. Sources are only read.
+// `lsp` stays owned by the managed overlay and is never mirrored.
+export const mirrorQaPersonalSetup = async ({ options, sourceHome, home, config, sourceConfigs, provisioned }) => {
+    const sourceConfig = path.join(sourceHome, '.config/opencode');
+    const evidence = emptyQaMirrorEvidence(options);
+    const basePlugins = Array.isArray(provisioned.plugin) ? provisioned.plugin : [];
+    const copiedTrees = [];
+    let plugin = basePlugins;
+    if (options.plugins) {
+        const entries = sourceConfigs.flatMap((value) => {
+            if (value.plugin !== undefined && !Array.isArray(value.plugin)) throw new Error('QA personal plugin entries must be arrays');
+            return value.plugin ?? [];
+        });
+        const { personal, ordered } = classifyQaPersonalPluginEntries(entries, { provisioned: basePlugins, sourceConfig });
+        plugin = orderQaMirroredPlugins(basePlugins, ordered);
+        evidence.plugins = personal.map(({ spec, kind, hasOptions }) => ({ entry: spec, kind, hasOptions }));
+        evidence.pluginOrder = plugin.map(qaPluginSpec);
+        if (personal.length) evidence.configKeys.push('plugin');
+        for (const directory of pluginDirectoryNames) {
+            let dirents;
+            try { dirents = await readdir(path.join(sourceConfig, directory), { withFileTypes: true }); }
+            catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+            const selected = new Set(selectQaPersonalPluginDirectoryEntries(dirents.map(item => item.name)));
+            for (const item of dirents.filter(candidate => selected.has(candidate.name)).sort((a, b) => a.name.localeCompare(b.name))) {
+                await mkdir(path.join(config, directory), { recursive: true, mode: 0o700 });
+                await cp(path.join(sourceConfig, directory, item.name), path.join(config, directory, item.name), {
+                    recursive: true, verbatimSymlinks: true, errorOnExist: true, force: false, filter: personalCopyFilter });
+                evidence.pluginDirectories.push({ directory, name: item.name,
+                    type: item.isSymbolicLink() ? 'symlink' : item.isDirectory() ? 'directory' : 'file' });
+                copiedTrees.push(path.join(config, directory, item.name));
+            }
+        }
+        // Only node_modules and the plugin directories are copied. A local
+        // registration elsewhere would silently diverge from the owner's setup.
+        for (const { spec, kind } of personal.filter(item => item.kind === 'config-path' || item.kind === 'node-modules')) {
+            const entry = path.resolve(config, spec);
+            const roots = (kind === 'node-modules' ? ['node_modules'] : pluginDirectoryNames).map(directory => path.resolve(config, directory));
+            let present = roots.some(root => isInside(root, entry));
+            if (present) {
+                try {
+                    const resolved = await realpath(entry);
+                    const canonicalRoots = await Promise.all(roots.map(canonicalFuturePath));
+                    present = canonicalRoots.some(root => isInside(root, resolved));
+                }
+                catch (error) { if (error.code !== 'ENOENT') throw error; present = false; }
+            }
+            if (!present) throw new Error(`QA mirrored plugin entry ${spec} is outside the copied plugin directories`);
+        }
+    }
+    if (options.skills) {
+        for (const root of qaPersonalSkillRoots) {
+            evidence.skills[root] = await copyPersonalTree(path.join(sourceHome, root), path.join(home, root));
+            if (evidence.skills[root] !== null) copiedTrees.push(path.join(home, root));
+        }
+    }
+    const mcp = buildQaMirroredMcp(Object.assign({}, ...sourceConfigs.map(value => value.mcp ?? {})), options.mcp);
+    evidence.mcp = mcp.evidence;
+    if (options.mcp !== 'off' && mcp.evidence.length) evidence.configKeys.push('mcp');
+    // Provisioning gives its managed built-in agent entries precedence over the
+    // owner's; the mirror applies the same merge the owner's profile received.
+    const sourceAgents = sourceConfigs.filter(value => isRecord(value.agent));
+    const agent = sourceAgents.length
+        ? { ...structuredClone(Object.assign({}, ...sourceAgents.map(value => value.agent))), ...(isRecord(provisioned.agent) ? provisioned.agent : {}) }
+        : undefined;
+    if (agent) evidence.configKeys.push('agent');
+    evidence.commands = await copyPersonalTree(path.join(sourceConfig, 'commands'), path.join(config, 'commands'));
+    if (evidence.commands !== null) {
+        evidence.configKeys.push('commands');
+        copiedTrees.push(path.join(config, 'commands'));
+    }
+    // Check after all copies so relative aliases between copied trees still
+    // work. Never publish registrations while a descendant can reach the owner.
+    for (const tree of copiedTrees) await ensurePrivateTreeLinks(tree, home, 'personal setup copy');
+    return { plugin, agent, mcp: mcp.config, evidence };
+};
+
 // Inherited overrides that relocate Meridian or Claude state. The owned values
 // below replace the directories; any other relocation would escape the profile.
 const inheritedStatePathKey = key => /^(MERIDIAN|CLAUDE)_(\w+_)?(DIR|PATH|CONFIG|DB|FILE|HOME|INSTANCES)$/.test(key);
@@ -268,7 +438,7 @@ const inheritedStatePathKey = key => /^(MERIDIAN|CLAUDE)_(\w+_)?(DIR|PATH|CONFIG
 // this launch environment; the shim still never mutates it inside a process.
 export const createQaLaunchEnvironment = ({ runtimeRoot, home, opencodeBinary, baseEnvironment = process.env }) => {
     const data = path.join(home, '.config/openchamber');
-    const env = { ...baseEnvironment };
+    const env = qaPlatformEnvironment(baseEnvironment);
     for (const key of Object.keys(env)) if (inheritedStatePathKey(key)) delete env[key];
     Object.assign(env, { DEVRYAN_QA_RUNTIME_ROOT: runtimeRoot, DEVRYAN_QA_HOME: home,
         HOME: home, OPENCODE_TEST_HOME: home, XDG_CONFIG_HOME: path.join(home, '.config'),
@@ -320,128 +490,8 @@ export const assertQaLaunchEnvironmentOwned = (env, ownedBase, { executables = [
     }
 };
 
-export async function prepareQaProfile({ runtimeRoot, workspace, providerId, modelId, variant = null, agentAssignments = {},
-    allowCrossProviderAssignments = false, preserveOrchestration = false,
-    credentialProviders = allowedProviders,
-    sourceHome = os.homedir(), opencodeBinary = path.join(repositoryRoot, '.cache/qa/opencode-1.18.33/package/bin/opencode') }) {
-    const cacheRoot = path.join(repositoryRoot, '.cache');
-    if (!path.isAbsolute(runtimeRoot) || !isInside(cacheRoot, path.resolve(runtimeRoot))) throw new Error('QA runtime root must be inside this repository cache');
-    if (!path.isAbsolute(workspace) || !isInside(cacheRoot, path.resolve(workspace))) throw new Error('QA workspace must be inside this repository cache');
-    if (!allowedProviders.includes(providerId) || typeof modelId !== 'string' || !modelId.trim() || modelId.includes('/')) throw new Error('QA model must use OpenAI, Anthropic, or xAI');
-    if (variant !== null && (typeof variant !== 'string' || !variant.trim())) throw new Error('QA thinking must be null or a nonempty variant');
-    validateQaAgentAssignments(agentAssignments, providerId, allowCrossProviderAssignments);
-    if (!Array.isArray(credentialProviders) || !credentialProviders.includes(providerId)
-        || credentialProviders.some(id => !managedSpecialistProviders.includes(id))) throw new Error('QA credential sources must explicitly include the selected supported provider');
-    if (typeof preserveOrchestration !== 'boolean' || (preserveOrchestration && (allowCrossProviderAssignments || Object.keys(agentAssignments).length))) {
-        throw new Error('Preserved orchestration cannot be combined with model assignment overrides');
-    }
-    const admittedProviders = [...new Set([...credentialProviders, ...(preserveOrchestration ? preservedProviders : []), ...Object.values(agentAssignments).map(selection => selection.providerId)])];
-    await validateOwnedPaths(runtimeRoot, workspace, cacheRoot);
-    await mkdir(runtimeRoot, { recursive: true, mode: 0o700 });
-    const home = path.join(runtimeRoot, 'home');
-    await mkdir(home, { mode: 0o700 });
-    await writeFile(path.join(home, '.devryan-qa-home'), 'owned QA home\n', { flag: 'wx', mode: 0o600 });
-    const config = path.join(home, '.config/opencode');
-    const data = path.join(home, '.config/openchamber');
-    const authDirectory = path.join(home, '.local/share/opencode');
-    const sourceConfig = path.join(sourceHome, '.config/opencode');
-    const env = createQaLaunchEnvironment({ runtimeRoot, home, opencodeBinary });
-    assertQaLaunchEnvironmentOwned(env, home);
-    await Promise.all([config, data, authDirectory, env.TMPDIR, env.XDG_CACHE_HOME, env.CLAUDE_CONFIG_DIR, env.MERIDIAN_CONFIG_DIR].map((directory) => mkdir(directory, { recursive: true, mode: 0o700 })));
-    // HOME is private, so host Git would otherwise have no identity.
-    await writeFile(path.join(home, '.gitconfig'), '[user]\n\tname = DevRyan QA\n\temail = qa@devryan.invalid\n', { flag: 'wx', mode: 0o600 });
-    await cp(path.join(sourceConfig, 'node_modules'), path.join(config, 'node_modules'), {
-        recursive: true, verbatimSymlinks: true, mode: constants.COPYFILE_FICLONE,
-        // npm's hidden .bin replacement links are installation scratch, not
-        // executable dependencies; stale ones can point at removed packages.
-        filter: file => !(path.basename(path.dirname(file)) === '.bin' && path.basename(file).startsWith('.')),
-    });
-    await ensurePrivateDependencyLinks(path.join(config, 'node_modules'));
-    await cp(path.join(sourceConfig, 'package.json'), path.join(config, 'package.json'));
-    for (const lockfile of ['bun.lock', 'bun.lockb']) {
-        try { await cp(path.join(sourceConfig, lockfile), path.join(config, lockfile)); }
-        catch (error) { if (error.code !== 'ENOENT') throw error; }
-    }
-    // The provenance marker tells provisioning these Claude runtime fields are
-    // DevRyan-managed. Without it, copied older versions look user-pinned and
-    // the QA profile would silently test a stale tuple instead of the reviewed one.
-    try {
-        await mkdir(path.join(config, '.openchamber'), { recursive: true, mode: 0o700 });
-        await cp(path.join(sourceConfig, '.openchamber/claude-runtime-compatibility.json'), path.join(config, '.openchamber/claude-runtime-compatibility.json'));
-    } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    const provisioning = await createUserProfileProvisioningRuntime({
-        homedir: () => home, configDirectory: config, configRoot: path.join(repositoryRoot, 'packages/web/server/default-config'),
-        profileRoot: path.join(repositoryRoot, 'packages/web/server/default-config/user-profile'),
-        runCommand: async (command, args, options) => {
-            try { const result = await execute(command, args, { cwd: options.cwd, env, timeout: 120_000, maxBuffer: 1024 * 1024 }); return { ok: true, exitCode: 0, ...result }; }
-            catch { return { ok: false, exitCode: 1, stdout: '', stderr: 'Private QA dependency provisioning failed' }; }
-        },
-    }).provision();
-    if (!provisioning.ok) throw new Error(provisioning.error || 'Private QA provisioning failed');
-
-    const base = await readOptionalJson(path.join(config, 'opencode.json'));
-    const sourceConfigs = await Promise.all(['opencode.json', 'config.json', 'opencode.jsonc'].map((file) => readOptionalJson(path.join(sourceConfig, file))));
-    const providers = Object.assign({}, ...sourceConfigs.map((value) => value.provider ?? {}));
-    await writePrivateJson(path.join(config, 'opencode.json'), { ...base, model: `${providerId}/${modelId}`, enabled_providers: admittedProviders,
-        provider: Object.fromEntries(Object.entries(providers).filter(([id]) => admittedProviders.includes(id))), mcp: {} });
-    const slim = resolveSlimConfig(undefined, { configDirectory: sourceConfig }).userConfig;
-    const pinnedAgents = preserveOrchestration ? preserveQaOrchestration(slim, {}).slim
-        : pinQaAgents(slim, { providerId, modelId, variant, agentAssignments, allowCrossProviderAssignments });
-    let orchestrationSidecar = {};
-    if (preserveOrchestration) {
-        // Copy only the orchestration settings, never sessions or account state.
-        const sourceSidecar = { ...Object.assign({}, ...sourceConfigs.map(value => value.openchamber ?? {})),
-            ...await readOptionalJson(path.join(sourceConfig, '.openchamber/config.json')) };
-        orchestrationSidecar = preserveQaOrchestration(slim, sourceSidecar).sidecar;
-        await mkdir(path.join(config, '.openchamber'), { recursive: true, mode: 0o700 });
-        await writePrivateJson(path.join(config, '.openchamber/config.json'), orchestrationSidecar);
-    }
-    await writePrivateJson(path.join(config, 'oh-my-opencode-slim.json'), pinnedAgents);
-    try { await cp(path.join(sourceConfig, 'AGENTS.md'), path.join(config, 'AGENTS.md')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-
-    // Private package entry wrappers evaluate the same home shim before their
-    // actual dependencies. The compiled OpenCode executable does not honor
-    // NODE_OPTIONS preloads, while its own config honors OPENCODE_TEST_HOME.
-    // Imagegen resolves its data paths from explicit XDG variables. Keep
-    // imagegen's reviewed executable intact so the ordinary
-    // provisioning hash check remains valid when the private host boots.
-    for (const plugin of base.plugin.filter((entry) => entry.startsWith('./node_modules/')
-        && !entry.startsWith('./node_modules/opencode-gpt-imagegen/'))) {
-        const entry = await realpath(path.join(config, plugin));
-        if (!isInside(path.join(config, 'node_modules'), entry)) throw new Error('QA plugin escaped the copied installation');
-        await prepareQaPluginHomeWrapper(entry);
-    }
-    const projectedAuth = projectQaAuth(await readOptionalJson(path.join(sourceHome, '.local/share/opencode/auth.json')), Date.now(), admittedProviders, { preserveOrchestration });
-    await writePrivateJson(path.join(authDirectory, 'auth.json'), projectedAuth.records);
-    const claude = admittedProviders.includes('anthropic') ? await readClaudeAccess(sourceHome) : null;
-    const credentialsEnvironment = {};
-    if (claude) {
-        credentialsEnvironment.MERIDIAN_PROFILES = JSON.stringify([{ id: 'qa', type: 'oauth-token', oauthToken: claude.access }]);
-        credentialsEnvironment.MERIDIAN_DEFAULT_PROFILE = 'qa';
-        projectedAuth.evidence.anthropic = { state: 'available', type: 'claude-cli-access-only', expires: claude.expires };
-    }
-    assertQaSelectedProviderAccess(providerId, projectedAuth.evidence);
-    await writePrivateJson(path.join(runtimeRoot, 'credentials.env.json'), credentialsEnvironment);
-    await writePrivateJson(path.join(data, 'settings.json'), { lastDirectory: workspace, projects: [{ id: 'qa-project', path: workspace, label: 'QA workspace' }],
-        activeProjectId: 'qa-project', opencodeBinary: opencodeBinary, messageStreamTransport: 'sse', showReasoningTraces: true,
-        desktopWindowState: { width: 1280, height: 800, maximized: false } });
-    const effectiveAgents = preserveOrchestration ? resolveSlimConfig(workspace, { configDirectory: config }).agents : pinnedAgents.agents;
-    const modelRef = selection => typeof selection.model === 'string' ? selection.model
-        : selection.model ? `${selection.model.providerID}/${selection.model.modelID}` : null;
-    const ripgrep = await provisionQaRipgrep({ sourceHome, cacheHome: env.XDG_CACHE_HOME });
-    const evidence = { providerId, modelId, variant, credentials: projectedAuth.evidence,
-        allowCrossProviderAssignments, preserveOrchestration, admittedProviders,
-        orchestrationSidecar, savedPreset: pinnedAgents.preset ?? null,
-        appearanceOverrides: { showReasoningTraces: true },
-        dependencies: { installPerformed: Boolean(provisioning.install), degraded: provisioning.installDegraded === true },
-        meridianHttpHotfix: provisioning.meridianHttpHotfix,
-        fingerprints: await installedFingerprints(config, base.plugin, opencodeBinary),
-        ripgrep,
-        agentModels: Object.fromEntries(Object.entries(effectiveAgents).map(([agent, selection]) => [agent, modelRef(selection)])),
-        agentSelections: Object.fromEntries(Object.entries(effectiveAgents).map(([agent, selection]) => [agent, {
-            model: modelRef(selection), variant: selection.variant ?? null,
-        }])),
-        isolation: { home, config, data, authDirectory, workspace, opencodeBinary, refreshTokensCopied: false, personalSkillsCopied: false, multiUser: false } };
-    await writePrivateJson(path.join(runtimeRoot, 'profile-evidence.json'), evidence);
-    return { env, bootstrapPath: fileURLToPath(new URL('./isolated-host.mjs', import.meta.url)), evidence };
+// Live profile preparation is owned by native-profile-factory/preparation.
+// These older data/SDK helpers remain reusable without launching a runtime.
+export async function prepareQaProfile() {
+    throw Object.assign(new Error('Legacy QA profile preparation is retired; use constructor-owned native preparation'), { code: 'qa_native_diagnostic_unavailable' });
 }

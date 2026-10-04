@@ -19,6 +19,7 @@ export const createBootstrapRuntime = (dependencies) => {
       runtimeInstanceId,
       gracefulShutdown,
       getHealthSnapshot,
+      getNativeRuntimeOwner,
       verboseRequestLogs,
       uiPassword,
       tunnelAuthController,
@@ -78,6 +79,7 @@ export const createBootstrapRuntime = (dependencies) => {
       runtimeInstanceId,
       gracefulShutdown,
       getHealthSnapshot,
+      getNativeRuntimeOwner,
       uiAuthController,
     });
     if (uiAuthController.enabled) {

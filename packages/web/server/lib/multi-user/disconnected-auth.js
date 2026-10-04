@@ -18,6 +18,7 @@ export function createDisconnectedAuth(connection) {
   return {
     enabled: true, multiUser: false,
     resolvePrincipal, requireAuth, authorizeSystemRequest: requireAuth,
+    captureAuthorization: principal => connection.captureAuthorization(principal),
     async handleSessionStatus(req, res) {
       const principal = await resolvePrincipal(req);
       if (!principal) return res.status(401).json({ authenticated: false, locked: true, mode: 'local', supabaseDisconnected: true });

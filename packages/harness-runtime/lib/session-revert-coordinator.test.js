@@ -16,7 +16,7 @@ async function fixture() {
   const sessions = new Map(['a', 'b'].map((id) => [id, { id, directory: project }]));
   const calls = [], events = [];
   const conversation = {
-    capabilities: async () => ({ legacyConversationRevert: 1 }),
+    capabilities: async () => ({ conversationOnlyRevert: 1 }),
     get: async ({ sessionID }) => sessions.get(sessionID),
     revert: async (input) => { calls.push(input); const session = { ...sessions.get(input.sessionID),
       revert: { messageID: input.messageID, fileRestore: input.files !== false } }; sessions.set(input.sessionID, session); return session; },
@@ -67,6 +67,22 @@ test('Revert and Redo preserve explicit partial publication conflicts in the hos
   expect(await coordinator.redo({ directory: f.directory, sessionID: 'b' }))
     .toMatchObject({ outcome: 'partial', conflicts: [{ path: 'x' }] });
   expect(await fs.readFile(path.join(f.directory, 'x'))).toEqual(Buffer.from([0, 2]));
+}, 60_000);
+
+test('native conversation holds release only after durable settlement and receive its exact transaction', async () => {
+  const f = await fixture(); await f.write('before');
+  const lease = await f.begin('a'); await fs.writeFile(path.join(lease.viewDirectory, 'x'), 'after');
+  await f.runtime.finish({ directory: f.directory, token: lease.token });
+  const releases = [];
+  f.conversation.capabilities = async () => ({ conversationOnlyRevert: 1 });
+  f.conversation.releaseHolds = async input => {
+    const transaction = await f.runtime.transaction(input);
+    expect(transaction.state).toBe('committed'); releases.push(input);
+  };
+  const result = await f.create().revert({ directory: f.directory, sessionID: 'a', messageID: 'pa' });
+  expect(f.calls[0].transactionID).toBe(result.verification.transactionID);
+  expect(releases).toEqual([{ directory: f.directory, sessions: ['a'], transactionID: result.verification.transactionID }]);
+  expect(await f.read()).toBe('before');
 }, 60_000);
 
 test('cancellation acceptance without authoritative termination cannot change files or conversation', async () => {

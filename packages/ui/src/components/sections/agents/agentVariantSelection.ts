@@ -103,5 +103,5 @@ export const resolveAgentVariantForSave = (
     return cleanedVariant;
   }
 
-  return findVariantKey(model.variants, cleanedVariant);
+  return findVariantKey(model.variants, cleanedVariant) ?? cleanedVariant;
 };

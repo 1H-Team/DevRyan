@@ -26,3 +26,11 @@ describe('managed model availability', () => {
     expect(isManagedModelAvailableInCatalog({ providers: [{ id: 'openai' }] }, 'openai', 'gpt-5')).toBeNull();
   });
 });
+
+it('validates the exact variant without replacing a saved effort with provider default', () => {
+  const catalog = { providers: [{ id: 'openai', models: { model: { variants: { medium: {} } } } }] };
+  expect(isManagedModelAvailableInCatalog(catalog, 'openai', 'model', 'medium')).toBe(true);
+  expect(isManagedModelAvailableInCatalog(catalog, 'openai', 'model', 'high')).toBe(false);
+  expect(isManagedModelAvailableInCatalog(catalog, 'openai', 'model', null)).toBe(true);
+  expect(isManagedModelAvailableInCatalog(null, 'openai', 'model', 'high')).toBeNull();
+});

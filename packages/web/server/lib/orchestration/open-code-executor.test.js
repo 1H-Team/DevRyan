@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -5,7 +6,19 @@ import {
   MANAGED_TURN_BUDGET_PROMPT,
 } from '@openchamber/orchestration-runtime';
 
-import { createWebManagedOpenCodeExecutor } from './open-code-executor.js';
+import { createOpenCodeClient } from '../opencode/opencode-client/index.js';
+import { createNativeConsumerFixture } from '../opencode/test-native-consumer-client.js';
+import { createWebManagedOpenCodeExecutor as createNativeExecutor } from './open-code-executor.js';
+
+// Preserve transport-independent scheduler scenarios with a typed in-memory
+// native client. Wire paths and auth are covered by the real-client tests below.
+const createWebManagedOpenCodeExecutor = (options = {}) => createNativeExecutor({
+  ...options,
+  openCodeClient: 'openCodeClient' in options ? options.openCodeClient : createNativeConsumerFixture({
+    readFixture: options.fetchImpl, headers: options.getOpenCodeAuthHeaders,
+    baseUrl: () => options.buildOpenCodeUrl('/', ''),
+  }),
+});
 
 const jsonResponse = (body, init = {}) => new Response(JSON.stringify(body), {
   status: init.status ?? 200,
@@ -71,7 +84,7 @@ describe('web managed OpenCode executor transport', () => {
     expect(control.setChildSessionId).not.toHaveBeenCalled();
   });
 
-  it('uses the managed OpenCode HTTP contract with directory and auth isolation', async () => {
+  it('keeps directory and auth isolation in the typed managed transport fixture', async () => {
     const requests = [];
     const fetchImpl = vi.fn(async (url, init = {}) => {
       requests.push({ url: String(url), init });
@@ -659,5 +672,337 @@ describe('web managed OpenCode executor host hooks', () => {
       taskId: 'dvr_task_hooks', rootSessionId: 'ses_root', agent: 'explorer',
       label: 'Hooked child', prompt: 'Inspect the project.',
     });
+  });
+});
+
+describe('web managed OpenCode executor on gen 2 (openCodeClient)', () => {
+  const createFakeOpenCodeClient = ({ generation = 2, ...overrides } = {}) => ({
+    generation: vi.fn(() => {
+      if (generation instanceof Error) throw generation;
+      return generation;
+    }),
+    sessions: {
+      create: vi.fn(async () => ({ id: 'ses_child_v2', version: '2' })),
+      get: vi.fn(async (sessionID) => ({ id: sessionID })),
+      status: vi.fn(async () => ({})),
+      messages: vi.fn(async () => ({
+        records: [{
+          info: { id: 'msg_v2', role: 'assistant', finish: 'stop', time: { completed: 2_000 }, summary: { diffs: [{ patch: 'x' }] } },
+          parts: [{ type: 'text', text: 'v2 done' }],
+        }],
+        cursor: undefined,
+      })),
+      abort: vi.fn(async () => true),
+      remove: vi.fn(async () => true),
+      ...overrides.sessions,
+    },
+    prompts: {
+      prompt: vi.fn(async () => true),
+      ...overrides.prompts,
+    },
+  });
+
+  const task = {
+    taskId: 'dvr_task_v2',
+    leaseToken: 'dvr_lease_v2',
+    dispatchCallId: 'call_v2_dispatch',
+    rootSessionId: 'ses_root',
+    childSessionId: null,
+    directory: '/workspace',
+    providerId: 'github-copilot',
+    modelId: 'gpt-4.1',
+    agent: 'explorer',
+    variant: null,
+    label: 'V2 child',
+    prompt: 'Inspect the project.',
+  };
+
+  const createExecutor = (openCodeClient, extra = {}) => createWebManagedOpenCodeExecutor({
+    buildOpenCodeUrl: (pathname) => `http://127.0.0.1:4096${pathname}`,
+    getOpenCodeAuthHeaders: () => ({ authorization: 'Basic opaque' }),
+    fetchImpl: vi.fn(async (url) => { throw new Error(`gen 2 leaked a direct request: ${url}`); }),
+    openCodeClient,
+    pollIntervalMs: 0,
+    idleStablePolls: 1,
+    ...extra,
+  });
+
+  it('rejects an injected client that is not an openCodeClient', () => {
+    expect(() => createExecutor({})).toThrow('openCodeClient must be an openCodeClient');
+  });
+
+  it('creates, prompts, observes and reads the child through the client with today\'s budgets', async () => {
+    const client = createFakeOpenCodeClient();
+    const registerExecutionChild = vi.fn(async () => {});
+    const nativeTaskDispatch = vi.fn(async (input, action) => {
+      if (input.operation === 'create') expect(client.sessions.create).not.toHaveBeenCalled();
+      else expect(client.prompts.prompt).not.toHaveBeenCalled();
+      return action();
+    });
+    const executor = createExecutor(client, { registerExecutionChild, nativeTaskDispatch });
+    const control = { setChildSessionId: vi.fn(async () => true), markAccepted: vi.fn(async () => true) };
+
+    const result = await executor.start(task, control);
+
+    expect(result).toMatchObject({ status: 'completed', recoverablePreview: 'v2 done' });
+    expect(nativeTaskDispatch.mock.calls.map(([input]) => input)).toEqual([
+      { operation: 'create', taskId: task.taskId, leaseToken: task.leaseToken, directory: task.directory,
+        parentID: task.rootSessionId, parentCallID: task.dispatchCallId },
+      { operation: 'prompt', taskId: task.taskId, leaseToken: task.leaseToken, directory: task.directory,
+        sessionID: 'ses_child_v2', providerId: task.providerId, modelId: task.modelId, agent: task.agent, variant: null },
+    ]);
+    expect(client.sessions.create).toHaveBeenCalledWith(
+      { directory: '/workspace', title: 'V2 Child', parentID: 'ses_root' },
+      { directory: '/workspace', timeoutMs: 30_000 },
+    );
+    expect(registerExecutionChild).toHaveBeenCalledWith({ directory: '/workspace', sessionID: 'ses_child_v2',
+      parentID: 'ses_root', parentCallID: 'call_v2_dispatch' });
+    expect(control.setChildSessionId).toHaveBeenCalledWith('ses_child_v2');
+    // The v1 prompt body goes to the admission module unchanged (B.5).
+    expect(client.prompts.prompt).toHaveBeenCalledWith('ses_child_v2', expect.objectContaining({
+      agent: 'explorer',
+      model: { providerID: 'github-copilot', modelID: 'gpt-4.1' },
+      variant: '',
+      parts: [{ type: 'text', text: 'Inspect the project.' }],
+    }), expect.objectContaining({ directory: '/workspace', timeoutMs: 30_000 }));
+    // The scheduler's launch signal travels with the dispatch budget, as on gen 1.
+    const promptOptions = client.prompts.prompt.mock.calls[0][2];
+    expect(Object.keys(promptOptions).sort()).toEqual(['directory', 'signal', 'timeoutMs']);
+    expect(promptOptions.signal).toBeInstanceOf(AbortSignal);
+    expect(client.sessions.status).toHaveBeenCalledWith({ directory: '/workspace' }, { timeoutMs: 10_000 });
+    expect(client.sessions.messages).toHaveBeenCalledWith('ses_child_v2', { limit: 100 },
+      { directory: '/workspace', timeoutMs: 120_000, signal: expect.any(AbortSignal) });
+  });
+
+  it('keeps native registration and observation outside the expired submitting tool context', async () => {
+    const context = new AsyncLocalStorage();
+    const neutralReads = [];
+    const client = createFakeOpenCodeClient();
+    for (const [name, method] of Object.entries(client.sessions)) {
+      client.sessions[name] = vi.fn((...args) => {
+        expect(context.getStore()).toBe(name === 'create' ? 'fresh-dispatch' : undefined);
+        if (name !== 'create') neutralReads.push(name);
+        return method(...args);
+      });
+    }
+    const prompt = client.prompts.prompt;
+    client.prompts.prompt = vi.fn((...args) => {
+      expect(context.getStore()).toBe('fresh-dispatch');
+      return prompt(...args);
+    });
+    const registerExecutionChild = vi.fn(async () => { expect(context.getStore()).toBeUndefined(); });
+    const executor = createExecutor(client, {
+      registerExecutionChild,
+      nativeTaskDispatch: (_input, action) => {
+        expect(context.getStore()).toBeUndefined();
+        return context.run('fresh-dispatch', action);
+      },
+    });
+    try {
+      const result = await context.run('expired-tool', () => executor.start(task, {
+        async setChildSessionId() { return true; }, async markAccepted() { return true; },
+      }));
+      expect(result.status).toBe('completed');
+      expect(registerExecutionChild).toHaveBeenCalledOnce();
+      expect(neutralReads).toEqual(expect.arrayContaining(['status', 'messages']));
+      await expect(context.run('expired-tool', () => executor.observe({ ...task, childSessionId: 'ses_child_v2' })))
+        .resolves.toMatchObject({ status: 'completed' });
+    } finally { await executor.shutdown(); }
+  });
+
+  it.each(['create', 'prompt'])('refuses native %s before the client mutation when its lease was revoked', async (operation) => {
+    const client = createFakeOpenCodeClient();
+    const failure = Object.assign(new Error('task lease revoked'), { code: 'native_managed_task_lease_invalid' });
+    const executor = createExecutor(client, { nativeTaskDispatch: async (input, action) => {
+      if (input.operation === operation) throw failure;
+      return action();
+    } });
+    await expect(executor.start(task, {
+      async setChildSessionId() { return true; }, async markAccepted() { return true; },
+    })).rejects.toBe(failure);
+    expect(client.prompts.prompt).not.toHaveBeenCalled();
+    expect(client.sessions.create).toHaveBeenCalledTimes(operation === 'create' ? 0 : 1);
+    await executor.shutdown?.();
+  });
+
+  it('single-flights gen-2 status reads per directory', async () => {
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const client = createFakeOpenCodeClient({
+      sessions: {
+        status: vi.fn(async () => {
+          await gate;
+          return { ses_alpha: { type: 'idle' }, ses_beta: { type: 'idle' } };
+        }),
+        messages: vi.fn(async (sessionID) => ({
+          records: [{ info: { id: `msg_${sessionID}`, role: 'assistant', finish: 'stop' },
+            parts: [{ type: 'text', text: `${sessionID} result` }] }],
+          cursor: undefined,
+        })),
+      },
+    });
+    const executor = createExecutor(client);
+    const observe = (sessionId) => executor.observe({ taskId: `dvr_task_${sessionId}`, childSessionId: sessionId,
+      directory: '/workspace', providerId: 'openai' });
+
+    const pending = Promise.all([observe('ses_alpha'), observe('ses_beta')]);
+    await waitForCondition(() => client.sessions.status.mock.calls.length === 1);
+    release();
+    await expect(pending).resolves.toMatchObject([
+      { status: 'completed', recoverablePreview: 'ses_alpha result' },
+      { status: 'completed', recoverablePreview: 'ses_beta result' },
+    ]);
+    expect(client.sessions.status).toHaveBeenCalledTimes(1);
+  });
+
+  it('detaches a cancelled task from shared stalled status without stopping the other task', async () => {
+    let release, creates = 0;
+    const gate = new Promise(resolve => { release = resolve; });
+    const client = createFakeOpenCodeClient({ sessions: {
+      create: vi.fn(async () => ({ id: `ses_child_${++creates}`, version: '2' })),
+      status: vi.fn(async () => { await gate; return {}; }),
+    } });
+    const executor = createExecutor(client);
+    const control = { async setChildSessionId() { return true; }, async markAccepted() { return true; } };
+    const firstTask = { ...task, taskId: 'dvr_task_first' }, secondTask = { ...task, taskId: 'dvr_task_second' };
+    const first = executor.start(firstTask, control);
+    const second = executor.start(secondTask, control);
+    try {
+      await waitForCondition(() => client.prompts.prompt.mock.calls.length === 2 && client.sessions.status.mock.calls.length === 1);
+      await executor.abort({ ...firstTask, childSessionId: 'ses_child_1' });
+      // This must settle before the underlying HTTP read has been released.
+      await expect(first).resolves.toMatchObject({ status: 'aborted' });
+      expect(client.sessions.status).toHaveBeenCalledTimes(1);
+      expect(client.sessions.abort).toHaveBeenCalledTimes(1);
+      expect(client.sessions.abort.mock.calls[0][0]).toBe('ses_child_1');
+      expect(client.sessions.status.mock.calls[0][1].signal).toBeUndefined();
+      release();
+      await expect(second).resolves.toMatchObject({ status: 'completed' });
+      expect(client.prompts.prompt).toHaveBeenCalledTimes(2);
+      expect(client.sessions.status).toHaveBeenCalledTimes(1);
+    } finally { release(); await executor.shutdown(); }
+  });
+
+  it('does not consume a shared status response from a replaced runtime incarnation', async () => {
+    let release, epoch = 1;
+    const gate = new Promise(resolve => { release = resolve; });
+    const client = createFakeOpenCodeClient({ sessions: { status: vi.fn(async () => { await gate; return {}; }) } });
+    const executor = createExecutor(client, { readRuntimeStartedAt: () => epoch });
+    const pending = executor.observe({ ...task, childSessionId: 'ses_child_v2' }).catch(error => error);
+    try {
+      await waitForCondition(() => client.sessions.status.mock.calls.length === 1);
+      epoch = 2;
+      release();
+      expect(await pending).toMatchObject({ status: 'interrupted', resumable: true,
+        failureReason: 'Managed runtime changed during status observation' });
+      expect(client.sessions.messages).not.toHaveBeenCalled();
+      await expect(executor.observe({ ...task, childSessionId: 'ses_child_v2' })).resolves.toMatchObject({ status: 'completed' });
+      expect(client.sessions.status).toHaveBeenCalledTimes(2);
+      expect(client.prompts.prompt).not.toHaveBeenCalled();
+    } finally { release(); await executor.shutdown(); }
+  });
+
+  it('aborts with the scheduler signal (no extra budget) and with the request budget otherwise', async () => {
+    const client = createFakeOpenCodeClient();
+    const executor = createExecutor(client);
+    const controller = new AbortController();
+    const child = { taskId: 'dvr_task_v2_abort', childSessionId: 'ses_abort', directory: '/workspace', providerId: 'openai' };
+
+    await expect(executor.abort(child, { signal: controller.signal })).resolves.toEqual({ aborted: true });
+    expect(client.sessions.abort).toHaveBeenLastCalledWith('ses_abort', { directory: '/workspace', signal: controller.signal });
+
+    await expect(executor.abort(child)).resolves.toEqual({ aborted: true });
+    expect(client.sessions.abort).toHaveBeenLastCalledWith('ses_abort', { directory: '/workspace', timeoutMs: 10_000 });
+  });
+
+  it('removes a definitively unregistered child through the client', async () => {
+    const client = createFakeOpenCodeClient();
+    const executor = createExecutor(client, {
+      registerExecutionChild: vi.fn(async () => {
+        throw Object.assign(new Error('execution_reverted'), { code: 'execution_reverted' });
+      }),
+    });
+    const control = { setChildSessionId: vi.fn(async () => true), markAccepted: vi.fn(async () => true) };
+
+    await expect(executor.start(task, control)).rejects.toMatchObject({ code: 'execution_reverted' });
+    expect(client.sessions.remove).toHaveBeenCalledWith('ses_child_v2',
+      { directory: '/workspace', allowNotFound: true, timeoutMs: 10_000 });
+    expect(client.prompts.prompt).not.toHaveBeenCalled();
+  });
+
+  it('aborts and deletes a child whose launch ownership was lost', async () => {
+    const client = createFakeOpenCodeClient();
+    const executor = createExecutor(client);
+
+    await expect(executor.start({ ...task, dispatchCallId: undefined }, {
+      async setChildSessionId() { return false; },
+      async markAccepted() { throw new Error('must not accept'); },
+    })).rejects.toThrow('lost launch ownership before provider prompt');
+    expect(client.sessions.abort).toHaveBeenCalledWith('ses_child_v2', expect.objectContaining({ directory: '/workspace' }));
+    expect(client.sessions.remove).toHaveBeenCalledWith('ses_child_v2',
+      { directory: '/workspace', allowNotFound: true, timeoutMs: 10_000 });
+  });
+
+  it('surfaces client failures unchanged', async () => {
+    const failure = Object.assign(new Error('sessions.create failed (503)'), { code: 'opencode_unavailable', statusCode: 503 });
+    const client = createFakeOpenCodeClient({ sessions: { create: vi.fn(async () => { throw failure; }) } });
+    const executor = createExecutor(client);
+
+    await expect(executor.start(task, {
+      async setChildSessionId() {},
+      async markAccepted() {},
+    })).rejects.toBe(failure);
+  });
+
+  it('reaches the 2.0.20 interrupt route through the real gen-2 client', async () => {
+    const requests = [];
+    const fetchImpl = vi.fn(async (url, init = {}) => {
+      requests.push({ url: String(url), init });
+      return jsonResponse({ interrupted: false });
+    });
+    const openCodeClient = createOpenCodeClient({
+      getRuntime: () => ({ generation: 2, baseUrl: 'http://127.0.0.1:4097' }),
+      getAuthHeaders: () => ({ authorization: 'Basic opaque' }),
+      fetchImpl,
+    });
+    const executor = createExecutor(openCodeClient);
+
+    await expect(executor.abort({ taskId: 'dvr_task_real_v2', childSessionId: 'ses_real_v2', directory: '/workspace',
+      providerId: 'openai' })).resolves.toEqual({ aborted: true });
+    expect(requests).toHaveLength(1);
+    expect(requests[0].url).toBe('http://127.0.0.1:4097/api/session/ses_real_v2/interrupt');
+    expect(requests[0].init).toMatchObject({ method: 'POST', headers: { authorization: 'Basic opaque' } });
+  });
+
+  it.each([1, 3, null])('refuses unsupported runtime identity %s without any direct request', async (generation) => {
+    const client = createFakeOpenCodeClient({ generation });
+    const fetchImpl = vi.fn();
+    const executor = createExecutor(client, { fetchImpl });
+    await expect(executor.abort({ taskId: 'dvr_task_invalid_abort', childSessionId: 'ses_invalid', directory: '/workspace',
+      providerId: 'openai' })).rejects.toMatchObject({ code: 'opencode_generation_invalid' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(client.sessions.abort).not.toHaveBeenCalled();
+  });
+
+  it('refuses a missing native client without fetching', async () => {
+    const fetchImpl = vi.fn();
+    const executor = createNativeExecutor({ fetchImpl });
+    await expect(executor.abort({ taskId: 'dvr_task_missing', childSessionId: 'ses_missing', directory: '/workspace',
+      providerId: 'openai' })).rejects.toMatchObject({ code: 'opencode_generation_invalid' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on an unknown generation instead of falling back to gen 1', async () => {
+    const invalid = Object.assign(new Error('The OpenCode runtime generation is unknown'), { code: 'opencode_generation_invalid' });
+    const client = createFakeOpenCodeClient({ generation: invalid });
+    const fetchImpl = vi.fn();
+    const executor = createExecutor(client, { fetchImpl });
+
+    await expect(executor.start(task, {
+      async setChildSessionId() {},
+      async markAccepted() {},
+    })).rejects.toMatchObject({ code: 'opencode_generation_invalid' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(client.sessions.create).not.toHaveBeenCalled();
   });
 });

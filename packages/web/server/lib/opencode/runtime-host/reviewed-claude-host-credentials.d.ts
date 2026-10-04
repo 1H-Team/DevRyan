@@ -1,0 +1,3 @@
+export interface ReviewedClaudeCredentialStore {readonly refreshKey:string;read:()=>Promise<Record<string,unknown>|null>;write:(value:Record<string,unknown>)=>Promise<boolean>;readonly fetch?:typeof fetch}
+export interface ReviewedClaudeCredentialModule {createPlatformCredentialStore:(options:{serviceName:string;execFile?:unknown;fetch?:typeof fetch})=>ReviewedClaudeCredentialStore;ensureFreshToken:(store:ReviewedClaudeCredentialStore)=>Promise<boolean>;refreshOAuthToken:(store:ReviewedClaudeCredentialStore)=>Promise<boolean>}
+export function loadReviewedClaudeCredentials(asset:{readonly path:string;readonly sha256:string}):Promise<ReviewedClaudeCredentialModule>;

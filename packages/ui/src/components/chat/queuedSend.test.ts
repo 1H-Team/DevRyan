@@ -46,6 +46,16 @@ describe("queued message flushing", () => {
     useMessageQueueStore.setState({ queuedMessages: {}, queueModeEnabled: true })
   })
 
+  test("natural FIFO opts into child-safe queue delivery while explicit send-now stays steer",async()=>{
+    const deliveries:Array<string|undefined>=[]
+    const options={sessionId:"queue-delivery",fallbackSendConfig:{providerID:"fixture",modelID:"exact"},prepareQueuedMessage:(message:{content:string})=>({content:message.content,providerID:'fixture',modelID:'exact'}),sendMessageToSession:async(...args:Parameters<NonNullable<Parameters<typeof flushQueuedMessagesForSession>[0]["sendMessageToSession"]>>)=>{deliveries.push(args[11]?.delivery)},waitForReadyToSendNext:async()=>{}}
+    useMessageQueueStore.getState().addToQueue("queue-delivery",{content:"Natural"})
+    await flushQueuedMessagesForSession({...options,waitForCurrentTurnBeforeFirstSend:true})
+    useMessageQueueStore.getState().addToQueue("queue-delivery",{content:"Manual"})
+    await sendQueuedMessagesNowForSession({...options,interruptBeforeFlush:false,beginInterrupt:()=>async()=>{}})
+    expect(deliveries).toEqual(["queue","steer"])
+  })
+
   test("keeps canonical provider default through queue persistence, reload, failure, and retry against a High fallback", async () => {
     const restored = resolveLatestUserChoiceFromMessages(JSON.parse(JSON.stringify([{
       id: "msg_user_default", role: "user", agent: "Builder",

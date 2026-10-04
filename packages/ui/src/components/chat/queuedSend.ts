@@ -48,6 +48,7 @@ export type SendQueuedMessageToSession = (
 ) => Promise<void>
 
 export type QueuedSendLifecycleCallbacks = {
+  delivery?: 'queue' | 'steer'
   messageID?: string
   directory?: string
   /** Awaited by the send right before its prompt reaches the transport. */
@@ -282,7 +283,7 @@ export async function flushQueuedMessagesForSession(options: FlushQueuedMessages
       const directory = preparedMessage.directory ?? queuedMessage.directory
       const awaitTransportGate = nextMessageIndex === 0 ? options.firstSendTransportGate : undefined
       const lifecycleCallbacks: QueuedSendLifecycleCallbacks | undefined = (messageID || directory || awaitTransportGate)
-        ? { messageID, directory, ...(awaitTransportGate ? { awaitTransportGate } : {}) }
+        ? { messageID, directory, delivery: options.waitForCurrentTurnBeforeFirstSend ? 'queue' : 'steer', ...(awaitTransportGate ? { awaitTransportGate } : {}) }
         : undefined
 
       await sendMessageToSession(

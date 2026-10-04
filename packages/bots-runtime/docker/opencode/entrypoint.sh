@@ -10,23 +10,24 @@ initialize_runtime_config() {
     echo "runtime config path cannot be a symlink" >&2
     exit 1
   fi
-  mkdir -p "$RUNTIME_CONFIG_DIR/plugins"
-  cp "$SOURCE_PLUGIN" "$RUNTIME_CONFIG_DIR/plugins/devryan-bot-tools.mjs"
-  chmod 0444 "$RUNTIME_CONFIG_DIR/plugins/devryan-bot-tools.mjs"
+  mkdir -p "$RUNTIME_CONFIG_DIR"
   node --input-type=module <<'NODE'
 import fs from 'node:fs';
 
+const permissions = (rules) => Object.entries({ ...rules, ...(rules.write ? { devryan_bot_write: rules.write } : {}),
+  ...(rules.edit ? { devryan_bot_edit: rules.edit } : {}) }).map(([action, effect]) => ({ action, resource: '*', effect }));
 const config = {
-  $schema: 'https://opencode.ai/config.json',
   default_agent: 'bot',
-  plugin: ['/runtime-config/plugins/devryan-bot-tools.mjs'],
-  mcp: {},
-  agent: {
+  plugins: [],
+  mcp: { servers: {} },
+  snapshots: false, warming: false, update: 'disable', share: 'disabled',
+  permissions: permissions({ '*': 'deny' }),
+  agents: {
     bot: {
       mode: 'primary',
       description: 'Scoped DevRyan Production Bot runtime',
-      prompt: 'Operate autonomously within this scoped Bot channel and managed workspace. Use devryan_bot for governed browser and external actions. When devryan_image is available, use its exact prompt, out, and quality arguments for requested raster image generation; save out under /workspace/generated-images and successful images attach automatically. Never guess an image.generate gateway payload or promise a later Shared-folder publication. Never seek host files, Docker, host credentials, raw browser/CDP, direct MCP, or DevRyan host-task orchestration.',
-      permission: {
+      system: 'Operate autonomously within this scoped Bot channel and managed workspace. Use devryan_bot for governed browser and external actions. When devryan_image is available, use its exact prompt, out, and quality arguments for requested raster image generation; save out under /workspace/generated-images and successful images attach automatically. Never guess an image.generate gateway payload or promise a later Shared-folder publication. Never seek host files, Docker, host credentials, raw browser/CDP, direct MCP, or DevRyan host-task orchestration.',
+      permissions: permissions({
         '*': 'deny',
         read: 'allow',
         write: 'allow',
@@ -37,24 +38,24 @@ const config = {
         devryan_image: 'allow',
         devryan_write: 'allow',
         devryan_ask: 'allow',
-        bash: 'allow',
+        shell: 'allow',
         terminal: 'allow',
         git: 'allow',
-        task: 'allow',
+        subagent: 'allow',
         devryan_task: 'deny',
         browser: 'deny',
         devryan_browser: 'deny',
         mcp: 'deny',
         external_directory: 'deny',
-      },
+      }),
     },
     explore: {
       mode: 'subagent',
-      permission: { '*': 'deny', read: 'allow', write: 'allow', edit: 'allow', glob: 'allow', grep: 'allow', bash: 'allow', terminal: 'allow', git: 'allow', task: 'deny', devryan_task: 'deny', devryan_bot: 'deny', devryan_image: 'deny', devryan_write: 'deny', devryan_ask: 'deny', browser: 'deny', devryan_browser: 'deny', mcp: 'deny', external_directory: 'deny' },
+      permissions: permissions({ '*': 'deny', read: 'allow', write: 'allow', edit: 'allow', glob: 'allow', grep: 'allow', shell: 'allow', terminal: 'allow', git: 'allow', subagent: 'deny', devryan_task: 'deny', devryan_bot: 'deny', devryan_image: 'deny', devryan_write: 'deny', devryan_ask: 'deny', browser: 'deny', devryan_browser: 'deny', mcp: 'deny', external_directory: 'deny' }),
     },
     general: {
       mode: 'subagent',
-      permission: { '*': 'deny', read: 'allow', write: 'allow', edit: 'allow', glob: 'allow', grep: 'allow', bash: 'allow', terminal: 'allow', git: 'allow', task: 'deny', devryan_task: 'deny', devryan_bot: 'deny', devryan_image: 'deny', devryan_write: 'deny', devryan_ask: 'deny', browser: 'deny', devryan_browser: 'deny', mcp: 'deny', external_directory: 'deny' },
+      permissions: permissions({ '*': 'deny', read: 'allow', write: 'allow', edit: 'allow', glob: 'allow', grep: 'allow', shell: 'allow', terminal: 'allow', git: 'allow', subagent: 'deny', devryan_task: 'deny', devryan_bot: 'deny', devryan_image: 'deny', devryan_write: 'deny', devryan_ask: 'deny', browser: 'deny', devryan_browser: 'deny', mcp: 'deny', external_directory: 'deny' }),
     },
   },
 };

@@ -170,7 +170,7 @@ export const createTaskContextRuntime = (options) => {
   const operations = new Set();
   let lastPruneAt = null;
   let pruning = null;
-  const pruneDerived = async (protectedKey) => {
+  const pruneDerived = async (protectedKey, source) => {
     if (pruning) return pruning;
     if (lastPruneAt !== null && now() - lastPruneAt < 60_000) return;
     lastPruneAt = now();
@@ -185,6 +185,7 @@ export const createTaskContextRuntime = (options) => {
         if (!reason) continue;
         options.recordDiagnostic?.({ type: 'lifecycle', event: 'context_checkpoint_evicted', sessionID: record.sessionID,
           payload: { reason, bytes: Buffer.byteLength(JSON.stringify(record)), ageMs: now() - record.updatedAt } });
+        await options.authorizeWrite?.({ action: 'prune', ...source });
         await store.deleteRecord(key); count--; bytes -= Buffer.byteLength(JSON.stringify(record));
       }
     })().finally(() => { pruning = null; });
@@ -214,22 +215,32 @@ export const createTaskContextRuntime = (options) => {
       || b.score - a.score || b.createdAt - a.createdAt).slice(0, 8).map(({ score: _score, ...entry }) => entry);
   };
   const checkpoint = async ({ sessionID, directory, query = '' }) => {
-    const key = `${sessionID}:${directory}`;
-    if (pending.has(key)) return pending.get(key);
-    const operation = (async () => {
-      const context = await scope(sessionID, directory);
-      if (context.session.parentID) return { available: false, reason: 'child_uses_its_dispatch_brief' };
-      const data = await options.readTaskState(context);
-      const decisions = await readDecisions(context, query || textParts(data.anchor).map((part) => part.text).join(' ').slice(0, 2048));
-      const result = deriveTaskCheckpoint({ ...data, session: context.session, projectKey: context.projectKey,
-        now: now(), sanitizeText, decisions });
-      const recordKey = `task_${hash(key)}`;
-      await store.writeRecord(recordKey, result);
-      await pruneDerived(recordKey);
-      return { available: true, checkpoint: result };
-    })().finally(() => pending.delete(key));
-    pending.set(key, operation);
-    return operation;
+    const context = await scope(sessionID, directory);
+    if (context.session.parentID) return { available: false, reason: 'child_uses_its_dispatch_brief' };
+    const recordIdentity = `${sessionID}:${directory}`;
+    const key = JSON.stringify([sessionID, directory, context.projectKey, String(query || '')]);
+    let operation = pending.get(key);
+    if (!operation) {
+      operation = (async () => {
+        const data = await options.readTaskState(context);
+        const decisions = await readDecisions(context, query || textParts(data.anchor).map((part) => part.text).join(' ').slice(0, 2048));
+        return deriveTaskCheckpoint({ ...data, session: context.session, projectKey: context.projectKey,
+          now: now(), sanitizeText, decisions });
+      })();
+      pending.set(key, operation);
+      const release = () => { if (pending.get(key) === operation) pending.delete(key); };
+      void operation.then(release, release);
+    }
+    const result = await operation;
+    // Only canonical reads are shared. Each caller keeps its own captured
+    // authorization and rechecks scope after those reads, before its commit.
+    const current = await scope(sessionID, directory);
+    if (current.session.parentID || current.projectKey !== context.projectKey) throw fault('context_scope_changed');
+    const recordKey = `task_${hash(recordIdentity)}`;
+    await options.authorizeWrite?.({ action: 'checkpoint', sessionID, directory });
+    await store.writeRecord(recordKey, result);
+    await pruneDerived(recordKey, { sessionID, directory });
+    return { available: true, checkpoint: result };
   };
   const rememberDecision = async (input) => {
     const context = await scope(input.sessionID, input.directory);
@@ -259,6 +270,7 @@ export const createTaskContextRuntime = (options) => {
       const next = { ...current, updatedAt: now(), decisions: [...decisions, decision] };
       if (Buffer.byteLength(JSON.stringify(next)) > MAX_RECORD_BYTES) throw fault('project_decision_capacity_requires_review');
       if (!current.decisions.length && (await store.listRecords()).filter(({ record }) => record.kind === 'project').length >= 256) throw fault('project_context_capacity_requires_review');
+      await options.authorizeWrite?.({ action: 'remember_decision', sessionID: input.sessionID, directory: input.directory });
       await store.writeRecord(key, next);
       return decision;
     });

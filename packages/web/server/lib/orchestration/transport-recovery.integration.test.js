@@ -1,5 +1,12 @@
 import { expect, it } from 'vitest';
-import { createWebManagedOrchestrationRuntime } from './runtime.js';
+import { createWebManagedOrchestrationRuntime as createNativeOrchestrationRuntime } from './runtime.js';
+import { createNativeConsumerFixture } from '../opencode/test-native-consumer-client.js';
+
+const createWebManagedOrchestrationRuntime = options => createNativeOrchestrationRuntime({
+  ...options,
+  openCodeClient: createNativeConsumerFixture({ readFixture: options.fetchImpl, headers: options.getOpenCodeAuthHeaders,
+    baseUrl: () => options.buildOpenCodeUrl('/') }),
+});
 
 const failure = { name: 'UnknownError', data: { message: JSON.stringify({
   type: 'api_error', message: 'Claude Code returned an error result: API Error: Connection closed mid-response. The response above may be incomplete.\nSubprocess stderr: Warning: Custom betas are only available for API key users. Ignoring provided betas.',

@@ -225,6 +225,15 @@ export const createManagedTaskScheduler = (options = {}) => {
   const cancellationPromises = new Map();
   const cancellationOwners = new Map();
   const acknowledgementPromises = new Map();
+  // Restored from the native ledger before removal recovery. This is a dispatch
+  // fence, not a second durable deletion journal.
+  const sessionRemovalHolds = new Map();
+  const removalKey = (directory, sessionID) => `${directory}\0${sessionID}`;
+  const removalHeld = (task) => Boolean(task && [task.rootSessionId, task.childSessionId, task.resumeSessionId]
+    .some((id) => id && sessionRemovalHolds.has(removalKey(task.directory, id))));
+  const assertNotRemoving = (task) => {
+    if (removalHeld(task)) throw new ManagedOrchestrationError('session_removal_pending', 'Session removal has closed managed task admission');
+  };
   const handoffLocks = new Map();
   const taskWaiters = new Map();
   const resultActionWaiters = new Map();
@@ -988,7 +997,7 @@ export const createManagedTaskScheduler = (options = {}) => {
   // state when this task was an automatic follow-up, keeps the provider breaker
   // honest, and parks the task itself when it is eligible.
   const parkAutoResumeLocked = async (task, { planningDelayMs = 0 } = {}) => {
-    if (!autoResumeAttempt) return;
+    if (!autoResumeAttempt || removalHeld(task)) return;
     const envelope = resultEnvelopes.get(task.taskId);
     if (!envelope || envelope.autoResume !== null) return;
     const ownerKey = ownerKeyFor(task.rootSessionId);
@@ -1161,7 +1170,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       if (shutDown) return;
       const task = tasks.get(taskId);
       const previous = resultEnvelopes.get(taskId);
-      if (!task || !previous || previous.action !== null || !isAutoResumeActive(previous)) return;
+      if (!task || removalHeld(task) || !previous || previous.action !== null || !isAutoResumeActive(previous)) return;
       const state = previous.autoResume;
       if (state.cancelGeneration !== generation || state.state !== 'scheduled' || !state.target) return;
       const at = now();
@@ -1298,7 +1307,7 @@ export const createManagedTaskScheduler = (options = {}) => {
   };
 
   const launchTask = (task) => {
-    if (activeLaunches.has(task.taskId)) return;
+    if (activeLaunches.has(task.taskId) || removalHeld(task)) return;
     const leaseToken = task.leaseToken;
     const control = createTaskControl(task.taskId, leaseToken);
     const launch = (async () => {
@@ -1333,7 +1342,7 @@ export const createManagedTaskScheduler = (options = {}) => {
   };
 
   const observeRecoveredTask = (task) => {
-    if (activeLaunches.has(task.taskId)) return;
+    if (activeLaunches.has(task.taskId) || removalHeld(task)) return;
     const leaseToken = task.leaseToken;
     const control = createTaskControl(task.taskId, leaseToken);
     const observation = (async () => {
@@ -1375,6 +1384,7 @@ export const createManagedTaskScheduler = (options = {}) => {
   };
 
   const recoverTask = async (task) => {
+    if (removalHeld(task)) return;
     let reconciliation;
     try {
       reconciliation = await executor.reconcile(cloneTask(task));
@@ -1570,6 +1580,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       const queued = [...tasks.values()]
         .filter((task) => (
           task.status === 'queued'
+          && !removalHeld(task)
           && !cancellationOwners.has(task.taskId)
           && !(
             task.dispatchGroupId !== null
@@ -1586,6 +1597,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       let held = 0;
       for (const [index, previous] of queued.entries()) {
         const decision = await resolveLaunchAdmission(previous, activeCount, queuedCount);
+        if (removalHeld(previous)) continue;
         if (!decision.admit) {
           // FIFO: a held head blocks everything behind it, so nothing jumps the queue.
           held = queued.length - index;
@@ -1678,7 +1690,7 @@ export const createManagedTaskScheduler = (options = {}) => {
     const ordered = [...resultEnvelopes.values()].sort((left, right) => left.sequence - right.sequence);
     for (const envelope of ordered) {
       const task = tasks.get(envelope.taskId);
-      if (!task || !isAutoResumeActive(envelope)) continue;
+      if (!task || removalHeld(task) || !isAutoResumeActive(envelope)) continue;
       const state = envelope.autoResume;
       const ownerKey = ownerKeyFor(task.rootSessionId);
       const origin = resolveAutoResumeOriginLocked(task);
@@ -1896,6 +1908,7 @@ export const createManagedTaskScheduler = (options = {}) => {
   const submit = async (input) => {
     await ensureInitialized();
     const task = await runExclusive(async () => {
+      assertNotRemoving(input);
       const indexKey = idempotencyIndexKey(input.rootSessionId, input.idempotencyKey);
       const existingTaskId = idempotencyIndex.get(indexKey);
       if (existingTaskId) return cloneTask(tasks.get(existingTaskId));
@@ -2052,6 +2065,7 @@ export const createManagedTaskScheduler = (options = {}) => {
     terminalStatus = 'aborted',
     resumableOnUnconfirmedAbort = false,
     expectedTimeoutAt,
+    nativeSettled = false,
   } = {}) => {
     const existingCancellation = cancellationPromises.get(taskId);
     if (existingCancellation) return await existingCancellation;
@@ -2108,7 +2122,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       const abortController = new AbortController();
       try {
         const outcome = await raceAbortWithTimeout(
-          executor.abort(cloneTask(task), { signal: abortController.signal }),
+          executor.abort(cloneTask(task), { signal: abortController.signal, ...(nativeSettled ? { nativeSettled: true } : {}) }),
           () => abortController.abort(new Error(
             `Managed task abort exceeded ${abortTimeoutMs}ms`,
           )),
@@ -2574,7 +2588,8 @@ export const createManagedTaskScheduler = (options = {}) => {
     return [...tasks.values()]
       .filter((task) => {
         if (
-          task.mode !== 'orchestrator'
+          removalHeld(task)
+          || task.mode !== 'orchestrator'
           || task.dispatchGroupId === null
           || !isTerminalManagedTaskStatus(task.status)
         ) {
@@ -2638,7 +2653,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       }
 
       const envelope = resultEnvelopes.get(task.taskId);
-      const ready = task.mode === 'orchestrator'
+      const ready = !removalHeld(task) && task.mode === 'orchestrator'
         && task.dispatchGroupId !== null
         && isTerminalManagedTaskStatus(task.status)
         && envelope?.action === null
@@ -2681,7 +2696,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       const envelope = resultEnvelopes.get(scope.taskId);
       const source = task?.priorTaskId ? resultEnvelopes.get(task.priorTaskId) : null;
       const claim = providerRecoveryContinuationClaims.get(scope.taskId);
-      if (!task || task.rootSessionId !== scope.rootSessionId || task.directory !== scope.directory
+      if (!task || removalHeld(task) || task.rootSessionId !== scope.rootSessionId || task.directory !== scope.directory
         || task.mode !== 'orchestrator' || !task.dispatchGroupId || task.status !== 'completed'
         || envelope?.status !== 'completed' || envelope.action !== null
         || task.executionKind !== 'retry_in_place' || source?.action !== 'retry_in_place'
@@ -2773,6 +2788,7 @@ export const createManagedTaskScheduler = (options = {}) => {
 
   const acknowledgeResult = async (taskId, actionOptions = {}) => {
     await ensureInitialized();
+    assertNotRemoving(tasks.get(taskId));
     const action = actionOptions.action;
     if (!['continue', 'resume', 'retry', 'recover_in_place', 'retry_in_place', 'abandon'].includes(action)) {
       throw new ManagedOrchestrationError('invalid_result_action', 'result action is invalid');
@@ -3013,6 +3029,7 @@ export const createManagedTaskScheduler = (options = {}) => {
     }
     return await runExclusive(async () => {
       const task = tasks.get(taskId);
+      if (enabled) assertNotRemoving(task);
       const previous = resultEnvelopes.get(taskId);
       if (!task || !previous) {
         throw new ManagedOrchestrationError('result_not_found', `managed task result ${taskId} was not found`);
@@ -3089,6 +3106,76 @@ export const createManagedTaskScheduler = (options = {}) => {
       }
       return { cancelledTaskIds };
     });
+  };
+
+  // Constructor-only host call. The durable removal intent seals these IDs;
+  // only its real native/supervisor settlement permits skipping provider abort.
+  const cancelSessionsForRemoval = async ({ directory, sessions, intentID, phase, settled, absentSessions = [] }) => {
+    if (typeof directory !== 'string' || !directory || directory.includes('\0')
+      || typeof intentID !== 'string' || !intentID || intentID.includes('\0')
+      || !Array.isArray(sessions) || !sessions.length || sessions.length > 4096
+      || new Set(sessions).size !== sessions.length || sessions.some((id) => typeof id !== 'string' || !/^ses[A-Za-z0-9_-]+$/.test(id))
+      || !['fence', 'settle'].includes(phase)) {
+      throw new ManagedOrchestrationError('native_removal_scope_invalid', 'Exact native removal scope is required');
+    }
+    const keys = sessions.map((id) => removalKey(directory, id));
+    if (keys.some((key) => sessionRemovalHolds.has(key) && sessionRemovalHolds.get(key) !== intentID)
+      || (phase === 'settle' && keys.some((key) => sessionRemovalHolds.get(key) !== intentID))) {
+      throw new ManagedOrchestrationError('native_removal_scope_invalid', 'Native removal fence does not match');
+    }
+    if (phase === 'settle') {
+      // Absent IDs are separately proven by canonical native state, staged
+      // delete disposition and an empty active-lease query in the removal owner.
+      const live = settled === null ? [] : settled?.terminated === true && Array.isArray(settled.sessions) ? settled.sessions : null;
+      if (!live || !Array.isArray(absentSessions) || live.length + absentSessions.length !== sessions.length
+        || new Set([...live, ...absentSessions]).size !== sessions.length
+        || [...live, ...absentSessions].some((id) => !sessions.includes(id))) {
+        throw new ManagedOrchestrationError('native_removal_settlement_required', 'Native removal requires actual session termination or verified absence');
+      }
+    }
+    for (const key of keys) sessionRemovalHolds.set(key, intentID);
+    await ensureInitialized();
+    const selected = () => [...tasks.values()].filter((task) => task.directory === directory
+      && (sessions.includes(task.rootSessionId) || sessions.includes(task.childSessionId)));
+    await runExclusive(async () => {
+      for (const task of selected()) {
+        const envelope = resultEnvelopes.get(task.taskId);
+        if (envelope && isAutoResumeActive(envelope)) await disableAutoResumeLocked(task, envelope, 'session_deleted');
+        providerRecoveryContinuationClaims.delete(task.taskId);
+      }
+    });
+    // Earlier acknowledgements retain their own result/error; no new one can
+    // enter after the synchronous fence above, including automatic retries.
+    await Promise.allSettled(selected().map((task) => acknowledgementPromises.get(task.taskId)?.promise));
+    if (phase === 'fence') return { fenced: true, sessions: [...sessions] };
+    const taskIDs = selected().map((task) => task.taskId);
+    for (const taskID of taskIDs) {
+      const task = tasks.get(taskID);
+      if (task.childSessionId && !sessions.includes(task.childSessionId)) {
+        throw new ManagedOrchestrationError('native_removal_scope_invalid', 'Managed child is outside the settled removal subtree');
+      }
+      await cancelSingleTask(taskID, { reason: 'Session deleted', nativeSettled: true });
+      if (activeLaunches.has(taskID)) {
+        const result = await executor.abort(cloneTask(tasks.get(taskID)), { nativeSettled: true });
+        if (result?.aborted !== true) throw new ManagedOrchestrationError('native_removal_settlement_required', 'Managed observation did not stop');
+      }
+    }
+    const observations = await raceAbortWithTimeout(Promise.all(taskIDs.map((id) => activeLaunches.get(id))));
+    if (observations.timedOut || observations.error) throw new ManagedOrchestrationError('native_removal_settlement_required', 'Managed observations are still pending');
+    await runExclusive(async () => {
+      for (const task of selected()) {
+        if (!isTerminalManagedTaskStatus(task.status) || cancellationPromises.has(task.taskId)
+          || acknowledgementPromises.has(task.taskId) || activeLaunches.has(task.taskId)) {
+          throw new ManagedOrchestrationError('native_removal_settlement_required', 'Managed task is still pending');
+        }
+        const envelope = resultEnvelopes.get(task.taskId);
+        if (envelope?.action === null) await commitEnvelopeUpdateLocked(envelope,
+          { ...envelope, action: 'abandon', acknowledgedAt: now(), followUpTaskId: null });
+        providerRecoveryContinuationClaims.delete(task.taskId);
+      }
+    });
+    await flush();
+    return { settled: true, sessions: [...sessions], taskIDs };
   };
 
   const confirmAgentHandoff = async (input) => {
@@ -3275,17 +3362,67 @@ export const createManagedTaskScheduler = (options = {}) => {
     acknowledgeResult,
     setResultAutoResume,
     cancelAutoResumeForSession,
+    cancelSessionsForRemoval,
     shutdown,
     releaseModeLease,
     flush,
     getTask(taskId) {
       return cloneTask(tasks.get(taskId));
     },
+    verifyTaskDispatch(taskId, leaseToken) {
+      return runExclusive(() => {
+        const task = tasks.get(taskId);
+        if (!initialized || shutDown || removalHeld(task) || cancellationPromises.has(taskId) || cancellationOwners.has(taskId)
+          || !task || task.owner !== 'devryan' || !leaseToken || task.leaseToken !== leaseToken
+          || (task.status !== 'starting' && task.status !== 'running')) {
+          throw new ManagedOrchestrationError('native_managed_task_lease_invalid', 'Managed dispatch has no current task lease');
+        }
+        return cloneTask(task);
+      });
+    },
     listTasks({ rootSessionId } = {}) {
       return [...tasks.values()]
         .filter((task) => !rootSessionId || task.rootSessionId === rootSessionId)
         .sort(compareManagedTaskQueueOrder)
         .map(cloneTask);
+    },
+    async withNativePromptContext(input, action) {
+      await initialize();
+      return runExclusive(async () => {
+        const current = () => {
+          if (!initialized || shutDown || !input || typeof input.rootSessionId !== 'string' || !input.rootSessionId
+            || typeof input.directory !== 'string' || !input.directory || typeof input.authorize !== 'function'
+            || typeof action !== 'function') throw new ManagedOrchestrationError('native_prompt_context_unavailable', 'Native prompt context is unavailable');
+          const scoped = [...tasks.values()].filter(task => task.rootSessionId === input.rootSessionId);
+          if (scoped.some(task => task.directory !== input.directory || removalHeld(task)))
+            throw new ManagedOrchestrationError('native_prompt_context_fenced', 'Native prompt context scope is fenced');
+          return scoped;
+        };
+        await input.authorize();
+        const scoped = current(), pending = new Map();
+        const envelopes = scoped.map(task => resultEnvelopes.get(task.taskId)).filter(Boolean);
+        const value = await action({ tasks: scoped.map(cloneTask), envelopes: envelopes.map(envelope => structuredClone(envelope)),
+          markPromptObserved: ({ taskId, attempt, sequence }) => {
+            const task = scoped.find(task => task.taskId === taskId), envelope = resultEnvelopes.get(taskId);
+            if (!task || !envelope || envelope.attempt !== attempt || task.attempt !== attempt
+              || envelope.sequence !== sequence || envelope.rootSessionId !== input.rootSessionId
+              || envelope.directory !== input.directory || !isTerminalManagedTaskStatus(task.status))
+              throw new ManagedOrchestrationError('native_prompt_context_revision_conflict', 'Native prompt context revision changed');
+            const next = { ...envelope, promptObserved: { attempt, sequence, observedAt: now() } };
+            validateManagedTaskResultEnvelope(next); pending.set(taskId, next);
+          },
+        });
+        await input.authorize(); current();
+        if (pending.size) {
+          const previous = new Map([...pending.keys()].map(taskId => [taskId, resultEnvelopes.get(taskId)]));
+          for (const [taskId, envelope] of pending) resultEnvelopes.set(taskId, envelope);
+          try { await persistLocked(); }
+          catch (error) { for (const [taskId, envelope] of previous) resultEnvelopes.set(taskId, envelope); throw error; }
+        }
+        // Prompt observation does not alter disposition, collection cursor,
+        // auto-resume, waiter publication or the actual managed result receipt.
+        return value;
+      });
     },
     getSnapshot() {
       return snapshotLocked();

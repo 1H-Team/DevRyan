@@ -55,11 +55,17 @@ export async function verifySessionExecutionLauncher({ launcher, platform = proc
   } catch { verifiedLaunchers.delete(cacheKey); return false; }
 }
 
-export function sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory, socketDirectory, writableDirectories = [], chromiumRendezvous = false }) {
+const validateDeniedReadDirectories = (directories) => {
+  if (!Array.isArray(directories) || directories.length > 32 || directories.some(directory =>
+    typeof directory !== 'string' || !path.isAbsolute(directory) || /[\u0000-\u001f]/.test(directory))) throw error('invalid_execution_path');
+};
+
+export function sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory, socketDirectory, writableDirectories = [], deniedReadDirectories = [], chromiumRendezvous = false }) {
+  validateDeniedReadDirectories(deniedReadDirectories);
   const writeThrough = writableDirectories.map((directory) => `(require-not (subpath ${sbString(directory)}))`).join(' ');
   return `(version 1)
 (allow default)
-(deny file-write* (require-all (require-not (subpath ${sbString(viewDirectory)})) (require-not (subpath ${sbString(scratchDirectory)})) ${auxiliaryDirectory ? `(require-not (subpath ${sbString(auxiliaryDirectory)}))` : ''} ${socketDirectory ? `(require-not (subpath ${sbString(socketDirectory)}))` : ''} ${writeThrough} (require-not (literal "/dev/null"))))
+${deniedReadDirectories.map(directory => `(deny file-read* (subpath ${sbString(directory)}))\n`).join('')}(deny file-write* (require-all (require-not (subpath ${sbString(viewDirectory)})) (require-not (subpath ${sbString(scratchDirectory)})) ${auxiliaryDirectory ? `(require-not (subpath ${sbString(auxiliaryDirectory)}))` : ''} ${socketDirectory ? `(require-not (subpath ${sbString(socketDirectory)}))` : ''} ${writeThrough} (require-not (literal "/dev/null"))))
 (deny mach-lookup)
 ${chromiumRendezvous ? `; Headless Chromium's helpers fetch their IPC ports from the browser process
 ; that launched them; its rendezvous server hands ports only to its own
@@ -124,17 +130,53 @@ export const ownedPrivateDirectory = async (directory) => {
   if (!stat.isDirectory() || stat.uid !== process.getuid() || (stat.mode & 0o777) !== 0o700) throw error('invalid_execution_path');
 };
 
-async function prepareExecutionSocketDirectory(lease) {
-  const directory = executionSocketDirectory(lease);
+async function prepareExecutionSocketDirectory(lease, requested) {
+  // Explicit null is the repository-local/native-test mode: no shared /tmp
+  // directory is created or later removed.
+  if (requested === null) return null;
+  if (requested !== undefined && (!path.isAbsolute(requested) || requested.includes('\0'))) throw error('invalid_execution_path');
+  const directory = requested ?? executionSocketDirectory(lease);
   if (!directory) return null;
+  if (requested !== undefined) await validateOwnedSocketPath(lease, directory, false);
   await ownedPrivateDirectory(path.dirname(directory));
   await ownedPrivateDirectory(directory);
+  if (requested !== undefined) await validateOwnedSocketPath(lease, directory, true);
   return directory;
 }
 
-export async function removeExecutionSocketDirectory(lease) {
-  const directory = executionSocketDirectory(lease);
-  if (directory) await fs.rm(directory, { recursive: true, force: true });
+const validateOwnedSocketPath = async (lease, directory, exists) => {
+  if (!path.isAbsolute(lease?.viewDirectory ?? '') || !path.isAbsolute(directory ?? '') || directory.includes('\0')) throw error('invalid_execution_path');
+  const root = await fs.realpath(path.dirname(lease.viewDirectory));
+  if (directory !== path.resolve(directory) || !directory.startsWith(`${root}${path.sep}`)) throw error('invalid_execution_path');
+  if (!exists) {
+    if (await fs.realpath(path.dirname(directory)) !== path.dirname(directory)) throw error('invalid_execution_path');
+    return;
+  }
+  const stat = await fs.lstat(directory).catch(cause => { if (cause.code === 'ENOENT') return null; throw cause; });
+  if (!stat) return;
+  if (!stat.isDirectory() || stat.uid !== process.getuid() || (stat.mode & 0o777) !== 0o700 || await fs.realpath(directory) !== directory) throw error('invalid_execution_path');
+};
+
+export async function removeExecutionSocketDirectory(lease, socketDirectory = undefined) {
+  if (socketDirectory === undefined && path.isAbsolute(lease?.viewDirectory ?? '')) {
+    const policy = path.join(path.dirname(lease.viewDirectory), 'no-execution-socket.json');
+    const stat = await fs.lstat(policy).catch(cause => { if (cause.code === 'ENOENT') return null; throw cause; });
+    if (stat) {
+      if (!stat.isFile() || stat.size > 4096) throw error('invalid_execution_socket_policy');
+      const value = JSON.parse(await fs.readFile(policy, 'utf8'));
+      if (value.version !== 1) throw error('invalid_execution_socket_policy');
+      if (value.disabled === true && Object.keys(value).every(key => ['version', 'disabled'].includes(key))) return;
+      if (typeof value.directory !== 'string' || Object.keys(value).some(key => !['version', 'directory'].includes(key))) throw error('invalid_execution_socket_policy');
+      await validateOwnedSocketPath(lease, value.directory, true);
+      await fs.rm(value.directory, { recursive: true, force: true });
+      return;
+    }
+  }
+  const directory = socketDirectory === undefined ? executionSocketDirectory(lease) : socketDirectory;
+  if (directory) {
+    if (socketDirectory !== undefined && directory !== executionSocketDirectory(lease)) await validateOwnedSocketPath(lease, directory, true);
+    await fs.rm(directory, { recursive: true, force: true });
+  }
 }
 
 /** Best effort: removes socket directories a crashed host never cleaned. Only
@@ -162,15 +204,28 @@ const ledgerStorageOf = (viewDirectory) => {
   return path.basename(views) === 'views' ? path.dirname(path.dirname(views)) : path.dirname(viewDirectory);
 };
 
-export async function prepareSessionExecution({ launcher, lease }) {
+export async function prepareSessionExecution({ launcher, lease, socketDirectory: requestedSocketDirectory, workerBrowsers = true, deniedReadDirectories = [] }) {
   if (!['darwin', 'linux', 'win32'].includes(process.platform)) throw error('mutation_platform_unsupported');
   if (!path.isAbsolute(launcher ?? '')) throw error('mutation_runtime_unsupported');
+  validateDeniedReadDirectories(deniedReadDirectories);
+  if (deniedReadDirectories.length && process.platform !== 'darwin') throw error('mutation_platform_unsupported');
+  const deniedRoots = await Promise.all(deniedReadDirectories.map(async directory => {
+    const resolved = await fs.realpath(directory);
+    if (!(await fs.stat(resolved)).isDirectory()) throw error('invalid_execution_path');
+    return resolved;
+  }));
   const viewDirectory = await fs.realpath(lease.viewDirectory);
   const root = path.dirname(viewDirectory), scratchDirectory = path.join(root, 'scratch');
   const workingDirectory = await fs.realpath(lease.workingDirectory ?? viewDirectory);
   const relative = path.relative(viewDirectory, workingDirectory);
   if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw error('invalid_execution_path');
   await fs.mkdir(scratchDirectory, { recursive: true, mode: 0o700 });
+  // Ledger/restart cleanup receives only the durable lease, not this call's
+  // constructor options. Persist explicit no-socket selection in its owned
+  // parent so that cleanup never probes the legacy global socket directory.
+  const noSocketPolicy = path.join(root, 'no-execution-socket.json');
+  if (requestedSocketDirectory === null) await writeFileAtomic(noSocketPolicy, JSON.stringify({ version: 1, disabled: true }));
+  else await fs.rm(noSocketPolicy, { force: true });
   // Seatbelt matches resolved paths; dependency overlays link caches here.
   const requestedAuxiliary = lease.auxiliaryDirectory ? path.resolve(lease.auxiliaryDirectory) : scratchDirectory;
   await fs.mkdir(requestedAuxiliary, { recursive: true, mode: 0o700 });
@@ -178,7 +233,7 @@ export async function prepareSessionExecution({ launcher, lease }) {
   // Session-scoped tool calls on macOS may launch headless Chromium (a
   // project's Playwright check); provider transports never can.
   const sessionScoped = process.platform === 'darwin' && typeof lease.scope?.sessionID === 'string' && lease.scope.sessionID.length > 0;
-  const browsers = sessionScoped && workerBrowsersEnabled();
+  const browsers = sessionScoped && workerBrowsers && workerBrowsersEnabled();
   // A detached child's group can be signalled (see native/session-group-darwin.h).
   const groupSignals = sessionScoped && workerGroupSignalsEnabled();
   if (process.platform === 'darwin') {
@@ -187,7 +242,10 @@ export async function prepareSessionExecution({ launcher, lease }) {
     await fs.writeFile(path.join(scratchDirectory, '.bash-env'), shellEnvironment, { mode: 0o600 });
   }
   const nodeEnvironment = browsers || groupSignals ? await workerNodeEnvironment({ launcher, scratchDirectory, browsers, groupSignals }) : {};
-  const socketDirectory = await prepareExecutionSocketDirectory(lease);
+  const socketDirectory = await prepareExecutionSocketDirectory(lease, requestedSocketDirectory);
+  if (requestedSocketDirectory !== undefined && requestedSocketDirectory !== null) {
+    await writeFileAtomic(noSocketPolicy, JSON.stringify({ version: 1, directory: socketDirectory }));
+  }
   const sessionTemporaryDirectory = await prepareSessionTemporaryDirectory(auxiliaryDirectory, lease);
   // Only the macOS profile grants write-through; the Linux and Windows
   // launchers are not approved for production and keep inputs read-only.
@@ -197,10 +255,10 @@ export async function prepareSessionExecution({ launcher, lease }) {
   }) : [];
   const profile = path.join(root, `sandbox-${randomUUID()}.sb`);
   await writeFileAtomic(profile, sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory, socketDirectory, writableDirectories,
-    chromiumRendezvous: browsers }));
+    deniedReadDirectories: deniedRoots, chromiumRendezvous: browsers }));
   const cancelEvent = `Local\\DevRyan-execution-${randomUUID()}`;
   return { launcher, arguments: [viewDirectory, scratchDirectory, profile, path.join(root, 'termination.json'), '--'],
-    cwd: workingDirectory, profile, scratchDirectory,
+    cwd: workingDirectory, profile, scratchDirectory, socketDirectory,
     environment: { DEVRYAN_EXECUTION_WORKER: '1', HOME: scratchDirectory,
       DEVRYAN_EXECUTION_CWD: lease.logicalWorkingDirectory ?? workingDirectory, DEVRYAN_EXECUTION_CANCEL_EVENT: cancelEvent,
       DEVRYAN_EXECUTION_CACHE: auxiliaryDirectory,
@@ -365,13 +423,13 @@ const workerLanguageServerEnvironment = () => process.env.DEVRYAN_WORKER_LSP_DOW
 
 /** Starts only the reviewed native launcher. Commands never inherit host fds
  * or gain write access to the ledger, original project, or dependencies. */
-export async function startSessionExecution({ launcher, lease, command, args = [], env = {}, signal, onOutput, input, interactive = false }) {
+export async function startSessionExecution({ launcher, lease, command, args = [], env = {}, signal, onOutput, input, interactive = false, socketDirectory, workerBrowsers = true, deniedReadDirectories = [] }) {
   if (typeof command !== 'string' || !command || !Array.isArray(args)
     || args.some((arg) => typeof arg !== 'string' || arg.includes('\0'))) throw error('invalid_execution_command');
   signal?.throwIfAborted();
-  const prepared = await prepareSessionExecution({ launcher, lease });
+  const prepared = await prepareSessionExecution({ launcher, lease, socketDirectory, workerBrowsers, deniedReadDirectories });
   if (signal?.aborted) {
-    await fs.rm(prepared.profile, { force: true }); await removeExecutionSocketDirectory(lease).catch(() => {});
+    await fs.rm(prepared.profile, { force: true }); await removeExecutionSocketDirectory(lease, prepared.socketDirectory).catch(() => {});
     signal.throwIfAborted();
   }
   const child = spawn(launcher, [...prepared.arguments, command, ...args], {
@@ -412,7 +470,7 @@ export async function startSessionExecution({ launcher, lease, command, args = [
   }).finally(async () => {
     signal?.removeEventListener('abort', cancel);
     await fs.rm(prepared.profile, { force: true });
-    await removeExecutionSocketDirectory(lease).catch(() => {});
+    await removeExecutionSocketDirectory(lease, prepared.socketDirectory).catch(() => {});
   });
   return { pid: child.pid, child, cancel, result };
 }
@@ -453,4 +511,28 @@ export async function startReadOnlySessionExecution({ launcher, storage, environ
   });
   void result.catch(() => {});
   return { ...handle, lease, result };
+}
+
+/** Bounded host discovery helpers own no agent contribution. The supervisor
+ * remains the termination authority, including timeout/output overflow. */
+export async function runReadOnlySessionExecution({ maxOutputBytes = 1024 * 1024, maxErrorBytes = 64 * 1024,
+  onStarted, onTermination, ...input }) {
+  for (const bound of [maxOutputBytes, maxErrorBytes]) if (!Number.isSafeInteger(bound) || bound < 0 || bound > 1024 * 1024) throw error('invalid_execution_output_bound');
+  const controller = new AbortController();
+  const buffers = { stdout: [], stderr: [] }, sizes = { stdout: 0, stderr: 0 };
+  let overflow = false;
+  const handle = await startReadOnlySessionExecution({ ...input,
+    signal: AbortSignal.any([controller.signal, ...(input.signal ? [input.signal] : [])]),
+    onOutput: ({ stream, data }) => {
+      const limit = stream === 'stdout' ? maxOutputBytes : maxErrorBytes;
+      if (sizes[stream] + data.length > limit) {
+        overflow = true; controller.abort(error('execution_output_overflow')); return;
+      }
+      sizes[stream] += data.length; buffers[stream].push(Buffer.from(data));
+    } });
+  try { onStarted?.(handle); } catch { handle.cancel(); }
+  const receipt = await handle.result;
+  try { onTermination?.(receipt); } catch { /* Observer only. */ }
+  if (!receipt.confined || receipt.cancelled || overflow) throw error(overflow ? 'execution_output_overflow' : receipt.cancelled ? 'execution_cancelled' : 'mutation_runtime_unsupported');
+  return { receipt, stdout: Buffer.concat(buffers.stdout), stderr: Buffer.concat(buffers.stderr) };
 }

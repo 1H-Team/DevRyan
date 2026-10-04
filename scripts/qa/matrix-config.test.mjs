@@ -10,6 +10,54 @@ const config = () => ({ schemaVersion: 1, evidenceRoot: '.cache/qa/matrix-test',
   agent:'builder', planMode:true, variant:null, scenarioIds:['project-work','compaction-natural'], repetitions:2, timeoutMs:60_000,
 }] });
 
+test('actual-backend synthetic cells are distinct from wire and saved-provider admission', () => {
+  const value = config(); value.cells[0] = { ...value.cells[0], transport: 'runtime-fixture', providerId: 'devryan-smoke',
+    modelId: 'smoke-write', planMode: false, variant: 'high', scenarioIds: ['core-journey'] };
+  assert.equal(validateQaMatrixConfig(value).cells[0].transport, 'runtime-fixture');
+  for (const patch of [{ providerId: 'openai' }, { modelId: 'other' }, { variant: null }, { planMode: true },
+    { scenarioIds: ['project-work'] }, { mirrorPersonalSetup: true }, { preserveOrchestration: true }]) {
+    const invalid = structuredClone(value); Object.assign(invalid.cells[0], patch); assert.throws(() => validateQaMatrixConfig(invalid));
+  }
+  const live = structuredClone(value); live.cells[0].transport = 'live'; assert.throws(() => validateQaMatrixConfig(live));
+  const wire = structuredClone(value); wire.cells[0].transport = 'fixture'; assert.throws(() => validateQaMatrixConfig(wire));
+});
+
+test('explicit desktop themes retain distinct cell identities and mobile keeps its existing sweep',()=>{
+  const value=config();value.cells= ['light','dark'].map(theme=>({...value.cells[0],id:`desktop-${theme}`,theme,scenarioIds:['core-journey']}));
+  const runs=expandQaMatrix(value);
+  assert.deepEqual(runs.map(row=>[row.runId,row.theme]),[['desktop-light-core-journey-1','light'],['desktop-light-core-journey-2','light'],['desktop-dark-core-journey-1','dark'],['desktop-dark-core-journey-2','dark']]);
+  assert.equal(new Set(runs.map(row=>row.evidenceDirectory)).size,4);
+  for(const theme of ['system','unknown',null,undefined]){
+    const invalid=structuredClone(value);invalid.cells[0].theme=theme;
+    assert.throws(()=>validateQaMatrixConfig(invalid),/desktop theme/);
+  }
+  const mobile=structuredClone(value);mobile.cells[0].runtime='web';mobile.cells[0].scenarioIds=['mobile'];
+  assert.throws(()=>validateQaMatrixConfig(mobile),/mobile owns its two-theme sweep/);
+  delete mobile.cells[0].theme;
+  assert.equal(expandQaMatrix(mobile)[0].theme,undefined);
+  const duplicate=structuredClone(value);duplicate.cells[1].id=duplicate.cells[0].id;
+  assert.throws(()=>validateQaMatrixConfig(duplicate),/IDs must be unique/);
+});
+
+test('matrix expands explicit personal setup mirroring only with a preserved live graph', () => {
+  const value = config();
+  value.cells[0].preserveOrchestration = true;
+  value.cells[0].mirrorPersonalSetup = true;
+  assert.deepEqual(expandQaMatrix(value)[0].mirrorPersonalSetup, { plugins: true, skills: true, mcp: 'definitions' });
+  value.cells[0].mirrorPersonalSetup = { skills: true, mcp: 'live' };
+  const runs = expandQaMatrix(value);
+  assert.ok(runs.every(run => run.mirrorPersonalSetup.skills && !run.mirrorPersonalSetup.plugins
+    && run.mirrorPersonalSetup.mcp === 'live' && Object.isFrozen(run.mirrorPersonalSetup)));
+  for (const patch of [{ preserveOrchestration: false }, { mirrorPersonalSetup: { plugins: 'yes' } },
+    { mirrorPersonalSetup: { mcp: 'all' } }, { mirrorPersonalSetup: { credentials: true } }]) {
+    const invalid = structuredClone(value); Object.assign(invalid.cells[0], patch);
+    assert.throws(() => validateQaMatrixConfig(invalid), { code: 'invalid_qa_matrix' });
+  }
+  const fixture = config(); Object.assign(fixture.cells[0], { runtime: 'web', transport: 'fixture', providerId: 'fixture',
+    modelId: 'fixture-model', scenarioIds: ['core-journey'], mirrorPersonalSetup: true });
+  assert.throws(() => validateQaMatrixConfig(fixture), /requires live transport/);
+});
+
 test('matrix expands explicit pinned selections without losing provider-default null', () => {
   const normalized = validateQaMatrixConfig(config());
   assert.equal(normalized.cells[0].variant, null);
@@ -20,7 +68,7 @@ test('matrix expands explicit pinned selections without losing provider-default 
 });
 
 test('matrix rejects unsupported runtime/provider/phase combinations and missing thinking intent', () => {
-  for (const patch of [{runtime:'vscode'}, {runtime:'web'}, {transport:'fixture'}, {providerId:'google'}, {agent:'plan'},
+  for (const patch of [{runtime:'vscode'}, {transport:'fixture'}, {providerId:'google'}, {agent:'plan'},
     {planMode:'true'}, {variant:undefined}, {variant:''}, {repetitions:0}, {timeoutMs:Infinity}, {modelId:'../model'}]) {
     const value = config(); Object.assign(value.cells[0],patch);
     assert.throws(() => validateQaMatrixConfig(value), {code:'invalid_qa_matrix'});
@@ -106,4 +154,13 @@ test('preserved orchestration is live-only and cannot silently combine with role
   delete value.cells[0].agentAssignments;
   value.cells[0].preserveOrchestration = 'true';
   assert.throws(() => validateQaMatrixConfig(value), /requires live transport/);
+});
+
+test('natural compaction admits live web with the same pinned selection and rejects fixture transports', () => {
+  const value = config(); value.cells[0].runtime = 'web';
+  assert.equal(expandQaMatrix(value).find(row => row.scenarioId === 'compaction-natural').runtime, 'web');
+  for (const transport of ['fixture', 'runtime-fixture']) {
+    const invalid = structuredClone(value); invalid.cells[0].transport = transport;
+    assert.throws(() => validateQaMatrixConfig(invalid));
+  }
 });

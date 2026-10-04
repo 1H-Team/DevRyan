@@ -45,6 +45,7 @@ export const createWebHarnessRuntime = (options = {}) => {
   let evidenceRuntime = null;
   let commandDeadlineRuntime = null;
   let primaryRecoveryRuntime = null;
+  let nativeSessionIdleObserver = null;
   let sessionChangeHost = null;
   let controlObserver = null;
   let taskContextRuntime = null;
@@ -191,7 +192,7 @@ export const createWebHarnessRuntime = (options = {}) => {
 
   const drain = async () => {
     beginDrain();
-    await Promise.allSettled([
+    const results = await Promise.allSettled([
       journal.close(),
       worktreeRuntime?.drain?.(),
       evidenceRuntime?.drain?.(),
@@ -202,6 +203,8 @@ export const createWebHarnessRuntime = (options = {}) => {
       worktreeStore.drain(),
       commandDeadlineStore.drain(),
     ]);
+    const failures = results.filter(result => result.status === 'rejected').map(result => result.reason);
+    if (failures.length) throw new AggregateError(failures, 'Harness stores did not finish draining');
   };
 
   return {
@@ -221,6 +224,12 @@ export const createWebHarnessRuntime = (options = {}) => {
     record,
     recordOpenCodeEvent(payload, directory = null) {
       primaryRecoveryRuntime?.observe(payload);
+      if (nativeSessionIdleObserver && payload?.type === 'session.status' && payload.properties?.status?.type === 'idle'
+        && typeof payload.properties.sessionID === 'string' && typeof directory === 'string') {
+        void Promise.resolve().then(() => nativeSessionIdleObserver?.({ sessionID: payload.properties.sessionID, directory }))
+          .catch(error => record({ type: 'log', event: 'native_todo_continuation_failed', sessionID: payload.properties.sessionID,
+            payload: { code: typeof error?.code === 'string' ? error.code : 'native_continuation_unavailable' } }));
+      }
       void sessionChangeHost?.observe(payload, directory).catch((error) => record({ type: 'log', event: 'session_changes_observation_failed',
         sessionID: payload?.properties?.part?.sessionID ?? payload?.properties?.sessionID ?? null,
         payload: { callID: payload?.properties?.part?.callID ?? null, code: typeof error?.code === 'string' ? error.code : 'capture_unavailable' },
@@ -251,6 +260,7 @@ export const createWebHarnessRuntime = (options = {}) => {
     setEvidenceRuntime,
     setCommandDeadlineRuntime,
     setPrimaryRecoveryRuntime(runtime) { primaryRecoveryRuntime = runtime; },
+    setNativeSessionIdleObserver(observer) { nativeSessionIdleObserver = observer; },
     // Receives journaled session controls (with the response, so a rejected
     // request can be withdrawn). Wired by the server, never by a request.
     setControlObserver(observer) { controlObserver = typeof observer === 'function' ? observer : null; },

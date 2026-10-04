@@ -12,6 +12,9 @@ import { createQaUiDriver } from '../qa/ui-driver.mjs';
 import { reservePort, startOwnedProcess } from '../qa/process.mjs';
 import { loadQaPackagedArtifact } from '../qa/packaged-artifact.mjs';
 import { prepareQaFixtureProfile } from '../qa/fixture-scenarios.mjs';
+import { createQaHostLaunchEnvironment } from '../qa/launch-environment.mjs';
+import { resolveQaFixtureGeneration } from '../qa/runtime-target.mjs';
+export { compareRuntimeUpgradeSummaries } from './runtime-upgrade-comparison.mjs';
 import { assertPerfCleanupComplete, capturePerfJournal, observePerfBrowserErrors } from './electron-run-evidence.mjs';
 import {
   assertStartupMode,
@@ -30,10 +33,7 @@ import {
   runInteractiveScenario,
 } from './electron-interactive-benchmark.mjs';
 
-import {
-  createLoopbackOpenCodeFixture,
-  PERF_PARENT_SESSION_ID,
-} from './loopback-opencode-fixture.mjs';
+import { PERF_PARENT_SESSION_ID } from './fixture-session-seeds.mjs';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, '../..');
@@ -63,6 +63,7 @@ export const parseBenchmarkArguments = (argv) => {
     electronBinary: null,
     packageEvidence: null,
     baseline: null,
+    generation: undefined,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -81,6 +82,7 @@ export const parseBenchmarkArguments = (argv) => {
     else if (flag === '--electron-binary') options.electronBinary = path.resolve(repositoryRoot, value);
     else if (flag === '--package-evidence') options.packageEvidence = path.resolve(repositoryRoot, value);
     else if (flag === '--baseline') options.baseline = path.resolve(repositoryRoot, value);
+    else if (flag === '--generation') options.generation = value;
     else throw new Error(`Unknown benchmark flag: ${flag}`);
   }
 
@@ -94,6 +96,7 @@ export const parseBenchmarkArguments = (argv) => {
       throw new Error(`Unknown scenario ${JSON.stringify(scenario)}; expected ${[...VALID_SCENARIOS].join(', ')}`);
     }
   }
+  options.generation = resolveQaFixtureGeneration(options.generation);
   return options;
 };
 
@@ -238,27 +241,38 @@ const displaySignature = ({ visibilityState, innerWidth, innerHeight, outerWidth
   visibilityState, innerWidth, innerHeight, outerWidth, outerHeight, devicePixelRatio, screen,
 });
 
-export const lifecycleProtocolIdentity = async (readProtocolFile = file => readFile(path.join(scriptDirectory, file)), startupMode = 'natural') => {
+export const fixtureProtocolIdentity = async (generation = 2, readProtocolFile = file => readFile(path.join(scriptDirectory, file))) => {
+  const selected = resolveQaFixtureGeneration(generation);
+  const files = ['fixture-session-seeds.mjs', 'loopback-opencode-fixtures.mjs',
+    'loopback-opencode-v2-fixture.mjs', 'opencode-v2-wire.mjs',
+      '../../packages/web/server/lib/opencode/v2/openapi-2.0.20.json'];
+  const hash = createHash('sha256').update(JSON.stringify({ generation: selected }));
+  for (const file of files) hash.update(file).update(await readProtocolFile(file));
+  return hash.digest('hex');
+};
+
+export const lifecycleProtocolIdentity = async (readProtocolFile = file => readFile(path.join(scriptDirectory, file)), startupMode = 'natural', generation = 2) => {
   assertStartupMode(startupMode);
   const hash = createHash('sha256');
   hash.update(JSON.stringify({ startupMode }));
-  for (const file of ['electron-resource-benchmark.mjs', 'electron-lifecycle-benchmark.mjs', 'electron-run-evidence.mjs', 'loopback-opencode-fixture.mjs',
+  hash.update(await fixtureProtocolIdentity(generation, readProtocolFile));
+  for (const file of ['electron-resource-benchmark.mjs', 'electron-lifecycle-benchmark.mjs', 'electron-run-evidence.mjs', 'fixture-session-seeds.mjs',
     '../journal.mjs', '../qa/cdp.mjs', '../qa/ui-driver.mjs', '../qa/host-readiness.mjs', '../qa/history-scroll.mjs', '../qa/fixture-scenarios.mjs',
     '../qa/packaged-artifact.mjs', '../qa/artifact-evidence.mjs', '../qa/project-fixture.mjs', '../qa/isolated-home.mjs',
-    '../qa/process.mjs', '../qa/process-ownership.mjs', '../dev-child-utils.mjs']) {
+    '../qa/process.mjs', '../qa/process-ownership.mjs', '../qa/runtime-target.mjs', '../qa/launch-environment.mjs', '../dev-child-utils.mjs']) {
     hash.update(file).update(await readProtocolFile(file));
   }
   return hash.digest('hex');
 };
 
 export const interactiveProtocolIdentity = async (startupMode = 'natural', interactiveScope = 'full',
-  readProtocolFile = file => readFile(path.join(scriptDirectory, file))) => {
+  readProtocolFile = file => readFile(path.join(scriptDirectory, file)), generation = 2) => {
   assertStartupMode(startupMode);
   assertInteractiveScope(interactiveScope);
   return createHash('sha256').update(JSON.stringify({ startupMode, interactiveScope }))
-    .update(await lifecycleProtocolIdentity(readProtocolFile, startupMode))
+    .update(await lifecycleProtocolIdentity(readProtocolFile, startupMode, generation))
     .update(await readProtocolFile('electron-interactive-benchmark.mjs'))
-    .update(await readProtocolFile('loopback-opencode-fixture.mjs'))
+    .update(await readProtocolFile('fixture-session-seeds.mjs'))
     .digest('hex');
 };
 
@@ -337,6 +351,8 @@ const aggregateMemoryRuns = (runs) => Object.fromEntries(['initial', 'loaded', '
 ]));
 
 const assertMatchingStartupModes = (baseline, current) => {
+  if ((baseline.fixtureGeneration ?? 2) !== (current.fixtureGeneration ?? 2)) throw new Error('Benchmark comparison requires matching fixtureGeneration');
+  resolveQaFixtureGeneration(baseline.fixtureGeneration ?? 2);
   const before = baseline.startupMode === undefined ? 'natural' : baseline.startupMode;
   const after = current.startupMode === undefined ? 'natural' : current.startupMode;
   assertStartupMode(before);
@@ -399,22 +415,18 @@ export const compareBenchmarkSummaries = (baseline, current) => {
   return { passed: checks.every((check) => check.passed), checks };
 };
 
-const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, packageEvidence, warmupMs, measureMs, startupMode, interactiveScope }) => {
+const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, packageEvidence, warmupMs, measureMs, startupMode, interactiveScope, generation }) => {
   const runDirectory = path.join(scenarioDirectory, `run-${runIndex}`);
   const fixtureDirectory = path.join(runDirectory, 'workspace');
   await mkdir(fixtureDirectory, { recursive: true });
   execFileSync('git', ['init', '--quiet', fixtureDirectory], { stdio: 'pipe' });
-  const profile = packageEvidence ? await prepareQaFixtureProfile({ runtimeRoot: path.join(runDirectory, 'runtime'), workspace: fixtureDirectory,
-    cell: { transport: 'fixture', runtime: 'electron', providerId: 'fixture', modelId: 'fixture-model', agent: 'builder', planMode: false, variant: null, scenarioId: 'core-journey' } }) : null;
-  const dataDirectory = profile?.env.OPENCHAMBER_DATA_DIR ?? path.join(runDirectory, 'data');
-  const userDataDirectory = profile?.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR ?? path.join(runDirectory, 'chromium-profile');
+  const profile = await prepareQaFixtureProfile({ runtimeRoot: path.join(runDirectory, 'runtime'), workspace: fixtureDirectory, generation,
+    cell: { transport: 'fixture', runtime: 'electron', providerId: 'fixture', modelId: 'fixture-model', agent: 'builder', planMode: false, variant: null, scenarioId: 'core-journey' } });
+  const dataDirectory = profile.env.OPENCHAMBER_DATA_DIR;
+  const userDataDirectory = profile.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR;
   await mkdir(dataDirectory, { recursive: true });
   await mkdir(userDataDirectory, { recursive: true });
-  const settings = profile ? JSON.parse(await readFile(path.join(dataDirectory, 'settings.json'), 'utf8')) : {
-    messageStreamTransport: 'sse', lastDirectory: fixtureDirectory,
-    projects: [{ id: 'perf-project', path: fixtureDirectory, label: 'Performance workspace' }], activeProjectId: 'perf-project',
-    desktopWindowState: { width: 1280, height: 800, maximized: false },
-  };
+  const settings = JSON.parse(await readFile(path.join(dataDirectory, 'settings.json'), 'utf8'));
   // Pin only this fresh benchmark profile before launch. Host-managed agent
   // defaults otherwise may select a production model outside the fixture catalog.
   await writeFile(path.join(dataDirectory, 'settings.json'), JSON.stringify({ ...settings,
@@ -423,7 +435,7 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
       { providerId: 'fixture', modelId: 'fixture-model' }])),
   }, null, 2), { mode: 0o600 });
 
-  const fixture = profile?.fixture ?? await createLoopbackOpenCodeFixture({ directory: fixtureDirectory });
+  const fixture = profile.fixture;
   const memorySessions = scenario === 'session-memory'
     ? await prepareMemorySessions(fixture).catch(async error => { await fixture.close(); throw error; })
     : [];
@@ -439,16 +451,14 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
     '--force-device-scale-factor=1',
   ], {
     cwd: repositoryRoot,
-    env: {
-      ...process.env,
-      ...profile?.env,
+    env: createQaHostLaunchEnvironment(profile.env, {
       OPENCHAMBER_DATA_DIR: dataDirectory,
       OPENCODE_HOST: fixture.origin,
       OPENCODE_SKIP_START: 'true',
       OPENCHAMBER_SKIP_OPENCODE_START: 'true',
       NO_PROXY: 'localhost,127.0.0.1',
       no_proxy: 'localhost,127.0.0.1',
-    },
+    }),
   });
   const child = ownedProcess.child;
   child.stdout?.on('data', (chunk) => { logs = appendBoundedLog(logs, chunk); });
@@ -459,7 +469,7 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
   let startupNavigationAudit = null;
   let browserErrors = null;
   let runError = null;
-  const runEvidence = { schemaVersion: 1, scenario, runIndex, startupMode,
+  const runEvidence = { schemaVersion: 1, scenario, runIndex, startupMode, fixtureGeneration: generation,
     ...(scenario === 'interactive' ? { interactiveScope } : {}), diagnostics: null, browserErrors: null,
     fixture: null, journal: null, cleanup: { errors: [] }, review: 'required' };
   const screenshot = async name => {
@@ -481,7 +491,7 @@ const runOnce = async ({ scenario, runIndex, scenarioDirectory, electronBinary, 
     await writeFile(path.join(runDirectory, 'startup.json'), JSON.stringify(startup, null, 2));
     if (startup.outcome !== 'passed') throw new Error(`Native startup failed: ${startup.error}`);
     const chromium = await cdp.send('Browser.getVersion');
-    if (profile) {
+    if (packageEvidence) {
       const host = JSON.parse(await readFile(path.join(runDirectory, 'runtime/packaged-host.json'), 'utf8'));
       if (host.isPackaged !== true) throw new Error('Resource measurement requires the actual packaged host');
       await writeFile(path.join(runDirectory, 'packaged-host.json'), JSON.stringify(host, null, 2));
@@ -662,6 +672,7 @@ export const runElectronResourceBenchmark = async ({ argv = [], startupMode = 'n
     gitCommit,
     createdAt: new Date().toISOString(),
     startupMode,
+    fixtureGeneration: options.generation,
     electronBinary,
     packageEvidence: packaged ? { path: packaged.evidencePath, evidenceFileSha256: packageEvidenceSha256, sourceSha256: packaged.evidence.source.sha256,
       archiveSha256: packaged.evidence.archiveSha256, uiArtifactSha256: packaged.evidence.packagedWebArtifact.sha256,
@@ -673,10 +684,10 @@ export const runElectronResourceBenchmark = async ({ argv = [], startupMode = 'n
     warmupMs: options.warmupMs,
     ...(interactiveScope === 'typing' ? { measurement: getInteractiveProtocol(interactiveScope).measurement }
       : { measureMs: options.measureMs, sampleIntervalMs: SAMPLE_INTERVAL_MS }),
-    fixtureSha256: createHash('sha256').update(await readFile(path.join(scriptDirectory, 'loopback-opencode-fixture.mjs'))).digest('hex'),
-    lifecycleProtocolSha256: await lifecycleProtocolIdentity(undefined, startupMode),
+    fixtureSha256: await fixtureProtocolIdentity(options.generation),
+    lifecycleProtocolSha256: await lifecycleProtocolIdentity(undefined, startupMode, options.generation),
     ...(options.scenarios.includes('interactive') ? { interactiveScope,
-      interactiveProtocolSha256: await interactiveProtocolIdentity(startupMode, interactiveScope),
+      interactiveProtocolSha256: await interactiveProtocolIdentity(startupMode, interactiveScope, undefined, options.generation),
       interactiveProtocol: getInteractiveProtocol(interactiveScope), interactivePrimaryMetrics: getInteractivePrimaryMetrics(interactiveScope) } : {}),
     scenarios: {},
   };
@@ -700,6 +711,7 @@ export const runElectronResourceBenchmark = async ({ argv = [], startupMode = 'n
           measureMs: options.measureMs,
           startupMode,
           interactiveScope,
+          generation: options.generation,
         }));
       }
       const display = displaySignature(runs[0].display);
@@ -727,6 +739,7 @@ export const runElectronResourceBenchmark = async ({ argv = [], startupMode = 'n
 
     if (options.baseline) {
       const baseline = JSON.parse(await readFile(options.baseline, 'utf8'));
+      assertMatchingStartupModes(baseline, result);
       if (options.scenarios.some(scenario => DEFAULT_SCENARIOS.includes(scenario))) result.comparison = compareBenchmarkSummaries(baseline, result);
       if (options.scenarios.includes('interactive')) result.interactiveComparison = compareInteractiveSummaries(baseline, result);
       if (interactiveScope !== 'typing') {
@@ -745,10 +758,10 @@ export const runElectronResourceBenchmark = async ({ argv = [], startupMode = 'n
     catch (error) { integrityErrors.push(error); }
   }
   try {
-    if (result.lifecycleProtocolSha256 !== await lifecycleProtocolIdentity(undefined, startupMode)) throw new Error('Lifecycle runner, fixture or shared QA helpers changed during measurement');
+    if (result.lifecycleProtocolSha256 !== await lifecycleProtocolIdentity(undefined, startupMode, options.generation)) throw new Error('Lifecycle runner, fixture or shared QA helpers changed during measurement');
   } catch (error) { integrityErrors.push(error); }
   try {
-    if (result.interactiveProtocolSha256 && result.interactiveProtocolSha256 !== await interactiveProtocolIdentity(startupMode, interactiveScope)) throw new Error('Interactive protocol or fixture changed during measurement');
+    if (result.interactiveProtocolSha256 && result.interactiveProtocolSha256 !== await interactiveProtocolIdentity(startupMode, interactiveScope, undefined, options.generation)) throw new Error('Interactive protocol or fixture changed during measurement');
   } catch (error) { integrityErrors.push(error); }
   result.integrity = { passed: integrityErrors.length === 0, errors: integrityErrors.map(error => error.message) };
   if (measurementError) result.workloadError = measurementError.message;

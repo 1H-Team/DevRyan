@@ -1608,8 +1608,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                         'normal',
                         planMode,
                         (messageID || directory || awaitTransportGate)
-                            ? { messageID, directory, awaitTransportGate }
-                            : undefined,
+                            ? { messageID, directory, awaitTransportGate, delivery: 'steer' }
+                            : { delivery: 'steer' },
                     );
                 },
             });
@@ -1634,7 +1634,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
     const runCompactCommand = React.useCallback(async (sessionId: string) => {
         try {
-            await sessionActions.waitForConnectionOrThrow();
+            const assertSubscription = await opencodeClient.awaitInputSubscription();
+            assertSubscription();
             const sdk = opencodeClient.getSdkClient();
             const configState = useConfigStore.getState();
             await sdk.session.summarize({

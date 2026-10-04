@@ -22,3 +22,19 @@ test('release graph shares one web build and gates packaging on complete inputs'
   const upload = jobs['build-web-artifact'].steps.find((step) => step.uses?.startsWith('actions/upload-artifact@'));
   assert.equal(upload.with['include-hidden-files'], true);
 });
+
+test('desktop-only release skips npm while requiring all desktop and image gates', () => {
+  const workflow = YAML.parse(fs.readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8'));
+  const { jobs } = workflow;
+  assert.equal(workflow.on.workflow_dispatch.inputs.scope.default, 'desktop-macos-arm64');
+  assert.match(jobs['publish-npm'].if, /outputs.scope == 'full'/);
+  const finalize = jobs['finalize-release'];
+  assert.match(finalize.if, /always\(\)/);
+  assert.match(finalize.if, /outputs.scope == 'desktop-macos-arm64' && needs.publish-npm.result == 'skipped'/);
+  for (const prerequisite of ['create-release', 'publish-bot-runtime-images', 'build-desktop-electron-macos', 'combine-electron-manifests']) {
+    assert.ok(finalize.if.includes(`needs.${prerequisite}.result == 'success'`));
+  }
+  const verification = finalize.steps.find(step => step.run === 'node scripts/verify-release-assets.mjs');
+  assert.equal(verification.env.RELEASE_SCOPE, '${{ needs.create-release.outputs.scope }}');
+  assert.ok(finalize.steps.find(step => step.name === 'Deploy and verify Supabase configuration and migrations'));
+});

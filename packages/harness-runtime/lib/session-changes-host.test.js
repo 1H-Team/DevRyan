@@ -4,6 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createSessionChangeHost } from './session-changes-host.js';
+import { createNativeConsumerFixture } from '../../web/server/lib/opencode/test-native-consumer-client.js';
+
+const createFixtureHost = options => createSessionChangeHost({ ...options, openCodeClient: options.openCodeClient ?? createNativeConsumerFixture({ readFixture: options.fetchImpl }) });
 
 // These are real Git/metadata integration tests, with the same outer budget
 // as session-changes.test.js; protocol deadlines remain independently tested.
@@ -15,7 +18,7 @@ beforeEach(async () => {
   directory = path.join(base, 'repo'); await fs.mkdir(directory);
   execFileSync('git', ['init', '-q'], { cwd: directory });
   messages = [{ info: { id: 'user_1', role: 'user', time: { created: 1 } }, parts: [] }]; statuses = {}; events = [];
-  host = createSessionChangeHost({ dataDirectory: base, buildOpenCodeUrl: (pathname) => `http://fixture${pathname}`,
+  host = createFixtureHost({ dataDirectory: base, buildOpenCodeUrl: (pathname) => `http://fixture${pathname}`,
     publishEvent: (event) => events.push(event),
     fetchImpl: async (raw) => {
       const url = new URL(raw);
@@ -33,7 +36,7 @@ const endpoint = (action = '') => `/api/openchamber/session/ses_a/changes${actio
 const tool = (callID) => ({ info: { id: `msg_${callID}`, parentID: 'user_1', role: 'assistant', time: { created: 2 } },
   parts: [{ id: `part_${callID}`, type: 'tool', callID, tool: 'bash', state: { status: 'completed' } }] });
 
-test('private hook receipts feed the same summary, diff, and restore HTTP contract', async () => {
+test('private hook receipts feed summary and diff; mutation requires native ownership', async () => {
   await host.plugin({ action: 'message', sessionID: 'ses_a', directory, userMessageID: 'user_1' });
   const record = tool('call_a'); record.parts[0].tool = 'write'; record.parts[0].state.input = { filePath: 'shell.txt' };
   messages.push(record);
@@ -48,8 +51,8 @@ test('private hook receipts feed the same summary, diff, and restore HTTP contra
   const revision = result.body.revision;
   const diff = await host.handleRequest('GET', `${endpoint('/diff')}&revision=${revision}&file=shell.txt`);
   expect(diff.body.patch).toContain('+from shell');
-  expect((await host.handleRequest('POST', endpoint('/undo'), { revision })).status).toBe(200);
-  expect((await host.handleRequest('GET', endpoint())).body.undone).toBe(true);
+  expect(await host.handleRequest('POST', endpoint('/undo'), { revision })).toMatchObject({ status: 409, body: { code: 'mutation_runtime_unsupported' } });
+  expect(await fs.readFile(path.join(directory, 'shell.txt'), 'utf8')).toBe('from shell\n');
   expect((await host.handleRequest('POST', endpoint('/redo'), { revision })).status).toBe(409);
 });
 
@@ -83,7 +86,7 @@ test('reconstructs historical native file receipts without adopting broad turn d
 
 test('reads history beyond 1000 messages using the supplied cursor', async () => {
   let pages = 0;
-  const paged = createSessionChangeHost({ dataDirectory: base,
+  const paged = createFixtureHost({ dataDirectory: base,
     buildOpenCodeUrl: (pathname) => `http://fixture${pathname}`,
     fetchImpl: async (raw) => {
       const url = new URL(raw);
@@ -100,7 +103,7 @@ test('reads history beyond 1000 messages using the supplied cursor', async () =>
 });
 
 
-test('restore fails closed when another session is busy or live status is malformed', async () => {
+test('restore refuses a missing native owner regardless of live status', async () => {
   await host.plugin({ action: 'message', sessionID: 'ses_a', directory, userMessageID: 'user_1' });
   const record = tool('call_a'); record.parts[0].tool = 'write'; record.parts[0].state.input = { filePath: 'shell.txt' };
   messages.push(record);
@@ -111,9 +114,9 @@ test('restore fails closed when another session is busy or live status is malfor
   await host.plugin({ ...input, action: 'after' });
   const { body } = await host.handleRequest('GET', endpoint());
   statuses = { other: { type: 'busy' } };
-  expect((await host.handleRequest('POST', endpoint('/undo'), { revision: body.revision })).body.code).toBe('directory_busy');
+  expect((await host.handleRequest('POST', endpoint('/undo'), { revision: body.revision })).body.code).toBe('mutation_runtime_unsupported');
   statuses = [];
-  expect((await host.handleRequest('POST', endpoint('/undo'), { revision: body.revision })).body.code).toBe('session_status_unavailable');
+  expect((await host.handleRequest('POST', endpoint('/undo'), { revision: body.revision })).body.code).toBe('mutation_runtime_unsupported');
   expect(await fs.readFile(path.join(directory, 'shell.txt'), 'utf8')).toBe('keep\n');
 });
 
@@ -122,7 +125,7 @@ test('cached history refreshes only the head page and captures newly settled rec
   const historical = tool('historical'), newest = tool('newest');
   historical.parts[0].tool = 'edit';
   historical.parts[0].state.metadata = { filediff: { file: 'a.txt', before: 'base\n', after: 'first\n' } };
-  const paged = createSessionChangeHost({ dataDirectory: base, buildOpenCodeUrl: (pathname) => `http://fixture${pathname}`,
+  const paged = createFixtureHost({ dataDirectory: base, buildOpenCodeUrl: (pathname) => `http://fixture${pathname}`,
     fetchImpl: async (raw) => {
       const url = new URL(raw);
       if (url.pathname.endsWith('/children')) return Response.json([]);
@@ -227,7 +230,7 @@ test('concurrent summary subscribers share history and only the final disconnect
   const gate = new Promise(resolve => { release = resolve; });
   const entered = new Promise(resolve => { started = resolve; });
   let messageReads = 0, readSignal;
-  const shared = createSessionChangeHost({ dataDirectory: base, buildOpenCodeUrl: pathname => `http://fixture${pathname}`,
+  const shared = createFixtureHost({ dataDirectory: base, buildOpenCodeUrl: pathname => `http://fixture${pathname}`,
     fetchImpl: async (raw, init) => {
       const url = new URL(raw);
       if (url.pathname.endsWith('/message')) {
@@ -265,7 +268,7 @@ test('a disconnected sole summary client aborts upstream history and releases it
   let started;
   const entered = new Promise(resolve => { started = resolve; });
   let observedAbort = false;
-  const shared = createSessionChangeHost({ dataDirectory: base, buildOpenCodeUrl: pathname => `http://fixture${pathname}`,
+  const shared = createFixtureHost({ dataDirectory: base, buildOpenCodeUrl: pathname => `http://fixture${pathname}`,
     fetchImpl: async (raw, init) => {
       const url = new URL(raw);
       if (url.pathname.endsWith('/message')) {
@@ -296,4 +299,16 @@ test('a cancelled confined call with an empty receipt leaves the change record c
   await host.recordReceipt({ ...input, messageID: 'msg_stopped', userMessageID: 'user_1', source: 'confined-execution', complete: true, files: [], tool: 'bash' });
   const result = await host.handleRequest('GET', endpoint());
   expect(result.body).toMatchObject({ coverage: 'complete', reasons: [], fileCount: 0 });
+});
+
+
+test('session-change observation requires explicit native identity without a raw fallback', async () => {
+  for (const openCodeClient of [undefined, {}, { generation: () => 1 }, { generation: () => 3 }]) {
+    let calls = 0;
+    const current = createSessionChangeHost({ dataDirectory: base, openCodeClient, fetchImpl: () => { calls++; throw Error('raw runtime forbidden'); } });
+    try {
+      expect(await current.handleRequest('GET', endpoint())).toMatchObject({ status: 503, body: { code: 'opencode_generation_invalid' } });
+      expect(calls).toBe(0);
+    } finally { await current.drain(); }
+  }
 });

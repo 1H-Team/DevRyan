@@ -1,6 +1,12 @@
+import { createNativeConsumerFixture } from './test-native-consumer-client.js';
+const createHarnessRunFingerprintReader = (options = {}) => createHarnessRunFingerprintReaderNative({
+  ...options, openCodeClient: options.openCodeClient ?? createNativeConsumerFixture({
+    readFixture: options.fetchImpl ?? ((...args) => globalThis.fetch(...args)), headers: options.getOpenCodeAuthHeaders,
+  }),
+});
 import { describe, expect, it, vi } from 'vitest';
 import { createDiagnosticSanitizer } from '@openchamber/harness-runtime';
-import { buildHarnessRunFingerprint, createHarnessRunFingerprintReader } from './harness-run-fingerprint.js';
+import { buildHarnessRunFingerprint, createHarnessRunFingerprintReader as createHarnessRunFingerprintReaderNative } from './harness-run-fingerprint.js';
 
 const input = () => ({ runtimeVersion: '1.18.30', selection: { providerID: 'openai', modelID: 'gpt-6-astra', agent: 'orchestrator', variant: 'medium' },
   agent: { prompt: 'Scoped role instructions' }, source: { scope: 'packaged', path: '/fixture/agents/orchestrator.md' },
@@ -56,5 +62,57 @@ describe('run fingerprints', () => {
     expect(a).toEqual(b);
     expect(fetchImpl).toHaveBeenCalledTimes(5);
     expect(entries[0]).toMatchObject({ event: 'harness_run_start', userMessageID: 'msg_fixture', payload: { fingerprint: a } });
+  });
+  it('reads health, config, agents and the tool snapshot through the client on OpenCode 2', async () => {
+    const fetchImpl = vi.fn();
+    const client = {
+      generation: () => 2,
+      health: { probe: vi.fn(async () => ({ ready: true, version: '2.0.20' })) },
+      catalog: {
+        config: vi.fn(async () => ({ plugin: [] })),
+        agents: vi.fn(async () => [{ name: 'orchestrator', prompt: 'Role' }]),
+        tools: vi.fn(async () => ({ ids: ['read'], definitions: [{ id: 'read', description: 'Read', parameters: {} }] })),
+      },
+    };
+    const reader = createHarnessRunFingerprintReader({ fetchImpl, buildOpenCodeUrl: (p) => `http://127.0.0.1:12345${p}`,
+      openCodeClient: () => client, getAgentSource: () => input().source });
+    const context = { ...input().selection, directory: '/fixture' };
+    const value = await reader.read(context);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(client.catalog.config.mock.calls[0][0]).toEqual({ directory: '/fixture' });
+    expect(client.catalog.agents.mock.calls[0][0]).toEqual({ directory: '/fixture' });
+    expect(value).toMatchObject({ runtimeVersion: '2.0.20', role: { contentHash: expect.any(String) },
+      catalog: { count: 1, availability: 'available' }, plugins: { configured: [] } });
+
+    // Unsupported identities produce unavailable metadata without any transport.
+    const gen1Fetch = vi.fn(async (raw) => {
+      const responses = { '/global/health': { healthy: true, version: '2.0.20' }, '/config': { plugin: [] },
+        '/agent': [{ name: 'orchestrator', prompt: 'Role' }], '/experimental/tool/ids': ['read'],
+        '/experimental/tool': [{ id: 'read', description: 'Read', parameters: {} }] };
+      return Response.json(responses[new URL(raw).pathname]);
+    });
+    const gen1 = createHarnessRunFingerprintReader({ fetchImpl: gen1Fetch, buildOpenCodeUrl: (p) => `http://127.0.0.1:12345${p}`,
+      openCodeClient: { ...client, generation: () => 1 }, getAgentSource: () => input().source });
+    expect(await gen1.read(context)).toMatchObject({ runtimeVersion: null, catalog: { availability: 'unavailable', count: null } });
+    expect(gen1Fetch).not.toHaveBeenCalled();
+  });
+  it('treats an unready host, a failed read or an unknown generation as unavailable metadata', async () => {
+    const fetchImpl = vi.fn();
+    const failing = {
+      generation: () => 2,
+      health: { probe: vi.fn(async () => ({ ready: false, reason: 'not_ready', version: null })) },
+      catalog: {
+        config: vi.fn(async () => { throw new Error('catalog.config failed (503)'); }),
+        agents: vi.fn(async () => { throw new Error('catalog.agents failed (503)'); }),
+        tools: vi.fn(async () => { throw new Error('catalog.tools failed (503)'); }),
+      },
+    };
+    for (const openCodeClient of [failing, { generation: () => { throw new Error('unknown generation'); } }]) {
+      const value = await createHarnessRunFingerprintReader({ fetchImpl, buildOpenCodeUrl: (p) => `http://127.0.0.1:12345${p}`, openCodeClient })
+        .read({ ...input().selection, directory: '/fixture' });
+      expect(value).toMatchObject({ runtimeVersion: null, role: { contentHash: null }, catalog: { availability: 'unavailable' },
+        plugins: { configured: null } });
+    }
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

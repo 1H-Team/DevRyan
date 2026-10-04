@@ -27,7 +27,7 @@ const makeDirectory = async () => {
 
 describe('Production Bots runtime composition', () => {
   it('passes the Electron workspace-list callback through the server composition root', async () => {
-    const serverSource = await fs.readFile(new URL('../../index.js', import.meta.url), 'utf8');
+    const serverSource = await fs.readFile(new URL('../../application.js', import.meta.url), 'utf8');
     const runtimeSource = await fs.readFile(new URL('./runtime.js', import.meta.url), 'utf8');
 
     expect(serverSource).toContain('listWorkspace: botRuntimeControlProvider?.listWorkspace');

@@ -7,6 +7,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     setIsShuttingDown,
     syncToHmrState,
     openCodeWatcherRuntime,
+    globalMessageStreamHub,
     sessionRuntime,
     scheduledTasksRuntime,
     getHealthCheckInterval,
@@ -25,8 +26,6 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     getOpenCodePort,
     getOpenCodeProcess,
     setOpenCodeProcess,
-    killProcessOnPort,
-    waitForPortRelease,
     getServer,
     getUiAuthController,
     setUiAuthController,
@@ -34,6 +33,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     setActiveTunnelController,
     tunnelAuthController,
     getHarnessRuntime,
+    closeNativeRuntime,
   } = dependencies;
 
   const gracefulShutdown = async (options = {}) => {
@@ -45,8 +45,21 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     const exitProcess = typeof options.exitProcess === 'boolean' ? options.exitProcess : getExitOnShutdown();
     const harnessRuntime = typeof getHarnessRuntime === 'function' ? getHarnessRuntime() : null;
     harnessRuntime?.beginDrain?.();
+    // Native close needs the journal, scheduler and private execution bridge
+    // alive until its scope, supervisors and durable ACK barrier have settled.
+    if (closeNativeRuntime) {
+      try { await closeNativeRuntime(); }
+      catch (cause) {
+        // Admission stays drained, but a refused native settlement must be
+        // retryable once its owner confirms exit and durable recovery.
+        setIsShuttingDown(false);
+        syncToHmrState();
+        throw cause;
+      }
+    }
 
     openCodeWatcherRuntime.stop();
+    globalMessageStreamHub?.stop();
     sessionRuntime.dispose();
     scheduledTasksRuntime?.stop?.();
 
@@ -150,8 +163,9 @@ export const createGracefulShutdownRuntime = (dependencies) => {
       }
     }
 
-    if (!shouldSkipOpenCodeStop()) {
-      const portToKill = getOpenCodePort();
+    if (closeNativeRuntime) {
+      setOpenCodeProcess(null);
+    } else if (!shouldSkipOpenCodeStop()) {
       const openCodeProcess = getOpenCodeProcess();
 
       if (openCodeProcess) {
@@ -177,10 +191,6 @@ export const createGracefulShutdownRuntime = (dependencies) => {
         setOpenCodeProcess(null);
       }
 
-      killProcessOnPort(portToKill);
-      if (!(await waitForPortRelease(portToKill, 5000))) {
-        console.warn(`Timed out waiting for OpenCode port ${portToKill} to be released during shutdown`);
-      }
     } else {
       console.log('Skipping OpenCode shutdown (external server)');
     }

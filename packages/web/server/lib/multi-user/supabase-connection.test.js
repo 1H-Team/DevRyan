@@ -11,6 +11,7 @@ import { createDisconnectedAuth } from './disconnected-auth.js';
 import { attachSupabaseConnectionBoundary, registerSupabaseConnectionRoutes } from './connection-routes.js';
 import { supabaseTrafficOperation } from './supabase-traffic.js';
 import { createMultiUserRuntime } from './runtime.js';
+import { getRequestPrincipal } from './request-context.js';
 import { PRODUCTION_BOTS_MIGRATION } from './auth-compat.js';
 
 const roots = []; const connections = []; const servers = [];
@@ -98,6 +99,56 @@ describe('persistent Supabase connection', () => {
     expect(await auth.resolvePrincipal(request(cookie))).toMatchObject({ id: 'owner' });
     await connection.logoutLocalOwner({ getHeader: () => undefined, setHeader: vi.fn() });
     expect(await auth.resolvePrincipal(request(cookie))).toBeNull();
+  });
+
+  it('captures only authenticated owner principals and rechecks exact sessions, expiry and disposal', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const { connection } = await fixture(false), cookie = await enroll(connection);
+    const original = connection.authenticateLocalOwner(request(cookie));
+    const check = connection.captureAuthorization(original);
+    expect(check()).toBe(true);
+    expect(connection.captureAuthorization(structuredClone(original))).toBeNull();
+    expect(connection.captureAuthorization(connection.ownerPrincipal())).toBeNull();
+    await connection.logoutLocalOwner({ getHeader: () => undefined, setHeader: vi.fn() }, request(cookie));
+    expect(check()).toBe(false);
+    const second = await connection.issueLocalOwnerSession();
+    const secondPrincipal = connection.authenticateLocalOwner(request(`${second.name}=${second.value}`));
+    const secondCheck = connection.captureAuthorization(secondPrincipal); expect(secondCheck()).toBe(true);
+    vi.setSystemTime(Date.now() + 31 * 24 * 60 * 60 * 1000); expect(secondCheck()).toBe(false);
+    const third = await connection.issueLocalOwnerSession();
+    const thirdCheck = connection.captureAuthorization(connection.authenticateLocalOwner(request(`${third.name}=${third.value}`)));
+    expect(thirdCheck()).toBe(true);
+    await connection.dispose(); expect(thirdCheck()).toBe(false); expect(connection.isLocalAccessActive()).toBe(false);
+  });
+
+  it('binds distinct legacy local callers to private grants before entering request context', async () => {
+    const { root } = await fixture(false);
+    const runtime = await createMultiUserRuntime({ dataDirectory: root, fetchImpl: () => { throw new Error('No cloud calls'); } });
+    connections.push(runtime.connection);
+    let live = true;
+    const auth = runtime.wrapLegacyAuthController({ enabled: false, requireAuth: (_req, _res, next) => next(), captureAuthorization: () => () => live });
+    try {
+      const first = request(), second = request();
+      await auth.requireAuth(first, {}, () => { expect(getRequestPrincipal()).toBe(first.principal); });
+      await auth.requireAuth(second, {}, () => { expect(getRequestPrincipal()).toBe(second.principal); });
+      expect(first.principal).not.toBe(second.principal);
+      expect(auth.captureAuthorization(structuredClone(first.principal))).toBeNull();
+      const check = auth.captureAuthorization(first.principal); expect(check()).toBe(true);
+      live = false; expect(check()).toBe(false);
+    } finally { await runtime.botsRuntime.shutdown(); }
+  });
+
+  it('revokes captured owner grants when the owner or requested authentication mode changes', async () => {
+    const { connection } = await fixture(false, async url => new Response(JSON.stringify(String(url).includes('/rpc/')
+      ? '99999999999999' : [{ id: principal.id, role: 'admin', status: 'active' }])));
+    const cookie = await enroll(connection), original = connection.authenticateLocalOwner(request(cookie));
+    const check = connection.captureAuthorization(original); expect(check()).toBe(true);
+    await connection.change(true); expect(check()).toBe(false);
+    // Until explicit restart, the host still serves its effective Off mode.
+    expect(connection.isLocalAccessActive()).toBe(true);
+    const renewed = connection.captureAuthorization(connection.authenticateLocalOwner(request(cookie))); expect(renewed()).toBe(true);
+    await connection.rememberOwner({ ...principal, id: 'replacement-owner' }, { setHeader: vi.fn() });
+    expect(renewed()).toBe(false);
   });
 
   it('makes zero calls on disconnected restart and failed REST, RPC, Auth and Storage access', async () => {

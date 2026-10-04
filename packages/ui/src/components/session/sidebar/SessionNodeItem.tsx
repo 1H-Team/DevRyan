@@ -57,12 +57,13 @@ import {
 } from '@/stores/useManagedOrchestrationStore';
 import { useProviderRecoveryStore } from '@/stores/useProviderRecoveryStore';
 import { useI18n } from '@/lib/i18n';
+import { useRuntimeCapability } from '@/lib/opencode/runtime-capabilities';
 import { resolveEffectivePlanIndicatorState, type PlanIndicatorState } from '@/sync/plan-indicator';
 import { useNotificationStore } from '@/sync/notification-store';
-import { hasWorkingDescendantSession, resolveLeadingRailLayout, resolveSidebarIndicator, resolveSidebarWorkingStatus, resolveSubtaskSidebarIndicator } from './sessionIndicator';
+import { hasWorkingDescendantSession, resolveLeadingRailLayout, resolveSessionLeadingIndicatorLabelKey, resolveSessionLeadingIndicatorPresentation, resolveSidebarIndicator, resolveSidebarWorkingStatus, resolveSubtaskSidebarIndicator } from './sessionIndicator';
 import type { SessionIndicator } from './sessionIndicator';
 import { useSessionLifecycleStatus } from '@/hooks/useSessionLifecycleStatus';
-import { SidebarSpinner } from './SidebarSpinner';
+import { SessionStatusDot } from './SessionStatusDot';
 import {
   resolveMobileSessionSwipeAction,
   resolveSessionRowInteractionClasses,
@@ -320,6 +321,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const flatRow = React.useContext(FlatSidebarRowContext);
   const sidebarRows = React.useContext(SidebarRowsContext);
   const isElectron = React.useMemo(() => canUseElectronDesktopIPC(), []);
+  const shareAvailable = useRuntimeCapability('share');
   const session = node.session;
   const isOpening = useSessionUIStore(state => state.pendingSessionId === session.id);
   const isArchiveAncestorOnly = archivedBucket && node.isArchiveAncestorOnly === true;
@@ -509,7 +511,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   // the indicator state; it does not trigger transitions.
   const effectivePlanIndicatorState: PlanIndicatorState | null = planIndicatorState;
   // Consolidated per-session lifecycle status. Used for accessible status text;
-  // the spinner stays neutral gray across lifecycle variants by design.
+  // the working dot stays neutral gray across lifecycle variants by design.
   const lifecycleStatus = useSessionLifecycleStatus(
     isRootSession ? session.id : null,
     sessionDirectory ?? undefined,
@@ -521,7 +523,6 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     React.useCallback((state) => state.index.session.unseenHasError[session.id] ?? false, [session.id]),
   );
   const isMenuOpen = openSidebarMenuKey === menuInstanceKey;
-  const workingStatusPaddingClass = sidebarIsWorking ? 'pr-6' : '';
 
   const descendantCount = React.useMemo(() => collectNodeDescendantIds(node).length, [collectNodeDescendantIds, node]);
 
@@ -745,33 +746,25 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     hasParentOwnedRecovery: Boolean(parentOwnedRecoveryTaskId),
   });
   const effectiveSidebarStatusIndicator = sidebarStatusIndicator ?? subtaskStatusIndicator;
-  const showLeadingStatus = Boolean(effectiveSidebarStatusIndicator);
   const leadingRailLayout = resolveLeadingRailLayout({
     hasChildren,
-    showLeadingStatus,
     isPinnedSession,
   });
-  const leadingStatusMarker = effectiveSidebarStatusIndicator ? (
-    <span
-      className={cn('h-1.5 w-1.5 rounded-full', effectiveSidebarStatusIndicator.className)}
-      aria-label={t(effectiveSidebarStatusIndicator.labelKey)}
-      title={t(effectiveSidebarStatusIndicator.labelKey)}
+  // Generic unread attention intentionally has no colored dot: session status
+  // colors are reserved for explicit question/plan lifecycle signals. Working
+  // shows a slow gray blink in the same slot; otherwise an idle ring holds it.
+  const leadingPresentation = resolveSessionLeadingIndicatorPresentation({
+    indicator: effectiveSidebarStatusIndicator,
+    isWorking: sidebarIsWorking,
+    isImplementingPlan: lifecycleStatus.kind === 'plan-executing',
+  });
+  const leadingLabelKey = resolveSessionLeadingIndicatorLabelKey(leadingPresentation);
+  const leadingStatusMarker = (
+    <SessionStatusDot
+      presentation={leadingPresentation}
+      label={leadingLabelKey ? t(leadingLabelKey) : undefined}
     />
-  ) : null;
-  // Generic unread attention intentionally has no dot here: session status colors
-  // are reserved for explicit question/plan lifecycle signals, so success never
-  // degrades into a neutral/gray marker when unread state changes.
-  const isImplementingPlan = lifecycleStatus.kind === 'plan-executing';
-  const activeStatusMarker = sidebarIsWorking ? (
-    <SidebarSpinner
-      aria-label={t(isImplementingPlan
-        ? 'sessions.sidebar.session.status.planExecuting'
-        : 'sessions.sidebar.session.status.active')}
-      title={t(isImplementingPlan
-        ? 'sessions.sidebar.session.status.planExecuting'
-        : 'sessions.sidebar.session.status.active')}
-    />
-  ) : null;
+  );
   const handleSubsessionChevronPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
@@ -1030,7 +1023,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
         {isPinnedSession ? <RiUnpinLine className="mr-1 h-4 w-4" /> : <RiPushpinLine className="mr-1 h-4 w-4" />}
         {isPinnedSession ? t('sessions.sidebar.session.menu.unpin') : t('sessions.sidebar.session.menu.pin')}
       </DropdownMenuItem>
-      {resolvedSession.share ? (
+      {shareAvailable && resolvedSession.share ? (
         <>
           <DropdownMenuItem onClick={() => { if (resolvedSession.share?.url) handleCopyShareUrl(resolvedSession.share.url, session.id); }} className="[&>svg]:mr-1">
             {copiedSessionId === session.id
@@ -1167,7 +1160,6 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                   alwaysShowActions
                     ? (alwaysActionPaddingClass)
                     : revealPaddingClass,
-                  alwaysShowActions ? '' : workingStatusPaddingClass,
                 )}
               >
                 <div className="flex w-full items-center min-w-0 flex-1 overflow-hidden gap-1">
@@ -1239,15 +1231,6 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
             {streamingIndicator && !mobileVariant ? (
               <div className="absolute top-1/2 -translate-y-1/2 z-10 right-0">
                 {streamingIndicator}
-              </div>
-            ) : null}
-
-            {activeStatusMarker ? (
-              <div className={cn(
-                'pointer-events-none absolute right-0 top-1/2 z-20 flex h-6 w-6 -translate-y-1/2 items-center justify-center transition-opacity',
-                isMenuOpen ? 'opacity-0' : 'opacity-100 group-hover:opacity-0 group-focus-within:opacity-0',
-              )}>
-                {activeStatusMarker}
               </div>
             ) : null}
 

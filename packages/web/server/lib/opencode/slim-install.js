@@ -1,6 +1,6 @@
 import { spawn as spawnChild } from 'node:child_process';
 import fs from 'node:fs';
-import os from 'node:os';
+import { getRuntimeHome, selectedRuntimeBundle } from './runtime-host/runtime-bundle-binding.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseConfigJsonc } from './jsonc-config.js';
@@ -251,7 +251,7 @@ const getWrapperStatus = ({ fsApi, pathApi, configDirectory, opencodeConfig }) =
 export const createSlimSetupRuntime = (dependencies = {}) => {
   const fsApi = dependencies.fs || fs;
   const pathApi = dependencies.path || path;
-  const homedir = dependencies.homedir || (() => os.homedir());
+  const homedir = dependencies.homedir || getRuntimeHome;
   const env = dependencies.env || process.env;
   const now = dependencies.now || (() => new Date());
   const runCommand = dependencies.runCommand || runCommandDefault;
@@ -259,7 +259,7 @@ export const createSlimSetupRuntime = (dependencies = {}) => {
   const configDirectory = getConfigDirectory({
     pathApi,
     homedir,
-    configDirectory: dependencies.configDirectory,
+    configDirectory: dependencies.configDirectory ?? selectedRuntimeBundle?.descriptor.launch.opencodeConfigDirectory,
   });
 
   const getPaths = () => {

@@ -4,6 +4,7 @@ import { readAuthFile } from '../../opencode/auth.js';
 import { fetchQuotaForProvider } from './index.js';
 
 vi.mock('../../opencode/auth.js', () => ({
+  OPENCODE_DATA_DIR: new URL('../../../../../../.cache/v2-validation/quota-fixtures/copilot/data', import.meta.url).pathname,
   readAuthFile: vi.fn(() => ({})),
 }));
 

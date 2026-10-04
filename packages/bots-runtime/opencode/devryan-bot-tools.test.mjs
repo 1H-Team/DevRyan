@@ -301,7 +301,7 @@ describe('scoped OpenCode Bot plugin', () => {
     expect(entrypoint).toContain("'*': 'deny'");
     const primary = entrypoint.slice(entrypoint.indexOf('bot: {'), entrypoint.indexOf('explore: {'));
     for (const tool of [
-      'read', 'write', 'edit', 'glob', 'grep', 'bash', 'terminal', 'git', 'task',
+      'read', 'write', 'edit', 'glob', 'grep', 'shell', 'terminal', 'git', 'subagent',
       'devryan_bot', 'devryan_image', 'devryan_write', 'devryan_ask',
     ]) {
       expect(primary).toContain(`${tool}: 'allow'`);
@@ -312,15 +312,15 @@ describe('scoped OpenCode Bot plugin', () => {
       expect(primary).toContain(`${tool}: 'deny'`);
     }
     const subagents = entrypoint.slice(entrypoint.indexOf('explore: {'));
-    expect(subagents).toContain("task: 'deny'");
+    expect(subagents).toContain("subagent: 'deny'");
     expect(subagents).toContain("devryan_bot: 'deny'");
     expect(subagents).toContain("devryan_image: 'deny'");
     expect(subagents).toContain("devryan_ask: 'deny'");
     expect(subagents).toContain("browser: 'deny'");
     expect(BOT_TARGET_OPENCODE_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
-    expect(dockerfile).toContain(
-      `opencode-ai@${BOT_TARGET_OPENCODE_VERSION} @opencode-ai/plugin@${BOT_TARGET_OPENCODE_VERSION} opencode-gpt-imagegen@0.1.12`,
-    );
+    expect(dockerfile).toContain(`@opencode/server@${BOT_TARGET_OPENCODE_VERSION} @opencode/core@${BOT_TARGET_OPENCODE_VERSION}`);
+    expect(dockerfile).toContain('@opencode-ai/plugin@1.18.33 opencode-gpt-imagegen@0.1.12');
+    expect(dockerfile).toContain('oven/bun:1.3.14');
     expect(dockerfile).toContain("node_modules/opencode-gpt-imagegen/package.json");
     expect(entrypoint).toContain('launch-opencode.mjs');
     expect(dockerfile).toContain('bash=5.2.15-2+b13');

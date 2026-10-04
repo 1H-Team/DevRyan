@@ -14,12 +14,6 @@ const createStore = () => {
   };
 };
 
-const response = (body, status = 200) => ({
-  ok: status >= 200 && status < 300,
-  status,
-  async text() { return body === null ? '' : JSON.stringify(body); },
-});
-
 const runningPart = {
   id: 'part/1',
   messageID: 'msg/1',
@@ -43,22 +37,25 @@ const event = {
   },
 };
 
-describe('web command deadline adapter', () => {
-  it('uses authenticated exact-message and abort requests scoped to the event directory', async () => {
-    let now = 1_000;
-    const fetchImpl = vi.fn()
-      .mockResolvedValueOnce(response({
-        info: { id: 'msg/1', sessionID: 'ses/1' },
-        parts: [runningPart],
-      }))
-      .mockResolvedValueOnce(response({ success: true }))
-      .mockResolvedValueOnce(response({
-        info: { id: 'msg/1', sessionID: 'ses/1' },
-        parts: [{
-          ...runningPart,
-          state: { status: 'aborted', time: { start: 1_000, end: 2_000 } },
-        }],
-      }));
+describe('web command deadline adapter on gen 2 (openCodeClient)', () => {
+  const createClient = ({ generation = 2, messages, statuses = {} } = {}) => {
+    const queue = [...(messages ?? [])];
+    return {
+      generation: vi.fn(() => {
+        if (generation instanceof Error) throw generation;
+        return generation;
+      }),
+      sessions: {
+        message: vi.fn(async () => queue.shift() ?? null),
+        abort: vi.fn(async () => true),
+        status: vi.fn(async () => statuses),
+      },
+    };
+  };
+
+  const createRuntime = (openCodeClient, extra = {}) => {
+    const clock = { now: 1_000 };
+    const fetchImpl = vi.fn(async (url) => { throw new Error(`gen 2 leaked a direct request: ${url}`); });
     const publishEvent = vi.fn();
     const runtime = createWebCommandDeadlineRuntime({
       store: createStore(),
@@ -68,26 +65,41 @@ describe('web command deadline adapter', () => {
       publishEvent,
       restartOpenCode: vi.fn(),
       isExternalOpenCode: () => false,
+      openCodeClient,
       controllerOptions: {
-        now: () => now,
+        now: () => clock.now,
         graceMs: 0,
         confirmationMs: 0,
       },
+      ...extra,
     });
+    return { runtime, fetchImpl, publishEvent, clock };
+  };
+
+  it('rejects an injected client that is not an openCodeClient', () => {
+    expect(() => createRuntime({ sessions: {} })).toThrow('openCodeClient must be an openCodeClient');
+  });
+
+  it('reads the exact message and aborts through the client, scoped to the event directory', async () => {
+    const openCodeClient = createClient({
+      messages: [
+        { info: { id: 'msg/1', sessionID: 'ses/1' }, parts: [runningPart] },
+        {
+          info: { id: 'msg/1', sessionID: 'ses/1' },
+          parts: [{ ...runningPart, state: { status: 'error', error: 'aborted', time: { start: 1_000, end: 2_000 } } }],
+        },
+      ],
+    });
+    const { runtime, fetchImpl, publishEvent, clock } = createRuntime(openCodeClient);
 
     await runtime.observe(event, '/workspace/project');
-    now = 2_000;
+    clock.now = 2_000;
     await runtime.reconcile();
 
-    expect(fetchImpl).toHaveBeenCalledTimes(3);
-    const [messageUrl, messageRequest] = fetchImpl.mock.calls[0];
-    expect(messageUrl.pathname).toBe('/session/ses%2F1/message/msg%2F1');
-    expect(messageUrl.searchParams.get('directory')).toBe('/workspace/project');
-    expect(messageRequest.headers.Authorization).toBe('Basic test');
-    const [abortUrl, abortRequest] = fetchImpl.mock.calls[1];
-    expect(abortUrl.pathname).toBe('/session/ses%2F1/abort');
-    expect(abortUrl.searchParams.get('directory')).toBe('/workspace/project');
-    expect(abortRequest.method).toBe('POST');
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(openCodeClient.sessions.message).toHaveBeenCalledWith('ses/1', 'msg/1',
+      { directory: '/workspace/project', allowNotFound: true, timeoutMs: 5_000 });
+    expect(openCodeClient.sessions.abort).toHaveBeenCalledWith('ses/1', { directory: '/workspace/project', timeoutMs: 5_000 });
     expect(publishEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'message.part.updated',
@@ -95,5 +107,45 @@ describe('web command deadline adapter', () => {
       }),
       { directory: '/workspace/project' },
     );
+  });
+
+  it('treats a message the client cannot find as replaced, without aborting', async () => {
+    const openCodeClient = createClient({ messages: [null] });
+    const { runtime, clock } = createRuntime(openCodeClient);
+
+    await runtime.observe(event, '/workspace/project');
+    clock.now = 2_000;
+    await runtime.reconcile();
+
+    expect(openCodeClient.sessions.message).toHaveBeenCalledTimes(1);
+    expect(openCodeClient.sessions.abort).not.toHaveBeenCalled();
+  });
+
+  it('restarts the managed runtime only when the client reports the command session as the sole active one', async () => {
+    const stillRunning = { info: { id: 'msg/1', sessionID: 'ses/1' }, parts: [runningPart] };
+    const openCodeClient = createClient({
+      messages: [stillRunning, stillRunning],
+      statuses: { 'ses/1': { type: 'busy' }, 'ses/idle': { type: 'idle' } },
+    });
+    const restartOpenCode = vi.fn(async () => {});
+    const { runtime, clock } = createRuntime(openCodeClient, { restartOpenCode });
+
+    await runtime.observe(event, '/workspace/project');
+    clock.now = 2_000;
+    await runtime.reconcile();
+
+    expect(openCodeClient.sessions.status).toHaveBeenCalledWith({ directory: '/workspace/project' }, { timeoutMs: 5_000 });
+    expect(restartOpenCode).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([1, 3, null])('refuses unsupported runtime identity %s without fetching or aborting', async (generation) => {
+    const openCodeClient = createClient({ generation });
+    const { runtime, clock, fetchImpl } = createRuntime(openCodeClient);
+    await runtime.observe(event, '/workspace/project');
+    clock.now = 2_000;
+    await runtime.reconcile();
+    expect(openCodeClient.sessions.message).not.toHaveBeenCalled();
+    expect(openCodeClient.sessions.abort).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

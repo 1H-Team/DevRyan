@@ -4,6 +4,7 @@ import {
   createHarnessWarning,
   withHarnessResult,
 } from './harness-result.js';
+import { resolveGen2OpenCodeClient } from './opencode-client-seam.js';
 
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_COMMAND_TIMEOUT_MS = 70_000;
@@ -33,35 +34,30 @@ function formatError(error) {
   return String(error);
 }
 
-function appendDirectoryQuery(requestPath, directory) {
-  if (!directory) return requestPath;
-  const separator = requestPath.includes('?') ? '&' : '?';
-  return `${requestPath}${separator}directory=${encodeURIComponent(directory)}`;
-}
+const CLIENT_WARMUP_READS = Object.freeze({
+  health: {
+    scoped: false,
+    read: async (client, _directory, signal) => {
+      const probed = await client.health.probe({ signal });
+      if (probed?.ready !== true) throw new Error(`OpenCode is not ready (${probed?.reason ?? 'unknown'})`);
+      return probed;
+    },
+  },
+  config: { scoped: true, read: (client, directory, signal) => client.catalog.config({ directory }, { signal }) },
+  providers: { scoped: true, read: (client, directory, signal) => client.catalog.providers({ directory }, { signal }) },
+  agents: { scoped: true, read: (client, directory, signal) => client.catalog.agents({ directory }, { signal }) },
+  sessionStatus: { scoped: false, read: (client, directory, signal) => client.sessions.status({ directory }, { signal }) },
+  opencodeSkills: { scoped: true, read: (client, directory, signal) => client.catalog.skills({ directory }, { signal }) },
+  mcp: { scoped: true, read: (client, directory, signal) => client.catalog.mcp({ directory }, { signal }) },
+  commands: { scoped: true, read: (client, directory, signal) => client.catalog.commands({ directory }, { signal }) },
+});
 
-async function readJson(response) {
-  if (!response.ok) {
-    throw new Error(`OpenCode responded ${response.status}`);
-  }
-  try {
-    return await response.json();
-  } catch {
-    return null;
-  }
-}
-
-function createOpenCodeGetTask({ name, requestPath, directory, buildOpenCodeUrl, getOpenCodeAuthHeaders, fetchImpl }) {
+function createOpenCodeGetTask({ name, directory, openCodeClient }) {
   return async ({ signal }) => {
-    const path = appendDirectoryQuery(requestPath, directory);
-    const response = await fetchImpl(buildOpenCodeUrl(path), {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-        ...getOpenCodeAuthHeaders(),
-      },
-      signal,
-    });
-    await readJson(response);
+    const client = resolveGen2OpenCodeClient(openCodeClient);
+    const check = CLIENT_WARMUP_READS[name];
+    if (check.scoped && !directory) return { name };
+    await check.read(client, directory ?? undefined, signal);
     return { name };
   };
 }
@@ -117,13 +113,8 @@ function createTimeoutError() {
 }
 
 function createAgentRuntimeWarmup(dependencies = {}) {
-  const buildOpenCodeUrl = typeof dependencies.buildOpenCodeUrl === 'function'
-    ? dependencies.buildOpenCodeUrl
-    : (requestPath) => requestPath;
-  const getOpenCodeAuthHeaders = typeof dependencies.getOpenCodeAuthHeaders === 'function'
-    ? dependencies.getOpenCodeAuthHeaders
-    : () => ({});
-  const fetchImpl = typeof dependencies.fetchImpl === 'function' ? dependencies.fetchImpl : fetch;
+  // The client itself or a getter; read per task (opencode-client-seam.js).
+  const openCodeClient = dependencies.openCodeClient ?? null;
   const discoverSkills = typeof dependencies.discoverSkills === 'function' ? dependencies.discoverSkills : () => [];
   const readSkillFile = typeof dependencies.readSkillFile === 'function' ? dependencies.readSkillFile : () => '';
   const cursorPrewarm = typeof dependencies.cursorPrewarm === 'function' ? dependencies.cursorPrewarm : null;
@@ -135,7 +126,16 @@ function createAgentRuntimeWarmup(dependencies = {}) {
   const warmLedger = typeof dependencies.warmLedger === 'function' ? dependencies.warmLedger : null;
   const now = typeof dependencies.now === 'function' ? dependencies.now : () => Date.now();
   const inflightByDirectory = new Map();
+  const pendingTasks = new Set();
+  const taskControllers = new Set();
+  let held = false;
+  let drainPromise;
   let latestResult = null;
+  const trackTask = promise => {
+    pendingTasks.add(promise);
+    promise.then(() => pendingTasks.delete(promise), () => pendingTasks.delete(promise));
+    return promise;
+  };
 
   const buildHarness = (result) => {
     const issueCount = result.errors.length;
@@ -179,6 +179,7 @@ function createAgentRuntimeWarmup(dependencies = {}) {
 
   const runTask = async ({ name, task, timeoutMs }) => {
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    if (controller) taskControllers.add(controller);
     const startedAt = now();
     let timer;
     try {
@@ -189,7 +190,7 @@ function createAgentRuntimeWarmup(dependencies = {}) {
         }, timeoutMs);
       });
       await Promise.race([
-        task({ signal: controller?.signal }),
+        trackTask(Promise.resolve(task({ signal: controller?.signal }))),
         timeout,
       ]);
       return {
@@ -207,15 +208,17 @@ function createAgentRuntimeWarmup(dependencies = {}) {
       };
     } finally {
       if (timer) clearTimeout(timer);
+      if (controller) taskControllers.delete(controller);
     }
   };
 
   return {
     warm(options = {}) {
+      if (held) return Promise.reject(Object.assign(new Error('bundle_warmup_held'), { code: 'bundle_warmup_held', status: 503 }));
       const directory = normalizeDirectory(options.directory);
       const directoryKey = directory ?? '';
       if (warmLedger && directory && options.ledger !== false) {
-        try { void Promise.resolve(warmLedger({ directory })).catch(() => {}); } catch { /* Best effort only. */ }
+        try { void trackTask(Promise.resolve(warmLedger({ directory }))).catch(() => {}); } catch { /* Best effort only. */ }
       }
       const existing = inflightByDirectory.get(directoryKey);
       if (existing) {
@@ -246,9 +249,7 @@ function createAgentRuntimeWarmup(dependencies = {}) {
             // proxied to app.opencode.ai, an external request on every start.
             requestPath: '/global/health',
             directory: null,
-            buildOpenCodeUrl,
-            getOpenCodeAuthHeaders,
-            fetchImpl,
+            openCodeClient,
           }),
         },
         {
@@ -257,9 +258,7 @@ function createAgentRuntimeWarmup(dependencies = {}) {
             name: 'config',
             requestPath: '/config',
             directory,
-            buildOpenCodeUrl,
-            getOpenCodeAuthHeaders,
-            fetchImpl,
+            openCodeClient,
           }),
         },
         {
@@ -268,9 +267,7 @@ function createAgentRuntimeWarmup(dependencies = {}) {
             name: 'providers',
             requestPath: '/config/providers',
             directory,
-            buildOpenCodeUrl,
-            getOpenCodeAuthHeaders,
-            fetchImpl,
+            openCodeClient,
           }),
         },
         {
@@ -279,9 +276,7 @@ function createAgentRuntimeWarmup(dependencies = {}) {
             name: 'agents',
             requestPath: '/agent',
             directory,
-            buildOpenCodeUrl,
-            getOpenCodeAuthHeaders,
-            fetchImpl,
+            openCodeClient,
           }),
         },
         {
@@ -290,9 +285,7 @@ function createAgentRuntimeWarmup(dependencies = {}) {
             name: 'sessionStatus',
             requestPath: '/session/status',
             directory,
-            buildOpenCodeUrl,
-            getOpenCodeAuthHeaders,
-            fetchImpl,
+            openCodeClient,
           }),
         },
         {
@@ -301,9 +294,7 @@ function createAgentRuntimeWarmup(dependencies = {}) {
             name: 'opencodeSkills',
             requestPath: '/skill',
             directory,
-            buildOpenCodeUrl,
-            getOpenCodeAuthHeaders,
-            fetchImpl,
+            openCodeClient,
           }),
         },
         ...(cursorPrewarm ? [{
@@ -331,9 +322,7 @@ function createAgentRuntimeWarmup(dependencies = {}) {
           name: 'mcp',
           requestPath: '/mcp',
           directory,
-          buildOpenCodeUrl,
-          getOpenCodeAuthHeaders,
-          fetchImpl,
+          openCodeClient,
         }),
       };
       const commandTask = {
@@ -343,9 +332,7 @@ function createAgentRuntimeWarmup(dependencies = {}) {
           name: 'commands',
           requestPath: '/command',
           directory,
-          buildOpenCodeUrl,
-          getOpenCodeAuthHeaders,
-          fetchImpl,
+          openCodeClient,
         }),
       };
       const xaiTask = warmXaiToolCatalog ? {
@@ -412,6 +399,16 @@ function createAgentRuntimeWarmup(dependencies = {}) {
 
     getLatestResult() {
       return latestResult;
+    },
+    holdForCheckpoint() {
+      held = true;
+      for (const controller of taskControllers) controller.abort();
+      drainPromise ??= (async () => {
+        await Promise.allSettled([...inflightByDirectory.values()]);
+        // A caller timeout is not task settlement, including ledger warming.
+        await Promise.allSettled([...pendingTasks]);
+      })();
+      return drainPromise;
     },
   };
 }

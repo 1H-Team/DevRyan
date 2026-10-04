@@ -33,7 +33,7 @@ never mutate host agent files. Council and every non-model field remain
 host-managed.
 
 `AgentRuntimePage.tsx` is the host-wide Runtime view: `AgentRuntimeSection`,
-the OpenCode binary path (`openchamber/OpenCodeCliSettings.tsx`), and local
+bundled OpenCode runtime status (`openchamber/OpenCodeCliSettings.tsx`), and local
 Electron Agent Browser Control. `AgentRuntimeSection.tsx` is never rendered
 inside one agent's editor: the agent-runtime
 language-server switch (`/api/config/agent-runtime`) compares desired settings

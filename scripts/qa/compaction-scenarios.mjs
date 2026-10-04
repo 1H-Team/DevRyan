@@ -10,6 +10,7 @@ import { projectQaPlanChildPolicy } from './live-task-evidence.mjs';
 import { assertQaCompactionPlanUnchanged, captureQaCompactionPlanReference, captureQaCompactionProjectPlan, prepareQaCompactionApproval } from './compaction-approval.mjs';
 import { createQaCompactionSnapshotRecorder, createQaCompactionActionSnapshotRecorder, decodeQaCompactionSnapshots } from './compaction-snapshot-evidence.mjs';
 import { readQaManualCompactionQueueMode, withQaManualCompactionSubmission } from './manual-compaction-submission.mjs';
+import { findQaNativeCompactionBoundaries } from './native-compaction-evidence.mjs';
 import { findQaSubmittedUser } from './submitted-turn.mjs';
 
 const digest = value => createHash('sha256').update(value).digest('hex');
@@ -17,7 +18,8 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const terminal = new Set(['completed', 'failed', 'aborted', 'interrupted']);
 const messageText = row => row.parts.filter(part => part.type === 'text').map(part => part.text ?? '').join('\n');
 
-export function findQaPlanApprovalUser(rows, previousIds, { sessionID, sourceMessageID, cell, nativeAgent }) {
+export function findQaPlanApprovalUser(rows, previousIds, { sessionID, sourceMessageID, projectDirectory, cell, nativeAgent }) {
+  assert.ok(typeof projectDirectory === 'string' && path.isAbsolute(projectDirectory), 'Plan approval requires the expected project directory');
   const prefix = '[openchamber-plan-action:v1] ';
   const candidates = rows.filter(row => row.info?.role === 'user' && !previousIds.has(row.info.id)
     && row.parts?.some(part => part.type === 'text' && part.synthetic === true && part.text?.startsWith(prefix)));
@@ -27,7 +29,7 @@ export function findQaPlanApprovalUser(rows, previousIds, { sessionID, sourceMes
   const markers = user.parts.filter(part => part.type === 'text' && part.synthetic === true && part.text?.startsWith(prefix));
   assert.equal(markers.length, 1, 'Plan approval must have exactly one source marker');
   assert.deepEqual(JSON.parse(markers[0].text.slice(prefix.length)), {
-    action: 'implement', sourceSessionId: sessionID, sourceMessageId: sourceMessageID, planIndex: 0,
+    action: 'implement', sourceSessionId: sessionID, sourceMessageId: sourceMessageID, planIndex: 0, projectDirectory,
   }, 'Plan approval changed the source revision');
   assert.equal(user.info.sessionID, sessionID, 'Plan approval changed the session');
   assert.equal(user.info.model?.providerID, cell.providerId, 'Plan approval changed the provider');
@@ -55,7 +57,8 @@ export function findQaNativeCompactionCycle(events, summaryCompletedAt) {
 
 // A typed compaction part linked to a completed summary is the native boundary.
 // A recap, slash-command text, or a summary from another turn cannot substitute.
-export function findManualCompactionBoundary(rows, previousPartIds = []) {
+export function findManualCompactionBoundary(rows, previousPartIds = [], nativeObservationScope) {
+  if (nativeObservationScope) return findQaNativeCompactionBoundaries(rows, { ...nativeObservationScope, previousPartIds, reason: 'manual' })[0] ?? null;
   const previous = new Set(previousPartIds);
   for (const row of rows) {
     if (row.info?.role !== 'user') continue;
@@ -100,7 +103,7 @@ export function projectCompactionTaskSnapshot(snapshot, rootSessionId) {
 }
 
 export async function runQaManualCompaction({ cell, projectFixture, cdp, ui, api, check, screenshot, runDeadline,
-  sendTurn, messages, getSessionID, captureSavedPlan, readSavedRevision, readProviderObservation, nativeAgent }) {
+  sendTurn, messages, getSessionID, captureSavedPlan, readSavedRevision, readProviderObservation, nativeAgent, nativeObservationScope }) {
   const composedProject = cell?.scenarioId === 'project-work' && cell.runtime === 'electron' && cell.projectCompaction === 'manual';
   if (cell?.transport !== 'live' || (cell.scenarioId !== 'compaction-manual' && !composedProject)) throw new Error('Manual compaction requires a live manual matrix cell or opted-in Electron project journey');
   const snapshotRecorder = createQaCompactionSnapshotRecorder();
@@ -180,7 +183,7 @@ export async function runQaManualCompaction({ cell, projectFixture, cdp, ui, api
   };
   const waitAfterCard = async (previousIds, sourceMessageID) => ui.waitFor('completed plan-card implementation', async () => {
     const rows = await messages();
-    const user = findQaPlanApprovalUser(rows, previousIds, { sessionID: getSessionID(), sourceMessageID, cell, nativeAgent });
+    const user = findQaPlanApprovalUser(rows, previousIds, { sessionID: getSessionID(), sourceMessageID, projectDirectory: projectFixture.fixtureRoot, cell, nativeAgent });
     if (!user) return false;
     if (!evidence.submittedUserMessageIDs.includes(user.info.id)) evidence.submittedUserMessageIDs.push(user.info.id);
     const answers = rows.filter(row => row.info?.role === 'assistant' && row.info.parentID === user.info.id);
@@ -280,7 +283,8 @@ export async function runQaManualCompaction({ cell, projectFixture, cdp, ui, api
           queueModeEnabled: evidence.queueModeObservation.enabled, deadline: runDeadline, receipt: submission, persist }, async observer => {
           const observed = await ui.waitFor('canonical manual compaction and completed summary', async () => {
             observer.assertHealthy();
-            return findManualCompactionBoundary(await messages(), before);
+            return findManualCompactionBoundary(await messages(), before, nativeObservationScope && { ...nativeObservationScope,
+              sessionID: getSessionID(), startedAt, observations: await readProviderObservation() });
           }, cell.timeoutMs);
           observed.sessionID = getSessionID();
           assert.equal(observed.sessionID, evidence.sessionID, 'Manual compaction changed the project session');
@@ -291,19 +295,21 @@ export async function runQaManualCompaction({ cell, projectFixture, cdp, ui, api
           const status = await api(`/api/session/status?directory=${encodeURIComponent(projectFixture.fixtureRoot)}`);
           return !status[getSessionID()] || status[getSessionID()].type === 'idle';
         }, cell.timeoutMs);
-        boundary.nativeEvents = [];
-        try {
-          await ui.waitFor('native observer flush', async () => {
-            const observations = await readProviderObservation();
-            assert.ok(Array.isArray(observations), 'Provider observation must be parsed records');
-            boundary.nativeEvents = observations.filter(item => item.sessionID === getSessionID() && item.at >= startedAt
-              && item.at <= boundary.observedAt + 5000
-              && ['native.compacting', 'native.session.compacted', 'native.compaction.autocontinue'].includes(item.kind));
-            boundary.nativeCycle = findQaNativeCompactionCycle(boundary.nativeEvents, boundary.observedAt);
-            return boundary.nativeCycle;
-          }, 5000);
-        } catch (error) {
-          if (error.message !== 'Timed out: native observer flush') throw error;
+        if (!nativeObservationScope) {
+          boundary.nativeEvents = [];
+          try {
+            await ui.waitFor('native observer flush', async () => {
+              const observations = await readProviderObservation();
+              assert.ok(Array.isArray(observations), 'Provider observation must be parsed records');
+              boundary.nativeEvents = observations.filter(item => item.sessionID === getSessionID() && item.at >= startedAt
+                && item.at <= boundary.observedAt + 5000
+                && ['native.compacting', 'native.session.compacted', 'native.compaction.autocontinue'].includes(item.kind));
+              boundary.nativeCycle = findQaNativeCompactionCycle(boundary.nativeEvents, boundary.observedAt);
+              return boundary.nativeCycle;
+            }, 5000);
+          } catch (error) {
+            if (error.message !== 'Timed out: native observer flush') throw error;
+          }
         }
         boundary.nativeLifecycle = boundary.nativeCycle ? 'observed' : 'missing';
         evidence.boundaries.push(boundary);
@@ -322,7 +328,8 @@ export async function runQaManualCompaction({ cell, projectFixture, cdp, ui, api
         }
         await screenshot(`compaction-boundary-${index + 1}`);
         await ui.reload();
-        const restored = findManualCompactionBoundary(await messages(), before);
+        const restored = findManualCompactionBoundary(await messages(), before, nativeObservationScope && { ...nativeObservationScope,
+          sessionID: getSessionID(), startedAt, observations: await readProviderObservation() });
         assert.equal(restored?.summaryMessageId, boundary.summaryMessageId, 'Reload lost the canonical compaction summary');
         evidence.afterCompactionGrade = pausedGrade(revisedPlan);
         // Read the current authoritative plan again; the retained evidence copy

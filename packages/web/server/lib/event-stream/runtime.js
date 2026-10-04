@@ -15,7 +15,7 @@ import { serializeEventPayload } from './payload-serialization.js';
 import { acceptDirectoryMessageStreamWsConnection } from './directory-ws-bridge.js';
 import {
   DEFAULT_UPSTREAM_RECONNECT_DELAY_MS,
-  DEFAULT_UPSTREAM_STALL_TIMEOUT_MS,
+  GEN2_UPSTREAM_STALL_TIMEOUT_MS,
 } from './upstream-reader.js';
 
 function getRequestLastEventId(req) {
@@ -178,6 +178,8 @@ export function createGlobalUiEventBroadcaster({
   wsClients,
   writeSseEvent,
   globalEventHub = null,
+  openCodeClient = null,
+  getOpenCodeRuntime = null,
   registerRetentionConnection = null,
 }) {
   const filteredQueues = new WeakMap();
@@ -249,15 +251,16 @@ export function createMessageStreamWsRuntime({
   uiAuthController,
   isRequestOriginAllowed,
   rejectWebSocketUpgrade,
-  buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
   wsClients,
   triggerHealthCheck,
   heartbeatIntervalMs = MESSAGE_STREAM_WS_HEARTBEAT_INTERVAL_MS,
-  upstreamStallTimeoutMs = DEFAULT_UPSTREAM_STALL_TIMEOUT_MS,
+  generation2StallTimeoutMs = GEN2_UPSTREAM_STALL_TIMEOUT_MS,
   upstreamReconnectDelayMs = DEFAULT_UPSTREAM_RECONNECT_DELAY_MS,
   fetchImpl = fetch,
   globalEventHub = null,
+  openCodeClient = null,
+  getOpenCodeRuntime = null,
   registerRetentionConnection = null,
   eventFilter = null,
 }) {
@@ -267,10 +270,11 @@ export function createMessageStreamWsRuntime({
 
   const ownsGlobalHub = !globalEventHub;
   const globalHub = globalEventHub ?? createGlobalMessageStreamHub({
-    buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     fetchImpl,
-    upstreamStallTimeoutMs,
+    generation2StallTimeoutMs,
+    openCodeClient,
+    getOpenCodeRuntime,
     upstreamReconnectDelayMs,
     // Same trim the server-owned hub applies: diff patch bodies never fan out.
     transformEventPayload: stripEventDiffContent,
@@ -278,14 +282,20 @@ export function createMessageStreamWsRuntime({
 
   const globalBridge = createGlobalMessageStreamWsBridge({
     globalHub,
-    ownsGlobalHub,
+    ownsGlobalHub: false,
     wsClients,
     triggerHealthCheck,
     heartbeatIntervalMs,
     eventFilter,
   });
 
+  let connectedClients = 0;
   wsServer.on('connection', (socket, req) => {
+    connectedClients += 1;
+    socket.once('close', () => {
+      connectedClients -= 1;
+      if (ownsGlobalHub && connectedClients === 0) globalHub.stop();
+    });
     const releaseRetention = registerRetentionConnection?.(req);
     if (releaseRetention) socket.once('close', releaseRetention);
     const unregisterConnection = typeof uiAuthController?.registerConnection === 'function'
@@ -302,6 +312,7 @@ export function createMessageStreamWsRuntime({
     if (isGlobalStream) {
       globalBridge.accept(socket, {
         requestedLastEventId,
+        unanchoredReplay: !requestedLastEventId && requestUrl.searchParams.get('replayUnanchored') === '1',
         principal: req.principal,
       });
       return;
@@ -311,14 +322,10 @@ export function createMessageStreamWsRuntime({
       socket,
       requestedLastEventId,
       requestedDirectory,
-      buildOpenCodeUrl,
-      getOpenCodeAuthHeaders,
+      globalHub,
       wsClients,
       triggerHealthCheck,
       heartbeatIntervalMs,
-      upstreamStallTimeoutMs,
-      upstreamReconnectDelayMs,
-      fetchImpl,
       eventFilter,
       principal: req.principal,
     });
@@ -365,6 +372,7 @@ export function createMessageStreamWsRuntime({
     async close() {
       server.off('upgrade', upgradeHandler);
       globalBridge.close();
+      if (ownsGlobalHub) globalHub.stop();
 
       try {
         for (const client of wsServer.clients) {

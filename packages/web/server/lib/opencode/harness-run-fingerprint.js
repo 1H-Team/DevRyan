@@ -3,6 +3,7 @@ import path from 'node:path';
 import { resolveHarnessPolicies } from '@openchamber/orchestration-runtime';
 import { readDuplicatePluginInventory, qualifyDuplicateOutputs, resolveDuplicateOutputPolicy, createRuntimeDigestReader, createRuntimeIdentityReader, duplicatePolicyVector } from './harness-duplicate-qualification.js';
 import { createHarnessToolManifestReader } from './harness-tool-manifest.js';
+import { resolveGen2OpenCodeClient } from './opencode-client-seam.js';
 
 const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const identifier = (value) => typeof value === 'string' && /^[a-zA-Z0-9@][a-zA-Z0-9_.@:/-]{0,255}$/.test(value)
@@ -57,33 +58,34 @@ export const createHarnessRunFingerprintReader = (options) => {
   let qualifiedRuntimeVersion = null;
   const pending = new Map();
   const inventories = new Map();
-  const request = async (pathname, directory) => {
+  const viaClient = async (load) => {
     try {
-      const url = new URL(options.buildOpenCodeUrl(pathname));
-      if (directory) url.searchParams.set('directory', directory);
-      const response = await options.fetchImpl(url, { headers: options.getOpenCodeAuthHeaders?.() ?? {}, signal: AbortSignal.timeout(5000) });
-      if (!response.ok || !response.body) return null;
-      const reader = response.body.getReader();
-      const chunks = [];
-      let bytes = 0;
-      try {
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          bytes += value.byteLength;
-          if (bytes > 8 * 1024 * 1024) return null;
-          chunks.push(value);
-        }
-        return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-      } finally { await reader.cancel().catch(() => {}); }
-    } catch { return null; }
+      const client = resolveGen2OpenCodeClient(options.openCodeClient);
+      return { value: await load(client) };
+    } catch { return { value: null }; }
+  };
+  /** `{healthy, version}` like `/global/health`; gen 2 reports the probed OpenCode version when ready. */
+  const readHealth = async () => {
+    const result = await viaClient(async (client) => {
+      const probed = await client.health.probe({ timeoutMs: 5000 });
+      return probed?.ready === true ? { healthy: true, version: probed.version } : null;
+    });
+    return result.value;
+  };
+  const readConfig = async (directory) => {
+    const result = await viaClient((client) => client.catalog.config({ directory }, { timeoutMs: 5000 }));
+    return result.value;
+  };
+  const readAgents = async (directory) => {
+    const result = await viaClient((client) => client.catalog.agents({ directory }, { timeoutMs: 5000 }));
+    return result.value;
   };
   const read = async (context = {}) => {
     const key = JSON.stringify([context.directory, context.providerID, context.modelID, context.agent, context.variant]);
     if (pending.has(key)) return pending.get(key);
     const operation = (async () => {
       const [health, config, agents, toolManifest] = await Promise.all([
-        request('/global/health'), request('/config', context.directory), request('/agent', context.directory), manifests(context),
+        readHealth(), readConfig(context.directory), readAgents(context.directory), manifests(context),
       ]);
       const agent = Array.isArray(agents) ? agents.find((entry) => entry?.name === context.agent) : null;
       let source;
@@ -106,7 +108,7 @@ export const createHarnessRunFingerprintReader = (options) => {
       const enabled = duplicateOutputs;
       const managed = options.isManaged?.() === true;
       if (!enabled || !managed || typeof context.directory !== 'string') return { qualified: false, reason: 'policy-or-runtime-unqualified' };
-      const [health, config, runtime] = await Promise.all([request('/global/health'), request('/config', context.directory), readRuntimeIdentity()]);
+      const [health, config, runtime] = await Promise.all([readHealth(), readConfig(context.directory), readRuntimeIdentity()]);
       runtimeHash = runtime.runtimeHash;
       qualifiedRuntimeVersion = health?.version ?? null;
       const inventory = await readDuplicatePluginInventory(config?.plugin, config?.provider);

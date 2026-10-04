@@ -1,0 +1,2040 @@
+{
+  "schema": 1,
+  "edges": [
+    {
+      "importer": "node_modules/jsdom/lib/api.js",
+      "specifier": "tough-cookie",
+      "target": "node_modules/tough-cookie/dist/index.cjs"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/api.js",
+      "specifier": "html-encoding-sniffer",
+      "target": "node_modules/html-encoding-sniffer/lib/html-encoding-sniffer.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/api.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/api.js",
+      "specifier": "@exodus/bytes/encoding.js",
+      "target": "node_modules/@exodus/bytes/encoding.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/api.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/api.js",
+      "specifier": "whatwg-mimetype",
+      "target": "node_modules/whatwg-mimetype/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/browser/Window.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/browser/Window.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/@exodus/bytes/encoding.js",
+      "specifier": "@exodus/bytes/multi-byte.js",
+      "target": "node_modules/@exodus/bytes/multi-byte.node.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/browser/resources/jsdom-dispatcher.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/browser/resources/jsdom-dispatcher.js",
+      "specifier": "data-urls",
+      "target": "node_modules/data-urls/lib/parser.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/browser/resources/jsdom-dispatcher.js",
+      "specifier": "@exodus/bytes/base64.js",
+      "target": "node_modules/@exodus/bytes/base64.js"
+    },
+    {
+      "importer": "node_modules/tough-cookie/dist/index.cjs",
+      "specifier": "tldts",
+      "target": "node_modules/tldts/dist/cjs/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/domparsing/serialization.js",
+      "specifier": "w3c-xmlserializer",
+      "target": "node_modules/w3c-xmlserializer/lib/serialize.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/domparsing/serialization.js",
+      "specifier": "parse5",
+      "target": "node_modules/parse5/dist/index.js"
+    },
+    {
+      "importer": "node_modules/html-encoding-sniffer/lib/html-encoding-sniffer.js",
+      "specifier": "@exodus/bytes/encoding-lite.js",
+      "target": "node_modules/@exodus/bytes/encoding-lite.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/browser/parser/html.js",
+      "specifier": "parse5",
+      "target": "node_modules/parse5/dist/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/browser/parser/xml.js",
+      "specifier": "saxes",
+      "target": "node_modules/saxes/saxes.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/DOMException.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/w3c-xmlserializer/lib/serialize.js",
+      "specifier": "xml-name-validator",
+      "target": "node_modules/xml-name-validator/lib/xml-name-validator.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/Comment.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/DocumentType.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/DocumentFragment.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/Text.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/helpers/custom-elements.js",
+      "specifier": "is-potential-custom-element-name",
+      "target": "node_modules/is-potential-custom-element-name/index.js"
+    },
+    {
+      "importer": "node_modules/whatwg-url/lib/url-state-machine.js",
+      "specifier": "@exodus/bytes/encoding.js",
+      "target": "node_modules/@exodus/bytes/encoding.js"
+    },
+    {
+      "importer": "node_modules/whatwg-url/lib/url-state-machine.js",
+      "specifier": "@exodus/bytes/whatwg.js",
+      "target": "node_modules/@exodus/bytes/whatwg.js"
+    },
+    {
+      "importer": "node_modules/@exodus/bytes/fallback/encoding.js",
+      "specifier": "@exodus/bytes/utf16.js",
+      "target": "node_modules/@exodus/bytes/utf16.node.js"
+    },
+    {
+      "importer": "node_modules/@exodus/bytes/fallback/encoding.js",
+      "specifier": "@exodus/bytes/utf8.js",
+      "target": "node_modules/@exodus/bytes/utf8.node.js"
+    },
+    {
+      "importer": "node_modules/@exodus/bytes/fallback/encoding.js",
+      "specifier": "@exodus/bytes/single-byte.js",
+      "target": "node_modules/@exodus/bytes/single-byte.node.js"
+    },
+    {
+      "importer": "node_modules/saxes/saxes.js",
+      "specifier": "xmlchars/xml/1.0/ed5",
+      "target": "node_modules/xmlchars/xml/1.0/ed5.js"
+    },
+    {
+      "importer": "node_modules/saxes/saxes.js",
+      "specifier": "xmlchars/xml/1.1/ed2",
+      "target": "node_modules/xmlchars/xml/1.1/ed2.js"
+    },
+    {
+      "importer": "node_modules/saxes/saxes.js",
+      "specifier": "xmlchars/xmlns/1.0/ed3",
+      "target": "node_modules/xmlchars/xmlns/1.0/ed3.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CDATASection.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/ProcessingInstruction.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/OnErrorEventHandlerNonNull.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/interfaces.js",
+      "specifier": "whatwg-url/webidl2js-wrapper",
+      "target": "node_modules/whatwg-url/webidl2js-wrapper.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/interfaces.js",
+      "specifier": "whatwg-url/webidl2js-wrapper",
+      "target": "node_modules/whatwg-url/webidl2js-wrapper.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/EventHandlerNonNull.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/Function.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/Navigator.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/Storage.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/window/SessionHistory.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/EventTarget.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/Performance.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CustomElementRegistry.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/Screen.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/Crypto.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/External.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/css/helpers/computed-style.js",
+      "specifier": "@bramus/specificity",
+      "target": "node_modules/@bramus/specificity/dist/index.cjs"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/OnBeforeUnloadEventHandlerNonNull.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/MessageEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/Element.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/websockets/WebSocket-impl.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/Selection.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/BarProp.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/data-urls/lib/parser.js",
+      "specifier": "whatwg-mimetype",
+      "target": "node_modules/whatwg-mimetype/lib/index.js"
+    },
+    {
+      "importer": "node_modules/data-urls/lib/parser.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/data-urls/node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/parse5/dist/serializer/index.js",
+      "specifier": "entities/escape",
+      "target": "node_modules/parse5/node_modules/entities/dist/escape.js"
+    },
+    {
+      "importer": "node_modules/parse5/dist/tokenizer/index.js",
+      "specifier": "entities/decode",
+      "target": "node_modules/parse5/node_modules/entities/dist/decode.js"
+    },
+    {
+      "importer": "node_modules/w3c-xmlserializer/lib/attributes.js",
+      "specifier": "xml-name-validator",
+      "target": "node_modules/xml-name-validator/lib/xml-name-validator.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CharacterData.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/Node.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/whatwg-url/lib/url-miscellaneous.js",
+      "specifier": "tr46",
+      "target": "node_modules/tr46/index.js"
+    },
+    {
+      "importer": "node_modules/whatwg-url/lib/URLSearchParams.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/whatwg-url/lib/URL.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/helpers/validate-names.js",
+      "specifier": "xml-name-validator",
+      "target": "node_modules/xml-name-validator/lib/xml-name-validator.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/PageTransitionEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/Event.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/@exodus/bytes/fallback/multi-byte.table.js",
+      "specifier": "@exodus/bytes/base64.js",
+      "target": "node_modules/@exodus/bytes/base64.js"
+    },
+    {
+      "importer": "node_modules/@exodus/bytes/fallback/multi-byte.table.js",
+      "specifier": "@exodus/bytes/utf16.js",
+      "target": "node_modules/@exodus/bytes/utf16.node.js"
+    },
+    {
+      "importer": "node_modules/@exodus/bytes/whatwg.js",
+      "specifier": "@exodus/bytes/utf8.js",
+      "target": "node_modules/@exodus/bytes/utf8.node.js"
+    },
+    {
+      "importer": "node_modules/@exodus/bytes/whatwg.js",
+      "specifier": "@exodus/bytes/single-byte.js",
+      "target": "node_modules/@exodus/bytes/single-byte.node.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/XMLDocument.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/Document.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/Range.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/custom-elements/CustomElementRegistry-impl.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CustomElementConstructor.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/ElementDefinitionOptions.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSLayerBlockRule.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLHeadingElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/StorageEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLEmbedElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLEmbedElement.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSSupportsRule.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/DOMParser.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLFieldSetElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CustomEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/SVGGElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLCollection.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/StyleSheetList.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSNamespaceRule.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/DOMImplementation.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLPreElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSKeyframesRule.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLMenuElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLQuoteElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLQuoteElement.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CloseEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/StaticRange.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/BlobEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/WebSocket.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/MouseEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLMarqueeElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/Blob.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLProgressElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/ErrorEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLOptionElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/WheelEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/ProgressEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLFormElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/SVGPreserveAspectRatio.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSStyleProperties.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSCounterStyleRule.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/DOMRect.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLFrameSetElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/PointerEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/ValidityState.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLMediaElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLMediaElement.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/XMLHttpRequest.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLTableSectionElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLBRElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLVideoElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLVideoElement.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLLabelElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLModElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLModElement.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLParamElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLBodyElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/TouchEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/TextDecoder.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/SVGAnimatedString.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLMeterElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/DOMStringMap.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/Plugin.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLTemplateElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/MutationRecord.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/SVGNumber.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLSourceElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLSourceElement.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/History.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/SVGMetadataElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLTextAreaElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLOptionsCollection.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSLayerStatementRule.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLOutputElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLScriptElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLScriptElement.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLUnknownElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/SVGStringList.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/FormData.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/Attr.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLTableCellElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLTableCaptionElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSMediaRule.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/SVGSymbolElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/XMLHttpRequestUpload.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/MimeType.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSConditionRule.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSFontFaceRule.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/SVGSVGElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLLegendElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLAreaElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLAudioElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/SVGGraphicsElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLImageElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLImageElement.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/TransitionEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLOptGroupElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSStyleRule.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLTrackElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLTrackElement.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLTableRowElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSImportRule.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/DOMRectReadOnly.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLFrameElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLFrameElement.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSStyleSheet.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSNestedDeclarations.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/BeforeUnloadEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/StyleSheet.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/DeviceOrientationEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/NodeList.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/PromiseRejectionEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLDataListElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLTitleElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLStyleElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLMapElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/SVGAnimatedRect.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/SVGAnimatedPreserveAspectRatio.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/File.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/FocusEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLObjectElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLObjectElement.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/DeviceMotionEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/RadioNodeList.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/MediaList.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/SVGRect.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLHeadElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLUListElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLSlotElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLSpanElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLFontElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/Location.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/Headers.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/AbstractRange.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSS.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLDataElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/TreeWalker.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/ElementInternals.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/SVGDefsElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/MutationObserver.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLTableElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLTimeElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSRuleList.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/NamedNodeMap.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/XMLSerializer.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/AbortSignal.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/TextEncoder.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLLinkElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLLinkElement.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLDetailsElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLButtonElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/InputEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLDivElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/FileList.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/DOMTokenList.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLDialogElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLHRElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLParagraphElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/ShadowRoot.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSContainerRule.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLFormControlsCollection.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/XMLHttpRequestEventTarget.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLOListElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/UIEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/QuotaExceededError.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CompositionEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/AbortController.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/SVGSwitchElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HashChangeEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLBaseElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLLIElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLHtmlElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/DeviceMotionEventRotationRate.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/PopStateEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLDListElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/SVGTitleElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLDirectoryElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSGroupingRule.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSScopeRule.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLPictureElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSPageRule.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/MimeTypeArray.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/DeviceMotionEventAcceleration.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSKeyframeRule.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSStyleDeclaration.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLIFrameElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLIFrameElement.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/SubmitEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/NodeIterator.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLMetaElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLInputElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLInputElement.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLSelectElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/SVGElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSRule.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/PluginArray.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/NodeFilter.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/SVGDescElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/KeyboardEvent.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLAnchorElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLTableColElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HTMLCanvasElement.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/FileReader.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/tr46/index.js",
+      "specifier": "punycode/",
+      "target": "node_modules/punycode/punycode.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/EventListener.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/AddEventListenerOptions.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/EventListenerOptions.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/MessageEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/GetRootNodeOptions.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/ShadowRootInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/css/helpers/css-values.js",
+      "specifier": "@asamuzakjp/css-color",
+      "target": "node_modules/@asamuzakjp/css-color/dist/esm/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/css/helpers/css-values.js",
+      "specifier": "lru-cache",
+      "target": "node_modules/lru-cache/dist/commonjs/node/index.min.js"
+    },
+    {
+      "importer": "node_modules/data-urls/node_modules/whatwg-url/lib/url-state-machine.js",
+      "specifier": "@exodus/bytes/encoding.js",
+      "target": "node_modules/@exodus/bytes/encoding.js"
+    },
+    {
+      "importer": "node_modules/data-urls/node_modules/whatwg-url/lib/url-state-machine.js",
+      "specifier": "@exodus/bytes/whatwg.js",
+      "target": "node_modules/@exodus/bytes/whatwg.js"
+    },
+    {
+      "importer": "node_modules/data-urls/node_modules/whatwg-url/lib/url-state-machine.js",
+      "specifier": "tr46",
+      "target": "node_modules/tr46/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/EventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/whatwg-url/lib/Function.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/PageTransitionEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/PromiseRejectionEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/helpers/form-controls.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/DeviceOrientationEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/css/helpers/patched-csstree.js",
+      "specifier": "@csstools/css-syntax-patches-for-csstree",
+      "target": "node_modules/@csstools/css-syntax-patches-for-csstree/dist/index.json"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/css/helpers/patched-csstree.js",
+      "specifier": "css-tree",
+      "target": "node_modules/css-tree/cjs/index.cjs"
+    },
+    {
+      "importer": "node_modules/@asamuzakjp/css-color/dist/esm/index.js",
+      "specifier": "@csstools/css-tokenizer",
+      "target": "node_modules/@csstools/css-tokenizer/dist/index.mjs"
+    },
+    {
+      "importer": "node_modules/@asamuzakjp/css-color/dist/esm/index.js",
+      "specifier": "lru-cache",
+      "target": "node_modules/lru-cache/dist/esm/node/index.min.js"
+    },
+    {
+      "importer": "node_modules/@asamuzakjp/css-color/dist/esm/index.js",
+      "specifier": "@csstools/css-calc",
+      "target": "node_modules/@csstools/css-calc/dist/index.mjs"
+    },
+    {
+      "importer": "node_modules/@asamuzakjp/css-color/dist/esm/index.js",
+      "specifier": "@csstools/css-color-parser",
+      "target": "node_modules/@csstools/css-color-parser/dist/index.mjs"
+    },
+    {
+      "importer": "node_modules/@asamuzakjp/css-color/dist/esm/index.js",
+      "specifier": "@csstools/css-parser-algorithms",
+      "target": "node_modules/@csstools/css-parser-algorithms/dist/index.mjs"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/ElementCreationOptions.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/nodes/Document-impl.js",
+      "specifier": "tough-cookie",
+      "target": "node_modules/tough-cookie/dist/index.cjs"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/nodes/Document-impl.js",
+      "specifier": "@asamuzakjp/dom-selector",
+      "target": "node_modules/@asamuzakjp/dom-selector/src/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/nodes/Document-impl.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CSSStyleSheetInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/css/helpers/stylesheets.js",
+      "specifier": "@exodus/bytes/encoding.js",
+      "target": "node_modules/@exodus/bytes/encoding.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/css/helpers/stylesheets.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/nodes/HTMLFrameElement-impl.js",
+      "specifier": "@exodus/bytes/encoding.js",
+      "target": "node_modules/@exodus/bytes/encoding.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/nodes/HTMLFrameElement-impl.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/nodes/HTMLFrameElement-impl.js",
+      "specifier": "html-encoding-sniffer",
+      "target": "node_modules/html-encoding-sniffer/lib/html-encoding-sniffer.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/nodes/HTMLFrameElement-impl.js",
+      "specifier": "whatwg-mimetype",
+      "target": "node_modules/whatwg-mimetype/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/DOMRectInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/BlobCallback.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/file-api/FileReader-impl.js",
+      "specifier": "@exodus/bytes/encoding.js",
+      "target": "node_modules/@exodus/bytes/encoding.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/file-api/FileReader-impl.js",
+      "specifier": "@exodus/bytes/base64.js",
+      "target": "node_modules/@exodus/bytes/base64.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/file-api/FileReader-impl.js",
+      "specifier": "whatwg-mimetype",
+      "target": "node_modules/whatwg-mimetype/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/KeyboardEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/TransitionEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/window/navigation.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/nodes/HTMLImageElement-impl.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/nodes/HTMLImageElement-impl.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/nodes/HTMLOrSVGElement-impl.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/nodes/HTMLSelectElement-impl.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/SubmitEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/data-urls/node_modules/whatwg-url/lib/URL.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/data-urls/node_modules/whatwg-url/lib/URLSearchParams.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/nodes/HTMLInputElement-impl.js",
+      "specifier": "decimal.js",
+      "target": "node_modules/decimal.js/decimal.js"
+    },
+    {
+      "importer": "node_modules/@asamuzakjp/dom-selector/src/index.js",
+      "specifier": "lru-cache",
+      "target": "node_modules/lru-cache/dist/commonjs/node/index.min.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/xhr/FormData-impl.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/nodes/HTMLScriptElement-impl.js",
+      "specifier": "@exodus/bytes/encoding.js",
+      "target": "node_modules/@exodus/bytes/encoding.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/nodes/HTMLScriptElement-impl.js",
+      "specifier": "whatwg-mimetype",
+      "target": "node_modules/whatwg-mimetype/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/nodes/HTMLScriptElement-impl.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/PopStateEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/HashChangeEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/nodes/HTMLBaseElement-impl.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/window/History-impl.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CompositionEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/QuotaExceededErrorOptions.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/data-urls/node_modules/whatwg-url/lib/Function.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/UIEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/traversal/helpers.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/TextDecoderOptions.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/TextDecodeOptions.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/encoding/TextDecoder-impl.js",
+      "specifier": "@exodus/bytes/encoding.js",
+      "target": "node_modules/@exodus/bytes/encoding.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/TouchEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/nodes/HTMLHyperlinkElementUtils-impl.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/@csstools/css-calc/dist/index.mjs",
+      "specifier": "@csstools/css-parser-algorithms",
+      "target": "node_modules/@csstools/css-parser-algorithms/dist/index.mjs"
+    },
+    {
+      "importer": "node_modules/@csstools/css-calc/dist/index.mjs",
+      "specifier": "@csstools/css-tokenizer",
+      "target": "node_modules/@csstools/css-tokenizer/dist/index.mjs"
+    },
+    {
+      "importer": "node_modules/@csstools/css-color-parser/dist/index.mjs",
+      "specifier": "@csstools/css-tokenizer",
+      "target": "node_modules/@csstools/css-tokenizer/dist/index.mjs"
+    },
+    {
+      "importer": "node_modules/@csstools/css-color-parser/dist/index.mjs",
+      "specifier": "@csstools/color-helpers",
+      "target": "node_modules/@csstools/color-helpers/dist/index.mjs"
+    },
+    {
+      "importer": "node_modules/@csstools/css-color-parser/dist/index.mjs",
+      "specifier": "@csstools/css-parser-algorithms",
+      "target": "node_modules/@csstools/css-parser-algorithms/dist/index.mjs"
+    },
+    {
+      "importer": "node_modules/@csstools/css-color-parser/dist/index.mjs",
+      "specifier": "@csstools/css-calc",
+      "target": "node_modules/@csstools/css-calc/dist/index.mjs"
+    },
+    {
+      "importer": "node_modules/@csstools/css-parser-algorithms/dist/index.mjs",
+      "specifier": "@csstools/css-tokenizer",
+      "target": "node_modules/@csstools/css-tokenizer/dist/index.mjs"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/InputEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/xhr/XMLHttpRequest-impl.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/xhr/XMLHttpRequest-impl.js",
+      "specifier": "@exodus/bytes/encoding.js",
+      "target": "node_modules/@exodus/bytes/encoding.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/xhr/XMLHttpRequest-impl.js",
+      "specifier": "tough-cookie",
+      "target": "node_modules/tough-cookie/dist/index.cjs"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/xhr/XMLHttpRequest-impl.js",
+      "specifier": "whatwg-mimetype",
+      "target": "node_modules/whatwg-mimetype/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/EventModifierInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/nodes/HTMLLinkElement-impl.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/encoding/TextEncoder-impl.js",
+      "specifier": "@exodus/bytes/encoding.js",
+      "target": "node_modules/@exodus/bytes/encoding.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/PointerEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/domparsing/XMLSerializer-impl.js",
+      "specifier": "w3c-xmlserializer",
+      "target": "node_modules/w3c-xmlserializer/lib/serialize.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/MutationObserverInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/MutationCallback.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/ProgressEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/WheelEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/nodes/HTMLFormElement-impl.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/ErrorEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/window/Location-impl.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/BlobPropertyBag.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/AssignedNodesOptions.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/MouseEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/BlobEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/StaticRangeInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CloseEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/CustomEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/FocusEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/StorageEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/DeviceMotionEventInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/FilePropertyBag.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/xhr/xhr-utils.js",
+      "specifier": "whatwg-url",
+      "target": "node_modules/whatwg-url/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/xhr/multipart-form-data.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/jsdom/living/fetch/header-types.js",
+      "specifier": "whatwg-mimetype",
+      "target": "node_modules/whatwg-mimetype/lib/index.js"
+    },
+    {
+      "importer": "node_modules/@asamuzakjp/dom-selector/src/js/parser.js",
+      "specifier": "css-tree/selector-parser",
+      "target": "node_modules/css-tree/lib/parser/parse-selector.js"
+    },
+    {
+      "importer": "node_modules/@asamuzakjp/dom-selector/src/js/parser.js",
+      "specifier": "css-tree/walker",
+      "target": "node_modules/css-tree/cjs/walker/index.cjs"
+    },
+    {
+      "importer": "node_modules/@asamuzakjp/dom-selector/src/js/parser.js",
+      "specifier": "css-tree/convertor",
+      "target": "node_modules/css-tree/lib/convertor/index.js"
+    },
+    {
+      "importer": "node_modules/@asamuzakjp/dom-selector/src/js/parser.js",
+      "specifier": "css-tree/utils",
+      "target": "node_modules/css-tree/lib/utils/index.js"
+    },
+    {
+      "importer": "node_modules/@asamuzakjp/dom-selector/src/js/parser.js",
+      "specifier": "css-tree/generator",
+      "target": "node_modules/css-tree/cjs/generator/index.cjs"
+    },
+    {
+      "importer": "node_modules/@asamuzakjp/dom-selector/src/js/nwsapi.js",
+      "specifier": "lru-cache",
+      "target": "node_modules/lru-cache/dist/commonjs/node/index.min.js"
+    },
+    {
+      "importer": "node_modules/@asamuzakjp/dom-selector/src/js/selector.js",
+      "specifier": "css-tree/walker",
+      "target": "node_modules/css-tree/lib/walker/index.js"
+    },
+    {
+      "importer": "node_modules/@asamuzakjp/dom-selector/src/js/selector.js",
+      "specifier": "css-tree/generator",
+      "target": "node_modules/css-tree/lib/generator/index.js"
+    },
+    {
+      "importer": "node_modules/@asamuzakjp/dom-selector/src/js/utility.js",
+      "specifier": "bidi-js",
+      "target": "node_modules/bidi-js/dist/bidi.mjs"
+    },
+    {
+      "importer": "node_modules/@asamuzakjp/dom-selector/src/js/utility.js",
+      "specifier": "is-potential-custom-element-name",
+      "target": "node_modules/is-potential-custom-element-name/index.js"
+    },
+    {
+      "importer": "node_modules/css-tree/cjs/generator/sourceMap.cjs",
+      "specifier": "source-map-js/lib/source-map-generator.js",
+      "target": "node_modules/source-map-js/lib/source-map-generator.js"
+    },
+    {
+      "importer": "node_modules/css-tree/cjs/data.cjs",
+      "specifier": "mdn-data/css/at-rules.json",
+      "target": "node_modules/mdn-data/css/at-rules.json"
+    },
+    {
+      "importer": "node_modules/css-tree/cjs/data.cjs",
+      "specifier": "mdn-data/css/properties.json",
+      "target": "node_modules/mdn-data/css/properties.json"
+    },
+    {
+      "importer": "node_modules/css-tree/cjs/data.cjs",
+      "specifier": "mdn-data/css/syntaxes.json",
+      "target": "node_modules/mdn-data/css/syntaxes.json"
+    },
+    {
+      "importer": "node_modules/css-tree/lib/generator/sourceMap.js",
+      "specifier": "source-map-js/lib/source-map-generator.js",
+      "target": "node_modules/source-map-js/lib/source-map-generator.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/DeviceMotionEventAccelerationInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/jsdom/lib/generated/idl/DeviceMotionEventRotationRateInit.js",
+      "specifier": "webidl-conversions",
+      "target": "node_modules/webidl-conversions/lib/index.js"
+    },
+    {
+      "importer": "node_modules/css-tree/cjs/data.cjs",
+      "specifier": "mdn-data/css/at-rules.json",
+      "target": "node_modules/mdn-data/css/at-rules.json"
+    },
+    {
+      "importer": "node_modules/css-tree/cjs/data.cjs",
+      "specifier": "mdn-data/css/properties.json",
+      "target": "node_modules/mdn-data/css/properties.json"
+    },
+    {
+      "importer": "node_modules/css-tree/cjs/data.cjs",
+      "specifier": "mdn-data/css/syntaxes.json",
+      "target": "node_modules/mdn-data/css/syntaxes.json"
+    },
+    {
+      "importer": "node_modules/css-tree/cjs/generator/sourceMap.cjs",
+      "specifier": "source-map-js/lib/source-map-generator.js",
+      "target": "node_modules/source-map-js/lib/source-map-generator.js"
+    }
+  ]
+}

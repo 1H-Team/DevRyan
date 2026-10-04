@@ -84,3 +84,8 @@ test('quota Meridian profile paths stay owned inside the Bun host where the home
         assert.ok(!leaked.profile.startsWith(`${qaHome}${path.sep}`), 'expected the unowned env to escape the QA home');
     } finally { await rm(scratch, { recursive: true, force: true }); }
 });
+
+ test('a lawful owned profile cannot start the retired v1 quota transport', async () => {
+  const { runtimeRoot, qaHome, env } = syntheticLaunch(path.join(root, '.cache/qa/synthetic-quota-retired'));
+  await assert.rejects(startClaudeQuotaRuntime({ runtimeRoot, qaHome, env }), { code: 'qa_native_diagnostic_unavailable' });
+});

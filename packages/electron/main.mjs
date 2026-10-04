@@ -1,5 +1,7 @@
+import {createNativeSettingsDirectory,readNativeShellBundleBinding} from './native-settings-directory.mjs';
 import { AGENT_BROWSER_VERSION } from '@openchamber/web/server/lib/agent-browser/install.js';
 import { restartSupabaseHost } from './supabase-host-restart.mjs';
+import {confirmRuntimeBundleResume} from './runtime-bundle-recovery.mjs';
 import { createRuntimeMemoryMonitor } from './runtime-memory-monitor.mjs';
 import { installRendererRecovery } from './renderer-recovery.mjs';
 import { createDesktopMenu } from './desktop-menu.mjs';
@@ -372,7 +374,7 @@ const performConfirmedQuit = ({ restart = false } = {}) => {
         }),
       ]);
     },
-    relaunch: restart ? () => app.relaunch() : undefined,
+    relaunch: restart ? relaunchWithHostDataRoot : undefined,
     requestQuit: () => {
       state.quitCleanupPromise = null;
       app.quit();
@@ -489,12 +491,35 @@ const refreshQuitRiskFlags = async () => {
   }));
 };
 
-const { settingsFilePath, readSettingsRoot, mutateSettingsRoot, normalizeHostUrl, readDesktopHostsConfig, writeDesktopHostsConfig, readWindowState, writeWindowState, debounceWindowStatePersist } = createDesktopSettings({
+// The binding changes OPENCHAMBER_DATA_DIR during module evaluation. Capture
+// shell ownership first; a static import would run before this in packaged ESM.
+const hostDataRootDirectory=path.resolve(process.env.OPENCHAMBER_DATA_DIR||path.join(os.homedir(),'.config','openchamber'));
+const {readRuntimeBundleBinding}=await import('@openchamber/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js');
+const shellRuntimeBundleBinding=readNativeShellBundleBinding({environment:{...process.env},home:os.homedir(),existsSync:fs.existsSync,readRuntimeBundleBinding});
+const runtimeBundleRecoveryRequired=shellRuntimeBundleBinding?.admission==='held'||shellRuntimeBundleBinding?.selection.reconciliationRequired===true;
+const resolveSettingsDirectory=createNativeSettingsDirectory({environment:{...process.env},home:os.homedir(),existsSync:fs.existsSync,readRuntimeBundleBinding});
+const { settingsFilePath, readSettingsRoot, mutateSettingsRoot, normalizeHostUrl, readDesktopHostsConfig, writeDesktopHostsConfig, readWindowState, writeWindowState, debounceWindowStatePersist, holdForCheckpoint: holdDesktopSettingsForCheckpoint } = createDesktopSettings({
   fs, fsp, os, process, log, getMainWindow: () => state.mainWindow,
-  minWidth: MIN_WINDOW_WIDTH, minHeight: MIN_WINDOW_HEIGHT, LOCAL_HOST_ID,
+  minWidth: MIN_WINDOW_WIDTH, minHeight: MIN_WINDOW_HEIGHT, LOCAL_HOST_ID, resolveDataDirectory:resolveSettingsDirectory,
 });
 
-const dataRootDirectory = () => path.dirname(settingsFilePath());
+// Native bundle binding may relocate settings. Host service/Bot identity must
+// retain its original shell-owned root across that application transition.
+const dataRootDirectory = () => hostDataRootDirectory;
+
+const relaunchWithHostDataRoot = () => {
+  const runtimeDataDirectory = process.env.OPENCHAMBER_DATA_DIR;
+  process.env.OPENCHAMBER_DATA_DIR = hostDataRootDirectory;
+  try {
+    // Electron synchronously starts its relaunch helper with the current env.
+    app.relaunch();
+  } finally {
+    // Ordinary quit can use bounded cleanup; keep any remaining parent work
+    // bound to its selected runtime even if scheduling the relaunch fails.
+    if (runtimeDataDirectory === undefined) delete process.env.OPENCHAMBER_DATA_DIR;
+    else process.env.OPENCHAMBER_DATA_DIR = runtimeDataDirectory;
+  }
+};
 
 const firstExistingPath = (candidates) => (
   candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0]
@@ -598,7 +623,8 @@ const getBotRuntimeManager = () => {
 };
 
 const sshManager = new ElectronSshManager({
-  settingsFilePath: settingsFilePath(),
+  settingsFilePath,
+  mutateSettingsRoot,
   appVersion: APP_VERSION,
   emit: (event, detail) => emitToAllWindows(event, detail),
 });
@@ -831,7 +857,7 @@ const acquireRuntimeOwner = createRuntimeOwnerAcquirer({
 });
 
 const spawnLocalServer = async () => {
-  inheritUserShellEnv();
+  if(!runtimeBundleRecoveryRequired)inheritUserShellEnv();
 
   await acquireRuntimeOwner(isRuntimeServiceMode ? 'service' : 'app_bound');
 
@@ -848,7 +874,7 @@ const spawnLocalServer = async () => {
   // When the user enables "Desktop Network Access" we bind on all interfaces
   // so phones/tablets on the same Wi-Fi can reach the app. UI shows a clear
   // warning and persists the flag via /api/config/settings.
-  const lanAccessEnabled = !isRuntimeServiceMode && settings.desktopLanAccessEnabled === true;
+  const lanAccessEnabled = !runtimeBundleRecoveryRequired && !isRuntimeServiceMode && settings.desktopLanAccessEnabled === true;
   const bindHost = lanAccessEnabled ? '0.0.0.0' : '127.0.0.1';
   // The in-process web server refuses to bind a network-exposed host without UI
   // auth (see server/lib/security/bind-host.js). Desktop Network Access is a
@@ -901,7 +927,7 @@ const spawnLocalServer = async () => {
   delete process.env.DEVRYAN_BROWSER_CDP_TOKEN;
   delete process.env.DEVRYAN_AGENT_BROWSER_BIN;
 
-  if (!state.botSecretStore) {
+  if (!runtimeBundleRecoveryRequired && !state.botSecretStore) {
     try {
       state.botSecretStore = await createBotSecretStore({
         dataDirectory: dataRootDirectory(),
@@ -985,11 +1011,19 @@ const spawnLocalServer = async () => {
     host: bindHost,
     attachSignals: false,
     exitOnShutdown: false,
+    onRuntimeBundleCheckpoint: async () => {
+      // Lease expiry does not prove a separate foreground writer exited. Use
+      // the existing app-bound handoff before taking a bundle checkpoint.
+      if (isRuntimeServiceMode) {
+        throw Object.assign(new Error('bundle_service_requires_app_bound'), { code: 'bundle_service_requires_app_bound', status: 503 });
+      }
+      await holdDesktopSettingsForCheckpoint();
+    },
     onRestartHost: () => restartSupabaseHost({
       handle: state.serverHandle,
       coordinator: state.runtimeServiceCoordinator,
       serviceMode: isRuntimeServiceMode,
-      relaunch: () => app.relaunch(),
+      relaunch: relaunchWithHostDataRoot,
       exit: (code) => app.exit(code),
       onStopped: () => {
         state.serverHandle = null;
@@ -1181,7 +1215,10 @@ const spawnLocalServer = async () => {
   const url = buildLocalUrl(port);
 
   state.serverHandle = handle;
-  if (!isRuntimeServiceMode) {
+  const bundleStatus = await handle.runtimeBundle?.inspect?.();
+  const recoveryOnly = bundleStatus?.state === 'held' || bundleStatus?.reconciliationRequired === true;
+  if (recoveryOnly) await holdDesktopSettingsForCheckpoint();
+  if (!recoveryOnly && !isRuntimeServiceMode) {
     const ownerCookie = await handle.issueLocalOwnerSession?.();
     if (ownerCookie) await session.defaultSession.cookies.set({
       url, name: ownerCookie.name, value: ownerCookie.value, path: '/', httpOnly: true,
@@ -1199,8 +1236,13 @@ const spawnLocalServer = async () => {
   state.runtimeServiceOwnsServer = isRuntimeServiceMode;
 
   if (isRuntimeServiceMode) {
-    await state.runtimeServiceCoordinator.start({ port, health: 'healthy' });
+    await state.runtimeServiceCoordinator.start({ port, health: recoveryOnly ? 'degraded' : 'healthy' });
+    log.info(recoveryOnly
+      ? '[runtime-service] recovery-only background runtime is listening'
+      : '[runtime-service] background runtime is listening', { port });
   }
+
+  if(recoveryOnly)return url;
 
   // Managed startup invokes getManagedBrowserEnvironment before it can become
   // ready. If readiness arrives without that callback, the lifecycle selected
@@ -3115,7 +3157,9 @@ const activateMainWindow = async (url, localOrigin, bootOutcome) => {
   state.bootOutcome = bootOutcome ?? null;
   state.initScript = buildInitScript(localOrigin, state.bootOutcome, state.sidecarUrl || localOrigin);
   const startupSplashPalette = currentStartupSplashPalette();
-  const startupUrl = withStartupSplashPalette(url, localOrigin, startupSplashPalette);
+  const startupUrl = runtimeBundleRecoveryRequired
+    ? url
+    : withStartupSplashPalette(url, localOrigin, startupSplashPalette);
 
   const mainWindow = state.mainWindow;
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -3398,11 +3442,11 @@ const setMiniChatPinned = (browserWindow, pinned) => {
 const resolveInitialUrl = async () => {
   const localUrl = state.runtimeServiceClient && state.sidecarUrl
     ? state.sidecarUrl
-    : (isDev && await waitForHealth('http://127.0.0.1:3901', 5_000, 100)
+    : (!runtimeBundleRecoveryRequired && isDev && await waitForHealth('http://127.0.0.1:3901', 5_000, 100)
       ? 'http://127.0.0.1:3901'
       : await spawnLocalServer());
 
-  const localUiUrl = isDev && await waitForHealth('http://127.0.0.1:5173', 8_000, 100)
+  const localUiUrl = !runtimeBundleRecoveryRequired && isDev && await waitForHealth('http://127.0.0.1:5173', 8_000, 100)
     ? 'http://127.0.0.1:5173'
     : localUrl;
 
@@ -3413,8 +3457,8 @@ const resolveInitialUrl = async () => {
   let initialUrl = localUiUrl;
   let remoteProbe = null;
 
-  const envTarget = normalizeHostUrl(process.env.OPENCHAMBER_SERVER_URL || '');
-  const config = readDesktopHostsConfig();
+  const envTarget = runtimeBundleRecoveryRequired?null:normalizeHostUrl(process.env.OPENCHAMBER_SERVER_URL || '');
+  const config = runtimeBundleRecoveryRequired?{hosts:[],defaultHostId:LOCAL_HOST_ID,initialHostChoiceCompleted:true}:readDesktopHostsConfig();
   if (envTarget) {
     initialUrl = envTarget;
   } else if (config.defaultHostId && config.defaultHostId !== LOCAL_HOST_ID) {
@@ -3559,7 +3603,7 @@ const retryBotRuntimeStartup = () => {
 };
 
 const prepareBotRuntimeInBackground = () => {
-  if (state.botRuntimeRetryPromise || typeof state.serverHandle?.prepareBotRuntime !== 'function') {
+  if (runtimeBundleRecoveryRequired || state.botRuntimeRetryPromise || typeof state.serverHandle?.prepareBotRuntime !== 'function') {
     return;
   }
   const current = requirePreparedBotRuntime().catch((error) => {
@@ -3577,6 +3621,7 @@ const prepareBotRuntimeInBackground = () => {
 };
 
 const prepareForegroundRuntime = async () => {
+  if(runtimeBundleRecoveryRequired)return;
   if (state.runtimeServiceClient || state.runtimeServiceCoordinator?.getOwner()) return;
   const automaticRuntime = await autoEnableBackgroundRuntimeOnFirstLaunch();
   if (automaticRuntime.mode === 'service') {
@@ -3610,8 +3655,8 @@ const startDesktopRuntime = () => {
       await activateMainWindow(initialUrl, localOrigin, bootOutcome);
       desktopStartupFailed = false;
 
-      installPowerResumeHook();
-      if (isLocalStartupTarget(startupContext)) {
+      if(!runtimeBundleRecoveryRequired)installPowerResumeHook();
+      if (!runtimeBundleRecoveryRequired && isLocalStartupTarget(startupContext)) {
         const openCodeStartup = Promise.resolve(
           state.serverHandle?.resumeDeferredOpenCodeStartup?.(),
         );
@@ -3698,7 +3743,7 @@ const setupAutoUpdater = () => {
   });
 };
 
-const buildInstalledAppsCachePath = () => path.join(path.dirname(settingsFilePath()), INSTALLED_APPS_CACHE_FILE);
+const buildInstalledAppsCachePath = () => path.join(hostDataRootDirectory, INSTALLED_APPS_CACHE_FILE);
 
 // Async variants. sips + mdfind via spawnSync blocked the Electron main event
 // loop for 2-3s on boot (22 OPEN_IN_APPS × ~200 ms each). Use execFile promises
@@ -4904,6 +4949,28 @@ const SENSITIVE_NATIVE_BROWSER_COMMANDS = new Set([
 
 ipcMain.handle('openchamber:invoke', async (event, command, args) => {
   const browserWindow = BrowserWindow.fromWebContents(event.sender);
+  if(command==='desktop_runtime_bundle_resume'){
+    const handle=state.serverHandle;
+    const assertSender=()=>{
+      if(!runtimeBundleRecoveryRequired||!handle||handle!==state.serverHandle||!browserWindow||browserWindow!==state.mainWindow
+        ||browserWindow.isDestroyed()||event.senderFrame!==event.sender.mainFrame||!isLocalSender(event.sender))throw new Error('bundle_recovery_sender_denied');
+      const url=new URL(event.sender.getURL()),owned=new URL(state.sidecarUrl);
+      if(url.origin!==owned.origin||url.pathname!=='/'||url.search||url.hash)throw new Error('bundle_recovery_sender_denied');
+    };
+    const result=await confirmRuntimeBundleResume({args,handle,assertSender,confirm:async()=>{
+      const answer=await dialog.showMessageBox(browserWindow,{type:'warning',title:'Resume retained runtime',
+        message:'Resume the retained runtime and restart DevRyan?',detail:'Both bundles will be kept. Recovery proceeds only if the original checkpoint and retained runtime still verify.',
+        buttons:['Cancel','Resume and restart'],defaultId:0,cancelId:0,noLink:true});
+      return answer.response===1;
+    }});
+    if(result.state==='restart_required')setImmediate(()=>{
+      void restartSupabaseHost({handle,coordinator:state.runtimeServiceCoordinator,serviceMode:isRuntimeServiceMode,
+        relaunch:relaunchWithHostDataRoot,exit:code=>app.exit(code),onStopped:()=>{
+          state.serverHandle=null;state.sidecarUrl=null;state.runtimeServiceCoordinator=null;state.runtimeServiceOwnsServer=false;
+        }}).catch(()=>log.error('[electron] retained runtime selected; restart remains required'));
+    });
+    return result;
+  }
   if (NATIVE_BROWSER_COMMANDS.has(command)) {
     const force = SENSITIVE_NATIVE_BROWSER_COMMANDS.has(command)
       || (command === 'desktop_browser_surface_command'
@@ -5059,6 +5126,16 @@ app.whenReady().then(async () => {
     app.exit(result.ok && result.state !== 'not_found' ? 0 : 2);
     return;
   }
+  if(runtimeBundleRecoveryRequired){
+    await holdDesktopSettingsForCheckpoint();
+    if(!isRuntimeServiceMode){
+      process.once('SIGTERM',()=>performConfirmedQuit());
+      process.once('SIGINT',()=>performConfirmedQuit());
+      state.mainWindow=createBrowserWindow({label:'main',restoreGeometry:true,url:null});
+      await startDesktopRuntime();
+      return;
+    }
+  }
   if (isRuntimeServiceMode) {
     // Accessory (not prohibited): no Dock icon or menu bar, yet a native
     // dialog raised by the service can still be shown.
@@ -5071,9 +5148,6 @@ app.whenReady().then(async () => {
     });
     process.once('SIGINT', () => {
       void shutdownOwnedRuntimeService().finally(() => app.exit(0));
-    });
-    log.info('[runtime-service] background runtime is healthy', {
-      port: state.serverHandle?.getPort?.(),
     });
     return;
   }

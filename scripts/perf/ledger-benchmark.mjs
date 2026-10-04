@@ -1,22 +1,44 @@
 #!/usr/bin/env node
 // Times the session mutation ledger on a real repository: the first confined
-// call (which builds the ledger), warm confined calls and a control call.
-// Each iteration uses a fresh clone and fresh ledger storage under the
-// repository cache, so it never touches a user's project or runtime state.
+// call (which builds the ledger's file records unless --prewarm did), warm
+// confined calls and a control call. Each iteration uses a fresh clone
+// and fresh ledger storage under the repository cache, so it never touches a
+// user's project or runtime state.
 //
 //   node scripts/perf/ledger-benchmark.mjs [--repo <git repo> | --fixture-files <count>] [--runtime <harness-runtime/lib>]
-//     [--iterations 3] [--warm-calls 3] [--parallel <calls>] [--restamp] [--prewarm] [--out <report.json>] [--keep]
+//     [--iterations 3] [--warm-calls 3] [--seed-calls <n>] [--parallel <calls>] [--same-session] [--deferred-cleanup]
+//     [--restamp] [--prewarm] [--out <report.json>] [--keep]
 //   --fixture-files builds (once) a deterministic synthetic repository under
-//   .cache/perf/ledger-fixtures. --parallel adds a burst of concurrent confined
-//   calls after the warm calls; --restamp then rewrites every tracked file with
-//   identical bytes (new inode and ctime) and times the next call.
-//   --profile [--companion] [--timeout-ms 300000] runs cold, prewarmed,
-//   metadata-only and changed-content cases in fresh worker processes.
+//   .cache/perf/ledger-fixtures. --seed-calls (0-200000) replays n direct
+//   read/glob/grep/skill receipts (admitDirect + finishDirect, as the host
+//   records them) over five synthetic sessions, eight per assistant step,
+//   before the timed calls, so the ledger carries production-shaped call
+//   history; it runs after --prewarm (without it the seeded ledger has no file
+//   records and a warning is printed), is one ledger commit per call, so its
+//   time grows with the seed (hours at tens of thousands), and reports its
+//   duration and the ledger entry count by kind. The seed's background ledger
+//   maintenance is awaited before the timed calls (`seed.maintenanceDrainMs`).
+//   --parallel adds a burst of concurrent confined calls after the warm calls,
+//   in distinct sessions by default or, with --same-session, as one assistant
+//   step of the warm session (report `burstMode`). --deferred-cleanup starts
+//   view cleanup without awaiting it on the timed path, as the host does
+//   (DEVRYAN_DEFERRED_LEASE_CLEANUP); later timed calls overlap it, and what
+//   remains after the last timed call is drained before the control call
+//   (`drainMs`). --restamp then rewrites every tracked file with identical
+//   bytes (new inode and ctime) and times the next call. Each iteration awaits
+//   the runtime's ledger maintenance before counting entries and removing the
+//   clone (`maintenanceDrainMs`).
+//   --profile [--parallel <calls> [--same-session]] [--timeout-ms 300000]
+//   runs cold, prewarmed, metadata-only and changed-content cases in fresh
+//   worker processes; --parallel adds a
+//   measured burst after each case's call, with its Git counts. --restamp,
+//   --seed-calls and --deferred-cleanup apply to the call benchmark only.
 //
 // `--runtime` points at another checkout's `packages/harness-runtime/lib` so a
 // frozen baseline and a candidate run the same workload. Kill-switch variables
 // in the environment are passed through unchanged, for per-switch A/B runs.
 import { execFile } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -28,8 +50,8 @@ const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 export function parseLedgerBenchmarkArgs(argv) {
   const options = { repo: repositoryRoot, runtime: path.join(repositoryRoot, 'packages/harness-runtime/lib'),
-    iterations: 3, warmCalls: 3, prewarm: false, out: null, keep: false, profile: false, companion: false, timeoutMs: 300_000,
-    fixtureFiles: null, parallel: 1, restamp: false };
+    iterations: 3, warmCalls: 3, prewarm: false, out: null, keep: false, profile: false, timeoutMs: 300_000,
+    fixtureFiles: null, parallel: 1, restamp: false, seedCalls: 0, sameSession: false, deferredCleanup: false };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     const value = () => {
@@ -45,24 +67,29 @@ export function parseLedgerBenchmarkArgs(argv) {
     else if (flag === '--prewarm') options.prewarm = true;
     else if (flag === '--keep') options.keep = true;
     else if (flag === '--profile') options.profile = true;
-    else if (flag === '--companion') options.companion = true;
+    else if (flag === '--companion') throw new Error('The legacy companion benchmark is retired; use native-upgrade-benchmark.mjs');
     else if (flag === '--timeout-ms') options.timeoutMs = Number(value());
     else if (flag === '--fixture-files') options.fixtureFiles = Number(value());
     else if (flag === '--parallel') options.parallel = Number(value());
     else if (flag === '--restamp') options.restamp = true;
+    else if (flag === '--seed-calls') options.seedCalls = Number(value());
+    else if (flag === '--same-session') options.sameSession = true;
+    else if (flag === '--deferred-cleanup') options.deferredCleanup = true;
     else throw new Error(`Unknown option ${flag}`);
   }
   if (options.fixtureFiles !== null && (!Number.isSafeInteger(options.fixtureFiles) || options.fixtureFiles < 1 || options.fixtureFiles > 200_000)) {
     throw new Error('--fixture-files must be an integer from 1 to 200000');
   }
   if (!Number.isSafeInteger(options.parallel) || options.parallel < 1 || options.parallel > 32) throw new Error('--parallel must be an integer from 1 to 32');
-  if (options.profile && (options.parallel > 1 || options.restamp)) throw new Error('--parallel and --restamp apply to the call benchmark, not --profile');
+  if (!Number.isSafeInteger(options.seedCalls) || options.seedCalls < 0 || options.seedCalls > 200_000) throw new Error('--seed-calls must be an integer from 0 to 200000');
+  if (options.sameSession && options.parallel < 2) throw new Error('--same-session applies to the --parallel burst');
+  if (options.profile && (options.restamp || options.seedCalls > 0 || options.deferredCleanup)) {
+    throw new Error('--restamp, --seed-calls and --deferred-cleanup apply to the call benchmark, not --profile');
+  }
   for (const [name, count] of [['--iterations', options.iterations], ['--warm-calls', options.warmCalls]]) {
     if (!Number.isSafeInteger(count) || count < 1 || count > 50) throw new Error(`${name} must be an integer from 1 to 50`);
   }
   if (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs < 1000 || options.timeoutMs > 900_000) throw new Error('--timeout-ms must be an integer from 1000 to 900000');
-  if (options.companion && !options.profile) throw new Error('--companion requires --profile');
-  if (options.companion && options.runtime !== path.join(repositoryRoot, 'packages/harness-runtime/lib')) throw new Error('--companion uses this checkout\'s host; an alternate --runtime requires ledger-only profiling');
   return options;
 }
 
@@ -81,7 +108,12 @@ const timed = async (fn) => {
   return { value, ms: Math.round(performance.now() - started), cpuMs: Math.round((used.user + used.system) / 1000) };
 };
 
-async function processCall(runtime, directory, ids, edit) {
+// `deferred` is the iteration's set of in-flight cleanups: when given, view
+// cleanup starts after publication but is not awaited on the timed path,
+// mirroring the host (session-execution-host.js, DEVRYAN_DEFERRED_LEASE_CLEANUP).
+// The row's cleanupMs is filled in when that work settles; the iteration drains
+// the set before it ends, so a failed cleanup still fails the run.
+async function processCall(runtime, directory, ids, edit, deferred = null) {
   const input = { directory, sessionID: ids.session, userMessageID: ids.user, messageID: `${ids.user}-assistant`, callID: ids.call };
   const begin = await timed(() => runtime.begin(input));
   const lease = begin.value;
@@ -93,8 +125,86 @@ async function processCall(runtime, directory, ids, edit) {
   await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'),
     JSON.stringify({ terminated: true, confined: true, exitCode: 0, cancelled: false }));
   const finish = await timed(() => runtime.finish({ directory, token: lease.token }));
-  const cleanup = await timed(() => runtime.cleanupLease({ directory, token: lease.token }));
-  return { beginMs: begin.ms, beginCpuMs: begin.cpuMs, finishMs: finish.ms, finishCpuMs: finish.cpuMs, cleanupMs: cleanup.ms };
+  const row = { beginMs: begin.ms, beginCpuMs: begin.cpuMs, finishMs: finish.ms, finishCpuMs: finish.cpuMs, cleanupMs: null, cleanupDeferred: deferred !== null };
+  const cleanup = timed(() => runtime.cleanupLease({ directory, token: lease.token })).then((result) => { row.cleanupMs = result.ms; });
+  if (deferred === null) { await cleanup; return row; }
+  deferred.add(cleanup);
+  cleanup.catch(() => { /* Not unhandled: the drain rethrows it. */ });
+  return row;
+}
+
+// A --parallel burst is one assistant step: with --same-session every call
+// shares the warm session and one user message (as in production); by default
+// each call keeps its own session, the historical shape.
+export const burstModeFor = (options) => (options.parallel > 1 ? (options.sameSession ? 'same-session' : 'distinct-sessions') : null);
+export function burstCallIdentity(call, sameSession, session = 's1') {
+  return sameSession ? { session, user: 'ub', call: `bc${call}` } : { session: `b${call}`, user: `bu${call}`, call: `bc${call}` };
+}
+
+// Synthetic direct calls spread over a handful of sessions, eight calls per
+// assistant step, as read/glob/grep/skill receipts arrive in production.
+export const SEED_SESSIONS = 5;
+export function seedCallIdentity(index) {
+  const session = index % SEED_SESSIONS;
+  const user = `seed-u${session}-${Math.floor(index / (SEED_SESSIONS * 8))}`;
+  return { sessionID: `seed-s${session}`, userMessageID: user, messageID: `${user}-assistant`, callID: `seed-c${index}` };
+}
+
+// Replays direct receipts through the same runtime API the host uses for
+// built-in read-only tools (session-execution-host.js direct-admit and
+// direct-finish: admitDirect, then finishDirect in one locked commit, and no
+// execution receipt while DEVRYAN_DIRECT_LEDGER_ONLY is on); no view, no
+// provider, no raw Git. Direct receipts record no file state: the first
+// seeded call only initializes the ledger store (reported apart), and file
+// records still come from --prewarm or the first confined call. The last
+// calls show the per-commit cost at the seeded size.
+async function seedDirectCalls(runtime, directory, count) {
+  if (typeof runtime.admitDirect !== 'function' || typeof runtime.finishDirect !== 'function') {
+    throw new Error('This runtime has no direct receipts (admitDirect/finishDirect); run without --seed-calls');
+  }
+  const durations = [];
+  for (let index = 0; index < count; index += 1) {
+    const identity = { directory, ...seedCallIdentity(index) };
+    const started = performance.now();
+    const { generation } = await runtime.admitDirect(identity);
+    await runtime.finishDirect({ ...identity, token: randomUUID(), generation,
+      executionFingerprint: createHash('sha256').update(identity.callID).digest('hex') });
+    durations.push(Math.round(performance.now() - started));
+  }
+  return { firstCallMs: durations[0] ?? null, callMs: summarize(durations.slice(1)), lastCallsMs: summarize(durations.slice(Math.max(1, count - 50))) };
+}
+
+// Awaits the runtime's background ledger maintenance (count-objects/repack/
+// prune, scheduled with setImmediate every 64 commits) and any other owned
+// work, so no Git child outlives the phase it belongs to or races the clone's
+// removal. One tick first lets a just-scheduled maintenance run register.
+// Null for a runtime without drain() (an older --runtime baseline).
+export async function drainRuntime(runtime) {
+  if (typeof runtime?.drain !== 'function') return null;
+  return (await timed(async () => {
+    await new Promise((resolve) => setImmediate(resolve));
+    await runtime.drain();
+  })).ms;
+}
+
+// Entries in the ledger's state tree, by top-level kind (files, sessions,
+// prompts, calls, leases, operations, ...). The runtime exposes no count, so
+// this lists the committed tree read-only; null before any ledger commit.
+async function ledgerEntryCount(changeKey, storage, project) {
+  const gitDir = path.join(storage, changeKey(await fs.realpath(project)), 'git');
+  if (!await fs.access(path.join(gitDir, 'HEAD')).then(() => true, () => false)) return null;
+  const ref = (await execute('git', ['--git-dir', gitDir, 'for-each-ref', '--format=%(objectname)', 'refs/devryan/state'])).stdout.trim();
+  if (!ref) return null;
+  const { stdout } = await execute('git', ['--git-dir', gitDir, 'ls-tree', '-r', '-z', '--name-only', ref], { maxBuffer: 256 * 1024 * 1024 });
+  const byKind = {};
+  let total = 0;
+  for (const key of stdout.split('\0')) {
+    if (!key) continue;
+    total += 1;
+    const slash = key.indexOf('/'), kind = slash === -1 ? '.' : key.slice(0, slash);
+    byKind[kind] = (byKind[kind] ?? 0) + 1;
+  }
+  return { total, byKind };
 }
 
 async function controlCall(runtime, directory, ids) {
@@ -167,13 +277,22 @@ async function trackedFileCount(directory) {
 
 export async function runLedgerBenchmark(options) {
   const { createSessionMutationRuntime } = await import(pathToFileURL(path.join(options.runtime, 'session-mutations.js')).href);
+  const { changeKey } = await import(pathToFileURL(path.join(options.runtime, 'session-changes-store.js')).href);
   if (options.fixtureFiles !== null) options = { ...options, repo: await ensureFixtureRepository(options.fixtureFiles) };
+  const burstMode = burstModeFor(options);
+  // Direct receipts record no file state, so a seed without --prewarm commits
+  // on a ledger far smaller than production's: say so rather than mislead.
+  if (options.seedCalls > 0 && !options.prewarm) {
+    console.error('ledger-benchmark: --seed-calls without --prewarm seeds a ledger with no file records (not production-shaped); add --prewarm');
+  }
   const benchRoot = path.join(repositoryRoot, '.cache/perf/ledger-bench');
   await fs.mkdir(benchRoot, { recursive: true });
   const iterations = [];
   for (let iteration = 0; iteration < options.iterations; iteration += 1) {
     const root = await fs.mkdtemp(path.join(benchRoot, 'run-'));
     const project = path.join(root, 'project'), storage = path.join(root, 'ledger');
+    const deferred = options.deferredCleanup ? new Set() : null;
+    let runtime = null;
     try {
       // A shallow copy of the committed tree: the ledger sees tracked files
       // only, identical for every arm, and never the source's working state.
@@ -181,37 +300,62 @@ export async function runLedgerBenchmark(options) {
       const files = await trackedFileCount(project);
       const edit = 'README.md';
       await fs.access(path.join(project, edit));
-      const runtime = createSessionMutationRuntime({ directory: storage });
+      runtime = createSessionMutationRuntime({ directory: storage });
       let prewarmMs = null;
       if (options.prewarm) {
         if (typeof runtime.warm !== 'function') throw new Error('This runtime has no warm(); run without --prewarm');
         prewarmMs = (await timed(() => runtime.warm({ directory: project }))).ms;
       }
-      const first = await processCall(runtime, project, { session: 's1', user: 'u0', call: 'c0' }, edit);
+      // Seeded history precedes every timed call (and follows the prewarm, so
+      // the seed commits rewrite a ledger that already holds the file tree).
+      let seed = null;
+      if (options.seedCalls > 0) {
+        const seeded = await timed(() => seedDirectCalls(runtime, project, options.seedCalls));
+        // Seeding is setup: its background repack finishes (timed apart, not
+        // in `ms`) before the first timed call, so it cannot skew that call.
+        const maintenanceDrainMs = await drainRuntime(runtime);
+        seed = { calls: options.seedCalls, sessions: Math.min(options.seedCalls, SEED_SESSIONS), ms: seeded.ms, cpuMs: seeded.cpuMs,
+          ...seeded.value, maintenanceDrainMs, ledgerEntries: await ledgerEntryCount(changeKey, storage, project) };
+      }
+      const first = await processCall(runtime, project, { session: 's1', user: 'u0', call: 'c0' }, edit, deferred);
       const warm = [];
       for (let call = 1; call <= options.warmCalls; call += 1) {
-        warm.push(await processCall(runtime, project, { session: 's1', user: `u${call}`, call: `c${call}` }, edit));
+        warm.push(await processCall(runtime, project, { session: 's1', user: `u${call}`, call: `c${call}` }, edit, deferred));
       }
       let burst = null;
       if (options.parallel > 1) {
         // Concurrent calls of one assistant step: each edits its own new file.
         const started = performance.now();
         const calls = await Promise.all(Array.from({ length: options.parallel }, (_, call) => processCall(runtime, project,
-          { session: `b${call}`, user: `bu${call}`, call: `bc${call}` }, `ledger-bench-burst-${call}.txt`)));
-        burst = { spanMs: Math.round(performance.now() - started), calls };
+          burstCallIdentity(call, options.sameSession), `ledger-bench-burst-${call}.txt`, deferred)));
+        burst = { mode: burstMode, spanMs: Math.round(performance.now() - started), calls };
       }
       let restamp = null;
       if (options.restamp) {
         const rewritten = await restampTrackedFiles(project);
-        restamp = { rewritten, ...await processCall(runtime, project, { session: 's1', user: 'ur', call: 'cr' }, edit) };
+        restamp = { rewritten, ...await processCall(runtime, project, { session: 's1', user: 'ur', call: 'cr' }, edit, deferred) };
       }
+      // Deferred cleanups overlap the later timed calls, as in the host. The
+      // remainder drains right after the last producer (timed as `drainMs`),
+      // before the control call, so the control call never queues behind them.
+      const drainMs = deferred ? (await timed(() => Promise.all([...deferred]))).ms : null;
+      // The control call keeps its synchronous cleanup: it is the round-trip reference.
       const control = await controlCall(runtime, project, { session: 's1', user: 'uc', call: 'cc' });
-      iterations.push({ iteration, files, prewarmMs, first, warm, burst, restamp, control, maxRssMiB: Math.round(process.resourceUsage().maxRSS / 1024) });
-      console.error(JSON.stringify({ iteration, files, prewarmMs, firstBeginMs: first.beginMs, firstFinishMs: first.finishMs,
+      // Background ledger maintenance finishes before the count and removal.
+      const maintenanceDrainMs = await drainRuntime(runtime);
+      const ledgerEntries = await ledgerEntryCount(changeKey, storage, project);
+      iterations.push({ iteration, files, prewarmMs, seed, first, warm, burst, restamp, control, drainMs, maintenanceDrainMs, ledgerEntries,
+        maxRssMiB: Math.round(process.resourceUsage().maxRSS / 1024) });
+      console.error(JSON.stringify({ iteration, files, prewarmMs, seedMs: seed?.ms ?? null, seedLedgerEntries: seed?.ledgerEntries?.total ?? null,
+        firstBeginMs: first.beginMs, firstFinishMs: first.finishMs,
         warmBeginMs: warm.map(row => row.beginMs), warmFinishMs: warm.map(row => row.finishMs),
-        burstSpanMs: burst?.spanMs ?? null, burstBeginMs: burst?.calls.map(row => row.beginMs) ?? null,
-        restampBeginMs: restamp?.beginMs ?? null, controlMs: control.totalMs }));
+        burstMode, burstSpanMs: burst?.spanMs ?? null, burstBeginMs: burst?.calls.map(row => row.beginMs) ?? null,
+        restampBeginMs: restamp?.beginMs ?? null, controlMs: control.totalMs, drainMs, maintenanceDrainMs, ledgerEntries: ledgerEntries?.total ?? null }));
     } finally {
+      // A failed iteration still waits for its in-flight cleanups and ledger
+      // maintenance before the clone and ledger go.
+      if (deferred) await Promise.allSettled([...deferred]);
+      await drainRuntime(runtime).catch(() => { /* Best effort: the iteration's own error, if any, is what propagates. */ });
       if (!options.keep) await fs.rm(root, { recursive: true, force: true });
     }
   }
@@ -220,15 +364,24 @@ export async function runLedgerBenchmark(options) {
   return {
     version: 1, runtime: options.runtime, repo: options.repo, iterations: options.iterations, warmCalls: options.warmCalls,
     prewarm: options.prewarm, parallel: options.parallel, restamp: options.restamp, fixtureFiles: options.fixtureFiles,
+    seedCalls: options.seedCalls, sameSession: options.sameSession, burstMode, deferredCleanup: options.deferredCleanup,
     switches, platform: `${process.platform}-${process.arch}`, node: process.version,
     summary: {
       files: pick(row => [row.files]),
       prewarmMs: pick(row => [row.prewarmMs]),
+      seedMs: pick(row => (row.seed ? [row.seed.ms] : [])),
+      seedLastCallMs: pick(row => (row.seed ? [row.seed.lastCallsMs.p50] : [])),
+      seedLedgerEntries: pick(row => (row.seed?.ledgerEntries ? [row.seed.ledgerEntries.total] : [])),
+      ledgerEntries: pick(row => (row.ledgerEntries ? [row.ledgerEntries.total] : [])),
+      drainMs: pick(row => [row.drainMs]), maintenanceDrainMs: pick(row => [row.maintenanceDrainMs]),
+      seedMaintenanceDrainMs: pick(row => (row.seed ? [row.seed.maintenanceDrainMs] : [])),
       firstBeginMs: pick(row => [row.first.beginMs]), firstFinishMs: pick(row => [row.first.finishMs]),
       warmBeginMs: pick(row => row.warm.map(call => call.beginMs)), warmFinishMs: pick(row => row.warm.map(call => call.finishMs)),
       warmCleanupMs: pick(row => row.warm.map(call => call.cleanupMs)),
       burstSpanMs: pick(row => (row.burst ? [row.burst.spanMs] : [])),
       burstBeginMs: pick(row => row.burst?.calls.map(call => call.beginMs) ?? []),
+      burstFinishMs: pick(row => row.burst?.calls.map(call => call.finishMs) ?? []),
+      burstCleanupMs: pick(row => row.burst?.calls.map(call => call.cleanupMs) ?? []),
       restampBeginMs: pick(row => (row.restamp ? [row.restamp.beginMs] : [])),
       controlMs: pick(row => [row.control.totalMs]), maxRssMiB: pick(row => [row.maxRssMiB]),
     },
@@ -239,11 +392,12 @@ export async function runLedgerBenchmark(options) {
 // Phase profiling runs each case in a fresh process so maxRSS, caches and
 // initialization from earlier cases cannot silently affect the next sample.
 export async function runPreparationProfile(options) {
+  if (options.fixtureFiles !== null) options = { ...options, repo: await ensureFixtureRepository(options.fixtureFiles) };
   const cacheRoot = path.join(repositoryRoot, '.cache/perf/ledger-profile');
   await fs.mkdir(cacheRoot, { recursive: true });
   const outputRoot = await fs.mkdtemp(path.join(cacheRoot, 'run-'));
   const rows = [];
-  for (const mode of options.companion ? ['ledger', 'companion'] : ['ledger']) {
+  for (const mode of ['ledger']) {
     for (let iteration = 0; iteration < options.iterations; iteration += 1) {
       // Rotate case order to avoid assigning every first/cold trial to the
       // same filesystem-cache and machine-load position.
@@ -294,6 +448,7 @@ export async function runPreparationProfile(options) {
   }
   return { version: 2, at: new Date().toISOString(), outputRoot, repo: options.repo, runtime: options.runtime,
     platform: `${process.platform}-${process.arch}`, node: process.version, iterations: options.iterations,
+    parallel: options.parallel, burstMode: burstModeFor(options),
     measurement: 'Independent fresh processes; prewarm is separate. Nested phases and concurrent Git/copy work overlap and must not be added. Host CPU/maxRSS exclude child processes; companion RSS is sampled, not an exact peak. No installed-app state or live provider.', summary, rows };
 }
 
