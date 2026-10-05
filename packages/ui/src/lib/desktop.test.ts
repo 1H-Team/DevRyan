@@ -289,9 +289,11 @@ describe('desktop access helpers', () => {
 
   test('reports which page the shell opened when the update has no in-app payload', async () => {
     for (const [reply, expected] of [
-      [{ openedExternally: true, kind: 'installer' }, 'installer'],
-      [{ openedExternally: true, kind: 'release-page' }, 'release-page'],
-      [{ openedExternally: true }, 'release-page'],
+      [{ openedExternally: true, kind: 'installer', backgroundRuntimeStopped: true }, { opened: 'installer', backgroundRuntimeStopped: true }],
+      [{ openedExternally: true, kind: 'release-page', backgroundRuntimeStopped: false }, { opened: 'release-page', backgroundRuntimeStopped: false }],
+      // A main process without the field never claims the runtime stopped.
+      [{ openedExternally: true, kind: 'installer' }, { opened: 'installer', backgroundRuntimeStopped: false }],
+      [{ openedExternally: true, backgroundRuntimeStopped: 'yes' }, { opened: 'release-page', backgroundRuntimeStopped: false }],
       [null, 'downloaded'],
     ] as const) {
       installWindow({
@@ -299,7 +301,7 @@ describe('desktop access helpers', () => {
         __OPENCHAMBER_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
         __TAURI__: { core: { invoke: mock(async () => reply) } },
       });
-      expect(await downloadDesktopUpdate()).toBe(expected);
+      expect(await downloadDesktopUpdate()).toEqual(expected);
     }
   });
 });

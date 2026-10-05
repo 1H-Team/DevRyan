@@ -108,8 +108,10 @@ and desktop-host broker bridges.
   From 2.0.1 the descriptor carries the service's `appVersion`. A live owner
   whose descriptor has none (1.x, 2.0.0) or another version is never attached:
   `retireMismatchedRuntimeService` drains it once through `prepare-update`,
-  unregisters it, proves it stopped (signalling only a verified same-uid
-  `DevRyan --runtime-service` at that PID as a bounded fallback), and registers
+  unregisters it, proves it stopped (signalling only a same-uid process at
+  that PID whose executable image, read through `lsof`, is a
+  `.app/Contents/MacOS/DevRyan` and whose argv is the launchd
+  `DevRyan --runtime-service` or that image path, as a bounded fallback), and registers
   the current bundle's service; any failure falls back to the app-bound runtime.
   Malformed legacy writes receive a one-second grace period.
   `owner-recovery.v2.json` records an ambiguous legacy or damaged regular file's
@@ -296,7 +298,8 @@ and desktop-host broker bridges.
   tag page) that the Update action opens externally. It first drains and
   unregisters the background runtime as the in-app updater does, so Finder can
   replace the bundle and the next launch re-registers it; a drain failure
-  opens nothing.
+  opens nothing. The result's `backgroundRuntimeStopped` is true only when a
+  service was drained, and only then does the toast say so.
 
 ## Flow
 1. Electron establishes process guards, protocol registration, logging, and the

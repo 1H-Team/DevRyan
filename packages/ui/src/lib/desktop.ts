@@ -590,10 +590,13 @@ export const checkForDesktopUpdates = async (): Promise<UpdateInfo | null> => {
   }
 };
 
-// 'installer' / 'release-page': the release has no in-app updater payload, so
-// the shell opened the verified installer download or the release's tag page
-// in the browser instead.
-export type DesktopUpdateDownloadResult = 'downloaded' | 'installer' | 'release-page' | 'unavailable';
+// `opened`: the release has no in-app updater payload, so the shell opened the
+// verified installer download or the release's tag page in the browser
+// instead, after draining the background runtime when one was running.
+export type DesktopUpdateDownloadResult = 'downloaded' | 'unavailable' | {
+  opened: 'installer' | 'release-page';
+  backgroundRuntimeStopped: boolean;
+};
 
 export const downloadDesktopUpdate = async (
   onProgress?: (progress: UpdateProgress) => void
@@ -640,9 +643,14 @@ export const downloadDesktopUpdate = async (
 
     const result = await tauri?.core?.invoke?.('desktop_download_and_install_update');
     if (typeof result !== 'object' || result === null) return 'downloaded';
-    const { openedExternally, kind } = result as { openedExternally?: unknown; kind?: unknown };
+    const { openedExternally, kind, backgroundRuntimeStopped } = result as {
+      openedExternally?: unknown; kind?: unknown; backgroundRuntimeStopped?: unknown;
+    };
     if (openedExternally !== true) return 'downloaded';
-    return kind === 'installer' ? 'installer' : 'release-page';
+    return {
+      opened: kind === 'installer' ? 'installer' : 'release-page',
+      backgroundRuntimeStopped: backgroundRuntimeStopped === true,
+    };
   } catch (error) {
     console.warn('Failed to download update (tauri)', error);
     const message = error instanceof Error

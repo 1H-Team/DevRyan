@@ -123,13 +123,24 @@ describe('retiring a background runtime from another app version', () => {
 });
 
 describe('verified stale-service termination', () => {
-  const probe = (stdout, error = null) => {
+  const IMAGE = '/Applications/DevRyan.app/Contents/MacOS/DevRyan';
+  const image = (path, pid = 4242) => `p${pid}\nftxt\nn${path}\nftxt\nn/usr/lib/dyld\n`;
+  const probe = (stdout, { lsof = image(IMAGE), error = null, lsofError = null } = {}) => {
     const signals = [];
     return {
       signals,
       run: (options = {}) => terminateRuntimeServiceProcess({
         pid: 4242, uid: 501, platform: 'darwin',
-        execute: (_file, args, _options, callback) => { assert.deepEqual(args, ['-p', '4242', '-o', 'uid=,command=']); callback(error, stdout); },
+        execute: (file, args, _options, callback) => {
+          if (file === '/bin/ps') {
+            assert.deepEqual(args, ['-p', '4242', '-o', 'uid=,command=']);
+            callback(error, stdout);
+            return;
+          }
+          assert.equal(file, '/usr/sbin/lsof');
+          assert.deepEqual(args, ['-a', '-p', '4242', '-d', 'txt', '-Fn']);
+          callback(lsofError, lsof);
+        },
         kill: (pid, signal) => signals.push([pid, signal]),
         ...options,
       }),
@@ -137,32 +148,47 @@ describe('verified stale-service termination', () => {
   };
 
   test('signals only this user\'s DevRyan --runtime-service at the descriptor PID', async () => {
+    // SMAppService/launchd starts the BundleProgram with ProgramArguments
+    // ["DevRyan", "--runtime-service"], so argv carries no path.
+    const launchd = probe('  501 DevRyan --runtime-service\n');
+    assert.equal(await launchd.run({ signal: 'SIGKILL' }), true);
+    assert.deepEqual(launchd.signals, [[4242, 'SIGKILL']]);
     const verified = probe('  501 /Applications/DevRyan.app/Contents/MacOS/DevRyan --runtime-service\n');
-    assert.equal(await verified.run({ signal: 'SIGKILL' }), true);
-    assert.deepEqual(verified.signals, [[4242, 'SIGKILL']]);
-    const spaced = probe('501 /Users/me/Apps/DevRyan 2.app/Contents/MacOS/DevRyan --runtime-service');
-    assert.equal(await spaced.run(), true);
+    assert.equal(await verified.run(), true);
+    assert.deepEqual(verified.signals, [[4242, 'SIGTERM']]);
+    const spacedImage = '/Users/me/Apps/DevRyan 2.app/Contents/MacOS/DevRyan';
+    assert.equal(await probe(`501 ${spacedImage} --runtime-service`, { lsof: image(spacedImage) }).run(), true);
+    assert.equal(await probe('501 DevRyan --runtime-service', { lsof: image(spacedImage) }).run(), true);
   });
 
-  for (const [name, stdout, options] of [
-    ['another user', '0 /Applications/DevRyan.app/Contents/MacOS/DevRyan --runtime-service', {}],
+  for (const [name, stdout, options, lsofOptions = {}] of [
+    ['another user', '0 DevRyan --runtime-service', {}],
+    ['another user at the absolute path', '0 /Applications/DevRyan.app/Contents/MacOS/DevRyan --runtime-service', {}],
     ['the foreground app', '501 /Applications/DevRyan.app/Contents/MacOS/DevRyan', {}],
+    ['the foreground app started by launchd', '501 DevRyan', {}],
     ['another program', '501 /usr/bin/python3 --runtime-service', {}],
+    ['another program named DevRyan', '501 DevRyan --runtime-service', {}, { lsof: image('/usr/local/bin/DevRyan') }],
+    ['another bundle\'s executable', '501 DevRyan --runtime-service', {}, { lsof: image('/Applications/Other.app/Contents/MacOS/DevRyanHelper') }],
+    ['a relative image', '501 DevRyan --runtime-service', {}, { lsof: image('DevRyan.app/Contents/MacOS/DevRyan') }],
+    ['an argv path that is not the image', '501 /Applications/Old.app/Contents/MacOS/DevRyan --runtime-service', {}],
+    ['an image probe for another PID', '501 DevRyan --runtime-service', {}, { lsof: image(IMAGE, 4243) }],
+    ['an image probe without a text entry', '501 DevRyan --runtime-service', {}, { lsof: 'p4242\n' }],
+    ['an unavailable image probe', '501 DevRyan --runtime-service', {}, { lsof: '', lsofError: new Error('lsof failed') }],
     ['a shell wrapping the command', '501 /bin/sh -c /Applications/DevRyan.app/Contents/MacOS/DevRyan --runtime-service', {}],
-    ['a reused PID with extra arguments', '501 /Applications/DevRyan.app/Contents/MacOS/DevRyan --runtime-service --type=renderer', {}],
+    ['a reused PID with extra arguments', '501 DevRyan --runtime-service --type=renderer', {}],
     ['a missing process', '', {}],
-    ['a non-macOS host', '501 /Applications/DevRyan.app/Contents/MacOS/DevRyan --runtime-service', { platform: 'linux' }],
-    ['an unsupported signal', '501 /Applications/DevRyan.app/Contents/MacOS/DevRyan --runtime-service', { signal: 'SIGHUP' }],
+    ['a non-macOS host', '501 DevRyan --runtime-service', { platform: 'linux' }],
+    ['an unsupported signal', '501 DevRyan --runtime-service', { signal: 'SIGHUP' }],
   ]) {
     test(`leaves ${name} alone`, async () => {
-      const check = probe(stdout);
+      const check = probe(stdout, lsofOptions);
       assert.equal(await check.run(options), false);
       assert.deepEqual(check.signals, []);
     });
   }
 
   test('an unavailable probe is not permission to signal', async () => {
-    const check = probe('', new Error('ps failed'));
+    const check = probe('', { error: new Error('ps failed') });
     assert.equal(await check.run(), false);
     assert.deepEqual(check.signals, []);
   });
@@ -254,7 +280,7 @@ describe('DMG fallback update', () => {
     ${mainSource.slice(blockStart, blockEnd)}
     return 'updater';
   `);
-  const fallback = (drainError) => {
+  const fallback = (drainError, drained = true) => {
     const calls = [];
     return {
       calls,
@@ -262,7 +288,7 @@ describe('DMG fallback update', () => {
         state: { pendingUpdate: { version: '2.0.2', metadata: {}, electronUpdate: null } },
         resolveUpdateDownloadFallback: () => ({ url: 'https://github.com/1H-Team/DevRyan/releases/download/v2.0.2/DevRyan-2.0.2-arm64.dmg', kind: 'installer' }),
         GITHUB_REPOSITORY_URL: 'https://github.com/1H-Team/DevRyan',
-        prepareBackgroundRuntimeForAppUpdate: async () => { calls.push('drain'); if (drainError) throw drainError; },
+        prepareBackgroundRuntimeForAppUpdate: async () => { calls.push('drain'); if (drainError) throw drainError; return drained; },
         shell: { openExternal: async () => { calls.push('open'); } },
         log: { info: () => {}, warn: () => {} },
       }),
@@ -271,8 +297,21 @@ describe('DMG fallback update', () => {
 
   test('drains the background runtime before opening the installer', async () => {
     const { calls, result } = fallback();
-    assert.deepEqual(await result, { openedExternally: true, kind: 'installer' });
+    assert.deepEqual(await result, { openedExternally: true, kind: 'installer', backgroundRuntimeStopped: true });
     assert.deepEqual(calls, ['drain', 'open']);
+  });
+
+  test('an app-bound runtime has nothing to drain and is not reported stopped', async () => {
+    const { calls, result } = fallback(null, false);
+    assert.deepEqual(await result, { openedExternally: true, kind: 'installer', backgroundRuntimeStopped: false });
+    assert.deepEqual(calls, ['drain', 'open']);
+  });
+
+  test('the drain reports whether it stopped a background runtime', () => {
+    const body = mainSource.slice(mainSource.indexOf('const prepareBackgroundRuntimeForAppUpdate = async () => {'),
+      mainSource.indexOf('const resumeBackgroundRuntimeAfterAppUpdate = '));
+    assert.match(body, /if \(!state\.runtimeServiceClient\) return false;/);
+    assert.match(body, /\n  return true;\n\};\n/);
   });
 
   test('a failed drain opens nothing and tells the user how to retry', async () => {

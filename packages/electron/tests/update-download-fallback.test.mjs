@@ -92,7 +92,7 @@ test("main consults electron-updater only for releases that publish its channel 
 
 test("main opens the fallback only when electron-updater metadata is absent and returns its kind", () => {
   const body = caseBody("desktop_download_and_install_update", "desktop_restart");
-  assert.match(body, /if \(!state\.pendingUpdate\.electronUpdate\) \{[\s\S]*?resolveUpdateDownloadFallback\(\{[\s\S]*?repositoryUrl: GITHUB_REPOSITORY_URL[\s\S]*?await shell\.openExternal\(fallback\.url\);[\s\S]*?return \{ openedExternally: true, kind: fallback\.kind \};/);
+  assert.match(body, /if \(!state\.pendingUpdate\.electronUpdate\) \{[\s\S]*?resolveUpdateDownloadFallback\(\{[\s\S]*?repositoryUrl: GITHUB_REPOSITORY_URL[\s\S]*?await shell\.openExternal\(fallback\.url\);[\s\S]*?return \{ openedExternally: true, kind: fallback\.kind, backgroundRuntimeStopped \};/);
   assert.doesNotMatch(body, /Electron updater metadata is not available/);
-  assert.ok(body.indexOf("autoUpdater.downloadUpdate()") > body.indexOf("return { openedExternally: true, kind: fallback.kind };"));
+  assert.ok(body.indexOf("autoUpdater.downloadUpdate()") > body.indexOf("return { openedExternally: true, kind: fallback.kind, backgroundRuntimeStopped };"));
 });

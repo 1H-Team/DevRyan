@@ -541,27 +541,38 @@ export const isRuntimeServiceProtocolSupported = (protocolVersion) => (
   RUNTIME_SERVICE_SUPPORTED_PROTOCOLS.includes(protocolVersion)
 );
 
-// Signals only a process that ps proves is this user's DevRyan
-// --runtime-service at that pid (exactly the LaunchAgent's ProgramArguments).
-// Anything else, or an unavailable probe, is left alone and reported false.
+// Signals only a process proved to be this user's DevRyan --runtime-service
+// at that pid: ps gives its uid and argv, and lsof's first text entry gives its
+// executable image, because launchd starts the SMAppService BundleProgram with
+// the bare ProgramArguments ("DevRyan --runtime-service"). Anything else, or an
+// unavailable probe, is left alone and reported false.
+const RUNTIME_SERVICE_IMAGE_PATTERN = /^\/[^\n]*\.app\/Contents\/MacOS\/DevRyan$/;
 export const terminateRuntimeServiceProcess = async ({
   pid, signal = 'SIGTERM', uid = process.getuid?.(), platform = process.platform,
   execute = execFile, kill = (target, name) => process.kill(target, name),
 } = {}) => {
   if (platform !== 'darwin' || !Number.isSafeInteger(pid) || pid <= 1 || !Number.isSafeInteger(uid)
     || !['SIGTERM', 'SIGKILL'].includes(signal)) return false;
-  let stdout;
+  // lsof lists every mapped library as text, tens of KiB for an Electron app.
+  const probe = (file, args, maxBuffer = 16 * 1_024) => new Promise((resolve, reject) => {
+    execute(file, args, {
+      encoding: 'utf8', timeout: 5_000, maxBuffer, env: { ...process.env, LC_ALL: 'C' },
+    }, (error, output) => error ? reject(error) : resolve(String(output)));
+  });
+  let processLine;
+  let imageLines;
   try {
-    stdout = await new Promise((resolve, reject) => {
-      execute('/bin/ps', ['-p', String(pid), '-o', 'uid=,command='], {
-        encoding: 'utf8', timeout: 2_000, maxBuffer: 16 * 1_024, env: { ...process.env, LC_ALL: 'C' },
-      }, (error, output) => error ? reject(error) : resolve(output));
-    });
+    processLine = await probe('/bin/ps', ['-p', String(pid), '-o', 'uid=,command=']);
+    imageLines = (await probe('/usr/sbin/lsof', ['-a', '-p', String(pid), '-d', 'txt', '-Fn'], 1_024 * 1_024)).split('\n');
   } catch {
     return false;
   }
-  const match = /^\s*(\d+)\s+\/(?:(?! -)[^\n])+\.app\/Contents\/MacOS\/DevRyan --runtime-service\s*$/.exec(String(stdout));
+  const match = /^\s*(\d+)\s+([^\n]+?)\s*$/.exec(processLine);
   if (!match || Number(match[1]) !== uid) return false;
+  if (imageLines[0] !== `p${pid}` || imageLines[1] !== 'ftxt' || !imageLines[2]?.startsWith('n')) return false;
+  const image = imageLines[2].slice(1);
+  if (!RUNTIME_SERVICE_IMAGE_PATTERN.test(image)
+    || (match[2] !== 'DevRyan --runtime-service' && match[2] !== `${image} --runtime-service`)) return false;
   try {
     kill(pid, signal);
     return true;

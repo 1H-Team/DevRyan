@@ -249,16 +249,17 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
       if (result === 'unavailable') {
         throw new Error('Desktop update only works on Local instance');
       }
-      if (result === 'installer' || result === 'release-page') {
+      if (typeof result === 'object') {
         // No in-app updater payload: the installer or release page opened in the browser.
         set({ downloading: false, progress: null });
-        toast.success(result === 'installer'
+        const installer = result.opened === 'installer';
+        toast.success(installer
           ? 'Opened the DevRyan installer download in your browser'
           : 'Opened the DevRyan release page in your browser', {
-          // The main process drained the background runtime before opening it.
-          description: result === 'installer'
-            ? 'The background runtime was stopped for the update. Open the downloaded DMG, then quit DevRyan before replacing it in Applications.'
-            : 'The background runtime was stopped for the update. Download the DMG from the release page and open it, then quit DevRyan before replacing it in Applications.',
+          // Only a background runtime the main process actually drained is reported stopped.
+          description: `${result.backgroundRuntimeStopped ? 'The background runtime was stopped for the update. ' : ''}${installer
+            ? 'Open the downloaded DMG'
+            : 'Download the DMG from the release page and open it'}, then quit DevRyan before replacing it in Applications.`,
         });
         return;
       }

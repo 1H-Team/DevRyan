@@ -1743,8 +1743,9 @@ const disableBackgroundBots = async () => {
   return runtimeServiceStatus();
 };
 
+// Resolves true only when a background runtime was drained and stopped.
 const prepareBackgroundRuntimeForAppUpdate = async () => {
-  if (!state.runtimeServiceClient) return;
+  if (!state.runtimeServiceClient) return false;
   await requestRuntimeService('/api/runtime-service/prepare-update', { method: 'POST' });
   await getRuntimeServiceRegistration().unregister();
   await stopDesktopHostBroker({ notifyService: false });
@@ -1759,6 +1760,7 @@ const prepareBackgroundRuntimeForAppUpdate = async () => {
     root.productionBotsRuntimeMode = 'service';
     root.productionBotsRuntimeReregisterAfterUpdate = true;
   });
+  return true;
 };
 
 const resumeBackgroundRuntimeAfterAppUpdate = async () => {
@@ -4725,8 +4727,9 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         // updater does: a running service holds the bundle open in Finder and
         // would otherwise keep serving the old version. The next launch
         // re-registers it, whether or not the user replaced the app.
+        let backgroundRuntimeStopped;
         try {
-          await prepareBackgroundRuntimeForAppUpdate();
+          backgroundRuntimeStopped = await prepareBackgroundRuntimeForAppUpdate() === true;
         } catch (error) {
           log.warn('[runtime-service] update drain failed', { code: error?.code || 'runtime_service_update_owner_active' });
           throw Object.assign(new Error('DevRyan could not stop its background runtime for the update. Quit and reopen DevRyan, then retry the update.'), {
@@ -4735,7 +4738,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         }
         await shell.openExternal(fallback.url);
         log.info(`[electron] update ${fallback.kind} opened externally version=${state.pendingUpdate.version}`);
-        return { openedExternally: true, kind: fallback.kind };
+        return { openedExternally: true, kind: fallback.kind, backgroundRuntimeStopped };
       }
       emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({
         event: 'Started',

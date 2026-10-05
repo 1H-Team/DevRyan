@@ -38,15 +38,17 @@ describe('desktop update download outcome', () => {
   beforeEach(() => { toasts.length = 0; });
 
   test('an externally opened installer or release page is reported without an error or restart prompt', async () => {
-    for (const [result, message] of [
-      ['installer', 'Opened the DevRyan installer download in your browser'],
-      ['release-page', 'Opened the DevRyan release page in your browser'],
+    for (const [opened, message, guidance] of [
+      ['installer', 'Opened the DevRyan installer download in your browser', 'Open the downloaded DMG'],
+      ['release-page', 'Opened the DevRyan release page in your browser', 'Download the DMG from the release page and open it'],
     ] as const) {
-      toasts.length = 0;
-      expect(await download(result)).toMatchObject({ downloading: false, downloaded: false, error: null });
-      expect(toasts.map((entry) => entry.message)).toEqual([message]);
-      expect(toasts[0]?.description?.startsWith('The background runtime was stopped for the update. ')).toBe(true);
-      expect(toasts[0]?.description?.endsWith(', then quit DevRyan before replacing it in Applications.')).toBe(true);
+      for (const backgroundRuntimeStopped of [true, false]) {
+        toasts.length = 0;
+        expect(await download({ opened, backgroundRuntimeStopped })).toMatchObject({ downloading: false, downloaded: false, error: null });
+        expect(toasts.map((entry) => entry.message)).toEqual([message]);
+        // Only a drained background runtime is reported stopped.
+        expect(toasts[0]?.description).toBe(`${backgroundRuntimeStopped ? 'The background runtime was stopped for the update. ' : ''}${guidance}, then quit DevRyan before replacing it in Applications.`);
+      }
     }
   });
 
