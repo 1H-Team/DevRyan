@@ -127,12 +127,14 @@ Electron IPC use this same core. Recovery HTTP exposes no mutation route.
   The draft is renamed to a sibling `bundles/.stale-*` before removal, and later unselected
   launches sweep validated `.stale-*` leftovers before any draft or seed decision.
   `bootstrap.lock` waits up to 5 minutes for a live holder (a concurrent first start
-  provisioning real artifacts); a dead holder is reclaimed at once, and a lock older than
-  10 minutes (a crashed launch under a reused or foreign-uid pid) by atomic rename.
+  provisioning real artifacts); a dead holder is reclaimed at once.
   `native-setup-local-owners.js` restores the v1 owner snapshot once, then renames it to
   `native-setup-local-owners.restored.json`, so later app owner changes survive restarts.
-  Concurrent first starts serialize on `native-setup-local-owners.lock` in web-data; a lock
-  older than 60 s (a crashed start, possibly under a reused pid) is reclaimed by atomic rename.
+  Concurrent first starts serialize on `native-setup-local-owners.lock` in web-data.
+  Both locks use its `reclaimReusedLock`: lock age never reclaims (a live holder's
+  `createdAt` ages across a system sleep). A live pid is reclaimed, by atomic rename with
+  compare and link-back, only when its UTC `ps` lstart is more than 2 s after the lock's
+  `createdAt` (a crashed start's pid reused, any uid); an unreadable start time keeps the lock.
 - `native-recovered-input.js` reconstructs typed queued/promoted input and incomplete
   canonical work before every controller spawn. Only startup-affected sessions
   are fenced; selected recovery summaries are bounded and full contents are read

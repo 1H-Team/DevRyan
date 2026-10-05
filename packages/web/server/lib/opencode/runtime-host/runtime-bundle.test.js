@@ -3,11 +3,11 @@ import {claudeKeychainService} from '../claude-credential-projection.js';
 import {readRollbackIntentSync} from './bundle-rollback-intent.js';
 import {verifyNativeBootMigration} from './native-boot-migration.js';
 import {recoveredInputHash} from './native-recovered-input-hash.js';
-import { afterEach, expect, test } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { resolveSqliteDriver } from '../db-maintenance-core.js';
 import { verifyBundleOwnedContinuations } from './bundle-owned-continuations.js';
@@ -871,25 +871,48 @@ test('a concurrent first start waits for a live provisioning holder longer than 
 const bootstrapLock=home=>path.join(home,'.local','state','devryan','runtime-bundles','bootstrap.lock');
 const plantLock=async(home,owner)=>{await fs.mkdir(path.dirname(bootstrapLock(home)),{recursive:true,mode:0o700});
  await fs.writeFile(bootstrapLock(home),JSON.stringify({ownerToken:'f'.repeat(32),...owner})+'\n',{mode:0o600});};
-test('a bootstrap lock older than any provisioning is reclaimed although its pid is live or foreign',async()=>{
- const f=await fixture(),release=await releaseArtifacts(f,'A');
- // A crashed launch whose pid was reused: this process (live) or launchd (EPERM).
- for(const pid of [process.pid,1]){
-  const home=path.join(f.root,`stale-lock-${pid}`);await plantLock(home,{pid,createdAt:Date.now()-11*60_000});
-  const controlRoot=await launchDefault(f,home,release);
+// A pid reused after the lock was written: a live process started after its createdAt.
+const reusedPid=async()=>{const c=spawn('/bin/sleep',['60']);await new Promise((resolve,reject)=>{c.once('spawn',resolve);c.once('error',reject);});return c;};
+test('a bootstrap lock whose pid a later process reused, or whose holder died, is reclaimed at once',async()=>{
+ const f=await fixture(),release=await releaseArtifacts(f,'A'),reused=await reusedPid();
+ const dead=spawn(process.execPath,['-e','']),deadPid=await new Promise(resolve=>dead.on('close',()=>resolve(dead.pid)));
+ try{for(const pid of [reused.pid,deadPid]){
+  const home=path.join(f.root,`reclaimed-lock-${pid}`);await plantLock(home,{pid,createdAt:Date.now()-60_000});
+  const started=Date.now(),controlRoot=await launchDefault(f,home,release);expect(Date.now()-started).toBeLessThan(30_000);
   expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot}).descriptor.bundleID).toBe('default-native');
   expect(await fs.stat(bootstrapLock(home)).catch(error=>error.code)).toBe('ENOENT');
+ }}finally{reused.kill();}
+},90_000);
+test('a live original bootstrap holder is waited for however old its lock reads, even after a system sleep',async()=>{
+ const f=await fixture(),release=await releaseArtifacts(f,'A');
+ // This process and launchd both started before their locks were written; a sleep only advances the clock.
+ for(const [pid,createdAt,clock] of [[process.pid,Date.now(),11*60_000],[1,Date.now()-11*60_000,0]]){
+  const home=path.join(f.root,`live-lock-${pid}`);await plantLock(home,{pid,createdAt});
+  const now=Date.now,clockJump=vi.spyOn(Date,'now').mockImplementation(()=>now()+clock);
+  try{
+   let settled=false;const launch=launchDefault(f,home,release).finally(()=>{settled=true;});
+   await new Promise(resolve=>setTimeout(resolve,1_500));expect(settled).toBe(false);
+   expect(await fs.stat(path.join(draftRoot(home))).catch(error=>error.code)).toBe('ENOENT');
+   expect(JSON.parse(await fs.readFile(bootstrapLock(home),'utf8'))).toMatchObject({pid,createdAt});
+   await fs.rm(bootstrapLock(home));
+   expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:await launch}).descriptor.bundleID).toBe('default-native');
+  }finally{clockJump.mockRestore();}
  }
-},60_000);
-test('a live bootstrap holder younger than the stale bound is still waited for',async()=>{
- const f=await fixture(),home=path.join(f.root,'live-lock-home'),release=await releaseArtifacts(f,'A');
- await plantLock(home,{pid:process.pid,createdAt:Date.now()-6*60_000});
- let settled=false;const launch=launchDefault(f,home,release).finally(()=>{settled=true;});
- await new Promise(resolve=>setTimeout(resolve,1_500));expect(settled).toBe(false);
- expect(await fs.stat(path.join(draftRoot(home))).catch(error=>error.code)).toBe('ENOENT');
- await fs.rm(bootstrapLock(home));
- expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:await launch}).descriptor.bundleID).toBe('default-native');
-},60_000);
+},90_000);
+test('five concurrent first starts on a reused-pid bootstrap lock provision exactly once',async()=>{
+ const f=await fixture(),release=await releaseArtifacts(f,'A'),home=path.join(f.root,'race-home'),reused=await reusedPid();
+ let active=0,overlap=false,calls=0;
+ const counted=async request=>{calls++;if(++active>1)overlap=true;try{return await f.runMigration(request);}finally{active--;}};
+ try{
+  await plantLock(home,{pid:reused.pid,createdAt:Date.now()-60_000});
+  const started=Date.now(),roots=await Promise.all(Array.from({length:5},()=>launchDefault(f,home,release,counted)));
+  expect(Date.now()-started).toBeLessThan(30_000);expect(new Set(roots).size).toBe(1);expect(overlap).toBe(false);
+  expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:roots[0]}).descriptor.bundleID).toBe('default-native');
+ }finally{reused.kill();}
+ const single=path.join(f.root,'single-home');let singleCalls=0;
+ await launchDefault(f,single,release,async request=>{singleCalls++;return f.runMigration(request);});
+ expect(calls).toBe(singleCalls);
+},120_000);
 test('selected default bundle still verifies after its one-shot owner snapshot is consumed',async()=>{
  const f=await fixture(),home=path.join(f.root,'owner-home'),owners={'supabase-local-owner':{id:'10000000-0000-4000-8000-000000000001',scope:'local-admin'}};
  const controlRoot=await launchDefault(f,home,await releaseArtifacts(f,'A'),f.runMigration,async()=>({localOwners:owners}));
