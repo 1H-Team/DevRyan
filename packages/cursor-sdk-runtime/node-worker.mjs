@@ -161,12 +161,10 @@ const main = async () => {
   if (!apiKey) throw new Error('Cursor SDK API key is not configured.');
   if (!prompt) throw new Error('Cursor prompt is required.');
 
-  if (process.env.DEVRYAN_EXECUTION_WORKER === '1') {
-    const ripgrep = resolveCursorRipgrepPath({ env: process.env });
-    // The pinned local runtime consumes this environment field; the SDK's
-    // public entry does not export configureRipgrepPath in every build.
-    if (ripgrep.path) process.env.CURSOR_RIPGREP_PATH = ripgrep.path;
-  }
+  // The pinned local runtime's workspace ignore mapping consumes this
+  // environment field; configureRipgrepPath on the public entry does not reach it.
+  const ripgrep = resolveCursorRipgrepPath({ env: process.env });
+  if (ripgrep.path) process.env.CURSOR_RIPGREP_PATH = ripgrep.path;
   const cursorSdk = await import('@cursor/sdk');
   configureCursorSdkRipgrep(cursorSdk, { env: process.env });
   if (process.env.DEVRYAN_EXECUTION_WORKER === '1') {
