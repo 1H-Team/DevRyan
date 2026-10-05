@@ -33,10 +33,15 @@ import {
   createMeridianClaudeContextUsageClient,
 } from './providers/claude-meridian.js';
 import { isAnthropicProviderId } from '../opencode/anthropic-provider-ids.js';
+import { OPENCODE_GENERATION_INVALID } from '../opencode/opencode-generation.js';
 import { resolveClaudeCodeLaunch as resolveClaudeCodeLaunchDefault } from '../opencode/claude-cli-runtime.js';
 
 const jsonParser = express.json({ limit: MAX_QUOTA_CREDENTIAL_PAYLOAD_BYTES });
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
+// Matches the proxy readiness hold: the native runtime identity is unknown until
+// its first readiness probe, so early UI reads wait briefly instead of failing.
+const RUNTIME_READINESS_HOLD_MS = 6_000;
+const RUNTIME_READINESS_POLL_MS = 75;
 
 const unavailableContextUsage = (sessionID) => ({
   sessionID,
@@ -154,6 +159,8 @@ export function registerQuotaRoutes(app, {
   ownsSession,
   claudeContextUsageClient: claudeContextUsageClientOverride,
   credentialRuntime: credentialRuntimeOverrides,
+  runtimeReadinessHoldMs = RUNTIME_READINESS_HOLD_MS,
+  runtimeReadinessPollMs = RUNTIME_READINESS_POLL_MS,
 }) {
   const credentialRuntime = {
     ...defaultCredentialRuntime,
@@ -190,7 +197,19 @@ export function registerQuotaRoutes(app, {
     openCodeClient,
     ttlMs: 0,
   });
-  const resolveClaudeProxyBaseUrl = (workingDirectory) => claudeProxyBaseUrls.resolve(workingDirectory);
+  // Only an unknown runtime identity is retried, within a bounded hold; any
+  // other failure, or one that outlasts the hold, still reaches the caller.
+  const resolveClaudeProxyBaseUrl = async (workingDirectory) => {
+    const deadline = Date.now() + runtimeReadinessHoldMs;
+    for (;;) {
+      try {
+        return await claudeProxyBaseUrls.resolve(workingDirectory);
+      } catch (error) {
+        if (error?.code !== OPENCODE_GENERATION_INVALID || Date.now() >= deadline) throw error;
+        await new Promise((resolve) => setTimeout(resolve, Math.min(runtimeReadinessPollMs, Math.max(0, deadline - Date.now()))));
+      }
+    }
+  };
 
   app.get('/api/quota/providers', async (req, res) => {
     try {
