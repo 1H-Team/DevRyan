@@ -60,6 +60,25 @@ remain conservatively fenced pending integration and the full safety inventory.
 The native APIs are [GetProcessTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes)
 and [IsProcessInJob](https://learn.microsoft.com/en-us/windows/win32/api/jobapi/nf-jobapi-isprocessinjob).
 
+The [identity run](https://github.com/1H-Team/DevRyan/actions/runs/37359682512)
+at `1aff987701f9c8c45d6e443aa602b260fcc57eb8` passed stable native process
+creation/liveness and owned child exit on both architectures. Both actual runners
+report containing-job membership. Full safety and controller/writer builds still
+fail, and execution remains unavailable. A following change binds the native
+supervisor's parent handle to creation before the supervisor, rather than
+accepting a numeric parent PID alone.
+
+The SDK boundary also now inspects file identities and private ACLs from the same
+no-follow handle and creates private directories exclusively while retaining all
+ancestors against write/delete sharing. Existing ACLs are never repaired.
+Separate architecture checks cover inherited ACLs despite `chmod(0700)`, Unicode
+and case paths, hard-link identities, junction refusal and locked files. These
+native checks must pass before shared filesystem owners use that boundary; they
+do not replace the confinement inventory. The underlying APIs are
+[GetFileInformationByHandleEx](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfileinformationbyhandleex),
+[GetSecurityInfo](https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-getsecurityinfo)
+and [CreateDirectoryW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createdirectoryw).
+
 `scripts/build-native-runtime.mjs` currently requires Darwin ARM64 and seals
 Darwin PTY, AST, Claude, and supervisor assets. The Windows builder must select
 reviewed inputs by the actual host architecture, emit `.exe` artifacts, and

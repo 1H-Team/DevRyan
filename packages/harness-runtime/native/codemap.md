@@ -4,8 +4,8 @@
 uses an inherited Seatbelt profile. The Linux implementation uses Landlock ABI 3
 and seccomp, but has not passed platform acceptance and is not approved for
 production admission. Artifact verification returns false for Linux until
-metadata and IPC escape mediation is complete. Windows support remains
-unimplemented. The remaining metadata restriction gap is documented in the
+metadata and IPC escape mediation is complete. Windows execution remains
+unqualified. The remaining metadata restriction gap is documented in the
 [kernel Landlock API](https://docs.kernel.org/userspace-api/landlock.html#filesystem-flags).
 
 The supervisor closes inherited descriptors, retains the leader until its group
@@ -37,3 +37,16 @@ Build with `scripts/build-session-execution.mjs`; run the explicit native suite
 with `scripts/verify-session-execution.mjs`. These checks use disposable roots.
 The source and helper are internal implementation work, not enabled in the
 production host or shipped native artifacts.
+
+`session-execution-windows.c` is the Windows SDK supervisor draft. Its standalone
+identity operations query a no-follow file handle for volume/file ID, reparse
+state, hard-link count, owner and protected ACL. Exclusive private-directory
+creation holds every ancestor against write/delete sharing and refuses reparse
+parents or traversal; it never repairs an existing ACL. Process probes query
+creation time, liveness and containing-job membership from one held handle.
+The supervisor retains its original parent handle only after comparing parent
+and supervisor creation times, so a recycled parent PID cannot become an owner.
+`verify-windows-host-boundary.mjs` and `verify-windows-filesystem-boundary.mjs`
+exercise these native operations on each architecture. These are independent
+prerequisites: they do not attest read confinement, descendant containment,
+cancellation, runtime admission or the complete acceptance inventory.

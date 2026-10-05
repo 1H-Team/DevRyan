@@ -22,16 +22,106 @@ static void fail(const char *operation) {
 }
 static void checked(BOOL ok, const char *operation) { if (!ok) fail(operation); }
 
+static TOKEN_USER *current_user(void) {
+  HANDLE token;
+  checked(OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token), "identity token");
+  DWORD size = 0;
+  GetTokenInformation(token, TokenUser, NULL, 0, &size);
+  TOKEN_USER *user = calloc(1, size);
+  if (!user) fail("identity allocation");
+  checked(GetTokenInformation(token, TokenUser, user, size, &size), "identity owner");
+  CloseHandle(token);
+  return user;
+}
+
+/* File identity and ACL come from one no-follow handle. Mode bits are not an
+ * ownership boundary on Windows. Unknown ACL forms never attest privacy. */
+static int inspect_file_handle(HANDLE file) {
+  BY_HANDLE_FILE_INFORMATION info; FILE_ID_INFO identity;
+  checked(GetFileInformationByHandle(file, &info), "file identity attributes");
+  checked(GetFileInformationByHandleEx(file, FileIdInfo, &identity, sizeof(identity)), "file identity");
+  PSID owner; PACL dacl; PSECURITY_DESCRIPTOR security;
+  DWORD error = GetSecurityInfo(file, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+    &owner, NULL, &dacl, NULL, &security);
+  if (error != ERROR_SUCCESS) { SetLastError(error); fail("file ownership"); }
+  TOKEN_USER *user = current_user();
+  BOOL own = owner && EqualSid(owner, user->User.Sid), private = own && dacl != NULL;
+  SECURITY_DESCRIPTOR_CONTROL control; DWORD revision;
+  checked(GetSecurityDescriptorControl(security, &control, &revision), "file security control");
+  if (!(control & SE_DACL_PROTECTED)) private = FALSE;
+  PSID system; checked(ConvertStringSidToSidW(L"S-1-5-18", &system), "system identity");
+  BOOL ownerAccess = FALSE;
+  if (dacl) for (DWORD i = 0; i < dacl->AceCount; i++) {
+    ACE_HEADER *header; checked(GetAce(dacl, i, (void **)&header), "file security entry");
+    if (header->AceType != ACCESS_ALLOWED_ACE_TYPE || (header->AceFlags & INHERITED_ACE)) { private = FALSE; continue; }
+    ACCESS_ALLOWED_ACE *ace = (ACCESS_ALLOWED_ACE *)header;
+    PSID principal = &ace->SidStart;
+    if (EqualSid(principal, user->User.Sid)) {
+      if ((ace->Mask & FILE_ALL_ACCESS) == FILE_ALL_ACCESS || (ace->Mask & GENERIC_ALL)) ownerAccess = TRUE;
+    } else if (!EqualSid(principal, system)) private = FALSE;
+  }
+  if (!ownerAccess) private = FALSE;
+  printf("{\"protocol\":\"devryan.windows-file-identity/1\",\"volume\":\"%016llx\",\"fileId\":\"", (unsigned long long)identity.VolumeSerialNumber);
+  for (DWORD i = 0; i < sizeof(identity.FileId.Identifier); i++) printf("%02x", (unsigned int)identity.FileId.Identifier[i]);
+  printf("\",\"type\":\"%s\",\"reparsePoint\":%s,\"linkCount\":%lu,\"currentOwner\":%s,\"privateAcl\":%s}\n",
+    info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY ? "directory" : "file",
+    info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT ? "true" : "false", info.nNumberOfLinks,
+    own ? "true" : "false", private ? "true" : "false");
+  LocalFree(system); LocalFree(security); free(user);
+  return 0;
+}
+
+static int inspect_path(const wchar_t *path) {
+  HANDLE file = CreateFileW(path, FILE_READ_ATTRIBUTES | READ_CONTROL,
+    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
+    FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+  if (file == INVALID_HANDLE_VALUE) fail("file identity handle");
+  int result = inspect_file_handle(file); CloseHandle(file); return result;
+}
+
+/* Creation is exclusive. Hold every ancestor without write/delete sharing so
+ * neither a rename nor a new reparse target can change the anchored path. No
+ * existing file/ACL is repaired, and an interrupted new directory is retained. */
+static int create_private_directory(const wchar_t *argument) {
+  wchar_t path[32768]; DWORD size = GetFullPathNameW(argument, 32768, path, NULL);
+  if (!size || size >= 32768 || wcslen(path) < 4 || path[1] != L':' || path[2] != L'\\'
+    || CompareStringOrdinal(path, -1, argument, -1, TRUE) != CSTR_EQUAL) return 125;
+  wchar_t *separator = wcsrchr(path, L'\\');
+  if (!separator || !separator[1]) return 125;
+  size_t parentLength = (size_t)(separator - path);
+  if (parentLength < 3) parentLength = 3;
+  HANDLE ancestors[256]; DWORD count = 0;
+  for (size_t end = 3; end <= parentLength; end++) {
+    if (end != 3 && end != parentLength && path[end] != L'\\') continue;
+    if (count == 256) return 125;
+    wchar_t saved = path[end]; path[end] = 0;
+    HANDLE parent = CreateFileW(path, FILE_READ_ATTRIBUTES | READ_CONTROL, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+      FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    path[end] = saved;
+    if (parent == INVALID_HANDLE_VALUE) fail("anchored directory parent");
+    BY_HANDLE_FILE_INFORMATION info; checked(GetFileInformationByHandle(parent, &info), "anchored parent attributes");
+    if (!(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+      SetLastError(ERROR_ACCESS_DENIED); fail("anchored parent reparse boundary");
+    }
+    ancestors[count++] = parent;
+  }
+  TOKEN_USER *user = current_user(); LPWSTR owner;
+  checked(ConvertSidToStringSidW(user->User.Sid, &owner), "private owner string");
+  wchar_t descriptor[1024];
+  swprintf(descriptor, 1024, L"O:%sD:P(A;OICI;FA;;;%s)(A;OICI;FA;;;SY)", owner, owner);
+  PSECURITY_DESCRIPTOR security;
+  checked(ConvertStringSecurityDescriptorToSecurityDescriptorW(descriptor, SDDL_REVISION_1, &security, NULL), "private directory security");
+  SECURITY_ATTRIBUTES attributes = { sizeof(attributes), security, FALSE };
+  checked(CreateDirectoryW(path, &attributes), "exclusive private directory");
+  int result = inspect_path(path);
+  for (DWORD i = 0; i < count; i++) CloseHandle(ancestors[i]);
+  LocalFree(security); LocalFree(owner); free(user);
+  return result;
+}
+
 /* Read-only OS identity probe. Never grant, signal or infer exit from a PID.
  * Creation identity and liveness come from the same non-inherited handle. */
-static int inspect_process(const wchar_t *argument) {
-  if (!*argument) return 125;
-  for (const wchar_t *p = argument; *p; p++) if (*p < L'0' || *p > L'9') return 125;
-  wchar_t *end; errno = 0;
-  unsigned long pid = wcstoul(argument, &end, 10);
-  if (errno || *end || !pid) return 125;
-  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, (DWORD)pid);
-  if (!process) fail("process identity handle");
+static int emit_process_identity(HANDLE process, DWORD pid) {
   FILETIME created, exited, kernel, user;
   checked(GetProcessTimes(process, &created, &exited, &kernel, &user), "process creation identity");
   DWORD state = WaitForSingleObject(process, 0);
@@ -40,8 +130,17 @@ static int inspect_process(const wchar_t *argument) {
   checked(IsProcessInJob(process, NULL, &inJob), "containing job identity");
   printf("{\"protocol\":\"devryan.windows-process-identity/1\",\"pid\":%lu,\"startIdentity\":\"win32:%08lx%08lx\",\"active\":%s,\"inJob\":%s}\n",
     pid, created.dwHighDateTime, created.dwLowDateTime, state == WAIT_TIMEOUT ? "true" : "false", inJob ? "true" : "false");
-  CloseHandle(process);
   return 0;
+}
+static int inspect_process(const wchar_t *argument) {
+  if (!*argument) return 125;
+  for (const wchar_t *p = argument; *p; p++) if (*p < L'0' || *p > L'9') return 125;
+  wchar_t *end; errno = 0;
+  unsigned long pid = wcstoul(argument, &end, 10);
+  if (errno || *end || !pid) return 125;
+  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, (DWORD)pid);
+  if (!process) fail("process identity handle");
+  int result = emit_process_identity(process, (DWORD)pid); CloseHandle(process); return result;
 }
 static wchar_t *joined(const wchar_t *left, const wchar_t *right) {
   size_t n = wcslen(left) + wcslen(right) + 2;
@@ -118,6 +217,21 @@ static DWORD parent_id(void) {
   CloseHandle(snapshot); if (!parent) fail("execution owner"); return parent;
 }
 
+/* A recycled parent PID cannot authorize a new owner. Open the actual process,
+ * require creation before this supervisor, and retain that handle until drain. */
+static HANDLE parent_process(DWORD *pid) {
+  *pid = parent_id();
+  HANDLE parent = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, *pid);
+  if (!parent) fail("owner handle");
+  FILETIME parentCreated, created, exited, kernel, user;
+  checked(GetProcessTimes(parent, &parentCreated, &exited, &kernel, &user), "owner creation identity");
+  checked(GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user), "supervisor creation identity");
+  if (CompareFileTime(&parentCreated, &created) >= 0 || WaitForSingleObject(parent, 0) != WAIT_TIMEOUT) {
+    SetLastError(ERROR_INVALID_PARAMETER); fail("original owner identity");
+  }
+  return parent;
+}
+
 static PSID cache_sid(const wchar_t *directory) {
   HCRYPTPROV provider; HCRYPTHASH hash; BYTE digest[32]; DWORD size = sizeof(digest);
   checked(CryptAcquireContextW(&provider, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT), "cache identity provider");
@@ -134,6 +248,12 @@ static PSID cache_sid(const wchar_t *directory) {
 
 int wmain(int argc, wchar_t **argv) {
   if (argc == 3 && !wcscmp(argv[1], L"--inspect-process")) return inspect_process(argv[2]);
+  if (argc == 2 && !wcscmp(argv[1], L"--inspect-parent")) {
+    DWORD pid; HANDLE parent = parent_process(&pid);
+    int result = emit_process_identity(parent, pid); CloseHandle(parent); return result;
+  }
+  if (argc == 3 && !wcscmp(argv[1], L"--inspect-path")) return inspect_path(argv[2]);
+  if (argc == 3 && !wcscmp(argv[1], L"--create-private-directory")) return create_private_directory(argv[2]);
   // The host uses a named cancellation event because TerminateProcess would
   // close the job safely but could not write a termination acknowledgement.
   if (argc == 3 && !wcscmp(argv[1], L"--cancel")) {
@@ -143,8 +263,7 @@ int wmain(int argc, wchar_t **argv) {
   if (argc < 7 || wcscmp(argv[5], L"--")) return 125;
   HANDLE receipt = CreateFileW(argv[4], GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
   if (receipt == INVALID_HANDLE_VALUE) fail("exclusive receipt");
-  HANDLE parent = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, parent_id());
-  if (!parent) fail("owner handle");
+  DWORD parentPid; HANDLE parent = parent_process(&parentPid);
   HANDLE token, restricted;
   checked(OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_ADJUST_DEFAULT, &token), "host token");
   DWORD length = 0; GetTokenInformation(token, TokenUser, NULL, 0, &length);
