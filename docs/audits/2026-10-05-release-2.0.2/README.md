@@ -53,7 +53,7 @@ ledger waits and hold times, bridge calls, first output, and first text.
 Diagnostic routes require permission and session ownership. Foreign assistant
 message IDs cannot mutate another session's timings. Native response frames
 must match observed requests. Focused timing and harness checks passed;
-loopback baselines and optimization qualification remain pending.
+final loopback qualification remains pending.
 First output and first answer text now have distinct typed marks; the historical
 text/reasoning mark retains its meaning. The existing benchmark retains its
 three warmup receipts and feeds real provider, bridge, ledger and projected
@@ -73,6 +73,19 @@ an error-only client diagnostic from healthy turns. This diagnostic does not
 replace the required three compiled acceptance roots or performance calibration.
 The original incomplete probe is retained. Timing, projector and native-provider
 checks pass (99); journal/collector/Windows workflow contracts pass (27).
+
+Three baseline and three candidate engineering repetitions retain cold and
+warm turns for both workloads, with stable per-cohort source identities and
+successful cleanup. A candidate reused bridge connections and avoided unchanged
+registration locks; its auth/cancellation tests (6), ledger/admission tests (71)
+and web types passed. Its median gains (92 ms for one stream, 365 ms for eight
+calls) did not exceed baseline launch variation (101 ms and 1,947 ms). The
+optimizations were therefore removed from the implementation; their exact patch,
+receipts, artifact identities and inconclusive decision remain preserved in
+`.cache/release-2.0.2-recovery/performance-optimization-decision.json` and
+`performance-unqualified-candidate.patch`. These runs were not quiet-window
+calibration or matched source/environment paired qualification. The full
+performance audit and frozen protocol remain outstanding; the interval is 750 ms.
 
 Five shutdown failures were reproduced with the preserved review fixtures:
 finite credential refusals killed the controller, and queued enrollment/provider
@@ -114,14 +127,20 @@ release/tag/upload, registry/image-tag, npm, database and notification writes;
 Bot core functions also refuse publication and tagging. Assets must match their
 packaging SHA-256, uploaded state, size and exact shared scope allowlist. The
 preserved `r22-b6` verifier supplied the digest checks. Focused release tests
-passed without registry access. Windows x64/ARM64 CI is configured with pinned
-native tools and read permissions; actual Windows runs and contracts are pending.
+passed without registry access. Windows x64/ARM64 CI uses pinned native tools
+and read permissions.
 The release branch was pushed to the canonical repository. Draft PR creation
-was refused by the API token's permissions, and the dedicated GitHub comparison
-tab is signed out; native CI has not started. The Windows draft now assigns the
-Job Object during process creation, removing the post-creation ownership gap.
-Its source contract passes; the actual Windows abrupt-death inventory remains
-unavailable until CI can run. Core execution remains held.
+was refused by the API token's permissions. Native CI now runs on scoped pushes
+to this release branch, without requiring a PR or browser sign-in. The first
+[run](https://github.com/1H-Team/DevRyan/actions/runs/37349064957), at
+`7e328f87690f9b01d0603d302a95a724aae31ef7`, compiled both supervisors and failed
+both safety inventories. Retained x64/ARM64 supervisor SHA-256 values are
+`409bec7afc6435bfb0c90cd15aa79f46fce34e0cdd2ad569ed570fbff008f5ae` and
+`6f3adde9ac0b3af8513ba9a62824792744b62bb22325210d97f94f0f1896a073`.
+The missing token adjustment right is corrected; POSIX-only test assumptions,
+native filesystem/read confinement and the Darwin-only controller/writer builder
+remain open. The draft assigns its Job Object atomically during process creation;
+actual abrupt-death qualification is still not run. Core execution remains held.
 
 Enrollment review findings reproduced on the original review snapshot and the
 integrated branch. A durable fingerprint-only intent now precedes the exclusive
@@ -244,11 +263,11 @@ evidence in `.cache/release-2.0.2-recovery`.
 | DMG update success/refusal/interruption/rollback | Passed (focused); packaged not run | Verified downloads, native app exchange, startup acknowledgement and guarded rollback; killed-helper/native exchange checks pass; disposable package qualification pending |
 | Exact provider/role graph, 12 journeys, 16 compaction boundaries | Not run | Owner sign-in window after credential-free rehearsal |
 | Managed-user verification | Unavailable | Non-production Supabase environment not supplied |
-| Cold/warm loopback and full performance audit | Passed (interim diagnostic); final not run | One-stream and eight-call timing probe retained complete exact-turn marks; reproducible baselines and full audit pending |
+| Cold/warm loopback and full performance audit | Passed (engineering baselines); final not run | Three baseline and three candidate repetitions; gains within noise, candidate removed; full audit and frozen grading pending |
 | Burst, six attribution, 21 calibration, conditional 42 paired launches | Not run | Quiet window and frozen grading pending; retain 750 ms |
 | Release dry-run with no external writes and exact asset digests | Passed (focused); CI not run | Fake-registry refusal/reuse tests, workflow writer guards and packaging-digest verification; actual signed images and frozen package pending |
 | Downloaded DMG digest, mounted app, isolated launch and updater | Not run | Publication requires all preceding mandatory gates |
-| Windows x64 / ARM64 native safety and installers | Unavailable; not run | [Port plan](../../WINDOWS_PORT_PLAN.md); branch pushed, PR API permission refused and browser sign-in pending |
+| Windows x64 / ARM64 native safety and installers | Failed (native CI); installers not run | [Port plan](../../WINDOWS_PORT_PLAN.md); both supervisors compile, safety and controller/writer builds fail; original artifacts/logs retained |
 
 macOS remains ad-hoc signed. Windows packaging is unsigned. No notarization,
 Authenticode, live provider, or Windows runtime pass is claimed. Verification

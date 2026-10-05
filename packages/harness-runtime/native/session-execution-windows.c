@@ -122,7 +122,7 @@ int wmain(int argc, wchar_t **argv) {
   HANDLE parent = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, parent_id());
   if (!parent) fail("owner handle");
   HANDLE token, restricted;
-  checked(OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY, &token), "host token");
+  checked(OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_ADJUST_DEFAULT, &token), "host token");
   DWORD length = 0; GetTokenInformation(token, TokenUser, NULL, 0, &length);
   TOKEN_USER *user = calloc(1, length);
   if (!user) fail("user allocation");

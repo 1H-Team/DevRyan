@@ -29,8 +29,17 @@ qualification refuses, and requires both before the integrated compiled
 inventory. A final gate refuses failed or skipped outcomes. It selects the
 architecture-specific MSVC component (including ARM64) and fences Git discovery
 above disposable fixtures. It has no publication authority.
-The workflows have not run on Windows yet; current unported contracts are
-expected to fail and must be completed before either architecture can qualify.
+The first [native CI run](https://github.com/1H-Team/DevRyan/actions/runs/37349064957)
+at `7e328f87690f9b01d0603d302a95a724aae31ef7` compiled both supervisors with
+Bun 1.3.14 and the native SDK. Both qualification jobs failed: the token handle
+lacked adjustment rights, existing tests use POSIX socket and directory-sync
+assumptions, and the controller/writer builder still requires Darwin ARM64.
+The token handle now requests `TOKEN_ADJUST_DEFAULT`, required by its existing
+integrity/default-DACL changes ([Microsoft token access rights](https://learn.microsoft.com/en-us/windows/win32/secauthz/access-rights-for-access-token-objects)).
+It is not inherited by the child. Actual native
+execution must be rerun; this correction does not qualify either architecture.
+Logs and downloaded artifacts are retained under
+`.cache/release-2.0.2-recovery/windows-native-first-run`.
 
 `scripts/build-native-runtime.mjs` currently requires Darwin ARM64 and seals
 Darwin PTY, AST, Claude, and supervisor assets. The Windows builder must select
