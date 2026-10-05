@@ -361,6 +361,13 @@ values are `a8e55bdba2d6f39dae0114b6deae548bf8275b64f8c9b83fbb72dcf7beb945e4`
 and `74239280e1046628be870b610597a38cf68c5d3f5e9a893c7c30fc7db17b720b`.
 Full confinement and controller/writer builds remain failed.
 
+Run `37377148453` at `17c9624d` again passed the 15 filesystem checks and
+process/parent identities on both native architectures. Its pinned libsql
+0.5.29 source build failed during pre-compilation identity checks; neither
+compiler nor binary receipt was produced. The failed receipts and logs remain
+in `windows-libsql-ci-1`. A follow-up records the finite failing stage and public
+source-file hashes; the cause and native ABI qualification remain pending.
+
 The corrected Stage F invocation passed all seven wire cells and both actual
 native-runtime UI cells against the unchanged source, runner and QA archive
 hashes above. Its result is `service-correction-stage-f-run-2.json`. All nine
@@ -392,21 +399,38 @@ artifacts in `synthetic-cli-v2-release-2.0.2-wUaqzw/result.json` under
 durable markers, replayed no provider requests, verified retained artifacts,
 and physically drained both owners with zero verified journal gaps. The
 hash-bound wrapper receipt is `service-correction-cli-persistence-1.json`.
-The expanded quiet/JSON/TTY refusal inventory and positive Electron Resume
-remain outstanding.
+All eight actual CLI refusal modes now pass against the unchanged packaged
+source and runner `f7f48ba2038185e3307211799b2321e5c1eedc590d964cf9762ec55e74d27758`:
+noninteractive, quiet, `-q`, JSON, plain, fully specified invalid flags, TTY and
+TTY JSON. All exit 2 without creating owner files. The actual TTY output was
+reviewed separately; original result `service-correction-cli-refusal-2.json`
+has SHA-256 `d79c48b9522dbe8b2bb2a9cba2f135e9651f36ebbfaba7902da562dc22c13efd`.
+The separate review is `service-correction-cli-refusal-2-manual-review.json`.
+Positive Electron Resume remains outstanding.
 
 All six original packaged first-launch cells failed at Git helper startup and
 cleaned up their owned processes. Their startup journal contains no detailed
 records. Independent original-helper reproduction proved that SDK filesystem
 discovery reached the enclosing checkout and correctly refused it with
 `native_helper_directory_denied`. The QA fixture now creates empty-template
-Git boundaries in its private HOME and eight projects; all 15 focused checks
-pass, including hostile inherited Git inputs. Production refusal is unchanged.
-The rerun uses runner SHA-256
-`35425679e5c0fc02f89fd3288758c974ce297ad3c9e14aa0d1d69b6bec84137c`;
+Git boundaries in its private HOME and eight projects. The first corrected
+rerun (`service-correction-first-launch-3.json`, runner `35425679e5c0fc02f89fd3288758c974ce297ad3c9e14aa0d1d69b6bec84137c`)
+recorded four passes and two selected-v2.0.0 startup failures. Independently
+reproducing the genuine selected bundle proved that its workspace root also
+needs a Git boundary. Manual review additionally found that both shell-export
+"passed" screenshots still showed the initial runtime chooser. Their original
+runner grades remain intact; `service-correction-first-launch-3-visual-review.json`
+records the failed visual review. All owned processes drained cleanly.
+
+The QA fixture now protects HOME, workspace and all eight projects. Readiness
+also requires the visible enabled composer within the original 180-second
+deadline. All 16 focused checks pass, including hostile inherited Git inputs
+and refusal to grade a backend-ready chooser as loaded chat. Production
+refusal is unchanged. The next six-cell rerun uses runner SHA-256
+`f7f48ba2038185e3307211799b2321e5c1eedc590d964cf9762ec55e74d27758`;
 all 4,695 linked native inputs and packaged source/archive hashes are unchanged.
-The original failed six-cell result is `service-correction-first-launch-2.json`;
-the corrected packaged rerun remains pending.
+Original failed results and screenshots remain preserved; the stronger
+packaged rerun is pending.
 
 This table must be rebound to the final source commit, lock hash, native build
 identity, image manifest identity, packaging digests, and installed artifacts
@@ -423,9 +447,9 @@ evidence in `.cache/release-2.0.2-recovery`.
 | Three meaningful durable journal roots and verified gaps | Not run | Journal fixture/grading code integrated |
 | Seven lifecycle modes and seven wire cells | Passed at frozen source; final freeze pending | All seven actual lifecycle modes and seven wire cells passed; original predecessor/current artifact proofs, native Cancel and verified gaps retained |
 | Two actual-runtime UI cells and reviewed screenshots | Passed at `bf2aa44a`; final freeze pending | Web and packaged Electron passed; all nine recorded screenshots reviewed; verified journal gaps and clean owned-process drain |
-| CLI persistence/refusal and Electron Resume | CLI persistence passed; full refusal and positive Electron Resume not run | Seven original compiled persistence checks, native cold-recovery refusals and actual packaged Cancel passed; expanded mode inventory and positive resume pending |
+| CLI persistence/refusal and Electron Resume | CLI persistence and all eight refusal modes passed; positive Electron Resume not run | Seven original compiled persistence checks, eight actual CLI refusal modes with separate TTY review, native cold-recovery refusals and actual packaged Cancel passed |
 | Shipped 2.0.1 → candidate → 2.0.1 continuity | Unavailable on current host; VM prerequisite pending | Unmodified shipped startup registers a global LaunchServices protocol; disposable HOME cannot isolate it |
-| Packaged first launch and service mode | Service passed; six first-launch cells failed | Git fixture discovery reproduced; QA-only boundary correction passed 15 focused checks; original packaged rerun pending; production registration and authenticated desktop lease remain separate |
+| Packaged first launch and service mode | Service passed; first-launch qualification failed | Original six failures retained; corrected rerun had two selected-bundle startup failures and two visual failures; ten-boundary/composer correction passes 16 focused checks; stronger rerun pending |
 | DMG update success/refusal/interruption/rollback | Passed (focused); packaged not run | Verified downloads, native app exchange, startup acknowledgement and guarded rollback; killed-helper/native exchange checks pass; disposable package qualification pending |
 | Exact provider/role graph, 12 journeys, 16 compaction boundaries | Not run | Owner sign-in window after credential-free rehearsal |
 | Managed-user verification | Unavailable | Non-production Supabase environment not supplied |
@@ -433,7 +457,7 @@ evidence in `.cache/release-2.0.2-recovery`.
 | Burst, six attribution, 21 calibration, conditional 42 paired launches | Not run | Quiet window and frozen grading pending; retain 750 ms |
 | Release dry-run with no external writes and exact asset digests | Passed (focused); CI not run | Fake-registry refusal/reuse tests, workflow writer guards and packaging-digest verification; actual signed images and frozen package pending |
 | Downloaded DMG digest, mounted app, isolated launch and updater | Not run | Publication requires all preceding mandatory gates |
-| Windows x64 / ARM64 native safety and installers | Partial native checks; release gate failed | Both process/parent identities and 15 filesystem checks passed at `0a8225ae`, including parent reparse refusal; confinement and controller/writer builds fail; installers not run |
+| Windows x64 / ARM64 native safety and installers | Partial native checks; release gate failed | Both process/parent identities and 15 filesystem checks passed at `0a8225ae` and `17c9624d`; pinned libsql source identity, confinement and controller/writer builds fail; installers not run |
 
 macOS remains ad-hoc signed. Windows packaging is unsigned. No notarization,
 Authenticode, live provider, or Windows runtime pass is claimed. Verification

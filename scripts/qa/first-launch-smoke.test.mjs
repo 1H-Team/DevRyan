@@ -10,11 +10,19 @@ import {
   CHANGED_THEME_ID, DEFAULT_V200_ARTIFACTS, INITIAL_THEME_ID, PLAN_COUNTS, SHELL_EXPORTS, buildLegacyOwnerTree, buildShellExportRcFiles,
   classifyBundledRuntimeOffer, createV200PrepareEnvironment, findProcessesMatching, firstLaunchLayout, gradeShellExportLog,
   LEGACY_TREE_APP_WRITTEN, compareLegacySourceTree, hashLegacySourceTree,
-  parseFirstLaunchArgs, parseSeedSkipSummary, parseStartupFailures, prepareFirstLaunchGitBoundaries, resolvePackageRepositoryRoot, writeLegacyOwnerTree, writeShellExportRcFiles,
+  isFirstLaunchReady, parseFirstLaunchArgs, parseSeedSkipSummary, parseStartupFailures, prepareFirstLaunchGitBoundaries, resolvePackageRepositoryRoot, writeLegacyOwnerTree, writeShellExportRcFiles,
 } from './first-launch-smoke.mjs';
 
 const projectPaths = Array.from({ length: 8 }, (_, index) => `/synthetic/workspace/project-${index + 1}`);
 const evidence = '/repo/.cache/qa/packaged-electron-x/package-evidence.json';
+
+test('backend readiness cannot grade a startup chooser as a loaded chat', () => {
+  const health = { status: 200, body: { status: 'ok', isOpenCodeReady: true } };
+  assert.equal(isFirstLaunchReady({ health, selected: true, composerVisible: false }), false);
+  assert.equal(isFirstLaunchReady({ health, selected: true, composerVisible: true }), true);
+  assert.equal(isFirstLaunchReady({ health, selected: false, composerVisible: true }), false);
+  assert.equal(isFirstLaunchReady({ health: { ...health, status: 503 }, selected: true, composerVisible: true }), false);
+});
 
 test('CLI requires an absolute package, a known scenario and v2.0.0 source only for v200 scenarios', () => {
   assert.deepEqual(parseFirstLaunchArgs(['--package-evidence', evidence, '--scenario', 'owner-shaped']),
@@ -55,12 +63,12 @@ test('private Git boundaries stop enclosing-checkout discovery without inheritin
     const parent = spawnSync('git', ['init', '--quiet', `--template=${hostileTemplate}`], { cwd: root,
       env: { PATH: process.env.PATH, HOME: root, GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_NOSYSTEM: '1' } });
     assert.equal(parent.status, 0);
-    const directories = [layout.home, ...Array.from({ length: 8 }, (_, index) => path.join(layout.workspace, `project-${index + 1}`))];
+    const directories = [layout.home, layout.workspace, ...Array.from({ length: 8 }, (_, index) => path.join(layout.workspace, `project-${index + 1}`))];
     for (const directory of directories) await mkdir(directory, { recursive: true, mode: 0o700 });
     const env = { PATH: process.env.PATH, HOME: root, GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_NOSYSTEM: '1' };
     assert.equal(spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: layout.home, env }).stdout.toString().trim(), root);
     assert.equal(await prepareFirstLaunchGitBoundaries(layout, { ...env, GIT_DIR: path.join(root, '.git'),
-      GIT_CONFIG_GLOBAL: hostileConfig, GIT_TEMPLATE_DIR: hostileTemplate }), 9);
+      GIT_CONFIG_GLOBAL: hostileConfig, GIT_TEMPLATE_DIR: hostileTemplate }), 10);
     for (const directory of directories) {
       assert.equal(spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: directory, env }).stdout.toString().trim(), directory);
       assert.equal(await readFile(path.join(directory, '.git/HEAD'), 'utf8'), 'ref: refs/heads/main\n');

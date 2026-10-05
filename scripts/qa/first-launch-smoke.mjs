@@ -232,7 +232,7 @@ export async function prepareFirstLaunchGitBoundaries(layout, baseEnvironment = 
   await mkdir(template, { mode: 0o700 });
   const env = { ...createV200PrepareEnvironment(layout, baseEnvironment), GIT_CONFIG_GLOBAL: os.devNull,
     GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', GIT_CEILING_DIRECTORIES: layout.runtimeRoot };
-  const directories = [layout.home, ...Array.from({ length: PROJECT_RECORD_COUNT }, (_, index) => path.join(layout.workspace, `project-${index + 1}`))];
+  const directories = [layout.home, layout.workspace, ...Array.from({ length: PROJECT_RECORD_COUNT }, (_, index) => path.join(layout.workspace, `project-${index + 1}`))];
   for (const directory of directories) {
     if (!inside(layout.runtimeRoot, directory) || await realpath(directory) !== directory
       || !(await lstat(directory)).isDirectory() || await exists(path.join(directory, '.git'))) throw new Error('Git boundary requires a fresh private fixture');
@@ -406,8 +406,15 @@ async function runV200Preparation({ layout, v200Source, artifactDirectory, outpu
     ownedProcesses: child.getCleanupEvidence().observedProcesses.length };
 }
 
+export function isFirstLaunchReady({ health, selected, composerVisible }) {
+  return health?.status === 200 && health.body?.status === 'ok' && health.body.isOpenCodeReady === true
+    && selected === true && composerVisible === true;
+}
+
 const PAGE_STATE = `(() => ({ href: location.href, protocol: location.protocol, origin: location.origin, readyState: document.readyState,
   rootChildren: document.getElementById('root')?.childElementCount ?? 0, h1: document.querySelector('h1')?.textContent?.trim().slice(0, 200) ?? null,
+  composerVisible: [...document.querySelectorAll('textarea')].some(element => { const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 && !element.disabled && getComputedStyle(element).visibility !== 'hidden'; }),
   alert: document.querySelector('.error-content,[role="alert"]')?.textContent?.trim().slice(0, 600) ?? null, title: document.title }))()`;
 const loopback = origin => /^http:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d+$/.test(origin ?? '');
 
@@ -565,7 +572,7 @@ export async function runFirstLaunchSmoke(options) {
         let page = null;
         try { page = await evaluate(cdp, PAGE_STATE); } catch (error) { if (/closed/.test(error.message)) { cdp.close(); cdp = null; } }
         if (page) {
-          last = { protocol: page.protocol, origin: page.protocol === 'data:' ? 'data:' : page.origin, readyState: page.readyState,
+          last = { protocol: page.protocol, origin: page.protocol === 'data:' ? 'data:' : page.origin, readyState: page.readyState, composerVisible: page.composerVisible,
             rootChildren: page.rootChildren, h1: page.h1 ? sanitize(page.h1) : null };
           if (page.protocol === 'data:' && (/startup needs attention/i.test(page.h1 ?? '') || page.alert)) {
             outcome = { result: 'FAIL', reason: 'startup_error_page', page: { h1: sanitize(page.h1 ?? ''), message: sanitize(page.alert ?? '') } };
@@ -582,8 +589,9 @@ export async function runFirstLaunchSmoke(options) {
               executionRuntime: health.body?.executionRuntime ?? null,
               lastOpenCodeError: health.body?.lastOpenCodeError ? sanitize(JSON.stringify(health.body.lastOpenCodeError)).slice(0, 400) : null };
             last.selectionPresent = selected;
-            // A loaded shell is not a first launch: the bundled native runtime must be ready too.
-            if (health?.status === 200 && health.body?.status === 'ok' && health.body.isOpenCodeReady === true && selected) {
+            // The native backend and actionable renderer must both become ready
+            // within the original launch deadline; a startup chooser is not a pass.
+            if (isFirstLaunchReady({ health, selected, composerVisible: page.composerVisible })) {
               outcome = { result: 'PASS', reason: 'app_loaded_runtime_ready_selection_present', origin: page.origin, health: last.health };
               break;
             }
