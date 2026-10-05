@@ -65,6 +65,14 @@ export function createNativeObservation(options:{readonly controllerInstanceID:s
     yield* Effect.tryPromise({try:signal=>options.rpc('native.observation',{controllerInstanceID:options.controllerInstanceID,permit,observation},{signal}),catch:()=>new Error('native_observation_unavailable')})
       .pipe(Effect.catch(()=>Effect.logWarning('native_observation_unavailable',{stage:observation.stage})));
   }).pipe(Effect.catchCause(()=>Effect.logWarning('native_observation_unavailable',{stage:observation.stage})));
+  // Turn timing only: the first response bytes of a physical request (HTTP
+  // response headers or the first WebSocket frame) and the Responses
+  // `response.created` frame. Never awaited, so the provider stream is not
+  // delayed; a lost mark is only a missing measurement, never an authority.
+  const timing=(prepared:PreparedObservation,transport:'http'|'ws',event:'first-byte'|'response-created',statusCode:number|null)=>{
+    try{void Promise.resolve(options.rpc('native.provider-timing',{controllerInstanceID:options.controllerInstanceID,sessionID:prepared.sessionID,
+      requestID:prepared.requestID,kind:prepared.kind,transport,event,statusCode})).catch(()=>undefined);}catch{/* Timing only. */}
+  };
   const physical=(prepared:PreparedObservation,transport:'http'|'ws',ordinal:number,body:unknown)=>Effect.gen(function*(){
     const attempt=yield* currentNativeAttemptIdentity;
     yield* emit({schema:1,stage:'physical',controllerInstanceID:options.controllerInstanceID,configurationDigest:options.configurationDigest,
@@ -91,14 +99,20 @@ export function createNativeObservation(options:{readonly controllerInstanceID:s
       let ordinal=0;
       const preparation:Preparation={observed,nextOrdinal:()=>++ordinal};
       const http:NonNullable<typeof prepared.options.http>=(request,handler)=>{
-        const send:typeof handler=sent=>physical(observed,'http',++ordinal,sent.body._tag==='Uint8Array'?sent.body.body:undefined).pipe(Effect.andThen(handler(sent)));
+        const send:typeof handler=sent=>physical(observed,'http',++ordinal,sent.body._tag==='Uint8Array'?sent.body.body:undefined).pipe(Effect.andThen(handler(sent)),
+          Effect.tap(response=>Effect.sync(()=>timing(observed,'http','first-byte',response.status))));
         return prepared.options.http?prepared.options.http(request,send):send(request);
       };
       const webSocket=prepared.options.webSocket;
+      // Only the first frames are inspected; `response.created` opens a stream.
+      const markFrames=()=>{let seen=0,created=false;return (frame:string)=>{
+        if(seen<8){if(seen++===0)timing(observed,'ws','first-byte',null);
+          if(!created&&frame.includes('"response.created"')){created=true;timing(observed,'ws','response-created',null);}}
+        return frame;};};
       return {...prepared,options:{...prepared.options,http,...webSocket?{webSocket:{execute:(exchange:WebSocketChannelExchange)=>
         webSocket.execute(exchange).pipe(Effect.provideService(PreparationRef,preparation),Effect.map(execution=>({
           get http(){return execution.http;},
-          frames:execution.frames.pipe(Stream.provideService(PreparationRef,preparation)),
+          frames:execution.frames.pipe(Stream.map(markFrames()),Stream.provideService(PreparationRef,preparation)),
           complete:execution.complete.pipe(Effect.provideService(PreparationRef,preparation)),
         })))}}:{}}};
     });

@@ -101,6 +101,21 @@ test('credential settlement remains attached when bounded recovery times out', a
   });
 });
 
+test('uncertain reverse commands release the credential queue after child settlement before queued owner cleanup', async () => {
+  await fixture(async ({ start }) => {
+    let queue = Promise.resolve(), cleaned = false;
+    const withQueue = action => { const work = queue.then(action); queue = work.catch(() => {}); return work; };
+    const controller = await start({ afterExit: () => withQueue(async () => { cleaned = true; }) });
+    const operation = withQueue(async () => {
+      try { await controller.call({ action: 'hold', sessionID: 'ses_test' }, { timeoutMs: 20 }); }
+      catch (error) { await controller.killAndWaitForTermination(); throw error; }
+    });
+    await expect(operation).rejects.toMatchObject({ code: 'native_process_command_timeout' });
+    await controller.killAndWaitForExit();
+    expect(cleaned).toBe(true);
+  });
+});
+
 test('observation warnings retain one finite gap across stderr chunks without persisting raw output', () => fixture(async ({ start, root, boot }) => {
   const logFile = path.join(root, 'native-controller.jsonl'), gaps = [];
   const controller = await start({ logFile, onObservationUnavailable: id => { gaps.push(id); throw new Error('observer unavailable'); } });

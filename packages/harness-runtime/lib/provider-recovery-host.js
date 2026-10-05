@@ -188,6 +188,7 @@ export function createPrimaryRecoveryHost(options) {
       : process.env.DEVRYAN_PROVIDER_PROGRESS_TIMEOUT_MS ? Number(process.env.DEVRYAN_PROVIDER_PROGRESS_TIMEOUT_MS) : undefined),
     isManaged: options.isManaged, authorize: options.authorize, classifyFailure: options.classifyFailure,
     isNativeFallbackError: options.isNativeFallbackError,
+    resolveProviderRequest: options.resolveProviderRequest,
     publishEvent: (event, context) => {
       const properties = event?.properties;
       // Controller publication runs under durable owner locks. It has no native

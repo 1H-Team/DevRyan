@@ -8,9 +8,10 @@ const mocks = vi.hoisted(() => ({
     begin: vi.fn(), claimLease: vi.fn(), leaseForCall: vi.fn(), finish: vi.fn(), cleanupLease: vi.fn(), drain: vi.fn(),
     assertAdmission: vi.fn(), registerChild: vi.fn(), cancelUnstartedCall: vi.fn() },
   classify: vi.fn(),
+  runtimeOptions: null,
 }));
 vi.mock('@openchamber/harness-runtime', () => ({
-  createSessionMutationRuntime: () => mocks.runtime,
+  createSessionMutationRuntime: (options) => { mocks.runtimeOptions = options; return mocks.runtime; },
   createSessionRevertCoordinator: () => ({}),
 }));
 vi.mock('@openchamber/harness-runtime/lib/session-execution.js', () => ({
@@ -680,6 +681,36 @@ test.each(['read', 'glob', 'grep', 'skill'])('native direct %s receipt verifies 
   expect(recordReceipt).not.toHaveBeenCalled();
   mocks.runtime.finishDirect.mockRejectedValue(Object.assign(Error('cancelled'), { code: 'execution_cancelled' }));
   await expect(host.nativeExecution({ ...call, ...admitted, action: 'direct-finish' })).rejects.toMatchObject({ code: 'execution_cancelled' });
+});
+
+test('native direct admissions and finishes are journaled like plugin ones without changing their failures', async () => {
+  const client = createFakeClient();
+  client.sessions.message.mockResolvedValue({ info: { role: 'assistant', sessionID: input.sessionID, parentID: 'msg_user' },
+    parts: [{ type: 'tool', callID: input.callID, tool: 'read' }], turnOwnership: { source: 'native-sequence', userMessageID: 'msg_user' } });
+  const { host, diagnostics } = fixture({ openCodeClient: client, nativeExecution: { recheckPermit: async () => {} }, admissionSummaryMinMs: 0 });
+  const call = { ...input, tool: 'read' };
+  const admitted = await host.nativeExecution({ ...call, action: 'direct-admit' });
+  expect(await host.nativeExecution({ ...call, ...admitted, action: 'direct-finish' })).toEqual({ files: [] });
+  expect(diagnostics).toEqual(expect.arrayContaining([
+    expect.objectContaining({ event: 'session_execution', phase: 'direct_admit', state: 'completed', sessionID: input.sessionID,
+      callID: input.callID, executionTier: 'direct', steps: expect.stringContaining('direct_admission:1/') }),
+    expect.objectContaining({ event: 'session_execution', phase: 'direct_finish', state: 'completed', sessionID: input.sessionID,
+      callID: input.callID, executionTier: 'direct', steps: expect.stringMatching(/tool_execution:1\/\d+.*direct_receipt:1\//) }),
+  ]));
+  // A lock timeout reaches the controller with its original code, as before.
+  const lockTimeout = Object.assign(Error('lock'), { code: 'LOCK_TIMEOUT' });
+  mocks.runtime.finishDirect.mockRejectedValue(lockTimeout);
+  await expect(host.nativeExecution({ ...call, ...admitted, action: 'direct-finish' })).rejects.toBe(lockTimeout);
+  expect(diagnostics.at(-1)).toMatchObject({ phase: 'direct_finish', state: 'failed' });
+});
+
+test('ledger lock timings reach the host observer', () => {
+  const timings = [];
+  fixture({ onLockTiming: (timing) => timings.push(timing) });
+  mocks.runtimeOptions.onLockTiming({ operation: 'registerNativeSession', sessionID: 'ses_test', queueMs: 1, waitMs: 2, holdMs: 3, wrote: true, failed: false });
+  expect(timings).toEqual([{ operation: 'registerNativeSession', sessionID: 'ses_test', queueMs: 1, waitMs: 2, holdMs: 3, wrote: true, failed: false }]);
+  fixture({ onLockTiming: () => { throw new Error('observer failure'); } });
+  expect(() => mocks.runtimeOptions.onLockTiming({ operation: 'ledger' })).not.toThrow();
 });
 
 test('native direct receipts reject foreign canonical parents and writers before admission', async () => {

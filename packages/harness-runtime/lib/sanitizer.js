@@ -68,6 +68,10 @@ const NESTED_FIELDS = new Set([
   'transformDurationMs', 'finalRequestBytes', 'inventory', 'entries', 'targetKind', 'lastAt', 'coalescedDiagnostics',
   'progressKind', 'progress', 'counts', 'lastUsefulAt', 'relevance', 'policy', 'slow', 'steps', 'fenceReason', 'retired', 'supported', 'transport',
   'tool-evidence', 'child-completed', 'artifact-changed', 'required-check',
+  // Turn timing: per-turn bridge RPC and ledger lock aggregates (counts and
+  // milliseconds only) and native provider request timestamps.
+  'bridge', 'ledger', 'methods', 'operations', 'maxMs', 'reusedCount', 'failedCount',
+  'queueMs', 'waitMs', 'holdMs', 'maxWaitMs', 'maxHoldMs', 'requestPreparedAt', 'requestSentAt',
 ]);
 
 const MEMORY_EXTRACTION_COUNTS = new Set([

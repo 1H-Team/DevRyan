@@ -240,13 +240,22 @@ export function createNativeProviderRuntimeOwner({instanceID,snapshot,registrati
   };
   const startMeridian=async()=>{
     if(!claudeSupported)throw fail('native_claude_update_required',503);
-    live();if(!meridian)throw fail('native_meridian_unavailable',503);if(worker)return worker;
+    live();if(!meridian)throw fail('native_meridian_unavailable',503);
+    if(worker&&!worker.isFailed())return worker;
     if(!starting)starting=(async()=>{
+      if(worker){
+        const previous=worker;
+        // Retirement shares the launch promise so concurrent callers cannot
+        // replace a failed worker twice or bypass its termination receipt.
+        await previous.killAndWaitForExit();live();
+        if(worker===previous)worker=undefined;
+      }
       const profiles=prepareMeridianProfiles?await prepareMeridianProfiles({recheck:async()=>{live();},signal:workerStartCancel.signal}):meridian.boot.profiles;
       live();workerStartCancel.signal.throwIfAborted();
       const result=await createNativeProviderProcess({...meridian,boot:{...meridian.boot,profiles},resolveCredential:credentialRequest});
-      try{live();worker=result;return result;}catch(error){await result.close();throw error;}
-    })().catch(error=>{starting=undefined;throw error;});
+      try{live();if(result.isFailed())throw fail('native_provider_exited',503);worker=result;return result;}
+      catch(error){await result.killAndWaitForExit();throw error;}
+    })().finally(()=>{starting=undefined;});
     return starting;
   };
   const withMeridian=(input,action)=>admissionOwner.withProviderAttempt(input,async recheck=>{live();if(!path.isAbsolute(input.directory)||!locations.has(input.directory))throw fail('native_provider_directory_unreviewed');const target=await startMeridian();input.signal?.throwIfAborted();live();const result=await action({origin:target.bound.url,health:target.bound.health,instanceID:target.bound.instanceID,authorization:meridian.boot.requestAuthorization,authorizeAttempt:target.authorizeAttempt,releaseAttempt:target.releaseAttempt,recheck});input.signal?.throwIfAborted();live();return result;});
@@ -282,5 +291,5 @@ export function createNativeProviderRuntimeOwner({instanceID,snapshot,registrati
   const cursorPrompt=(input,body)=>admissionOwner.withProviderAttempt(input,async()=>{live();if(!cursor||!locations.has(input.directory))throw fail('native_cursor_unavailable',503);input.signal?.throwIfAborted();const result=await cursor.handlePromptAsync({sessionID:input.sessionID,directory:input.directory,body});input.signal?.throwIfAborted();live();return result;});
   return {catalog,inspectClaude,withMeridian,beginMeridian,assertMeridian,endMeridian,cursorPrompt,abortCursor:async sessionID=>{if(!cursor)throw fail('native_cursor_unavailable',503);return cursor.abortAndWait(sessionID);},
     handleRpc:(method,input,context)=>{if(method==='provider.catalog')return catalog(input,context);if(method==='provider.meridian.begin')return beginMeridian(input,context);if(method==='provider.meridian.assert')return assertMeridian(input);if(method==='provider.meridian.end')return endMeridian(input);throw fail('native_provider_operation_invalid');},
-    close:()=>closing??=(async()=>{closed=true;workerStartCancel.abort(fail('native_provider_owner_expired'));for(const cancel of catalogControllers)cancel.abort(fail('native_provider_owner_expired'));await Promise.allSettled([...attempts.values()].map(async attempt=>{try{await attempt.release();}finally{attempt.finish();}}));await Promise.allSettled([...catalogs,...attemptWork]);attempts.clear();let target=worker;try{target??=await starting;}catch{ /* Launch failure already settled its child. */ }if(target)return target.close();})()};
+    close:()=>closing??=(async()=>{closed=true;workerStartCancel.abort(fail('native_provider_owner_expired'));for(const cancel of catalogControllers)cancel.abort(fail('native_provider_owner_expired'));await Promise.allSettled([...attempts.values()].map(async attempt=>{try{await attempt.release();}finally{attempt.finish();}}));await Promise.allSettled([...catalogs,...attemptWork]);attempts.clear();let target=worker;try{target??=await starting;}catch{ /* Launch failure already settled its child. */ }if(target){if(target.isFailed())return target.killAndWaitForExit();try{return await target.close();}catch(error){if(!target.isFailed())throw error;return target.killAndWaitForExit();}}})()};
 }

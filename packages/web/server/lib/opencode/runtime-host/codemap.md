@@ -1,5 +1,25 @@
 # Native OpenCode host
 
+`runtime-bundle-lifecycle.js` can retain one frozen, constructor-only held
+checkpoint grant. It reserves ownership before selection reads, rechecks the
+selector after settlement, and exposes only the genuine action-scoped
+`assertHeld`. Failed settlement revokes the grant; expired scopes cannot revive
+during a later action. This grant is absent from HTTP and Electron APIs.
+
+`native-command-refusal.js` distinguishes correlated replies and commands never
+dispatched from uncertain transport failures. The integration owner preserves
+the controller after finite refusals. Uncertain commands hold the credential
+queue through `native-process.js`'s verified child termination ACK, then allow
+queue-dependent owner cleanup to finish; the original full-cleanup exit ACK is
+unchanged. Provider workers expose failure state and require their own verified
+termination before replacement or successful drain.
+
+`native-provider-timing.js` binds response measurements to committed native
+request observations and real attempt spans. `native-observation.ts` emits
+content-free first-response measurements without delaying provider streams.
+The web turn-timing owner journals bounded marks and ledger/bridge aggregates;
+its HTTP routes require diagnostic permission and session ownership.
+
 `native-setup-source.js` owns the private sibling fresh seed, including canonical
 ownership checks, mode repair before any native launch, and complete removal only
 after verified selection. Removal renames the seed to a sibling

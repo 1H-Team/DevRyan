@@ -57,7 +57,7 @@ test('actual Node original-caller grants and shared queue reach the single nativ
   const configuration=snapshot();let ready=false,originalChecks=0;
   let queue:Promise<void>=Promise.resolve();
   const withMutationQueue=<A>(action:()=>A|Promise<A>)=>{const result=queue.then(action);queue=result.then(()=>undefined,()=>undefined);return result;};
-  const controller:Pick<NativeControllerProcess,'instanceID'|'call'|'killAndWaitForExit'>={instanceID:'controller-one',
+  const controller:Pick<NativeControllerProcess,'instanceID'|'call'|'killAndWaitForExit'|'killAndWaitForTermination'>={instanceID:'controller-one',
     call:async input=>{
       if(input.action==='credential-commit-owned')return factory.commitCredentialOwned(input);
       if(input.action==='openai-read-selected-owned')return factory.readSelectedOwned(input);
@@ -65,7 +65,8 @@ test('actual Node original-caller grants and shared queue reach the single nativ
       if(input.action==='credential-operation-owned')return factory.credentialOwned(input);
       if(input.action==='credential-metadata-owned')return factory.credentialMetadataOwned(input);
       throw new Error('Unexpected native control');
-    },killAndWaitForExit:async()=>{throw new Error('No real native process in service acquisition fixture');}};
+    },killAndWaitForExit:async()=>{throw new Error('No real native process in service acquisition fixture');},
+    killAndWaitForTermination:async()=>{throw new Error('No real native process in service acquisition fixture');}};
   const node=createNativeIntegrationOwner({instanceID:'controller-one',snapshot:configuration,stateDirectory:state,controller:()=>controller,
     isReady:()=>ready,withMutationQueue,captureWebAuthorization:async()=>async()=>{originalChecks++;},
     admissionOwner:{withProviderResolution:async (_input,action)=>action(async()=>{}),withProviderAttempt:(_input,action)=>action(async()=>{}),withImageGeneration:async()=>{throw Error('Image generation is outside this credential fixture');}}});
@@ -131,7 +132,8 @@ test('Cursor key reads use the actual selected native Credential and refuse clos
       if(input.action==='credential-operation-owned')return factory.credentialOwned(input);
       if(input.action==='credential-metadata-owned')return factory.credentialMetadataOwned(input);
       throw Error('Unexpected native control');
-    },killAndWaitForExit:async()=>{throw Error('No native process in service acquisition fixture');}}),isReady:()=>true,
+    },killAndWaitForExit:async()=>{throw Error('No native process in service acquisition fixture');},
+    killAndWaitForTermination:async()=>{throw Error('No native process in service acquisition fixture');}}),isReady:()=>true,
     withMutationQueue:action=>{const result=queue.then(action);queue=result.then(()=>undefined,()=>undefined);return result;},
     captureWebAuthorization:async()=>async()=>{if(!allowed)throw Error('original caller revoked');},
     admissionOwner:{withProviderResolution:async (_input,action)=>action(async()=>{}),withProviderAttempt:(_input,action)=>action(async()=>{}),withImageGeneration:async()=>{throw Error('Outside fixture');}}});

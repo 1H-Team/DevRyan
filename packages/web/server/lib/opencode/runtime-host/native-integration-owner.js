@@ -4,6 +4,7 @@ import { createNativeOpenAiAuth } from './native-openai-auth.js';
 import { createNativeIntegrationAuthorization } from './native-integration-authorization.js';
 import { createNativeCredentialMutationOwner, credentialMutationFingerprint, parseCredentialResolutionBinding } from './native-credential-mutation-owner.js';
 import { reviewedMcpConfiguration } from './reviewed-mcp-configuration.js';
+import { NativeCommandRefusal } from './native-command-refusal.js';
 
 const fail = (code, status = 403) => Object.assign(new Error(code), { code, status, statusCode: status });
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -45,9 +46,11 @@ export function createNativeIntegrationOwner({ instanceID, snapshot, stateDirect
     if (target.instanceID !== instanceID) throw fail('native_controller_unavailable', 503);
     try { return await target.call({ ...input, controllerInstanceID: instanceID }); }
     catch (cause) {
+      if (cause instanceof NativeCommandRefusal) throw cause;
       // A timeout is not settlement: the shared queue remains held until the
       // real process has exited, even when its bounded recovery call times out.
-      await target.killAndWaitForExit();
+      if (typeof target.killAndWaitForTermination === 'function') await target.killAndWaitForTermination();
+      else await target.killAndWaitForExit();
       throw cause;
     }
   };

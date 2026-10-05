@@ -5,7 +5,7 @@ import type {NativeIntegrationOperation,NativeIntegrationAuthorizationOptions} f
 import type {NativeCredentialOperation} from './native-process-protocol.js';
 export interface NativeIntegrationOwnerOptions {
   readonly instanceID:string;readonly snapshot:NativeConfigurationSnapshot;readonly stateDirectory:string;
-  readonly controller:()=>Pick<NativeControllerProcess,'instanceID'|'call'|'killAndWaitForExit'>;
+  readonly controller:()=>Pick<NativeControllerProcess,'instanceID'|'call'|'killAndWaitForExit'|'killAndWaitForTermination'>;
   readonly isReady:()=>boolean;readonly withMutationQueue:<A>(action:()=>A|Promise<A>)=>Promise<A>;
   readonly captureWebAuthorization:NativeIntegrationAuthorizationOptions['captureWebAuthorization'];
   readonly admissionOwner:Pick<NativeAdmissionOwner,'withProviderAttempt'|'withProviderResolution'|'withImageGeneration'>;

@@ -10,6 +10,8 @@ export interface NativeControllerProcess {
   readonly killForRecovery:()=>Promise<NativeProcessExit>;
   /** Credential queue settlement cannot release on a timeout while the child may still mutate. */
   readonly killAndWaitForExit:()=>Promise<NativeProcessExit>;
+  /** Confined child receipt, before owner cleanup that can await shared queues. */
+  readonly killAndWaitForTermination:()=>Promise<NativeProcessExit>;
 }
 export function createNativeControllerProcess(options:{readonly binary:string;readonly environment:NodeJS.ProcessEnv;readonly cwd:string;readonly boot:NativeProcessBoot;readonly supervisor?:{readonly launcher:string;readonly deniedReadDirectories?:readonly string[]};readonly logFile?:string;readonly timeoutMs?:number;readonly beforeSpawn?:()=>Promise<void>;readonly afterExit?:(exit:NativeProcessExit)=>Promise<void>;readonly onExit?:(exit:NativeProcessExit)=>void;readonly onObservationUnavailable?:(instanceID:string)=>void}):Promise<NativeControllerProcess>;
 

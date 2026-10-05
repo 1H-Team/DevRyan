@@ -1495,3 +1495,28 @@ describe('native fallback before lazy canonical Step.Started',()=>{
   const newer=await setup();await reserve(newer);await newer.controller.admit({sessionID:identity.sessionID,directory:'/project',primary:true,executionGeneration:2,body:{messageID:'msg_newuser',agent:execution.agent,model:{providerID:execution.providerID,modelID:execution.modelID},variant:execution.variant}});expect((await newer.controller.readRecord(identity.sessionID)).nativeFallback).toBeUndefined();expect(newer.sent).toHaveLength(0);
  });
 });
+
+test('a native step reports the provider request its attempt actually prepared and sent', async () => {
+  const lookups = [];
+  const f = await fixture({ mode: 'observe', resolveProviderRequest: (input) => {
+    lookups.push(input);
+    return input.attempt.spanID === 'span_1' ? { requestID: 'req_native', transport: 'ws', preparedAt: 9_000, sentAt: 9_400 } : null;
+  } });
+  delete f.state.messages.at(-1).info.error; delete f.state.messages.at(-1).info.time.completed;
+  await f.controller.plugin({ action: 'step', ...identity, nativeAttempt: { traceID: 'trace_1', spanID: 'span_1' }, nativePermitSha256: 'a'.repeat(64) });
+  expect(lookups).toEqual([{ sessionID: identity.sessionID, attempt: { traceID: 'trace_1', spanID: 'span_1' } }]);
+  const prepared = f.incidents.filter((entry) => entry.event === 'provider_request_prepared');
+  expect(prepared).toHaveLength(1);
+  // Step.Started is observed after the first provider output; the incident
+  // carries the attempt's real request identity and times, not the step's.
+  expect(prepared[0]).toMatchObject({ providerRequestID: 'req_native', wireTiming: 'observed', transport: 'ws',
+    requestPreparedAt: 9_000, requestSentAt: 9_400 });
+});
+
+test('a step without an observed native request keeps the explicit unavailable identity', async () => {
+  const f = await fixture({ mode: 'observe', resolveProviderRequest: () => { throw new Error('observer failure'); } });
+  delete f.state.messages.at(-1).info.error; delete f.state.messages.at(-1).info.time.completed;
+  await f.controller.plugin({ action: 'step', ...identity, nativeAttempt: { traceID: 'trace_1', spanID: 'span_2' }, nativePermitSha256: 'a'.repeat(64) });
+  const prepared = f.incidents.find((entry) => entry.event === 'provider_request_prepared');
+  expect(prepared).toMatchObject({ providerRequestID: 'unavailable', wireTiming: 'unavailable', transport: 'unverified', requestPreparedAt: 10_000 });
+});

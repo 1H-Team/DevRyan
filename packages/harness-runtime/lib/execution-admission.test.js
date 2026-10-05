@@ -185,3 +185,29 @@ test('summary steps are no-ops outside a summary and never check an aborted admi
   }, { signal: controller.signal, summary: { minMs: 0 } }).catch(() => {});
   expect(ran).toBe(true);
 });
+
+test('an observation of context-free work journals its summary but keeps the original failure and code', async () => {
+  const { withExecutionObservation, executionReporting, executionSignal } = await import('./execution-admission.js');
+  const records = [];
+  expect(executionReporting()).toBe(false);
+  const lockTimeout = Object.assign(new Error('lock'), { code: 'LOCK_TIMEOUT' });
+  const error = await withExecutionObservation({ sessionID: 'ses_native', action: 'direct-finish', callID: 'call_1' }, async () => {
+    expect(executionReporting()).toBe(true);
+    expect(executionSignal()).toBeUndefined();
+    await executionPhase('identity_lookup', async () => {});
+    return executionPhase('direct_receipt', async () => { throw lockTimeout; });
+  }, { phase: 'direct_finish', minMs: 0, onDiagnostic: (record) => records.push(record) }).catch((value) => value);
+  // Without a prior context the caller received LOCK_TIMEOUT; observing it must not rewrap it.
+  expect(error).toBe(lockTimeout);
+  const summary = records.find((record) => record.phase === 'direct_finish');
+  expect(summary).toMatchObject({ event: 'session_execution', sessionID: 'ses_native', callID: 'call_1', executionTier: 'direct', state: 'failed' });
+  expect(summary.steps).toContain('identity_lookup:1/');
+  expect(records.find((record) => record.phase === 'direct_receipt')).toMatchObject({ state: 'failed' });
+  const completed = [];
+  expect(await withExecutionObservation({}, async () => 'ok', { phase: 'direct_admit', minMs: 0, onDiagnostic: (record) => completed.push(record) })).toBe('ok');
+  expect(completed).toEqual([expect.objectContaining({ phase: 'direct_admit', state: 'completed', steps: '' })]);
+  // Inside an existing admission it is an ordinary summary: timeouts keep their admission meaning.
+  const nested = await withExecutionAdmission({}, () => withExecutionObservation({}, async () => { throw lockTimeout; },
+    { phase: 'direct_finish' })).catch((value) => value);
+  expect(nested.code).toBe('local_execution_timeout');
+});

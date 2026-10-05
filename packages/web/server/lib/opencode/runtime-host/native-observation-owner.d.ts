@@ -10,6 +10,8 @@ export interface NativeObservationOwnerOptions {
    readonly turnOwnership?:{readonly source:string;readonly userMessageID?:string}}|undefined>}};
  readonly recordDiagnostic:(entry:{readonly type:'lifecycle';readonly event:'native_observation';readonly sessionID:string;readonly directory:string;readonly payload:NativeObservation}
   |{readonly type:'gap';readonly event:'native_observation_gap';readonly sessionID?:string;readonly payload:{readonly stage?:string;readonly code:'native_observation_gap'}})=>unknown;
+ /** Turn timing observer, after each committed controller observation. */
+ readonly onObservation?:(observation:NativeObservation)=>void;
 }
 export function createNativeObservationOwner(options:NativeObservationOwnerOptions):{
  readonly observeAcceptedUser:(input:Omit<Extract<NativeObservation,{stage:'accepted-user'}>,'schema'|'stage'|'controllerInstanceID'|'configurationDigest'>)=>null;

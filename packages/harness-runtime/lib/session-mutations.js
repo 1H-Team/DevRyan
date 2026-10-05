@@ -1,4 +1,5 @@
-import { executionCleanup, executionDiagnostic, checkExecutionAdmission, executionPhase, quietExecutionPhase, executionSignal, executionProgressMeter, executionProgress, withExecutionMeter, withoutExecutionDeadline, waitForExecutionQueue } from './execution-admission.js';
+import { executionCleanup, executionDiagnostic, executionReporting, executionStep, checkExecutionAdmission, executionPhase, quietExecutionPhase, executionSignal, executionProgressMeter, executionProgress, withExecutionMeter, withoutExecutionDeadline, waitForExecutionQueue } from './execution-admission.js';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import os from 'node:os';
@@ -57,6 +58,8 @@ const INSTALL_BATCH_BYTES = 32 * 1024 * 1024;
 const WARM_MAX_FILES = 20_000;
 const WARM_MAX_BYTES = 512 * 1024 * 1024;
 const WARM_BATCH_GAP_MS = 25;
+// Lock timings outside a journaled context reach the journal from this long.
+const LOCK_TIMING_SLOW_MS = 250;
 // Kill switches: set to exactly '0' to restore the previous behaviour.
 const fastIngest = () => process.env.DEVRYAN_LEDGER_FAST_INGEST !== '0';
 // Rows whose content is unchanged (a new inode or ctime only) cost one record
@@ -119,11 +122,24 @@ const mapBounded = async (items, fn, limit = FILE_CONCURRENCY) => {
  * Adapters must enforce write confinement and stop every writer before finish.
  * The private Git metadata store pages histories and commits accepted intent
  * with an atomic ref update before the publication transaction writes files. */
-export function createSessionMutationRuntime({ directory: storage, onChange = () => {}, onMaterialize, onDiagnostic = () => {}, maintenance: maintenanceOptions } = {}) {
+export function createSessionMutationRuntime({ directory: storage, onChange = () => {}, onMaterialize, onDiagnostic = () => {}, onLockTiming, maintenance: maintenanceOptions } = {}) {
   if (!path.isAbsolute(storage ?? '')) throw new TypeError('Absolute mutation storage directory is required');
   // Background failures outside any admission context (codes only).
   const diagnostic = (record) => { try { onDiagnostic(record); } catch { /* Observer only. */ } };
+  // Every owner-lock acquisition, with or without an execution context:
+  // queue and lock wait, then hold time (transaction and commit). Observer
+  // only; contended or long holds outside a journaled context are journaled
+  // here, because no admission summary carries them.
+  const lockTiming = (timing) => {
+    try { onLockTiming?.(timing); } catch { /* Observer only. */ }
+    if (executionReporting() || (timing.waitMs < LOCK_TIMING_SLOW_MS && timing.holdMs < LOCK_TIMING_SLOW_MS && !timing.failed)) return;
+    diagnostic({ phase: 'ledger_lock', state: timing.failed ? 'failed' : 'completed', elapsedMs: timing.waitMs + timing.holdMs, slow: true,
+      action: timing.operation, ...(timing.sessionID ? { sessionID: timing.sessionID } : {}),
+      steps: `queue_wait:1/${timing.queueMs},lock_wait:1/${timing.waitMs - timing.queueMs},lock_hold:1/${timing.holdMs}` });
+  };
   const queues = new Map();
+  // The public runtime operation that took a lock, for lock timings only.
+  const lockOperation = new AsyncLocalStorage();
   // Packs a ledger's Git objects in the background, never under the ledger
   // lock: Git keeps concurrent readers and writers safe while it repacks, and
   // objects of in-flight transactions stay loose until their ref update.
@@ -245,14 +261,18 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   // Callers queued behind a repository's lock follow its current holder's
   // progress, so waiting behind productive work is not reported as a stall.
   const queueMeters = new Map();
-  const locked = async (requested, fn, { requireExisting = false } = {}) => {
+  const locked = async (requested, fn, { requireExisting = false, operation: explicitOperation, sessionID: explicitSessionID } = {}) => {
     checkExecutionAdmission();
+    const label = lockOperation.getStore();
+    const operation = explicitOperation ?? label?.operation ?? 'ledger', sessionID = explicitSessionID ?? label?.sessionID;
     const { logicalDirectory, directory, vcs } = await resolveRepository(requested);
     if (requireExisting) {
       // Read-only evidence queries never create a ledger as a side effect.
       try { await fs.access(path.join(rootFor(directory), 'git', 'HEAD')); }
       catch (error) { if (error.code === 'ENOENT') return fn(null); throw error; }
     }
+    const queued = Date.now();
+    const timing = { operation, ...(validID(sessionID) ? { sessionID } : {}), queueMs: 0, waitMs: 0, holdMs: 0, wrote: false, failed: false };
     const previous = queues.get(directory) ?? Promise.resolve();
     let queueMeter = queueMeters.get(directory);
     if (!queueMeter) { queueMeter = { progress: Date.now(), waiters: 0, following: undefined }; queueMeters.set(directory, queueMeter); }
@@ -260,6 +280,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     const work = ready.then(() => {
       checkExecutionAdmission();
       const lockStarted = Date.now();
+      timing.queueMs = lockStarted - queued;
       let acquired = false;
       return withCrossProcessFileLock(path.join(rootFor(directory), 'owner.lock'), () => withExecutionMeter(async () => {
         acquired = true;
@@ -271,11 +292,20 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
       }), { timeoutMs: 30_000, signal: executionSignal() }).catch(cause => {
         if (!acquired) executionDiagnostic({ phase: 'lock_wait', state: 'failed', elapsedMs: Date.now() - lockStarted,
           code: cause?.code === 'LOCK_TIMEOUT' ? 'local_execution_timeout' : 'local_execution_failed' });
+        timing.failed = true;
+        if (!acquired) timing.waitMs = Date.now() - queued;
         throw cause;
       });
       async function holdLock() {
-        // Journal only contended acquisitions; every tool call takes this lock.
         const lockWaitMs = Date.now() - lockStarted;
+        const held = Date.now();
+        timing.waitMs = held - queued;
+        executionStep('lock_wait', lockWaitMs);
+        try { return await holdLockedTransaction(lockWaitMs); }
+        finally { timing.holdMs = Date.now() - held; executionStep('lock_hold', timing.holdMs); }
+      }
+      async function holdLockedTransaction(lockWaitMs) {
+        // Journal only contended acquisitions; every tool call takes this lock.
         if (lockWaitMs >= 250) executionDiagnostic({ phase: 'lock_wait', state: 'completed', elapsedMs: lockWaitMs, slow: true });
         const root = rootFor(directory), gitDir = path.join(root, 'git');
         await fs.mkdir(root, { recursive: true, mode: 0o700 });
@@ -297,6 +327,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         const wrote = db.pendingCount > 0;
         await withoutExecutionDeadline(() => quietExecutionPhase('ledger_commit', () => db.commit()));
         if (wrote) noteLedgerCommit(root);
+        timing.wrote = wrote;
         return result;
       }
     });
@@ -304,7 +335,13 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     const tail = Promise.allSettled([previous, work]).then(() => undefined);
     queues.set(directory, tail);
     try { return await work; }
+    catch (cause) {
+      timing.failed = true;
+      if (!timing.waitMs) timing.waitMs = Date.now() - queued;
+      throw cause;
+    }
     finally {
+      lockTiming(timing);
       void tail.then(() => {
         if (queues.get(directory) === tail) { queues.delete(directory); queueMeters.delete(directory); }
       });
@@ -613,7 +650,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
               executionProgress();
             }
             written = { db: repo.db, latest, disabled };
-          });
+          }, { operation: warm ? 'ledger_warm_install' : 'observation_install' });
           // The store's tree is the one this batch committed (or read, if it
           // changed nothing); the next batch reuses state only from that tree.
           carried = fast && written ? { tree: written.db.tree, latest: written.latest, disabled: written.disabled } : null;
@@ -1927,7 +1964,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     }
     return directories;
   };
-  return { projectDirectories, projectDirectory: (input) => locked(input.directory, (repo) => repo.directory),
+  const runtime = { projectDirectories, projectDirectory: (input) => locked(input.directory, (repo) => repo.directory),
     assertAdmission, registerNativeSession, nativeAdmissionState, holdNativeAdmission, releaseNativeAdmission,
     beginNativeRemoval, abandonQuietNativeRemoval, nativeRetentionHolds, commitNativeRemoval, prepareNativeRemovalMembers: input => commitNativeRemoval({...input,prepareOnly:true}), nativeRemoval, nativeRemovals, stageNativeRemovalMember, acknowledgeNativeRemoval, completeNativeRemoval,
     deferNativeContinuation, nativeContinuations, nativeShellContinuations, nativeTransactionHolds, acknowledgeNativeContinuation,
@@ -1937,4 +1974,11 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     maintainLedger: ({ directory }) => resolveRepository(directory).then(({ directory: project }) => maintainLedger(rootFor(project))),
     drain: () => Promise.allSettled([...preparations.values(), ...settlements.values(), ...queues.values(),
       ...[...maintenanceStates.values()].map((state) => state.running).filter(Boolean)]) };
+  // Lock timings name the outermost runtime operation; nested calls keep it.
+  for (const [name, method] of Object.entries(runtime)) {
+    if (typeof method !== 'function' || name === 'drain') continue;
+    runtime[name] = (input, ...rest) => lockOperation.getStore() ? method(input, ...rest)
+      : lockOperation.run({ operation: name, sessionID: input?.sessionID }, () => method(input, ...rest));
+  }
+  return runtime;
 }

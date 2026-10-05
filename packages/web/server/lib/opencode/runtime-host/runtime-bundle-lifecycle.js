@@ -24,7 +24,8 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
   stopProducers, drainStores, executionHost, afterExit, beforeControllerStop, requestRecomposition,
   artifactDirectory = executionArtifacts().directory, verifyArtifacts = verifyNativeRuntimeArtifacts,
   credentialProcess = runNativeBundleCredentialProcess, storeFactory = createRuntimeBundleStore,
-  retainArtifacts = retainNativeArtifacts }) {
+  retainArtifacts = retainNativeArtifacts, retainCheckpoint }) {
+  if (retainCheckpoint !== undefined && typeof retainCheckpoint !== 'function') throw fail('bundle_checkpoint_grant_invalid');
   // Permanent for this process: the application admission gate never reopens
   // after a checkpoint starts closing it, so neither may the lifecycle.
   let checkpointHeld = false;
@@ -35,6 +36,16 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
   let state = binding.selection.reconciliationRequired ? 'held' : 'ready';
   let reason = state === 'held' ? 'bundle_rollback_reconciliation_required' : null;
   let transition;
+  let heldAction = false, checkpointFailed = false;
+  const withCheckpoint = async (source, action) => {
+    let entered = false;
+    try {
+      return await checkpoint(source, async (...args) => { entered = true; return action(...args); });
+    } catch (error) {
+      if (!entered && checkpointHeld) checkpointFailed = true;
+      throw error;
+    }
+  };
   let captureArtifacts;
   const snapshots = new Map();
   const verifyLaunch = async launch => {
@@ -53,7 +64,7 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
       sourceManifestSha256: source.launch.artifactManifestSha256, targetManifestSha256: artifacts.artifactManifestSha256 } };
   };
   const store = storeFactory({ controlRoot: binding.controlRoot, allowRecoveredInputStartup: true,
-    withQuiescedSource: async (source, action) => checkpoint(source, action),
+    withQuiescedSource: withCheckpoint,
     runMigration: async () => { throw fail('bundle_migration_generation_invalid'); },
     verifyArtifacts: async ({ launch }) => verifyLaunch(launch),
     verifyV2Compatibility: compatible,
@@ -92,7 +103,7 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
       selectedManifestSha256: current?.descriptor.launch.artifactManifestSha256 ?? binding.descriptor.launch.artifactManifestSha256,
       restartRequired: !selectedMatches(binding, current), reconciliationRequired: current?.selection.reconciliationRequired === true };
     // Mirrors run(): only an unchecked host with a selector-owned target may roll back.
-    snapshot.rollbackAvailable = !checkpointHeld && !transition && !snapshot.restartRequired && ['ready', 'held'].includes(state)
+    snapshot.rollbackAvailable = !checkpointHeld && !transition && !heldAction && !snapshot.restartRequired && ['ready', 'held'].includes(state)
       && Boolean(snapshot.reconciliationRequired ? current?.selection.selectedBundleID : current?.selection.previousBundleID);
     if (snapshot.restartRequired || state === 'held' || state === 'transitioning') return snapshot;
     try {
@@ -103,7 +114,7 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
     return snapshot;
   };
   const run = (kind, input, action) => {
-    if (transition) return Promise.reject(fail('bundle_lifecycle_busy'));
+    if (transition || heldAction) return Promise.reject(fail('bundle_lifecycle_busy'));
     if (!input || Object.keys(input).some(key => key !== 'expectedRevision') || !Number.isSafeInteger(input.expectedRevision)) {
       return Promise.reject(fail('bundle_selection_revision_conflict'));
     }
@@ -129,7 +140,7 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
     })().finally(() => { transition = undefined; });
     return transition;
   };
-  return {
+  const handle = {
     inspect,
     resume: input=>resumeRuntimeBundle({controlRoot:binding.controlRoot,input}),
     recompose: async () => {
@@ -164,6 +175,37 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
       return store.rollback({ targetBundleID, expectedRevision: input.expectedRevision });
     }),
   };
+  if (retainCheckpoint) {
+    let revoked = false;
+    const ownerID = binding.descriptor.bundleID, controlRoot = binding.controlRoot;
+    const revision = binding.selection.revision;
+    const matches = current => current?.selection.selectedBundleID === ownerID && current.selection.revision === revision;
+    const withHeldCheckpoint = action => {
+      if (typeof action !== 'function') return Promise.reject(fail('bundle_checkpoint_grant_invalid'));
+      if (revoked || checkpointFailed) return Promise.reject(fail('bundle_checkpoint_grant_revoked'));
+      if (transition || heldAction) return Promise.reject(fail('bundle_lifecycle_busy'));
+      if (binding.selection.reconciliationRequired) return Promise.reject(fail('bundle_rollback_reconciliation_required'));
+      if (state === 'restart_required') return Promise.reject(fail('bundle_host_restart_required'));
+      // Reserve synchronously: selection reads and settlement both suspend.
+      heldAction = true;
+      return (async () => {
+        if (!matches(await store.readSelected())) throw fail('bundle_selection_revision_conflict');
+        let entered = false;
+        try {
+          return await withCheckpoint({ kind: 'bundle', bundleID: ownerID }, async (_stamp, scope) => {
+            if (!matches(await store.readSelected())) throw fail('bundle_selection_revision_conflict');
+            entered = true;
+            return action(Object.freeze({ assertHeld: scope.assertHeld }));
+          });
+        } catch (error) {
+          if (!entered) revoked = true;
+          throw error;
+        }
+      })().finally(() => { heldAction = false; });
+    };
+    retainCheckpoint(Object.freeze({ ownerID, controlRoot, withHeldCheckpoint }));
+  }
+  return handle;
 }
 
 /** Install after authentication; request data supplies only the selector CAS. */

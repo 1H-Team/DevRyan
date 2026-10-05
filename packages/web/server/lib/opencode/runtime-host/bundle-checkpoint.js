@@ -11,7 +11,7 @@ export function createRuntimeBundleCheckpoint({ ownerID, generation, launch, clo
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(ownerID ?? '') || ![1,2].includes(generation)
     || [closeAdmission, getController, stopProducers, drainStores].some(value => typeof value !== 'function')
     || typeof executionHost?.drain !== 'function') throw fail('bundle_checkpoint_owner_required');
-  let copying = false, settled = false,settledController,settlement;
+  let copying = false, settled = false,settledController,settlement, activeScope;
   return async (source, action) => {
     if (copying) throw fail('bundle_checkpoint_busy');
     if (source.kind === 'bundle' ? source.bundleID !== ownerID : source.kind !== 'legacy'
@@ -19,6 +19,8 @@ export function createRuntimeBundleCheckpoint({ ownerID, generation, launch, clo
       throw fail('bundle_checkpoint_source_mismatch');
     }
     copying = true;
+    const scopeIdentity = Symbol('held-checkpoint');
+    activeScope = scopeIdentity;
     try {
       if (!settled) {
         await closeAdmission();
@@ -53,13 +55,14 @@ export function createRuntimeBundleCheckpoint({ ownerID, generation, launch, clo
       }
       const assertHeld=async()=>{
         const current=getController();
-        if(!copying||!settled||current&&current!==settledController||settledController&&!settledController.hasExited())throw fail('bundle_checkpoint_scope_expired');
+        if(!copying||activeScope!==scopeIdentity||!settled||current&&current!==settledController||settledController&&!settledController.hasExited())throw fail('bundle_checkpoint_scope_expired');
         await assertAdmissionClosed?.();
+        if(!copying||activeScope!==scopeIdentity)throw fail('bundle_checkpoint_scope_expired');
       };
       await assertHeld();
       return await action({ checkpointID: randomUUID(), ownerID, generation, databasePath: launch.opencodeDatabasePath,
         webDataDirectory: launch.webDataDirectory, webConfigDirectory: launch.webConfigDirectory,
         opencodeConfigDirectory: launch.opencodeConfigDirectory, settledAt: Date.now() },{assertHeld,...settlement?{settlement}:{}});
-    } finally { copying = false; }
+    } finally { copying = false; activeScope = undefined; }
   };
 }

@@ -27,6 +27,10 @@ test('original checkpoint captures before controller stop and expires the closed
  });
  expect(order).toEqual(['admission','quiesce','producers','capture','exit','execution','after-exit','stores']);
  await expect(retained.assertHeld()).rejects.toMatchObject({code:'bundle_checkpoint_scope_expired'});
+ await checkpoint({kind:'bundle',bundleID:'A'},async(_proof,scope)=>{
+  await scope.assertHeld();
+  await expect(retained.assertHeld()).rejects.toMatchObject({code:'bundle_checkpoint_scope_expired'});
+ });
  await expect(checkpoint({kind:'bundle',bundleID:'B'},async()=>{})).rejects.toMatchObject({code:'bundle_checkpoint_source_mismatch'});
 });
 

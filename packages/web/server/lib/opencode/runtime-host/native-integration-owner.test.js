@@ -3,6 +3,28 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createNativeIntegrationOwner } from './native-integration-owner.js';
 import { credentialMutationFingerprint as fingerprint } from './native-credential-mutation-owner.js';
+import { NativeCommandRefusal } from './native-command-refusal.js';
+
+test.each([
+  ['native_integration_acquisition_expired', 'reply'],
+  ['native_credential_mutation_failed', 'reply'],
+  ['native_process_busy', 'not-dispatched'],
+])('a proven finite credential refusal keeps its controller alive: %s', async (code, settlement) => {
+  const root = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation/integration-refusal-'));
+  let kills = 0; const instanceID = 'controller-fixture';
+  const controller = { instanceID, call: async () => { throw new NativeCommandRefusal(code, 403, settlement); },
+    killAndWaitForTermination: async () => { kills++; }, killAndWaitForExit: async () => { kills++; } };
+  const owner = createNativeIntegrationOwner({ instanceID, stateDirectory: root,
+    snapshot: { locations: [{ directory: root, configuration: {}, compatibility: { mcp: {} } }] },
+    controller: () => controller, isReady: () => true, withMutationQueue: action => action(),
+    captureWebAuthorization: async () => async () => {}, admissionOwner: {} });
+  try {
+    await expect(owner.credentialMetadata({ kind: 'openai', directory: root, integrationID: 'openai',
+      configurationDigest: fingerprint({}), operation: 'openai.integration', method: 'GET', path: '/api/integration/openai' }))
+      .rejects.toMatchObject({ code });
+    expect(kills).toBe(0);
+  } finally { await owner.invalidate(); await fs.rm(root, { recursive: true, force: true }); }
+});
 
 test('a timed-out reverse credential commit holds the shared queue through actual controller exit', async () => {
   const root = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation/integration-owner-'));

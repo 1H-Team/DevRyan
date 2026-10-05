@@ -71,6 +71,6 @@ export async function createNativeProviderProcess({binary,cwd,environment,boot:i
     child.stdin.write(JSON.stringify(boot)+'\n',error=>{if(error)failed(error);});
     await deadline(binding,'native_provider_boot_timeout');
   }catch(error){try{await terminate();}catch(cleanup){throw new AggregateError([error,cleanup],'native_provider_launch_unsettled');}throw error;}
-  return {bound,pid:child.pid,health:()=>call('health'),authorizeAttempt:input=>call('authorize-attempt',input),releaseAttempt:input=>call('release-attempt',input),killAndWaitForExit:terminate,
+  return {bound,pid:child.pid,isFailed:()=>Boolean(fatal||stopped),health:()=>call('health'),authorizeAttempt:input=>call('authorize-attempt',input),releaseAttempt:input=>call('release-attempt',input),killAndWaitForExit:terminate,
     close:()=>closeWork??=(async()=>{try{await call('close');child.stdin.end();const result=await deadline(exited,'native_provider_exit_unconfirmed');if(result.code!==0||result.signal)throw fail('native_provider_close_unconfirmed');return result;}catch(error){await terminate();throw error;}})()};
 }

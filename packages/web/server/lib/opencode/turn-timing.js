@@ -58,7 +58,31 @@ const KNOWN_TURN_MARKS = new Set([
   'cursor_abort_requested',
 ]);
 
+// Server-only marks on the native provider path: never accepted from clients.
+// `provider_request_prepared` is the native model request preparation,
+// `provider_request_sent` its first physical send, `provider_first_byte` the
+// first response bytes (HTTP headers or WebSocket frame) and
+// `provider_response_created` the Responses `response.created` frame.
+const SERVER_TURN_MARKS = new Set([
+  'provider_request_prepared',
+  'provider_request_sent',
+  'provider_first_byte',
+  'provider_response_created',
+]);
+const MAX_AGGREGATE_KEYS = 32;
+
 const DURATION_PAIRS = [
+  ['send_started', 'provider_request_prepared'],
+  ['send_started', 'provider_request_sent'],
+  ['send_started', 'provider_first_byte'],
+  ['prompt_accepted', 'provider_request_prepared'],
+  ['prompt_accepted', 'provider_request_sent'],
+  ['provider_request_prepared', 'provider_request_sent'],
+  ['provider_request_sent', 'provider_first_byte'],
+  ['provider_request_sent', 'provider_response_created'],
+  ['provider_first_byte', 'first_text_delta'],
+  ['provider_request_sent', 'first_text_delta'],
+  ['send_started', 'first_text_delta'],
   ['cursor_draft_session_create_started', 'cursor_draft_session_created'],
   ['cursor_prewarm_started', 'cursor_prewarm_completed'],
   ['cursor_agent_prepare_started', 'cursor_agent_prepared'],
@@ -372,6 +396,13 @@ function createTurnTimingRuntime(options = {}) {
   const maxToolCalls = Number.isFinite(options.maxToolCalls) && options.maxToolCalls > 0
     ? Math.trunc(options.maxToolCalls)
     : DEFAULT_MAX_TOOL_CALLS;
+  // Journal observers (observer only): every newly set mark, and each turn's
+  // summary when its session goes idle. Payloads carry timings, identities
+  // and model selection only, never prompt or response text.
+  const observe = (callback, value) => {
+    if (typeof callback !== 'function') return;
+    try { callback(value); } catch { /* Observer only. */ }
+  };
   const lifecycleTracker = options.lifecycleTracker ?? createLifecycleTracker({
     clock: now,
     onTurnEvent: options.onTurnEvent,
@@ -468,6 +499,8 @@ function createTurnTimingRuntime(options = {}) {
         cursorWorkspaceRepair: null,
         mutatingToolCalls: [],
         terminalFailure: null,
+        bridge: null,
+        ledger: null,
         concurrency: {
           evidenceOnly: true,
           atAcceptance: null,
@@ -557,8 +590,22 @@ function createTurnTimingRuntime(options = {}) {
       record.diagnostics.cursorWorkspaceRepair = sanitizeCursorWorkspaceRepair(metadata);
     }
     record.updatedAt = timestamp;
+    observe(options.onTurnMark, buildJournalMark(record, mark, entry));
+    if (mark === 'session_status_idle') observe(options.onTurnSettled, buildJournalSummary(record, timestamp));
     pruneRecords();
     return true;
+  };
+
+  const findActiveRecord = (sessionId) => findLatestRecordForSession(sessionId, (item) => !item.marks.session_status_idle);
+
+  const aggregate = (target, key, sample) => {
+    const keys = target.byKey;
+    if (!keys.has(key) && keys.size >= MAX_AGGREGATE_KEYS) return;
+    const entry = keys.get(key) ?? { count: 0, totalMs: 0, maxMs: 0, waitMs: 0, holdMs: 0 };
+    entry.count += 1;
+    for (const [field, value] of Object.entries(sample)) entry[field] += value;
+    entry.maxMs = Math.max(entry.maxMs, sample.totalMs ?? 0);
+    keys.set(key, entry);
   };
 
   const captureConcurrency = (providerID) => {
@@ -843,7 +890,74 @@ function createTurnTimingRuntime(options = {}) {
     });
   };
 
-  const buildDurations = (marks) => {
+  const nonNegative = (value) => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.trunc(value) : null);
+
+  const projectBridge = (bridge) => (bridge ? {
+    count: bridge.count,
+    durationMs: bridge.durationMs,
+    maxMs: bridge.maxMs,
+    reusedCount: bridge.reusedCount,
+    failedCount: bridge.failedCount,
+    methods: [...bridge.byKey].map(([method, entry]) => ({
+      method, count: entry.count, durationMs: entry.totalMs, maxMs: entry.maxMs,
+    })),
+  } : null);
+
+  const projectLedger = (ledger) => (ledger ? {
+    count: ledger.count,
+    waitMs: ledger.waitMs,
+    holdMs: ledger.holdMs,
+    maxWaitMs: ledger.maxWaitMs,
+    maxHoldMs: ledger.maxHoldMs,
+    failedCount: ledger.failedCount,
+    operations: [...ledger.byKey].map(([operation, entry]) => ({
+      action: operation, count: entry.count, waitMs: entry.waitMs, holdMs: entry.holdMs,
+    })),
+  } : null);
+
+  // Journal shapes use only field names the diagnostic sanitizer retains.
+  function buildJournalMark(record, mark, entry) {
+    const metadata = isObject(entry.metadata) ? entry.metadata : {};
+    const payload = {
+      ...(record.assistantMessageId ? { assistantMessageID: record.assistantMessageId } : {}),
+      elapsedMs: Math.max(0, entry.at - record.createdAt),
+    };
+    for (const key of ['providerID', 'modelID', 'agent', 'variant', 'source', 'transport', 'kind', 'requestID', 'status']) {
+      if (typeof metadata[key] === 'string' && metadata[key]) payload[key] = metadata[key].slice(0, 256);
+    }
+    for (const key of ['statusCode', 'stalledForMs']) {
+      const value = nonNegative(metadata[key]);
+      if (value !== null) payload[key === 'stalledForMs' ? 'durationMs' : key] = value;
+    }
+    return {
+      sessionId: record.sessionId,
+      userMessageId: record.userMessageId,
+      directory: record.directory,
+      mark,
+      at: entry.at,
+      payload,
+    };
+  }
+
+  function buildJournalSummary(record, at) {
+    return {
+      sessionId: record.sessionId,
+      userMessageId: record.userMessageId,
+      directory: record.directory,
+      mark: 'summary',
+      at,
+      payload: {
+        ...(record.assistantMessageId ? { assistantMessageID: record.assistantMessageId } : {}),
+        durationMs: Math.max(0, at - record.createdAt),
+        model: getPromptAcceptedMetadata(record) ?? null,
+        stages: Object.entries(buildDurations(record.marks)).map(([phase, durationMs]) => ({ phase, durationMs })),
+        bridge: projectBridge(record.diagnostics.bridge),
+        ledger: projectLedger(record.diagnostics.ledger),
+      },
+    };
+  }
+
+  function buildDurations(marks) {
     const durations = {};
     for (const [start, end] of DURATION_PAIRS) {
       if (!marks[start] || !marks[end]) continue;
@@ -853,7 +967,7 @@ function createTurnTimingRuntime(options = {}) {
       }
     }
     return durations;
-  };
+  }
 
   const toRecordResponse = (record) => ({
     sessionId: record.sessionId,
@@ -870,6 +984,8 @@ function createTurnTimingRuntime(options = {}) {
       terminalFailure: record.diagnostics.terminalFailure
         ? { ...record.diagnostics.terminalFailure }
         : null,
+      bridge: projectBridge(record.diagnostics.bridge),
+      ledger: projectLedger(record.diagnostics.ledger),
       concurrency: {
         evidenceOnly: true,
         atAcceptance: record.diagnostics.concurrency.atAcceptance
@@ -909,6 +1025,9 @@ function createTurnTimingRuntime(options = {}) {
       if ((!sessionId && !assistantMessageId) || !mark) {
         return false;
       }
+      // A client cannot bind an owned session to another session's message.
+      const existingAssistant = recordsByAssistantMessage.get(assistantMessageId);
+      if (existingAssistant && sessionId && existingAssistant.sessionId !== sessionId) return false;
 
       const record = assistantMessageId
         ? recordsByAssistantMessage.get(assistantMessageId)
@@ -934,6 +1053,76 @@ function createTurnTimingRuntime(options = {}) {
       if (input.directory && record) {
         record.directory = normalizeDirectory(input.directory);
       }
+      return true;
+    },
+
+    // Server-side native provider marks for the session's active turn. A
+    // session without an active turn records nothing.
+    recordSessionMark(input = {}) {
+      const sessionId = normalizeString(input.sessionId);
+      const mark = normalizeString(input.mark);
+      if (!sessionId || !SERVER_TURN_MARKS.has(mark)) return false;
+      const record = findActiveRecord(sessionId);
+      if (!record) return false;
+      const metadata = {};
+      if (isObject(input.metadata)) {
+        for (const key of ['transport', 'kind', 'requestID']) {
+          const value = normalizeString(input.metadata[key]);
+          if (value && value.length <= 256) metadata[key] = value;
+        }
+        const statusCode = nonNegative(input.metadata.statusCode);
+        if (statusCode !== null) metadata.statusCode = statusCode;
+      }
+      if (!metadata.requestID) return false;
+      if (mark === 'provider_request_sent'
+        && metadata.requestID !== record.marks.provider_request_prepared?.metadata?.requestID) return false;
+      if (['provider_first_byte', 'provider_response_created'].includes(mark)
+        && metadata.requestID !== record.marks.provider_request_sent?.metadata?.requestID) return false;
+      return setMark(record, mark, Object.keys(metadata).length > 0 ? metadata : undefined);
+    },
+
+    // One controller-to-web bridge RPC, aggregated into the session's active turn.
+    recordBridgeCall(input = {}) {
+      const sessionId = normalizeString(input.sessionId);
+      const method = normalizeString(input.method).slice(0, 128) || 'unknown';
+      const durationMs = nonNegative(input.durationMs);
+      if (!sessionId || durationMs === null) return false;
+      const record = findActiveRecord(sessionId);
+      if (!record) return false;
+      const bridge = record.diagnostics.bridge ??= {
+        count: 0, durationMs: 0, maxMs: 0, reusedCount: 0, failedCount: 0, byKey: new Map(),
+      };
+      bridge.count += 1;
+      bridge.durationMs += durationMs;
+      bridge.maxMs = Math.max(bridge.maxMs, durationMs);
+      if (input.reused === true) bridge.reusedCount += 1;
+      const statusCode = nonNegative(input.statusCode);
+      if (statusCode === null || statusCode >= 400) bridge.failedCount += 1;
+      aggregate(bridge, method, { totalMs: durationMs });
+      record.updatedAt = now();
+      return true;
+    },
+
+    // One ledger owner-lock acquisition, aggregated into the session's active turn.
+    recordLedgerLock(input = {}) {
+      const sessionId = normalizeString(input.sessionId);
+      const operation = normalizeString(input.operation).slice(0, 128) || 'ledger';
+      const waitMs = nonNegative(input.waitMs);
+      const holdMs = nonNegative(input.holdMs);
+      if (!sessionId || waitMs === null || holdMs === null) return false;
+      const record = findActiveRecord(sessionId);
+      if (!record) return false;
+      const ledger = record.diagnostics.ledger ??= {
+        count: 0, waitMs: 0, holdMs: 0, maxWaitMs: 0, maxHoldMs: 0, failedCount: 0, byKey: new Map(),
+      };
+      ledger.count += 1;
+      ledger.waitMs += waitMs;
+      ledger.holdMs += holdMs;
+      ledger.maxWaitMs = Math.max(ledger.maxWaitMs, waitMs);
+      ledger.maxHoldMs = Math.max(ledger.maxHoldMs, holdMs);
+      if (input.failed === true) ledger.failedCount += 1;
+      aggregate(ledger, operation, { waitMs, holdMs });
+      record.updatedAt = now();
       return true;
     },
 
@@ -996,9 +1185,13 @@ function createTurnTimingRuntime(options = {}) {
 }
 
 function registerTurnTimingRoutes(app, runtime, options = {}) {
-  app.post('/api/diagnostics/turn-timing/mark', (req, res) => {
+  const authorized = async (req, sessionId) => typeof options.authorize === 'function'
+    && await options.authorize(req, sessionId) === true;
+  const forbidden = res => res.status(403).json({ code: 'turn_timing_forbidden' });
+  app.post('/api/diagnostics/turn-timing/mark', async (req, res) => {
     const input = req.body || {};
-    const accepted = runtime.recordClientMark(input);
+    if (!await authorized(req, typeof input.sessionId === 'string' ? input.sessionId : undefined)) return forbidden(res);
+    const accepted = typeof input.sessionId === 'string' && input.sessionId.trim() && runtime.recordClientMark(input);
     if (!accepted) {
       res.status(400).json(withHarnessResult(
         { ok: false, error: 'Invalid turn timing mark' },
@@ -1025,11 +1218,14 @@ function registerTurnTimingRoutes(app, runtime, options = {}) {
     ));
   });
 
-  app.get('/api/diagnostics/turn-timing/recent', (req, res) => {
+  app.get('/api/diagnostics/turn-timing/recent', async (req, res) => {
     const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined;
     const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    if (!await authorized(req, sessionId)) return forbidden(res);
+    const timings = runtime.getRecentTimings({ sessionId, limit });
+    const visible = await Promise.all(timings.records.map(record => authorized(req, record.sessionId)));
     res.json(withHarnessResult(
-      runtime.getRecentTimings({ sessionId, limit }),
+      { ...timings, records: timings.records.filter((_record, index) => visible[index]) },
       createHarnessSuccess({
         summary: 'Turn timing diagnostics loaded',
         nextActions: [],

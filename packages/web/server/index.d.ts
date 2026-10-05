@@ -79,6 +79,7 @@ export interface StartWebUiServerOptions {
   exitOnShutdown?: boolean;
   onRestartHost?: () => Promise<void>;
   onRuntimeBundleCheckpoint?: () => Promise<void>;
+  retainRuntimeBundleCheckpoint?: (grant: RuntimeBundleCheckpointGrant) => void;
   uiPassword?: string | null;
   getIsWindowFocused?: () => boolean;
   getBrowserCdpDiscoveryToken?: () => string;
@@ -105,6 +106,13 @@ export interface StartWebUiServerOptions {
   stopBotRuntimeResource?: (input: Record<string, unknown>) => Promise<unknown>;
   requestBotIndexer?: (input: BotIndexerRequest) => Promise<Record<string, unknown>>;
   getManagedBrowserEnvironment?: () => ManagedBrowserEnvironment | Promise<ManagedBrowserEnvironment>;
+}
+
+/** Private constructor capability. The held scope expires after each action. */
+export interface RuntimeBundleCheckpointGrant {
+  readonly ownerID: string;
+  readonly controlRoot: string;
+  readonly withHeldCheckpoint: <T>(action: (scope: Readonly<{ assertHeld: () => Promise<void> }>) => Promise<T>) => Promise<T>;
 }
 
 export declare function startWebUiServer(

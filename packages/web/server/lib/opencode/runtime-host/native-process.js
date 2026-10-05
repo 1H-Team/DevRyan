@@ -7,6 +7,7 @@ import { sessionExecutionProfile, verifySessionExecutionLauncher } from '@opench
 import { startParentDeathWatchdog } from '../parent-death-watchdog.js';
 import { registerManagedOpenCodeProcess, unregisterManagedOpenCodeProcess, reapOrphanedManagedOpenCodeProcesses } from '../managed-process-registry.js';
 import { NATIVE_PROCESS_LIMITS, parseNativeBoot, parseNativeCommand, parseNativeReply, encodeNativeProcessMessage } from './native-process-protocol.js';
+import { NativeCommandRefusal } from './native-command-refusal.js';
 
 const failure = code => Object.assign(new Error(code), { code, status: 503 });
 const deadline = async (work, timeoutMs, code) => {
@@ -69,6 +70,9 @@ export async function createNativeControllerProcess(options) {
   const binding = new Promise((resolve, reject) => { resolveBound = resolve; rejectBound = reject; });
   void binding.catch(() => {});
   const exited = new Promise((resolve, reject) => { resolveExit = resolve; rejectExit = reject; });
+  let resolveTermination, rejectTermination;
+  const terminated = new Promise((resolve, reject) => { resolveTermination = resolve; rejectTermination = reject; });
+  void terminated.catch(() => {});
   // Exit cleanup may reject while the owner is still serving another request.
   void exited.catch(() => {});
   const rejectPending = cause => {
@@ -103,11 +107,14 @@ export async function createNativeControllerProcess(options) {
         await fs.promises.rm(supervised.profile);
       }
       if (child.pid) unregisterManagedOpenCodeProcess(child.pid, registryOptions);
+      // The original child and its confined descendants have settled. Owner
+      // cleanup can itself wait on the credential queue, so it has a separate ACK.
+      resolveTermination(exitResult);
       await options.afterExit?.(exitResult);
       if (options.logFile) await fs.promises.appendFile(options.logFile, JSON.stringify({ event: 'native-process-exit', ...exitResult, stderrBytes }) + '\n', { mode: 0o600 });
       try { options.onExit?.(exitResult); } catch { /* Observer cannot own cleanup. */ }
       resolveExit(exitResult);
-    })().catch(rejectExit);
+    })().catch(error => { rejectTermination(error); rejectExit(error); });
   });
   // Raw provider/plugin output can contain credentials. Only lifecycle facts
   // enter this log; structured runtime diagnostics retain their own redaction.
@@ -141,15 +148,15 @@ export async function createNativeControllerProcess(options) {
         if (!bound || !request) throw failure('native_process_response_uncorrelated');
         pending.delete(reply.id); clearTimeout(request.timer);
         if (reply.ok) request.resolve(reply.result);
-        else request.reject(Object.assign(new Error(reply.error.code), { code: reply.error.code, status: reply.error.status }));
+        else request.reject(new NativeCommandRefusal(reply.error.code, reply.error.status, 'reply'));
       }
       if (Buffer.byteLength(buffer) > NATIVE_PROCESS_LIMITS.messageBytes) throw failure('native_process_protocol_overflow');
     } catch (cause) { fail(cause); }
   });
   const call = (input, { timeoutMs: requestTimeout = timeoutMs } = {}) => {
     if (fatal || exitResult) return Promise.reject(fatal ?? failure('native_process_exited'));
-    if (!bound || pending.size >= NATIVE_PROCESS_LIMITS.inFlight) return Promise.reject(failure('native_process_busy'));
-    if (!Number.isSafeInteger(requestTimeout) || requestTimeout < 1 || requestTimeout > 300_000) return Promise.reject(failure('native_process_timeout_invalid'));
+    if (!bound || pending.size >= NATIVE_PROCESS_LIMITS.inFlight) return Promise.reject(new NativeCommandRefusal('native_process_busy', 503, 'not-dispatched'));
+    if (!Number.isSafeInteger(requestTimeout) || requestTimeout < 1 || requestTimeout > 300_000) return Promise.reject(new NativeCommandRefusal('native_process_timeout_invalid', 503, 'not-dispatched'));
     const command = parseNativeCommand({ ...input, protocol: 1, id: randomUUID() });
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -168,6 +175,11 @@ export async function createNativeControllerProcess(options) {
     signal(supervised ? 'SIGTERM' : 'SIGKILL');
     return exited;
   };
+  const killAndWaitForTermination = () => {
+    closing = true;
+    signal(supervised ? 'SIGTERM' : 'SIGKILL');
+    return terminated;
+  };
   const killForRecovery = () => deadline(killAndWaitForExit(), timeoutMs, 'native_process_exit_unconfirmed');
   try {
     if (watchdog.error) throw failure(watchdog.error.code);
@@ -182,7 +194,7 @@ export async function createNativeControllerProcess(options) {
   }
   return {
     url: bound.url, port: bound.port, instanceID: boot.instanceID, pid: child.pid, startedAt, bound,
-    hasExited: () => exitResult !== undefined, call, killForRecovery, killAndWaitForExit,
+    hasExited: () => exitResult !== undefined, call, killForRecovery, killAndWaitForExit, killAndWaitForTermination,
     close() {
       if (closeWork) return closeWork;
       closing = true;

@@ -866,8 +866,19 @@ export function createPrimaryRecoveryController(options) {
       },async()=>authorizePendingChoice?.());
       const timeouts = Object.fromEntries(['headers', 'chunk', 'total'].map((key) => [key,
         Number.isFinite(input.timeouts?.[key]) || input.timeouts?.[key] === false ? input.timeouts[key] : null]));
+      // Native Step.Started follows the attempt's first provider output, so
+      // the request's identity and times come from the controller's own
+      // observations of this attempt span, when available.
+      let observed = null;
+      if (input.nativeAttempt) {
+        try { observed = options.resolveProviderRequest?.({ sessionID: r.sessionID, attempt: input.nativeAttempt }) ?? null; }
+        catch { observed = null; }
+      }
       diagnostic('provider_request_prepared', r, { observedTimeoutOptions: timeouts, configurationSource: 'provider_options_hook',
-        transport: 'unverified', requestPreparedAt: now(), meaningfulProgressAt: l.at, phase: l.phase });
+        transport: 'unverified', requestPreparedAt: now(), meaningfulProgressAt: l.at, phase: l.phase,
+        ...(observed && typeof observed.requestID === 'string' ? { providerRequestID: observed.requestID, wireTiming: 'observed',
+          transport: observed.transport ?? 'unverified', requestPreparedAt: observed.preparedAt ?? observed.sentAt ?? now(),
+          requestSentAt: observed.sentAt ?? null } : {}) });
     }
     if (input.action === 'tool_before') { l.calls.add(input.callID); l.phase = 'tool'; }
     return { allowed: true, readOnly: isGuarded };

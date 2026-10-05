@@ -23,7 +23,7 @@ import crypto from 'crypto';
 import yaml from 'yaml';
 import { createUiAuth } from './lib/ui-auth/ui-auth.js';
 import { createMultiUserRuntime, getRequestPrincipal } from './lib/multi-user/index.js';
-import { canUseBrowser } from './lib/multi-user/policy.js';
+import { canUseBrowser, canReadSettingsPage } from './lib/multi-user/policy.js';
 import { createBotModelCatalogLoader } from './lib/bots/model-catalog.js';
 import { setBotOwnerCookie } from './lib/bots/local-owner.js';
 import { createTunnelAccessControl as createTunnelAuth, registerTunnelAccessBoundary, hasTunnelBoundaryAuthorization } from './lib/tunnels/access-control.js';
@@ -112,6 +112,7 @@ import { createBootstrapRuntime } from './lib/opencode/bootstrap-runtime.js';
 import { createSessionRuntime } from './lib/opencode/session-runtime.js';
 import { createOpenCodeWatcherRuntime } from './lib/opencode/watcher.js';
 import { createTurnTimingRuntime, registerTurnTimingRoutes } from './lib/opencode/turn-timing.js';
+import { createNativeProviderTiming } from './lib/opencode/runtime-host/native-provider-timing.js';
 import { createAgentRuntimeWarmup, registerAgentRuntimeWarmupRoute } from './lib/opencode/agent-runtime-warmup.js';
 import { createProjectPrewarmRuntime } from './lib/opencode/project-prewarm-runtime.js';
 import { createXaiToolCatalogRuntime } from './lib/opencode/xai-tool-catalog-runtime.js';
@@ -584,7 +585,12 @@ const turnTimingRuntime = createTurnTimingRuntime({
     harnessRuntime.recordLifecycleEvent(event);
     evidenceRuntime?.processLifecycleEvent(event);
   },
+  // Turn timing persists in the diagnostic journal (and Export Diagnostics).
+  onTurnMark: (entry) => harnessRuntime.recordTurnTiming(entry),
+  onTurnSettled: (entry) => harnessRuntime.recordTurnTiming(entry),
 });
+// Native provider request marks and the primary step's request identity.
+const nativeProviderTiming = createNativeProviderTiming({ onMark: (input) => turnTimingRuntime.recordSessionMark(input) });
 
 // Activity projection is observational; a slow Supabase must not accumulate
 // unbounded in-flight projections (one per tool event).
@@ -1559,6 +1565,7 @@ const primaryRecoveryRuntime = createWebPrimaryRecoveryRuntime({
   publishEvent: emitSyntheticOpenCodeEvent,
   recordIncident: (incident) => harnessRuntime.record({ type: 'lifecycle', event: incident.event,
     sessionID: incident.sessionID, messageID: incident.messageID, payload: incident }),
+  resolveProviderRequest: (input) => nativeProviderTiming.resolve(input),
 });
 harnessRuntime.setPrimaryRecoveryRuntime(primaryRecoveryRuntime);
 // Any accepted abort settles the running turn as aborted in the journal. Only an
@@ -1660,6 +1667,8 @@ const sessionExecutionHost = createSessionExecutionHost({ assertExecutionReady: 
   admissionSummaryMinMs: /^\d{1,6}$/.test(process.env.DEVRYAN_EXECUTION_SUMMARY_MIN_MS ?? '')
     ? Number(process.env.DEVRYAN_EXECUTION_SUMMARY_MIN_MS) : undefined,
   onDiagnostic: (event) => harnessRuntime.recordSessionExecution(event),
+  onLockTiming: (timing) => turnTimingRuntime.recordLedgerLock({ sessionId: timing.sessionID, operation: timing.operation,
+    waitMs: timing.waitMs, holdMs: timing.holdMs, failed: timing.failed }),
 });
 observeCommandDeadline = (payload) => commandDeadlineRuntime.observe(payload);
 if (selectedRuntimeBundle && (ENV_SKIP_OPENCODE_START || ENV_CONFIGURED_OPENCODE_HOST)) {
@@ -1693,6 +1702,11 @@ if (nativeBundle) {
     },
     withCredentialMutationQueue: action => openAiOAuthCoordinator.withAuthMutation(action),
     recordDiagnostic: entry => harnessRuntime.record(entry),
+    // Turn timing (observer only): bridge RPCs and native provider marks.
+    onBridgeTiming: timing => turnTimingRuntime.recordBridgeCall({ sessionId: timing.sessionID, method: timing.method,
+      durationMs: timing.durationMs, statusCode: timing.statusCode, reused: timing.reused }),
+    onNativeObservation: observation => nativeProviderTiming.observe(observation),
+    onProviderTiming: timing => nativeProviderTiming.response(timing),
     getManagedRuntime: () => managedOrchestrationRuntime,
     authorization: createNativeAuthorization({ locations: nativeBundle.locations, manifest: nativeBundle.artifacts.manifest,
       getRequestPrincipal, getMultiUserRuntime: () => multiUserRuntime,
@@ -1893,6 +1907,7 @@ async function main(options = {}) {
     : process.env.DEVRYAN_SUPERVISED_RESTART === '1'
       ? async () => { await gracefulShutdown({ exitProcess: false }); process.exit(1); } : undefined;
   const runtimeBundleLifecycle = createRuntimeBundleLifecycle({ binding: selectedRuntimeBundle,
+    retainCheckpoint: options.retainRuntimeBundleCheckpoint,
     getController: () => nativeRuntime.checkpointController(),
     closeAdmission: async () => {
       bundleAdmission.close();
@@ -2595,6 +2610,11 @@ async function main(options = {}) {
   const { tunnelService, startTunnelWithNormalizedRequest } = tunnelRuntimeContext;
 
   registerTurnTimingRoutes(app, turnTimingRuntime, {
+    authorize: async (req, sessionId) => {
+      const principal = req.principal ?? getRequestPrincipal();
+      if (!principal || !canReadSettingsPage(principal, 'about')) return false;
+      return !sessionId || await multiUserRuntime.ownsSession?.(principal, sessionId) === true;
+    },
     onAcceptedMark: (input) => {
       const isToolInputStall = input?.mark === 'renderer_tool_input_stall_confirmed';
       const isInferenceStall = input?.mark === 'renderer_provider_inference_stall_confirmed';

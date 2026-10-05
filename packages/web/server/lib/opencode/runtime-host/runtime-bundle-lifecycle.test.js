@@ -15,7 +15,8 @@ const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
 
 async function fixture({ unknownController = false, unsettledController = false, failDrain = false, drainFailures = 0, failProjection = false,
-  failRestart = false, failQuiesce = false, failCapture = false, failRetain = false, failStore = null, reconciliationRequired = false } = {}) {
+  failRestart = false, failQuiesce = false, failCapture = false, failRetain = false, failStore = null, reconciliationRequired = false,
+  retainCheckpoint, beforeReadSelected, beforeDrain } = {}) {
   const root = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), 'runtime-bundle-lifecycle-')); roots.push(root);
   const launch = { opencodeDatabasePath: path.join(root, 'a.db'), webDataDirectory: path.join(root, 'web'),
     webConfigDirectory: path.join(root, 'web-config'), opencodeConfigDirectory: path.join(root, 'config'),
@@ -55,7 +56,7 @@ async function fixture({ unknownController = false, unsettledController = false,
   const storeFactory = options => {
     callbacks = options;
     return {
-      readSelected: async () => selected,
+      readSelected: async () => { await beforeReadSelected?.(); return selected; },
       prepare: async input => options.withQuiescedSource(failStore === 'source' ? { kind: 'bundle', bundleID: 'B' } : input.source, async (proof, scope) => {
         await scope.assertHeld(); events.push('prepare');
         if (failStore === 'prepare') throw injected('bundle_prepare_copy_failed');
@@ -84,7 +85,7 @@ async function fixture({ unknownController = false, unsettledController = false,
     };
   };
   const restart = vi.fn(async () => { events.push('restart'); if (failRestart) throw new Error('host refused restart'); });
-  const lifecycle = createRuntimeBundleLifecycle({ binding, artifactDirectory, verifyArtifacts, credentialProcess, storeFactory,
+  const lifecycle = createRuntimeBundleLifecycle({ binding, artifactDirectory, verifyArtifacts, credentialProcess, storeFactory, retainCheckpoint,
     retainArtifacts: async () => { events.push('retain'); if (failRetain) throw injected('bundle_retain_failed'); return retained; }, requestRecomposition: restart,
     getController: () => unknownController ? null : controller,
     closeAdmission: async () => { events.push('admission-close'); gate.close(); },
@@ -95,10 +96,12 @@ async function fixture({ unknownController = false, unsettledController = false,
     executionHost: { drain: async () => { events.push('execution-drain'); } },
     drainStores: async () => {
       events.push('stores-drain');
+      await beforeDrain?.();
       if (failDrain || remainingDrainFailures-- > 0) throw Object.assign(Error('failed'), { code: 'bundle_stores_unsettled' });
     },
   });
-  return { lifecycle, events, credentialProcess, binding, restart, candidateHash, retained, gate, artifactDirectory, callbacks: () => callbacks };
+  return { lifecycle, events, credentialProcess, binding, restart, candidateHash, retained, gate, artifactDirectory, callbacks: () => callbacks,
+    changeSelection: value => { selected.selection = { ...selected.selection, ...value }; } };
 }
 
 test('production lifecycle detects only the app artifact and holds the actual original owner through clone and selector CAS', async () => {
@@ -283,4 +286,80 @@ test('the held route refusal keeps the original failure inspectable', async () =
     expect(refused.status).toBe(503); expect(refused.body.code).toBe('bundle_runtime_admission_held');
   }
   expect((await request(app).get('/api/runtime/bundle')).body).toMatchObject({ state: 'held', reason: 'bundle_stores_unsettled', rollbackAvailable: false });
+});
+
+test('constructor grant is synchronous, frozen, narrow, and settles the genuine owner once', async () => {
+  const retain = vi.fn(); const value = await fixture({ retainCheckpoint: retain });
+  expect(retain).toHaveBeenCalledOnce(); const grant = retain.mock.calls[0][0];
+  expect(Object.isFrozen(grant)).toBe(true);
+  expect(Object.keys(grant).sort()).toEqual(['controlRoot', 'ownerID', 'withHeldCheckpoint']);
+  expect(grant.ownerID).toBe('A'); expect(grant.controlRoot).toBe(value.binding.controlRoot);
+  expect(Object.keys(value.lifecycle).sort()).toEqual(['inspect', 'recompose', 'resume', 'rollback', 'upgrade']);
+  let expired;
+  expect(await grant.withHeldCheckpoint(async scope => {
+    expect(Object.isFrozen(scope)).toBe(true); expect(Object.keys(scope)).toEqual(['assertHeld']);
+    await scope.assertHeld(); expired = scope.assertHeld; return 'captured';
+  })).toBe('captured');
+  await expect(expired()).rejects.toMatchObject({ code: 'bundle_checkpoint_scope_expired' });
+  await grant.withHeldCheckpoint(async scope => {
+    await scope.assertHeld();
+    await expect(expired()).rejects.toMatchObject({ code: 'bundle_checkpoint_scope_expired' });
+  });
+  expect(value.events).toEqual(['admission-close', 'quiesce', 'producers-stop', 'credentials-drain', 'controller-close',
+    'execution-drain', 'owner-close', 'stores-drain']);
+  expect(await value.lifecycle.inspect()).toMatchObject({ state: 'held', rollbackAvailable: false, revision: 1 });
+  await expect(value.lifecycle.upgrade({ expectedRevision: 1 })).rejects.toMatchObject({ code: 'bundle_runtime_admission_held' });
+});
+
+test('held grant reserves before selection awaits and excludes transitions and other actions', async () => {
+  let grant, unblock; const wait = new Promise(resolve => { unblock = resolve; });
+  const value = await fixture({ retainCheckpoint: value => { grant = value; }, beforeReadSelected: () => wait });
+  const action = vi.fn(async scope => scope.assertHeld()); const work = grant.withHeldCheckpoint(action);
+  await expect(grant.withHeldCheckpoint(action)).rejects.toMatchObject({ code: 'bundle_lifecycle_busy' });
+  await expect(value.lifecycle.rollback({ expectedRevision: 1 })).rejects.toMatchObject({ code: 'bundle_lifecycle_busy' });
+  unblock(); await work; expect(action).toHaveBeenCalledOnce();
+});
+
+test('failed settlement permanently revokes the retained grant; action failure only expires that action', async () => {
+  let grant; const value = await fixture({ retainCheckpoint: value => { grant = value; }, drainFailures: 1 });
+  const action = vi.fn();
+  await expect(grant.withHeldCheckpoint(action)).rejects.toMatchObject({ code: 'bundle_stores_unsettled' });
+  await expect(grant.withHeldCheckpoint(action)).rejects.toMatchObject({ code: 'bundle_checkpoint_grant_revoked' });
+  expect(action).not.toHaveBeenCalled(); expect(value.events.filter(event => event === 'stores-drain')).toHaveLength(1);
+  const settled = await fixture({ retainCheckpoint: value => { grant = value; } });
+  let expired;
+  await expect(grant.withHeldCheckpoint(async scope => { expired = scope.assertHeld; throw Error('capture refused'); })).rejects.toThrow('capture refused');
+  await grant.withHeldCheckpoint(async scope => {
+    await expect(expired()).rejects.toMatchObject({ code: 'bundle_checkpoint_scope_expired' }); await scope.assertHeld();
+  });
+  expect(settled.events.filter(event => event === 'stores-drain')).toHaveLength(1);
+});
+
+test('a failed public settlement also revokes retained authority', async () => {
+  let grant; const value = await fixture({ retainCheckpoint: value => { grant = value; }, failDrain: true });
+  await expect(value.lifecycle.upgrade({ expectedRevision: 1 })).rejects.toMatchObject({ code: 'bundle_stores_unsettled' });
+  await expect(grant.withHeldCheckpoint(async () => {})).rejects.toMatchObject({ code: 'bundle_checkpoint_grant_revoked' });
+});
+
+test('grant refuses invalid actions, reconciliation, changed selection, and restart-required hosts', async () => {
+  await expect(fixture({ retainCheckpoint: true })).rejects.toMatchObject({ code: 'bundle_checkpoint_grant_invalid' });
+  let grant; const value = await fixture({ retainCheckpoint: value => { grant = value; } });
+  await expect(grant.withHeldCheckpoint(null)).rejects.toMatchObject({ code: 'bundle_checkpoint_grant_invalid' });
+  value.changeSelection({ revision: 2 });
+  await expect(grant.withHeldCheckpoint(async () => {})).rejects.toMatchObject({ code: 'bundle_selection_revision_conflict' });
+  expect(value.events).toEqual([]);
+  await fixture({ retainCheckpoint: value => { grant = value; }, reconciliationRequired: true });
+  await expect(grant.withHeldCheckpoint(async () => {})).rejects.toMatchObject({ code: 'bundle_rollback_reconciliation_required' });
+  const upgraded = await fixture({ retainCheckpoint: value => { grant = value; } });
+  await upgraded.lifecycle.upgrade({ expectedRevision: 1 });
+  await expect(grant.withHeldCheckpoint(async () => {})).rejects.toMatchObject({ code: 'bundle_host_restart_required' });
+});
+
+test('selector change during settlement cannot expose a held credential scope', async () => {
+  let grant, value; value = await fixture({ retainCheckpoint: result => { grant = result; },
+    beforeDrain: () => value.changeSelection({ selectedBundleID: 'foreign', revision: 2 }) });
+  const action = vi.fn();
+  await expect(grant.withHeldCheckpoint(action)).rejects.toMatchObject({ code: 'bundle_selection_revision_conflict' });
+  expect(action).not.toHaveBeenCalled();
+  await expect(grant.withHeldCheckpoint(action)).rejects.toMatchObject({ code: 'bundle_checkpoint_grant_revoked' });
 });
