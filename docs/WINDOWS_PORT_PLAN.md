@@ -134,7 +134,16 @@ Run `37381203090` built the exact source on x64 and passed the Node and Bun
 database checks. ARM64 preserved the same source bytes but failed CMake's
 Visual Studio generator discovery. The builder now explicitly uses MSVC's
 `NMake Makefiles` generator with the native architecture's `VsDevCmd` tools;
-both native builds must run again before this candidate is qualified.
+Run `37383981687` at `a92c85e2` then built the unchanged source natively on
+both architectures with NMake. Both passed the existing database transaction,
+rollback and Unicode checks in Node 22.23.3 and Bun 1.3.14. Independent downloaded
+binary inspection confirms the PE architecture and receipt SHA-256:
+`3ec054ed07b0e8cc756e77a6a52d06ea10b26611527baa869a60610cc189a8b1`
+(x64) and `f9a7564676a8d6b51d0db15628a68d7900783d9b2c424f190ab99365507531de`
+(ARM64). Evidence is retained under
+`.cache/release-2.0.2-recovery/windows-libsql-ci-4`. These are verified database
+asset candidates; both jobs still fail the full safety gate, so neither
+architecture has controller/writer or runtime admission acceptance.
 The [Rust platform contract](https://doc.rust-lang.org/stable/rustc/platform-support/windows-msvc.html)
 supports native MSVC ARM64 host tools; that support does not establish libsql
 compatibility by itself.
