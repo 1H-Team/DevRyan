@@ -76,3 +76,10 @@ test('main inherits the login shell through the filtered merge and logs names on
  const logLine=body.split('\n').find(line=>/log\.(info|warn)\(/.test(line));
  assert.ok(logLine&&/dropped\.join\(/.test(logLine)&&!/inherited|shellEnv\[/.test(logLine));
 });
+
+test('main marks a packaged app for the server re-merge before importing the server',()=>{
+ const marker=mainSource.indexOf("if (app.isPackaged) process.env[PACKAGED_DESKTOP_ENV] = '1'; else delete process.env[PACKAGED_DESKTOP_ENV];");
+ assert.ok(marker>0);
+ assert.ok(marker<mainSource.indexOf("await import('@openchamber/web/server/index.js')"));
+ assert.match(mainSource,/import \{ PACKAGED_DESKTOP_ENV \} from '@openchamber\/web\/server\/lib\/opencode\/login-shell-env-filter\.js';/);
+});

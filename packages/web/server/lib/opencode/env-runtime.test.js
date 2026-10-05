@@ -142,3 +142,57 @@ describe('bounded discovery probes', () => {
     expect(() => process.kill(result.pid, 0)).toThrow();
   });
 });
+
+describe('applyLoginShellEnvSnapshot filter', () => {
+  const NAMES = ['OPENCODE_HOST', 'OPENCODE_BINARY', 'OPENCODE_SKIP_START', 'OPENCODE_DB', 'DEVRYAN_OPENCODE_GENERATION', 'DEVRYAN_RUNTIME_BUNDLE_ROOT',
+    'OPENCHAMBER_ELECTRON_DEV', 'DEVRYAN_EXECUTION_ARTIFACTS', 'DEVRYAN_DEFAULT_CONFIG_ROOT', 'OPENCHAMBER_ELECTRON_USER_DATA_DIR',
+    'OPENCHAMBER_DATA_DIR', 'DEVRYAN_PRIMARY_RECOVERY_MODE', 'DEVRYAN_PACKAGED_DESKTOP'];
+  const saved = Object.fromEntries(NAMES.map((name) => [name, process.env[name]]));
+  afterEach(() => {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
+  });
+  const shell = { OPENCODE_HOST: 'https://fixture.invalid:4096', OPENCODE_BINARY: '/fixture/bin/opencode', OPENCODE_SKIP_START: 'true',
+    OPENCODE_DB: 'relative.db', DEVRYAN_OPENCODE_GENERATION: '1', DEVRYAN_RUNTIME_BUNDLE_ROOT: '/fixture/bundles',
+    OPENCHAMBER_ELECTRON_DEV: '1', DEVRYAN_EXECUTION_ARTIFACTS: '/fixture/artifacts', DEVRYAN_DEFAULT_CONFIG_ROOT: '/fixture/default-config',
+    OPENCHAMBER_ELECTRON_USER_DATA_DIR: '/fixture/user-data', OPENCHAMBER_DATA_DIR: '/fixture/data', DEVRYAN_PRIMARY_RECOVERY_MODE: 'legacy' };
+  const apply = ({ launch = {}, packaged = false } = {}) => {
+    for (const name of NAMES) delete process.env[name];
+    Object.assign(process.env, launch);
+    if (packaged) process.env.DEVRYAN_PACKAGED_DESKTOP = '1';
+    const info = [];
+    const { runtime, state } = createRuntime({}, { shellCandidates: ['/fixture/zsh'], isExecutable: (file) => file === '/fixture/zsh',
+      executeProbe: () => ({ status: 0, stdout: `${Object.entries(shell).map(([key, value]) => `${key}=${value}`).join('\0')}\0` }),
+      logger: { info: (message) => info.push(message) } });
+    state.cachedLoginShellEnvSnapshot = undefined;
+    runtime.applyLoginShellEnvSnapshot();
+    runtime.applyLoginShellEnvSnapshot();
+    return { env: Object.fromEntries(NAMES.map((name) => [name, process.env[name] ?? null])), info };
+  };
+  const provisioning = ['DEVRYAN_OPENCODE_GENERATION', 'DEVRYAN_RUNTIME_BUNDLE_ROOT', 'OPENCODE_BINARY', 'OPENCODE_DB', 'OPENCODE_HOST', 'OPENCODE_SKIP_START'];
+  const redirections = ['DEVRYAN_DEFAULT_CONFIG_ROOT', 'DEVRYAN_EXECUTION_ARTIFACTS', 'OPENCHAMBER_ELECTRON_DEV', 'OPENCHAMBER_ELECTRON_USER_DATA_DIR'];
+
+  it('drops provisioning-refused login-shell values in every runtime, merges the rest and logs names once', () => {
+    const { env, info } = apply();
+    for (const name of provisioning) expect(env[name], name).toBeNull();
+    for (const name of [...redirections, 'OPENCHAMBER_DATA_DIR', 'DEVRYAN_PRIMARY_RECOVERY_MODE']) expect(env[name], name).toBe(shell[name]);
+    expect(info).toEqual([`[shell-env] server ignored login-shell variables the runtime does not support: ${provisioning.join(', ')}`]);
+  });
+
+  it('drops dev/packaging redirections only under the packaged desktop marker', () => {
+    const { env, info } = apply({ packaged: true });
+    for (const name of [...provisioning, ...redirections]) expect(env[name], name).toBeNull();
+    expect(env.OPENCHAMBER_DATA_DIR).toBe('/fixture/data');
+    expect(info).toHaveLength(1);
+    for (const name of [...provisioning, ...redirections]) expect(info[0]).toContain(name);
+    for (const value of Object.values(shell)) expect(info[0]).not.toContain(value);
+  });
+
+  it('never touches launch-environment values', () => {
+    const launch = { OPENCODE_HOST: 'http://127.0.0.1:9999', OPENCHAMBER_ELECTRON_DEV: '0', DEVRYAN_EXECUTION_ARTIFACTS: '/launch/artifacts' };
+    const { env, info } = apply({ launch, packaged: true });
+    for (const [name, value] of Object.entries(launch)) expect(env[name]).toBe(value);
+    expect(info[0]).not.toMatch(/OPENCODE_HOST|OPENCHAMBER_ELECTRON_DEV|DEVRYAN_EXECUTION_ARTIFACTS/);
+  });
+});

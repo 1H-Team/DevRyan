@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { mergePathValues } from './path-utils.js';
+import { isPackagedDesktopEnv, isUnsupportedLoginShellValue } from './login-shell-env-filter.js';
 
 const SHELL_PROBE_TIMEOUT_MS = 5_000;
 const DISCOVERY_PROBE_BUDGET_MS = 10_000;
@@ -18,6 +19,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
     probeBudgetMs = DISCOVERY_PROBE_BUDGET_MS,
     shellCandidates,
     isExecutable: executableOverride,
+    logger = console,
   } = deps;
 
   // A logical discovery owns one runner, including nested WSL probes. The clock
@@ -218,13 +220,17 @@ export const createOpenCodeEnvRuntime = (deps) => {
     return null;
   };
 
+  let loginShellDropsLogged = false;
   const applyLoginShellEnvSnapshot = () => {
     const snapshot = getLoginShellEnvSnapshot();
     if (!snapshot) {
       return;
     }
 
+    // Same filter as Electron main's merge, so this re-merge cannot restore what main dropped.
+    const packaged = isPackagedDesktopEnv(process.env);
     const skipKeys = new Set(['PWD', 'OLDPWD', 'SHLVL', '_']);
+    const dropped = [];
     for (const [key, value] of Object.entries(snapshot)) {
       if (skipKeys.has(key)) {
         continue;
@@ -233,7 +239,15 @@ export const createOpenCodeEnvRuntime = (deps) => {
       if (typeof existing === 'string' && existing.length > 0) {
         continue;
       }
+      if (isUnsupportedLoginShellValue(key, value, { packaged })) {
+        dropped.push(key);
+        continue;
+      }
       process.env[key] = value;
+    }
+    if (dropped.length && !loginShellDropsLogged) {
+      loginShellDropsLogged = true;
+      logger.info(`[shell-env] server ignored login-shell variables the runtime does not support: ${dropped.sort().join(', ')}`);
     }
 
     const currentPath = process.env.PATH || '';

@@ -1,13 +1,15 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { seedNativeSetup } from '../../packages/web/server/lib/opencode/runtime-host/native-setup-seed.js';
 import {
-  CHANGED_THEME_ID, DEFAULT_V200_ARTIFACTS, INITIAL_THEME_ID, PLAN_COUNTS, buildLegacyOwnerTree, classifyBundledRuntimeOffer,
-  createV200PrepareEnvironment, findProcessesMatching, firstLaunchLayout, hashLegacyPlans, parseFirstLaunchArgs,
-  parseSeedSkipSummary, parseStartupFailures, resolvePackageRepositoryRoot, writeLegacyOwnerTree,
+  CHANGED_THEME_ID, DEFAULT_V200_ARTIFACTS, INITIAL_THEME_ID, PLAN_COUNTS, SHELL_EXPORTS, buildLegacyOwnerTree, buildShellExportRcFiles,
+  classifyBundledRuntimeOffer, createV200PrepareEnvironment, findProcessesMatching, firstLaunchLayout, gradeShellExportLog, hashLegacyPlans,
+  parseFirstLaunchArgs, parseSeedSkipSummary, parseStartupFailures, resolvePackageRepositoryRoot, writeLegacyOwnerTree, writeShellExportRcFiles,
 } from './first-launch-smoke.mjs';
 
 const projectPaths = Array.from({ length: 8 }, (_, index) => `/synthetic/workspace/project-${index + 1}`);
@@ -15,17 +17,19 @@ const evidence = '/repo/.cache/qa/packaged-electron-x/package-evidence.json';
 
 test('CLI requires an absolute package, a known scenario and v2.0.0 source only for v200 scenarios', () => {
   assert.deepEqual(parseFirstLaunchArgs(['--package-evidence', evidence, '--scenario', 'owner-shaped']),
-    { packageEvidence: evidence, scenario: 'owner-shaped', v200Artifacts: DEFAULT_V200_ARTIFACTS, timeoutMs: 180000, keepRuntime: false });
+    { packageEvidence: evidence, scenario: 'owner-shaped', v200Artifacts: DEFAULT_V200_ARTIFACTS, timeoutMs: 180000, keepRuntime: false, shellExports: false });
   assert.deepEqual(parseFirstLaunchArgs(['--scenario', 'v200-selected', '--package-evidence', evidence, '--v200-source', '/v200',
     '--v200-artifacts', '/artifacts', '--timeout-ms', '60000', '--keep-runtime']),
-  { packageEvidence: evidence, scenario: 'v200-selected', v200Source: '/v200', v200Artifacts: '/artifacts', timeoutMs: 60000, keepRuntime: true });
+  { packageEvidence: evidence, scenario: 'v200-selected', v200Source: '/v200', v200Artifacts: '/artifacts', timeoutMs: 60000, keepRuntime: true, shellExports: false });
+  assert.equal(parseFirstLaunchArgs(['--shell-exports', '--package-evidence', evidence, '--scenario', 'owner-shaped']).shellExports, true);
   for (const argv of [[], ['--scenario', 'owner-shaped'], ['--package-evidence', 'relative.json', '--scenario', 'owner-shaped'],
     ['--package-evidence', evidence, '--scenario', 'v1'], ['--package-evidence', evidence, '--scenario', 'v200-half-seed'],
     ['--package-evidence', evidence, '--scenario', 'owner-shaped', '--v200-source', '/v200'],
     ['--package-evidence', evidence, '--scenario', 'owner-shaped', '--timeout-ms', '5'],
     ['--package-evidence', evidence, '--scenario', 'owner-shaped', '--timeout-ms', '1e5'],
     ['--package-evidence', evidence, '--package-evidence', evidence, '--scenario', 'owner-shaped'],
-    ['--package-evidence', '--scenario', 'owner-shaped'], ['--package-evidence', evidence, '--scenario', 'owner-shaped', '--extra', 'x']]) {
+    ['--package-evidence', '--scenario', 'owner-shaped'], ['--package-evidence', evidence, '--scenario', 'owner-shaped', '--extra', 'x'],
+    ['--package-evidence', evidence, '--scenario', 'owner-shaped', '--shell-exports', '--shell-exports']]) {
     assert.throws(() => parseFirstLaunchArgs(argv), error => error.code === 'qa_first_launch_usage', argv.join(' '));
   }
 });
@@ -37,6 +41,7 @@ test('runtime layout matches the packaged QA host policy', () => {
   assert.equal(layout.credentials, '/qa/runtime/credentials.env.json');
   assert.equal(layout.controlRoot, '/qa/runtime/home/.local/state/devryan/runtime-bundles');
   assert.equal(layout.freshSource, '/qa/runtime/home/.local/state/devryan/fresh-native-source');
+  assert.equal(layout.shellConfig, '/qa/runtime/home/.config/qa-zsh');
 });
 
 test('owner-shaped tree: 8 records, 608 v1 plans, a nested folder, Finder and AppleDouble metadata, fake credentials', () => {
@@ -179,4 +184,41 @@ test('package evidence must be inside this checkout or its main worktree', () =>
   assert.equal(resolvePackageRepositoryRoot('/main/.cache/qa/p/package-evidence.json', ['/main/.cache/worktrees/w', '/main']), '/main');
   assert.equal(resolvePackageRepositoryRoot('/main/.cache/worktrees/w/.cache/qa/p.json', ['/main/.cache/worktrees/w', '/main']), '/main/.cache/worktrees/w');
   assert.throws(() => resolvePackageRepositoryRoot('/elsewhere/p.json', ['/main']), error => error.code === 'qa_first_launch_package_outside_repository');
+});
+
+test('--shell-exports writes the four v1-era exports into every private ZDOTDIR rc file, readable by a real login shell', async () => {
+  assert.deepEqual(SHELL_EXPORTS, { OPENCODE_BINARY: '/opt/homebrew/bin/opencode', OPENCODE_HOST: 'http://127.0.0.1:4096',
+    OPENCODE_SKIP_START: 'true', DEVRYAN_RUNTIME_BUNDLE_ROOT: '/nonexistent' });
+  const files = buildShellExportRcFiles();
+  assert.deepEqual([...files.keys()], ['.zshenv', '.zprofile', '.zshrc']);
+  for (const text of files.values()) {
+    for (const line of ['export OPENCODE_BINARY=/opt/homebrew/bin/opencode', 'export OPENCODE_HOST=http://127.0.0.1:4096',
+      'export OPENCODE_SKIP_START=true', 'export DEVRYAN_RUNTIME_BUNDLE_ROOT=/nonexistent']) assert.ok(text.split('\n').includes(line), line);
+  }
+  assert.throws(() => buildShellExportRcFiles({ OPENCODE_HOST: 'x; rm -rf ~' }), /Unsafe/);
+  const root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-first-launch-rc-')));
+  try {
+    const shellConfig = firstLaunchLayout(root).shellConfig;
+    assert.deepEqual(await writeShellExportRcFiles(shellConfig), ['.zshenv', '.zprofile', '.zshrc']);
+    for (const name of files.keys()) {
+      assert.equal(await readFile(path.join(shellConfig, name), 'utf8'), files.get(name));
+      assert.equal((await stat(path.join(shellConfig, name))).mode & 0o777, 0o600);
+    }
+    await assert.rejects(writeShellExportRcFiles(shellConfig), error => error.code === 'EEXIST');
+    if (existsSync('/bin/zsh')) {
+      // main's probe: `$SHELL -il -c 'env -0'` with the packaged QA host's ZDOTDIR.
+      const probe = spawnSync('/bin/zsh', ['-il', '-c', 'env -0'], { env: { PATH: '/usr/bin:/bin', HOME: path.join(root, 'home'), ZDOTDIR: shellConfig } });
+      const env = Object.fromEntries(probe.stdout.toString().split('\0').filter(Boolean).map(line => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]));
+      for (const [name, value] of Object.entries(SHELL_EXPORTS)) assert.equal(env[name], value, name);
+    }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('shell-export grading needs every name in a [shell-env] dropped line and no values', () => {
+  const main = '[2026-10-05 10:00:00.000] [info]  [shell-env] ignored login-shell variables the desktop runtime does not support: DEVRYAN_RUNTIME_BUNDLE_ROOT, OPENCODE_BINARY, OPENCODE_HOST, OPENCODE_SKIP_START';
+  assert.deepEqual(gradeShellExportLog(main), { logged: ['DEVRYAN_RUNTIME_BUNDLE_ROOT', 'OPENCODE_BINARY', 'OPENCODE_HOST', 'OPENCODE_SKIP_START'], missing: [], valuesLogged: false });
+  assert.deepEqual(gradeShellExportLog('[info] [shell-env] server ignored login-shell variables the runtime does not support: OPENCODE_HOST\n[info] other OPENCODE_BINARY').missing,
+    ['DEVRYAN_RUNTIME_BUNDLE_ROOT', 'OPENCODE_BINARY', 'OPENCODE_SKIP_START']);
+  assert.equal(gradeShellExportLog('[shell-env] ignored login-shell variables: OPENCODE_HOST=http://127.0.0.1:4096').valuesLogged, true);
+  assert.deepEqual(gradeShellExportLog('').missing.length, 4);
 });

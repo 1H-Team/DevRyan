@@ -30,19 +30,20 @@ export const PROJECT_RECORD_COUNT = 8;
 export const INITIAL_THEME_ID = 'aura-dark';
 export const CHANGED_THEME_ID = 'catppuccin-dark';
 const USAGE = 'Usage: node scripts/qa/first-launch-smoke.mjs --package-evidence <abs path> --scenario owner-shaped|v200-half-seed|v200-selected '
-  + '[--v200-source <abs v2.0.0 checkout>] [--v200-artifacts <abs dir>] [--timeout-ms 180000] [--keep-runtime]';
+  + '[--v200-source <abs v2.0.0 checkout>] [--v200-artifacts <abs dir>] [--timeout-ms 180000] [--shell-exports] [--keep-runtime]';
 const usageError = message => Object.assign(new Error(`${message}\n${USAGE}`), { code: 'qa_first_launch_usage' });
 
 export function parseFirstLaunchArgs(argv) {
   const flags = { '--package-evidence': 'packageEvidence', '--scenario': 'scenario', '--v200-source': 'v200Source',
     '--v200-artifacts': 'v200Artifacts', '--timeout-ms': 'timeoutMs' };
-  const options = { v200Artifacts: DEFAULT_V200_ARTIFACTS, timeoutMs: 180000, keepRuntime: false };
+  const switches = { '--keep-runtime': 'keepRuntime', '--shell-exports': 'shellExports' };
+  const options = { v200Artifacts: DEFAULT_V200_ARTIFACTS, timeoutMs: 180000, keepRuntime: false, shellExports: false };
   const seen = new Set();
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
-    if (flag === '--keep-runtime') {
-      if (seen.has('keepRuntime')) throw usageError('Duplicate --keep-runtime');
-      seen.add('keepRuntime'); options.keepRuntime = true; continue;
+    if (switches[flag]) {
+      if (seen.has(switches[flag])) throw usageError(`Duplicate ${flag}`);
+      seen.add(switches[flag]); options[switches[flag]] = true; continue;
     }
     const key = flags[flag];
     if (!key) throw usageError(`Unknown argument: ${flag}`);
@@ -73,7 +74,35 @@ export function firstLaunchLayout(runtimeRoot) {
   return { runtimeRoot, home, data: path.join(home, '.config/openchamber'), profile: path.join(runtimeRoot, 'profile'),
     workspace: path.join(runtimeRoot, 'workspace'), credentials: path.join(runtimeRoot, 'credentials.env.json'),
     controlRoot: path.join(home, '.local/state/devryan/runtime-bundles'), freshSource: path.join(home, '.local/state/devryan/fresh-native-source'),
-    projects: path.join(home, '.config/openchamber/projects') };
+    projects: path.join(home, '.config/openchamber/projects'), shellConfig: path.join(home, '.config/qa-zsh') };
+}
+
+/** --shell-exports: v1-era rc exports the packaged app must drop from its login shell. */
+export const SHELL_EXPORTS = Object.freeze({ OPENCODE_BINARY: '/opt/homebrew/bin/opencode', OPENCODE_HOST: 'http://127.0.0.1:4096',
+  OPENCODE_SKIP_START: 'true', DEVRYAN_RUNTIME_BUNDLE_ROOT: '/nonexistent' });
+const SHELL_RC_FILES = Object.freeze(['.zshenv', '.zprofile', '.zshrc']);
+
+/** Pure: the private ZDOTDIR rc files (packaged-host-policy.mjs sets ZDOTDIR) carrying the exports. */
+export function buildShellExportRcFiles(exports = SHELL_EXPORTS) {
+  const body = Object.entries(exports).map(([name, value]) => {
+    if (!/^[A-Z_][A-Z0-9_]*$/.test(name) || !/^[A-Za-z0-9_./:-]+$/.test(value)) throw new Error(`Unsafe shell export: ${name}`);
+    return `export ${name}=${value}\n`;
+  }).join('');
+  return new Map(SHELL_RC_FILES.map(name => [name, `# devryan first-launch smoke --shell-exports\n${body}`]));
+}
+
+export async function writeShellExportRcFiles(shellConfig, files = buildShellExportRcFiles()) {
+  await mkdir(shellConfig, { recursive: true, mode: 0o700 });
+  for (const [name, text] of files) await writeFile(path.join(shellConfig, name), text, { flag: 'wx', mode: 0o600 });
+  return [...files.keys()];
+}
+
+/** Pure: names logged by main's (and the server's) `[shell-env] ... ignored login-shell variables ...: A, B` lines. */
+export function gradeShellExportLog(text, exports = SHELL_EXPORTS) {
+  const lines = [...String(text).matchAll(/\[shell-env\][^\n]*?ignored login-shell variables[^\n:]*:\s*([^\n]*)/g)].map(match => match[1]);
+  const logged = [...new Set(lines.flatMap(line => line.split(',').map(name => name.trim()).filter(name => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name))))].sort();
+  return { logged, missing: Object.keys(exports).filter(name => !logged.includes(name)).sort(),
+    valuesLogged: lines.some(line => Object.values(exports).some(value => line.includes(value))) };
 }
 
 // Finder metadata bytes: not JSON, exactly what broke v2.0.0's projects import.
@@ -453,6 +482,13 @@ export async function runFirstLaunchSmoke(options) {
     }
     const env = createQaIsolatedRuntimeEnvironment({ runtime: 'electron', runtimeRoot, home: layout.home, data: layout.data,
       profile: layout.profile, distDirectory: packaged.artifactDirectory, port });
+    if (options.shellExports) {
+      // Only the packaged app's real login-shell probe may see these: never the launch environment.
+      const inLaunch = Object.keys(SHELL_EXPORTS).filter(name => name in env);
+      if (inLaunch.length) throw new Error(`Shell-export names are in the launch environment: ${inLaunch.join(', ')}`);
+      evidence.prepared.shellExports = { names: Object.keys(SHELL_EXPORTS).sort(), files: await writeShellExportRcFiles(layout.shellConfig),
+        directory: 'home/.config/qa-zsh (ZDOTDIR)' };
+    }
     const flags = [`--remote-debugging-port=${debugPort}`, `--user-data-dir=${layout.profile}`];
     evidence.launch = { binary: packaged.binary, flags: flags.map(flag => flag.replace(runtimeRoot, '<QA_RUNTIME>')), debugPort, port,
       environmentKeys: Object.keys(env).sort(), legacyFixtureFlags: ['OPENCODE_HOST', 'OPENCODE_SKIP_START', 'OPENCHAMBER_SKIP_OPENCODE_START'].filter(key => key in env) };
@@ -517,7 +553,14 @@ export async function runFirstLaunchSmoke(options) {
     }
     evidence.outcome = outcome;
     evidence.timings.outcomeAfterLaunchMs = Math.round(performance.now() - launchedAt);
-    const logText = await readLogs() + '\n' + app.getLog();
+    const mainLogText = await readLogs();
+    const logText = mainLogText + '\n' + app.getLog();
+    if (options.shellExports) {
+      const graded = gradeShellExportLog(mainLogText);
+      evidence.shellExports = graded;
+      check('main.log records every login-shell export as dropped, by name only', !graded.missing.length && !graded.valuesLogged,
+        { missing: graded.missing, valuesLogged: graded.valuesLogged });
+    }
     evidence.skippedEntries = parseSeedSkipSummary(logText);
     if (outcome.failure) outcome.failure.relativePath = outcome.failure.relativePath && sanitize(outcome.failure.relativePath);
     if (cdp) {
