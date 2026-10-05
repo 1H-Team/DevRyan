@@ -13,7 +13,7 @@ import { assertWriterOutcome } from './assertions.mjs';
 
 /** Real product owners with disposable state and an explicitly selected fixture model. */
 export function createNativeManagedFixture({ client, admissionOwner, executionHost, directory, dataDirectory,
-  buildOpenCodeUrl, getOpenCodeAuthHeaders, environment, observations, diagnostics,
+  buildOpenCodeUrl, getOpenCodeAuthHeaders, environment, observations, diagnostics, journal,
   isNativeFallbackError, dispatchNativeRecovery, eventReconcileIntervalMs,
   executionModel = { providerID: 'sim', modelID: 'm1', variant: 'default' } }) {
   assert.ok(typeof executionModel.providerID === 'string' && executionModel.providerID
@@ -34,7 +34,8 @@ export function createNativeManagedFixture({ client, admissionOwner, executionHo
     verifyOwnedNativeContinuation: createNativeShellContinuationVerifier({ runtime: executionHost.runtime,
       getShellJobReceipt: input => executionHost.nativeShellJobReceipt(input) }),
     executionOutcomes: input => executionHost.runtime.executionOutcomes(input),
-    recordIncident: record => diagnostics.push(record),
+    // Optional fixture-journal tee: the application journals the same incident.
+    recordIncident: record => { diagnostics.push(record); journal?.primaryRecoveryIncident(record); },
   });
   const taskContext = createHarnessTaskContextHost({ openCodeClient: client, dataDirectory,
     buildOpenCodeUrl, getOpenCodeAuthHeaders, readPrimaryRecord: sessionID => primary.readRecord(sessionID),

@@ -9,12 +9,13 @@ import { waitFor } from './process-lanes.mjs';
 import { createV2MessageId } from '../../packages/web/server/lib/opencode/v2/admission.js';
 import { createQaHostLaunchEnvironment } from '../qa/launch-environment.mjs';
 import { readManagedOpenCodeRegistry, reapOrphanedManagedOpenCodeProcesses } from '../../packages/web/server/lib/opencode/managed-process-registry.js';
+import { createFixtureJournal } from './fixture-journal.mjs';
 
 const exec = promisify(execFile);
 const alive = pid => { try { process.kill(pid, 0); return true; } catch (error) { if (error.code === 'ESRCH') return false; throw error; } };
 
 /** Pause an actual compiled tool only after its confined shell is alive in a private view. */
-export async function prepareCompiledParentDeathProbe({ root, provider, client, host, controller, descriptor, directory, sessionID }) {
+export async function prepareCompiledParentDeathProbe({ root, provider, client, host, controller, descriptor, directory, sessionID, journal, inheritedJournals = [] }) {
   const callID = 'native_compiled-parent-death', turn = toolTurn('shell', {
     command: "printf '%s' $$ > owner-death.pid; sleep 120; printf 'must not publish\\n' > owner-death-published.txt",
   }, 'compiled-parent-death');
@@ -30,7 +31,12 @@ export async function prepareCompiledParentDeathProbe({ root, provider, client, 
   }, value => Number.isSafeInteger(value) && value > 0 && alive(value), 'Parent-death confined shell never became alive');
   await assert.rejects(fs.stat(path.join(directory, 'owner-death-published.txt')), error => error.code === 'ENOENT');
   assert.equal(controller.hasExited(), false);
+  // Everything accepted before this summary is durable before the crash; the
+  // still-open chunk is sealed afterwards only by the owner's own recovery.
+  const flushed = journal.summary();
+  await journal.flush();
   return { root, directory, sessionID, callID, shellPID, controllerPID: controller.pid, instanceID: controller.instanceID,
+    journal: { directory: journal.journalDirectory, flushed, inherited: inheritedJournals },
     controllerReceiptPath: path.join(path.dirname(descriptor.preparedManifestPath), '.native-controller', controller.instanceID, 'termination.json'),
     workerReceiptPath: path.join(path.dirname(lease.viewDirectory), 'termination.json'),
     registryPath: path.join(descriptor.launch.global.state, 'managed-opencode-processes.json') };
@@ -61,6 +67,7 @@ export async function runCompiledParentDeath({ artifactRoot, root, environment }
       'Parent-death probe did not reach its actual compiled tool', 120000);
     assert.ok(evidence.root.startsWith(path.dirname(root) + path.sep));
     for (const key of ['directory','controllerReceiptPath','workerReceiptPath','registryPath']) assert.ok(evidence[key].startsWith(evidence.root + path.sep));
+    assert.ok(evidence.journal.directory.startsWith(evidence.root + path.sep) && path.basename(evidence.journal.directory) === 'journal');
     const registry = { registryPath: evidence.registryPath };
     const registered = readManagedOpenCodeRegistry(registry);
     assert.equal(registered.length, 1); assert.equal(registered[0].ownerPid, child.pid); assert.equal(registered[0].childPid, evidence.controllerPID);
@@ -89,6 +96,11 @@ export async function runCompiledParentDeath({ artifactRoot, root, environment }
     const reaped = await reapOrphanedManagedOpenCodeProcesses(registry); assert.deepEqual(reaped.kept, []);
     assert.deepEqual(readManagedOpenCodeRegistry(registry), []);
     await assert.rejects(fs.stat(path.join(evidence.directory, 'owner-death-published.txt')), error => error.code === 'ENOENT');
+    // The next owner's journal initialization is the product recovery that seals
+    // the killed owner's open chunks; it records nothing itself.
+    const recovery = await createFixtureJournal({ webDataDirectory: path.dirname(path.dirname(evidence.journal.directory)), label: 'fixture-pd-recovery' });
+    await recovery.drain();
+    evidence.journal = { ...evidence.journal, recovery: recovery.summary() };
     return { id: 'compiled-parent-death-drain', status: 'passed', ownerPID: child.pid, ...evidence,
       terminatedPIDs: pids, receipts, registryEmpty: true, source: 'actual-Node-owner-SIGKILL-and-independent-confined-supervisor-receipts' };
   } finally {
