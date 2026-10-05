@@ -215,6 +215,37 @@ describe('vector 01: two-step tool turn', () => {
   });
 });
 
+describe('reviewed skill names on the live stream', () => {
+  it('names the running and completed skill row from metadata, never from the hashed id', () => {
+    const hashed = 'devryan-539ddc37a961e3aceadfc7bbb540b8e7';
+    const envelopes = framesOf('01-two-step-tool-turn.json');
+    const called = envelopes.find((envelope) => envelope.type === 'session.tool.called');
+    const prefix = envelopes.slice(0, envelopes.indexOf(called) + 1).map((envelope) => {
+      if (envelope.type === 'session.tool.input.started') return { ...envelope, data: { ...envelope.data, name: 'skill' } };
+      if (envelope === called) return { ...envelope, data: { ...envelope.data, input: { id: hashed } } };
+      return envelope;
+    });
+    const tool = (type, offset, data) => ({
+      id: `${called.id}_${type}`, created: called.created + offset, type, location: { directory: DIR },
+      data: { sessionID: SID, assistantMessageID: called.data.assistantMessageID, id: called.data.id, ...data },
+    });
+    const { projector } = createProjector();
+    const events = replay(projector, [
+      ...prefix,
+      tool('session.tool.progress', 1, { metadata: { name: 'Superpowers' } }),
+      tool('session.tool.success', 2, { content: [{ type: 'text', text: '<skill_content name="Superpowers">' }], metadata: { name: 'Superpowers', directory: '/skills/superpowers' } }),
+    ]);
+    const states = ofType(events, 'message.part.updated').map((props) => props.part)
+      .filter((part) => part.type === 'tool' && part.tool === 'skill').map((part) => part.state);
+    expect(states.map((state) => [state.status, state.input?.name, state.title])).toEqual([
+      ['pending', undefined, undefined],
+      ['running', undefined, undefined],
+      ['running', 'Superpowers', 'Superpowers'],
+      ['completed', 'Superpowers', 'Superpowers'],
+    ]);
+  });
+});
+
 describe('first-sight rule (D1 deltaFirst)', () => {
   const ordered = framesOf('01-two-step-tool-turn.json');
   const reordered = deltaFirst(ordered);

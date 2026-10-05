@@ -5,7 +5,9 @@
 //            sessions already use v1 names, which pass through unchanged.
 // Input:     aliases are ADDED for v1 consumers, never replacing the original
 //            keys: read/edit/write `path` -> `filePath`, task `agent` ->
-//            `subagent_type`, skill `id` -> `name`.
+//            `subagent_type`, skill `id` -> `name`. A reviewed skill's hashed
+//            id (`devryan-<32 hex>`) is never aliased: its human name comes
+//            from `metadata.name` (progress, completion), which also titles it.
 // Metadata:  task `sessionID` also as `sessionId`; edit/write `files[0]` ->
 //            `diff` (its patch) and `filediff {file, additions, deletions}`.
 // State:     streaming -> pending {input: {}, raw}; running gains a title
@@ -43,6 +45,10 @@ const INPUT_ALIASES = new Map([
 
 const FILE_DIFF_TOOLS = new Set(['edit', 'write']);
 const SUBAGENT_TOOL = 'task';
+const SKILL_TOOL = 'skill';
+
+/** DevRyan reviewed-skill ids (`runtime-host/reviewed-skills.js`) are opaque hashes, never names. */
+const REVIEWED_SKILL_ID = /^devryan-[0-9a-f]{32}$/;
 
 const EMPTY_INPUT = Object.freeze({});
 
@@ -84,6 +90,7 @@ export const toV1ToolInput = (name, input) => {
   let projected = input;
   for (const [v2Key, v1Key] of aliases) {
     if (!hasKey(input, v2Key) || hasKey(input, v1Key)) continue;
+    if (v1Key === 'name' && typeof input[v2Key] === 'string' && REVIEWED_SKILL_ID.test(input[v2Key])) continue;
     if (projected === input) projected = { ...input };
     projected[v1Key] = input[v2Key];
   }
@@ -226,6 +233,18 @@ const contentAttachments = (content, callID, context) => {
   return attachments;
 };
 
+/**
+ * The skill's human name from its v2 metadata (`{ name, directory }`), set as
+ * the v1 `input.name` unless the original input already carries one.
+ */
+const withSkillDisplayName = (name, rawInput, input, metadata) => {
+  if (toV1ToolName(name) !== SKILL_TOOL || !isRecord(metadata) || !isNonEmptyString(metadata.name)) {
+    return { input, title: undefined };
+  }
+  if (hasKey(rawInput, 'name')) return { input, title: metadata.name };
+  return { input: { ...input, name: metadata.name }, title: metadata.name };
+};
+
 const structuredErrorMessage = (error) => {
   if (isRecord(error) && typeof error.message === 'string') return error.message;
   return typeof error === 'string' ? error : '';
@@ -249,11 +268,13 @@ export const toV1ToolState = (tool, context) => {
     return { status: 'pending', input: {}, raw: typeof state.input === 'string' ? state.input : '' };
   }
 
-  const input = toV1ToolInput(name, isRecord(state.input) ? state.input : EMPTY_INPUT);
+  const rawInput = isRecord(state.input) ? state.input : EMPTY_INPUT;
   const metadata = isRecord(state.metadata) ? toV1ToolMetadata(name, state.metadata) : undefined;
+  const skill = withSkillDisplayName(name, rawInput, toV1ToolInput(name, rawInput), metadata);
+  const input = skill.input;
 
   if (state.status === 'running') {
-    const title = synthesizeToolTitle(input);
+    const title = skill.title ?? synthesizeToolTitle(input);
     const running = { status: 'running', input, metadata: metadata ?? {}, time: { start } };
     return title === undefined ? running : { ...running, title };
   }
@@ -263,7 +284,7 @@ export const toV1ToolState = (tool, context) => {
       status: 'completed',
       input,
       output: contentText(state.content),
-      title: synthesizeToolTitle(input) ?? '',
+      title: skill.title ?? synthesizeToolTitle(input) ?? '',
       metadata: metadata ?? {},
       time: { start, end: end ?? start },
     };

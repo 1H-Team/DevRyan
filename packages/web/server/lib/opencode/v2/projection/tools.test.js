@@ -292,3 +292,42 @@ describe('toV1ToolPart', () => {
     expect(toV1ToolPart({ type: 'tool', id: 'c', name: 'read', state: { status: 'nope' } }, context)).toBeNull();
   });
 });
+
+describe('reviewed skill display names', () => {
+  // Reviewed v2 skills carry a hashed id; the human name arrives in metadata.
+  const HASHED = 'devryan-539ddc37a961e3aceadfc7bbb540b8e7';
+  const body = '<skill_content name="Superpowers">\n# Skill: Superpowers\n</skill_content>';
+  const skill = (state) => ({ id: 'call_s', name: 'skill', time: { created: 1, ran: 2, completed: 3 }, state });
+
+  it('never aliases a hashed reviewed id into the display name', () => {
+    const input = { id: HASHED };
+    expect(toV1ToolInput('skill', input)).toBe(input);
+    expect(toV1ToolInput('skill', { id: 'pdf' })).toEqual({ id: 'pdf', name: 'pdf' });
+  });
+
+  it('names a running skill from its progress metadata and a hash-only one not at all', () => {
+    expect(toV1ToolState(skill({ status: 'running', input: { id: HASHED } }), context))
+      .toEqual({ status: 'running', input: { id: HASHED }, metadata: {}, time: { start: 2 } });
+    expect(toV1ToolState(skill({ status: 'running', input: { id: HASHED }, metadata: { name: 'Superpowers' } }), context))
+      .toEqual({ status: 'running', input: { id: HASHED, name: 'Superpowers' }, metadata: { name: 'Superpowers' }, title: 'Superpowers', time: { start: 2 } });
+  });
+
+  it('uses metadata.name as the completed input name and title', () => {
+    const metadata = { name: 'Superpowers', directory: '/skills/superpowers' };
+    expect(toV1ToolState(skill({ status: 'completed', input: { id: HASHED }, content: [{ type: 'text', text: body }], metadata }), context))
+      .toEqual({ status: 'completed', input: { id: HASHED, name: 'Superpowers' }, output: body, title: 'Superpowers', metadata, time: { start: 2, end: 3 } });
+    expect(toV1ToolState(skill({ status: 'error', input: { id: HASHED }, error: { message: 'native_skill_unreviewed' } }), context))
+      .toEqual({ status: 'error', input: { id: HASHED }, error: 'native_skill_unreviewed', time: { start: 2, end: 3 } });
+  });
+
+  it('keeps folder-name ids and existing v1 names, and strips the display name on the way back', () => {
+    expect(toV1ToolState(skill({ status: 'completed', input: { id: 'pdf' }, content: [], metadata: { name: 'pdf' } }), context))
+      .toMatchObject({ input: { id: 'pdf', name: 'pdf' }, title: 'pdf' });
+    expect(toV1ToolState(skill({ status: 'completed', input: { id: 'pdf' }, content: [] }), context))
+      .toMatchObject({ input: { id: 'pdf', name: 'pdf' }, title: '' });
+    expect(toV1ToolState(skill({ status: 'completed', input: { name: 'legacy' }, content: [], metadata: { name: 'Legacy' } }), context))
+      .toMatchObject({ input: { name: 'legacy' } });
+    const projected = toV1ToolState(skill({ status: 'completed', input: { id: HASHED }, content: [], metadata: { name: 'Superpowers' } }), context);
+    expect(toV2ToolInput('skill', projected.input)).toEqual({ id: HASHED });
+  });
+});

@@ -572,6 +572,24 @@ describe('shell and skill rows', () => {
     });
     expect(records[2].info.parentID).toBe('msg_u');
   });
+
+  it('reloads a reviewed skill tool call with its human name, never the hashed id', () => {
+    const hashed = 'devryan-539ddc37a961e3aceadfc7bbb540b8e7';
+    const body = '<skill_content name="Superpowers">\nbody\n</skill_content>';
+    const [, assistant] = project([
+      { id: 'msg_u', type: 'user', text: 'x', time: { created: 1 } },
+      {
+        id: 'msg_a', type: 'assistant', agent: 'build', model: { id: 'm', providerID: 'p' }, time: { created: 2, completed: 4 },
+        content: [{
+          type: 'tool', id: 'call_k', name: 'skill', time: { created: 2, ran: 3, completed: 4 },
+          state: { status: 'completed', input: { id: hashed }, content: [{ type: 'text', text: body }], metadata: { name: 'Superpowers', directory: '/skills/superpowers' } },
+        }],
+      },
+    ]);
+    const tool = assistant.parts.find((part) => part.type === 'tool');
+    expect(tool.state).toMatchObject({ status: 'completed', input: { id: hashed, name: 'Superpowers' }, title: 'Superpowers' });
+    expect(JSON.stringify(tool.state.title)).not.toContain(hashed);
+  });
 });
 
 describe('assistant states from vectors', () => {
