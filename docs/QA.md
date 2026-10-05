@@ -79,6 +79,21 @@ attempts remain under `.cache/v2-validation/package-*/result.json`; incomplete
 mandatory lanes, changed source or incomplete cleanup keep the exit nonzero.
 This command does not activate a bundle in the installed app.
 
+Every compiled host (the package process, each fresh lifecycle driver and the
+parent-death owner) also writes the production web diagnostic journal into its
+descriptor's `web-data/harness/journal`; the in-memory diagnostic arrays are a
+tee of the same records. Case `compiled-durable-journal-roots` grades the
+selected candidate, the baseline and the SIGKILLed parent-death candidate, and
+passes only at 3/3. A missing root or one without chunks is unavailable, never
+passed. A present root needs sealed chunks (the parent-death root is sealed by
+the next owner's journal recovery), at least one `lifecycle` record, an empty
+`node scripts/journal.mjs --dir <root> gaps --verify` run recorded under
+`package-*/journal-gaps/`, and every record reconciled to the writer that
+accepted it. Case `compiled-seeded-credential-first-boot` prepares a fresh
+initialization whose `native-setup-credentials.json` (one fake API key) is
+present at first boot, then proves the controller started, unlinked the seed
+after stamping its digest, restarted, and holds the imported credential.
+
 The migration fixture contains two independent relocated Git projects, exact
 conversation/tool IDs, compaction dispositions, attachment bytes, ordered
 permissions, and separate web/native configuration trees. A lost import
