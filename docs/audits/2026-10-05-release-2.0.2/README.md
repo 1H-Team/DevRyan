@@ -346,6 +346,50 @@ and clean owned-process drain. Result `package-hJlzxd/result.json` remains under
 failure; no optimization or deadline change followed. Neither diagnostic
 satisfies the complete acceptance, seeded boot or three meaningful-root gates.
 
+A fresh full run passed 119 cases, including DOCX, then exposed a verifier
+ownership error before seeded boot. The seeded fixture supplied its legacy
+source checkpoint when selection requested the newly prepared bundle's own
+checkpoint. The fixture now retains both genuine constructor checkpoints;
+production checkpoint fences are unchanged. Two focused checks and isolated
+seeded boot passed. The fresh full rerun then passed all **122 cases**, including
+seed import/consumption, supervised restart and actual parent-death drain.
+Result `.cache/v2-validation/package-7girmS/result.json` has SHA-256
+`19fd16286ec7d7614d6d84fa68f7cbf1f626674ecc9e07b07b4408dbb2689c09`.
+Acceptance source digest is
+`d4a0c1a0f7323e8862e280f611c65df4e143e209cadbc81d978f2b6edd61f0f4`;
+source coherence and owned cleanup passed, with the 750 ms interval unchanged.
+The three meaningful durable roots passed exact tee reconciliation and explicit
+`gaps --verify`: candidate **1,496 records**, baseline **12**, parent-death **109**;
+all have zero gaps and no open chunks. Original 108- and 119-case failures remain
+preserved. `compiled-acceptance-4-summary.json` binds the concise grade to the
+original result. `seeded-checkpoint-validate-full-1.log` records a passing full
+lint/type/deterministic validation, including 4,048 UI and 6,325 server tests.
+
+The private packaged prompt rehearsal passed native conflict-notice review,
+both explicit Restore actions, exact edited-file backups and Apply & Restart.
+Builder and Orchestrator each received both planning/execution guidance clauses
+in their original primary system prompt, then completed separate synthetic
+loopback turns. No inline primary prompt override or paid provider was used.
+Result `.cache/qa/packaged-prompts-oa1OcI/result.json` has SHA-256
+`2237e04da8806fbc75458e033b1be4f67cab9e75b3395aa1415a977c9393cfad`;
+the packaged source/archive and all 4,695 linked native inputs are unchanged.
+All four screenshots were individually reviewed; the 155-record journal has
+zero errors and explicit verified gaps, and owned process cleanup passed.
+`packaged-prompts-3-visual-and-journal-review.json` binds that independent review
+to the original result. The first two failed rehearsals remain preserved: their
+oracle mistook the original SDK title prompt for a primary prompt. The corrected
+rehearsal recognizes its independently verified exact hash, accepts at most one
+per role, and keeps both guidance assertions for the two actual primaries.
+
+Windows run `37383981687` at `a92c85e2` built pinned libsql 0.5.29 from the
+unchanged official source on both native architectures using NMake. Node
+22.23.3 and Bun 1.3.14 passed both ABI/transaction checks. Downloaded PE machine
+identities and full SHA-256 values independently match the receipts:
+`3ec054ed07b0e8cc756e77a6a52d06ea10b26611527baa869a60610cc189a8b1`
+(x64), `f9a7564676a8d6b51d0db15628a68d7900783d9b2c424f190ab99365507531de`
+(ARM64). `windows-libsql-ci-4` retains the artifacts. Both full Windows jobs
+remain failed; these database asset candidates grant no runtime admission.
+
 Windows run `37366300612` initially had no acquired runners; its retry compiled
 both supervisors and passed both process/parent identity checks. Each retained
 filesystem receipt passed 13 checks and then failed exclusive-file-lock refusal.
@@ -460,7 +504,9 @@ All six original loaded screenshots were individually reviewed: each shows the
 composer, eight project rows and no startup chooser. The separate review is
 `service-correction-first-launch-4-visual-review.json`; all owned trees drained
 cleanly. All six startup journals and both positive-recovery journals have zero
-verified gaps in `service-correction-first-launch-4-positive-gaps.json`. These
+verified gaps in `service-correction-first-launch-4-positive-gaps-verified.json`.
+This receipt reruns explicit `gaps --verify` for all eight roots with unchanged
+index hashes; the earlier default-only gap receipt remains preserved. These
 checks do not replace the compiled inventory's three meaningful-root gate.
 
 This table must be rebound to the final source commit, lock hash, native build
@@ -471,11 +517,11 @@ evidence in `.cache/release-2.0.2-recovery`.
 | Mandatory gate | Status | Evidence or prerequisite |
 | --- | --- | --- |
 | Full integrated validation, build, bundle budgets and documentation | Passed at `bf2aa44a`; freeze pending | Corrected full suite, build, bundle and docs logs above; rerun after code changes |
-| Packaged prompt conflict notice and explicit restore | Passed (focused); packaged not run | API, mounted UI, stale revision, edit/path replacement and guidance checks |
+| Packaged prompt conflict notice and explicit restore | Passed (focused and private packaged); final freeze pending | Native notice, two explicit restores with exact backups, configuration apply, both original primary guidance requests, four reviewed screenshots and verified journal gaps |
 | Tracked credential owner and synthetic rehearsal | Passed (compiled synthetic); live not run | Original SDK OAuth, compiled native key/CAS owners, held projection, ready boot and zero evidence leaks; final identities and attended live/launcher qualification pending |
 | Complete B1 review closure | Consolidated (focused); qualification pending | Seven engineering scopes above retain original reproductions, corrected checks and current drift; final compiled/live/package evidence pending |
-| Compiled acceptance and seeded-credential boot | Failed; seeded boot not reached | 108 cases passed; DOCX continuation timed out after tool completion; fresh and 300-settlement diagnostics passed six original document checks; age alone did not reproduce |
-| Three meaningful durable journal roots and verified gaps | Not run | Journal fixture/grading code integrated |
+| Compiled acceptance and seeded-credential boot | Passed (122 cases); final freeze pending | Original inventory, seeded import/consumption and supervised restart passed after the verifier checkpoint correction; both earlier failed runs remain preserved |
+| Three meaningful durable journal roots and verified gaps | Passed (3/3); final freeze pending | Candidate 1,496, baseline 12 and parent-death 109 meaningful records; explicit gap verification and exact accepted-record reconciliation passed |
 | Seven lifecycle modes and seven wire cells | Passed at frozen source; final freeze pending | All seven actual lifecycle modes and seven wire cells passed; original predecessor/current artifact proofs, native Cancel and verified gaps retained |
 | Two actual-runtime UI cells and reviewed screenshots | Passed at `bf2aa44a`; final freeze pending | Web and packaged Electron passed; all nine recorded screenshots reviewed; verified journal gaps and clean owned-process drain |
 | CLI persistence/refusal and Electron Resume | Passed at current artifacts; final freeze pending | Seven original compiled persistence checks, eight actual refusal modes with TTY review, packaged Cancel and positive native Resume/relaunch/preservation/cleanup passed; prospective Bots-disabled supplement scope above |
@@ -488,7 +534,7 @@ evidence in `.cache/release-2.0.2-recovery`.
 | Burst, six attribution, 21 calibration, conditional 42 paired launches | Not run | Quiet window and frozen grading pending; retain 750 ms |
 | Release dry-run with no external writes and exact asset digests | Passed (focused); CI not run | Fake-registry refusal/reuse tests, workflow writer guards and packaging-digest verification; actual signed images and frozen package pending |
 | Downloaded DMG digest, mounted app, isolated launch and updater | Not run | Publication requires all preceding mandatory gates |
-| Windows x64 / ARM64 native safety and installers | Partial native checks; release gate failed | Both process/parent identities and 15 filesystem checks passed at `0a8225ae` and `17c9624d`; pinned libsql source identity, confinement and controller/writer builds fail; installers not run |
+| Windows x64 / ARM64 native safety and installers | Partial native checks; release gate failed | Both process/parent identities, 15 filesystem checks and pinned libsql source/Node/Bun ABI candidates pass; confinement and controller/writer builds still fail; installers not run |
 
 macOS remains ad-hoc signed. Windows packaging is unsigned. No notarization,
 Authenticode, live provider, or Windows runtime pass is claimed. Verification

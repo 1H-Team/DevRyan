@@ -151,7 +151,9 @@ Repository automation entrypoint for developer workflows: validation planning, l
   `qa/final-evidence-rules.mjs`, exact or crash-bounded tee reconciliation) into
   `compiled-durable-journal-roots`, which passes only at 3/3.
   `package-seeded-credential-lane.mjs` boots a fresh bundle whose setup
-  credential seed is present at first boot. `removal-lanes.mjs` uses the
+  credential seed is present at first boot; distinct constructor-owned
+  never-started checkpoints fence source preparation and prepared-bundle
+  selection. `removal-lanes.mjs` uses the
   production removal coordinator, independent native row checks, real writer
   cancellation and retained commit recovery; published workspace bytes stay
   intact. Optional `--managed-wake-attribution` adds the finite same-runtime
