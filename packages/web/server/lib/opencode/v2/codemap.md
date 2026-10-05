@@ -72,7 +72,7 @@ limits, with their operational consequences made explicit.
 | Key | Projection and limit |
 | --- | --- |
 | `system-notices` | Migrated legacy tool system notices are hidden from conversation rendering. |
-| `idle-rows` | Idle records do not become messages; session status owns completion. |
+| `idle-rows` | Idle records do not become messages; session status owns completion. Projected idle includes the last native inbox `userMessageID` when known so late delivery settles only that turn's diagnostic timing; it grants no execution authority. |
 | `user-selection` | Without DevRyan turn metadata, selection comes from the sequence fold or answering assistant. This historical display fallback cannot attest the admitted selection. |
 | `segment-kind` | Attachment and synthetic text segments both become synthetic text parts. |
 | `part-order` | Files and agents follow text segments; their original interleaving is unavailable. |

@@ -34,6 +34,8 @@ its HTTP routes require diagnostic permission and session ownership.
 `first_text_output` observes answer text only. They preserve the older
 text/reasoning `first_text_delta` metric. Part types are retained for at most 64
 announcements until answer text arrives; unknown types leave timing absent.
+Projected native idle carries its inbox identity. The timing owner settles that
+exact record and keeps any newer send active; unknown identities are ignored.
 
 `native-setup-source.js` owns the private sibling fresh seed, including canonical
 ownership checks, mode repair before any native launch, and complete removal only

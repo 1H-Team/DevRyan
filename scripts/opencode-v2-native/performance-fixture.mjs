@@ -480,11 +480,22 @@ export async function createPerformanceFixture({ root, generation, artifactRoot,
       }
       check();
       const completionObservedAtMs = performance.now();
+      // Preserve the original canonical completion clock. Collect the timing
+      // snapshot only after the same native stream settles this exact inbox,
+      // before another send can race its remaining output/idle publications.
+      let timing;
+      for (;;) {
+        timing = turnTiming.getRecentTimings({ sessionId: sessionID, limit: 200 }).records.find(row => row.userMessageId === input.messageID);
+        if (timing?.marks.session_status_idle) break;
+        check();
+        assert.ok(Date.now() < deadline, `Exact native timing settlement missing ${id}`);
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
       const terminalTiming = terminalObserver.join({ sessionID, assistantMessageID: final.info.id,
         submissionAtMs: wall, completionObservedAtMs });
       return { id, kind:'canonical-terminal', sessionID, messageID:final.info.id, parentID:final.info.parentID,
         completedAt:final.info.time.completed, durationMs:completionObservedAtMs-wall, terminalTiming, providerProof, toolProofs,
-        turnTiming: turnTiming.getRecentTimings({ sessionId: sessionID, limit: 200 }).records.find(row => row.userMessageId === input.messageID) ?? null };
+        turnTiming: timing };
     };
     return { root, generation, directory, model, modelLimits, configuration, version, artifactSha256, pluginHash, eventReconcileIntervalMs,
       startupMs, preparationMs:performance.now()-started-startupMs, streamEvidence, pid:controller.pid, observations, diagnostics,

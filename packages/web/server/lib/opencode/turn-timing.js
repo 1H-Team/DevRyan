@@ -750,21 +750,25 @@ function createTurnTimingRuntime(options = {}) {
     const sessionId = normalizeString(properties.sessionID || properties.sessionId);
     const statusType = getStatusType(properties).toLowerCase();
     if (!sessionId || !statusType) return;
+    // Native projection carries its live inbox identity. An old idle can
+    // arrive after a new HTTP send; it must settle only its own timing record.
+    const record = Object.hasOwn(properties, 'userMessageID')
+      ? recordsByUserMessage.get(userKey(sessionId, normalizeString(properties.userMessageID)))
+      : findLatestRecordForSession(sessionId, (item) => !item.marks.session_status_idle);
+    if (!record || record.marks.session_status_idle) return;
 
     if (statusType === 'busy' || statusType === 'retry') {
-      const record = findLatestRecordForSession(sessionId, (item) => !item.marks.session_status_idle);
       setMark(record, 'session_status_busy', { status: statusType });
       return;
     }
 
     if (statusType === 'idle') {
-      const record = findLatestRecordForSession(sessionId, (item) => !item.marks.session_status_idle);
       if (record?.pendingTerminalFailure) {
         captureTerminalFailure(record, record.pendingTerminalFailure);
         record.pendingTerminalFailure = null;
       }
       setMark(record, 'session_status_idle', { status: statusType });
-      activeTurnsBySession.delete(sessionId);
+      if (activeTurnsBySession.get(sessionId)?.record === record) activeTurnsBySession.delete(sessionId);
     }
   };
 

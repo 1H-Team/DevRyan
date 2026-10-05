@@ -5,6 +5,20 @@ import { describe, expect, it } from 'vitest';
 import { createTurnTimingRuntime, registerTurnTimingRoutes } from './turn-timing.js';
 
 describe('turn timing runtime', () => {
+  it('settles an exact old turn without clearing a newer send when its native idle arrives late', () => {
+    const settled = [];
+    const runtime = createTurnTimingRuntime({ onTurnSettled: entry => settled.push(entry) });
+    runtime.recordClientMark({ sessionId: 'ses_late', messageId: 'msg_old', mark: 'send_started' });
+    runtime.recordClientMark({ sessionId: 'ses_late', messageId: 'msg_new', mark: 'send_started' });
+    runtime.processOpenCodeEvent({ type: 'session.status', properties: { sessionID: 'ses_late', userMessageID: 'msg_old', status: { type: 'idle' } } });
+    runtime.processOpenCodeEvent({ type: 'session.status', properties: { sessionID: 'ses_late', userMessageID: 'foreign', status: { type: 'idle' } } });
+    expect(runtime.recordSessionMark({ sessionId: 'ses_late', mark: 'provider_request_prepared', metadata: { requestID: 'req_new' } })).toBe(true);
+    const records = runtime.getRecentTimings({ sessionId: 'ses_late' }).records;
+    expect(records.find(row => row.userMessageId === 'msg_old').marks.session_status_idle).toBeDefined();
+    expect(records.find(row => row.userMessageId === 'msg_new').marks.session_status_idle).toBeUndefined();
+    expect(settled.map(entry => entry.userMessageId)).toEqual(['msg_old']);
+  });
+
   it('separates first provider output from typed answer text without inferring unknown part types', () => {
     let now = 1; const marks = [];
     const runtime = createTurnTimingRuntime({ now: () => now, onTurnMark: entry => marks.push(entry) });

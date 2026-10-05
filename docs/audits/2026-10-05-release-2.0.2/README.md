@@ -59,7 +59,20 @@ text/reasoning mark retains its meaning. The existing benchmark retains its
 three warmup receipts and feeds real provider, bridge, ledger and projected
 output observations to the production journal, sealed during cleanup. Focused
 timing checks pass (25), as do journal/collector checks (26, zero skips), web
-types and documentation checks. Compiled measurement remains pending.
+types and documentation checks. Final performance qualification remains pending.
+The first compiled timing probe exposed late native idle settling a newer send.
+That race was reproduced independently before the fix. Native projected idle
+now carries its actual inbox identity; timing settlement cannot clear another
+turn. The collector preserves its canonical completion clock and waits for the
+exact stream settlement before collecting timing snapshots. The corrected
+one-stream and eight-call diagnostic retained all ten sets of provider, bridge,
+ledger, first-output and first-answer-text marks. Both sealed journals reconcile
+to their accepted counts (133 and 558); original gap commands exited zero with
+zero gaps. An initial ad hoc journal grade remains failed because it requested
+an error-only client diagnostic from healthy turns. This diagnostic does not
+replace the required three compiled acceptance roots or performance calibration.
+The original incomplete probe is retained. Timing, projector and native-provider
+checks pass (99); journal/collector/Windows workflow contracts pass (27).
 
 Five shutdown failures were reproduced with the preserved review fixtures:
 finite credential refusals killed the controller, and queued enrollment/provider

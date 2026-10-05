@@ -580,7 +580,8 @@ export function createEventProjector(options = {}) {
     if (!force && isSameStatus(state.status, status)) return;
     state.status = status;
     if (state.directory === undefined) state.statusDirty = true;
-    emit(ctx, 'session.status', { sessionID: state.sessionID, status });
+    emit(ctx, 'session.status', { sessionID: state.sessionID, status,
+      ...(status.type === 'idle' && state.lastUser ? { userMessageID: state.lastUser } : {}) });
   };
 
   // -------------------------------------------------------------------------
@@ -1830,7 +1831,8 @@ export function createEventProjector(options = {}) {
     state.pendingUpdate = false;
     if (state.statusDirty && state.directory !== undefined) {
       state.statusDirty = false;
-      emit(ctx, 'session.status', { sessionID, status: state.status });
+      emit(ctx, 'session.status', { sessionID, status: state.status,
+        ...(state.status.type === 'idle' && state.lastUser ? { userMessageID: state.lastUser } : {}) });
     }
     return seedResult(ctx);
   };

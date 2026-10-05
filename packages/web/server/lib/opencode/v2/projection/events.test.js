@@ -173,6 +173,7 @@ describe('vector 01: two-step tool turn', () => {
     const { projector } = createProjector();
     const events = replay(projector, envelopes);
     expect(ofType(events, 'session.status').map((status) => status.status)).toEqual([{ type: 'busy' }, { type: 'idle' }]);
+    expect(ofType(events, 'session.status').at(-1).userMessageID).toBe(mid(1));
     expect(ofType(events, 'session.idle')).toEqual([{ sessionID: SID }]);
     expect(projector.sessionStatus(SID)).toEqual({ type: 'idle' });
   });
