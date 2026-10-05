@@ -56,7 +56,7 @@ const RecoveredInputRow = ({ sessionId, revision, input, disabled, fallback, onA
             {details.files.map((file, index) => <li key={index} className="break-all">{file.name || (file.uri.startsWith('data:') ? 'Attached file' : file.uri)}{file.mime ? ` (${file.mime})` : ''}</li>)}
           </ul>}
           {details.agents?.length ? <p>Agents: {details.agents.map(agent => agent.name).join(', ')}</p> : null}
-          {details.skills?.length ? <p>Skills: {details.skills.join(', ')}</p> : null}
+          {details.skills?.length ? <p>Skills: {details.skills.map(skill => skill.name).join(', ')}</p> : null}
         </>}
       </div>
     </details>
