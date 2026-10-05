@@ -313,7 +313,7 @@ export function collectBotRuntimeImageMetadata({
   return Object.freeze({ repository, indexDigest, platforms: Object.freeze(platforms) });
 }
 
-const defaultCommandRunner = Object.freeze({
+export const defaultCommandRunner = Object.freeze({
   run(file, args, options = {}) {
     const result = spawnSync(file, args, {
       cwd: options.cwd,
@@ -340,7 +340,7 @@ const defaultCommandRunner = Object.freeze({
   },
 });
 
-const loadAttestationDocuments = (runner, repository, indexDocument, options) => {
+export const loadAttestationDocuments = (runner, repository, indexDocument, options) => {
   const digests = new Set(indexDocument.manifests
     .filter((descriptor) => descriptor?.annotations?.['vnd.docker.reference.type'] === 'attestation-manifest')
     .map((descriptor) => requireDigest(descriptor.digest, 'Bot runtime attestation')));
@@ -439,10 +439,15 @@ export async function signBotRuntimeImage({
         indexDigest: imageMetadata.indexDigest,
         platforms: imageMetadata.platforms,
       };
-  return { version: 1, releaseId: version, sourceRevision: revision, repositoryPrefix,
-    openCodeVersion: metadata.openCodeVersion, schemaVersion: metadata.schemaVersion,
-    pluginHash: metadata.pluginHash, key, image };
+  return createBotRuntimeImageResult({ version, revision, repositoryPrefix, metadata, key, image });
 }
+
+// One image result as the aggregation job consumes it, whether built here or reused.
+export const createBotRuntimeImageResult = ({ version, revision, repositoryPrefix, metadata, key, image }) => ({
+  version: 1, releaseId: version, sourceRevision: revision, repositoryPrefix,
+  openCodeVersion: metadata.openCodeVersion, schemaVersion: metadata.schemaVersion,
+  pluginHash: metadata.pluginHash, key, image,
+});
 
 export async function assembleBotRuntimeImages({
   version, revision, repositoryPrefix, results, root = repositoryRoot,

@@ -35,7 +35,7 @@ const fail = (message, code, options) => {
   throw new BotRuntimeImageVerificationError(message, code, options);
 };
 
-const defaultRegistryProbe = (reference, { environment }) => {
+export const defaultRegistryProbe = (reference, { environment }) => {
   const result = spawnSync('docker', ['manifest', 'inspect', reference], {
     env: environment,
     encoding: 'utf8',
@@ -49,7 +49,7 @@ const defaultRegistryProbe = (reference, { environment }) => {
   };
 };
 
-const registryFailureKind = (result) => {
+export const registryFailureKind = (result) => {
   const output = `${result?.stderr || ''}\n${result?.stdout || ''}`;
   if (/unauthorized|authentication required|access denied|denied:|forbidden|insufficient[_ ]scope/i.test(output)) {
     return 'not anonymously accessible';
