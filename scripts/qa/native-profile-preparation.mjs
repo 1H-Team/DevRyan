@@ -207,7 +207,7 @@ export async function validateQaNativeSourceLaunch(launch, runtimeRoot) {
 
 /** Fresh process imports the production binding before configuration owners.
  * It reports routes and prompt hashes only; never raw prompts or credentials. */
-async function snapshotView(binding, environment, workspace) {
+export async function readQaNativeSelectionView(binding, environment, workspace) {
   const module = fileURLToPath(new URL('../../packages/web/server/lib/opencode/runtime-host/native-runtime-owner.js', import.meta.url));
   const bindingModule = fileURLToPath(new URL('../../packages/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js', import.meta.url));
   const source = `
@@ -234,6 +234,28 @@ async function snapshotView(binding, environment, workspace) {
   return JSON.parse(stdout);
 }
 
+/** The same offline bundle composition is used by the sign-in source and cells.
+ * A serialized input cannot supply a checkpoint or migration owner. */
+export async function prepareQaNativeBundle({runtimeRoot,source,bundleID='candidate'}){
+  await ownedPath(runtimeRoot);
+  if(typeof source?.checkpointOptions!=='function'||typeof source?.runMigration!=='function')throw fail('qa_native_checkpoint_prerequisite');
+  await validateQaNativeSourceLaunch(source.launch,runtimeRoot);
+  const controlRoot=path.join(runtimeRoot,'native-bundles'),descriptors=new Map(),checkpoints=new Map();
+  const store=createRuntimeBundleStore({controlRoot,runMigration:source.runMigration,withQuiescedSource:async(scope,action)=>{
+    const ownerID=scope.kind==='legacy'?'qa-source':scope.bundleID;
+    const captured=scope.kind==='legacy'?{launch:source.launch,generation:1}:descriptors.get(ownerID);
+    if(!captured?.launch)throw fail('qa_native_checkpoint_prerequisite');
+    if(!checkpoints.has(ownerID))checkpoints.set(ownerID,createRuntimeBundleCheckpoint({
+      ...await source.checkpointOptions({ownerID,generation:captured.generation,launch:captured.launch}),ownerID,generation:captured.generation,launch:captured.launch,
+    }));
+    return checkpoints.get(ownerID)(scope,action);
+  }});
+  const candidate=await store.prepare({bundleID,generation:2,source:{kind:'legacy',launch:source.launch},projectMap:source.projectMap,auxiliary:{kind:'absent'},launchArtifacts:source.nativeArtifacts});
+  descriptors.set(bundleID,candidate);await store.select({bundleID,expectedRevision:0});
+  const binding=readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot});
+  return {controlRoot,store,binding,launch:binding.descriptor.launch};
+}
+
 /** Source/credential callbacks are constructor-owned production owners, never
  * matrix JSON. Source copying uses the actual checkpoint and migration store. */
 export async function prepareQaNativeProfile({ runtimeRoot, workspace, cell, nativePreparation }) {
@@ -252,31 +274,15 @@ export async function prepareQaNativeProfile({ runtimeRoot, workspace, cell, nat
   }
   await validateQaNativeSourceLaunch(source.launch, runtimeRoot);
   if (!source.projectMap?.some(row => row.targetDirectory === workspace)) throw fail('qa_native_location_missing');
-  const controlRoot = path.join(runtimeRoot, 'native-bundles'), descriptors = new Map(), checkpoints = new Map();
-  const store = createRuntimeBundleStore({ controlRoot, runMigration: source.runMigration,
-    withQuiescedSource: async (scope, action) => {
-      const ownerID = scope.kind === 'legacy' ? 'qa-source' : scope.bundleID;
-      const captured = scope.kind === 'legacy' ? { launch: source.launch, generation: 1 } : descriptors.get(ownerID);
-      const launch = captured?.launch;
-      if (!launch) throw fail('qa_native_checkpoint_prerequisite');
-      if (!checkpoints.has(ownerID)) checkpoints.set(ownerID, createRuntimeBundleCheckpoint({
-        ...await source.checkpointOptions({ ownerID, generation: captured.generation, launch }), ownerID, generation: captured.generation, launch,
-      }));
-      return checkpoints.get(ownerID)(scope, action);
-    } });
-  const candidate = await store.prepare({ bundleID: 'candidate', generation: 2, source: { kind: 'legacy', launch: source.launch },
-    projectMap: source.projectMap, auxiliary: { kind: 'absent' }, launchArtifacts: source.nativeArtifacts });
-  descriptors.set('candidate', candidate);
-  await store.select({ bundleID: 'candidate', expectedRevision: 0 });
-  const binding = readRuntimeBundleBinding({ DEVRYAN_RUNTIME_BUNDLE_ROOT: controlRoot }), launch = binding.descriptor.launch;
+  const {store,binding,launch}=await prepareQaNativeBundle({runtimeRoot,source});
   if (!within(runtimeRoot, launch.global.log)) throw fail('qa_native_log_path_invalid');
   const nativeLogRoot = await ownedPath(launch.global.log);
   await fs.writeFile(path.join(launch.global.home, '.devryan-qa-home'), 'DevRyan isolated native QA\n', { mode: 0o600 });
   await fs.writeFile(path.join(runtimeRoot, 'credentials.env.json'), '{}\n', { mode: 0o600 });
   const env = createQaNativeLaunchEnvironment({ binding, runtimeRoot });
-  const view = await snapshotView(binding, env, workspace); assertQaNativeSelection(cell, view);
+  const view = await readQaNativeSelectionView(binding, env, workspace); assertQaNativeSelection(cell, view);
   const requiredProviders = qaNativeRequiredProviders(view);
-  const bootstrap = await nativePreparation.bootstrapCredentials({ binding, requiredProviders, savedSelections: view.agentSelections, savedBackupSelections: view.nativeBackupSelections });
+  const bootstrap = await nativePreparation.bootstrapCredentials({ binding, requiredProviders, preparedSource:source,cellTimeoutMs:cell.timeoutMs,savedSelections: view.agentSelections, savedBackupSelections: view.nativeBackupSelections });
   if (bootstrap?.status !== 'ready') throw fail('qa_native_credential_prerequisite');
   if (requiredProviders.some(provider => bootstrap.credentials?.[provider]?.bundleID !== binding.descriptor.bundleID
     || bootstrap.credentials[provider].controlRoot !== binding.controlRoot)) throw fail('qa_native_credential_binding');

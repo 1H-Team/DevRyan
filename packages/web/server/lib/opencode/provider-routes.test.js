@@ -1338,9 +1338,14 @@ describe('OpenCode provider routes', () => {
     expect(writeAuthFile).toHaveBeenLastCalledWith({ 'cursor-acp': { key: 'sdk-key' } });
   });
 
-  it('saves Cursor SDK auth without deleting the usage quota token', async () => {
+  it('forwards Cursor SDK key saves to native ownership without touching the usage quota vault', async () => {
     readAuthFile.mockReturnValue({ 'cursor-acp': { usageSessionToken: 'cursor-session-token' } });
     const { app } = createApp();
+    const forwarded = [];
+    app.put('/api/auth/cursor-acp', (req, res) => {
+      forwarded.push(req.body);
+      res.json({ success: true, configured: true });
+    });
 
     const response = await request(app)
       .put('/api/auth/cursor-acp')
@@ -1349,13 +1354,9 @@ describe('OpenCode provider routes', () => {
 
     expect(response.body).toMatchObject({ success: true, configured: true });
     expect(JSON.stringify(response.body)).not.toContain('cursor-sdk-key');
-    expect(writeAuthFile).toHaveBeenCalledWith({
-      'cursor-acp': {
-        usageSessionToken: 'cursor-session-token',
-        type: 'api',
-        key: 'cursor-sdk-key',
-      },
-    });
+    expect(forwarded).toEqual([{ type: 'api', key: 'cursor-sdk-key' }]);
+    expect(writeAuthFile).not.toHaveBeenCalled();
+    expect(readAuthFile).not.toHaveBeenCalled();
   });
 
   it('parses Cursor SDK auth requests through the production middleware', async () => {
@@ -1364,19 +1365,20 @@ describe('OpenCode provider routes', () => {
       useJsonParser: false,
       useCommonRequestMiddleware: true,
     });
+    const forwarded = [];
+    app.put('/api/auth/cursor-acp', (req, res) => {
+      forwarded.push(req.body);
+      res.json({ success: true, configured: true });
+    });
 
     await request(app)
       .put('/api/auth/cursor-acp')
       .send({ type: 'api', key: 'cursor-sdk-key' })
       .expect(200);
 
-    expect(writeAuthFile).toHaveBeenCalledWith({
-      'cursor-acp': {
-        usageSessionToken: 'cursor-session-token',
-        type: 'api',
-        key: 'cursor-sdk-key',
-      },
-    });
+    expect(forwarded).toEqual([{ type: 'api', key: 'cursor-sdk-key' }]);
+    expect(writeAuthFile).not.toHaveBeenCalled();
+    expect(readAuthFile).not.toHaveBeenCalled();
   });
 
   it('disconnects Cursor SDK auth without deleting the usage quota token', async () => {

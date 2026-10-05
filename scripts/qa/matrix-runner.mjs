@@ -795,13 +795,15 @@ export async function runQaMatrixCell(cell, { nativePreparation, sourceHome, pre
   return { runId: cell.runId, outcome: evidence.outcome, visualReview: evidence.visualReview, interrupted, error: evidence.error, output: fixture.evidenceDirectory };
 }
 
-export async function runQaMatrix(configPath, { prepareCellInputs, prepareRuntimeFixtureProfile } = {}) {
+export async function runQaMatrix(configPath, { prepareCellInputs, prepareRuntimeFixtureProfile, afterCell } = {}) {
   const config = loadQaMatrixConfig(configPath);
   const runs = expandQaMatrix(config);
   await mkdir(config.evidenceRoot, { recursive: true });
   const summary = { schemaVersion: 1, planned: runs.length, completed: 0, outcome: 'running', runs: [] };
   for (const cell of runs) {
-    summary.runs.push(await runQaMatrixCell(cell, { prepareCellInputs, prepareRuntimeFixtureProfile })); summary.completed += 1;
+    const result=await runQaMatrixCell(cell, { prepareCellInputs, prepareRuntimeFixtureProfile });
+    await afterCell?.(cell,result);
+    summary.runs.push(result); summary.completed += 1;
     await writeFile(path.join(config.evidenceRoot, 'summary.json'), JSON.stringify(summary, null, 2));
     if (summary.runs.at(-1).interrupted) break;
   }

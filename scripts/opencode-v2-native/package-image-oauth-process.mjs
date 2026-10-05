@@ -15,10 +15,10 @@ export function assertSourceImageOAuthProof(proof) {
   assert.equal(proof.compiledOAuthCreation, false); assert.equal(proof.settledMutations, 2);
   assert.equal(proof.accounts.length, 2);
   proof.accounts.forEach((account, index) => {
-    assert.deepEqual(Object.keys(account).sort(), ['accountID', 'credentialID', 'expires', 'methodID', 'valueFingerprint']);
+    assert.deepEqual(Object.keys(account).sort(), ['accountID', 'credentialID', 'expectedFingerprint', 'expires', 'methodID', 'valueFingerprint']);
     assert.match(account.credentialID, /^cred_[A-Za-z0-9]+$/); assert.equal(account.methodID, 'chatgpt-headless');
     assert.equal(account.accountID, `owned-image-account-${index === 0 ? 'A' : 'B'}`);
-    assert.match(account.valueFingerprint, /^[a-f0-9]{64}$/); assert.ok(Number.isSafeInteger(account.expires));
+    assert.match(account.valueFingerprint, /^[a-f0-9]{64}$/);assert.match(account.expectedFingerprint,/^[a-f0-9]{64}$/); assert.ok(Number.isSafeInteger(account.expires));
   });
   assert.notEqual(proof.accounts[0].credentialID, proof.accounts[1].credentialID);
   assert.deepEqual(proof.reopened, proof.accounts[1]);

@@ -20,7 +20,8 @@ import { createNativeAuthorization } from '../../packages/web/server/lib/opencod
 import { createOpenAiOAuthCoordinator } from '../../packages/web/server/lib/opencode/openai-oauth-coordinator.js';
 
 const repository = path.resolve(import.meta.dirname, '../..');
-export async function prepareSourceOpenAiFixture({ databasePath, directory, profileRoot, expiresIn = { A: 3600, B: 3600 } }) {
+export async function prepareSourceOpenAiFixture({ databasePath, directory, profileRoot, expiresIn = { A: 3600, B: 3600 }, canaryPrefix }) {
+  if(canaryPrefix!==undefined)assert.match(canaryPrefix,/^[a-z0-9_-]{16,128}$/);
   assert.deepEqual(Object.keys(expiresIn).sort(), ['A', 'B']);
   for (const value of Object.values(expiresIn)) assert.ok(Number.isSafeInteger(value) && value >= 1 && value <= 3600);
   for (const value of [databasePath, directory, profileRoot]) assert.ok(path.isAbsolute(value) && value.startsWith(repository + path.sep));
@@ -47,17 +48,18 @@ export async function prepareSourceOpenAiFixture({ databasePath, directory, prof
     assert.equal(body.get('grant_type'), 'authorization_code'); assert.equal(body.get('code'), `owned-authorization-${account}`);
     assert.equal(body.get('code_verifier'), `owned-verifier-${account}`); requests.push({ account, phase: 'exchange' });
     const claims = Buffer.from(JSON.stringify({ chatgpt_account_id: `owned-image-account-${account}` })).toString('base64url');
-    return Response.json({ access_token: `owned-image-access-${account}`, refresh_token: `owned-image-refresh-${account}`,
+    return Response.json({ access_token: `${canaryPrefix??'owned'}-image-access-${account}`, refresh_token: `${canaryPrefix??'owned'}-image-refresh-${account}`,
       id_token: `owned.${claims}.fixture`, expires_in: expiresIn[account] });
   };
-  const readProof = selected => {
+  const readProof = (selected,metadata) => {
     assert.ok(selected?.credentialID); assert.equal(selected.value.type, 'oauth'); assert.equal(selected.value.methodID, 'chatgpt-headless');
+    assert.equal(metadata?.id,selected.credentialID);assert.equal(metadata.integrationID,'openai');
     return { credentialID: selected.credentialID, methodID: selected.value.methodID, accountID: selected.value.metadata.accountID,
-      valueFingerprint: credentialMutationFingerprint(selected.value), expires: selected.value.expires };
+      expectedFingerprint:credentialMutationFingerprint(metadata),valueFingerprint: credentialMutationFingerprint(selected.value), expires: selected.value.expires };
   };
   const run = async prepare => {
     const instanceID = randomUUID(), acquisitionID = randomUUID(), configurationDigest = credentialMutationFingerprint({});
-    let active = true, integration, plugins;
+    let active = true, integration, plugins,credentials;
     const principal = Object.freeze({ scope: 'local-admin', id: 'owned-source-oauth-fixture' });
     const authorization = createNativeAuthorization({ locations: [{ directory }], manifest: { inputs: { nativeRegistrations: [], reviewedPlugins: [] } },
       getRequestPrincipal: () => principal, captureLocalAuthorization: original => original === principal ? () => active : null,
@@ -94,7 +96,7 @@ export async function prepareSourceOpenAiFixture({ databasePath, directory, prof
       }) });
     const overrides = [Global.node.replace(Global.layerWith(globals)), ...configurationOverrides({}),
       Credential.node.replace(Credential.node.mapLayer(original => Layer.effect(Credential.Service, Effect.gen(function* () {
-        return adapter.decorateCredential(yield* Credential.Service);
+        credentials=adapter.decorateCredential(yield* Credential.Service);return credentials;
       })).pipe(Layer.provide(original)))),
       Integration.node.replace(Integration.node.mapLayer(original => Layer.effect(Integration.Service, Effect.gen(function* () {
         const inner = yield* Integration.Service;
@@ -126,9 +128,10 @@ export async function prepareSourceOpenAiFixture({ databasePath, directory, prof
           }
           throw Error('Original native OAuth did not commit its selected account');
         });
-        accounts.push(readProof(selected));
+        const records=yield* credentials.list('openai');accounts.push(readProof(selected,records.find(row=>row.id===selected.credentialID)));
       }
-      return readProof(yield* Effect.promise(() => adapter.readSelectedOwned({ directory })));
+      const selected=yield* Effect.promise(() => adapter.readSelectedOwned({ directory })),records=yield* credentials.list('openai');
+      return readProof(selected,records.find(row=>row.id===selected.credentialID));
     }).pipe(Effect.provide(Logger.layer([Logger.withConsoleError(Logger.formatLogFmt)], { mergeWithExisting: false }))))); }
     finally { await bridge.close(); await mutationOwner.close(); grants.close(); active = false; }
   };

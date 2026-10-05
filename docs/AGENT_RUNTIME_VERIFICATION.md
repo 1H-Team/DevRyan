@@ -45,6 +45,13 @@ bun scripts/qa/native-profile-factory-diagnostic.mjs --artifact-root "$PWD/.cach
 
 Use a fresh verified artifact directory in place of the example. This checks isolated startup, not personal provider access or managed-user authorization. Live checks need the reviewed setup and their explicit account bootstrap; never construct credential files by hand.
 
+The attended `live-credential-owner.mjs` and credential-free compiled rehearsal
+are documented in [tracked live credential ownership](QA.md#tracked-live-credential-owner).
+The live source uses independent owner sign-ins, a constructor-only held grant,
+memory-only snapshots and private candidate CAS. It never discovers installed
+accounts. Managed-user tests still require the separate non-production
+Supabase prerequisites below.
+
 ## Diagnostic journal (check it before theorizing)
 
 Whenever the user reports a DevRyan runtime issue — stuck or hung sessions, missing or duplicated events, failed/rejected prompts, aborts that did not take effect, streaming or sync anomalies, worktree or evidence lifecycle issues — inspect the journal before forming a code-only theory. Start from the repository root:

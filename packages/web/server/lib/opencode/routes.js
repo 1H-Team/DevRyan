@@ -4,10 +4,7 @@ import { createProjectIdFromPath } from '../projects/project-id.js';
 import fs from 'fs';
 import { OPENCODE_CONFIG_DIR } from './shared.js';
 import path from 'path';
-import {
-  clearCursorSdkAuth,
-  saveCursorSdkAuth,
-} from '@openchamber/cursor-sdk-runtime';
+import { clearCursorSdkAuth } from '@openchamber/cursor-sdk-runtime';
 import { resolveProviderPromptTools } from '@openchamber/orchestration-runtime';
 import {
   GITHUB_COPILOT_PROVIDER_ID,
@@ -294,25 +291,6 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
 
   app.put('/api/auth/:providerId', async (req, res, next) => {
     const providerId = typeof req.params?.providerId === 'string' ? req.params.providerId.trim().toLowerCase() : '';
-    if (providerId === CURSOR_ACP_PROVIDER_ID) {
-      try {
-        const key = typeof req.body?.key === 'string' ? req.body.key.trim() : '';
-        if (!key) {
-          return res.status(400).json({ error: 'Cursor SDK API key is required.' });
-        }
-        const auth = await getAuthLibrary();
-        saveCursorSdkAuth({
-          readAuth: auth.readAuthFile,
-          writeAuth: auth.writeAuthFile,
-          key,
-          type: typeof req.body?.type === 'string' ? req.body.type : 'api',
-        });
-        return res.json({ success: true, configured: true });
-      } catch (error) {
-        console.error('Failed to save Cursor SDK auth:', error);
-        return res.status(500).json({ error: error.message || 'Failed to save Cursor SDK auth' });
-      }
-    }
     if (!ANTHROPIC_PROVIDER_IDS.has(providerId)) {
       return next();
     }

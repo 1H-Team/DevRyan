@@ -74,7 +74,7 @@ import { createSessionExecutionHost } from './lib/opencode/session-execution-hos
 import { hostStallClock, onHostStall } from '@openchamber/harness-runtime/lib/host-stall-clock.js';
 import { executionArtifacts, executionReadinessMiddleware } from './lib/opencode/execution-artifacts.js';
 import { createOpenAiOAuthCoordinator } from './lib/opencode/openai-oauth-coordinator.js';
-import { createOpenAiOAuthBridge, registerManagedOAuthMutationGate } from './lib/opencode/openai-oauth-bridge.js';
+import { createOpenAiOAuthBridge } from './lib/opencode/openai-oauth-bridge.js';
 import { createConfigApplyCoordinator, createConfigChangeMarker } from '@openchamber/shared-runtime';
 import { syncPackagedAgents } from './lib/opencode/packaged-agent-sync.js';
 import { syncRuntimeAgentOverlays } from './lib/opencode/runtime-agent-overlays.js';
@@ -2736,8 +2736,6 @@ async function main(options = {}) {
     fetchImpl: fetch,
   }));
 
-  registerManagedOAuthMutationGate(app, { coordinator: openAiOAuthCoordinator,
-    isManaged: () => Boolean(openCodeLifecycleState.openCodeProcess && !openCodeLifecycleState.isExternalOpenCode) });
   await featureRoutesRuntime.registerRoutes(app, {
     openCodeClient,
     getNativeRuntimeOwner: () => nativeRuntime,

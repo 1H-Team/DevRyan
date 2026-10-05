@@ -67,7 +67,7 @@ export async function runQaNativeFactoryDiagnostic({ artifactRoot, bun = 'bun' }
       settledMutations: proof.settledMutations, knownNativeCreationLogCount: creationLogs.length, compiledOAuthCreation: false });
     return { status: 'ready', credentials: { openai: { kind: 'native-credential', providerId: 'openai',
       bundleID: binding.descriptor.bundleID, controlRoot: binding.controlRoot, credentialID: proof.reopened.credentialID,
-      expectedFingerprint: proof.reopened.valueFingerprint, valueType: 'oauth', expires: proof.reopened.expires,
+      expectedFingerprint: proof.reopened.expectedFingerprint, valueType: 'oauth', expires: proof.reopened.expires,
       checkedAt: Date.now(), expiryCheck: 'passed' } } };
   };
   try {

@@ -221,7 +221,7 @@ Managed hosts launch the verified native v2 controller and writer bundle. Build 
 
 Fresh Stage F preparation uses `scripts/qa/stage-f-preparation.mjs` with explicit current source, artifact, web-build and packaged-app hashes and produces seven v2 wire cells plus two actual-backend cells. Historical build9/G1 recipes do not qualify current source.
 
-A fresh checkout alone still cannot run live-provider QA. `prepareQaProfile` also requires the user's existing supported OpenCode configuration directory, its installed dependency tree/package manifest and managed provider/agent configuration. It copies those installed dependencies into each owned private profile and provisions candidate defaults there. It projects only supported unexpired access credentials without refresh tokens; Anthropic requires the existing Claude CLI credential source. Establish these through their canonical owners. Fixture QA needs no provider credentials or cached OpenCode executable. Do not suggest hand-written credential files or a global install as a bootstrap substitute.
+A fresh checkout alone still cannot run live-provider QA. Generation-two QA uses verified native artifacts, an explicit repository-owned nonsecret setup mirror, and the tracked credential owner below. It does not discover installed accounts or copy an installed dependency tree. The owner signs in independent accounts through the isolated application's actual Providers UI and the reviewed independent Claude CLI. Fixture QA needs no provider credentials. Hand-written credential files and a global install do not satisfy admission.
 
 Validation performed for this proposal: read root/workspace package scripts, both native-helper builders, native rebuild resolver, bundler and QA packager; checked installed Bun's `--frozen-lockfile`, `--backend=copyfile`, `--cache-dir` syntax and npm's `pack --pack-destination --json` syntax. Builder options and explicit config-file behavior match the existing QA packager. No dependency install, native rebuild, donor package build or provider request was executed for this task.
 
@@ -256,6 +256,75 @@ The UI runner prepares and selects a fresh v2 candidate bundle. Separate assembl
 
 
 The original sealed resolver must preserve saved role models, effort, prompts and ordered Council members. Cells that ask for different saved selections fail instead of rewriting every role to a QA model. Credential bootstrap must return secret-free evidence bound to the selected bundle and control root. Native providers require the original authorized acquisition and shared owner, with the actual selected credential ID, fingerprint and value type. Anthropic requires the original Meridian loader's selected profile ID, configuration fingerprint and auth kind; its supervised SDK account is not a native Credential row. OAuth-derived access must cover the cell timeout plus ten minutes; API keys record that expiry is not applicable. An unavailable acquisition or original profile check is a prerequisite failure; writing OAuth rows or mirroring a second `auth.json` is not a substitute. Current tests use synthetic repo-owned files, verify the real private home preload, and prove that the actual isolated host rejects missing bundle selection before readiness. They do not establish successful native web startup or live account access. Installed account reads and actual live-provider execution still require their separate authorization and qualified host/artifact checks. Ordinary synthetic matrices remain unchanged.
+
+## Tracked live credential owner
+
+Prepare the approved nonsecret mirror with `scripts/qa/live-setup-mirror.mjs`.
+Its `--input` is a repository-cache file containing `preparedInput.sourceHome`
+and the explicit `{path, sha256}` inventory. Its `--graph` contains only the
+actual resolver's `agentSelections`, `nativeBackupSelections`,
+`nativeCompactionSettings`, and ordered `councilMembers`. Both files require
+their own SHA-256. The source, artifacts and output parent must be canonical
+repository-cache paths; private roots must be owned 0700 directories.
+
+```sh
+node scripts/qa/live-setup-mirror.mjs --input <abs-input> --input-sha256 <sha256> --graph <abs-graph> --graph-sha256 <sha256> --artifact-root <abs-artifacts> --output-root <new-abs-private-output>
+node scripts/qa/live-credential-rehearsal.mjs --artifact-root <abs-artifacts>
+node scripts/qa/live-credential-owner.mjs --artifact-root <abs-artifacts> --mirror <abs-preparation.json> --mirror-sha256 <sha256> --matrix <abs-matrix.json> --matrix-sha256 <sha256> --evidence-root <new-abs-private-evidence>
+```
+
+The mirror reads only approved agents, commands, prompts, skills and configuration.
+Account stores, databases, journals, vaults and installed-home discovery are
+excluded. It removes credential/environment/header fields, removes personal
+projects and sessions, and disables MCP entries. This lane qualifies the account
+handoff; live MCP qualification remains separate. The actual resolver must
+reproduce the saved graph before source start and again after readiness.
+
+Run the live owner from an attended terminal. It starts a fresh private host and
+prints a one-use, ten-minute, loopback-only owner link and an isolated Claude
+login command. The owner opens the link and performs provider sign-ins. Never
+record the link, cookie, sign-in transcript or credential values in evidence.
+The command protocol accepts exactly one `command` per JSON line:
+
+```json
+{"command":"status"}
+{"command":"enroll-link"}
+{"command":"hold-and-verify"}
+{"command":"run"}
+{"command":"close"}
+```
+
+`hold-and-verify` permanently closes source admission, invalidates sign-in links,
+and uses the genuine constructor-retained checkpoint. Complete native snapshots
+and their digests remain in memory. Each never-started candidate receives the
+unchanged graph through the existing private native CAS projection, then resumes
+through its own verified binding. The matrix cannot change role assignments.
+OAuth lifetime must cover the sum of cell deadlines plus ten minutes. A changed
+source, target baseline, input identity, profile service or credential refuses
+without retry. `run` is single-use. `--reuse-source <abs-private-source-root>`
+requires the same source/runner/artifact/mirror identities and selected binding;
+it never relaxes admission or infers prior sign-in success.
+
+Claude remains access-only: the source and candidate use empty account folders
+and the exact independent login service. Read-only credential lookup cannot
+refresh, write, exchange or enroll. Dedicated Claude enrollment has its separate
+lifecycle inventory and is refused in this default lane.
+
+Closing drains owned runtime state, closes listeners, audits retained PID/start
+identities from the launcher, rechecks inputs, and scans evidence for keyed raw,
+base64 and URL-encoded credential windows. Scan results contain counts only.
+Retained candidate runtimes move outside evidence into the private source root.
+They block evidence publication until the owner reviews exact paths and sizes
+and authorizes cleanup. The owner also signs out independent accounts and
+removes the independent vendor login item through its owner. Missing process
+observations or cleanup proof are failures; no personal process is discovered or
+stopped by name, path or port.
+
+The compiled synthetic rehearsal uses the same owner and actual web/controller
+startup, original source SDK OAuth grants, actual key acquisition and private
+projection. Its synthetic Claude store is constructor-only and unavailable from
+the live CLI. It sends no paid inference and cannot establish provider, reasoning,
+compaction, packaged Electron or managed-user qualification.
 
 Grade recorded checks and evidence, not just the process exit code or screenshot filename. A partial fixture run does not qualify later steps. Direct use of an existing shared scenario can supply separately labeled coverage; retain the failed original and record the exact source, helper and served artifact identities before/after. Inspect every original screenshot, correlate journal records, and independently verify retained PID/start identities are absent before removing a private profile.
 

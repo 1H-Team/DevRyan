@@ -106,6 +106,32 @@ as did the synthetic renewal checks and web type checks. Evidence grading now
 reads and verifies the actual log descriptor instead of trusting caller-supplied
 empty bytes; all 13 gap/tee/evidence checks passed. Other B1 scopes remain open.
 
+Tracked live ownership now uses a fresh attended host, one constructor-retained
+grant, an in-memory one-use local-owner link and an explicit nonsecret setup
+mirror. Held native snapshots/digests stay private; candidate projection uses
+the existing native CAS. Claude access-only acceptance reads the independent
+login service through a readonly owner and cannot refresh, write or enroll.
+The matrix retains the exact saved graph and scopes each candidate's binding.
+Teardown checks listeners, inputs and parent-observed PID/start identities;
+retained runtime state stays outside evidence and prevents publication.
+
+The compiled synthetic rehearsal passed at native build ID
+`722fa725e3cb11c3fe797a7c7bb06fc3ac6506e7f68b894935bf867df35362c0`
+(manifest SHA-256
+`96142e55386afeef5e82985395736cb1ae8233722897c7262d9757312fed9e53`).
+It uses original source SDK OAuth grants, actual compiled key mutations and
+activation, genuine source/candidate holds, exact private Credential.Info
+fingerprints, candidate readiness, owned cleanup and zero evidence leaks.
+Its evidence is `.cache/v2-validation/live-owner-rehearsal-qDlZSr/evidence`;
+23 constructor/mirror/input tests and 134 provider/coordinator/facade tests passed.
+No paid inference, external Cursor model discovery, packaged Electron or
+managed-user qualification is claimed. Failed rehearsals and their zero-gap
+runtime journals remain preserved. They reproduced an outer HTTP credential
+queue deadlock and a Cursor key save incorrectly owned by legacy `auth.json`.
+Native commits now own the complete queue span, and Cursor keys use the native
+facade. Two later rehearsal assertions were corrected to respect sanitized
+evidence and the separate external Cursor catalog.
+
 ## Final evidence table
 
 This table must be rebound to the final source commit, lock hash, native build
@@ -117,7 +143,7 @@ evidence in `.cache/release-2.0.2-recovery`.
 | --- | --- | --- |
 | Full integrated validation, build, bundle budgets and documentation | Not run | Engineering is still changing |
 | Packaged prompt conflict notice and explicit restore | Passed (focused); packaged not run | API, mounted UI, stale revision, edit/path replacement and guidance checks |
-| Tracked credential owner and synthetic rehearsal | Not run | Genuine checkpoint grant implemented; QA composition pending |
+| Tracked credential owner and synthetic rehearsal | Passed (compiled synthetic); live not run | Original SDK OAuth, compiled native key/CAS owners, held projection, ready boot and zero evidence leaks; final identities and attended live/launcher qualification pending |
 | Complete B1 review closure | In progress | Checkpoint, shutdown, enrollment and renewal findings reproduced and corrected; remaining scopes being consolidated |
 | Compiled acceptance and seeded-credential boot | Not run | Final native artifacts pending |
 | Three meaningful durable journal roots and verified gaps | Not run | Journal fixture/grading code integrated |
