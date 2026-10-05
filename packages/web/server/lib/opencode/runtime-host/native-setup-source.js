@@ -21,6 +21,22 @@ const verifySeed=async sourceRoot=>{
   seen.add(row.path);
  }
 };
+/** A 2.0.0 removal deleted the verified seed in place, so an interruption left a
+ * canonical tree whose marker or pinned files are partly gone while no remaining
+ * pinned byte changed. A complete, changed or unreadable seed is not partial. */
+const partiallyRemoved=async sourceRoot=>{
+ let saved;try{saved=await readBundleJSON(path.join(sourceRoot,'web-data','native-setup-seed.json'));}
+ catch(error){if(error.code==='ENOENT')return true;if(error.code==='bundle_document_invalid'||error instanceof SyntaxError)return false;throw error;}
+ if(saved?.schema!==1||!Array.isArray(saved.files)||saved.files.length>NATIVE_SETUP_SEED_MAX_FILES)return false;
+ let gone=false;
+ for(const row of saved.files){
+  if(!row||typeof row.path!=='string'||!row.path.startsWith(sourceRoot+path.sep)||!/^[a-f0-9]{64}$/.test(row.sha256))return false;
+  let stat;try{stat=await fs.lstat(row.path);}catch(error){if(error.code==='ENOENT'||error.code==='ENOTDIR'){gone=true;continue;}throw error;}
+  if(!stat.isFile()||stat.isSymbolicLink()||stat.size>NATIVE_SETUP_SEED_MAX_FILE_BYTES
+   ||createHash('sha256').update(await fs.readFile(row.path)).digest('hex')!==row.sha256)return false;
+ }
+ return gone;
+};
 
 /** The sibling seed contains credentials. Verify ownership before repairing old modes. */
 export async function protectNativeSetupSource({controlRoot,sourceRoot}){
@@ -56,9 +72,14 @@ const missing=async file=>{try{await fs.lstat(file);return false;}catch(error){i
  * Every other partial state keeps the identical-retry rule. */
 export async function resetAbandonedNativeSetupSource({controlRoot,sourceRoot}){
  if(sourceRoot!==path.join(path.dirname(controlRoot),'fresh-native-source')||!path.isAbsolute(sourceRoot))throw fail();
- let saved;try{saved=await readBundleJSON(path.join(sourceRoot,ownerFile));}catch(error){if(error.code==='ENOENT')return false;throw error;}
- if(saved?.schema!==1||saved.controlRoot!==controlRoot||saved.sourceRoot!==sourceRoot)return false;
- if(!await missing(path.join(sourceRoot,'web-data','native-setup-seed.json'))||!await missing(path.join(controlRoot,'selection.json')))return false;
+ if(await missing(sourceRoot))return false;
+ let saved;try{saved=await readBundleJSON(path.join(sourceRoot,ownerFile));}catch(error){if(error.code!=='ENOENT')throw error;}
+ if(saved&&(saved.schema!==1||saved.controlRoot!==controlRoot||saved.sourceRoot!==sourceRoot))return false;
+ // An unpinned stamped seed is an abandoned first attempt. An unstamped unpinned one, or a
+ // pinned one with files gone but none changed, is a half-deleted 2.0.0 seed: rebuild it.
+ const marker=!await missing(path.join(sourceRoot,'web-data','native-setup-seed.json'));
+ if(marker?!await partiallyRemoved(sourceRoot):false)return false;
+ if(!await missing(path.join(controlRoot,'selection.json')))return false;
  let drafts=[];try{drafts=await fs.readdir(path.join(controlRoot,'bundles'));}catch(error){if(error.code!=='ENOENT')throw error;}
  if(drafts.length)return false;
  // Ownership, canonical location, uid and no-symlink checks for the whole tree.
@@ -93,6 +114,13 @@ export async function removeNativeSetupSource({controlRoot,sourceRoot,verifySele
  try{await fs.lstat(sourceRoot);}catch(error){if(error.code==='ENOENT')return;throw error;}
  await verifySelected();
  let saved;try{saved=await readBundleJSON(path.join(sourceRoot,ownerFile));}catch(error){if(error.code!=='ENOENT')throw error;}
+ // A half-deleted 2.0.0 seed no selected bundle needs: finish its removal once the
+ // whole canonical tree is proved owned, unlinked and private, instead of refusing every launch.
+ if(await partiallyRemoved(sourceRoot)){
+  if(saved&&(saved.schema!==1||saved.controlRoot!==controlRoot||saved.sourceRoot!==sourceRoot))throw fail();
+  await protectNativeSetupSource({controlRoot,sourceRoot});
+  return removeAside(sourceRoot);
+ }
  // Earlier valid seed roots did not have the owner stamp. Adopt only the
  // canonical private tree with a complete pinned seed and selected candidate.
  if(!saved){await verifySeed(sourceRoot);await protectNativeSetupSource({controlRoot,sourceRoot});saved=await readBundleJSON(path.join(sourceRoot,ownerFile));}
@@ -100,8 +128,11 @@ export async function removeNativeSetupSource({controlRoot,sourceRoot,verifySele
   ||sourceRoot!==path.join(path.dirname(controlRoot),'fresh-native-source'))throw fail();
  await protectNativeSetupSource({controlRoot,sourceRoot});
  await verifySeed(sourceRoot);
- // Never remove in place: an interrupted removal leaves only a sibling the next launch sweeps.
+ await removeAside(sourceRoot);
+}
+// Never remove in place: an interrupted removal leaves only a sibling the next launch sweeps.
+const removeAside=async sourceRoot=>{
  const parent=path.dirname(sourceRoot),renamed=path.join(parent,`.fresh-native-source.removing-${randomBytes(8).toString('hex')}`);
  await fs.rename(sourceRoot,renamed);await syncDirectory(parent);
  await fs.rm(renamed,{recursive:true});
-}
+};

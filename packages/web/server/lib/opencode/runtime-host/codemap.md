@@ -11,7 +11,11 @@ atomic `native-setup-seed.json` pins. Inside the bootstrap lock,
 `web-config`, `opencode-config`, `home`) of a stamped seed whose marker is absent
 while neither `selection.json` nor any `bundles/*` draft exists, so a failed
 first seed reseeds current owner setup; every other partial seed keeps the
-identical-retry rule and a completed seed still refuses changed files. Custom configuration remains a separate
+identical-retry rule and a completed seed still refuses changed files. A half-deleted
+2.0.0 seed (2.0.0 removed it in place: marker or pinned files gone, no remaining pinned byte
+changed) is never seeded from: without selection or drafts the same reset rebuilds it,
+stamped or not, and after verified selection removal validates the whole canonical tree and
+completes the rename-aside removal instead of refusing every launch. Custom configuration remains a separate
 `native-custom-config.json` layer; Slim JSONC, declarative tunnel registration,
 prompt overrides and logical local-owner identities retain their original owners.
 
