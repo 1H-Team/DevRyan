@@ -63,9 +63,9 @@ async function seed({source,target,environment={},captureLogicalSetup}){
  const skip=(relative,reason,detail={})=>{skippedCount++;reasons[reason]=(reasons[reason]??0)+1;if(skippedRows.length<MAX_REPORTED)skippedRows.push({relativePath:sanitize(relative),reason,...detail});};
  const read=async(file,root,limit=MAX_FILE_BYTES)=>{
   const relative=path.relative(root,file);if((relative==='..'||relative.startsWith('..'+path.sep))||path.isAbsolute(relative))throw fail('native_setup_source_invalid');
-  let current=root,real=root;
+  let current=root,real=root,checked;
   for(const part of ['',...relative.split(path.sep).filter(Boolean)]){current=part?path.join(current,part):current;
-   let stat;try{stat=await fs.lstat(current);}catch(error){if(error.code==='ENOENT'||error.code==='ENOTDIR')return undefined;if(denied(error))throw skipped('unreadable');throw error;}
+   let stat;try{stat=checked=await fs.lstat(current);}catch(error){if(error.code==='ENOENT'||error.code==='ENOTDIR')return undefined;if(denied(error))throw skipped('unreadable');throw error;}
    if(stat.isSymbolicLink())throw fail('native_setup_source_invalid');
    // Case-insensitive volumes: a component stored as agents.md/Skills is the requested
    // AGENTS.md/skills only when its realpath differs by case alone and is the same inode.
@@ -80,8 +80,15 @@ async function seed({source,target,environment={},captureLogicalSetup}){
   let handle;try{handle=await fs.open(file,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);}catch(error){
    if(error.code==='ENOENT')return undefined;if(denied(error))throw skipped('unreadable');if(error.code==='ELOOP')throw fail('native_setup_source_invalid');
    if(['ENXIO','EOPNOTSUPP','ENODEV'].includes(error.code))throw skipped('unsupported_type');throw error;}
-  try{const stat=await handle.stat();if(!stat.isFile())throw skipped('unsupported_type');if(stat.size>limit)throw skipped('file_too_large');
-   const bytes=await handle.readFile(),after=await fs.stat(file);if(bytes.length!==stat.size||after.ino!==stat.ino||after.dev!==stat.dev||after.mtimeMs!==stat.mtimeMs||after.ctimeMs!==stat.ctimeMs)throw fail('native_setup_source_changed');return bytes;
+  try{const stat=await handle.stat();if(!stat.isFile())throw skipped('unsupported_type');
+   // The descriptor must be the entry checked above: a same-uid swap of the file or a checked
+   // directory component between the checks and open (or the read) never reaches a protected store.
+   if(stat.dev!==checked.dev||stat.ino!==checked.ino)throw fail('native_setup_source_changed');
+   // Another name of this inode may sit in a protected store the deny-list cannot see.
+   if(stat.nlink>1)throw skipped('hard_link');
+   if(stat.size>limit)throw skipped('file_too_large');
+   const bytes=await handle.readFile(),after=await fs.lstat(file);if(bytes.length!==stat.size||after.ino!==stat.ino||after.dev!==stat.dev||after.mtimeMs!==stat.mtimeMs||after.ctimeMs!==stat.ctimeMs
+    ||await fs.realpath(file)!==real)throw fail('native_setup_source_changed');return bytes;
   }finally{await handle.close();}
  };
  // Destination reads: anything unreadable or oversized cannot be the pinned bytes.

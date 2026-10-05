@@ -426,3 +426,29 @@ it('never lets a same-root link import web-data runtime state; exact named setup
  expect(marker.skipped.every(row=>row.reason==='protected')).toBe(true);
  expect(marker.files.map(row=>path.relative(f.root,row.path))).toEqual(['target/web/settings.json']);
 });
+it('refuses hard-linked setup and credential files that would carry a protected store past the deny-list',async()=>{
+ const f=await fixture(),secret=path.join(f.source.home,'.ssh','id_fixture'),stash=path.join(f.source.home,'auth-backup.json');
+ await f.text(secret,'fixture-secret-key');await f.text(path.join(f.source.opencodeConfigDirectory,'agents','ok.md'),'agent');
+ await fs.link(secret,path.join(f.source.opencodeConfigDirectory,'agents','leak.md'));
+ await f.write(stash,{openai:{type:'api',key:'fixture-linked-key'}});await fs.link(stash,path.join(f.source.opencodeDataDirectory,'auth.json'));
+ const marker=await seedNativeSetup(f);
+ expect(marker.skipped).toEqual([{relativePath:'auth.json',reason:'hard_link'},{relativePath:'agents/leak.md',reason:'hard_link'}]);
+ expect(await fs.readdir(path.join(f.target.opencodeConfigDirectory,'agents'))).toEqual(['ok.md']);
+ expect(await fs.stat(path.join(f.target.opencodeConfigDirectory,'native-setup-credentials.json')).catch(error=>error.code)).toBe('ENOENT');
+ expect(JSON.stringify(marker)+warn.mock.calls.join('')).not.toMatch(/fixture-secret|fixture-linked/);
+});
+it('compares the opened descriptor with the checked path so a same-uid swap during the read fails closed',async()=>{
+ const swapped=async swap=>{
+  const f=await fixture(),agents=path.join(f.source.opencodeConfigDirectory,'agents'),file=path.join(agents,'a.md'),secret=path.join(f.source.home,'.ssh','a.md');
+  await f.text(file,'agent');await f.text(secret,'fixture-secret-key');
+  const open=fs.open;let done=false;
+  fs.open=async(target,...rest)=>{if(!done&&String(target)===file){done=true;await swap({f,agents,file,secret});}return open.call(fs,target,...rest);};
+  try{await expect(seedNativeSetup(f)).rejects.toMatchObject({code:'native_setup_source_changed',relativePath:'agents/a.md'});}finally{fs.open=open;}
+  expect(done).toBe(true);
+  const copied=await fs.readFile(path.join(f.target.opencodeConfigDirectory,'agents','a.md'),'utf8').catch(error=>error.code);expect(copied).toBe('ENOENT');
+ };
+ // A checked directory component becomes a link into a protected store.
+ await swapped(async({f,agents,secret})=>{await fs.rename(agents,agents+'-checked');await fs.symlink(path.dirname(secret),agents);});
+ // The checked file becomes another name of a protected file.
+ await swapped(async({file,secret})=>{await fs.rm(file);await fs.link(secret,file);});
+});
