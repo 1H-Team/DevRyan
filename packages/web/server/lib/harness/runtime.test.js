@@ -264,3 +264,23 @@ describe('web harness control observer', () => {
     await runtime.drain();
   });
 });
+
+describe('web harness session execution diagnostics', () => {
+  it('journals execution and revert diagnostics with the production lifecycle mapping', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-web-harness-'));
+    temporaryDirectories.push(directory);
+    const runtime = createWebHarnessRuntime({ dataDirectory: directory, runtime: 'test' });
+    await runtime.initialize();
+    expect(runtime.recordSessionExecution({ event: 'session_execution', sessionID: 'ses_exec', phase: 'finish', state: 'completed' })).toBe(true);
+    expect(runtime.recordSessionExecution({ event: 'session_revert', sessionID: 'ses_revert', phase: 'recovery_failed' })).toBe(true);
+    expect(runtime.recordSessionExecution({ event: 'other', phase: 'unattributed' })).toBe(true);
+    await runtime.journal.flush();
+    const rows = (await runtime.journal.readRecords()).filter((record) => record.type === 'lifecycle');
+    const bySession = Object.fromEntries(rows.map((record) => [record.sessionID ?? 'runtime', record]));
+    expect(bySession.ses_exec).toMatchObject({ event: 'session_execution', runtime: 'test', payload: { phase: 'finish', state: 'completed' } });
+    expect(bySession.ses_revert).toMatchObject({ event: 'session_revert', payload: { phase: 'recovery_failed' } });
+    expect(bySession.runtime).toMatchObject({ event: 'session_revert', payload: { phase: 'unattributed' } });
+    await runtime.drain();
+    expect(runtime.recordSessionExecution({ event: 'session_execution', sessionID: 'ses_late' })).toBe(false);
+  });
+});
