@@ -364,3 +364,27 @@ it('never follows links or bulk folders into account, token and browser stores; 
  expect(JSON.parse(await fs.readFile(path.join(profile.claudeConfigDir,'.credentials.json'),'utf8'))).toEqual({claudeAiOauth:{accessToken:'fixture-meridian'}});
  expect(JSON.parse(await fs.readFile(path.join(f.target.opencodeConfigDirectory,'native-setup-credentials.json'),'utf8')).credentials.map(row=>row.integrationID)).toEqual(['fixture']);
 });
+it.skipIf(!caseInsensitive)('checks a differently cased account path against the stores by its stored case',async()=>{
+ const f=await fixture(),home=f.source.home;await f.write(path.join(home,'.ssh','.credentials.json'),{fixture:'ssh-store'});
+ for(const name of ['.SSH','.ssh']){
+  await f.write(path.join(home,'.config','meridian','profiles.json'),[{id:'p',type:'claude-max',claudeConfigDir:path.join(home,name)}]);
+  const marker=await seedNativeSetup({...f,target:f.launch(path.join(f.root,name==='.ssh'?'exact':'variant'))});
+  expect(marker.skipped).toEqual([{relativePath:name,reason:'protected'}]);expect(marker.files.map(row=>path.basename(row.path))).toEqual(['profiles.json']);
+ }
+});
+it('never lets links or bulk folders copy DevRyan web-data secrets or Electron/Chromium stores; exact web setup still seeds',async()=>{
+ const f=await fixture(),home=f.source.home,web=path.join(home,'.config','openchamber'),skills=path.join(home,'.agents','skills'),support=path.join(home,'Library','Application Support');
+ const source={...f.source,webDataDirectory:web,webConfigDirectory:web};
+ await f.write(path.join(web,'settings.json'),{themeId:'dark',selectedSessionId:'old'});await f.write(path.join(web,'quota','opencode.json'),{fixture:'quota'});await f.write(path.join(web,'themes','t.json'),{id:'t'});
+ for(const name of ['multi-user-vault.key','multi-user-vault.json','branch-preview-vault.key','jwt-secret','bots/keys/deployment-key.v1','multi-user/x.json','quota/cache.json'])await f.text(path.join(web,name),'fixture-devryan');
+ for(const name of ['DevRyan/Partitions/p/Cookies','DevRyan-runtime-service/x.md','OpenChamber/Local State','@openchamber/x.md','Other/Cookies','Other/Network/Cookies-journal','Other/Partitions/p/x.md'])await f.text(path.join(support,name),'fixture-electron');
+ await f.text(path.join(support,'Other','readme.md'),'kept');
+ const links={web,vault:path.join(web,'multi-user-vault.key'),mu:path.join(web,'multi-user'),quota:path.join(web,'quota'),dr:path.join(support,'DevRyan'),svc:path.join(support,'DevRyan-runtime-service'),
+  oc:path.join(support,'OpenChamber'),at:path.join(support,'@openchamber'),other:path.join(support,'Other')};
+ await fs.mkdir(skills,{recursive:true});for(const [name,to] of Object.entries(links))await fs.symlink(to,path.join(skills,name));
+ const marker=await seedNativeSetup({...f,source});
+ expect(marker.skipped).toEqual(['at','dr','mu','oc','other/Cookies','other/Network/Cookies-journal','other/Partitions','quota','svc','vault','web'].map(name=>({relativePath:'.agents/skills/'+name,reason:'protected'})));
+ expect(marker.files.map(row=>path.relative(f.root,row.path)).sort()).toEqual(['target/home/.agents/skills/other/readme.md','target/web-config/themes/t.json','target/web/quota/opencode.json','target/web/settings.json']);
+ expect(JSON.parse(await fs.readFile(path.join(f.target.webDataDirectory,'settings.json'),'utf8'))).toEqual({themeId:'dark'});
+ for(const row of marker.files)expect(await fs.readFile(row.path,'utf8')).not.toMatch(/fixture-(devryan|electron)/);
+});

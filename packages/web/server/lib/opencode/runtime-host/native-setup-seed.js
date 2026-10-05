@@ -20,6 +20,10 @@ const parseJSON=bytes=>{try{return JSON.parse(String(bytes));}catch{return undef
 const inside=(root,value)=>value===root||value.startsWith(root+path.sep);
 // Never traversed in copied folders: VCS, dependency and bytecode trees are not setup.
 const excluded=new Set(['.git','.hg','.svn','node_modules','.venv','__pycache__']);
+// Chromium/Electron cookie, login and web storage, wherever a link or copied folder reaches it.
+const browserStores=new Set(['Cookies','Cookies-journal','Login Data','Login Data-journal','Web Data','Web Data-journal','Local Storage','Session Storage','IndexedDB','Partitions']);
+// DevRyan's own web-data secrets, never copied even when that directory protects nothing else.
+const webSecrets=['multi-user-vault.key','multi-user-vault.json','branch-preview-vault.key','branch-preview-vault.json','jwt-secret','github-auth.json','ui-passkeys.json','bots','multi-user','credentials'];
 const MAX_VISITED=8192,MAX_REPORTED=200;
 // Diagnostics name the source file relative to its read root, never its bytes or HOME.
 const sanitize=relative=>String(relative).split(path.sep).join('/').replace(/[\u0000-\u001f\u007f-\u009f]/g,'').replace(/^\/+/,'').slice(0,256);
@@ -124,15 +128,16 @@ async function seed({source,target,environment={},captureLogicalSetup}){
   return canonical.get(root);
  };
  const home=await resolveRoot(path.resolve(source.home));
- // Never read DevRyan state (control root, fresh seed) or the seed target back into itself.
+ // Never read DevRyan state (control root, fresh seed), the seed target or the v1 web-data secrets back into itself.
  const canonicalAll=values=>Promise.all(values.map(value=>fs.realpath(value).catch(()=>value)));
- const guarded=await canonicalAll([...roots,path.resolve(environment.XDG_STATE_HOME||path.join(source.home,'.local','state'),'devryan')]);
+ const absolute=value=>typeof value==='string'&&path.isAbsolute(value)?[path.resolve(value)]:[];
+ const webRoots=await canonicalAll([source.webDataDirectory,source.webConfigDirectory].flatMap(absolute));
+ const guarded=await canonicalAll([...roots,path.resolve(environment.XDG_STATE_HOME||path.join(source.home,'.local','state'),'devryan'),...webRoots.flatMap(root=>webSecrets.map(name=>path.join(root,name)))]);
  // Credential, token and browser stores are never setup, whether reached by a link or below one.
  // Account stores (raw OpenCode data, ~/.claude, Meridian accounts) are read only by the exact
  // auth.json/.credentials.json copies, never through another link or copied folder. A store that
  // canonicalizes to HOME, outside it, or onto/above a setup root protects nothing. ~/.claude and
  // ~/.codex stay protected except their top-level shared setup folders and instruction files.
- const absolute=value=>typeof value==='string'&&path.isAbsolute(value)?[path.resolve(value)]:[];
  const fromHome=values=>home?values.map(relative=>path.join(home,relative)):[];
  const setupRoots=await canonicalAll([source.webDataDirectory,source.webConfigDirectory,source.opencodeConfigDirectory,source.opencodeConfigFile&&path.dirname(source.opencodeConfigFile)]
   .flatMap(absolute).concat(fromHome(['.agents/skills','.opencode/skill','.opencode/skills','.config/meridian'])));
@@ -140,12 +145,18 @@ async function seed({source,target,environment={},captureLogicalSetup}){
  const otherAccountRoots=home?await canonicalAll([...absolute(source.opencodeDataDirectory),...fromHome(['.config/meridian/accounts'])]):[];
  const otherSecretRoots=await canonicalAll([...fromHome(['.ssh','.gnupg','.aws','.azure','.kube','.docker','.config/gcloud','.config/gh','.password-store','.netrc','Library/Keychains','Library/Cookies',
   '.claude.json','.git-credentials','.npmrc','.pypirc',...['Google','BraveSoftware','Firefox','Microsoft Edge','Arc'].map(name=>'Library/Application Support/'+name)]),
+  // DevRyan/OpenChamber Electron userData (and its -runtime-service sibling, @openchamber, legacy Tauri data).
+  ...(home?(await fs.readdir(path.join(home,'Library','Application Support')).catch(()=>[])).filter(name=>/devryan|openchamber/i.test(name)).map(name=>path.join(home,'Library','Application Support',name)):[]),
   ...absolute(environment.XDG_CONFIG_HOME).map(value=>path.join(value,'gh')),...absolute(environment.GH_CONFIG_DIR),...absolute(environment.CLOUDSDK_CONFIG)]);
  const accountRoots=[...otherAccountRoots,...claudeRoot?[claudeRoot]:[]];
  const usable=(values,protectedRoots)=>values.filter(value=>value!==home&&inside(home,value)&&!protectedRoots.some(root=>inside(value,root)));
  const secrets=usable([...otherSecretRoots,...codexRoot?[codexRoot]:[]],[...setupRoots,...accountRoots]);
  // A ~/.claude or ~/.codex that canonicalizes onto or into another store never lifts that store's protection.
  const others=[...otherSecretRoots,...otherAccountRoots].filter(store=>store!==home&&inside(home,store));
+ // The v1 web data/config is read only from its own roots by the exact setup copies below; a
+ // link reaching it (vaults, keys, bots, multi-user, runtime trees) is protected. One that is HOME
+ // or above another setup root protects nothing beyond webSecrets.
+ const web=webRoots.filter(root=>root!==home&&!setupRoots.some(other=>!webRoots.includes(other)&&inside(root,other)));
  const accounts=usable(accountRoots,setupRoots),tools=[claudeRoot,codexRoot].filter(root=>root&&root!==home&&!others.some(store=>inside(store,root)));
  const sharedDirs=new Set(['skills','commands','agents','prompts','output-styles']),sharedFiles=new Set(['CLAUDE.md','AGENTS.md']);
  // The ~/.claude or ~/.codex root that admits this canonical file as shared setup, if any.
@@ -162,9 +173,13 @@ async function seed({source,target,environment={},captureLogicalSetup}){
    if(!owned(stat)){skip(relative,'symlink_foreign_owner');return null;}
    if(resolved===home||tree&&tree.startsWith(resolved+path.sep)){skip(relative,'protected');return null;}
    file=resolved;readRoot=home;
+  }else{
+   // Its parent is canonical: on case-insensitive volumes checks and reads use the stored case (~/.SSH is ~/.ssh).
+   const real=await fs.realpath(file).catch(()=>file);
+   if(real!==file){if(path.dirname(real)!==path.dirname(file)||!await fs.lstat(real).then(item=>item.dev===stat.dev&&item.ino===stat.ino,()=>false))throw fail('native_setup_source_changed');file=real;}
   }
   const open=shared(file,stat),blocked=root=>inside(root,file)&&root!==open;
-  if(guarded.some(root=>inside(root,file))||secrets.some(blocked)||!account&&accounts.some(blocked)){skip(relative,'protected');return null;}
+  if(guarded.some(root=>inside(root,file))||secrets.some(blocked)||!account&&accounts.some(blocked)||!webRoots.includes(readRoot)&&web.some(root=>inside(root,file))||browserStores.has(path.basename(file))){skip(relative,'protected');return null;}
   if(!stat.isFile()&&!stat.isDirectory()){skip(relative,'unsupported_type');return null;}
   return {file,stat,readRoot,tree};
  };
