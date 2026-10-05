@@ -120,7 +120,7 @@ const DEEP_LINK_PROTOCOL = 'openchamber';
 const STARTUP_RETRY_HOST = 'retry-startup';
 const BOT_RUNTIME_RETRY_HOST = 'retry-bot-runtime';
 const BOT_RUNTIME_CONTINUE_HOST = 'continue-without-bots';
-const APP_USER_MODEL_ID = 'dev.openchamber.desktop';
+const APP_USER_MODEL_ID = process.platform === 'win32' ? 'dev.devryan.desktop' : 'dev.openchamber.desktop';
 
 if (isDev && typeof process.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR === 'string') {
   const devUserDataDirectory = path.resolve(process.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR);

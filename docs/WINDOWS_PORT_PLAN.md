@@ -79,6 +79,18 @@ do not replace the confinement inventory. The underlying APIs are
 [GetSecurityInfo](https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-getsecurityinfo)
 and [CreateDirectoryW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createdirectoryw).
 
+The [filesystem run](https://github.com/1H-Team/DevRyan/actions/runs/37363627676)
+at `6c466e82ae1b063152c28bdfe2bd3d379d24de68` compiled both SDK boundaries and
+passed native parent identity on each architecture. Both filesystem receipts
+remain failed after their private-directory checks: an ordinary Node-created
+file did not satisfy the current-user ownership assertion. GitHub's displayed
+step conclusion is not acceptance when `continue-on-error` applies; inspect
+the retained receipt and final gate outcomes. The next implementation explicitly
+creates private files with current-user ownership and a protected ACL instead of
+accepting an inherited/default owner. It bounds input, flushes the file before
+identity publication, rejects device/stream aliases, refuses replacements, and
+retains an interrupted file for recovery. Fresh native results are required.
+
 `scripts/build-native-runtime.mjs` currently requires Darwin ARM64 and seals
 Darwin PTY, AST, Claude, and supervisor assets. The Windows builder must select
 reviewed inputs by the actual host architecture, emit `.exe` artifacts, and
@@ -163,6 +175,15 @@ Build unsigned, per-user NSIS installers with Windows app ID
 all protocol/package compatibility identities. Public names are exactly
 `DevRyan-<version>-win-x64.exe` and `DevRyan-<version>-win-arm64.exe`.
 The release asset table in `packages/electron/release-assets.mjs` owns naming.
+
+The isolated implementation now declares the Windows app ID, native AppUserModelID,
+unsigned NSIS target and exact per-architecture installer names. Its fixed GUID is
+`f8140f18-5574-54bc-8df6-bf218619bfba`, the pinned builder's deterministic GUID
+for `dev.devryan.desktop`; do not change it for later upgrades. Installation is
+per-user, cannot request elevation, and does not auto-launch at Finish. The owner
+controls relaunch after update validation. Source configuration is not installer
+qualification: Windows native preparation, resource selection, safety acceptance
+and actual installer/update launches still remain outstanding.
 
 Windows updating shares verified release discovery, architecture selection,
 resumable downloads, SHA-256 verification, disk preflight, and durable intent

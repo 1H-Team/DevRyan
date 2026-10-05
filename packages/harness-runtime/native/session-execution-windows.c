@@ -82,18 +82,29 @@ static int inspect_path(const wchar_t *path) {
 /* Creation is exclusive. Hold every ancestor without write/delete sharing so
  * neither a rename nor a new reparse target can change the anchored path. No
  * existing file/ACL is repaired, and an interrupted new directory is retained. */
-static int create_private_directory(const wchar_t *argument) {
-  wchar_t path[32768]; DWORD size = GetFullPathNameW(argument, 32768, path, NULL);
+static DWORD anchor_parents(const wchar_t *argument, wchar_t *path, HANDLE *ancestors) {
+  DWORD size = GetFullPathNameW(argument, 32768, path, NULL);
   if (!size || size >= 32768 || wcslen(path) < 4 || path[1] != L':' || path[2] != L'\\'
-    || CompareStringOrdinal(path, -1, argument, -1, TRUE) != CSTR_EQUAL) return 125;
+    || CompareStringOrdinal(path, -1, argument, -1, TRUE) != CSTR_EQUAL) { SetLastError(ERROR_INVALID_PARAMETER); fail("canonical private path"); }
   wchar_t *separator = wcsrchr(path, L'\\');
-  if (!separator || !separator[1]) return 125;
+  if (!separator || !separator[1]) { SetLastError(ERROR_INVALID_PARAMETER); fail("private basename"); }
+  const wchar_t *name = separator + 1; size_t length = wcslen(name);
+  if (name[length - 1] == L'.' || name[length - 1] == L' ' || wcschr(name, L':')) {
+    SetLastError(ERROR_INVALID_PARAMETER); fail("private name alias");
+  }
+  size_t stem = wcscspn(name, L".");
+  if ((stem == 3 && (!_wcsnicmp(name, L"CON", 3) || !_wcsnicmp(name, L"PRN", 3) || !_wcsnicmp(name, L"AUX", 3) || !_wcsnicmp(name, L"NUL", 3)))
+    || (stem == 4 && (!_wcsnicmp(name, L"COM", 3) || !_wcsnicmp(name, L"LPT", 3))
+      && ((name[3] >= L'0' && name[3] <= L'9') || name[3] == L'\u00b9' || name[3] == L'\u00b2' || name[3] == L'\u00b3'))
+    || !_wcsicmp(name, L"CONIN$") || !_wcsicmp(name, L"CONOUT$")) {
+    SetLastError(ERROR_INVALID_PARAMETER); fail("private device alias");
+  }
   size_t parentLength = (size_t)(separator - path);
   if (parentLength < 3) parentLength = 3;
-  HANDLE ancestors[256]; DWORD count = 0;
+  DWORD count = 0;
   for (size_t end = 3; end <= parentLength; end++) {
     if (end != 3 && end != parentLength && path[end] != L'\\') continue;
-    if (count == 256) return 125;
+    if (count == 256) { SetLastError(ERROR_INVALID_PARAMETER); fail("private path depth"); }
     wchar_t saved = path[end]; path[end] = 0;
     HANDLE parent = CreateFileW(path, FILE_READ_ATTRIBUTES | READ_CONTROL, FILE_SHARE_READ, NULL, OPEN_EXISTING,
       FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
@@ -105,17 +116,58 @@ static int create_private_directory(const wchar_t *argument) {
     }
     ancestors[count++] = parent;
   }
+  return count;
+}
+
+static PSECURITY_DESCRIPTOR private_security(BOOL directory) {
   TOKEN_USER *user = current_user(); LPWSTR owner;
   checked(ConvertSidToStringSidW(user->User.Sid, &owner), "private owner string");
   wchar_t descriptor[1024];
-  swprintf(descriptor, 1024, L"O:%sD:P(A;OICI;FA;;;%s)(A;OICI;FA;;;SY)", owner, owner);
+  swprintf(descriptor, 1024, L"O:%sD:P(A;%s;FA;;;%s)(A;%s;FA;;;SY)", owner, directory ? L"OICI" : L"", owner, directory ? L"OICI" : L"");
   PSECURITY_DESCRIPTOR security;
   checked(ConvertStringSecurityDescriptorToSecurityDescriptorW(descriptor, SDDL_REVISION_1, &security, NULL), "private directory security");
+  LocalFree(owner); free(user);
+  return security;
+}
+
+static int create_private_directory(const wchar_t *argument) {
+  wchar_t path[32768]; HANDLE ancestors[256];
+  DWORD count = anchor_parents(argument, path, ancestors);
+  PSECURITY_DESCRIPTOR security = private_security(TRUE);
   SECURITY_ATTRIBUTES attributes = { sizeof(attributes), security, FALSE };
   checked(CreateDirectoryW(path, &attributes), "exclusive private directory");
   int result = inspect_path(path);
   for (DWORD i = 0; i < count; i++) CloseHandle(ancestors[i]);
-  LocalFree(security); LocalFree(owner); free(user);
+  LocalFree(security);
+  return result;
+}
+
+static int create_private_file(const wchar_t *argument) {
+  wchar_t path[32768]; HANDLE ancestors[256];
+  DWORD count = anchor_parents(argument, path, ancestors);
+  PSECURITY_DESCRIPTOR security = private_security(FALSE);
+  SECURITY_ATTRIBUTES attributes = { sizeof(attributes), security, FALSE };
+  HANDLE file = CreateFileW(path, GENERIC_WRITE | FILE_READ_ATTRIBUTES | READ_CONTROL, FILE_SHARE_READ,
+    &attributes, CREATE_NEW, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_WRITE_THROUGH, NULL);
+  if (file == INVALID_HANDLE_VALUE) fail("exclusive private file");
+  checked(GetFileType(file) == FILE_TYPE_DISK, "private file type");
+  BYTE bytes[65536]; DWORD total = 0;
+  for (;;) {
+    DWORD read;
+    if (!ReadFile(GetStdHandle(STD_INPUT_HANDLE), bytes, sizeof(bytes), &read, NULL)) {
+      if (GetLastError() == ERROR_BROKEN_PIPE) break;
+      fail("private file input");
+    }
+    if (!read) break;
+    if (total > 1048576 - read) { SetLastError(ERROR_FILE_TOO_LARGE); fail("private file input bound"); }
+    DWORD written; checked(WriteFile(file, bytes, read, &written, NULL) && written == read, "private file write");
+    total += read;
+  }
+  checked(FlushFileBuffers(file), "private file durability");
+  int result = inspect_file_handle(file);
+  CloseHandle(file);
+  for (DWORD i = 0; i < count; i++) CloseHandle(ancestors[i]);
+  LocalFree(security);
   return result;
 }
 
@@ -254,6 +306,7 @@ int wmain(int argc, wchar_t **argv) {
   }
   if (argc == 3 && !wcscmp(argv[1], L"--inspect-path")) return inspect_path(argv[2]);
   if (argc == 3 && !wcscmp(argv[1], L"--create-private-directory")) return create_private_directory(argv[2]);
+  if (argc == 3 && !wcscmp(argv[1], L"--create-private-file")) return create_private_file(argv[2]);
   // The host uses a named cancellation event because TerminateProcess would
   // close the job safely but could not write a termination acknowledgement.
   if (argc == 3 && !wcscmp(argv[1], L"--cancel")) {

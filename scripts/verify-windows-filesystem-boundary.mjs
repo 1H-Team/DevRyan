@@ -20,8 +20,8 @@ const pin = async () => {
   assert.equal(hash(await fs.readFile(binary)), manifest.sha256);
   assert.deepEqual(await fs.readFile(manifestFile), manifestBytes);
 };
-const call = (operation, target) => {
-  const value = JSON.parse(execFileSync(binary, [operation, target], { encoding: 'utf8', timeout: 5000, maxBuffer: 4096 }));
+const call = (operation, target, input) => {
+  const value = JSON.parse(execFileSync(binary, [operation, target], { input, encoding: 'utf8', timeout: 5000, maxBuffer: 4096 }));
   assert.deepEqual(Object.keys(value).sort(), ['currentOwner', 'fileId', 'linkCount', 'privateAcl', 'protocol', 'reparsePoint', 'type', 'volume']);
   assert.equal(value.protocol, 'devryan.windows-file-identity/1');
   assert.match(value.volume, /^[a-f0-9]{16}$/); assert.match(value.fileId, /^[a-f0-9]{32}$/);
@@ -53,11 +53,23 @@ try {
   refused('--create-private-directory', privatePath);
   assert.deepEqual(call('--inspect-path', privatePath), privateDirectory);
   evidence.checks.push('exclusive-private-unicode-directory', 'stable-no-follow-directory-identity', 'existing-directory-preserved');
+  const ordinary = path.join(privatePath, 'ordinary-node-file');
+  await fs.writeFile(ordinary, 'ordinary owner observation\n', { flag: 'wx' });
+  evidence.ordinaryFile = call('--inspect-path', ordinary);
+  assert.equal(evidence.ordinaryFile.privateAcl, false);
   const file = path.join(privatePath, 'Case-Fixture.txt');
-  await fs.writeFile(file, 'owned filesystem fixture\n', { flag: 'wx' });
+  const created = call('--create-private-file', file, 'owned filesystem fixture\n');
   const original = call('--inspect-path', file);
+  assert.deepEqual(original, created); assert.equal(original.privateAcl, true);
   assert.equal(original.currentOwner, true); assert.equal(original.type, 'file'); assert.equal(original.linkCount, 1);
   assert.equal(original.reparsePoint, false);
+  assert.equal(await fs.readFile(file, 'utf8'), 'owned filesystem fixture\n');
+  refused('--create-private-file', file);
+  assert.equal(await fs.readFile(file, 'utf8'), 'owned filesystem fixture\n');
+  for (const name of ['CON', 'NUL.txt', 'COM1', 'LPT²', 'CONIN$', 'CONOUT$', 'trailing.', 'trailing ', 'file:stream']) {
+    refused('--create-private-file', path.join(privatePath, name));
+  }
+  evidence.checks.push('ordinary-file-is-not-private-proof', 'exclusive-private-file-owner-and-contents', 'reserved-and-stream-name-refusal');
   assert.deepEqual(call('--inspect-path', file.toUpperCase()), original);
   evidence.checks.push('native-case-equivalence', 'file-identity-stability');
   const linked = path.join(privatePath, 'hard-link.txt'); await fs.link(file, linked);
@@ -91,7 +103,7 @@ try {
   await pin();
   evidence.status = 'passed'; evidence.privateDirectory = privateDirectory;
 } catch (error) {
-  evidence.error = error.code ?? error.message;
+  evidence.error = { code: error.code ?? null, message: error.message.replaceAll(fixture, '<FIXTURE>'), stack: error.stack?.split('\n').slice(0, 4).join('\n').replaceAll(fixture, '<FIXTURE>') };
 } finally {
   if (locked && locked.exitCode === null && locked.signalCode === null) locked.kill('SIGTERM');
   if (closed) {

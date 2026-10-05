@@ -41,8 +41,11 @@ production host or shipped native artifacts.
 `session-execution-windows.c` is the Windows SDK supervisor draft. Its standalone
 identity operations query a no-follow file handle for volume/file ID, reparse
 state, hard-link count, owner and protected ACL. Exclusive private-directory
-creation holds every ancestor against write/delete sharing and refuses reparse
-parents or traversal; it never repairs an existing ACL. Process probes query
+and bounded private-file creation hold every ancestor against write/delete
+sharing and refuse reparse parents, traversal, device aliases and alternate
+streams. Files explicitly name the current user as owner, use a protected ACL,
+flush before reporting identity, and preserve a partial file on failed input.
+The operations never replace a file or repair an existing ACL. Process probes query
 creation time, liveness and containing-job membership from one held handle.
 The supervisor retains its original parent handle only after comparing parent
 and supervisor creation times, so a recycled parent PID cannot become an owner.
