@@ -78,6 +78,8 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     readAgentRuntimeSettings,
     writeAgentRuntimeSettings,
     getAgentRuntimeApplicationState,
+    getPackagedAgentPrompts,
+    restorePackagedAgentPrompt,
     listConfigAgents,
     getCommandSources,
     createCommand,
@@ -164,6 +166,31 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       retryable,
     },
   })));
+
+  const requireHostAdmin = (req, res, next) => {
+    if (req.principal?.scope !== 'local-admin' && req.principal?.role !== 'admin') {
+      return res.status(403).json({ error: 'Host administrator access required' });
+    }
+    next();
+  };
+  app.get('/api/config/packaged-agent-prompts', requireHostAdmin, async (_req, res) => {
+    if (typeof getPackagedAgentPrompts !== 'function') return res.status(503).json({ error: 'Packaged prompt maintenance unavailable' });
+    try { return res.json(await getPackagedAgentPrompts()); }
+    catch (error) { return res.status(error.status ?? 500).json({ error: formatErrorMessage(error, 'Unable to inspect packaged prompts') }); }
+  });
+  app.post('/api/config/packaged-agent-prompts/restore', requireHostAdmin, async (req, res) => {
+    if (typeof restorePackagedAgentPrompt !== 'function') return res.status(503).json({ error: 'Packaged prompt maintenance unavailable' });
+    if (!req.body || Object.keys(req.body).length !== 2 || !Object.hasOwn(req.body, 'name') || !Object.hasOwn(req.body, 'expectedHash')) {
+      return res.status(400).json({ error: 'An agent name and current revision are required' });
+    }
+    try {
+      const result = await restorePackagedAgentPrompt(req.body);
+      return completeAgentOverrideMutation(res, 'packaged agent prompt restored', req.body.name,
+        { success: true, ...result }, result.changed);
+    } catch (error) {
+      return res.status(error.status ?? 500).json({ error: formatErrorMessage(error, 'Unable to restore packaged prompt'), code: error.code });
+    }
+  });
 
   app.get('/api/config/agents', async (req, res) => {
     try {

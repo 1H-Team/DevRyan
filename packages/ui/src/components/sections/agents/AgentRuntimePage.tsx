@@ -6,6 +6,7 @@ import { SettingsDetailHeader, SettingsPageLayout } from '@/components/sections/
 import { useAuthPrincipal } from '@/lib/authSession';
 import { useI18n } from '@/lib/i18n';
 import { AgentRuntimeSection } from './AgentRuntimeSection';
+import { PackagedAgentPrompts } from './PackagedAgentPrompts';
 import { canViewAgentRuntime } from './useAgentsSettingsEntries';
 
 /**
@@ -24,6 +25,7 @@ export const AgentRuntimePage: React.FC = () => {
         subtitle={t('settings.agents.runtimePage.subtitle')}
       />
       <AgentRuntimeSection canEdit={canViewAgentRuntime(principal)} />
+      {canViewAgentRuntime(principal) ? <PackagedAgentPrompts /> : null}
       <OpenCodeCliSettings />
       <AgentBrowserControlSettings />
     </SettingsPageLayout>

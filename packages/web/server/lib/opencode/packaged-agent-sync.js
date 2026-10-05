@@ -1,8 +1,10 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
+import { constants } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'yaml';
+import { withCrossProcessFileLock, writeFileAtomic } from '@openchamber/harness-runtime';
 
 import { AGENT_DIR, OPENCODE_CONFIG_DIR } from './shared.js';
 import {
@@ -134,25 +136,71 @@ const readProfileAgentHashes = async (filePath) => {
   }
 };
 
-const writeFileAtomic = async (filePath, content) => {
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  const tempPath = path.join(
-    path.dirname(filePath),
-    `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`
-  );
-  await fs.writeFile(tempPath, content, 'utf8');
-  await fs.rename(tempPath, filePath);
+const changed = () => Object.assign(new Error('The agent prompt changed. Refresh before restoring it.'), {
+  code: 'packaged_agent_changed', status: 409,
+});
+const sameFile = (left, right) => left.dev === right.dev && left.ino === right.ino;
+const syncDirectory = async (directory) => {
+  let handle;
+  try { handle = await fs.open(directory, 'r'); await handle.sync(); }
+  catch (error) { if (!['EINVAL', 'ENOTSUP', ...(process.platform === 'win32' ? ['EPERM', 'EISDIR'] : [])].includes(error.code)) throw error; }
+  finally { await handle?.close(); }
+};
+const readTargetAgent = async (filePath) => {
+  let handle;
+  try {
+    const before = await fs.lstat(filePath);
+    if (!before.isFile() || before.nlink !== 1) throw changed();
+    handle = await fs.open(filePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    const stat = await handle.stat();
+    if (!sameFile(before, stat) || !stat.isFile() || stat.nlink !== 1 || stat.size > 4 * 1024 * 1024) throw changed();
+    const content = await handle.readFile('utf8');
+    const after = await handle.stat();
+    if (!sameFile(stat, await fs.lstat(filePath)) || stat.size !== after.size || stat.mtimeMs !== after.mtimeMs
+      || stat.ctimeMs !== after.ctimeMs || after.nlink !== 1) throw changed();
+    return { content, hash: hashContent(content), stat: after };
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  } finally {
+    await handle?.close();
+  }
 };
 
-const removeFileIfPresent = async (filePath) => {
+// Move the observed file into its backup before publishing without overwrite.
+// A racing external writer keeps its bytes, even when it replaces the path.
+const replaceTargetAgent = async ({ targetPath, agent, observed, backupDirectory, content }) => {
+  await fs.mkdir(path.dirname(targetPath), { recursive: true });
+  const temporaryPath = `${targetPath}.${crypto.randomUUID()}.tmp`;
+  let backupPath;
   try {
-    await fs.unlink(filePath);
-    return true;
-  } catch (error) {
-    if (error?.code === 'ENOENT') {
-      return false;
+    if (content !== null) {
+      const handle = await fs.open(temporaryPath, 'wx', 0o600);
+      try { await handle.writeFile(content, 'utf8'); await handle.sync(); } finally { await handle.close(); }
     }
+    if (observed) {
+      await fs.mkdir(backupDirectory, { recursive: true, mode: 0o700 });
+      backupPath = path.join(backupDirectory, `${agent.name}.${crypto.randomUUID()}.md`);
+      await fs.rename(targetPath, backupPath);
+      const held = await readTargetAgent(backupPath);
+      if (!held || !sameFile(held.stat, observed.stat) || held.hash !== observed.hash) throw changed();
+      const handle = await fs.open(backupPath, 'r');
+      try { await handle.sync(); } finally { await handle.close(); }
+      await syncDirectory(backupDirectory);
+    }
+    if (content !== null) await fs.link(temporaryPath, targetPath);
+    await syncDirectory(path.dirname(targetPath));
+    return backupPath;
+  } catch (error) {
+    if (backupPath) {
+      await fs.copyFile(backupPath, targetPath, constants.COPYFILE_EXCL).catch((restoreError) => {
+        if (restoreError.code !== 'EEXIST') throw restoreError;
+      });
+    }
+    if (['EEXIST', 'ENOENT', 'ELOOP'].includes(error?.code)) throw changed();
     throw error;
+  } finally {
+    await fs.unlink(temporaryPath).catch((error) => { if (error.code !== 'ENOENT') throw error; });
   }
 };
 
@@ -268,14 +316,6 @@ const isDevRyanWrittenTarget = ({ agent, targetHash, previousManagedHash, releas
   || profileAgentHashes[agent.name] === targetHash
 );
 
-const backupUserModifiedAgent = async ({ backupDirectory, agent, content }) => {
-  await fs.mkdir(backupDirectory, { recursive: true });
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const backupPath = path.join(backupDirectory, `${agent.name}.${stamp}.${process.pid}.md`);
-  await fs.writeFile(backupPath, content, { encoding: 'utf8', flag: 'wx' });
-  return backupPath;
-};
-
 const syncPackagedAgentFile = async ({
   agent,
   manifestAgents,
@@ -283,6 +323,7 @@ const syncPackagedAgentFile = async ({
   releasedAgentHashes,
   profileAgentHashes,
   restoreAgentNames,
+  expectedAgentHashes,
   backupDirectory,
   dryRun,
 }) => {
@@ -290,21 +331,21 @@ const syncPackagedAgentFile = async ({
   const manifestEntry = manifestAgents[agent.name];
   const previousManagedHash = getManifestHash(manifestEntry);
 
-  let targetContent = null;
-  try {
-    targetContent = await fs.readFile(targetPath, 'utf8');
-  } catch (error) {
-    if (error?.code !== 'ENOENT') {
-      throw error;
-    }
-  }
+  const observed = await readTargetAgent(targetPath);
+  const targetContent = observed?.content ?? null;
+  const prompt = { name: agent.name, currentHash: observed?.hash ?? null, packagedHash: agent.hash,
+    state: !observed ? 'missing' : observed.hash === agent.hash ? 'current'
+      : isDevRyanWrittenTarget({ agent, targetHash: observed.hash, previousManagedHash, releasedAgentHashes, profileAgentHashes }) ? 'outdated' : 'modified' };
+  if (restoreAgentNames.has(agent.name) && expectedAgentHashes
+    && observed?.hash !== expectedAgentHashes[agent.name]) throw changed();
 
   if (targetContent === null) {
-    if (!dryRun) await writeFileAtomic(targetPath, agent.content);
+    if (!dryRun) await replaceTargetAgent({ targetPath, agent, observed, backupDirectory, content: agent.content });
     return {
       type: 'written',
       name: agent.name,
       hash: agent.hash,
+      prompt,
     };
   }
 
@@ -316,38 +357,42 @@ const syncPackagedAgentFile = async ({
         type: 'manifest',
         name: agent.name,
         hash: agent.hash,
+        prompt,
       };
     }
     return {
       type: 'unchanged',
       name: agent.name,
+      prompt,
     };
   }
 
   if (isDevRyanWrittenTarget({ agent, targetHash, previousManagedHash, releasedAgentHashes, profileAgentHashes })) {
-    if (!dryRun) await writeFileAtomic(targetPath, agent.content);
+    if (!dryRun) await replaceTargetAgent({ targetPath, agent, observed, backupDirectory, content: agent.content });
     return {
       type: 'updated',
       name: agent.name,
       hash: agent.hash,
+      prompt,
     };
   }
 
   // User edits are kept unless the owner explicitly chose the packaged prompt;
   // the replaced file is kept as a backup first.
   if (!dryRun && restoreAgentNames.has(agent.name)) {
-    const backupPath = await backupUserModifiedAgent({ backupDirectory, agent, content: targetContent });
-    await writeFileAtomic(targetPath, agent.content);
+    const backupPath = await replaceTargetAgent({ targetPath, agent, observed, backupDirectory, content: agent.content });
     return {
       type: 'restored',
       name: agent.name,
       hash: agent.hash,
       backupPath,
+      prompt,
     };
   }
 
   return {
     type: 'conflict',
+    prompt,
     conflict: {
       name: agent.name,
       path: targetPath,
@@ -368,7 +413,7 @@ export const formatPackagedAgentSyncConflicts = (conflicts) => {
   return `Packaged agent sync conflict for ${names}. DevRyan will not overwrite user-modified runtime agent files.`;
 };
 
-export const syncPackagedAgents = async (options = {}) => {
+const synchronizePackagedAgents = async (options) => {
   const packagedAgentDirectory = options.packagedAgentDirectory ?? DEFAULT_PACKAGED_AGENT_DIR;
   const targetAgentDirectory = options.targetAgentDirectory ?? AGENT_DIR;
   const manifestPath = options.manifestPath ?? DEFAULT_MANIFEST_PATH;
@@ -402,6 +447,7 @@ export const syncPackagedAgents = async (options = {}) => {
     removed: [],
     restored: [],
     conflicts: [],
+    prompts: [],
     manifestPath,
     targetAgentDirectory,
   };
@@ -413,12 +459,15 @@ export const syncPackagedAgents = async (options = {}) => {
     .map((agent) => applySkillPolicyToPackagedAgent(agent, options.skillPolicy));
   const packagedByName = new Map(packagedAgents.map((agent) => [agent.name, agent]));
   const currentSetHash = hashPackagedAgentSet(packagedAgents);
+  if (options.restoreOnly && [...restoreAgentNames].some((name) => !packagedByName.has(name))) {
+    throw Object.assign(new Error('Unknown packaged agent'), { code: 'packaged_agent_unknown', status: 404 });
+  }
   const manifest = await readManifestFile(manifestPath);
   const manifestAgents = isPlainObject(manifest.agents) ? manifest.agents : {};
   const nextManifestAgents = { ...manifestAgents };
   let manifestChanged = false;
 
-  if (restoreAgentNames.size === 0 && await canUsePackagedSetHashFastPath({
+  if (!dryRun && restoreAgentNames.size === 0 && await canUsePackagedSetHashFastPath({
     manifest,
     manifestAgents,
     packagedAgents,
@@ -430,18 +479,24 @@ export const syncPackagedAgents = async (options = {}) => {
 
   if (!dryRun) await fs.mkdir(targetAgentDirectory, { recursive: true });
 
-  const syncOutcomes = await Promise.all(packagedAgents.map((agent) => syncPackagedAgentFile({
+  const syncOutcomes = [];
+  for (const agent of packagedAgents) {
+    if (options.restoreOnly && !restoreAgentNames.has(agent.name)) continue;
+    syncOutcomes.push(await syncPackagedAgentFile({
     agent,
     manifestAgents,
     targetAgentDirectory,
     releasedAgentHashes,
     profileAgentHashes,
     restoreAgentNames,
+    expectedAgentHashes: options.expectedAgentHashes,
     backupDirectory,
     dryRun,
-  })));
+    }));
+  }
 
   for (const outcome of syncOutcomes) {
+    result.prompts.push(outcome.prompt);
     if (['written', 'updated', 'manifest', 'restored'].includes(outcome.type)) {
       nextManifestAgents[outcome.name] = createManifestEntry(outcome.hash);
       result.changed = true;
@@ -462,20 +517,14 @@ export const syncPackagedAgents = async (options = {}) => {
   }
 
   for (const [name, entry] of Object.entries(manifestAgents)) {
-    if (!isManagedManifestEntry(entry) || packagedByName.has(name)) {
+    if (options.restoreOnly || !isManagedManifestEntry(entry) || packagedByName.has(name)) {
       continue;
     }
 
     const targetPath = path.join(targetAgentDirectory, `${name}.md`);
     const previousManagedHash = getManifestHash(entry);
-    let targetContent = null;
-    try {
-      targetContent = await fs.readFile(targetPath, 'utf8');
-    } catch (error) {
-      if (error?.code !== 'ENOENT') {
-        throw error;
-      }
-    }
+    const observed = await readTargetAgent(targetPath);
+    const targetContent = observed?.content ?? null;
 
     if (targetContent === null) {
       delete nextManifestAgents[name];
@@ -486,7 +535,7 @@ export const syncPackagedAgents = async (options = {}) => {
 
     const targetHash = hashContent(targetContent);
     if (previousManagedHash && targetHash === previousManagedHash) {
-      if (!dryRun) await removeFileIfPresent(targetPath);
+      if (!dryRun) await replaceTargetAgent({ targetPath, agent: { name }, observed, backupDirectory, content: null });
       delete nextManifestAgents[name];
       result.removed.push(name);
       result.changed = true;
@@ -501,7 +550,7 @@ export const syncPackagedAgents = async (options = {}) => {
     });
   }
 
-  const nextPackagedSetHash = result.conflicts.length === 0 ? currentSetHash : null;
+  const nextPackagedSetHash = !options.restoreOnly && result.conflicts.length === 0 ? currentSetHash : null;
   if (manifest.packagedSetHash !== nextPackagedSetHash) {
     manifestChanged = true;
   }
@@ -522,6 +571,10 @@ export const syncPackagedAgents = async (options = {}) => {
 
   return result;
 };
+
+export const syncPackagedAgents = async (options = {}) => options.dryRun === true
+  ? synchronizePackagedAgents(options)
+  : withCrossProcessFileLock(`${options.manifestPath ?? DEFAULT_MANIFEST_PATH}.lock`, () => synchronizePackagedAgents(options));
 
 export {
   DEFAULT_MANIFEST_PATH,

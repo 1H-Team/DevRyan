@@ -18,6 +18,17 @@ function fixture(overrides={}){
  return {runtime,state,native,bundle,events,children};
 }
 it('starts only a verified native owner and waits for its catalog',async()=>{const f=fixture();await f.runtime.bootstrapOpenCodeAtStartup();expect(f.events).toEqual(['verify','agents','probe']);expect(f.state).toMatchObject({openCodeGeneration:2,openCodeVersion:'2.0.20',isOpenCodeReady:true,isExternalOpenCode:false});expect(f.state.openCodeProcess).toBe(f.children[0]);});
+it('inspects and restores prompts through their existing owner without applying runtime overlays', async () => {
+ const prompts=[{name:'builder',state:'modified',currentHash:'a'.repeat(64),packagedHash:'b'.repeat(64)}];
+ const sync=vi.fn(async()=>({prompts,changed:false})),overlays=vi.fn();
+ const f=fixture({syncPackagedAgents:sync,syncRuntimeAgentOverlays:overlays});
+ expect(await f.runtime.getPackagedAgentPrompts()).toEqual({prompts});
+ expect(sync).toHaveBeenCalledWith(expect.objectContaining({dryRun:true}));
+ await expect(f.runtime.restorePackagedAgentPrompt({name:'../builder',expectedHash:'a'.repeat(64)})).rejects.toMatchObject({status:400});
+ await f.runtime.restorePackagedAgentPrompt({name:'builder',expectedHash:'a'.repeat(64)});
+ expect(sync).toHaveBeenLastCalledWith(expect.objectContaining({restoreOnly:true,restoreAgentNames:['builder'],expectedAgentHashes:{builder:'a'.repeat(64)}}));
+ expect(overlays).not.toHaveBeenCalled();expect(f.native.start).not.toHaveBeenCalled();
+});
 it('missing/legacy bundle or external flags fail before any owner starts',async()=>{for(const overrides of [{getNativeRuntime:()=>null},{getRuntimeBundle:()=>({descriptor:{generation:1}})},{env:{ENV_SKIP_OPENCODE_START:true}},{env:{ENV_CONFIGURED_OPENCODE_HOST:{origin:'http://localhost:1'}}}]){const f=fixture(overrides);await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'native_runtime_bundle_required'});expect(f.native.start).not.toHaveBeenCalled();}});
 it('artifact failure never falls back to a standalone executable or marks ready',async()=>{const f=fixture({getRuntimeBundle:()=>({descriptor:{generation:2},verify:async()=>{throw Object.assign(Error('invalid'),{code:'native_runtime_artifacts_unverified'});}})});await expect(f.runtime.bootstrapOpenCodeAtStartup()).rejects.toMatchObject({code:'native_runtime_artifacts_unverified'});expect(f.native.start).not.toHaveBeenCalled();expect(f.state.isOpenCodeReady).toBe(false);});
 it('replacement drains the exact child and browser lease before native restart',async()=>{const f=fixture();await f.runtime.startOpenCode();f.events.length=0;await Promise.all([f.runtime.restartOpenCode(),f.runtime.restartOpenCode()]);expect(f.events).toEqual(['pause','exit','verify','agents','probe','resume']);expect(f.native.start).toHaveBeenCalledTimes(2);expect(f.state.isRestartingOpenCode).toBe(false);});

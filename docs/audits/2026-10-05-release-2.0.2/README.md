@@ -64,6 +64,14 @@ owner cleanup to finish. Full-cleanup exit semantics remain intact.
 Process/integration checks passed. Crashed provider worker recovery also passed,
 including refusal to replace a worker with unconfirmed termination.
 
+Packaged prompt maintenance now has host-admin typed status and explicit restore
+operations plus a visible conflict notice in Runtime settings. Status is read-only
+even with a matching manifest fast path. Restoration checks the inspected hash,
+backs up the observed file, rejects linked targets and racing replacements, and
+queues the existing configuration-apply owner. The 52 focused server checks,
+mounted restore UI, packaged planning/execution guidance contracts, web/UI type
+checks and documentation validation passed. Final packaged qualification is pending.
+
 ## Final evidence table
 
 This table must be rebound to the final source commit, lock hash, native build
@@ -74,7 +82,7 @@ evidence in `.cache/release-2.0.2-recovery`.
 | Mandatory gate | Status | Evidence or prerequisite |
 | --- | --- | --- |
 | Full integrated validation, build, bundle budgets and documentation | Not run | Engineering is still changing |
-| Packaged prompt conflict notice and explicit restore | Not run | API/UI and concurrent-change refusal pending |
+| Packaged prompt conflict notice and explicit restore | Passed (focused); packaged not run | API, mounted UI, stale revision, edit/path replacement and guidance checks |
 | Tracked credential owner and synthetic rehearsal | Not run | Genuine checkpoint grant implemented; QA composition pending |
 | Complete B1 review closure | Not run | Recovered reproductions being consolidated |
 | Compiled acceptance and seeded-credential boot | Not run | Final native artifacts pending |

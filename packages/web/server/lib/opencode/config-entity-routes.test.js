@@ -52,6 +52,35 @@ describe('restricted agent runtime metadata', () => {
   });
 });
 
+describe('packaged prompt maintenance routes', () => {
+  it('requires host administration and records restore through the configuration apply owner', async () => {
+    const getPackagedAgentPrompts = vi.fn(async () => ({ prompts: [] }));
+    const restorePackagedAgentPrompt = vi.fn(async () => ({ changed: true, backups: [{ name: 'builder', backupPath: '/owned/backup.md' }] }));
+    const markConfigChange = vi.fn(async () => ({ runtimeApplied: false, requiresApply: true }));
+    const appFor = (principal) => {
+      const app = express();app.use(express.json());app.use((req, _res, next) => { req.principal = principal; next(); });
+      registerConfigEntityRoutes(app, { getPackagedAgentPrompts, restorePackagedAgentPrompt, markConfigChange });return app;
+    };
+    for (const principal of [undefined, { scope: 'managed-user', role: 'developer' }]) {
+      await request(appFor(principal)).get('/api/config/packaged-agent-prompts').expect(403);
+      await request(appFor(principal)).post('/api/config/packaged-agent-prompts/restore').send({name:'builder',expectedHash:'a'.repeat(64)}).expect(403);
+    }
+    expect(getPackagedAgentPrompts).not.toHaveBeenCalled();expect(restorePackagedAgentPrompt).not.toHaveBeenCalled();
+    const admin = appFor({ scope: 'local-admin' });
+    await request(admin).get('/api/config/packaged-agent-prompts').expect(200);
+    await request(admin).post('/api/config/packaged-agent-prompts/restore').send({name:'builder',expectedHash:'a'.repeat(64),force:true}).expect(400);
+    await request(admin).post('/api/config/packaged-agent-prompts/restore').send({name:'builder',expectedHash:'a'.repeat(64)})
+      .expect(200).expect(res => expect(res.body).toMatchObject({success:true,runtimeApplied:false,requiresApply:true}));
+    expect(markConfigChange).toHaveBeenCalledWith('packaged agent prompt restored', {agentName:'builder'}, true);
+    restorePackagedAgentPrompt.mockRejectedValueOnce(Object.assign(new Error('Changed'), {status:409,code:'packaged_agent_changed'}));
+    await request(admin).post('/api/config/packaged-agent-prompts/restore').send({name:'builder',expectedHash:'a'.repeat(64)}).expect(409);
+    expect(markConfigChange).toHaveBeenCalledTimes(1);
+    markConfigChange.mockRejectedValueOnce(new Error('Apply queue unavailable'));
+    await request(admin).post('/api/config/packaged-agent-prompts/restore').send({name:'builder',expectedHash:'a'.repeat(64)})
+      .expect(200).expect(res => expect(res.body).toMatchObject({success:true,reloadFailed:true,runtimeApplied:false,warning:'Apply queue unavailable'}));
+  });
+});
+
 describe('agent backup model routes', () => {
   let tempRoot;
   let projectDirectory;

@@ -43,6 +43,12 @@ values while pending; accepted restarts and configuration-apply transitions only
 refresh server state. A known pending managed change exposes Restart Runtime
 where supported. Host admins edit; other principals read the desired values.
 
+`PackagedAgentPrompts.tsx` exposes edited packaged prompts in the host-admin
+Runtime view. Its typed configuration API inspects without writing and restores
+only an explicitly selected revision. A rejected revision refreshes the notice;
+a successful restore merges the existing configuration-apply response, so the
+running runtime changes only through the usual apply owner.
+
 ## Flow
 Settings navigation selects a section; section reads/writes config through hooks/APIs.
 

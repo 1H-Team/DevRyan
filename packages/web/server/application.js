@@ -2792,6 +2792,8 @@ async function main(options = {}) {
     waitForOpenCodeReady,
     isExternalOpenCode: () => isExternalOpenCode || ENV_SKIP_OPENCODE_START,
     getAgentRuntimeApplicationState,
+    getPackagedAgentPrompts: () => openCodeLifecycleRuntime.getPackagedAgentPrompts(),
+    restorePackagedAgentPrompt: (input) => openCodeLifecycleRuntime.restorePackagedAgentPrompt(input),
     buildAugmentedPath,
     projectConfigRuntime,
     scheduledTasksRuntime,

@@ -82,7 +82,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   };
   const emitStartupStatus=text=>onStartupStatus(text);
   const getAgentRuntimeApplicationState=()=>({runtimeMode:'managed',appliedLsp:typeof state.appliedAgentRuntimeSettings?.lsp==='boolean'?state.appliedAgentRuntimeSettings.lsp:null});
-  const syncManagedAgentRuntimeConfig = async (agentRuntimeSettings = normalizeAgentRuntimeSettings(readAgentRuntimeSettings())) => {
+  const prepareAgentRuntimeConfig = async () => {
     let settings = {};
     try {
       settings = await readSettingsFromDisk();
@@ -95,20 +95,37 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       state.openCodeWorkingDirectory,
       sanitizeProjects
     );
-    if (resolvedWorkingDirectory && resolvedWorkingDirectory !== state.openCodeWorkingDirectory) {
-      state.openCodeWorkingDirectory = resolvedWorkingDirectory;
-      syncToHmrState();
-    }
-
     const hiddenSkills = sanitizeHiddenSkills(settings?.hiddenSkills) || [];
-    const skills = discoverSkills(state.openCodeWorkingDirectory);
+    const skills = discoverSkills(resolvedWorkingDirectory);
     const skillPolicy = buildVisibleSkillPolicy({ skills, hiddenSkills });
-    const slimConfig = resolveSlimConfiguration(state.openCodeWorkingDirectory);
-    const packagedResult = await syncPackagedAgents({
+    const slimConfig = resolveSlimConfiguration(resolvedWorkingDirectory);
+    return { workingDirectory: resolvedWorkingDirectory, slimConfig, skillPolicy, packagedOptions: {
       agentOverrides: {},
       skillPolicy,
       excludedAgentNames: slimConfig.enabled ? Array.from(SLIM_REPLACED_AGENT_NAMES) : [],
-    });
+    } };
+  };
+  const getPackagedAgentPrompts = async () => {
+    const { packagedOptions } = await prepareAgentRuntimeConfig();
+    return { prompts: (await syncPackagedAgents({ ...packagedOptions, dryRun: true })).prompts ?? [] };
+  };
+  const restorePackagedAgentPrompt = async ({ name, expectedHash } = {}) => {
+    if (typeof name !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(name)
+      || typeof expectedHash !== 'string' || !/^[a-f0-9]{64}$/.test(expectedHash)) {
+      throw Object.assign(new Error('A packaged agent name and its current revision are required'), { status: 400 });
+    }
+    const { packagedOptions } = await prepareAgentRuntimeConfig();
+    const result = await syncPackagedAgents({ ...packagedOptions, restoreAgentNames: [name],
+      expectedAgentHashes: { [name]: expectedHash }, restoreOnly: true });
+    return { changed: result.changed, backups: result.restored ?? [] };
+  };
+  const syncManagedAgentRuntimeConfig = async (agentRuntimeSettings = normalizeAgentRuntimeSettings(readAgentRuntimeSettings())) => {
+    const { workingDirectory, slimConfig, skillPolicy, packagedOptions } = await prepareAgentRuntimeConfig();
+    if (workingDirectory !== state.openCodeWorkingDirectory) {
+      state.openCodeWorkingDirectory = workingDirectory;
+      syncToHmrState();
+    }
+    const packagedResult = await syncPackagedAgents(packagedOptions);
     const conflicts = Array.isArray(packagedResult?.conflicts) ? packagedResult.conflicts : [];
     if (conflicts.length > 0) {
       const message = formatPackagedAgentSyncConflicts(conflicts)
@@ -294,5 +311,6 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   };
 
   return {startOpenCode,restartOpenCode,waitForOpenCodeReady,waitForAgentPresence,applyOpenCodeConfigChanges,
-    syncManagedAgentRuntimeConfig,getAgentRuntimeApplicationState,bootstrapOpenCodeAtStartup,startHealthMonitoring,triggerHealthCheck};
+    syncManagedAgentRuntimeConfig,getAgentRuntimeApplicationState,getPackagedAgentPrompts,restorePackagedAgentPrompt,
+    bootstrapOpenCodeAtStartup,startHealthMonitoring,triggerHealthCheck};
 };

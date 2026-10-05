@@ -64,6 +64,83 @@ describe('syncPackagedAgents', () => {
 
   const readManifest = async () => JSON.parse(await fs.readFile(manifestPath, 'utf8'));
 
+  it('inspects edited prompts even when the manifest fast path matches, without writing', async () => {
+    await writePackagedAgent('builder', agentContent('builder', 'Current packaged guidance'));
+    const options = { packagedAgentDirectory, targetAgentDirectory, manifestPath };
+    await syncPackagedAgents(options);
+    const manifestBefore = await fs.readFile(manifestPath, 'utf8');
+    const edited = agentContent('builder', 'My prompt');
+    await writeTargetAgent('builder', edited);
+    const result = await syncPackagedAgents({ ...options, dryRun: true });
+    expect(result.prompts).toEqual([{ name: 'builder', state: 'modified', currentHash: hashContent(edited),
+      packagedHash: hashContent(agentContent('builder', 'Current packaged guidance')) }]);
+    expect(await fs.readFile(manifestPath, 'utf8')).toBe(manifestBefore);
+    expect(await fs.readFile(path.join(targetAgentDirectory, 'builder.md'), 'utf8')).toBe(edited);
+  });
+
+  it('restores only the explicitly selected prompt and rejects stale revisions', async () => {
+    await writePackagedAgent('builder', agentContent('builder', 'Current guidance'));
+    await writePackagedAgent('fixer', agentContent('fixer', 'Other guidance'));
+    const edited = agentContent('builder', 'My edit');
+    await writeTargetAgent('builder', edited);
+    const options = { packagedAgentDirectory, targetAgentDirectory, manifestPath,
+      restoreOnly: true, restoreAgentNames: ['builder'], expectedAgentHashes: { builder: hashContent(edited) } };
+    await expect(syncPackagedAgents({ ...options, expectedAgentHashes: { builder: '0'.repeat(64) } }))
+      .rejects.toMatchObject({ code: 'packaged_agent_changed', status: 409 });
+    const result = await syncPackagedAgents(options);
+    expect(await fs.readFile(result.restored[0].backupPath, 'utf8')).toBe(edited);
+    await expect(fs.lstat(path.join(targetAgentDirectory, 'fixer.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(syncPackagedAgents(options)).rejects.toMatchObject({ code: 'packaged_agent_changed' });
+    await expect(syncPackagedAgents({ ...options, restoreAgentNames: ['unknown'] })).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('preserves an edit made during the backup move and a replacement made during publication', async () => {
+    await writePackagedAgent('builder', agentContent('builder', 'Current guidance'));
+    const target = path.join(targetAgentDirectory, 'builder.md');
+    const edited = agentContent('builder', 'My edit');
+    const racing = agentContent('builder', 'Newer edit');
+    const options = { packagedAgentDirectory, targetAgentDirectory, manifestPath,
+      restoreOnly: true, restoreAgentNames: ['builder'], expectedAgentHashes: { builder: hashContent(edited) } };
+    await writeTargetAgent('builder', edited);
+    const rename = fs.rename.bind(fs);
+    const renameSpy = vi.spyOn(fs, 'rename').mockImplementation(async (source, destination) => {
+      if (source === target) await fs.writeFile(target, racing);
+      return rename(source, destination);
+    });
+    await expect(syncPackagedAgents(options)).rejects.toMatchObject({ code: 'packaged_agent_changed' });
+    expect(await fs.readFile(target, 'utf8')).toBe(racing);
+    renameSpy.mockRestore();
+    await writeTargetAgent('builder', edited);
+    const link = fs.link.bind(fs);
+    vi.spyOn(fs, 'link').mockImplementation(async (source, destination) => {
+      if (destination === target) await fs.writeFile(target, racing);
+      return link(source, destination);
+    });
+    await expect(syncPackagedAgents(options)).rejects.toMatchObject({ code: 'packaged_agent_changed' });
+    expect(await fs.readFile(target, 'utf8')).toBe(racing);
+    const backups = await fs.readdir(path.join(path.dirname(manifestPath), 'backups', 'packaged-agents'));
+    const contents = await Promise.all(backups.map((name) => fs.readFile(path.join(path.dirname(manifestPath), 'backups', 'packaged-agents', name), 'utf8')));
+    expect(contents).toContain(edited);
+    expect(contents).toContain(racing);
+  });
+
+  it('refuses linked prompt targets without changing the referenced file', async () => {
+    await writePackagedAgent('builder', agentContent('builder', 'Current guidance'));
+    await fs.mkdir(targetAgentDirectory, { recursive: true });
+    const outside = path.join(tempRoot, 'user.md');
+    const target = path.join(targetAgentDirectory, 'builder.md');
+    const edited = agentContent('builder', 'My edit');
+    await fs.writeFile(outside, edited);
+    const options = { packagedAgentDirectory, targetAgentDirectory, manifestPath,
+      restoreOnly: true, restoreAgentNames: ['builder'], expectedAgentHashes: { builder: hashContent(edited) } };
+    for (const makeLink of [fs.symlink, fs.link]) {
+      await makeLink(outside, target);
+      await expect(syncPackagedAgents(options)).rejects.toMatchObject({ code: 'packaged_agent_changed' });
+      expect(await fs.readFile(outside, 'utf8')).toBe(edited);
+      await fs.unlink(target);
+    }
+  });
+
   it('materializes packaged agents into an empty runtime agent directory', async () => {
     const builder = agentContent('builder', 'Builder prompt v1');
     await writePackagedAgent('builder', builder);
