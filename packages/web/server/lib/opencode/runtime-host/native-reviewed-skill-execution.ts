@@ -27,7 +27,9 @@ export function createReviewedSkillExecution(options:ReviewedSkillExecutionOptio
       const id=resolveReviewedSkillAlias(options.snapshot,directory,input.id);
       const location=options.snapshot.locations.find(value=>value.directory===directory),skill=location?.skills.find(value=>value.id===id);
       if(!skill)return yield* failure('native_skill_unreviewed');
-      yield* invocation.nativePermissionAssert({action:'skill',resources:[skill.id],save:[skill.id],sessionID:invocation.nativeContext.sessionID,
+      // The hashed id stays the permission resource; the human name is display-only.
+      yield* invocation.nativeContext.progress({name:skill.name});
+      yield* invocation.nativePermissionAssert({action:'skill',resources:[skill.id],save:[skill.id],metadata:{name:skill.name},sessionID:invocation.nativeContext.sessionID,
         agent:invocation.nativeContext.agent,source:{type:'tool',messageID:invocation.nativeContext.messageID,id:invocation.nativeContext.id}})
         .pipe(Effect.mapError(()=>new Tool.Error({message:'native_skill_permission_refused'})));
       // Body read is an exact manifest grant. It cannot grant access to its

@@ -21,16 +21,18 @@ async function fixture(){
   instructions:[{path:path.join(root,'rules.md'),content:'instructions\n\n',sha256:'d'.repeat(64),size:14}],textReferences:[],
   compatibility:{legacy:{},agents:{},commands:{},slim:{},mcp:{}},requiredCatalogs:{agents:[],plugins:[],tools:[],models:[],skills:[],commands:[],mcp:[]}}]};
  const context=Schema.decodeUnknownSync(WorkerInput)({protocol:1,tool:'write',input:{},directory:root,projectDirectory:root,logicalDirectory:root,logicalProjectDirectory:root,scratchDirectory:root,config:{},context:{sessionID:'ses_fixture',agent:'build',messageID:'msg_fixture',id:'call_fixture'}}).context;
- const permissions:unknown[]=[],events:string[]=[];
- const invocation:OwnedToolInvocation={toolID:'skill',provenance:{kind:'native',id:'opencode.tool.skill',manifestDigest:'e'.repeat(64),capabilities:['read']},input:{id:'EXACT-SKILL'},location:Schema.decodeUnknownSync(Location.Info)({directory:root,project:{id:'global',directory:root,canonical:root}}),nativeContext:{...context,progress:()=>Effect.void},existingPermit:{token:'f'.repeat(64),revision:0,sessionID:context.sessionID},recheckPermit:()=>Effect.sync(()=>{events.push('permit');}),nativePermissionAssert:input=>Effect.sync(()=>{permissions.push(input);events.push('permission');}),executeNative:()=>Effect.die(new Error('ambient native scan must never run'))};
+ const permissions:unknown[]=[],events:string[]=[],progress:unknown[]=[];
+ const invocation:OwnedToolInvocation={toolID:'skill',provenance:{kind:'native',id:'opencode.tool.skill',manifestDigest:'e'.repeat(64),capabilities:['read']},input:{id:'EXACT-SKILL'},location:Schema.decodeUnknownSync(Location.Info)({directory:root,project:{id:'global',directory:root,canonical:root}}),nativeContext:{...context,progress:update=>Effect.sync(()=>{progress.push(update);events.push('progress');})},existingPermit:{token:'f'.repeat(64),revision:0,sessionID:context.sessionID},recheckPermit:()=>Effect.sync(()=>{events.push('permit');}),nativePermissionAssert:input=>Effect.sync(()=>{permissions.push(input);events.push('permission');}),executeNative:()=>Effect.die(new Error('ambient native scan must never run'))};
  const execute=createReviewedSkillExecution({snapshot,withDirectRead:(_invocation,action)=>Effect.gen(function*(){events.push('admit');return yield* action;}).pipe(Effect.ensuring(Effect.sync(()=>{events.push('finish');})))});
- return {root,file,snapshot,permissions,events,invocation,execute};
+ return {root,file,snapshot,permissions,events,progress,invocation,execute};
 }
 test('loads exact snapshot body via actual native formatter and fresh permission inside direct ledger fence',async()=>{
  const f=await fixture(),result=await Effect.runPromise(f.execute(f.invocation));
  expect(result.content).toContain('<skill_content name="Exact Skill">');expect(result.content).toContain('exact reviewed skill body');expect(result.content).toContain(`<file>${path.join(f.root,'support.txt')}</file>`);
- expect(f.permissions).toEqual([{action:'skill',resources:['reviewed-id'],save:['reviewed-id'],sessionID:'ses_fixture',agent:'build',source:{type:'tool',messageID:'msg_fixture',id:'call_fixture'}}]);
- expect(f.events).toEqual(['admit','permit','permission','permit','finish']);
+ expect(f.permissions).toEqual([{action:'skill',resources:['reviewed-id'],save:['reviewed-id'],metadata:{name:'Exact Skill'},sessionID:'ses_fixture',agent:'build',source:{type:'tool',messageID:'msg_fixture',id:'call_fixture'}}]);
+ // The running row and the permission ask carry the human name; the hashed id stays the permission resource.
+ expect(f.progress).toEqual([{name:'Exact Skill'}]);expect(result.metadata).toEqual({name:'Exact Skill',directory:f.root});
+ expect(f.events).toEqual(['admit','permit','progress','permission','permit','finish']);
 });
 test('refuses unknown origin, ambiguous/unreviewed IDs, extra input and modified resource bytes',async()=>{
  const f=await fixture();
