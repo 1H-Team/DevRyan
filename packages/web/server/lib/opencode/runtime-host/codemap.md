@@ -25,7 +25,12 @@ prompt overrides and logical local-owner identities retain their original owners
 
 `retained-native-artifacts.js` retains every verified manifest-owned file under
 the existing bundle control root before application Resources can be replaced,
-including the reviewed Claude host credential module. `runtime-bundle.js` clones
+including the reviewed Claude host credential module. Under `artifacts/retention.lock` it
+sweeps abandoned `.retaining-*` copies and restarts a reused set's age.
+`pruneRetainedNativeArtifacts` removes (rename to `.pruning-*`, then delete) only sets at
+least an hour old that no selected, previous, newer-than-selected draft, rollback intent or
+selected/previous rollback baseline references; owned unlinked directories only, and any
+unreadable reference prunes nothing. `runtime-bundle.js` clones
 the current coherent V2 database and stores through `source.kind='bundle'`, under
 `bundle-checkpoint.js`'s original controller/admission/drain fence. It retains the
 original import receipt as provenance rather than presenting a new V1 import.
@@ -133,7 +138,10 @@ Electron IPC use this same core. Recovery HTTP exposes no mutation route.
   removed with the source's derived `reviewed-*.json`, as is a matching sealed draft whose
   `verify('prepared')` fails; a selected install is never reset.
   The draft is renamed to a sibling `bundles/.stale-*` before removal, and later unselected
-  launches sweep validated `.stale-*` leftovers before any draft or seed decision.
+  launches sweep validated `.stale-*` leftovers before any draft or seed decision. An
+  unheld selected launch sweeps them too, and prunes retained artifact sets, only under a
+  non-waiting `selection.lock` (a lifecycle operation holding it defers the sweep to a later
+  launch); this storage hygiene reports failures and never blocks the selected launch.
   `bootstrap.lock` waits up to 5 minutes for a live holder (a concurrent first start
   provisioning real artifacts); a dead holder is reclaimed at once.
   `native-setup-local-owners.js` restores the v1 owner snapshot once, then renames it to
