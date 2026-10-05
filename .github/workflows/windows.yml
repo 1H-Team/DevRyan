@@ -33,6 +33,7 @@ jobs:
     env:
       DEVRYAN_SKIP_INSTALL_PREPARE: '1'
       TMPDIR: ${{ github.workspace }}/.cache/test-fixtures
+      GIT_CEILING_DIRECTORIES: ${{ github.workspace }}/.cache/test-fixtures
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -55,6 +56,7 @@ jobs:
           "TEMP=$env:TMPDIR" >> $env:GITHUB_ENV
           "TMP=$env:TMPDIR" >> $env:GITHUB_ENV
       - name: Install pinned dependencies
+        id: dependencies
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Select Windows SDK compiler for the native architecture
         shell: pwsh
@@ -62,7 +64,8 @@ jobs:
           EXPECTED_ARCH: ${{ matrix.arch }}
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $installation = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $component = if ($env:EXPECTED_ARCH -eq 'arm64') { 'Microsoft.VisualStudio.Component.VC.Tools.ARM64' } else { 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64' }
+          $installation = & $vswhere -latest -products '*' -requires $component -property installationPath
           if (-not $installation) { throw 'Windows SDK/MSVC installation unavailable' }
           $command = '"' + $installation + '\Common7\Tools\VsDevCmd.bat" -arch=' + $env:EXPECTED_ARCH + ' -host_arch=' + $env:EXPECTED_ARCH + ' >nul && set'
           $variables = & cmd.exe /d /s /c $command
@@ -71,17 +74,47 @@ jobs:
             if ($line -match '^(PATH|INCLUDE|LIB|LIBPATH)=(.*)$') { "$($Matches[1])=$($Matches[2])" >> $env:GITHUB_ENV }
           }
       - name: Compile architecture-specific supervisor
+        id: supervisor
+        continue-on-error: true
         run: node scripts/build-session-execution.mjs .cache/windows-native/${{ matrix.arch }}
       - name: Qualify compiled supervision and file boundaries
+        id: supervisor_acceptance
+        if: ${{ always() && steps.supervisor.outcome == 'success' }}
+        continue-on-error: true
         # No acceptance marker is written until the actual platform inventory
         # passes. Missing Windows read/ACL/process contracts fail this job.
         run: node scripts/build-session-execution.mjs .cache/windows-native/${{ matrix.arch }} --verify
       - name: Restore exact reviewed build inputs
+        id: inputs
+        if: ${{ always() && steps.dependencies.outcome == 'success' }}
+        continue-on-error: true
         run: node scripts/hydrate-reviewed-claude.mjs
       - name: Compile and verify controller and writer on this architecture
+        id: runtime
+        if: ${{ always() && steps.inputs.outcome == 'success' }}
+        continue-on-error: true
         run: bun scripts/build-native-runtime.mjs
       - name: Execute the compiled native acceptance inventory
+        id: runtime_acceptance
+        if: ${{ always() && steps.runtime.outcome == 'success' && steps.supervisor_acceptance.outcome == 'success' }}
+        continue-on-error: true
         run: node scripts/verify-opencode-v2-package.mjs
+      - name: Require every native build and acceptance result
+        if: ${{ always() }}
+        shell: pwsh
+        env:
+          SUPERVISOR: ${{ steps.supervisor.outcome }}
+          SUPERVISOR_ACCEPTANCE: ${{ steps.supervisor_acceptance.outcome }}
+          RUNTIME: ${{ steps.runtime.outcome }}
+          RUNTIME_ACCEPTANCE: ${{ steps.runtime_acceptance.outcome }}
+        run: |
+          $failed = $false
+          foreach ($name in @('SUPERVISOR', 'SUPERVISOR_ACCEPTANCE', 'RUNTIME', 'RUNTIME_ACCEPTANCE')) {
+            $outcome = [Environment]::GetEnvironmentVariable($name)
+            "$name=$outcome" >> $env:GITHUB_STEP_SUMMARY
+            if ($outcome -ne 'success') { $failed = $true }
+          }
+          if ($failed) { throw 'Windows native qualification incomplete; execution remains unavailable' }
       - uses: actions/upload-artifact@v4
         if: ${{ always() }}
         with:

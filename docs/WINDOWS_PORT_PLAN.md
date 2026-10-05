@@ -24,8 +24,11 @@ storage, lifecycle, UX, skills, prompt, journal, and Bot image work.
 
 `.github/workflows/windows.yml` now defines both native runner jobs. It selects
 the matching Bun, Node and MSVC architectures, installs the frozen lock without
-application setup, and requires actual supervisor acceptance before the full
-controller/writer and compiled inventory. It has no publication authority.
+application setup, attempts the controller/writer build even when supervisor
+qualification refuses, and requires both before the integrated compiled
+inventory. A final gate refuses failed or skipped outcomes. It selects the
+architecture-specific MSVC component (including ARM64) and fences Git discovery
+above disposable fixtures. It has no publication authority.
 The workflows have not run on Windows yet; current unported contracts are
 expected to fail and must be completed before either architecture can qualify.
 
