@@ -55,7 +55,9 @@ plugin, confinement, migration or performance parity. The remaining gates are in
   row preserves only the exact `compaction_continue: true` boolean on its text
   part, alongside its description, for existing maintenance classifiers. Folded
   prefaces leave the following human request unmarked. This does not establish
-  built-in native automatic-compaction lifecycle coverage.
+  built-in native automatic-compaction lifecycle coverage. A reviewed skill's
+  hashed `devryan-<hash>` id is never projected as its name; skill tool rows take
+  `input.name` and the title from `metadata.name` (live progress or completion).
 
 [Captured vectors](__vectors__/README.md) and their
 [observed answers](__vectors__/ANSWERS.md) establish the native behavior below.
