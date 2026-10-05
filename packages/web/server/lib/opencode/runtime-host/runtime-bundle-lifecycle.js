@@ -25,8 +25,12 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
   artifactDirectory = executionArtifacts().directory, verifyArtifacts = verifyNativeRuntimeArtifacts,
   credentialProcess = runNativeBundleCredentialProcess, storeFactory = createRuntimeBundleStore,
   retainArtifacts = retainNativeArtifacts }) {
+  // Permanent for this process: the application admission gate never reopens
+  // after a checkpoint starts closing it, so neither may the lifecycle.
+  let checkpointHeld = false;
   const checkpoint = createRuntimeBundleCheckpoint({ ownerID: binding.descriptor.bundleID, generation: 2,
-    launch: binding.descriptor.launch, getController, closeAdmission, assertAdmissionClosed,
+    launch: binding.descriptor.launch, getController, assertAdmissionClosed,
+    closeAdmission: () => { checkpointHeld = true; state = 'held'; return closeAdmission(); },
     stopProducers, drainStores, executionHost, afterExit, beforeControllerStop });
   let state = binding.selection.reconciliationRequired ? 'held' : 'ready';
   let reason = state === 'held' ? 'bundle_rollback_reconciliation_required' : null;
@@ -49,10 +53,7 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
       sourceManifestSha256: source.launch.artifactManifestSha256, targetManifestSha256: artifacts.artifactManifestSha256 } };
   };
   const store = storeFactory({ controlRoot: binding.controlRoot, allowRecoveredInputStartup: true,
-    withQuiescedSource: async (source, action) => {
-      state = 'held';
-      return checkpoint(source, action);
-    },
+    withQuiescedSource: async (source, action) => checkpoint(source, action),
     runMigration: async () => { throw fail('bundle_migration_generation_invalid'); },
     verifyArtifacts: async ({ launch }) => verifyLaunch(launch),
     verifyV2Compatibility: compatible,
@@ -90,6 +91,9 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
       previousBundleID: current?.selection.previousBundleID ?? null, revision: current?.selection.revision ?? binding.selection.revision,
       selectedManifestSha256: current?.descriptor.launch.artifactManifestSha256 ?? binding.descriptor.launch.artifactManifestSha256,
       restartRequired: !selectedMatches(binding, current), reconciliationRequired: current?.selection.reconciliationRequired === true };
+    // Mirrors run(): only an unchecked host with a selector-owned target may roll back.
+    snapshot.rollbackAvailable = !checkpointHeld && !transition && !snapshot.restartRequired && ['ready', 'held'].includes(state)
+      && Boolean(snapshot.reconciliationRequired ? current?.selection.selectedBundleID : current?.selection.previousBundleID);
     if (snapshot.restartRequired || state === 'held' || state === 'transitioning') return snapshot;
     try {
       const candidate = await readCandidate();
@@ -106,6 +110,8 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
     transition = (async () => {
       const current = await store.readSelected();
       if (!selectedMatches(binding, current) || input.expectedRevision !== current.selection.revision) throw fail('bundle_selection_revision_conflict');
+      if (checkpointHeld) throw fail('bundle_runtime_admission_held');
+      const previous = state;
       state = 'transitioning'; reason = null;
       try {
         const result = await action(current);
@@ -115,8 +121,9 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
           transition: kind, revision: selection.revision };
       } catch (error) {
         reason = finiteCode(error);
-        // Once a checkpoint closes admission its owner cannot be reused.
-        if (state !== 'held') state = 'ready';
+        // Once a checkpoint closes admission its owner cannot be reused; a
+        // failure before any checkpoint leaves the prior state unchanged.
+        state = checkpointHeld ? 'held' : previous;
         throw error;
       } finally { snapshots.clear(); captureArtifacts = undefined; }
     })().finally(() => { transition = undefined; });

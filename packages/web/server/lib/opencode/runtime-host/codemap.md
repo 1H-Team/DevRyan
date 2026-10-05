@@ -80,7 +80,12 @@ the real application owner: close admission, stop producers, drain credential
 resolution and mutations, obtain controller quiescence/exit and drain stores
 before copying. Administrator HTTP mutations accept only an expected selector
 revision. The returned server handle exposes the same lifecycle for Electron;
-new selection needs host recomposition. `runtime-bundle-recovery.js` is the cold
+new selection needs host recomposition. Once a checkpoint starts closing
+admission the lifecycle is held for the rest of the process: it never reports
+`ready` again and refuses further upgrade/rollback with
+`bundle_runtime_admission_held`, keeping the original failure as `reason`. A
+failure before any checkpoint keeps the prior state. Inspection reports
+`rollbackAvailable` only when the rollback route would proceed. `runtime-bundle-recovery.js` is the cold
 held startup path: loopback status and an explanatory page, with no provider,
 feature-store or controller startup and no fabricated checkpoint acknowledgement.
 `bundle-rollback-intent.js` publishes the digest-bound checkpoint, drain, owner-exit
