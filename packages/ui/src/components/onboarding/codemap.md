@@ -16,3 +16,7 @@ Connected to settings/auth/provider modules and app routing.
 - The same setup surface includes `../sections/providers/BundledRuntimeUpdate.tsx`:
   an administrator explicitly applies an available bundled runtime using its
   current selector revision. Reading readiness never changes the selection.
+  A held runtime shows the pause explanation and server reason; it offers
+  rollback only when inspection reports `rollbackAvailable`, otherwise only a
+  status refresh (recovery needs a DevRyan restart). A refused transition
+  withdraws its action until the state is read again.

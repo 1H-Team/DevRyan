@@ -2284,4 +2284,9 @@ export const settingsDict = {
   'settings.providers.runtimeUpdate.restarting': 'The selected runtime changed. Reload after the host restarts.',
   'settings.providers.runtimeUpdate.reload': 'Reload',
   'settings.providers.runtimeUpdate.failed': 'The runtime update could not be confirmed. Refresh the selected runtime state before trying again.',
+  'settings.providers.runtimeUpdate.heldTitle': 'Bundled runtime paused',
+  'settings.providers.runtimeUpdate.held': 'Provider and session work is paused because a runtime change stopped after the runtime was paused. Both runtime bundles and their state are retained. Restart DevRyan to continue with the selected runtime.',
+  'settings.providers.runtimeUpdate.heldReconciliation': 'Provider and session work is paused until the rollback credentials are reconciled. Both runtime bundles and their state are retained. Retry the rollback to reconcile them.',
+  'settings.providers.runtimeUpdate.heldReason': 'Reason: {reason}',
+  'settings.providers.runtimeUpdate.retryRollback': 'Retry rollback',
 } as const;
