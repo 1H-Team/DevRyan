@@ -803,6 +803,60 @@ test('the stale sweep keeps a matching sealed draft',async()=>{
  await launchDefault(f,home,release);
  expect(await fs.readdir(bundles)).toEqual(['default-native']);expect(await fs.readFile(preparation)).toEqual(sealed);
 });
+const killedBeforeSelect=async(f,home,release)=>{
+ const open=fs.open;fs.open=async(file,...rest)=>{if(path.basename(String(file))==='selection.lock')throw Object.assign(Error('killed before select'),{code:'EKILLED'});return open.call(fs,file,...rest);};
+ try{await expect(launchDefault(f,home,release)).rejects.toMatchObject({code:'EKILLED'});}finally{fs.open=open;}
+ expect(await fs.stat(path.join(draftRoot(home),'prepared.json')).then(stat=>stat.isFile())).toBe(true);
+};
+test('a sealed default draft whose migrated database was reopened before selection relaunches',async()=>{
+ const f=await fixture(),home=path.join(f.root,'unselected-home'),release=await releaseArtifacts(f,'A');
+ await killedBeforeSelect(f,home,release);
+ const opencode=path.join(draftRoot(home),'opencode');expect((await fs.readdir(opencode)).sort()).toEqual(['opencode.db','opencode.db-shm','opencode.db-wal']);
+ const preparation=await fs.readFile(path.join(draftRoot(home),'sources','preparation.json'));
+ const controlRoot=await launchDefault(f,home,release);
+ expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot}).descriptor.bundleID).toBe('default-native');
+ expect(await fs.readFile(path.join(draftRoot(home),'sources','preparation.json'))).toEqual(preparation);
+ // Shared memory is not snapshot content; committed WAL pages still are.
+ const manifest=JSON.parse(await fs.readFile(path.join(draftRoot(home),'prepared.json'),'utf8'));
+ expect(manifest.initialFiles.map(row=>row.path)).toEqual(expect.arrayContaining(['opencode/opencode.db','opencode/opencode.db-wal']));
+ expect(manifest.initialFiles.some(row=>row.path.endsWith('.db-shm'))).toBe(false);
+ const store=createRuntimeBundleStore({controlRoot,runMigration:async()=>{throw Error('fixture no import');},
+  withQuiescedSource:async()=>{throw Error('fixture no checkpoint');},verifyArtifacts:async()=>{}});
+ await fs.appendFile(path.join(opencode,'opencode.db-wal'),'\0');
+ await expect(store.verify({bundleID:'default-native',phase:'prepared'})).rejects.toMatchObject({code:'bundle_snapshot_changed'});
+});
+test('a tampered sealed default draft is reset before selection, never trusted',async()=>{
+ const f=await fixture(),home=path.join(f.root,'tampered-home'),release=await releaseArtifacts(f,'A');
+ await killedBeforeSelect(f,home,release);
+ const injected=path.join(draftRoot(home),'web-data','injected.json');await fs.writeFile(injected,'{"not":"prepared"}');
+ const store=createRuntimeBundleStore({controlRoot:path.dirname(path.dirname(draftRoot(home))),runMigration:async()=>{throw Error('fixture no import');},
+  withQuiescedSource:async()=>{throw Error('fixture no checkpoint');},verifyArtifacts:async()=>{}});
+ await expect(store.verify({bundleID:'default-native',phase:'prepared'})).rejects.toMatchObject({code:'bundle_snapshot_changed'});
+ const controlRoot=await launchDefault(f,home,release);
+ expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot}).descriptor.bundleID).toBe('default-native');
+ expect(await fs.stat(injected).catch(error=>error.code)).toBe('ENOENT');expect(await fs.readdir(path.dirname(draftRoot(home)))).toEqual(['default-native']);
+});
+test('an interrupted fresh-source removal after selection leaves only a sibling the next launch sweeps',async()=>{
+ const f=await fixture(),home=path.join(f.root,'removal-home'),release=await releaseArtifacts(f,'A'),state=path.join(home,'.local','state','devryan');
+ const rm=fs.rm;fs.rm=async(target,...rest)=>{
+  if(path.basename(String(target)).startsWith('.fresh-native-source.removing-')||String(target)===path.join(state,'fresh-native-source')){
+   await rm.call(fs,path.join(String(target),'web-data'),{recursive:true});throw Object.assign(Error('killed during removal'),{code:'EKILLED'});}
+  return rm.call(fs,target,...rest);};
+ try{await expect(launchDefault(f,home,release)).rejects.toMatchObject({code:'EKILLED'});}finally{fs.rm=rm;}
+ const controlRoot=path.join(state,'runtime-bundles'),selection=await fs.readFile(path.join(controlRoot,'selection.json'));
+ expect(await fs.stat(path.join(state,'fresh-native-source')).catch(error=>error.code)).toBe('ENOENT');
+ expect((await fs.readdir(state)).filter(name=>name.startsWith('.fresh-native-source.removing-'))).toHaveLength(1);
+ expect(await launchDefault(f,home,release,timedOut)).toBe(controlRoot);
+ expect((await fs.readdir(state)).sort()).toEqual(['runtime-bundles']);expect(await fs.readFile(path.join(controlRoot,'selection.json'))).toEqual(selection);
+});
+test('a concurrent first start waits for a live provisioning holder longer than the default lock timeout',async()=>{
+ const f=await fixture(),home=path.join(f.root,'concurrent-home'),release=await releaseArtifacts(f,'A');
+ const slow=async request=>{await new Promise(resolve=>setTimeout(resolve,5_500));return f.runMigration(request);};
+ const first=launchDefault(f,home,release,slow);
+ await new Promise(resolve=>setTimeout(resolve,200));
+ const [owner,waiter]=await Promise.all([first,launchDefault(f,home,release,timedOut)]);
+ expect(waiter).toBe(owner);expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:owner}).descriptor.bundleID).toBe('default-native');
+},60_000);
 test('selected default bundle still verifies after its one-shot owner snapshot is consumed',async()=>{
  const f=await fixture(),home=path.join(f.root,'owner-home'),owners={'supabase-local-owner':{id:'10000000-0000-4000-8000-000000000001',scope:'local-admin'}};
  const controlRoot=await launchDefault(f,home,await releaseArtifacts(f,'A'),f.runMigration,async()=>({localOwners:owners}));

@@ -2,7 +2,10 @@
 
 `native-setup-source.js` owns the private sibling fresh seed, including canonical
 ownership checks, mode repair before any native launch, and complete removal only
-after verified selection. Failed preparation retains the complete seed and its
+after verified selection. Removal renames the seed to a sibling
+`.fresh-native-source.removing-*` (parent fsynced) before deleting it, and every launch
+sweeps validated (owned, unlinked directory) leftovers under the bootstrap lock without
+re-verifying them. Failed preparation retains the complete seed and its
 atomic `native-setup-seed.json` pins. Inside the bootstrap lock,
 `resetAbandonedNativeSetupSource` removes only the four seeded trees (`web-data`,
 `web-config`, `opencode-config`, `home`) of a stamped seed whose marker is absent
@@ -80,7 +83,8 @@ Electron IPC use this same core. Recovery HTTP exposes no mutation route.
   changing the parent process's HOME. Unresolved rollback state refuses execution;
   explicit held inspection permits only the recovery application to read the
   selection before feature owners are imported. `runtime-bundle.js` owns offline legacy-data copy preparation into generation 2, verification and
-  the atomic selection pointer. Runnable descriptors and activation targets are generation 2 only;
+  the atomic selection pointer. The `prepared` tree snapshot omits SQLite `*.db-shm`
+  wal-index files, which every read-only open rewrites; `*.db-wal` stays covered. Runnable descriptors and activation targets are generation 2 only;
   a legacy source is data paths under an actual quiesced checkpoint, never a selectable controller.
   Rollback requires reconciled current-2/prior-2 selection and retains candidate work.
   The sealed importer receipt permits an absent migration marker only when the SDK
@@ -118,9 +122,12 @@ Electron IPC use this same core. Recovery HTTP exposes no mutation route.
   location is launch cwd; further locations require reviewed bundle configuration.
   Before any selection, a `bundles/default-native` draft that `sources/preparation.json`
   does not seal for the exact current input (interrupted copy, earlier build or cwd) is
-  removed with the source's derived `reviewed-*.json`; a selected install is never reset.
+  removed with the source's derived `reviewed-*.json`, as is a matching sealed draft whose
+  `verify('prepared')` fails; a selected install is never reset.
   The draft is renamed to a sibling `bundles/.stale-*` before removal, and later unselected
   launches sweep validated `.stale-*` leftovers before any draft or seed decision.
+  `bootstrap.lock` waits up to 5 minutes for a live holder (a concurrent first start
+  provisioning real artifacts); a dead holder is reclaimed at once.
   `native-setup-local-owners.js` restores the v1 owner snapshot once, then renames it to
   `native-setup-local-owners.restored.json`, so later app owner changes survive restarts.
   Concurrent first starts serialize on `native-setup-local-owners.lock` in web-data; a lock

@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {createHash} from 'node:crypto';
+import {createHash,randomBytes} from 'node:crypto';
 import {saveBundleJSON,readBundleJSON} from './bundle-migration-inventory.js';
 import {BUNDLE_DOCUMENT_MAX_BYTES} from './bundle-document-limits.js';
 // One budget for writing (native-setup-seed.js) and re-verifying the pinned seed.
@@ -71,6 +71,22 @@ export async function resetAbandonedNativeSetupSource({controlRoot,sourceRoot}){
  return true;
 }
 
+const removing=/^\.fresh-native-source\.removing-[a-f0-9]{16}$/;
+const syncDirectory=async directory=>{const handle=await fs.open(directory,'r');try{await handle.sync();}catch{}finally{await handle.close();}};
+/** Call inside the bootstrap lock on every launch, selected or not. A removal
+ * renames the verified seed to a sibling first, so its canonical path is either
+ * complete or absent; only a validated renamed sibling is swept, never re-verified. */
+export async function sweepRemovedNativeSetupSources({controlRoot,sourceRoot}){
+ if(sourceRoot!==path.join(path.dirname(controlRoot),'fresh-native-source')||!path.isAbsolute(sourceRoot))throw fail();
+ const parent=path.dirname(sourceRoot);let names;
+ try{names=(await fs.readdir(parent)).filter(name=>removing.test(name));}catch(error){if(error.code==='ENOENT')return;throw error;}
+ for(const name of names){
+  const entry=path.join(parent,name),stat=await fs.lstat(entry);
+  if(!stat.isDirectory()||stat.isSymbolicLink()||await fs.realpath(entry)!==entry||typeof process.getuid==='function'&&stat.uid!==process.getuid())throw fail();
+  await fs.rm(entry,{recursive:true});
+ }
+}
+
 /** Call only after full candidate verification and committed selection. */
 export async function removeNativeSetupSource({controlRoot,sourceRoot,verifySelected}){
  if(typeof verifySelected!=='function')throw fail();
@@ -84,5 +100,8 @@ export async function removeNativeSetupSource({controlRoot,sourceRoot,verifySele
   ||sourceRoot!==path.join(path.dirname(controlRoot),'fresh-native-source'))throw fail();
  await protectNativeSetupSource({controlRoot,sourceRoot});
  await verifySeed(sourceRoot);
- await fs.rm(sourceRoot,{recursive:true});
+ // Never remove in place: an interrupted removal leaves only a sibling the next launch sweeps.
+ const parent=path.dirname(sourceRoot),renamed=path.join(parent,`.fresh-native-source.removing-${randomBytes(8).toString('hex')}`);
+ await fs.rename(sourceRoot,renamed);await syncDirectory(parent);
+ await fs.rm(renamed,{recursive:true});
 }
