@@ -105,9 +105,50 @@ export const retryRuntimeServiceConnection = async ({
       return await connect();
     } catch (error) {
       const budgetMs = RUNTIME_SERVICE_STARTING_CODES.has(error?.code) ? startingTimeoutMs : timeoutMs;
-      if (now() - startedAt >= budgetMs) throw error;
+      if (error?.retryable === false || now() - startedAt >= budgetMs) throw error;
     }
     await wait(retryDelayMs);
+  }
+};
+
+// A live service started by another app version (1.x and 2.0.0 publish no
+// appVersion) keeps serving its old in-memory server and holds the bundle open
+// in Finder. It is drained through its own prepare-update route, unregistered
+// and proved stopped, with a bounded signal fallback limited to the verified
+// service process, then the current bundle's service is registered. Any
+// failure is final for this connection wait, so startup falls back to the
+// app-bound runtime instead of attaching to the mismatched version.
+export const retireMismatchedRuntimeService = async ({
+  descriptor, appVersion, drain, unregister, waitForStopped, terminate, register, log,
+} = {}) => {
+  log?.warn?.('[runtime-service] retiring a background runtime from another app version', {
+    phase: 'retire', code: 'runtime_service_version_mismatch',
+    serviceVersion: typeof descriptor?.appVersion === 'string' ? 'different' : 'missing', appVersion,
+  });
+  try {
+    try { await drain(); } catch (error) {
+      log?.warn?.('[runtime-service] stale runtime drain failed', {
+        phase: 'drain', code: diagnosticCode(error?.code) || 'runtime_service_update_prepare_failed',
+      });
+    }
+    const unregistered = await unregister();
+    if (unregistered?.ok !== true) {
+      throw Object.assign(new Error('Background runtime could not be unregistered'), { code: 'runtime_service_unregister_failed' });
+    }
+    let stopped = await waitForStopped(15_000);
+    for (const signal of ['SIGTERM', 'SIGKILL']) {
+      if (stopped || !await terminate(signal)) break;
+      log?.warn?.('[runtime-service] stale runtime signalled', { phase: 'terminate', code: 'runtime_service_owner_active', signal });
+      stopped = await waitForStopped(5_000);
+    }
+    if (!stopped) {
+      throw Object.assign(new Error('The background runtime from another app version is still running'), {
+        code: 'runtime_service_owner_active',
+      });
+    }
+    await register();
+  } catch (error) {
+    throw Object.assign(error instanceof Error ? error : new Error(String(error)), { retryable: false });
   }
 };
 

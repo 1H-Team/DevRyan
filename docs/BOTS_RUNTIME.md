@@ -891,7 +891,8 @@ Bot-owned local paths are:
 - `runtime-service/owner-recovery.v2.json`: private cross-boot damaged-file
   observation; a migrated `owner-recovery.v1.json` is preserved;
 - `runtime-service/handshake.v1.json`: private protocol/port/health descriptor
-  whose bootstrap token is sealed with Electron `safeStorage` and rotated after
+  (from 2.0.1 also the service's `appVersion`; the foreground retires a service
+  of another app version instead of attaching to it) whose bootstrap token is sealed with Electron `safeStorage` and rotated after
   one use;
 - `bots/runtime/channels/<channelId>/<revisionId>/<compiledHash>/`: immutable, private
   channel/revision runtime config plus exact read-only assigned Skill snapshots;

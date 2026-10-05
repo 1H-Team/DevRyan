@@ -45,6 +45,7 @@ describe('desktop update download outcome', () => {
       toasts.length = 0;
       expect(await download(result)).toMatchObject({ downloading: false, downloaded: false, error: null });
       expect(toasts.map((entry) => entry.message)).toEqual([message]);
+      expect(toasts[0]?.description?.startsWith('The background runtime was stopped for the update. ')).toBe(true);
       expect(toasts[0]?.description?.endsWith(', then quit DevRyan before replacing it in Applications.')).toBe(true);
     }
   });

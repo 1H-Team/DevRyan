@@ -442,19 +442,26 @@ const validateDesktopHost = (value) => {
   });
 };
 
+const DESCRIPTOR_KEYS = Object.freeze([
+  'version',
+  'instanceId',
+  'pid',
+  'port',
+  'protocolVersion',
+  'health',
+  'ownerGeneration',
+  'desktopHost',
+  'sealedBootstrapToken',
+  'updatedAt',
+]);
+const APP_VERSION_PATTERN = /^\d{1,9}\.\d{1,9}\.\d{1,9}(?:-[0-9A-Za-z.-]{1,64})?$/;
+export const isRuntimeServiceAppVersion = (value) => typeof value === 'string' && APP_VERSION_PATTERN.test(value);
+
+// Services before 2.0.1 publish no appVersion; the foreground treats that as
+// another app version and never attaches to it.
 export const validateRuntimeServiceDescriptor = (value) => {
-  if (!exactObject(value, [
-    'version',
-    'instanceId',
-    'pid',
-    'port',
-    'protocolVersion',
-    'health',
-    'ownerGeneration',
-    'desktopHost',
-    'sealedBootstrapToken',
-    'updatedAt',
-  ])
+  if (!(exactObject(value, DESCRIPTOR_KEYS)
+    || (exactObject(value, [...DESCRIPTOR_KEYS, 'appVersion']) && isRuntimeServiceAppVersion(value.appVersion)))
     || value.version !== DESCRIPTOR_VERSION
     || !isUuid(value.instanceId)
     || !Number.isSafeInteger(value.pid)
@@ -534,6 +541,35 @@ export const isRuntimeServiceProtocolSupported = (protocolVersion) => (
   RUNTIME_SERVICE_SUPPORTED_PROTOCOLS.includes(protocolVersion)
 );
 
+// Signals only a process that ps proves is this user's DevRyan
+// --runtime-service at that pid (exactly the LaunchAgent's ProgramArguments).
+// Anything else, or an unavailable probe, is left alone and reported false.
+export const terminateRuntimeServiceProcess = async ({
+  pid, signal = 'SIGTERM', uid = process.getuid?.(), platform = process.platform,
+  execute = execFile, kill = (target, name) => process.kill(target, name),
+} = {}) => {
+  if (platform !== 'darwin' || !Number.isSafeInteger(pid) || pid <= 1 || !Number.isSafeInteger(uid)
+    || !['SIGTERM', 'SIGKILL'].includes(signal)) return false;
+  let stdout;
+  try {
+    stdout = await new Promise((resolve, reject) => {
+      execute('/bin/ps', ['-p', String(pid), '-o', 'uid=,command='], {
+        encoding: 'utf8', timeout: 2_000, maxBuffer: 16 * 1_024, env: { ...process.env, LC_ALL: 'C' },
+      }, (error, output) => error ? reject(error) : resolve(output));
+    });
+  } catch {
+    return false;
+  }
+  const match = /^\s*(\d+)\s+\/(?:(?! -)[^\n])+\.app\/Contents\/MacOS\/DevRyan --runtime-service\s*$/.exec(String(stdout));
+  if (!match || Number(match[1]) !== uid) return false;
+  try {
+    kill(pid, signal);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 export async function createRuntimeServiceCoordinator({
   dataDirectory,
   safeStorage,
@@ -547,11 +583,13 @@ export async function createRuntimeServiceCoordinator({
   getBootSessionId = readBootSessionId,
   getProcessStartIdentity = readRuntimeProcessStartIdentity,
   platform = process.platform,
+  appVersion = null,
   onDiagnostic = () => undefined,
 } = {}) {
   validateAbsoluteDirectory(dataDirectory);
   validateSafeStorage(safeStorage);
-  if (!Number.isSafeInteger(pid) || pid <= 0 || typeof isProcessAlive !== 'function') {
+  if (!Number.isSafeInteger(pid) || pid <= 0 || typeof isProcessAlive !== 'function'
+    || (appVersion !== null && !isRuntimeServiceAppVersion(appVersion))) {
     fail('Runtime service process identity is invalid', 'runtime_service_config_invalid');
   }
 
@@ -702,6 +740,7 @@ export async function createRuntimeServiceCoordinator({
       },
       sealedBootstrapToken: sealToken(bootstrapToken),
       updatedAt: now().toISOString(),
+      ...(appVersion === null ? {} : { appVersion }),
     });
     await persistDescriptor();
     return descriptor;

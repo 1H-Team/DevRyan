@@ -255,9 +255,10 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
         toast.success(result === 'installer'
           ? 'Opened the DevRyan installer download in your browser'
           : 'Opened the DevRyan release page in your browser', {
+          // The main process drained the background runtime before opening it.
           description: result === 'installer'
-            ? 'Open the downloaded DMG, then quit DevRyan before replacing it in Applications.'
-            : 'Download the DMG from the release page and open it, then quit DevRyan before replacing it in Applications.',
+            ? 'The background runtime was stopped for the update. Open the downloaded DMG, then quit DevRyan before replacing it in Applications.'
+            : 'The background runtime was stopped for the update. Download the DMG from the release page and open it, then quit DevRyan before replacing it in Applications.',
         });
         return;
       }

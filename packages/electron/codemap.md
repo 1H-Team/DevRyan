@@ -105,6 +105,12 @@ and desktop-host broker bridges.
   PID, instance, generation and service mode, and rejects proven-stopped owners;
   older services without process evidence can still authenticate, with the
   lease response retaining its independent generation check.
+  From 2.0.1 the descriptor carries the service's `appVersion`. A live owner
+  whose descriptor has none (1.x, 2.0.0) or another version is never attached:
+  `retireMismatchedRuntimeService` drains it once through `prepare-update`,
+  unregisters it, proves it stopped (signalling only a verified same-uid
+  `DevRyan --runtime-service` at that PID as a bounded fallback), and registers
+  the current bundle's service; any failure falls back to the app-bound runtime.
   Malformed legacy writes receive a one-second grace period.
   `owner-recovery.v2.json` records an ambiguous legacy or damaged regular file's
   inode, birth time, size, change/modification times, content hash, and the
@@ -287,7 +293,10 @@ and desktop-host broker bridges.
   `electron-updater` only when the release lists `latest-mac.yml`, and otherwise
   `update-download-fallback.mjs` validates the exact
   `releases/download/v<x.y.z>/DevRyan-<x.y.z>-arm64.dmg` URL (or the exact release
-  tag page) that the Update action opens externally.
+  tag page) that the Update action opens externally. It first drains and
+  unregisters the background runtime as the in-app updater does, so Finder can
+  replace the bundle and the next launch re-registers it; a drain failure
+  opens nothing.
 
 ## Flow
 1. Electron establishes process guards, protocol registration, logging, and the
@@ -295,7 +304,8 @@ and desktop-host broker bridges.
 2. `--runtime-service` acquires the service generation, starts the loopback web
    runtime without a window, marks the versioned handshake healthy, and begins
    Bot/Docker preparation asynchronously.
-3. A migrated foreground app reads the descriptor, consumes its rotating
+3. A migrated foreground app reads the descriptor, retires a service of another
+   app version, consumes its rotating
    bootstrap into a renderer cookie, connects the desktop-host broker, and
    activates its window. App-bound compatibility mode instead acquires the
    in-process owner and starts that same server locally.

@@ -46,6 +46,7 @@ import {
   assertRuntimeServiceDescriptorOwner,
   isRuntimeServiceProtocolSupported,
   readRuntimeServiceDescriptor,
+  terminateRuntimeServiceProcess,
   waitForRuntimeServiceOwnerStopped as waitForOwnerStopped,
   unsealRuntimeServiceBootstrapToken,
 } from './runtime-service.mjs';
@@ -61,6 +62,7 @@ import {
   recoverAppBoundRuntime,
   retryRuntimeServiceConnection,
   ensureRuntimeServiceRegistered,
+  retireMismatchedRuntimeService,
 } from './runtime-service-startup.mjs';
 import {
   buildQuitRiskSnapshot,
@@ -853,7 +855,7 @@ const acquireRuntimeOwner = createRuntimeOwnerAcquirer({
   getCoordinator: () => state.runtimeServiceCoordinator,
   setCoordinator: (coordinator) => { state.runtimeServiceCoordinator = coordinator; },
   createCoordinator: () => createRuntimeServiceCoordinator({
-    dataDirectory: dataRootDirectory(), safeStorage,
+    dataDirectory: dataRootDirectory(), safeStorage, appVersion: APP_VERSION,
     onDiagnostic: (detail) => log.warn('[runtime-service] owner recovery', detail),
   }),
 });
@@ -1425,22 +1427,7 @@ const stopDesktopHostBroker = async ({ notifyService = true } = {}) => {
   await broker?.close().catch(() => undefined);
 };
 
-let runtimeServiceReconnectPromise = null;
-const connectToRuntimeService = async ({ reconnecting = false } = {}) => {
-  const descriptor = await readRuntimeServiceDescriptor({ dataDirectory: dataRootDirectory() });
-  if (!isRuntimeServiceProtocolSupported(descriptor.protocolVersion)) {
-    const error = new Error('The background runtime protocol is not supported by this app version');
-    error.code = 'runtime_service_protocol_mismatch';
-    throw error;
-  }
-  await assertRuntimeServiceDescriptorOwner({ dataDirectory: dataRootDirectory(), descriptor });
-  const url = buildLocalUrl(descriptor.port).replace(/\/$/, '');
-  if (!await waitForHealth(url, 5_000, 100)) {
-    const error = new Error('The background runtime is not ready');
-    error.code = 'runtime_service_unavailable';
-    throw error;
-  }
-  await assertRuntimeServiceDescriptorOwner({ dataDirectory: dataRootDirectory(), descriptor });
+const bootstrapRuntimeServiceSession = async (url, descriptor) => {
   const bootstrapToken = unsealRuntimeServiceBootstrapToken({ descriptor, safeStorage });
   const bootstrap = await session.defaultSession.fetch(`${url}/auth/runtime-service-bootstrap`, {
     method: 'POST',
@@ -1456,6 +1443,68 @@ const connectToRuntimeService = async ({ reconnecting = false } = {}) => {
     throw error;
   }
   await setRuntimeServiceCookie(url, bootstrap.headers.get('set-cookie'));
+};
+
+// prepare-update exists since the first runtime-service release (1.1.7), so a
+// service from any older version can be drained through it.
+const retireStaleRuntimeService = (descriptor, url) => retireMismatchedRuntimeService({
+  descriptor,
+  appVersion: APP_VERSION,
+  log,
+  drain: async () => {
+    if (!await waitForHealth(url, 5_000, 100)) {
+      throw Object.assign(new Error('The background runtime is not ready'), { code: 'runtime_service_unavailable' });
+    }
+    await bootstrapRuntimeServiceSession(url, descriptor);
+    const response = await session.defaultSession.fetch(`${url}/api/runtime-service/prepare-update`, {
+      method: 'POST',
+      headers: { 'X-DevRyan-CSRF': '1' },
+    });
+    if (!response.ok) {
+      throw Object.assign(new Error('The background runtime did not accept the drain'), {
+        code: 'runtime_service_update_prepare_failed',
+      });
+    }
+  },
+  unregister: () => getRuntimeServiceRegistration().unregister(),
+  waitForStopped: (timeoutMs) => waitForRuntimeServiceOwnerStopped(timeoutMs),
+  terminate: (signal) => terminateRuntimeServiceProcess({ pid: descriptor.pid, signal }),
+  register: () => ensureRuntimeServiceRegistered({ registration: getRuntimeServiceRegistration(), log }),
+});
+
+let runtimeServiceReconnectPromise = null;
+let runtimeServiceRetired = false;
+const connectToRuntimeService = async ({ reconnecting = false } = {}) => {
+  const descriptor = await readRuntimeServiceDescriptor({ dataDirectory: dataRootDirectory() });
+  if (!isRuntimeServiceProtocolSupported(descriptor.protocolVersion)) {
+    const error = new Error('The background runtime protocol is not supported by this app version');
+    error.code = 'runtime_service_protocol_mismatch';
+    throw error;
+  }
+  await assertRuntimeServiceDescriptorOwner({ dataDirectory: dataRootDirectory(), descriptor });
+  const url = buildLocalUrl(descriptor.port).replace(/\/$/, '');
+  // A protocol match is not enough: a live service of another app version
+  // would keep its old server (1.x: v1 OpenCode) and skip this version's
+  // provisioning. It is retired once; it is never attached.
+  if (descriptor.appVersion !== APP_VERSION) {
+    if (reconnecting || runtimeServiceRetired) {
+      throw Object.assign(new Error('The background runtime belongs to another app version'), {
+        code: 'runtime_service_version_mismatch', retryable: false,
+      });
+    }
+    runtimeServiceRetired = true;
+    await retireStaleRuntimeService(descriptor, url);
+    throw Object.assign(new Error('The background runtime is restarting for this app version'), {
+      code: 'runtime_service_unavailable',
+    });
+  }
+  if (!await waitForHealth(url, 5_000, 100)) {
+    const error = new Error('The background runtime is not ready');
+    error.code = 'runtime_service_unavailable';
+    throw error;
+  }
+  await assertRuntimeServiceDescriptorOwner({ dataDirectory: dataRootDirectory(), descriptor });
+  await bootstrapRuntimeServiceSession(url, descriptor);
   const broker = await startDesktopHostBroker();
   try {
     const status = await registerDesktopHostLease(url, broker);
@@ -4672,6 +4721,18 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
           repositoryUrl: GITHUB_REPOSITORY_URL,
         });
         if (!fallback) throw new Error(`DevRyan ${state.pendingUpdate.version} has no verified installer download yet. Retry later.`);
+        // Drain and unregister the background runtime first, as the in-app
+        // updater does: a running service holds the bundle open in Finder and
+        // would otherwise keep serving the old version. The next launch
+        // re-registers it, whether or not the user replaced the app.
+        try {
+          await prepareBackgroundRuntimeForAppUpdate();
+        } catch (error) {
+          log.warn('[runtime-service] update drain failed', { code: error?.code || 'runtime_service_update_owner_active' });
+          throw Object.assign(new Error('DevRyan could not stop its background runtime for the update. Quit and reopen DevRyan, then retry the update.'), {
+            code: error?.code || 'runtime_service_update_owner_active',
+          });
+        }
         await shell.openExternal(fallback.url);
         log.info(`[electron] update ${fallback.kind} opened externally version=${state.pendingUpdate.version}`);
         return { openedExternally: true, kind: fallback.kind };
