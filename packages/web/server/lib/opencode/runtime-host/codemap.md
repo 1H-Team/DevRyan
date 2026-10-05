@@ -15,7 +15,11 @@ identical-retry rule and a completed seed still refuses changed files. A pinned 
 live source stays the setup input until a selection consumes it: owner setup changed after pinning
 (including a newer `auth.json` sign-in) is neither imported nor a reason to refresh or refuse the
 seed, so those changes are made again in the native runtime; tampered pinned rows refuse with
-`native_setup_seed_changed` and no values. Custom configuration remains a separate
+`native_setup_seed_changed` and no values. A half-deleted
+2.0.0 seed (2.0.0 removed it in place: marker or pinned files gone, no remaining pinned byte
+changed) is never seeded from: without selection or drafts the same reset rebuilds it,
+stamped or not, and after verified selection removal validates the whole canonical tree and
+completes the rename-aside removal instead of refusing every launch. Custom configuration remains a separate
 `native-custom-config.json` layer; Slim JSONC, declarative tunnel registration,
 prompt overrides and logical local-owner identities retain their original owners.
 
