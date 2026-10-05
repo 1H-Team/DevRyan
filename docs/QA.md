@@ -246,6 +246,22 @@ The app is launched with `run.mjs`'s isolated environment (`createQaIsolatedRunt
 
 `--shell-exports` (any scenario) writes `export OPENCODE_BINARY=/opt/homebrew/bin/opencode`, `export OPENCODE_HOST=http://127.0.0.1:4096`, `export OPENCODE_SKIP_START=true` and `export DEVRYAN_RUNTIME_BUNDLE_ROOT=/nonexistent` into `.zshenv`, `.zprofile` and `.zshrc` of the private `home/.config/qa-zsh` before launch. The packaged QA host sets `ZDOTDIR` there, so only the app's real login-shell probe sees them; the run refuses to launch if any of these names is in the launch environment. PASS additionally requires a `[shell-env] ... ignored login-shell variables ...` line in `main.log` naming all four, with no values, besides the usual `isOpenCodeReady`.
 
+The direct service fixture verifies headless startup, durable private ownership,
+unauthenticated refusal, physical shutdown and restart without registering a
+launchd service. Use a fresh package and native artifacts from the same source:
+
+```sh
+TMPDIR="$PWD/.cache/test-fixtures" GIT_CEILING_DIRECTORIES="$PWD/.cache/test-fixtures" \
+  bun --tsconfig-override "$PWD/packages/ui/tsconfig.json" scripts/qa/packaged-service-smoke.mjs \
+  --package-evidence "$PWD/.cache/qa/packaged-electron-EXAMPLE/package-evidence.json" \
+  --artifact-root "$PWD/.cache/v2-validation/EXAMPLE-native"
+```
+
+It records a new `.cache/qa/packaged-service-*/evidence.json`; failed fixtures
+remain available for diagnosis. It uses synthetic configuration and no account
+snapshots. Direct launch does not qualify launchd registration, an authenticated
+desktop-host lease, or the three compiled acceptance journal roots.
+
 ## Interpreting an incomplete acceptance run
 
 Generation-2 live matrices require programmatic `runQaMatrix(configPath, { prepareCellInputs })` preparation. Each live cell supplies `nativePreparation` with a canonical repo-owned copied `sourceHome`, a complete file/digest manifest, a verified native artifact root, `prepareSource`, and `bootstrapCredentials`. Preparation creates a private empty setup seed and delegates bundle initialization, checkpoints and selection to the existing production owners. It does not launch or import an old runtime. Before copying, the runner validates the private database, both configuration trees, web data and every Global root. It checks the complete source manifest after preparation and again after full cell execution, including failures. A changed original input fails the cell and preserves its runtime.

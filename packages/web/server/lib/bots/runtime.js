@@ -1894,6 +1894,9 @@ export function createBotsRuntime({
     // Called by the host after setup/repair/update, so it must bypass the status cache.
     reconcileExecution: () => resolveCurrentCapabilities({ refresh: true }),
     async prepareStartup({ ensureRuntime, onStatus = () => {} } = {}) {
+      if (!executionEnabled) {
+        return Object.freeze({ state: 'skipped', reason: 'bots_background_disabled' });
+      }
       if (!store.available) {
         return Object.freeze({ state: 'skipped', reason: 'bots_unavailable' });
       }

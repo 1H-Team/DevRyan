@@ -276,6 +276,39 @@ Resolved dependency tuples and dependency pins are unchanged. Release notes
 and version/release contracts pass (11 checks); final source and artifact
 identities must be recorded after this candidate is committed and built.
 
+The frozen `fc5f750e` attempt built the web/Electron bundles and passed startup
+bundle budgets. Native build ID was
+`ba89b95731b464fca77bfa62be72570a18c0890d23fc72a15f44ecff58ad7d7b`,
+with manifest SHA-256
+`185746157c1ac56cdc60bdc7dfcaa1c7ecfb542f1a734a63dcad3b6baebc83e2`.
+Full validation passed 663 harness tests but another durable shell-intent case
+reached the runner's five-second timeout; the secondary Git failure followed
+fixture teardown. Its unchanged isolated case passed in 2.94 seconds. The case
+now uses a bounded 20-second runner budget and all 34 file checks pass; authority,
+receipt and replay assertions are unchanged. The full failed log is retained as
+`frozen-full-validation-1.log` and must be rerun after the service correction.
+
+Compiled acceptance passed 15 cases before the human-queue fixture's 60-second
+budget expired while another full validation was running. Its controller exited
+physically and cleanup passed. The actual fixture journal has zero verified gaps;
+this does not satisfy the three meaningful-root inventory, which was not reached.
+Original result `.cache/v2-validation/package-D1pvRP/result.json` and journal
+inspection remain preserved. Rerun acceptance alone before changing any deadline.
+
+The frozen Stage F attempt refused all seven wire cells because the invocation
+omitted `QA_NATIVE_ARTIFACT_ROOT`. The packaged Electron actual-backend cell
+passed send/reload/cancel/reconnect and native read/write publication. The first
+web cell lost its light theme at final screenshot grading; an unchanged independent
+web repeat passed. Both grades remain retained, and screenshots still require
+review. None of these results is rebound to later changed source.
+
+Service review independently reproduced `prepareStartup` invoking the runtime
+preparer with background Bots disabled. The shared runtime now returns
+`bots_background_disabled` before runtime, catalog or Docker preparation;
+19 focused checks pass. A new direct packaged service fixture covers private
+owner/descriptor identity, unauthenticated refusal, no model sends before a
+desktop lease, physical drain and restart. Its actual launch remains pending.
+
 This table must be rebound to the final source commit, lock hash, native build
 identity, image manifest identity, packaging digests, and installed artifacts
 before it can authorize publication. Current evidence is interim engineering
@@ -287,10 +320,10 @@ evidence in `.cache/release-2.0.2-recovery`.
 | Packaged prompt conflict notice and explicit restore | Passed (focused); packaged not run | API, mounted UI, stale revision, edit/path replacement and guidance checks |
 | Tracked credential owner and synthetic rehearsal | Passed (compiled synthetic); live not run | Original SDK OAuth, compiled native key/CAS owners, held projection, ready boot and zero evidence leaks; final identities and attended live/launcher qualification pending |
 | Complete B1 review closure | Consolidated (focused); qualification pending | Seven engineering scopes above retain original reproductions, corrected checks and current drift; final compiled/live/package evidence pending |
-| Compiled acceptance and seeded-credential boot | Not run | Final native artifacts pending |
+| Compiled acceptance and seeded-credential boot | Failed (interim); final pending | 15 compiled cases passed, human-queue fixture timed out; original journals and clean physical exit retained |
 | Three meaningful durable journal roots and verified gaps | Not run | Journal fixture/grading code integrated |
 | Seven lifecycle modes and seven wire cells | Not run | Final identities pending |
-| Two actual-runtime UI cells and reviewed screenshots | Not run | Final runtime pending |
+| Two actual-runtime UI cells and reviewed screenshots | Partial (interim); final pending | Electron passed; first web theme failure retained, unchanged web repeat passed; screenshots unreviewed |
 | CLI persistence/refusal and Electron Resume | Not run | Final runtime pending |
 | Shipped 2.0.1 → candidate → 2.0.1 continuity | Not run | Actual artifact qualification pending |
 | Packaged first launch and service mode | Not run | Candidate package pending |

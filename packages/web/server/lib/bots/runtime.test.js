@@ -244,6 +244,37 @@ describe('Production Bots runtime composition', () => {
     expect(ensureRuntime).not.toHaveBeenCalled();
   });
 
+  it('never prepares a configured Bot host when background execution is disabled', async () => {
+    const dataDirectory = await makeDirectory();
+    const ensureRuntime = vi.fn();
+    const onStatus = vi.fn();
+    const botHost = {
+      owner: 'electron',
+      getStatus: vi.fn(),
+      getModelCatalog: vi.fn(),
+    };
+    const supabase = { rest: vi.fn(), rpc: vi.fn() };
+    const runtime = createBotsRuntime({
+      dataDirectory,
+      botHost,
+      supabase,
+      executionEnabled: false,
+    });
+
+    await expect(runtime.prepareStartup({ ensureRuntime, onStatus })).resolves.toEqual({
+      state: 'skipped',
+      reason: 'bots_background_disabled',
+    });
+    expect(ensureRuntime).not.toHaveBeenCalled();
+    expect(onStatus).not.toHaveBeenCalled();
+    expect(botHost.getStatus).not.toHaveBeenCalled();
+    expect(botHost.getModelCatalog).not.toHaveBeenCalled();
+    expect(supabase.rest).not.toHaveBeenCalled();
+    expect(supabase.rpc).not.toHaveBeenCalled();
+    expect(runtime.dispatcher).toBeNull();
+    expect(runtime.getExecutionFailure()).toEqual({ code: 'bots_background_disabled' });
+  });
+
   it('returns a typed sanitized startup failure', async () => {
     const dataDirectory = await makeDirectory();
     const runtime = createBotsRuntime({

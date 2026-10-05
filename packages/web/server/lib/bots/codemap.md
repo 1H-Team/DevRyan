@@ -38,7 +38,9 @@ must preserve those checks. A grant never inherits global administrator access.
   activation hold and catalog maintenance/import wiring;
   also owns the run-sweep idle gate (`createBotRunSweepGate`: six-hour idle
   window, boot sweep always runs, `getSweepDiagnostics()`) and the dispatcher
-  activity facade that feeds it.
+  activity facade that feeds it. Host startup preparation respects the
+  background-execution setting before any runtime, Docker, catalog, or
+  execution preparation, including headless service startup.
 - `routes.js`: authenticated `/api/bots/*` capability, management/routine,
   channel/message/run, Bot-SSE, and encrypted-object routes plus stable
   migration/error envelopes and content-free catalog-read failure diagnostics, including profile/avatar/model-option/publish
