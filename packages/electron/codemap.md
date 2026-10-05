@@ -303,17 +303,23 @@ and desktop-host broker bridges.
 - **Diagnostics export**: `desktop_export_diagnostics` owns the native save
   dialog and streams the in-process server ZIP through a private sibling
   temporary file, fsync, and atomic rename.
-- **Release authority**: packaged update discovery and `electron-updater`
-  publishing both target the canonical `1H-Team/DevRyan` GitHub repository.
-  Releases from 2.0.1 publish only the DMG: `desktop_check_for_updates` consults
-  `electron-updater` only when the release lists `latest-mac.yml`, and otherwise
-  `update-download-fallback.mjs` validates the exact
-  `releases/download/v<x.y.z>/DevRyan-<x.y.z>-arm64.dmg` URL (or the exact release
-  tag page) that the Update action opens externally. It first drains and
-  unregisters the background runtime as the in-app updater does, so Finder can
-  replace the bundle and the next launch re-registers it; a drain failure
-  opens nothing. The result's `backgroundRuntimeStopped` is true only when a
-  service was drained, and only then does the toast say so.
+- **Release authority**: `desktop-updater.mjs` discovers stable releases only
+  from `1H-Team/DevRyan`, using the shared `release-assets.mjs` name/URL table
+  and GitHub's exact asset size and SHA-256. It owns bounded metadata reads,
+  private cache files, resumable range downloads and re-verification at restart.
+  `desktop-updater-macos.mjs` owns read-only DMG staging, installation path,
+  signing-class, service bridge, native-artifact and disk preflight before drain.
+  Its private durable intent binds the original app, stage, helper and candidate
+  process identities. `desktop-update-install.mjs` is bundled separately and
+  copied with the verified native bridge outside the replaceable app. It waits
+  for original owner exit, atomically exchanges apps, retains the original,
+  requires a ready acknowledgement, and rolls back only after verified candidate
+  cleanup and process exit. Native `renameExclusive`/`swapApplications` are
+  internal shell facilities; no preload operation exposes filesystem renames.
+  Ambiguous ownership or concurrent replacement retains both copies and blocks
+  further installation. A following ready launch archives the receipt and moves
+  only the installer-created stage to Trash. Existing update commands/events
+  remain compatible; ZIP, blockmaps and updater metadata are removed.
 
 ## Flow
 1. Electron establishes process guards, protocol registration, logging, and the
@@ -339,17 +345,17 @@ and desktop-host broker bridges.
    unregisters/re-registers as required.
 
 ## Integration
-- **Depends on**: `@openchamber/web` server entrypoint, Electron runtime APIs, `electron-updater`, OS facilities.
+- **Depends on**: `@openchamber/web` server entrypoint, Electron runtime APIs, OS facilities.
 - **Consumes/hosts**: web UI bundle served from local web server; startup splash and boot metadata are injected from main process.
 - **Contract with shared UI**: `__TAURI__` invoke commands and emitted `openchamber:*` events. Browser surfaces use local-only `desktop_browser_surface_*` operations plus surface-ID capture and DevTools commands; manual groups add local-only `desktop_browser_workspace_*` activate/pop-out/dock/focus operations. Window-scoped token-free `browser-surface-updated` snapshots include manual workspace/tab identity. Agent leases use snapshot, exact context claims, observed-lease selection, `desktop_agent_browser_*`, window-scoped `browser-agent-leases`, and global-count-only `browser-agent-lease-total`; the old bind command remains a compatibility status read instead of accepting renderer `webContentsId` ownership.
-- **Packaging/release hooks**: `packages/electron/scripts/*` for bundling the main process, native bridge build/signing, archive verification, and release metadata finalization.
+- **Packaging/release hooks**: `packages/electron/scripts/*` for bundling the main process and standalone installer, native bridge build/signing, and artifact verification.
 - **Window-state persistence**: `window-state-persistence.mjs` snapshots native `BrowserWindow` values before queued settings writes, so shutdown never retains a destroyed native window.
 - **Quit cleanup**: `quit-cleanup.mjs` checkpoints Bot runs, stops Bot
   dispatcher/index requests, then orders normal app quit after general
   owned-resource cleanup; it deduplicates the main-process stop promise and
   bounds a genuinely hung cleanup at ten seconds without deleting named Bot
   volumes.
-- **Native packaging verification**: `scripts/native-module-paths.mjs` resolves workspace/transitive native modules without assuming Bun hoisting, while `scripts/packaged-native-modules.mjs` rejects artifacts missing required Electron ABI bindings or Cursor SDK platform artifacts (`rg`, `cursorsandbox`, and both tree-sitter bindings). `scripts/verify-runtime-service-package.mjs` separately enforces the in-process background bridge and LaunchAgent contract in the unpacked app, ZIP, and DMG for both release architectures; unsigned artifacts must expose the usable private-agent fallback and may not probe as `not_found`. Cursor SDK 1.0.28 uses Node's built-in SQLite, so no transitive Cursor `sqlite3` ABI rebuild is performed.
+- **Native packaging verification**: `scripts/native-module-paths.mjs` resolves workspace/transitive native modules without assuming Bun hoisting, while `scripts/packaged-native-modules.mjs` rejects artifacts missing required Electron ABI bindings or Cursor SDK platform artifacts (`rg`, `cursorsandbox`, and both tree-sitter bindings). `scripts/verify-runtime-service-package.mjs` separately enforces the in-process background bridge and LaunchAgent contract in the unpacked app and read-only mounted DMG; ad-hoc artifacts must expose the usable private-agent fallback and may not probe as `not_found`. Cursor SDK 1.0.28 uses Node's built-in SQLite, so no transitive Cursor `sqlite3` ABI rebuild is performed.
 - **Regression suite**: `bun run test` recursively discovers Electron `*.test.*` files outside generated/package output and runs them under Bun; the suite contract rejects missed files, and the root full and affected validation gates invoke this package suite.
 - **Browser inspection acceptance**: `tests/browser-inspection/run.mjs` explicitly
   launches the pinned Electron runtime with an isolated temporary profile and

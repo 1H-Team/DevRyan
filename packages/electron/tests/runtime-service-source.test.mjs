@@ -39,7 +39,7 @@ describe('runtime-service desktop bootstrap source contract', () => {
         isRuntimeServiceMode, runtimeBundleRecoveryRequired, holdDesktopSettingsForCheckpoint,
         performConfirmedQuit, state, createBrowserWindow, startDesktopRuntime,
         acquireRuntimeOwner, spawnLocalServer, prepareBotRuntimeInBackground,
-        shutdownOwnedRuntimeService } = owners;
+        shutdownOwnedRuntimeService, desktopDmgInstaller = null } = owners;
       ${mainSource.slice(start + marker.length, end)}
       throw new Error('startup did not return before ordinary foreground setup');
     `);
@@ -155,8 +155,9 @@ describe('runtime-service desktop bootstrap source contract', () => {
     assert.match(packageVerifierSource, /runtime-service-control=status/);
     assert.match(packageVerifierSource, /allowedStatuses: \[0\]/);
     assert.match(packageVerifierSource, /status\?\.state === 'not_found'/);
-    assert.match(packageVerifierSource, /ditto', \['-x', '-k'/);
+    assert.doesNotMatch(packageVerifierSource, /\.zip|ditto', \['-x', '-k'/);
     assert.match(packageVerifierSource, /hdiutil', \['attach'/);
+    assert.match(packageVerifierSource, /\['attach', '-nobrowse', '-readonly'/);
     assert.match(packageVerifierSource, /must be signed with a Developer ID identity/);
     assert.match(packageVerifierSource, /native bridge is not executable/);
   });

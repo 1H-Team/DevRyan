@@ -339,8 +339,10 @@ back to a Tauri build, they must manually download. We don't support this.
 - `packages/electron/main.mjs` — autoUpdater setup (`setupAutoUpdater`,
   `desktop_check_for_updates`, `desktop_download_and_install_update`,
   `desktop_restart`). Understand this flow before touching the CI.
-- `packages/electron/scripts/finalize-latest-yml.mjs` — per-arch
-  `latest-mac.yml` merger. Already wired in `combine-electron-manifests`.
+- `packages/electron/desktop-updater.mjs`, `desktop-updater-macos.mjs` and
+  `desktop-update-install.mjs` — current verified DMG updater. The historical
+  per-architecture metadata merger has been removed; the cutover design below
+  must be requalified against this owner before a separate cutover decision.
 - `packages/desktop/src-tauri/tauri.conf.json` — legacy Tauri identifier,
   minisign pubkey embedded for updater verification. Don't modify; just
   reference for context.

@@ -42,7 +42,7 @@ export async function bundleElectronMain({ outdir = path.join(root, 'dist-bundle
   }
   const settings = {
     root: repository,
-    entrypoints: [path.join(root, 'main.mjs')],
+    entrypoints: [path.join(root, 'main.mjs'), path.join(root, 'desktop-update-install.mjs')],
     outdir,
     target: 'node',
     format: 'esm',
@@ -88,7 +88,8 @@ export async function bundleElectronMain({ outdir = path.join(root, 'dist-bundle
   await fs.writeFile(path.join(outdir, 'main.inputs.json'), JSON.stringify({ schema: 1,
     workingDirectory: repository, bunVersion: Bun.version, bunRevision: Bun.revision,
     entrypoint: path.relative(repository, settings.entrypoints[0]),
-    mainSha256: hash(await fs.readFile(main)), inputs }, null, 2) + '\n');
+    mainSha256: hash(await fs.readFile(main)),
+    installerSha256: hash(await fs.readFile(path.join(outdir, 'desktop-update-install.mjs'))), inputs }, null, 2) + '\n');
   return main;
 }
 

@@ -18,12 +18,17 @@ do not dispatch updates to an upstream website.
 
 Since 2.0.1 the public release carries exactly one asset for the desktop scope,
 `DevRyan-<version>-arm64.dmg`; `full` adds the web tarball.
-`scripts/verify-release-assets.mjs` enforces that exact allowlist. electron-builder
-still produces the ZIP, blockmaps and `latest-mac.yml`, but they are neither
-published nor verified, and the Bot image manifest remains an internal workflow
-artifact. Installed 2.0.0 and earlier apps therefore cannot update in-app to
-these releases and need a manual DMG install. From 2.0.1, when no updater
-metadata exists, the Update action opens the verified release DMG download.
+`scripts/verify-release-assets.mjs` enforces that exact allowlist. Packaging
+produces only the DMG; ZIP, blockmaps, updater metadata and `electron-updater`
+are removed. The Bot image manifest remains an internal workflow artifact.
+Installed 2.0.0 and earlier apps require a manual DMG install. The shipped
+2.0.1 Update action opens the release download. The 2.0.2 installer owner
+discovers the exact published asset with size and SHA-256, supports verified
+resume, stages a read-only mounted DMG, and preserves the original app until
+startup is acknowledged. Path, signing class, native runtime, service bridge
+and disk checks precede runtime drain. Rollback requires candidate cleanup and
+process-exit evidence; ambiguous settlement preserves both copies and intent.
+macOS remains ad-hoc signed, without notarization.
 
 Release install steps set `DEVRYAN_SKIP_INSTALL_PREPARE=1`. Without it, Bun runs
 the Electron workspace `prepare` script (a full web build plus native helpers)
@@ -152,8 +157,8 @@ Electron QA, and packaged native checks before release. Handoff tests cover stal
 identity, altered/missing bytes, architecture mismatch, incomplete image results,
 signing failure and packaging failure propagation.
 
-Packaged runtime-service verification checks the unpacked app, the extracted ZIP
-and the mounted DMG one after another. Keep it serial: running the three deep
+Packaged runtime-service verification checks the unpacked app and read-only
+mounted DMG one after another. Keep it serial: running the previous three deep
 codesign checks and x64 Rosetta probes concurrently raised x64 packaging from
 326s to 776s on 2026-09-23.
 

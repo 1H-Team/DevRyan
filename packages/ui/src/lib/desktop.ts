@@ -690,7 +690,7 @@ export const restartDesktopApp = async (): Promise<boolean> => {
     return true;
   } catch (error) {
     console.warn('Failed to restart desktop app (tauri)', error);
-    return false;
+    throw new Error(error instanceof Error ? error.message.replace(/^Error invoking remote method ['"]openchamber:invoke['"]:\s*(?:Error:\s*)?/i, '').trim() : 'Failed to restart desktop app');
   }
 };
 

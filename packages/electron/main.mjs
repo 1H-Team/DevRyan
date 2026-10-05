@@ -21,7 +21,9 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import updaterPkg from 'electron-updater';
+import { createDesktopUpdater } from './desktop-updater.mjs';
+import { createMacDmgInstaller } from './desktop-updater-macos.mjs';
+import { verifyNativeRuntimeArtifacts } from '@openchamber/web/server/lib/opencode/runtime-host/native-artifacts.js';
 import { ElectronSshManager } from './ssh-manager.mjs';
 import { MacosSpeechManager } from './speech-manager.mjs';
 import { clearElectronRuntimeCaches, getElectronRuntimeCacheInfo } from './cache-maintenance.mjs';
@@ -41,7 +43,6 @@ import { BOT_RUNTIME_IMAGE_KEYS, loadBotRuntimeManifest } from './bot-runtime-ma
 import { loadBotDatabaseSql } from '@openchamber/bot-db';
 import { finishQuitAfterCleanup } from './quit-cleanup.mjs';
 import { createModuleEntryLoader, routeStartupRetry } from './startup-retry.mjs';
-import { releaseListsUpdaterChannel, resolveUpdateDownloadFallback } from './update-download-fallback.mjs';
 import {
   createRuntimeServiceCoordinator,
   assertRuntimeServiceDescriptorOwner,
@@ -260,14 +261,12 @@ const GITHUB_REPOSITORY_NAME = 'DevRyan';
 const GITHUB_REPOSITORY_URL = `https://github.com/${GITHUB_REPOSITORY_OWNER}/${GITHUB_REPOSITORY_NAME}`;
 const GITHUB_REPOSITORY_API_URL =
   `https://api.github.com/repos/${GITHUB_REPOSITORY_OWNER}/${GITHUB_REPOSITORY_NAME}`;
-const UPDATE_METADATA_URL = `${GITHUB_REPOSITORY_API_URL}/releases/latest`;
 const GITHUB_BUG_REPORT_URL = `${GITHUB_REPOSITORY_URL}/issues/new?template=bug_report.yml`;
 const GITHUB_FEATURE_REQUEST_URL = `${GITHUB_REPOSITORY_URL}/issues/new?template=feature_request.yml`;
 const DISCORD_INVITE_URL = 'https://discord.gg/ZYRSdnwwKA';
 const INSTALLED_APPS_CACHE_TTL_SECS = 60 * 60 * 24;
 const INSTALLED_APPS_CACHE_FILE = 'discovered-apps.json';
 
-const { autoUpdater } = updaterPkg;
 const keepAwakeController = createKeepAwakeController({ powerSaveBlocker });
 
 const state = {
@@ -284,7 +283,6 @@ const state = {
   updateCleanupPromise: null,
   updateInstallReady: false,
   installingUpdate: false,
-  pendingUpdate: null,
   unreachableHosts: new Set(),
   windowCounter: 1,
   focusedWindowIds: new Set(),
@@ -828,11 +826,6 @@ const { maybeShowNativeNotification, focusForegroundWindow, isAnyWindowFocused }
   emitToAllWindows: (...args) => emitToAllWindows(...args),
 });
 
-const mapUpdaterProgressEvent = (payload) => ({
-  event: payload.event,
-  data: payload.data,
-});
-
 // Merge the user's login-shell env (PATH, etc.) into this process before we
 import { pathLooksUserConfigured, mergePathValues } from '@openchamber/web/server/lib/opencode/path-utils.js';
 import { PACKAGED_DESKTOP_ENV } from '@openchamber/web/server/lib/opencode/login-shell-env-filter.js';
@@ -873,7 +866,16 @@ const acquireRuntimeOwner = createRuntimeOwnerAcquirer({
 // cached, so startup Retry must relaunch instead of importing it again.
 const webServerEntry = createModuleEntryLoader(() => import('@openchamber/web/server/index.js'));
 
-const spawnLocalServer = async () => {
+let localServerStartPromise = null;
+const spawnLocalServer = () => {
+  if (state.quitRequested) return Promise.reject(Object.assign(new Error('The runtime owner is shutting down'), { code: 'runtime_owner_shutting_down' }));
+  if (localServerStartPromise) return localServerStartPromise;
+  const starting = Promise.resolve().then(startLocalServer);
+  localServerStartPromise = starting;
+  void starting.finally(() => { if (localServerStartPromise === starting) localServerStartPromise = null; }).catch(() => {});
+  return starting;
+};
+const startLocalServer = async () => {
   if(!runtimeBundleRecoveryRequired)inheritUserShellEnv();
 
   await acquireRuntimeOwner(isRuntimeServiceMode ? 'service' : 'app_bound');
@@ -1290,6 +1292,10 @@ let sidecarStopFailure = null;
 let runtimeServiceShutdownPromise = null;
 
 const killSidecar = ({ strict = false } = {}) => {
+  if (localServerStartPromise) return localServerStartPromise.then(() => killSidecar({ strict }), (error) => {
+    if (strict) throw error;
+    return killSidecar({ strict });
+  });
   if (strict && sidecarStopFailure) return Promise.reject(sidecarStopFailure);
   if (!state.serverHandle) {
     if (state.runtimeServiceCoordinator?.getOwner?.()?.mode === 'app_bound') {
@@ -3759,6 +3765,7 @@ const startDesktopRuntime = () => {
         const openCodeStartup = Promise.resolve(
           state.serverHandle?.resumeDeferredOpenCodeStartup?.(),
         );
+        if (desktopDmgInstaller?.isCandidateStartup()) await openCodeStartup;
         void openCodeStartup.catch((error) => {
           log.error('[electron] deferred OpenCode startup failed', startupErrorDetails(error));
         });
@@ -3766,7 +3773,9 @@ const startDesktopRuntime = () => {
           void openCodeStartup.then(() => prepareBotRuntimeInBackground()).catch(() => undefined);
         }
       }
+      await desktopDmgInstaller?.acceptStartup();
     } catch (error) {
+      if (desktopDmgInstaller?.isCandidateStartup()) { await desktopDmgInstaller.refuseStartup();return; }
       desktopStartupFailed = true;
       const details = startupErrorDetails(error);
       log.error('[electron] startup failed', details);
@@ -3786,60 +3795,39 @@ const startDesktopRuntime = () => {
   return current;
 };
 
-const compareSemver = (left, right) => {
-  const a = String(left || '').replace(/^v/, '').split('.').map((value) => Number.parseInt(value || '0', 10));
-  const b = String(right || '').replace(/^v/, '').split('.').map((value) => Number.parseInt(value || '0', 10));
-  const length = Math.max(a.length, b.length);
-  for (let index = 0; index < length; index += 1) {
-    const diff = (a[index] || 0) - (b[index] || 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
+const updateCacheDirectory = path.join(app.getPath('userData'), 'updates');
+const desktopUpdater = createDesktopUpdater({ currentVersion: APP_VERSION, cacheDirectory: updateCacheDirectory,
+  onProgress: progress => emitToAllWindows('openchamber:update-progress', progress) });
+const desktopDmgInstaller = app.isPackaged && process.platform === 'darwin' && !isRuntimeServiceMode && !isRuntimeServiceControlProbe
+  ? createMacDmgInstaller({ installedBundle: path.dirname(path.dirname(path.dirname(process.execPath))),
+    currentVersion: APP_VERSION, cacheDirectory: updateCacheDirectory, verifyNativeArtifacts: verifyNativeRuntimeArtifacts,
+    trashItem: target => shell.trashItem(target), onRollbackRequested: () => rollbackCandidateUpdate() }) : null;
+const cleanupUpdateOwners = async () => {
+  // A startup that has not published its handle still owns native resources.
+  // Never acknowledge candidate shutdown while that construction is pending.
+  if (localServerStartPromise) await localServerStartPromise;
+  await prepareBackgroundRuntimeForAppUpdate();
+  speechManager.shutdown();
+  await Promise.all([killSidecar({ strict: true }), sshManager.shutdownAll(), stopDesktopHostBroker()]);
 };
-
-const parseGithubRepo = () => {
-  return { owner: GITHUB_REPOSITORY_OWNER, repo: GITHUB_REPOSITORY_NAME };
-};
-
-const setupAutoUpdater = () => {
-  if (!app.isPackaged) {
-    return;
-  }
-  autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = false;
-  autoUpdater.allowPrerelease = false;
-  autoUpdater.fullChangelog = true;
-  autoUpdater.disableWebInstaller = false;
-  autoUpdater.logger = log;
-
-  const { owner, repo } = parseGithubRepo();
-  autoUpdater.setFeedURL({
-    provider: 'github',
-    owner,
-    repo,
-  });
-
-  autoUpdater.on('download-progress', (progress) => {
-    emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({
-      event: 'Progress',
-      data: {
-        chunkLength: Math.max(0, Math.round(progress.bytesPerSecond || 0)),
-        downloaded: Math.round(progress.transferred || 0),
-        total: Math.round(progress.total || 0),
-      },
-    }));
-  });
-
-  autoUpdater.on('update-downloaded', (info) => {
-    log.info(`[electron] update-downloaded version=${info?.version || 'unknown'}`);
-    if (state.pendingUpdate) {
-      state.pendingUpdate.downloaded = true;
+const rollbackCandidateUpdate = async () => {
+  if (state.updateCleanupPromise) return state.updateCleanupPromise;
+  prepareForQuit({ installingUpdate: true });
+  state.updateCleanupPromise = finishQuitAfterCleanup({ owner: 'updater',
+    checkpointBotRuns: () => state.serverHandle?.checkpointBotRuns?.({ reason: 'app_update_rollback' }),
+    stopBotDispatcher: () => state.serverHandle?.stopBotDispatcher?.(),
+    stopBotIndexerRequests: () => state.serverHandle?.stopBotIndexerRequests?.(),
+    cleanupOwnedResources: async () => { await cleanupUpdateOwners();await desktopDmgInstaller.recordCandidateStopped(true); },
+    requestQuit: () => { state.updateInstallReady = true;app.quit(); }, forceExit: () => {},
+    onCleanupError: error => log.warn('[electron] candidate rollback shutdown refused', { code: error?.code || 'update_cleanup_failed' }),
+  }).then(async outcome => {
+    if (outcome === 'blocked') {
+      await desktopDmgInstaller.recordCandidateStopped(false);
+      state.installingUpdate = false;state.quitRequested = false;state.quitConfirmed = false;
     }
+    return outcome;
   });
-
-  autoUpdater.on('error', (err) => {
-    log.error('[electron] autoUpdater error', err);
-  });
+  return state.updateCleanupPromise;
 };
 
 const buildInstalledAppsCachePath = () => path.join(hostDataRootDirectory, INSTALLED_APPS_CACHE_FILE);
@@ -4703,176 +4691,43 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       return { enabled };
     }
 
-    case 'desktop_check_for_updates': {
-      const currentVersion = APP_VERSION;
-      let payload = null;
-      try {
-        const response = await fetch(UPDATE_METADATA_URL, {
-          headers: {
-            Accept: 'application/vnd.github+json',
-            'User-Agent': `DevRyan/${currentVersion}`,
-            'X-GitHub-Api-Version': '2022-11-28',
-          },
-          signal: AbortSignal.timeout(10_000),
-        });
-        payload = await response.json();
-      } catch {
-      }
-
-      let updateResult = null;
-      if (releaseListsUpdaterChannel(payload)) {
-        try {
-          updateResult = await autoUpdater.checkForUpdates();
-        } catch {
-        }
-      }
-
-      const updateInfo = updateResult?.updateInfo;
-      const nextVersion = String(
-        (typeof updateInfo?.version === 'string' && updateInfo.version) ||
-        (typeof payload?.version === 'string' && payload.version) ||
-        (typeof payload?.tag_name === 'string' && payload.tag_name) ||
-        currentVersion
-      ).replace(/^v/, '');
-      const available = compareSemver(nextVersion, currentVersion) > 0;
-      const body =
-        (typeof payload?.notes === 'string' && payload.notes.trim() ? payload.notes : null) ||
-        (typeof payload?.body === 'string' && payload.body.trim() ? payload.body : null) ||
-        (typeof updateInfo?.releaseNotes === 'string' && updateInfo.releaseNotes.trim() ? updateInfo.releaseNotes : null);
-      state.pendingUpdate = available ? { version: nextVersion, metadata: payload, electronUpdate: updateResult } : null;
-      return {
-        available,
-        currentVersion,
-        version: available ? nextVersion : null,
-        body: body || null,
-        date:
-          (typeof updateInfo?.releaseDate === 'string' && updateInfo.releaseDate) ||
-          (typeof payload?.pub_date === 'string' && payload.pub_date) ||
-          (typeof payload?.published_at === 'string' ? payload.published_at : null),
-      };
-    }
+    case 'desktop_check_for_updates':
+      if (!app.isPackaged) throw new Error('Desktop updates require an installed release');
+      return desktopUpdater.check();
 
     case 'desktop_download_and_install_update':
-      if (!state.pendingUpdate) {
-        throw new Error('No pending update');
-      }
-      if (!state.pendingUpdate.electronUpdate) {
-        const fallback = resolveUpdateDownloadFallback({
-          payload: state.pendingUpdate.metadata,
-          version: state.pendingUpdate.version,
-          repositoryUrl: GITHUB_REPOSITORY_URL,
-        });
-        if (!fallback) throw new Error(`DevRyan ${state.pendingUpdate.version} has no verified installer download yet. Retry later.`);
-        // Drain and unregister the background runtime first, as the in-app
-        // updater does: a running service holds the bundle open in Finder and
-        // would otherwise keep serving the old version. The next launch
-        // re-registers it, whether or not the user replaced the app.
-        let backgroundRuntimeStopped;
-        try {
-          backgroundRuntimeStopped = await prepareBackgroundRuntimeForAppUpdate() === true;
-        } catch (error) {
-          log.warn('[runtime-service] update drain failed', { code: error?.code || 'runtime_service_update_owner_active' });
-          throw Object.assign(new Error('DevRyan could not stop its background runtime for the update. Quit and reopen DevRyan, then retry the update.'), {
-            code: error?.code || 'runtime_service_update_owner_active',
-          });
-        }
-        await shell.openExternal(fallback.url);
-        log.info(`[electron] update ${fallback.kind} opened externally version=${state.pendingUpdate.version}`);
-        return { openedExternally: true, kind: fallback.kind, backgroundRuntimeStopped };
-      }
-      emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({
-        event: 'Started',
-        data: {
-          contentLength: null,
-        },
-      }));
-      if (!state.pendingUpdate.downloaded) {
-        await new Promise((resolve, reject) => {
-          let settled = false;
-          const cleanup = () => {
-            autoUpdater.off('update-downloaded', onDownloaded);
-            autoUpdater.off('error', onError);
-          };
-          const finish = (callback, value) => {
-            if (settled) return;
-            settled = true;
-            cleanup();
-            callback(value);
-          };
-          const onDownloaded = () => finish(resolve, null);
-          const onError = (error) => finish(reject, error);
-          autoUpdater.on('update-downloaded', onDownloaded);
-          autoUpdater.on('error', onError);
-          Promise.resolve(autoUpdater.downloadUpdate()).catch((error) => finish(reject, error));
-        });
-      }
-      emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({
-        event: 'Finished',
-        data: {},
-      }));
-      return null;
+      if (!app.isPackaged) throw new Error('Desktop updates require an installed release');
+      return desktopUpdater.download();
 
     case 'desktop_restart': {
-      const applyUpdate = Boolean(state.pendingUpdate?.downloaded && app.isPackaged);
-      log.info(`[electron] desktop_restart applyUpdate=${applyUpdate} packaged=${app.isPackaged}`);
-      if (applyUpdate && process.platform === 'darwin' && typeof app.isInApplicationsFolder === 'function') {
-        try {
-          if (!app.isInApplicationsFolder()) {
-            throw new Error('Desktop update requires DevRyan.app to be installed in /Applications');
-          }
-        } catch (error) {
-          log.warn('[electron] desktop_restart blocked', error);
-          throw error;
-        }
-      }
-      if (applyUpdate) {
-        if (state.updateCleanupPromise) return null;
-        await prepareBackgroundRuntimeForAppUpdate();
-        prepareForQuit({ installingUpdate: true });
-      }
+      const applyUpdate = desktopUpdater.isDownloaded() && app.isPackaged;
+      if (!applyUpdate) { performConfirmedQuit({ restart: true });return null; }
+      if (!desktopDmgInstaller) throw new Error('Installer updates are unavailable on this platform');
+      if (state.updateCleanupPromise) return null;
+      // All integrity, signing, path, space and service-package checks precede
+      // any drain. A refused preflight leaves the running runtime untouched.
+      const prepared = await desktopDmgInstaller.prepare(await desktopUpdater.getDownloaded());
+      prepareForQuit({ installingUpdate: true });
       browserCdpBridge?.closeAll('app_restart');
-      // Defer so the IPC reply flushes before the app starts shutting down.
-      // Without this, quitAndInstall() can race with the renderer's pending
-      // invoke and the restart appears to do nothing from the UI side.
       setImmediate(() => {
-        try {
-          if (applyUpdate) {
-            state.updateCleanupPromise = finishQuitAfterCleanup({
-              owner: 'updater',
-              checkpointBotRuns: () => state.serverHandle?.checkpointBotRuns?.({ reason: 'app_update' }),
-              stopBotDispatcher: () => state.serverHandle?.stopBotDispatcher?.(),
-              stopBotIndexerRequests: () => state.serverHandle?.stopBotIndexerRequests?.(),
-              cleanupOwnedResources: async () => {
-                speechManager.shutdown();
-                await Promise.all([killSidecar({ strict: true }), sshManager.shutdownAll(), stopDesktopHostBroker()]);
-              },
-              requestQuit: () => { state.updateInstallReady = true; autoUpdater.quitAndInstall(); },
-              // Never call app.quit/exit on behalf of electron-updater.
-              forceExit: () => {},
-              onCleanupError: (error) => {
-                log.warn('[electron] update cleanup failed:', error?.code || 'update_cleanup_failed');
-                emitToAllWindows('openchamber:update-progress', { event: 'Error', data: { message: 'Update cleanup did not finish. Quit and reopen DevRyan before retrying the update.' } });
-              },
-            }).then((outcome) => {
-              if (outcome === 'blocked') {
-                state.installingUpdate = false;
-                state.updateInstallReady = false;
-                state.quitRequested = false;
-                state.quitConfirmed = false;
-              }
-            }).catch((error) => {
-              state.installingUpdate = false;
-              state.updateInstallReady = false;
-              state.quitRequested = false;
-              state.quitConfirmed = false;
-              log.error('[electron] update installation failed', error);
-            });
-          } else {
-            performConfirmedQuit({ restart: true });
+        state.updateCleanupPromise = finishQuitAfterCleanup({ owner: 'updater',
+          checkpointBotRuns: () => state.serverHandle?.checkpointBotRuns?.({ reason: 'app_update' }),
+          stopBotDispatcher: () => state.serverHandle?.stopBotDispatcher?.(),
+          stopBotIndexerRequests: () => state.serverHandle?.stopBotIndexerRequests?.(),
+          cleanupOwnedResources: async () => { await cleanupUpdateOwners();await desktopDmgInstaller.launchPrepared(prepared); },
+          requestQuit: () => { state.updateInstallReady = true;app.quit(); }, forceExit: () => {},
+          onCleanupError: error => {
+            log.warn('[electron] update cleanup refused', { code: error?.code || 'update_cleanup_failed' });
+            emitToAllWindows('openchamber:update-progress', { event: 'Error', data: { message: 'Update shutdown did not finish. Quit and reopen DevRyan before retrying.' } });
+          },
+        }).then(outcome => {
+          if (outcome === 'blocked') {
+            state.installingUpdate = false;state.updateInstallReady = false;state.quitRequested = false;state.quitConfirmed = false;
           }
-        } catch (err) {
-          log.error('[electron] desktop_restart failed', err);
-        }
+        }).catch(error => {
+          state.installingUpdate = false;state.updateInstallReady = false;state.quitRequested = false;state.quitConfirmed = false;
+          log.error('[electron] update installation failed', { code: error?.code || 'update_install_failed' });
+        });
       });
       return null;
     }
@@ -5241,6 +5096,7 @@ app.whenReady().then(async () => {
     platform: process.platform,
     arch: process.arch,
   });
+  await desktopDmgInstaller?.beginStartup(process.argv.find(arg => arg.startsWith('--devryan-update-attempt='))?.slice('--devryan-update-attempt='.length));
   if (isRuntimeServiceControlProbe) {
     const registration = getRuntimeServiceRegistration();
     const result = await registration.status();
@@ -5298,7 +5154,6 @@ app.whenReady().then(async () => {
   } catch (error) {
     log.warn('[electron] failed to apply persisted desktop keep awake setting:', error);
   }
-  setupAutoUpdater();
 
   if (process.platform === 'darwin') {
     Menu.setApplicationMenu(buildMacMenu());
@@ -5315,7 +5170,8 @@ app.whenReady().then(async () => {
   if (initial.length > 0) handleDeepLinks(initial);
 
   await startDesktopRuntime();
-}).catch((error) => {
+}).catch(async (error) => {
+  if (desktopDmgInstaller?.isCandidateStartup()) { await desktopDmgInstaller.refuseStartup();return; }
   const details = startupErrorDetails(error);
   log.error('[electron] app initialization failed', details);
   releaseDesktopKeepAwake();

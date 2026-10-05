@@ -123,7 +123,7 @@ describe('Electron startup splash', () => {
     const source = mainSource();
     const startupBlock = source.slice(
       source.indexOf('const startDesktopRuntime ='),
-      source.indexOf('const compareSemver ='),
+      source.indexOf('const updateCacheDirectory ='),
     );
     const retryBlock = source.slice(
       source.indexOf('const retryBotRuntimeStartup ='),
@@ -145,7 +145,7 @@ describe('Electron startup splash', () => {
   it('activates held recovery without resuming native startup, power hooks or Bot preparation', async () => {
     const source = mainSource();
     const start = source.indexOf('const startDesktopRuntime =');
-    const end = source.indexOf('const compareSemver =', start);
+    const end = source.indexOf('const updateCacheDirectory =', start);
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
     const createStartup = new Function('owners', `
@@ -153,6 +153,7 @@ describe('Electron startup splash', () => {
       const { runtimeBundleRecoveryRequired, state, prepareForegroundRuntime,
         resolveInitialUrl, activateMainWindow, installPowerResumeHook,
         isLocalStartupTarget, readSettingsRoot, prepareBotRuntimeInBackground } = owners;
+      const desktopDmgInstaller = null;
       ${source.slice(start, end)}
       return startDesktopRuntime;
     `);

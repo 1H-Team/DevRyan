@@ -72,6 +72,17 @@ queues the existing configuration-apply owner. The 52 focused server checks,
 mounted restore UI, packaged planning/execution guidance contracts, web/UI type
 checks and documentation validation passed. Final packaged qualification is pending.
 
+The DMG updater now verifies release identity, architecture, size and SHA-256,
+resumes interrupted downloads, performs preflight before drain, and binds a
+durable installation intent to file and process identities. The standalone
+installer uses the compiled macOS bridge for exclusive rename and atomic app
+exchange; startup acknowledgement retains the previous app, and rollback
+requires proven candidate cleanup and exit. Download, installer state-machine,
+owned drain, and startup checks passed, including the compiled native bridge.
+The installer bundle is self-contained and its digest is recorded with bundle
+inputs. Disposable packaged DMG launches and interrupted-helper recovery remain
+unqualified; no update of the user's installation was attempted.
+
 ## Final evidence table
 
 This table must be rebound to the final source commit, lock hash, native build
@@ -92,7 +103,7 @@ evidence in `.cache/release-2.0.2-recovery`.
 | CLI persistence/refusal and Electron Resume | Not run | Final runtime pending |
 | Shipped 2.0.1 → candidate → 2.0.1 continuity | Not run | Actual artifact qualification pending |
 | Packaged first launch and service mode | Not run | Candidate package pending |
-| DMG update success/refusal/interruption/rollback | Not run | Updater implementation pending |
+| DMG update success/refusal/interruption/rollback | Passed (focused); packaged not run | Verified downloads, native app exchange, startup acknowledgement and guarded rollback; disposable package and interrupted-helper qualification pending |
 | Exact provider/role graph, 12 journeys, 16 compaction boundaries | Not run | Owner sign-in window after credential-free rehearsal |
 | Managed-user verification | Unavailable | Non-production Supabase environment not supplied |
 | Cold/warm loopback and full performance audit | Not run | Timing instrumentation and reproducible baselines pending |

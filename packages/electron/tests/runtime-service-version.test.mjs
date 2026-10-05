@@ -292,54 +292,40 @@ describe('foreground connection to the background runtime', () => {
   });
 });
 
-describe('DMG fallback update', () => {
-  const caseStart = mainSource.indexOf("case 'desktop_download_and_install_update':");
-  const blockStart = mainSource.indexOf('if (!state.pendingUpdate.electronUpdate) {', caseStart);
-  const blockEnd = mainSource.indexOf("emitToAllWindows('openchamber:update-progress'", blockStart);
-  assert.ok(caseStart > 0 && blockStart > caseStart && blockEnd > blockStart);
+describe('verified installer update drain', () => {
+  const start = mainSource.indexOf('const cleanupUpdateOwners = async () => {');
+  const end = mainSource.indexOf('const rollbackCandidateUpdate =', start);
+  assert.ok(start > 0 && end > start);
   const run = new AsyncFunction('deps', `
-    const { state, resolveUpdateDownloadFallback, GITHUB_REPOSITORY_URL, prepareBackgroundRuntimeForAppUpdate, shell, log } = deps;
-    ${mainSource.slice(blockStart, blockEnd)}
-    return 'updater';
+    const { localServerStartPromise, prepareBackgroundRuntimeForAppUpdate, speechManager, killSidecar, sshManager, stopDesktopHostBroker } = deps;
+    ${mainSource.slice(start, end)}
+    return cleanupUpdateOwners();
   `);
-  const fallback = (drainError, drained = true) => {
+  test('waits for startup ownership and background drain before settling all remaining owned resources', async () => {
     const calls = [];
-    return {
-      calls,
-      result: run({
-        state: { pendingUpdate: { version: '2.0.2', metadata: {}, electronUpdate: null } },
-        resolveUpdateDownloadFallback: () => ({ url: 'https://github.com/1H-Team/DevRyan/releases/download/v2.0.2/DevRyan-2.0.2-arm64.dmg', kind: 'installer' }),
-        GITHUB_REPOSITORY_URL: 'https://github.com/1H-Team/DevRyan',
-        prepareBackgroundRuntimeForAppUpdate: async () => { calls.push('drain'); if (drainError) throw drainError; return drained; },
-        shell: { openExternal: async () => { calls.push('open'); } },
-        log: { info: () => {}, warn: () => {} },
-      }),
-    };
-  };
-
-  test('drains the background runtime before opening the installer', async () => {
-    const { calls, result } = fallback();
-    assert.deepEqual(await result, { openedExternally: true, kind: 'installer', backgroundRuntimeStopped: true });
-    assert.deepEqual(calls, ['drain', 'open']);
+    await run({ localServerStartPromise: Promise.resolve().then(() => calls.push('startup-settled')),
+      prepareBackgroundRuntimeForAppUpdate: async () => calls.push('background-drained'),
+      speechManager: { shutdown: () => calls.push('speech') },
+      killSidecar: async options => { assert.deepEqual(options, { strict: true });calls.push('native-owner'); },
+      sshManager: { shutdownAll: async () => calls.push('ssh') },stopDesktopHostBroker: async () => calls.push('broker'),
+    });
+    assert.deepEqual(calls, ['startup-settled', 'background-drained', 'speech', 'native-owner', 'ssh', 'broker']);
   });
-
-  test('an app-bound runtime has nothing to drain and is not reported stopped', async () => {
-    const { calls, result } = fallback(null, false);
-    assert.deepEqual(await result, { openedExternally: true, kind: 'installer', backgroundRuntimeStopped: false });
-    assert.deepEqual(calls, ['drain', 'open']);
+  test('unconfirmed startup or background termination cannot acknowledge installer cleanup', async () => {
+    for (const phase of ['startup', 'background']) {
+      const calls = [], failure = Object.assign(new Error('Unconfirmed owner'), { code: 'runtime_service_update_owner_active' });
+      await assert.rejects(run({ localServerStartPromise: phase === 'startup' ? Promise.reject(failure) : null,
+        prepareBackgroundRuntimeForAppUpdate: async () => { throw failure; },
+        speechManager: { shutdown: () => calls.push('speech') },killSidecar: () => calls.push('native'),
+        sshManager: { shutdownAll: () => calls.push('ssh') },stopDesktopHostBroker: () => calls.push('broker'),
+      }), failure);
+      assert.deepEqual(calls, []);
+    }
   });
-
   test('the drain reports whether it stopped a background runtime', () => {
     const body = mainSource.slice(mainSource.indexOf('const prepareBackgroundRuntimeForAppUpdate = async () => {'),
       mainSource.indexOf('const resumeBackgroundRuntimeAfterAppUpdate = '));
     assert.match(body, /if \(!state\.runtimeServiceClient\) return false;/);
     assert.match(body, /\n  return true;\n\};\n/);
-  });
-
-  test('a failed drain opens nothing and tells the user how to retry', async () => {
-    const { calls, result } = fallback(Object.assign(new Error('x'), { code: 'runtime_service_update_owner_active' }));
-    await assert.rejects(result, (error) => error.code === 'runtime_service_update_owner_active'
-      && /could not stop its background runtime/.test(error.message));
-    assert.deepEqual(calls, ['drain']);
   });
 });
