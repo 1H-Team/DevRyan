@@ -1,5 +1,6 @@
 import {NATIVE_BUNDLE_CREDENTIAL_CONTRACT} from './native-bundle-credential-contract.js';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
@@ -13,10 +14,9 @@ const roots = [];
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
 
-async function fixture({ unknownController = false, unsettledController = false, failDrain = false, failProjection = false, failRestart = false } = {}) {
-  const parent = new URL('../../../../../../.cache/runtime-bundle-lifecycle-tests/', import.meta.url);
-  await fs.mkdir(parent, { recursive: true });
-  const root = await fs.mkdtemp(path.join(parent.pathname, 'case-')); roots.push(root);
+async function fixture({ unknownController = false, unsettledController = false, failDrain = false, drainFailures = 0, failProjection = false,
+  failRestart = false, failQuiesce = false, failCapture = false, failRetain = false, failStore = null, reconciliationRequired = false } = {}) {
+  const root = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), 'runtime-bundle-lifecycle-')); roots.push(root);
   const launch = { opencodeDatabasePath: path.join(root, 'a.db'), webDataDirectory: path.join(root, 'web'),
     webConfigDirectory: path.join(root, 'web-config'), opencodeConfigDirectory: path.join(root, 'config'),
     controllerBinary: path.join(root, 'old-controller'), writerBinary: path.join(root, 'old-writer'),
@@ -25,11 +25,14 @@ async function fixture({ unknownController = false, unsettledController = false,
   await fs.writeFile(launch.opencodeDatabasePath, 'fixture database');
   for (const directory of [launch.webDataDirectory, launch.webConfigDirectory, launch.opencodeConfigDirectory]) await fs.mkdir(directory);
   const descriptor = { bundleID: 'A', generation: 2, launch, projectMap: [{ sourceDirectory: root, targetDirectory: root, mode: 'identity' }] };
-  const binding = { controlRoot: root, descriptor, selection: { revision: 1, selectedBundleID: 'A', previousBundleID: 'prior', reconciliationRequired: false } };
+  const binding = { controlRoot: root, descriptor, selection: { revision: 1, selectedBundleID: 'A', previousBundleID: 'prior', reconciliationRequired } };
   let selected = structuredClone({ descriptor, selection: binding.selection });
-  let exited = false, closed = false, prepared, callbacks;
+  let exited = false, prepared, callbacks, remainingDrainFailures = drainFailures;
   const events = [];
-  const controller = { hasExited: () => exited, call: async input => { events.push(input.action); },
+  // The real application admission gate, as composed by application.js main().
+  const gate = createRuntimeBundleAdmissionGate();
+  const injected = code => Object.assign(new Error(code), { code });
+  const controller = { hasExited: () => exited, call: async input => { events.push(input.action); if (failQuiesce) throw injected('bundle_controller_quiesce_failed'); },
     close: async () => { events.push('controller-close'); exited = !unsettledController; } };
   const manifest = { opencodeVersion: '2.0.20', inputs: { coreDigest: 'c'.repeat(64), reviewedPlugins: [] },
     compiledContracts: ['devryan-v2-clone/1', NATIVE_BUNDLE_CREDENTIAL_CONTRACT, 'devryan.bundle.credential-owners/2'] };
@@ -42,6 +45,7 @@ async function fixture({ unknownController = false, unsettledController = false,
     ? { manifest, controller: launch.controllerBinary, writer: launch.writerBinary } : retained);
   const credentialProcess = vi.fn(async input => {
     await input.assertHeld(); events.push(input.action.action);
+    if (failCapture && input.action.action === 'capture') throw injected('bundle_credential_capture_failed');
     if (input.action.action === 'project') {
       if (failProjection) throw Object.assign(new Error('incompatible'), { code: 'bundle_credential_contract_incompatible' });
       return { protocol: NATIVE_BUNDLE_CREDENTIAL_CONTRACT, status: 'projected', ...input.action.binding, appliedSha256: input.action.binding.sourceSha256 };
@@ -52,20 +56,22 @@ async function fixture({ unknownController = false, unsettledController = false,
     callbacks = options;
     return {
       readSelected: async () => selected,
-      prepare: async input => options.withQuiescedSource(input.source, async (proof, scope) => {
+      prepare: async input => options.withQuiescedSource(failStore === 'source' ? { kind: 'bundle', bundleID: 'B' } : input.source, async (proof, scope) => {
         await scope.assertHeld(); events.push('prepare');
+        if (failStore === 'prepare') throw injected('bundle_prepare_copy_failed');
         await options.captureCredentials({ descriptor, checkpoint: proof, assertHeld: scope.assertHeld });
         prepared = { ...descriptor, bundleID: input.bundleID, sourceBundleID: 'A', launch: { ...launch, ...input.launchArtifacts } };
         return prepared;
       }),
       select: async input => options.withQuiescedSource({ kind: 'bundle', bundleID: 'A' }, async (proof, scope) => {
         await scope.assertHeld(); await options.captureCredentials({ descriptor, checkpoint: proof, assertHeld: scope.assertHeld });
+        if (failStore === 'select') throw injected('bundle_selection_write_failed');
         events.push('select');
         selected = { descriptor: prepared, selection: { revision: input.expectedRevision + 1,
           selectedBundleID: input.bundleID, previousBundleID: 'A', reconciliationRequired: false } };
         return selected.selection;
       }),
-      rollback: async input => options.withQuiescedSource({ kind: 'bundle', bundleID: 'A' }, async (proof, scope) => {
+      rollback: async input => failStore === 'rollback-precheck' ? Promise.reject(injected('bundle_rollback_target_invalid')) : options.withQuiescedSource({ kind: 'bundle', bundleID: 'A' }, async (proof, scope) => {
         const captured = await options.captureCredentials({ descriptor, checkpoint: proof, assertHeld: scope.assertHeld });
         const target = { ...descriptor, bundleID: input.targetBundleID };
         const credentialBinding = { sourceBundleID: 'A', targetBundleID: target.bundleID, targetManifestSha256: launch.artifactManifestSha256,
@@ -79,17 +85,20 @@ async function fixture({ unknownController = false, unsettledController = false,
   };
   const restart = vi.fn(async () => { events.push('restart'); if (failRestart) throw new Error('host refused restart'); });
   const lifecycle = createRuntimeBundleLifecycle({ binding, artifactDirectory, verifyArtifacts, credentialProcess, storeFactory,
-    retainArtifacts: async () => { events.push('retain'); return retained; }, requestRecomposition: restart,
+    retainArtifacts: async () => { events.push('retain'); if (failRetain) throw injected('bundle_retain_failed'); return retained; }, requestRecomposition: restart,
     getController: () => unknownController ? null : controller,
-    closeAdmission: async () => { events.push('admission-close'); closed = true; },
-    assertAdmissionClosed: async () => { if (!closed) throw Error('not closed'); },
+    closeAdmission: async () => { events.push('admission-close'); gate.close(); },
+    assertAdmissionClosed: async () => gate.assertClosed(),
     stopProducers: async () => { events.push('producers-stop'); },
     beforeControllerStop: async () => { events.push('credentials-drain'); },
     afterExit: async () => { events.push('owner-close'); },
     executionHost: { drain: async () => { events.push('execution-drain'); } },
-    drainStores: async () => { events.push('stores-drain'); if (failDrain) throw Object.assign(Error('failed'), { code: 'bundle_stores_unsettled' }); },
+    drainStores: async () => {
+      events.push('stores-drain');
+      if (failDrain || remainingDrainFailures-- > 0) throw Object.assign(Error('failed'), { code: 'bundle_stores_unsettled' });
+    },
   });
-  return { lifecycle, events, credentialProcess, binding, restart, candidateHash, retained, callbacks: () => callbacks };
+  return { lifecycle, events, credentialProcess, binding, restart, candidateHash, retained, gate, artifactDirectory, callbacks: () => callbacks };
 }
 
 test('production lifecycle detects only the app artifact and holds the actual original owner through clone and selector CAS', async () => {
@@ -184,4 +193,94 @@ test('lifecycle forwards the verified target artifact capability to the core clo
  expect(verified).toBe(value.retained);
  expect(verified.manifest.compiledContracts).toContain('devryan.bundle.credential-owners/2');
  expect(value.events).toEqual([]);
+});
+
+test('a checkpoint-held host stays held after a retry that fails before the checkpoint', async () => {
+  const value = await fixture({ drainFailures: 1 });
+  await expect(value.lifecycle.upgrade({ expectedRevision: 1 })).rejects.toMatchObject({ code: 'bundle_stores_unsettled' });
+  expect(await value.lifecycle.inspect()).toMatchObject({ state: 'held', reason: 'bundle_stores_unsettled', revision: 1, rollbackAvailable: false });
+  expect(value.gate.isHeld()).toBe(true);
+  // The retry would fail before reaching any checkpoint (the candidate disappeared).
+  await fs.rm(path.join(value.artifactDirectory, 'native-bundle.json'));
+  const mark = value.events.length;
+  await expect(value.lifecycle.upgrade({ expectedRevision: 1 })).rejects.toMatchObject({ code: 'bundle_runtime_admission_held' });
+  expect(await value.lifecycle.inspect()).toMatchObject({ state: 'held', reason: 'bundle_stores_unsettled', rollbackAvailable: false });
+  expect(value.gate.isHeld()).toBe(true); expect(value.events.slice(mark)).toEqual([]);
+});
+
+test('a failed settlement cannot be retried in-process into a prepared and selected candidate', async () => {
+  const value = await fixture({ drainFailures: 1 });
+  await expect(value.lifecycle.upgrade({ expectedRevision: 1 })).rejects.toMatchObject({ code: 'bundle_stores_unsettled' });
+  const mark = value.events.length;
+  await expect(value.lifecycle.upgrade({ expectedRevision: 1 })).rejects.toMatchObject({ code: 'bundle_runtime_admission_held' });
+  await expect(value.lifecycle.rollback({ expectedRevision: 1 })).rejects.toMatchObject({ code: 'bundle_runtime_admission_held' });
+  await expect(value.lifecycle.recompose()).rejects.toMatchObject({ code: 'bundle_host_restart_required' });
+  expect(value.events.slice(mark)).toEqual([]);
+  expect(await value.lifecycle.inspect()).toMatchObject({ state: 'held', revision: 1, reason: 'bundle_stores_unsettled' });
+});
+
+test.each([
+  ['candidate artifact missing', { removeCandidate: true }, false],
+  ['retained artifact copy', { failRetain: true }, false],
+  ['checkpoint source mismatch', { failStore: 'source' }, false],
+  ['unacknowledged application write', { uncertainWrite: true }, true],
+  ['unknown original controller', { unknownController: true }, true],
+  ['controller quiesce', { failQuiesce: true }, true],
+  ['unconfirmed controller exit', { unsettledController: true }, true],
+  ['store drain', { failDrain: true }, true],
+  ['candidate preparation', { failStore: 'prepare' }, true],
+  ['credential capture', { failCapture: true }, true],
+  ['selector write', { failStore: 'select' }, true],
+])('reported state agrees with application admission after a failed upgrade: %s', async (_name, { removeCandidate, uncertainWrite, ...options }, held) => {
+  const value = await fixture(options);
+  if (removeCandidate) await fs.rm(path.join(value.artifactDirectory, 'native-bundle.json'));
+  if (uncertainWrite) {
+    const response = new EventEmitter();
+    value.gate.middleware({ method: 'POST', path: '/api/config' }, response, () => {}); response.emit('close');
+  }
+  const failure = await value.lifecycle.upgrade({ expectedRevision: 1 }).then(() => null, error => error);
+  expect(failure).not.toBeNull();
+  const snapshot = await value.lifecycle.inspect();
+  expect(value.gate.isHeld()).toBe(held);
+  expect(snapshot.state === 'held').toBe(held);
+  expect(snapshot.restartRequired).toBe(false); expect(snapshot.revision).toBe(1);
+  if (held) {
+    expect(snapshot.rollbackAvailable).toBe(false);
+    await expect(value.lifecycle.upgrade({ expectedRevision: 1 })).rejects.toMatchObject({ code: 'bundle_runtime_admission_held' });
+    expect((await value.lifecycle.inspect()).state).toBe('held');
+  } else {
+    expect(['ready', 'upgrade_available']).toContain(snapshot.state);
+    expect(value.events).not.toContain('admission-close');
+  }
+  expect(value.events).not.toContain('select');
+});
+
+test('reconciliation-held construction keeps its rollback until a checkpoint is taken', async () => {
+  const precheck = await fixture({ reconciliationRequired: true, failStore: 'rollback-precheck' });
+  expect(await precheck.lifecycle.inspect()).toMatchObject({ state: 'held', reason: 'bundle_rollback_reconciliation_required', rollbackAvailable: true });
+  await expect(precheck.lifecycle.rollback({ expectedRevision: 1 })).rejects.toMatchObject({ code: 'bundle_rollback_target_invalid' });
+  expect(precheck.gate.isHeld()).toBe(false);
+  expect(await precheck.lifecycle.inspect()).toMatchObject({ state: 'held', reconciliationRequired: true, rollbackAvailable: true });
+
+  const drained = await fixture({ reconciliationRequired: true, failDrain: true });
+  await expect(drained.lifecycle.rollback({ expectedRevision: 1 })).rejects.toMatchObject({ code: 'bundle_stores_unsettled' });
+  expect(drained.gate.isHeld()).toBe(true);
+  expect(await drained.lifecycle.inspect()).toMatchObject({ state: 'held', reason: 'bundle_stores_unsettled', rollbackAvailable: false });
+  await expect(drained.lifecycle.rollback({ expectedRevision: 1 })).rejects.toMatchObject({ code: 'bundle_runtime_admission_held' });
+
+  const reconciled = await fixture({ reconciliationRequired: true });
+  expect(await reconciled.lifecycle.rollback({ expectedRevision: 1 })).toMatchObject({ state: 'restart_required', restartRequired: true });
+  expect(await reconciled.lifecycle.inspect()).toMatchObject({ state: 'restart_required', rollbackAvailable: false });
+});
+
+test('the held route refusal keeps the original failure inspectable', async () => {
+  const value = await fixture({ failDrain: true }); const app = express();
+  registerRuntimeBundleLifecycleRoutes(app, { lifecycle: value.lifecycle, isAdministrator: () => true });
+  const first = await request(app).post('/api/runtime/bundle/upgrade').set('x-devryan-csrf', '1').send({ expectedRevision: 1 });
+  expect(first.status).toBe(503); expect(first.body.code).toBe('bundle_stores_unsettled');
+  for (const action of ['upgrade', 'rollback']) {
+    const refused = await request(app).post(`/api/runtime/bundle/${action}`).set('x-devryan-csrf', '1').send({ expectedRevision: 1 });
+    expect(refused.status).toBe(503); expect(refused.body.code).toBe('bundle_runtime_admission_held');
+  }
+  expect((await request(app).get('/api/runtime/bundle')).body).toMatchObject({ state: 'held', reason: 'bundle_stores_unsettled', rollbackAvailable: false });
 });
