@@ -158,7 +158,9 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
   // Only this privately created source is eligible for an automatic checkpoint.
   if(!await exists(launch.opencodeDatabasePath)){await fs.writeFile(launch.opencodeDatabasePath,'',{flag:'wx',mode:0o600});const db=resolveSqliteDriver().open(launch.opencodeDatabasePath);db.close();await fs.chmod(launch.opencodeDatabasePath,0o600);}
   await seedNativeSetup({source:{webDataDirectory:dataRoot,webConfigDirectory:path.join(home,'.config','openchamber'),
-   opencodeConfigDirectory:path.resolve(env.OPENCODE_CONFIG_DIR||path.join(env.XDG_CONFIG_HOME||path.join(home,'.config'),'opencode')),
+   // OpenCode always loads its global config directory; OPENCODE_CONFIG_DIR is one more layer over it.
+   opencodeConfigDirectory:path.resolve(env.XDG_CONFIG_HOME||path.join(home,'.config'),'opencode'),
+   opencodeConfigOverlayDirectory:env.OPENCODE_CONFIG_DIR?path.resolve(env.OPENCODE_CONFIG_DIR):undefined,
    opencodeConfigFile:env.OPENCODE_CONFIG?path.resolve(env.OPENCODE_CONFIG):undefined,
    opencodeDataDirectory:path.resolve(env.XDG_DATA_HOME||path.join(home,'.local','share'),'opencode'),home},target:launch,environment:env,captureLogicalSetup});
   if(!await exists(path.join(launch.opencodeConfigDirectory,'opencode.json')))await fs.copyFile(new URL('opencode.json',defaultConfigRoot),path.join(launch.opencodeConfigDirectory,'opencode.json'));

@@ -795,6 +795,17 @@ test('an interrupted stale-draft reset leaves only a .stale sibling that the nex
  await fs.mkdir(path.join(bundles,'.stale-selected'));expect(await launchDefault(f,home,releaseA,timedOut)).toBe(controlRoot);
  expect((await fs.readdir(bundles)).sort()).toEqual(['.stale-selected','default-native']);
 });
+test('fresh default startup seeds the global OpenCode config directory under an OPENCODE_CONFIG_DIR layer',async()=>{
+ const f=await fixture(),home=path.join(f.root,'layered-home'),release=await releaseArtifacts(f,'A'),global=path.join(home,'.config','opencode'),overlay=path.join(f.root,'layered-overlay');
+ for(const [file,text] of [[path.join(global,'agents','g.md'),'global'],[path.join(global,'agents','shared.md'),'global'],[path.join(overlay,'agents','shared.md'),'overlay'],[path.join(overlay,'agents','o.md'),'overlay']]){
+  await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,text);}
+ const {provisionDefaultNativeBundle}=await import('./native-default-bundle.js');
+ const controlRoot=await provisionDefaultNativeBundle({env:{PATH:process.env.PATH,OPENCODE_CONFIG_DIR:overlay},home,cwd:f.seed.projectMap[0].targetDirectory,artifactDirectory:release,runMigration:f.runMigration,
+  verifyArtifacts:async({manifestPath,manifestSha256,launcher})=>{const directory=path.dirname(manifestPath);return {directory,manifestPath,manifestSha256,launcher,
+   controller:path.join(directory,'DevRyan-controller'),writer:path.join(directory,'DevRyan-writer'),manifest:JSON.parse(await fs.readFile(manifestPath,'utf8'))};}});
+ const agents=path.join(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot}).descriptor.launch.opencodeConfigDirectory,'agents');
+ expect((await fs.readdir(agents)).sort()).toEqual(['g.md','o.md','shared.md']);expect(await fs.readFile(path.join(agents,'shared.md'),'utf8')).toBe('overlay');
+});
 test('the stale sweep keeps a matching sealed draft',async()=>{
  const f=await fixture(),home=path.join(f.root,'sweep-sealed-home'),release=await releaseArtifacts(f,'A'),bundles=path.dirname(draftRoot(home));
  await expect(launchDefault(f,home,release,timedOut)).rejects.toMatchObject({code:'native_migration_timeout'});
