@@ -10,7 +10,7 @@ import { reservePort, startOwnedProcess } from './process.mjs';
 import { PERF_PARENT_SESSION_ID } from '../perf/fixture-session-seeds.mjs';
 import { createLoopbackOpenCodeFixtureForGeneration } from '../perf/loopback-opencode-fixtures.mjs';
 import { resolveQaFixtureGeneration } from './runtime-target.mjs';
-import { createQaHostLaunchEnvironment } from './launch-environment.mjs';
+import { createQaIsolatedRuntimeEnvironment } from './launch-environment.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const requireElectron = createRequire(new URL('../../packages/electron/package.json', import.meta.url));
@@ -105,23 +105,13 @@ export async function runQa({ runtime = 'web', scenario = 'chat', generation, ou
       await writeFile(settingsPath, JSON.stringify({ ...JSON.parse(await readFile(settingsPath, 'utf8')), desktopLocalPort: port,
         ...(scenario === 'navigation' && process.env.DEVRYAN_QA_RUNTIME_SERVICE === '1' ? { productionBotsRuntimeMode: 'service' } : {}) }));
     }
-    const env = createQaHostLaunchEnvironment({}, { OPENCHAMBER_DATA_DIR: data, OPENCHAMBER_ELECTRON_USER_DATA_DIR: profile,
-      OPENCHAMBER_DIST_DIR: path.join(root, 'packages/web/dist'), OPENCHAMBER_PORT: String(port),
-      OPENCODE_HOST: fixture.origin, OPENCODE_SKIP_START: 'true', OPENCHAMBER_SKIP_OPENCODE_START: 'true',
-      OPENCHAMBER_ELECTRON_DEV: '1', NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1' });
-    delete env.ELECTRON_RUN_AS_NODE;
-    {
-      const qaHome = path.join(temporary, 'home');
-      await mkdir(qaHome, { recursive: true, mode: 0o700 });
-      await writeFile(path.join(qaHome, '.devryan-qa-home'), '', { mode: 0o600 });
-      await writeFile(path.join(temporary, 'credentials.env.json'), '{}', { mode: 0o600 });
-      Object.assign(env, { DEVRYAN_QA_HOME: qaHome, DEVRYAN_QA_RUNTIME_ROOT: temporary, DEVRYAN_QA_RUNTIME: runtime });
-      for (const key of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|API_KEY/.test(key)) delete env[key];
-      Object.assign(env, { HOME: qaHome, OPENCODE_TEST_HOME: qaHome, XDG_CONFIG_HOME: path.join(qaHome, '.config'),
-        XDG_DATA_HOME: path.join(qaHome, '.local/share'), XDG_STATE_HOME: path.join(qaHome, '.local/state'), XDG_CACHE_HOME: path.join(qaHome, '.cache'),
-        OPENCODE_CONFIG_DIR: path.join(qaHome, '.config/opencode'), GH_CONFIG_DIR: path.join(qaHome, 'gh'), ...fixture.runtimeEnv });
-      for (const key of ['OPENCODE_CONFIG', 'OPENCODE_CONFIG_CONTENT', 'NODE_OPTIONS', 'CLAUDE_CONFIG_DIR', 'MERIDIAN_CONFIG_DIR', 'MERIDIAN_SESSION_DIR']) delete env[key];
-    }
+    const qaHome = path.join(temporary, 'home');
+    await mkdir(qaHome, { recursive: true, mode: 0o700 });
+    await writeFile(path.join(qaHome, '.devryan-qa-home'), '', { mode: 0o600 });
+    await writeFile(path.join(temporary, 'credentials.env.json'), '{}', { mode: 0o600 });
+    const env = createQaIsolatedRuntimeEnvironment({ runtime, runtimeRoot: temporary, home: qaHome, data, profile,
+      distDirectory: path.join(root, 'packages/web/dist'), port, runtimeEnv: fixture.runtimeEnv,
+      overrides: { OPENCODE_HOST: fixture.origin, OPENCODE_SKIP_START: 'true', OPENCHAMBER_SKIP_OPENCODE_START: 'true' } });
     const start = (command, args, environment = env) => {
       const process = startOwnedProcess(command, args, { cwd: root, env: environment });
       owned.push(process);

@@ -210,6 +210,24 @@ A fresh checkout alone still cannot run live-provider QA. `prepareQaProfile` als
 
 Validation performed for this proposal: read root/workspace package scripts, both native-helper builders, native rebuild resolver, bundler and QA packager; checked installed Bun's `--frozen-lockfile`, `--backend=copyfile`, `--cache-dir` syntax and npm's `pack --pack-destination --json` syntax. Builder options and explicit config-file behavior match the existing QA packager. No dependency install, native rebuild, donor package build or provider request was executed for this task.
 
+## Packaged first-launch smokes
+
+`scripts/qa/first-launch-smoke.mjs` proves a packaged candidate's first native-bundle provisioning on a private HOME, one launch at a time:
+
+```sh
+node scripts/qa/first-launch-smoke.mjs --package-evidence "$PWD/.cache/qa/packaged-electron-EXAMPLE/package-evidence.json" --scenario owner-shaped
+node scripts/qa/first-launch-smoke.mjs --package-evidence <abs> --scenario v200-half-seed --v200-source <abs v2.0.0 checkout with node_modules>
+node scripts/qa/first-launch-smoke.mjs --package-evidence <abs> --scenario v200-selected --v200-source <abs v2.0.0 checkout> [--v200-artifacts <abs dir>]
+```
+
+Each run writes a new 0700 `.cache/qa/first-launch-<scenario>-*/` with `evidence.json`, `source-identity.json`, sanitized `logs/` and a screenshot. The private runtime (`runtime/`: marked home, `home/.config/openchamber` data, `profile`, `{}` credentials) is removed only after a passing, cleanly torn-down run; `--keep-runtime` retains it. The package is verified with `loadQaPackagedArtifact` before and after (evidence may live in this checkout or its main worktree).
+
+- `owner-shaped`: a synthetic v1 tree (8 `path_<base64>.json` project records, 608 v1 plans plus a nested folder, Finder `.DS_Store`/AppleDouble files, agents, skills, icons, fake `qa-fixture-*` keys only).
+- `v200-half-seed`: the actual v2.0.0 importer (child Node process in `<v2.0.0>/packages/web`, private HOME, platform-only environment) must fail with `native_setup_json_invalid`, leaving a stamped `fresh-native-source` without its seed marker; `themeId` then changes so an identical retry would fail.
+- `v200-selected`: v2.0.0 selects its bundle from the plan-free variant, using the installed v2.0.0 native artifacts read-only (default `/Applications/DevRyan.app/Contents/Resources/revert-runtime/darwin-arm64`). The selected bundle's `web-data/settings.json` receives the packaged QA policy overlay (Bots disabled, no LAN, reserved port), recorded in evidence, because desktop settings relocate there.
+
+The app is launched with `run.mjs`'s isolated environment (`createQaIsolatedRuntimeEnvironment`) without the loopback-fixture flags. FAIL is the first logged `[electron] startup failed` or deferred runtime failure (code and `relativePath`; packaged `main.log` lands in `<home>/Library/Logs/DevRyan/`), the startup error page, the runtime recovery page, an exit or the timeout. PASS requires the loopback app document, `/api/health` `ok` with `isOpenCodeReady`, and `selection.json`. Owner-shaped and half-seed then require exactly the 8 records in the bundle's `config/openchamber/projects`, unchanged v1 plan hashes, a removed fresh source and (half-seed) the changed `themeId` in the bundle. `v200-selected` requires the same selection revision/bundle and records the Providers-page offer from `GET /api/runtime/bundle` with its reason. Teardown sends SIGTERM, then SIGKILL after 20 s, cleans the owned process tree and asserts no command line contains the private root. A pre-2.0.0 package is expected to fail owner-shaped with `native_setup_json_invalid`; that negative result only proves the runner.
+
 ## Interpreting an incomplete acceptance run
 
 Generation-2 live matrices require programmatic `runQaMatrix(configPath, { prepareCellInputs })` preparation. Each live cell supplies `nativePreparation` with a canonical repo-owned copied `sourceHome`, a complete file/digest manifest, a verified native artifact root, `prepareSource`, and `bootstrapCredentials`. Preparation creates a private empty setup seed and delegates bundle initialization, checkpoints and selection to the existing production owners. It does not launch or import an old runtime. Before copying, the runner validates the private database, both configuration trees, web data and every Global root. It checks the complete source manifest after preparation and again after full cell execution, including failures. A changed original input fails the cell and preserves its runtime.
