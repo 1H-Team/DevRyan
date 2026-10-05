@@ -1,4 +1,5 @@
 import {createNativeSettingsDirectory,readNativeShellBundleBinding} from './native-settings-directory.mjs';
+import {selectInheritedShellEnv} from './shell-env-inheritance.mjs';
 import { AGENT_BROWSER_VERSION } from '@openchamber/web/server/lib/agent-browser/install.js';
 import { restartSupabaseHost } from './supabase-host-restart.mjs';
 import {confirmRuntimeBundleResume} from './runtime-bundle-recovery.mjs';
@@ -835,12 +836,11 @@ const inheritUserShellEnv = () => {
   const currentPath = process.env.PATH || '';
   const currentPathLooksUserConfigured = pathLooksUserConfigured(currentPath, homeDir, ':');
 
-  for (const [key, value] of Object.entries(shellEnv)) {
-    if (key === 'PATH') continue;
-    if (typeof process.env[key] === 'undefined') {
-      process.env[key] = value;
-    }
-  }
+  // Desktop-managed names stay as launched: the shell already derived its
+  // data/control roots from them, and provisioning refuses runtime overrides.
+  const { inherited, dropped } = selectInheritedShellEnv(process.env, shellEnv);
+  Object.assign(process.env, inherited);
+  if (dropped.length) log.info(`[shell-env] ignored login-shell variables managed by the desktop app: ${dropped.join(', ')}`);
 
   const shellPath = typeof shellEnv.PATH === 'string' ? shellEnv.PATH : '';
   if (!currentPathLooksUserConfigured && shellPath) {

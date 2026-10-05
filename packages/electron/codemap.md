@@ -359,6 +359,7 @@ service generation change. See [connection behavior](../../docs/SUPABASE_CONNECT
 
 - Managed SSH version mismatch permits signed shutdown after ownership verification. Installation waits for confirmed listener absence; ambiguous ownership or shutdown failures prevent upgrade/start.
 
+- `shell-env-inheritance.mjs` is the login-shell merge rule used before the in-process server import: it adds only variables absent from the launch environment and drops desktop-managed names (runtime overrides that provisioning refuses, plus the data/state roots the shell derived before inheritance, and `DEVRYAN_*`). `main.mjs` logs the dropped names, never their values.
 - `native-settings-directory.mjs` resolves the existing verified native selection for desktop preferences without launching a controller. Fresh transition reads the original setup until provisioning selects v2; subsequent boots read the selected bundle immediately. `desktop-settings.mjs` captures one settings path throughout each asynchronous mutation, and SSH preferences use the same resolver. The shell separately retains its original runtime-service/Bot data root, so selecting private application storage does not move those owners.
 - An unresolved bundle transition enters recovery before normal shell startup.
   Settings writes, provider/browser/Bot startup, automatic updates and deferred

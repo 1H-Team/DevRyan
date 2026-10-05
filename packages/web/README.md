@@ -69,6 +69,8 @@ OPENCODE_HOST=https://myhost:4096 OPENCODE_SKIP_START=true openchamber
 | `OPENCHAMBER_SKIP_API_COMPRESSION` | Set to `true` to disable gzip compression for `/api/*` responses |
 | `OPENCHAMBER_COMPRESS_API` | Set to `true` to force `/api/*` compression, or `false` to disable it. Desktop runtime disables API compression by default to reduce local runtime CPU use |
 
+These variables apply only where this web server documents them. The DevRyan 2.x desktop app manages its own runtime and does not support `OPENCODE_HOST`, `OPENCODE_PORT`, `OPENCODE_SKIP_START`, `OPENCHAMBER_SKIP_OPENCODE_START`, `OPENCODE_BINARY`, `OPENCODE_DB`, `OPENCHAMBER_DATA_DIR`, `XDG_STATE_HOME` or `DEVRYAN_*`: when they come from your login shell (for example `~/.zshrc`), the desktop app ignores them and logs their names.
+
 </details>
 
 <details>
