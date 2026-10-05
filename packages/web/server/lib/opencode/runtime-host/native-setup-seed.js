@@ -86,7 +86,7 @@ async function seed({source,target,environment={},captureLogicalSetup}){
    if(stat.dev!==checked.dev||stat.ino!==checked.ino)throw fail('native_setup_source_changed');
    // Another name of this inode may sit in a protected store the deny-list cannot see.
    if(stat.nlink>1)throw skipped('hard_link');
-   if(stat.size>limit)throw skipped('file_too_large');
+   if(stat.size>limit)throw Object.assign(skipped('file_too_large'),{size:stat.size,limit});
    const bytes=await handle.readFile(),after=await fs.lstat(file);if(bytes.length!==stat.size||after.ino!==stat.ino||after.dev!==stat.dev||after.mtimeMs!==stat.mtimeMs||after.ctimeMs!==stat.ctimeMs
     ||await fs.realpath(file)!==real)throw fail('native_setup_source_changed');return bytes;
   }finally{await handle.close();}
@@ -209,7 +209,10 @@ async function seed({source,target,environment={},captureLogicalSetup}){
     const child=await entry(path.join(item.file,name),childRelative,item.readRoot,item.tree);if(!child||records&&child.stat.isDirectory())continue;
     await place(child,childRelative,path.join(destination,name),transform,{},nested);}return;
   }
-  let bytes;try{bytes=await read(item.file,item.readRoot);}catch(error){if(error.code!=='native_setup_source_skipped')throw error;skip(relative,error.reason);return;}
+  let bytes;try{bytes=await read(item.file,item.readRoot);}catch(error){if(error.code!=='native_setup_source_skipped')throw error;
+   // A required account input is never skipped or truncated for size: the launch refuses with its name and size.
+   if(required&&error.reason==='file_too_large')throw Object.assign(fail('native_setup_source_too_large'),{reason:error.reason,size:error.size,limit:error.limit});
+   skip(relative,error.reason);return;}
   if(bytes===undefined)return;
   if(sink)return sink(bytes);
   let result=bytes;
@@ -227,16 +230,16 @@ async function seed({source,target,environment={},captureLogicalSetup}){
   await place({...item,tree:await fs.realpath(item.file)},relative,destination,transform,options);
  });
  // One source file through the same entry rules, read into memory.
- const load=async(root,relative,account)=>{let bytes;await copy(root,relative,undefined,undefined,{sink:value=>{bytes=value;},account});return bytes;};
+ const load=async(root,relative,{account,required}={})=>{let bytes;await copy(root,relative,undefined,undefined,{sink:value=>{bytes=value;},account,required});return bytes;};
  // Generated credential, Meridian and owner rows first (fail closed if they cannot fit),
  // then exact records and single files, record folders and bulk folders last.
- await copy(source.home,'.claude/.credentials.json',path.join(target.global.home,'.claude','.credentials.json'),undefined,{account:true});
+ await copy(source.home,'.claude/.credentials.json',path.join(target.global.home,'.claude','.credentials.json'),undefined,{account:true,required:true});
  // Meridian settings are written once; an exported default profile wins over the saved one.
  const meridianSettings='.config/meridian/settings.json',defaultProfile=typeof environment.MERIDIAN_DEFAULT_PROFILE==='string'?environment.MERIDIAN_DEFAULT_PROFILE.trim():'';
  if(defaultProfile.length>256)skip('MERIDIAN_DEFAULT_PROFILE','default_profile_invalid');
  if(!defaultProfile||defaultProfile.length>256)await copy(source.home,meridianSettings,path.join(target.global.home,meridianSettings),undefined,{required:true});
  else await located(meridianSettings,async()=>{
-  const bytes=await load(source.home,meridianSettings),saved=bytes===undefined?{}:parseJSON(bytes);
+  const bytes=await load(source.home,meridianSettings,{required:true}),saved=bytes===undefined?{}:parseJSON(bytes);
   if(!record(saved))skip(meridianSettings,'json_invalid');
   await save(path.join(target.global.home,meridianSettings),Buffer.from(JSON.stringify({...record(saved)?saved:{},activeProfile:defaultProfile})+'\n'),meridianSettings,true);
  });
@@ -245,13 +248,13 @@ async function seed({source,target,environment={},captureLogicalSetup}){
  await located(profileFile,async()=>{
   let label='MERIDIAN_PROFILES',profiles;const exported=environment.MERIDIAN_PROFILES;
   if(typeof exported==='string'&&exported.trim()){profiles=Buffer.byteLength(exported)>MAX_FILE_BYTES?undefined:parseJSON(exported);if(profiles===undefined)skip(label,'profiles_invalid');}
-  if(profiles===undefined){label=profileFile;const bytes=await load(source.home,profileFile);if(bytes===undefined)return;profiles=parseJSON(bytes);if(profiles===undefined){skip(label,'profiles_invalid');return;}}
+  if(profiles===undefined){label=profileFile;const bytes=await load(source.home,profileFile,{required:true});if(bytes===undefined)return;profiles=parseJSON(bytes);if(profiles===undefined){skip(label,'profiles_invalid');return;}}
   const relocated=await relocateNativeSetupProfiles({profiles,sourceHome:source.home,targetHome:target.global.home,onSkip:({reason,...detail})=>skip(label,reason,detail),
    copyAccount:async(account,destination)=>{await fs.mkdir(destination,{recursive:true,mode:0o700});
-    await copy(source.home,path.join(path.relative(source.home,account),'.credentials.json'),path.join(destination,'.credentials.json'),undefined,{account:true});}});
+    await copy(source.home,path.join(path.relative(source.home,account),'.credentials.json'),path.join(destination,'.credentials.json'),undefined,{account:true,required:true});}});
   await save(path.join(target.global.home,profileFile),Buffer.from(JSON.stringify(relocated)+'\n'),profileFile,true);
  });
- await located('auth.json',async()=>{const auth=await load(source.opencodeDataDirectory,'auth.json',true);
+ await located('auth.json',async()=>{const auth=await load(source.opencodeDataDirectory,'auth.json',{account:true,required:true});
   if(auth!==undefined){const parsed=parseJSON(auth);if(parsed===undefined)throw fail('native_setup_credentials_invalid');
    const projected=projectNativeSetupCredentials(parsed,{onSkip:detail=>skip('auth.json',detail.reason,detail.integrationID?{integrationID:detail.integrationID}:{})});
    await save(path.join(target.opencodeConfigDirectory,NATIVE_SETUP_CREDENTIAL_FILE),Buffer.from(JSON.stringify(projected)+'\n'),'auth.json',true);}});

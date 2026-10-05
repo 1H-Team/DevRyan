@@ -452,3 +452,18 @@ it('compares the opened descriptor with the checked path so a same-uid swap duri
  // The checked file becomes another name of a protected file.
  await swapped(async({file,secret})=>{await fs.rm(file);await fs.link(secret,file);});
 });
+it('refuses required account inputs over the per-file cap with their name and size, never skipping or truncating them',async()=>{
+ const big=JSON.stringify({openai:{type:'api',key:'fixture-'+'k'.repeat(NATIVE_SETUP_SEED_MAX_FILE_BYTES)}});
+ for(const relative of ['auth.json','.config/meridian/settings.json','.config/meridian/profiles.json','.claude/.credentials.json']){
+  const f=await fixture(),file=relative==='auth.json'?path.join(f.source.opencodeDataDirectory,relative):path.join(f.source.home,relative);
+  await f.text(file,big);await f.write(path.join(f.source.webDataDirectory,'settings.json'),{themeId:'dark'});
+  const error=await seedNativeSetup(f).then(()=>undefined,value=>value);
+  expect(error).toMatchObject({code:'native_setup_source_too_large',reason:'file_too_large',relativePath:relative,size:Buffer.byteLength(big),limit:NATIVE_SETUP_SEED_MAX_FILE_BYTES});
+  expect(JSON.stringify({...error,message:error.message})).not.toContain('fixture-');
+  expect(await fs.stat(path.join(f.target.webDataDirectory,'native-setup-seed.json')).catch(value=>value.code)).toBe('ENOENT');
+ }
+ // Exactly at the cap is accepted.
+ const f=await fixture(),exact=JSON.stringify({openai:{type:'api',key:'k'}}).padEnd(NATIVE_SETUP_SEED_MAX_FILE_BYTES,' ');
+ await f.text(path.join(f.source.home,'.claude','.credentials.json'),exact);
+ expect((await seedNativeSetup(f)).files.map(row=>path.relative(f.target.home,row.path))).toEqual(['.claude/.credentials.json']);
+},60_000);
