@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { createSessionVault } from '../../multi-user/vault.js';
 import { createLocalBotOwner } from '../../bots/local-owner.js';
 import { createSupabaseConnection } from '../../multi-user/supabase-connection.js';
@@ -80,4 +81,31 @@ test('a bundle whose owner the app replaced after an unconsumed restore starts a
  for(const start of [1,2])await restoreNativeSetupOwners(target);
  expect((await createSessionVault({dataDirectory:target})).get('supabase-local-owner').principal.id).toBe('40000000-0000-4000-8000-000000000004');
  expect(await fs.readdir(target)).toContain('native-setup-local-owners.restored.json');
+}));
+const child=(script,...args)=>new Promise((resolve,reject)=>{const c=spawn(process.execPath,[script,...args],{stdio:['ignore','pipe','inherit']});let out='';c.stdout.on('data',chunk=>out+=chunk);c.on('error',reject);c.on('close',()=>resolve(out.trim()));});
+test('concurrent first starts restore the snapshot once and neither start fails',async()=>fixture(async root=>{
+ const script=path.join(root,'start.mjs');
+ await fs.writeFile(script,`const {restoreNativeSetupOwners}=await import(${JSON.stringify(new URL('./native-setup-local-owners.js',import.meta.url).href)});
+const go=Number(process.argv[3]);while(Date.now()<go){}
+try{await restoreNativeSetupOwners(process.argv[2]);console.log('ok');}catch(error){console.log('FAIL '+(error.code??error.message));}`);
+ for(let round=0;round<20;round++){
+  const target=path.join(root,`target-${round}`);await snapshot(target,localAdmin);
+  const go=String(Date.now()+700);
+  expect(await Promise.all([child(script,target,go),child(script,target,go)])).toEqual(['ok','ok']);
+  expect((await createSessionVault({dataDirectory:target})).get('supabase-local-owner').principal).toMatchObject({id:localAdmin['supabase-local-owner'].id,scope:'local-admin'});
+  expect((await fs.readdir(target)).sort()).toEqual(['multi-user-vault.json','multi-user-vault.key','native-setup-local-owners.restored.json']);
+ }
+}),120_000);
+test('a start that crashed holding the restore lock, or lost the snapshot to another start, does not block or fail',async()=>fixture(async root=>{
+ const target=path.join(root,'target');await snapshot(target,localAdmin);
+ const dead=spawn(process.execPath,['-e','']);const pid=await new Promise(resolve=>dead.on('close',()=>resolve(dead.pid)));
+ await fs.writeFile(path.join(target,'native-setup-local-owners.lock'),JSON.stringify({ownerToken:'f'.repeat(32),pid,createdAt:Date.now()})+'\n');
+ await restoreNativeSetupOwners(target);
+ expect((await fs.readdir(target)).sort()).toEqual(['multi-user-vault.json','multi-user-vault.key','native-setup-local-owners.restored.json']);
+ const other=path.join(root,'other');await snapshot(other,localAdmin);const snapshotFile=path.join(other,'native-setup-local-owners.json');
+ const readFile=fs.readFile;fs.readFile=async(file,...rest)=>{if(String(file)===snapshotFile)throw Object.assign(Error('ENOENT injected'),{code:'ENOENT'});return readFile.call(fs,file,...rest);};
+ try{await restoreNativeSetupOwners(other);}finally{fs.readFile=readFile;}
+ const rename=fs.rename;fs.rename=async(from,...rest)=>{if(String(from)===snapshotFile)throw Object.assign(Error('ENOENT injected'),{code:'ENOENT'});return rename.call(fs,from,...rest);};
+ try{await restoreNativeSetupOwners(other);}finally{fs.rename=rename;}
+ expect((await createSessionVault({dataDirectory:other})).get('supabase-local-owner').principal.id).toBe(localAdmin['supabase-local-owner'].id);
 }));
