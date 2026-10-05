@@ -778,6 +778,31 @@ test('fresh default startup resumes its own sealed draft and never resets anythi
  expect(await launchDefault(f,home,releaseB,timedOut)).toBe(controlRoot);
  expect(await fs.readFile(preparation)).toEqual(sealed);expect(await fs.readFile(path.join(controlRoot,'selection.json'))).toEqual(selection);
 });
+test('an interrupted stale-draft reset leaves only a .stale sibling that the next launch sweeps before provisioning',async()=>{
+ const f=await fixture(),home=path.join(f.root,'sweep-home'),plugin={id:'fixture-release-b',manifestDigest:'b'.repeat(64),capabilities:['read']};
+ const releaseA=await releaseArtifacts(f,'A'),releaseB=await releaseArtifacts(f,'B',[plugin]),bundles=path.dirname(draftRoot(home));
+ await expect(launchDefault(f,home,releaseA,timedOut)).rejects.toMatchObject({code:'native_migration_timeout'});
+ // The reset dies while removing the renamed draft: default-native is already gone.
+ const rm=fs.rm;fs.rm=async(target,...rest)=>{if(path.basename(String(target)).startsWith('.stale-'))throw Object.assign(Error('EIO injected'),{code:'EIO'});return rm.call(fs,target,...rest);};
+ try{await expect(launchDefault(f,home,releaseB)).rejects.toMatchObject({code:'EIO'});}finally{fs.rm=rm;}
+ const [stale,...others]=await fs.readdir(bundles);expect(others).toEqual([]);expect(stale).toMatch(/^\.stale-/);
+ expect(await fs.stat(path.join(bundles,stale,'sources','preparation.json')).then(value=>value.isFile())).toBe(true);
+ await fs.rm(path.join(bundles,stale,'web-data'),{recursive:true,force:true});
+ const controlRoot=await launchDefault(f,home,releaseB),binding=readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot});
+ expect(await fs.readdir(bundles)).toEqual(['default-native']);expect(binding.descriptor.bundleID).toBe('default-native');
+ expect(JSON.parse(await fs.readFile(binding.descriptor.launch.reviewedPluginManifestPath,'utf8')).plugins).toEqual([{...plugin,legacySpecs:[]}]);
+ // Once selected nothing under bundles/ is swept.
+ await fs.mkdir(path.join(bundles,'.stale-selected'));expect(await launchDefault(f,home,releaseA,timedOut)).toBe(controlRoot);
+ expect((await fs.readdir(bundles)).sort()).toEqual(['.stale-selected','default-native']);
+});
+test('the stale sweep keeps a matching sealed draft',async()=>{
+ const f=await fixture(),home=path.join(f.root,'sweep-sealed-home'),release=await releaseArtifacts(f,'A'),bundles=path.dirname(draftRoot(home));
+ await expect(launchDefault(f,home,release,timedOut)).rejects.toMatchObject({code:'native_migration_timeout'});
+ const preparation=path.join(draftRoot(home),'sources','preparation.json'),sealed=await fs.readFile(preparation);
+ await fs.mkdir(path.join(bundles,'.stale-left','sources'),{recursive:true});await fs.writeFile(path.join(bundles,'.stale-left','sources','preparation.json'),sealed);
+ await launchDefault(f,home,release);
+ expect(await fs.readdir(bundles)).toEqual(['default-native']);expect(await fs.readFile(preparation)).toEqual(sealed);
+});
 test('selected default bundle still verifies after its one-shot owner snapshot is consumed',async()=>{
  const f=await fixture(),home=path.join(f.root,'owner-home'),owners={'supabase-local-owner':{id:'10000000-0000-4000-8000-000000000001',scope:'local-admin'}};
  const controlRoot=await launchDefault(f,home,await releaseArtifacts(f,'A'),f.runMigration,async()=>({localOwners:owners}));
@@ -795,6 +820,9 @@ test('fresh default startup refuses to reset a symlinked draft and leaves its ta
  await fs.mkdir(outside);await fs.writeFile(path.join(outside,'kept.txt'),'kept');
  await fs.mkdir(path.dirname(draftRoot(home)),{recursive:true});await fs.symlink(outside,draftRoot(home));
  await expect(launchDefault(f,home,await releaseArtifacts(f,'A'))).rejects.toMatchObject({code:'bundle_path_invalid'});
+ expect(await fs.readFile(path.join(outside,'kept.txt'),'utf8')).toBe('kept');
+ await fs.rm(draftRoot(home));await fs.symlink(outside,path.join(path.dirname(draftRoot(home)),'.stale-link'));
+ await expect(launchDefault(f,home,await releaseArtifacts(f,'B'))).rejects.toMatchObject({code:'bundle_path_invalid'});
  expect(await fs.readFile(path.join(outside,'kept.txt'),'utf8')).toBe('kept');
 });
 

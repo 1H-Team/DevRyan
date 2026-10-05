@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import {createHash} from 'node:crypto';
+import {createHash,randomBytes} from 'node:crypto';
 import {executionArtifacts} from '../execution-artifacts.js';
 import {resolveSqliteDriver} from '../db-maintenance-core.js';
 import {DEVRYAN_MANAGED_PLUGINS} from '../managed-plugins.js';
@@ -24,6 +24,7 @@ const nativePluginIDs={
  'opencode-gpt-imagegen':['opencode-gpt-imagegen'], 'oh-my-opencode-slim':['devryan.slim','devryan.slim-commands','devryan.slim-lifecycle'],
  superpowers:['devryan.reviewed-skills'],'devryan-skill-context':['devryan.reviewed-skills'],'devryan-document-reader':['devryan.document-reader'],
 };
+const syncDirectory=async directory=>{const handle=await fs.open(directory,'r');try{await handle.sync();}catch{}finally{await handle.close();}};
 const owned=async(directory,parent)=>{
  const stat=await fs.lstat(directory);
  if(path.dirname(directory)!==parent||!stat.isDirectory()||stat.isSymbolicLink()||await fs.realpath(directory)!==directory
@@ -51,7 +52,18 @@ const resetStaleDefaultDraft=async({controlRoot,sourceRoot,inputSha256})=>{
   await fs.rm(file);
  }
  if(!await exists(root))return false;
- await fs.rm(root,{recursive:true});return true;
+ // Never remove in place: an interrupted removal leaves only a sibling the next launch sweeps.
+ const stale=path.join(bundles,`.stale-${randomBytes(8).toString('hex')}`);
+ await fs.rename(root,stale);await syncDirectory(bundles);
+ await fs.rm(stale,{recursive:true});return true;
+};
+/** Call inside the bootstrap lock, only while no selection.json exists, before any
+ * draft or seed decision: the abandoned-seed reset refuses while any bundles/* entry exists. */
+const sweepStaleDrafts=async controlRoot=>{
+ const bundles=path.join(controlRoot,'bundles');let names;
+ try{names=(await fs.readdir(bundles)).filter(name=>name.startsWith('.stale-'));}catch(error){if(error.code==='ENOENT')return;throw error;}
+ if(names.length)await owned(bundles,controlRoot);
+ for(const name of names){const entry=path.join(bundles,name);await owned(entry,bundles);await fs.rm(entry,{recursive:true});}
 };
 export function defaultNativeRegistrations(origins) {
  return origins.map(origin=>({...origin,legacySpecs:DEVRYAN_MANAGED_PLUGINS.filter(plugin=>nativePluginIDs[plugin.id]?.includes(origin.id))
@@ -88,6 +100,7 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
    }});
    return controlRoot;
   }
+  await sweepStaleDrafts(controlRoot);
   const manifestPath=path.join(artifactDirectory,'native-bundle.json');
   const manifestStat=await fs.lstat(manifestPath).catch(()=>{throw fail('native_runtime_artifacts_unverified');});
   if(!manifestStat.isFile()||manifestStat.isSymbolicLink()||manifestStat.size>4*1024*1024)throw fail('native_runtime_artifacts_unverified');

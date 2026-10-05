@@ -119,6 +119,8 @@ Electron IPC use this same core. Recovery HTTP exposes no mutation route.
   Before any selection, a `bundles/default-native` draft that `sources/preparation.json`
   does not seal for the exact current input (interrupted copy, earlier build or cwd) is
   removed with the source's derived `reviewed-*.json`; a selected install is never reset.
+  The draft is renamed to a sibling `bundles/.stale-*` before removal, and later unselected
+  launches sweep validated `.stale-*` leftovers before any draft or seed decision.
   `native-setup-local-owners.js` restores the v1 owner snapshot once, then renames it to
   `native-setup-local-owners.restored.json`, so later app owner changes survive restarts.
   Concurrent first starts serialize on `native-setup-local-owners.lock` in web-data.
