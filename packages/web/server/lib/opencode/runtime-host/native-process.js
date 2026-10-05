@@ -27,7 +27,11 @@ export const prepareSupervisedController = async (boot, supervisor) => {
   }
   if (Object.entries(boot.globals).some(([key, directory]) => key !== 'config' && !directory.startsWith(auxiliaryDirectory + path.sep))) throw failure('native_controller_roots_invalid');
   const deniedReadDirectories = supervisor.deniedReadDirectories ?? [];
-  sessionExecutionProfile({ viewDirectory: databaseDirectory, scratchDirectory: boot.globals.tmp, auxiliaryDirectory, deniedReadDirectories });
+  // The controller consumes (unlinks) the one-time setup credential seed that
+  // provisioning writes beside the read-only config (native-setup-seed.js,
+  // controller-startup.ts). Only that file is writable; config/ stays read-only.
+  const writableDirectories = [path.join(boot.globals.config, 'native-setup-credentials.json')];
+  sessionExecutionProfile({ viewDirectory: databaseDirectory, scratchDirectory: boot.globals.tmp, auxiliaryDirectory, writableDirectories, deniedReadDirectories });
   for (const directory of deniedReadDirectories) if (await fs.promises.realpath(directory) !== directory || !(await fs.promises.stat(directory)).isDirectory()) throw failure('native_controller_roots_invalid');
   const controlBase = path.join(bundleRoot, '.native-controller');
   try { await fs.promises.mkdir(controlBase, { mode: 0o700 }); }
@@ -37,7 +41,7 @@ export const prepareSupervisedController = async (boot, supervisor) => {
   await fs.promises.mkdir(controlDirectory, { mode: 0o700 });
   const profile = path.join(controlDirectory, 'controller.sb'), receiptPath = path.join(controlDirectory, 'termination.json');
   await fs.promises.writeFile(profile, sessionExecutionProfile({ viewDirectory: databaseDirectory, scratchDirectory: boot.globals.tmp,
-    auxiliaryDirectory, socketDirectory: null, deniedReadDirectories }), { flag: 'wx', mode: 0o600 });
+    auxiliaryDirectory, socketDirectory: null, writableDirectories, deniedReadDirectories }), { flag: 'wx', mode: 0o600 });
   return { profile, receiptPath, arguments: [databaseDirectory, boot.globals.tmp, profile, receiptPath, '--'] };
 };
 

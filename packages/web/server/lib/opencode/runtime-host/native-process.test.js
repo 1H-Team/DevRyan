@@ -2,7 +2,8 @@ import { expect, test } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { createNativeControllerProcess } from './native-process.js';
+import { spawnSync } from 'node:child_process';
+import { createNativeControllerProcess, prepareSupervisedController } from './native-process.js';
 import {parseNativeBoot,parseNativeCommand,parseNativeReply} from './native-process-protocol.js';
 
 const fixture = async (action, bootReply) => {
@@ -122,4 +123,37 @@ test('queued command inspection can omit an input ID while delivery/recovery com
  expect(()=>parseNativeCommand({...input,messageID:42})).toThrow();
  expect(()=>parseNativeCommand({...input,action:'reconcile-primary-owned'})).toThrow();
  expect(()=>parseNativeCommand({...input,permit:{...permit,sessionID:'ses_foreign'}})).toThrow();
+});
+
+// The confined controller consumes the setup credential seed that provisioning
+// writes into the otherwise read-only config directory (native-setup-seed.js).
+const nativeLauncher = path.join(process.env.DEVRYAN_EXECUTION_ARTIFACTS
+  || path.resolve(import.meta.dirname, '../../../../runtime/darwin-arm64'), 'DevRyan-execution-darwin-arm64');
+const launcherPresent = process.platform === 'darwin' && await fs.access(nativeLauncher).then(() => true, () => false);
+test.skipIf(!launcherPresent)('the supervised controller may unlink only the setup credential seed in its read-only config', async () => {
+  const base = path.resolve(import.meta.dirname, '../../../../../../.cache/v2-validation');
+  await fs.mkdir(base, { recursive: true });
+  const root = await fs.realpath(await fs.mkdtemp(path.join(base, 'native-process-seed-')));
+  try {
+    const bundle = path.join(root, 'bundle'), global = path.join(bundle, 'global');
+    const globals = Object.fromEntries(['home', 'data', 'state', 'cache', 'bin', 'log', 'repos', 'tmp'].map(key => [key, path.join(global, key)]));
+    globals.config = path.join(bundle, 'config', 'opencode');
+    for (const directory of [path.join(bundle, 'opencode'), ...Object.values(globals)]) await fs.mkdir(directory, { recursive: true });
+    const seed = path.join(globals.config, 'native-setup-credentials.json'), config = path.join(globals.config, 'opencode.json');
+    await fs.writeFile(seed, '{}'); await fs.writeFile(config, '{}');
+    const boot = { instanceID: randomUUID(), databasePath: path.join(bundle, 'opencode', 'opencode.db'), globals };
+    const supervised = await prepareSupervisedController(boot, { launcher: nativeLauncher });
+    let run = 0;
+    const confined = (...command) => {
+      const args = [...supervised.arguments]; args[3] = path.join(root, `termination-${run++}.json`);
+      return spawnSync(nativeLauncher, [...args, ...command], { cwd: root, encoding: 'utf8',
+        env: { PATH: '/usr/bin:/bin', DEVRYAN_EXECUTION_WORKER: '1', DEVRYAN_EXECUTION_CWD: root, DYLD_INSERT_LIBRARIES: `${nativeLauncher}-spawn.dylib` } }).status;
+    };
+    expect(confined('/usr/bin/touch', path.join(globals.config, 'written'))).not.toBe(0);
+    expect(confined('/bin/rm', config)).not.toBe(0);
+    expect(confined('/bin/rm', seed)).toBe(0);
+    await expect(fs.access(seed)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fs.readFile(config, 'utf8')).resolves.toBe('{}');
+    await expect(fs.access(path.join(globals.config, 'written'))).rejects.toMatchObject({ code: 'ENOENT' });
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
