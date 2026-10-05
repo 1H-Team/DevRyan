@@ -2,16 +2,21 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {saveBundleJSON,readBundleJSON} from './bundle-migration-inventory.js';
+import {BUNDLE_DOCUMENT_MAX_BYTES} from './bundle-document-limits.js';
+// One budget for writing (native-setup-seed.js) and re-verifying the pinned seed.
+export const NATIVE_SETUP_SEED_MAX_FILES=4096,NATIVE_SETUP_SEED_MAX_FILE_BYTES=1024*1024,NATIVE_SETUP_SEED_MAX_TOTAL_BYTES=16*1024*1024,NATIVE_SETUP_SEED_MAX_MARKER_BYTES=BUNDLE_DOCUMENT_MAX_BYTES;
+// Finder/AppleDouble metadata is never setup and never ownership evidence.
+export const isNativeSetupOSMetadata=name=>name==='.DS_Store'||name==='Icon\r'||name.startsWith('._');
 const fail=()=>Object.assign(new Error('native_setup_source_ownership_invalid'),{code:'native_setup_source_ownership_invalid',status:503});
 const ownerFile='.devryan-fresh-source.json';
 const verifySeed=async sourceRoot=>{
  const saved=await readBundleJSON(path.join(sourceRoot,'web-data','native-setup-seed.json'));
- if(saved?.schema!==1||!Array.isArray(saved.files)||saved.files.length>4096)throw fail();
+ if(saved?.schema!==1||!Array.isArray(saved.files)||saved.files.length>NATIVE_SETUP_SEED_MAX_FILES)throw fail();
  const seen=new Set();let total=0;
  for(const row of saved.files){
   if(!row||typeof row.path!=='string'||!row.path.startsWith(sourceRoot+path.sep)||seen.has(row.path)||!/^[a-f0-9]{64}$/.test(row.sha256))throw fail();
   const stat=await fs.lstat(row.path);
-  if(!stat.isFile()||stat.isSymbolicLink()||await fs.realpath(row.path)!==row.path||stat.size>1024*1024||(total+=stat.size)>16*1024*1024
+  if(!stat.isFile()||stat.isSymbolicLink()||await fs.realpath(row.path)!==row.path||stat.size>NATIVE_SETUP_SEED_MAX_FILE_BYTES||(total+=stat.size)>NATIVE_SETUP_SEED_MAX_TOTAL_BYTES
     ||createHash('sha256').update(await fs.readFile(row.path)).digest('hex')!==row.sha256)throw fail();
   seen.add(row.path);
  }
@@ -23,7 +28,7 @@ export async function protectNativeSetupSource({controlRoot,sourceRoot}){
  if(await fs.realpath(path.dirname(sourceRoot))!==path.dirname(sourceRoot))throw fail();
  await fs.mkdir(sourceRoot,{recursive:true,mode:0o700});
  const allowed=new Set([ownerFile,'empty.db','empty.db-wal','empty.db-shm','web-data','web-config','opencode-config','home','reviewed-native.json','reviewed-plugins.json']);
- if((await fs.readdir(sourceRoot)).some(name=>!allowed.has(name)))throw fail();
+ if((await fs.readdir(sourceRoot)).some(name=>!allowed.has(name)&&!isNativeSetupOSMetadata(name)))throw fail();
  const walk=async directory=>{
   const stat=await fs.lstat(directory);
   if(!stat.isDirectory()||stat.isSymbolicLink()||await fs.realpath(directory)!==directory||typeof process.getuid==='function'&&stat.uid!==process.getuid())throw fail();

@@ -39,3 +39,11 @@ test('never claims an arbitrary directory or traverses a symlink as owned seed',
  await expect(protectNativeSetupSource({controlRoot,sourceRoot})).rejects.toMatchObject({code:'native_setup_source_ownership_invalid'});
  expect(await fs.stat(path.join(sourceRoot,'.devryan-fresh-source.json')).catch(error=>error.code)).toBe('ENOENT');
 });
+test('Finder metadata directly inside the fresh source is tolerated and removed with the tree',async()=>{
+ const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'source-metadata-')));roots.push(root);
+ const controlRoot=path.join(root,'runtime-bundles'),sourceRoot=path.join(root,'fresh-native-source');await fs.mkdir(path.join(sourceRoot,'web-data'),{recursive:true});
+ for(const name of ['.DS_Store','._web-data'])await fs.writeFile(path.join(sourceRoot,name),'\0\0\0\x01Bud1');
+ await fs.writeFile(path.join(sourceRoot,'web-data','native-setup-seed.json'),JSON.stringify({schema:1,files:[]}));
+ await protectNativeSetupSource({controlRoot,sourceRoot});expect((await fs.stat(path.join(sourceRoot,'.DS_Store'))).mode&0o777).toBe(0o600);
+ await removeNativeSetupSource({controlRoot,sourceRoot,verifySelected:async()=>{}});expect(await fs.stat(sourceRoot).catch(error=>error.code)).toBe('ENOENT');
+});
