@@ -1,9 +1,13 @@
 import path from 'node:path';
 import fs from 'node:fs';
 
+// The Superpowers bootstrap made every first turn load a skill before answering;
+// writing/executing plans guidance now lives in the primary agent prompts.
 const RETIRED_DEVRYAN_SKILL_NAMES = Object.freeze([
   'test-driven-development',
   'subagent-driven-development',
+  'superpowers',
+  'using-superpowers',
 ]);
 const RETIRED_DEVRYAN_SKILL_NAME_SET = new Set(RETIRED_DEVRYAN_SKILL_NAMES);
 

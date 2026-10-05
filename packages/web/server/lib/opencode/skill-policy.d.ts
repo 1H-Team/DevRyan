@@ -13,6 +13,8 @@ export type VisibleSkillPolicy = {
 export const RETIRED_DEVRYAN_SKILL_NAMES: readonly [
   'test-driven-development',
   'subagent-driven-development',
+  'superpowers',
+  'using-superpowers',
 ];
 export function isRetiredDevRyanSkillName(value: unknown): boolean;
 export function normalizeSkillPath(value: unknown): string;
