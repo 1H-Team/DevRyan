@@ -82,6 +82,23 @@ test('a bundle whose owner the app replaced after an unconsumed restore starts a
  expect((await createSessionVault({dataDirectory:target})).get('supabase-local-owner').principal.id).toBe('40000000-0000-4000-8000-000000000004');
  expect(await fs.readdir(target)).toContain('native-setup-local-owners.restored.json');
 }));
+test('an owner the app removed after an unconsumed 2.0.0 restore stays removed',async()=>fixture(async root=>{
+ // 2.0.0 restored the snapshot on every start and never consumed it.
+ const target=path.join(root,'target');await snapshot(target,localAdmin);
+ const earlier=await createSessionVault({dataDirectory:target});await earlier.restoreSetupOwners(localAdmin);await earlier.drain();
+ await earlier.delete('supabase-local-owner');await earlier.drain();
+ for(const start of [1,2])await restoreNativeSetupOwners(target);
+ expect((await createSessionVault({dataDirectory:target})).get('supabase-local-owner')).toBeNull();
+ expect((await fs.readdir(target)).sort()).toEqual(['multi-user-vault.json','multi-user-vault.key','native-setup-local-owners.restored.json']);
+}));
+test('a first start that died after creating the vault but before persisting the owner restores it on the next start',async()=>fixture(async root=>{
+ const target=path.join(root,'target');await snapshot(target,localAdmin);
+ // Only the pending marker and the new empty vault reached disk.
+ await fs.writeFile(path.join(target,'native-setup-local-owners.restoring'),'');await createSessionVault({dataDirectory:target});
+ await restoreNativeSetupOwners(target);
+ expect((await createSessionVault({dataDirectory:target})).get('supabase-local-owner').principal).toMatchObject({id:localAdmin['supabase-local-owner'].id,scope:'local-admin'});
+ expect((await fs.readdir(target)).sort()).toEqual(['multi-user-vault.json','multi-user-vault.key','native-setup-local-owners.restored.json']);
+}));
 const child=(script,...args)=>new Promise((resolve,reject)=>{const c=spawn(process.execPath,[script,...args],{stdio:['ignore','pipe','inherit']});let out='';c.stdout.on('data',chunk=>out+=chunk);c.on('error',reject);c.on('close',()=>resolve(out.trim()));});
 test('concurrent first starts restore the snapshot once and neither start fails',async()=>fixture(async root=>{
  const script=path.join(root,'start.mjs');
