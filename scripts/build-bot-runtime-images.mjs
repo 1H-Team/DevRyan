@@ -157,7 +157,7 @@ export async function readBotRuntimeReleaseMetadata({
     /export const PRODUCTION_BOTS_MIGRATION = '(\d{14})';/,
   );
   if (new Set(nativePins.map(match => match[1])).size !== 5 || !schemaMatch
-    || !openCodeDockerfile.includes('FROM oven/bun:1.3.14 AS bun-runtime')) {
+    || !/^FROM oven\/bun:1\.3\.14@sha256:[0-9a-f]{64} AS bun-runtime$/m.test(openCodeDockerfile)) {
     fail('Bot runtime release source metadata is inconsistent', 'bot_runtime_image_source_invalid');
   }
   // The Dockerfile keeps the literal pin; the shared Bot target constant is the
