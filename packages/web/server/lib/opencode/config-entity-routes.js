@@ -178,7 +178,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     try { return res.json(await getPackagedAgentPrompts()); }
     catch (error) { return res.status(error.status ?? 500).json({ error: formatErrorMessage(error, 'Unable to inspect packaged prompts') }); }
   });
-  app.post('/api/config/packaged-agent-prompts/restore', requireHostAdmin, async (req, res) => {
+  app.post('/api/config/packaged-agent-prompts/restore', requireHostAdmin, express.json({ limit: '4kb' }), async (req, res) => {
     if (typeof restorePackagedAgentPrompt !== 'function') return res.status(503).json({ error: 'Packaged prompt maintenance unavailable' });
     if (!req.body || Object.keys(req.body).length !== 2 || !Object.hasOwn(req.body, 'name') || !Object.hasOwn(req.body, 'expectedHash')) {
       return res.status(400).json({ error: 'An agent name and current revision are required' });

@@ -188,6 +188,16 @@ unqualified.
 
 ## Final evidence table
 
+The isolated full validation at `3f344f87` passed lint, type checks,
+documentation, the harness suite and all 4,048 UI checks. The web suite passed
+6,321 checks and failed one production JSON-parser coverage check: packaged
+prompt restoration had relied on a parser present only in its focused fixture.
+The restore route now owns a 4 KiB JSON parser. Its fixture omits the global
+parser and checks oversized refusal before mutation; both focused route and
+parser-coverage files pass (21 checks). The full failed log remains
+`integrated-full-validation-isolated.log`; later suites were not run by that
+attempt. Final integrated validation is still required.
+
 This table must be rebound to the final source commit, lock hash, native build
 identity, image manifest identity, packaging digests, and installed artifacts
 before it can authorize publication. Current evidence is interim engineering

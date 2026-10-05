@@ -58,7 +58,7 @@ describe('packaged prompt maintenance routes', () => {
     const restorePackagedAgentPrompt = vi.fn(async () => ({ changed: true, backups: [{ name: 'builder', backupPath: '/owned/backup.md' }] }));
     const markConfigChange = vi.fn(async () => ({ runtimeApplied: false, requiresApply: true }));
     const appFor = (principal) => {
-      const app = express();app.use(express.json());app.use((req, _res, next) => { req.principal = principal; next(); });
+      const app = express();app.use((req, _res, next) => { req.principal = principal; next(); });
       registerConfigEntityRoutes(app, { getPackagedAgentPrompts, restorePackagedAgentPrompt, markConfigChange });return app;
     };
     for (const principal of [undefined, { scope: 'managed-user', role: 'developer' }]) {
@@ -69,6 +69,8 @@ describe('packaged prompt maintenance routes', () => {
     const admin = appFor({ scope: 'local-admin' });
     await request(admin).get('/api/config/packaged-agent-prompts').expect(200);
     await request(admin).post('/api/config/packaged-agent-prompts/restore').send({name:'builder',expectedHash:'a'.repeat(64),force:true}).expect(400);
+    await request(admin).post('/api/config/packaged-agent-prompts/restore').send({name:'builder',expectedHash:'a'.repeat(4096)}).expect(413);
+    expect(restorePackagedAgentPrompt).not.toHaveBeenCalled();
     await request(admin).post('/api/config/packaged-agent-prompts/restore').send({name:'builder',expectedHash:'a'.repeat(64)})
       .expect(200).expect(res => expect(res.body).toMatchObject({success:true,runtimeApplied:false,requiresApply:true}));
     expect(markConfigChange).toHaveBeenCalledWith('packaged agent prompt restored', {agentName:'builder'}, true);
