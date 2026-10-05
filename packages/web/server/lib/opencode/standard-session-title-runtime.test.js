@@ -1166,6 +1166,36 @@ describe('standard session title runtime on OpenCode 2 (openCodeClient)', () => 
     await runtime.dispose();
   });
 
+  it('admits the native title helper with the session variant from the prompt and from history', async () => {
+    // Mirrors the native admission owner: a title helper must use the session's exact selection.
+    const selection = { providerID: 'openai', modelID: 'gpt-5.6-sol', variant: 'medium' };
+    const generateHelperText = vi.fn(async (request) => {
+      if (request.providerID !== selection.providerID || request.modelID !== selection.modelID || request.variant !== selection.variant) {
+        throw Object.assign(new Error('native_title_selection_changed'), { code: 'native_title_selection_changed', status: 403, statusCode: 403 });
+      }
+      return { text: 'Native Helper Session Title' };
+    });
+    for (const scheduled of [
+      { providerID: 'openai', modelID: 'gpt-5.6-sol', variant: 'medium' },
+      {},
+    ]) {
+      generateHelperText.mockClear();
+      const fake = createFakeOpenCode();
+      fake.state.messages.get('ses_1')[0].info.model.variant = 'medium';
+      const projected = [];
+      const diagnostics = [];
+      const runtime = createRuntime({
+        fake, projected, diagnostics, generateSessionModelTitle: null, generateHelperText,
+        openCodeClient: createFakeOpenCodeClient(fake),
+      });
+      await runtime.schedule({ sessionID: 'ses_1', directory: '/tmp/project', ...scheduled });
+      expect(generateHelperText).toHaveBeenCalledWith(expect.objectContaining({ ...selection, agent: 'devryan-title' }));
+      expect(diagnostics.map(({ payload }) => payload)).not.toContainEqual(expect.objectContaining({ reason: 'unauthorized' }));
+      expect(projected[0]).toMatchObject({ title: 'Native Helper Session Title', source: 'session_model' });
+      await runtime.dispose();
+    }
+  });
+
   it('removes only idle legacy helper sessions through the client', async () => {
     const fake = createFakeOpenCode({
       sessions: [
