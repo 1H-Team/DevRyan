@@ -57,9 +57,9 @@ every workspace's build script. Full validation remains separate from compilatio
 
 1. Validate release metadata and create the draft release.
 2. In parallel, validate UI types and compile web assets once, prepare arm64 native dependencies and
-   helpers, and build the eight multi-platform images. Image jobs use individual
+   helpers, and resolve all eight image inputs once. Image builds use individual
    GitHub Actions cache scopes with full intermediate-layer export.
-3. Each image job first resolves its input digest (`scripts/bot-runtime-image-inputs.mjs`).
+3. The read-only resolver computes each input digest (`scripts/bot-runtime-image-inputs.mjs`).
    When `<repository>:in-<digest>` exists, passes `cosign verify` for `release.yml` at a
    `refs/tags/v*` ref, has complete SBOM/provenance attestations and pulls anonymously,
    the job emits that image as its result without building. Otherwise it builds,
@@ -70,14 +70,18 @@ every workspace's build script. Full validation remains separate from compilatio
    The aggregation job requires eight distinct results for the same version,
    revision, repository, OpenCode/schema versions and plugin hash. It validates
    platform/attestation completeness, anonymous pull access and production
-   topology health before exposing the complete manifest. The topology smoke
+   anonymous access before exposing the complete manifest. Packaging and the
+   topology smoke then run independently; final publication requires both.
+   The topology smoke
    runs in an isolated `devryan-smoke-<hex>` namespace, creates, initializes and
    migrates the catalog volume the way Electron does, and waits for the fixed services,
    `database` and `database-rest` to become healthy.
 4. npm consumes the web artifact, bundles private workspace runtime packages, and publishes the exact verified tarball.
    Electron consumes web assets, prepared native files, and the complete Bot
    manifest, then runs all existing packaged artifact gates.
-5. Finalize the release only after every gate succeeds; finalization verifies the exact asset allowlist.
+5. Each packaging job records its actual installer/tarball SHA-256. Finalize
+   only after every gate succeeds; finalization verifies the exact asset
+   allowlist, uploaded state, non-empty size, and those packaging digests.
 
 macOS preparation builds and verifies the pinned native v2 runtime with Bun
 1.3.14. `release-cache.yml` now verifies those same inputs from `main`, without
@@ -115,7 +119,7 @@ or build credentials. Packaging restores it into a fresh checkout without runnin
 another dependency installation that could replace rebuilt native binaries.
 
 `scripts/release-ci.mjs` is the fixed-operation CI adapter. `RELEASE_OPERATION`
-selects `image-plan`, `image-resolve`, `image-sign`, `image-assemble`, `web-describe`, `web-stage`,
+selects `asset-describe`, `image-plan`, `image-resolve`, `image-sign`, `image-assemble`, `web-describe`, `web-stage`,
 `web-pack`, `prepare-export` or `prepare-import`. Artifact verification remains in reusable
 core functions. Internal handoff artifacts are not public release assets.
 
@@ -169,6 +173,17 @@ verification, native preparation and packaging timings separately. Compare total
 duration and step timings across subsequent authorized warm- and cold-cache
 releases. A 30% warm-cache reduction is a target, not a verified result.
 
-Do not use the existing release `dry_run` to test without publication: it still
-creates/uploads some external artifacts. Local fixture verification does not
-publish; a real release requires the normal authorized release process.
+`dry_run` prohibits GitHub release/tag creation and uploads, registry publication
+and input tags, npm publication, database deployment and notifications. It keeps
+internal workflow handoffs and checks staged assets locally against packaging
+digests. Signed-image and native/package gates remain mandatory: if an image's
+inputs changed and no verified signed image exists, the dry run refuses that
+image lane before publication rather than manufacturing development evidence.
+Bot build/sign/tag functions also enforce this prohibition in core code. Local
+fixture verification uses fake registry commands and makes no external writes.
+
+`windows.yml` provides separate `windows-2022` x64 and `windows-11-arm` ARM64
+qualification jobs with Bun 1.3.14, native MSVC environments, compiled supervisor
+acceptance and controller/writer/package checks. It has only read permissions.
+These jobs expose unported Windows contracts as failures and do not open runtime
+admission or publish an installer. See [Windows port](WINDOWS_PORT_PLAN.md).

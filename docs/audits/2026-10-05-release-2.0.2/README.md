@@ -83,6 +83,16 @@ The installer bundle is self-contained and its digest is recorded with bundle
 inputs. Disposable packaged DMG launches and interrupted-helper recovery remain
 unqualified; no update of the user's installation was attempted.
 
+Release preparation now resolves the eight Bot image inputs once. Manifest
+assembly permits packaging and isolated topology qualification to run
+independently, while publication still requires both. Dry-run guards cover
+release/tag/upload, registry/image-tag, npm, database and notification writes;
+Bot core functions also refuse publication and tagging. Assets must match their
+packaging SHA-256, uploaded state, size and exact shared scope allowlist. The
+preserved `r22-b6` verifier supplied the digest checks. Focused release tests
+passed without registry access. Windows x64/ARM64 CI is configured with pinned
+native tools and read permissions; actual Windows runs and contracts are pending.
+
 ## Final evidence table
 
 This table must be rebound to the final source commit, lock hash, native build
@@ -108,7 +118,7 @@ evidence in `.cache/release-2.0.2-recovery`.
 | Managed-user verification | Unavailable | Non-production Supabase environment not supplied |
 | Cold/warm loopback and full performance audit | Not run | Timing instrumentation and reproducible baselines pending |
 | Burst, six attribution, 21 calibration, conditional 42 paired launches | Not run | Quiet window and frozen grading pending; retain 750 ms |
-| Release dry-run with no external writes and exact asset digests | Not run | Release pipeline restructuring pending |
+| Release dry-run with no external writes and exact asset digests | Passed (focused); CI not run | Fake-registry refusal/reuse tests, workflow writer guards and packaging-digest verification; actual signed images and frozen package pending |
 | Downloaded DMG digest, mounted app, isolated launch and updater | Not run | Publication requires all preceding mandatory gates |
 | Windows x64 / ARM64 native safety and installers | Not run | [Port plan](../../WINDOWS_PORT_PLAN.md); native Windows runners required |
 

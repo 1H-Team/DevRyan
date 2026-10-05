@@ -5,6 +5,12 @@ import crypto from 'node:crypto';
 export const hash = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 export const WEB_BUILD_OPTIONS = Object.freeze({ mode: 'production', reactScan: false });
 
+export function assertReleaseWritesAllowed(environment = process.env) {
+  if (![undefined, 'false'].includes(environment.RELEASE_DRY_RUN)) {
+    throw Object.assign(new Error('Release dry runs prohibit external publication and tagging'), { code: 'release_dry_run_write_forbidden' });
+  }
+}
+
 export async function releaseIdentity(root, revision) {
   if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(revision || '')) throw new Error('Release revision required');
   return {

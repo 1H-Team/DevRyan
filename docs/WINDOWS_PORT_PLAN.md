@@ -22,6 +22,13 @@ storage, lifecycle, UX, skills, prompt, journal, and Bot image work.
 
 ## Current gaps
 
+`.github/workflows/windows.yml` now defines both native runner jobs. It selects
+the matching Bun, Node and MSVC architectures, installs the frozen lock without
+application setup, and requires actual supervisor acceptance before the full
+controller/writer and compiled inventory. It has no publication authority.
+The workflows have not run on Windows yet; current unported contracts are
+expected to fail and must be completed before either architecture can qualify.
+
 `scripts/build-native-runtime.mjs` currently requires Darwin ARM64 and seals
 Darwin PTY, AST, Claude, and supervisor assets. The Windows builder must select
 reviewed inputs by the actual host architecture, emit `.exe` artifacts, and

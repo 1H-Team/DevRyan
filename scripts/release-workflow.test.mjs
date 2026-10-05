@@ -31,14 +31,16 @@ test('desktop-only release skips npm while requiring all desktop and image gates
   const finalize = jobs['finalize-release'];
   assert.match(finalize.if, /always\(\)/);
   assert.match(finalize.if, /outputs.scope == 'desktop-macos-arm64' && needs.publish-npm.result == 'skipped'/);
-  assert.deepEqual(finalize.needs, ['create-release', 'publish-bot-runtime-images', 'build-desktop-electron-macos', 'publish-npm']);
-  for (const prerequisite of ['create-release', 'publish-bot-runtime-images', 'build-desktop-electron-macos']) {
+  assert.deepEqual(finalize.needs, ['create-release', 'publish-bot-runtime-images', 'verify-bot-runtime-topology', 'build-desktop-electron-macos', 'publish-npm']);
+  for (const prerequisite of ['create-release', 'publish-bot-runtime-images', 'verify-bot-runtime-topology', 'build-desktop-electron-macos']) {
     assert.ok(finalize.if.includes(`needs.${prerequisite}.result == 'success'`));
   }
   assert.equal(jobs['combine-electron-manifests'], undefined);
   assert.doesNotMatch(finalize.if, /combine-electron-manifests/);
-  const verification = finalize.steps.find(step => step.run === 'node scripts/verify-release-assets.mjs');
+  const verification = finalize.steps.find(step => step.name === 'Verify required release assets before publish');
   assert.equal(verification.env.RELEASE_SCOPE, '${{ needs.create-release.outputs.scope }}');
+  assert.equal(verification.env.RELEASE_SHA256_MACOS_ARM64, '${{ needs.build-desktop-electron-macos.outputs.sha256 }}');
+  assert.equal(verification.env.RELEASE_SHA256_WEB, '${{ needs.publish-npm.outputs.sha256 }}');
   assert.ok(finalize.steps.find(step => step.name === 'Deploy and verify Supabase configuration and migrations'));
 });
 
@@ -65,20 +67,23 @@ test('Bot image jobs reuse verified input-addressed images unless a refresh is r
   const refresh = workflow.on.workflow_dispatch.inputs.rebuild_bot_images;
   assert.equal(refresh.type, 'boolean');
   assert.equal(refresh.default, false);
+  const resolution = workflow.jobs['resolve-bot-runtime-images'];
+  assert.equal(resolution.permissions.contents, 'read');
+  const resolve = resolution.steps.find(step => step.env?.RELEASE_OPERATION === 'image-resolve');
+  assert.equal(resolve.id, 'resolve');
+  assert.equal(resolve.env.IMAGE_KEY, undefined);
+  assert.equal(resolve.env.REBUILD_BOT_IMAGES, "${{ github.event.inputs.rebuild_bot_images == 'true' }}");
   const { steps } = workflow.jobs['build-bot-runtime-image'];
+  assert.deepEqual(workflow.jobs['build-bot-runtime-image'].needs, ['create-release', 'resolve-bot-runtime-images']);
   const position = (predicate) => steps.findIndex(predicate);
-  const resolve = position((step) => step.env?.RELEASE_OPERATION === 'image-resolve');
   const cosign = position((step) => step.uses?.startsWith('sigstore/cosign-installer@'));
   const login = position((step) => step.uses?.startsWith('docker/login-action@'));
   const build = position((step) => step.uses?.startsWith('docker/build-push-action@'));
   const sign = position((step) => step.env?.RELEASE_OPERATION === 'image-sign');
   const upload = position((step) => step.uses?.startsWith('actions/upload-artifact@'));
-  assert.ok(login < resolve && cosign < resolve && resolve < build && build < sign && sign < upload);
-  assert.equal(steps[resolve].id, 'resolve');
-  assert.equal(steps[resolve].env.IMAGE_KEY, '${{ matrix.image }}');
-  assert.equal(steps[resolve].env.REBUILD_BOT_IMAGES, "${{ github.event.inputs.rebuild_bot_images == 'true' }}");
+  assert.ok(login < build && cosign < build && build < sign && sign < upload);
   for (const index of [build, sign]) {
-    assert.equal(steps[index].if, 'contains(fromJSON(steps.resolve.outputs.build), matrix.image)');
+    assert.equal(steps[index].if, "${{ env.RELEASE_DRY_RUN != 'true' && contains(fromJSON(needs.resolve-bot-runtime-images.outputs.build), matrix.image) }}");
   }
   assert.equal(steps[upload].if, undefined);
   assert.equal(steps[upload].with.path, 'artifacts/${{ matrix.image }}.json');
@@ -90,4 +95,21 @@ test('Bot image jobs reuse verified input-addressed images unless a refresh is r
   assert.equal(recipe.sbom, BOT_RUNTIME_IMAGE_BUILD_RECIPE.sbom);
   assert.equal(recipe['build-args'], undefined);
   assert.equal(recipe.target, undefined);
+  assert.ok(workflow.jobs['verify-bot-runtime-topology'].needs.includes('publish-bot-runtime-images'));
+  assert.ok(!workflow.jobs['build-desktop-electron-macos'].needs.includes('verify-bot-runtime-topology'));
+});
+
+test('dry-run guards every external writer and verifies staged digests without creating a release', () => {
+  const workflow = YAML.parse(fs.readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8'));
+  assert.equal(workflow.env.RELEASE_DRY_RUN, "${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}");
+  const writers = Object.values(workflow.jobs).flatMap(job => job.steps).filter(step =>
+    /^(?:softprops\/action-gh-release|docker\/login-action|docker\/build-push-action)@/.test(step.uses ?? '')
+    || step.env?.RELEASE_OPERATION === 'image-sign' || /npm publish|supabase db push|fetch\(process\.env\.DISCORD_WEBHOOK_URL/.test(step.run ?? ''));
+  assert.ok(writers.length >= 9);
+  for (const writer of writers) assert.match(writer.if ?? '', /env\.RELEASE_DRY_RUN != 'true'/, writer.name ?? writer.uses);
+  const verify = workflow.jobs['finalize-release'].steps.find(step => step.name === 'Verify required release assets before publish');
+  assert.match(verify.run, /"\$RELEASE_DRY_RUN" = 'true'[\s\S]*--directory release-assets/);
+  for (const job of Object.values(workflow.jobs)) for (const step of job.steps) {
+    if (step.uses?.startsWith('oven-sh/setup-bun@')) assert.equal(step.with['bun-version'], '1.3.14');
+  }
 });

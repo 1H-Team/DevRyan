@@ -29,6 +29,7 @@ async function checkout(t, extra = []) {
     'scripts/release-artifacts.mjs', 'scripts/build-bot-runtime-images.mjs',
     'scripts/verify-bot-runtime-images.mjs', 'scripts/bot-runtime-image-inputs.mjs',
     'packages/electron/bot-runtime-manifest.mjs',
+    'packages/electron/release-assets.mjs', 'scripts/verify-release-assets.mjs',
     'packages/web/server/lib/opencode/version-policy.js',
     ...extra,
   ]) {
@@ -187,4 +188,31 @@ test('image signing tags the signed index with its input digest only on tag-trig
   const calls = await registry.calls();
   assert.ok(calls.some((call) => call[0] === 'cosign' && call[1] === 'sign'));
   assert.ok(!calls.some((call) => call.includes('create')));
+});
+
+test('dry-run image resolution is read-only and signing refuses before reaching a registry', async t => {
+  const root = await imageCheckout(t), output = path.join(root, 'image-output');
+  const registry = await fakeRegistry(root);
+  let result = run(root, 'image-resolve', { ...workflow, RELEASE_DRY_RUN: 'true', IMAGE_KEY: 'rest', GITHUB_OUTPUT: output, PATH: registry.PATH });
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(!(await registry.calls()).some(call => call.includes('create') || call.includes('sign')));
+  await fs.rm(path.join(root, 'fake-registry/calls.log'));
+  result = run(root, 'image-sign', { ...workflow, RELEASE_DRY_RUN: 'true', IMAGE_KEY: 'rest', IMAGE_DIGEST: registry.indexDigest, PATH: registry.PATH });
+  assert.notEqual(result.status, 0);assert.match(result.stderr, /dry runs prohibit external publication/);
+  assert.deepEqual(await registry.calls(), []);
+  result = run(root, 'image-resolve', { ...workflow, RELEASE_DRY_RUN: 'true', REBUILD_BOT_IMAGES: 'true', IMAGE_KEY: 'rest', GITHUB_OUTPUT: output, PATH: registry.PATH });
+  assert.notEqual(result.status, 0);assert.match(result.stderr, /Dry run cannot publish new Bot images/);
+  assert.deepEqual(await registry.calls(), []);
+});
+
+test('packaged asset description emits the actual SHA-256 and refuses escaped directories', async t => {
+  const root = await checkout(t), output = path.join(root, 'asset-output'), directory = path.join(root, 'installers');
+  await fs.mkdir(directory);
+  const version = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).version;
+  const bytes = Buffer.from('disposable installer');
+  await fs.writeFile(path.join(directory, `DevRyan-${version}-arm64.dmg`), bytes);
+  const result = run(root, 'asset-describe', { RELEASE_ASSET_PLATFORM: 'macos-arm64', RELEASE_ASSET_DIRECTORY: directory, GITHUB_OUTPUT: output });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(await fs.readFile(output, 'utf8'), `sha256=${digestOf(bytes).slice(7)}\n`);
+  assert.notEqual(run(root, 'asset-describe', { RELEASE_ASSET_PLATFORM: 'macos-arm64', RELEASE_ASSET_DIRECTORY: repository, GITHUB_OUTPUT: output }).status, 0);
 });

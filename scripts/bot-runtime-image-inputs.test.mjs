@@ -261,5 +261,7 @@ describe('Bot runtime image input tagging', () => {
     ]) {
       assert.equal(await tagBotRuntimeImageInputs({ repository, indexDigest: `sha256:${'0'.repeat(64)}`, inputDigest, environment: { ...environment, ...override }, runner }), null);
     }
+    await assert.rejects(tagBotRuntimeImageInputs({ repository, indexDigest: `sha256:${'0'.repeat(64)}`, inputDigest,
+      environment: { ...environment, RELEASE_DRY_RUN: 'true' }, runner }), { code: 'release_dry_run_write_forbidden' });
   });
 });

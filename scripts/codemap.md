@@ -5,6 +5,17 @@ Repository automation entrypoint for developer workflows: validation planning, l
 
 ## Design
 
+- **Release writes and assets**: `release-artifacts.mjs` owns the core dry-run
+  write prohibition used by Bot build/sign/input-tag owners. `release-ci.mjs`
+  resolves all images once, records packaging digests, and refuses new unsigned
+  image evidence in dry runs. `verify-release-assets.mjs` takes exact scope
+  allowlists from Electron's shared asset table and checks uploaded state, size
+  and packaging SHA-256; `--directory` verifies staged dry-run assets. The
+  release graph separates manifest assembly from topology qualification so
+  packaging and isolated topology checks run independently and gate finalization.
+  `windows.yml` runs native x64/ARM64 qualification separately, with read-only
+  repository permissions and no runtime-admission bypass.
+
 - **Compiled native package** (`build-native-runtime.mjs`,
   `native-runtime-assets.mjs`, `verify-opencode-v2-package.mjs`): builds branded
   controller/writer executables with pinned SDK, dependency, source and asset

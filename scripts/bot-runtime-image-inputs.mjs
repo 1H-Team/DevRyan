@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { assertReleaseWritesAllowed } from './release-artifacts.mjs';
 
 import {
   BOT_RUNTIME_IMAGE_KEYS,
@@ -505,6 +506,7 @@ export async function tagBotRuntimeImageInputs({
     fail('Bot runtime image input tag request is invalid', 'bot_runtime_image_build_input_invalid');
   }
   const tag = botRuntimeImageInputTag(inputDigest);
+  assertReleaseWritesAllowed(environment);
   const { GITHUB_REPOSITORY: workflowRepository, GITHUB_REF: ref, GITHUB_WORKFLOW_REF: workflowRef } = environment;
   if (typeof workflowRepository !== 'string' || !GITHUB_REPOSITORY_PATTERN.test(workflowRepository)
     || typeof ref !== 'string' || !ref.startsWith('refs/tags/v')

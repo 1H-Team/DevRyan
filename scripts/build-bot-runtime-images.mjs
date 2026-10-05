@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
+import { assertReleaseWritesAllowed } from './release-artifacts.mjs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
@@ -395,6 +396,7 @@ export async function signBotRuntimeImage({
   root = repositoryRoot, runner = defaultCommandRunner, environment = process.env, fsPromises = fs,
 } = {}) {
   validateBuildIdentity({ version, revision, repositoryPrefix });
+  assertReleaseWritesAllowed(environment);
   if (environment.GITHUB_ACTIONS !== 'true' || !environment.ACTIONS_ID_TOKEN_REQUEST_URL
     || !environment.ACTIONS_ID_TOKEN_REQUEST_TOKEN) {
     fail('Bot runtime image publication requires GitHub OIDC', 'bot_runtime_image_oidc_required');
@@ -492,6 +494,7 @@ export async function buildBotRuntimeImages({
     || !environment || typeof environment !== 'object') {
     fail('Bot runtime image build output is invalid', 'bot_runtime_image_build_input_invalid');
   }
+  assertReleaseWritesAllowed(environment);
   if (environment.GITHUB_ACTIONS !== 'true'
     || typeof environment.ACTIONS_ID_TOKEN_REQUEST_URL !== 'string'
     || !environment.ACTIONS_ID_TOKEN_REQUEST_URL

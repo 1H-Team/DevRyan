@@ -3,6 +3,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { releaseAssetName } from '../packages/electron/release-assets.mjs';
+import { describeDirectoryAssets } from './verify-release-assets.mjs';
 import { BOT_RUNTIME_IMAGE_DEFINITIONS, assembleBotRuntimeImages, createBotRuntimeImageBuildPlan, signBotRuntimeImage } from './build-bot-runtime-images.mjs';
 import { readBotRuntimeImageInputs, resolveBotRuntimeImages, tagBotRuntimeImageInputs } from './bot-runtime-image-inputs.mjs';
 import { describeWebArtifact, verifyWebArtifact, stageWebArtifact, hash, releaseIdentity, verifyPreparedMetadata } from './release-artifacts.mjs';
@@ -23,7 +25,17 @@ const run = (args) => {
 };
 const preparedArchive = 'prepared.tar.zst';
 const botIdentity = { version: identity.release, revision: identity.revision, repositoryPrefix: `ghcr.io/${env.GITHUB_REPOSITORY_OWNER?.toLowerCase()}` };
+if (![undefined, 'true', 'false'].includes(env.RELEASE_DRY_RUN)) throw new Error('Invalid RELEASE_DRY_RUN');
 switch (env.RELEASE_OPERATION) {
+  case 'asset-describe': {
+    const name = releaseAssetName(env.RELEASE_ASSET_PLATFORM, identity.release);
+    const directory = path.resolve(env.RELEASE_ASSET_DIRECTORY ?? '');
+    if (!directory.startsWith(root + path.sep) || await fs.realpath(directory) !== directory) throw new Error('Owned release asset directory required');
+    const assets = await describeDirectoryAssets(directory), asset = assets.find(asset => asset.name === name);
+    if (!asset || asset.state !== 'uploaded' || asset.size <= 0 || !/^sha256:[a-f0-9]{64}$/.test(asset.digest)) throw new Error('Packaged release asset missing or invalid');
+    await fs.appendFile(env.GITHUB_OUTPUT, `sha256=${asset.digest.slice(7)}\n`);
+    break;
+  }
   case 'image-plan': {
     const plan = createBotRuntimeImageBuildPlan({ ...botIdentity, root });
     const build = plan.builds.find((entry) => entry.key === env.IMAGE_KEY);
@@ -41,7 +53,11 @@ switch (env.RELEASE_OPERATION) {
       console.log(`[bots] ${result.key}: reusing ${result.image.repository}@${result.image.indexDigest}`);
     }
     for (const key of resolution.build) console.log(`[bots] ${key}: building (${resolution.reasons[key]})`);
+    if (env.RELEASE_DRY_RUN === 'true' && resolution.build.length) {
+      throw new Error('Dry run cannot publish new Bot images. Qualification requires verified signed images for the changed inputs: ' + resolution.build.join(', '));
+    }
     await fs.appendFile(env.GITHUB_OUTPUT, `build=${JSON.stringify(resolution.build)}\n`);
+    await write('resolution.txt', { build: resolution.build });
     break;
   }
   case 'image-sign': {
