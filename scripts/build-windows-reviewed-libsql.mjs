@@ -75,6 +75,9 @@ async function build() {
     const platformKeys = ['PATH', 'SystemRoot', 'SYSTEMROOT', 'WINDIR', 'SystemDrive', 'COMSPEC', 'PATHEXT', 'TEMP', 'TMP', 'USERPROFILE', 'INCLUDE', 'LIB', 'LIBPATH', 'RUSTUP_HOME', 'CARGO_HOME'];
     const env = Object.fromEntries(platformKeys.filter(key => typeof process.env[key] === 'string').map(key => [key, process.env[key]]));
     env.CARGO_TARGET_DIR = path.join(repository, '.cache', `sql-${process.arch}`, 'target');
+    // Use the architecture-specific VsDevCmd tools already selected by CI.
+    env.CMAKE_GENERATOR = 'NMake Makefiles';
+    report.cmakeGenerator = env.CMAKE_GENERATOR;
     report.stage = 'source-build';
     try {
       const result = await execute('cargo', [`+${toolchain}`, 'build', '--locked', '--release', '--target', target], { cwd: source, env, timeout: 1200000, maxBuffer: 4 * 1024 * 1024 });

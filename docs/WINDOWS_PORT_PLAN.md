@@ -130,6 +130,11 @@ dependency and updates no lockfile. Source changes and dependency resolution
 changes refuse the build. `libsql-source-evidence.json` is an asset candidate
 receipt, not runtime acceptance. Native build results remain pending; the
 controller/writer must still seal and qualify the actual reviewed resource.
+Run `37381203090` built the exact source on x64 and passed the Node and Bun
+database checks. ARM64 preserved the same source bytes but failed CMake's
+Visual Studio generator discovery. The builder now explicitly uses MSVC's
+`NMake Makefiles` generator with the native architecture's `VsDevCmd` tools;
+both native builds must run again before this candidate is qualified.
 The [Rust platform contract](https://doc.rust-lang.org/stable/rustc/platform-support/windows-msvc.html)
 supports native MSVC ARM64 host tools; that support does not establish libsql
 compatibility by itself.
