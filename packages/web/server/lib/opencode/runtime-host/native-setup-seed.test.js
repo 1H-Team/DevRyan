@@ -308,6 +308,35 @@ it('ignores a credential store that canonicalizes to HOME, outside HOME or onto 
  expect(await fs.readFile(path.join(f.target.opencodeConfigDirectory,'skills','a','SKILL.md'),'utf8')).toBe('skill');
  expect(await fs.readdir(path.join(f.target.webConfigDirectory,'themes'))).toEqual(['t.json']);
 });
+// Setup commonly shared from Claude Code/Codex: only their top-level setup folders and instruction files.
+it.each([
+ ['skills -> ~/.claude/skills',(home,config)=>[[path.join(home,'.claude','skills'),path.join(config,'skills')]],'skills/s/SKILL.md'],
+ ['AGENTS.md -> ~/.claude/CLAUDE.md',(home,config)=>[[path.join(home,'.claude','CLAUDE.md'),path.join(config,'AGENTS.md')]],'AGENTS.md'],
+ ['commands -> ~/.claude/commands',(home,config)=>[[path.join(home,'.claude','commands'),path.join(config,'commands')]],'commands/c.md'],
+ ['AGENTS.md -> ~/.codex/AGENTS.md',(home,config)=>[[path.join(home,'.codex','AGENTS.md'),path.join(config,'AGENTS.md')]],'AGENTS.md'],
+])('copies shared setup linked from %s',async(_name,links,copied)=>{
+ const f=await fixture(),home=f.source.home,config=f.source.opencodeConfigDirectory;
+ for(const [file,text] of [['.claude/skills/s/SKILL.md','skill'],['.claude/CLAUDE.md','rules'],['.claude/commands/c.md','cmd'],['.codex/AGENTS.md','rules']])await f.text(path.join(home,file),text);
+ for(const [store,link] of links(home,config))await fs.symlink(store,link);
+ const marker=await seedNativeSetup(f);
+ expect(marker.skipped).toEqual([]);expect(marker.files.map(row=>path.relative(f.target.opencodeConfigDirectory,row.path))).toEqual([copied]);
+ expect(await fs.readFile(path.join(f.target.opencodeConfigDirectory,copied),'utf8')).toBe(await fs.readFile(path.join(config,copied),'utf8'));
+});
+it('keeps the rest of ~/.claude, ~/.codex and ~/.claude.json protected from links, including links nested in shared setup',async()=>{
+ const f=await fixture(),home=f.source.home,claude=path.join(home,'.claude'),codex=path.join(home,'.codex'),skills=path.join(home,'.agents','skills');
+ await f.write(path.join(claude,'.credentials.json'),{claudeAiOauth:{accessToken:'fixture-claude'}});await f.text(path.join(claude,'projects','p','t.jsonl'),'fixture-transcript');
+ await f.write(path.join(claude,'settings.json'),{fixture:'settings'});await f.text(path.join(codex,'auth.json'),'fixture-codex');await f.text(path.join(codex,'sessions','s.jsonl'),'fixture-session');
+ await f.write(path.join(home,'.claude.json'),{fixture:'claude-json'});await f.text(path.join(claude,'skills','s','SKILL.md'),'skill');
+ const stores={cred:path.join(claude,'.credentials.json'),projects:path.join(claude,'projects'),settings:path.join(claude,'settings.json'),cauth:path.join(codex,'auth.json'),
+  csessions:path.join(codex,'sessions'),cjson:path.join(home,'.claude.json'),cl:claude,cx:codex};
+ await fs.mkdir(skills,{recursive:true});for(const [name,store] of Object.entries(stores))await fs.symlink(store,path.join(skills,name));
+ // A shared skills folder whose own subtree links back into ~/.claude/projects.
+ await fs.symlink(path.join(claude,'projects'),path.join(claude,'skills','s','history'));await fs.symlink(path.join(claude,'skills'),path.join(f.source.opencodeConfigDirectory,'skills'));
+ const marker=await seedNativeSetup(f);
+ expect(marker.skipped).toEqual([{relativePath:'skills/s/history',reason:'protected'},...Object.keys(stores).sort().map(name=>({relativePath:'.agents/skills/'+name,reason:'protected'}))]);
+ expect(marker.files.map(row=>path.relative(f.root,row.path)).sort()).toEqual(['target/config/skills/s/SKILL.md','target/home/.claude/.credentials.json']);
+ expect(JSON.parse(await fs.readFile(path.join(f.target.home,'.claude','.credentials.json'),'utf8'))).toEqual({claudeAiOauth:{accessToken:'fixture-claude'}});
+});
 it('never follows links or bulk folders into account, token and browser stores; exact account inputs still seed',async()=>{
  const f=await fixture(),home=f.source.home,skills=path.join(home,'.agents','skills'),data=path.join(home,'.local','share','opencode'),source={...f.source,opencodeDataDirectory:data};
  await f.text(path.join(skills,'ok','SKILL.md'),'ok');await f.write(path.join(data,'auth.json'),{fixture:{type:'api',key:'fixture-auth'}});

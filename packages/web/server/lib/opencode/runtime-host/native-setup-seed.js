@@ -130,7 +130,8 @@ async function seed({source,target,environment={},captureLogicalSetup}){
  // Credential, token and browser stores are never setup, whether reached by a link or below one.
  // Account stores (raw OpenCode data, ~/.claude, Meridian accounts) are read only by the exact
  // auth.json/.credentials.json copies, never through another link or copied folder. A store that
- // canonicalizes to HOME, outside it, or onto/above a setup root protects nothing.
+ // canonicalizes to HOME, outside it, or onto/above a setup root protects nothing. ~/.claude and
+ // ~/.codex stay protected except their top-level shared setup folders and instruction files.
  const absolute=value=>typeof value==='string'&&path.isAbsolute(value)?[path.resolve(value)]:[];
  const fromHome=values=>home?values.map(relative=>path.join(home,relative)):[];
  const setupRoots=await canonicalAll([source.webDataDirectory,source.webConfigDirectory,source.opencodeConfigDirectory,source.opencodeConfigFile&&path.dirname(source.opencodeConfigFile)]
@@ -138,9 +139,13 @@ async function seed({source,target,environment={},captureLogicalSetup}){
  const accountRoots=home?await canonicalAll([...absolute(source.opencodeDataDirectory),...fromHome(['.claude','.config/meridian/accounts'])]):[];
  const usable=(values,protectedRoots)=>values.filter(value=>value!==home&&inside(home,value)&&!protectedRoots.some(root=>inside(value,root)));
  const secrets=usable(await canonicalAll([...fromHome(['.ssh','.gnupg','.aws','.azure','.kube','.docker','.config/gcloud','.config/gh','.password-store','.netrc','Library/Keychains','Library/Cookies',
-  '.codex','.git-credentials','.npmrc','.pypirc',...['Google','BraveSoftware','Firefox','Microsoft Edge','Arc'].map(name=>'Library/Application Support/'+name)]),
+  '.codex','.claude.json','.git-credentials','.npmrc','.pypirc',...['Google','BraveSoftware','Firefox','Microsoft Edge','Arc'].map(name=>'Library/Application Support/'+name)]),
   ...absolute(environment.XDG_CONFIG_HOME).map(value=>path.join(value,'gh')),...absolute(environment.GH_CONFIG_DIR),...absolute(environment.CLOUDSDK_CONFIG)]),[...setupRoots,...accountRoots]);
- const accounts=usable(accountRoots,setupRoots);
+ const accounts=usable(accountRoots,setupRoots),tools=home?await canonicalAll(fromHome(['.claude','.codex'])):[];
+ const sharedDirs=new Set(['skills','commands','agents','prompts','output-styles']),sharedFiles=new Set(['CLAUDE.md','AGENTS.md']);
+ // The ~/.claude or ~/.codex root that admits this canonical file as shared setup, if any.
+ const shared=(file,stat)=>tools.find(root=>{if(file===root||!inside(root,file))return false;const [top,...rest]=path.relative(root,file).split(path.sep);
+  return sharedDirs.has(top)&&(rest.length>0||stat.isDirectory())||sharedFiles.has(top)&&!rest.length&&stat.isFile();});
  // lstat one source entry. A symlink is followed only into the canonical HOME, to a
  // uid-owned file or directory that is neither HOME itself nor an ancestor of the copied
  // root (`tree`); reads then walk from HOME with O_NOFOLLOW. Only `account` reads enter account stores.
@@ -153,7 +158,8 @@ async function seed({source,target,environment={},captureLogicalSetup}){
    if(resolved===home||tree&&tree.startsWith(resolved+path.sep)){skip(relative,'protected');return null;}
    file=resolved;readRoot=home;
   }
-  if(guarded.some(root=>inside(root,file))||secrets.some(root=>inside(root,file))||!account&&accounts.some(root=>inside(root,file))){skip(relative,'protected');return null;}
+  const open=shared(file,stat),blocked=root=>inside(root,file)&&root!==open;
+  if(guarded.some(root=>inside(root,file))||secrets.some(blocked)||!account&&accounts.some(blocked)){skip(relative,'protected');return null;}
   if(!stat.isFile()&&!stat.isDirectory()){skip(relative,'unsupported_type');return null;}
   return {file,stat,readRoot,tree};
  };
