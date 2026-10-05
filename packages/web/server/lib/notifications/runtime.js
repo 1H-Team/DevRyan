@@ -1359,7 +1359,12 @@ export const createNotificationTriggerRuntime = (deps) => {
         const permissionText = typeof permission === 'string' && permission.length > 0 ? permission : '';
         const patterns = Array.isArray(payload.properties?.patterns) ? payload.properties.patterns : [];
         const requestedPath = patterns.find((pattern) => typeof pattern === 'string' && pattern.trim().length > 0)?.trim() || '';
-        const fallbackMessage = requestedPath
+        // A reviewed skill is asked by its hashed id; its human name rides in metadata.
+        const skillName = permission === 'skill' && typeof payload.properties?.metadata?.name === 'string'
+          ? payload.properties.metadata.name.trim()
+          : '';
+        const fallbackMessage = skillName
+          || requestedPath
           || (typeof sessionTitle === 'string' && sessionTitle.trim().length > 0 ? sessionTitle.trim() : '')
           || permissionText
           || 'Agent is waiting for folder access';

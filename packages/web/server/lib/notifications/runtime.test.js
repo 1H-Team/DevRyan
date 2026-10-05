@@ -1104,6 +1104,28 @@ describe('notification trigger runtime completion gating', () => {
     expect(calls.push[0].data.type).toBe('permission');
   });
 
+  it('names a reviewed skill permission by its human name, not the hashed resource', async () => {
+    vi.useFakeTimers();
+    const hashed = 'devryan-539ddc37a961e3aceadfc7bbb540b8e7';
+    const { runtime, calls } = createRuntime({ notifyOnQuestion: true });
+
+    await runtime.maybeSendPushForTrigger({
+      type: 'permission.asked',
+      properties: {
+        sessionID: 'ses_1',
+        id: 'perm_skill_1',
+        permission: 'skill',
+        patterns: [hashed],
+        metadata: { name: 'Superpowers' },
+      },
+    });
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(calls.desktop).toHaveLength(1);
+    expect(calls.desktop[0]).toMatchObject({ kind: 'permission', body: 'Superpowers' });
+    expect(JSON.stringify([calls.desktop, calls.ui, calls.push])).not.toContain(hashed);
+  });
+
   it('lets Permissions Needed be disabled independently from Agent Questions', async () => {
     vi.useFakeTimers();
     const { runtime, calls } = createRuntime({
