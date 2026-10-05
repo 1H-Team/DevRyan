@@ -40,6 +40,11 @@ export async function seedDuplicateLiveFixture(request, sessionID, fixture, sele
   return seedIDs;
 }
 
+// A skill call names its skill as v1 input.name, OpenCode 2 input.id, or (for a
+// reviewed hashed id) the projected metadata.name; any of them identifies a repeat.
+const isFixtureSkillCall = part => part.tool === 'skill'
+  && [part.state?.metadata?.name, part.state?.input?.name, part.state?.input?.id].includes('qa-context-continuity');
+
 export function gradeDuplicateLiveReply(messages, seedIDs, fixture, mutationContents) {
   const generated = messages.filter(row => row.info?.role === 'assistant' && !seedIDs.includes(row.info.id));
   const tools = generated.flatMap(row => row.parts.filter(part => part.type === 'tool'));
@@ -48,7 +53,7 @@ export function gradeDuplicateLiveReply(messages, seedIDs, fixture, mutationCont
   try { parsed = JSON.parse(text.trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '')); } catch { /* recorded below */ }
   const expected = { ...fixture.facts, uniqueProof: fixture.uniqueProof };
   const factsIntact = parsed && Object.keys(expected).every(key => parsed[key] === expected[key]);
-  const repeats = tools.filter(part => part.tool === 'skill' && part.state?.input?.name === 'qa-context-continuity'
+  const repeats = tools.filter(part => isFixtureSkillCall(part)
     || part.tool === 'devryan_task' && part.state?.input?.taskId === 'dvr_task_qa_continuity').length;
   const mutations = tools.filter(part => !['skill', 'read', 'glob', 'grep', 'devryan_task'].includes(part.tool)
     || part.tool === 'devryan_task' && !['status', 'wait'].includes(part.state?.input?.action)).length;

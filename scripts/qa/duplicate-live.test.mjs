@@ -36,6 +36,13 @@ test('live continuity grade rejects lost facts, mutation attempts and incomplete
   assert.equal(gradeDuplicateLiveReply(mutation, [], fixture, 'completed').repeatedMutations, 1, 'rejected mutation attempts still fail');
   const repeat = structuredClone(messages); repeat[0].parts.push({ type: 'tool', tool: 'skill', state: { input: { name: 'qa-context-continuity' } } });
   assert.equal(gradeDuplicateLiveReply(repeat, [], fixture, 'completed').sameKeyRepeatCalls, 1);
+  // OpenCode 2 skill calls carry the skill as input.id; the projected display name may be absent or come from metadata.
+  for (const state of [{ input: { id: 'qa-context-continuity' } }, { status: 'completed', input: { id: 'devryan-539ddc37a961e3aceadfc7bbb540b8e7' }, metadata: { name: 'qa-context-continuity' } }]) {
+    const v2Repeat = structuredClone(messages); v2Repeat[0].parts.push({ type: 'tool', tool: 'skill', state });
+    assert.equal(gradeDuplicateLiveReply(v2Repeat, [], fixture, 'completed').sameKeyRepeatCalls, 1);
+  }
+  const otherSkill = structuredClone(messages); otherSkill[0].parts.push({ type: 'tool', tool: 'skill', state: { input: { id: 'other-skill' }, metadata: { name: 'Other' } } });
+  assert.equal(gradeDuplicateLiveReply(otherSkill, [], fixture, 'completed').sameKeyRepeatCalls, 0);
   assert.equal(gradeDuplicateLiveReply(messages, ['msg_new'], fixture, 'completed').completed, false);
   assert.equal(gradeDuplicateLiveReply(messages, [], fixture, 'completedcompleted').criticalFailures, 1);
 });
