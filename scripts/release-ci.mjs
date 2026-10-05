@@ -4,6 +4,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { BOT_RUNTIME_IMAGE_DEFINITIONS, assembleBotRuntimeImages, createBotRuntimeImageBuildPlan, signBotRuntimeImage } from './build-bot-runtime-images.mjs';
+import { readBotRuntimeImageInputs, resolveBotRuntimeImages, tagBotRuntimeImageInputs } from './bot-runtime-image-inputs.mjs';
 import { describeWebArtifact, verifyWebArtifact, stageWebArtifact, hash, releaseIdentity, verifyPreparedMetadata } from './release-artifacts.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -30,9 +31,27 @@ switch (env.RELEASE_OPERATION) {
     await fs.appendFile(env.GITHUB_OUTPUT, `dockerfile=${BOT_RUNTIME_IMAGE_DEFINITIONS[build.key].dockerfile}\nrepository=${build.repository}\ntags=${build.repository}:${identity.release},${build.repository}:sha-${identity.revision.slice(0, 12)}\n`);
     break;
   }
-  case 'image-sign':
-    await write(`${env.IMAGE_KEY}.json`, await signBotRuntimeImage({ ...botIdentity, key: env.IMAGE_KEY, indexDigest: env.IMAGE_DIGEST, root }));
+  case 'image-resolve': {
+    // An image whose inputs match a verified signed :in-<digest> image is reused; the rest are built.
+    if (!['true', 'false', undefined].includes(env.REBUILD_BOT_IMAGES)) throw new Error('Invalid REBUILD_BOT_IMAGES');
+    const resolution = await resolveBotRuntimeImages({ ...botIdentity, root, workflowRepository: env.GITHUB_REPOSITORY,
+      keys: env.IMAGE_KEY ? [env.IMAGE_KEY] : undefined, rebuild: env.REBUILD_BOT_IMAGES === 'true' });
+    for (const result of resolution.reused) {
+      await write(`${result.key}.json`, result);
+      console.log(`[bots] ${result.key}: reusing ${result.image.repository}@${result.image.indexDigest}`);
+    }
+    for (const key of resolution.build) console.log(`[bots] ${key}: building (${resolution.reasons[key]})`);
+    await fs.appendFile(env.GITHUB_OUTPUT, `build=${JSON.stringify(resolution.build)}\n`);
     break;
+  }
+  case 'image-sign': {
+    const result = await signBotRuntimeImage({ ...botIdentity, key: env.IMAGE_KEY, indexDigest: env.IMAGE_DIGEST, root });
+    const { digest } = await readBotRuntimeImageInputs({ key: env.IMAGE_KEY, root });
+    const tagged = await tagBotRuntimeImageInputs({ repository: result.image.repository, indexDigest: result.image.indexDigest, inputDigest: digest, environment: env });
+    console.log(tagged ? `[bots] ${env.IMAGE_KEY}: tagged ${tagged}` : `[bots] ${env.IMAGE_KEY}: input tag skipped outside tag-triggered release.yml runs`);
+    await write(`${env.IMAGE_KEY}.json`, result);
+    break;
+  }
   case 'image-assemble': {
     const entries = await fs.readdir(output);
     const results = await Promise.all(entries.filter((name) => name.endsWith('.json')).map(read));

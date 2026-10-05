@@ -58,3 +58,36 @@ test('public release uploads only the arm64 DMG and the full-scope web tarball',
   assert.match(manifest.uses, /^actions\/upload-artifact@/);
   assert.equal(manifest.with.name, 'bot-runtime-images');
 });
+
+test('Bot image jobs reuse verified input-addressed images unless a refresh is requested', async () => {
+  const { BOT_RUNTIME_IMAGE_BUILD_RECIPE } = await import('./bot-runtime-image-inputs.mjs');
+  const workflow = YAML.parse(fs.readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8'));
+  const refresh = workflow.on.workflow_dispatch.inputs.rebuild_bot_images;
+  assert.equal(refresh.type, 'boolean');
+  assert.equal(refresh.default, false);
+  const { steps } = workflow.jobs['build-bot-runtime-image'];
+  const position = (predicate) => steps.findIndex(predicate);
+  const resolve = position((step) => step.env?.RELEASE_OPERATION === 'image-resolve');
+  const cosign = position((step) => step.uses?.startsWith('sigstore/cosign-installer@'));
+  const login = position((step) => step.uses?.startsWith('docker/login-action@'));
+  const build = position((step) => step.uses?.startsWith('docker/build-push-action@'));
+  const sign = position((step) => step.env?.RELEASE_OPERATION === 'image-sign');
+  const upload = position((step) => step.uses?.startsWith('actions/upload-artifact@'));
+  assert.ok(login < resolve && cosign < resolve && resolve < build && build < sign && sign < upload);
+  assert.equal(steps[resolve].id, 'resolve');
+  assert.equal(steps[resolve].env.IMAGE_KEY, '${{ matrix.image }}');
+  assert.equal(steps[resolve].env.REBUILD_BOT_IMAGES, "${{ github.event.inputs.rebuild_bot_images == 'true' }}");
+  for (const index of [build, sign]) {
+    assert.equal(steps[index].if, 'contains(fromJSON(steps.resolve.outputs.build), matrix.image)');
+  }
+  assert.equal(steps[upload].if, undefined);
+  assert.equal(steps[upload].with.path, 'artifacts/${{ matrix.image }}.json');
+  // The input digest covers the recipe; the workflow must build exactly that recipe.
+  const recipe = steps[build].with;
+  assert.equal(recipe.context, BOT_RUNTIME_IMAGE_BUILD_RECIPE.context);
+  assert.equal(recipe.platforms, BOT_RUNTIME_IMAGE_BUILD_RECIPE.platforms.join(','));
+  assert.equal(recipe.provenance, BOT_RUNTIME_IMAGE_BUILD_RECIPE.provenance);
+  assert.equal(recipe.sbom, BOT_RUNTIME_IMAGE_BUILD_RECIPE.sbom);
+  assert.equal(recipe['build-args'], undefined);
+  assert.equal(recipe.target, undefined);
+});

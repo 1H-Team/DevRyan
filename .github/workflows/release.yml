@@ -25,6 +25,11 @@ on:
         description: 'Send the release announcement to the configured Discord webhook'
         default: false
         type: boolean
+      rebuild_bot_images:
+        description: 'Rebuild every Bot image even when a verified image with identical inputs exists'
+        required: false
+        default: false
+        type: boolean
 
 env:
   CARGO_INCREMENTAL: 0
@@ -317,8 +322,17 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@v4.1.2
+      - name: Reuse a verified image with identical inputs
+        id: resolve
+        env:
+          RELEASE_OPERATION: image-resolve
+          IMAGE_KEY: ${{ matrix.image }}
+          REBUILD_BOT_IMAGES: ${{ github.event.inputs.rebuild_bot_images == 'true' }}
+        run: node scripts/release-ci.mjs
       - name: Build and attest image
         id: build
+        if: contains(fromJSON(steps.resolve.outputs.build), matrix.image)
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -334,8 +348,8 @@ jobs:
           sbom: true
           cache-from: type=gha,scope=devryan-bot-${{ matrix.image }}
           cache-to: type=gha,scope=devryan-bot-${{ matrix.image }},mode=max
-      - uses: sigstore/cosign-installer@v4.1.2
       - name: Sign and verify image metadata
+        if: contains(fromJSON(steps.resolve.outputs.build), matrix.image)
         env:
           RELEASE_OPERATION: image-sign
           IMAGE_KEY: ${{ matrix.image }}
