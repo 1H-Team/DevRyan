@@ -10,11 +10,15 @@ import {
   listAgentModelOverrides,
 } from './agents.js';
 import { sanitizeAgentSkillPolicy } from './skill-policy.js';
+import { RELEASED_PACKAGED_AGENT_HASHES } from './packaged-agent-baselines.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_CONFIG_DIR = path.resolve(__dirname, '../../default-config');
 const DEFAULT_PACKAGED_AGENT_DIR = path.join(DEFAULT_CONFIG_DIR, 'agents');
 const DEFAULT_MANIFEST_PATH = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'packaged-agents.json');
+// The retired v1 user-profile provisioner kept its own baseline beside this manifest.
+const PROFILE_MANIFEST_FILE_NAME = 'user-profile-manifest.json';
+const PACKAGED_AGENT_BACKUP_DIRECTORY = path.join('backups', 'packaged-agents');
 
 const hashContent = (content) => crypto.createHash('sha256').update(content).digest('hex');
 
@@ -108,6 +112,25 @@ const readManifestFile = async (filePath) => {
       return { version: 1, packagedSetHash: null, agents: {} };
     }
     throw new Error(`Failed to read packaged agent sync manifest: ${error.message}`);
+  }
+};
+
+// Agent hashes recorded by the retired user-profile provisioner, keyed by agent name.
+const readProfileAgentHashes = async (filePath) => {
+  try {
+    const parsed = JSON.parse(await fs.readFile(filePath, 'utf8'));
+    const files = isPlainObject(parsed) && isPlainObject(parsed.files) ? parsed.files : {};
+    const hashes = {};
+    for (const [relativePath, entry] of Object.entries(files)) {
+      const match = /^agents\/([^/]+)\.md$/.exec(relativePath);
+      if (match && isPlainObject(entry) && typeof entry.hash === 'string') {
+        hashes[match[1]] = entry.hash;
+      }
+    }
+    return hashes;
+  } catch {
+    // A missing or unreadable legacy manifest only removes one baseline source.
+    return {};
   }
 };
 
@@ -234,10 +257,34 @@ const applyAgentOverridesToPackagedAgent = (agent, options) => {
   };
 };
 
+// DevRyan wrote a target with one of these exact contents, so replacing it loses no
+// user edit: the last synced rendering, the raw packaged source (written by the
+// retired provisioner or copied by the 2.0 setup seed), a prompt shipped by an
+// earlier release, or the hash the retired provisioner recorded.
+const isDevRyanWrittenTarget = ({ agent, targetHash, previousManagedHash, releasedAgentHashes, profileAgentHashes }) => (
+  (previousManagedHash && targetHash === previousManagedHash)
+  || targetHash === agent.sourceHash
+  || Boolean(releasedAgentHashes?.[agent.name]?.has?.(targetHash))
+  || profileAgentHashes[agent.name] === targetHash
+);
+
+const backupUserModifiedAgent = async ({ backupDirectory, agent, content }) => {
+  await fs.mkdir(backupDirectory, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backupPath = path.join(backupDirectory, `${agent.name}.${stamp}.${process.pid}.md`);
+  await fs.writeFile(backupPath, content, { encoding: 'utf8', flag: 'wx' });
+  return backupPath;
+};
+
 const syncPackagedAgentFile = async ({
   agent,
   manifestAgents,
   targetAgentDirectory,
+  releasedAgentHashes,
+  profileAgentHashes,
+  restoreAgentNames,
+  backupDirectory,
+  dryRun,
 }) => {
   const targetPath = path.join(targetAgentDirectory, agent.fileName);
   const manifestEntry = manifestAgents[agent.name];
@@ -253,7 +300,7 @@ const syncPackagedAgentFile = async ({
   }
 
   if (targetContent === null) {
-    await writeFileAtomic(targetPath, agent.content);
+    if (!dryRun) await writeFileAtomic(targetPath, agent.content);
     return {
       type: 'written',
       name: agent.name,
@@ -277,12 +324,25 @@ const syncPackagedAgentFile = async ({
     };
   }
 
-  if (previousManagedHash && targetHash === previousManagedHash) {
-    await writeFileAtomic(targetPath, agent.content);
+  if (isDevRyanWrittenTarget({ agent, targetHash, previousManagedHash, releasedAgentHashes, profileAgentHashes })) {
+    if (!dryRun) await writeFileAtomic(targetPath, agent.content);
     return {
       type: 'updated',
       name: agent.name,
       hash: agent.hash,
+    };
+  }
+
+  // User edits are kept unless the owner explicitly chose the packaged prompt;
+  // the replaced file is kept as a backup first.
+  if (!dryRun && restoreAgentNames.has(agent.name)) {
+    const backupPath = await backupUserModifiedAgent({ backupDirectory, agent, content: targetContent });
+    await writeFileAtomic(targetPath, agent.content);
+    return {
+      type: 'restored',
+      name: agent.name,
+      hash: agent.hash,
+      backupPath,
     };
   }
 
@@ -321,12 +381,26 @@ export const syncPackagedAgents = async (options = {}) => {
     ? options.agentOverrides
     : listAgentModelOverrides(options);
   const effectiveOptions = { ...options, agentOverrides };
+  const dryRun = options.dryRun === true;
+  const restoreAgentNames = new Set(
+    Array.isArray(options.restoreAgentNames)
+      ? options.restoreAgentNames.filter((name) => typeof name === 'string' && name.trim())
+      : [],
+  );
+  const releasedAgentHashes = isPlainObject(options.releasedAgentHashes)
+    ? options.releasedAgentHashes
+    : RELEASED_PACKAGED_AGENT_HASHES;
+  const profileAgentHashes = await readProfileAgentHashes(
+    options.profileManifestPath ?? path.join(path.dirname(manifestPath), PROFILE_MANIFEST_FILE_NAME),
+  );
+  const backupDirectory = path.join(path.dirname(manifestPath), PACKAGED_AGENT_BACKUP_DIRECTORY);
 
   const result = {
     changed: false,
     written: [],
     updated: [],
     removed: [],
+    restored: [],
     conflicts: [],
     manifestPath,
     targetAgentDirectory,
@@ -334,6 +408,7 @@ export const syncPackagedAgents = async (options = {}) => {
 
   const packagedAgents = (await listPackagedAgentFiles(packagedAgentDirectory))
     .filter((agent) => !excludedAgentNames.has(agent.name))
+    .map((agent) => ({ ...agent, sourceHash: agent.hash }))
     .map((agent) => applyAgentOverridesToPackagedAgent(agent, effectiveOptions))
     .map((agent) => applySkillPolicyToPackagedAgent(agent, options.skillPolicy));
   const packagedByName = new Map(packagedAgents.map((agent) => [agent.name, agent]));
@@ -343,7 +418,7 @@ export const syncPackagedAgents = async (options = {}) => {
   const nextManifestAgents = { ...manifestAgents };
   let manifestChanged = false;
 
-  if (await canUsePackagedSetHashFastPath({
+  if (restoreAgentNames.size === 0 && await canUsePackagedSetHashFastPath({
     manifest,
     manifestAgents,
     packagedAgents,
@@ -353,16 +428,21 @@ export const syncPackagedAgents = async (options = {}) => {
     return result;
   }
 
-  await fs.mkdir(targetAgentDirectory, { recursive: true });
+  if (!dryRun) await fs.mkdir(targetAgentDirectory, { recursive: true });
 
   const syncOutcomes = await Promise.all(packagedAgents.map((agent) => syncPackagedAgentFile({
     agent,
     manifestAgents,
     targetAgentDirectory,
+    releasedAgentHashes,
+    profileAgentHashes,
+    restoreAgentNames,
+    backupDirectory,
+    dryRun,
   })));
 
   for (const outcome of syncOutcomes) {
-    if (outcome.type === 'written' || outcome.type === 'updated' || outcome.type === 'manifest') {
+    if (['written', 'updated', 'manifest', 'restored'].includes(outcome.type)) {
       nextManifestAgents[outcome.name] = createManifestEntry(outcome.hash);
       result.changed = true;
       manifestChanged = true;
@@ -372,6 +452,9 @@ export const syncPackagedAgents = async (options = {}) => {
     }
     if (outcome.type === 'updated') {
       result.updated.push(outcome.name);
+    }
+    if (outcome.type === 'restored') {
+      result.restored.push({ name: outcome.name, backupPath: outcome.backupPath });
     }
     if (outcome.type === 'conflict') {
       result.conflicts.push(outcome.conflict);
@@ -403,7 +486,7 @@ export const syncPackagedAgents = async (options = {}) => {
 
     const targetHash = hashContent(targetContent);
     if (previousManagedHash && targetHash === previousManagedHash) {
-      await removeFileIfPresent(targetPath);
+      if (!dryRun) await removeFileIfPresent(targetPath);
       delete nextManifestAgents[name];
       result.removed.push(name);
       result.changed = true;
@@ -423,7 +506,7 @@ export const syncPackagedAgents = async (options = {}) => {
     manifestChanged = true;
   }
 
-  if (manifestChanged) {
+  if (manifestChanged && !dryRun) {
     await writeFileAtomic(manifestPath, `${JSON.stringify({
       version: 1,
       packagedSetHash: nextPackagedSetHash,
@@ -434,6 +517,7 @@ export const syncPackagedAgents = async (options = {}) => {
   result.written.sort((a, b) => a.localeCompare(b));
   result.updated.sort((a, b) => a.localeCompare(b));
   result.removed.sort((a, b) => a.localeCompare(b));
+  result.restored.sort((a, b) => a.name.localeCompare(b.name));
   result.conflicts.sort((a, b) => a.name.localeCompare(b.name));
 
   return result;
