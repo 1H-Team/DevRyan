@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { seedNativeSetup } from '../../packages/web/server/lib/opencode/runtime-host/native-setup-seed.js';
 import {
   CHANGED_THEME_ID, DEFAULT_V200_ARTIFACTS, INITIAL_THEME_ID, PLAN_COUNTS, SHELL_EXPORTS, buildLegacyOwnerTree, buildShellExportRcFiles,
-  classifyBundledRuntimeOffer, createV200PrepareEnvironment, findProcessesMatching, firstLaunchLayout, gradeShellExportLog, hashLegacyPlans,
+  classifyBundledRuntimeOffer, createV200PrepareEnvironment, findProcessesMatching, firstLaunchLayout, gradeShellExportLog,
+  LEGACY_TREE_APP_WRITTEN, compareLegacySourceTree, hashLegacySourceTree,
   parseFirstLaunchArgs, parseSeedSkipSummary, parseStartupFailures, resolvePackageRepositoryRoot, writeLegacyOwnerTree, writeShellExportRcFiles,
 } from './first-launch-smoke.mjs';
 
@@ -95,8 +96,8 @@ test('the current setup importer imports exactly the 8 records and leaves v1 pla
     const home = path.join(root, 'home'), target = path.join(root, 'target');
     const tree = buildLegacyOwnerTree({ projectPaths: projectPaths.map(value => path.join(root, value)) });
     await writeLegacyOwnerTree(home, tree);
-    const before = await hashLegacyPlans(path.join(home, '.config/openchamber/projects'));
-    assert.equal(before.count, 608 + 2 + 1);
+    const before = await hashLegacySourceTree(home, tree.files.keys());
+    assert.equal(before.count, tree.files.size - 1);
     const warn = console.warn; const warnings = [];
     console.warn = (...args) => { warnings.push(args.join(' ')); };
     let result;
@@ -108,23 +109,49 @@ test('the current setup importer imports exactly the 8 records and leaves v1 pla
     } finally { console.warn = warn; }
     assert.ok(Array.isArray(result.files));
     assert.deepEqual((await readdir(path.join(target, 'web-config/projects'))).sort(), tree.expectedRecords);
-    assert.equal((await hashLegacyPlans(path.join(home, '.config/openchamber/projects'))).sha256, before.sha256);
+    assert.deepEqual(compareLegacySourceTree(before, await hashLegacySourceTree(home, tree.files.keys())),
+      { files: tree.files.size - 1, unchanged: tree.files.size - 1, changed: 0, missing: 0, unchangedTree: true });
     const settings = JSON.parse(await readFile(path.join(target, 'web-data/settings.json'), 'utf8'));
     assert.equal(settings.projects.length, 8);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('plan hash list changes when a v1 plan changes', async () => {
+test('the legacy tree hash covers every created v1 file, including top-level records and auth.json, and reports counts only', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'devryan-first-launch-hash-'));
   try {
     const tree = buildLegacyOwnerTree({ projectPaths });
     await writeLegacyOwnerTree(root, tree);
-    const projects = path.join(root, '.config/openchamber/projects');
-    const before = await hashLegacyPlans(projects);
-    const plan = [...tree.files.keys()].find(name => name.endsWith('plan-0001.md'));
-    await writeFile(path.join(root, plan), 'changed\n');
-    assert.notEqual((await hashLegacyPlans(projects)).sha256, before.sha256);
-    assert.equal((await hashLegacyPlans(path.join(root, 'missing'))).count, 0);
+    const files = [...tree.files.keys()];
+    const before = await hashLegacySourceTree(root, tree.files.keys());
+    assert.deepEqual(LEGACY_TREE_APP_WRITTEN, ['.config/openchamber/settings.json']);
+    assert.equal(before.count, files.length - 1);
+    for (const prefix of ['.config/openchamber/', '.config/opencode/', '.agents/', '.local/share/opencode/']) {
+      assert.ok(before.entries.some(entry => entry.file.startsWith(prefix)), prefix);
+    }
+    const record = files.find(name => /^\.config\/openchamber\/projects\/[^/]+\.json$/.test(name));
+    const plan = files.find(name => name.endsWith('plan-0001.md'));
+    for (const [name, mutate, expected] of [
+      ['a top-level project record deleted', () => rm(path.join(root, record)), { changed: 0, missing: 1 }],
+      ['auth.json rewritten', () => writeFile(path.join(root, '.local/share/opencode/auth.json'), '{}\n'), { changed: 1, missing: 0 }],
+      ['a plan rewritten', () => writeFile(path.join(root, plan), 'changed\n'), { changed: 1, missing: 0 }],
+      ['a shared skill replaced by a folder', async () => {
+        const skill = path.join(root, '.agents/skills/qa-shared-skill/SKILL.md');
+        await rm(skill); await mkdir(skill);
+      }, { changed: 1, missing: 0 }],
+    ]) {
+      await rm(root, { recursive: true, force: true });
+      await writeLegacyOwnerTree(root, tree);
+      await mutate();
+      const result = compareLegacySourceTree(before, await hashLegacySourceTree(root, tree.files.keys()));
+      assert.deepEqual(result, { files: before.count, unchanged: before.count - 1, ...expected, unchangedTree: false }, name);
+      assert.deepEqual(Object.keys(result).sort(), ['changed', 'files', 'missing', 'unchanged', 'unchangedTree']);
+    }
+    // The desktop settings file is app-written by design and outside the proof.
+    await rm(root, { recursive: true, force: true });
+    await writeLegacyOwnerTree(root, tree);
+    await writeFile(path.join(root, '.config/openchamber/settings.json'), '{"desktopLocalPort":1}\n');
+    assert.equal(compareLegacySourceTree(before, await hashLegacySourceTree(root, tree.files.keys())).unchangedTree, true);
+    await assert.rejects(hashLegacySourceTree(root, ['../outside.json']), /escaped the private home/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

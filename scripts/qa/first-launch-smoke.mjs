@@ -181,20 +181,36 @@ export async function writeLegacyOwnerTree(home, tree) {
   }
 }
 
-/** v1 plan files (everything below projects/<id>/), as a stable hash list. */
-export async function hashLegacyPlans(projectsDirectory) {
+/** The desktop settings file is live app state: the smoke writes its port (and the
+ * half-seed theme change) and the app persists window state there by design. */
+export const LEGACY_TREE_APP_WRITTEN = Object.freeze(['.config/openchamber/settings.json']);
+
+/** Every v1 file the smoke created below the private HOME (project records, plans,
+ * opencode config, shared skills, icons, auth.json), hashed in place. A missing or
+ * replaced file is recorded, never skipped. Contents never leave this process. */
+export async function hashLegacySourceTree(home, relativeFiles) {
   const entries = [];
-  const visit = async (relative) => {
-    const names = (await readdir(path.join(projectsDirectory, relative), { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name));
-    for (const entry of names) {
-      const child = path.join(relative, entry.name);
-      if (entry.isDirectory()) await visit(child);
-      else if (entry.isFile() && relative) entries.push({ file: child, sha256: digest(await readFile(path.join(projectsDirectory, child))) });
-      else if (!entry.isFile()) entries.push({ file: child, type: 'non-file' });
-    }
-  };
-  if (await exists(projectsDirectory)) await visit('');
+  for (const file of [...new Set(relativeFiles)].filter(name => !LEGACY_TREE_APP_WRITTEN.includes(name)).sort()) {
+    const absolute = path.join(home, file);
+    if (!inside(home, absolute)) throw new Error('Legacy tree file escaped the private home');
+    let info = null;
+    try { info = await lstat(absolute); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    entries.push(!info ? { file, type: 'missing' } : info.isFile() ? { file, sha256: digest(await readFile(absolute)) } : { file, type: 'non-file' });
+  }
   return { count: entries.length, sha256: digest(JSON.stringify(entries)), entries };
+}
+
+/** Counts only: which created files are still byte-identical, changed or gone. */
+export function compareLegacySourceTree(before, after) {
+  const current = new Map(after.entries.map(entry => [entry.file, entry]));
+  let unchanged = 0, changed = 0, missing = 0;
+  for (const entry of before.entries) {
+    const now = current.get(entry.file);
+    if (!now || now.type === 'missing') missing += 1;
+    else if (now.sha256 && now.sha256 === entry.sha256) unchanged += 1;
+    else changed += 1;
+  }
+  return { files: before.entries.length, unchanged, changed, missing, unchangedTree: before.sha256 === after.sha256 && changed + missing === 0 };
 }
 
 /** Minimal child environment for the v2.0.0 importer: platform inputs plus the
@@ -396,7 +412,7 @@ export async function runFirstLaunchSmoke(options) {
   let interrupted = false;
   const onInterrupt = () => { interrupted = true; };
   process.on('SIGINT', onInterrupt); process.on('SIGTERM', onInterrupt);
-  let app, cdp, packaged, packageRoot, debugPort, port;
+  let app, cdp, packaged, packageRoot, debugPort, port, legacyTreeBefore = null;
   const processLogs = [];
   try {
     // Identity first: a stale or changed package never launches.
@@ -422,8 +438,9 @@ export async function runFirstLaunchSmoke(options) {
     for (const directory of projectPaths) await mkdir(directory, { mode: 0o700 });
     const tree = buildLegacyOwnerTree({ variant: options.scenario === 'v200-selected' ? 'selected' : 'owner-shaped', projectPaths });
     await writeLegacyOwnerTree(layout.home, tree);
-    const plansBefore = await hashLegacyPlans(layout.projects);
-    evidence.prepared = { tree: tree.facts, expectedRecords: tree.expectedRecords, plansBefore: { count: plansBefore.count, sha256: plansBefore.sha256 } };
+    legacyTreeBefore = await hashLegacySourceTree(layout.home, tree.files.keys());
+    evidence.prepared = { tree: tree.facts, expectedRecords: tree.expectedRecords,
+      legacyTreeBefore: { count: legacyTreeBefore.count, excluded: LEGACY_TREE_APP_WRITTEN.length } };
     mark('treeBuiltMs');
 
     // 3. Optional v2.0.0 pre-state from the actual v2.0.0 importer.
@@ -638,7 +655,7 @@ export async function runFirstLaunchSmoke(options) {
     } catch (error) { evidence.errors.push(`logs: ${sanitize(error.message)}`); }
 
     // Scenario checks against quiescent files (after the app has exited).
-    try { await gradeScenario({ options, layout, evidence, check }); } catch (error) { evidence.errors.push(`grading: ${sanitize(error.message)}`); }
+    try { await gradeScenario({ options, layout, evidence, check, legacyTreeBefore }); } catch (error) { evidence.errors.push(`grading: ${sanitize(error.message)}`); }
     if (packaged) {
       try {
         const after = await packageIdentity(packageRoot, options.packageEvidence);
@@ -662,7 +679,7 @@ export async function runFirstLaunchSmoke(options) {
   return evidence;
 }
 
-async function gradeScenario({ options, layout, evidence, check }) {
+async function gradeScenario({ options, layout, evidence, check, legacyTreeBefore }) {
   const { scenario } = options;
   const selection = await readSelection(layout.controlRoot);
   evidence.selection = selection && { revision: selection.revision, bundleID: selection.bundleID, selectionSha256: selection.selectionSha256,
@@ -670,9 +687,12 @@ async function gradeScenario({ options, layout, evidence, check }) {
   evidence.postState = { selectionPresent: Boolean(selection), freshSourcePresent: await exists(layout.freshSource),
     freshSourceStamped: await exists(path.join(layout.freshSource, '.devryan-fresh-source.json')),
     seedMarkerPresent: await exists(path.join(layout.freshSource, 'web-data/native-setup-seed.json')) };
-  const plansAfter = await hashLegacyPlans(layout.projects);
-  check('v1 plans and source project tree unchanged', plansAfter.sha256 === evidence.prepared?.plansBefore?.sha256,
-    { before: evidence.prepared?.plansBefore?.count ?? null, after: plansAfter.count });
+  const legacyTree = legacyTreeBefore
+    ? compareLegacySourceTree(legacyTreeBefore, await hashLegacySourceTree(layout.home, legacyTreeBefore.entries.map(entry => entry.file)))
+    : null;
+  check('v1 source tree unchanged (every created file, including project records, plans and auth.json)', legacyTree?.unchangedTree === true,
+    { files: legacyTree?.files ?? null, unchanged: legacyTree?.unchanged ?? null, changed: legacyTree?.changed ?? null,
+      missing: legacyTree?.missing ?? null, excluded: LEGACY_TREE_APP_WRITTEN.length });
   if (evidence.outcome?.result !== 'PASS') return;
   const records = selection?.webConfigDirectory
     ? (await readdir(path.join(selection.webConfigDirectory, 'projects'), { withFileTypes: true }).catch(() => []))
