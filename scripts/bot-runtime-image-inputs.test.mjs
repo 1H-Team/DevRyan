@@ -81,6 +81,28 @@ describe('Bot runtime image input digest', () => {
     }
   });
 
+  test('applies .dockerignore exclusions and negations inside copied directories', async t => {
+    const { root, write, digest } = await fixture(t, {
+      ...supervisorFiles(),
+      '.dockerignore': '**/node_modules\n**/*.log\n!packages/bot-supervisor/src/keep.log\n',
+    });
+    const base = await digest();
+    await write('packages/bot-supervisor/src/node_modules/x/index.js', 'ignored\n');
+    await write('packages/bot-supervisor/src/debug.log', 'ignored\n');
+    assert.equal(await digest(), base);
+    await write('packages/bot-supervisor/src/keep.log', 'included\n');
+    assert.notEqual(await digest(), base);
+    const { files } = await readBotRuntimeImageInputs({ key: 'supervisor', root });
+    assert.deepEqual(files.map((entry) => entry.file), [
+      '.dockerignore',
+      'packages/bot-supervisor/Dockerfile',
+      'packages/bot-supervisor/package.json',
+      'packages/bot-supervisor/src/keep.log',
+      'packages/bot-supervisor/src/lib/a.js',
+      'packages/bot-supervisor/src/server.js',
+    ]);
+  });
+
   test('normalizes only the root package version away', async t => {
     const { write, digest } = await fixture(t, {
       ...supervisorFiles('COPY packages/bot-supervisor/package-lock.json ./\n'),
