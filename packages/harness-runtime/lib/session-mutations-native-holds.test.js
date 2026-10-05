@@ -54,6 +54,34 @@ async function managedFixture() {
   return { ...f, owner, rpc, control, task, create, prompt, accepted, locks, setVerifier: value => { verifier = value; } };
 }
 
+test('replacement clears only exact temporary owner holds and preserves independent durable fences', async () => {
+  const f = await fixture();
+  const ownerID = 'fixture-bundle', directory = f.directory;
+  await f.rpc('hold', { sessionID: 'ses_root' });
+  await f.runtime.holdNativeAdmission({ directory, sessionID: 'ses_root', ownerID: 'foreign-owner' });
+  await f.runtime.holdNativeAdmission({ directory, sessionID: 'ses_child', ownerID, retentionInstanceID: 'old-retention' });
+  const removal = await f.runtime.beginNativeRemoval({ directory, rootSessionID: 'ses_other', ownerID });
+  await f.runtime.registerNativeSession({ directory, sessionID: 'ses_revert' });
+  await f.runtime.registerPrompt({ directory, sessionID: 'ses_revert', userMessageID: 'msg_revert' });
+  const tx = await f.runtime.prepareRevert({ directory, sessionID: 'ses_revert', messageID: 'msg_revert' });
+  await f.runtime.holdNativeAdmission({ directory, sessionID: 'ses_revert', ownerID });
+  f.owner.dispose();
+  const runtime = f.reopen();
+  expect(await runtime.recoverNativeTransientHolds({ directory, ownerID })).toBe(1);
+  expect(await runtime.recoverNativeTransientHolds({ directory, ownerID })).toBe(0);
+  expect((await runtime.nativeAdmissionState({ directory, sessionID: 'ses_root' })).holds.map(hold => hold.ownerID)).toEqual(['foreign-owner']);
+  expect((await runtime.nativeAdmissionState({ directory, sessionID: 'ses_child' })).holds.find(hold => hold.sessionID === 'ses_child'))
+    .toMatchObject({ ownerID, retentionInstanceID: 'old-retention' });
+  expect((await runtime.nativeAdmissionState({ directory, sessionID: 'ses_other' })).held).toBe(true);
+  expect((await runtime.nativeRemoval({ directory, intentID: removal.id })).state).toBe('preparing');
+  expect((await runtime.nativeAdmissionState({ directory, sessionID: 'ses_revert' })).holds).toEqual([
+    expect.objectContaining({ ownerID, transactionID: tx.id })]);
+  await runtime.settleRevert({ directory, transactionID: tx.id, commit: true });
+  expect(await runtime.recoverNativeTransientHolds({ directory, ownerID })).toBe(0);
+  expect((await runtime.nativeAdmissionState({ directory, sessionID: 'ses_revert' })).held).toBe(true);
+  await expect(runtime.recoverNativeTransientHolds({ directory, ownerID: '../foreign' })).rejects.toMatchObject({ code: 'invalid_capture_identity' });
+});
+
 test('web permits bind exact effects, the original caller, interaction ownership, and their request lifetime', async () => {
   const f = await fixture();
   let principal = 'caller', allowed = true, checks = 0;

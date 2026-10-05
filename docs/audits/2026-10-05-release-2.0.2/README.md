@@ -132,6 +132,29 @@ Native commits now own the complete queue span, and Cursor keys use the native
 facade. Two later rehearsal assertions were corrected to respect sanitized
 evidence and the separate external Cursor catalog.
 
+Recovery review independently reproduced a committed upgrade whose caller
+aborted before settlement, serialized Electron recovery codes being lost,
+broken selector imports exiting before a recovery window, and CLI `-q`/root
+resolution inconsistencies. A committed transition now recomposes once after
+completion or disconnect. Recovery displays only finite original IPC codes;
+broken selectors hold owners and settings, while service probes remain readable.
+CLI, shell and provisioning share validated root resolution. Startup releases
+only exact temporary holds belonging to the verified bundle or its immediate
+checkpoint source, then retries persisted wakes through existing permits and
+revision-bound acknowledgements. Durable and foreign fences remain intact.
+The combined server checks passed (81), ledger/admission checks passed (53),
+Electron package checks passed, and web type checks passed. Original failed
+review fixtures are preserved. Compiled journal grading rejects empty roots and
+uses verified chunk scans, including stale zero-gap manifests; historical gap
+command acceptance is not meaningful root qualification.
+
+The integrated full validation was attempted. The first attempt exposed a stale
+release-workflow assertion; its normalized dry-run contract now passes. The
+second reached Electron after passing lint, types and preceding deterministic
+suites, then failed an extracted startup fixture missing the new binding-error
+state. The fixture and focused Electron suite are corrected. Full validation
+must be rerun against the frozen candidate; neither attempt is a full pass.
+
 ## Final evidence table
 
 This table must be rebound to the final source commit, lock hash, native build
@@ -141,7 +164,7 @@ evidence in `.cache/release-2.0.2-recovery`.
 
 | Mandatory gate | Status | Evidence or prerequisite |
 | --- | --- | --- |
-| Full integrated validation, build, bundle budgets and documentation | Not run | Engineering is still changing |
+| Full integrated validation, build, bundle budgets and documentation | Failed (interim); final not run | Two validation failures corrected with focused checks; engineering is still changing |
 | Packaged prompt conflict notice and explicit restore | Passed (focused); packaged not run | API, mounted UI, stale revision, edit/path replacement and guidance checks |
 | Tracked credential owner and synthetic rehearsal | Passed (compiled synthetic); live not run | Original SDK OAuth, compiled native key/CAS owners, held projection, ready boot and zero evidence leaks; final identities and attended live/launcher qualification pending |
 | Complete B1 review closure | In progress | Checkpoint, shutdown, enrollment and renewal findings reproduced and corrected; remaining scopes being consolidated |

@@ -150,14 +150,15 @@ describe('Electron startup splash', () => {
     expect(end).toBeGreaterThan(start);
     const createStartup = new Function('owners', `
       let desktopStartupPromise = null, desktopStartupFailed = false;
-      const { runtimeBundleRecoveryRequired, state, prepareForegroundRuntime,
+      const { runtimeBundleRecoveryRequired, shellRuntimeBundleBindingError, state, prepareForegroundRuntime,
         resolveInitialUrl, activateMainWindow, installPowerResumeHook,
-        isLocalStartupTarget, readSettingsRoot, prepareBotRuntimeInBackground } = owners;
+        isLocalStartupTarget, readSettingsRoot, prepareBotRuntimeInBackground,
+        startupErrorDetails, log, releaseDesktopKeepAwake, killSidecar, showStartupFailure } = owners;
       const desktopDmgInstaller = null;
       ${source.slice(start, end)}
       return startDesktopRuntime;
     `);
-    for (const held of [false, true]) {
+    for (const [held, bindingFailed] of [[false, false], [true, false], [true, true]]) {
       const calls = [];
       let releaseNativeStartup;
       const nativeStartup = new Promise(resolve => { releaseNativeStartup = resolve; });
@@ -168,6 +169,12 @@ describe('Electron startup splash', () => {
       } };
       const startup = createStartup({
         runtimeBundleRecoveryRequired: held, state,
+        shellRuntimeBundleBindingError: bindingFailed ? Object.assign(new Error('Cannot verify selected runtime'), { code: 'runtime_bundle_binding_invalid' }) : undefined,
+        startupErrorDetails: error => ({ code: error.code }),
+        log: { error: (_message, details) => calls.push(details.code) },
+        releaseDesktopKeepAwake: () => calls.push('release-keep-awake'),
+        killSidecar: async () => calls.push('cleanup'),
+        showStartupFailure: async error => { expect(error.code).toBe('runtime_bundle_binding_invalid'); calls.push('show-failure'); },
         prepareForegroundRuntime: async () => calls.push('prepare-foreground'),
         resolveInitialUrl: async () => context,
         activateMainWindow: async (...args) => {
@@ -182,6 +189,12 @@ describe('Electron startup splash', () => {
       const pending = startup();
       expect(startup()).toBe(pending);
       await pending;
+      if (bindingFailed) {
+        expect(state.pendingBotStartupContext).toBe(context);
+        expect(calls).toEqual(['runtime_bundle_binding_invalid', 'release-keep-awake', 'cleanup', 'show-failure']);
+        releaseNativeStartup();
+        continue;
+      }
       expect(state.pendingBotStartupContext).toBeNull();
       expect(calls).toEqual(held
         ? ['prepare-foreground', 'activate']

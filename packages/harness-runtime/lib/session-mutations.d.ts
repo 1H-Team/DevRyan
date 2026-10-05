@@ -103,10 +103,13 @@ export interface SessionMutationRuntime {
   nativeAdmissionState(input: { directory: string; sessionID: string }): Promise<NativeAdmissionState>;
   holdNativeAdmission(input: { directory: string; sessionID: string; ownerID: string;retentionInstanceID?:string }): Promise<{ id: string; ownerID: string; revision: number;retentionInstanceID?:string }>;
   releaseNativeAdmission(input: { directory: string; sessionID: string; ownerID: string; holdID: string; expectedRevision: number }): Promise<NativeAdmissionState>;
+  /** Constructor recovery only, after prior process settlement and verified bundle ownership. */
+  recoverNativeTransientHolds(input: { directory: string; ownerID: string }): Promise<number>;
   deferNativeContinuation(input: { directory: string; sessionID: string; operation: string }): Promise<void>;
   nativeContinuations(input: { directory: string; sessionID: string }): Promise<string[]>;
   /** Only receipt-bound shell wake intents, from this repository's existing ledger. */
   nativeShellContinuations(input: { directory: string }): Promise<Array<{ sessionID: string; operation: string }>>;
+  nativeExecutionContinuations(input: { directory: string }): Promise<string[]>;
   nativeTransactionHolds(input: { directory: string; ownerID: string }): Promise<Array<{ transactionID: string; sessions: string[] }>>;
   bindNativeShellJob(input: { directory: string; token: string; jobID: string; command: string; sessionID: string; messageID: string; callID: string }): Promise<MutationLease>;
   nativeShellJob(input: { directory: string; sessionID: string; jobID: string }): Promise<MutationLease>;

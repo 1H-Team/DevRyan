@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import http from 'node:http';
 import express from 'express';
 import request from '../../../test-supertest.js';
 import { afterEach, expect, test, vi } from 'vitest';
@@ -159,6 +160,35 @@ test('a failed host recomposition remains inspectable after the successful selec
   expect(result.status).toBe(200);
   expect((await request(app).get('/api/runtime/bundle')).body).toMatchObject({ state: 'restart_required',
     reason: 'bundle_host_restart_failed', revision: 2, restartRequired: true });
+});
+
+test.each(['upgrade', 'rollback'])('a disconnected %s caller cannot strand a committed selection', async action => {
+  let commit, entered, disconnected;
+  const accepted = new Promise(resolve => { entered = resolve; });
+  const closed = new Promise(resolve => { disconnected = resolve; });
+  const committed = new Promise(resolve => { commit = resolve; });
+  const recompose = vi.fn(async () => {});
+  const app = express();
+  app.use((_req, res, next) => { res.once('close', disconnected); next(); });
+  registerRuntimeBundleLifecycleRoutes(app, { isAdministrator: () => true, lifecycle: {
+    [action]: async () => { entered(); await committed; return { restartAvailable: true, restartRequired: true }; },
+    recompose,
+  } });
+  const server = http.createServer(app);
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const client = http.request({ host: '127.0.0.1', port: server.address().port,
+    path: `/api/runtime/bundle/${action}`, method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-devryan-csrf': '1' } });
+  client.on('error', () => {});
+  try {
+    client.end(JSON.stringify({ expectedRevision: 1 }));
+    await accepted; client.destroy(); await closed;
+    expect(recompose).not.toHaveBeenCalled();
+    commit(); await vi.waitFor(() => expect(recompose).toHaveBeenCalledOnce());
+  } finally {
+    commit(); client.destroy(); server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
 });
 
 test('write admission refuses unacknowledged requests and blocks migrating reads while held', () => {

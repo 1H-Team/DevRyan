@@ -50,6 +50,7 @@ test('every shell-only value is dropped exactly when provisioning would refuse i
    ['DEVRYAN_OPENCODE_GENERATION','1'],['DEVRYAN_OPENCODE_GENERATION',''],['DEVRYAN_OPENCODE_GENERATION','2'],
    ['DEVRYAN_RUNTIME_BUNDLE_ROOT',path.join(root,'other-bundles')],['DEVRYAN_RUNTIME_BUNDLE_ROOT',''],
    ['OPENCODE_PORT','4096'],['OPENCHAMBER_DATA_DIR',path.join(root,'data')],['XDG_STATE_HOME',path.join(root,'state')],
+   ['XDG_STATE_HOME',''],['XDG_STATE_HOME','state'],['XDG_STATE_HOME',root+'/../foreign'],['XDG_STATE_HOME',root+'/\nforeign'],
    ['OPENCHAMBER_ELECTRON_DEV','1'],['OPENCHAMBER_ELECTRON_USER_DATA_DIR',path.join(root,'user-data')],
    ['DEVRYAN_PRIMARY_RECOVERY_MODE','legacy'],['DEVRYAN_MANAGED_RESULT_MODE','full']];
   const control=await provision(launchEnv);
@@ -60,7 +61,7 @@ test('every shell-only value is dropped exactly when provisioning would refuse i
    const merged=await provision({...launchEnv,...inherited});
    assert.ok(merged.code&&merged.code!==REFUSED,`${label} after merge: ${JSON.stringify(merged)}`);
    const launched=await provision({...launchEnv,[name]:value});
-   const refusedOrBypassed=launched.code===REFUSED||launched.root===value;
+   const refusedOrBypassed=launched.code===REFUSED||launched.code==='bundle_recovery_owner_required'||launched.root===value;
    assert.deepEqual(dropped,refusedOrBypassed?[name]:[],`${label} launched: ${JSON.stringify(launched)}`);
    if(!dropped.length)assert.deepEqual(inherited,{[name]:value},label);
   }

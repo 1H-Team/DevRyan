@@ -29,7 +29,8 @@ const fixture = async (action, cursorRuntime, configure) => {
     transport.start.mockResolvedValue({ DEVRYAN_ORCHESTRATION_URL: 'http://127.0.0.1:1', DEVRYAN_ORCHESTRATION_TOKEN: 'private-fixture' });
     transport.stop.mockResolvedValue();
     const drain = vi.fn(async () => {}), settleController = vi.fn(async () => {});
-    const runtime = { nativeRetentionHolds: async()=>[], nativeRemovals: vi.fn(async () => []), nativeTransactionHolds: async () => [], nativeShellContinuations: async () => [] };
+    const runtime = { nativeRetentionHolds: async()=>[], nativeRemovals: vi.fn(async () => []), nativeTransactionHolds: async () => [], nativeShellContinuations: async () => [],
+      recoverNativeTransientHolds: vi.fn(async () => 0), nativeExecutionContinuations: async () => [] };
     const ownerOptions = {
       bundle: { descriptor: { bundleID: 'fixture', preparedManifestPath: path.join(root, 'prepared.json'), migrationReceiptPath,
         launch: {opencodeDatabasePath, webDataDirectory: root, global: { log: root } } }, artifacts: { manifest: { buildId: 'fixture' } }, configuration: {},
@@ -105,6 +106,31 @@ test('startup passes fresh original Cursor declarations without account discover
   expect(launch.boot.cursorCatalog.models.every(row=>Object.keys(row).sort().join(',')==='id,variants')).toBe(true);
   await owner.close();
  },cursor);}finally{await cursor.dispose();}
+});
+
+test('verified replacement recovers only current and proved source holds before fresh admission', async () => {
+  const events = [];
+  await fixture(async ({ owner, runtime, root }) => {
+    let launch, exited = false;
+    transport.create.mockImplementation(async options => {
+      launch = options; events.push('bound');
+      return { bound: { catalog: { asserted: true } }, hasExited: () => exited,
+        call: async input => { events.push(input.action); return null; },
+        close: async () => { exited = true; await launch.afterExit({}); }, killForRecovery: async () => {} };
+    });
+    runtime.recoverNativeTransientHolds.mockImplementation(async input => {
+      expect(input.directory).toBe(root); events.push(`recover:${input.ownerID}`); return 0;
+    });
+    await owner.start();
+    expect(events).toEqual(['verified', 'bound', 'open-recovery', 'recover:fixture', 'recover:original-A', 'open']);
+    await owner.close();
+  }, undefined, async options => {
+    const descriptor = options.bundle.descriptor;
+    descriptor.sourceBundleID = 'original-A'; descriptor.checkpoint = { generation: 2, ownerID: 'original-A' };
+    await fs.writeFile(descriptor.preparedManifestPath, '{}');
+    options.bundle.preparedManifestSha256 = createHash('sha256').update('{}').digest('hex');
+    options.bundle.verify = async () => { events.push('verified'); };
+  });
 });
 
 test('only the selected artifact exact Stop contract enables the primary handoff disposition', async () => {

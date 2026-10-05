@@ -36,7 +36,7 @@ describe('runtime-service desktop bootstrap source contract', () => {
     assert.ok(end > start);
     const ready = new AsyncFunction('owners', `
       const { app, log, APP_VERSION, process, isRuntimeServiceControlProbe,
-        isRuntimeServiceMode, runtimeBundleRecoveryRequired, holdDesktopSettingsForCheckpoint,
+        isRuntimeServiceMode, runtimeBundleRecoveryRequired, shellRuntimeBundleBindingError, holdDesktopSettingsForCheckpoint,
         performConfirmedQuit, state, createBrowserWindow, startDesktopRuntime,
         acquireRuntimeOwner, spawnLocalServer, prepareBotRuntimeInBackground,
         shutdownOwnedRuntimeService, desktopDmgInstaller = null } = owners;

@@ -12,6 +12,7 @@ const PROVISIONING_REFUSES={
  OPENCODE_DB:value=>!path.isAbsolute(value),OPENCODE_HOST:Boolean,OPENCODE_BINARY:Boolean,
  OPENCODE_SKIP_START:value=>value==='true',OPENCHAMBER_SKIP_OPENCODE_START:value=>value==='true',
  DEVRYAN_OPENCODE_GENERATION:value=>value!=='2',DEVRYAN_RUNTIME_BUNDLE_ROOT:()=>true,
+ XDG_STATE_HOME:value=>value!==''&&(!path.isAbsolute(value)||path.normalize(value)!==value||/[\u0000-\u001f]/.test(value)),
 };
 export const isDesktopRefusedShellValue=(name,value)=>Object.hasOwn(PROVISIONING_REFUSES,name)&&PROVISIONING_REFUSES[name](value);
 // Development/packaging redirections of packaged resources (native artifacts, default

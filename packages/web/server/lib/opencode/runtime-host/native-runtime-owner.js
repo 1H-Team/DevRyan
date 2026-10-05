@@ -625,10 +625,20 @@ export function createNativeRuntimeOwner(options) {
         for (const location of bundle.locations) {
           if (checkpointHeld) throw fail('native_checkpoint_admission_held');
           await removal.recover({ directory: location.directory });
+          // The new controller has reaped the original registry and verified
+          // its clone before opening private recovery. Only the current bundle
+          // and its proved immediate checkpoint source own temporary holds.
+          const holdOwners = new Set([descriptor.bundleID]);
+          if (descriptor.checkpoint?.generation === 2) {
+            if (descriptor.checkpoint.ownerID !== descriptor.sourceBundleID) throw fail('native_clone_evidence_invalid');
+            holdOwners.add(descriptor.checkpoint.ownerID);
+          }
+          for (const ownerID of holdOwners) await executionHost.runtime.recoverNativeTransientHolds({ directory: location.directory, ownerID });
           await nativeOwner.recoverTransactionHolds({ directory: location.directory });
           await nativeOwner.recoverShellContinuations({ directory: location.directory });
           await cursor.recover({ directory: location.directory });
           await sessionContext?.recoverContinuations({ directory: location.directory });
+          await nativeOwner.recoverExecutionContinuations({ directory: location.directory });
         }
         if (checkpointHeld) throw fail('native_checkpoint_admission_held');
         await child.call({ action: 'open' });

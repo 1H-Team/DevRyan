@@ -1,6 +1,7 @@
 import path from 'node:path';
+import {resolveRuntimeBundleRoot} from '@openchamber/web/server/lib/opencode/runtime-host/runtime-bundle-root.js';
 export function readNativeShellBundleBinding({environment,home,existsSync,readRuntimeBundleBinding}){
- const controlRoot=environment.DEVRYAN_RUNTIME_BUNDLE_ROOT||path.resolve(environment.XDG_STATE_HOME||path.join(home,'.local','state'),'devryan','runtime-bundles');
+ const controlRoot=resolveRuntimeBundleRoot(environment,home);
  return existsSync(path.join(controlRoot,'selection.json'))
   ?readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot},{allowHeldInspection:true}):null;
 }

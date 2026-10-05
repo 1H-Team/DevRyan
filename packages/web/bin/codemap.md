@@ -4,6 +4,8 @@
   `openchamber runtime bundle resume --expected-revision N` recovery operation.
   It uses the same original-proof, owner-exit, unchanged-candidate and revision
   checks in every output/TTY mode, without HTTP mutation or runtime bootstrap.
+  Both `--quiet` and `-q` preserve these checks. The shared `runtime-bundle-root.js`
+  resolver keeps CLI, shell and provisioning root selection identical.
 
 ## Responsibility
 Node CLI surface for launching and operating DevRyan/OpenChamber server features (serve lifecycle, tunnel workflows, status/log-style output).

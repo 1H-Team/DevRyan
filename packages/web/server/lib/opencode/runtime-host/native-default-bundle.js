@@ -12,6 +12,7 @@ import {createRuntimeBundleCheckpoint} from './bundle-checkpoint.js';
 import {withCrossProcessFileLock} from '../../../../../harness-runtime/lib/atomic-file.js';
 import {seedNativeSetup} from './native-setup-seed.js';
 import {readRuntimeBundleBinding} from './runtime-bundle-binding.js';
+import {resolveRuntimeBundleRoot} from './runtime-bundle-root.js';
 import {pruneRetainedNativeArtifacts,retainNativeArtifacts} from './retained-native-artifacts.js';
 import {protectNativeSetupSource,removeNativeSetupSource,resetAbandonedNativeSetupSource,sweepRemovedNativeSetupSources} from './native-setup-source.js';
 import {canonicalJSON,isRecord,readBundleJSON,sha256} from './bundle-migration-inventory.js';
@@ -106,9 +107,9 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
  defaultConfigRoot=new URL('../../../default-config/',import.meta.url),captureLogicalSetup}={}) {
  if(env.OPENCODE_DB!==undefined&&!path.isAbsolute(env.OPENCODE_DB)||env.OPENCODE_HOST||env.OPENCODE_SKIP_START==='true'||env.OPENCHAMBER_SKIP_OPENCODE_START==='true'||env.OPENCODE_BINARY
   ||env.DEVRYAN_OPENCODE_GENERATION!==undefined&&env.DEVRYAN_OPENCODE_GENERATION!=='2')throw fail('native_runtime_configuration_unsupported');
- if(env.DEVRYAN_RUNTIME_BUNDLE_ROOT!==undefined)return env.DEVRYAN_RUNTIME_BUNDLE_ROOT;
+ const controlRoot=resolveRuntimeBundleRoot(env,home);
+ if(env.DEVRYAN_RUNTIME_BUNDLE_ROOT!==undefined)return controlRoot;
  const dataRoot=path.resolve(env.OPENCHAMBER_DATA_DIR||path.join(home,'.config','openchamber'));
- const controlRoot=path.resolve(env.XDG_STATE_HOME||path.join(home,'.local','state'),'devryan','runtime-bundles');
  const sourceRoot=path.join(path.dirname(controlRoot),'fresh-native-source');
  await fs.mkdir(controlRoot,{recursive:true,mode:0o700});
  if(await fs.realpath(controlRoot)!==controlRoot)throw fail('bundle_path_invalid');

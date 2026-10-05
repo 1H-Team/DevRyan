@@ -78,6 +78,22 @@ test('a journal gap is reported from the verified CLI and fails the root', () =>
   assert.equal(result.recordCounts.gap, 1);
 }));
 
+test('a stale zero-gap manifest cannot hide a sealed gap from compiled grading', () => withRepository(async repositoryRoot => {
+  const journal = await writer(repositoryRoot, 'stale-gap');
+  journal.ownerDiagnostic(lifecycle('fixture_observation'));
+  journal.ownerDiagnostic({ type: 'unsupported_fixture_type', sessionID: 'ses_fixture' });
+  await journal.drain();
+  const manifestPath = path.join(journal.journalDirectory, 'sessions/ses_fixture/manifest.json');
+  const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+  assert.equal(manifest.gapCount, 1);
+  await fs.writeFile(manifestPath, JSON.stringify({ ...manifest, gapCount: 0 }));
+  const result = await grade(repositoryRoot, journal);
+  assert.equal(result.status, 'failed');
+  assert.ok(result.reasons.includes('journal_gaps_present'));
+  assert.equal(result.gapCommand.gapRecords, 1);
+  assert.equal(result.recordCounts.gap, 1);
+}));
+
 test('tee mismatches, unknown writers, rejected or undrained tees and missing types fail reconciliation', () => withRepository(async repositoryRoot => {
   const journal = await writer(repositoryRoot, 'tee');
   journal.ownerDiagnostic(lifecycle('fixture_observation'));

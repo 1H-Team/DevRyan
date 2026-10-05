@@ -21,7 +21,12 @@ API contracts.
 
 - Selective mutation ownership: exported `lib/session-mutations.js` and internal
   `lib/session-mutation-text.js`, with immutable bases, replacement ancestry,
-  generation fences and recoverable publication receipts. Exported
+  generation fences and recoverable publication receipts. The runtime method
+  `recoverNativeTransientHolds` releases only exact temporary bundle-owner holds
+  during verified constructor recovery, under one bounded ledger decision;
+  durable Revert, retention, removal and foreign fences stay intact. Bounded
+  execution-wake discovery shares the existing deferred continuation inventory
+  and revision-bound acknowledgement. Exported
   `lib/session-revert-coordinator.js` coordinates conversation boundaries,
   acknowledged target-tree cancellation and the durable commit decision.
   `lib/session-execution-owner.js`, `lib/session-execution.js` and

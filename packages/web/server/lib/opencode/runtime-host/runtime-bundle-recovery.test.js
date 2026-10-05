@@ -1,5 +1,6 @@
 import request from '../../../test-supertest.js';
 import { expect, test, vi } from 'vitest';
+import vm from 'node:vm';
 import { createRuntimeBundleRecoveryApplication } from './runtime-bundle-recovery.js';
 
 const binding = { descriptor: { bundleID: 'A', launch: { privatePath: '/must/not/expose' } },
@@ -38,4 +39,31 @@ test('pending B remains passive and only the owned local server handle can deleg
   expect(resume).not.toHaveBeenCalled();await expect(runtime.runtimeBundle.resume({expectedRevision:2})).resolves.toMatchObject({revision:3});
   expect(resume).toHaveBeenCalledExactlyOnceWith({controlRoot:'/owned/control',input:{expectedRevision:2}});
  }finally{await runtime.stop();}
+});
+
+test('the actual recovery page preserves finite Electron errors without exposing transport messages', async () => {
+  const application = createRuntimeBundleRecoveryApplication({ binding: { ...binding, admission: 'held',
+    rollbackRecovery: { candidateBundleID: 'A' } } });
+  const runtime = await application.startWebUiServer({ port: 0, attachSignals: false });
+  try {
+    const html = (await request(runtime.expressApp).get('/')).text;
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+    for (const [error, expected] of [
+      [new Error("Error invoking remote method 'openchamber:invoke': Error: bundle_recovery_proof_required"), 'bundle_recovery_proof_required'],
+      [Object.assign(new Error('fixture'), { code: 'bundle_selection_revision_conflict' }), 'bundle_selection_revision_conflict'],
+      [new Error("Error invoking remote method 'foreign:invoke': Error: bundle_recovery_proof_required"), 'bundle_recovery_failed'],
+      [new Error("Error invoking remote method 'openchamber:invoke': Error: bundle_recovery_proof_required\nprivate fixture"), 'bundle_recovery_failed'],
+      [new Error('private fixture bundle_recovery_proof_required'), 'bundle_recovery_failed'],
+    ]) {
+      let click;
+      const button = { hidden: true, disabled: false, addEventListener: (_event, action) => { click = action; } };
+      const result = { textContent: '' };
+      const invoke = vi.fn(async () => { throw error; });
+      vm.runInNewContext(script, { window: { __TAURI__: { core: { invoke } } },
+        document: { getElementById: id => id === 'resume' ? button : result } });
+      expect(button.hidden).toBe(false); await click();
+      expect(invoke).toHaveBeenCalledExactlyOnceWith('desktop_runtime_bundle_resume', { expectedRevision: 3 });
+      expect(result.textContent).toBe(expected); expect(button.disabled).toBe(false);
+    }
+  } finally { await runtime.stop(); }
 });

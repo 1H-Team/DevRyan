@@ -924,6 +924,25 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     // Revert pending state is deliberately preserved by this generic release.
     return nativeAdmission(repo, input.sessionID);
   });
+  // Called only by the constructing native owner after prior process settlement
+  // and bundle verification, while fresh execution admission remains closed.
+  const recoverNativeTransientHolds = input => locked(input.directory, async repo => {
+    if (typeof input.ownerID !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(input.ownerID)) throw changeError('invalid_capture_identity', 400);
+    const updates = [];
+    for await (const { value: session } of repo.db.entries('sessions')) {
+      if (session.pending || !session.nativeAdmission) continue;
+      const state = session.nativeAdmission;
+      const holds = state.holds.filter(hold => !(hold.ownerID === input.ownerID && validID(hold.id)
+        && Object.keys(hold).every(name => name === 'id' || name === 'ownerID')));
+      if (holds.length === state.holds.length) continue;
+      if (updates.length >= 512) throw changeError('native_hold_recovery_unbounded');
+      updates.push({ ...session, nativeAdmission: { ...state, revision: state.revision + 1, holds } });
+    }
+    // Collect before writing: an unbounded or corrupt inventory cannot partly
+    // release fences. Revert, retention, removal and foreign holds stay intact.
+    for (const session of updates) repo.db.set(key('sessions', session.id), session);
+    return updates.length;
+  });
   const deferNativeContinuation = (input) => locked(input.directory, async (repo) => {
     if (!validID(input.sessionID) || !validID(input.operation)) throw changeError('invalid_capture_identity', 400);
     const sessionKey = key('sessions', input.sessionID), session = await repo.db.get(sessionKey);
@@ -936,15 +955,20 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     const session = await repo.db.get(key('sessions', input.sessionID));
     return [...(session?.nativeAdmission?.continuations ?? [])];
   });
-  const nativeShellContinuations = (input) => snapshotOrLocked(input.directory, async (repo) => {
+  const nativeDeferredContinuations = (input) => snapshotOrLocked(input.directory, async (repo) => {
     const result = [];
     for await (const { value: session } of repo.db.entries('sessions')) {
       for (const operation of session.nativeAdmission?.continuations ?? []) {
-        if (operation.startsWith('shell.complete:')) result.push({ sessionID: session.id, operation });
+        if (operation.startsWith('shell.complete:') || operation === 'execution.wake') {
+          if (result.length >= 4096) throw changeError('native_continuation_recovery_unbounded');
+          result.push({ sessionID: session.id, operation });
+        }
       }
     }
     return result;
   });
+  const nativeShellContinuations = async input => (await nativeDeferredContinuations(input)).filter(row => row.operation.startsWith('shell.complete:'));
+  const nativeExecutionContinuations = async input => (await nativeDeferredContinuations(input)).filter(row => row.operation === 'execution.wake').map(row => row.sessionID);
   const nativeTransactionHolds = (input) => snapshotOrLocked(input.directory, async (repo) => {
     const result = [];
     for await (const { value: session } of repo.db.entries('sessions')) {
@@ -1965,9 +1989,9 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     return directories;
   };
   const runtime = { projectDirectories, projectDirectory: (input) => locked(input.directory, (repo) => repo.directory),
-    assertAdmission, registerNativeSession, nativeAdmissionState, holdNativeAdmission, releaseNativeAdmission,
+    assertAdmission, registerNativeSession, nativeAdmissionState, holdNativeAdmission, releaseNativeAdmission, recoverNativeTransientHolds,
     beginNativeRemoval, abandonQuietNativeRemoval, nativeRetentionHolds, commitNativeRemoval, prepareNativeRemovalMembers: input => commitNativeRemoval({...input,prepareOnly:true}), nativeRemoval, nativeRemovals, stageNativeRemovalMember, acknowledgeNativeRemoval, completeNativeRemoval,
-    deferNativeContinuation, nativeContinuations, nativeShellContinuations, nativeTransactionHolds, acknowledgeNativeContinuation,
+    deferNativeContinuation, nativeContinuations, nativeShellContinuations, nativeExecutionContinuations, nativeTransactionHolds, acknowledgeNativeContinuation,
     bindNativeShellJob, nativeShellJob, bindNativeShellNotification, acknowledgeNativeShellCompletion,
     registerPrompt, registerChild, reserve, prepare, warm, begin, admitDirect, finishDirect, claimLease, finish, cleanupLease, executionReceipt, aliasCalls, prepareRevert, prepareRedo, prepareFileRestore, settleRevert, leaseForCall,
     transaction, updateTransaction, pendingTransactions, capturedSessionState, restoreForeign, cancelLease, cancelUnstartedCall, activeLeases, pendingCleanup, executionOutcomes,

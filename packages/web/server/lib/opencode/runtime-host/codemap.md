@@ -111,8 +111,11 @@ the real application owner: close admission, stop producers, drain credential
 resolution and mutations, obtain controller quiescence/exit and drain stores
 before copying. Administrator HTTP mutations accept only an expected selector
 revision. The returned server handle exposes the same lifecycle for Electron;
-new selection needs host recomposition. Once a checkpoint starts closing
-admission the lifecycle is held for the rest of the process: it never reports
+new selection needs host recomposition.
+The committed selector schedules recomposition once after response completion
+or disconnect, including a caller lost while the checkpoint was settling.
+Once a checkpoint starts closing admission the lifecycle is held for the rest of
+the process: it never reports
 `ready` again and refuses further upgrade/rollback with
 `bundle_runtime_admission_held`, keeping the original failure as `reason`. A
 failure before any checkpoint keeps the prior state. Inspection reports
@@ -126,6 +129,11 @@ names B. `runtime-bundle-resume.js` verifies that original proof and unchanged B
 before incrementing the selector revision and clearing the hold for a fresh
 composition. The CLI `runtime bundle resume --expected-revision N` and trusted
 Electron IPC use this same core. Recovery HTTP exposes no mutation route.
+The cold page recognizes only bounded finite native codes from the original
+Electron invoke error envelope; it never displays arbitrary transport text.
+`runtime-bundle-root.js` resolves one validated absolute root for CLI, shell
+inspection and default provisioning. Empty XDG state uses the home default;
+relative authority and an empty explicit bundle root refuse before owner access.
 
 - `runtime-bundle-binding.js` reads only the explicitly selected bundle before
   the web store owners initialize. It binds copied configuration and data without
@@ -240,6 +248,12 @@ Electron IPC use this same core. Recovery HTTP exposes no mutation route.
   the admission owner's ACK barrier. Its stderr drain retains only a finite
   observation-failure marker, reports it once to the existing journal and keeps
   it in the process exit record; raw provider/plugin output is never persisted.
+  Before fresh admission opens, constructor recovery clears temporary holds
+  belonging only to the selected bundle and its verified immediate checkpoint
+  source. Revert, retention, removal, future-shaped and foreign holds remain.
+  Startup retries durable execution wakes through the existing exact permit,
+  observed native result and revision-bound ACK. Unresolved restored inputs
+  retain their explicit recovery decision and their wake intent.
   `native-migration-process.js` separately
   requires an offline process exit and matching persisted migration receipt.
 - `native-artifacts.js` verifies every packaged output, the accepted supervisor,

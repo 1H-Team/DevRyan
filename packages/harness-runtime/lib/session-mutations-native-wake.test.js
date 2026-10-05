@@ -78,6 +78,36 @@ test('replacement rebinds retained deferred wake and success is idempotent', asy
   expect(f.reads).toContain('ses_root');
 });
 
+test('startup recovery consumes only unheld execution wakes with a fresh verified capability', async () => {
+  let calls = 0;
+  const f = await fixture(async input => { calls++; return receipt(input); });
+  await f.defer('execution.wake'); await f.defer('shell.complete:job_retained'); f.reopen();
+  await f.runtime.holdNativeAdmission({ directory: f.directory, sessionID: 'ses_root', ownerID: 'foreign-owner' });
+  await f.owner.recoverExecutionContinuations({ directory: f.directory });
+  expect(calls).toBe(0); expect(await f.pending()).toEqual(['execution.wake', 'shell.complete:job_retained']);
+  expect(await f.runtime.recoverNativeTransientHolds({ directory: f.directory, ownerID: 'foreign-owner' })).toBe(1);
+  await f.owner.recoverExecutionContinuations({ directory: f.directory });
+  await f.owner.recoverExecutionContinuations({ directory: f.directory });
+  expect(calls).toBe(1); expect(await f.pending()).toEqual(['shell.complete:job_retained']);
+  await expect(f.rpc('recoverExecutionContinuations', { directory: f.directory })).rejects.toMatchObject({ code: 'native_admission_rpc_unavailable' });
+});
+
+test('startup recovery retains an unverified wake and an unresolved restored input', async () => {
+  const f = await fixture(async () => ({ kind: 'blocked' })); await f.defer('execution.wake');
+  await expect(f.owner.recoverExecutionContinuations({ directory: f.directory })).rejects.toMatchObject({ code: 'native_continuation_wake_unverified' });
+  expect(await f.pending()).toEqual(['execution.wake']);
+  let calls = 0;
+  const restored = createNativeAdmissionOwner({ runtime: f.runtime, directory: f.directory, ownerID: 'restored-fixture',
+    getSession: async id => ({ id, directory: f.directory, ...(id === 'ses_child' ? { parentID: 'ses_root' } : {}) }),
+    authorizeOperation: async () => {}, withSessionLock: async (_id, action) => action(),
+    assertRecoveredInputOperation: () => { throw Object.assign(new Error('native_recovered_input_fenced'), { code: 'native_recovered_input_fenced' }); },
+    onContinuation: async input => { calls++; return receipt(input); } });
+  try {
+    await restored.recoverExecutionContinuations({ directory: f.directory });
+    expect(calls).toBe(0); expect(await f.pending()).toEqual(['execution.wake']);
+  } finally { restored.dispose(); }
+});
+
 test('concurrent hold releases share one independently registered wake', async () => {
   let calls = 0, complete;
   const entered = Promise.withResolvers();

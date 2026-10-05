@@ -14,7 +14,7 @@ const bindingSpecifier = '@openchamber/web/server/lib/opencode/runtime-host/runt
 
 // Keep the emitted import form intact: a static external import executes before
 // even a textually earlier capture, including when the other code was inlined.
-function bootstrapProbe(source, bindingUrl) {
+function bootstrapProbe(source, bindingUrl, failed = false) {
   const start = source.search(/^(?:const|var) hostDataRootDirectory\s*=/m);
   const end = source.search(/^(?:const|var) shellRuntimeBundleBinding\s*=/m);
   assert.ok(start >= 0 && end > start, 'The shell bootstrap must remain identifiable');
@@ -29,8 +29,9 @@ function bootstrapProbe(source, bindingUrl) {
   assert.ok(importsAndCapture.includes(bindingSpecifier), 'Execute the real binding import');
   return `import ${pathAlias} from 'node:path';
 import ${osAlias} from 'node:os';
+const isRuntimeServiceControlProbe=false;
 ${importsAndCapture.replaceAll(bindingSpecifier, bindingUrl)}
-process.stdout.write(JSON.stringify({ hostRoot: hostDataRootDirectory, selectedRoot: process.env.OPENCHAMBER_DATA_DIR }));
+process.stdout.write(JSON.stringify({ hostRoot: hostDataRootDirectory, selectedRoot: process.env.OPENCHAMBER_DATA_DIR${failed ? ', code:shellRuntimeBundleBindingError?.code' : ''} }));
 `;
 }
 
@@ -68,6 +69,15 @@ export const readRuntimeBundleBinding = () => null;
           assert.deepEqual(JSON.parse(result.stdout), { hostRoot, selectedRoot });
         });
       }
+      const brokenBinding = path.join(fixture, `${label}-broken-binding.mjs`);
+      await fs.writeFile(brokenBinding, "throw new Error('private fixture must not escape');\n");
+      const brokenProbe = path.join(fixture, `${label}-broken.mjs`);
+      await fs.writeFile(brokenProbe, bootstrapProbe(source, pathToFileURL(brokenBinding).href, true));
+      const result = spawnSync(process.execPath, [brokenProbe], { cwd: fixture, encoding: 'utf8', timeout: 10_000,
+        env: { HOME: home, PATH: process.env.PATH } });
+      assert.equal(result.status, 0, result.stderr || result.error?.message);
+      assert.deepEqual(JSON.parse(result.stdout), { hostRoot: path.join(home, '.config', 'openchamber'), code: 'runtime_bundle_binding_invalid' });
+      assert.equal(result.stderr, '');
     }
   } finally {
     await fs.rm(fixture, { recursive: true, force: true });

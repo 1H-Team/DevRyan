@@ -117,6 +117,7 @@ export interface NativeAdmissionOwner {
     readonly assistantMessageID: string; readonly consumedUserMessageIDs?: readonly string[] }) => Promise<void>;
   /** Constructor-only startup reconciliation of retained receipt-bound shell intents; honors durable holds. */
   readonly recoverShellContinuations: (input: { readonly directory: string }) => Promise<void>;
+  readonly recoverExecutionContinuations: (input: { readonly directory: string }) => Promise<void>;
   readonly handleRpc: (method: string, input?: unknown) => Promise<unknown>;
   readonly requestHeaders: () => Readonly<Record<string, string>>;
   readonly withAcceptedOperation: <A>(accepted: { readonly sessionID: string; readonly messageID: string; readonly fingerprint: string;

@@ -548,10 +548,24 @@ if (!isRuntimeServiceControlProbe) {
 // The binding changes OPENCHAMBER_DATA_DIR during module evaluation. Capture
 // shell ownership first; a static import would run before this in packaged ESM.
 const hostDataRootDirectory=path.resolve(process.env.OPENCHAMBER_DATA_DIR||path.join(os.homedir(),'.config','openchamber'));
-const {readRuntimeBundleBinding}=await import('@openchamber/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js');
-const shellRuntimeBundleBinding=readNativeShellBundleBinding({environment:{...process.env},home:os.homedir(),existsSync:fs.existsSync,readRuntimeBundleBinding});
-const runtimeBundleRecoveryRequired=shellRuntimeBundleBinding?.admission==='held'||shellRuntimeBundleBinding?.selection.reconciliationRequired===true;
-const resolveSettingsDirectory=createNativeSettingsDirectory({environment:{...process.env},home:os.homedir(),existsSync:fs.existsSync,readRuntimeBundleBinding});
+let readRuntimeBundleBinding, shellRuntimeBundleBindingError;
+const bindingFailed = () => {
+  shellRuntimeBundleBindingError = Object.assign(new Error('The selected runtime bundle could not be verified.'), { code: 'runtime_bundle_binding_invalid' });
+  return null;
+};
+try {
+  if (!isRuntimeServiceControlProbe) ({readRuntimeBundleBinding}=await import('@openchamber/web/server/lib/opencode/runtime-host/runtime-bundle-binding.js'));
+} catch { bindingFailed(); }
+const shellRuntimeBundleBinding=(() => {
+  if (shellRuntimeBundleBindingError || isRuntimeServiceControlProbe) return null;
+  try { return readNativeShellBundleBinding({environment:{...process.env},home:os.homedir(),existsSync:fs.existsSync,readRuntimeBundleBinding}); }
+  catch { return bindingFailed(); }
+})();
+const runtimeBundleRecoveryRequired=Boolean(shellRuntimeBundleBindingError)||shellRuntimeBundleBinding?.admission==='held'||shellRuntimeBundleBinding?.selection.reconciliationRequired===true;
+const resolveSettingsDirectory=shellRuntimeBundleBindingError
+  ? () => { throw shellRuntimeBundleBindingError; }
+  : isRuntimeServiceControlProbe ? () => hostDataRootDirectory
+    : createNativeSettingsDirectory({environment:{...process.env},home:os.homedir(),existsSync:fs.existsSync,readRuntimeBundleBinding});
 const { settingsFilePath, readSettingsRoot, mutateSettingsRoot, normalizeHostUrl, readDesktopHostsConfig, writeDesktopHostsConfig, readWindowState, writeWindowState, debounceWindowStatePersist, holdForCheckpoint: holdDesktopSettingsForCheckpoint } = createDesktopSettings({
   fs, fsp, os, process, log, getMainWindow: () => state.mainWindow,
   minWidth: MIN_WINDOW_WIDTH, minHeight: MIN_WINDOW_HEIGHT, LOCAL_HOST_ID, resolveDataDirectory:resolveSettingsDirectory,
@@ -2000,11 +2014,11 @@ const computeBootOutcome = ({ envTargetUrl, probe, config, localAvailable }) => 
 };
 
 const buildStartupSplashHtml = () => {
-  return buildStartupSplashHtmlFromSettings(readSettingsRoot());
+  return buildStartupSplashHtmlFromSettings(shellRuntimeBundleBindingError ? {} : readSettingsRoot());
 };
 
 const currentStartupSplashPalette = () => (
-  resolveStartupSplashPalette(readSettingsRoot(), nativeTheme.shouldUseDarkColors)
+  resolveStartupSplashPalette(shellRuntimeBundleBindingError ? {} : readSettingsRoot(), nativeTheme.shouldUseDarkColors)
 );
 
 const startupErrorDetails = (error) => {
@@ -2028,7 +2042,7 @@ const startupErrorDetails = (error) => {
 
 const buildStartupErrorHtml = (error) => {
   const details = startupErrorDetails(error);
-  return buildStartupErrorHtmlFromSettings(readSettingsRoot(), {
+  return buildStartupErrorHtmlFromSettings(shellRuntimeBundleBindingError ? {} : readSettingsRoot(), {
     message: details.displayMessage,
   });
 };
@@ -3131,7 +3145,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
     if (startupAction === 'retry-startup') {
       event.preventDefault();
       routeStartupRetry({
-        requiresRelaunch: webServerEntry.requiresRelaunch,
+        requiresRelaunch: () => Boolean(shellRuntimeBundleBindingError) || webServerEntry.requiresRelaunch(),
         relaunch: () => performConfirmedQuit({ restart: true }),
         retryInProcess: startDesktopRuntime,
       });
@@ -3750,6 +3764,7 @@ const startDesktopRuntime = () => {
   if (desktopStartupPromise) return desktopStartupPromise;
   const current = (async () => {
     try {
+      if (shellRuntimeBundleBindingError) throw shellRuntimeBundleBindingError;
       if (desktopStartupFailed) {
         applyDesktopKeepAwake(readDesktopKeepAwakeEnabled());
       }
@@ -5102,6 +5117,15 @@ app.whenReady().then(async () => {
     const result = await registration.status();
     process.stdout.write(`${JSON.stringify(result)}\n`);
     app.exit(result.ok && result.state !== 'not_found' ? 0 : 2);
+    return;
+  }
+  if (shellRuntimeBundleBindingError) {
+    await holdDesktopSettingsForCheckpoint();
+    if (desktopDmgInstaller?.isCandidateStartup()) { await desktopDmgInstaller.refuseStartup(); return; }
+    log.error('[electron] runtime bundle inspection failed', { code: shellRuntimeBundleBindingError.code });
+    if (isRuntimeServiceMode) { app.exit(1); return; }
+    state.mainWindow=createBrowserWindow({label:'main',restoreGeometry:false,url:null});
+    await showStartupFailure(shellRuntimeBundleBindingError);
     return;
   }
   if(runtimeBundleRecoveryRequired){

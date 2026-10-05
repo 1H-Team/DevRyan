@@ -219,7 +219,19 @@ export function registerRuntimeBundleLifecycleRoutes(app, { lifecycle, isAdminis
   for (const action of ['upgrade', 'rollback']) app.post(`/api/runtime/bundle/${action}`, guard, mutationGuard, express.json({ limit: '1kb' }), async (req, res) => {
     try {
       const result = await lifecycle[action](req.body);
-      if (result.restartAvailable) res.once('finish', () => { void lifecycle.recompose().catch(() => {}); });
+      if (result.restartAvailable) {
+        let restarted = false;
+        const restart = () => {
+          if (restarted) return;
+          restarted = true;
+          res.off('finish', restart); res.off('close', restart);
+          void lifecycle.recompose().catch(() => {});
+        };
+        res.once('finish', restart); res.once('close', restart);
+        // Selection belongs to the host after commit, even when the caller
+        // disconnected while its checkpoint was settling.
+        if (res.destroyed || res.writableFinished) restart();
+      }
       res.json(result);
     } catch (error) { res.status(error.status ?? 503).json({ code: finiteCode(error) }); }
   });

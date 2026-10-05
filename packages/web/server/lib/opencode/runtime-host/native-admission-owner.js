@@ -1349,6 +1349,19 @@ export function createNativeAdmissionOwner(options) {
       }
     }),
     recoverTransactionHolds: input => inController(async () => { for (const held of await runtime.nativeTransactionHolds({ directory: input.directory, ownerID })) await releaseTransactionHolds({ ...held, directory: input.directory }); }),
+    recoverExecutionContinuations: input => inController(async () => {
+      if (!path.isAbsolute(input.directory ?? '')) throw fail('native_session_directory_mismatch', 403);
+      for (const sessionID of await runtime.nativeExecutionContinuations(input)) {
+        const { session, state } = await stateFor(sessionID);
+        if (session.directory !== input.directory) throw fail('native_session_directory_mismatch', 403);
+        if (state.held || state.reverting) continue;
+        // An unresolved restored input keeps its explicit owner decision.
+        // Starting a replacement cannot borrow that future recovery grant.
+        try { options.assertRecoveredInputOperation?.({ operation: 'execution.deferred.wake', sessionID }); }
+        catch (cause) { if (cause?.code === 'native_recovered_input_fenced') continue; throw cause; }
+        await continueDeferredExecution(sessionID);
+      }
+    }),
     withRevertOperation: (input, action) => inController(async () => {
       const request = { operation: input.operation, sessionID: input.sessionID, ...(input.operation === 'session.revert.stage' ? { input } : {}) };
       await validateRevert(input, request);
