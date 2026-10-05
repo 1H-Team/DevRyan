@@ -10,11 +10,19 @@ import {
   CHANGED_THEME_ID, DEFAULT_V200_ARTIFACTS, INITIAL_THEME_ID, PLAN_COUNTS, SHELL_EXPORTS, buildLegacyOwnerTree, buildShellExportRcFiles,
   classifyBundledRuntimeOffer, createV200PrepareEnvironment, findProcessesMatching, firstLaunchLayout, gradeShellExportLog,
   LEGACY_TREE_APP_WRITTEN, compareLegacySourceTree, hashLegacySourceTree,
-  parseFirstLaunchArgs, parseSeedSkipSummary, parseStartupFailures, resolvePackageRepositoryRoot, writeLegacyOwnerTree, writeShellExportRcFiles,
+  isFirstLaunchReady, parseFirstLaunchArgs, parseSeedSkipSummary, parseStartupFailures, prepareFirstLaunchGitBoundaries, resolvePackageRepositoryRoot, writeLegacyOwnerTree, writeShellExportRcFiles,
 } from './first-launch-smoke.mjs';
 
 const projectPaths = Array.from({ length: 8 }, (_, index) => `/synthetic/workspace/project-${index + 1}`);
 const evidence = '/repo/.cache/qa/packaged-electron-x/package-evidence.json';
+
+test('backend readiness cannot grade a startup chooser as a loaded chat', () => {
+  const health = { status: 200, body: { status: 'ok', isOpenCodeReady: true } };
+  assert.equal(isFirstLaunchReady({ health, selected: true, composerVisible: false }), false);
+  assert.equal(isFirstLaunchReady({ health, selected: true, composerVisible: true }), true);
+  assert.equal(isFirstLaunchReady({ health, selected: false, composerVisible: true }), false);
+  assert.equal(isFirstLaunchReady({ health: { ...health, status: 503 }, selected: true, composerVisible: true }), false);
+});
 
 test('CLI requires an absolute package, a known scenario and v2.0.0 source only for v200 scenarios', () => {
   assert.deepEqual(parseFirstLaunchArgs(['--package-evidence', evidence, '--scenario', 'owner-shaped']),
@@ -43,6 +51,32 @@ test('runtime layout matches the packaged QA host policy', () => {
   assert.equal(layout.controlRoot, '/qa/runtime/home/.local/state/devryan/runtime-bundles');
   assert.equal(layout.freshSource, '/qa/runtime/home/.local/state/devryan/fresh-native-source');
   assert.equal(layout.shellConfig, '/qa/runtime/home/.config/qa-zsh');
+});
+
+test('private Git boundaries stop enclosing-checkout discovery without inheriting Git configuration or templates', async () => {
+  const root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'devryan-first-launch-git-')));
+  try {
+    const layout = firstLaunchLayout(path.join(root, 'runtime'));
+    const hostileTemplate = path.join(root, 'hostile-template'), hostileConfig = path.join(root, 'hostile-config');
+    await mkdir(hostileTemplate); await writeFile(path.join(hostileTemplate, 'unexpected'), 'must not be copied');
+    await writeFile(hostileConfig, '[init]\n defaultBranch = hostile\n');
+    const parent = spawnSync('git', ['init', '--quiet', `--template=${hostileTemplate}`], { cwd: root,
+      env: { PATH: process.env.PATH, HOME: root, GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_NOSYSTEM: '1' } });
+    assert.equal(parent.status, 0);
+    const directories = [layout.home, layout.workspace, ...Array.from({ length: 8 }, (_, index) => path.join(layout.workspace, `project-${index + 1}`))];
+    for (const directory of directories) await mkdir(directory, { recursive: true, mode: 0o700 });
+    const env = { PATH: process.env.PATH, HOME: root, GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_NOSYSTEM: '1' };
+    assert.equal(spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: layout.home, env }).stdout.toString().trim(), root);
+    assert.equal(await prepareFirstLaunchGitBoundaries(layout, { ...env, GIT_DIR: path.join(root, '.git'),
+      GIT_CONFIG_GLOBAL: hostileConfig, GIT_TEMPLATE_DIR: hostileTemplate }), 10);
+    for (const directory of directories) {
+      assert.equal(spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: directory, env }).stdout.toString().trim(), directory);
+      assert.equal(await readFile(path.join(directory, '.git/HEAD'), 'utf8'), 'ref: refs/heads/main\n');
+      assert.ok(!existsSync(path.join(directory, '.git/unexpected')));
+      assert.ok(!existsSync(path.join(directory, '.git/hooks')));
+    }
+    await assert.rejects(prepareFirstLaunchGitBoundaries(layout), error => error.code === 'EEXIST');
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test('owner-shaped tree: 8 records, 608 v1 plans, a nested folder, Finder and AppleDouble metadata, fake credentials', () => {

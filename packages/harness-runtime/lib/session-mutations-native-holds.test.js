@@ -675,7 +675,7 @@ test('retained shell intents recover consumed notices without another wake and a
   // A generic web owner without shell machinery must still accept unrelated
   // canonical Steps when it has no retained shell intents.
   await f.owner.acknowledgeStartedContinuation({ sessionID: 'ses_other', userMessageID: 'msg_other', assistantMessageID: 'msg_other_step' });
-});
+}, 20_000);
 
 test('native attachment sealing refuses lexical and canonical git metadata and protected owner roots', async () => {
   const f = await fixture(), protectedRoot = path.join(f.directory, 'private');

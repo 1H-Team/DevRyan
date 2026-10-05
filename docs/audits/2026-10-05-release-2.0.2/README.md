@@ -276,6 +276,239 @@ Resolved dependency tuples and dependency pins are unchanged. Release notes
 and version/release contracts pass (11 checks); final source and artifact
 identities must be recorded after this candidate is committed and built.
 
+The frozen `fc5f750e` attempt built the web/Electron bundles and passed startup
+bundle budgets. Native build ID was
+`ba89b95731b464fca77bfa62be72570a18c0890d23fc72a15f44ecff58ad7d7b`,
+with manifest SHA-256
+`185746157c1ac56cdc60bdc7dfcaa1c7ecfb542f1a734a63dcad3b6baebc83e2`.
+Full validation passed 663 harness tests but another durable shell-intent case
+reached the runner's five-second timeout; the secondary Git failure followed
+fixture teardown. Its unchanged isolated case passed in 2.94 seconds. The case
+now uses a bounded 20-second runner budget and all 34 file checks pass; authority,
+receipt and replay assertions are unchanged. The full failed log is retained as
+`frozen-full-validation-1.log` and must be rerun after the service correction.
+
+Compiled acceptance passed 15 cases before the human-queue fixture's 60-second
+budget expired while another full validation was running. Its controller exited
+physically and cleanup passed. The actual fixture journal has zero verified gaps;
+this does not satisfy the three meaningful-root inventory, which was not reached.
+Original result `.cache/v2-validation/package-D1pvRP/result.json` and journal
+inspection remain preserved. Rerun acceptance alone before changing any deadline.
+
+The frozen Stage F attempt refused all seven wire cells because the invocation
+omitted `QA_NATIVE_ARTIFACT_ROOT`. The packaged Electron actual-backend cell
+passed send/reload/cancel/reconnect and native read/write publication. The first
+web cell lost its light theme at final screenshot grading; an unchanged independent
+web repeat passed. Both grades remain retained, and screenshots still require
+review. None of these results is rebound to later changed source.
+
+Service review independently reproduced `prepareStartup` invoking the runtime
+preparer with background Bots disabled. The shared runtime now returns
+`bots_background_disabled` before runtime, catalog or Docker preparation;
+19 focused checks pass. A new direct packaged service fixture covers private
+owner/descriptor identity, unauthenticated refusal, no model sends before a
+desktop lease, physical drain and restart. Its actual launch passed at
+`bf2aa44a`: `.cache/qa/packaged-service-sDdrk8/evidence.json` records two
+headless service starts, original process identities, private descriptor modes,
+401 refusals, zero model sends, physical exit, lock removal and a new restart
+instance. Cleanup has no errors. This direct service check does not register
+launchd or qualify an authenticated desktop lease or live providers.
+
+The corrected `bf2aa44a` cohort passed `validate:full` alone: UI 4,048 checks,
+web Vitest 6,325 checks and web Bun 11 checks, with workspace lint, types and
+deterministic suites. `build`, `bundle:check` and `docs:validate` also passed.
+Logs are `service-correction-full-validation-2.log`,
+`service-correction-build-2.log`, `service-correction-bundle-check-2.log` and
+`service-correction-docs-1.log` in the recovery directory. Lock SHA-256 is
+`30d8bb422ea2ab4e2ff27a31ec3591ca0f032887f334034ffa651ba216a9a247`.
+Packaged source SHA-256 is
+`741dfbcc801d879a65b7576194492e7dd57ac2ea40846835112e1befa1782269`,
+runner SHA-256 is
+`3aaf96d9ea6eb31ed7c6159745a8ffcf4f80746a444a83b07217829b6b9928a5`,
+and QA archive SHA-256 is
+`b096d6e5b90fb2ec1a447260f2c30d55974cb535045960e02635cf677e320732`.
+
+Compiled acceptance alone passed 108 cases, including the earlier human queue,
+all 23 retained skills and actual Electron browser publication, then failed
+`compiled-document-docx-read` at its original 60-second continuation deadline.
+Result `.cache/v2-validation/package-esr1QY/result.json` retains unchanged
+source identities, clean physical controller exit and no cleanup errors. The
+correlated document session has zero verified journal gaps. Its actual tool
+completed; the following image-context worker did not publish before the
+continuation deadline. An independent fresh compiled document diagnostic
+passed all six document checks in 9.6–14.0 seconds with the same tool, HTTP,
+publication and 60-second assertions. Its result is
+`.cache/v2-validation/package-kV5sMR/result.json`; its journal gap check passed.
+A second diagnostic first settled 300 genuine ledger operations, then passed
+the same six document checks in 7.5–10.5 seconds with zero verified journal gaps
+and clean owned-process drain. Result `package-hJlzxd/result.json` remains under
+`.cache/v2-validation`. Ledger age alone did not reproduce the continuation
+failure; no optimization or deadline change followed. Neither diagnostic
+satisfies the complete acceptance, seeded boot or three meaningful-root gates.
+
+A fresh full run passed 119 cases, including DOCX, then exposed a verifier
+ownership error before seeded boot. The seeded fixture supplied its legacy
+source checkpoint when selection requested the newly prepared bundle's own
+checkpoint. The fixture now retains both genuine constructor checkpoints;
+production checkpoint fences are unchanged. Two focused checks and isolated
+seeded boot passed. The fresh full rerun then passed all **122 cases**, including
+seed import/consumption, supervised restart and actual parent-death drain.
+Result `.cache/v2-validation/package-7girmS/result.json` has SHA-256
+`19fd16286ec7d7614d6d84fa68f7cbf1f626674ecc9e07b07b4408dbb2689c09`.
+Acceptance source digest is
+`d4a0c1a0f7323e8862e280f611c65df4e143e209cadbc81d978f2b6edd61f0f4`;
+source coherence and owned cleanup passed, with the 750 ms interval unchanged.
+The three meaningful durable roots passed exact tee reconciliation and explicit
+`gaps --verify`: candidate **1,496 records**, baseline **12**, parent-death **109**;
+all have zero gaps and no open chunks. Original 108- and 119-case failures remain
+preserved. `compiled-acceptance-4-summary.json` binds the concise grade to the
+original result. `seeded-checkpoint-validate-full-1.log` records a passing full
+lint/type/deterministic validation, including 4,048 UI and 6,325 server tests.
+
+The private packaged prompt rehearsal passed native conflict-notice review,
+both explicit Restore actions, exact edited-file backups and Apply & Restart.
+Builder and Orchestrator each received both planning/execution guidance clauses
+in their original primary system prompt, then completed separate synthetic
+loopback turns. No inline primary prompt override or paid provider was used.
+Result `.cache/qa/packaged-prompts-oa1OcI/result.json` has SHA-256
+`2237e04da8806fbc75458e033b1be4f67cab9e75b3395aa1415a977c9393cfad`;
+the packaged source/archive and all 4,695 linked native inputs are unchanged.
+All four screenshots were individually reviewed; the 155-record journal has
+zero errors and explicit verified gaps, and owned process cleanup passed.
+`packaged-prompts-3-visual-and-journal-review.json` binds that independent review
+to the original result. The first two failed rehearsals remain preserved: their
+oracle mistook the original SDK title prompt for a primary prompt. The corrected
+rehearsal recognizes its independently verified exact hash, accepts at most one
+per role, and keeps both guidance assertions for the two actual primaries.
+
+Windows run `37383981687` at `a92c85e2` built pinned libsql 0.5.29 from the
+unchanged official source on both native architectures using NMake. Node
+22.23.3 and Bun 1.3.14 passed both ABI/transaction checks. Downloaded PE machine
+identities and full SHA-256 values independently match the receipts:
+`3ec054ed07b0e8cc756e77a6a52d06ea10b26611527baa869a60610cc189a8b1`
+(x64), `f9a7564676a8d6b51d0db15628a68d7900783d9b2c424f190ab99365507531de`
+(ARM64). `windows-libsql-ci-4` retains the artifacts. Both full Windows jobs
+remain failed; these database asset candidates grant no runtime admission.
+
+Windows run `37366300612` initially had no acquired runners; its retry compiled
+both supervisors and passed both process/parent identity checks. Each retained
+filesystem receipt passed 13 checks and then failed exclusive-file-lock refusal.
+The original SDK attribute/security handle can bypass sharing restrictions;
+the isolated Windows branch now requests read access. Run `37370143551` at
+`a8810206` passed all 14 filesystem checks, including exclusive-lock refusal,
+and both process/parent identity checks on x64 and ARM64. Original receipts are
+retained in `.cache/release-2.0.2-recovery/windows-sdk-ci-4`. The subsequent
+parent-anchored inspection change passed all 15 filesystem checks and both
+process/parent identity checks on both architectures in run `37371384474` at
+`0a8225ae`. Receipts are retained in `windows-sdk-ci-5`; supervisor SHA-256
+values are `a8e55bdba2d6f39dae0114b6deae548bf8275b64f8c9b83fbb72dcf7beb945e4`
+and `74239280e1046628be870b610597a38cf68c5d3f5e9a893c7c30fc7db17b720b`.
+Full confinement and controller/writer builds remain failed.
+
+Run `37377148453` at `17c9624d` again passed the 15 filesystem checks and
+process/parent identities on both native architectures. Its pinned libsql
+0.5.29 source build failed during pre-compilation identity checks; neither
+compiler nor binary receipt was produced. The failed receipts and logs remain
+in `windows-libsql-ci-1`. A follow-up records the finite failing stage and public
+source-file hashes. Native ABI qualification remains pending.
+Follow-up run `37380055984` at `c0f0d366` identified the same
+`source-bytes-Cargo.toml` failure on both architectures. Its digest exactly
+matches the pinned source converted to CRLF, independently reproduced in
+`windows-libsql-checkout-reproduction-1.json`. Commit `91b236a2` preserves LF
+bytes for the reviewed source checkout; four portable checks and documentation
+validation passed. The native source/ABI rerun remains pending.
+
+The corrected Stage F invocation passed all seven wire cells and both actual
+native-runtime UI cells against the unchanged source, runner and QA archive
+hashes above. Its result is `service-correction-stage-f-run-2.json`. All nine
+recorded screenshots from the two actual-runtime cells were manually reviewed:
+composer and cancellation controls remain visible, human agent/tool names are
+readable, and the published file change survives completion. Both actual-runtime
+journals have zero verified gaps and owned process cleanup has no errors.
+Separate hash-bound review and gap receipts are
+`service-correction-stage-f-2-runtime-visual-review.json` and
+`service-correction-stage-f-2-runtime-gaps.json`. Full wire screenshot review,
+physical devices, paid providers and native compaction are not covered by this
+review; original earlier failed grades remain preserved.
+
+The original seven actual lifecycle modes passed with the independently built
+predecessor and current frozen artifacts in
+`.cache/v2-validation/release-2.0.2-application-3CyDzw/result.json`.
+The packaged recovery window was operated through computer use: its real Cancel
+button returned `cancelled`, left the retained state byte-identical and started
+zero native controllers. Both recorded screenshots were reviewed separately;
+the native dialog's manual review receipt remains beside its original result.
+Both lifecycle journals have zero verified gaps. The earlier Bun invocation
+failed to import the sealed configuration module and remains failed; the
+successful wrapper used Node. This cancel check does not qualify positive
+Electron Resume.
+
+The original seven CLI persistence checks passed against the frozen native
+artifacts in `synthetic-cli-v2-release-2.0.2-wUaqzw/result.json` under
+`.cache/v2-validation`: fresh start and restart preserved conversation IDs and
+durable markers, replayed no provider requests, verified retained artifacts,
+and physically drained both owners with zero verified journal gaps. The
+hash-bound wrapper receipt is `service-correction-cli-persistence-1.json`.
+All eight actual CLI refusal modes now pass against the unchanged packaged
+source and runner `f7f48ba2038185e3307211799b2321e5c1eedc590d964cf9762ec55e74d27758`:
+noninteractive, quiet, `-q`, JSON, plain, fully specified invalid flags, TTY and
+TTY JSON. All exit 2 without creating owner files. The actual TTY output was
+reviewed separately; original result `service-correction-cli-refusal-2.json`
+has SHA-256 `d79c48b9522dbe8b2bb2a9cba2f135e9651f36ebbfaba7902da562dc22c13efd`.
+The separate review is `service-correction-cli-refusal-2-manual-review.json`.
+The positive native Electron Resume supplement also passed in
+`.cache/release-2.0.2-recovery/positive-electron-G502jb/result.json` (SHA-256
+`89100dc21ac05088f028e0c1904a198d695d6eae21b7ba99a00e3000c73fd7dd`).
+Computer use clicked the actual "Resume and restart" native button. The preload
+returned `restart_required` at revision 3; the real `app.relaunch` owner had a
+new PID and private owner pair, matching OS boot/start/binary/argv identities.
+Both health routes and the visible composer became ready. History, credential
+and configuration assertions passed, the native controller retained a clean
+termination receipt, and owned-process closure had no errors. The two original
+held/ready screenshots were reviewed in the separate `manual-review.json`.
+
+This supplement prospectively disabled Bots in disposable A settings before
+upgrade, history and rollback crash; B retained that setting. Its source
+derivation and exact hashes remain in `positive-electron-provenance-1.json`.
+The original application drivers and recovery assertions remain active. The
+capture intentionally stops after the cold hook; its original lifecycle
+sidecar remains failed and does not substitute for the separate seven-mode
+pass above. Docker, global registration and installed-app continuity are not
+covered.
+
+All six original packaged first-launch cells failed at Git helper startup and
+cleaned up their owned processes. Their startup journal contains no detailed
+records. Independent original-helper reproduction proved that SDK filesystem
+discovery reached the enclosing checkout and correctly refused it with
+`native_helper_directory_denied`. The QA fixture now creates empty-template
+Git boundaries in its private HOME and eight projects. The first corrected
+rerun (`service-correction-first-launch-3.json`, runner `35425679e5c0fc02f89fd3288758c974ce297ad3c9e14aa0d1d69b6bec84137c`)
+recorded four passes and two selected-v2.0.0 startup failures. Independently
+reproducing the genuine selected bundle proved that its workspace root also
+needs a Git boundary. Manual review additionally found that both shell-export
+"passed" screenshots still showed the initial runtime chooser. Their original
+runner grades remain intact; `service-correction-first-launch-3-visual-review.json`
+records the failed visual review. All owned processes drained cleanly.
+
+The QA fixture now protects HOME, workspace and all eight projects. Readiness
+also requires the visible enabled composer within the original 180-second
+deadline. All 16 focused checks pass, including hostile inherited Git inputs
+and refusal to grade a backend-ready chooser as loaded chat. Production
+refusal is unchanged. The next six-cell rerun uses runner SHA-256
+`f7f48ba2038185e3307211799b2321e5c1eedc590d964cf9762ec55e74d27758`;
+all 4,695 linked native inputs and packaged source/archive hashes are unchanged.
+Original failed results and screenshots remain preserved; the stronger
+packaged rerun passed all six cases. Result `service-correction-first-launch-4.json`
+has SHA-256 `453dd27f1a50bd83a3683a08cf740412ca7379ee3432cf66c344679e4930a581`.
+All six original loaded screenshots were individually reviewed: each shows the
+composer, eight project rows and no startup chooser. The separate review is
+`service-correction-first-launch-4-visual-review.json`; all owned trees drained
+cleanly. All six startup journals and both positive-recovery journals have zero
+verified gaps in `service-correction-first-launch-4-positive-gaps-verified.json`.
+This receipt reruns explicit `gaps --verify` for all eight roots with unchanged
+index hashes; the earlier default-only gap receipt remains preserved. These
+checks do not replace the compiled inventory's three meaningful-root gate.
+
 This table must be rebound to the final source commit, lock hash, native build
 identity, image manifest identity, packaging digests, and installed artifacts
 before it can authorize publication. Current evidence is interim engineering
@@ -283,17 +516,17 @@ evidence in `.cache/release-2.0.2-recovery`.
 
 | Mandatory gate | Status | Evidence or prerequisite |
 | --- | --- | --- |
-| Full integrated validation, build, bundle budgets and documentation | Failed (interim); final not run | Interim validation failures corrected with focused checks; engineering is still changing |
-| Packaged prompt conflict notice and explicit restore | Passed (focused); packaged not run | API, mounted UI, stale revision, edit/path replacement and guidance checks |
+| Full integrated validation, build, bundle budgets and documentation | Passed at `bf2aa44a`; freeze pending | Corrected full suite, build, bundle and docs logs above; rerun after code changes |
+| Packaged prompt conflict notice and explicit restore | Passed (focused and private packaged); final freeze pending | Native notice, two explicit restores with exact backups, configuration apply, both original primary guidance requests, four reviewed screenshots and verified journal gaps |
 | Tracked credential owner and synthetic rehearsal | Passed (compiled synthetic); live not run | Original SDK OAuth, compiled native key/CAS owners, held projection, ready boot and zero evidence leaks; final identities and attended live/launcher qualification pending |
 | Complete B1 review closure | Consolidated (focused); qualification pending | Seven engineering scopes above retain original reproductions, corrected checks and current drift; final compiled/live/package evidence pending |
-| Compiled acceptance and seeded-credential boot | Not run | Final native artifacts pending |
-| Three meaningful durable journal roots and verified gaps | Not run | Journal fixture/grading code integrated |
-| Seven lifecycle modes and seven wire cells | Not run | Final identities pending |
-| Two actual-runtime UI cells and reviewed screenshots | Not run | Final runtime pending |
-| CLI persistence/refusal and Electron Resume | Not run | Final runtime pending |
-| Shipped 2.0.1 → candidate → 2.0.1 continuity | Not run | Actual artifact qualification pending |
-| Packaged first launch and service mode | Not run | Candidate package pending |
+| Compiled acceptance and seeded-credential boot | Passed (122 cases); final freeze pending | Original inventory, seeded import/consumption and supervised restart passed after the verifier checkpoint correction; both earlier failed runs remain preserved |
+| Three meaningful durable journal roots and verified gaps | Passed (3/3); final freeze pending | Candidate 1,496, baseline 12 and parent-death 109 meaningful records; explicit gap verification and exact accepted-record reconciliation passed |
+| Seven lifecycle modes and seven wire cells | Passed at frozen source; final freeze pending | All seven actual lifecycle modes and seven wire cells passed; original predecessor/current artifact proofs, native Cancel and verified gaps retained |
+| Two actual-runtime UI cells and reviewed screenshots | Passed at `bf2aa44a`; final freeze pending | Web and packaged Electron passed; all nine recorded screenshots reviewed; verified journal gaps and clean owned-process drain |
+| CLI persistence/refusal and Electron Resume | Passed at current artifacts; final freeze pending | Seven original compiled persistence checks, eight actual refusal modes with TTY review, packaged Cancel and positive native Resume/relaunch/preservation/cleanup passed; prospective Bots-disabled supplement scope above |
+| Shipped 2.0.1 → candidate → 2.0.1 continuity | Unavailable on current host; VM prerequisite pending | Unmodified shipped startup registers a global LaunchServices protocol; disposable HOME cannot isolate it |
+| Packaged first launch and service mode | All six first launches and service mode passed; final freeze pending | Ten-boundary/composer correction passes 16 focused checks; six original screenshots reviewed and gaps verified; all earlier failures retained; production registration and authenticated lease remain separate |
 | DMG update success/refusal/interruption/rollback | Passed (focused); packaged not run | Verified downloads, native app exchange, startup acknowledgement and guarded rollback; killed-helper/native exchange checks pass; disposable package qualification pending |
 | Exact provider/role graph, 12 journeys, 16 compaction boundaries | Not run | Owner sign-in window after credential-free rehearsal |
 | Managed-user verification | Unavailable | Non-production Supabase environment not supplied |
@@ -301,7 +534,7 @@ evidence in `.cache/release-2.0.2-recovery`.
 | Burst, six attribution, 21 calibration, conditional 42 paired launches | Not run | Quiet window and frozen grading pending; retain 750 ms |
 | Release dry-run with no external writes and exact asset digests | Passed (focused); CI not run | Fake-registry refusal/reuse tests, workflow writer guards and packaging-digest verification; actual signed images and frozen package pending |
 | Downloaded DMG digest, mounted app, isolated launch and updater | Not run | Publication requires all preceding mandatory gates |
-| Windows x64 / ARM64 native safety and installers | Failed (native CI); installers not run | [Port plan](../../WINDOWS_PORT_PLAN.md); both supervisors compile, safety and controller/writer builds fail; original artifacts/logs retained |
+| Windows x64 / ARM64 native safety and installers | Partial native checks; release gate failed | Both process/parent identities, 15 filesystem checks and pinned libsql source/Node/Bun ABI candidates pass; confinement and controller/writer builds still fail; installers not run |
 
 macOS remains ad-hoc signed. Windows packaging is unsigned. No notarization,
 Authenticode, live provider, or Windows runtime pass is claimed. Verification

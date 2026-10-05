@@ -69,15 +69,24 @@ export async function runCompiledSeededCredentialBoot({ root, artifacts, manifes
   const sourceCheckpoint = createRuntimeBundleCheckpoint({ ownerID: 'seeded-fresh-source', generation: 1, launch: sourceLaunch, neverStarted: true,
     closeAdmission: async () => {}, getController: () => null, executionHost: { drain: async () => {} }, drainStores: async () => {},
     stopProducers: async () => { assert.deepEqual(await fs.readdir(sourceLaunch.webDataDirectory), []); } });
+  let preparedCheckpoint;
   const store = createRuntimeBundleStore({ controlRoot, withQuiescedSource: (input, action) => {
-    assert.equal(input.kind, 'legacy', 'Seeded first boot prepares only its fresh source');
-    return sourceCheckpoint(input, action);
+    if (input.kind === 'legacy') return sourceCheckpoint(input, action);
+    assert.equal(input.kind, 'bundle');
+    assert.equal(input.bundleID, 'seeded', 'Seeded selection holds only its never-started prepared bundle');
+    assert.ok(preparedCheckpoint, 'Seeded selection requires its prepared checkpoint owner');
+    return preparedCheckpoint(input, action);
   }, runMigration: request => runNativeMigrationProcess({ binary: artifacts.controller, request, cwd: laneRoot,
     environment: environmentFor(Object.fromEntries(['home', 'config', 'data', 'state', 'cache', 'tmp', 'bin', 'log', 'repos']
       .map(key => [key, path.join(request.isolatedRoot, key)])), fixture.environment),
     beforeSpawn: () => verifyNativeRuntimeArtifacts({ manifestPath, manifestSha256, launcher: artifacts.launcher }) }) });
   const descriptor = await store.prepare({ bundleID: 'seeded', generation: 2, source: { kind: 'legacy', launch: sourceLaunch },
     projectMap: fixture.projectMap, auxiliary: { kind: 'absent' }, launchArtifacts });
+  // Selection fences the prepared bundle, not the legacy source used to create it.
+  preparedCheckpoint = createRuntimeBundleCheckpoint({ ownerID: descriptor.bundleID, generation: descriptor.generation,
+    launch: descriptor.launch, neverStarted: true, closeAdmission: async () => {}, getController: () => null,
+    executionHost: { drain: async () => {} }, drainStores: async () => {},
+    stopProducers: async () => { assert.deepEqual(await fs.readdir(descriptor.launch.webDataDirectory), []); } });
   await store.select({ bundleID: 'seeded', expectedRevision: 0 });
   const bundleSeed = path.join(descriptor.launch.global.config, NATIVE_SETUP_CREDENTIAL_FILE);
   assert.equal(sha256(await fs.readFile(bundleSeed)), seed.sha256, 'Prepared bundle did not carry the setup seed to first boot');

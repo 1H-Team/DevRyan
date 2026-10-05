@@ -224,6 +224,26 @@ export function createV200PrepareEnvironment({ home }, baseEnvironment = process
   return env;
 }
 
+/** The SDK discovers .git through the filesystem, independent of Git's ceiling.
+ * Fence each fresh fixture so a repository-local TMPDIR cannot select the checkout. */
+export async function prepareFirstLaunchGitBoundaries(layout, baseEnvironment = process.env) {
+  if (await realpath(layout.runtimeRoot) !== layout.runtimeRoot) throw new Error('Private runtime root is not canonical');
+  const template = path.join(layout.runtimeRoot, 'git-template');
+  await mkdir(template, { mode: 0o700 });
+  const env = { ...createV200PrepareEnvironment(layout, baseEnvironment), GIT_CONFIG_GLOBAL: os.devNull,
+    GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', GIT_CEILING_DIRECTORIES: layout.runtimeRoot };
+  const directories = [layout.home, layout.workspace, ...Array.from({ length: PROJECT_RECORD_COUNT }, (_, index) => path.join(layout.workspace, `project-${index + 1}`))];
+  for (const directory of directories) {
+    if (!inside(layout.runtimeRoot, directory) || await realpath(directory) !== directory
+      || !(await lstat(directory)).isDirectory() || await exists(path.join(directory, '.git'))) throw new Error('Git boundary requires a fresh private fixture');
+    const options = { cwd: directory, env, timeout: 15000, maxBuffer: 65536 };
+    await execFileAsync('git', ['init', '--quiet', '--initial-branch=main', `--template=${template}`], options);
+    const { stdout } = await execFileAsync('git', ['rev-parse', '--show-toplevel'], options);
+    if (stdout.trim() !== directory) throw new Error('Git boundary escaped the private fixture');
+  }
+  return directories.length;
+}
+
 /** electron-log records: one header line plus util.inspect continuation lines. */
 const logRecords = text => {
   const records = [];
@@ -386,8 +406,15 @@ async function runV200Preparation({ layout, v200Source, artifactDirectory, outpu
     ownedProcesses: child.getCleanupEvidence().observedProcesses.length };
 }
 
+export function isFirstLaunchReady({ health, selected, composerVisible }) {
+  return health?.status === 200 && health.body?.status === 'ok' && health.body.isOpenCodeReady === true
+    && selected === true && composerVisible === true;
+}
+
 const PAGE_STATE = `(() => ({ href: location.href, protocol: location.protocol, origin: location.origin, readyState: document.readyState,
   rootChildren: document.getElementById('root')?.childElementCount ?? 0, h1: document.querySelector('h1')?.textContent?.trim().slice(0, 200) ?? null,
+  composerVisible: [...document.querySelectorAll('textarea')].some(element => { const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 && !element.disabled && getComputedStyle(element).visibility !== 'hidden'; }),
   alert: document.querySelector('.error-content,[role="alert"]')?.textContent?.trim().slice(0, 600) ?? null, title: document.title }))()`;
 const loopback = origin => /^http:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d+$/.test(origin ?? '');
 
@@ -397,8 +424,8 @@ export async function runFirstLaunchSmoke(options) {
   await mkdir(outputRoot, { recursive: true, mode: 0o700 });
   const output = await mkdtemp(path.join(outputRoot, `first-launch-${options.scenario}-`));
   await chmod(output, 0o700);
-  // The private runtime lives outside any git work tree: a workspace nested in the
-  // repository makes the native git helper resolve the repository root and refuse it.
+  // Git boundaries below keep SDK discovery inside the owned fixture, including
+  // when the caller supplies a repository-local TMPDIR.
   const runtimeRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), `devryan-first-launch-${options.scenario}-`)));
   const layout = firstLaunchLayout(runtimeRoot);
   const logsOut = path.join(output, 'logs');
@@ -431,9 +458,6 @@ export async function runFirstLaunchSmoke(options) {
 
     // 1. Private runtime root exactly as packaged-host-policy.mjs requires.
     await chmod(runtimeRoot, 0o700);
-    let gitTop = null;
-    try { gitTop = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: runtimeRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { /* Not a work tree. */ }
-    if (gitTop) throw new Error('Private runtime root is inside a git work tree');
     for (const directory of [layout.home, layout.profile, layout.workspace]) await mkdir(directory, { recursive: true, mode: 0o700 });
     await writeFile(path.join(layout.home, '.devryan-qa-home'), 'owned packaged first-launch smoke\n', { mode: 0o600 });
     await writeFile(layout.credentials, '{}\n', { mode: 0o600 });
@@ -442,10 +466,11 @@ export async function runFirstLaunchSmoke(options) {
     // 2. Owner-shaped legacy tree.
     const projectPaths = Array.from({ length: PROJECT_RECORD_COUNT }, (_, index) => path.join(layout.workspace, `project-${index + 1}`));
     for (const directory of projectPaths) await mkdir(directory, { mode: 0o700 });
+    const gitBoundaryCount = await prepareFirstLaunchGitBoundaries(layout);
     const tree = buildLegacyOwnerTree({ variant: options.scenario === 'v200-selected' ? 'selected' : 'owner-shaped', projectPaths });
     await writeLegacyOwnerTree(layout.home, tree);
     legacyTreeBefore = await hashLegacySourceTree(layout.home, tree.files.keys());
-    evidence.prepared = { tree: tree.facts, expectedRecords: tree.expectedRecords,
+    evidence.prepared = { tree: tree.facts, expectedRecords: tree.expectedRecords, gitBoundaryCount,
       legacyTreeBefore: { count: legacyTreeBefore.count, excluded: LEGACY_TREE_APP_WRITTEN.length } };
     mark('treeBuiltMs');
 
@@ -547,7 +572,7 @@ export async function runFirstLaunchSmoke(options) {
         let page = null;
         try { page = await evaluate(cdp, PAGE_STATE); } catch (error) { if (/closed/.test(error.message)) { cdp.close(); cdp = null; } }
         if (page) {
-          last = { protocol: page.protocol, origin: page.protocol === 'data:' ? 'data:' : page.origin, readyState: page.readyState,
+          last = { protocol: page.protocol, origin: page.protocol === 'data:' ? 'data:' : page.origin, readyState: page.readyState, composerVisible: page.composerVisible,
             rootChildren: page.rootChildren, h1: page.h1 ? sanitize(page.h1) : null };
           if (page.protocol === 'data:' && (/startup needs attention/i.test(page.h1 ?? '') || page.alert)) {
             outcome = { result: 'FAIL', reason: 'startup_error_page', page: { h1: sanitize(page.h1 ?? ''), message: sanitize(page.alert ?? '') } };
@@ -564,8 +589,9 @@ export async function runFirstLaunchSmoke(options) {
               executionRuntime: health.body?.executionRuntime ?? null,
               lastOpenCodeError: health.body?.lastOpenCodeError ? sanitize(JSON.stringify(health.body.lastOpenCodeError)).slice(0, 400) : null };
             last.selectionPresent = selected;
-            // A loaded shell is not a first launch: the bundled native runtime must be ready too.
-            if (health?.status === 200 && health.body?.status === 'ok' && health.body.isOpenCodeReady === true && selected) {
+            // The native backend and actionable renderer must both become ready
+            // within the original launch deadline; a startup chooser is not a pass.
+            if (isFirstLaunchReady({ health, selected, composerVisible: page.composerVisible })) {
               outcome = { result: 'PASS', reason: 'app_loaded_runtime_ready_selection_present', origin: page.origin, health: last.health };
               break;
             }
