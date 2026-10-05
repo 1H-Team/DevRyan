@@ -19,12 +19,17 @@ export function createMacDmgInstaller({ installedBundle, currentVersion, cacheDi
   roots = applicationRoots(), run = exec, spawnImpl = spawn, executable = process.execPath, trashItem,
   onRollbackRequested = async () => {} }) {
   const intentPath = path.join(cacheDirectory, 'install-intent.json');
-  let startup = null, watcher = null, rollbackRequested = false;
+  let startup = null, watcher = null, rollbackRequested = false, recoveryStartup = false;
   const inspect = async () => readUpdateIntent(intentPath, roots).catch((error) => { if (error.code === 'ENOENT') return null; throw error; });
   const finalizeCompleted = async () => {
     const intent = await inspect();
     if (!intent || !['complete', 'rolled-back', 'aborted'].includes(intent.phase)) return;
     if (installedBundle !== intent.target || currentVersion !== (intent.phase === 'complete' ? intent.version : intent.previous.version)) throw fail('update_installation_changed');
+    const installed = await verifyMacUpdateBundle(installedBundle, { version: currentVersion, signing: intent.signing, run });
+    const identity = intent.phase === 'complete' ? intent.candidateIdentity : intent.previous;
+    const cdhash = intent.phase === 'complete' ? intent.candidateSigning.cdhash : intent.signing.cdhash;
+    if (installed.dev !== identity?.dev || installed.ino !== identity?.ino || installed.signing.cdhash !== cdhash
+      || intent.phase === 'complete' && installed.manifestSha256 !== intent.manifestSha256) throw fail('update_installation_changed');
     // Trash only the installer-created stage, after the installed app is ready.
     if (typeof trashItem !== 'function') return;
     await writeFileAtomic(path.join(cacheDirectory, `install-${intent.nonce}.json`), `${JSON.stringify(intent)}\n`);
@@ -67,7 +72,7 @@ export function createMacDmgInstaller({ installedBundle, currentVersion, cacheDi
       const candidatePath = path.join(stage, 'candidate.app');
       await run('/usr/bin/ditto', [source, candidatePath], { timeout: 120_000, maxBuffer: 64 * 1024 });
       const copied = await verifyMacUpdateBundle(candidatePath, { version: update.version, signing: previous.signing, run });
-      if (copied.manifestSha256 !== candidate.manifestSha256) throw fail('update_native_identity_changed');
+      if (copied.manifestSha256 !== candidate.manifestSha256 || copied.signing.cdhash !== candidate.signing.cdhash) throw fail('update_native_identity_changed');
       await verifyNativeArtifacts({ manifestPath: copied.manifestPath, manifestSha256: copied.manifestSha256,
         launcher: path.join(path.dirname(copied.manifestPath), 'DevRyan-execution-darwin-arm64') });
       const current = await fs.lstat(installedBundle);
@@ -77,8 +82,9 @@ export function createMacDmgInstaller({ installedBundle, currentVersion, cacheDi
       const intent = { protocol: 'devryan.desktop-update/1', nonce, phase: 'prepared', target: installedBundle,
         stage, stageIdentity: { dev: stageIdentity.dev, ino: stageIdentity.ino },
         candidate: candidatePath, backup: path.join(stage, 'previous.app'), failed: path.join(stage, 'failed.app'),
-        version: update.version, sha256: update.sha256, arch: 'arm64', signing: previous.signing,
-        manifestSha256: copied.manifestSha256, bridgeSha256, previous: { version: currentVersion, dev: previous.dev, ino: previous.ino },
+        version: update.version, sha256: update.sha256, arch: 'arm64', signing: previous.signing, candidateSigning: copied.signing,
+        manifestSha256: copied.manifestSha256, bridgeSha256,
+        installerSha256: hash(await fs.readFile(path.join(path.dirname(fileURLToPath(import.meta.url)), 'desktop-update-install.mjs'))), previous: { version: currentVersion, dev: previous.dev, ino: previous.ino },
         ownerPID: process.pid, ownerStart };
       await writeFileAtomic(intentPath, `${JSON.stringify(intent)}\n`);
       prepared = true;
@@ -89,17 +95,39 @@ export function createMacDmgInstaller({ installedBundle, currentVersion, cacheDi
       if (!prepared) await fs.rm(stage, { recursive: true, force: true });
     }
   });
-  const launchPrepared = async ({ nonce }) => {
+  const launchPrepared = async ({ nonce, recovery = false }) => {
     const intent = await inspect();
-    if (!intent || intent.nonce !== nonce || intent.phase !== 'prepared' || intent.ownerPID !== process.pid
-      || intent.ownerStart !== await processStart(process.pid)) throw fail('update_intent_changed');
+    if (!intent || intent.nonce !== nonce || (!recovery && (intent.phase !== 'prepared' || intent.ownerPID !== process.pid
+      || intent.ownerStart !== await processStart(process.pid)))) throw fail('update_intent_changed');
+    if (recovery && (intent.helperPID && await processStart(intent.helperPID) === intent.helperStart
+      || ['prepared', 'complete', 'rolled-back', 'aborted'].includes(intent.phase))) throw fail('update_installer_still_active');
     const helper = path.join(cacheDirectory, `installer-${nonce}`, 'desktop-update-install.mjs');
     const source = path.join(path.dirname(fileURLToPath(import.meta.url)), 'desktop-update-install.mjs');
-    await writeFileAtomic(helper, await fs.readFile(source));
-    const bridgeBytes = await fs.readFile(path.join(installedBundle, 'Contents/Resources/native/DevRyanRuntimeServiceControl.node'));
+    if (!recovery) {
+      const sourceBytes = await fs.readFile(source);
+      if (hash(sourceBytes) !== intent.installerSha256) throw fail('update_installer_changed');
+      await writeFileAtomic(helper, sourceBytes);
+    }
+    const helperHandle = await fs.open(helper, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try {
+      const helperStat = await helperHandle.stat();
+      if (!helperStat.isFile() || helperStat.nlink !== 1 || helperStat.uid !== process.getuid() || (helperStat.mode & 0o077) || helperStat.size > 4 * 1024 * 1024
+        || hash(await helperHandle.readFile()) !== intent.installerSha256 || await fs.realpath(helper) !== helper) throw fail('update_installer_changed');
+    } finally { await helperHandle.close(); }
+    const bridgeCopy = path.join(path.dirname(helper), 'DevRyanRuntimeServiceControl.node');
+    let bridgeBytes;
+    if (recovery) {
+      const bridgeHandle = await fs.open(bridgeCopy, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+      try {
+        const bridgeStat = await bridgeHandle.stat();
+        if (!bridgeStat.isFile() || bridgeStat.nlink !== 1 || bridgeStat.uid !== process.getuid() || (bridgeStat.mode & 0o077)
+          || bridgeStat.size > 4 * 1024 * 1024 || await fs.realpath(bridgeCopy) !== bridgeCopy) throw fail('update_installer_bridge_changed');
+        bridgeBytes = await bridgeHandle.readFile();
+      } finally { await bridgeHandle.close(); }
+    } else bridgeBytes = await fs.readFile(path.join(installedBundle, 'Contents/Resources/native/DevRyanRuntimeServiceControl.node'));
     if (hash(bridgeBytes) !== intent.bridgeSha256) throw fail('update_installer_bridge_changed');
-    await writeFileAtomic(path.join(path.dirname(helper), 'DevRyanRuntimeServiceControl.node'), bridgeBytes);
-    const errorLog = await fs.open(path.join(cacheDirectory, `installer-${nonce}.log`), 'ax', 0o600);
+    if (!recovery) await writeFileAtomic(bridgeCopy, bridgeBytes);
+    const errorLog = await fs.open(path.join(cacheDirectory, `installer-${nonce}-${randomUUID()}.log`), 'ax', 0o600);
     let child;
     try {
       child = spawnImpl(executable, [helper, '--devryan-install-intent', intentPath], { detached: true,
@@ -127,28 +155,62 @@ export function createMacDmgInstaller({ installedBundle, currentVersion, cacheDi
         child.once('error', onError);child.once('exit', onExit);child.stdout?.on('data', onData);
       });
       const held = await inspect();
-      if (held?.phase !== 'waiting-for-owner' || held.helperPID !== child.pid || held.helperStart !== await processStart(child.pid)) throw fail('update_installer_owner_invalid');
+      if (!held || held.nonce !== nonce || held.helperPID !== child.pid || held.helperStart !== await processStart(child.pid)) throw fail('update_installer_owner_invalid');
       child.stdout?.destroy();child.unref();
     } catch (error) {
       const held = await inspect();
-      if (held?.nonce === nonce && ['prepared', 'waiting-for-owner'].includes(held.phase)) {
+      if (!recovery && held?.nonce === nonce && ['prepared', 'waiting-for-owner'].includes(held.phase)) {
         await mutateUpdateIntent(intentPath, nonce, [held.phase], { phase: 'aborted', errorCode: error.code ?? 'update_installer_start_failed' }, roots);
       }
       throw error;
     } finally { await errorLog.close(); }
   };
-  const beginStartup = async (nonce) => {
-    const intent = await inspect();
+  const beginStartup = async (nonce) => withCrossProcessFileLock(`${intentPath}.startup.lock`, async () => {
+    let intent = await inspect();
     if (!intent) return false;
     if (['complete', 'rolled-back', 'aborted'].includes(intent.phase)) return false;
     if (intent.phase === 'prepared' && await processStart(intent.ownerPID) !== intent.ownerStart) {
       await mutateUpdateIntent(intentPath, intent.nonce, ['prepared'], { phase: 'aborted', errorCode: 'update_owner_exited_before_install' }, roots);return false;
     }
-    if (intent.phase !== 'launching' || nonce !== intent.nonce || currentVersion !== intent.version || installedBundle !== intent.target) {
+    const helperAlive = intent.helperPID && await processStart(intent.helperPID) === intent.helperStart;
+    if (!helperAlive && intent.phase === 'accepted') {
+      const installed = await verifyMacUpdateBundle(intent.target, { version: intent.version, signing: intent.signing, run });
+      const previous = await verifyMacUpdateBundle(intent.backup, { version: intent.previous.version, signing: intent.signing, run });
+      if (installed.dev !== intent.candidateIdentity?.dev || installed.ino !== intent.candidateIdentity?.ino
+        || installed.manifestSha256 !== intent.manifestSha256 || installed.signing.cdhash !== intent.candidateSigning.cdhash
+        || previous.dev !== intent.previous.dev || previous.ino !== intent.previous.ino || previous.signing.cdhash !== intent.signing.cdhash
+        || installedBundle !== intent.target || currentVersion !== intent.version) throw fail('update_installation_changed');
+      await mutateUpdateIntent(intentPath, intent.nonce, ['accepted'], { phase: 'complete' }, roots);return false;
+    }
+    const stoppedRollback = ['rollback-requested', 'rollback-blocked'].includes(intent.phase)
+      && intent.candidateStopped === true && intent.candidatePID && await processStart(intent.candidatePID) !== intent.candidateStart;
+    if (!helperAlive && (['waiting-for-owner', 'swapping', 'rolling-back'].includes(intent.phase) || stoppedRollback)) {
+      if (intent.recoveryOwnerPID && await processStart(intent.recoveryOwnerPID) === intent.recoveryOwnerStart) throw fail('update_installation_pending');
+      const actual = await fs.lstat(installedBundle);
+      if (installedBundle !== intent.target || ![intent.previous, intent.candidateIdentity].some(identity => identity?.dev === actual.dev && identity.ino === actual.ino)) throw fail('update_installation_changed');
+      intent = await mutateUpdateIntent(intentPath, intent.nonce, [intent.phase], { recoveryOwnerPID: process.pid,
+        recoveryOwnerStart: await processStart(process.pid) }, roots);
+      await launchPrepared({ nonce: intent.nonce, recovery: true });
+      recoveryStartup = true;return false;
+    }
+    if (intent.phase !== 'launching' || (helperAlive ? nonce !== intent.nonce : nonce && nonce !== intent.nonce)
+      || currentVersion !== intent.version || installedBundle !== intent.target) {
       throw fail('update_installation_pending', 'An update is in progress. Reopen DevRyan after it finishes.');
     }
+    if (intent.candidatePID && intent.candidatePID !== process.pid && await processStart(intent.candidatePID) === intent.candidateStart) throw fail('update_installation_pending');
+    const candidate = await verifyMacUpdateBundle(intent.target, { version: intent.version, signing: intent.signing, run });
+    if (candidate.dev !== intent.candidateIdentity?.dev || candidate.ino !== intent.candidateIdentity?.ino
+      || candidate.manifestSha256 !== intent.manifestSha256 || candidate.signing.cdhash !== intent.candidateSigning.cdhash) throw fail('update_installation_changed');
+    if (!helperAlive) {
+      // The previous recovery host must have exited. This candidate stays alive
+      // to run the ordinary readiness/drain owners while the new helper waits.
+      if (intent.recoveryOwnerPID && await processStart(intent.recoveryOwnerPID) === intent.recoveryOwnerStart) throw fail('update_installation_pending');
+      intent = await mutateUpdateIntent(intentPath, intent.nonce, ['launching'], { recoveryOwnerPID: undefined, recoveryOwnerStart: undefined }, roots);
+    }
+    nonce = intent.nonce;
     startup = await mutateUpdateIntent(intentPath, nonce, ['launching'], { candidatePID: process.pid,
       candidateStart: await processStart(process.pid), candidateStopped: false }, roots);
+    if (!helperAlive) await launchPrepared({ nonce, recovery: true });
     const checkRollback = async () => {
       if (rollbackRequested) return;
       const current = await inspect();
@@ -160,8 +222,8 @@ export function createMacDmgInstaller({ installedBundle, currentVersion, cacheDi
     watcher = watch(cacheDirectory, (_event, filename) => {
       if (filename?.toString() === path.basename(intentPath)) void checkRollback().catch(() => {});
     });
-    watcher.unref();return true;
-  };
+    watcher.unref();await checkRollback();return true;
+  });
   const acceptStartup = async () => {
     if (!startup) { await finalizeCompleted();return; }
     await mutateUpdateIntent(intentPath, startup.nonce, ['launching'], { phase: 'accepted' }, roots);
@@ -184,5 +246,5 @@ export function createMacDmgInstaller({ installedBundle, currentVersion, cacheDi
     watcher?.close();watcher = null;
   };
   return { prepare, launchPrepared, beginStartup, acceptStartup, refuseStartup, recordCandidateStopped,
-    isCandidateStartup: () => Boolean(startup), finalizeCompleted };
+    isCandidateStartup: () => Boolean(startup), isRecoveryStartup: () => recoveryStartup, finalizeCompleted };
 }

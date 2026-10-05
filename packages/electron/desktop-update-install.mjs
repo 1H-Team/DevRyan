@@ -13,7 +13,7 @@ const exec = promisify(execFile);
 const fail = (code) => Object.assign(new Error(code), { code });
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const phases = new Set(['prepared', 'waiting-for-owner', 'swapping', 'launching', 'accepted', 'complete',
-  'rollback-requested', 'rollback-blocked', 'rolled-back', 'aborted']);
+  'rollback-requested', 'rolling-back', 'rollback-blocked', 'rolled-back', 'aborted']);
 export const applicationRoots = () => ['/Applications', path.join(os.homedir(), 'Applications')];
 export const processStart = async (pid) => {
   try { return (await exec('/bin/ps', ['-p', String(pid), '-o', 'lstart='], { timeout: 3000 })).stdout.trim() || null; }
@@ -23,7 +23,7 @@ const syncDirectory = async (directory) => {
   const handle = await fs.open(directory, 'r');try { await handle.sync(); } finally { await handle.close(); }
 };
 export async function readUpdateIntent(intentPath, roots = applicationRoots()) {
-  const handle = await fs.open(intentPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const handle = await fs.open(intentPath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   let intent;
   try {
     const stat = await handle.stat();
@@ -41,7 +41,20 @@ export async function readUpdateIntent(intentPath, roots = applicationRoots()) {
     || !Number.isSafeInteger(intent.previous?.dev) || !Number.isSafeInteger(intent.previous?.ino)
     || !/^\d+\.\d+\.\d+$/.test(intent.previous?.version ?? '') || !['adhoc', 'release'].includes(intent.signing?.mode)
     || intent.signing.identifier !== 'dev.openchamber.desktop' || intent.arch !== 'arm64'
-    || !/^[a-f0-9]{64}$/.test(intent.manifestSha256 ?? '') || !/^[a-f0-9]{64}$/.test(intent.bridgeSha256 ?? '')) throw fail('update_intent_invalid');
+    || !/^[a-f0-9]{40,64}$/.test(intent.signing.cdhash ?? '')
+    || intent.candidateSigning?.mode !== intent.signing.mode || intent.candidateSigning?.identifier !== intent.signing.identifier
+    || intent.candidateSigning?.teamID !== intent.signing.teamID || !/^[a-f0-9]{40,64}$/.test(intent.candidateSigning?.cdhash ?? '')
+    || !/^[a-f0-9]{64}$/.test(intent.manifestSha256 ?? '') || !/^[a-f0-9]{64}$/.test(intent.bridgeSha256 ?? '')
+    || !/^[a-f0-9]{64}$/.test(intent.installerSha256 ?? '')) throw fail('update_intent_invalid');
+  for (const prefix of ['helper', 'candidate', 'recoveryOwner']) {
+    const pid = intent[`${prefix}PID`], start = intent[`${prefix}Start`];
+    if (pid !== undefined || start !== undefined) {
+      if (!Number.isSafeInteger(pid) || pid <= 0 || typeof start !== 'string' || !start || start.length > 256) throw fail('update_intent_invalid');
+    }
+  }
+  if (intent.candidateIdentity !== undefined && (!Number.isSafeInteger(intent.candidateIdentity?.dev)
+    || !Number.isSafeInteger(intent.candidateIdentity?.ino))) throw fail('update_intent_invalid');
+  if (intent.candidateStopped !== undefined && typeof intent.candidateStopped !== 'boolean') throw fail('update_intent_invalid');
   const stage = path.join(path.dirname(intent.target), `.DevRyan-update-${intent.nonce}`);
   if (intent.stage !== stage || intent.candidate !== path.join(stage, 'candidate.app')
     || intent.backup !== path.join(stage, 'previous.app') || intent.failed !== path.join(stage, 'failed.app')) throw fail('update_intent_invalid');
@@ -106,112 +119,157 @@ const waitForExit = async (pid, start, timeoutMs) => {
   return false;
 };
 
-/** Standalone installer: waits for proven owner exit; never kills a process. */
+/** Standalone installer: waits for proven owner exit; never kills a process.
+ * An interrupted helper resumes only from sealed file identities. The execution
+ * lock prevents two helpers from interpreting the same durable decision. */
 export async function runDesktopUpdateInstall(intentPath, { roots = applicationRoots(), verifyBundle = verifyMacUpdateBundle,
   renameExclusive, swapApplications,
   ownerExited = waitForExit, launch = (bundle, nonce) => exec('/usr/bin/open', ['-n', bundle, '--args', `--devryan-update-attempt=${nonce}`], { timeout: 10_000 }),
   startupTimeoutMs = 120_000, onWaiting = () => {} } = {}) {
-  let intent = await readUpdateIntent(intentPath, roots);
-  if (!renameExclusive) {
-    const bridge = path.join(path.dirname(intentPath), `installer-${intent.nonce}`, 'DevRyanRuntimeServiceControl.node');
-    const handle = await fs.open(bridge, constants.O_RDONLY | constants.O_NOFOLLOW);
+  return withCrossProcessFileLock(`${intentPath}.execution.lock`, async () => {
+    let intent = await readUpdateIntent(intentPath, roots);
+    if (['complete', 'rolled-back', 'aborted'].includes(intent.phase)) return intent.phase;
+    if (intent.helperPID && await processStart(intent.helperPID) === intent.helperStart) throw fail('update_installer_still_active');
+    const resumed = intent.phase !== 'prepared';
+    if (!renameExclusive) {
+      const bridge = path.join(path.dirname(intentPath), `installer-${intent.nonce}`, 'DevRyanRuntimeServiceControl.node');
+      const handle = await fs.open(bridge, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+      try {
+        const stat = await handle.stat();
+        if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid() || (stat.mode & 0o077) || stat.size > 4 * 1024 * 1024
+          || hash(await handle.readFile()) !== intent.bridgeSha256 || await fs.realpath(bridge) !== bridge) throw fail('update_installer_bridge_invalid');
+      } finally { await handle.close(); }
+      const control = createRequire(import.meta.url)(bridge);
+      renameExclusive = control.renameExclusive;swapApplications = control.swapApplications;
+    }
+    if (typeof renameExclusive !== 'function' || typeof swapApplications !== 'function') throw fail('update_installer_bridge_invalid');
+    intent = await mutateUpdateIntent(intentPath, intent.nonce, [intent.phase], {
+      ...(intent.phase === 'prepared' ? { phase: 'waiting-for-owner' } : {}),
+      helperPID: process.pid, helperStart: await processStart(process.pid),
+    }, roots);
+    onWaiting(intent.nonce);
+    if (!await ownerExited(intent.ownerPID, intent.ownerStart, 120_000)
+      || intent.recoveryOwnerPID && !await ownerExited(intent.recoveryOwnerPID, intent.recoveryOwnerStart, 120_000)) {
+      if (intent.phase === 'waiting-for-owner') await mutateUpdateIntent(intentPath, intent.nonce, ['waiting-for-owner'], { phase: 'aborted', errorCode: 'update_owner_still_active' }, roots);
+      throw fail('update_owner_still_active');
+    }
+    const stat = file => fs.lstat(file).catch(error => { if (error.code === 'ENOENT') return null;throw error; });
+    const matches = (value, identity) => value?.isDirectory() && value.dev === identity?.dev && value.ino === identity?.ino;
+    const verifyCandidate = async file => {
+      if (!matches(await stat(file), intent.candidateIdentity)) throw fail('update_installation_changed');
+      const verified = await verifyBundle(file, { version: intent.version, signing: intent.signing, arch: intent.arch });
+      if (verified.manifestSha256 !== intent.manifestSha256 || verified.signing?.cdhash !== intent.candidateSigning.cdhash) throw fail('update_native_identity_changed');
+    };
+    const verifyPrevious = async file => {
+      if (!matches(await stat(file), intent.previous)) throw fail('update_installation_changed');
+      const verified = await verifyBundle(file, { version: intent.previous.version, signing: intent.signing, arch: intent.arch });
+      if (verified.signing?.cdhash !== intent.signing.cdhash) throw fail('update_installation_changed');
+    };
+    let switched = !['waiting-for-owner', 'swapping'].includes(intent.phase), launchNow = false;
     try {
-      const stat = await handle.stat();
-      if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid() || (stat.mode & 0o077)
-        || hash(await handle.readFile()) !== intent.bridgeSha256 || await fs.realpath(bridge) !== bridge) throw fail('update_installer_bridge_invalid');
-    } finally { await handle.close(); }
-    const control = createRequire(import.meta.url)(bridge);
-    renameExclusive = control.renameExclusive;swapApplications = control.swapApplications;
-  }
-  if (typeof renameExclusive !== 'function' || typeof swapApplications !== 'function') throw fail('update_installer_bridge_invalid');
-  intent = await mutateUpdateIntent(intentPath, intent.nonce, ['prepared'], { phase: 'waiting-for-owner', helperPID: process.pid,
-    helperStart: await processStart(process.pid) }, roots);
-  onWaiting(intent.nonce);
-  if (!await ownerExited(intent.ownerPID, intent.ownerStart, 120_000)) {
-    await mutateUpdateIntent(intentPath, intent.nonce, ['waiting-for-owner'], { phase: 'aborted', errorCode: 'update_owner_still_active' }, roots);
-    throw fail('update_owner_still_active');
-  }
-  let switched = false, candidateIdentity;
-  try {
-    const actual = await fs.lstat(intent.target);
-    if (!actual.isDirectory() || actual.dev !== intent.previous.dev || actual.ino !== intent.previous.ino) throw fail('update_installation_changed');
-    await verifyBundle(intent.target, { version: intent.previous.version, signing: intent.signing, arch: intent.arch });
-    const candidate = await verifyBundle(intent.candidate, { version: intent.version, signing: intent.signing, arch: intent.arch });
-    candidateIdentity = await fs.lstat(intent.candidate);
-    if (candidate.manifestSha256 !== intent.manifestSha256) throw fail('update_native_identity_changed');
-    await mutateUpdateIntent(intentPath, intent.nonce, ['waiting-for-owner'], { phase: 'swapping',
-      candidateIdentity: { dev: candidateIdentity.dev, ino: candidateIdentity.ino } }, roots);
-    // An atomic exchange keeps the installed path available across interruption.
-    // The original app becomes the private candidate path until backup naming.
-    await swapApplications(intent.candidate, intent.target);switched = true;
-    await syncDirectory(path.dirname(intent.target));await syncDirectory(intent.stage);
-    await renameExclusive(intent.candidate, intent.backup);
-    const backup = await fs.lstat(intent.backup);
-    if (backup.dev !== intent.previous.dev || backup.ino !== intent.previous.ino) throw fail('update_installation_changed');
-    const published = await fs.lstat(intent.target);
-    if (published.dev !== candidateIdentity.dev || published.ino !== candidateIdentity.ino) throw fail('update_installation_changed');
-    await syncDirectory(path.dirname(intent.target));await syncDirectory(intent.stage);
-    await mutateUpdateIntent(intentPath, intent.nonce, ['swapping'], { phase: 'launching' }, roots);
-    await launch(intent.target, intent.nonce);
-    const deadline = Date.now() + startupTimeoutMs;
-    do {
-      intent = await readUpdateIntent(intentPath, roots);
+      if (intent.phase === 'waiting-for-owner') {
+        await verifyPrevious(intent.target);
+        const candidate = await verifyBundle(intent.candidate, { version: intent.version, signing: intent.signing, arch: intent.arch });
+        const candidateIdentity = await stat(intent.candidate);
+        if (candidate.manifestSha256 !== intent.manifestSha256 || candidate.signing?.cdhash !== intent.candidateSigning.cdhash) throw fail('update_native_identity_changed');
+        intent = await mutateUpdateIntent(intentPath, intent.nonce, ['waiting-for-owner'], { phase: 'swapping',
+          candidateIdentity: { dev: candidateIdentity.dev, ino: candidateIdentity.ino } }, roots);
+      }
+      if (intent.phase === 'swapping') {
+        if (matches(await stat(intent.target), intent.previous)) {
+          await verifyPrevious(intent.target);await verifyCandidate(intent.candidate);
+          switched = true;
+          await swapApplications(intent.candidate, intent.target);
+        }
+        // The atomic exchange may have completed before a killed helper wrote
+        // another byte. Both sides must still be the exact recorded apps.
+        switched = true;
+        if (await stat(intent.backup)) await verifyPrevious(intent.backup);
+        else { await verifyPrevious(intent.candidate);await renameExclusive(intent.candidate, intent.backup); }
+        await verifyCandidate(intent.target);
+        await syncDirectory(path.dirname(intent.target));await syncDirectory(intent.stage);
+        intent = await mutateUpdateIntent(intentPath, intent.nonce, ['swapping'], { phase: 'launching' }, roots);
+        launchNow = true;
+      }
+      if (['rollback-requested', 'rollback-blocked', 'rolling-back'].includes(intent.phase)) throw fail(intent.errorCode ?? 'update_candidate_startup_failed');
       if (intent.phase === 'accepted') {
+        await verifyCandidate(intent.target);await verifyPrevious(intent.backup);
         await mutateUpdateIntent(intentPath, intent.nonce, ['accepted'], { phase: 'complete' }, roots);return 'complete';
       }
-      if (intent.phase === 'rollback-requested' || intent.phase === 'rollback-blocked') throw fail('update_candidate_startup_failed');
-      await pause(250);
-    } while (Date.now() < deadline);
-    throw fail('update_candidate_startup_timeout');
-  } catch (error) {
-    intent = await readUpdateIntent(intentPath, roots);
-    if (switched) {
-      try {
-        // Before the durable launch phase no candidate was started. Afterwards
-        // require both a cleanup receipt and the exact candidate's process exit.
-        if (intent.phase !== 'swapping') {
-          if (intent.phase === 'launching') intent = await mutateUpdateIntent(intentPath, intent.nonce, ['launching'], { phase: 'rollback-requested', errorCode: error.code ?? 'update_install_failed' }, roots);
-          const deadline = Date.now() + 120_000;
-          do {
-            intent = await readUpdateIntent(intentPath, roots);
-            if (intent.phase === 'rollback-blocked') break;
-            if (intent.candidateStopped === true && Number.isSafeInteger(intent.candidatePID) && typeof intent.candidateStart === 'string'
-              && await ownerExited(intent.candidatePID, intent.candidateStart, 1000)) break;
-            await pause(250);
-          } while (Date.now() < deadline);
-          if (intent.candidateStopped !== true || !Number.isSafeInteger(intent.candidatePID) || typeof intent.candidateStart !== 'string'
-            || !await ownerExited(intent.candidatePID, intent.candidateStart, 1000)) throw fail('update_candidate_shutdown_unconfirmed');
+      if (intent.phase !== 'launching') throw fail('update_intent_changed');
+      await verifyCandidate(intent.target);await verifyPrevious(intent.backup);
+      // A durable launch whose acknowledgement was lost is never replayed.
+      // Its candidate either reopens and acknowledges readiness or proves its
+      // shutdown before rollback; absence alone is not a cleanup receipt.
+      if (launchNow) await launch(intent.target, intent.nonce);
+      const deadline = Date.now() + startupTimeoutMs;
+      do {
+        intent = await readUpdateIntent(intentPath, roots);
+        if (intent.phase === 'accepted') {
+          await verifyCandidate(intent.target);await verifyPrevious(intent.backup);
+          await mutateUpdateIntent(intentPath, intent.nonce, ['accepted'], { phase: 'complete' }, roots);return 'complete';
         }
-        const original = await fs.lstat(intent.backup).then(() => intent.backup,
-          error => { if (error.code === 'ENOENT') return intent.candidate;throw error; });
-        const previous = await fs.lstat(original), current = await fs.lstat(intent.target);
-        if (!previous.isDirectory() || previous.dev !== intent.previous.dev || previous.ino !== intent.previous.ino
-          || !current.isDirectory() || current.dev !== candidateIdentity.dev || current.ino !== candidateIdentity.ino) throw fail('update_installation_changed');
-        await verifyBundle(original, { version: intent.previous.version, signing: intent.signing, arch: intent.arch });
-        await swapApplications(original, intent.target);
-        await renameExclusive(original, intent.failed);
+        if (intent.phase === 'rollback-requested' || intent.phase === 'rollback-blocked') throw fail('update_candidate_startup_failed');
+        await pause(250);
+      } while (Date.now() < deadline);
+      throw fail('update_candidate_startup_timeout');
+    } catch (error) {
+      intent = await readUpdateIntent(intentPath, roots);
+      if (switched) {
+        try {
+          if (intent.phase !== 'swapping' && intent.phase !== 'rolling-back') {
+            if (intent.phase === 'launching') intent = await mutateUpdateIntent(intentPath, intent.nonce, ['launching'], { phase: 'rollback-requested', errorCode: error.code ?? 'update_install_failed' }, roots);
+            const deadline = Date.now() + startupTimeoutMs;
+            do {
+              intent = await readUpdateIntent(intentPath, roots);
+              if (intent.phase === 'rollback-blocked') break;
+              if (intent.candidateStopped === true && Number.isSafeInteger(intent.candidatePID) && typeof intent.candidateStart === 'string'
+                && await ownerExited(intent.candidatePID, intent.candidateStart, 1000)) break;
+              await pause(250);
+            } while (Date.now() < deadline);
+            if (intent.candidateStopped !== true || !Number.isSafeInteger(intent.candidatePID) || typeof intent.candidateStart !== 'string'
+              || !await ownerExited(intent.candidatePID, intent.candidateStart, 1000)) throw fail('update_candidate_shutdown_unconfirmed');
+          }
+          if (intent.phase !== 'rolling-back') intent = await mutateUpdateIntent(intentPath, intent.nonce,
+            ['swapping', 'launching', 'rollback-requested', 'rollback-blocked'], { phase: 'rolling-back', errorCode: error.code ?? 'update_install_failed' }, roots);
+          if (!matches(await stat(intent.target), intent.previous)) {
+            const original = await stat(intent.backup) ? intent.backup : intent.candidate;
+            await verifyPrevious(original);await verifyCandidate(intent.target);
+            await swapApplications(original, intent.target);
+          }
+          await verifyPrevious(intent.target);
+          if (await stat(intent.failed)) await verifyCandidate(intent.failed);
+          else {
+            const failed = await stat(intent.backup) ? intent.backup : intent.candidate;
+            await verifyCandidate(failed);await renameExclusive(failed, intent.failed);
+          }
+          await syncDirectory(intent.stage);
+        } catch (rollbackError) {
+          await mutateUpdateIntent(intentPath, intent.nonce, ['swapping', 'launching', 'accepted', 'rollback-requested', 'rolling-back', 'rollback-blocked'],
+            { phase: 'rollback-blocked', errorCode: rollbackError.code ?? 'update_installation_changed' }, roots);
+          throw rollbackError;
+        }
+      } else if (resumed && intent.phase === 'swapping') {
+        // Ambiguous pre-exchange identities stay held, with all copies intact.
+        throw error;
       }
-      catch (rollbackError) {
-        await mutateUpdateIntent(intentPath, intent.nonce, ['swapping', 'launching', 'rollback-requested', 'rollback-blocked'],
-          { phase: 'rollback-blocked', errorCode: rollbackError.code ?? 'update_installation_changed' }, roots);
-        throw rollbackError;
+      await syncDirectory(path.dirname(intent.target));
+      try { await verifyPrevious(intent.target); }
+      catch (restoreError) {
+        await mutateUpdateIntent(intentPath, intent.nonce, ['waiting-for-owner', 'swapping', 'launching', 'rollback-requested', 'rolling-back'],
+          { phase: 'rollback-blocked', errorCode: restoreError.code ?? 'update_installation_changed' }, roots);
+        throw restoreError;
       }
-    }
-    await syncDirectory(path.dirname(intent.target));
-    await mutateUpdateIntent(intentPath, intent.nonce, ['waiting-for-owner', 'swapping', 'launching', 'rollback-requested'],
-      { phase: 'rolled-back', errorCode: error.code ?? 'update_install_failed' }, roots);
-    // The owner has exited even when pre-swap verification refused. Relaunch
-    // only the original verified installation; never a concurrent replacement.
-    const restored = await fs.lstat(intent.target);
-    if (restored.dev === intent.previous.dev && restored.ino === intent.previous.ino) {
-      await verifyBundle(intent.target, { version: intent.previous.version, signing: intent.signing, arch: intent.arch });
+      await mutateUpdateIntent(intentPath, intent.nonce, ['waiting-for-owner', 'swapping', 'launching', 'rollback-requested', 'rolling-back'],
+        { phase: 'rolled-back', errorCode: error.code ?? 'update_install_failed' }, roots);
       await launch(intent.target, intent.nonce);
+      return 'rolled-back';
     }
-    return 'rolled-back';
-  }
+  }, { timeoutMs: 0 });
 }
 
-if (path.basename(fileURLToPath(import.meta.url)) === 'desktop-update-install.mjs' && process.argv[2] === '--devryan-install-intent') {
+if (path.basename(fileURLToPath(import.meta.url)) === 'desktop-update-install.mjs'
+  && process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url) && process.argv[2] === '--devryan-install-intent') {
   try {
     if (process.argv.length !== 4 || process.platform !== 'darwin') throw fail('update_installer_arguments_invalid');
     const outcome = await runDesktopUpdateInstall(path.resolve(process.argv[3]), {

@@ -39,7 +39,7 @@ describe('runtime-service desktop bootstrap source contract', () => {
         isRuntimeServiceMode, runtimeBundleRecoveryRequired, shellRuntimeBundleBindingError, holdDesktopSettingsForCheckpoint,
         performConfirmedQuit, state, createBrowserWindow, startDesktopRuntime,
         acquireRuntimeOwner, spawnLocalServer, prepareBotRuntimeInBackground,
-        shutdownOwnedRuntimeService, desktopDmgInstaller = null } = owners;
+        shutdownOwnedRuntimeService, prepareForQuit, desktopDmgInstaller = null } = owners;
       ${mainSource.slice(start + marker.length, end)}
       throw new Error('startup did not return before ordinary foreground setup');
     `);
@@ -71,6 +71,18 @@ describe('runtime-service desktop bootstrap source contract', () => {
         : ['settings-held', 'window', 'foreground-recovery']);
       assert.equal(state.mainWindow, serviceMode ? undefined : window);
     }
+    const calls = [], state = {};
+    await ready({
+      app: { isPackaged: true, quit: () => calls.push('quit') }, log: { info: () => {} }, APP_VERSION: 'fixture',
+      process: { platform: 'darwin', arch: 'arm64', argv: [] }, state,
+      desktopDmgInstaller: { beginStartup: async () => calls.push('installer-ready'), isRecoveryStartup: () => true },
+      holdDesktopSettingsForCheckpoint: async () => calls.push('settings-held'),
+      prepareForQuit: value => { assert.equal(value.installingUpdate, true);calls.push('quit-prepared'); },
+      acquireRuntimeOwner: () => assert.fail('Interrupted update must exit before starting owners'),
+      spawnLocalServer: () => assert.fail('Interrupted update must exit before starting the server'),
+    });
+    assert.deepEqual(calls, ['installer-ready', 'settings-held', 'quit-prepared', 'quit']);
+    assert.equal(state.updateInstallReady, true);
   });
 
   test('headless service processes stay out of the macOS Dock; the foreground app does not', () => {

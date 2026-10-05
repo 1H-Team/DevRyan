@@ -310,11 +310,17 @@ and desktop-host broker bridges.
   `desktop-updater-macos.mjs` owns read-only DMG staging, installation path,
   signing-class, service bridge, native-artifact and disk preflight before drain.
   Its private durable intent binds the original app, stage, helper and candidate
-  process identities. `desktop-update-install.mjs` is bundled separately and
+  process identities, both app code hashes and the exact installer digest.
+  `desktop-update-install.mjs` is bundled separately and
   copied with the verified native bridge outside the replaceable app. It waits
   for original owner exit, atomically exchanges apps, retains the original,
   requires a ready acknowledgement, and rolls back only after verified candidate
-  cleanup and process exit. Native `renameExclusive`/`swapApplications` are
+  cleanup and process exit. Its exclusive helper lock and durable rollback
+  decision recover interrupted exchanges and backup naming from exact file
+  identities. A reopening host exits before pre-launch recovery; a lost launch
+  is observed rather than replayed, and accepted startup can finish after helper
+  death. Every candidate startup re-verifies its sealed app. Native
+  `renameExclusive`/`swapApplications` are
   internal shell facilities; no preload operation exposes filesystem renames.
   Ambiguous ownership or concurrent replacement retains both copies and blocks
   further installation. A following ready launch archives the receipt and moves

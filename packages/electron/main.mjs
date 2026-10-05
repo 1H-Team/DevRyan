@@ -5112,6 +5112,13 @@ app.whenReady().then(async () => {
     arch: process.arch,
   });
   await desktopDmgInstaller?.beginStartup(process.argv.find(arg => arg.startsWith('--devryan-update-attempt='))?.slice('--devryan-update-attempt='.length));
+  if (desktopDmgInstaller?.isRecoveryStartup()) {
+    await holdDesktopSettingsForCheckpoint();
+    prepareForQuit({ installingUpdate: true });
+    state.updateInstallReady = true;
+    app.quit();
+    return;
+  }
   if (isRuntimeServiceControlProbe) {
     const registration = getRuntimeServiceRegistration();
     const result = await registration.status();

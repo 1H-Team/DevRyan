@@ -80,7 +80,12 @@ exchange; startup acknowledgement retains the previous app, and rollback
 requires proven candidate cleanup and exit. Download, installer state-machine,
 owned drain, and startup checks passed, including the compiled native bridge.
 The installer bundle is self-contained and its digest is recorded with bundle
-inputs. Disposable packaged DMG launches and interrupted-helper recovery remain
+inputs. Interrupted helper recovery now covers the atomic exchange, backup naming,
+rollback decision and failed-copy naming. Reopening binds a replacement helper
+and exits before pre-launch recovery; a lost launch is not replayed. Both app
+code hashes and the copied installer are pinned, including startup and final
+cleanup verification. Focused checks include actual killed subprocesses and the
+compiled macOS exchange bridge. Disposable packaged DMG launches remain
 unqualified; no update of the user's installation was attempted.
 
 Release preparation now resolves the eight Bot image inputs once. Manifest
@@ -175,7 +180,7 @@ evidence in `.cache/release-2.0.2-recovery`.
 | CLI persistence/refusal and Electron Resume | Not run | Final runtime pending |
 | Shipped 2.0.1 → candidate → 2.0.1 continuity | Not run | Actual artifact qualification pending |
 | Packaged first launch and service mode | Not run | Candidate package pending |
-| DMG update success/refusal/interruption/rollback | Passed (focused); packaged not run | Verified downloads, native app exchange, startup acknowledgement and guarded rollback; disposable package and interrupted-helper qualification pending |
+| DMG update success/refusal/interruption/rollback | Passed (focused); packaged not run | Verified downloads, native app exchange, startup acknowledgement and guarded rollback; killed-helper/native exchange checks pass; disposable package qualification pending |
 | Exact provider/role graph, 12 journeys, 16 compaction boundaries | Not run | Owner sign-in window after credential-free rehearsal |
 | Managed-user verification | Unavailable | Non-production Supabase environment not supplied |
 | Cold/warm loopback and full performance audit | Not run | Timing instrumentation and reproducible baselines pending |
