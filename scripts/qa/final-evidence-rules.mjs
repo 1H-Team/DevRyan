@@ -11,13 +11,20 @@ const time = value => Number.isSafeInteger(value) && value > 0;
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const inside = (root, file) => file.startsWith(root + path.sep);
 
+// Exactly two spellings: the original `gaps --dir <root>` and the verified
+// `--dir <root> gaps --verify`, which reads every chunk regardless of manifests.
+const gapCommandForm = args => {
+  if (!Array.isArray(args) || args[0] !== 'scripts/journal.mjs') return null;
+  const form = args.length === 4 && args[1] === 'gaps' && args[2] === '--dir' ? { directory: args[3], verify: false }
+    : args.length === 5 && args[1] === '--dir' && args[3] === 'gaps' && args[4] === '--verify' ? { directory: args[2], verify: true } : null;
+  return form && typeof form.directory === 'string' && form.directory ? form : null;
+};
+
 /** Interpret an original command only through its recorded cwd. A relative
  * spelling is not evidence of a different journal, or of an assumed cwd. */
 export async function assertQaGapCommand({ command, journalDirectory, repositoryRoot, logPath, logBytes }) {
-  if (!record(command) || typeof command.cwd !== 'string' || !path.isAbsolute(command.cwd)
-    || !Array.isArray(command.args) || command.args.length !== 4
-    || command.args[0] !== 'scripts/journal.mjs' || command.args[1] !== 'gaps' || command.args[2] !== '--dir'
-    || typeof command.args[3] !== 'string' || !command.args[3]
+  const form = gapCommandForm(command?.args);
+  if (!record(command) || typeof command.cwd !== 'string' || !path.isAbsolute(command.cwd) || !form
     || command.code !== 0 || command.signal !== null || command.spawnError !== null
     || !Buffer.isBuffer(logBytes) || logBytes.length !== 0
     || !time(Date.parse(command.startedAt)) || !time(Date.parse(command.finishedAt))
@@ -27,11 +34,11 @@ export async function assertQaGapCommand({ command, journalDirectory, repository
   if (root !== path.resolve(repositoryRoot) || cwd !== path.resolve(command.cwd) || cwd !== root
     || !inside(root, expected) || expected !== path.resolve(journalDirectory)
     || await realpath(path.resolve(cwd, command.args[0])) !== path.join(root, 'scripts/journal.mjs')
-    || await realpath(path.resolve(cwd, command.args[3])) !== expected
+    || await realpath(path.resolve(cwd, form.directory)) !== expected
     || typeof command.log !== 'string' || !path.isAbsolute(command.log)
     || await realpath(command.log) !== await realpath(logPath)
     || !inside(root, await realpath(logPath))) throw fail('qa_gap_directory_mismatch');
-  return { directory: expected, cwd, code: 0, logBytes: 0 };
+  return { directory: expected, cwd, code: 0, logBytes: 0, verify: form.verify };
 }
 
 /** The raw artifact and independent integrity record remain the authority.
