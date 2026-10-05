@@ -1,5 +1,5 @@
 import React from 'react';
-import { getSkillPresentation } from './skillPresentation';
+import { getSkillDisplayName, getSkillPresentation } from './skillPresentation';
 import type { ToolPart as ToolPartType } from '@opencode-ai/sdk/v2';
 import type { TurnActivityRecord as TurnActivityPart } from '../../lib/turns/types';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
@@ -142,10 +142,7 @@ const getToolShortDescription = (activity: TurnActivityPart): string | null => {
     }
 
     if (toolName === 'skill') {
-        const name = input?.name;
-        if (typeof name === 'string' && name.trim().length > 0) {
-            return name;
-        }
+        return getSkillDisplayName(part);
     }
 
     if (toolName === 'webfetch' || toolName === 'fetch' || toolName === 'curl' || toolName === 'wget') {

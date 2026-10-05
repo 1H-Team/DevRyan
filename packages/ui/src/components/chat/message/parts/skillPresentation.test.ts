@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import type { ToolPart } from '@opencode-ai/sdk/v2';
-import { getSkillPresentation } from './skillPresentation';
+import { getSkillDisplayName, getSkillPresentation } from './skillPresentation';
 
 const skill = (state: ToolPart['state']): ToolPart => ({
     id: 'part', sessionID: 'session', messageID: 'message', type: 'tool', tool: 'skill', callID: 'call', state,
@@ -23,4 +23,15 @@ test('mixed skill outcomes retain failures and never expose raw errors', () => {
     const result = getSkillPresentation([failed, running]);
     expect(result.title).toBe('Loading skill:');
     expect(result.explanation).toBe('The skill could not be loaded.');
+});
+test('skill display name prefers metadata, then skill_content, then a non-hash input name, never the hashed id', () => {
+    const hashed = 'devryan-539ddc37a961e3aceadfc7bbb540b8e7';
+    const body = '<skill_content name="Superpowers">\nbody\n</skill_content>';
+    expect(getSkillDisplayName(skill({ status: 'completed', input: { id: hashed, name: hashed }, output: body, title: '', metadata: { name: 'From Metadata' }, time: { start: 1, end: 2 } }))).toBe('From Metadata');
+    expect(getSkillDisplayName(skill({ status: 'completed', input: { id: hashed, name: hashed }, output: body, title: '', metadata: {}, time: { start: 1, end: 2 } }))).toBe('Superpowers');
+    expect(getSkillDisplayName(skill({ status: 'running', input: { id: 'pdf', name: 'pdf' }, time: { start: 1 } }))).toBe('pdf');
+    expect(getSkillDisplayName(skill({ status: 'running', input: { id: hashed, name: hashed }, time: { start: 1 } }))).toBe('Skill');
+    expect(getSkillDisplayName(skill({ status: 'running', input: { id: hashed }, time: { start: 1 } }))).toBe('Skill');
+    expect(getSkillDisplayName(skill({ status: 'pending', input: {}, raw: '' }))).toBe('Skill');
+    expect(getSkillDisplayName(skill({ status: 'error', input: { name: hashed }, error: 'x', time: { start: 1, end: 2 } }))).toBe('Skill');
 });
