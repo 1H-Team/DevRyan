@@ -5,6 +5,7 @@
 import { createHash } from 'node:crypto';
 import { execFile, execFileSync } from 'node:child_process';
 import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
@@ -396,7 +397,9 @@ export async function runFirstLaunchSmoke(options) {
   await mkdir(outputRoot, { recursive: true, mode: 0o700 });
   const output = await mkdtemp(path.join(outputRoot, `first-launch-${options.scenario}-`));
   await chmod(output, 0o700);
-  const runtimeRoot = path.join(output, 'runtime');
+  // The private runtime lives outside any git work tree: a workspace nested in the
+  // repository makes the native git helper resolve the repository root and refuse it.
+  const runtimeRoot = await realpath(await mkdtemp(path.join(os.tmpdir(), `devryan-first-launch-${options.scenario}-`)));
   const layout = firstLaunchLayout(runtimeRoot);
   const logsOut = path.join(output, 'logs');
   await mkdir(logsOut, { mode: 0o700 });
@@ -427,11 +430,14 @@ export async function runFirstLaunchSmoke(options) {
       dirty: Boolean(execFileSync('git', ['status', '--porcelain'], { cwd: repository, encoding: 'utf8' }).trim()) };
 
     // 1. Private runtime root exactly as packaged-host-policy.mjs requires.
-    await mkdir(runtimeRoot, { mode: 0o700 });
+    await chmod(runtimeRoot, 0o700);
+    let gitTop = null;
+    try { gitTop = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: runtimeRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { /* Not a work tree. */ }
+    if (gitTop) throw new Error('Private runtime root is inside a git work tree');
     for (const directory of [layout.home, layout.profile, layout.workspace]) await mkdir(directory, { recursive: true, mode: 0o700 });
     await writeFile(path.join(layout.home, '.devryan-qa-home'), 'owned packaged first-launch smoke\n', { mode: 0o600 });
     await writeFile(layout.credentials, '{}\n', { mode: 0o600 });
-    if (path.resolve(layout.home) === path.resolve(process.env.HOME ?? '/') || !inside(output, layout.home)) throw new Error('Private home is not isolated');
+    if (path.resolve(layout.home) === path.resolve(process.env.HOME ?? '/') || !inside(runtimeRoot, layout.home)) throw new Error('Private home is not isolated');
 
     // 2. Owner-shaped legacy tree.
     const projectPaths = Array.from({ length: PROJECT_RECORD_COUNT }, (_, index) => path.join(layout.workspace, `project-${index + 1}`));
