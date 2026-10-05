@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { useI18n } from '@/lib/i18n';
 import { openExternalUrl } from '@/lib/url';
 
-interface Enrollment { enrollmentID: string; profileID: string; status: 'enrolled' }
+interface Enrollment { enrollmentID: string; profileID: string; status: 'enrolled' | 'incomplete' | 'unavailable' }
 interface PendingEnrollment { enrollmentID: string; url: string; state: string }
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const id = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
@@ -36,7 +36,7 @@ export function ClaudeDedicatedEnrollment({ administrator, principalID, director
   const [pending, setPending] = React.useState<PendingEnrollment | null>(null);
   const [code, setCode] = React.useState('');
   const [busy, setBusy] = React.useState(false);
-  const [error, setError] = React.useState<'failed' | 'update' | 'callback' | null>(null);
+  const [error, setError] = React.useState<'failed' | 'update' | 'callback' | 'capacity' | null>(null);
   const active = React.useRef<AbortController | null>(null);
   const scope = directory?.trim() ? `?directory=${encodeURIComponent(directory.trim())}` : '';
 
@@ -47,15 +47,17 @@ export function ClaudeDedicatedEnrollment({ administrator, principalID, director
       try {
         const response = await fetch(`${endpoint}${scope}`, { signal: controller.signal });
         const data: unknown = await response.json();
-        if (!response.ok || !isRecord(data) || !Array.isArray(data.accounts)) {
+        if (!response.ok || !isRecord(data) || !Array.isArray(data.accounts) || data.accounts.length > 64) {
           if (isRecord(data) && data.code === 'native_claude_enrollment_update_required' && !controller.signal.aborted) setError('update');
           throw new Error('response');
         }
         const rows: Enrollment[] = [];
         for (const row of data.accounts) {
-          if (!isRecord(row) || !id(row.enrollmentID) || row.profileID !== `devryan-${row.enrollmentID}` || row.status !== 'enrolled') throw new Error('response');
-          rows.push({ enrollmentID: row.enrollmentID, profileID: row.profileID, status: 'enrolled' });
+          if (!isRecord(row) || !id(row.enrollmentID) || row.profileID !== `devryan-${row.enrollmentID}`
+            || (row.status !== 'enrolled' && row.status !== 'incomplete' && row.status !== 'unavailable')) throw new Error('response');
+          rows.push({ enrollmentID: row.enrollmentID, profileID: row.profileID, status: row.status });
         }
+        if (new Set(rows.map(row => row.enrollmentID)).size !== rows.length) throw new Error('response');
         if (!controller.signal.aborted) setAccounts(rows);
       } catch { if (!controller.signal.aborted) setError(value => value ?? 'failed'); }
     })();
@@ -69,7 +71,11 @@ export function ClaudeDedicatedEnrollment({ administrator, principalID, director
     const response = await fetch(`${endpoint}${path}${scope}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-devryan-csrf': '1' }, body: JSON.stringify(body), signal });
     const data: unknown = await response.json();
     if (signal.aborted) throw new Error('scope');
-    if (!response.ok || !isRecord(data)) { if (isRecord(data) && data.code === 'native_claude_enrollment_update_required') setError('update'); throw new Error('response'); }
+    if (!response.ok || !isRecord(data)) {
+      if (isRecord(data) && data.code === 'native_claude_enrollment_update_required') setError('update');
+      if (isRecord(data) && data.code === 'native_claude_enrollment_capacity') setError('capacity');
+      throw new Error('response');
+    }
     return data;
   };
   const start = async () => {
@@ -102,12 +108,16 @@ export function ClaudeDedicatedEnrollment({ administrator, principalID, director
     finally { if (current(controller)) setBusy(false); }
   };
   const select = async (row: Enrollment) => {
+    if (row.status === 'unavailable') return;
     const controller = active.current;
     setBusy(true); setError(null);
     try {
       const data = await mutate(`/${row.enrollmentID}/select`, {});
       if (data.status !== 'selected' || data.enrollmentID !== row.enrollmentID || data.profileID !== row.profileID) throw new Error('response');
-      if (current(controller)) await onSelected();
+      if (current(controller)) {
+        setAccounts(rows => rows.map(account => account.enrollmentID === row.enrollmentID ? { ...account, status: 'enrolled' } : account));
+        await onSelected();
+      }
     } catch { if (current(controller)) setError(value => value ?? 'failed'); }
     finally { if (current(controller)) setBusy(false); }
   };
@@ -123,8 +133,9 @@ export function ClaudeDedicatedEnrollment({ administrator, principalID, director
     </div> : null}
     {accounts.map(row => <div key={row.enrollmentID} className="flex flex-wrap items-center gap-2">
       <span className="typography-meta break-all">{row.profileID}</span>
-      <Button size="xs" variant="outline" disabled={busy} onClick={() => void select(row)}>{t('settings.providers.enrollment.select')}</Button>
+      {row.status === 'unavailable' ? <span className="typography-meta text-muted-foreground">{t('settings.providers.enrollment.unavailable')}</span> :
+        <Button size="xs" variant="outline" disabled={busy} onClick={() => void select(row)}>{t(row.status === 'incomplete' ? 'settings.providers.enrollment.recover' : 'settings.providers.enrollment.select')}</Button>}
     </div>)}
-    {error ? <p role="alert" className="typography-meta text-[var(--status-error)]">{t(error === 'callback' ? 'settings.providers.enrollment.callbackInvalid' : error === 'update' ? 'settings.providers.enrollment.updateRequired' : 'settings.providers.enrollment.failed')}</p> : null}
+    {error ? <p role="alert" className="typography-meta text-[var(--status-error)]">{t(error === 'callback' ? 'settings.providers.enrollment.callbackInvalid' : error === 'update' ? 'settings.providers.enrollment.updateRequired' : error === 'capacity' ? 'settings.providers.enrollment.capacity' : 'settings.providers.enrollment.failed')}</p> : null}
   </section>;
 }

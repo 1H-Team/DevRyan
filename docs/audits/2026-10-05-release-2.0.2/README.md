@@ -165,6 +165,27 @@ macOS acceptance gate; all portable assertions remain in deterministic discovery
 Runner/discovery, installer and actual native checks pass (59 focused checks).
 The original failed run remains recorded; this is not a full validation pass.
 
+The next integrated attempt reached the harness suite, with two fixture
+isolation failures and a teardown error: repository-local non-Git fixtures
+discovered the enclosing DevRyan checkout. Both unchanged assertions pass when
+the fixture's canonical `TMPDIR` is also its `GIT_CEILING_DIRECTORIES` (2 checks).
+The full gate must be rerun with this isolation; the failed attempt is retained
+as `integrated-full-validation-native-gate.log`.
+
+Further B1 reproduction found that a full Claude lifecycle dispatched the issuer
+before refusing capacity. Count, byte and complete renewal capacity now precede
+the sign-in URL and are rechecked before dispatch; existing accounts and
+unresolved fingerprints remain intact. The 64-account/128-unresolved safety
+ceilings retain no automatic eviction or credential retirement. Historical
+empty directories left by a crashed owner remain outside automatic cleanup.
+The enrollment page also rejected the backend's incomplete/unavailable rows,
+hiding healthy peers. It now preserves those rows and offers an explicit
+Recover and Use action without replaying sign-in. Original-factory server checks
+pass (124); mounted enrollment checks pass (5), as do existing skill
+running/completed/history/permission presentation checks (11). These are focused
+checks; live enrollment, native notifications and final packaged cells remain
+unqualified.
+
 ## Final evidence table
 
 This table must be rebound to the final source commit, lock hash, native build

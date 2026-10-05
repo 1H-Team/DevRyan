@@ -16,6 +16,7 @@ export type ClaudeLifecycleOperation =
  | {readonly kind:'block-legacy';readonly account:ClaudeLifecycleAccount;readonly attemptID:string};
 export interface ClaudeLifecycleClient {read():Promise<ClaudeLifecycleState>;transition(expectedRevision:number,operation:ClaudeLifecycleOperation):Promise<ClaudeLifecycleState>}
 export function emptyClaudeLifecycle():ClaudeLifecycleState;
+export function assertClaudeEnrollmentCapacity(value:unknown,selected:ClaudeEnrollmentBinding):void;
 export function parseClaudeLifecycle(value:unknown):ClaudeLifecycleState;
 export function parseClaudeLifecycleOperation(value:unknown):ClaudeLifecycleOperation;
 export function transitionClaudeLifecycle(value:unknown,expectedRevision:number,operation:unknown):ClaudeLifecycleState;

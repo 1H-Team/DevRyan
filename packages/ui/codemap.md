@@ -21,7 +21,9 @@ Workspace package for the shared React UI runtime used by web and Electron shell
   unavailability does not hide it; startup reads never activate updates.
   `ClaudeDedicatedEnrollment.tsx` drives the prepared vendor login and separate
   explicit profile selection, fences asynchronous results by principal/project,
-  and clears transient authorization-code state after completion.
+  and clears transient authorization-code state after completion. Reloaded
+  incomplete connections have an explicit Recover and Use action; unavailable
+  connections stay visible without hiding healthy peers or replaying sign-in.
 - **Header usage composition**: reusable provider-tab and selected-provider quota panels live under `src/components/layout/usage/` and are shared by the desktop/mobile header menus.
 - **Self-describing preference rows**: `src/components/sections/shared/SettingsField.tsx` (label, visible description, badge, reset, switch rows) and `SettingsOptionCardGroup.tsx` (single choices as chips or illustrated cards) give settings pages one accessible, read-only-aware row pattern; Settings → Appearance (`sections/openchamber/appearance/`) builds its sections and live preview from them.
 - **Grouped settings destinations**: `src/lib/settings/navigation.ts` keeps Providers/Usage and Remote Tunnel/Remote Instances as permission-aware sidebar destinations while preserving their existing child slugs. `src/components/views/SettingsSectionTabs.tsx` renders the shared accessible workspace tabs used by the full and managed settings shells.

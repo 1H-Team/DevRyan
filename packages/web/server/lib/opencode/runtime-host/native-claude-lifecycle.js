@@ -45,6 +45,20 @@ export function hasLegacyClaudeFence(value){
 }
 export const sameClaudeEnrollment=(left,right)=>bindingFields.every(key=>left[key]===right[key]);
 export const emptyClaudeLifecycle=()=>({protocol:CLAUDE_LIFECYCLE_PROTOCOL,revision:0,accounts:[],unresolved:[]});
+/** Check storage before an issuer creates a grant. These placeholders measure
+ * the fixed fingerprint widths; they are never persisted or used as authority. */
+export function assertClaudeEnrollmentCapacity(value,selected){
+ const state=parseClaudeLifecycle(value);exact(selected,bindingFields);binding(selected);
+ if(state.revision===Number.MAX_SAFE_INTEGER||state.accounts.length+state.unresolved.filter(row=>row.phase==='enrollment-prepared').length>=CLAUDE_LIFECYCLE_LIMITS.accounts
+  ||state.unresolved.length>=CLAUDE_LIFECYCLE_LIMITS.unresolved)fail('native_claude_lifecycle_capacity');
+ const row={...selected,grantFingerprint:'0'.repeat(64),recordFingerprint:'0'.repeat(64)};
+ const prepared={...row,attemptID:selected.enrollmentID,phase:'enrollment-prepared'};
+ const renewal={...row,attemptID:'0'.repeat(36),phase:'replacement-prepared',replacementRecordFingerprint:'0'.repeat(64),replacementGrantFingerprint:'0'.repeat(64)};
+ for(const future of [{...state,unresolved:[...state.unresolved,prepared]},
+  {...state,accounts:[...state.accounts,row],unresolved:[...state.unresolved,renewal]}]){
+  if(Buffer.byteLength(JSON.stringify({...future,revision:Number.MAX_SAFE_INTEGER}))>CLAUDE_LIFECYCLE_LIMITS.bytes)fail('native_claude_lifecycle_capacity');
+ }
+}
 export function parseClaudeLifecycle(value){
  exact(value,['protocol','revision','accounts','unresolved']);
  if(value.protocol!==CLAUDE_LIFECYCLE_PROTOCOL||!Number.isSafeInteger(value.revision)||value.revision<0

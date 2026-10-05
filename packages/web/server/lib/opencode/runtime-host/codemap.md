@@ -713,7 +713,10 @@ receipts, publication or task ownership.
 - `native-claude-enrollment.js` prepares the reviewed vendor login in an unused,
   private stable directory under the bundle control root. Original principal,
   directory, grant, configuration and controller bindings are rechecked through
-  publication. `native-claude-profile-publication.js` preserves existing settings
+  publication. The lifecycle count/byte ceiling and complete renewal capacity
+  are checked before returning a URL and again before issuer dispatch; capacity
+  refusal cannot mint an unrecorded grant or evict unresolved fingerprints.
+  `native-claude-profile-publication.js` preserves existing settings
   and priority, performs raw-byte CAS and selects only on the explicit Use action.
   `native-claude-enrollment-directory.js` validates path ownership; it grants no
   renewal authority. `native-setup-profiles.js` preserves stable directory and

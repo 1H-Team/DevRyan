@@ -6,6 +6,12 @@
 - `bun run validate:quick` selects checks from the current changed-file set for fast local feedback.
 - `bun run validate:affected` expands validation to affected packages and shared-runtime dependents.
 - `bun run validate:full` runs workspace lint, type checks, documentation validation, and the full deterministic test gate.
+
+When disposable fixtures use a `TMPDIR` inside this checkout, set
+`GIT_CEILING_DIRECTORIES` to that same canonical fixture directory for the test
+command. This prevents fixtures without their own Git metadata from discovering
+the enclosing DevRyan checkout. The fixture's own Git repositories still work;
+non-Git assertions must not be changed to accept the parent repository.
 - Release verification also runs `bun run build` and `bun run bundle:check`.
 
 The full gate rejects skipped or todo tests, undiscovered JavaScript/TypeScript test files, test-owning workspace packages omitted from `test:full`, and stale paths in the checked feature matrix.

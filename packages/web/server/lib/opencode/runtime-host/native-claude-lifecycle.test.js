@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {CLAUDE_LIFECYCLE_LIMITS,emptyClaudeLifecycle,parseClaudeLifecycle,parseClaudeLifecycleOperation,transitionClaudeLifecycle,claudeRecordFingerprint,claudeGrantFingerprint,hasLegacyClaudeFence} from './native-claude-lifecycle.js';
+import {CLAUDE_LIFECYCLE_LIMITS,emptyClaudeLifecycle,parseClaudeLifecycle,parseClaudeLifecycleOperation,transitionClaudeLifecycle,claudeRecordFingerprint,claudeGrantFingerprint,hasLegacyClaudeFence,assertClaudeEnrollmentCapacity} from './native-claude-lifecycle.js';
 import {createNativeClaudeLifecycleClient} from './native-claude-lifecycle-client.js';
 import {parseNativeCommand} from './native-process-protocol.js';
 
@@ -10,6 +10,21 @@ const binding=({profileID,service,configDirectory,enrollmentID,generation})=>({p
 const next=(state,operation)=>transitionClaudeLifecycle(state,state.revision,operation);
 
 describe('Claude lifecycle contract',()=>{
+ it('checks byte and renewal capacity before issuer dispatch without creating authority or changing fences',()=>{
+  let state=emptyClaudeLifecycle();
+  for(let index=1;index<=64;index++){
+   const selected={...account(index),configDirectory:'/owned/'+index+'/'+ 'x'.repeat(500)};
+   const before=structuredClone(state);
+   try{assertClaudeEnrollmentCapacity(state,binding(selected));}catch(error){
+    expect(error.code).toBe('native_claude_lifecycle_capacity');
+    expect(()=>next(state,{kind:'prepare-enrollment',account:selected,attemptID:selected.enrollmentID})).toThrow('native_claude_lifecycle_capacity');
+    expect(state).toEqual(before);return;
+   }
+   expect(state).toEqual(before);state=next(state,{kind:'enroll',account:selected});
+   state=next(state,{kind:'begin',account:selected,attemptID:'pending-'+index});
+  }
+  throw new Error('Expected the bounded lifecycle to refuse an additional grant');
+ });
  it('reserves fresh enrollment without renewal authority and settles only its exact prepared record',()=>{
   const selected=account();let state=next(emptyClaudeLifecycle(),{kind:'prepare-enrollment',account:selected,attemptID:'fresh'});
   expect(state.accounts).toEqual([]);expect(state.unresolved[0].phase).toBe('enrollment-prepared');

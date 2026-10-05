@@ -77,3 +77,28 @@ test('manual code entry rejects a foreign callback URL without issuer submission
     expect(container.find(node => node.getAttribute('role') === 'alert')?.textContent).toContain('another sign-in');
   } finally { await act(async () => root.unmount()); }
 }));
+
+test('incomplete and unavailable enrollments retain healthy rows and explicit recovery after reload', async () => withDom(async container => {
+  const incomplete = '22222222-2222-4222-8222-222222222222', unavailable = '33333333-3333-4333-8333-333333333333';
+  const rows = [{ enrollmentID: ID, profileID: PROFILE, status: 'enrolled' },
+    { enrollmentID: incomplete, profileID: `devryan-${incomplete}`, status: 'incomplete' },
+    { enrollmentID: unavailable, profileID: `devryan-${unavailable}`, status: 'unavailable' }];
+  globalThis.fetch = Object.assign(mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input), method = init?.method ?? 'GET';
+    calls.push({ path, method, body: String(init?.body ?? ''), csrf: new Headers(init?.headers).get('x-devryan-csrf') });
+    if (method === 'GET') return Response.json({ accounts: rows });
+    expect(path).toContain(`/${incomplete}/select`);
+    return Response.json({ enrollmentID: incomplete, profileID: `devryan-${incomplete}`, status: 'selected' });
+  }), { preconnect: () => {} });
+  const { createRoot } = await import('react-dom/client'); const root = createRoot(container as unknown as Element);
+  try {
+    await act(async () => root.render(<ClaudeDedicatedEnrollment administrator principalID="admin" onSelected={onSelected} />));
+    expect(container.textContent).toContain(PROFILE);
+    expect(container.textContent).toContain(`devryan-${incomplete}`);
+    expect(container.textContent).toContain('Unavailable');
+    expect(calls).toHaveLength(1); expect(selected).toBe(0); expect(opened).toHaveLength(0);
+    await click(container, 'Recover and Use This Profile'); expect(selected).toBe(1);
+    expect(calls.filter(call => call.method === 'POST')).toEqual([{ path: `/api/provider/anthropic/enrollment/${incomplete}/select`, method: 'POST', body: '{}', csrf: '1' }]);
+    expect(opened).toHaveLength(0);
+  } finally { await act(async () => root.unmount()); }
+}));

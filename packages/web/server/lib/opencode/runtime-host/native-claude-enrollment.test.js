@@ -27,8 +27,24 @@ async function fixture(){
  };
  const owner=createNativeClaudeEnrollmentOwner(options);
  const start=async()=>{const pending=await owner.begin({});return{...pending,code:'original-user-code',state:new URL(pending.url).searchParams.get('state')};};
- return{owner,options,start,records,calls,published,get state(){return state;},get exchanges(){return exchanges;},revoke:()=>{valid=false;},restore:()=>{valid=true;},token:value=>{token=value;},afterTransition:fn=>{afterTransition=fn;},beforeExchange:fn=>{beforeExchange=fn;},beforeWrite:fn=>{beforeWrite=fn;},afterWrite:fn=>{afterWrite=fn;},transitionFault:fn=>{transitionFault=fn;}};
+ return{owner,options,start,records,calls,published,get state(){return state;},replaceState:value=>{state=structuredClone(value);},get exchanges(){return exchanges;},revoke:()=>{valid=false;},restore:()=>{valid=true;},token:value=>{token=value;},afterTransition:fn=>{afterTransition=fn;},beforeExchange:fn=>{beforeExchange=fn;},beforeWrite:fn=>{beforeWrite=fn;},afterWrite:fn=>{afterWrite=fn;},transitionFault:fn=>{transitionFault=fn;}};
 }
+
+const fullLifecycle=()=>({protocol:'devryan.claude-lifecycle/1',revision:1,unresolved:[],accounts:Array.from({length:64},(_,index)=>({
+ profileID:'existing-'+index,service:'Claude Code-credentials-'+index.toString(16).padStart(8,'0'),configDirectory:'/owned/existing/'+index,
+ enrollmentID:'existing-'+index,generation:'generation-'+index,grantFingerprint:index.toString(16).padStart(64,'0'),recordFingerprint:(index+64).toString(16).padStart(64,'0'),
+}))});
+
+test('capacity refusal precedes a URL or issuer exchange and retains every existing account',async()=>{
+ const f=await fixture(),full=fullLifecycle();f.replaceState(full);
+ await expect(f.start()).rejects.toMatchObject({code:'native_claude_enrollment_capacity'});
+ expect(f.exchanges).toBe(0);expect(f.records.size).toBe(0);expect(f.state).toEqual(full);
+ expect(await fs.readdir(path.join(f.options.controlRoot,'claude-enrollments'))).toEqual([]);await f.owner.close();
+ const g=await fixture(),p=await g.start();g.replaceState(full);
+ await expect(g.owner.complete(p.enrollmentID,{code:p.code,state:p.state},{})).rejects.toMatchObject({code:'native_claude_enrollment_capacity'});
+ expect(g.exchanges).toBe(0);expect(g.records.size).toBe(0);expect(g.state).toEqual(full);
+ expect(await fs.readdir(path.join(g.options.controlRoot,'claude-enrollments'))).toEqual([]);await g.owner.close();
+});
 
 test('fresh original factory enrollment publishes KV authority only after readback and selects only explicitly',async()=>{
  const f=await fixture(),pending=await f.start();const url=new URL(pending.url);expect(url.origin).toBe('https://claude.com');expect(url.searchParams.get('code_challenge_method')).toBe('S256');
