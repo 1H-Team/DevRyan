@@ -2,13 +2,13 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import type { DesktopUpdateDownloadResult, UpdateInfo } from '@/lib/desktop';
 
 let downloadResult: DesktopUpdateDownloadResult | Error = 'downloaded';
-const toasts: string[] = [];
+const toasts: Array<{ message: string; description?: string }> = [];
 const desktopInfo: UpdateInfo = { available: true, currentVersion: '2.0.1', version: '2.0.2' };
 
 const ui = await import('@/components/ui');
 mock.module('@/components/ui', () => ({
   ...ui,
-  toast: { ...ui.toast, success: (message: string) => { toasts.push(message); } },
+  toast: { ...ui.toast, success: (message: string, options?: { description?: string }) => { toasts.push({ message, description: options?.description }); } },
 }));
 const desktop = await import('@/lib/desktop');
 mock.module('@/lib/desktop', () => ({
@@ -37,10 +37,16 @@ const download = async (result: DesktopUpdateDownloadResult | Error) => {
 describe('desktop update download outcome', () => {
   beforeEach(() => { toasts.length = 0; });
 
-  test('an externally opened installer is reported without an error or restart prompt', async () => {
-    const state = await download('external');
-    expect(state).toMatchObject({ downloading: false, downloaded: false, error: null });
-    expect(toasts).toEqual(['Opened the DevRyan installer download in your browser']);
+  test('an externally opened installer or release page is reported without an error or restart prompt', async () => {
+    for (const [result, message] of [
+      ['installer', 'Opened the DevRyan installer download in your browser'],
+      ['release-page', 'Opened the DevRyan release page in your browser'],
+    ] as const) {
+      toasts.length = 0;
+      expect(await download(result)).toMatchObject({ downloading: false, downloaded: false, error: null });
+      expect(toasts.map((entry) => entry.message)).toEqual([message]);
+      expect(toasts[0]?.description?.endsWith(', then quit DevRyan before replacing it in Applications.')).toBe(true);
+    }
   });
 
   test('an in-app download still offers the restart', async () => {

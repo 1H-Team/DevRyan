@@ -40,7 +40,7 @@ import {
 import { BOT_RUNTIME_IMAGE_KEYS, loadBotRuntimeManifest } from './bot-runtime-manifest.mjs';
 import { loadBotDatabaseSql } from '@openchamber/bot-db';
 import { finishQuitAfterCleanup } from './quit-cleanup.mjs';
-import { resolveUpdateDownloadFallbackUrl } from './update-download-fallback.mjs';
+import { releaseListsUpdaterChannel, resolveUpdateDownloadFallback } from './update-download-fallback.mjs';
 import {
   createRuntimeServiceCoordinator,
   assertRuntimeServiceDescriptorOwner,
@@ -836,11 +836,11 @@ const inheritUserShellEnv = () => {
   const currentPath = process.env.PATH || '';
   const currentPathLooksUserConfigured = pathLooksUserConfigured(currentPath, homeDir, ':');
 
-  // Desktop-managed names stay as launched: the shell already derived its
-  // data/control roots from them, and provisioning refuses runtime overrides.
+  // Login-shell values that provisioning would refuse (or that bypass it) are
+  // dropped; everything else is inherited as before.
   const { inherited, dropped } = selectInheritedShellEnv(process.env, shellEnv);
   Object.assign(process.env, inherited);
-  if (dropped.length) log.info(`[shell-env] ignored login-shell variables managed by the desktop app: ${dropped.join(', ')}`);
+  if (dropped.length) log.info(`[shell-env] ignored login-shell variables the desktop runtime does not support: ${dropped.join(', ')}`);
 
   const shellPath = typeof shellEnv.PATH === 'string' ? shellEnv.PATH : '';
   if (!currentPathLooksUserConfigured && shellPath) {
@@ -4626,9 +4626,11 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       }
 
       let updateResult = null;
-      try {
-        updateResult = await autoUpdater.checkForUpdates();
-      } catch {
+      if (releaseListsUpdaterChannel(payload)) {
+        try {
+          updateResult = await autoUpdater.checkForUpdates();
+        } catch {
+        }
       }
 
       const updateInfo = updateResult?.updateInfo;
@@ -4661,15 +4663,15 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         throw new Error('No pending update');
       }
       if (!state.pendingUpdate.electronUpdate) {
-        const url = resolveUpdateDownloadFallbackUrl({
+        const fallback = resolveUpdateDownloadFallback({
           payload: state.pendingUpdate.metadata,
           version: state.pendingUpdate.version,
           repositoryUrl: GITHUB_REPOSITORY_URL,
         });
-        if (!url) throw new Error(`DevRyan ${state.pendingUpdate.version} has no verified installer download yet. Retry later.`);
-        await shell.openExternal(url);
-        log.info(`[electron] update installer opened externally version=${state.pendingUpdate.version}`);
-        return { openedExternally: true };
+        if (!fallback) throw new Error(`DevRyan ${state.pendingUpdate.version} has no verified installer download yet. Retry later.`);
+        await shell.openExternal(fallback.url);
+        log.info(`[electron] update ${fallback.kind} opened externally version=${state.pendingUpdate.version}`);
+        return { openedExternally: true, kind: fallback.kind };
       }
       emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({
         event: 'Started',

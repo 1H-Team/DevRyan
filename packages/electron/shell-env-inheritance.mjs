@@ -1,17 +1,22 @@
-// The desktop app manages its own runtime. Login-shell exports must not select
-// another runtime (provisioning refuses these) or move the data/state roots the
-// shell already derived from the launch environment before inheritance.
-const MANAGED_NAMES=new Set(['OPENCODE_BINARY','OPENCODE_HOST','OPENCODE_PORT','OPENCODE_SKIP_START','OPENCHAMBER_SKIP_OPENCODE_START',
- 'OPENCODE_DB','OPENCHAMBER_DATA_DIR','XDG_STATE_HOME','OPENCHAMBER_ELECTRON_DEV','OPENCHAMBER_ELECTRON_USER_DATA_DIR']);
-export const isDesktopManagedEnvName=name=>MANAGED_NAMES.has(name)||name.startsWith('DEVRYAN_');
+import path from 'node:path';
+
+// Login-shell values that would make provisionDefaultNativeBundle refuse to start
+// (mirrors its refusal predicate), plus the bundle root that bypasses provisioning.
+// Every other login-shell export, including documented DEVRYAN_* switches, is inherited.
+const PROVISIONING_REFUSES={
+ OPENCODE_DB:value=>!path.isAbsolute(value),OPENCODE_HOST:Boolean,OPENCODE_BINARY:Boolean,
+ OPENCODE_SKIP_START:value=>value==='true',OPENCHAMBER_SKIP_OPENCODE_START:value=>value==='true',
+ DEVRYAN_OPENCODE_GENERATION:value=>value!=='2',DEVRYAN_RUNTIME_BUNDLE_ROOT:()=>true,
+};
+export const isDesktopRefusedShellValue=(name,value)=>Object.hasOwn(PROVISIONING_REFUSES,name)&&PROVISIONING_REFUSES[name](value);
 
 /** Login-shell variables absent from the launch environment, except PATH (merged
- * separately) and desktop-managed names. `dropped` holds names only, never values. */
+ * separately) and refused values. `dropped` holds names only, never values. */
 export function selectInheritedShellEnv(launchEnv,shellEnv){
  const inherited={},dropped=[];
  for(const [key,value] of Object.entries(shellEnv)){
   if(key==='PATH'||typeof launchEnv[key]!=='undefined')continue;
-  if(isDesktopManagedEnvName(key))dropped.push(key);else inherited[key]=value;
+  if(isDesktopRefusedShellValue(key,value))dropped.push(key);else inherited[key]=value;
  }
  return {inherited,dropped:dropped.sort()};
 }

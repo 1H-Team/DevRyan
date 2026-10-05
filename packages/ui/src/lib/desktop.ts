@@ -590,9 +590,10 @@ export const checkForDesktopUpdates = async (): Promise<UpdateInfo | null> => {
   }
 };
 
-// 'external': the release has no in-app updater payload, so the shell opened
-// the verified installer download in the browser instead.
-export type DesktopUpdateDownloadResult = 'downloaded' | 'external' | 'unavailable';
+// 'installer' / 'release-page': the release has no in-app updater payload, so
+// the shell opened the verified installer download or the release's tag page
+// in the browser instead.
+export type DesktopUpdateDownloadResult = 'downloaded' | 'installer' | 'release-page' | 'unavailable';
 
 export const downloadDesktopUpdate = async (
   onProgress?: (progress: UpdateProgress) => void
@@ -638,9 +639,10 @@ export const downloadDesktopUpdate = async (
     }
 
     const result = await tauri?.core?.invoke?.('desktop_download_and_install_update');
-    const openedExternally = typeof result === 'object' && result !== null
-      && (result as { openedExternally?: unknown }).openedExternally === true;
-    return openedExternally ? 'external' : 'downloaded';
+    if (typeof result !== 'object' || result === null) return 'downloaded';
+    const { openedExternally, kind } = result as { openedExternally?: unknown; kind?: unknown };
+    if (openedExternally !== true) return 'downloaded';
+    return kind === 'installer' ? 'installer' : 'release-page';
   } catch (error) {
     console.warn('Failed to download update (tauri)', error);
     const message = error instanceof Error

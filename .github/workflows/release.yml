@@ -627,8 +627,9 @@ jobs:
             fi
           done
 
-      # The public release carries only the installer DMG. ZIP and blockmaps
-      # are still built and verified above; latest-mac.yml is not published.
+      # The public release carries only the installer DMG. electron-builder still
+      # builds the ZIP and blockmaps, but they are neither published nor verified;
+      # latest-mac.yml is not published.
       - name: Upload DMG to release
         uses: softprops/action-gh-release@v2
         with:

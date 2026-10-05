@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import {
   clearDesktopCache,
+  downloadDesktopUpdate,
   getDesktopCacheInfo,
   isDesktopShell,
   isElectronShell,
@@ -284,5 +285,21 @@ describe('desktop access helpers', () => {
     }
     expect(thrown instanceof Error).toBe(true);
     expect((thrown as Error).message).toContain('dialog failed');
+  });
+
+  test('reports which page the shell opened when the update has no in-app payload', async () => {
+    for (const [reply, expected] of [
+      [{ openedExternally: true, kind: 'installer' }, 'installer'],
+      [{ openedExternally: true, kind: 'release-page' }, 'release-page'],
+      [{ openedExternally: true }, 'release-page'],
+      [null, 'downloaded'],
+    ] as const) {
+      installWindow({
+        __OPENCHAMBER_ELECTRON__: { runtime: 'electron' },
+        __OPENCHAMBER_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
+        __TAURI__: { core: { invoke: mock(async () => reply) } },
+      });
+      expect(await downloadDesktopUpdate()).toBe(expected);
+    }
   });
 });

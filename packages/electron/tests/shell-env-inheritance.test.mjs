@@ -7,41 +7,51 @@ import {selectInheritedShellEnv} from '../shell-env-inheritance.mjs';
 import {provisionDefaultNativeBundle} from '@openchamber/web/server/lib/opencode/runtime-host/native-default-bundle.js';
 
 const mainSource=await fs.readFile(new URL('../main.mjs',import.meta.url),'utf8');
-// A v1 desktop user's rc exports: README external-server recipe, the onboarding
-// OPENCODE_BINARY hint, a stray relative DB and private state/data overrides.
-const shellExports={OPENCODE_PORT:'4096',OPENCODE_SKIP_START:'true',OPENCODE_HOST:'https://fixture.invalid:4096',
- OPENCHAMBER_SKIP_OPENCODE_START:'true',OPENCODE_BINARY:'/fixture/bin/opencode',OPENCODE_DB:'relative.db',
- DEVRYAN_OPENCODE_GENERATION:'1',DEVRYAN_RUNTIME_BUNDLE_ROOT:'/fixture/other-bundles',OPENCHAMBER_DATA_DIR:'/fixture/other-data',
- XDG_STATE_HOME:'/fixture/other-state',OPENCHAMBER_ELECTRON_DEV:'1',OPENCHAMBER_ELECTRON_USER_DATA_DIR:'/fixture/other-user-data',
- OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS:'1',EDITOR:'vim',PATH:'/fixture/shell/bin'};
+const REFUSED='native_runtime_configuration_unsupported';
 
-test('login-shell merge drops desktop-managed names, keeps others and never touches the launch environment',()=>{
+test('login-shell merge drops only refused or provisioning-bypassing values and never touches the launch environment',()=>{
  const launchEnv=Object.freeze({PATH:'/usr/bin',HOME:'/fixture/home',EDITOR:'nano',OPENCODE_SKIP_START:'true',XDG_STATE_HOME:'/fixture/state'});
- const {inherited,dropped}=selectInheritedShellEnv(launchEnv,shellExports);
- assert.deepEqual(inherited,{OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS:'1'});
+ // A v1 desktop user's rc exports: README external-server recipe, the onboarding
+ // OPENCODE_BINARY hint, a stray relative DB and documented rollback/diagnostic switches.
+ const {inherited,dropped}=selectInheritedShellEnv(launchEnv,{OPENCODE_PORT:'4096',OPENCODE_SKIP_START:'true',OPENCODE_HOST:'https://fixture.invalid:4096',
+  OPENCHAMBER_SKIP_OPENCODE_START:'true',OPENCODE_BINARY:'/fixture/bin/opencode',OPENCODE_DB:'relative.db',DEVRYAN_OPENCODE_GENERATION:'1',
+  DEVRYAN_RUNTIME_BUNDLE_ROOT:'/fixture/other-bundles',OPENCHAMBER_DATA_DIR:'/fixture/other-data',XDG_STATE_HOME:'/fixture/other-state',
+  DEVRYAN_PRIMARY_RECOVERY_MODE:'legacy',DEVRYAN_DUPLICATE_OUTPUTS:'1',EDITOR:'vim',PATH:'/fixture/shell/bin'});
+ assert.deepEqual(inherited,{OPENCODE_PORT:'4096',OPENCHAMBER_DATA_DIR:'/fixture/other-data',DEVRYAN_PRIMARY_RECOVERY_MODE:'legacy',DEVRYAN_DUPLICATE_OUTPUTS:'1'});
  // Launch-set names (OPENCODE_SKIP_START, XDG_STATE_HOME) are kept by the ordinary rule, not reported.
- assert.deepEqual(dropped,['DEVRYAN_OPENCODE_GENERATION','DEVRYAN_RUNTIME_BUNDLE_ROOT','OPENCHAMBER_DATA_DIR','OPENCHAMBER_ELECTRON_DEV',
-  'OPENCHAMBER_ELECTRON_USER_DATA_DIR','OPENCHAMBER_SKIP_OPENCODE_START','OPENCODE_BINARY','OPENCODE_DB','OPENCODE_HOST','OPENCODE_PORT']);
- assert.ok(dropped.every(name=>Object.hasOwn(shellExports,name)));
- assert.deepEqual(selectInheritedShellEnv({},{EDITOR:'vim',DEVRYANISH:'1'}),{inherited:{EDITOR:'vim',DEVRYANISH:'1'},dropped:[]});
- assert.deepEqual(selectInheritedShellEnv({},{XDG_STATE_HOME:'/fixture/s',OPENCHAMBER_DATA_DIR:'/fixture/d'}),{inherited:{},dropped:['OPENCHAMBER_DATA_DIR','XDG_STATE_HOME']});
+ assert.deepEqual(dropped,['DEVRYAN_OPENCODE_GENERATION','DEVRYAN_RUNTIME_BUNDLE_ROOT','OPENCHAMBER_SKIP_OPENCODE_START','OPENCODE_BINARY','OPENCODE_DB','OPENCODE_HOST']);
+ assert.deepEqual(selectInheritedShellEnv({},{XDG_STATE_HOME:'/fixture/s',OPENCHAMBER_DATA_DIR:'/fixture/d'}),{inherited:{XDG_STATE_HOME:'/fixture/s',OPENCHAMBER_DATA_DIR:'/fixture/d'},dropped:[]});
 });
 
-test('shell exports reach provisioning as a no-op and the server control root stays the shell control root',async()=>{
+test('every shell-only value is dropped exactly when provisioning would refuse it or be bypassed by it',async()=>{
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-shell-env-')));
  try{
   const home=path.join(root,'home');await fs.mkdir(home);
-  const provision=async(name,exports)=>{
-   const launchEnv={PATH:'/usr/bin',HOME:home,XDG_STATE_HOME:path.join(root,name,'state')};
-   const env={...launchEnv,...selectInheritedShellEnv(launchEnv,{...exports,XDG_STATE_HOME:path.join(root,name,'shell-state')}).inherited};
-   try{await provisionDefaultNativeBundle({env,home,cwd:home,artifactDirectory:path.join(root,'no-artifacts')});return 'ok';}
-   catch(error){return error.code;}
+  const launchEnv=Object.freeze({PATH:'/usr/bin',HOME:home});
+  const provision=async env=>{
+   try{return {root:await provisionDefaultNativeBundle({env,home,cwd:home,artifactDirectory:path.join(root,'no-artifacts')})};}
+   catch(error){return {code:error.code};}
   };
-  const control=await provision('control',{});
-  assert.notEqual(control,'native_runtime_configuration_unsupported');
-  assert.equal(await provision('exports',shellExports),control);
-  await fs.access(path.join(root,'exports','state','devryan','runtime-bundles'));
-  await assert.rejects(fs.access(path.join(root,'exports','shell-state')));
+  const cases=[['OPENCODE_DB','relative.db'],['OPENCODE_DB',''],['OPENCODE_DB',path.join(root,'opencode.db')],
+   ['OPENCODE_HOST','https://fixture.invalid:4096'],['OPENCODE_HOST',''],['OPENCODE_SKIP_START','true'],['OPENCODE_SKIP_START','false'],
+   ['OPENCHAMBER_SKIP_OPENCODE_START','true'],['OPENCHAMBER_SKIP_OPENCODE_START','1'],['OPENCODE_BINARY','/fixture/bin/opencode'],['OPENCODE_BINARY',''],
+   ['DEVRYAN_OPENCODE_GENERATION','1'],['DEVRYAN_OPENCODE_GENERATION',''],['DEVRYAN_OPENCODE_GENERATION','2'],
+   ['DEVRYAN_RUNTIME_BUNDLE_ROOT',path.join(root,'other-bundles')],['DEVRYAN_RUNTIME_BUNDLE_ROOT',''],
+   ['OPENCODE_PORT','4096'],['OPENCHAMBER_DATA_DIR',path.join(root,'data')],['XDG_STATE_HOME',path.join(root,'state')],
+   ['OPENCHAMBER_ELECTRON_DEV','1'],['OPENCHAMBER_ELECTRON_USER_DATA_DIR',path.join(root,'user-data')],
+   ['DEVRYAN_PRIMARY_RECOVERY_MODE','legacy'],['DEVRYAN_MANAGED_RESULT_MODE','full']];
+  const control=await provision(launchEnv);
+  assert.ok(control.code&&control.code!==REFUSED,JSON.stringify(control));
+  for(const [name,value] of cases){
+   const label=`${name}=${JSON.stringify(value)}`;
+   const {inherited,dropped}=selectInheritedShellEnv(launchEnv,{[name]:value});
+   const merged=await provision({...launchEnv,...inherited});
+   assert.ok(merged.code&&merged.code!==REFUSED,`${label} after merge: ${JSON.stringify(merged)}`);
+   const launched=await provision({...launchEnv,[name]:value});
+   const refusedOrBypassed=launched.code===REFUSED||launched.root===value;
+   assert.deepEqual(dropped,refusedOrBypassed?[name]:[],`${label} launched: ${JSON.stringify(launched)}`);
+   if(!dropped.length)assert.deepEqual(inherited,{[name]:value},label);
+  }
  }finally{await fs.rm(root,{recursive:true,force:true});}
 });
 

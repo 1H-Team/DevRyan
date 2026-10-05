@@ -249,11 +249,15 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
       if (result === 'unavailable') {
         throw new Error('Desktop update only works on Local instance');
       }
-      if (result === 'external') {
-        // No in-app updater payload: the installer download opened in the browser.
+      if (result === 'installer' || result === 'release-page') {
+        // No in-app updater payload: the installer or release page opened in the browser.
         set({ downloading: false, progress: null });
-        toast.success('Opened the DevRyan installer download in your browser', {
-          description: 'Open the downloaded DMG and drag DevRyan into Applications to finish updating.',
+        toast.success(result === 'installer'
+          ? 'Opened the DevRyan installer download in your browser'
+          : 'Opened the DevRyan release page in your browser', {
+          description: result === 'installer'
+            ? 'Open the downloaded DMG, then quit DevRyan before replacing it in Applications.'
+            : 'Download the DMG from the release page and open it, then quit DevRyan before replacing it in Applications.',
         });
         return;
       }
