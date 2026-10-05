@@ -131,7 +131,16 @@ Repository automation entrypoint for developer workflows: validation planning, l
   and process cleanup remain in the report. `writer-edge-cases.mjs` checks
   byte preservation, real formatter output, foreign edits and concurrent
   same-file publication; `managed-fixture.mjs` composes the existing primary
-  and task owners for actual child completion. `removal-lanes.mjs` uses the
+  and task owners for actual child completion. `fixture-journal.mjs` composes
+  the production web harness journal on a compiled fixture's descriptor web
+  data and tees each diagnostic source with its application mapping, counting
+  accepted/refused records per writer label; `journal-evidence.mjs` grades those
+  roots (missing/empty = unavailable, sealed chunks, required records, the
+  original `journal.mjs --dir <root> gaps --verify` run validated by
+  `qa/final-evidence-rules.mjs`, exact or crash-bounded tee reconciliation) into
+  `compiled-durable-journal-roots`, which passes only at 3/3.
+  `package-seeded-credential-lane.mjs` boots a fresh bundle whose setup
+  credential seed is present at first boot. `removal-lanes.mjs` uses the
   production removal coordinator, independent native row checks, real writer
   cancellation and retained commit recovery; published workspace bytes stay
   intact. Optional `--managed-wake-attribution` adds the finite same-runtime
