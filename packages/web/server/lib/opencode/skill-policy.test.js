@@ -7,6 +7,7 @@ import {
   applyRuntimeExternalDirectoryPolicy,
   buildVisibleSkillPolicy,
   filterVisibleSkills,
+  isRetiredDevRyanSkillName,
   resolveApprovedSkills,
   sanitizeAgentSkillPolicy,
 } from './skill-policy.js';
@@ -91,11 +92,11 @@ describe('skill policy', () => {
     const skills = [
       {
         name: 'dispatching-parallel-agents',
-        path: '/Users/test/.config/opencode/skills/superpowers/dispatching-parallel-agents/SKILL.md',
+        path: '/Users/test/.config/opencode/skills/toolkit/dispatching-parallel-agents/SKILL.md',
       },
       {
         name: 'dispatching-parallel-agents',
-        path: '/Users/test/.cache/opencode/packages/superpowers/node_modules/superpowers/skills/dispatching-parallel-agents/SKILL.md',
+        path: '/Users/test/.cache/opencode/packages/toolkit/node_modules/toolkit/skills/dispatching-parallel-agents/SKILL.md',
       },
       {
         name: 'cache-only',
@@ -106,7 +107,7 @@ describe('skill policy', () => {
     const result = filterVisibleSkills(skills, []);
 
     expect(result.map((skill) => skill.path)).toEqual([
-      '/Users/test/.config/opencode/skills/superpowers/dispatching-parallel-agents/SKILL.md',
+      '/Users/test/.config/opencode/skills/toolkit/dispatching-parallel-agents/SKILL.md',
     ]);
   });
 
@@ -148,7 +149,22 @@ describe('skill policy', () => {
     }]);
   });
 
-  it('denies retired Superpowers skill names regardless of their directory', () => {
+  it('retires the Superpowers bootstrap skill by name in any directory and letter case', () => {
+    // Writing/executing plans guidance moved into the primary agents; the bootstrap
+    // skill (a per-turn "load skills first" rule) must not reach agents even when an
+    // older setup still holds a copy.
+    const result = filterVisibleSkills([
+      { name: 'Superpowers', path: '/Users/test/.config/opencode/skills/Superpowers/SKILL.md' },
+      { name: 'using-superpowers', path: '/Users/test/.agents/skills/using-superpowers/SKILL.md' },
+      { name: 'Writing Plans', path: '/Users/test/.config/opencode/skills/Superpowers/writing-plans/SKILL.md' },
+    ], []);
+
+    expect(result.map((skill) => skill.name)).toEqual(['Writing Plans']);
+    expect(isRetiredDevRyanSkillName('Superpowers')).toBe(true);
+    expect(isRetiredDevRyanSkillName(' using-superpowers ')).toBe(true);
+  });
+
+  it('denies retired skill names regardless of their directory', () => {
     const result = filterVisibleSkills([
       {
         name: 'test-driven-development',
@@ -160,7 +176,7 @@ describe('skill policy', () => {
       },
       {
         name: 'systematic-debugging',
-        path: '/Users/test/.config/opencode/skills/superpowers/systematic-debugging/SKILL.md',
+        path: '/Users/test/.config/opencode/skills/toolkit/systematic-debugging/SKILL.md',
       },
     ], []);
 
