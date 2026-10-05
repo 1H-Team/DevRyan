@@ -18,6 +18,15 @@ const record=value=>value!==null&&typeof value==='object'&&!Array.isArray(value)
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const parseJSON=bytes=>{try{return JSON.parse(String(bytes));}catch{return undefined;}};
 const inside=(root,value)=>value===root||value.startsWith(root+path.sep);
+// OpenCode's configuration layer merge: objects merge deeply, a later scalar or array wins,
+// and the top-level plugin and instructions lists concatenate without duplicates.
+const mergeConfigLayer=(base,next,top=true)=>{
+ if(!record(base)||!record(next))return next;
+ const result={...base};
+ for(const [key,value] of Object.entries(next))Object.defineProperty(result,key,{value:top&&['plugin','instructions'].includes(key)&&Array.isArray(base[key])&&Array.isArray(value)
+  ?[...new Set([...base[key],...value])]:mergeConfigLayer(Object.hasOwn(base,key)?base[key]:undefined,value,false),enumerable:true,writable:true,configurable:true});
+ return result;
+};
 // Never traversed in copied folders: VCS, dependency and bytecode trees are not setup.
 const excluded=new Set(['.git','.hg','.svn','node_modules','.venv','__pycache__']);
 // Chromium/Electron cookie, login and web storage, wherever a link or copied folder reaches it.
@@ -148,7 +157,7 @@ async function seed({source,target,environment={},captureLogicalSetup}){
  // canonicalizes to HOME, outside it, or onto/above a setup root protects nothing. ~/.claude and
  // ~/.codex stay protected except their top-level shared setup folders and instruction files.
  const fromHome=values=>home?values.map(relative=>path.join(home,relative)):[];
- const setupRoots=await canonicalAll([source.webDataDirectory,source.webConfigDirectory,source.opencodeConfigDirectory,source.opencodeConfigFile&&path.dirname(source.opencodeConfigFile)]
+ const setupRoots=await canonicalAll([source.webDataDirectory,source.webConfigDirectory,source.opencodeConfigDirectory,source.opencodeConfigOverlayDirectory,source.opencodeConfigFile&&path.dirname(source.opencodeConfigFile)]
   .flatMap(absolute).concat(fromHome(['.agents/skills','.opencode/skill','.opencode/skills','.config/meridian'])));
  const [claudeRoot,codexRoot]=home?await canonicalAll(fromHome(['.claude','.codex'])):[];
  const otherAccountRoots=home?await canonicalAll([...absolute(source.opencodeDataDirectory),...fromHome(['.config/meridian/accounts'])]):[];
@@ -194,7 +203,7 @@ async function seed({source,target,environment={},captureLogicalSetup}){
   if(!stat.isFile()&&!stat.isDirectory()){skip(relative,'unsupported_type');return null;}
   return {file,stat,readRoot,tree};
  };
- const place=(item,relative,destination,transform,{records=false,sink,required}={},trail=new Set())=>located(relative,async()=>{
+ const place=(item,relative,destination,transform,{records=false,sink,required,shadow}={},trail=new Set())=>located(relative,async()=>{
   if(exhausted)return;
   if(++visited>MAX_VISITED){exhausted=true;skip(relative,'visit_limit');return;}
   if(item.stat.isDirectory()){
@@ -202,7 +211,7 @@ async function seed({source,target,environment={},captureLogicalSetup}){
    const id=item.stat.dev+':'+item.stat.ino;if(trail.has(id)){skip(relative,'symlink_cycle');return;}
    let names;try{names=(await fs.readdir(item.file)).sort();}catch(error){if(denied(error)){skip(relative,'unreadable');return;}throw error;}
    const nested=new Set(trail).add(id);
-   for(const name of names){if(name.includes('\0'))throw fail('native_setup_source_invalid');if(osMetadata(name))continue;
+   for(const name of names){if(name.includes('\0'))throw fail('native_setup_source_invalid');if(osMetadata(name)||shadow?.has(name))continue;
     // Record folders import only their top-level *.json files; nested trees are not setup.
     if(records&&!name.endsWith('.json'))continue;
     const childRelative=path.join(relative,name);if(excluded.has(name)){skip(childRelative,'excluded');continue;}
@@ -283,7 +292,28 @@ async function seed({source,target,environment={},captureLogicalSetup}){
  for(const name of ['opencode','opencode-go','ollama-cloud','cursor-acp'])await copy(source.webDataDirectory,'quota/'+name+'.json',path.join(target.webDataDirectory,'quota',name+'.json'));
  // Project records only: projects/<id>/plans/** are v1 conversation artifacts and stay in place.
  await copy(source.webConfigDirectory,'projects',path.join(target.webConfigDirectory,'projects'),value=>{if(!record(value))throw fail('native_setup_json_invalid');return projectNativeSetupState(value);},{records:true});
- for(const name of ['config.json','opencode.json','opencode.jsonc','oh-my-opencode-slim.json','oh-my-opencode-slim.jsonc','AGENTS.md','.openchamber/config.json','ponytail/config.json'])await copy(source.opencodeConfigDirectory,name,path.join(target.opencodeConfigDirectory,name));
+ // OpenCode loads its global config directory and then OPENCODE_CONFIG_DIR over it; both seed the one
+ // target directory. Layers are listed highest precedence first; an overlay equal to the global directory is one layer.
+ const configTarget=target.opencodeConfigDirectory,globalConfig=source.opencodeConfigDirectory,overlayInput=source.opencodeConfigOverlayDirectory;
+ const overlay=typeof overlayInput==='string'&&path.isAbsolute(overlayInput)&&path.resolve(overlayInput)!==path.resolve(globalConfig)
+  &&await resolveRoot(path.resolve(overlayInput))!==undefined&&await resolveRoot(path.resolve(overlayInput))!==await resolveRoot(path.resolve(globalConfig))?path.resolve(overlayInput):undefined;
+ const layers=overlay?[overlay,globalConfig]:[globalConfig],supplied=relative=>files.some(row=>row.path===path.join(configTarget,relative));
+ const configNames=['config.json','opencode.json','opencode.jsonc'];
+ if(!overlay)for(const name of configNames)await copy(globalConfig,name,path.join(configTarget,name));
+ else{
+  // One layer with configuration files keeps their bytes; two layers merge in OpenCode's order
+  // (global config.json, opencode.json, opencode.jsonc, then the same names in OPENCODE_CONFIG_DIR) into opencode.json.
+  const loaded=[];for(const root of [globalConfig,overlay])for(const name of configNames){const bytes=await load(root,name);if(bytes!==undefined)loaded.push({root,name,bytes});}
+  if(new Set(loaded.map(row=>row.root)).size<2)for(const row of loaded)await located(row.name,()=>save(path.join(configTarget,row.name),row.bytes,row.name));
+  else await located('opencode.json',async()=>{
+   const {parseConfigJsonc}=await import('../jsonc-config.js');let merged={};
+   for(const row of loaded){let value;try{value=parseConfigJsonc(row.bytes.toString('utf8'),row.name);}catch{throw Object.assign(fail('native_setup_json_invalid'),{relativePath:row.name});}merged=mergeConfigLayer(merged,value);}
+   await save(path.join(configTarget,'opencode.json'),Buffer.from(JSON.stringify(merged,null,2)+'\n'),'opencode.json');
+  });
+ }
+ // Other exact files: the highest layer that provides one of a group's names supplies the whole group (Slim JSON/JSONC is one setting).
+ for(const group of [['oh-my-opencode-slim.json','oh-my-opencode-slim.jsonc'],['AGENTS.md'],['.openchamber/config.json'],['ponytail/config.json']])
+  for(const root of layers){for(const name of group)await copy(root,name,path.join(configTarget,name));if(group.some(supplied))break;}
  if(source.opencodeConfigFile){
   // The selected custom layer follows ordinary user/project layers. It must
   // neither replace config.json nor create two hashes for one destination.
@@ -292,7 +322,14 @@ async function seed({source,target,environment={},captureLogicalSetup}){
  }
  await copy(source.webDataDirectory,'project-icons',path.join(target.webDataDirectory,'project-icons'));
  await copy(source.webConfigDirectory,'themes',path.join(target.webConfigDirectory,'themes'));
- for(const folder of ['agent','agents','command','commands','prompts','skills','skill'])await copy(source.opencodeConfigDirectory,folder,path.join(target.opencodeConfigDirectory,folder));
+ // Folders union their layers; a same-named top-level entry (agent file, skill folder) comes whole from the highest layer.
+ for(const folder of ['agent','agents','command','commands','prompts','skills','skill']){
+  const destination=path.join(configTarget,folder),shadow=new Set();
+  for(const root of layers){
+   await copy(root,folder,destination,undefined,{shadow});if(supplied(folder))break;
+   for(const row of files)if(row.path.startsWith(destination+path.sep))shadow.add(path.relative(destination,row.path).split(path.sep)[0]);
+  }
+ }
  for(const relative of ['.agents/skills','.opencode/skill','.opencode/skills'])await copy(source.home,relative,path.join(target.global.home,relative));
  const saved={schema:1,files};await saveBundleJSON(marker,saved);
  if(skippedCount)console.warn(`[native-setup] seed skipped ${skippedCount} setup entries (${Object.entries(reasons).map(([reason,count])=>reason+'='+count).join(', ')}): `

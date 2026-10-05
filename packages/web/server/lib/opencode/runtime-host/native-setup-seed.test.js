@@ -467,3 +467,37 @@ it('refuses required account inputs over the per-file cap with their name and si
  await f.text(path.join(f.source.home,'.claude','.credentials.json'),exact);
  expect((await seedNativeSetup(f)).files.map(row=>path.relative(f.target.home,row.path))).toEqual(['.claude/.credentials.json']);
 },60_000);
+it('layers OPENCODE_CONFIG_DIR over the global config directory instead of replacing it',async()=>{
+ const f=await fixture(),global=f.source.opencodeConfigDirectory,overlay=path.join(f.root,'source','overlay');
+ await f.write(path.join(global,'config.json'),{a:1,provider:{x:{model:'g'}},plugin:['g-plugin']});
+ await f.text(path.join(global,'opencode.jsonc'),'{ // global\n "theme":"global", "instructions":["g.md"],\n}');
+ await f.text(path.join(global,'AGENTS.md'),'global rules');await f.text(path.join(global,'agents','g.md'),'global');await f.text(path.join(global,'agents','shared.md'),'global');
+ await f.text(path.join(global,'skills','s','SKILL.md'),'global');await f.text(path.join(global,'skills','s','extra.md'),'global extra');await f.text(path.join(global,'skills','only-global','SKILL.md'),'global');
+ await f.text(path.join(global,'oh-my-opencode-slim.jsonc'),'{ // global slim\n}');await f.write(path.join(global,'ponytail','config.json'),{g:true});
+ await f.write(path.join(overlay,'opencode.json'),{theme:'overlay',provider:{x:{key2:'o'}},plugin:['o-plugin','g-plugin'],instructions:['o.md']});
+ await f.text(path.join(overlay,'agents','shared.md'),'overlay');await f.text(path.join(overlay,'agents','o.md'),'overlay');
+ await f.text(path.join(overlay,'skills','s','SKILL.md'),'overlay');await f.write(path.join(overlay,'oh-my-opencode-slim.json'),{overlay:true});
+ const source={...f.source,opencodeConfigOverlayDirectory:overlay},config=f.target.opencodeConfigDirectory,read=relative=>fs.readFile(path.join(config,relative),'utf8');
+ const marker=await seedNativeSetup({...f,source});expect(marker.skipped).toEqual([]);
+ expect((await fs.readdir(config)).sort()).toEqual(['AGENTS.md','agents','oh-my-opencode-slim.json','opencode.json','ponytail','skills']);
+ // OpenCode's order: global config.json, opencode.json, opencode.jsonc, then the OPENCODE_CONFIG_DIR files; plugin/instructions concatenate.
+ expect(JSON.parse(await read('opencode.json'))).toEqual({a:1,provider:{x:{model:'g',key2:'o'}},plugin:['g-plugin','o-plugin'],theme:'overlay',instructions:['g.md','o.md']});
+ expect(await read('AGENTS.md')).toBe('global rules');expect(JSON.parse(await read('ponytail/config.json'))).toEqual({g:true});
+ expect(JSON.parse(await read('oh-my-opencode-slim.json'))).toEqual({overlay:true});
+ expect((await fs.readdir(path.join(config,'agents'))).sort()).toEqual(['g.md','o.md','shared.md']);expect(await read('agents/shared.md')).toBe('overlay');
+ // A same-named overlay entry replaces the whole global entry (a skill folder is one skill).
+ expect(await fs.readdir(path.join(config,'skills','s'))).toEqual(['SKILL.md']);expect(await read('skills/s/SKILL.md')).toBe('overlay');
+ expect(await read('skills/only-global/SKILL.md')).toBe('global');
+ expect(new Set(marker.files.map(row=>row.path)).size).toBe(marker.files.length);
+ expect(await seedNativeSetup({...f,source})).toEqual({...marker,skipped:[],skippedCount:0});
+ // One layer with configuration keeps its bytes (comments included); an overlay equal to the global directory is one layer.
+ const g=await fixture();await g.text(path.join(g.source.opencodeConfigDirectory,'opencode.jsonc'),'{ // kept\n "theme":"global"\n}');
+ await g.text(path.join(g.root,'source','overlay','agents','o.md'),'overlay');
+ await seedNativeSetup({...g,source:{...g.source,opencodeConfigOverlayDirectory:path.join(g.root,'source','overlay')}});
+ expect(await fs.readFile(path.join(g.target.opencodeConfigDirectory,'opencode.jsonc'),'utf8')).toBe('{ // kept\n "theme":"global"\n}');
+ const h=await fixture();await h.write(path.join(h.source.opencodeConfigDirectory,'opencode.json'),{same:true});
+ expect((await seedNativeSetup({...h,source:{...h.source,opencodeConfigOverlayDirectory:h.source.opencodeConfigDirectory}})).files.map(row=>path.basename(row.path))).toEqual(['opencode.json']);
+ // Merging needs both layers to parse.
+ const k=await fixture();await k.write(path.join(k.source.opencodeConfigDirectory,'opencode.json'),{a:1});await k.text(path.join(k.root,'source','overlay','opencode.jsonc'),'{ "fixture-secret": ');
+ await expect(seedNativeSetup({...k,source:{...k.source,opencodeConfigOverlayDirectory:path.join(k.root,'source','overlay')}})).rejects.toMatchObject({code:'native_setup_json_invalid',relativePath:'opencode.jsonc'});
+});
