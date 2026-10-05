@@ -24,6 +24,9 @@ test('fixture journal tees every production source mapping into the real durable
     assert.equal(journal.clientDiagnostic({ phase: 'request', code: 'fixture' }), true);
     assert.equal(journal.sessionExecution({ event: 'session_execution', sessionID: 'ses_exec', phase: 'finish', state: 'completed' }), true);
     assert.equal(journal.primaryRecoveryIncident({ event: 'primary_recovery_fixture', sessionID: 'ses_primary', messageID: 'msg_1' }), true);
+    assert.equal(journal.turnTiming({ sessionId: 'ses_timing', userMessageId: 'msg_1', mark: 'first_text_output',
+      payload: { elapsedMs: 25, kind: 'text', source: 'part_delta' } }), true);
+    assert.equal(journal.lifecycleEvent({ type: 'turn_settled', sessionID: 'ses_timing', userMessageID: 'msg_1' }), true);
     await journal.flush();
     const open = (await collectJournalPaths(journal.journalDirectory)).filter(file => file.endsWith('.open'));
     assert.ok(open.length > 0, 'A flushed but undrained journal keeps its active chunks open');
@@ -31,14 +34,18 @@ test('fixture journal tees every production source mapping into the real durable
     await journal.drain();
     assert.equal(journal.ownerDiagnostic({ type: 'lifecycle', event: 'late_close_diagnostic' }), false);
     assert.deepEqual(journal.summary(), { label: 'fixture-main-1', journalDirectory: journal.journalDirectory,
-      accepted: { 'fixture-main-1': 4 }, rejectedBeforeDrain: 0, rejectedAfterDrain: 1, drained: true });
+      accepted: { 'fixture-main-1': 6 }, rejectedBeforeDrain: 0, rejectedAfterDrain: 1, drained: true });
     const paths = await collectJournalPaths(journal.journalDirectory);
     assert.ok(paths.length > 0); assert.equal(paths.some(file => file.endsWith('.open')), false);
     const records = await readAll(journal.journalDirectory);
-    assert.equal(records.length, 4);
-    assert.ok(records.every(row => row.runtime === 'fixture-main-1' && row.type === 'lifecycle'));
-    const byEvent = Object.fromEntries(records.map(row => [row.event, row]));
-    assert.deepEqual(Object.keys(byEvent).sort(), ['native_observation_gap', 'opencode_client', 'primary_recovery_fixture', 'session_execution']);
+    assert.equal(records.length, 6);
+    assert.ok(records.every(row => row.runtime === 'fixture-main-1'));
+    const timing = records.find(row => row.type === 'timing');
+    assert.equal(timing.mark, 'turn.first_text_output');
+    assert.equal(timing.sessionID, 'ses_timing');
+    assert.deepEqual(timing.payload, { elapsedMs: 25, kind: 'text', source: 'part_delta' });
+    const byEvent = Object.fromEntries(records.filter(row => row.type === 'lifecycle').map(row => [row.event, row]));
+    assert.deepEqual(Object.keys(byEvent).sort(), ['native_observation_gap', 'opencode_client', 'primary_recovery_fixture', 'session_execution', 'turn_settled']);
     assert.equal(byEvent.session_execution.sessionID, 'ses_exec');
     assert.equal(byEvent.primary_recovery_fixture.sessionID, 'ses_primary');
     assert.deepEqual(byEvent.opencode_client.payload, { phase: 'request', code: 'fixture' });

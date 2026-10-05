@@ -5,6 +5,35 @@ import { describe, expect, it } from 'vitest';
 import { createTurnTimingRuntime, registerTurnTimingRoutes } from './turn-timing.js';
 
 describe('turn timing runtime', () => {
+  it('separates first provider output from typed answer text without inferring unknown part types', () => {
+    let now = 1; const marks = [];
+    const runtime = createTurnTimingRuntime({ now: () => now, onTurnMark: entry => marks.push(entry) });
+    runtime.recordClientMark({ sessionId: 'ses_output', messageId: 'msg_user', mark: 'send_started' });
+    for (const mark of ['first_output', 'first_text_output']) {
+      expect(runtime.recordClientMark({ sessionId: 'ses_output', messageId: 'msg_user', mark })).toBe(false);
+    }
+    runtime.processOpenCodeEvent({ type: 'message.updated', properties: { info: { id: 'msg_answer', role: 'assistant',
+      sessionID: 'ses_output', parentID: 'msg_user', time: { created: 1 } } } });
+    const announce = (id, type) => runtime.processOpenCodeEvent({ type: 'message.part.updated', properties: {
+      part: { id, type, sessionID: 'ses_output', messageID: 'msg_answer', text: '' } } });
+    const delta = (partID, text) => runtime.processOpenCodeEvent({ type: 'message.part.delta', properties: {
+      sessionID: 'ses_output', messageID: 'msg_answer', partID, field: 'text', delta: text } });
+    announce('reasoning', 'reasoning');
+    now = 4; delta('reasoning', 'private reasoning');
+    now = 6; delta('unannounced:text:0', 'private untyped content');
+    expect(runtime.getRecentTimings({ sessionId: 'ses_output' }).records[0].marks.first_text_output).toBeUndefined();
+    announce('answer', 'text');
+    now = 9; delta('answer', 'private answer');
+    now = 12; delta('answer', 'private repeated answer');
+    const record = runtime.getRecentTimings({ sessionId: 'ses_output' }).records[0];
+    expect(record.marks.first_output.at).toBe(4);
+    expect(record.marks.first_text_output.at).toBe(9);
+    expect(record.durationsMs.first_output_to_first_text_output).toBe(5);
+    expect(record.marks.first_text_delta.at).toBe(4); // Existing metric retains its semantics.
+    expect(marks.filter(entry => ['first_output', 'first_text_output'].includes(entry.mark))).toHaveLength(2);
+    expect(JSON.stringify(marks)).not.toContain('private');
+  });
+
   it('attributes native provider marks, bridge calls and ledger locks to the active turn and journals them without text', () => {
     let now = 1_000;
     const marks = [];
@@ -229,6 +258,7 @@ describe('turn timing runtime', () => {
       'assistant_message_created',
       'first_part_updated',
       'first_step_start',
+      'first_output',
       'first_tool_started',
       'first_tool_completed',
       'first_text_delta',

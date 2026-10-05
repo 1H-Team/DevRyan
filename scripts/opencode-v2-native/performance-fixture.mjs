@@ -4,6 +4,9 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { repositoryRoot } from './artifacts.mjs';
+import { createFixtureJournal } from './fixture-journal.mjs';
+import { createTurnTimingRuntime } from '../../packages/web/server/lib/opencode/turn-timing.js';
+import { createNativeProviderTiming } from '../../packages/web/server/lib/opencode/runtime-host/native-provider-timing.js';
 
 export const performanceSha256 = value => createHash('sha256').update(typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest('hex');
 export const performanceRole = Object.freeze({ description: 'Isolated runtime performance fixture', prompt: 'Execute the exact fixture request. Do not perform additional work.', mode: 'primary' });
@@ -147,6 +150,10 @@ export async function createPerformanceFixture({ root, generation, artifactRoot,
     import('../../packages/harness-runtime/lib/session-execution.js'),
   ]);
   const observations = [], diagnostics = [], cleanupFailures = [];
+  let journal;
+  const turnTiming = createTurnTimingRuntime({ onTurnEvent: event => journal?.lifecycleEvent(event),
+    onTurnMark: entry => journal?.turnTiming(entry), onTurnSettled: entry => journal?.turnTiming(entry) });
+  const providerTiming = createNativeProviderTiming({ onMark: input => turnTiming.recordSessionMark(input) });
   const nativeWriterHandles = new Map(), writerDescriptors = new Map();
   const writerStartListeners = new Set();
   let writerStartObserverFailed = false;
@@ -173,18 +180,18 @@ export async function createPerformanceFixture({ root, generation, artifactRoot,
   const started = performance.now();
   const cleanup = async () => {
     for (const close of [() => stopEvents?.(), () => runtimeOwner?.close(), () => host?.drain(),
-      () => managed?.close(), () => provider.close()]) {
+      () => managed?.close(), () => provider.close(), () => journal?.drain()]) {
       try { await close(); } catch (error) { cleanupFailures.push({ code: error.code, message: error.message }); }
     }
     const evidence = { cleanupFailures,
-      nativeExited: controller ? controller.hasExited() : null };
+      nativeExited: controller ? controller.hasExited() : null, journal: journal?.summary() };
     await fs.writeFile(path.join(root, 'cleanup.json'), JSON.stringify(evidence, null, 2) + '\n');
     if (cleanupFailures.length) throw new AggregateError(cleanupFailures.map(row => failure(row.code ?? row.message)), 'Benchmark cleanup incomplete');
     if (controller) assert.equal(controller.hasExited(), true);
     return evidence;
   };
   const deps = { getRuntime: () => ({ generation, baseUrl: nativeURL, version, epoch }),
-    getAuthHeaders: () => runtimeOwner?.getAuthHeaders() ?? {}, recordDiagnostic: row => diagnostics.push(row),
+    getAuthHeaders: () => runtimeOwner?.getAuthHeaders() ?? {}, recordDiagnostic: row => { diagnostics.push(row); return journal?.clientDiagnostic(row) ?? true; },
     withNativeWebOperation: (spec, action) => runtimeOwner.nativeOwner.withWebOperation(spec, action) };
   const admission = createOpenCodeAdmission(deps, { beforePromptDispatch: (receipt, context) => managed?.admitNativePrompt(receipt, context),
     onPromptDispatchFailure: receipt => managed?.markNativePromptUncertain(receipt), nativeOwner: {
@@ -285,6 +292,7 @@ export async function createPerformanceFixture({ root, generation, artifactRoot,
       const bundle = { ...loadedBundle, resolveConfiguration: revision => resolveSnapshot({ binding, revision,
         expectedRegistrationDigest: registrationDigest }) };
       const globals = descriptor.launch.global;
+      journal = await createFixtureJournal({ webDataDirectory: descriptor.launch.webDataDirectory, label: 'fixture-performance' });
       for (const dir of Object.values(globals)) await fs.mkdir(dir, { recursive: true });
       await fs.writeFile(path.join(globals.tmp, 'package.json'), '{"type":"commonjs"}\n');
       const rg = path.join(globals.cache, 'opencode/bin/rg'); await fs.mkdir(path.dirname(rg), { recursive: true });
@@ -292,7 +300,10 @@ export async function createPerformanceFixture({ root, generation, artifactRoot,
       environment = privateEnvironment(globals); directory = locations[0].directory;
       host = createSessionExecutionHost({ dataDirectory: descriptor.launch.webDataDirectory, openCodeClient: client,
         getLauncher: () => artifacts.launcher, buildOpenCodeUrl, getOpenCodeAuthHeaders: deps.getAuthHeaders,
-        onDiagnostic: row => diagnostics.push(row), nativeExecution: { writerConfig: { formatter: false }, isReady: () => Boolean(nativeURL), locations,
+        onDiagnostic: row => { diagnostics.push(row); journal.sessionExecution(row); },
+        onLockTiming: timing => turnTiming.recordLedgerLock({ sessionId: timing.sessionID, operation: timing.operation,
+          waitMs: timing.waitMs, holdMs: timing.holdMs, failed: timing.failed }),
+        nativeExecution: { writerConfig: { formatter: false }, isReady: () => Boolean(nativeURL), locations,
           socketDirectory: null, workerBrowsers: false, helperRoots: locations.map(row => row.directory), gitCommand: '/usr/bin/git',
           deniedReadDirectories: ['packages','scripts','node_modules'].map(name => path.join(repositoryRoot, name)),
           workerCommand: artifacts.writer, workerArgs: [], workerEnvironment: environment,
@@ -321,13 +332,19 @@ export async function createPerformanceFixture({ root, generation, artifactRoot,
         withManagedTaskDispatch: (input, action) => runtimeOwner.nativeOwner.withManagedTaskDispatch(input, action),
         withPermit: (permit, action) => runtimeOwner.nativeOwner.withPermit(permit, action) }, executionHost: host, directory,
         dataDirectory: descriptor.launch.webDataDirectory, buildOpenCodeUrl, getOpenCodeAuthHeaders: deps.getAuthHeaders,
-        environment, observations, diagnostics, eventReconcileIntervalMs, executionModel: { providerID: 'devryan-smoke', modelID: 'smoke-write', variant: 'default' } });
+        environment, observations, diagnostics, journal, eventReconcileIntervalMs,
+        resolveProviderRequest: input => providerTiming.resolve(input),
+        executionModel: { providerID: 'devryan-smoke', modelID: 'smoke-write', variant: 'default' } });
       const principal = Object.freeze({ scope: 'local-admin', id: 'local-admin' });
       const authorization = createNativeAuthorization({ locations, manifest: artifacts.manifest, getRequestPrincipal: () => principal,
         captureLocalAuthorization: original => original === principal ? () => true : null,
         getMultiUserRuntime: () => ({ enabled: false, connection: { configured: false, isLocalAccessActive: () => true } }) });
       runtimeOwner = createNativeRuntimeOwner({ bundle, openCodeClient: client, admission, executionHost: host, clientDependencies: deps,
-        recordDiagnostic: row => { diagnostics.push(row); return true; },
+        recordDiagnostic: row => { diagnostics.push(row); return journal.ownerDiagnostic(row); },
+        onBridgeTiming: timing => turnTiming.recordBridgeCall({ sessionId: timing.sessionID, method: timing.method,
+          durationMs: timing.durationMs, statusCode: timing.statusCode, reused: timing.reused }),
+        onNativeObservation: observation => providerTiming.observe(observation),
+        onProviderTiming: timing => providerTiming.response(timing),
         withCredentialMutationQueue: createOpenAiOAuthCoordinator({ readAuth: () => undefined }).withAuthMutation,
         primaryRuntime: managed.primaryRuntime, taskContext: managed.taskContext, getManagedRuntime: managed.getManagedRuntime,
         authorization, environment, supervisedController: { deniedReadDirectories: ['packages','scripts','node_modules'].map(name => path.join(repositoryRoot, name)) },
@@ -373,6 +390,7 @@ export async function createPerformanceFixture({ root, generation, artifactRoot,
     const stream = await fetch(client.events.url({ directory }), { headers:await deps.getAuthHeaders(), signal:streamAbort.signal });
     assert.ok(stream.ok && stream.body, 'Actual native SSE unavailable');
     const eventCounts = {}, eventHash = createHash('sha256'), terminalObserver = createPerformanceTerminalObserver({ generation, directory });
+    const projector = client.events.createProjector();
     let eventBytes=0, eventBlocks=0, streamFailure;
     const streamWork = (async () => {
       const decoder = new TextDecoder(); let pending='';
@@ -384,6 +402,7 @@ export async function createPerformanceFixture({ root, generation, artifactRoot,
           const data=block.split('\n').filter(line=>line.startsWith('data:')).map(line=>line.slice(5).trimStart()).join('\n');
           if (!data || data === '[DONE]') continue;
           const event=JSON.parse(data), type=event.type ?? event.payload?.type ?? 'unknown';
+          for (const projected of projector.project(event.payload ?? event)) turnTiming.processOpenCodeEvent(projected.payload);
           eventCounts[type]=(eventCounts[type]??0)+1; eventBlocks++;
           const terminal = terminalObserver.observe(event, performance.now());
           if (terminal) observations.push({ phase: 'canonical_terminal_arrival', ...terminal });
@@ -396,7 +415,7 @@ export async function createPerformanceFixture({ root, generation, artifactRoot,
       }
     })().catch(error => { if (!streamAbort.signal.aborted) streamFailure=error; });
     stopEvents = async () => { streamAbort.abort(); await streamWork; if (streamFailure) throw streamFailure; };
-    const streamEvidence = () => { if (streamFailure) throw streamFailure; return {bytes:eventBytes,blocks:eventBlocks,types:{...eventCounts},sha256:eventHash.copy().digest('hex')}; };
+    const streamEvidence = () => { if (streamFailure) throw streamFailure; return {bytes:eventBytes,blocks:eventBlocks,types:{...eventCounts},sha256:eventHash.copy().digest('hex'),projection:projector.stats()}; };
     const check = () => {
       if (writerStartObserverFailed) throw Object.assign(new Error('writer_start_observer_failed'), { code: 'writer_start_observer_failed' });
       provider.check(); streamEvidence();
@@ -412,8 +431,11 @@ export async function createPerformanceFixture({ root, generation, artifactRoot,
         parts:[{ type:'text', text:turn.marker }], ...(noReply ? { noReply:true } : {}) };
       const wall = performance.now();
       const observationStart = observations.length;
+      if (!noReply) turnTiming.recordClientMark({ sessionId: sessionID, messageId: input.messageID, directory, mark: 'send_started' });
       await client.prompts.prompt(sessionID, input, { directory, origin:'native_performance', timeoutMs:120_000 });
       if (noReply) return { id, kind:'history-seed' };
+      turnTiming.recordClientMark({ sessionId: sessionID, messageId: input.messageID, directory, mark: 'prompt_accepted',
+        metadata: { providerID: model.providerID, modelID: model.modelID, agent: input.agent, variant: input.variant } });
       const deadline = Date.now() + 120_000;
       let transcript, final;
       for (;;) {
@@ -461,7 +483,8 @@ export async function createPerformanceFixture({ root, generation, artifactRoot,
       const terminalTiming = terminalObserver.join({ sessionID, assistantMessageID: final.info.id,
         submissionAtMs: wall, completionObservedAtMs });
       return { id, kind:'canonical-terminal', sessionID, messageID:final.info.id, parentID:final.info.parentID,
-        completedAt:final.info.time.completed, durationMs:completionObservedAtMs-wall, terminalTiming, providerProof, toolProofs };
+        completedAt:final.info.time.completed, durationMs:completionObservedAtMs-wall, terminalTiming, providerProof, toolProofs,
+        turnTiming: turnTiming.getRecentTimings({ sessionId: sessionID, limit: 200 }).records.find(row => row.userMessageId === input.messageID) ?? null };
     };
     return { root, generation, directory, model, modelLimits, configuration, version, artifactSha256, pluginHash, eventReconcileIntervalMs,
       startupMs, preparationMs:performance.now()-started-startupMs, streamEvidence, pid:controller.pid, observations, diagnostics,

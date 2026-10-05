@@ -34,6 +34,8 @@ export async function createFixtureJournal({ webDataDirectory, label }) {
     clientDiagnostic: payload => record({ type: 'lifecycle', event: 'opencode_client', payload }),
     // createSessionExecutionHost onDiagnostic.
     sessionExecution: event => count(runtime.recordSessionExecution(event), label),
+    turnTiming: entry => count(runtime.recordTurnTiming(entry), label),
+    lifecycleEvent: event => count(runtime.recordLifecycleEvent(event), label),
     // createWebPrimaryRecoveryRuntime recordIncident.
     primaryRecoveryIncident: incident => record({ type: 'lifecycle', event: incident?.event,
       sessionID: incident?.sessionID, messageID: incident?.messageID, payload: incident }),

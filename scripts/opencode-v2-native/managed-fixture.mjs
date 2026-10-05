@@ -14,7 +14,7 @@ import { assertWriterOutcome } from './assertions.mjs';
 /** Real product owners with disposable state and an explicitly selected fixture model. */
 export function createNativeManagedFixture({ client, admissionOwner, executionHost, directory, dataDirectory,
   buildOpenCodeUrl, getOpenCodeAuthHeaders, environment, observations, diagnostics, journal,
-  isNativeFallbackError, dispatchNativeRecovery, eventReconcileIntervalMs,
+  isNativeFallbackError, dispatchNativeRecovery, eventReconcileIntervalMs, resolveProviderRequest,
   executionModel = { providerID: 'sim', modelID: 'm1', variant: 'default' } }) {
   assert.ok(typeof executionModel.providerID === 'string' && executionModel.providerID
     && typeof executionModel.modelID === 'string' && executionModel.modelID
@@ -25,7 +25,7 @@ export function createNativeManagedFixture({ client, admissionOwner, executionHo
   const fixtureOwner = randomUUID();
   const primary = createWebPrimaryRecoveryRuntime({ openCodeClient: client, dataDirectory,
     buildOpenCodeUrl, getOpenCodeAuthHeaders, isManaged: () => true, mode: 'observe',
-    isNativeFallbackError, dispatchNativeRecovery, eventReconcileIntervalMs,
+    isNativeFallbackError, dispatchNativeRecovery, eventReconcileIntervalMs, resolveProviderRequest,
     getManagedRuntime: () => managed, getMultiUserRuntime: () => ({ canSessionTokenHashAccess: async (owner, sessionID) => {
       if (owner !== fixtureOwner || !roots.has(sessionID)) return false;
       const session = await client.sessions.get(sessionID, { directory });

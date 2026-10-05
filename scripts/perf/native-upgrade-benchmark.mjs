@@ -294,8 +294,9 @@ export async function measureScenario(fixture, scenario, { operations=100, idleM
       : scenario.startsWith('tools-') ? [{id:`${id}-glob`,name:'glob',input:{pattern:'files/*.txt',}}] : [];
     return fixture.invoke({sessionID,id,calls,text:`completed ${id}\n`+'x'.repeat(benchmarkProtocol.streamCharacters),deltas:benchmarkProtocol.streamDeltas});
   };
+  const warmupReceipts = [];
   if (scenario==='long-history') for(let index=0;index<benchmarkProtocol.historyCompletedTurns;index++)await invoke(sessions[0],index,'history');
-  if (scenario!=='idle') for(let index=0;index<benchmarkProtocol.warmupOperations;index++)await invoke(sessions[index%concurrency],index,'warmup');
+  if (scenario!=='idle') for(let index=0;index<benchmarkProtocol.warmupOperations;index++)warmupReceipts.push(await invoke(sessions[index%concurrency],index,'warmup'));
   await pause(warmupMs);
   fixture.check?.();
   const beforeStream=fixture.streamEvidence(), providerStart=fixture.observations.filter(row=>row.phase==='provider').length;
@@ -330,7 +331,7 @@ export async function measureScenario(fixture, scenario, { operations=100, idleM
     terminalAttribution: terminalAttribution.coverage,
     metrics:{...resource.metrics,...terminalAttribution.metrics,completedOperationsPerSecond:receipts.length/(resource.durationMs/1000),operationP50Ms:quantile(receipts.map(row=>row.durationMs),.5),
       operationP95Ms:quantile(receipts.map(row=>row.durationMs),.95),sseBytes:afterStream.bytes-beforeStream.bytes,
-      sseBlocks:afterStream.blocks-beforeStream.blocks},receipts,resource,stream:{before:beforeStream,after:afterStream}};
+      sseBlocks:afterStream.blocks-beforeStream.blocks},receipts,warmupReceipts,resource,stream:{before:beforeStream,after:afterStream}};
 }
 
 async function runArm(input) {

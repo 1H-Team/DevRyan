@@ -107,8 +107,11 @@ test('idle submits zero work; four streams retain every completion after paralle
   const samplerFactory=async(_pid,_interval,options)=>{assert.equal(options.subscribeWriterStarts,fixture.subscribeWriterStarts);return {stop:async()=>({durationMs:1,samples:[{}],metrics:{hostCpuMs:0},failures:[]})};};
   const idle=await measureScenario(fixture,'idle',{operations:4,idleMs:1,warmupMs:0,samplerFactory});
   assert.equal(idle.completedOperations,0);assert.equal(idle.submittedOperations,0);assert.deepEqual(submitted,[]);
+  assert.deepEqual(idle.warmupReceipts, []);
   const stream=await measureScenario(fixture,'four-streams',{operations:8,warmupMs:0,samplerFactory});
   assert.equal(stream.receipts.length,8);assert.equal(stream.submittedOperations,8);
+  assert.equal(stream.warmupReceipts.length, benchmarkProtocol.warmupOperations);
+  assert.deepEqual(stream.warmupReceipts.map(row => row.id), submitted.slice(0, benchmarkProtocol.warmupOperations).map(row => row.id));
   assert.equal(new Set(submitted.slice(benchmarkProtocol.warmupOperations).map(row=>row.sessionID)).size,4);
   assert.equal(new Set(stream.receipts.map(row=>row.id)).size,8);
   const failures=[{code:'process_sample_unavailable',pid:100}];

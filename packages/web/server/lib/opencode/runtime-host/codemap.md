@@ -30,6 +30,10 @@ request observations and real attempt spans. `native-observation.ts` emits
 content-free first-response measurements without delaying provider streams.
 The web turn-timing owner journals bounded marks and ledger/bridge aggregates;
 its HTTP routes require diagnostic permission and session ownership.
+`first_output` observes typed reasoning, answer text or active tool publication;
+`first_text_output` observes answer text only. They preserve the older
+text/reasoning `first_text_delta` metric. Part types are retained for at most 64
+announcements until answer text arrives; unknown types leave timing absent.
 
 `native-setup-source.js` owns the private sibling fresh seed, including canonical
 ownership checks, mode repair before any native launch, and complete removal only

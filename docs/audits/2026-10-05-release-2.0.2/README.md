@@ -54,6 +54,12 @@ Diagnostic routes require permission and session ownership. Foreign assistant
 message IDs cannot mutate another session's timings. Native response frames
 must match observed requests. Focused timing and harness checks passed;
 loopback baselines and optimization qualification remain pending.
+First output and first answer text now have distinct typed marks; the historical
+text/reasoning mark retains its meaning. The existing benchmark retains its
+three warmup receipts and feeds real provider, bridge, ledger and projected
+output observations to the production journal, sealed during cleanup. Focused
+timing checks pass (25), as do journal/collector checks (26, zero skips), web
+types and documentation checks. Compiled measurement remains pending.
 
 Five shutdown failures were reproduced with the preserved review fixtures:
 finite credential refusals killed the controller, and queued enrollment/provider

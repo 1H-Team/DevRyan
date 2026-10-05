@@ -70,6 +70,7 @@ const SERVER_TURN_MARKS = new Set([
   'provider_response_created',
 ]);
 const MAX_AGGREGATE_KEYS = 32;
+const MAX_OUTPUT_PARTS = 64;
 
 const DURATION_PAIRS = [
   ['send_started', 'provider_request_prepared'],
@@ -83,6 +84,12 @@ const DURATION_PAIRS = [
   ['provider_first_byte', 'first_text_delta'],
   ['provider_request_sent', 'first_text_delta'],
   ['send_started', 'first_text_delta'],
+  ['send_started', 'first_output'],
+  ['send_started', 'first_text_output'],
+  ['provider_request_sent', 'first_output'],
+  ['provider_request_sent', 'first_text_output'],
+  ['provider_first_byte', 'first_output'],
+  ['first_output', 'first_text_output'],
   ['cursor_draft_session_create_started', 'cursor_draft_session_created'],
   ['cursor_prewarm_started', 'cursor_prewarm_completed'],
   ['cursor_agent_prepare_started', 'cursor_agent_prepared'],
@@ -511,6 +518,9 @@ function createTurnTimingRuntime(options = {}) {
       latestToolCall: null,
       toolCallOrdinal: 0,
       lastTextDeltaSignaturesByPart: {},
+      // ponytail: 64 announced parts until answer text; an evicted type leaves
+      // delta timing unavailable rather than guessing from its part ID.
+      outputPartTypes: new Map(),
       pendingTerminalFailure: null,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -822,11 +832,19 @@ function createTurnTimingRuntime(options = {}) {
       });
     if (!record) return;
 
+    const partId = normalizeString(part.id || properties.partID || properties.partId);
+    if (!record.marks.first_text_output && partId && partId.length <= 256) {
+      const previous = record.outputPartTypes.get(partId);
+      record.outputPartTypes.set(partId, previous === undefined || previous === partType ? partType : 'unknown');
+      if (record.outputPartTypes.size > MAX_OUTPUT_PARTS) record.outputPartTypes.delete(record.outputPartTypes.keys().next().value);
+    }
+
     setMark(record, 'first_part_updated', { partId: normalizeString(part.id || properties.partID || properties.partId), type: partType });
 
     if (partType === 'text' || partType === 'reasoning') {
       const text = typeof part.text === 'string' ? part.text : '';
       if (text.length > 0) {
+        markOutput(record, partType, 'part_updated');
         setMark(record, 'first_text_delta', {
           partId: normalizeString(part.id || properties.partID || properties.partId),
           source: 'part_updated',
@@ -845,11 +863,24 @@ function createTurnTimingRuntime(options = {}) {
     recordToolCall(record, part, properties, toolName, status);
     recordMutatingToolCall(record, toolName, status);
     if (isActiveToolStatus(status)) {
+      markOutput(record, 'tool', 'part_updated');
       setMark(record, 'first_tool_started', { partId: normalizeString(part.id || properties.partID || properties.partId), status });
       return;
     }
     if (isFinalToolStatus(status)) {
       setMark(record, 'first_tool_completed', { partId: normalizeString(part.id || properties.partID || properties.partId), status });
+    }
+  };
+
+  // First answer text is separate from the historical text/reasoning metric.
+  // Types come from the projected part announcement, never an ID suffix or
+  // response contents. Unknown/evicted types leave this measurement absent.
+  const markOutput = (record, kind, source) => {
+    if (!record || !['text', 'reasoning', 'tool'].includes(kind)) return;
+    setMark(record, 'first_output', { kind, source });
+    if (kind === 'text') {
+      setMark(record, 'first_text_output', { kind, source });
+      record.outputPartTypes.clear();
     }
   };
 
@@ -877,6 +908,7 @@ function createTurnTimingRuntime(options = {}) {
         record.diagnostics.toolLoopGuardCount += 1;
       }
       const partId = normalizeString(properties.partID || properties.partId || part.id);
+      if (!record.marks.first_text_output) markOutput(record, record.outputPartTypes.get(partId), 'part_delta');
       const signature = buildTextDeltaSignature(delta);
       if (signature && partId) {
         if (record.lastTextDeltaSignaturesByPart[partId] === signature) {
