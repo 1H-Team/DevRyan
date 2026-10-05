@@ -283,6 +283,11 @@ and desktop-host broker bridges.
   temporary file, fsync, and atomic rename.
 - **Release authority**: packaged update discovery and `electron-updater`
   publishing both target the canonical `1H-Team/DevRyan` GitHub repository.
+  Releases from 2.0.1 publish only the DMG: `desktop_check_for_updates` consults
+  `electron-updater` only when the release lists `latest-mac.yml`, and otherwise
+  `update-download-fallback.mjs` validates the exact
+  `releases/download/v<x.y.z>/DevRyan-<x.y.z>-arm64.dmg` URL (or the exact release
+  tag page) that the Update action opens externally.
 
 ## Flow
 1. Electron establishes process guards, protocol registration, logging, and the

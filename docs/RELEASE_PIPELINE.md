@@ -16,6 +16,15 @@ requirements and refuses publication while those native artifacts are missing.
 Discord announcements require the explicit manual `announce` input; releases
 do not dispatch updates to an upstream website.
 
+Since 2.0.1 the public release carries exactly one asset for the desktop scope,
+`DevRyan-<version>-arm64.dmg`; `full` adds the web tarball.
+`scripts/verify-release-assets.mjs` enforces that exact allowlist. electron-builder
+still produces the ZIP, blockmaps and `latest-mac.yml`, but they are neither
+published nor verified, and the Bot image manifest remains an internal workflow
+artifact. Installed 2.0.0 and earlier apps therefore cannot update in-app to
+these releases and need a manual DMG install. From 2.0.1, when no updater
+metadata exists, the Update action opens the verified release DMG download.
+
 Release install steps set `DEVRYAN_SKIP_INSTALL_PREPARE=1`. Without it, Bun runs
 the Electron workspace `prepare` script (a full web build plus native helpers)
 during every install, duplicating the shared web artifact and the explicit
@@ -56,7 +65,7 @@ every workspace's build script. Full validation remains separate from compilatio
 4. npm consumes the web artifact, bundles private workspace runtime packages, and publishes the exact verified tarball.
    Electron consumes web assets, prepared native files, and the complete Bot
    manifest, then runs all existing packaged artifact gates.
-5. Merge update metadata and finalize the release only after every gate succeeds.
+5. Finalize the release only after every gate succeeds; finalization verifies the exact asset allowlist.
 
 macOS preparation builds and verifies the pinned native v2 runtime with Bun
 1.3.14. `release-cache.yml` now verifies those same inputs from `main`, without
@@ -102,7 +111,8 @@ core functions. Internal handoff artifacts are not public release assets.
 boundary. Bot-manifest validation is mandatory there, including local builds;
 plain main-process compilation does not require a release manifest. The manual
 macOS workflow's Electron build requires a ref with a matching published Bot
-manifest and fails on a revision mismatch. Test-only QA shells remain separate.
+manifest and fails on a revision mismatch. Releases from 2.0.1 no longer publish
+that manifest, so the manual workflow cannot package them. Test-only QA shells remain separate.
 
 ## Ownership and maintenance
 

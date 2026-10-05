@@ -47,6 +47,6 @@ DevRyan provides web and Electron interfaces to OpenCode over HTTP and SSE. This
 
 ## Release invariants
 
-- Public GitHub Release assets and directly downloadable workflow artifacts must use `DevRyan` branding. Tool-mandated metadata such as `latest-mac.yml` and internal handoff artifacts may keep functional names.
+- Public GitHub Release assets and directly downloadable workflow artifacts must use `DevRyan` branding. Internal handoff artifacts may keep functional names.
 - Stage compatibility-derived outputs under deterministic `DevRyan-*` names before release upload. npm/package identities may remain compatible.
-- Release verification must require branded filenames and reject legacy-prefixed assets and extension packages. Preserve signed-image and artifact checks; do not substitute development manifests for release evidence.
+- Release verification must require the exact per-scope asset allowlist (`desktop-macos-arm64`: only `DevRyan-<version>-arm64.dmg`; `full` adds the web tarball) and reject missing, unexpected, legacy-prefixed and extension assets. Preserve signed-image and artifact checks; do not substitute development manifests for release evidence.

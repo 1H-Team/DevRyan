@@ -1,5 +1,10 @@
 # Tauri → Electron auto-update cutover
 
+> Status (2.0.1): releases publish only the branded DMG. `latest-mac.yml`, ZIPs,
+> blockmaps and the `combine-electron-manifests` job are gone, so the update-metadata
+> sections below are historical; 2.0.2 replaces `electron-updater` with an in-app
+> DMG updater.
+
 > Self-contained playbook. The branch and conversation where this plan was
 > designed will not be around when the cutover happens — read this file top to
 > bottom and execute; do not assume prior context.

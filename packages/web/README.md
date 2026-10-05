@@ -69,7 +69,7 @@ OPENCODE_HOST=https://myhost:4096 OPENCODE_SKIP_START=true openchamber
 | `OPENCHAMBER_SKIP_API_COMPRESSION` | Set to `true` to disable gzip compression for `/api/*` responses |
 | `OPENCHAMBER_COMPRESS_API` | Set to `true` to force `/api/*` compression, or `false` to disable it. Desktop runtime disables API compression by default to reduce local runtime CPU use |
 
-These variables apply only where this web server documents them. The DevRyan 2.x desktop app manages its own runtime and does not support `OPENCODE_HOST`, `OPENCODE_BINARY`, `OPENCODE_SKIP_START=true`, `OPENCHAMBER_SKIP_OPENCODE_START=true`, a relative `OPENCODE_DB`, a `DEVRYAN_OPENCODE_GENERATION` other than `2`, or `DEVRYAN_RUNTIME_BUNDLE_ROOT`. When these come from your login shell (for example `~/.zshrc`), the desktop app ignores them and logs their names; other login-shell variables, including `XDG_STATE_HOME`, `OPENCHAMBER_DATA_DIR` and other `DEVRYAN_*` switches, are inherited.
+These variables apply only where this web server documents them. The DevRyan 2.x desktop app manages its own runtime and does not support `OPENCODE_HOST`, `OPENCODE_BINARY`, `OPENCODE_SKIP_START=true`, `OPENCHAMBER_SKIP_OPENCODE_START=true`, a relative `OPENCODE_DB`, a `DEVRYAN_OPENCODE_GENERATION` other than `2`, or `DEVRYAN_RUNTIME_BUNDLE_ROOT`. When these come from your login shell (for example `~/.zshrc`), the desktop app and the server's login-shell merge ignore them and log their names (values set in the launch environment are unchanged); other login-shell variables, including `XDG_STATE_HOME`, `OPENCHAMBER_DATA_DIR` and other `DEVRYAN_*` switches, are inherited.
 
 </details>
 
