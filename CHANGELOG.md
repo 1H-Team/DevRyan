@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.2] - 2026-10-05
+
+- Runtime settings show when packaged agent instructions conflict with your edits. Restore is explicit, preserves a backup, and refuses a file changed since inspection. Planning and implementation guidance now follows the saved plan and keeps incomplete work visible.
+- Skills use their human names in tool rows, permission requests and restored history. Generic reviewed skills remain available; bundled Superpowers integration is retired.
+- Dedicated Claude enrollment preserves healthy accounts when another enrollment is interrupted. Recover and Use settles the original verified credential without repeating sign-in. Read-only account inspection remains access-only.
+- Runtime updates and recovery retain the original owner, credential checkpoint and durable execution evidence. A completed update recovers even when its caller disconnects, and an uncertain shutdown keeps the runtime held for reconciliation.
+- In-app macOS updates use verified, resumable DMG downloads, installation preflight, owned runtime drain and durable rollback state. The app retains its current ad-hoc signing class.
+- Release preparation reuses Bot images only after verifying identical build inputs and signed image evidence. Dry runs prohibit publication, tags and other external writes; release assets must match their packaging digests and exact names.
+- Add durable diagnostics for provider sends, ledger waits, bridge calls, first output and first answer text. No performance improvement is claimed.
+
 ## [2.0.1] - 2026-10-05
 
 - Fix the first launch after upgrading to 2.0. The one-time setup import no longer reads saved version 1 plans under `~/.config/openchamber/projects/<id>/plans` or Finder metadata, and imports only the top-level project records. Saved version 1 plans and conversations stay where they are and are not imported. The bundled runtime can now finish importing saved provider sign-ins; before, it could not start on any upgraded install with saved credentials.

@@ -40,6 +40,13 @@ It is not inherited by the child. Actual native
 execution must be rerun; this correction does not qualify either architecture.
 Logs and downloaded artifacts are retained under
 `.cache/release-2.0.2-recovery/windows-native-first-run`.
+The [token-right rerun](https://github.com/1H-Team/DevRyan/actions/runs/37352574985)
+at `9d52371b8917d60c2969d86821bee6ceaa278f70` compiles both architectures and
+advances past token adjustment. Both jobs still fail; x64 now reports Job Object
+UI boundary error 87. [Nested jobs cannot carry UI limits](https://learn.microsoft.com/en-us/windows/win32/procthread/nested-jobs).
+Complete and verify the isolation policy under a containing host job; do not
+remove the boundary merely to make CI pass. The retained rerun log is
+`.cache/release-2.0.2-recovery/windows-native-token-right-run.log`.
 
 `scripts/build-native-runtime.mjs` currently requires Darwin ARM64 and seals
 Darwin PTY, AST, Claude, and supervisor assets. The Windows builder must select

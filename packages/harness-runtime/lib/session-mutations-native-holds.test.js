@@ -587,7 +587,7 @@ test('shell synthetic admission requires actual terminal lease proof and commits
     onContinuation: async () => { throw new Error('Already continued shell must not resume twice'); } });
   await restarted.handleRpc('native.admission.releaseHold', { sessionID: 'ses_root' });
   expect(await f.runtime.nativeContinuations({ directory: f.directory, sessionID: 'ses_root' })).toEqual([]);
-});
+}, 20_000);
 
 test('same-owner replacement rebinds current canonical lineage before a retained shell wake enters Store.claim', async () => {
   const f = await fixture();

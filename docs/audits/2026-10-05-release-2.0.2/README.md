@@ -153,7 +153,8 @@ undispatched attempt is cancelled, and new enrollment reserves space for its
 complete renewal intent. Enrollment/lifecycle/provider-route checks passed (116),
 as did the synthetic renewal checks and web type checks. Evidence grading now
 reads and verifies the actual log descriptor instead of trusting caller-supplied
-empty bytes; all 13 gap/tee/evidence checks passed. Other B1 scopes remain open.
+empty bytes; all 13 gap/tee/evidence checks passed. Remaining B1 scopes are
+consolidated below.
 
 Tracked live ownership now uses a fresh attended host, one constructor-retained
 grant, an in-memory one-use local-owner link and an explicit nonsecret setup
@@ -230,6 +231,25 @@ running/completed/history/permission presentation checks (11). These are focused
 checks; live enrollment, native notifications and final packaged cells remain
 unqualified.
 
+## Consolidated B1 engineering review
+
+| Scope | Reproduced findings and current focused evidence |
+| --- | --- |
+| Credentials and enrollment | Durable issuer/write intent, lost acknowledgement, private directory refusal and capacity-before-issuer corrections; 116 then 124 server checks, 5 mounted UI checks and the compiled synthetic owner rehearsal |
+| Worker shutdown | Five preserved failure reproductions; finite refusals retain controllers, reverse actions settle outside recursive queues, active/retired credential requests retain their 64-request bound, and physical exit precedes dependent cleanup |
+| Recovery | Disconnect after committed update, finite IPC codes, invalid selector startup, CLI quiet/root handling, original checkpoint and source-owner checks; 81 server and 53 ledger/admission checks |
+| Capabilities and admission | Unsupported Anthropic refuses before worker/authorization while another provider remains usable; original readonly inspection cannot settle renewal; both rebound preserved fixtures pass; input and eight fix-group checks remain integrated |
+| Credential composition | Frozen constructor-only grant, selector CAS before/after settlement, per-action authority expiry and revocation after failed settlement; genuine drain/exit ordering and compiled in-memory projection checks |
+| Drift | Current comparison records 254 modified historical files, five intentional removals and no changed file types or restored v1 routes. The user's status-dot change is preserved. Updater metadata and Superpowers removals are intentional. Hydrated Claude bytes are present; new artifacts must use fresh source identities |
+| Evidence grading | Opened log identity/bytes, raw hash attribution, expected cancellation joins, exact accepted tee and nonempty compiled roots; 13 focused gap/tee checks pass, while the failed ad hoc error-only grade remains recorded |
+
+Original review fixtures, failed reproductions and corrected runs remain under
+`.cache/release-2.0.2-recovery`. The current drift comparison is
+`b1-final-drift.json`; it invalidates historical qualification for changed source.
+This consolidates engineering review, not live or packaged acceptance. Native
+notifications, actual UI cells, managed-user checks and final compiled evidence
+remain in their qualification gates below.
+
 ## Final evidence table
 
 The isolated full validation at `3f344f87` passed lint, type checks,
@@ -242,6 +262,20 @@ parser-coverage files pass (21 checks). The full failed log remains
 `integrated-full-validation-isolated.log`; later suites were not run by that
 attempt. Final integrated validation is still required.
 
+At `9d52371b`, another full run passed lint/types and the preceding deterministic
+suites, then passed 663 harness checks and reached the framework's five-second
+cutoff in a durable shell-wake integration case. Teardown removed its fixture
+while Git was still reading it, producing a secondary `capture_not_git` error.
+The unchanged isolated case passed in 2.5 seconds. Its runner budget is now a
+bounded 20 seconds; all 34 checks in that file pass with the original authority,
+receipt and replay assertions. The failed full log is
+`integrated-full-validation-current.log`. UI and later suites were not run.
+
+Version metadata is now 2.0.2, including all 15 locked workspace versions.
+Resolved dependency tuples and dependency pins are unchanged. Release notes
+and version/release contracts pass (11 checks); final source and artifact
+identities must be recorded after this candidate is committed and built.
+
 This table must be rebound to the final source commit, lock hash, native build
 identity, image manifest identity, packaging digests, and installed artifacts
 before it can authorize publication. Current evidence is interim engineering
@@ -252,7 +286,7 @@ evidence in `.cache/release-2.0.2-recovery`.
 | Full integrated validation, build, bundle budgets and documentation | Failed (interim); final not run | Interim validation failures corrected with focused checks; engineering is still changing |
 | Packaged prompt conflict notice and explicit restore | Passed (focused); packaged not run | API, mounted UI, stale revision, edit/path replacement and guidance checks |
 | Tracked credential owner and synthetic rehearsal | Passed (compiled synthetic); live not run | Original SDK OAuth, compiled native key/CAS owners, held projection, ready boot and zero evidence leaks; final identities and attended live/launcher qualification pending |
-| Complete B1 review closure | In progress | Checkpoint, shutdown, enrollment and renewal findings reproduced and corrected; remaining scopes being consolidated |
+| Complete B1 review closure | Consolidated (focused); qualification pending | Seven engineering scopes above retain original reproductions, corrected checks and current drift; final compiled/live/package evidence pending |
 | Compiled acceptance and seeded-credential boot | Not run | Final native artifacts pending |
 | Three meaningful durable journal roots and verified gaps | Not run | Journal fixture/grading code integrated |
 | Seven lifecycle modes and seven wire cells | Not run | Final identities pending |
