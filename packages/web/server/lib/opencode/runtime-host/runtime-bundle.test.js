@@ -699,6 +699,27 @@ test('fresh default startup imports a private empty source and selects only veri
  expect(sha256(await fs.readFile(binding.descriptor.launch.opencodeDatabasePath))).toBe(beforeNative);
  expect(JSON.parse(await fs.readFile(path.join(binding.descriptor.launch.webDataDirectory,'settings.json'),'utf8')).selectedSessionId).toBe('native-session');
 });
+test('fresh default startup reseeds an abandoned first attempt with the owner current setup and leaves v1 plans in place',async()=>{
+ const f=await fixture(),home=path.join(f.root,'retry-home'),config=path.join(home,'.config','openchamber'),artifactDirectory=path.dirname(f.launchArtifacts.artifactManifestPath);
+ await fs.copyFile(f.launchArtifacts.artifactManifestPath,path.join(artifactDirectory,'native-bundle.json'));
+ const plan=path.join(config,'projects','path_a','plans','plan.md');await fs.mkdir(path.dirname(plan),{recursive:true});await fs.writeFile(plan,'# saved v1 plan');
+ await fs.writeFile(path.join(config,'projects','.DS_Store'),'\0\0\0\x01Bud1');await fs.writeFile(path.join(config,'projects','path_a.json'),'{broken');
+ await fs.writeFile(path.join(config,'settings.json'),JSON.stringify({themeId:'first'}));
+ const {provisionDefaultNativeBundle}=await import('./native-default-bundle.js');
+ const env={PATH:process.env.PATH},cwd=f.seed.projectMap[0].targetDirectory,options={env,home,cwd,artifactDirectory,runMigration:f.runMigration,
+  verifyArtifacts:async({manifestPath,manifestSha256,launcher})=>{const directory=path.dirname(manifestPath);return {directory,manifestPath,manifestSha256,launcher,controller:path.join(directory,path.basename(f.launchArtifacts.controllerBinary)),writer:path.join(directory,path.basename(f.launchArtifacts.writerBinary)),manifest:{inputs:{reviewedPlugins:[]}}};}};
+ await expect(provisionDefaultNativeBundle(options)).rejects.toMatchObject({code:'native_setup_json_invalid',relativePath:'projects/path_a.json'});
+ const sourceRoot=path.join(home,'.local','state','devryan','fresh-native-source');
+ expect(JSON.parse(await fs.readFile(path.join(sourceRoot,'web-data','settings.json'),'utf8'))).toEqual({themeId:'first'});
+ expect(await fs.stat(path.join(sourceRoot,'web-data','native-setup-seed.json')).catch(error=>error.code)).toBe('ENOENT');
+ // The owner keeps using the old install between attempts.
+ await fs.writeFile(path.join(config,'settings.json'),JSON.stringify({themeId:'second'}));await fs.writeFile(path.join(config,'projects','path_a.json'),JSON.stringify({id:'a',path:cwd,selectedSessionId:'old'}));
+ const controlRoot=await provisionDefaultNativeBundle(options),binding=readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot});
+ expect(JSON.parse(await fs.readFile(path.join(binding.descriptor.launch.webDataDirectory,'settings.json'),'utf8')).themeId).toBe('second');
+ expect(await fs.readdir(path.join(binding.descriptor.launch.webConfigDirectory,'projects'))).toEqual(['path_a.json']);
+ expect(JSON.parse(await fs.readFile(path.join(binding.descriptor.launch.webConfigDirectory,'projects','path_a.json'),'utf8'))).toEqual({id:'a',path:cwd});
+ expect(await fs.readFile(plan,'utf8')).toBe('# saved v1 plan');expect(await fs.stat(sourceRoot).catch(error=>error.code)).toBe('ENOENT');
+});
 test('default startup ignores old conversation databases and never falls back to an ambient runtime',async()=>{
  const f=await fixture(),home=path.join(f.root,'existing-home'),data=path.join(home,'.local','share','opencode');await fs.mkdir(data,{recursive:true});
  const file=path.join(data,'opencode.db');await fs.writeFile(file,'existing accepted work');const before=sha256(await fs.readFile(file));

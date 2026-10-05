@@ -43,6 +43,29 @@ export async function protectNativeSetupSource({controlRoot,sourceRoot}){
  if(!saved)await saveBundleJSON(file,{schema:1,controlRoot,sourceRoot});
 }
 
+const missing=async file=>{try{await fs.lstat(file);return false;}catch(error){if(error.code==='ENOENT')return true;throw error;}};
+/** Call inside the bootstrap lock before protecting/seeding a first bundle. A
+ * stamped seed without its pinned marker, with no selection and no prepared
+ * draft, is an abandoned first attempt: no candidate or selection can reference
+ * it. Remove only its seeded trees so the retry reseeds current owner setup.
+ * Every other partial state keeps the identical-retry rule. */
+export async function resetAbandonedNativeSetupSource({controlRoot,sourceRoot}){
+ if(sourceRoot!==path.join(path.dirname(controlRoot),'fresh-native-source')||!path.isAbsolute(sourceRoot))throw fail();
+ let saved;try{saved=await readBundleJSON(path.join(sourceRoot,ownerFile));}catch(error){if(error.code==='ENOENT')return false;throw error;}
+ if(saved?.schema!==1||saved.controlRoot!==controlRoot||saved.sourceRoot!==sourceRoot)return false;
+ if(!await missing(path.join(sourceRoot,'web-data','native-setup-seed.json'))||!await missing(path.join(controlRoot,'selection.json')))return false;
+ let drafts=[];try{drafts=await fs.readdir(path.join(controlRoot,'bundles'));}catch(error){if(error.code!=='ENOENT')throw error;}
+ if(drafts.length)return false;
+ // Ownership, canonical location, uid and no-symlink checks for the whole tree.
+ await protectNativeSetupSource({controlRoot,sourceRoot});
+ for(const name of ['web-data','web-config','opencode-config','home']){
+  const directory=path.join(sourceRoot,name);let stat;try{stat=await fs.lstat(directory);}catch(error){if(error.code==='ENOENT')continue;throw error;}
+  if(!stat.isDirectory()||stat.isSymbolicLink()||path.dirname(directory)!==sourceRoot||await fs.realpath(directory)!==directory||typeof process.getuid==='function'&&stat.uid!==process.getuid())throw fail();
+  await fs.rm(directory,{recursive:true});
+ }
+ return true;
+}
+
 /** Call only after full candidate verification and committed selection. */
 export async function removeNativeSetupSource({controlRoot,sourceRoot,verifySelected}){
  if(typeof verifySelected!=='function')throw fail();

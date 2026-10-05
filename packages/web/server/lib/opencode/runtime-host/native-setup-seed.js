@@ -9,6 +9,16 @@ import {saveBundleJSON} from './bundle-migration-inventory.js';
 const fail=code=>Object.assign(new Error(code),{code,status:503,statusCode:503});
 const record=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
+// Finder/AppleDouble metadata is never setup in any copied folder.
+const osMetadata=name=>name==='.DS_Store'||name==='Icon\r'||name.startsWith('._');
+// Diagnostics name the source file relative to its read root, never its bytes or HOME.
+const located=async(relative,action)=>{
+ try{return await action();}catch(error){
+  if(typeof error?.code==='string'&&error.code.startsWith('native_setup_')&&error.relativePath===undefined)
+   error.relativePath=String(relative).split(path.sep).join('/').replace(/[\u0000-\u001f\u007f-\u009f]/g,'').replace(/^\/+/,'').slice(0,256);
+  throw error;
+ }
+};
 export const NATIVE_SETUP_CREDENTIAL_FILE='native-setup-credentials.json';
 // Saved preference fields owned by settings-helpers and desktop-settings. Runtime
 // selections, drafts and session/task references are intentionally not setup.
@@ -67,19 +77,22 @@ export async function seedNativeSetup({source,target,environment={},captureLogic
   else await fs.writeFile(file,bytes,{flag:'wx',mode:0o600});
   await fs.chmod(file,0o600);files.push({path:file,sha256:hash(bytes)});
  };
- const copy=async(root,relative,destination,transform)=>{
+ const copy=(root,relative,destination,transform,{records=false}={})=>located(relative,async()=>{
   if(++visited>8192)throw fail('native_setup_source_too_large');
   const file=path.join(root,relative);let stat;try{stat=await fs.lstat(file);}catch(error){if(error.code==='ENOENT')return;throw error;}
   if(stat.isSymbolicLink())throw fail('native_setup_source_invalid');
   if(stat.isDirectory()){
    if(await fs.realpath(file)!==file)throw fail('native_setup_source_invalid');
-   for(const name of (await fs.readdir(file)).sort()){if(name.includes('\0'))throw fail('native_setup_source_invalid');await copy(root,path.join(relative,name),path.join(destination,name),transform);}return;
+   for(const name of (await fs.readdir(file)).sort()){if(name.includes('\0'))throw fail('native_setup_source_invalid');if(osMetadata(name))continue;
+    // Record folders import only their top-level *.json files; nested trees are not setup.
+    if(records){if(!name.endsWith('.json'))continue;const item=await fs.lstat(path.join(file,name)).catch(error=>{if(error.code==='ENOENT')return null;throw error;});if(!item||item.isDirectory())continue;}
+    await copy(root,path.join(relative,name),path.join(destination,name),transform);}return;
   }
   const bytes=await read(file,root);if(bytes===undefined)return;
   let result=bytes;
   if(transform){let parsed;try{parsed=JSON.parse(bytes.toString('utf8'));}catch{throw fail('native_setup_json_invalid');}result=Buffer.from(JSON.stringify(transform(parsed))+'\n');}
   await save(destination,result);
- };
+ });
  await copy(source.webDataDirectory,'settings.json',path.join(target.webDataDirectory,'settings.json'),projectNativeSetupSettings);
  for(const name of ['supabase.json','supabase-connection.json','git-identities.json'])await copy(source.webDataDirectory,name,path.join(target.webDataDirectory,name),value=>{if(!record(value))throw fail('native_setup_json_invalid');return value;});
  await copy(source.webDataDirectory,'magic-prompts.json',path.join(target.webDataDirectory,'magic-prompts.json'),value=>{
@@ -97,7 +110,8 @@ export async function seedNativeSetup({source,target,environment={},captureLogic
  // Exact managed connection files; cached quota responses/flows are not setup.
  for(const name of ['opencode','opencode-go','ollama-cloud','cursor-acp'])await copy(source.webDataDirectory,'quota/'+name+'.json',path.join(target.webDataDirectory,'quota',name+'.json'));
  await copy(source.webDataDirectory,'project-icons',path.join(target.webDataDirectory,'project-icons'));
- await copy(source.webConfigDirectory,'projects',path.join(target.webConfigDirectory,'projects'),value=>projectNativeSetupState(value));
+ // Project records only: projects/<id>/plans/** are v1 conversation artifacts and stay in place.
+ await copy(source.webConfigDirectory,'projects',path.join(target.webConfigDirectory,'projects'),value=>{if(!record(value))throw fail('native_setup_json_invalid');return projectNativeSetupState(value);},{records:true});
  await copy(source.webConfigDirectory,'themes',path.join(target.webConfigDirectory,'themes'));
  for(const name of ['config.json','opencode.json','opencode.jsonc','oh-my-opencode-slim.json','oh-my-opencode-slim.jsonc','AGENTS.md','.openchamber/config.json','ponytail/config.json'])await copy(source.opencodeConfigDirectory,name,path.join(target.opencodeConfigDirectory,name));
  for(const folder of ['agent','agents','command','commands','prompts','skills','skill'])await copy(source.opencodeConfigDirectory,folder,path.join(target.opencodeConfigDirectory,folder));
@@ -109,19 +123,22 @@ export async function seedNativeSetup({source,target,environment={},captureLogic
   await copy(path.dirname(source.opencodeConfigFile),path.basename(source.opencodeConfigFile),custom);
  }
  if(environment.MERIDIAN_PROFILES!==undefined&&typeof environment.MERIDIAN_PROFILES!=='string')throw fail('native_setup_profiles_invalid');
- const profileBytes=environment.MERIDIAN_PROFILES!==undefined?Buffer.from(environment.MERIDIAN_PROFILES):await read(path.join(source.home,'.config','meridian','profiles.json'),source.home);
- if(profileBytes!==undefined&&profileBytes.length>1024*1024)throw fail('native_setup_profiles_invalid');
- if(profileBytes!==undefined){
-  let profiles;try{profiles=JSON.parse(profileBytes.toString('utf8'));}catch{throw fail('native_setup_profiles_invalid');}
-  const relocated=await relocateNativeSetupProfiles({profiles,sourceHome:source.home,targetHome:target.global.home,
-   copyAccount:async(account,destination)=>{await fs.mkdir(destination,{recursive:true,mode:0o700});await copy(account,'.credentials.json',path.join(destination,'.credentials.json'));}});
-  await save(path.join(target.global.home,'.config','meridian','profiles.json'),Buffer.from(JSON.stringify(relocated)+'\n'));
- }
+ const profileFile=path.join('.config','meridian','profiles.json'),seedProfiles=async()=>{
+  const profileBytes=environment.MERIDIAN_PROFILES!==undefined?Buffer.from(environment.MERIDIAN_PROFILES):await read(path.join(source.home,profileFile),source.home);
+  if(profileBytes!==undefined&&profileBytes.length>1024*1024)throw fail('native_setup_profiles_invalid');
+  if(profileBytes!==undefined){
+   let profiles;try{profiles=JSON.parse(profileBytes.toString('utf8'));}catch{throw fail('native_setup_profiles_invalid');}
+   const relocated=await relocateNativeSetupProfiles({profiles,sourceHome:source.home,targetHome:target.global.home,
+    copyAccount:async(account,destination)=>{await fs.mkdir(destination,{recursive:true,mode:0o700});await copy(account,'.credentials.json',path.join(destination,'.credentials.json'));}});
+   await save(path.join(target.global.home,'.config','meridian','profiles.json'),Buffer.from(JSON.stringify(relocated)+'\n'));
+  }
+ };
+ if(environment.MERIDIAN_PROFILES!==undefined)await seedProfiles();else await located(profileFile,seedProfiles);
  if(environment.MERIDIAN_DEFAULT_PROFILE){if(typeof environment.MERIDIAN_DEFAULT_PROFILE!=='string'||environment.MERIDIAN_DEFAULT_PROFILE.length>256)throw fail('native_setup_profiles_invalid');
   await save(path.join(target.global.home,'.config','meridian','settings.json'),Buffer.from(JSON.stringify({activeProfile:environment.MERIDIAN_DEFAULT_PROFILE})+'\n'));}
- const auth=await read(path.join(source.opencodeDataDirectory,'auth.json'),source.opencodeDataDirectory);
- if(auth!==undefined){let parsed;try{parsed=JSON.parse(auth.toString('utf8'));}catch{throw fail('native_setup_credentials_invalid');}
-  await save(path.join(target.opencodeConfigDirectory,NATIVE_SETUP_CREDENTIAL_FILE),Buffer.from(JSON.stringify(projectNativeSetupCredentials(parsed))+'\n'));}
+ await located('auth.json',async()=>{const auth=await read(path.join(source.opencodeDataDirectory,'auth.json'),source.opencodeDataDirectory);
+  if(auth!==undefined){let parsed;try{parsed=JSON.parse(auth.toString('utf8'));}catch{throw fail('native_setup_credentials_invalid');}
+   await save(path.join(target.opencodeConfigDirectory,NATIVE_SETUP_CREDENTIAL_FILE),Buffer.from(JSON.stringify(projectNativeSetupCredentials(parsed))+'\n'));}});
  if(captureLogicalSetup){
   const logical=await captureLogicalSetup();
   if(!record(logical)||Object.keys(logical).some(key=>!['localOwners'].includes(key))||!record(logical.localOwners))throw fail('native_setup_logical_invalid');

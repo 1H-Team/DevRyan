@@ -13,7 +13,7 @@ import {withCrossProcessFileLock} from '../../../../../harness-runtime/lib/atomi
 import {seedNativeSetup} from './native-setup-seed.js';
 import {readRuntimeBundleBinding} from './runtime-bundle-binding.js';
 import {retainNativeArtifacts} from './retained-native-artifacts.js';
-import {protectNativeSetupSource,removeNativeSetupSource} from './native-setup-source.js';
+import {protectNativeSetupSource,removeNativeSetupSource,resetAbandonedNativeSetupSource} from './native-setup-source.js';
 
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const fail=code=>Object.assign(new Error(code),{code,status:503});
@@ -68,6 +68,8 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
   const artifacts=await retainNativeArtifacts({controlRoot,manifestPath,manifestSha256,verifyArtifacts});
   const retainedManifestPath=artifacts.manifestPath;
   const retainedLauncher=artifacts.launcher;
+  // No selection exists here; a stamped seed that never pinned its marker is reseeded.
+  await resetAbandonedNativeSetupSource({controlRoot,sourceRoot});
   await protectNativeSetupSource({controlRoot,sourceRoot});
   const launch={opencodeDatabasePath:path.join(sourceRoot,'empty.db'),webDataDirectory:path.join(sourceRoot,'web-data'),
    webConfigDirectory:path.join(sourceRoot,'web-config'),opencodeConfigDirectory:path.join(sourceRoot,'opencode-config'),global:{home:path.join(sourceRoot,'home')}};
