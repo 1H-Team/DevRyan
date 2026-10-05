@@ -44,7 +44,7 @@ describe('agent runtime warmup', () => {
         return Response.json({ ok: true });
       }),
       discoverSkills: () => [
-        { name: 'using-superpowers', path: '/skills/using-superpowers/SKILL.md' },
+        { name: 'writing-plans', path: '/skills/writing-plans/SKILL.md' },
         { name: 'other', path: '/skills/other/SKILL.md' },
       ],
       readSkillFile: vi.fn(() => 'skill content'),

@@ -123,7 +123,7 @@ describe("useSkillsStore", () => {
       skills: [
         {
           name: "brainstorming",
-          path: "/Users/test/.config/opencode/skills/superpowers/brainstorming/SKILL.md",
+          path: "/Users/test/.config/opencode/skills/toolkit/brainstorming/SKILL.md",
           scope: "user",
           source: "opencode",
           description: "Brainstorming",
@@ -141,7 +141,7 @@ describe("useSkillsStore", () => {
     await useSkillsStore.getState().loadSkills({ refresh: true });
 
     expect(useSkillsStore.getState().skills.map((item) => `${item.name}:${item.group ?? "flat"}`)).toEqual([
-      "brainstorming:superpowers",
+      "brainstorming:toolkit",
       "theme-system:flat",
     ]);
   });
@@ -186,14 +186,14 @@ describe("useSkillsStore", () => {
       skills: [
         {
           name: "dispatching-parallel-agents",
-          path: "/Users/test/.config/opencode/skills/superpowers/dispatching-parallel-agents/SKILL.md",
+          path: "/Users/test/.config/opencode/skills/toolkit/dispatching-parallel-agents/SKILL.md",
           scope: "user",
           source: "opencode",
           description: "Installed copy",
         },
         {
           name: "dispatching-parallel-agents",
-          path: "/Users/test/.cache/opencode/packages/superpowers/node_modules/superpowers/skills/dispatching-parallel-agents/SKILL.md",
+          path: "/Users/test/.cache/opencode/packages/toolkit/node_modules/toolkit/skills/dispatching-parallel-agents/SKILL.md",
           scope: "user",
           source: "opencode",
           description: "Package cache copy",

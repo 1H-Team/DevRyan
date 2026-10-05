@@ -139,7 +139,6 @@ describe("usePluginsStore", () => {
       "@rama_nigg/open-cursor",
       "opencode-with-claude",
       "oh-my-opencode-slim",
-      "superpowers",
       "openai-tool-schema-sanitizer",
     ]);
     expect(usePluginsStore.getState().getById("devryan-default:opencode-with-claude")?.kind).toBe("default");

@@ -8,6 +8,7 @@ import { captureConfigurationSourceStamp } from './configuration-source-stamps.j
 import {captureNativePonytailDefault} from './native-ponytail-default.js';
 import { captureNativeTextSettings, verifyNativeTextSettings } from './native-text-settings.js';
 import {configuredNativeSkillDirectories,discoverConfiguredNativeSkills} from './native-configured-skills.js';
+import { isRetiredDevRyanPluginSpec } from '../managed-plugins.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const fail = code => Object.assign(new Error(code), { code, status: 503 });
@@ -127,7 +128,9 @@ export function createNativeConfigurationSnapshotResolver({ loadLocation = loadC
       loaded.skills.push(...await discoverConfiguredNativeSkills({directories:additionalPaths,directory,parseMarkdown:loaded.parseMarkdown}));
       const specs = loaded.legacy.plugin ?? loaded.legacy.plugins ?? [];
       if (!Array.isArray(specs)) throw fail('native_plugin_settings_invalid');
-      const activePlugins = specs.map(pluginSpec);
+      // Registrations DevRyan retired (for example the Superpowers adapter an
+      // upgraded setup still lists) load nothing; they are ignored, not rejected.
+      const activePlugins = specs.map(pluginSpec).filter(spec => !isRetiredDevRyanPluginSpec(spec));
       if (activePlugins.some(spec => !spec || !registrations.plugins.some(origin => origin.legacySpecs?.includes(spec)))) throw fail('native_plugin_registration_unreviewed');
       const activeRegistrationIDs=registrations.plugins.filter(origin=>origin.legacySpecs?.some(spec=>activePlugins.includes(spec))).map(origin=>origin.id);
       if(activeRegistrationIDs.some(id=>typeof id!=='string')||new Set(activeRegistrationIDs).size!==activeRegistrationIDs.length)throw fail('native_registration_revision_mismatch');

@@ -212,7 +212,6 @@ function buildAnthropicMeasurement(visibleSkills, usage, claudeRuntime) {
       originalBytes,
       transformedBytes,
       savedBytes: Math.max(0, originalBytes - transformedBytes),
-      superpowersBootstrapBytes: 0,
       tokens: toOptionalCount(usage?.fixedPrefixTokens),
     },
     requestCount: toOptionalCount(usage?.requestCount),

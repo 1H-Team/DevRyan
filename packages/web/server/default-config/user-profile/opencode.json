@@ -5,7 +5,6 @@
     "./node_modules/opencode-with-claude/dist/index.js",
     "./node_modules/opencode-gpt-imagegen/dist/index.js",
     "./plugins/devryan-oh-my-opencode-slim.mjs",
-    "./plugins/devryan-superpowers.mjs",
     "./plugins/devryan-skill-context.mjs",
     "./plugins/devryan-document-reader.mjs"
   ],

@@ -3,9 +3,9 @@ import fs from 'node:fs/promises';import path from 'node:path';import {createHas
 import {createReviewedSetupSession,reviewedSetupFamilies,reviewedSetupRegistrations,assertReviewedSetupBoot,attachReviewedSetup} from './reviewed-setup.mjs';
 import {createHttpProviderConfiguration} from './http-provider.mjs';
 import {compiledHelperAgentIDs,createCompiledHelperAgentFixture} from './package-helper-agent-fixture.mjs';
-test('all eight exact active specs map to existing compiled owners without losing manifest provenance',()=>{
+test('all seven exact active specs map to existing compiled owners without losing manifest provenance',()=>{
  const ids=[...new Set(reviewedSetupFamilies.flatMap(row=>row.origins))];const origins=ids.map(id=>({id,manifestDigest:'a'.repeat(64),capabilities:['control']}));
- const rows=reviewedSetupRegistrations(origins);assert.equal(reviewedSetupFamilies.length,8);assert.equal(rows.length,origins.length);
+ const rows=reviewedSetupRegistrations(origins);assert.equal(reviewedSetupFamilies.length,7);assert.equal(rows.length,origins.length);
  for(const row of rows){assert.equal(row.manifestDigest,'a'.repeat(64));assert.ok(row.legacySpecs.length);}
  assert.throws(()=>reviewedSetupRegistrations(origins.filter(row=>row.id!=='devryan.document-reader')),/Required compiled family unavailable/);
 });
@@ -21,7 +21,7 @@ test('browser is explicit fixture activation, never an added saved personal fami
  const origins=[...new Set(reviewedSetupFamilies.flatMap(row=>row.origins)),'devryan.browser'].map(id=>({id,manifestDigest:'b'.repeat(64),capabilities:['control']}));
  assert.deepEqual(reviewedSetupRegistrations(origins).find(row=>row.id==='devryan.browser').legacySpecs,[]);
  assert.deepEqual(reviewedSetupRegistrations(origins,{browser:true}).find(row=>row.id==='devryan.browser').legacySpecs,['./plugins/devryan-browser.mjs']);
- assert.equal(reviewedSetupFamilies.length,8);
+ assert.equal(reviewedSetupFamilies.length,7);
  assert.throws(()=>reviewedSetupRegistrations(origins.filter(row=>row.id!=='devryan.browser'),{browser:true}),/compiled browser unavailable/);
 });
 

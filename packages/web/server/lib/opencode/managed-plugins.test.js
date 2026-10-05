@@ -10,8 +10,10 @@ import {
   DEVRYAN_MANAGED_PROFILE_DEPENDENCIES,
   DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS,
   RETIRED_DEVRYAN_PROFILE_DEPENDENCIES,
+  getDevRyanManagedPluginForSpec,
   getDevRyanManagedPluginRegistrationForConfigPath,
   inspectDevRyanManagedPluginInstallation,
+  isRetiredDevRyanPluginSpec,
   reconcileDevRyanManagedPluginSpecs,
   removeDevRyanManagedLegacyPluginSpecs,
 } from './managed-plugins.js';
@@ -54,7 +56,6 @@ describe('managed plugin manifest', () => {
       './node_modules/opencode-with-claude/dist/index.js',
       './node_modules/opencode-gpt-imagegen/dist/index.js',
       './plugins/devryan-oh-my-opencode-slim.mjs',
-      './plugins/devryan-superpowers.mjs',
       './plugins/devryan-skill-context.mjs',
       './plugins/devryan-document-reader.mjs',
     ]);
@@ -116,8 +117,8 @@ describe('managed plugin manifest', () => {
       .toContain('exported.server');
     expect(fs.readFileSync(path.join(tauriDefaultConfigRoot, 'plugins', 'devryan-oh-my-opencode-slim.mjs'), 'utf8'))
       .not.toContain('exported.server');
-    expect(fs.readFileSync(path.join(webDefaultConfigRoot, 'plugins', 'devryan-superpowers.mjs'), 'utf8'))
-      .not.toContain('experimental.chat.messages.transform');
+    // Superpowers is retired from the forward profile; released Tauri keeps its frozen copy.
+    expect(fs.existsSync(path.join(webDefaultConfigRoot, 'plugins', 'devryan-superpowers.mjs'))).toBe(false);
     expect(fs.readFileSync(path.join(tauriDefaultConfigRoot, 'plugins', 'devryan-superpowers.mjs'), 'utf8'))
       .toContain('experimental.chat.messages.transform');
     expect(fs.existsSync(path.join(webDefaultConfigRoot, 'plugins', 'devryan-document-reader.mjs'))).toBe(true);
@@ -144,10 +145,21 @@ describe('managed plugin manifest', () => {
       ['./node_modules/opencode-with-claude/dist/index.js', { enabled: true }],
       './node_modules/opencode-gpt-imagegen/dist/index.js',
       './plugins/devryan-oh-my-opencode-slim.mjs',
-      './plugins/devryan-superpowers.mjs',
       './plugins/devryan-skill-context.mjs',
       './plugins/devryan-document-reader.mjs',
     ]);
+  });
+
+  it('retires the Superpowers adapter and its upstream git plugin from existing profiles', () => {
+    expect(isRetiredDevRyanPluginSpec('./plugins/devryan-superpowers.mjs')).toBe(true);
+    expect(isRetiredDevRyanPluginSpec('file:///Users/test/.config/opencode/plugins/devryan-superpowers.mjs')).toBe(true);
+    expect(isRetiredDevRyanPluginSpec('superpowers@git+https://github.com/obra/superpowers.git')).toBe(true);
+    expect(getDevRyanManagedPluginForSpec('./plugins/devryan-superpowers.mjs')).toBeNull();
+    expect(reconcileDevRyanManagedPluginSpecs([
+      'user-plugin@1.0.0',
+      './plugins/devryan-superpowers.mjs',
+      ['/Users/test/.config/opencode/plugins/devryan-superpowers.mjs', { enabled: true }],
+    ]).some((entry) => JSON.stringify(entry).includes('superpowers'))).toBe(false);
   });
 
   it('moves Open Cursor registrations from the installed entrypoint to its adapter, relative or absolute', () => {

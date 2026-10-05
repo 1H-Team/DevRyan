@@ -82,8 +82,10 @@ describe('duplicate output release qualification', () => {
       if (profile.stale) expect(profile.stale.reason.length).toBeGreaterThan(20);
       for (const entry of profile.plugins) {
         if (!entry.name.endsWith('.mjs') && entry.name !== 'council-session.js') continue;
-        const body = await fs.readFile(new URL(`../../default-config/plugins/${entry.name}`, import.meta.url));
-        const actual = crypto.createHash('sha256').update(body).digest('hex');
+        // A removed bundled plugin is a byte change; only a stale profile may name it.
+        const body = await fs.readFile(new URL(`../../default-config/plugins/${entry.name}`, import.meta.url))
+          .catch((error) => { if (error?.code === 'ENOENT' && stale.has(entry.name)) return null; throw error; });
+        const actual = body === null ? null : crypto.createHash('sha256').update(body).digest('hex');
         if (stale.has(entry.name)) expect(actual, entry.name).not.toBe(entry.contentHash);
         else expect(actual, entry.name).toBe(entry.contentHash);
       }

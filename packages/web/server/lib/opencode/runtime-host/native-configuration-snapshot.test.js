@@ -172,6 +172,19 @@ it('rejects registration changes, unreviewed mutable plugins and escaped skill a
   await expect(f.resolver(f.input)).rejects.toMatchObject({ code: 'native_skill_resource_escape' });
 });
 
+it('ignores retired DevRyan plugin registrations that an upgraded setup still lists', async () => {
+  const f = await fixture(), baseline = await f.resolver(f.input);
+  // DevRyan <= 2.0.1 provisioned the Superpowers adapter into every profile;
+  // the seeded native setup keeps that registration after its removal.
+  f.loaded.legacy.plugin.push('./plugins/devryan-superpowers.mjs', 'superpowers@git+https://github.com/obra/superpowers.git');
+  const upgraded = await f.resolver(f.input);
+  expect(upgraded.locations[0].activePlugins).toEqual(baseline.locations[0].activePlugins);
+  expect(upgraded.locations[0].activeRegistrationIDs).toEqual(baseline.locations[0].activeRegistrationIDs);
+  expect(upgraded.locations[0].requiredCatalogs.plugins).toEqual(['devryan.fixture']);
+  f.loaded.legacy.plugin.push('./plugins/unknown.mjs');
+  await expect(f.resolver(f.input)).rejects.toMatchObject({ code: 'native_plugin_registration_unreviewed' });
+});
+
 it('rejects changed resource bytes, stale snapshots and name ambiguity without dropping duplicate skills', async () => {
   const f = await fixture(), other = path.join(f.directory, '.agents', 'skills', 'fixture'); await fs.mkdir(other, { recursive: true });
   await fs.writeFile(path.join(other, 'SKILL.md'), 'exact skill body\n');

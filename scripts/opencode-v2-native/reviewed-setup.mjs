@@ -12,7 +12,6 @@ export const reviewedSetupFamilies=Object.freeze([
  ['ponytail','./node_modules/@dietrichgebert/ponytail/.opencode/plugins/ponytail.mjs',['devryan.ponytail']],
  ['cursor','./plugins/devryan-open-cursor.mjs',['devryan.provider-compat']],
  ['claude','./node_modules/opencode-with-claude/dist/index.js',['devryan.provider-compat']],
- ['superpowers','./plugins/devryan-superpowers.mjs',['devryan.reviewed-skills']],
  ['slim','./plugins/devryan-oh-my-opencode-slim.mjs',['devryan.slim','devryan.slim-commands','devryan.slim-lifecycle']],
  ['documents','./plugins/devryan-document-reader.mjs',['devryan.document-reader']],
  ['skills','./plugins/devryan-skill-context.mjs',['devryan.reviewed-skills']],

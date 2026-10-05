@@ -33,8 +33,7 @@
   },
   "plugin": [
     "./plugins/orchestrator-autoresume.mjs",
-    "opencode-with-claude@1.6.18",
-    "superpowers@git+https://github.com/obra/superpowers.git"
+    "opencode-with-claude@1.6.18"
   ],
   "provider": {
     "anthropic": {
