@@ -307,7 +307,47 @@ preparer with background Bots disabled. The shared runtime now returns
 `bots_background_disabled` before runtime, catalog or Docker preparation;
 19 focused checks pass. A new direct packaged service fixture covers private
 owner/descriptor identity, unauthenticated refusal, no model sends before a
-desktop lease, physical drain and restart. Its actual launch remains pending.
+desktop lease, physical drain and restart. Its actual launch passed at
+`bf2aa44a`: `.cache/qa/packaged-service-sDdrk8/evidence.json` records two
+headless service starts, original process identities, private descriptor modes,
+401 refusals, zero model sends, physical exit, lock removal and a new restart
+instance. Cleanup has no errors. This direct service check does not register
+launchd or qualify an authenticated desktop lease or live providers.
+
+The corrected `bf2aa44a` cohort passed `validate:full` alone: UI 4,048 checks,
+web Vitest 6,325 checks and web Bun 11 checks, with workspace lint, types and
+deterministic suites. `build`, `bundle:check` and `docs:validate` also passed.
+Logs are `service-correction-full-validation-2.log`,
+`service-correction-build-2.log`, `service-correction-bundle-check-2.log` and
+`service-correction-docs-1.log` in the recovery directory. Lock SHA-256 is
+`30d8bb422ea2ab4e2ff27a31ec3591ca0f032887f334034ffa651ba216a9a247`.
+Packaged source SHA-256 is
+`741dfbcc801d879a65b7576194492e7dd57ac2ea40846835112e1befa1782269`,
+runner SHA-256 is
+`3aaf96d9ea6eb31ed7c6159745a8ffcf4f80746a444a83b07217829b6b9928a5`,
+and QA archive SHA-256 is
+`b096d6e5b90fb2ec1a447260f2c30d55974cb535045960e02635cf677e320732`.
+
+Compiled acceptance alone passed 108 cases, including the earlier human queue,
+all 23 retained skills and actual Electron browser publication, then failed
+`compiled-document-docx-read` at its original 60-second continuation deadline.
+Result `.cache/v2-validation/package-esr1QY/result.json` retains unchanged
+source identities, clean physical controller exit and no cleanup errors. The
+correlated document session has zero verified journal gaps. Its actual tool
+completed; the following image-context worker did not publish before the
+continuation deadline. An independent fresh compiled document diagnostic
+passed all six document checks in 9.6–14.0 seconds with the same tool, HTTP,
+publication and 60-second assertions. Its result is
+`.cache/v2-validation/package-kV5sMR/result.json`; its journal gap check passed.
+The aged-ledger reproduction remains pending. Neither diagnostic satisfies
+the complete acceptance, seeded boot or three meaningful-root gates.
+
+Windows run `37366300612` initially had no acquired runners; its retry compiled
+both supervisors and passed both process/parent identity checks. Each retained
+filesystem receipt passed 13 checks and then failed exclusive-file-lock refusal.
+The original SDK attribute/security handle can bypass sharing restrictions;
+the isolated Windows branch now requests read access and awaits a fresh native
+run. Full confinement and controller/writer builds remain failed.
 
 This table must be rebound to the final source commit, lock hash, native build
 identity, image manifest identity, packaging digests, and installed artifacts
@@ -316,17 +356,17 @@ evidence in `.cache/release-2.0.2-recovery`.
 
 | Mandatory gate | Status | Evidence or prerequisite |
 | --- | --- | --- |
-| Full integrated validation, build, bundle budgets and documentation | Failed (interim); final not run | Interim validation failures corrected with focused checks; engineering is still changing |
+| Full integrated validation, build, bundle budgets and documentation | Passed at `bf2aa44a`; freeze pending | Corrected full suite, build, bundle and docs logs above; rerun after code changes |
 | Packaged prompt conflict notice and explicit restore | Passed (focused); packaged not run | API, mounted UI, stale revision, edit/path replacement and guidance checks |
 | Tracked credential owner and synthetic rehearsal | Passed (compiled synthetic); live not run | Original SDK OAuth, compiled native key/CAS owners, held projection, ready boot and zero evidence leaks; final identities and attended live/launcher qualification pending |
 | Complete B1 review closure | Consolidated (focused); qualification pending | Seven engineering scopes above retain original reproductions, corrected checks and current drift; final compiled/live/package evidence pending |
-| Compiled acceptance and seeded-credential boot | Failed (interim); final pending | 15 compiled cases passed, human-queue fixture timed out; original journals and clean physical exit retained |
+| Compiled acceptance and seeded-credential boot | Failed; seeded boot not reached | 108 cases passed; DOCX continuation timed out after tool completion; fresh six-check diagnostic passed; aged-ledger reproduction pending |
 | Three meaningful durable journal roots and verified gaps | Not run | Journal fixture/grading code integrated |
-| Seven lifecycle modes and seven wire cells | Not run | Final identities pending |
+| Seven lifecycle modes and seven wire cells | Lifecycle not run; wire running | Frozen `bf2aa44a` package and runner pins; original seven-cell inventory |
 | Two actual-runtime UI cells and reviewed screenshots | Partial (interim); final pending | Electron passed; first web theme failure retained, unchanged web repeat passed; screenshots unreviewed |
 | CLI persistence/refusal and Electron Resume | Not run | Final runtime pending |
-| Shipped 2.0.1 → candidate → 2.0.1 continuity | Not run | Actual artifact qualification pending |
-| Packaged first launch and service mode | Not run | Candidate package pending |
+| Shipped 2.0.1 → candidate → 2.0.1 continuity | Unavailable on current host; VM prerequisite pending | Unmodified shipped startup registers a global LaunchServices protocol; disposable HOME cannot isolate it |
+| Packaged first launch and service mode | Service passed; six first-launch cells not run | Actual direct service evidence above; production registration and authenticated desktop lease remain separate |
 | DMG update success/refusal/interruption/rollback | Passed (focused); packaged not run | Verified downloads, native app exchange, startup acknowledgement and guarded rollback; killed-helper/native exchange checks pass; disposable package qualification pending |
 | Exact provider/role graph, 12 journeys, 16 compaction boundaries | Not run | Owner sign-in window after credential-free rehearsal |
 | Managed-user verification | Unavailable | Non-production Supabase environment not supplied |
@@ -334,7 +374,7 @@ evidence in `.cache/release-2.0.2-recovery`.
 | Burst, six attribution, 21 calibration, conditional 42 paired launches | Not run | Quiet window and frozen grading pending; retain 750 ms |
 | Release dry-run with no external writes and exact asset digests | Passed (focused); CI not run | Fake-registry refusal/reuse tests, workflow writer guards and packaging-digest verification; actual signed images and frozen package pending |
 | Downloaded DMG digest, mounted app, isolated launch and updater | Not run | Publication requires all preceding mandatory gates |
-| Windows x64 / ARM64 native safety and installers | Failed (native CI); installers not run | [Port plan](../../WINDOWS_PORT_PLAN.md); both supervisors compile, safety and controller/writer builds fail; original artifacts/logs retained |
+| Windows x64 / ARM64 native safety and installers | Failed (native CI); installers not run | Both process/parent identities passed; 13 filesystem checks per architecture passed before locked-file failure; confinement and controller/writer builds fail; receipts retained |
 
 macOS remains ad-hoc signed. Windows packaging is unsigned. No notarization,
 Authenticode, live provider, or Windows runtime pass is claimed. Verification
