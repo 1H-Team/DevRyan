@@ -29,7 +29,13 @@ test('Windows qualification builds and executes independent pinned native archit
   const required = job.steps.find(step => step.env?.SUPERVISOR_ACCEPTANCE);
   assert.equal(required.if, '${{ always() }}');
   assert.equal(required['continue-on-error'], undefined);
-  assert.deepEqual(Object.keys(required.env).sort(), ['FILESYSTEM_BOUNDARY', 'HOST_BOUNDARY', 'REVIEWED_LIBSQL', 'RUNTIME', 'RUNTIME_ACCEPTANCE', 'SUPERVISOR', 'SUPERVISOR_ACCEPTANCE']);
+  assert.deepEqual(Object.keys(required.env).sort(), ['FEATURE_CAPABILITIES', 'FILESYSTEM_BOUNDARY', 'HOST_BOUNDARY', 'REVIEWED_LIBSQL', 'RUNTIME', 'RUNTIME_ACCEPTANCE', 'SUPERVISOR', 'SUPERVISOR_ACCEPTANCE']);
+  assert.equal(required.env.FEATURE_CAPABILITIES, '${{ steps.feature_capabilities.outcome }}');
+  assert.equal(byID.feature_capabilities.if, "${{ always() && steps.dependencies.outcome == 'success' }}");
+  assert.match(byID.feature_capabilities.run, /TerminalView\.mounted\.test\.tsx/);
+  assert.match(byID.feature_capabilities.run, /bot-runtime-manager\.test\.mjs.*speech-manager\.test\.mjs -t Windows/);
+  assert.match(byID.feature_capabilities.run, /node --test --test-name-pattern=Windows.*runtime-service-startup\.test\.mjs/);
+  assert.match(byID.feature_capabilities.run, /runtime\.test\.js.* -t Windows/);
   const libsql = job.steps.find(step => step.with?.repository === 'tursodatabase/libsql-js');
   assert.deepEqual(libsql.env, { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.autocrlf', GIT_CONFIG_VALUE_0: 'false' });
   assert.equal(libsql.with.ref, '55bee86d1c284f1ddf2b9e280e870d2b6cef884a');

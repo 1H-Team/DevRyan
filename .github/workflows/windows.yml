@@ -9,6 +9,12 @@ on:
       - packages/electron/**
       - packages/harness-runtime/**
       - packages/web/server/lib/opencode/runtime-host/**
+      - packages/web/server/lib/terminal/**
+      - packages/web/server/lib/bots/routes*
+      - packages/ui/src/lib/terminalApi*
+      - packages/ui/src/lib/api/types.ts
+      - packages/ui/src/components/views/TerminalView*
+      - packages/web/src/api/terminal.ts
       - scripts/build-native-runtime.mjs
       - scripts/build-session-execution.mjs
       - scripts/verify-session-execution.mjs
@@ -23,6 +29,12 @@ on:
       - packages/electron/**
       - packages/harness-runtime/**
       - packages/web/server/lib/opencode/runtime-host/**
+      - packages/web/server/lib/terminal/**
+      - packages/web/server/lib/bots/routes*
+      - packages/ui/src/lib/terminalApi*
+      - packages/ui/src/lib/api/types.ts
+      - packages/ui/src/components/views/TerminalView*
+      - packages/web/src/api/terminal.ts
       - scripts/build-native-runtime.mjs
       - scripts/build-session-execution.mjs
       - scripts/verify-session-execution.mjs
@@ -78,6 +90,28 @@ jobs:
       - name: Install pinned dependencies
         id: dependencies
         run: bun install --frozen-lockfile --ignore-scripts
+      - name: Verify unavailable Windows features on this architecture
+        id: feature_capabilities
+        if: ${{ always() && steps.dependencies.outcome == 'success' }}
+        continue-on-error: true
+        shell: pwsh
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          node -e "if(process.platform!=='win32'||process.arch!==process.env.EXPECTED_ARCH)throw Error('Native runner architecture mismatch')"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location packages/web
+          node node_modules/vitest/vitest.mjs run server/lib/terminal/runtime.test.js server/lib/bots/routes.test.js -t Windows --no-file-parallelism --maxWorkers=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+          bun test packages/electron/tests/bot-runtime-manager.test.mjs packages/electron/tests/speech-manager.test.mjs -t Windows
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test --test-name-pattern=Windows packages/electron/tests/runtime-service-startup.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location packages/ui
+          bun test src/lib/terminalApi.test.ts src/components/views/TerminalView.mounted.test.tsx
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
       - name: Select Windows SDK compiler for the native architecture
         shell: pwsh
         env:
@@ -159,12 +193,13 @@ jobs:
           SUPERVISOR_ACCEPTANCE: ${{ steps.supervisor_acceptance.outcome }}
           HOST_BOUNDARY: ${{ steps.host_boundary.outcome }}
           FILESYSTEM_BOUNDARY: ${{ steps.filesystem_boundary.outcome }}
+          FEATURE_CAPABILITIES: ${{ steps.feature_capabilities.outcome }}
           REVIEWED_LIBSQL: ${{ steps.reviewed_libsql.outcome }}
           RUNTIME: ${{ steps.runtime.outcome }}
           RUNTIME_ACCEPTANCE: ${{ steps.runtime_acceptance.outcome }}
         run: |
           $failed = $false
-          foreach ($name in @('SUPERVISOR', 'SUPERVISOR_ACCEPTANCE', 'HOST_BOUNDARY', 'FILESYSTEM_BOUNDARY', 'REVIEWED_LIBSQL', 'RUNTIME', 'RUNTIME_ACCEPTANCE')) {
+          foreach ($name in @('SUPERVISOR', 'SUPERVISOR_ACCEPTANCE', 'HOST_BOUNDARY', 'FILESYSTEM_BOUNDARY', 'FEATURE_CAPABILITIES', 'REVIEWED_LIBSQL', 'RUNTIME', 'RUNTIME_ACCEPTANCE')) {
             $outcome = [Environment]::GetEnvironmentVariable($name)
             "$name=$outcome" >> $env:GITHUB_STEP_SUMMARY
             if ($outcome -ne 'success') { $failed = $true }

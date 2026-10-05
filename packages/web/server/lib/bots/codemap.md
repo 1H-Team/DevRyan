@@ -21,6 +21,10 @@ options, and exact save-gate-publish semantics.
 Domain logic stays out of `multi-user/runtime.js` and the
 Electron shell.
 
+Windows reports `bots_platform_unsupported` with no catalog, execution or
+runtime-management grant, before key retrieval or Docker status probes. The
+Electron manager independently refuses construction before any owner work.
+
 Tunnel guests carry explicit `tunnel-bot` principals. The early tunnel boundary
 allowlists transport routes; Bot authorization separately intersects selected
 Bot UUIDs with membership and channel ACLs. Catalog, SSE, run and approval reads

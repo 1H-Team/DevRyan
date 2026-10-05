@@ -235,6 +235,20 @@ history, recovery inspection, and installation available where qualified.
 Core execution remains unavailable until all safety contracts above pass;
 an unsigned installer or successful compile does not enable it.
 
+The persistent-terminal owner now reports a typed unsupported capability on
+Windows and rejects HTTP/WS work before backend imports, filesystem access or
+environment projection. The shared view waits for this capability before
+mounting transport and session owners, and refuses failed or superseded reads.
+Bot capability reads grant neither catalog, execution nor management and never
+retrieve keys or probe Docker; the Electron manager separately refuses before
+construction work. A saved background `service` preference also no longer
+projects an enabled service on Windows; the preference remains preserved.
+That status error was independently reproduced before correction in
+`windows-background-capability-reproduction-1.json`. Existing native speech
+and service-registration refusals have focused Windows checks. The native CI
+jobs run these guards on each actual architecture and require their outcome;
+this does not replace controller, confinement or installer acceptance.
+
 ## Packaging and updating
 
 Build unsigned, per-user NSIS installers with Windows app ID

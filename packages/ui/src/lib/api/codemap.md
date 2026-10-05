@@ -1,5 +1,10 @@
 # packages/ui/src/lib/api/
 
+`TerminalAPI.getCapabilities` exposes the web/Electron host's typed persistent
+PTY availability. The shared terminal client validates its explicit grant and
+unsupported code; the view gates owner mounting, while HTTP/WS owners enforce
+the same refusal independently.
+
 ## Responsibility
 Generic API client helpers for UI-to-server HTTP interactions.
 

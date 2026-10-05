@@ -173,7 +173,11 @@ export const resolveBotCapabilities = async ({
   startupState = 'ready',
   statusCache = null,
   refreshStatus = false,
+  platform = process.platform,
 } = {}) => {
+  if (platform === 'win32') {
+    return capability({ state: 'unsupported_host', code: 'bots_platform_unsupported', owner: 'unsupported' });
+  }
   const owner = typeof botHost?.owner === 'string' ? botHost.owner : 'unsupported';
   const database = maintenance
     ? { state: 'maintenance', code: maintenance.kind ? `bots_maintenance_${maintenance.kind}` : 'bots_maintenance' }

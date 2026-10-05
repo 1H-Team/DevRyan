@@ -90,7 +90,34 @@ export function createTerminalRuntime({
   multiUserRuntime,
   onTerminalSessionClosed,
   killPtyProcess = killTerminalProcess,
+  platform = process.platform,
 }) {
+  const capabilities = Object.freeze(platform === 'win32'
+    ? { available: false, code: 'terminal_platform_unsupported' }
+    : { available: true, code: null });
+  app.get('/api/terminal/capabilities', (_req, res) => res.json(capabilities));
+  if (!capabilities.available) {
+    // No pinned Windows PTY or qualified descendant ownership contract exists.
+    // Refuse before loading a backend, resolving environment or touching files.
+    app.use('/api/terminal', (_req, res) => res.status(503).json({
+      ...capabilities, error: 'Persistent terminals are unavailable on this host.',
+    }));
+    const upgrade = (req, socket) => {
+      if (parseRequestPathname(req.url) === TERMINAL_INPUT_WS_PATH) {
+        rejectWebSocketUpgrade(socket, 503, 'Persistent terminals are unavailable');
+      }
+    };
+    server.on('upgrade', upgrade);
+    const terminateOwnerSessions = async () => 0;
+    multiUserRuntime?.setTerminalOwnerTerminator?.(terminateOwnerSessions);
+    return {
+      getCapabilities: () => capabilities,
+      shutdown: async () => { server.off('upgrade', upgrade); },
+      terminateOwnerSessions,
+      getSessionDescriptor: () => null,
+      touchSession: () => null,
+    };
+  }
   let ptyProviderPromise = null;
   const getPtyProvider = async () => {
     if (ptyProviderPromise) {
@@ -986,5 +1013,5 @@ export function createTerminalRuntime({
     };
   };
 
-  return { shutdown, terminateOwnerSessions, getSessionDescriptor, touchSession };
+  return { shutdown, terminateOwnerSessions, getSessionDescriptor, touchSession, getCapabilities: () => capabilities };
 }

@@ -59,6 +59,7 @@ import {
 import { createRuntimeServiceRegistration } from './runtime-service-registration.mjs';
 import { createRuntimeServiceNativeControl } from './runtime-service-native.mjs';
 import {
+  describeRuntimeServiceStatus,
   prepareAutomaticRuntimeService,
   createRuntimeOwnerAcquirer,
   recoverAppBoundRuntime,
@@ -1664,22 +1665,19 @@ const runtimeServiceOptedOut = () => readSettingsRoot().productionBotsRuntimeSer
 
 const runtimeServiceStatus = async () => {
   const registration = await getRuntimeServiceRegistration().status();
-  const handshake = state.runtimeServiceClient
+  const handshake = process.platform === 'darwin' && state.runtimeServiceClient
     ? await requestRuntimeService('/api/runtime-service/handshake').catch(() => null)
     : null;
   const configuredMode = readSettingsRoot().productionBotsRuntimeMode || 'app_bound';
-  return Object.freeze({
+  return describeRuntimeServiceStatus({
+    platform: process.platform,
+    isPackaged: app.isPackaged,
     configuredMode,
-    serviceEnabled: Boolean(handshake) || configuredMode === 'service' || (
-      configuredMode !== 'disabled' && !runtimeServiceOptedOut()
-      && process.platform === 'darwin' && app.isPackaged
-    ),
+    optedOut: runtimeServiceOptedOut(),
     registrationMode: getRuntimeServiceRegistration().mode || 'unsupported',
     registration,
-    connected: Boolean(handshake),
     handshake,
     settingsUrl: getRuntimeServiceRegistration().settingsUrl,
-    canEnable: registration.state === 'not_registered' || registration.state === 'enabled',
   });
 };
 
