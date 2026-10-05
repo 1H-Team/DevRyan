@@ -111,7 +111,8 @@ and desktop-host broker bridges.
   unregisters it, proves it stopped (signalling only a same-uid process at
   that PID whose executable image, read through `lsof`, is a
   `.app/Contents/MacOS/DevRyan` and whose argv is the launchd
-  `DevRyan --runtime-service` or that image path, as a bounded fallback), and registers
+  `DevRyan --runtime-service` or a legacy absolute DevRyan image path, even a
+  bundle moved while it ran, as a bounded fallback), and registers
   the current bundle's service; any failure falls back to the app-bound runtime.
   Malformed legacy writes receive a one-second grace period.
   `owner-recovery.v2.json` records an ambiguous legacy or damaged regular file's

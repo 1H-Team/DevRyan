@@ -161,6 +161,16 @@ describe('verified stale-service termination', () => {
     assert.equal(await probe('501 DevRyan --runtime-service', { lsof: image(spacedImage) }).run(), true);
   });
 
+  test('signals a legacy full-path service whose bundle was moved while it ran', async () => {
+    // The legacy plist launched the absolute path; moving the bundle (to the
+    // Trash, or a replaced install) leaves argv on the old path.
+    const moved = probe('501 /Applications/DevRyan.app/Contents/MacOS/DevRyan --runtime-service', {
+      lsof: image('/Users/me/.Trash/DevRyan.app/Contents/MacOS/DevRyan'),
+    });
+    assert.equal(await moved.run(), true);
+    assert.deepEqual(moved.signals, [[4242, 'SIGTERM']]);
+  });
+
   for (const [name, stdout, options, lsofOptions = {}] of [
     ['another user', '0 DevRyan --runtime-service', {}],
     ['another user at the absolute path', '0 /Applications/DevRyan.app/Contents/MacOS/DevRyan --runtime-service', {}],
@@ -170,11 +180,18 @@ describe('verified stale-service termination', () => {
     ['another program named DevRyan', '501 DevRyan --runtime-service', {}, { lsof: image('/usr/local/bin/DevRyan') }],
     ['another bundle\'s executable', '501 DevRyan --runtime-service', {}, { lsof: image('/Applications/Other.app/Contents/MacOS/DevRyanHelper') }],
     ['a relative image', '501 DevRyan --runtime-service', {}, { lsof: image('DevRyan.app/Contents/MacOS/DevRyan') }],
-    ['an argv path that is not the image', '501 /Applications/Old.app/Contents/MacOS/DevRyan --runtime-service', {}],
+    ['an argv path that is not a DevRyan image', '501 /Applications/Old.app/Contents/MacOS/Helper --runtime-service', {}],
+    ['a relative argv path', '501 Applications/DevRyan.app/Contents/MacOS/DevRyan --runtime-service', {}],
+    ['a moved bundle\'s argv over a foreign image', '501 /Applications/DevRyan.app/Contents/MacOS/DevRyan --runtime-service', {}, { lsof: image('/usr/local/bin/DevRyan') }],
+    ['a moved bundle of another user', '0 /Applications/DevRyan.app/Contents/MacOS/DevRyan --runtime-service', {}, { lsof: image('/Users/me/.Trash/DevRyan.app/Contents/MacOS/DevRyan') }],
+    ['a moved bundle at another PID', '501 /Applications/DevRyan.app/Contents/MacOS/DevRyan --runtime-service', {}, { lsof: image('/Users/me/.Trash/DevRyan.app/Contents/MacOS/DevRyan', 4243) }],
+    ['a full-path service with extra arguments', '501 /Applications/DevRyan.app/Contents/MacOS/DevRyan --runtime-service --type=renderer', {}],
+    ['a full-path foreground app', '501 /Applications/DevRyan.app/Contents/MacOS/DevRyan --inspect --runtime-service', {}],
     ['an image probe for another PID', '501 DevRyan --runtime-service', {}, { lsof: image(IMAGE, 4243) }],
     ['an image probe without a text entry', '501 DevRyan --runtime-service', {}, { lsof: 'p4242\n' }],
     ['an unavailable image probe', '501 DevRyan --runtime-service', {}, { lsof: '', lsofError: new Error('lsof failed') }],
     ['a shell wrapping the command', '501 /bin/sh -c /Applications/DevRyan.app/Contents/MacOS/DevRyan --runtime-service', {}],
+    ['a shell wrapping a moved bundle', '501 /bin/sh -c /Applications/DevRyan.app/Contents/MacOS/DevRyan --runtime-service', {}, { lsof: image('/Users/me/.Trash/DevRyan.app/Contents/MacOS/DevRyan') }],
     ['a reused PID with extra arguments', '501 DevRyan --runtime-service --type=renderer', {}],
     ['a missing process', '', {}],
     ['a non-macOS host', '501 DevRyan --runtime-service', { platform: 'linux' }],

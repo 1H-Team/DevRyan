@@ -544,7 +544,10 @@ export const isRuntimeServiceProtocolSupported = (protocolVersion) => (
 // Signals only a process proved to be this user's DevRyan --runtime-service
 // at that pid: ps gives its uid and argv, and lsof's first text entry gives its
 // executable image, because launchd starts the SMAppService BundleProgram with
-// the bare ProgramArguments ("DevRyan --runtime-service"). Anything else, or an
+// the bare ProgramArguments ("DevRyan --runtime-service"). The legacy plist's
+// absolute argv only has to name a DevRyan image: a bundle moved (to the Trash,
+// or replaced) while running keeps its old argv; a path holding an option
+// (" -", e.g. a wrapping shell) is not one. Anything else, or an
 // unavailable probe, is left alone and reported false.
 const RUNTIME_SERVICE_IMAGE_PATTERN = /^\/[^\n]*\.app\/Contents\/MacOS\/DevRyan$/;
 export const terminateRuntimeServiceProcess = async ({
@@ -571,8 +574,11 @@ export const terminateRuntimeServiceProcess = async ({
   if (!match || Number(match[1]) !== uid) return false;
   if (imageLines[0] !== `p${pid}` || imageLines[1] !== 'ftxt' || !imageLines[2]?.startsWith('n')) return false;
   const image = imageLines[2].slice(1);
+  const command = match[2];
+  const legacyPath = command.endsWith(' --runtime-service') ? command.slice(0, -' --runtime-service'.length) : '';
   if (!RUNTIME_SERVICE_IMAGE_PATTERN.test(image)
-    || (match[2] !== 'DevRyan --runtime-service' && match[2] !== `${image} --runtime-service`)) return false;
+    || (command !== 'DevRyan --runtime-service'
+      && (!RUNTIME_SERVICE_IMAGE_PATTERN.test(legacyPath) || /\s-/.test(legacyPath)))) return false;
   try {
     kill(pid, signal);
     return true;
