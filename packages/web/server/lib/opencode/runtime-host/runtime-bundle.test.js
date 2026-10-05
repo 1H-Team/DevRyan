@@ -836,6 +836,17 @@ test('a tampered sealed default draft is reset before selection, never trusted',
  expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot}).descriptor.bundleID).toBe('default-native');
  expect(await fs.stat(injected).catch(error=>error.code)).toBe('ENOENT');expect(await fs.readdir(path.dirname(draftRoot(home)))).toEqual(['default-native']);
 });
+test('only the bundle database wal-index is outside the prepared snapshot; any other planted *.db-shm resets the draft',async()=>{
+ const f=await fixture(),home=path.join(f.root,'planted-shm-home'),release=await releaseArtifacts(f,'A');
+ await killedBeforeSelect(f,home,release);
+ const planted=path.join(draftRoot(home),'web-data','evil.db-shm');await fs.writeFile(planted,'tamper');
+ const store=createRuntimeBundleStore({controlRoot:path.dirname(path.dirname(draftRoot(home))),runMigration:async()=>{throw Error('fixture no import');},
+  withQuiescedSource:async()=>{throw Error('fixture no checkpoint');},verifyArtifacts:async()=>{}});
+ await expect(store.verify({bundleID:'default-native',phase:'prepared'})).rejects.toMatchObject({code:'bundle_snapshot_changed'});
+ const controlRoot=await launchDefault(f,home,release);
+ expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot}).descriptor.bundleID).toBe('default-native');
+ expect(await fs.stat(planted).catch(error=>error.code)).toBe('ENOENT');
+});
 test('an interrupted fresh-source removal after selection leaves only a sibling the next launch sweeps',async()=>{
  const f=await fixture(),home=path.join(f.root,'removal-home'),release=await releaseArtifacts(f,'A'),state=path.join(home,'.local','state','devryan');
  const rm=fs.rm;fs.rm=async(target,...rest)=>{
@@ -856,6 +867,28 @@ test('a concurrent first start waits for a live provisioning holder longer than 
  await new Promise(resolve=>setTimeout(resolve,200));
  const [owner,waiter]=await Promise.all([first,launchDefault(f,home,release,timedOut)]);
  expect(waiter).toBe(owner);expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:owner}).descriptor.bundleID).toBe('default-native');
+},60_000);
+const bootstrapLock=home=>path.join(home,'.local','state','devryan','runtime-bundles','bootstrap.lock');
+const plantLock=async(home,owner)=>{await fs.mkdir(path.dirname(bootstrapLock(home)),{recursive:true,mode:0o700});
+ await fs.writeFile(bootstrapLock(home),JSON.stringify({ownerToken:'f'.repeat(32),...owner})+'\n',{mode:0o600});};
+test('a bootstrap lock older than any provisioning is reclaimed although its pid is live or foreign',async()=>{
+ const f=await fixture(),release=await releaseArtifacts(f,'A');
+ // A crashed launch whose pid was reused: this process (live) or launchd (EPERM).
+ for(const pid of [process.pid,1]){
+  const home=path.join(f.root,`stale-lock-${pid}`);await plantLock(home,{pid,createdAt:Date.now()-11*60_000});
+  const controlRoot=await launchDefault(f,home,release);
+  expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot}).descriptor.bundleID).toBe('default-native');
+  expect(await fs.stat(bootstrapLock(home)).catch(error=>error.code)).toBe('ENOENT');
+ }
+},60_000);
+test('a live bootstrap holder younger than the stale bound is still waited for',async()=>{
+ const f=await fixture(),home=path.join(f.root,'live-lock-home'),release=await releaseArtifacts(f,'A');
+ await plantLock(home,{pid:process.pid,createdAt:Date.now()-6*60_000});
+ let settled=false;const launch=launchDefault(f,home,release).finally(()=>{settled=true;});
+ await new Promise(resolve=>setTimeout(resolve,1_500));expect(settled).toBe(false);
+ expect(await fs.stat(path.join(draftRoot(home))).catch(error=>error.code)).toBe('ENOENT');
+ await fs.rm(bootstrapLock(home));
+ expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:await launch}).descriptor.bundleID).toBe('default-native');
 },60_000);
 test('selected default bundle still verifies after its one-shot owner snapshot is consumed',async()=>{
  const f=await fixture(),home=path.join(f.root,'owner-home'),owners={'supabase-local-owner':{id:'10000000-0000-4000-8000-000000000001',scope:'local-admin'}};

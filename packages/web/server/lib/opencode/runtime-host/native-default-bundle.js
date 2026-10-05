@@ -21,6 +21,23 @@ const fail=code=>Object.assign(new Error(code),{code,status:503});
 // A live holder may be provisioning the real artifacts (retention copy, several
 // artifact verifications, a migration spawn); a dead holder is reclaimed at once.
 const BOOTSTRAP_LOCK_TIMEOUT_MS=5*60_000;
+// Provisioning (a migration spawn is capped at 2 minutes) never holds the lock this long,
+// so an older lock belongs to a crashed launch whose pid a live or foreign-uid process
+// may since have reused (the shared lock trusts it). Same reclaim as the setup-owners lock.
+const BOOTSTRAP_LOCK_STALE_MS=10*60_000;
+const reclaimStaleLock=async lock=>{
+ let stat,raw;
+ try{stat=await fs.lstat(lock);raw=await fs.readFile(lock,'utf8');}catch(error){if(error.code==='ENOENT')return false;throw error;}
+ let createdAt;try{createdAt=JSON.parse(raw)?.createdAt;}catch{}
+ if(Date.now()-(Number.isFinite(createdAt)?createdAt:stat.mtimeMs)<BOOTSTRAP_LOCK_STALE_MS)return false;
+ // Rename is the atomic claim; a lock another launch re-created after reclaiming the same stale one is handed back.
+ const aside=`${lock}.stale-${process.pid}-${randomBytes(8).toString('hex')}`;
+ try{await fs.rename(lock,aside);}catch(error){if(error.code==='ENOENT')return true;throw error;}
+ try{const taken=await fs.lstat(aside);
+  if(taken.ino!==stat.ino||taken.dev!==stat.dev||await fs.readFile(aside,'utf8')!==raw)await fs.link(aside,lock).catch(error=>{if(error.code!=='EEXIST')throw error;});
+ }finally{await fs.rm(aside,{force:true});}
+ return true;
+};
 const exists=async file=>{try{await fs.lstat(file);return true;}catch(error){if(error.code==='ENOENT')return false;throw error;}};
 const nativePluginIDs={
  '@rama_nigg/open-cursor':['devryan.provider-compat'], 'opencode-with-claude':['devryan.provider-compat'],
@@ -96,7 +113,8 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
  await fs.mkdir(controlRoot,{recursive:true,mode:0o700});
  if(await fs.realpath(controlRoot)!==controlRoot)throw fail('bundle_path_invalid');
  await fs.chmod(controlRoot,0o700);
- return withCrossProcessFileLock(path.join(controlRoot,'bootstrap.lock'),async()=>{
+ const lock=path.join(controlRoot,'bootstrap.lock');
+ const provision=async()=>{
   await sweepRemovedNativeSetupSources({controlRoot,sourceRoot});
   if(await exists(path.join(controlRoot,'selection.json'))){
    const selected=readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot},{allowHeldInspection:true});
@@ -173,5 +191,12 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
    await store.verify({bundleID:candidate.bundleID,phase:'resume'});
   }});
   return controlRoot;
- },{timeoutMs:BOOTSTRAP_LOCK_TIMEOUT_MS});
+ };
+ await reclaimStaleLock(lock);
+ try{return await withCrossProcessFileLock(lock,provision,{timeoutMs:BOOTSTRAP_LOCK_TIMEOUT_MS});}
+ catch(error){
+  // A lock that turned stale while this launch waited is reclaimed once.
+  if(error.code!=='LOCK_TIMEOUT'||!await reclaimStaleLock(lock))throw error;
+  return withCrossProcessFileLock(lock,provision,{timeoutMs:BOOTSTRAP_LOCK_TIMEOUT_MS});
+ }
 }

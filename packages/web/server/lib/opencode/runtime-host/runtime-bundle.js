@@ -134,11 +134,13 @@ const treeManifest = async root => {
   };
   await walk(root); return rows;
 };
-// SQLite's wal-index (*.db-shm) is rebuildable shared memory that every connection,
-// including verify's read-only one, rewrites (read marks), so it is never snapshot
-// content. *.db-wal stays covered: it holds committed pages, and a read-only
-// connection never appends to, checkpoints or truncates it.
-const durable = rows => rows.filter(row => !(isRecord(row) && typeof row.path === 'string' && row.path.endsWith('.db-shm')));
+// The bundle database's SQLite wal-index (opencode.db-shm) is rebuildable shared memory
+// that every connection, including verify's read-only one, rewrites (read marks), so it
+// is never snapshot content. Any other *.db-shm is ordinary content. *.db-wal stays
+// covered: it holds committed pages, and a read-only connection never appends to,
+// checkpoints or truncates it.
+const durable = (rows,root,launch) => { const shm=path.relative(root,launch.opencodeDatabasePath)+'-shm';
+  return rows.filter(row => !(isRecord(row) && row.path === shm)); };
 const verifyTree = async (root,rows) => {
   if (!Array.isArray(rows)) throw fail('bundle_manifest_invalid');
   for (const row of rows) if (!isRecord(row) || typeof row.path !== 'string' || row.path.split('/').some(part => !part || part === '..')
@@ -225,9 +227,9 @@ export function createRuntimeBundleStore(options) {
     for (const row of manifest.artifactFiles) if (!isRecord(row) || !validHash(row.sha256) || await fileHash(absolute(row.path))!==row.sha256) throw fail('bundle_artifact_changed');
     await verifyArtifacts({generation:value.generation,launch:value.launch});
     if (phase === 'prepared') {
-      const initial=durable(manifest.initialFiles);
+      const initial=durable(manifest.initialFiles,root,value.launch);
       await verifyTree(root,initial);
-      const actual=durable(await treeManifest(root)).filter(row=>row.path!=='prepared.json');
+      const actual=durable(await treeManifest(root),root,value.launch).filter(row=>row.path!=='prepared.json');
       if (JSON.stringify(actual)!==JSON.stringify(initial)) throw fail('bundle_snapshot_changed');
     }
     const db = sqlite(value.launch.opencodeDatabasePath);
@@ -276,7 +278,7 @@ export function createRuntimeBundleStore(options) {
     }
     descriptor(controlRoot,value.bundleID,value);
     await saveBundleJSON(path.join(root,'descriptor.json'),value);
-    const files=durable(await treeManifest(root));
+    const files=durable(await treeManifest(root),root,value.launch);
     await saveBundleJSON(value.preparedManifestPath,{schema:1,bundleID:value.bundleID,checkpointID:value.checkpoint.checkpointID,
       descriptorSha256:await fileHash(path.join(root,'descriptor.json')),
       artifactFiles:await Promise.all([artifacts.controllerBinary,artifacts.writerBinary,artifacts.artifactManifestPath].filter(Boolean).map(async file=>({path:absolute(file),sha256:await fileHash(file)}))),

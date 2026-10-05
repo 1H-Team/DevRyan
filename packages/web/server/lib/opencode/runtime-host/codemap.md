@@ -83,8 +83,8 @@ Electron IPC use this same core. Recovery HTTP exposes no mutation route.
   changing the parent process's HOME. Unresolved rollback state refuses execution;
   explicit held inspection permits only the recovery application to read the
   selection before feature owners are imported. `runtime-bundle.js` owns offline legacy-data copy preparation into generation 2, verification and
-  the atomic selection pointer. The `prepared` tree snapshot omits SQLite `*.db-shm`
-  wal-index files, which every read-only open rewrites; `*.db-wal` stays covered. Runnable descriptors and activation targets are generation 2 only;
+  the atomic selection pointer. The `prepared` tree snapshot omits only the bundle database's
+  `opencode/opencode.db-shm` wal-index, which every read-only open rewrites; any other `*.db-shm` and `*.db-wal` stay covered. Runnable descriptors and activation targets are generation 2 only;
   a legacy source is data paths under an actual quiesced checkpoint, never a selectable controller.
   Rollback requires reconciled current-2/prior-2 selection and retains candidate work.
   The sealed importer receipt permits an absent migration marker only when the SDK
@@ -127,7 +127,8 @@ Electron IPC use this same core. Recovery HTTP exposes no mutation route.
   The draft is renamed to a sibling `bundles/.stale-*` before removal, and later unselected
   launches sweep validated `.stale-*` leftovers before any draft or seed decision.
   `bootstrap.lock` waits up to 5 minutes for a live holder (a concurrent first start
-  provisioning real artifacts); a dead holder is reclaimed at once.
+  provisioning real artifacts); a dead holder is reclaimed at once, and a lock older than
+  10 minutes (a crashed launch under a reused or foreign-uid pid) by atomic rename.
   `native-setup-local-owners.js` restores the v1 owner snapshot once, then renames it to
   `native-setup-local-owners.restored.json`, so later app owner changes survive restarts.
   Concurrent first starts serialize on `native-setup-local-owners.lock` in web-data; a lock
