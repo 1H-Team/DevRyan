@@ -1,5 +1,5 @@
-FROM oven/bun:1.3.14 AS bun-runtime
-FROM node:22.13.1-bookworm-slim
+FROM oven/bun:1.3.14@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4 AS bun-runtime
+FROM node:22.13.1-bookworm-slim@sha256:83fdfa2a4de32d7f8d79829ea259bd6a4821f8b2d123204ac467fbe3966450fc
 
 COPY --from=bun-runtime /usr/local/bin/bun /usr/local/bin/bun
 
