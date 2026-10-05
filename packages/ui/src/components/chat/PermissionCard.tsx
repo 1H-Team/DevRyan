@@ -11,7 +11,7 @@ import { generateSyntaxTheme } from '@/lib/theme/syntaxThemeGenerator';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { DiffPreview, WritePreview } from './DiffPreview';
 import { useI18n } from '@/lib/i18n';
-import { filterPermissionCardPatterns, isShellPermissionTool } from './permissionCardPatterns';
+import { filterPermissionCardPatterns, getSkillPermissionName, isShellPermissionTool } from './permissionCardPatterns';
 
 const PERMISSION_BASH_CUSTOM_STYLE: React.CSSProperties = {
   margin: 0,
@@ -145,13 +145,17 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
   const shellCommand = isShellPermissionTool(toolName)
     ? getMeta('command') || getMeta('cmd') || getMeta('script')
     : '';
+  const skillName = getSkillPermissionName(toolName, permission.metadata);
   const visiblePermissionPatterns = filterPermissionCardPatterns({
     toolName,
     patterns: permission.patterns,
     command: shellCommand,
+    metadata: permission.metadata,
   });
 
   const renderToolContent = () => {
+    // The skill name is already shown in place of its hashed resource.
+    if (skillName) return null;
 
     if (isShellPermissionTool(toolName)) {
       const description = getMeta('description');
