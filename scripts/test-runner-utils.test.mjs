@@ -216,7 +216,11 @@ describe('release workflow', () => {
     assert.ok(migrationStep < releaseStep, 'database migrations must run immediately before release publication');
     assert.match(job, /uses: supabase\/setup-cli@v1/);
     assert.match(job, /version: 2\.115\.0/);
-    assert.match(job, /if: \$\{\{ github\.event\.inputs\.dry_run != 'true' \}\}/);
+    assert.match(workflow, /RELEASE_DRY_RUN: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.dry_run == true \}\}/);
+    assert.match(
+      job.slice(migrationStep, releaseStep),
+      /^- name: Deploy and verify Supabase configuration and migrations\n        if: \$\{\{ env\.RELEASE_DRY_RUN != 'true' \}\}/,
+    );
     assert.match(job, /SUPABASE_ACCESS_TOKEN: \$\{\{ secrets\.SUPABASE_ACCESS_TOKEN \}\}/);
     assert.match(job, /SUPABASE_DB_PASSWORD: \$\{\{ secrets\.SUPABASE_DB_PASSWORD \}\}/);
     assert.match(job, /SUPABASE_PROJECT_ID: \$\{\{ secrets\.SUPABASE_PROJECT_ID \}\}/);
