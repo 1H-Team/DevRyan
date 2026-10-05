@@ -10,6 +10,8 @@ test('Windows qualification builds and executes independent pinned native archit
   assert.equal(job.strategy['fail-fast'], false);
   assert.deepEqual(job.strategy.matrix.include, [{ runner: 'windows-2022', arch: 'x64' }, { runner: 'windows-11-arm', arch: 'arm64' }]);
   assert.equal(job.steps.find(step => step.uses?.startsWith('oven-sh/setup-bun@')).with['bun-version'], '1.3.14');
+  assert.deepEqual(workflow.on.push.branches, ['release/2.0.2']);
+  assert.deepEqual(workflow.on.push.paths, workflow.on.pull_request.paths);
   assert.equal(job.steps.find(step => step.uses?.startsWith('actions/setup-node@')).with.architecture, '${{ matrix.arch }}');
   assert.equal(job.env.GIT_CEILING_DIRECTORIES, '${{ github.workspace }}/.cache/test-fixtures');
   const commands = job.steps.map(step => step.run ?? '').join('\n');

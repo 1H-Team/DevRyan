@@ -2,6 +2,18 @@ name: Windows native qualification
 
 on:
   workflow_dispatch:
+  push:
+    branches: [release/2.0.2]
+    paths:
+      - .github/workflows/windows.yml
+      - packages/electron/**
+      - packages/harness-runtime/**
+      - packages/web/server/lib/opencode/runtime-host/**
+      - scripts/build-native-runtime.mjs
+      - scripts/build-session-execution.mjs
+      - scripts/verify-session-execution.mjs
+      - scripts/native-runtime-assets.mjs
+      - bun.lock
   pull_request:
     paths:
       - .github/workflows/windows.yml
