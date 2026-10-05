@@ -10,6 +10,28 @@ const binding=({profileID,service,configDirectory,enrollmentID,generation})=>({p
 const next=(state,operation)=>transitionClaudeLifecycle(state,state.revision,operation);
 
 describe('Claude lifecycle contract',()=>{
+ it('reserves fresh enrollment without renewal authority and settles only its exact prepared record',()=>{
+  const selected=account();let state=next(emptyClaudeLifecycle(),{kind:'prepare-enrollment',account:selected,attemptID:'fresh'});
+  expect(state.accounts).toEqual([]);expect(state.unresolved[0].phase).toBe('enrollment-prepared');
+  expect(()=>next(state,{kind:'enroll',account:selected})).toThrow('native_claude_enrollment_conflict');
+  expect(()=>next(state,{kind:'begin',account:selected,attemptID:'renew'})).toThrow('native_claude_refresh_unsettled');
+  expect(()=>next(state,{kind:'settle-enrollment',binding:binding(selected),attemptID:'fresh',recordFingerprint:digest(999)})).toThrow('native_claude_lifecycle_conflict');
+  expect(()=>next(state,{kind:'cancel-before-dispatch',binding:binding(selected),attemptID:'fresh'})).toThrow('native_claude_lifecycle_conflict');
+  state=next(state,{kind:'settle-enrollment',binding:binding(selected),attemptID:'fresh',recordFingerprint:selected.recordFingerprint});
+  expect(state.accounts).toEqual([selected]);expect(state.unresolved).toEqual([]);
+ });
+ it('never admits a new account that cannot hold its complete renewal intent at the byte ceiling',()=>{
+  let state=emptyClaudeLifecycle(),accepted=0;
+  for(let index=1;index<100;index++){
+   const selected={...account(index),configDirectory:'/owned/'+String(index)+'/'+ 'x'.repeat(450)};
+   let enrolled;try{enrolled=next(state,{kind:'enroll',account:selected});}catch(error){expect(error.code).toBe('native_claude_lifecycle_capacity');break;}
+   accepted++;const begun=next(enrolled,{kind:'begin',account:selected,attemptID:'0'.repeat(36)});
+   const prepared=next(begun,{kind:'prepare',binding:binding(selected),attemptID:'0'.repeat(36),recordFingerprint:digest(index+10000),grantFingerprint:digest(index+20000)});
+   expect(Buffer.byteLength(JSON.stringify(prepared))).toBeLessThanOrEqual(CLAUDE_LIFECYCLE_LIMITS.bytes);
+   state=next(enrolled,{kind:'begin',account:selected,attemptID:'attempt-'+index});
+  }
+  expect(accepted).toBeGreaterThan(1);expect(accepted).toBeLessThan(64);
+ });
  it('canonicalizes parsed JSON and separates refresh-grant identity from record edits and aliases',()=>{
   expect(claudeRecordFingerprint({z:[{b:2,a:1}],a:3})).toBe(claudeRecordFingerprint(JSON.parse('{"a":3,"z":[{"a":1,"b":2}]}')));
   expect(claudeGrantFingerprint('synthetic')).toBe(claudeGrantFingerprint('synthetic'));

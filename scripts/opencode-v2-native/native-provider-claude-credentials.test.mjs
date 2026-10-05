@@ -270,3 +270,19 @@ test('changed prepared record fails closed even if its access token and refresh 
  owned.stored.get(serviceA).account='unverified-external-owner';
  await assert.rejects(owned.recreate()({profileID:'one',purpose:'request'},owned.context()),/native_claude_refresh_unsettled/);assert.equal(owned.exchanges(),1);assert.equal(owned.state().unresolved.length,1);
 });
+test('a lost committed begin acknowledgement cancels its proved undispatched attempt before releasing ownership',async()=>{
+ const owned=fixture({expiresAt:Date.now()+1000}),original=owned.lifecycle.transition;let lose=true;
+ owned.lifecycle.transition=async(revision,operation)=>{
+  const result=await original(revision,operation);
+  if(operation.kind==='begin'&&lose){lose=false;throw Object.assign(new Error('native_claude_lifecycle_owner_expired'),{code:'native_claude_lifecycle_owner_expired'});}return result;
+ };
+ await assert.rejects(owned.owner({profileID:'one',purpose:'request'},owned.context()),/native_claude_lifecycle_owner_expired/);
+ assert.equal(owned.exchanges(),0);assert.equal(owned.state().unresolved.length,0);
+ assert.equal((await owned.recreate()({profileID:'one',purpose:'request'},owned.context())).accessToken,'token-B');assert.equal(owned.exchanges(),1);
+});
+test('an unverified begin receipt is never cancelled after a lost acknowledgement',async()=>{
+ const owned=fixture({expiresAt:Date.now()+1000}),original=owned.lifecycle.transition,read=owned.lifecycle.read;let lose=true;
+ owned.lifecycle.transition=async(revision,operation)=>{const result=await original(revision,operation);if(operation.kind==='begin'&&lose){lose=false;throw new Error('lost begin');}return result;};
+ owned.lifecycle.read=async()=>{const result=await read();if(result.unresolved.length)result.unresolved[0].recordFingerprint='f'.repeat(64);return result;};
+ await assert.rejects(owned.owner({profileID:'one',purpose:'request'},owned.context()),/lost begin/);assert.equal(owned.exchanges(),0);assert.equal(owned.state().unresolved.length,1);
+});

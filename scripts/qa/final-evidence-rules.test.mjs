@@ -23,6 +23,10 @@ test('gap evidence resolves relative and absolute journal spelling only from the
     const foreign = path.join(fixture, 'different'); await fs.mkdir(foreign);
     await assert.rejects(check({ ...command, args: [...command.args.slice(0, 3), foreign] }), { code: 'qa_gap_directory_mismatch' });
     await assert.rejects(check({ ...command, code: 1 }), { code: 'qa_gap_command_invalid' });
+    await fs.writeFile(logPath,'{"type":"gap"}\n');
+    await assert.rejects(check(command),{code:'qa_gap_command_invalid'});
+    await fs.writeFile(logPath,'');await fs.link(logPath,path.join(fixture,'alias.log'));
+    await assert.rejects(check(command),{code:'qa_gap_command_invalid'});
   } finally { await fs.rm(fixture, { recursive: true, force: true }); }
 });
 

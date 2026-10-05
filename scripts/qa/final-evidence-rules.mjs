@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { realpath } from 'node:fs/promises';
+import { realpath,open,lstat } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import path from 'node:path';
 import { createDiagnosticSanitizer } from '../../packages/harness-runtime/lib/sanitizer.js';
 
@@ -38,6 +39,15 @@ export async function assertQaGapCommand({ command, journalDirectory, repository
     || typeof command.log !== 'string' || !path.isAbsolute(command.log)
     || await realpath(command.log) !== await realpath(logPath)
     || !inside(root, await realpath(logPath))) throw fail('qa_gap_directory_mismatch');
+  const handle=await open(logPath,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
+  try{
+    const before=await handle.stat();
+    if(!before.isFile()||before.nlink!==1||before.size>4*1024*1024)throw fail('qa_gap_command_invalid');
+    const recorded=await handle.readFile(),after=await handle.stat(),linked=await lstat(logPath);
+    if(!recorded.equals(logBytes)||recorded.length!==0||before.dev!==linked.dev||before.ino!==linked.ino
+      ||linked.isSymbolicLink()||before.size!==after.size||before.mtimeMs!==after.mtimeMs||before.ctimeMs!==after.ctimeMs
+      ||linked.mtimeMs!==after.mtimeMs||linked.ctimeMs!==after.ctimeMs)throw fail('qa_gap_command_invalid');
+  }finally{await handle.close();}
   return { directory: expected, cwd, code: 0, logBytes: 0, verify: form.verify };
 }
 

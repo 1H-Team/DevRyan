@@ -94,6 +94,8 @@ export function createNativeClaudeCredentialOwner({profiles,home,withMutationQue
   let current=await store.read();await check();if(!current)throw fail('claude_credentials_missing',401);
   const legacyFence=hasLegacyClaudeFence(current);let token=access(current);
   let state=lifecycle?parseClaudeLifecycle(await lifecycle.read()):emptyClaudeLifecycle();await check();
+  const currentRefresh=current.claudeAiOauth?.refreshToken;
+  if(typeof currentRefresh==='string'&&state.unresolved.some(row=>row.phase==='enrollment-prepared'&&row.grantFingerprint===claudeGrantFingerprint(currentRefresh)))throw fail('native_claude_refresh_unsettled',401);
   const transition=async operation=>{
    if(!lifecycle)throw fail('native_claude_lifecycle_owner_required',503);
    const expected=transitionClaudeLifecycle(state,state.revision,operation);
@@ -126,8 +128,7 @@ export function createNativeClaudeCredentialOwner({profiles,home,withMutationQue
    if(readOnly||!authority||policy==='access-only'||legacyFence){
     if(forced||token.expiresAt<=now()+60000)throw fail('claude_credentials_expired',401);
    }else{
-    const attemptID=randomUUID(),binding=enrollment(authority);let prepared=false,settled=false,committed=false,failure;
-    await check();await transition({kind:'begin',account:authority,attemptID});
+    const attemptID=randomUUID(),binding=enrollment(authority);let prepared=false,settled=false,committed=false,begun=false,failure;
     const settleReplacement=async()=>{
      const pending=state.unresolved.find(row=>row.attemptID===attemptID);
      if(!pending||pending.phase!=='replacement-prepared')throw fail('native_claude_refresh_unsettled',401);
@@ -138,6 +139,7 @@ export function createNativeClaudeCredentialOwner({profiles,home,withMutationQue
      current=written;settled=true;committed=true;
     };
     try{
+     await check();await transition({kind:'begin',account:authority,attemptID});begun=true;
      await check();
      const guarded={...store,async read(){await check();const value=await store.read();if(!value||claudeRecordFingerprint(value)!==before)throw fail('native_claude_account_changed');return value;},async write(value){
       await check();const issued=access(value);if(hasLegacyClaudeFence(value)||issued.expiresAt<=now()+60000)throw fail('native_claude_refresh_failed',401);
@@ -153,7 +155,17 @@ export function createNativeClaudeCredentialOwner({profiles,home,withMutationQue
     // A dispatch may have consumed its refresh grant. Only a proved non-dispatch
     // or the exact prepared replacement can settle an intent, including on abort.
     try{
-     if(!dispatched&&!prepared)await transition({kind:'cancel-before-dispatch',binding,attemptID});
+     if(!begun&&!dispatched){
+      // A lost begin acknowledgement cannot have dispatched an issuer request.
+      // Reconcile only this exact durable attempt under its physical owner.
+      state=parseClaudeLifecycle(await lifecycle.read());
+      const pending=state.unresolved.find(row=>row.attemptID===attemptID);
+      if(pending){
+       if(pending.phase!=='in-flight'||!sameClaudeEnrollment(pending,authority)||pending.recordFingerprint!==before||pending.grantFingerprint!==authority.grantFingerprint)throw fail('native_claude_refresh_unsettled',401);
+       begun=true;
+      }
+     }
+     if(begun&&!dispatched&&!prepared)await transition({kind:'cancel-before-dispatch',binding,attemptID});
      else if(prepared&&!settled)await settleReplacement();
     }catch(error){failure??=error;}
     if(failure)throw failure;

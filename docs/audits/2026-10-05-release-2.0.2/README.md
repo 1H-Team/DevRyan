@@ -93,6 +93,19 @@ preserved `r22-b6` verifier supplied the digest checks. Focused release tests
 passed without registry access. Windows x64/ARM64 CI is configured with pinned
 native tools and read permissions; actual Windows runs and contracts are pending.
 
+Enrollment review findings reproduced on the original review snapshot and the
+integrated branch. A durable fingerprint-only intent now precedes the exclusive
+vendor credential write; a matching pending enrollment can be settled by a fresh
+authorized selection without replaying the issuer. Abandoned live starts remove
+only their own empty directories, non-private roots refuse before issuer work,
+and damaged enrollment directories no longer hide healthy rows. The lost-begin
+renewal acknowledgement was also reproduced: only the exact owner's proved
+undispatched attempt is cancelled, and new enrollment reserves space for its
+complete renewal intent. Enrollment/lifecycle/provider-route checks passed (116),
+as did the synthetic renewal checks and web type checks. Evidence grading now
+reads and verifies the actual log descriptor instead of trusting caller-supplied
+empty bytes; all 13 gap/tee/evidence checks passed. Other B1 scopes remain open.
+
 ## Final evidence table
 
 This table must be rebound to the final source commit, lock hash, native build
@@ -105,7 +118,7 @@ evidence in `.cache/release-2.0.2-recovery`.
 | Full integrated validation, build, bundle budgets and documentation | Not run | Engineering is still changing |
 | Packaged prompt conflict notice and explicit restore | Passed (focused); packaged not run | API, mounted UI, stale revision, edit/path replacement and guidance checks |
 | Tracked credential owner and synthetic rehearsal | Not run | Genuine checkpoint grant implemented; QA composition pending |
-| Complete B1 review closure | Not run | Recovered reproductions being consolidated |
+| Complete B1 review closure | In progress | Checkpoint, shutdown, enrollment and renewal findings reproduced and corrected; remaining scopes being consolidated |
 | Compiled acceptance and seeded-credential boot | Not run | Final native artifacts pending |
 | Three meaningful durable journal roots and verified gaps | Not run | Journal fixture/grading code integrated |
 | Seven lifecycle modes and seven wire cells | Not run | Final identities pending |

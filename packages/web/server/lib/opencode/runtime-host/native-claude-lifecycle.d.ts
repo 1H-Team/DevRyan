@@ -3,10 +3,12 @@ export const CLAUDE_LIFECYCLE_KEY: 'devryan.claude-lifecycle/1';
 export const CLAUDE_LIFECYCLE_LIMITS: Readonly<{accounts:64;unresolved:128;bytes:61440}>;
 export interface ClaudeEnrollmentBinding {readonly profileID:string;readonly service:string;readonly configDirectory:string;readonly enrollmentID:string;readonly generation:string}
 export interface ClaudeLifecycleAccount extends ClaudeEnrollmentBinding {readonly grantFingerprint:string;readonly recordFingerprint:string}
-export interface ClaudeUnresolvedRefresh extends ClaudeLifecycleAccount {readonly attemptID:string;readonly phase:'in-flight'|'replacement-prepared'|'blocked';readonly replacementRecordFingerprint?:string;readonly replacementGrantFingerprint?:string}
+export interface ClaudeUnresolvedRefresh extends ClaudeLifecycleAccount {readonly attemptID:string;readonly phase:'in-flight'|'replacement-prepared'|'blocked'|'enrollment-prepared';readonly replacementRecordFingerprint?:string;readonly replacementGrantFingerprint?:string}
 export interface ClaudeLifecycleState {readonly protocol:typeof CLAUDE_LIFECYCLE_PROTOCOL;readonly revision:number;readonly accounts:readonly ClaudeLifecycleAccount[];readonly unresolved:readonly ClaudeUnresolvedRefresh[]}
 export type ClaudeLifecycleOperation =
  | {readonly kind:'enroll';readonly account:ClaudeLifecycleAccount}
+ | {readonly kind:'prepare-enrollment';readonly account:ClaudeLifecycleAccount;readonly attemptID:string}
+ | {readonly kind:'settle-enrollment';readonly binding:ClaudeEnrollmentBinding;readonly attemptID:string;readonly recordFingerprint:string}
  | {readonly kind:'begin';readonly account:ClaudeLifecycleAccount;readonly attemptID:string}
  | {readonly kind:'prepare';readonly binding:ClaudeEnrollmentBinding;readonly attemptID:string;readonly recordFingerprint:string;readonly grantFingerprint:string}
  | {readonly kind:'settle';readonly binding:ClaudeEnrollmentBinding;readonly attemptID:string;readonly recordFingerprint:string}

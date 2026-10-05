@@ -14,6 +14,17 @@ queue-dependent owner cleanup to finish; the original full-cleanup exit ACK is
 unchanged. Provider workers expose failure state and require their own verified
 termination before replacement or successful drain.
 
+`native-claude-enrollment.js` records a fingerprint-only `enrollment-prepared`
+intent in the original lifecycle KV before the exclusive vendor write. It is
+not renewal authority. Fresh authorized selection settles only its matching
+vendor record, so revocation or a lost settlement reply does not orphan a grant
+or retry the issuer. Unavailable directories are individual list rows; unused
+live starts remove only their own empty directories. The control root is private
+before issuer work. `native-claude-lifecycle.js` reserves renewal-intent space
+when accepting a new account. A lost begin acknowledgement is reconciled only
+for the exact physical owner's proved undispatched attempt; ambiguous dispatch
+and unverified receipts remain fenced.
+
 `native-provider-timing.js` binds response measurements to committed native
 request observations and real attempt spans. `native-observation.ts` emits
 content-free first-response measurements without delaying provider streams.

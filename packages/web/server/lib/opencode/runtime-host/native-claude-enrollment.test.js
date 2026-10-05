@@ -11,23 +11,23 @@ async function fixture(){
  const base=await fs.realpath(path.resolve('../../.cache/v2-validation'));const root=await fs.mkdtemp(path.join(base,'claude-enrollment-'));roots.push(root);
  const source=await fs.readFile(new URL('../../../../runtime/reviewed-inputs/claude-1.8.0/node_modules/@rynfar/meridian/dist/cli-khhjyk04.js',import.meta.url));
  const module=await import('data:text/javascript;base64,'+Buffer.from(rewriteReviewedClaudeCredentials(source)).toString('base64'));
- const records=new Map(),calls=[],published=[];let state=emptyClaudeLifecycle(),valid=true,exchanges=0,beforeExchange=async()=>{},beforeWrite=async()=>{},afterTransition=async()=>{};
+ const records=new Map(),calls=[],published=[];let state=emptyClaudeLifecycle(),valid=true,exchanges=0,beforeExchange=async()=>{},beforeWrite=async()=>{},afterWrite=async()=>{},afterTransition=async()=>{},transitionFault;
  let token={access_token:'fresh-access',refresh_token:'fresh-grant',expires_in:3600,scope:'user:profile user:inference'};
  let queue=Promise.resolve();const mutation=action=>{const work=queue.then(action);queue=work.catch(()=>{});return work;};
  const execute=async(file,args)=>{
   expect(file).toBe('/usr/bin/security');const service=args[args.indexOf('-s')+1];calls.push(args[0]);
   if(args[0]==='find-generic-password'){if(!records.has(service))throw Object.assign(new Error('missing'),{code:44});return{stdout:args.includes('-w')?JSON.stringify(records.get(service)):''};}
   expect(args[0]).toBe('add-generic-password');expect(args).not.toContain('-U');await beforeWrite(service);
-  if(records.has(service))throw Object.assign(new Error('collision'),{code:45});records.set(service,JSON.parse(args[args.indexOf('-w')+1]));return{stdout:''};
+  if(records.has(service))throw Object.assign(new Error('collision'),{code:45});records.set(service,JSON.parse(args[args.indexOf('-w')+1]));await afterWrite();return{stdout:''};
  };
- const options={controlRoot:root,home:root,asset:{},lifecycle:{read:async()=>structuredClone(state),transition:async(revision,action)=>{state=transitionClaudeLifecycle(state,revision,action);await afterTransition();return state;}},withMutationQueue:mutation,
+ const options={controlRoot:root,home:root,asset:{},lifecycle:{read:async()=>structuredClone(state),transition:async(revision,action)=>{if(transitionFault)await transitionFault(action);state=transitionClaudeLifecycle(state,revision,action);await afterTransition(action);return state;}},withMutationQueue:mutation,
   captureBinding:async()=>({principal:'admin',revision:1}),recheckBinding:async()=>{if(!valid)throw Object.assign(new Error('revoked'),{code:'web_authorization_revoked',status:403});},
   publishProfile:async profile=>published.push(profile),loadModule:async()=>module,execute,
   fetchImpl:async(url,request)=>{expect(url).toBe('https://platform.claude.com/v1/oauth/token');exchanges++;await beforeExchange();const body=JSON.parse(request.body);expect(body.grant_type).toBe('authorization_code');expect(body.code_verifier).toHaveLength(43);return new Response(JSON.stringify(token));},
  };
  const owner=createNativeClaudeEnrollmentOwner(options);
  const start=async()=>{const pending=await owner.begin({});return{...pending,code:'original-user-code',state:new URL(pending.url).searchParams.get('state')};};
- return{owner,options,start,records,calls,published,get state(){return state;},get exchanges(){return exchanges;},revoke:()=>{valid=false;},restore:()=>{valid=true;},token:value=>{token=value;},afterTransition:fn=>{afterTransition=fn;},beforeExchange:fn=>{beforeExchange=fn;},beforeWrite:fn=>{beforeWrite=fn;}};
+ return{owner,options,start,records,calls,published,get state(){return state;},get exchanges(){return exchanges;},revoke:()=>{valid=false;},restore:()=>{valid=true;},token:value=>{token=value;},afterTransition:fn=>{afterTransition=fn;},beforeExchange:fn=>{beforeExchange=fn;},beforeWrite:fn=>{beforeWrite=fn;},afterWrite:fn=>{afterWrite=fn;},transitionFault:fn=>{transitionFault=fn;}};
 }
 
 test('fresh original factory enrollment publishes KV authority only after readback and selects only explicitly',async()=>{
@@ -56,7 +56,7 @@ test.each([null,[],{expires_in:'3600'},{expires_in:[]},{expires_at:'999999999999
  await expect(f.owner.complete(p.enrollmentID,{code:p.code,state:p.state},{})).rejects.toMatchObject({code:'native_claude_enrollment_response_invalid'});expect(f.records.size).toBe(0);expect(f.state.accounts).toHaveLength(0);await f.owner.close();
 });
 test('committed enrollment survives post-KV revocation and selects with fresh authorization without issuer retry',async()=>{
- const f=await fixture(),p=await f.start();f.afterTransition(async()=>f.revoke());await expect(f.owner.complete(p.enrollmentID,{code:p.code,state:p.state},{})).rejects.toMatchObject({status:403});
+ const f=await fixture(),p=await f.start();f.afterTransition(async action=>{if(action.kind==='settle-enrollment')f.revoke();});await expect(f.owner.complete(p.enrollmentID,{code:p.code,state:p.state},{})).rejects.toMatchObject({status:403});
  expect(f.state.accounts).toHaveLength(1);f.restore();await f.owner.select(p.enrollmentID,{});expect(f.published).toHaveLength(1);expect(f.exchanges).toBe(1);await f.owner.close();
 });
 test('refuses a directory replaced during issuer work before KV or credential publication',async()=>{
@@ -89,4 +89,36 @@ test('completed enrollment can be selected after host recreation using KV author
 test('recreated owner refuses externally replaced enrolled credential',async()=>{
  const f=await fixture(),p=await f.start();await f.owner.complete(p.enrollmentID,{code:p.code,state:p.state},{});await f.owner.close();f.records.set(f.state.accounts[0].service,{claudeAiOauth:{accessToken:'foreign'}});const replacement=createNativeClaudeEnrollmentOwner(f.options);
  await expect(replacement.select(p.enrollmentID,{})).rejects.toMatchObject({code:'native_claude_enrollment_account_changed'});expect(f.published).toHaveLength(0);await replacement.close();
+});
+test.each(['revoked','settlement-conflict'])('a vendor write retains a recoverable intent after %s, without repeating the issuer',async fault=>{
+ const f=await fixture(),p=await f.start();
+ if(fault==='revoked')f.afterWrite(async()=>f.revoke());
+ else f.transitionFault(async action=>{if(action.kind==='settle-enrollment')throw Object.assign(new Error('conflict'),{code:'native_claude_lifecycle_conflict'});});
+ await expect(f.owner.complete(p.enrollmentID,{code:p.code,state:p.state},{})).rejects.toMatchObject({code:fault==='revoked'?'native_claude_enrollment_refused':'native_claude_enrollment_failed'});
+ expect(f.records.size).toBe(1);expect(f.state.accounts).toHaveLength(0);expect(f.state.unresolved[0].phase).toBe('enrollment-prepared');
+ await f.owner.close();f.restore();f.transitionFault(undefined);f.afterWrite(async()=>{});
+ const replacement=createNativeClaudeEnrollmentOwner(f.options);
+ expect(await replacement.list({})).toEqual([{enrollmentID:p.enrollmentID,profileID:f.state.unresolved[0].profileID,status:'incomplete'}]);
+ expect((await replacement.select(p.enrollmentID,{})).status).toBe('selected');expect(f.state.accounts).toHaveLength(1);expect(f.state.unresolved).toEqual([]);expect(f.exchanges).toBe(1);await replacement.close();
+});
+test('a failed intent commit never writes a vendor credential, and a foreign record cannot settle an intent',async()=>{
+ const f=await fixture(),p=await f.start();f.transitionFault(async()=>{throw new Error('commit failed');});
+ await expect(f.owner.complete(p.enrollmentID,{code:p.code,state:p.state},{})).rejects.toMatchObject({code:'native_claude_enrollment_failed'});
+ expect(f.records.size).toBe(0);expect(f.state.unresolved).toEqual([]);await f.owner.close();
+ const g=await fixture(),q=await g.start();g.beforeWrite(async service=>g.records.set(service,{claudeAiOauth:{accessToken:'foreign'}}));
+ await expect(g.owner.complete(q.enrollmentID,{code:q.code,state:q.state},{})).rejects.toMatchObject({code:'native_claude_enrollment_persistence_failed'});
+ expect(g.state.accounts).toHaveLength(0);expect(g.state.unresolved[0].phase).toBe('enrollment-prepared');
+ await expect(g.owner.select(q.enrollmentID,{})).rejects.toMatchObject({code:'native_claude_enrollment_account_changed'});expect(g.published).toEqual([]);await g.owner.close();
+});
+test('abandoned starts remove only their own empty directories; one damaged enrollment does not hide healthy rows',async()=>{
+ const f=await fixture();await f.start();await f.start();await f.owner.close();
+ expect(await fs.readdir(path.join(f.options.controlRoot,'claude-enrollments'))).toEqual([]);
+ const g=await fixture(),a=await g.start();await g.owner.complete(a.enrollmentID,{code:a.code,state:a.state},{});
+ g.token({access_token:'second-access',refresh_token:'second-grant',expires_in:3600});const b=await g.start();await g.owner.complete(b.enrollmentID,{code:b.code,state:b.state},{});
+ await fs.chmod(path.join(g.options.controlRoot,'claude-enrollments',a.enrollmentID),0o750);
+ expect((await g.owner.list({})).map(row=>row.status)).toEqual(['unavailable','enrolled']);expect((await g.owner.select(b.enrollmentID,{})).status).toBe('selected');await g.owner.close();
+});
+test('a non-private control root is refused before issuer, credential or lifecycle work',async()=>{
+ const f=await fixture();await fs.chmod(f.options.controlRoot,0o755);
+ await expect(f.owner.begin({})).rejects.toMatchObject({code:'native_claude_enrollment_root_invalid'});expect(f.exchanges).toBe(0);expect(f.records.size).toBe(0);expect(f.state.accounts).toEqual([]);await f.owner.close();
 });

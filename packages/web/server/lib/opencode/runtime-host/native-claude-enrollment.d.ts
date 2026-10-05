@@ -1,7 +1,7 @@
 import type {ClaudeLifecycleState,ClaudeLifecycleOperation} from './native-claude-lifecycle.js';
 export interface NativeClaudeEnrollmentResult {
  readonly enrollmentID:string;
- readonly status:'pending'|'enrolled'|'selected';
+ readonly status:'pending'|'enrolled'|'selected'|'incomplete'|'unavailable';
  readonly url?:string;
  readonly profileID?:string;
 }
