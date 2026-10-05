@@ -123,7 +123,8 @@ Electron IPC use this same core. Recovery HTTP exposes no mutation route.
   launches sweep validated `.stale-*` leftovers before any draft or seed decision.
   `native-setup-local-owners.js` restores the v1 owner snapshot once, then renames it to
   `native-setup-local-owners.restored.json`, so later app owner changes survive restarts.
-  Concurrent first starts serialize on `native-setup-local-owners.lock` in web-data.
+  Concurrent first starts serialize on `native-setup-local-owners.lock` in web-data; a lock
+  older than 60 s (a crashed start, possibly under a reused pid) is reclaimed by atomic rename.
 - `native-recovered-input.js` reconstructs typed queued/promoted input and incomplete
   canonical work before every controller spawn. Only startup-affected sessions
   are fenced; selected recovery summaries are bounded and full contents are read

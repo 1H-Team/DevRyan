@@ -109,3 +109,35 @@ test('a start that crashed holding the restore lock, or lost the snapshot to ano
  try{await restoreNativeSetupOwners(other);}finally{fs.rename=rename;}
  expect((await createSessionVault({dataDirectory:other})).get('supabase-local-owner').principal.id).toBe(localAdmin['supabase-local-owner'].id);
 }));
+const lockOf=target=>path.join(target,'native-setup-local-owners.lock');
+const liveLock=createdAt=>JSON.stringify({ownerToken:'e'.repeat(32),pid:1,createdAt})+'\n';
+test('a crashed start\'s restore lock whose pid a live unrelated process reused is reclaimed by age',async()=>fixture(async root=>{
+ const target=path.join(root,'target');await snapshot(target,localAdmin);
+ await fs.writeFile(lockOf(target),liveLock(Date.now()-120_000));
+ const started=Date.now();await restoreNativeSetupOwners(target);
+ expect(Date.now()-started).toBeLessThan(2_000);
+ expect((await fs.readdir(target)).sort()).toEqual(['multi-user-vault.json','multi-user-vault.key','native-setup-local-owners.restored.json']);
+ expect((await createSessionVault({dataDirectory:target})).get('supabase-local-owner').principal.id).toBe(localAdmin['supabase-local-owner'].id);
+}),20_000);
+test('a fresh restore lock held by a live process still serializes',async()=>fixture(async root=>{
+ const {withCrossProcessFileLock}=await import('../../../../../harness-runtime/lib/atomic-file.js');
+ const target=path.join(root,'target');await snapshot(target,localAdmin);
+ let restore;
+ await withCrossProcessFileLock(lockOf(target),async()=>{
+  restore=restoreNativeSetupOwners(target);await new Promise(resolve=>setTimeout(resolve,300));
+  expect(await fs.readdir(target)).toContain('native-setup-local-owners.json');
+ });
+ await restore;expect(await fs.readdir(target)).toContain('native-setup-local-owners.restored.json');
+ const foreign=path.join(root,'foreign');await snapshot(foreign,localAdmin);await fs.writeFile(lockOf(foreign),liveLock(Date.now()));
+ await expect(restoreNativeSetupOwners(foreign)).rejects.toMatchObject({code:'LOCK_TIMEOUT'});
+ expect(await fs.readdir(foreign)).toContain('native-setup-local-owners.json');
+}),20_000);
+test('a stale lock another start reclaimed and re-locked before this start removes it is handed back',async()=>fixture(async root=>{
+ const target=path.join(root,'target');await snapshot(target,localAdmin);
+ await fs.writeFile(lockOf(target),liveLock(Date.now()-120_000));
+ const fresh=liveLock(Date.now()+60_000),rename=fs.rename;
+ fs.rename=async(from,...rest)=>{if(String(from)===lockOf(target)){await fs.rm(from);await fs.writeFile(from,fresh);}return rename.call(fs,from,...rest);};
+ try{await expect(restoreNativeSetupOwners(target)).rejects.toMatchObject({code:'LOCK_TIMEOUT'});}finally{fs.rename=rename;}
+ expect(await fs.readFile(lockOf(target),'utf8')).toBe(fresh);
+ expect((await fs.readdir(target)).sort()).toEqual(['native-setup-local-owners.json','native-setup-local-owners.lock']);
+}),20_000);

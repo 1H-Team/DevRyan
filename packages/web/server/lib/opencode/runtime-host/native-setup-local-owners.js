@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createSessionVault, validateSetupOwners } from '../../multi-user/vault.js';
@@ -11,6 +12,28 @@ const existing = async file => {
     if (!stat.isFile() || stat.isSymbolicLink() || await fs.realpath(file) !== file) throw fail();
     return stat;
   } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+};
+
+// Restore holds the lock for milliseconds, so an older lock belongs to a crashed start
+// whose pid a live unrelated process may since have reused (the shared lock trusts it).
+const LOCK_STALE_MS = 60_000;
+const reclaimStaleLock = async lock => {
+  let stat, raw;
+  try { stat = await fs.lstat(lock); raw = await fs.readFile(lock, 'utf8'); }
+  catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+  let createdAt; try { createdAt = JSON.parse(raw)?.createdAt; } catch {}
+  if (Date.now() - (Number.isFinite(createdAt) ? createdAt : stat.mtimeMs) < LOCK_STALE_MS) return false;
+  // Rename is the atomic claim: only one start takes the file. A start that took a lock
+  // another start re-created after reclaiming the same stale one hands it back.
+  const aside = `${lock}.stale-${process.pid}-${crypto.randomUUID()}`;
+  try { await fs.rename(lock, aside); } catch (error) { if (error.code === 'ENOENT') return true; throw error; }
+  try {
+    const taken = await fs.lstat(aside);
+    if (taken.ino !== stat.ino || taken.dev !== stat.dev || await fs.readFile(aside, 'utf8') !== raw) {
+      await fs.link(aside, lock).catch(error => { if (error.code !== 'EEXIST') throw error; });
+    }
+  } finally { await fs.rm(aside, { force: true }); }
+  return true;
 };
 
 export async function captureNativeSetupOwners(dataDirectory) {
@@ -30,7 +53,8 @@ export async function captureNativeSetupOwners(dataDirectory) {
 export async function restoreNativeSetupOwners(dataDirectory) {
   const file = path.join(dataDirectory, 'native-setup-local-owners.json');
   if (!await existing(file)) return;
-  await withCrossProcessFileLock(path.join(dataDirectory, 'native-setup-local-owners.lock'), async () => {
+  const lock = path.join(dataDirectory, 'native-setup-local-owners.lock');
+  const restore = async () => {
     const stat = await existing(file);
     if (!stat) return;
     if (stat.size > 16384) throw fail();
@@ -57,5 +81,12 @@ export async function restoreNativeSetupOwners(dataDirectory) {
     try { await fs.rename(file, path.join(dataDirectory, 'native-setup-local-owners.restored.json')); }
     catch (error) { if (error.code === 'ENOENT') return; throw error; }
     await sync(dataDirectory).catch(() => {});
-  });
+  };
+  await reclaimStaleLock(lock);
+  try { await withCrossProcessFileLock(lock, restore); }
+  catch (error) {
+    // A lock that turned stale while this start waited is reclaimed once.
+    if (error.code !== 'LOCK_TIMEOUT' || !await reclaimStaleLock(lock)) throw error;
+    await withCrossProcessFileLock(lock, restore);
+  }
 }
