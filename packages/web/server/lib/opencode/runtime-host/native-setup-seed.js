@@ -136,12 +136,17 @@ async function seed({source,target,environment={},captureLogicalSetup}){
  const fromHome=values=>home?values.map(relative=>path.join(home,relative)):[];
  const setupRoots=await canonicalAll([source.webDataDirectory,source.webConfigDirectory,source.opencodeConfigDirectory,source.opencodeConfigFile&&path.dirname(source.opencodeConfigFile)]
   .flatMap(absolute).concat(fromHome(['.agents/skills','.opencode/skill','.opencode/skills','.config/meridian'])));
- const accountRoots=home?await canonicalAll([...absolute(source.opencodeDataDirectory),...fromHome(['.claude','.config/meridian/accounts'])]):[];
+ const [claudeRoot,codexRoot]=home?await canonicalAll(fromHome(['.claude','.codex'])):[];
+ const otherAccountRoots=home?await canonicalAll([...absolute(source.opencodeDataDirectory),...fromHome(['.config/meridian/accounts'])]):[];
+ const otherSecretRoots=await canonicalAll([...fromHome(['.ssh','.gnupg','.aws','.azure','.kube','.docker','.config/gcloud','.config/gh','.password-store','.netrc','Library/Keychains','Library/Cookies',
+  '.claude.json','.git-credentials','.npmrc','.pypirc',...['Google','BraveSoftware','Firefox','Microsoft Edge','Arc'].map(name=>'Library/Application Support/'+name)]),
+  ...absolute(environment.XDG_CONFIG_HOME).map(value=>path.join(value,'gh')),...absolute(environment.GH_CONFIG_DIR),...absolute(environment.CLOUDSDK_CONFIG)]);
+ const accountRoots=[...otherAccountRoots,...claudeRoot?[claudeRoot]:[]];
  const usable=(values,protectedRoots)=>values.filter(value=>value!==home&&inside(home,value)&&!protectedRoots.some(root=>inside(value,root)));
- const secrets=usable(await canonicalAll([...fromHome(['.ssh','.gnupg','.aws','.azure','.kube','.docker','.config/gcloud','.config/gh','.password-store','.netrc','Library/Keychains','Library/Cookies',
-  '.codex','.claude.json','.git-credentials','.npmrc','.pypirc',...['Google','BraveSoftware','Firefox','Microsoft Edge','Arc'].map(name=>'Library/Application Support/'+name)]),
-  ...absolute(environment.XDG_CONFIG_HOME).map(value=>path.join(value,'gh')),...absolute(environment.GH_CONFIG_DIR),...absolute(environment.CLOUDSDK_CONFIG)]),[...setupRoots,...accountRoots]);
- const accounts=usable(accountRoots,setupRoots),tools=home?await canonicalAll(fromHome(['.claude','.codex'])):[];
+ const secrets=usable([...otherSecretRoots,...codexRoot?[codexRoot]:[]],[...setupRoots,...accountRoots]);
+ // A ~/.claude or ~/.codex that canonicalizes onto or into another store never lifts that store's protection.
+ const others=[...otherSecretRoots,...otherAccountRoots].filter(store=>store!==home&&inside(home,store));
+ const accounts=usable(accountRoots,setupRoots),tools=[claudeRoot,codexRoot].filter(root=>root&&root!==home&&!others.some(store=>inside(store,root)));
  const sharedDirs=new Set(['skills','commands','agents','prompts','output-styles']),sharedFiles=new Set(['CLAUDE.md','AGENTS.md']);
  // The ~/.claude or ~/.codex root that admits this canonical file as shared setup, if any.
  const shared=(file,stat)=>tools.find(root=>{if(file===root||!inside(root,file))return false;const [top,...rest]=path.relative(root,file).split(path.sep);

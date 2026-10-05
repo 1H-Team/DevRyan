@@ -337,6 +337,14 @@ it('keeps the rest of ~/.claude, ~/.codex and ~/.claude.json protected from link
  expect(marker.files.map(row=>path.relative(f.root,row.path)).sort()).toEqual(['target/config/skills/s/SKILL.md','target/home/.claude/.credentials.json']);
  expect(JSON.parse(await fs.readFile(path.join(f.target.home,'.claude','.credentials.json'),'utf8'))).toEqual({claudeAiOauth:{accessToken:'fixture-claude'}});
 });
+it('never lets a ~/.claude that canonicalizes into another store lift that store',async()=>{
+ const f=await fixture(),home=f.source.home,ssh=path.join(home,'.ssh');
+ await f.text(path.join(ssh,'skills','s','SKILL.md'),'fixture-ssh-skill');await f.text(path.join(ssh,'id_fixture'),'fixture-key');
+ await fs.symlink(ssh,path.join(home,'.claude'));await fs.symlink(path.join(home,'.claude','skills'),path.join(f.source.opencodeConfigDirectory,'skills'));
+ const marker=await seedNativeSetup(f);
+ expect(marker.skipped).toEqual([{relativePath:'skills',reason:'protected'}]);
+ expect(marker.files).toEqual([]);
+});
 it('never follows links or bulk folders into account, token and browser stores; exact account inputs still seed',async()=>{
  const f=await fixture(),home=f.source.home,skills=path.join(home,'.agents','skills'),data=path.join(home,'.local','share','opencode'),source={...f.source,opencodeDataDirectory:data};
  await f.text(path.join(skills,'ok','SKILL.md'),'ok');await f.write(path.join(data,'auth.json'),{fixture:{type:'api',key:'fixture-auth'}});
