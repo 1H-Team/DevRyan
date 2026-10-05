@@ -78,7 +78,7 @@ export async function resetAbandonedNativeSetupSource({controlRoot,sourceRoot}){
  // An unpinned stamped seed is an abandoned first attempt. An unstamped unpinned one, or a
  // pinned one with files gone but none changed, is a half-deleted 2.0.0 seed: rebuild it.
  const marker=!await missing(path.join(sourceRoot,'web-data','native-setup-seed.json'));
- if(marker?!await partiallyRemoved(sourceRoot):false)return false;
+ if(marker&&!await partiallyRemoved(sourceRoot))return false;
  if(!await missing(path.join(controlRoot,'selection.json')))return false;
  let drafts=[];try{drafts=await fs.readdir(path.join(controlRoot,'bundles'));}catch(error){if(error.code!=='ENOENT')throw error;}
  if(drafts.length)return false;
