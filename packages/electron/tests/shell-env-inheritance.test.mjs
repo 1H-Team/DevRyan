@@ -23,6 +23,18 @@ test('login-shell merge drops only refused or provisioning-bypassing values and 
  assert.deepEqual(selectInheritedShellEnv({},{XDG_STATE_HOME:'/fixture/s',OPENCHAMBER_DATA_DIR:'/fixture/d'}),{inherited:{XDG_STATE_HOME:'/fixture/s',OPENCHAMBER_DATA_DIR:'/fixture/d'},dropped:[]});
 });
 
+test('a packaged app also drops login-shell dev/packaging redirections; dev runs and the launch environment keep them',()=>{
+ const redirections={OPENCHAMBER_ELECTRON_DEV:'1',OPENCHAMBER_ELECTRON_USER_DATA_DIR:'/fixture/user-data',
+  DEVRYAN_EXECUTION_ARTIFACTS:'/fixture/dev-artifacts',DEVRYAN_DEFAULT_CONFIG_ROOT:'/fixture/default-config'};
+ const shellEnv={...redirections,OPENCODE_HOST:'https://fixture.invalid:4096',OPENCHAMBER_DATA_DIR:'/fixture/d',DEVRYAN_PRIMARY_RECOVERY_MODE:'legacy',PATH:'/fixture/shell/bin'};
+ assert.deepEqual(selectInheritedShellEnv({PATH:'/usr/bin'},shellEnv,{packaged:true}),{inherited:{OPENCHAMBER_DATA_DIR:'/fixture/d',DEVRYAN_PRIMARY_RECOVERY_MODE:'legacy'},
+  dropped:['DEVRYAN_DEFAULT_CONFIG_ROOT','DEVRYAN_EXECUTION_ARTIFACTS','OPENCHAMBER_ELECTRON_DEV','OPENCHAMBER_ELECTRON_USER_DATA_DIR','OPENCODE_HOST']});
+ for(const options of [undefined,{packaged:false}])assert.deepEqual(selectInheritedShellEnv({PATH:'/usr/bin'},shellEnv,options),
+  {inherited:{...redirections,OPENCHAMBER_DATA_DIR:'/fixture/d',DEVRYAN_PRIMARY_RECOVERY_MODE:'legacy'},dropped:['OPENCODE_HOST']});
+ // Launch-set redirections are the packaged app's own decision and stay untouched, not reported.
+ assert.deepEqual(selectInheritedShellEnv(Object.freeze({...redirections}),shellEnv,{packaged:true}),{inherited:{OPENCHAMBER_DATA_DIR:'/fixture/d',DEVRYAN_PRIMARY_RECOVERY_MODE:'legacy'},dropped:['OPENCODE_HOST']});
+});
+
 test('every shell-only value is dropped exactly when provisioning would refuse it or be bypassed by it',async()=>{
  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'devryan-shell-env-')));
  try{
@@ -59,7 +71,7 @@ test('main inherits the login shell through the filtered merge and logs names on
  const start=mainSource.indexOf('const inheritUserShellEnv = ');
  const body=mainSource.slice(start,mainSource.indexOf('\n};\n',start));
  assert.ok(start>=0);
- assert.match(body,/selectInheritedShellEnv\(process\.env, shellEnv\)/);
+ assert.match(body,/selectInheritedShellEnv\(process\.env, shellEnv, \{ packaged: app\.isPackaged \}\)/);
  assert.doesNotMatch(body,/process\.env\[key\] = value/);
  const logLine=body.split('\n').find(line=>/log\.(info|warn)\(/.test(line));
  assert.ok(logLine&&/dropped\.join\(/.test(logLine)&&!/inherited|shellEnv\[/.test(logLine));

@@ -836,9 +836,9 @@ const inheritUserShellEnv = () => {
   const currentPath = process.env.PATH || '';
   const currentPathLooksUserConfigured = pathLooksUserConfigured(currentPath, homeDir, ':');
 
-  // Login-shell values that provisioning would refuse (or that bypass it) are
-  // dropped; everything else is inherited as before.
-  const { inherited, dropped } = selectInheritedShellEnv(process.env, shellEnv);
+  // Login-shell values that provisioning would refuse (or that bypass it), and in a
+  // packaged app dev/packaging redirections, are dropped; everything else is inherited.
+  const { inherited, dropped } = selectInheritedShellEnv(process.env, shellEnv, { packaged: app.isPackaged });
   Object.assign(process.env, inherited);
   if (dropped.length) log.info(`[shell-env] ignored login-shell variables the desktop runtime does not support: ${dropped.join(', ')}`);
 
