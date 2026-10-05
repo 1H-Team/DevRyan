@@ -521,7 +521,10 @@ Electron IPC use this same core. Recovery HTTP exposes no mutation route.
 - `execution-read-guard.ts` resolves read targets against explicit allowed
   roots and protected paths, including symlink targets and Git metadata.
   Reads remain subject to native permissions and the ledger generation fence.
-  Reviewed skill support files have exact per-location snapshot grants. The
+  Reviewed skill support files have exact per-location snapshot grants.
+  `native-reviewed-skill-execution.ts` keeps the hashed reviewed id as the
+  permission resource and reports the human skill name only as display data
+  (running progress and permission-ask `metadata.name`). The
   Environment replacement returns bytes from the verified file descriptor;
   parent directories, unlisted files, changed bytes and symlinks gain no grant.
   Explicit native instruction loads are closed until reviewed resource
