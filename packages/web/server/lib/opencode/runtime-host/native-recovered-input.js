@@ -241,7 +241,7 @@ export function createNativeRecoveredInputOwner({databasePath,primaryRuntime,cap
     async details(sessionID,scope){readiness();const {input}=await captured(sessionID,scope);
       await (await captureAuthorization(input))();
       return {messageID:input.messageID,payloadHash:input.payloadHash,type:input.type,delivery:input.delivery,location:input.location,
-        text:input.item.payload.text??'',files:(input.item.payload.files??[]).map(file=>({uri:file.source.type==='uri'?file.source.uri:`data:${file.mime};base64,${file.data}`,...file.name?{name:file.name}:{},mime:file.mime})),agents:(input.item.payload.agents??[]).map(agent=>({name:agent.name})),skills:input.item.payload.skills??[]};
+        text:input.item.payload.text??'',files:(input.item.payload.files??[]).map(file=>({uri:file.source.type==='uri'?file.source.uri:`data:${file.mime};base64,${file.data}`,...file.name?{name:file.name}:{},mime:file.mime})),agents:(input.item.payload.agents??[]).map(agent=>({name:agent.name})),skills:(input.item.payload.skills??[]).map(skill=>({id:skill.id,name:skill.name}))};
     },
     async action(sessionID,action,scope,context){return withSessionLock(sessionID,async()=>{readiness();const {input,inputs,r}=await captured(sessionID,scope);
       const authorize=await captureAuthorization(input);await authorize();

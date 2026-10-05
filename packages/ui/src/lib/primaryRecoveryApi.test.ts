@@ -44,6 +44,15 @@ test('detail reads bind the displayed identity and never enter the snapshot stor
   await expect(readRecoveredInput('ses_test', input, new AbortController().signal)).rejects.toThrow('This input changed');
 });
 
+test('detail reads accept the host skill and agent attachment shapes', async () => {
+  const skills = [{ id: 'devryan-539ddc37a961e3aceadfc7bbb540b8e7', name: 'Superpowers' }];
+  globalThis.fetch = mock(async () => response({ ...input, type: 'user', delivery: 'queue', location: 'queued', text: 'use it',
+    files: [{ uri: 'data:text/plain;base64,aGk=', name: 'note.txt', mime: 'text/plain' }], agents: [{ name: 'fixer' }], skills })) as typeof fetch;
+  const details = await readRecoveredInput('ses_test', input, new AbortController().signal);
+  expect(details.skills).toEqual(skills);
+  expect(details.files).toEqual([{ uri: 'data:text/plain;base64,aGk=', name: 'note.txt', mime: 'text/plain' }]);
+});
+
 test('a stale status reply cannot erase a newer retained-input projection', async () => {
   let finish: (value: Response) => void = () => {};
   globalThis.fetch = mock(() => new Promise<Response>(resolve => { finish = resolve; })) as typeof fetch;

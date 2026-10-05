@@ -40,6 +40,16 @@ test('initial queued crash is inspectable, fenced, explicitly same-ID adopted an
  expect(owner.assertOperation({sessionID:f.sessionID,operation:'session.abort'})).toBeUndefined();await owner.action(f.sessionID,'resume-input',f.scope(snapshot),{owner:null});expect(f.calls()).toBe(1);expect((await owner.snapshot(f.sessionID)).state).toBe('resuming');
  await expect(owner.action(f.sessionID,'resume-input',f.scope(snapshot),{owner:null})).rejects.toMatchObject({statusCode:409});const replacement=f.owner();await replacement.install('epoch2');expect((await replacement.snapshot(f.sessionID)).inputs[0].messageID).toBe(f.messageID);
 });
+test('details project retained skill and file attachments to the renderer contract',async()=>{
+ const f=await fixture(),hashed='devryan-539ddc37a961e3aceadfc7bbb540b8e7';
+ f.db.prepare('UPDATE session_inbox SET payload=?').run(JSON.stringify({text:'use /superpowers',
+  files:[{data:'aGk=',mime:'text/plain',source:{type:'inline'},name:'note.txt'},{data:'',mime:'image/png',source:{type:'uri',uri:'https://fixture.invalid/a.png'}}],
+  skills:[{id:hashed,name:'Superpowers',text:'full reviewed skill body',mention:{start:4,end:16,text:'/superpowers'}}]}));
+ const owner=f.owner();await owner.install('epoch');const snapshot=await owner.snapshot(f.sessionID);
+ const details=await owner.details(f.sessionID,f.scope(snapshot));
+ expect(details.files).toEqual([{uri:'data:text/plain;base64,aGk=',name:'note.txt',mime:'text/plain'},{uri:'https://fixture.invalid/a.png',mime:'image/png'}]);
+ expect(details.skills).toEqual([{id:hashed,name:'Superpowers'}]);
+});
 test('stale hash, revision and revoked principal never dispatch',async()=>{
  const f=await fixture(),owner=f.owner();await owner.install('epoch');const scope=f.scope(await owner.snapshot(f.sessionID));await expect(owner.action(f.sessionID,'resume-input',{...scope,payloadHash:'0'.repeat(64)},{owner:null})).rejects.toMatchObject({statusCode:409});
  f.db.prepare('UPDATE session_inbox SET payload=?').run(JSON.stringify({text:'changed'}));await expect(owner.action(f.sessionID,'resume-input',scope,{owner:null})).rejects.toMatchObject({statusCode:409});const fresh=f.scope(await owner.snapshot(f.sessionID));f.setRevoked();await expect(owner.action(f.sessionID,'resume-input',fresh,{owner:null})).rejects.toMatchObject({statusCode:403});expect(f.calls()).toBe(0);

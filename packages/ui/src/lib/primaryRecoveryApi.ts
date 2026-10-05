@@ -75,7 +75,7 @@ export const recoveredInputDetailsSchema = z.object({
   location: z.enum(['queued', 'promoted']), text: z.string().max(1_048_576),
   files: z.array(z.object({ uri: z.string().max(1_048_576), name: z.string().max(1_048_576).optional(), mime: z.string().max(256).optional() })).max(128),
   agents: z.array(z.object({ name: z.string().max(256) })).max(128).optional(),
-  skills: z.array(z.string().max(256)).max(128).optional(),
+  skills: z.array(z.object({ id: z.string().max(256), name: z.string().max(256) })).max(128).optional(),
 });
 export type RecoveredInputDetails = z.infer<typeof recoveredInputDetailsSchema>;
 

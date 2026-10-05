@@ -754,7 +754,7 @@ export interface RecoveredInputDetails {
   messageID: string; payloadHash: string; type: RecoveredInputType; delivery: 'queue' | 'steer';
   location: 'queued' | 'promoted'; text: string;
   files: Array<{ uri: string; name?: string; mime?: string }>;
-  agents?: Array<{ name: string }>; skills?: string[];
+  agents?: Array<{ name: string }>; skills?: Array<{ id: string; name: string }>;
 }
 /** Native constructor-owned paused inventory; never supplied by a plugin or renderer. */
 export interface RecoveredInputOwner {

@@ -65,7 +65,8 @@ const retained = (sessionID = 'ses_root'): PrimaryRecoverySnapshot => ({ ...snap
     attachmentCount: 1, canResume: true, canDiscard: true, reason: null }] } });
 const details = (sessionID = 'ses_root'): RecoveredInputDetails => ({ messageID: `msg_${sessionID}`, payloadHash: 'b'.repeat(64),
   type: 'user', delivery: 'queue', location: 'queued', text: 'Full retained text <script>never rendered as HTML</script>',
-  files: [{ uri: 'https://example.invalid/private.png', name: 'private.png', mime: 'image/png' }] });
+  files: [{ uri: 'https://example.invalid/private.png', name: 'private.png', mime: 'image/png' }],
+  skills: [{ id: 'devryan-539ddc37a961e3aceadfc7bbb540b8e7', name: 'Superpowers' }] });
 
 test('first retained input is visible without history or watchdog, with lazy details and exact actions', async () => {
   requests.length = 0; inputActions.length = 0; detailRequests.length = 0;
@@ -92,6 +93,8 @@ test('first retained input is visible without history or watchdog, with lazy det
       expect(container.find(node => node.tagName === 'IMG')).toBeNull();
       expect(container.find(node => node.tagName === 'A')).toBeNull();
       expect(container.textContent).toContain('private.png');
+      expect(container.textContent).toContain('Skills: Superpowers');
+      expect(container.textContent).not.toContain('devryan-539ddc37a961e3aceadfc7bbb540b8e7');
       await act(async () => disclosure?.toggle(false));
       expect(container.textContent).not.toContain('Full retained text');
       await act(async () => container.find(node => node.tagName === 'BUTTON' && node.textContent === 'Resume Input')?.click());
