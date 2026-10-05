@@ -128,7 +128,6 @@ describe('user profile provisioning', () => {
       './node_modules/opencode-with-claude/dist/index.js',
       './node_modules/opencode-gpt-imagegen/dist/index.js',
       './plugins/devryan-oh-my-opencode-slim.mjs',
-      './plugins/devryan-superpowers.mjs',
       './plugins/devryan-skill-context.mjs',
       './plugins/devryan-document-reader.mjs',
     ]);
@@ -152,7 +151,7 @@ describe('user profile provisioning', () => {
     expect(JSON.stringify(slim)).not.toContain('"mcps"');
     expect(fs.existsSync(path.join(configDir, 'agents', 'orchestrator.md'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-oh-my-opencode-slim.mjs'))).toBe(true);
-    expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-superpowers.mjs'))).toBe(true);
+    expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-superpowers.mjs'))).toBe(false);
     expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-skill-context.mjs'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-document-reader.mjs'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'node_modules', 'oh-my-opencode-slim'))).toBe(true);
@@ -192,9 +191,7 @@ describe('user profile provisioning', () => {
         claudeCode: 'managed',
       },
     });
-    expect(result.warnings).toContain(
-      'Superpowers skills are not installed; the optional adapter will remain disabled.',
-    );
+    expect(result.warnings.join('\n')).not.toMatch(/superpowers/i);
     expect(result.warnings).toContain(
       'Claude Code 2.1.281 is selected for Meridian compatibility; the broader cross-provider context target remains upstream-blocked.',
     );
@@ -352,7 +349,6 @@ describe('user profile provisioning', () => {
       './plugins/devryan-open-cursor.mjs',
       './node_modules/opencode-with-claude/dist/index.js',
       './node_modules/opencode-gpt-imagegen/dist/index.js',
-      './plugins/devryan-superpowers.mjs',
       './plugins/devryan-oh-my-opencode-slim.mjs',
       './plugins/devryan-skill-context.mjs',
       './plugins/devryan-document-reader.mjs',
@@ -437,9 +433,6 @@ describe('user profile provisioning', () => {
       promptMode: 'combined',
       preservedFields: ['codeSystemPrompt', 'clientSystemPrompt'],
     });
-    expect(preserved.warnings).toContain(
-      'Superpowers skills are not installed; the optional adapter will remain disabled.',
-    );
     expect(preserved.warnings.join('\n')).not.toContain('both the Claude Code and client system prompts');
     expect(readJson(explicitFeaturesPath).opencode.codeSystemPrompt).toBe(true);
   });
@@ -910,26 +903,38 @@ describe('user profile provisioning', () => {
     expect(commands).toHaveLength(2);
   });
 
-  it('keeps a user-installed Superpowers bootstrap active without warning', async () => {
-    const bootstrapPath = path.join(
-      home,
-      '.config',
-      'opencode',
-      'skills',
-      'superpowers',
-      'using-superpowers',
-      'SKILL.md',
-    );
-    fs.mkdirSync(path.dirname(bootstrapPath), { recursive: true });
-    fs.writeFileSync(bootstrapPath, '---\nname: using-superpowers\n---\nUser-installed skill.\n', 'utf8');
+  it('retires the Superpowers adapter from a profile provisioned by an earlier release', async () => {
+    const runtime = createRuntime();
+    await runtime.provision();
+    const configDir = path.join(home, '.config', 'opencode');
+    const configPath = path.join(configDir, 'opencode.json');
+    const manifestPath = path.join(configDir, '.openchamber', 'user-profile-manifest.json');
+    const adapterPath = path.join(configDir, 'plugins', 'devryan-superpowers.mjs');
+    const ownedSkillPath = path.join(configDir, 'skills', 'Superpowers', 'SKILL.md');
+    // DevRyan <= 2.0.1 wrote and tracked the adapter and registered it in the profile.
+    const adapterContent = 'export default async () => ({});\n';
+    fs.mkdirSync(path.dirname(adapterPath), { recursive: true });
+    fs.writeFileSync(adapterPath, adapterContent, 'utf8');
+    const manifest = readJson(manifestPath);
+    manifest.files['plugins/devryan-superpowers.mjs'] = { hash: hashContent(adapterContent) };
+    writeJson(manifestPath, manifest);
+    const config = readJson(configPath);
+    config.plugin = [...config.plugin.slice(0, 4), './plugins/devryan-superpowers.mjs', ...config.plugin.slice(4)];
+    writeJson(configPath, config);
+    fs.mkdirSync(path.dirname(ownedSkillPath), { recursive: true });
+    fs.writeFileSync(ownedSkillPath, '---\nname: Superpowers\n---\nUser-owned skill.\n', 'utf8');
 
-    const result = await createRuntime().provision();
+    const result = await runtime.provision();
 
     expect(result.ok).toBe(true);
-    expect(fs.readFileSync(bootstrapPath, 'utf8')).toContain('User-installed skill.');
-    expect(result.warnings).not.toContain(
-      'Superpowers skills are not installed; the optional adapter will remain disabled.',
-    );
+    expect(result.conflicts).toEqual([]);
+    expect(readJson(configPath).plugin).not.toContain('./plugins/devryan-superpowers.mjs');
+    expect(fs.existsSync(adapterPath)).toBe(false);
+    expect(result.removed).toContain(adapterPath);
+    expect(readJson(manifestPath).files).not.toHaveProperty('plugins/devryan-superpowers.mjs');
+    // The owner's skill folder is user data; DevRyan never removes it.
+    expect(fs.readFileSync(ownedSkillPath, 'utf8')).toContain('User-owned skill.');
+    expect(result.warnings.join('\n')).not.toMatch(/superpowers/i);
   });
 
   it('retires previously managed skills without claiming user-modified files', async () => {

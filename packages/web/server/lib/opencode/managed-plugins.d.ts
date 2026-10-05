@@ -3,7 +3,6 @@ export type DevRyanManagedPluginId =
   | 'opencode-with-claude'
   | 'opencode-gpt-imagegen'
   | 'oh-my-opencode-slim'
-  | 'superpowers'
   | 'devryan-skill-context'
   | 'devryan-document-reader'
   | 'openai-tool-schema-sanitizer';

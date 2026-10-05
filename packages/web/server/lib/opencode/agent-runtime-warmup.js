@@ -66,8 +66,6 @@ function prioritizeSkills(skills) {
   return [...skills].sort((a, b) => {
     const aName = typeof a?.name === 'string' ? a.name : '';
     const bName = typeof b?.name === 'string' ? b.name : '';
-    if (aName === 'using-superpowers') return -1;
-    if (bName === 'using-superpowers') return 1;
     return aName.localeCompare(bName);
   });
 }

@@ -1544,7 +1544,6 @@ export type DevRyanDefaultPluginId =
   | '@rama_nigg/open-cursor'
   | 'oh-my-opencode-slim'
   | 'opencode-with-claude'
-  | 'superpowers'
   | 'openai-tool-schema-sanitizer';
 
 export interface DevRyanDefaultPlugin {

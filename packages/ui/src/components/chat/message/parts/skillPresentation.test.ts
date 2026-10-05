@@ -6,8 +6,8 @@ const skill = (state: ToolPart['state']): ToolPart => ({
     id: 'part', sessionID: 'session', messageID: 'message', type: 'tool', tool: 'skill', callID: 'call', state,
 });
 test('skill outcome survives transcript reload and terminal replacement', () => {
-    const running = skill({ status: 'running', input: { name: 'Superpowers' }, time: { start: 1 } });
-    const failed = skill({ status: 'error', input: { name: 'Superpowers' }, error: 'local_execution_timeout', time: { start: 1, end: 2 } });
+    const running = skill({ status: 'running', input: { name: 'Release Checklist' }, time: { start: 1 } });
+    const failed = skill({ status: 'error', input: { name: 'Release Checklist' }, error: 'local_execution_timeout', time: { start: 1, end: 2 } });
     expect(getSkillPresentation([running]).title).toBe('Loading skill:');
     for (const part of [failed, JSON.parse(JSON.stringify(failed))]) {
         const result = getSkillPresentation([part]);
@@ -15,7 +15,7 @@ test('skill outcome survives transcript reload and terminal replacement', () => 
         expect(result.running).toBe(false);
         expect(result.explanation).toContain('workspace');
     }
-    expect(getSkillPresentation([skill({ status: 'completed', input: {}, output: 'body', title: 'Superpowers', metadata: {}, time: { start: 1, end: 2 } })]).title).toBe('Loaded skill:');
+    expect(getSkillPresentation([skill({ status: 'completed', input: {}, output: 'body', title: 'Release Checklist', metadata: {}, time: { start: 1, end: 2 } })]).title).toBe('Loaded skill:');
 });
 test('mixed skill outcomes retain failures and never expose raw errors', () => {
     const failed = skill({ status: 'error', input: {}, error: 'secret /private/file', time: { start: 1, end: 2 } });

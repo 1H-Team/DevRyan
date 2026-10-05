@@ -93,7 +93,7 @@ describe('skill discovery', () => {
   it('discovers nested user skills from a config skills directory without an active project', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-user-skills-'));
     const originalConfigDir = process.env.OPENCODE_CONFIG_DIR;
-    const skillDir = path.join(root, 'skills', 'superpowers', 'writing-plans');
+    const skillDir = path.join(root, 'skills', 'toolkit', 'writing-plans');
     fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(
       path.join(skillDir, 'SKILL.md'),
@@ -176,7 +176,7 @@ describe('skill discovery', () => {
     }
   });
 
-  it('does not discover or create retired Superpowers skills from project harness directories', () => {
+  it('does not discover or create retired skills from project harness directories', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-retired-skills-'));
     const controlSkill = path.join(root, '.agents', 'skills', 'control-skill');
     const retiredNames = ['test-driven-development', 'subagent-driven-development'];

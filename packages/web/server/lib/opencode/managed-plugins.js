@@ -6,7 +6,6 @@ export const DEVRYAN_MANAGED_PLUGIN_IDS = Object.freeze({
   CLAUDE: 'opencode-with-claude',
   GPT_IMAGEGEN: 'opencode-gpt-imagegen',
   SLIM: 'oh-my-opencode-slim',
-  SUPERPOWERS: 'superpowers',
   SKILL_CONTEXT: 'devryan-skill-context',
   DOCUMENT_READER: 'devryan-document-reader',
   OPENAI_TOOL_SCHEMA_SANITIZER: 'openai-tool-schema-sanitizer',
@@ -72,19 +71,6 @@ const definitions = [
     ],
     delivery: 'installed-local',
     sourcePath: 'default-config/user-profile/package.json',
-    profileRegistration: true,
-    public: true,
-  },
-  {
-    id: DEVRYAN_MANAGED_PLUGIN_IDS.SUPERPOWERS,
-    displayName: 'Superpowers',
-    packageName: null,
-    version: null,
-    entrypoint: null,
-    registrationPath: './plugins/devryan-superpowers.mjs',
-    legacySpecs: ['superpowers@git+https://github.com/obra/superpowers.git'],
-    delivery: 'bundled-file',
-    sourcePath: 'default-config/plugins/devryan-superpowers.mjs',
     profileRegistration: true,
     public: true,
   },
@@ -170,6 +156,9 @@ export const DEVRYAN_MANAGED_PROFILE_PLUGIN_FILES = Object.freeze(
 const RETIRED_CONTEXT_MODE_REGISTRATION_PATH = './node_modules/context-mode/build/adapters/opencode/plugin.js';
 // Antigravity (removed 2026-09) was pinned at 1.6.0; the same user-owned-version rule applies.
 const RETIRED_ANTIGRAVITY_REGISTRATION_PATH = './node_modules/opencode-antigravity-auth/dist/index.js';
+// Superpowers (removed 2026-10): the bundled skill-path adapter and the upstream
+// git plugin it replaced. Writing/executing plans guidance lives in the primary agents.
+const RETIRED_SUPERPOWERS_REGISTRATION_PATH = './plugins/devryan-superpowers.mjs';
 
 export const RETIRED_DEVRYAN_PLUGIN_SPECS = Object.freeze([
   'cursor-acp',
@@ -180,12 +169,15 @@ export const RETIRED_DEVRYAN_PLUGIN_SPECS = Object.freeze([
   'opencode-antigravity-auth@latest',
   'opencode-antigravity-auth@1.6.0',
   RETIRED_ANTIGRAVITY_REGISTRATION_PATH,
+  RETIRED_SUPERPOWERS_REGISTRATION_PATH,
+  'superpowers@git+https://github.com/obra/superpowers.git',
 ]);
 
 // Registration paths also retired in absolute or file:// form (matched by path suffix).
 const RETIRED_DEVRYAN_PLUGIN_REGISTRATION_SUFFIXES = Object.freeze([
   RETIRED_CONTEXT_MODE_REGISTRATION_PATH.replace(/^\.\//, '/'),
   RETIRED_ANTIGRAVITY_REGISTRATION_PATH.replace(/^\.\//, '/'),
+  RETIRED_SUPERPOWERS_REGISTRATION_PATH.replace(/^\.\//, '/'),
 ]);
 
 // Profile dependencies DevRyan pinned and now removes, keyed by package name with the exact pinned version.

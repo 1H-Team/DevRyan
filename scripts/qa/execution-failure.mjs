@@ -51,8 +51,8 @@ export async function runExecutionFailureQa({ fixture, cdp, directory, check, sc
     const userId = `msg_skill_${now}`, assistantId = `${userId}_assistant`;
     const skill = { id: `prt_skill_${now}`, sessionID: session.id, messageID: assistantId,
       type: 'tool', tool: 'skill', callID: 'call_skill',
-      state: { status: 'running', input: { name: 'Superpowers' }, time: { start: now } } };
-    const rows = () => [user(session.id, userId, now - 1, [text(session.id, userId, 'Load the Superpowers skill')]),
+      state: { status: 'running', input: { name: 'Checklist' }, time: { start: now } } };
+    const rows = () => [user(session.id, userId, now - 1, [text(session.id, userId, 'Load the Checklist skill')]),
       assistant(session.id, assistantId, userId, now, [skill])];
     const waitTitle = title => ui.waitExpression(title, `(() => {
       const row = document.querySelector('[title="${title}"]');
@@ -62,7 +62,7 @@ export async function runExecutionFailureQa({ fixture, cdp, directory, check, sc
     await cdp.send('Page.navigate', { url: `${origin}/?session=${session.id}` });
     await waitTitle('Loading skill:');
     await screenshot('skill-preparing');
-    skill.state = { status: 'error', input: { name: 'Superpowers' }, error: 'local_execution_timeout', time: { start: now, end: now + 1 } };
+    skill.state = { status: 'error', input: { name: 'Checklist' }, error: 'local_execution_timeout', time: { start: now, end: now + 1 } };
     fixture.replayRecoveryVisual({ sessionID: session.id, rows: rows(), status: 'idle' });
     await waitTitle('Skill failed:');
     await ui.waitVisibleText('The workspace was not ready before the startup deadline.');
@@ -71,7 +71,7 @@ export async function runExecutionFailureQa({ fixture, cdp, directory, check, sc
     await waitTitle('Skill failed:');
     await ui.waitVisibleText('The workspace was not ready before the startup deadline.');
     await screenshot('skill-preparation-failed-reloaded');
-    skill.state = { status: 'completed', input: { name: 'Superpowers' }, title: 'Superpowers', output: 'Fixture skill', metadata: {}, time: { start: now, end: now + 2 } };
+    skill.state = { status: 'completed', input: { name: 'Checklist' }, title: 'Checklist', output: 'Fixture skill', metadata: {}, time: { start: now, end: now + 2 } };
     fixture.replayRecoveryVisual({ sessionID: session.id, rows: rows(), status: 'idle' });
     await waitTitle('Loaded skill:');
     await screenshot('skill-loaded');

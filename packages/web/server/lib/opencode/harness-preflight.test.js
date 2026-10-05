@@ -1343,7 +1343,6 @@ describe('Anthropic context budget projection', () => {
     expect(result.contextBudget.anthropic).toMatchObject({
       fixedPrefix: {
         descriptionLimit: 240,
-        superpowersBootstrapBytes: 0,
         tokens: 2_000,
       },
       requestCount: 40,

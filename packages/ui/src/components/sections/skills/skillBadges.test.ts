@@ -4,7 +4,7 @@ import { getSkillRowBadgeKeys } from "./skillBadges";
 
 const skill = (source: DiscoveredSkill["source"]): DiscoveredSkill => ({
   name: "brainstorming",
-  path: "/tmp/.config/opencode/skills/superpowers/brainstorming/SKILL.md",
+  path: "/tmp/.config/opencode/skills/toolkit/brainstorming/SKILL.md",
   scope: "user",
   source,
 });

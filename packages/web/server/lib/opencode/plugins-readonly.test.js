@@ -53,7 +53,6 @@ describe('read-only plugin config model', () => {
         'opencode-with-claude',
         'opencode-gpt-imagegen',
         'oh-my-opencode-slim',
-        'superpowers',
         'devryan-skill-context',
         'devryan-document-reader',
         'openai-tool-schema-sanitizer',

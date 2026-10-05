@@ -44,12 +44,6 @@ describe('DevRyan default plugin catalog', () => {
         delivery: 'installed-local',
       },
       {
-        pluginId: 'superpowers',
-        shippedSpec: './plugins/devryan-superpowers.mjs',
-        version: null,
-        delivery: 'bundled-file',
-      },
-      {
         pluginId: 'devryan-skill-context',
         shippedSpec: './plugins/devryan-skill-context.mjs',
         version: null,
@@ -75,7 +69,7 @@ describe('DevRyan default plugin catalog', () => {
     expect(getDevRyanDefaultPluginIdForSpec('opencode-with-claude@1.6.17')).toBe('opencode-with-claude');
     expect(getDevRyanDefaultPluginIdForSpec('opencode-gpt-imagegen@0.1.10')).toBe('opencode-gpt-imagegen');
     expect(getDevRyanDefaultPluginIdForSpec('context-mode@1.0.169')).toBeNull();
-    expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-superpowers.mjs')).toBe('superpowers');
+    expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-superpowers.mjs')).toBeNull();
     expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-skill-context.mjs')).toBe('devryan-skill-context');
     expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-document-reader.mjs')).toBe('devryan-document-reader');
     expect(getDevRyanDefaultPluginIdForSpec('./node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js'))
