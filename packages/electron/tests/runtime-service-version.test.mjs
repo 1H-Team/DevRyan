@@ -223,7 +223,7 @@ describe('foreground connection to the background runtime', () => {
     const { readRuntimeServiceDescriptor, isRuntimeServiceProtocolSupported, assertRuntimeServiceDescriptorOwner,
       dataRootDirectory, buildLocalUrl, waitForHealth, APP_VERSION, retireStaleRuntimeService,
       bootstrapRuntimeServiceSession, startDesktopHostBroker, registerDesktopHostLease, stopDesktopHostBroker,
-      state, log, BrowserWindow, setInterval, clearInterval } = deps;
+      state, log, BrowserWindow, setInterval, clearInterval, recordRuntimeServiceAppVersion } = deps;
     ${mainSource.slice(start, end)}
     return connectToRuntimeService;
   `);
@@ -251,6 +251,7 @@ describe('foreground connection to the background runtime', () => {
       BrowserWindow: { getAllWindows: () => [] },
       setInterval: () => ({ unref: () => {} }),
       clearInterval: () => {},
+      recordRuntimeServiceAppVersion: async () => { calls.push('record'); },
     });
     return { calls, state, connect };
   };
@@ -278,7 +279,7 @@ describe('foreground connection to the background runtime', () => {
   test('a service of this app version is attached', async () => {
     const { calls, state, connect } = await fixture('2.0.1');
     assert.equal(await connect(), 'http://127.0.0.1:57123');
-    assert.deepEqual(calls, ['owner', 'health', 'owner', 'bootstrap', 'broker']);
+    assert.deepEqual(calls, ['owner', 'health', 'owner', 'bootstrap', 'broker', 'record']);
     assert.equal(state.runtimeServiceClient, true);
   });
 

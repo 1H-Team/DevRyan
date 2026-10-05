@@ -81,6 +81,42 @@ export const ensureRuntimeServiceRegistered = async ({ registration, log } = {})
   });
 };
 
+// A drag-and-drop install bypasses the in-app update path, which unregisters
+// the service before installing and registers it again afterwards. The
+// registration left behind was made by the previous app (its executable path
+// or code signature), so a stopped service is unregistered and registered for
+// this version. A live service is left to the connection, which drains and
+// retires another version's service before registering this one; a missing
+// registration is left to ensureRuntimeServiceRegistered.
+export const reregisterRuntimeServiceAfterUpgrade = async ({
+  registeredAppVersion, appVersion, registration, isOwnerStopped, recordRegisteredAppVersion, log,
+} = {}) => {
+  if (registeredAppVersion === appVersion) return Object.freeze({ state: 'current' });
+  let current;
+  try { current = await registration.status(); } catch { return Object.freeze({ state: 'unknown' }); }
+  if (current?.state !== 'enabled') return Object.freeze({ state: current?.state ?? 'unknown' });
+  let stopped = false;
+  try { stopped = await isOwnerStopped() === true; } catch { stopped = false; }
+  if (!stopped) return Object.freeze({ state: 'deferred' });
+  const removed = await registration.unregister();
+  if (removed?.ok !== true) {
+    throw Object.assign(new Error('The background runtime registration from the previous version could not be removed'), {
+      code: 'runtime_service_unregister_failed',
+    });
+  }
+  const registered = await registration.register({ allowLegacy: true });
+  if (registered?.state !== 'enabled') {
+    throw Object.assign(new Error('Background Bots require Login Items approval after the update'), {
+      code: 'runtime_service_approval_required',
+    });
+  }
+  await recordRegisteredAppVersion(appVersion);
+  log?.warn?.('[runtime-service] registered again after a manual upgrade', {
+    phase: 'register', code: 'runtime_service_reregistered_after_upgrade',
+  });
+  return Object.freeze({ state: 'reregistered' });
+};
+
 // A launchd start runs the service's whole Electron boot before it publishes a
 // live descriptor, and cold boots were observed past 20 s. Only failures that
 // mean the service is not up yet earn the longer budget; any other failure

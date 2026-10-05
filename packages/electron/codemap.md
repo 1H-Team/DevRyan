@@ -118,6 +118,12 @@ and desktop-host broker bridges.
   `DevRyan --runtime-service` or a legacy absolute DevRyan image path, even a
   bundle moved while it ran, as a bounded fallback), and registers
   the current bundle's service; any failure falls back to the app-bound runtime.
+  Settings record `productionBotsRuntimeServiceAppVersion` after an in-app update
+  resume, a registration replacement, or a connection to this version's service.
+  When a manual (drag-and-drop) install leaves a registration from another or an
+  unrecorded version, `reregisterRuntimeServiceAfterUpgrade` unregisters and
+  registers it again before the startup registration check if its owner is
+  proved stopped; a live service is left to the retirement above.
   Malformed legacy writes receive a one-second grace period.
   `owner-recovery.v2.json` records an ambiguous legacy or damaged regular file's
   inode, birth time, size, change/modification times, content hash, and the
