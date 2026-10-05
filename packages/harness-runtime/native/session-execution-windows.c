@@ -71,14 +71,20 @@ static int inspect_file_handle(HANDLE file) {
   return 0;
 }
 
-static int inspect_path(const wchar_t *path) {
+static DWORD anchor_parents(const wchar_t *argument, wchar_t *path, HANDLE *ancestors);
+
+static int inspect_path(const wchar_t *argument) {
+  wchar_t path[32768]; HANDLE ancestors[256];
+  DWORD count = anchor_parents(argument, path, ancestors);
   /* Attribute/security access bypasses sharing restrictions. A read handle
    * must also prove that an exclusive owner has not locked this identity. */
   HANDLE file = CreateFileW(path, GENERIC_READ,
     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
     FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
   if (file == INVALID_HANDLE_VALUE) fail("file identity handle");
-  int result = inspect_file_handle(file); CloseHandle(file); return result;
+  int result = inspect_file_handle(file); CloseHandle(file);
+  for (DWORD i = 0; i < count; i++) CloseHandle(ancestors[i]);
+  return result;
 }
 
 /* Creation is exclusive. Hold every ancestor without write/delete sharing so

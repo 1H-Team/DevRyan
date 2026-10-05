@@ -42,8 +42,10 @@ production host or shipped native artifacts.
 identity operations query a no-follow file handle for volume/file ID, reparse
 state, hard-link count, owner and protected ACL. Inspection requests read access
 so an exclusive file lock refuses the identity; attribute-only access would
-bypass that sharing boundary. Exclusive private-directory
-and bounded private-file creation hold every ancestor against write/delete
+bypass that sharing boundary. Inspection and creation anchor the canonical
+path's parents and refuse a reparse parent, even when the leaf itself has an
+ordinary file identity. Exclusive private-directory and bounded private-file
+creation hold every ancestor against write/delete
 sharing and refuse reparse parents, traversal, device aliases and alternate
 streams. Files explicitly name the current user as owner, use a protected ACL,
 flush before reporting identity, and preserve a partial file on failed input.

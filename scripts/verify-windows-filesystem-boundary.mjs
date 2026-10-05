@@ -82,11 +82,15 @@ try {
   const junction = path.join(privatePath, 'junction'); await fs.symlink(target, junction, 'junction');
   const reparse = call('--inspect-path', junction);
   assert.equal(reparse.reparsePoint, true); assert.notEqual(reparse.fileId, call('--inspect-path', target).fileId);
+  const targetFile = path.join(target, 'owned.txt');
+  call('--create-private-file', targetFile, 'owned target identity\n');
+  refused('--inspect-path', path.join(junction, 'owned.txt'));
+  assert.equal(await fs.readFile(targetFile, 'utf8'), 'owned target identity\n');
   refused('--create-private-directory', path.join(junction, 'escape'));
-  assert.deepEqual(await fs.readdir(target), []);
+  assert.deepEqual(await fs.readdir(target), ['owned.txt']);
   refused('--create-private-directory', path.join(privatePath, '..') + '\\..\\escape');
   refused('--create-private-directory', 'relative-directory');
-  evidence.checks.push('junction-not-followed', 'reparse-parent-refusal', 'relative-and-parent-traversal-refusal');
+  evidence.checks.push('junction-not-followed', 'reparse-parent-inspection-refusal', 'reparse-parent-refusal', 'relative-and-parent-traversal-refusal');
   const quoted = file.replaceAll("'", "''");
   locked = spawn('pwsh.exe', ['-NoProfile', '-NonInteractive', '-Command',
     `$stream = [System.IO.File]::Open('${quoted}', [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None); try { [Console]::WriteLine('ready'); Start-Sleep -Seconds 30 } finally { $stream.Dispose() }`],
