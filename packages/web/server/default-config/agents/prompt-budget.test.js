@@ -10,15 +10,15 @@ import { listPackagedAgents } from '../../lib/opencode/packaged-agents.js';
 const MAX_SLACK_RATIO = 0.1;
 
 const PROMPT_BODY_BUDGETS = {
-  builder: { maxBodyBytes: 8004, rationale: 'Sandbox write locations and EPERM recovery 2026-09-27 (7771 bytes) plus 3% headroom.' },
+  builder: { maxBodyBytes: 8996, rationale: 'Sandbox write locations and EPERM recovery 2026-09-27 (7771 bytes) plus 3% headroom; Writing/Executing Plans guidance replacing the retired Superpowers skill 2026-10-05 (+992 bytes, 8984 bytes).' },
   council: { maxBodyBytes: 3900, rationale: 'Baseline 2026-09-23 (3700 bytes) plus ~3% headroom.' },
   designer: { maxBodyBytes: 5648, rationale: 'Specialist-owned routing wording 2026-09-28 (5409 bytes) plus ~4% headroom.' },
   explorer: { maxBodyBytes: 5710, rationale: 'Explorer-first goal discovery 2026-09-27 (5544 bytes) plus 3% headroom.' },
   fixer: { maxBodyBytes: 8355, rationale: 'Specialist-owned routing wording 2026-09-28 (8066 bytes) plus ~3.5% headroom.' },
   librarian: { maxBodyBytes: 2030, rationale: 'Context Mode guidance removed 2026-09-24 (1969 bytes) plus ~3% headroom.' },
   oracle: { maxBodyBytes: 5600, rationale: 'Code-review precision rules (change attribution, severity vs confidence, verified vs unverified) 2026-09-23; Context Mode guidance removed 2026-09-24 (5439 bytes) plus ~3% headroom.' },
-  orchestrator: { maxBodyBytes: 40720, rationale: 'Parallel dispatch of independent plan phases, one closing cross-scope check and Designer task sizing 2026-09-30, replacing the Dispatching Parallel Agents skill (39922 bytes) plus ~2% headroom.' },
-  plan: { maxBodyBytes: 4115, rationale: 'Owner and dependency line per phase 2026-09-30 (3994 bytes) plus ~3% headroom.' },
+  orchestrator: { maxBodyBytes: 42718, rationale: 'Parallel dispatch of independent plan phases, one closing cross-scope check and Designer task sizing 2026-09-30, replacing the Dispatching Parallel Agents skill (39922 bytes) plus ~2% headroom; Writing/Executing Plans sections replacing the retired Superpowers skill 2026-10-05 (+1998 bytes, 42036 bytes).' },
+  plan: { maxBodyBytes: 5268, rationale: 'Owner and dependency line per phase 2026-09-30 (3994 bytes) plus ~3% headroom; Writing/Executing plans guidance replacing the retired Superpowers skill 2026-10-05 (+1153 bytes, 5147 bytes).' },
 };
 
 const measuredPrompts = () => buildPackagedPromptMeasurement(listPackagedAgents()).items;

@@ -56,6 +56,14 @@ permission:
 - Ask a Class 2 deviation through the structured question tool as one multi-line question in layman's terms: line 1 is the question; then one line each starting with `What changes:`, `Why:`, `For end users:`, `Security & data:`, `Reversibility:`, and `If we keep the original plan:`. Use the header `Plan deviation` and exactly the options `Approve deviation (Recommended)`, `Keep original plan`, and `Something else` (custom answer allowed). Do not implement the Class 2 change while the question is pending.
 - "Blocked" is reserved for missing user intent, a provider or tool failure, or a rule that cannot be satisfied; a plan-vs-repository conflict is a deviation to classify, not a blocker.
 
+**Plan Writing**
+- When asked only for a plan, stay read-only and write it for an implementer with no context: exact paths with `path:line` for reused functions, files mapped before tasks, small test-first tasks (failing test and its expected failure, minimal change, passing run), a confirmed root cause before any bug-fix plan, and Verification as exact commands with expected outcomes.
+- No placeholders ("TBD", "handle edge cases", "similar to Task N"). Before presenting, check that every requirement maps to a task and names match across tasks.
+
+**Plan Execution**
+- Read the selected revision with `devryan_task` `plan_read` and check it against the repository before the first edit. Implement tasks in plan order, follow each test-first step, and run the task's focused check before completing it.
+- After the last task, run every item in the plan's Verification section and report each result. A step that cannot be done as written is a deviation to classify, not a reason to stop.
+
 **Task Tracking and Completion**
 - Before the first modifying tool call, create the complete todo list for every implementation request that changes files or requires verification. Keep it short, but include every implementation and verification obligation. A genuinely atomic read-only answer does not need a todo list.
 - For ordinary work that did not come from a saved implementation plan, use plain task titles. Do not invent phases or prefix tasks with `Phase`.
