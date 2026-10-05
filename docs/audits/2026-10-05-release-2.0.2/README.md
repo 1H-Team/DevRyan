@@ -366,7 +366,13 @@ process/parent identities on both native architectures. Its pinned libsql
 0.5.29 source build failed during pre-compilation identity checks; neither
 compiler nor binary receipt was produced. The failed receipts and logs remain
 in `windows-libsql-ci-1`. A follow-up records the finite failing stage and public
-source-file hashes; the cause and native ABI qualification remain pending.
+source-file hashes. Native ABI qualification remains pending.
+Follow-up run `37380055984` at `c0f0d366` identified the same
+`source-bytes-Cargo.toml` failure on both architectures. Its digest exactly
+matches the pinned source converted to CRLF, independently reproduced in
+`windows-libsql-checkout-reproduction-1.json`. Commit `91b236a2` preserves LF
+bytes for the reviewed source checkout; four portable checks and documentation
+validation passed. The native source/ABI rerun remains pending.
 
 The corrected Stage F invocation passed all seven wire cells and both actual
 native-runtime UI cells against the unchanged source, runner and QA archive
@@ -406,7 +412,25 @@ TTY JSON. All exit 2 without creating owner files. The actual TTY output was
 reviewed separately; original result `service-correction-cli-refusal-2.json`
 has SHA-256 `d79c48b9522dbe8b2bb2a9cba2f135e9651f36ebbfaba7902da562dc22c13efd`.
 The separate review is `service-correction-cli-refusal-2-manual-review.json`.
-Positive Electron Resume remains outstanding.
+The positive native Electron Resume supplement also passed in
+`.cache/release-2.0.2-recovery/positive-electron-G502jb/result.json` (SHA-256
+`89100dc21ac05088f028e0c1904a198d695d6eae21b7ba99a00e3000c73fd7dd`).
+Computer use clicked the actual "Resume and restart" native button. The preload
+returned `restart_required` at revision 3; the real `app.relaunch` owner had a
+new PID and private owner pair, matching OS boot/start/binary/argv identities.
+Both health routes and the visible composer became ready. History, credential
+and configuration assertions passed, the native controller retained a clean
+termination receipt, and owned-process closure had no errors. The two original
+held/ready screenshots were reviewed in the separate `manual-review.json`.
+
+This supplement prospectively disabled Bots in disposable A settings before
+upgrade, history and rollback crash; B retained that setting. Its source
+derivation and exact hashes remain in `positive-electron-provenance-1.json`.
+The original application drivers and recovery assertions remain active. The
+capture intentionally stops after the cold hook; its original lifecycle
+sidecar remains failed and does not substitute for the separate seven-mode
+pass above. Docker, global registration and installed-app continuity are not
+covered.
 
 All six original packaged first-launch cells failed at Git helper startup and
 cleaned up their owned processes. Their startup journal contains no detailed
@@ -430,7 +454,14 @@ refusal is unchanged. The next six-cell rerun uses runner SHA-256
 `f7f48ba2038185e3307211799b2321e5c1eedc590d964cf9762ec55e74d27758`;
 all 4,695 linked native inputs and packaged source/archive hashes are unchanged.
 Original failed results and screenshots remain preserved; the stronger
-packaged rerun is pending.
+packaged rerun passed all six cases. Result `service-correction-first-launch-4.json`
+has SHA-256 `453dd27f1a50bd83a3683a08cf740412ca7379ee3432cf66c344679e4930a581`.
+All six original loaded screenshots were individually reviewed: each shows the
+composer, eight project rows and no startup chooser. The separate review is
+`service-correction-first-launch-4-visual-review.json`; all owned trees drained
+cleanly. All six startup journals and both positive-recovery journals have zero
+verified gaps in `service-correction-first-launch-4-positive-gaps.json`. These
+checks do not replace the compiled inventory's three meaningful-root gate.
 
 This table must be rebound to the final source commit, lock hash, native build
 identity, image manifest identity, packaging digests, and installed artifacts
@@ -447,9 +478,9 @@ evidence in `.cache/release-2.0.2-recovery`.
 | Three meaningful durable journal roots and verified gaps | Not run | Journal fixture/grading code integrated |
 | Seven lifecycle modes and seven wire cells | Passed at frozen source; final freeze pending | All seven actual lifecycle modes and seven wire cells passed; original predecessor/current artifact proofs, native Cancel and verified gaps retained |
 | Two actual-runtime UI cells and reviewed screenshots | Passed at `bf2aa44a`; final freeze pending | Web and packaged Electron passed; all nine recorded screenshots reviewed; verified journal gaps and clean owned-process drain |
-| CLI persistence/refusal and Electron Resume | CLI persistence and all eight refusal modes passed; positive Electron Resume not run | Seven original compiled persistence checks, eight actual CLI refusal modes with separate TTY review, native cold-recovery refusals and actual packaged Cancel passed |
+| CLI persistence/refusal and Electron Resume | Passed at current artifacts; final freeze pending | Seven original compiled persistence checks, eight actual refusal modes with TTY review, packaged Cancel and positive native Resume/relaunch/preservation/cleanup passed; prospective Bots-disabled supplement scope above |
 | Shipped 2.0.1 → candidate → 2.0.1 continuity | Unavailable on current host; VM prerequisite pending | Unmodified shipped startup registers a global LaunchServices protocol; disposable HOME cannot isolate it |
-| Packaged first launch and service mode | Service passed; first-launch qualification failed | Original six failures retained; corrected rerun had two selected-bundle startup failures and two visual failures; ten-boundary/composer correction passes 16 focused checks; stronger rerun pending |
+| Packaged first launch and service mode | All six first launches and service mode passed; final freeze pending | Ten-boundary/composer correction passes 16 focused checks; six original screenshots reviewed and gaps verified; all earlier failures retained; production registration and authenticated lease remain separate |
 | DMG update success/refusal/interruption/rollback | Passed (focused); packaged not run | Verified downloads, native app exchange, startup acknowledgement and guarded rollback; killed-helper/native exchange checks pass; disposable package qualification pending |
 | Exact provider/role graph, 12 journeys, 16 compaction boundaries | Not run | Owner sign-in window after credential-free rehearsal |
 | Managed-user verification | Unavailable | Non-production Supabase environment not supplied |
