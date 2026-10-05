@@ -134,6 +134,10 @@ Electron IPC use this same core. Recovery HTTP exposes no mutation route.
   provisioning real artifacts); a dead holder is reclaimed at once.
   `native-setup-local-owners.js` restores the v1 owner snapshot once, then renames it to
   `native-setup-local-owners.restored.json`, so later app owner changes survive restarts.
+  It applies the snapshot only to a vault this restore creates (a pending
+  `native-setup-local-owners.restoring` marker covers a start that dies before the
+  owner is durable); an existing vault without that marker already holds a 2.0.0
+  restore, so the snapshot is consumed without re-applying a removed or replaced owner.
   Concurrent first starts serialize on `native-setup-local-owners.lock` in web-data.
   Both locks use its `reclaimReusedLock`: lock age never reclaims (a live holder's
   `createdAt` ages across a system sleep). A live pid is reclaimed, by atomic rename with

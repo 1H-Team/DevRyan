@@ -68,7 +68,7 @@ export async function captureNativeSetupOwners(dataDirectory) {
 /** Runs before the application constructs its account/Bots owners or mints sessions.
  * One-shot: the app may later replace (rememberOwner) or remove the restored owner,
  * so the snapshot is consumed by an atomic rename once the vault holds it durably.
- * A start that dies before the rename re-runs against identical owners, which passes.
+ * A start that dies before the rename finds the vault durable and only consumes it.
  * The foreground app and the runtime service can both be a first start, so read,
  * restore, drain and consume run under one lock and a vanished snapshot was consumed. */
 export async function restoreNativeSetupOwners(dataDirectory) {
@@ -85,18 +85,26 @@ export async function restoreNativeSetupOwners(dataDirectory) {
     if (!value || value.schema !== 1 || Object.keys(value).some(key => !['schema', 'owners'].includes(key))) throw fail();
     const owners = validateSetupOwners(value.owners);
     if (Object.keys(owners).length) {
+      // The bundle vault starts absent and this runs before any owner. A vault that
+      // already exists without this start's pending marker was created by an earlier
+      // restore that durably applied the snapshot: 2.0.0 restored it on every start
+      // without consuming it, and the app may since have replaced or removed the owner.
+      // Consume it then, never re-apply it, so a removed owner is not resurrected.
+      const pending = path.join(dataDirectory, 'native-setup-local-owners.restoring');
+      const absent = !await existing(path.join(dataDirectory, 'multi-user-vault.key')) && !await existing(path.join(dataDirectory, 'multi-user-vault.json'));
+      if (absent) { await fs.writeFile(pending, '', { mode: 0o600 }); await sync(pending); await sync(dataDirectory).catch(() => {}); }
+      const first = absent || !!await existing(pending);
       const vault = await createSessionVault({ dataDirectory });
-      // The bundle vault starts without owners and this runs before any owner, so a
-      // different owner means 2.0.0 restored this snapshot without consuming it and
-      // the app later replaced it. Consume it rather than re-apply or refuse.
       const replaced = Object.entries(owners).some(([key, owner]) => {
         const current = vault.get(key);
         return current && JSON.stringify(key === 'bots-local-owner' ? { id: current.id, createdAt: current.createdAt }
           : { id: current.principal?.id, scope: current.principal?.scope }) !== JSON.stringify(owner);
       });
-      if (!replaced) await vault.restoreSetupOwners(owners);
+      if (first && !replaced) await vault.restoreSetupOwners(owners);
       await vault.drain();
       for (const owned of [vault.paths.keyPath, vault.paths.vaultPath]) await sync(owned);
+      // The vault now holds the snapshot durably; a start dying from here consumes it.
+      await fs.rm(pending, { force: true });
     }
     // Bundle verification hashes only descriptor, sources/ and config/reviewed-*, never web-data.
     try { await fs.rename(file, path.join(dataDirectory, 'native-setup-local-owners.restored.json')); }
