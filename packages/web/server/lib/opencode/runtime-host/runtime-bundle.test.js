@@ -791,9 +791,31 @@ test('an interrupted stale-draft reset leaves only a .stale sibling that the nex
  const controlRoot=await launchDefault(f,home,releaseB),binding=readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot});
  expect(await fs.readdir(bundles)).toEqual(['default-native']);expect(binding.descriptor.bundleID).toBe('default-native');
  expect(JSON.parse(await fs.readFile(binding.descriptor.launch.reviewedPluginManifestPath,'utf8')).plugins).toEqual([{...plugin,legacySpecs:[]}]);
- // Once selected nothing under bundles/ is swept.
+ // Once selected, a later unheld launch still sweeps .stale-* leftovers but never resets the selected draft.
  await fs.mkdir(path.join(bundles,'.stale-selected'));expect(await launchDefault(f,home,releaseA,timedOut)).toBe(controlRoot);
- expect((await fs.readdir(bundles)).sort()).toEqual(['.stale-selected','default-native']);
+ expect(await fs.readdir(bundles)).toEqual(['default-native']);
+});
+test('a selected unheld launch prunes unreferenced artifact sets, sweeps drafts and finishes a half-deleted seed, but never under a lifecycle lock',async()=>{
+ const f=await fixture(),home=path.join(await fs.realpath(os.tmpdir()),`selected-hygiene-${process.pid}-${Date.now()}`);roots.push(home);
+ const releaseA=await releaseArtifacts(f,'A'),releaseB=await releaseArtifacts(f,'B'),bundles=path.dirname(draftRoot(home));
+ await expect(launchDefault(f,home,releaseA,timedOut)).rejects.toMatchObject({code:'native_migration_timeout'});
+ const controlRoot=await launchDefault(f,home,releaseB),artifacts=path.join(controlRoot,'artifacts');
+ const shaA=sha256(await fs.readFile(path.join(releaseA,'native-bundle.json'))),shaB=sha256(await fs.readFile(path.join(releaseB,'native-bundle.json')));
+ expect((await fs.readdir(artifacts)).sort()).toEqual([shaA,shaB].sort());
+ const aged=new Date(Date.now()-2*60*60_000);for(const sha of [shaA,shaB])await fs.utimes(path.join(artifacts,sha),aged,aged);
+ await fs.mkdir(path.join(bundles,'.stale-left'));
+ // A 2.0.0 in-place removal of the fresh seed was interrupted after selection.
+ const sourceRoot=path.join(path.dirname(controlRoot),'fresh-native-source');await fs.mkdir(path.join(sourceRoot,'opencode-config'),{recursive:true});
+ await fs.writeFile(path.join(sourceRoot,'opencode-config','opencode.json'),'{}');
+ // A lifecycle operation holds the selector: nothing is swept and the launch still succeeds.
+ const {withCrossProcessFileLock}=await import('../../../../../harness-runtime/lib/atomic-file.js');
+ await withCrossProcessFileLock(path.join(controlRoot,'selection.lock'),async()=>{expect(await launchDefault(f,home,releaseB)).toBe(controlRoot);});
+ expect((await fs.readdir(bundles)).sort()).toEqual(['.stale-left','default-native']);expect((await fs.readdir(artifacts)).sort()).toEqual([shaA,shaB].sort());
+ expect(await launchDefault(f,home,releaseB)).toBe(controlRoot);
+ expect(await fs.readdir(bundles)).toEqual(['default-native']);expect(await fs.readdir(artifacts)).toEqual([shaB]);
+ expect(await fs.stat(sourceRoot).catch(error=>error.code)).toBe('ENOENT');
+ await expect(createRuntimeBundleStore({controlRoot,allowRecoveredInputStartup:true,runMigration:async()=>{throw Error('fixture no migration');},
+  withQuiescedSource:async()=>{throw Error('fixture no checkpoint');},verifyArtifacts:async()=>{}}).verify({bundleID:'default-native',phase:'resume'})).resolves.toMatchObject({integrity:'verified'});
 });
 test('the stale sweep keeps a matching sealed draft',async()=>{
  const f=await fixture(),home=path.join(f.root,'sweep-sealed-home'),release=await releaseArtifacts(f,'A'),bundles=path.dirname(draftRoot(home));

@@ -12,7 +12,7 @@ import {createRuntimeBundleCheckpoint} from './bundle-checkpoint.js';
 import {withCrossProcessFileLock} from '../../../../../harness-runtime/lib/atomic-file.js';
 import {seedNativeSetup} from './native-setup-seed.js';
 import {readRuntimeBundleBinding} from './runtime-bundle-binding.js';
-import {retainNativeArtifacts} from './retained-native-artifacts.js';
+import {pruneRetainedNativeArtifacts,retainNativeArtifacts} from './retained-native-artifacts.js';
 import {protectNativeSetupSource,removeNativeSetupSource,resetAbandonedNativeSetupSource,sweepRemovedNativeSetupSources} from './native-setup-source.js';
 import {canonicalJSON,isRecord,readBundleJSON,sha256} from './bundle-migration-inventory.js';
 import {reclaimReusedLock} from './native-setup-local-owners.js';
@@ -66,13 +66,29 @@ const resetStaleDefaultDraft=async({controlRoot,sourceRoot,inputSha256,verifySea
  await fs.rename(root,stale);await syncDirectory(bundles);
  await fs.rm(stale,{recursive:true});return true;
 };
-/** Call inside the bootstrap lock, only while no selection.json exists, before any
- * draft or seed decision: the abandoned-seed reset refuses while any bundles/* entry exists. */
+/** Call inside the bootstrap lock before any draft or seed decision while no
+ * selection.json exists (the abandoned-seed reset refuses while any bundles/* entry
+ * exists), or through sweepSelectedLeftovers once one does. */
 const sweepStaleDrafts=async controlRoot=>{
  const bundles=path.join(controlRoot,'bundles');let names;
  try{names=(await fs.readdir(bundles)).filter(name=>name.startsWith('.stale-'));}catch(error){if(error.code==='ENOENT')return;throw error;}
  if(names.length)await owned(bundles,controlRoot);
  for(const name of names){const entry=path.join(bundles,name);await owned(entry,bundles);await fs.rm(entry,{recursive:true});}
+};
+/** Inside the bootstrap lock of an unheld selection. It never waits for a lifecycle
+ * operation: while one holds selection.lock, a later launch sweeps instead. Storage
+ * hygiene never blocks a verified selected launch; its failure is only reported. */
+const sweepSelectedLeftovers=async controlRoot=>{
+ try{
+  await withCrossProcessFileLock(path.join(controlRoot,'selection.lock'),async()=>{
+   if(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot},{allowHeldInspection:true}).admission==='held')return;
+   await sweepStaleDrafts(controlRoot);
+   await pruneRetainedNativeArtifacts({controlRoot});
+  },{timeoutMs:0});
+ }catch(error){
+  if(error.code==='LOCK_TIMEOUT')return;
+  console.warn(`[runtime-bundle] selected install cleanup deferred: ${/^[a-z][a-z0-9_]{1,100}$/i.test(error.code??'')?error.code:'cleanup_failed'}`);
+ }
 };
 export function defaultNativeRegistrations(origins) {
  return origins.map(origin=>({...origin,legacySpecs:DEVRYAN_MANAGED_PLUGINS.filter(plugin=>nativePluginIDs[plugin.id]?.includes(origin.id))
@@ -102,13 +118,15 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
   await sweepRemovedNativeSetupSources({controlRoot,sourceRoot});
   if(await exists(path.join(controlRoot,'selection.json'))){
    const selected=readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot},{allowHeldInspection:true});
-   if(selected.admission!=='held'&&!selected.selection.reconciliationRequired&&await exists(sourceRoot))await removeNativeSetupSource({controlRoot,sourceRoot,verifySelected:async()=>{
+   if(selected.admission==='held'||selected.selection.reconciliationRequired)return controlRoot;
+   if(await exists(sourceRoot))await removeNativeSetupSource({controlRoot,sourceRoot,verifySelected:async()=>{
     const store=createRuntimeBundleStore({controlRoot,allowRecoveredInputStartup:true,runMigration:async()=>{throw fail('bundle_migration_generation_invalid');},
      withQuiescedSource:async()=>{throw fail('bundle_quiescence_unverified');},
      verifyArtifacts:async({launch:value})=>{const verified=await verifyArtifacts({manifestPath:value.artifactManifestPath,manifestSha256:value.artifactManifestSha256,launcher:executionArtifacts(path.dirname(value.artifactManifestPath)).launcher});
       if(verified.controller!==value.controllerBinary||verified.writer!==value.writerBinary)throw fail('bundle_artifact_generation_mismatch');}});
     await store.verify({bundleID:selected.descriptor.bundleID,phase:'resume'});
    }});
+   await sweepSelectedLeftovers(controlRoot);
    return controlRoot;
   }
   await sweepStaleDrafts(controlRoot);
