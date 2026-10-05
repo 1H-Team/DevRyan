@@ -57,6 +57,7 @@ import { runCompiledHelperIsolation } from './opencode-v2-native/package-helper-
 import { createCompiledHelperAgentFixture } from './opencode-v2-native/package-helper-agent-fixture.mjs';
 import { createFixtureJournal } from './opencode-v2-native/fixture-journal.mjs';
 import { gradeJournalRoot, compiledDurableJournalCase } from './opencode-v2-native/journal-evidence.mjs';
+import { runCompiledSeededCredentialBoot } from './opencode-v2-native/package-seeded-credential-lane.mjs';
 
 const privateEnvironment = (globals, inherited) => createQaHostLaunchEnvironment({ ...inherited,
   HOME: globals.home, XDG_CONFIG_HOME: globals.config, XDG_DATA_HOME: globals.data, XDG_STATE_HOME: globals.state,
@@ -661,6 +662,11 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       assert.equal(provider.requests.length, providerCountBeforeRecovery, 'Native inspection/restart inferred or replayed a prompt');
       assert.equal(fixtureSha256(await fs.readFile(fixture.sourceLaunch.opencodeDatabasePath)), fixture.expected.databaseSha256);
       assert.deepEqual(await snapshotRetainedBundleWork(descriptor), retainedWork);
+      // Separate control root: a fresh default-shaped initialization that still holds its setup seed at first boot.
+      const providerCountBeforeSeeded = provider.requests.length;
+      cases.push(await runCompiledSeededCredentialBoot({ root, artifacts, manifestPath, manifestSha256, reviewedPluginManifestPath,
+        configuration, catalogRequirements, provider, observations }));
+      assert.equal(provider.requests.length, providerCountBeforeSeeded + 1, 'Seeded first boot inferred other than its one seed prompt');
       const parentDeath = await runCompiledParentDeath({ artifactRoot, root, environment: fixture.environment });
       cases.push(parentDeath);
       // Every descriptor-owned root: the selected candidate (this host, both
