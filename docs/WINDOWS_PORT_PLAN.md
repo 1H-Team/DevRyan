@@ -48,6 +48,18 @@ Complete and verify the isolation policy under a containing host job; do not
 remove the boundary merely to make CI pass. The retained rerun log is
 `.cache/release-2.0.2-recovery/windows-native-token-right-run.log`.
 
+The isolated Windows implementation adds a read-only `--inspect-process PID`
+supervisor operation. It queries creation `FILETIME`, physical liveness and
+containing-job membership from one non-inherited Windows process handle,
+without changing files, security descriptors or admission. Its separate native
+CI check retains stable parent/child identities, actual child exit and invalid
+PID refusals in `host-boundary-evidence.json`. This measures the runner's actual
+job membership before revising the containment design; it does not qualify
+restricted execution or authorize takeover. Shared ownership callers still
+remain conservatively fenced pending integration and the full safety inventory.
+The native APIs are [GetProcessTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes)
+and [IsProcessInJob](https://learn.microsoft.com/en-us/windows/win32/api/jobapi/nf-jobapi-isprocessinjob).
+
 `scripts/build-native-runtime.mjs` currently requires Darwin ARM64 and seals
 Darwin PTY, AST, Claude, and supervisor assets. The Windows builder must select
 reviewed inputs by the actual host architecture, emit `.exe` artifacts, and

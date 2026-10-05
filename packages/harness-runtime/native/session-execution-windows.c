@@ -14,12 +14,35 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <wchar.h>
+#include <errno.h>
 
 static void fail(const char *operation) {
   fprintf(stderr, "%s failed (%lu)\n", operation, GetLastError());
   ExitProcess(125);
 }
 static void checked(BOOL ok, const char *operation) { if (!ok) fail(operation); }
+
+/* Read-only OS identity probe. Never grant, signal or infer exit from a PID.
+ * Creation identity and liveness come from the same non-inherited handle. */
+static int inspect_process(const wchar_t *argument) {
+  if (!*argument) return 125;
+  for (const wchar_t *p = argument; *p; p++) if (*p < L'0' || *p > L'9') return 125;
+  wchar_t *end; errno = 0;
+  unsigned long pid = wcstoul(argument, &end, 10);
+  if (errno || *end || !pid) return 125;
+  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, (DWORD)pid);
+  if (!process) fail("process identity handle");
+  FILETIME created, exited, kernel, user;
+  checked(GetProcessTimes(process, &created, &exited, &kernel, &user), "process creation identity");
+  DWORD state = WaitForSingleObject(process, 0);
+  if (state != WAIT_OBJECT_0 && state != WAIT_TIMEOUT) fail("process identity state");
+  BOOL inJob;
+  checked(IsProcessInJob(process, NULL, &inJob), "containing job identity");
+  printf("{\"protocol\":\"devryan.windows-process-identity/1\",\"pid\":%lu,\"startIdentity\":\"win32:%08lx%08lx\",\"active\":%s,\"inJob\":%s}\n",
+    pid, created.dwHighDateTime, created.dwLowDateTime, state == WAIT_TIMEOUT ? "true" : "false", inJob ? "true" : "false");
+  CloseHandle(process);
+  return 0;
+}
 static wchar_t *joined(const wchar_t *left, const wchar_t *right) {
   size_t n = wcslen(left) + wcslen(right) + 2;
   wchar_t *value = calloc(n, sizeof(wchar_t));
@@ -110,6 +133,7 @@ static PSID cache_sid(const wchar_t *directory) {
 }
 
 int wmain(int argc, wchar_t **argv) {
+  if (argc == 3 && !wcscmp(argv[1], L"--inspect-process")) return inspect_process(argv[2]);
   // The host uses a named cancellation event because TerminateProcess would
   // close the job safely but could not write a termination acknowledgement.
   if (argc == 3 && !wcscmp(argv[1], L"--cancel")) {

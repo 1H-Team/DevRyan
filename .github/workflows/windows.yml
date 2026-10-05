@@ -3,7 +3,7 @@ name: Windows native qualification
 on:
   workflow_dispatch:
   push:
-    branches: [release/2.0.2]
+    branches: [release/2.0.2, implementation/windows-port]
     paths:
       - .github/workflows/windows.yml
       - packages/electron/**
@@ -12,6 +12,7 @@ on:
       - scripts/build-native-runtime.mjs
       - scripts/build-session-execution.mjs
       - scripts/verify-session-execution.mjs
+      - scripts/verify-windows-host-boundary.mjs
       - scripts/native-runtime-assets.mjs
       - bun.lock
   pull_request:
@@ -23,6 +24,7 @@ on:
       - scripts/build-native-runtime.mjs
       - scripts/build-session-execution.mjs
       - scripts/verify-session-execution.mjs
+      - scripts/verify-windows-host-boundary.mjs
       - scripts/native-runtime-assets.mjs
       - bun.lock
 
@@ -96,6 +98,11 @@ jobs:
         # No acceptance marker is written until the actual platform inventory
         # passes. Missing Windows read/ACL/process contracts fail this job.
         run: node scripts/build-session-execution.mjs .cache/windows-native/${{ matrix.arch }} --verify
+      - name: Verify native process identities and containing host jobs
+        id: host_boundary
+        if: ${{ always() && steps.supervisor.outcome == 'success' }}
+        continue-on-error: true
+        run: node scripts/verify-windows-host-boundary.mjs .cache/windows-native/${{ matrix.arch }}
       - name: Restore exact reviewed build inputs
         id: inputs
         if: ${{ always() && steps.dependencies.outcome == 'success' }}
@@ -117,11 +124,12 @@ jobs:
         env:
           SUPERVISOR: ${{ steps.supervisor.outcome }}
           SUPERVISOR_ACCEPTANCE: ${{ steps.supervisor_acceptance.outcome }}
+          HOST_BOUNDARY: ${{ steps.host_boundary.outcome }}
           RUNTIME: ${{ steps.runtime.outcome }}
           RUNTIME_ACCEPTANCE: ${{ steps.runtime_acceptance.outcome }}
         run: |
           $failed = $false
-          foreach ($name in @('SUPERVISOR', 'SUPERVISOR_ACCEPTANCE', 'RUNTIME', 'RUNTIME_ACCEPTANCE')) {
+          foreach ($name in @('SUPERVISOR', 'SUPERVISOR_ACCEPTANCE', 'HOST_BOUNDARY', 'RUNTIME', 'RUNTIME_ACCEPTANCE')) {
             $outcome = [Environment]::GetEnvironmentVariable($name)
             "$name=$outcome" >> $env:GITHUB_STEP_SUMMARY
             if ($outcome -ne 'success') { $failed = $true }
