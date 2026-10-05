@@ -501,3 +501,16 @@ it('layers OPENCODE_CONFIG_DIR over the global config directory instead of repla
  const k=await fixture();await k.write(path.join(k.source.opencodeConfigDirectory,'opencode.json'),{a:1});await k.text(path.join(k.root,'source','overlay','opencode.jsonc'),'{ "fixture-secret": ');
  await expect(seedNativeSetup({...k,source:{...k.source,opencodeConfigOverlayDirectory:path.join(k.root,'source','overlay')}})).rejects.toMatchObject({code:'native_setup_json_invalid',relativePath:'opencode.jsonc'});
 });
+it('reuses a pinned seed older than the live source unchanged and refuses tampered credential pins without values',async()=>{
+ const f=await fixture(),auth=path.join(f.source.opencodeDataDirectory,'auth.json'),seeded=path.join(f.target.opencodeConfigDirectory,'native-setup-credentials.json');
+ await f.write(auth,{openai:{type:'api',key:'fixture-old-key'},'https://user:fixture-pass@opencode.example.com/':{type:'wellknown',key:'K',token:'fixture-wellknown-token'}});
+ const marker=await seedNativeSetup(f),pinned=await fs.readFile(seeded);
+ expect(marker.skipped).toEqual([{relativePath:'auth.json',reason:'credential_wellknown_unsupported'}]);
+ // The owner signs in again with the old install after the seed was pinned: the pin, not the newer source, is the input.
+ await f.write(auth,{openai:{type:'api',key:'fixture-new-key'},xai:{type:'api',key:'fixture-new-key'}});
+ expect(await seedNativeSetup(f)).toEqual({...marker,skipped:[],skippedCount:0});expect(await fs.readFile(seeded)).toEqual(pinned);
+ await fs.writeFile(seeded,JSON.stringify({schema:1,credentials:[{integrationID:'openai',value:{type:'key',key:'fixture-tampered-key'}}]})+'\n');
+ const error=await seedNativeSetup(f).then(()=>undefined,value=>value);
+ expect(error).toMatchObject({code:'native_setup_seed_changed'});
+ expect(JSON.stringify({...error,message:error.message})+warn.mock.calls.join('')).not.toMatch(/fixture-|example\.com/);
+});
