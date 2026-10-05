@@ -39,6 +39,10 @@ and desktop-host broker bridges.
   Packaged startup leaves Chromium caches intact; the existing explicit cache-
   clear command remains available. Window hangs, recoveries, renderer exits,
   and main-frame load failures are recorded as content-free lifecycle logs.
+  The server entry is loaded through `startup-retry.mjs`: its evaluation runs
+  bootstrap work and a failed evaluation stays cached in the ESM loader, so the
+  startup-failure Retry action relaunches through `performConfirmedQuit({ restart: true })`
+  after such a failure and retries in process otherwise.
 - **Native state controllers**: `keep-awake-controller.mjs` wraps `powerSaveBlocker` with idempotent apply/stop semantics for the desktop Keep Awake setting.
 - **Bundle settings checkpoint**: `desktop-settings.mjs` joins the server's
   constructor-only `onRuntimeBundleCheckpoint` callback. It rejects new settings

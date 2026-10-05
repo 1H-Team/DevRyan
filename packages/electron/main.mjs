@@ -40,6 +40,7 @@ import {
 import { BOT_RUNTIME_IMAGE_KEYS, loadBotRuntimeManifest } from './bot-runtime-manifest.mjs';
 import { loadBotDatabaseSql } from '@openchamber/bot-db';
 import { finishQuitAfterCleanup } from './quit-cleanup.mjs';
+import { createModuleEntryLoader, routeStartupRetry } from './startup-retry.mjs';
 import { releaseListsUpdaterChannel, resolveUpdateDownloadFallback } from './update-download-fallback.mjs';
 import {
   createRuntimeServiceCoordinator,
@@ -860,6 +861,10 @@ const acquireRuntimeOwner = createRuntimeOwnerAcquirer({
   }),
 });
 
+// The server entry bootstraps during evaluation; a failed evaluation stays
+// cached, so startup Retry must relaunch instead of importing it again.
+const webServerEntry = createModuleEntryLoader(() => import('@openchamber/web/server/index.js'));
+
 const spawnLocalServer = async () => {
   if(!runtimeBundleRecoveryRequired)inheritUserShellEnv();
 
@@ -1001,7 +1006,7 @@ const spawnLocalServer = async () => {
     log.warn('[agent-browser] managed setup failed; continuing without browser automation');
   }
 
-  const { startWebUiServer } = await import('@openchamber/web/server/index.js');
+  const { startWebUiServer } = await webServerEntry.load();
 
   const desktopHostLeaseIsActive = () => (
     state.desktopHostBrokerLease
@@ -3089,7 +3094,11 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
     const startupAction = startupActionForUrl(url);
     if (startupAction === 'retry-startup') {
       event.preventDefault();
-      void startDesktopRuntime();
+      routeStartupRetry({
+        requiresRelaunch: webServerEntry.requiresRelaunch,
+        relaunch: () => performConfirmedQuit({ restart: true }),
+        retryInProcess: startDesktopRuntime,
+      });
       return;
     }
     if (startupAction === 'retry-bot-runtime') {
