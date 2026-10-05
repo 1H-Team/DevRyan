@@ -47,15 +47,25 @@ async function build() {
   const report = { schema: 1, status: 'failed', version: '0.5.29', sourceCommit: commit, target, toolchain, inputs,
     scope: 'Existing pinned libsql source build and native ABI smoke only; no controller, confinement or runtime admission acceptance' };
   const verifySource = async () => {
+    report.stage = 'source-path';
     assert.equal(await fs.realpath(source), source);
+    report.stage = 'source-commit';
     const head = await execute('git', ['rev-parse', 'HEAD'], { cwd: source });
     assert.equal(head.stdout.trim(), commit);
+    report.stage = 'source-clean';
     const status = await execute('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: source });
     assert.equal(status.stdout, '');
-    for (const [name, expected] of Object.entries(inputs)) assert.equal(hash(await fs.readFile(path.join(source, name))), expected);
+    report.inputSha256 = {};
+    for (const [name, expected] of Object.entries(inputs)) {
+      report.stage = `source-bytes-${name}`;
+      const actual = hash(await fs.readFile(path.join(source, name)));
+      report.inputSha256[name] = actual;
+      assert.equal(actual, expected);
+    }
   };
   try {
     await verifySource();
+    report.stage = 'compiler-identity';
     const compiler = (await execute('rustc', [`+${toolchain}`, '--version', '--verbose'])).stdout.replace(/\r\n/g, '\n');
     assert.ok(compiler.includes('release: 1.85.1\n') && compiler.includes(`host: ${target}\n`));
     report.compiler = compiler.trim();
@@ -65,6 +75,7 @@ async function build() {
     const platformKeys = ['PATH', 'SystemRoot', 'SYSTEMROOT', 'WINDIR', 'SystemDrive', 'COMSPEC', 'PATHEXT', 'TEMP', 'TMP', 'USERPROFILE', 'INCLUDE', 'LIB', 'LIBPATH', 'RUSTUP_HOME', 'CARGO_HOME'];
     const env = Object.fromEntries(platformKeys.filter(key => typeof process.env[key] === 'string').map(key => [key, process.env[key]]));
     env.CARGO_TARGET_DIR = path.join(repository, '.cache', `sql-${process.arch}`, 'target');
+    report.stage = 'source-build';
     try {
       const result = await execute('cargo', [`+${toolchain}`, 'build', '--locked', '--release', '--target', target], { cwd: source, env, timeout: 1200000, maxBuffer: 4 * 1024 * 1024 });
       await fs.writeFile(path.join(output, 'libsql-build.log'), result.stdout + result.stderr, { flag: 'wx' });
@@ -73,17 +84,19 @@ async function build() {
       throw new Error('windows_libsql_source_build_failed');
     }
     const binary = path.join(env.CARGO_TARGET_DIR, target, 'release/libsql_js.dll');
+    report.stage = 'binary-identity';
     const bytes = await fs.readFile(binary); assertWindowsBinaryArchitecture(bytes, process.arch);
     const staged = path.join(output, `DevRyan-libsql-win32-${process.arch}.node`);
     await fs.writeFile(staged, bytes, { flag: 'wx' });
     report.binary = path.basename(staged); report.sha256 = hash(bytes); report.smokes = [];
     for (const executable of [process.execPath, 'bun']) {
+      report.stage = executable === process.execPath ? 'node-abi' : 'bun-abi';
       const result = await execute(executable, ['-e', smoke, staged], { cwd: repository, env, timeout: 30000, maxBuffer: 65536 });
       const value = JSON.parse(result.stdout.trim()); assert.equal(value.status, 'passed'); assert.equal(value.platform, 'win32'); assert.equal(value.arch, process.arch);
       if (value.runtime === 'bun') assert.equal(value.version, '1.3.14');
       report.smokes.push(value);
     }
-    await verifySource(); report.status = 'asset-candidate-passed';
+    await verifySource(); report.stage = 'complete'; report.status = 'asset-candidate-passed';
   } catch (error) { report.errorCode = /^windows_libsql_[a-z_]+$/.test(error.message) ? error.message : 'windows_libsql_build_or_identity_failed'; }
   await fs.writeFile(path.join(output, 'libsql-source-evidence.json'), JSON.stringify(report, null, 2) + '\n', { flag: 'wx' });
   console.log(JSON.stringify({ status: report.status, errorCode: report.errorCode, output }));
