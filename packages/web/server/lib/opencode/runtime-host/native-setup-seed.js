@@ -165,6 +165,8 @@ async function seed({source,target,environment={},captureLogicalSetup}){
  // lstat one source entry. A symlink is followed only into the canonical HOME, to a
  // uid-owned file or directory that is neither HOME itself nor an ancestor of the copied
  // root (`tree`); reads then walk from HOME with O_NOFOLLOW. Only `account` reads enter account stores.
+ // An exact web setup path (no `tree`) linked below its own web root keeps that root and is web
+ // setup again; never onto/above a web root, and webSecrets stay guarded.
  const entry=async(file,relative,readRoot,tree,account)=>{
   let stat;try{stat=await fs.lstat(file);}catch(error){if(error.code==='ENOENT'||error.code==='ENOTDIR')return undefined;if(denied(error)){skip(relative,'unreadable');return null;}throw error;}
   if(stat.isSymbolicLink()){
@@ -172,7 +174,7 @@ async function seed({source,target,environment={},captureLogicalSetup}){
    if(!home||!inside(home,resolved)){skip(relative,'symlink_outside_home');return null;}
    if(!owned(stat)){skip(relative,'symlink_foreign_owner');return null;}
    if(resolved===home||tree&&tree.startsWith(resolved+path.sep)){skip(relative,'protected');return null;}
-   file=resolved;readRoot=home;
+   if(tree||!webRoots.includes(readRoot)||!inside(readRoot,resolved)||webRoots.some(root=>inside(resolved,root)))readRoot=home;file=resolved;
   }else{
    // Its parent is canonical: on case-insensitive volumes checks and reads use the stored case (~/.SSH is ~/.ssh).
    const real=await fs.realpath(file).catch(()=>file);

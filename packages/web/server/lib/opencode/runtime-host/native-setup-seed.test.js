@@ -388,3 +388,15 @@ it('never lets links or bulk folders copy DevRyan web-data secrets or Electron/C
  expect(JSON.parse(await fs.readFile(path.join(f.target.webDataDirectory,'settings.json'),'utf8'))).toEqual({themeId:'dark'});
  for(const row of marker.files)expect(await fs.readFile(row.path,'utf8')).not.toMatch(/fixture-(devryan|electron)/);
 });
+it('follows an exact web setup link inside its own web root, never onto the root, another web root or a web secret',async()=>{
+ const f=await fixture(),home=f.source.home,web=path.join(home,'.config','openchamber'),data=path.join(web,'data');
+ const source={...f.source,webDataDirectory:data,webConfigDirectory:web};
+ await f.write(path.join(web,'themes-v2','t.json'),{id:'t'});await fs.symlink(path.join(web,'themes-v2'),path.join(web,'themes'));
+ await f.text(path.join(web,'multi-user-vault.key'),'fixture-devryan');await f.text(path.join(data,'multi-user-vault.key'),'fixture-devryan');
+ await fs.symlink(path.join(data,'multi-user-vault.key'),path.join(data,'settings.json'));await fs.symlink(path.join(web,'multi-user-vault.key'),path.join(data,'supabase.json'));
+ await fs.symlink(data,path.join(data,'project-icons'));await fs.symlink(data,path.join(web,'projects'));
+ const marker=await seedNativeSetup({...f,source});
+ expect(marker.skipped).toEqual(['settings.json','supabase.json','projects','project-icons'].map(relativePath=>({relativePath,reason:'protected'})));
+ expect(marker.files.map(row=>path.relative(f.root,row.path))).toEqual(['target/web-config/themes/t.json']);
+ expect(JSON.parse(await fs.readFile(path.join(f.target.webConfigDirectory,'themes','t.json'),'utf8'))).toEqual({id:'t'});
+});
