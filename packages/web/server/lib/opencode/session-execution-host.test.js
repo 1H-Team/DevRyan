@@ -304,12 +304,49 @@ test('native host helpers allow only bounded reviewed Git discovery with a fresh
   expect(native.runReadOnlySessionExecution).toHaveBeenCalledWith(expect.objectContaining({ command: '/usr/bin/git',
     socketDirectory: null, workerBrowsers: false, args: ['-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null', '-c', 'credential.helper=', ...helper.args],
     env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
-      GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', GIT_NO_LAZY_FETCH: '1', GIT_NO_REPLACE_OBJECTS: '1' } }));
+      GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', GIT_NO_LAZY_FETCH: '1', GIT_NO_REPLACE_OBJECTS: '1',
+      GIT_CEILING_DIRECTORIES: path.dirname(await fs.realpath(directory)) } }));
   await expect(host.nativeExecution({ ...helper, args: ['fetch', 'origin'] })).rejects.toMatchObject({ code: 'native_helper_denied' });
   await expect(host.nativeExecution({ ...helper, timeoutMs: '100' })).rejects.toMatchObject({ code: 'native_helper_timeout_invalid' });
   await expect(host.nativeExecution({ ...helper, cwd: path.dirname(directory) })).rejects.toMatchObject({ code: 'native_helper_directory_denied' });
   expect(native.runReadOnlySessionExecution).toHaveBeenCalledTimes(1);
   expect(mocks.runtime.reserve).not.toHaveBeenCalled();
+});
+
+test('native Git discovery stays inside the registered project when only an unregistered parent is a repository', async () => {
+  const { execFile } = await import('node:child_process');
+  const os = await import('node:os');
+  const native = await import('@openchamber/harness-runtime/lib/session-execution.js');
+  // The supervisor stand-in runs the exact command, arguments, environment and directory with real Git.
+  native.runReadOnlySessionExecution.mockImplementation(({ command, args, env, logicalDirectory }) => new Promise((resolve) => {
+    execFile(command, args, { cwd: logicalDirectory, env, encoding: 'buffer' }, (error, stdout, stderr) => {
+      const exitCode = error ? (typeof error.code === 'number' ? error.code : 1) : 0;
+      resolve({ receipt: { terminated: true, confined: true, cancelled: false, exitCode }, stdout, stderr });
+    });
+  }));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-nested-project-')));
+  try {
+    const parent = path.join(root, 'parent'), nested = path.join(parent, 'workspace', 'project');
+    await fs.mkdir(nested, { recursive: true });
+    await new Promise((resolve, reject) => execFile('/usr/bin/git', ['init', '--quiet', parent],
+      { env: { PATH: '/usr/bin:/bin', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_CEILING_DIRECTORIES: root } }, error => error ? reject(error) : resolve()));
+    const discovery = { action: 'helper', command: 'git', args: ['rev-parse', '--git-dir', '--git-common-dir', '--show-toplevel'] };
+    // Registered nested non-Git folder: discovery never reports the unregistered parent repository.
+    const { host } = fixture({ nativeExecution: { helperRoots: [nested], gitCommand: '/usr/bin/git', socketDirectory: null } });
+    const scoped = await host.nativeExecution({ ...discovery, cwd: nested });
+    expect(scoped.exitCode).not.toBe(0);
+    expect(Buffer.from(scoped.stdout, 'base64').toString()).not.toContain(parent);
+    expect(native.runReadOnlySessionExecution).toHaveBeenLastCalledWith(expect.objectContaining({ env: expect.objectContaining({ GIT_CEILING_DIRECTORIES: path.dirname(nested) }) }));
+    await expect(host.nativeExecution({ ...discovery, cwd: parent })).rejects.toMatchObject({ code: 'native_helper_directory_denied' });
+    // A registered repository root keeps full discovery for itself and its nested folders.
+    const { host: registered } = fixture({ nativeExecution: { helperRoots: [nested, parent], gitCommand: '/usr/bin/git', socketDirectory: null } });
+    for (const cwd of [nested, parent]) {
+      const result = await registered.nativeExecution({ ...discovery, cwd });
+      expect(result.exitCode).toBe(0);
+      expect(Buffer.from(result.stdout, 'base64').toString().trim().split('\n').at(-1)).toBe(parent);
+    }
+    expect(native.runReadOnlySessionExecution).toHaveBeenLastCalledWith(expect.objectContaining({ env: expect.objectContaining({ GIT_CEILING_DIRECTORIES: root }) }));
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
 test('native scans enforce Git exclusions, reject follow traversal and protect nested host roots', async () => {
