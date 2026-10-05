@@ -1,5 +1,5 @@
 import {createNativeSettingsDirectory,readNativeShellBundleBinding} from './native-settings-directory.mjs';
-import {selectInheritedShellEnv} from './shell-env-inheritance.mjs';
+import {selectInheritedShellEnv,selectShellDataRoots} from './shell-env-inheritance.mjs';
 import { AGENT_BROWSER_VERSION } from '@openchamber/web/server/lib/agent-browser/install.js';
 import { restartSupabaseHost } from './supabase-host-restart.mjs';
 import {confirmRuntimeBundleResume} from './runtime-bundle-recovery.mjs';
@@ -497,6 +497,56 @@ const refreshQuitRiskFlags = async () => {
   }));
 };
 
+const SHELL_ENV_TIMEOUT_MS = 5_000;
+let cachedShellEnv = null;
+let shellEnvProbed = false;
+
+const isNushell = (shell) => {
+  const name = path.basename(shell).toLowerCase();
+  return name === 'nu' || name === 'nu.exe';
+};
+
+const parseShellEnv = (buf) => {
+  const result = {};
+  for (const line of buf.toString('utf8').split('\0')) {
+    if (!line) continue;
+    const idx = line.indexOf('=');
+    if (idx <= 0) continue;
+    result[line.slice(0, idx)] = line.slice(idx + 1);
+  }
+  return result;
+};
+
+const probeShellEnv = (shell, mode) => {
+  const result = spawnSync(shell, [mode, '-c', 'env -0'], {
+    stdio: ['ignore', 'pipe', 'ignore'],
+    timeout: SHELL_ENV_TIMEOUT_MS,
+    windowsHide: true,
+  });
+  if (result.error || result.status !== 0) return null;
+  const env = parseShellEnv(result.stdout);
+  return Object.keys(env).length > 0 ? env : null;
+};
+
+// Finder-launched apps on macOS inherit a minimal PATH (no /opt/homebrew, mise, asdf, etc.).
+// Probe the user's login shell once so the sidecar sees the same PATH / tool env as `$SHELL -il`.
+const loadShellEnv = () => {
+  if (shellEnvProbed) return cachedShellEnv;
+  shellEnvProbed = true;
+  if (process.platform === 'win32') return null;
+  const shell = process.env.SHELL || '/bin/sh';
+  if (isNushell(shell)) return null;
+  cachedShellEnv = probeShellEnv(shell, '-il') || probeShellEnv(shell, '-l');
+  return cachedShellEnv;
+};
+
+// The server inherits the login-shell merge before computing its data root and
+// bundle selector. Adopt their shell-only values first so this process's root
+// capture and binding read resolve the same roots as the server.
+if (!isRuntimeServiceControlProbe) {
+  Object.assign(process.env, selectShellDataRoots(process.env, loadShellEnv(), { packaged: app.isPackaged }));
+}
+
 // The binding changes OPENCHAMBER_DATA_DIR during module evaluation. Capture
 // shell ownership first; a static import would run before this in packaged ESM.
 const hostDataRootDirectory=path.resolve(process.env.OPENCHAMBER_DATA_DIR||path.join(os.homedir(),'.config','openchamber'));
@@ -782,49 +832,6 @@ const mapUpdaterProgressEvent = (payload) => ({
   event: payload.event,
   data: payload.data,
 });
-
-const SHELL_ENV_TIMEOUT_MS = 5_000;
-let cachedShellEnv = null;
-let shellEnvProbed = false;
-
-const isNushell = (shell) => {
-  const name = path.basename(shell).toLowerCase();
-  return name === 'nu' || name === 'nu.exe';
-};
-
-const parseShellEnv = (buf) => {
-  const result = {};
-  for (const line of buf.toString('utf8').split('\0')) {
-    if (!line) continue;
-    const idx = line.indexOf('=');
-    if (idx <= 0) continue;
-    result[line.slice(0, idx)] = line.slice(idx + 1);
-  }
-  return result;
-};
-
-const probeShellEnv = (shell, mode) => {
-  const result = spawnSync(shell, [mode, '-c', 'env -0'], {
-    stdio: ['ignore', 'pipe', 'ignore'],
-    timeout: SHELL_ENV_TIMEOUT_MS,
-    windowsHide: true,
-  });
-  if (result.error || result.status !== 0) return null;
-  const env = parseShellEnv(result.stdout);
-  return Object.keys(env).length > 0 ? env : null;
-};
-
-// Finder-launched apps on macOS inherit a minimal PATH (no /opt/homebrew, mise, asdf, etc.).
-// Probe the user's login shell once so the sidecar sees the same PATH / tool env as `$SHELL -il`.
-const loadShellEnv = () => {
-  if (shellEnvProbed) return cachedShellEnv;
-  shellEnvProbed = true;
-  if (process.platform === 'win32') return null;
-  const shell = process.env.SHELL || '/bin/sh';
-  if (isNushell(shell)) return null;
-  cachedShellEnv = probeShellEnv(shell, '-il') || probeShellEnv(shell, '-l');
-  return cachedShellEnv;
-};
 
 // Merge the user's login-shell env (PATH, etc.) into this process before we
 import { pathLooksUserConfigured, mergePathValues } from '@openchamber/web/server/lib/opencode/path-utils.js';
