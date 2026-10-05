@@ -121,6 +121,10 @@ jobs:
         run: node scripts/hydrate-reviewed-claude.mjs
       - name: Check out the published libsql 0.5.29 source commit
         uses: actions/checkout@v4
+        env:
+          GIT_CONFIG_COUNT: '1'
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: 'false'
         with:
           repository: tursodatabase/libsql-js
           ref: 55bee86d1c284f1ddf2b9e280e870d2b6cef884a

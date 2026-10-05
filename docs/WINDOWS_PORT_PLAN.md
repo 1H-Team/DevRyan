@@ -134,6 +134,16 @@ The [Rust platform contract](https://doc.rust-lang.org/stable/rustc/platform-sup
 supports native MSVC ARM64 host tools; that support does not establish libsql
 compatibility by itself.
 
+The initial source attempt in run `37377148453` failed before compilation on
+both architectures. The x64 stage receipt from `37380055984` independently
+identified checkout line-ending conversion: its `Cargo.toml` digest
+`1095aa076118ca6e5da4379c23a1cfc40dde4201c55beb3896412a5f1e0762c4`
+exactly matches the official pinned bytes converted to CRLF. The source
+checkout now overrides `core.autocrlf=false` for that step alone. A disposable
+actual Git checkout reproduces conversion and verifies the override preserves
+the original bytes with a clean index. The original Cargo/source hash gates
+remain exact; a native build and ABI pass are still required.
+
 `scripts/build-native-runtime.mjs` currently requires Darwin ARM64 and seals
 Darwin PTY, AST, Claude, and supervisor assets. The Windows builder must select
 reviewed inputs by the actual host architecture, emit `.exe` artifacts, and

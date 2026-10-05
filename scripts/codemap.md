@@ -20,6 +20,8 @@ Repository automation entrypoint for developer workflows: validation planning, l
   compiler and resource PE architecture, executes the original database ABI
   through Node/Bun, and retains source/build receipts. Those candidate resources
   cannot supply runtime admission or replace the controller/writer safety gate.
+  Its source checkout preserves pinned LF bytes on Windows; finite stage and
+  public input-hash receipts retain identity failures before compilation.
 
 - **Compiled native package** (`build-native-runtime.mjs`,
   `native-runtime-assets.mjs`, `verify-opencode-v2-package.mjs`): builds branded
