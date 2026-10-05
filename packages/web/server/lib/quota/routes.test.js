@@ -378,6 +378,44 @@ describe('Claude quota runtime resolution', () => {
     fetchSpy.mockRestore();
   });
 
+  it('holds configured-provider discovery until the native runtime identity is ready, then fails closed', async () => {
+    const notReady = () => Object.assign(new Error('The OpenCode runtime generation is unknown'), {
+      name: 'OpenCodeClientError', code: 'opencode_generation_invalid', statusCode: 503,
+    });
+    const createClient = (readyAfterCalls) => {
+      let calls = 0;
+      return {
+        generation: () => { calls += 1; if (calls <= readyAfterCalls) throw notReady(); return 2; },
+        catalog: { providers: vi.fn(async () => ({ providers: [{ id: 'anthropic', options: { baseURL: 'http://127.0.0.1:55201/v1' } }] })) },
+      };
+    };
+    const listConfiguredQuotaProviders = vi.fn(() => ['claude']);
+    const register = (openCodeClient) => {
+      const app = express();
+      registerQuotaRoutes(app, {
+        openCodeClient,
+        getQuotaProviders: async () => ({ listConfiguredQuotaProviders, fetchQuotaForProvider: async () => ({}) }),
+        isExternalOpenCode: () => false,
+        runtimeReadinessHoldMs: 200,
+        runtimeReadinessPollMs: 5,
+      });
+      return app;
+    };
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      // First ready: the identity becomes known while the request is held.
+      const response = await request(register(createClient(3))).get('/api/quota/providers?directory=%2Fworkspace').expect(200);
+      expect(response.body).toEqual({ providers: ['claude'] });
+      expect(listConfiguredQuotaProviders).toHaveBeenCalledWith(expect.objectContaining({ claudeProxyBaseUrl: 'http://127.0.0.1:55201/v1' }));
+      expect(errors).not.toHaveBeenCalled();
+      // A runtime that never becomes ready still reports its failure after the bounded hold.
+      const failed = await request(register(createClient(Number.POSITIVE_INFINITY))).get('/api/quota/providers?directory=%2Fworkspace').expect(503);
+      expect(failed.body.error).toBe('The OpenCode runtime generation is unknown');
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
   it('uses native profile inspection rather than proxy, PATH or quota CLI fallback',async()=>{
     const app=express();const getQuotaProviders=vi.fn(async()=>{throw new Error('must not discover ambient credentials');});const resolveClaudeCodeLaunch=vi.fn();
     const inspectClaude=vi.fn(async input=>{expect(input).toEqual({kind:'quota',directory:'/workspace'});return {providerId:'claude',ok:true,configured:true};});
