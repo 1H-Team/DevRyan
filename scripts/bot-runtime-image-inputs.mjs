@@ -181,7 +181,7 @@ export function parseBotRuntimeDockerfile(text, dockerfile = 'Dockerfile') {
       flags = jsonStart.flags;
       try {
         operands = JSON.parse(jsonStart.rest.join(' '));
-      } catch (error) {
+      } catch {
         unaddressable(`${dockerfile} contains an unparseable ${keyword} instruction`);
       }
       if (!Array.isArray(operands) || operands.some((value) => typeof value !== 'string')) {
