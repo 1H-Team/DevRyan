@@ -75,8 +75,11 @@ recovery receipts, temporary files, and updater intent.
 
 ## Execution and process ownership
 
-The native supervisor starts the child suspended, assigns it to an owned Job
-Object, then resumes it. Disable breakaway; contain every descendant and prevent
+The native supervisor assigns the owned Job Object atomically during suspended
+process creation through `PROC_THREAD_ATTRIBUTE_JOB_LIST`, then resumes it.
+Post-creation assignment leaves a supervisor-death race and is prohibited.
+This change still needs actual Windows execution evidence. Disable breakaway;
+contain every descendant and prevent
 child access to the job, parent, policy, cancellation, and receipt handles.
 Only the three explicitly selected standard handles are inherited. The private
 desktop and token must restrict execution and reads as well as writes. Verify
@@ -89,6 +92,8 @@ Flush the receipt before reporting termination. A failed or missing receipt
 keeps admission held, prevents bundle publication, and requires reconciliation.
 Test parent death, descendant escape attempts, handle inheritance, PID reuse,
 busy refusal, abrupt supervisor death, cancellation races, and receipt tampering.
+The process-creation attribute is documented by
+[Microsoft](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute).
 
 The controller, writer, and supervisor must execute independently on each
 architecture before integrated tests. Credential and enrollment helpers stay

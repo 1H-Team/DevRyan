@@ -33,3 +33,14 @@ test('Windows qualification builds and executes independent pinned native archit
   const processSource = fs.readFileSync(new URL('../packages/web/server/lib/opencode/runtime-host/native-process.js', import.meta.url), 'utf8');
   assert.match(processSource, /process\.platform !== 'darwin'.*native_controller_supervisor_unavailable/);
 });
+
+test('the Windows supervisor requires kernel job assignment before creating a child', () => {
+  const source = fs.readFileSync(new URL('../packages/harness-runtime/native/session-execution-windows.c', import.meta.url), 'utf8');
+  const attributes = source.indexOf('PROC_THREAD_ATTRIBUTE_JOB_LIST');
+  const create = source.indexOf('checked(CreateProcessAsUserW(');
+  assert.ok(attributes > 0 && attributes < create);
+  assert.match(source, /&job, sizeof\(job\), NULL, NULL\), "atomic command ownership"/);
+  assert.doesNotMatch(source, /if\s*\(!AssignProcessToJobObject/);
+  assert.match(source, /JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE/);
+  assert.doesNotMatch(source, /JOB_OBJECT_LIMIT_(?:SILENT_)?BREAKAWAY_OK/);
+});

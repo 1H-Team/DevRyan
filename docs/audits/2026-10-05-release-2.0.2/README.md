@@ -116,6 +116,12 @@ packaging SHA-256, uploaded state, size and exact shared scope allowlist. The
 preserved `r22-b6` verifier supplied the digest checks. Focused release tests
 passed without registry access. Windows x64/ARM64 CI is configured with pinned
 native tools and read permissions; actual Windows runs and contracts are pending.
+The release branch was pushed to the canonical repository. Draft PR creation
+was refused by the API token's permissions, and the dedicated GitHub comparison
+tab is signed out; native CI has not started. The Windows draft now assigns the
+Job Object during process creation, removing the post-creation ownership gap.
+Its source contract passes; the actual Windows abrupt-death inventory remains
+unavailable until CI can run. Core execution remains held.
 
 Enrollment review findings reproduced on the original review snapshot and the
 integrated branch. A durable fingerprint-only intent now precedes the exclusive
@@ -238,11 +244,11 @@ evidence in `.cache/release-2.0.2-recovery`.
 | DMG update success/refusal/interruption/rollback | Passed (focused); packaged not run | Verified downloads, native app exchange, startup acknowledgement and guarded rollback; killed-helper/native exchange checks pass; disposable package qualification pending |
 | Exact provider/role graph, 12 journeys, 16 compaction boundaries | Not run | Owner sign-in window after credential-free rehearsal |
 | Managed-user verification | Unavailable | Non-production Supabase environment not supplied |
-| Cold/warm loopback and full performance audit | Not run | Timing instrumentation and reproducible baselines pending |
+| Cold/warm loopback and full performance audit | Passed (interim diagnostic); final not run | One-stream and eight-call timing probe retained complete exact-turn marks; reproducible baselines and full audit pending |
 | Burst, six attribution, 21 calibration, conditional 42 paired launches | Not run | Quiet window and frozen grading pending; retain 750 ms |
 | Release dry-run with no external writes and exact asset digests | Passed (focused); CI not run | Fake-registry refusal/reuse tests, workflow writer guards and packaging-digest verification; actual signed images and frozen package pending |
 | Downloaded DMG digest, mounted app, isolated launch and updater | Not run | Publication requires all preceding mandatory gates |
-| Windows x64 / ARM64 native safety and installers | Not run | [Port plan](../../WINDOWS_PORT_PLAN.md); native Windows runners required |
+| Windows x64 / ARM64 native safety and installers | Unavailable; not run | [Port plan](../../WINDOWS_PORT_PLAN.md); branch pushed, PR API permission refused and browser sign-in pending |
 
 macOS remains ad-hoc signed. Windows packaging is unsigned. No notarization,
 Authenticode, live provider, or Windows runtime pass is claimed. Verification

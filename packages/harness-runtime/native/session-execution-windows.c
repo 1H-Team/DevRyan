@@ -181,19 +181,20 @@ int wmain(int argc, wchar_t **argv) {
     checked(DuplicateHandle(GetCurrentProcess(), GetStdHandle(kinds[i]), GetCurrentProcess(), &handles[i], 0, TRUE, DUPLICATE_SAME_ACCESS), "pipe handle");
   }
   startup.StartupInfo.hStdInput = handles[0]; startup.StartupInfo.hStdOutput = handles[1]; startup.StartupInfo.hStdError = handles[2];
-  SIZE_T bytes = 0; InitializeProcThreadAttributeList(NULL, 1, 0, &bytes);
+  SIZE_T bytes = 0; InitializeProcThreadAttributeList(NULL, 2, 0, &bytes);
   startup.lpAttributeList = malloc(bytes); if (!startup.lpAttributeList) fail("handle list allocation");
-  checked(InitializeProcThreadAttributeList(startup.lpAttributeList, 1, 0, &bytes), "handle list");
+  checked(InitializeProcThreadAttributeList(startup.lpAttributeList, 2, 0, &bytes), "process attributes");
   checked(UpdateProcThreadAttribute(startup.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
     handles, sizeof(handles), NULL, NULL), "inherited handle boundary");
+  // The kernel assigns the child while creating it. A suspended process
+  // followed by AssignProcessToJobObject leaves an escape window on host death.
+  checked(UpdateProcThreadAttribute(startup.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_JOB_LIST,
+    &job, sizeof(job), NULL, NULL), "atomic command ownership");
   wchar_t cwd[32768]; DWORD cwdLength = GetEnvironmentVariableW(L"DEVRYAN_EXECUTION_CWD", cwd, 32768);
   if (!cwdLength || cwdLength >= 32768) wcscpy(cwd, argv[1]);
   wchar_t *command = command_line(argc, argv, 6); PROCESS_INFORMATION process = {0};
   checked(CreateProcessAsUserW(restricted, NULL, command, NULL, NULL, TRUE,
     CREATE_SUSPENDED | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT, NULL, cwd, &startup.StartupInfo, &process), "confined command");
-  if (!AssignProcessToJobObject(job, process.hProcess)) {
-    DWORD error = GetLastError(); TerminateProcess(process.hProcess, 125); SetLastError(error); fail("command ownership");
-  }
   checked(ResumeThread(process.hThread) != (DWORD)-1, "command start");
   for (unsigned int i = 0; i < 3; i++) CloseHandle(handles[i]);
   HANDLE wait[] = { process.hProcess, cancel, parent };
