@@ -254,9 +254,7 @@ describe('release workflow', () => {
     for (const stepName of [
       'Create GitHub Release',
       'Upload npm tarball to release',
-      'Upload Bot runtime manifest to release',
-      'Upload DMG / ZIP / blockmaps to release',
-      'Upload combined latest-mac.yml to release',
+      'Upload DMG to release',
     ]) {
       const step = preFinalWorkflow.match(new RegExp(
         `- name: ${stepName.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\n(?<body>[\\s\\S]*?)(?:\\n      - name: |$)`,

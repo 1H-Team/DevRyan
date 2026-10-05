@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { UpdateInfo, UpdateProgress } from '@/lib/desktop';
 import { getDeviceInfo } from '@/lib/device';
+import { toast } from '@/components/ui';
 import { useUIStore } from './useUIStore';
 import {
   checkForDesktopUpdates,
@@ -242,11 +243,19 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
           : desktopInfo,
       }));
 
-      const ok = await downloadDesktopUpdate((progress) => {
+      const result = await downloadDesktopUpdate((progress) => {
         set({ progress });
       });
-      if (!ok) {
+      if (result === 'unavailable') {
         throw new Error('Desktop update only works on Local instance');
+      }
+      if (result === 'external') {
+        // No in-app updater payload: the installer download opened in the browser.
+        set({ downloading: false, progress: null });
+        toast.success('Opened the DevRyan installer download in your browser', {
+          description: 'Open the downloaded DMG and drag DevRyan into Applications to finish updating.',
+        });
+        return;
       }
       set({ downloading: false, downloaded: true });
     } catch (error) {

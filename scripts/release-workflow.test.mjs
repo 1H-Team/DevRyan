@@ -31,10 +31,30 @@ test('desktop-only release skips npm while requiring all desktop and image gates
   const finalize = jobs['finalize-release'];
   assert.match(finalize.if, /always\(\)/);
   assert.match(finalize.if, /outputs.scope == 'desktop-macos-arm64' && needs.publish-npm.result == 'skipped'/);
-  for (const prerequisite of ['create-release', 'publish-bot-runtime-images', 'build-desktop-electron-macos', 'combine-electron-manifests']) {
+  assert.deepEqual(finalize.needs, ['create-release', 'publish-bot-runtime-images', 'build-desktop-electron-macos', 'publish-npm']);
+  for (const prerequisite of ['create-release', 'publish-bot-runtime-images', 'build-desktop-electron-macos']) {
     assert.ok(finalize.if.includes(`needs.${prerequisite}.result == 'success'`));
   }
+  assert.equal(jobs['combine-electron-manifests'], undefined);
+  assert.doesNotMatch(finalize.if, /combine-electron-manifests/);
   const verification = finalize.steps.find(step => step.run === 'node scripts/verify-release-assets.mjs');
   assert.equal(verification.env.RELEASE_SCOPE, '${{ needs.create-release.outputs.scope }}');
   assert.ok(finalize.steps.find(step => step.name === 'Deploy and verify Supabase configuration and migrations'));
+});
+
+test('public release uploads only the arm64 DMG and the full-scope web tarball', () => {
+  const { jobs } = YAML.parse(fs.readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8'));
+  const uploads = Object.entries(jobs).flatMap(([job, { steps }]) => steps
+    .filter((step) => step.uses?.startsWith('softprops/action-gh-release@') && step.with?.files)
+    .map((step) => [job, step.with.files]));
+  assert.deepEqual(uploads, [
+    ['publish-npm', 'artifacts/*.tgz'],
+    ['build-desktop-electron-macos', 'packages/electron/dist/DevRyan-${{ needs.create-release.outputs.version }}-arm64.dmg'],
+  ]);
+  const desktop = jobs['build-desktop-electron-macos'];
+  assert.equal(desktop.steps.find((step) => step.name === 'Upload DMG to release').with.fail_on_unmatched_files, true);
+  assert.ok(!desktop.steps.some((step) => step.uses?.startsWith('actions/upload-artifact@') && /latest-mac\.yml/.test(step.with?.path || '')));
+  const manifest = jobs['publish-bot-runtime-images'].steps.find((step) => step.name === 'Upload Bot runtime manifest for Electron release builds');
+  assert.match(manifest.uses, /^actions\/upload-artifact@/);
+  assert.equal(manifest.with.name, 'bot-runtime-images');
 });

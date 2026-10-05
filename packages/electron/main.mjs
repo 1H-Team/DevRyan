@@ -39,6 +39,7 @@ import {
 import { BOT_RUNTIME_IMAGE_KEYS, loadBotRuntimeManifest } from './bot-runtime-manifest.mjs';
 import { loadBotDatabaseSql } from '@openchamber/bot-db';
 import { finishQuitAfterCleanup } from './quit-cleanup.mjs';
+import { resolveUpdateDownloadFallbackUrl } from './update-download-fallback.mjs';
 import {
   createRuntimeServiceCoordinator,
   assertRuntimeServiceDescriptorOwner,
@@ -1918,10 +1919,14 @@ const startupErrorDetails = (error) => {
     ? error.code
     : (typeof cause?.code === 'string' ? cause.code : null);
   const causeMessage = cause instanceof Error ? cause.message : '';
+  const relativePath = typeof error?.relativePath === 'string'
+    ? error.relativePath
+    : (typeof cause?.relativePath === 'string' ? cause.relativePath : null);
   return {
     message,
     code,
     causeMessage,
+    ...(relativePath ? { relativePath } : {}),
     displayMessage: code ? `${message} (${code})` : message,
   };
 };
@@ -4655,15 +4660,23 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       if (!state.pendingUpdate) {
         throw new Error('No pending update');
       }
+      if (!state.pendingUpdate.electronUpdate) {
+        const url = resolveUpdateDownloadFallbackUrl({
+          payload: state.pendingUpdate.metadata,
+          version: state.pendingUpdate.version,
+          repositoryUrl: GITHUB_REPOSITORY_URL,
+        });
+        if (!url) throw new Error(`DevRyan ${state.pendingUpdate.version} has no verified installer download yet. Retry later.`);
+        await shell.openExternal(url);
+        log.info(`[electron] update installer opened externally version=${state.pendingUpdate.version}`);
+        return { openedExternally: true };
+      }
       emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({
         event: 'Started',
         data: {
           contentLength: null,
         },
       }));
-      if (!state.pendingUpdate.electronUpdate) {
-        throw new Error('Electron updater metadata is not available for this build');
-      }
       if (!state.pendingUpdate.downloaded) {
         await new Promise((resolve, reject) => {
           let settled = false;

@@ -590,11 +590,15 @@ export const checkForDesktopUpdates = async (): Promise<UpdateInfo | null> => {
   }
 };
 
+// 'external': the release has no in-app updater payload, so the shell opened
+// the verified installer download in the browser instead.
+export type DesktopUpdateDownloadResult = 'downloaded' | 'external' | 'unavailable';
+
 export const downloadDesktopUpdate = async (
   onProgress?: (progress: UpdateProgress) => void
-): Promise<boolean> => {
+): Promise<DesktopUpdateDownloadResult> => {
   if (!isTauriShell() || !isDesktopLocalOriginActive()) {
-    return false;
+    return 'unavailable';
   }
 
   const tauri = (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__;
@@ -633,11 +637,16 @@ export const downloadDesktopUpdate = async (
       });
     }
 
-    await tauri?.core?.invoke?.('desktop_download_and_install_update');
-    return true;
+    const result = await tauri?.core?.invoke?.('desktop_download_and_install_update');
+    const openedExternally = typeof result === 'object' && result !== null
+      && (result as { openedExternally?: unknown }).openedExternally === true;
+    return openedExternally ? 'external' : 'downloaded';
   } catch (error) {
     console.warn('Failed to download update (tauri)', error);
-    return false;
+    const message = error instanceof Error
+      ? error.message.replace(/^Error invoking remote method ['"]openchamber:invoke['"]:\s*(?:Error:\s*)?/i, '').trim()
+      : '';
+    throw new Error(message || 'Failed to download update');
   } finally {
     if (unlisten) {
       try {

@@ -6,20 +6,60 @@ import {
   legacyBrandedReleaseAssetNames,
   missingRequiredReleaseAssets,
   requiredReleaseAssetNames,
+  unexpectedReleaseAssets,
   unsupportedExtensionAssets,
+  verifyReleaseAssetNames,
 } from './verify-release-assets.mjs';
 
 describe('release asset verification', () => {
-  it('desktop-only scope retains every desktop, updater and Bot manifest requirement', () => {
-    const desktop = requiredReleaseAssetNames('2.0.0', 'desktop-macos-arm64');
-    assert.deepEqual(desktop, requiredReleaseAssetNames('2.0.0').filter(name => name !== 'DevRyan-web-2.0.0.tgz'));
-    assert.deepEqual(missingRequiredReleaseAssets(desktop, '2.0.0', 'desktop-macos-arm64'), []);
-    assert.deepEqual(missingRequiredReleaseAssets(desktop, '2.0.0'), ['DevRyan-web-2.0.0.tgz']);
-    for (const asset of desktop) {
-      assert.deepEqual(missingRequiredReleaseAssets(desktop.filter(name => name !== asset), '2.0.0', 'desktop-macos-arm64'), [asset]);
-    }
+  it('desktop-only scope publishes exactly the arm64 DMG and full adds the web tarball', () => {
+    assert.deepEqual(requiredReleaseAssetNames('2.0.1', 'desktop-macos-arm64'), ['DevRyan-2.0.1-arm64.dmg']);
+    assert.deepEqual(requiredReleaseAssetNames('2.0.1'), ['DevRyan-2.0.1-arm64.dmg', 'DevRyan-web-2.0.1.tgz']);
+    assert.deepEqual(verifyReleaseAssetNames(['DevRyan-2.0.1-arm64.dmg'], '2.0.1', 'desktop-macos-arm64'), []);
+    assert.deepEqual(verifyReleaseAssetNames(['DevRyan-web-2.0.1.tgz', 'DevRyan-2.0.1-arm64.dmg'], '2.0.1', 'full'), []);
     assert.throws(() => requiredReleaseAssetNames('2.0.0', 'unknown'), /Unknown release distribution scope/);
   });
+
+  it('fails when the DMG or the full-scope web tarball is missing', () => {
+    const [desktop] = verifyReleaseAssetNames([], '2.0.1', 'desktop-macos-arm64');
+    assert.match(desktop, /missing required assets:\n- DevRyan-2\.0\.1-arm64\.dmg$/);
+    assert.deepEqual(missingRequiredReleaseAssets(['DevRyan-2.0.1-arm64.dmg'], '2.0.1'), ['DevRyan-web-2.0.1.tgz']);
+    assert.deepEqual(missingRequiredReleaseAssets(['DevRyan-2.0.0-arm64.dmg'], '2.0.1', 'desktop-macos-arm64'), ['DevRyan-2.0.1-arm64.dmg']);
+  });
+
+  it('fails on updater metadata, ZIP, blockmaps, Bot manifest and off-scope assets', () => {
+    const extras = [
+      'latest-mac.yml',
+      'DevRyan-2.0.1-arm64.zip',
+      'DevRyan-2.0.1-arm64.dmg.blockmap',
+      'DevRyan-2.0.1-arm64.zip.blockmap',
+      'DevRyan-bot-runtime-images-2.0.1.json',
+      'DevRyan-web-2.0.1.tgz',
+      'DevRyan-2.0.0-arm64.dmg',
+    ];
+    const assets = ['DevRyan-2.0.1-arm64.dmg', ...extras];
+    assert.deepEqual(unexpectedReleaseAssets(assets, '2.0.1', 'desktop-macos-arm64'), extras);
+    const failures = verifyReleaseAssetNames(assets, '2.0.1', 'desktop-macos-arm64');
+    assert.equal(failures.length, 1);
+    assert.match(failures[0], /^unexpected public assets:/);
+    for (const name of extras) assert.ok(failures[0].includes(`- ${name}`), name);
+    assert.equal(unexpectedReleaseAssets(assets, '2.0.1').includes('DevRyan-web-2.0.1.tgz'), false);
+    assert.match(verifyReleaseAssetNames(['DevRyan-2.0.1-arm64.dmg', 'DevRyan-2.0.1-arm64.dmg'], '2.0.1', 'desktop-macos-arm64')[0], /^duplicate assets:/);
+  });
+
+  it('fails on legacy-prefixed and extension assets even beside the exact allowlist', () => {
+    const failures = verifyReleaseAssetNames([
+      'DevRyan-2.0.1-arm64.dmg',
+      'OpenChamber-2.0.1-arm64.dmg',
+      'openchamber-web-2.0.1.tgz',
+      'DevRyan-2.0.1.vsix',
+    ], '2.0.1', 'desktop-macos-arm64');
+    assert.deepEqual(failures, [
+      'unsupported extension assets:\n- DevRyan-2.0.1.vsix',
+      'legacy-branded public assets:\n- OpenChamber-2.0.1-arm64.dmg\n- openchamber-web-2.0.1.tgz',
+    ]);
+  });
+
   it('rejects extension packages and their download artifacts regardless of branding', () => {
     assert.deepEqual(unsupportedExtensionAssets([
       'DevRyan-1.1.13.vsix',
@@ -62,36 +102,6 @@ describe('release asset verification', () => {
     assert.deepEqual(release, { id: 42, tag_name: 'v1.1.8', draft: true });
     assert.equal(requests.length, 2);
     assert.match(requests[1], /\/releases\?per_page=100&page=1$/);
-  });
-
-  it('requires the Apple silicon app packages and update metadata', () => {
-    assert.deepEqual(requiredReleaseAssetNames('1.1.1'), [
-      'DevRyan-1.1.1-arm64.dmg',
-      'DevRyan-1.1.1-arm64.dmg.blockmap',
-      'DevRyan-1.1.1-arm64.zip',
-      'DevRyan-1.1.1-arm64.zip.blockmap',
-      'latest-mac.yml',
-      'DevRyan-web-1.1.1.tgz',
-      'DevRyan-bot-runtime-images-1.1.1.json',
-    ]);
-  });
-
-  it('reports exactly which required release assets are missing', () => {
-    const missing = missingRequiredReleaseAssets(
-      [
-        'DevRyan-1.1.1-arm64.dmg',
-        'DevRyan-1.1.1-arm64.dmg.blockmap',
-        'latest-mac.yml',
-      ],
-      '1.1.1',
-    );
-
-    assert.deepEqual(missing, [
-      'DevRyan-1.1.1-arm64.zip',
-      'DevRyan-1.1.1-arm64.zip.blockmap',
-      'DevRyan-web-1.1.1.tgz',
-      'DevRyan-bot-runtime-images-1.1.1.json',
-    ]);
   });
 
   it('rejects public release assets with the legacy product prefix', () => {
