@@ -1659,8 +1659,7 @@ const sessionExecutionHost = createSessionExecutionHost({ assertExecutionReady: 
   // QA baselines set this to 0 so every dispatch's phase summary is journaled.
   admissionSummaryMinMs: /^\d{1,6}$/.test(process.env.DEVRYAN_EXECUTION_SUMMARY_MIN_MS ?? '')
     ? Number(process.env.DEVRYAN_EXECUTION_SUMMARY_MIN_MS) : undefined,
-  onDiagnostic: (event) => harnessRuntime.record({ type: 'lifecycle', event: event.event === 'session_execution' ? 'session_execution' : 'session_revert',
-    sessionID: event.sessionID, payload: event }),
+  onDiagnostic: (event) => harnessRuntime.recordSessionExecution(event),
 });
 observeCommandDeadline = (payload) => commandDeadlineRuntime.observe(payload);
 if (selectedRuntimeBundle && (ENV_SKIP_OPENCODE_START || ENV_CONFIGURED_OPENCODE_HOST)) {

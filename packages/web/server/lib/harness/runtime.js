@@ -244,6 +244,11 @@ export const createWebHarnessRuntime = (options = {}) => {
         payload,
       });
     },
+    // Session execution host diagnostics (execution and revert phases).
+    recordSessionExecution(event) {
+      return record({ type: 'lifecycle', event: event.event === 'session_execution' ? 'session_execution' : 'session_revert',
+        sessionID: event.sessionID, payload: event });
+    },
     recordLifecycleEvent(event) {
       return record({
         type: 'lifecycle',
