@@ -300,7 +300,13 @@ export function createSessionExecutionHost(options) {
       if (!path.isAbsolute(input.cwd ?? '') || !Array.isArray(nativeOptions.helperRoots)) throw failure('native_helper_directory_denied', 403);
       const cwd = await fs.realpath(input.cwd);
       const roots = await Promise.all(nativeOptions.helperRoots.map((root) => fs.realpath(root)));
-      if (!roots.some((root) => cwd === root || cwd.startsWith(`${root}${path.sep}`))) throw failure('native_helper_directory_denied', 403);
+      const owning = roots.filter((root) => cwd === root || cwd.startsWith(`${root}${path.sep}`));
+      if (!owning.length) throw failure('native_helper_directory_denied', 403);
+      // Discovery never walks above the outermost registered root that owns cwd: a registered
+      // folder nested in an unregistered repository is not a work tree (that repository's root
+      // is outside every helper root and would be refused), while a registered repository
+      // root keeps discovery for itself and its nested registered folders.
+      const ceiling = path.dirname(owning.reduce((outer, root) => (root.length < outer.length ? root : outer)));
       const command = nativeOptions.gitCommand ?? '/usr/bin/git';
       if (!path.isAbsolute(command) || !await verifySessionExecutionLauncher({ launcher: launcher() })) throw failure('mutation_runtime_unsupported');
       signal?.throwIfAborted();
@@ -310,7 +316,7 @@ export function createSessionExecutionHost(options) {
       job.settled = runReadOnlySessionExecution({ launcher: launcher(), storage: path.join(options.dataDirectory, 'harness', 'native-helpers'),
         logicalDirectory: cwd, command, args: ['-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null', '-c', 'credential.helper=', ...input.args],
         env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
-          GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', GIT_NO_LAZY_FETCH: '1', GIT_NO_REPLACE_OBJECTS: '1' },
+          GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', GIT_NO_LAZY_FETCH: '1', GIT_NO_REPLACE_OBJECTS: '1', GIT_CEILING_DIRECTORIES: ceiling },
         signal: AbortSignal.any([controller.signal, AbortSignal.timeout(input.timeoutMs ?? 10_000), ...(signal ? [signal] : [])]),
         socketDirectory: nativeOptions.socketDirectory, workerBrowsers: false, deniedReadDirectories: nativeOptions.deniedReadDirectories,
         maxOutputBytes: input.maxOutputBytes ?? 1024 * 1024, maxErrorBytes: input.maxErrorBytes ?? 64 * 1024,
