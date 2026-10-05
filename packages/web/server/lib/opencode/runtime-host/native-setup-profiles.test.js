@@ -37,3 +37,14 @@ test('copied flags, absent/foreign native receipt, changed identity/service and 
  }
  await fs.chmod(f.directory,0o755);await expect(relocateNativeSetupProfiles({profiles:[f.profile],sourceHome:f.home,targetHome:f.targetHome,controlRoot:f.controlRoot,claudeLifecycle:f.claudeLifecycle,copyAccount:vi.fn()})).rejects.toMatchObject({code:'native_setup_profiles_invalid'});
 });
+test('first-seed mode drops invalid account paths, later duplicates and rows past 64; strict mode still fails closed',async()=>{
+ const home='/fixture/home',targetHome='/fixture/target',copied=[],skipped=[];
+ const profiles=[{id:'num',claudeConfigDir:7},{id:'rel',claudeConfigDir:'.claude'},{id:'tilde',type:'claude-max',claudeConfigDir:'~/.claude'},{id:'a'},{id:'a',type:'second'},
+  ...Array.from({length:62},(_,index)=>({id:'p'+index})),{id:'late'}];
+ const result=await relocateNativeSetupProfiles({profiles,sourceHome:home,targetHome,copyAccount:async account=>copied.push(account),onSkip:row=>skipped.push(row)});
+ expect(result.map(row=>row.id)).toEqual(['a',...Array.from({length:59},(_,index)=>'p'+index)]);expect(result[0]).toEqual({id:'a'});expect(copied).toEqual([]);
+ expect(skipped).toEqual([{reason:'profile_account_invalid',profile:'num'},{reason:'profile_account_invalid',profile:'rel'},{reason:'profile_account_invalid',profile:'tilde'},
+  {reason:'profile_duplicate',profile:'a'},{reason:'profile_limit',profile:'p59'},{reason:'profile_limit',profile:'p60'},{reason:'profile_limit',profile:'p61'},{reason:'profile_limit',profile:'late'}]);
+ for(const input of [[{id:'rel',claudeConfigDir:'~/.claude'}],[{id:'a'},{id:'a'}],Array.from({length:65},(_,index)=>({id:'q'+index}))])
+  await expect(relocateNativeSetupProfiles({profiles:input,sourceHome:home,targetHome,copyAccount:async()=>{}})).rejects.toMatchObject({code:'native_setup_profiles_invalid'});
+});

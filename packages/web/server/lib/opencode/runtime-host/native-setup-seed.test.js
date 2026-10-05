@@ -250,3 +250,44 @@ it('projects auth.json like the SDK import: wellknown and undecodable entries ar
  expect(marker.skipped).toEqual([{relativePath:'auth.json',reason:'credential_wellknown_unsupported'},{relativePath:'auth.json',reason:'credential_invalid',integrationID:'broken'},{relativePath:'auth.json',reason:'credential_invalid',integrationID:'odd'}]);
  expect(JSON.stringify(marker)+warn.mock.calls.join('')).not.toMatch(/fixture-|example\.com/);
 });
+it('pins generated credential, Meridian and owner rows before project records and fails closed when one cannot fit',async()=>{
+ const f=await fixture(),{controlRoot,sourceRoot,target}=production(f);await fs.mkdir(controlRoot,{recursive:true});await protectNativeSetupSource({controlRoot,sourceRoot});
+ for(let index=0;index<17;index++)await f.write(path.join(f.source.webConfigDirectory,'projects','p'+String(index).padStart(2,'0')+'.json'),{pad:'x'.repeat(1024*1024-20)});
+ await f.write(path.join(f.source.opencodeDataDirectory,'auth.json'),{openai:{type:'api',key:'synthetic'}});
+ await f.write(path.join(f.source.home,'.config','meridian','profiles.json'),[{id:'api',type:'api'}]);
+ const captureLogicalSetup=async()=>({localOwners:{'bots-local-owner':{id:'10000000-0000-4000-8000-000000000001',createdAt:'2026-01-01T00:00:00Z'}}});
+ const marker=await seedNativeSetup({source:f.source,target,environment:{MERIDIAN_DEFAULT_PROFILE:'work'},captureLogicalSetup});
+ for(const file of [path.join(target.opencodeConfigDirectory,'native-setup-credentials.json'),path.join(target.webDataDirectory,'native-setup-local-owners.json'),
+  path.join(target.global.home,'.config','meridian','profiles.json'),path.join(target.global.home,'.config','meridian','settings.json')])expect(marker.files.some(row=>row.path===file)).toBe(true);
+ expect(marker.skipped.length).toBeGreaterThan(0);expect(marker.skipped.every(row=>row.relativePath.startsWith('projects/')&&row.reason==='total_limit')).toBe(true);
+ // A generated row over the shared caps is never silently dropped.
+ const g=await fixture();await fs.writeFile(path.join(g.source.opencodeDataDirectory,'auth.json'),JSON.stringify({openai:{type:'api',key:'k'.repeat(1024*1024-34)}}));
+ await expect(seedNativeSetup(g)).rejects.toMatchObject({code:'native_setup_source_too_large',relativePath:'auth.json'});
+ expect(await fs.stat(path.join(g.target.webDataDirectory,'native-setup-seed.json')).catch(error=>error.code)).toBe('ENOENT');
+},60_000);
+const caseInsensitive=await(async()=>{const base=path.resolve(import.meta.dirname,'../../../../../../.cache/v2-validation');await fs.mkdir(base,{recursive:true});
+ const probe=await fs.mkdtemp(path.join(base,'case-'));try{await fs.writeFile(path.join(probe,'a'),'');return await fs.lstat(path.join(probe,'A')).then(()=>true,()=>false);}finally{await fs.rm(probe,{recursive:true,force:true});}})();
+it.skipIf(!caseInsensitive)('treats a case-only stored name as the requested entry and keeps the canonical destination name',async()=>{
+ const f=await fixture(),config=f.source.opencodeConfigDirectory;
+ await f.text(path.join(config,'agents.md'),'rules');await f.write(path.join(config,'OpenCode.json'),{stored:true});await f.text(path.join(config,'Skills','a','SKILL.md'),'skill');
+ const marker=await seedNativeSetup(f);expect(marker.skipped).toEqual([]);
+ const names=await fs.readdir(f.target.opencodeConfigDirectory);for(const name of ['AGENTS.md','opencode.json','skills'])expect(names).toContain(name);
+ expect(await fs.readFile(path.join(f.target.opencodeConfigDirectory,'AGENTS.md'),'utf8')).toBe('rules');
+ expect(await fs.readdir(path.join(f.target.opencodeConfigDirectory,'skills','a'))).toEqual(['SKILL.md']);
+ // A link behind a case-only name keeps the ordinary link rules.
+ await fs.rm(path.join(config,'agents.md'));await f.text(path.join(f.root,'other.md'),'other');await fs.symlink(path.join(f.root,'other.md'),path.join(config,'agents.md'));
+ await fs.rm(f.target.webDataDirectory,{recursive:true});await fs.rm(f.target.opencodeConfigDirectory,{recursive:true});
+ expect((await seedNativeSetup(f)).skipped).toEqual([{relativePath:'AGENTS.md',reason:'symlink_outside_home'}]);
+});
+it('never follows links to HOME, an ancestor of the copied root or a credential store',async()=>{
+ const f=await fixture(),home=f.source.home,skills=path.join(home,'.agents','skills');
+ await f.text(path.join(skills,'ok','SKILL.md'),'ok');await f.text(path.join(home,'.ssh','id_fixture'),'fixture-private');await f.text(path.join(home,'.netrc'),'fixture-netrc');
+ await f.text(path.join(home,'Library','Keychains','login','db'),'fixture-keychain');await f.text(path.join(home,'.config','gh','hosts.yml'),'fixture-gh');await f.text(path.join(home,'.config','other','x.md'),'kept');
+ for(const [name,to] of [['ssh','.ssh'],['home','.'],['up','.agents'],['netrc','.netrc'],['keys','Library/Keychains/login'],['cfg','.config']])await fs.symlink(path.join(home,to),path.join(skills,name));
+ const marker=await seedNativeSetup(f);
+ expect(marker.skipped).toEqual(['cfg/gh','home','keys','netrc','ssh','up'].map(name=>({relativePath:'.agents/skills/'+name,reason:'protected'})));
+ expect((await fs.readdir(path.join(f.target.home,'.agents','skills'))).sort()).toEqual(['cfg','ok']);
+ expect(await fs.readFile(path.join(f.target.home,'.agents','skills','cfg','other','x.md'),'utf8')).toBe('kept');
+ const copied=await fs.readdir(path.dirname(f.target.home),{recursive:true});
+ for(const name of copied){const file=path.join(path.dirname(f.target.home),name);if((await fs.lstat(file)).isFile())expect(await fs.readFile(file,'utf8')).not.toMatch(/fixture-(private|netrc|keychain|gh)/);}
+});

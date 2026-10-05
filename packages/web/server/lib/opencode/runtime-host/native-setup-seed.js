@@ -57,10 +57,18 @@ async function seed({source,target,environment={},captureLogicalSetup}){
  const skip=(relative,reason,detail={})=>{skippedCount++;reasons[reason]=(reasons[reason]??0)+1;if(skippedRows.length<MAX_REPORTED)skippedRows.push({relativePath:sanitize(relative),reason,...detail});};
  const read=async(file,root,limit=MAX_FILE_BYTES)=>{
   const relative=path.relative(root,file);if((relative==='..'||relative.startsWith('..'+path.sep))||path.isAbsolute(relative))throw fail('native_setup_source_invalid');
-  let current=root;
+  let current=root,real=root;
   for(const part of ['',...relative.split(path.sep).filter(Boolean)]){current=part?path.join(current,part):current;
    let stat;try{stat=await fs.lstat(current);}catch(error){if(error.code==='ENOENT'||error.code==='ENOTDIR')return undefined;if(denied(error))throw skipped('unreadable');throw error;}
-   if(stat.isSymbolicLink()||await fs.realpath(current)!==current)throw fail('native_setup_source_invalid');
+   if(stat.isSymbolicLink())throw fail('native_setup_source_invalid');
+   // Case-insensitive volumes: a component stored as agents.md/Skills is the requested
+   // AGENTS.md/skills only when its realpath differs by case alone and is the same inode.
+   const resolved=await fs.realpath(current),expected=part?path.join(real,part):root;
+   if(resolved!==expected){
+    const same=part&&path.dirname(resolved)===real&&path.basename(resolved).toLowerCase()===part.toLowerCase()&&await fs.lstat(resolved).then(item=>item.dev===stat.dev&&item.ino===stat.ino,()=>false);
+    if(!same)throw fail('native_setup_source_invalid');
+   }
+   real=resolved;
   }
   // Non-blocking: a FIFO or socket swapped in after lstat never stalls bootstrap.
   let handle;try{handle=await fs.open(file,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);}catch(error){
@@ -91,10 +99,12 @@ async function seed({source,target,environment={},captureLogicalSetup}){
  }
  // Budgets apply to the saved bytes and rows, exactly as verifySeed re-reads them,
  // and to the marker itself; an entry that does not fit is skipped, never pinned.
- const save=async(file,bytes,relative)=>{
+ const save=async(file,bytes,relative,required=false)=>{
   if(files.some(row=>row.path===file))throw fail('native_setup_destination_conflict');
   const row={path:file,sha256:hash(bytes)},size=Buffer.byteLength(JSON.stringify(row))+1;
   const over=bytes.length>MAX_FILE_BYTES?'file_too_large':files.length>=MAX_FILES?'file_limit':total+bytes.length>MAX_TOTAL_BYTES?'total_limit':pinned+size>MAX_MARKER_BYTES?'marker_limit':undefined;
+  // Generated credential, Meridian and owner rows are never budget-skipped.
+  if(over&&required)throw Object.assign(fail('native_setup_source_too_large'),{reason:over});
   if(over){skip(relative,over);return;}
   await fs.mkdir(path.dirname(file),{recursive:true,mode:0o700});
   const root=roots.find(value=>file.startsWith(value+path.sep));if(!root)throw fail('native_setup_target_invalid');
@@ -115,23 +125,28 @@ async function seed({source,target,environment={},captureLogicalSetup}){
  };
  const home=await resolveRoot(path.resolve(source.home));
  // Never read DevRyan state (control root, fresh seed) or the seed target back into itself.
- const guarded=await Promise.all([...roots,path.resolve(environment.XDG_STATE_HOME||path.join(source.home,'.local','state'),'devryan')]
-  .map(value=>fs.realpath(value).catch(()=>value)));
+ const canonicalAll=values=>Promise.all(values.map(value=>fs.realpath(value).catch(()=>value)));
+ const guarded=await canonicalAll([...roots,path.resolve(environment.XDG_STATE_HOME||path.join(source.home,'.local','state'),'devryan')]);
+ // Credential and secret stores are never setup, whether reached by a link or below one.
+ const secrets=home?await canonicalAll(['.ssh','.gnupg','.aws','.azure','.kube','.docker','.config/gcloud','.config/gh','.password-store','.netrc','Library/Keychains','Library/Cookies']
+  .map(relative=>path.join(home,relative))):[];
  // lstat one source entry. A symlink is followed only into the canonical HOME, to a
- // uid-owned file or directory; reads then walk from HOME with O_NOFOLLOW.
- const entry=async(file,relative,readRoot)=>{
+ // uid-owned file or directory that is neither HOME itself nor an ancestor of the copied
+ // root (`tree`); reads then walk from HOME with O_NOFOLLOW.
+ const entry=async(file,relative,readRoot,tree)=>{
   let stat;try{stat=await fs.lstat(file);}catch(error){if(error.code==='ENOENT'||error.code==='ENOTDIR')return undefined;if(denied(error)){skip(relative,'unreadable');return null;}throw error;}
   if(stat.isSymbolicLink()){
    let resolved;try{resolved=await fs.realpath(file);stat=await fs.lstat(resolved);}catch{skip(relative,'symlink_unresolved');return null;}
    if(!home||!inside(home,resolved)){skip(relative,'symlink_outside_home');return null;}
    if(!owned(stat)){skip(relative,'symlink_foreign_owner');return null;}
+   if(resolved===home||tree&&tree.startsWith(resolved+path.sep)){skip(relative,'protected');return null;}
    file=resolved;readRoot=home;
   }
-  if(guarded.some(root=>inside(root,file))){skip(relative,'protected');return null;}
+  if(guarded.some(root=>inside(root,file))||secrets.some(root=>inside(root,file))){skip(relative,'protected');return null;}
   if(!stat.isFile()&&!stat.isDirectory()){skip(relative,'unsupported_type');return null;}
-  return {file,stat,readRoot};
+  return {file,stat,readRoot,tree};
  };
- const place=(item,relative,destination,transform,{records=false,sink}={},trail=new Set())=>located(relative,async()=>{
+ const place=(item,relative,destination,transform,{records=false,sink,required}={},trail=new Set())=>located(relative,async()=>{
   if(exhausted)return;
   if(++visited>MAX_VISITED){exhausted=true;skip(relative,'visit_limit');return;}
   if(item.stat.isDirectory()){
@@ -143,7 +158,7 @@ async function seed({source,target,environment={},captureLogicalSetup}){
     // Record folders import only their top-level *.json files; nested trees are not setup.
     if(records&&!name.endsWith('.json'))continue;
     const childRelative=path.join(relative,name);if(excluded.has(name)){skip(childRelative,'excluded');continue;}
-    const child=await entry(path.join(item.file,name),childRelative,item.readRoot);if(!child||records&&child.stat.isDirectory())continue;
+    const child=await entry(path.join(item.file,name),childRelative,item.readRoot,item.tree);if(!child||records&&child.stat.isDirectory())continue;
     await place(child,childRelative,path.join(destination,name),transform,{},nested);}return;
   }
   let bytes;try{bytes=await read(item.file,item.readRoot);}catch(error){if(error.code!=='native_setup_source_skipped')throw error;skip(relative,error.reason);return;}
@@ -151,7 +166,7 @@ async function seed({source,target,environment={},captureLogicalSetup}){
   if(sink)return sink(bytes);
   let result=bytes;
   if(transform){const parsed=parseJSON(bytes);if(parsed===undefined)throw fail('native_setup_json_invalid');result=Buffer.from(JSON.stringify(transform(parsed))+'\n');}
-  await save(destination,result,relative);
+  await save(destination,result,relative,required);
  });
  const copy=(root,relative,destination,transform,options)=>located(relative,async()=>{
   if(exhausted||typeof root!=='string')return;
@@ -161,12 +176,44 @@ async function seed({source,target,environment={},captureLogicalSetup}){
    const next=await entry(path.join(item.file,part),parts.slice(0,index+1).join('/'),item.readRoot);if(!next)return;
    if(index<parts.length-1&&!next.stat.isDirectory())return;item=next;
   }
-  await place(item,relative,destination,transform,options);
+  await place({...item,tree:await fs.realpath(item.file)},relative,destination,transform,options);
  });
  // One source file through the same entry rules, read into memory.
  const load=async(root,relative)=>{let bytes;await copy(root,relative,undefined,undefined,{sink:value=>{bytes=value;}});return bytes;};
- // Exact records and single files first, generated setup next, bulk folders last:
- // caps can then only skip folder content, never credentials or owners.
+ // Generated credential, Meridian and owner rows first (fail closed if they cannot fit),
+ // then exact records and single files, record folders and bulk folders last.
+ await copy(source.home,'.claude/.credentials.json',path.join(target.global.home,'.claude','.credentials.json'));
+ // Meridian settings are written once; an exported default profile wins over the saved one.
+ const meridianSettings='.config/meridian/settings.json',defaultProfile=typeof environment.MERIDIAN_DEFAULT_PROFILE==='string'?environment.MERIDIAN_DEFAULT_PROFILE.trim():'';
+ if(defaultProfile.length>256)skip('MERIDIAN_DEFAULT_PROFILE','default_profile_invalid');
+ if(!defaultProfile||defaultProfile.length>256)await copy(source.home,meridianSettings,path.join(target.global.home,meridianSettings),undefined,{required:true});
+ else await located(meridianSettings,async()=>{
+  const bytes=await load(source.home,meridianSettings),saved=bytes===undefined?{}:parseJSON(bytes);
+  if(!record(saved))skip(meridianSettings,'json_invalid');
+  await save(path.join(target.global.home,meridianSettings),Buffer.from(JSON.stringify({...record(saved)?saved:{},activeProfile:defaultProfile})+'\n'),meridianSettings,true);
+ });
+ // Loader tolerance: an empty or unparsable export falls back to disk; an unparsable file is no profiles.
+ const profileFile='.config/meridian/profiles.json';
+ await located(profileFile,async()=>{
+  let label='MERIDIAN_PROFILES',profiles;const exported=environment.MERIDIAN_PROFILES;
+  if(typeof exported==='string'&&exported.trim()){profiles=Buffer.byteLength(exported)>MAX_FILE_BYTES?undefined:parseJSON(exported);if(profiles===undefined)skip(label,'profiles_invalid');}
+  if(profiles===undefined){label=profileFile;const bytes=await load(source.home,profileFile);if(bytes===undefined)return;profiles=parseJSON(bytes);if(profiles===undefined){skip(label,'profiles_invalid');return;}}
+  const relocated=await relocateNativeSetupProfiles({profiles,sourceHome:source.home,targetHome:target.global.home,onSkip:({reason,...detail})=>skip(label,reason,detail),
+   copyAccount:async(account,destination)=>{await fs.mkdir(destination,{recursive:true,mode:0o700});
+    await copy(source.home,path.join(path.relative(source.home,account),'.credentials.json'),path.join(destination,'.credentials.json'));}});
+  await save(path.join(target.global.home,profileFile),Buffer.from(JSON.stringify(relocated)+'\n'),profileFile,true);
+ });
+ await located('auth.json',async()=>{const auth=await load(source.opencodeDataDirectory,'auth.json');
+  if(auth!==undefined){const parsed=parseJSON(auth);if(parsed===undefined)throw fail('native_setup_credentials_invalid');
+   const projected=projectNativeSetupCredentials(parsed,{onSkip:detail=>skip('auth.json',detail.reason,detail.integrationID?{integrationID:detail.integrationID}:{})});
+   await save(path.join(target.opencodeConfigDirectory,NATIVE_SETUP_CREDENTIAL_FILE),Buffer.from(JSON.stringify(projected)+'\n'),'auth.json',true);}});
+ if(captureLogicalSetup)await located('native-setup-local-owners.json',async()=>{
+  const logical=await captureLogicalSetup();
+  if(!record(logical)||Object.keys(logical).some(key=>!['localOwners'].includes(key))||!record(logical.localOwners))throw fail('native_setup_logical_invalid');
+  const {validateSetupOwners}=await import('../../multi-user/vault.js');
+  const owners=validateSetupOwners(logical.localOwners);
+  await save(path.join(target.webDataDirectory,'native-setup-local-owners.json'),Buffer.from(JSON.stringify({schema:1,owners})+'\n'),'native-setup-local-owners.json',true);
+ });
  await copy(source.webDataDirectory,'settings.json',path.join(target.webDataDirectory,'settings.json'),projectNativeSetupSettings);
  for(const name of ['supabase.json','supabase-connection.json','git-identities.json'])await copy(source.webDataDirectory,name,path.join(target.webDataDirectory,name),value=>{if(!record(value))throw fail('native_setup_json_invalid');return value;});
  await copy(source.webDataDirectory,'magic-prompts.json',path.join(target.webDataDirectory,'magic-prompts.json'),value=>{
@@ -191,38 +238,6 @@ async function seed({source,target,environment={},captureLogicalSetup}){
   // neither replace config.json nor create two hashes for one destination.
   const custom=path.join(target.opencodeConfigDirectory,'native-custom-config.json');
   await copy(path.dirname(source.opencodeConfigFile),path.basename(source.opencodeConfigFile),custom);
- }
- await copy(source.home,'.claude/.credentials.json',path.join(target.global.home,'.claude','.credentials.json'));
- // Meridian settings are written once; an exported default profile wins over the saved one.
- const meridianSettings='.config/meridian/settings.json',defaultProfile=typeof environment.MERIDIAN_DEFAULT_PROFILE==='string'?environment.MERIDIAN_DEFAULT_PROFILE.trim():'';
- if(defaultProfile.length>256)skip('MERIDIAN_DEFAULT_PROFILE','default_profile_invalid');
- if(!defaultProfile||defaultProfile.length>256)await copy(source.home,meridianSettings,path.join(target.global.home,meridianSettings));
- else await located(meridianSettings,async()=>{
-  const bytes=await load(source.home,meridianSettings),saved=bytes===undefined?{}:parseJSON(bytes);
-  if(!record(saved))skip(meridianSettings,'json_invalid');
-  await save(path.join(target.global.home,meridianSettings),Buffer.from(JSON.stringify({...record(saved)?saved:{},activeProfile:defaultProfile})+'\n'),meridianSettings);
- });
- // Loader tolerance: an empty or unparsable export falls back to disk; an unparsable file is no profiles.
- const profileFile='.config/meridian/profiles.json';
- await located(profileFile,async()=>{
-  let label='MERIDIAN_PROFILES',profiles;const exported=environment.MERIDIAN_PROFILES;
-  if(typeof exported==='string'&&exported.trim()){profiles=Buffer.byteLength(exported)>MAX_FILE_BYTES?undefined:parseJSON(exported);if(profiles===undefined)skip(label,'profiles_invalid');}
-  if(profiles===undefined){label=profileFile;const bytes=await load(source.home,profileFile);if(bytes===undefined)return;profiles=parseJSON(bytes);if(profiles===undefined){skip(label,'profiles_invalid');return;}}
-  const relocated=await relocateNativeSetupProfiles({profiles,sourceHome:source.home,targetHome:target.global.home,onSkip:({reason,...detail})=>skip(label,reason,detail),
-   copyAccount:async(account,destination)=>{await fs.mkdir(destination,{recursive:true,mode:0o700});
-    await copy(source.home,path.join(path.relative(source.home,account),'.credentials.json'),path.join(destination,'.credentials.json'));}});
-  await save(path.join(target.global.home,profileFile),Buffer.from(JSON.stringify(relocated)+'\n'),profileFile);
- });
- await located('auth.json',async()=>{const auth=await load(source.opencodeDataDirectory,'auth.json');
-  if(auth!==undefined){const parsed=parseJSON(auth);if(parsed===undefined)throw fail('native_setup_credentials_invalid');
-   const projected=projectNativeSetupCredentials(parsed,{onSkip:detail=>skip('auth.json',detail.reason,detail.integrationID?{integrationID:detail.integrationID}:{})});
-   await save(path.join(target.opencodeConfigDirectory,NATIVE_SETUP_CREDENTIAL_FILE),Buffer.from(JSON.stringify(projected)+'\n'),'auth.json');}});
- if(captureLogicalSetup){
-  const logical=await captureLogicalSetup();
-  if(!record(logical)||Object.keys(logical).some(key=>!['localOwners'].includes(key))||!record(logical.localOwners))throw fail('native_setup_logical_invalid');
-  const {validateSetupOwners}=await import('../../multi-user/vault.js');
-  const owners=validateSetupOwners(logical.localOwners);
-  await save(path.join(target.webDataDirectory,'native-setup-local-owners.json'),Buffer.from(JSON.stringify({schema:1,owners})+'\n'),'native-setup-local-owners.json');
  }
  await copy(source.webDataDirectory,'project-icons',path.join(target.webDataDirectory,'project-icons'));
  await copy(source.webConfigDirectory,'themes',path.join(target.webConfigDirectory,'themes'));

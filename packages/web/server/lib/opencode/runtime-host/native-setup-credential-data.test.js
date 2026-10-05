@@ -36,3 +36,18 @@ it('bounds the projection to the controller row limit and keeps strict callers f
  expect(()=>projectNativeSetupCredentials({'https://opencode.example.com':{type:'wellknown',key:'K',token:'t'}})).toThrow('native_setup_credentials_invalid');
  expect(()=>project([])).toThrow('native_setup_credentials_invalid');
 });
+
+it('keeps the strict (bots) acceptance set of the original projection',()=>{
+ expect(projectNativeSetupCredentials({
+  openai:{type:'api',key:'k',metadata:{count:1,nested:{a:true}}},plain:{type:'api',key:'k',metadata:'ignored'},
+  'opencode.example':{type:'wellknown',key:'ENV',token:'fixture-token'},token:{type:'wellknown',token:'t'},
+  'github-copilot/':{type:'oauth',access:'a',refresh:'r',expires:-1,accountId:7,enterpriseUrl:''},anthropic:{type:'oauth',access:'a',refresh:'',expires:0,accountId:''},
+ })).toEqual({schema:1,credentials:[
+  {integrationID:'openai',value:{type:'key',key:'k',metadata:{count:1,nested:{a:true}}},label:'API key'},{integrationID:'plain',value:{type:'key',key:'k'},label:'API key'},
+  {integrationID:'opencode.example',value:{type:'key',key:'fixture-token'},label:'API key'},{integrationID:'token',value:{type:'key',key:'t'},label:'API key'},
+  {integrationID:'github-copilot',value:{type:'oauth',methodID:'device',access:'a',refresh:'r',expires:-1,metadata:{enterpriseUrl:''}},label:'OAuth'},
+  {integrationID:'anthropic',value:{type:'oauth',methodID:'oauth',access:'a',refresh:'',expires:0,metadata:{accountID:''}},label:'OAuth'},
+ ]});
+ for(const auth of [{x:{type:'api',key:''}},{'a:b':{type:'api',key:'k'}},{x:null},{x:{type:'wellknown',token:''}},{x:{type:'oauth',access:'a',refresh:'r',expires:1.5}},
+  Object.fromEntries(Array.from({length:129},(_,index)=>['p'+index,{type:'api',key:'k'}]))])expect(()=>projectNativeSetupCredentials(auth)).toThrow('native_setup_credentials_invalid');
+});

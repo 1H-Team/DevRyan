@@ -9,11 +9,12 @@ const plainID=value=>/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(value)?value:unde
  * undecodable entries, empty IDs and later duplicates are skipped. Wellknown
  * entries are skipped too: the controller seed cannot store their origins.
  * Every projected entry decodes as the controller's Credential.Value. Without
- * `onSkip` (DevRyan-owned auth files) any skipped entry fails closed. */
+ * `onSkip` (DevRyan-owned bots auth files) the original strict projection applies. */
 export function projectNativeSetupCredentials(auth,{onSkip}={}){
+ if(!onSkip)return strict(auth);
  if(!record(auth)||Buffer.byteLength(JSON.stringify(auth))>1024*1024)throw fail('native_setup_credentials_invalid');
  const credentials=[];
- const skip=(reason,integrationID)=>{if(!onSkip)throw fail('native_setup_credentials_invalid');onSkip({reason,...plainID(integrationID)?{integrationID:plainID(integrationID)}:{}});};
+ const skip=(reason,integrationID)=>{onSkip({reason,...plainID(integrationID)?{integrationID:plainID(integrationID)}:{}});};
  for(const [rawID,input] of Object.entries(auth)){
   const integrationID=rawID.replace(/\/+$/,'');
   if(!integrationID){skip('credential_id_invalid');continue;}
@@ -30,6 +31,28 @@ export function projectNativeSetupCredentials(auth,{onSkip}={}){
   }else{skip('credential_invalid',integrationID);continue;}
   if(credentials.some(item=>item.integrationID===integrationID)){skip('credential_duplicate',integrationID);continue;}
   if(credentials.length>=128){skip('credential_limit',integrationID);continue;}
+  credentials.push({integrationID,value,label:value.type==='oauth'?'OAuth':'API key'});
+ }
+ return {schema:1,credentials};
+}
+
+// The original (65b82e14) bots projection: any unknown shape fails closed, and the
+// accepted set stays exactly as the bots native server has always relied on.
+function strict(auth){
+ if(!record(auth)||Object.keys(auth).length>128||Buffer.byteLength(JSON.stringify(auth))>1024*1024)throw fail('native_setup_credentials_invalid');
+ const credentials=[];
+ for(const [rawID,input] of Object.entries(auth)){
+  const integrationID=rawID.replace(/\/+$/,'');
+  if(!plainID(integrationID)||!record(input))throw fail('native_setup_credentials_invalid');
+  let value;
+  if(input.type==='api'&&typeof input.key==='string'&&input.key)value={type:'key',key:input.key,...record(input.metadata)?{metadata:input.metadata}:{}};
+  else if(input.type==='wellknown'&&typeof input.token==='string'&&input.token)value={type:'key',key:input.token};
+  else if(input.type==='oauth'&&typeof input.access==='string'&&typeof input.refresh==='string'&&Number.isSafeInteger(input.expires)){
+   const methodID=integrationID==='openai'?'chatgpt-browser':['github-copilot','opencode','xai'].includes(integrationID)?'device':'oauth';
+   const metadata={...typeof input.accountId==='string'?{accountID:input.accountId}:{},...typeof input.enterpriseUrl==='string'?{enterpriseUrl:input.enterpriseUrl}:{}};
+   value={type:'oauth',methodID,access:input.access,refresh:input.refresh,expires:input.expires,...Object.keys(metadata).length?{metadata}:{}};
+  }else throw fail('native_setup_credentials_invalid');
+  if(credentials.some(item=>item.integrationID===integrationID))throw fail('native_setup_credentials_invalid');
   credentials.push({integrationID,value,label:value.type==='oauth'?'OAuth':'API key'});
  }
  return {schema:1,credentials};
