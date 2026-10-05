@@ -54,7 +54,14 @@ every workspace's build script. Full validation remains separate from compilatio
 2. In parallel, validate UI types and compile web assets once, prepare arm64 native dependencies and
    helpers, and build the eight multi-platform images. Image jobs use individual
    GitHub Actions cache scopes with full intermediate-layer export.
-3. Each image job signs its index and both platform digests and emits one result.
+3. Each image job first resolves its input digest (`scripts/bot-runtime-image-inputs.mjs`).
+   When `<repository>:in-<digest>` exists, passes `cosign verify` for `release.yml` at a
+   `refs/tags/v*` ref, has complete SBOM/provenance attestations and pulls anonymously,
+   the job emits that image as its result without building. Otherwise it builds,
+   signs its index and both platform digests, emits one result and, on tag-triggered
+   runs only, tags the signed index `:in-<digest>`. The manual `rebuild_bot_images`
+   input rebuilds every image; base images are pinned by digest, so a base refresh
+   is a reviewed Dockerfile change.
    The aggregation job requires eight distinct results for the same version,
    revision, repository, OpenCode/schema versions and plugin hash. It validates
    platform/attestation completeness, anonymous pull access and production
@@ -103,7 +110,7 @@ or build credentials. Packaging restores it into a fresh checkout without runnin
 another dependency installation that could replace rebuilt native binaries.
 
 `scripts/release-ci.mjs` is the fixed-operation CI adapter. `RELEASE_OPERATION`
-selects `image-plan`, `image-sign`, `image-assemble`, `web-describe`, `web-stage`,
+selects `image-plan`, `image-resolve`, `image-sign`, `image-assemble`, `web-describe`, `web-stage`,
 `web-pack`, `prepare-export` or `prepare-import`. Artifact verification remains in reusable
 core functions. Internal handoff artifacts are not public release assets.
 
