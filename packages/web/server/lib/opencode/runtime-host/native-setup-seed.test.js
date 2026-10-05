@@ -400,3 +400,29 @@ it('follows an exact web setup link inside its own web root, never onto the root
  expect(marker.files.map(row=>path.relative(f.root,row.path))).toEqual(['target/web-config/themes/t.json']);
  expect(JSON.parse(await fs.readFile(path.join(f.target.webConfigDirectory,'themes','t.json'),'utf8'))).toEqual({id:'t'});
 });
+it('never lets an exact link from an outer web root reach into a nested web root; the inner root keeps its own links',async()=>{
+ const f=await fixture(),home=f.source.home,web=path.join(home,'.config','openchamber'),data=path.join(web,'data');
+ const source={...f.source,webDataDirectory:data,webConfigDirectory:web};
+ await f.write(path.join(data,'themes-v2','t.json'),{id:'t'});await fs.symlink(path.join(data,'themes-v2'),path.join(web,'themes'));
+ await f.text(path.join(data,'icons-v2','p.png'),'png');await fs.symlink(path.join(data,'icons-v2'),path.join(data,'project-icons'));
+ const marker=await seedNativeSetup({...f,source});
+ expect(marker.skipped).toEqual([{relativePath:'themes',reason:'protected'}]);
+ expect(marker.files.map(row=>path.relative(f.root,row.path))).toEqual(['target/web/project-icons/p.png']);
+});
+it('never lets a same-root link import web-data runtime state; exact named setup still seeds',async()=>{
+ const f=await fixture(),web=path.join(f.source.home,'.config','openchamber');
+ const source={...f.source,webDataDirectory:web,webConfigDirectory:web};
+ await f.write(path.join(web,'bot-integrations','telegram','t.json'),{token:'fixture-sensitive'});await f.write(path.join(web,'runtime','openai-oauth-state.json'),{verifier:'fixture-sensitive'});
+ await f.write(path.join(web,'push-subscriptions.json'),{keys:'fixture-sensitive'});
+ for(const name of ['cursor-sdk-sessions','harness','orchestration','processes'])await f.write(path.join(web,name,'x.json'),{fixture:'fixture-sensitive'});await fs.mkdir(path.join(web,'quota'));
+ await fs.symlink(path.join(web,'bot-integrations','telegram'),path.join(web,'themes'));
+ await fs.symlink(path.join(web,'runtime','openai-oauth-state.json'),path.join(web,'quota','opencode.json'));
+ await fs.symlink(path.join(web,'push-subscriptions.json'),path.join(web,'supabase.json'));
+ for(const [name,link] of [['cursor-sdk-sessions','opencode-go'],['harness','ollama-cloud'],['orchestration','cursor-acp']])await fs.symlink(path.join(web,name,'x.json'),path.join(web,'quota',link+'.json'));
+ await fs.symlink(path.join(web,'processes'),path.join(web,'project-icons'));
+ await f.write(path.join(web,'settings.json'),{themeId:'dark'});
+ const marker=await seedNativeSetup({...f,source});
+ expect(marker.skipped.map(row=>row.relativePath).sort()).toEqual(['project-icons','quota/cursor-acp.json','quota/ollama-cloud.json','quota/opencode-go.json','quota/opencode.json','supabase.json','themes']);
+ expect(marker.skipped.every(row=>row.reason==='protected')).toBe(true);
+ expect(marker.files.map(row=>path.relative(f.root,row.path))).toEqual(['target/web/settings.json']);
+});

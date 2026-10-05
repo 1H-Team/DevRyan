@@ -22,8 +22,10 @@ const inside=(root,value)=>value===root||value.startsWith(root+path.sep);
 const excluded=new Set(['.git','.hg','.svn','node_modules','.venv','__pycache__']);
 // Chromium/Electron cookie, login and web storage, wherever a link or copied folder reaches it.
 const browserStores=new Set(['Cookies','Cookies-journal','Login Data','Login Data-journal','Web Data','Web Data-journal','Local Storage','Session Storage','IndexedDB','Partitions']);
-// DevRyan's own web-data secrets, never copied even when that directory protects nothing else.
-const webSecrets=['multi-user-vault.key','multi-user-vault.json','branch-preview-vault.key','branch-preview-vault.json','jwt-secret','github-auth.json','ui-passkeys.json','bots','multi-user','credentials'];
+// DevRyan's own web-data secrets and runtime state (bot tokens, OAuth flow state, push keys,
+// SDK sessions, harness/ledger/process records), never copied even when that directory protects nothing else.
+const webSecrets=['multi-user-vault.key','multi-user-vault.json','branch-preview-vault.key','branch-preview-vault.json','jwt-secret','github-auth.json','ui-passkeys.json','bots','multi-user','credentials',
+ 'bot-integrations','runtime','push-subscriptions.json','cursor-sdk-sessions','harness','orchestration','processes'];
 const MAX_VISITED=8192,MAX_REPORTED=200;
 // Diagnostics name the source file relative to its read root, never its bytes or HOME.
 const sanitize=relative=>String(relative).split(path.sep).join('/').replace(/[\u0000-\u001f\u007f-\u009f]/g,'').replace(/^\/+/,'').slice(0,256);
@@ -166,7 +168,7 @@ async function seed({source,target,environment={},captureLogicalSetup}){
  // uid-owned file or directory that is neither HOME itself nor an ancestor of the copied
  // root (`tree`); reads then walk from HOME with O_NOFOLLOW. Only `account` reads enter account stores.
  // An exact web setup path (no `tree`) linked below its own web root keeps that root and is web
- // setup again; never onto/above a web root, and webSecrets stay guarded.
+ // setup again; never onto/above a web root or into a web root nested in it, and webSecrets stay guarded.
  const entry=async(file,relative,readRoot,tree,account)=>{
   let stat;try{stat=await fs.lstat(file);}catch(error){if(error.code==='ENOENT'||error.code==='ENOTDIR')return undefined;if(denied(error)){skip(relative,'unreadable');return null;}throw error;}
   if(stat.isSymbolicLink()){
@@ -174,7 +176,7 @@ async function seed({source,target,environment={},captureLogicalSetup}){
    if(!home||!inside(home,resolved)){skip(relative,'symlink_outside_home');return null;}
    if(!owned(stat)){skip(relative,'symlink_foreign_owner');return null;}
    if(resolved===home||tree&&tree.startsWith(resolved+path.sep)){skip(relative,'protected');return null;}
-   if(tree||!webRoots.includes(readRoot)||!inside(readRoot,resolved)||webRoots.some(root=>inside(resolved,root)))readRoot=home;file=resolved;
+   if(tree||!webRoots.includes(readRoot)||!inside(readRoot,resolved)||webRoots.some(root=>inside(resolved,root)||root!==readRoot&&!inside(root,readRoot)&&inside(root,resolved)))readRoot=home;file=resolved;
   }else{
    // Its parent is canonical: on case-insensitive volumes checks and reads use the stored case (~/.SSH is ~/.ssh).
    const real=await fs.realpath(file).catch(()=>file);
