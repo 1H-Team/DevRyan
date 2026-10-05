@@ -25,7 +25,7 @@ describe('runtime-service desktop bootstrap source contract', () => {
       mainSource.indexOf('const prepareForegroundRuntime = async () => {'),
       mainSource.indexOf('const startDesktopRuntime = () => {'),
     );
-    assert.match(preparation, /try \{\s+await resumeBackgroundRuntimeAfterAppUpdate\(\);\s+await ensureRuntimeServiceRegistered\(\{ registration: getRuntimeServiceRegistration\(\), log \}\);\s+await waitForRuntimeServiceConnection\(\);\s+\} catch \(error\) \{\s+await recoverStartupToAppBound\(error\);/);
+    assert.match(preparation, /try \{\s+await resumeBackgroundRuntimeAfterAppUpdate\(\);\s+await reregisterBackgroundRuntimeAfterManualUpgrade\(\);\s+await ensureRuntimeServiceRegistered\(\{ registration: getRuntimeServiceRegistration\(\), log \}\);\s+await waitForRuntimeServiceConnection\(\);\s+\} catch \(error\) \{\s+await recoverStartupToAppBound\(error\);/);
   });
 
   test('ordinary and held background startup own the server without opening a recovery window', async () => {

@@ -64,6 +64,7 @@ import {
   retryRuntimeServiceConnection,
   ensureRuntimeServiceRegistered,
   retireMismatchedRuntimeService,
+  reregisterRuntimeServiceAfterUpgrade,
 } from './runtime-service-startup.mjs';
 import {
   buildQuitRiskSnapshot,
@@ -1477,6 +1478,17 @@ const retireStaleRuntimeService = (descriptor, url) => retireMismatchedRuntimeSe
   register: () => ensureRuntimeServiceRegistered({ registration: getRuntimeServiceRegistration(), log }),
 });
 
+// The app version whose registration is known to start its service: recorded
+// after a registration replacement and after connecting to this version's service.
+const recordRuntimeServiceAppVersion = async () => {
+  if (readSettingsRoot().productionBotsRuntimeServiceAppVersion === APP_VERSION) return;
+  try {
+    await mutateSettingsRoot((root) => { root.productionBotsRuntimeServiceAppVersion = APP_VERSION; });
+  } catch {
+    log.warn('[runtime-service] registration version was not recorded', { code: 'runtime_service_version_record_failed' });
+  }
+};
+
 let runtimeServiceReconnectPromise = null;
 let runtimeServiceRetired = false;
 const connectToRuntimeService = async ({ reconnecting = false } = {}) => {
@@ -1522,6 +1534,7 @@ const connectToRuntimeService = async ({ reconnecting = false } = {}) => {
     }
     state.runtimeServiceClient = true;
     state.sidecarUrl = url;
+    await recordRuntimeServiceAppVersion();
     if (state.desktopHostLeaseRefreshTimer) clearInterval(state.desktopHostLeaseRefreshTimer);
     state.desktopHostLeaseRefreshTimer = setInterval(() => {
       void registerDesktopHostLease(url, broker).catch((error) => {
@@ -1780,8 +1793,18 @@ const resumeBackgroundRuntimeAfterAppUpdate = async () => {
   }
   await mutateSettingsRoot((root) => {
     delete root.productionBotsRuntimeReregisterAfterUpdate;
+    root.productionBotsRuntimeServiceAppVersion = APP_VERSION;
   });
 };
+
+const reregisterBackgroundRuntimeAfterManualUpgrade = () => reregisterRuntimeServiceAfterUpgrade({
+  registeredAppVersion: readSettingsRoot().productionBotsRuntimeServiceAppVersion,
+  appVersion: APP_VERSION,
+  registration: getRuntimeServiceRegistration(),
+  isOwnerStopped: () => waitForRuntimeServiceOwnerStopped(0),
+  recordRegisteredAppVersion: () => recordRuntimeServiceAppVersion(),
+  log,
+});
 
 const autoEnableBackgroundRuntimeOnFirstLaunch = async () => {
   const settings = readSettingsRoot();
@@ -3695,6 +3718,7 @@ const prepareForegroundRuntime = async () => {
   if (automaticRuntime.mode === 'service') {
     try {
       await resumeBackgroundRuntimeAfterAppUpdate();
+      await reregisterBackgroundRuntimeAfterManualUpgrade();
       await ensureRuntimeServiceRegistered({ registration: getRuntimeServiceRegistration(), log });
       await waitForRuntimeServiceConnection();
     } catch (error) {
