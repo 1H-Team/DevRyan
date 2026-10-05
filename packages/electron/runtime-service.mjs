@@ -577,7 +577,7 @@ export const terminateRuntimeServiceProcess = async ({
   const command = match[2];
   const legacyPath = command.endsWith(' --runtime-service') ? command.slice(0, -' --runtime-service'.length) : '';
   if (!RUNTIME_SERVICE_IMAGE_PATTERN.test(image)
-    || (command !== 'DevRyan --runtime-service'
+    || (command !== 'DevRyan --runtime-service' && legacyPath !== image
       && (!RUNTIME_SERVICE_IMAGE_PATTERN.test(legacyPath) || /\s-/.test(legacyPath)))) return false;
   try {
     kill(pid, signal);

@@ -159,6 +159,10 @@ describe('verified stale-service termination', () => {
     const spacedImage = '/Users/me/Apps/DevRyan 2.app/Contents/MacOS/DevRyan';
     assert.equal(await probe(`501 ${spacedImage} --runtime-service`, { lsof: image(spacedImage) }).run(), true);
     assert.equal(await probe('501 DevRyan --runtime-service', { lsof: image(spacedImage) }).run(), true);
+    // A legacy full-path argv equal to its own image is accepted even when the path holds ' -'.
+    for (const dashedImage of ['/Users/me/My -Apps/DevRyan.app/Contents/MacOS/DevRyan', '/Users/me/Apps/DevRyan - copy.app/Contents/MacOS/DevRyan']) {
+      assert.equal(await probe(`501 ${dashedImage} --runtime-service`, { lsof: image(dashedImage) }).run(), true);
+    }
   });
 
   test('signals a legacy full-path service whose bundle was moved while it ran', async () => {
