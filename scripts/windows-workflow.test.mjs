@@ -29,7 +29,12 @@ test('Windows qualification builds and executes independent pinned native archit
   const required = job.steps.find(step => step.env?.SUPERVISOR_ACCEPTANCE);
   assert.equal(required.if, '${{ always() }}');
   assert.equal(required['continue-on-error'], undefined);
-  assert.deepEqual(Object.keys(required.env).sort(), ['FILESYSTEM_BOUNDARY', 'HOST_BOUNDARY', 'RUNTIME', 'RUNTIME_ACCEPTANCE', 'SUPERVISOR', 'SUPERVISOR_ACCEPTANCE']);
+  assert.deepEqual(Object.keys(required.env).sort(), ['FILESYSTEM_BOUNDARY', 'HOST_BOUNDARY', 'REVIEWED_LIBSQL', 'RUNTIME', 'RUNTIME_ACCEPTANCE', 'SUPERVISOR', 'SUPERVISOR_ACCEPTANCE']);
+  const libsql = job.steps.find(step => step.with?.repository === 'tursodatabase/libsql-js');
+  assert.equal(libsql.with.ref, '55bee86d1c284f1ddf2b9e280e870d2b6cef884a');
+  assert.equal(libsql.with['persist-credentials'], false);
+  assert.match(byID.reviewed_libsql.run, /1\.85\.1-\$target/);
+  assert.equal(required.env.REVIEWED_LIBSQL, '${{ steps.reviewed_libsql.outcome }}');
   for (const [name, id] of [['HOST_BOUNDARY', 'host_boundary'], ['FILESYSTEM_BOUNDARY', 'filesystem_boundary']]) {
     assert.equal(required.env[name], '${{ steps.' + id + '.outcome }}');
     assert.ok(byID[id].run.includes(`verify-windows-${id === 'host_boundary' ? 'host' : 'filesystem'}-boundary.mjs`));

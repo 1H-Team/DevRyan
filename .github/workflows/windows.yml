@@ -15,6 +15,7 @@ on:
       - scripts/verify-windows-host-boundary.mjs
       - scripts/verify-windows-filesystem-boundary.mjs
       - scripts/native-runtime-assets.mjs
+      - scripts/build-windows-reviewed-libsql.mjs
       - bun.lock
   pull_request:
     paths:
@@ -28,6 +29,7 @@ on:
       - scripts/verify-windows-host-boundary.mjs
       - scripts/verify-windows-filesystem-boundary.mjs
       - scripts/native-runtime-assets.mjs
+      - scripts/build-windows-reviewed-libsql.mjs
       - bun.lock
 
 permissions:
@@ -50,6 +52,8 @@ jobs:
       DEVRYAN_SKIP_INSTALL_PREPARE: '1'
       TMPDIR: ${{ github.workspace }}/.cache/test-fixtures
       GIT_CEILING_DIRECTORIES: ${{ github.workspace }}/.cache/test-fixtures
+      RUSTUP_HOME: ${{ github.workspace }}/.cache/rustup
+      CARGO_HOME: ${{ github.workspace }}/.cache/cargo
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -115,6 +119,24 @@ jobs:
         if: ${{ always() && steps.dependencies.outcome == 'success' }}
         continue-on-error: true
         run: node scripts/hydrate-reviewed-claude.mjs
+      - name: Check out the published libsql 0.5.29 source commit
+        uses: actions/checkout@v4
+        with:
+          repository: tursodatabase/libsql-js
+          ref: 55bee86d1c284f1ddf2b9e280e870d2b6cef884a
+          path: .cache/libsql-source
+          persist-credentials: false
+      - name: Build the pinned libsql source and execute its ABI on this native host
+        id: reviewed_libsql
+        continue-on-error: true
+        shell: pwsh
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          $target = if ($env:EXPECTED_ARCH -eq 'arm64') { 'aarch64-pc-windows-msvc' } else { 'x86_64-pc-windows-msvc' }
+          rustup toolchain install "1.85.1-$target" --profile minimal --no-self-update
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/build-windows-reviewed-libsql.mjs
       - name: Compile and verify controller and writer on this architecture
         id: runtime
         if: ${{ always() && steps.inputs.outcome == 'success' }}
@@ -133,11 +155,12 @@ jobs:
           SUPERVISOR_ACCEPTANCE: ${{ steps.supervisor_acceptance.outcome }}
           HOST_BOUNDARY: ${{ steps.host_boundary.outcome }}
           FILESYSTEM_BOUNDARY: ${{ steps.filesystem_boundary.outcome }}
+          REVIEWED_LIBSQL: ${{ steps.reviewed_libsql.outcome }}
           RUNTIME: ${{ steps.runtime.outcome }}
           RUNTIME_ACCEPTANCE: ${{ steps.runtime_acceptance.outcome }}
         run: |
           $failed = $false
-          foreach ($name in @('SUPERVISOR', 'SUPERVISOR_ACCEPTANCE', 'HOST_BOUNDARY', 'FILESYSTEM_BOUNDARY', 'RUNTIME', 'RUNTIME_ACCEPTANCE')) {
+          foreach ($name in @('SUPERVISOR', 'SUPERVISOR_ACCEPTANCE', 'HOST_BOUNDARY', 'FILESYSTEM_BOUNDARY', 'REVIEWED_LIBSQL', 'RUNTIME', 'RUNTIME_ACCEPTANCE')) {
             $outcome = [Environment]::GetEnvironmentVariable($name)
             "$name=$outcome" >> $env:GITHUB_STEP_SUMMARY
             if ($outcome -ne 'success') { $failed = $true }

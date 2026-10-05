@@ -108,6 +108,32 @@ Full confinement and controller/writer builds still fail; execution remains
 unavailable. The local workflow contract checks both independent boundary
 steps and requires their actual `outcome` in the final gate.
 
+Run `37370143551` at `a8810206` passed all 14 filesystem checks and both
+process/parent identity checks on both architectures. Run `37371384474` at
+`0a8225ae` also passed the new parent-anchored inspection refusal: 15 filesystem
+checks pass on each architecture. Original receipts remain under
+`.cache/release-2.0.2-recovery/windows-sdk-ci-{4,5}`. The latter supervisor
+SHA-256 values are `a8e55bdba2d6f39dae0114b6deae548bf8275b64f8c9b83fbb72dcf7beb945e4`
+(x64) and `74239280e1046628be870b610597a38cf68c5d3f5e9a893c7c30fc7db17b720b`
+(ARM64). Neither run qualifies confinement or controller/writer execution.
+
+The pinned libsql 0.5.29 publication has no Windows ARM64 native package.
+Its [registry metadata](https://registry.npmjs.org/libsql/0.5.29) records source
+commit `55bee86d1c284f1ddf2b9e280e870d2b6cef884a` in `tursodatabase/libsql-js`.
+The Windows job now attempts that exact source with its original Cargo lock
+(`897f93398893ce805b389b482ddf7555b75365a5f48a2e345703f21c1c58d74e`).
+It uses Rust 1.85.1 native host tools, available for both MSVC architectures,
+and verifies compiler/binary PE architecture before executing the existing
+database API in Node and Bun. The upstream toolchain file remains pinned and
+unchanged; the explicit Windows build-tool override adds no application
+dependency and updates no lockfile. Source changes and dependency resolution
+changes refuse the build. `libsql-source-evidence.json` is an asset candidate
+receipt, not runtime acceptance. Native build results remain pending; the
+controller/writer must still seal and qualify the actual reviewed resource.
+The [Rust platform contract](https://doc.rust-lang.org/stable/rustc/platform-support/windows-msvc.html)
+supports native MSVC ARM64 host tools; that support does not establish libsql
+compatibility by itself.
+
 `scripts/build-native-runtime.mjs` currently requires Darwin ARM64 and seals
 Darwin PTY, AST, Claude, and supervisor assets. The Windows builder must select
 reviewed inputs by the actual host architecture, emit `.exe` artifacts, and

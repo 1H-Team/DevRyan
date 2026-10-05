@@ -15,6 +15,11 @@ Repository automation entrypoint for developer workflows: validation planning, l
   packaging and isolated topology checks run independently and gate finalization.
   `windows.yml` runs native x64/ARM64 qualification separately, with read-only
   repository permissions and no runtime-admission bypass.
+  `build-windows-reviewed-libsql.mjs` attempts the original libsql 0.5.29 source
+  commit with an unchanged Cargo lock on each native Windows host. It verifies
+  compiler and resource PE architecture, executes the original database ABI
+  through Node/Bun, and retains source/build receipts. Those candidate resources
+  cannot supply runtime admission or replace the controller/writer safety gate.
 
 - **Compiled native package** (`build-native-runtime.mjs`,
   `native-runtime-assets.mjs`, `verify-opencode-v2-package.mjs`): builds branded
