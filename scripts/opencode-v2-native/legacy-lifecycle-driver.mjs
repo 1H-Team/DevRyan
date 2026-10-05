@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Console } from 'node:console';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 globalThis.console = new Console({ stdout: process.stderr, stderr: process.stderr });
 let bytes = '';
 for await (const chunk of process.stdin) { bytes += chunk; assert.ok(Buffer.byteLength(bytes) <= 65536); }
@@ -33,6 +33,7 @@ const { resumeRuntimeBundle } = await import('../../packages/web/server/lib/open
 const { readRollbackIntentSync, rollbackIntentPath, captureRollbackFiles } = await import('../../packages/web/server/lib/opencode/runtime-host/bundle-rollback-intent.js');
 const { createCompiledBundleUpgradeLane } = await import('./package-bundle-upgrade-lane.mjs');
 const { readManagedOpenCodeRegistry } = await import('../../packages/web/server/lib/opencode/managed-process-registry.js');
+const { createFixtureJournal } = await import('./fixture-journal.mjs');
 const registryOptions = { registryPath: path.join(binding.descriptor.launch.global.state, 'managed-opencode-processes.json') };
 const hash = value => createHash('sha256').update(value).digest('hex');
 const launcher = path.join(path.dirname(binding.descriptor.launch.controllerBinary), `DevRyan-execution-${process.platform}-${process.arch}`);
@@ -46,9 +47,13 @@ bundle.resolveConfiguration = revision => resolve({ binding, revision, expectedR
 const locations = binding.descriptor.projectMap.map(row => ({ directory: row.targetDirectory, readRoots: [row.targetDirectory],
   protectedRoots: [binding.descriptor.launch.global.home, binding.descriptor.launch.webDataDirectory] }));
 const directory = locations[0].directory, observations = [], diagnostics = [], exits = [], registry = [];
+// This fresh host owns the descriptor's durable web journal for its lifetime.
+const journal = await createFixtureJournal({ webDataDirectory: binding.descriptor.launch.webDataDirectory,
+  label: `fixture-lc-${randomBytes(4).toString('hex')}` });
 let owner, managed, host, url, epoch = 0;
 const deps = { getRuntime: () => ({ generation: 2, baseUrl: url, version: '2.0.20', epoch }),
-  getAuthHeaders: () => owner?.getAuthHeaders() ?? {}, withNativeWebOperation: (spec, action) => owner.nativeOwner.withWebOperation(spec, action) };
+  getAuthHeaders: () => owner?.getAuthHeaders() ?? {}, withNativeWebOperation: (spec, action) => owner.nativeOwner.withWebOperation(spec, action),
+  recordDiagnostic: payload => { diagnostics.push(payload); journal.clientDiagnostic(payload); } };
 const admission = createOpenCodeAdmission(deps, { beforePromptDispatch: (receipt, context) => managed.admitNativePrompt(receipt, context),
   onPromptDispatchFailure: receipt => managed.markNativePromptUncertain(receipt), nativeOwner: {
     requestHeaders: () => owner.nativeOwner.requestHeaders(), withAcceptedOperation: (receipt, action) => owner.nativeOwner.withAcceptedOperation(receipt, action),
@@ -61,13 +66,14 @@ const client = createOpenCodeClient({ ...deps, getAdmission: () => admission });
 const buildOpenCodeUrl = route => new URL(route, url).href;
 host = createSessionExecutionHost({ dataDirectory: binding.descriptor.launch.webDataDirectory, openCodeClient: client,
   getLauncher: () => launcher, buildOpenCodeUrl, getOpenCodeAuthHeaders: deps.getAuthHeaders,
+  onDiagnostic: event => { diagnostics.push(event); journal.sessionExecution(event); },
   nativeExecution: { locations, socketDirectory: null, workerBrowsers: false,
     helperRoots: locations.map(row => row.directory), gitCommand: '/usr/bin/git',
     deniedReadDirectories: ['packages', 'scripts', 'node_modules'].map(name => path.resolve(import.meta.dirname, '../..', name)) } });
 managed = createNativeManagedFixture({ client, admissionOwner: { withManagedTaskDispatch: (request, action) => owner.nativeOwner.withManagedTaskDispatch(request, action),
   withPermit: (permit, action) => owner.nativeOwner.withPermit(permit, action) }, executionHost: host, directory,
   dataDirectory: binding.descriptor.launch.webDataDirectory, buildOpenCodeUrl, getOpenCodeAuthHeaders: deps.getAuthHeaders,
-  environment: process.env, observations, diagnostics });
+  environment: process.env, observations, diagnostics, journal });
 const principal = Object.freeze({ scope: 'local-admin', id: 'local-admin' });
 const authorization = createNativeAuthorization({ locations, manifest: bundle.artifacts.manifest, getRequestPrincipal: () => principal,
   captureLocalAuthorization: original => original === principal ? () => true : null,
@@ -76,7 +82,7 @@ owner = createNativeRuntimeOwner({ bundle, openCodeClient: client, admission, ex
   authorization, environment: process.env, withCredentialMutationQueue: createOpenAiOAuthCoordinator({ readAuth: () => undefined }).withAuthMutation,
   supervisedController: { deniedReadDirectories: ['packages', 'scripts', 'node_modules'].map(name => path.resolve(import.meta.dirname, '../..', name)) },
   primaryRuntime: managed.primaryRuntime, taskContext: managed.taskContext, getManagedRuntime: managed.getManagedRuntime,
-  recordDiagnostic: row => { diagnostics.push(row); return true; },
+  recordDiagnostic: row => { diagnostics.push(row); journal.ownerDiagnostic(row); return true; },
   onExit: exit => exits.push(exit), onBound: child => { url = child.url; epoch++; } });
 let result;
 try {
@@ -117,9 +123,10 @@ try {
   await fs.writeFile(input.evidencePath, JSON.stringify(registry));
   await inspect();
   const checkpoint = createRuntimeBundleCheckpoint({ownerID:input.bundleID,generation:2,launch:binding.descriptor.launch,
-    closeAdmission:()=>owner.closeAdmissionForCheckpoint(),getController:()=>second,
+    closeAdmission:()=>{journal.beginDrain();return owner.closeAdmissionForCheckpoint();},getController:()=>second,
     assertAdmissionClosed:()=>owner.assertCheckpointAdmissionClosed(),beforeControllerStop:()=>owner.drainCredentialOwners(),
-    afterExit:()=>owner.close(),stopProducers:()=>managed.close(),executionHost:host,drainStores:()=>host.runtime.drain()});
+    afterExit:()=>owner.close(),stopProducers:()=>managed.close(),executionHost:host,
+    drainStores:async()=>{await host.runtime.drain();await journal.drain();}});
   let quiescence, rollbackEvidence;
   if (input.rollback) {
     assert.equal(binding.selection.revision, input.rollback.expectedRevision);
@@ -168,9 +175,10 @@ try {
     restart: { previousInstance: first.instanceID, replacementInstance: second.instanceID, exit: stopped },
     source: 'actual-selected-v2-owner-canonical-history-and-supervised-restart' };
 } finally {
-  await owner.close(); await managed.close(); await host.drain();
+  await owner.close(); await managed.close(); await host.drain(); await journal.drain();
 }
 assert.equal(readManagedOpenCodeRegistry(registryOptions).length, 0);
 assert.equal(exits.length, 2); assert.ok(exits.every(exit => exit.receipt?.terminated && exit.receipt?.confined));
 result.exits = exits;
+result.journal = journal.summary();
 process.stdout.write(JSON.stringify(result) + '\n');

@@ -93,6 +93,9 @@ test('tee mismatches, unknown writers, rejected or undrained tees and missing ty
   assert.deepEqual((await grade(repositoryRoot, journal, { tees: [] })).reasons, ['journal_tee_missing', 'journal_tee_unreconciled']);
   assert.deepEqual((await grade(repositoryRoot, journal, { tees: [{ ...summary, rejectedBeforeDrain: 1 }] })).reasons, ['journal_tee_rejected']);
   assert.deepEqual((await grade(repositoryRoot, journal, { tees: [{ ...summary, drained: false }] })).reasons, ['journal_tee_undrained']);
+  assert.deepEqual((await grade(repositoryRoot, journal, { tees: [{ ...summary, journalDirectory: path.join(repositoryRoot, 'other') }] })).reasons,
+    ['journal_tee_root_mismatch']);
+  assert.deepEqual((await grade(repositoryRoot, journal, { tees: [], inherited: [{ ...summary, journalDirectory: path.join(repositoryRoot, 'source') }] })).reasons, []);
   assert.deepEqual((await grade(repositoryRoot, journal, { requiredTypes: ['lifecycle', 'control'], minimumRecords: 3 })).reasons,
     ['journal_records_below_minimum', 'journal_record_type_missing']);
   assert.deepEqual((await grade(repositoryRoot, journal, { requiredEvents: ['session_execution'] })).missingEvents, ['session_execution']);

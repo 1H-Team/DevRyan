@@ -107,6 +107,8 @@ export async function gradeJournalRoot({ id, journalDirectory, logPath, reposito
   }
   const tee = reconcileJournalTees({ labelCounts, tees, inherited, crashed });
   for (const reason of tee.reasons) reasons.add(reason);
+  // Sealed and crashed writers wrote this root; inherited ones wrote the clone source.
+  if ([...tees, ...crashed].some(summary => summary?.journalDirectory !== journalDirectory)) reasons.add('journal_tee_root_mismatch');
   return { ...base, status: reasons.size ? 'failed' : 'passed', reasons: [...reasons], chunks: paths.length, openChunks,
     records, recordCounts, eventCounts, minimumRecords, missingTypes, missingEvents,
     gapCommand: { ...gaps.command, gapRecords: gapRecords.length, gapReasons }, tee };

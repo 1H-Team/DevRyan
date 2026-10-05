@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -54,6 +55,8 @@ import { createCompiledBundleUpgradeLane, snapshotClosedBundleSource, snapshotRe
 import { runCompiledClaudeCredentialBridge } from './opencode-v2-native/compiled-claude-credentials.mjs';
 import { runCompiledHelperIsolation } from './opencode-v2-native/package-helper-isolation-lane.mjs';
 import { createCompiledHelperAgentFixture } from './opencode-v2-native/package-helper-agent-fixture.mjs';
+import { createFixtureJournal } from './opencode-v2-native/fixture-journal.mjs';
+import { gradeJournalRoot, compiledDurableJournalCase } from './opencode-v2-native/journal-evidence.mjs';
 
 const privateEnvironment = (globals, inherited) => createQaHostLaunchEnvironment({ ...inherited,
   HOME: globals.home, XDG_CONFIG_HOME: globals.config, XDG_DATA_HOME: globals.data, XDG_STATE_HOME: globals.state,
@@ -84,7 +87,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
   const cases = [], observations = [], diagnostics = [], cleanupFailures = [];
   const source = await captureNativeAcceptanceSource();
   const runnerSha256 = fixtureSha256(await fs.readFile(fileURLToPath(import.meta.url)));
-  let provider, runtimeOwner, host, managed, fixture, result, browserLane, slimWeb, mcpLane, imageLane, failureEvents;
+  let provider, runtimeOwner, host, managed, fixture, result, browserLane, slimWeb, mcpLane, imageLane, failureEvents, journal;
   try {
     assert.equal(process.env.DEVRYAN_RUNTIME_BUNDLE_ROOT, undefined, 'Package QA requires an isolated launch environment');
     if (browser) assert.equal(reviewedSetup, true, 'Compiled browser qualification requires the active reviewed setup');
@@ -154,7 +157,8 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       },
       getAuthHeaders: () => runtimeOwner?.getAuthHeaders() ?? {},
       removeNativeSession: (sessionID, options) => runtimeOwner.removeSession(sessionID, options),
-      withNativeWebOperation: (spec, action) => runtimeOwner.nativeOwner.withWebOperation(spec, action), recordDiagnostic: row => diagnostics.push(row) };
+      withNativeWebOperation: (spec, action) => runtimeOwner.nativeOwner.withWebOperation(spec, action),
+      recordDiagnostic: row => { diagnostics.push(row); journal?.clientDiagnostic(row); } };
     const admission = createOpenCodeAdmission(deps, { beforePromptDispatch: (receipt, context) => managed.admitNativePrompt(receipt, context),
       onPromptDispatchFailure: receipt => managed.markNativePromptUncertain(receipt), nativeOwner: {
         requestHeaders: () => runtimeOwner.nativeOwner.requestHeaders(),
@@ -195,10 +199,11 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       const ownerID = input.kind === 'legacy' ? 'owned-never-started-source' : input.bundleID;
       if (input.kind === 'bundle' && input.bundleID === descriptor?.bundleID && currentController) {
         const checkpoint = createRuntimeBundleCheckpoint({ ownerID, generation: 2, launch,
-          closeAdmission: () => runtimeOwner.closeAdmissionForCheckpoint(), getController: () => currentController,
+          closeAdmission: () => { journal.beginDrain(); return runtimeOwner.closeAdmissionForCheckpoint(); }, getController: () => currentController,
           assertAdmissionClosed: () => runtimeOwner.assertCheckpointAdmissionClosed(),
           stopProducers: () => managed.close(), beforeControllerStop: () => runtimeOwner.drainCredentialOwners(),
-          afterExit: () => runtimeOwner.close(), executionHost: host, drainStores: () => host.runtime.drain() });
+          afterExit: () => runtimeOwner.close(), executionHost: host,
+          drainStores: async () => { await host.runtime.drain(); await journal.drain(); } });
         return checkpoint(input, action);
       }
       const sourceHost = createSessionExecutionHost({ dataDirectory: launch.webDataDirectory, openCodeClient: client,
@@ -311,9 +316,11 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     const environment = privateEnvironment(globals, fixture.environment);
     const directory = locations[0].directory;
     const writerConfig = { formatter: false };
+    // The production web journal on the selected descriptor; diagnostics stay teed into the result arrays.
+    journal = await createFixtureJournal({ webDataDirectory: descriptor.launch.webDataDirectory, label: `fixture-main-${randomBytes(4).toString('hex')}` });
     host = createSessionExecutionHost({ dataDirectory: descriptor.launch.webDataDirectory, openCodeClient: client,
       getLauncher: () => artifacts.launcher, buildOpenCodeUrl, getOpenCodeAuthHeaders: deps.getAuthHeaders,
-      onDiagnostic: row => diagnostics.push(row), nativeExecution: { writerConfig, isReady: () => Boolean(nativeURL),
+      onDiagnostic: row => { diagnostics.push(row); journal.sessionExecution(row); }, nativeExecution: { writerConfig, isReady: () => Boolean(nativeURL),
         conversation:createNativeRevertConversation({openCodeClient:client,clientDeps:deps,isReady:()=>runtimeOwner?.isReady()===true,
           admissionOwner:{withRevertOperation:(input,action)=>runtimeOwner.nativeOwner.withRevertOperation(input,action),
             releaseTransactionHolds:input=>runtimeOwner.nativeOwner.releaseTransactionHolds(input),
@@ -349,7 +356,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       dataDirectory: descriptor.launch.webDataDirectory, buildOpenCodeUrl, getOpenCodeAuthHeaders: deps.getAuthHeaders,
       isNativeFallbackError: error => bundle.reviewedConfiguration?.isReviewedSlimFailoverError(error) === true,
       dispatchNativeRecovery: (record, prompt) => runtimeOwner.dispatchNativeRecovery(record, prompt),
-      environment, observations, diagnostics, executionModel: { providerID: 'devryan-smoke', modelID: 'smoke-write', variant: 'default' } });
+      environment, observations, diagnostics, journal, executionModel: { providerID: 'devryan-smoke', modelID: 'smoke-write', variant: 'default' } });
     // This constructor grant belongs only to this private package smoke fixture.
     // Authentication parity is established by the product authenticator tests.
     const fixturePrincipal = Object.freeze({ scope: 'local-admin', id: 'local-admin' });
@@ -370,7 +377,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
     const startController = async () => {
     runtimeOwner = createNativeRuntimeOwner({ bundle, openCodeClient: client, admission, executionHost: host,
       clientDependencies: deps,
-      recordDiagnostic: row => { diagnostics.push(row); return true; },
+      recordDiagnostic: row => { diagnostics.push(row); journal.ownerDiagnostic(row); return true; },
       ...(browser ? { getManagedBrowserEnvironment: () => browserLane?.environment ?? browserEnvironment, getBrowserLeaseRuntime: () => browserLane?.runtime } : {}),
       ...(slimWeb ? { getWebBaseURL: slimWeb.getWebBaseURL, emitIntegrationEvent: slimWeb.emitIntegrationEvent } : {}),
       captureCommandPromptAdmission: async ({sessionID,directory:capturedDirectory}) => ({
@@ -497,7 +504,7 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
       await invoke(scenario);
       if(scenario.id==='package-read')cases.push(await runCompiledWorkspaceRevert({invoke,client,executionHost:host,directory,sessionID:session.id,observations}));
       if (onParentDeathReady && scenario.id === 'package-write') await onParentDeathReady(await prepareCompiledParentDeathProbe({
-        root, provider, client, host, controller, descriptor, directory, sessionID: session.id }));
+        root, provider, client, host, controller, descriptor, directory, sessionID: session.id, journal, inheritedJournals: [baselineEvidence.journal] }));
     }
     if (reviewedSetup) cases.push(await runCompiledCouncil({ invoke, runtime: host.runtime, client, managed, directory, runtimeOwner }));
     const secondDirectory = locations[1].directory;
@@ -648,18 +655,34 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
         scope: 'Full stopped B bytes through Resume and within each checkpoint; canonical history, credentials, configuration and project work across fresh composition' });
       cases.push({ id: 'candidate-work-rollback-retention', status: 'passed', source: 'actual-quiescence-derived-v2-copy-original-credential-reconciliation-and-complete-candidate-retained' });
       const providerCountBeforeRecovery = provider.requests.length;
-      cases.push(await runSelectedNativeLifecycle({ controlRoot, descriptor: baseline, configuration, fixture, sessionIDs:baselineEvidence.sessionIDs,
-        logFile: path.join(root, 'native-recovery-lifecycle.log') }));
+      const recoveryEvidence = await runSelectedNativeLifecycle({ controlRoot, descriptor: baseline, configuration, fixture, sessionIDs:baselineEvidence.sessionIDs,
+        logFile: path.join(root, 'native-recovery-lifecycle.log') });
+      cases.push(recoveryEvidence);
       assert.equal(provider.requests.length, providerCountBeforeRecovery, 'Native inspection/restart inferred or replayed a prompt');
       assert.equal(fixtureSha256(await fs.readFile(fixture.sourceLaunch.opencodeDatabasePath)), fixture.expected.databaseSha256);
       assert.deepEqual(await snapshotRetainedBundleWork(descriptor), retainedWork);
-      cases.push(await runCompiledParentDeath({ artifactRoot, root, environment: fixture.environment }));
+      const parentDeath = await runCompiledParentDeath({ artifactRoot, root, environment: fixture.environment });
+      cases.push(parentDeath);
+      // Every descriptor-owned root: the selected candidate (this host, both
+      // rollback hosts and the baseline seed copied by the clone), the baseline
+      // (seed and recovery hosts) and the SIGKILLed parent-death candidate.
+      const gapLog = id => path.join(root, 'journal-gaps', `${id}.log`);
+      const journalCase = compiledDurableJournalCase([
+        await gradeJournalRoot({ id: 'candidate', journalDirectory: journal.journalDirectory, logPath: gapLog('candidate'),
+          tees: [journal.summary(), lost.journal, completed.journal], inherited: [baselineEvidence.journal] }),
+        await gradeJournalRoot({ id: 'baseline', journalDirectory: path.join(baseline.launch.webDataDirectory, 'harness', 'journal'),
+          logPath: gapLog('baseline'), tees: [baselineEvidence.journal, recoveryEvidence.journal] }),
+        await gradeJournalRoot({ id: 'parent-death', journalDirectory: parentDeath.journal.directory, logPath: gapLog('parent-death'),
+          tees: [parentDeath.journal.recovery], crashed: [parentDeath.journal.flushed], inherited: parentDeath.journal.inherited }),
+      ]);
+      cases.push(journalCase);
+      assert.equal(journalCase.status, 'passed', `Compiled durable journal roots passed ${journalCase.passed}/${journalCase.required}`);
       result = { status: 'passed', artifact: { buildId: artifacts.manifest.buildId, manifestSha256 }, remainingMandatoryGates: [] };
     }
     }
   } catch (error) { result = { status: 'failed', error: errorEvidence(error) }; }
   finally {
-    for (const close of [() => failureEvents?.close(), () => runtimeOwner?.close(), () => managed?.close(), () => host?.drain(), () => provider?.close(), () => browserLane?.close(), () => slimWeb?.close(), () => mcpLane?.close(), () => imageLane?.close()]) {
+    for (const close of [() => failureEvents?.close(), () => runtimeOwner?.close(), () => managed?.close(), () => host?.drain(), () => journal?.drain(), () => provider?.close(), () => browserLane?.close(), () => slimWeb?.close(), () => mcpLane?.close(), () => imageLane?.close()]) {
       try { await close(); } catch (error) { cleanupFailures.push(errorEvidence(error)); }
     }
   }
