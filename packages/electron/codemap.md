@@ -326,6 +326,10 @@ and desktop-host broker bridges.
   further installation. A following ready launch archives the receipt and moves
   only the installer-created stage to Trash. Existing update commands/events
   remain compatible; ZIP, blockmaps and updater metadata are removed.
+  `tests/desktop-update-install.test.mjs` covers deterministic state contracts;
+  the explicit native installer gate in `tests/desktop-update-install-native.test.mjs`
+  additionally exercises actual killed helpers and the compiled atomic bridge.
+  Its synthetic app/signature fixtures do not establish packaged DMG acceptance.
 
 ## Flow
 1. Electron establishes process guards, protocol registration, logging, and the

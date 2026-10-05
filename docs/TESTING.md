@@ -76,7 +76,7 @@ in [runtime verification](AGENT_RUNTIME_VERIFICATION.md).
 | Production Bot computer | `bun run --cwd packages/bot-computer test` | Authenticated reviewed Chromium commands, profile/scratch ownership, accessibility refs, control, screencast, and gateway file transfer |
 | Production Bot retrieval index | `bun run --cwd packages/bot-indexer test` | Deterministic chunks, offline embeddings, SQLite FTS/vector ranking, namespace isolation, rebuild/recovery, and authenticated host API |
 | Cursor SDK runtime | `bun run --cwd packages/cursor-sdk-runtime test` | Cursor execution, question bridge, tool calls, auth, and usage contracts |
-| Electron | `bun run --cwd packages/electron test` | Recursively discovers Electron `*.test.*` outside generated/package output; dispatches Node, Bun, and Vitest suites to their declared runner, isolates Bun module/global mocks, and leaves Docker acceptance behind its explicit opt-in below |
+| Electron | `bun run --cwd packages/electron test` | Recursively discovers Electron `*.test.*` outside generated/package output; dispatches Node, Bun, and Vitest suites to their declared runner, isolates Bun module/global mocks, and reports Docker and macOS native installer acceptance as separate opt-in gates below |
 | Legacy Tauri | `bun run --cwd packages/desktop test` | Locked Rust unit and local integration tests in `src-tauri` |
 | Shared UI | `bun run --cwd packages/ui test` | UI, store, sync, Git, tool presentation, and policy tests; global mocks run in isolated processes |
 | Web | `bun run --cwd packages/web test` | Web runtime adapters, Express APIs, libraries, CLI, packaging, and integration contracts; reviewed runtime input tests run through `test:scripts` with their declared runner |
@@ -105,6 +105,23 @@ Deterministic suites must use temporary directories, injected dependencies, or l
 Use narrow fixtures that state the contract being exercised. Preserve public compatibility identifiers such as `@openchamber/*`, `OPENCHAMBER_*`, `openchamber://`, config paths, and event names. DevRyan branding assertions apply to public release filenames and user-facing release metadata.
 
 Do not silence a deterministic scenario with `skip` or `todo`. Remove tests for deleted behavior, or rewrite them around the current contract. Nondeterministic/manual validation belongs in release or audit documentation, not the required unit/integration gate.
+
+## macOS native installer acceptance
+
+After building the runtime-service bridge on macOS, run:
+
+```sh
+bun run --cwd packages/electron build:runtime-service-control
+DEVRYAN_RUN_DMG_INSTALLER_NATIVE_TESTS=1 bun run --cwd packages/electron test
+```
+
+This gate kills owned helper subprocesses after the actual native atomic install
+and rollback exchanges, then verifies identity-based recovery. It also checks
+the reopening host's pinned-helper handoff. App data, signature replies and
+startup acknowledgements are synthetic in these fixtures; the gate does not
+qualify a packaged DMG launch or update the user's installation. Other platforms
+are unavailable for this gate and fail when explicitly invoked. The ordinary
+deterministic runner reports it as not run, with no silent skip declarations.
 
 ## Production Bots Docker and acceptance gates
 

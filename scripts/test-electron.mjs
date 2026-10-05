@@ -27,6 +27,10 @@ export function planElectronTests(root = electronRoot, environment = process.env
       optional.push(file);
       continue;
     }
+    if (file === 'tests/desktop-update-install-native.test.mjs' && environment.DEVRYAN_RUN_DMG_INSTALLER_NATIVE_TESTS !== '1') {
+      optional.push(file);
+      continue;
+    }
     const source = readFileSync(path.join(root, file), 'utf8');
     if (/\bfrom\s*['"]node:test['"]/.test(source)) node.push(file);
     else if (/\bfrom\s*['"]vitest['"]/.test(source)) vitest.push(file);
@@ -39,8 +43,11 @@ export function planElectronTests(root = electronRoot, environment = process.env
 
 export function runElectronTests(root = electronRoot) {
   const plan = planElectronTests(root);
-  if (plan.optional.length > 0) {
+  if (plan.optional.includes('tests/bot-catalog.docker.test.mjs')) {
     console.log('Docker acceptance is a separate opt-in gate (DEVRYAN_RUN_BOT_DB_DOCKER_TESTS=1).');
+  }
+  if (plan.optional.includes('tests/desktop-update-install-native.test.mjs')) {
+    console.log('Native DMG installer acceptance is a separate opt-in gate (DEVRYAN_RUN_DMG_INSTALLER_NATIVE_TESTS=1; macOS required).');
   }
   const vitestEntry = plan.vitest.length
     ? path.join(path.dirname(require.resolve('vitest/package.json', { paths: [root, electronRoot] })), 'vitest.mjs')

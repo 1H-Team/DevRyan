@@ -159,6 +159,11 @@ second reached Electron after passing lint, types and preceding deterministic
 suites, then failed an extracted startup fixture missing the new binding-error
 state. The fixture and focused Electron suite are corrected. Full validation
 must be rerun against the frozen candidate; neither attempt is a full pass.
+A following interim run passed lint/types and 1,182 script checks, then correctly
+refused native test skip declarations. The native inventory is now an explicit
+macOS acceptance gate; all portable assertions remain in deterministic discovery.
+Runner/discovery, installer and actual native checks pass (59 focused checks).
+The original failed run remains recorded; this is not a full validation pass.
 
 ## Final evidence table
 
@@ -169,7 +174,7 @@ evidence in `.cache/release-2.0.2-recovery`.
 
 | Mandatory gate | Status | Evidence or prerequisite |
 | --- | --- | --- |
-| Full integrated validation, build, bundle budgets and documentation | Failed (interim); final not run | Two validation failures corrected with focused checks; engineering is still changing |
+| Full integrated validation, build, bundle budgets and documentation | Failed (interim); final not run | Interim validation failures corrected with focused checks; engineering is still changing |
 | Packaged prompt conflict notice and explicit restore | Passed (focused); packaged not run | API, mounted UI, stale revision, edit/path replacement and guidance checks |
 | Tracked credential owner and synthetic rehearsal | Passed (compiled synthetic); live not run | Original SDK OAuth, compiled native key/CAS owners, held projection, ready boot and zero evidence leaks; final identities and attended live/launcher qualification pending |
 | Complete B1 review closure | In progress | Checkpoint, shutdown, enrollment and renewal findings reproduced and corrected; remaining scopes being consolidated |

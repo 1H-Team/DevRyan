@@ -106,7 +106,7 @@ describe('Electron framework dispatch', () => {
   test('uses real Node for nested tests and isolates Bun module mocks from sibling suites', () => {
     mkdirSync(new URL('.cache/', repoRoot), { recursive: true });
     const root = mkdtempSync(fileURLToPath(new URL('.cache/electron-runner-', repoRoot)));
-    const environment = { ...process.env, DEVRYAN_RUN_BOT_DB_DOCKER_TESTS: '' };
+    const environment = { ...process.env, DEVRYAN_RUN_BOT_DB_DOCKER_TESTS: '', DEVRYAN_RUN_DMG_INSTALLER_NATIVE_TESTS: '' };
     delete environment.NODE_TEST_CONTEXT;
     const run = () => spawnSync(process.execPath, ['--input-type=module', '-e',
       `import { runElectronTests } from ${JSON.stringify(new URL('./test-electron.mjs', import.meta.url).href)}; process.exit(runElectronTests(process.argv[1]));`, root],
@@ -123,14 +123,18 @@ describe('Electron framework dispatch', () => {
         test('clean import', () => expect(value).toBe('original'));`);
       writeFileSync(path.join(root, 'tests/bot-catalog.docker.test.mjs'), `import { test } from 'bun:test';
         test('explicit Docker prerequisite', () => { throw new Error('Docker was not requested'); });`);
+      writeFileSync(path.join(root, 'tests/desktop-update-install-native.test.mjs'), `import { test } from 'node:test';
+        test('explicit macOS native prerequisite', () => { throw new Error('Native acceptance was not requested'); });`);
       const plan = planElectronTests(root, {});
       assert.deepEqual(plan.node, ['nested.test.mjs']);
       assert.deepEqual(plan.isolatedBun, ['a.mock.test.mjs']);
       assert.deepEqual(plan.bun, ['b.clean.test.mjs']);
-      assert.deepEqual(plan.optional, ['tests/bot-catalog.docker.test.mjs']);
+      assert.deepEqual(plan.optional, ['tests/bot-catalog.docker.test.mjs', 'tests/desktop-update-install-native.test.mjs']);
       assert.ok(planElectronTests(root, { DEVRYAN_RUN_BOT_DB_DOCKER_TESTS: '1' }).bun.includes('tests/bot-catalog.docker.test.mjs'));
+      assert.ok(planElectronTests(root, { DEVRYAN_RUN_DMG_INSTALLER_NATIVE_TESTS: '1' }).node.includes('tests/desktop-update-install-native.test.mjs'));
       const passing = run();
       assert.equal(passing.status, 0, passing.stdout + passing.stderr);
+      assert.match(passing.stdout, /Native DMG installer acceptance is a separate opt-in gate/);
       writeFileSync(path.join(root, 'nested.test.mjs'), `import { test } from 'node:test'; test('failure propagates', () => { throw new Error('expected fixture failure'); });`);
       assert.notEqual(run().status, 0, 'A failing framework must fail the combined runner');
       writeFileSync(path.join(root, 'splash.test.mjs'), "import { test } from 'vitest'; test('splash', () => {});");
