@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.1] - 2026-10-05
+
+- Fix the first launch after upgrading to 2.0. The one-time setup import no longer reads saved version 1 plans under `~/.config/openchamber/projects/<id>/plans` or Finder metadata, and imports only the top-level project records. Saved version 1 plans and conversations stay where they are and are not imported.
+- A failed or interrupted first launch now recovers on the next start. An unfinished setup copy is redone from your current settings, an unfinished or out-of-date runtime preparation is discarded before anything is selected, and the temporary setup copy is removed in one step. A second app instance starting at the same time waits for the first instead of failing.
+- Ordinary setups no longer stop the import. Symlinked skills, agents and configuration folders inside your home folder are followed, while credential, token, browser and DevRyan's own secret stores are never copied. Git and dependency folders, oversized, unreadable or special files, and unusual `auth.json` or Meridian profile entries are skipped and logged instead of failing the launch. Startup errors now name the file that caused them.
+- Login-shell variables that the 2.x desktop runtime does not support (`OPENCODE_BINARY`, `OPENCODE_HOST`, `OPENCODE_SKIP_START=true` and similar) are ignored and logged instead of blocking startup.
+- Local account owners are restored once from the upgrade snapshot, so a later owner change no longer blocks startup. A background runtime left running by an older version is stopped and replaced instead of being reused.
+- Releases now publish only the Apple silicon DMG. DevRyan 2.0.0 and earlier cannot update to 2.0.1 in the app: download `DevRyan-2.0.1-arm64.dmg` from the release page, quit DevRyan and replace it in Applications. If background Bots are on, turn the background runtime off first in Settings > Bots; if 2.0.0 does not open, switch DevRyan off under System Settings > General > Login Items & Extensions > Allow in the Background, then turn background Bots back on after 2.0.1 starts. Updating to 2.0.2 is also a manual install: from 2.0.1 the Update button stops the background runtime and opens the verified DMG download. In-app updates resume from 2.0.2.
+- Bot images are rebuilt as usual. Exact live-provider journeys, complete diagnostic journal qualification and the performance comparison remain open.
+
 ## [2.0.0] - 2026-10-05
 
 - This release ships the macOS Apple silicon desktop app only. Web/npm, Intel macOS, Linux and Windows distributions await native runtime qualification.
