@@ -8,7 +8,7 @@ export const isNativeKeychainService=value=>typeof value==='string'&&/^Claude Co
 /** Preserve account identity while relocating only exact account setup files.
  * With `onSkip` (first seed), inputs the Meridian loader tolerates are dropped
  * and reported by profile id only: non-array input, rows without an id, non-absolute
- * or outside-HOME accounts, later duplicate ids and rows past 64. Without it
+ * or outside-HOME accounts, non-standard keychain services, later duplicate ids and rows past 64. Without it
  * (bundle clones) they fail closed. */
 export async function relocateNativeSetupProfiles({profiles,sourceHome,targetHome,copyAccount,controlRoot,claudeLifecycle,onSkip}){
  const drop=(reason,id)=>{if(!onSkip)throw fail();onSkip({reason,...typeof id==='string'?{profile:id.replace(/[\u0000-\u001f\u007f-\u009f]/g,'').slice(0,256)}:{}});};
@@ -28,7 +28,7 @@ export async function relocateNativeSetupProfiles({profiles,sourceHome,targetHom
    if(!(account===sourceHome||account.startsWith(sourceHome+path.sep))){drop('profile_account_outside_home',profile.id);continue;}
    const privateAccount=path.join(targetHome,'.config','meridian','accounts',createHash('sha256').update(profile.id).digest('hex'));
    const service=profile.keychainService??claudeKeychainService(account,sourceHome);
-   if(!isNativeKeychainService(service))throw fail();
+   if(!isNativeKeychainService(service)){drop('profile_keychain_invalid',profile.id);continue;}
    await copyAccount(account,privateAccount);
    profile.claudeConfigDir=privateAccount;profile.keychainService=service;
   }

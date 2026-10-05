@@ -127,13 +127,24 @@ async function seed({source,target,environment={},captureLogicalSetup}){
  // Never read DevRyan state (control root, fresh seed) or the seed target back into itself.
  const canonicalAll=values=>Promise.all(values.map(value=>fs.realpath(value).catch(()=>value)));
  const guarded=await canonicalAll([...roots,path.resolve(environment.XDG_STATE_HOME||path.join(source.home,'.local','state'),'devryan')]);
- // Credential and secret stores are never setup, whether reached by a link or below one.
- const secrets=home?await canonicalAll(['.ssh','.gnupg','.aws','.azure','.kube','.docker','.config/gcloud','.config/gh','.password-store','.netrc','Library/Keychains','Library/Cookies']
-  .map(relative=>path.join(home,relative))):[];
+ // Credential, token and browser stores are never setup, whether reached by a link or below one.
+ // Account stores (raw OpenCode data, ~/.claude, Meridian accounts) are read only by the exact
+ // auth.json/.credentials.json copies, never through another link or copied folder. A store that
+ // canonicalizes to HOME, outside it, or onto/above a setup root protects nothing.
+ const absolute=value=>typeof value==='string'&&path.isAbsolute(value)?[path.resolve(value)]:[];
+ const fromHome=values=>home?values.map(relative=>path.join(home,relative)):[];
+ const setupRoots=await canonicalAll([source.webDataDirectory,source.webConfigDirectory,source.opencodeConfigDirectory,source.opencodeConfigFile&&path.dirname(source.opencodeConfigFile)]
+  .flatMap(absolute).concat(fromHome(['.agents/skills','.opencode/skill','.opencode/skills','.config/meridian'])));
+ const accountRoots=home?await canonicalAll([...absolute(source.opencodeDataDirectory),...fromHome(['.claude','.config/meridian/accounts'])]):[];
+ const usable=(values,protectedRoots)=>values.filter(value=>value!==home&&inside(home,value)&&!protectedRoots.some(root=>inside(value,root)));
+ const secrets=usable(await canonicalAll([...fromHome(['.ssh','.gnupg','.aws','.azure','.kube','.docker','.config/gcloud','.config/gh','.password-store','.netrc','Library/Keychains','Library/Cookies',
+  '.codex','.git-credentials','.npmrc','.pypirc',...['Google','BraveSoftware','Firefox','Microsoft Edge','Arc'].map(name=>'Library/Application Support/'+name)]),
+  ...absolute(environment.XDG_CONFIG_HOME).map(value=>path.join(value,'gh')),...absolute(environment.GH_CONFIG_DIR),...absolute(environment.CLOUDSDK_CONFIG)]),[...setupRoots,...accountRoots]);
+ const accounts=usable(accountRoots,setupRoots);
  // lstat one source entry. A symlink is followed only into the canonical HOME, to a
  // uid-owned file or directory that is neither HOME itself nor an ancestor of the copied
- // root (`tree`); reads then walk from HOME with O_NOFOLLOW.
- const entry=async(file,relative,readRoot,tree)=>{
+ // root (`tree`); reads then walk from HOME with O_NOFOLLOW. Only `account` reads enter account stores.
+ const entry=async(file,relative,readRoot,tree,account)=>{
   let stat;try{stat=await fs.lstat(file);}catch(error){if(error.code==='ENOENT'||error.code==='ENOTDIR')return undefined;if(denied(error)){skip(relative,'unreadable');return null;}throw error;}
   if(stat.isSymbolicLink()){
    let resolved;try{resolved=await fs.realpath(file);stat=await fs.lstat(resolved);}catch{skip(relative,'symlink_unresolved');return null;}
@@ -142,7 +153,7 @@ async function seed({source,target,environment={},captureLogicalSetup}){
    if(resolved===home||tree&&tree.startsWith(resolved+path.sep)){skip(relative,'protected');return null;}
    file=resolved;readRoot=home;
   }
-  if(guarded.some(root=>inside(root,file))||secrets.some(root=>inside(root,file))){skip(relative,'protected');return null;}
+  if(guarded.some(root=>inside(root,file))||secrets.some(root=>inside(root,file))||!account&&accounts.some(root=>inside(root,file))){skip(relative,'protected');return null;}
   if(!stat.isFile()&&!stat.isDirectory()){skip(relative,'unsupported_type');return null;}
   return {file,stat,readRoot,tree};
  };
@@ -173,16 +184,16 @@ async function seed({source,target,environment={},captureLogicalSetup}){
   const base=await resolveRoot(path.resolve(root));if(base===null)skip(relative,'root_unusable');if(!base)return;
   let item={file:base,readRoot:base};const parts=relative.split('/');
   for(const [index,part] of parts.entries()){
-   const next=await entry(path.join(item.file,part),parts.slice(0,index+1).join('/'),item.readRoot);if(!next)return;
+   const next=await entry(path.join(item.file,part),parts.slice(0,index+1).join('/'),item.readRoot,undefined,options?.account);if(!next)return;
    if(index<parts.length-1&&!next.stat.isDirectory())return;item=next;
   }
   await place({...item,tree:await fs.realpath(item.file)},relative,destination,transform,options);
  });
  // One source file through the same entry rules, read into memory.
- const load=async(root,relative)=>{let bytes;await copy(root,relative,undefined,undefined,{sink:value=>{bytes=value;}});return bytes;};
+ const load=async(root,relative,account)=>{let bytes;await copy(root,relative,undefined,undefined,{sink:value=>{bytes=value;},account});return bytes;};
  // Generated credential, Meridian and owner rows first (fail closed if they cannot fit),
  // then exact records and single files, record folders and bulk folders last.
- await copy(source.home,'.claude/.credentials.json',path.join(target.global.home,'.claude','.credentials.json'));
+ await copy(source.home,'.claude/.credentials.json',path.join(target.global.home,'.claude','.credentials.json'),undefined,{account:true});
  // Meridian settings are written once; an exported default profile wins over the saved one.
  const meridianSettings='.config/meridian/settings.json',defaultProfile=typeof environment.MERIDIAN_DEFAULT_PROFILE==='string'?environment.MERIDIAN_DEFAULT_PROFILE.trim():'';
  if(defaultProfile.length>256)skip('MERIDIAN_DEFAULT_PROFILE','default_profile_invalid');
@@ -200,10 +211,10 @@ async function seed({source,target,environment={},captureLogicalSetup}){
   if(profiles===undefined){label=profileFile;const bytes=await load(source.home,profileFile);if(bytes===undefined)return;profiles=parseJSON(bytes);if(profiles===undefined){skip(label,'profiles_invalid');return;}}
   const relocated=await relocateNativeSetupProfiles({profiles,sourceHome:source.home,targetHome:target.global.home,onSkip:({reason,...detail})=>skip(label,reason,detail),
    copyAccount:async(account,destination)=>{await fs.mkdir(destination,{recursive:true,mode:0o700});
-    await copy(source.home,path.join(path.relative(source.home,account),'.credentials.json'),path.join(destination,'.credentials.json'));}});
+    await copy(source.home,path.join(path.relative(source.home,account),'.credentials.json'),path.join(destination,'.credentials.json'),undefined,{account:true});}});
   await save(path.join(target.global.home,profileFile),Buffer.from(JSON.stringify(relocated)+'\n'),profileFile,true);
  });
- await located('auth.json',async()=>{const auth=await load(source.opencodeDataDirectory,'auth.json');
+ await located('auth.json',async()=>{const auth=await load(source.opencodeDataDirectory,'auth.json',true);
   if(auth!==undefined){const parsed=parseJSON(auth);if(parsed===undefined)throw fail('native_setup_credentials_invalid');
    const projected=projectNativeSetupCredentials(parsed,{onSkip:detail=>skip('auth.json',detail.reason,detail.integrationID?{integrationID:detail.integrationID}:{})});
    await save(path.join(target.opencodeConfigDirectory,NATIVE_SETUP_CREDENTIAL_FILE),Buffer.from(JSON.stringify(projected)+'\n'),'auth.json',true);}});

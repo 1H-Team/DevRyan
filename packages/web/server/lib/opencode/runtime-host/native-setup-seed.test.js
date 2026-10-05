@@ -77,12 +77,16 @@ it('retains custom/user layers, preferred Slim JSONC, logical setup and retries 
  await f.write(path.join(f.source.webDataDirectory,'magic-prompts.json'),{version:1,overrides:{'review.instructions':'Saved prompt'}});
  await f.write(path.join(f.source.webDataDirectory,'cloudflare-managed-remote-tunnels.json'),{version:2,tunnels:[{id:'fixture',name:'fixture',hostname:'fixture.test',token:'synthetic-token',originPort:3000,activeConnector:{private:true}}]});
  const captureLogicalSetup=async()=>({localOwners:{'bots-local-owner':{id:'10000000-0000-4000-8000-000000000001',createdAt:'2026-01-01T00:00:00Z'}}});
- // A later invalid source preserves earlier copied setup for an identical retry.
- await f.text(path.join(f.source.opencodeDataDirectory,'auth.json'),'{"invalid":');
- await expect(seedNativeSetup({...f,captureLogicalSetup})).rejects.toMatchObject({code:'native_setup_credentials_invalid',relativePath:'auth.json'});
- expect(await fs.stat(path.join(f.target.webDataDirectory,'native-setup-seed.json')).catch(error=>error.code)).toBe('ENOENT');
+ // A later invalid record fails after earlier setup is written; an identical retry hash-compares those files.
  await f.write(path.join(f.source.opencodeDataDirectory,'auth.json'),{fixture:{type:'api',key:'synthetic'}});
+ const record=path.join(f.source.webConfigDirectory,'projects','x.json');await f.text(record,'{"invalid":');
+ await expect(seedNativeSetup({...f,captureLogicalSetup})).rejects.toMatchObject({code:'native_setup_json_invalid',relativePath:'projects/x.json'});
+ expect(await fs.stat(path.join(f.target.webDataDirectory,'native-setup-seed.json')).catch(error=>error.code)).toBe('ENOENT');
+ const partial=[path.join(f.target.opencodeConfigDirectory,'native-setup-credentials.json'),path.join(f.target.webDataDirectory,'magic-prompts.json')];
+ for(const file of partial)expect((await fs.lstat(file)).isFile()).toBe(true);
+ await f.write(record,{id:'x'});
  const marker=await seedNativeSetup({...f,captureLogicalSetup});expect(new Set(marker.files.map(row=>row.path)).size).toBe(marker.files.length);
+ for(const file of [...partial,path.join(f.target.webConfigDirectory,'projects','x.json')])expect(marker.files.some(row=>row.path===file)).toBe(true);
  expect(JSON.parse(await fs.readFile(path.join(f.target.opencodeConfigDirectory,'config.json'),'utf8'))).toEqual({user:true});
  expect(JSON.parse(await fs.readFile(path.join(f.target.opencodeConfigDirectory,'native-custom-config.json'),'utf8'))).toEqual({custom:true});
  expect(await fs.readFile(path.join(f.target.opencodeConfigDirectory,'oh-my-opencode-slim.jsonc'),'utf8')).toContain('// saved');
@@ -290,4 +294,36 @@ it('never follows links to HOME, an ancestor of the copied root or a credential 
  expect(await fs.readFile(path.join(f.target.home,'.agents','skills','cfg','other','x.md'),'utf8')).toBe('kept');
  const copied=await fs.readdir(path.dirname(f.target.home),{recursive:true});
  for(const name of copied){const file=path.join(path.dirname(f.target.home),name);if((await fs.lstat(file)).isFile())expect(await fs.readFile(file,'utf8')).not.toMatch(/fixture-(private|netrc|keychain|gh)/);}
+});
+it('ignores a credential store that canonicalizes to HOME, outside HOME or onto a setup root',async()=>{
+ const f=await fixture(),home=f.source.home,source={...f.source,webDataDirectory:path.join(home,'.config','openchamber'),opencodeConfigDirectory:path.join(home,'.config','opencode')};
+ await f.write(path.join(source.webDataDirectory,'settings.json'),{themeId:'dark'});await f.text(path.join(source.opencodeConfigDirectory,'skills','a','SKILL.md'),'skill');
+ await f.write(path.join(f.source.webConfigDirectory,'themes','t.json'),{id:'t'});await f.text(path.join(home,'.ssh','id_fixture'),'fixture-private');
+ // ~/.docker -> ~/.config (ancestor of setup roots), ~/.kube -> HOME, ~/.aws -> a setup folder outside HOME.
+ await fs.symlink(path.join(home,'.config'),path.join(home,'.docker'));await fs.symlink(home,path.join(home,'.kube'));await fs.symlink(path.join(f.source.webConfigDirectory,'themes'),path.join(home,'.aws'));
+ await fs.symlink(path.join(home,'.ssh'),path.join(source.opencodeConfigDirectory,'skills','ssh'));
+ const marker=await seedNativeSetup({...f,source});
+ expect(marker.skipped).toEqual([{relativePath:'skills/ssh',reason:'protected'}]);
+ expect(JSON.parse(await fs.readFile(path.join(f.target.webDataDirectory,'settings.json'),'utf8'))).toEqual({themeId:'dark'});
+ expect(await fs.readFile(path.join(f.target.opencodeConfigDirectory,'skills','a','SKILL.md'),'utf8')).toBe('skill');
+ expect(await fs.readdir(path.join(f.target.webConfigDirectory,'themes'))).toEqual(['t.json']);
+});
+it('never follows links or bulk folders into account, token and browser stores; exact account inputs still seed',async()=>{
+ const f=await fixture(),home=f.source.home,skills=path.join(home,'.agents','skills'),data=path.join(home,'.local','share','opencode'),source={...f.source,opencodeDataDirectory:data};
+ await f.text(path.join(skills,'ok','SKILL.md'),'ok');await f.write(path.join(data,'auth.json'),{fixture:{type:'api',key:'fixture-auth'}});
+ await f.write(path.join(home,'.claude','.credentials.json'),{claudeAiOauth:{accessToken:'fixture-claude'}});
+ const meridian=path.join(home,'.config','meridian','accounts','m');await f.write(path.join(meridian,'.credentials.json'),{claudeAiOauth:{accessToken:'fixture-meridian'}});
+ await f.write(path.join(home,'.config','meridian','profiles.json'),[{id:'m',type:'claude-max',claudeConfigDir:meridian}]);
+ const stores={oc:data,cl:path.join(home,'.claude'),mer:path.join(home,'.config','meridian','accounts'),codex:path.join(home,'.codex'),gc:path.join(home,'.git-credentials'),npmrc:path.join(home,'.npmrc'),
+  pypirc:path.join(home,'.pypirc'),xgh:path.join(home,'xdg','gh'),ghd:path.join(home,'ghdir'),gcloud:path.join(home,'gcloud'),
+  ...Object.fromEntries(['Google','BraveSoftware','Firefox','Microsoft Edge','Arc'].map(name=>[name.replace(' ',''),path.join(home,'Library','Application Support',name)]))};
+ for(const [name,store] of Object.entries(stores)){if(!['oc','cl','mer'].includes(name))await f.text(path.join(store,...name.match(/rc$|^gc$/)?[]:['token']),'fixture-'+name);await fs.symlink(store,path.join(skills,name));}
+ await f.text(path.join(home,'xdg','kept.md'),'kept');await fs.symlink(path.join(home,'xdg'),path.join(skills,'xdg'));
+ const marker=await seedNativeSetup({...f,source,environment:{XDG_CONFIG_HOME:path.join(home,'xdg'),GH_CONFIG_DIR:path.join(home,'ghdir'),CLOUDSDK_CONFIG:path.join(home,'gcloud')}});
+ expect(marker.skipped).toEqual([...Object.keys(stores),'xdg/gh'].sort().map(name=>({relativePath:'.agents/skills/'+name,reason:'protected'})));
+ expect((await fs.readdir(path.join(f.target.home,'.agents','skills'))).sort()).toEqual(['ok','xdg']);expect(await fs.readdir(path.join(f.target.home,'.agents','skills','xdg'))).toEqual(['kept.md']);
+ expect(JSON.parse(await fs.readFile(path.join(f.target.home,'.claude','.credentials.json'),'utf8'))).toEqual({claudeAiOauth:{accessToken:'fixture-claude'}});
+ const [profile]=JSON.parse(await fs.readFile(path.join(f.target.home,'.config','meridian','profiles.json'),'utf8'));
+ expect(JSON.parse(await fs.readFile(path.join(profile.claudeConfigDir,'.credentials.json'),'utf8'))).toEqual({claudeAiOauth:{accessToken:'fixture-meridian'}});
+ expect(JSON.parse(await fs.readFile(path.join(f.target.opencodeConfigDirectory,'native-setup-credentials.json'),'utf8')).credentials.map(row=>row.integrationID)).toEqual(['fixture']);
 });

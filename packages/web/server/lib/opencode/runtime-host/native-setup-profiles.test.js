@@ -45,6 +45,11 @@ test('first-seed mode drops invalid account paths, later duplicates and rows pas
  expect(result.map(row=>row.id)).toEqual(['a',...Array.from({length:59},(_,index)=>'p'+index)]);expect(result[0]).toEqual({id:'a'});expect(copied).toEqual([]);
  expect(skipped).toEqual([{reason:'profile_account_invalid',profile:'num'},{reason:'profile_account_invalid',profile:'rel'},{reason:'profile_account_invalid',profile:'tilde'},
   {reason:'profile_duplicate',profile:'a'},{reason:'profile_limit',profile:'p59'},{reason:'profile_limit',profile:'p60'},{reason:'profile_limit',profile:'p61'},{reason:'profile_limit',profile:'late'}]);
- for(const input of [[{id:'rel',claudeConfigDir:'~/.claude'}],[{id:'a'},{id:'a'}],Array.from({length:65},(_,index)=>({id:'q'+index}))])
+ // A non-standard keychain service is dropped by profile id before any account copy.
+ const kept=[],dropped=[],account=path.join(home,'.claude-k');
+ expect(await relocateNativeSetupProfiles({profiles:[{id:'k',type:'claude-max',claudeConfigDir:account,keychainService:'my-keychain'},{id:'ok',type:'api'}],sourceHome:home,targetHome,
+  copyAccount:async value=>kept.push(value),onSkip:row=>dropped.push(row)})).toEqual([{id:'ok',type:'api'}]);
+ expect(dropped).toEqual([{reason:'profile_keychain_invalid',profile:'k'}]);expect(kept).toEqual([]);
+ for(const input of [[{id:'k',type:'claude-max',claudeConfigDir:account,keychainService:'my-keychain'}],[{id:'rel',claudeConfigDir:'~/.claude'}],[{id:'a'},{id:'a'}],Array.from({length:65},(_,index)=>({id:'q'+index}))])
   await expect(relocateNativeSetupProfiles({profiles:input,sourceHome:home,targetHome,copyAccount:async()=>{}})).rejects.toMatchObject({code:'native_setup_profiles_invalid'});
 });
