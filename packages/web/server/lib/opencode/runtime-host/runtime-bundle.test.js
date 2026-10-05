@@ -735,6 +735,69 @@ test('default startup ignores old conversation databases and never falls back to
  expect(await fs.stat(path.join(fresh,'.local','state','devryan','runtime-bundles','selection.json')).catch(error=>error.code)).toBe('ENOENT');
 });
 
+const releaseArtifacts=async(f,release,reviewedPlugins=[])=>{
+ const directory=path.join(f.root,'release-'+release),files=[];await fs.mkdir(directory);
+ for(const name of ['DevRyan-controller','DevRyan-writer']){const bytes=Buffer.from(`fixture ${name} ${release}\n`);await fs.writeFile(path.join(directory,name),bytes);await fs.chmod(path.join(directory,name),0o755);
+  files.push({path:name,sha256:sha256(bytes),size:bytes.length,mode:0o755});}
+ await fs.writeFile(path.join(directory,'native-bundle.json'),JSON.stringify({schema:1,release,files,inputs:{reviewedPlugins}})+'\n');return directory;
+};
+const launchDefault=async(f,home,artifactDirectory,runMigration=f.runMigration,captureLogicalSetup)=>{
+ const {provisionDefaultNativeBundle}=await import('./native-default-bundle.js');await fs.mkdir(home,{recursive:true});
+ return provisionDefaultNativeBundle({env:{PATH:process.env.PATH},home,cwd:f.seed.projectMap[0].targetDirectory,artifactDirectory,runMigration,captureLogicalSetup,
+  verifyArtifacts:async({manifestPath,manifestSha256,launcher})=>{const directory=path.dirname(manifestPath);return {directory,manifestPath,manifestSha256,launcher,
+   controller:path.join(directory,'DevRyan-controller'),writer:path.join(directory,'DevRyan-writer'),manifest:JSON.parse(await fs.readFile(manifestPath,'utf8'))};}});
+};
+const draftRoot=home=>path.join(home,'.local','state','devryan','runtime-bundles','bundles','default-native');
+const timedOut=async()=>{throw Object.assign(Error('native_migration_timeout'),{code:'native_migration_timeout'});};
+test('fresh default startup discards a candidate that died before its preparation seal and prepares again',async()=>{
+ const f=await fixture(),home=path.join(f.root,'interrupted-home'),release=await releaseArtifacts(f,'A');
+ const copyFile=fs.copyFile,web=path.join(draftRoot(home),'web-data')+path.sep;
+ fs.copyFile=async(source,target,...rest)=>{if(String(target).startsWith(web))throw Object.assign(Error('EIO injected'),{code:'EIO'});return copyFile.call(fs,source,target,...rest);};
+ try{await expect(launchDefault(f,home,release)).rejects.toMatchObject({code:'EIO'});}finally{fs.copyFile=copyFile;}
+ expect(await fs.stat(draftRoot(home)).then(stat=>stat.isDirectory())).toBe(true);
+ expect(await fs.stat(path.join(draftRoot(home),'sources','preparation.json')).catch(error=>error.code)).toBe('ENOENT');
+ const controlRoot=await launchDefault(f,home,release);
+ expect(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot}).descriptor.bundleID).toBe('default-native');
+});
+test('fresh default startup replaces a draft sealed by an earlier release and regenerates its reviewed plugins',async()=>{
+ const f=await fixture(),home=path.join(f.root,'release-home'),plugin={id:'fixture-release-b',manifestDigest:'b'.repeat(64),capabilities:['read']};
+ const releaseA=await releaseArtifacts(f,'A'),releaseB=await releaseArtifacts(f,'B',[plugin]);
+ await expect(launchDefault(f,home,releaseA,timedOut)).rejects.toMatchObject({code:'native_migration_timeout'});
+ expect(await fs.stat(path.join(draftRoot(home),'sources','preparation.json')).then(stat=>stat.isFile())).toBe(true);
+ const controlRoot=await launchDefault(f,home,releaseB),binding=readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot});
+ expect(binding.descriptor.launch.artifactManifestSha256).toBe(sha256(await fs.readFile(path.join(releaseB,'native-bundle.json'))));
+ expect(JSON.parse(await fs.readFile(binding.descriptor.launch.reviewedPluginManifestPath,'utf8')).plugins).toEqual([{...plugin,legacySpecs:[]}]);
+});
+test('fresh default startup resumes its own sealed draft and never resets anything once a bundle is selected',async()=>{
+ const f=await fixture(),home=path.join(f.root,'resume-home'),releaseA=await releaseArtifacts(f,'A'),releaseB=await releaseArtifacts(f,'B');
+ await expect(launchDefault(f,home,releaseA,timedOut)).rejects.toMatchObject({code:'native_migration_timeout'});
+ const preparation=path.join(draftRoot(home),'sources','preparation.json'),sealed=await fs.readFile(preparation);
+ const controlRoot=await launchDefault(f,home,releaseA);
+ expect(await fs.readFile(preparation)).toEqual(sealed);
+ const selection=await fs.readFile(path.join(controlRoot,'selection.json'));
+ expect(await launchDefault(f,home,releaseB,timedOut)).toBe(controlRoot);
+ expect(await fs.readFile(preparation)).toEqual(sealed);expect(await fs.readFile(path.join(controlRoot,'selection.json'))).toEqual(selection);
+});
+test('selected default bundle still verifies after its one-shot owner snapshot is consumed',async()=>{
+ const f=await fixture(),home=path.join(f.root,'owner-home'),owners={'supabase-local-owner':{id:'10000000-0000-4000-8000-000000000001',scope:'local-admin'}};
+ const controlRoot=await launchDefault(f,home,await releaseArtifacts(f,'A'),f.runMigration,async()=>({localOwners:owners}));
+ const {restoreNativeSetupOwners}=await import('./native-setup-local-owners.js'),{createSessionVault}=await import('../../multi-user/vault.js');
+ const webData=readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot}).descriptor.launch.webDataDirectory;
+ for(const start of [1,2])await restoreNativeSetupOwners(webData);
+ expect((await createSessionVault({dataDirectory:webData})).get('supabase-local-owner').principal).toMatchObject({id:owners['supabase-local-owner'].id,scope:'local-admin'});
+ expect(await fs.stat(path.join(webData,'native-setup-local-owners.json')).catch(error=>error.code)).toBe('ENOENT');
+ const store=createRuntimeBundleStore({controlRoot,allowRecoveredInputStartup:true,runMigration:async()=>{throw Error('fixture no import');},
+  withQuiescedSource:async()=>{throw Error('fixture no checkpoint');},verifyArtifacts:async()=>{}});
+ await expect(store.verify({bundleID:'default-native',phase:'resume'})).resolves.toMatchObject({integrity:'verified'});
+});
+test('fresh default startup refuses to reset a symlinked draft and leaves its target untouched',async()=>{
+ const f=await fixture(),home=path.join(f.root,'symlink-home'),outside=path.join(f.root,'outside');
+ await fs.mkdir(outside);await fs.writeFile(path.join(outside,'kept.txt'),'kept');
+ await fs.mkdir(path.dirname(draftRoot(home)),{recursive:true});await fs.symlink(outside,draftRoot(home));
+ await expect(launchDefault(f,home,await releaseArtifacts(f,'A'))).rejects.toMatchObject({code:'bundle_path_invalid'});
+ expect(await fs.readFile(path.join(outside,'kept.txt'),'utf8')).toBe('kept');
+});
+
 async function recoveryFixture(reconcileRollback){
  const f=await fixture();await f.store.prepare(f.baselineInput);await f.store.select({bundleID:'baseline',expectedRevision:0});
  const candidate=await f.store.prepare({...f.baselineInput,bundleID:'candidate',source:{kind:'bundle',bundleID:'baseline'}});await f.store.select({bundleID:'candidate',expectedRevision:1});

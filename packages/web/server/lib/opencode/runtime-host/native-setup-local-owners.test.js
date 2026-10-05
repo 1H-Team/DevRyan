@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createSessionVault } from '../../multi-user/vault.js';
 import { createLocalBotOwner } from '../../bots/local-owner.js';
+import { createSupabaseConnection } from '../../multi-user/supabase-connection.js';
 import { captureNativeSetupOwners, restoreNativeSetupOwners } from './native-setup-local-owners.js';
 
 const fixture = async action => {
@@ -43,4 +44,40 @@ test('absent owners do not create source storage and partial or conflicting owne
  await expect(vault.restoreSetupOwners({'supabase-local-owner':{id:'20000000-0000-4000-8000-000000000002',scope:'managed'}})).rejects.toMatchObject({code:'native_setup_local_owner_invalid'});
  expect(vault.get('supabase-local-owner').principal.id).toBe('10000000-0000-4000-8000-000000000001');
  expect(()=>vault.restoreSetupOwners({'bots-local-owner':{id:'10000000-0000-4000-8000-000000000001',createdAt:'2026-01-01',sessions:[]}})).toThrow('native_setup_local_owner_invalid');
+}));
+const snapshot=async(target,owners)=>{await fs.mkdir(target,{recursive:true});await fs.writeFile(path.join(target,'native-setup-local-owners.json'),JSON.stringify({schema:1,owners}));};
+const localAdmin={'supabase-local-owner':{id:'10000000-0000-4000-8000-000000000001',scope:'local-admin'}};
+test('restore is one-shot: a later app owner change through rememberOwner survives every following start',async()=>fixture(async root=>{
+ const target=path.join(root,'target');await snapshot(target,localAdmin);
+ await restoreNativeSetupOwners(target);
+ const connection=await createSupabaseConnection({config:{configured:true,enabled:false,dataDirectory:target,url:'https://supabase.invalid',publishableKey:'fixture-public',secretKey:'fixture-secret'},fetchImpl:async()=>{throw Error('fixture has no network');}});
+ try{await connection.rememberOwner({id:'20000000-0000-4000-8000-000000000002',role:'admin',scope:'managed',assignments:[],policy:{}},{getHeader:()=>undefined,setHeader:()=>{}});}
+ finally{await connection.dispose?.();}
+ for(const start of [1,2])await restoreNativeSetupOwners(target);
+ const vault=await createSessionVault({dataDirectory:target});
+ expect(vault.get('supabase-local-owner').principal).toMatchObject({id:'20000000-0000-4000-8000-000000000002',scope:'managed'});
+}));
+test('a revoked restored owner is not resurrected on later starts',async()=>fixture(async root=>{
+ const target=path.join(root,'target');await snapshot(target,localAdmin);
+ await restoreNativeSetupOwners(target);
+ const app=await createSessionVault({dataDirectory:target});await app.delete('supabase-local-owner');await app.drain();
+ await restoreNativeSetupOwners(target);
+ expect((await createSessionVault({dataDirectory:target})).get('supabase-local-owner')).toBeNull();
+}));
+test('a start that died after restoring but before consuming the snapshot restores again and then stops',async()=>fixture(async root=>{
+ const target=path.join(root,'target');await snapshot(target,localAdmin);
+ const died=await createSessionVault({dataDirectory:target});await died.restoreSetupOwners(localAdmin);await died.drain();
+ await restoreNativeSetupOwners(target);
+ expect((await createSessionVault({dataDirectory:target})).get('supabase-local-owner').principal).toMatchObject({id:localAdmin['supabase-local-owner'].id,scope:'local-admin'});
+ const app=await createSessionVault({dataDirectory:target});await app.set('supabase-local-owner',{principal:{id:'30000000-0000-4000-8000-000000000003',role:'admin',scope:'managed',assignments:[],policy:{}},sessions:[]});
+ await restoreNativeSetupOwners(target);
+ expect((await createSessionVault({dataDirectory:target})).get('supabase-local-owner').principal.id).toBe('30000000-0000-4000-8000-000000000003');
+}));
+test('a bundle whose owner the app replaced after an unconsumed restore starts again without re-applying the snapshot',async()=>fixture(async root=>{
+ const target=path.join(root,'target');await snapshot(target,localAdmin);
+ const earlier=await createSessionVault({dataDirectory:target});await earlier.restoreSetupOwners(localAdmin);await earlier.drain();
+ await earlier.set('supabase-local-owner',{principal:{id:'40000000-0000-4000-8000-000000000004',role:'admin',scope:'managed',assignments:[],policy:{}},sessions:[]});
+ for(const start of [1,2])await restoreNativeSetupOwners(target);
+ expect((await createSessionVault({dataDirectory:target})).get('supabase-local-owner').principal.id).toBe('40000000-0000-4000-8000-000000000004');
+ expect(await fs.readdir(target)).toContain('native-setup-local-owners.restored.json');
 }));

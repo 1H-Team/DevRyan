@@ -116,6 +116,11 @@ Electron IPC use this same core. Recovery HTTP exposes no mutation route.
   startup never guesses external-writer quiescence or modifies the old source. Missing
   artifacts and external/skip/binary overrides fail deterministically. The fresh reviewed
   location is launch cwd; further locations require reviewed bundle configuration.
+  Before any selection, a `bundles/default-native` draft that `sources/preparation.json`
+  does not seal for the exact current input (interrupted copy, earlier build or cwd) is
+  removed with the source's derived `reviewed-*.json`; a selected install is never reset.
+  `native-setup-local-owners.js` restores the v1 owner snapshot once, then renames it to
+  `native-setup-local-owners.restored.json`, so later app owner changes survive restarts.
 - `native-recovered-input.js` reconstructs typed queued/promoted input and incomplete
   canonical work before every controller spawn. Only startup-affected sessions
   are fenced; selected recovery summaries are bounded and full contents are read

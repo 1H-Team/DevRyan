@@ -14,6 +14,7 @@ import {seedNativeSetup} from './native-setup-seed.js';
 import {readRuntimeBundleBinding} from './runtime-bundle-binding.js';
 import {retainNativeArtifacts} from './retained-native-artifacts.js';
 import {protectNativeSetupSource,removeNativeSetupSource,resetAbandonedNativeSetupSource} from './native-setup-source.js';
+import {canonicalJSON,isRecord,readBundleJSON,sha256} from './bundle-migration-inventory.js';
 
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const fail=code=>Object.assign(new Error(code),{code,status:503});
@@ -22,6 +23,35 @@ const nativePluginIDs={
  '@rama_nigg/open-cursor':['devryan.provider-compat'], 'opencode-with-claude':['devryan.provider-compat'],
  'opencode-gpt-imagegen':['opencode-gpt-imagegen'], 'oh-my-opencode-slim':['devryan.slim','devryan.slim-commands','devryan.slim-lifecycle'],
  superpowers:['devryan.reviewed-skills'],'devryan-skill-context':['devryan.reviewed-skills'],'devryan-document-reader':['devryan.document-reader'],
+};
+const owned=async(directory,parent)=>{
+ const stat=await fs.lstat(directory);
+ if(path.dirname(directory)!==parent||!stat.isDirectory()||stat.isSymbolicLink()||await fs.realpath(directory)!==directory
+  ||typeof process.getuid==='function'&&stat.uid!==process.getuid())throw fail('bundle_path_invalid');
+};
+/** Call inside the bootstrap lock, only while no selection.json exists. Before any
+ * selection nothing under bundles/ is user data: v1 sources are only read and v2
+ * conversations exist only after selection. store.prepare resumes a default draft
+ * only when its sources/preparation.json seals this exact input (whose hash covers
+ * the artifact manifest, source paths and project map); any other draft, such as an
+ * interrupted copy or one sealed by an earlier build or cwd, fails every launch.
+ * Remove it with the source files derived from its manifest and cwd. */
+const resetStaleDefaultDraft=async({controlRoot,sourceRoot,inputSha256})=>{
+ const bundles=path.join(controlRoot,'bundles'),root=path.join(bundles,'default-native');
+ if(await exists(root)){
+  await owned(bundles,controlRoot);await owned(root,bundles);
+  let draft;try{draft=await readBundleJSON(path.join(root,'sources','preparation.json'));}
+  catch(error){if(!['ENOENT','ENOTDIR','bundle_document_invalid'].includes(error.code)&&!(error instanceof SyntaxError))throw error;}
+  if(isRecord(draft)&&draft.schema===1&&draft.inputSha256===inputSha256)return false;
+ }
+ for(const name of ['reviewed-native.json','reviewed-plugins.json']){
+  const file=path.join(sourceRoot,name);if(!await exists(file))continue;
+  await owned(sourceRoot,path.dirname(controlRoot));const stat=await fs.lstat(file);
+  if(!stat.isFile()||typeof process.getuid==='function'&&stat.uid!==process.getuid())throw fail('bundle_path_invalid');
+  await fs.rm(file);
+ }
+ if(!await exists(root))return false;
+ await fs.rm(root,{recursive:true});return true;
 };
 export function defaultNativeRegistrations(origins) {
  return origins.map(origin=>({...origin,legacySpecs:DEVRYAN_MANAGED_PLUGINS.filter(plugin=>nativePluginIDs[plugin.id]?.includes(origin.id))
@@ -68,11 +98,19 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
   const artifacts=await retainNativeArtifacts({controlRoot,manifestPath,manifestSha256,verifyArtifacts});
   const retainedManifestPath=artifacts.manifestPath;
   const retainedLauncher=artifacts.launcher;
-  // No selection exists here; a stamped seed that never pinned its marker is reseeded.
-  await resetAbandonedNativeSetupSource({controlRoot,sourceRoot});
-  await protectNativeSetupSource({controlRoot,sourceRoot});
   const launch={opencodeDatabasePath:path.join(sourceRoot,'empty.db'),webDataDirectory:path.join(sourceRoot,'web-data'),
    webConfigDirectory:path.join(sourceRoot,'web-config'),opencodeConfigDirectory:path.join(sourceRoot,'opencode-config'),global:{home:path.join(sourceRoot,'home')}};
+  const directory=await fs.realpath(cwd);
+  const reviewedNativeConfigPath=path.join(sourceRoot,'reviewed-native.json'),reviewedPluginManifestPath=path.join(sourceRoot,'reviewed-plugins.json');
+  const launchArtifacts={controllerBinary:artifacts.controller,writerBinary:artifacts.writer,artifactManifestPath:retainedManifestPath,
+   artifactManifestSha256:manifestSha256,reviewedNativeConfigPath,reviewedPluginManifestPath};
+  const input={bundleID:'default-native',generation:2,source:{kind:'legacy',launch},projectMap:[{sourceDirectory:directory,targetDirectory:directory,mode:'identity'}],auxiliary:{kind:'absent'},launchArtifacts};
+  // No selection exists here. A stale draft goes first: the abandoned-seed reset
+  // below refuses while any bundles/* entry exists.
+  await resetStaleDefaultDraft({controlRoot,sourceRoot,inputSha256:sha256(canonicalJSON(input))});
+  // A stamped seed that never pinned its marker is reseeded.
+  await resetAbandonedNativeSetupSource({controlRoot,sourceRoot});
+  await protectNativeSetupSource({controlRoot,sourceRoot});
   for(const directory of [launch.webDataDirectory,launch.webConfigDirectory,launch.opencodeConfigDirectory,launch.global.home])await fs.mkdir(directory,{recursive:true,mode:0o700});
   // Only this privately created source is eligible for an automatic checkpoint.
   if(!await exists(launch.opencodeDatabasePath)){await fs.writeFile(launch.opencodeDatabasePath,'',{flag:'wx',mode:0o600});const db=resolveSqliteDriver().open(launch.opencodeDatabasePath);db.close();await fs.chmod(launch.opencodeDatabasePath,0o600);}
@@ -81,16 +119,12 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
    opencodeConfigFile:env.OPENCODE_CONFIG?path.resolve(env.OPENCODE_CONFIG):undefined,
    opencodeDataDirectory:path.resolve(env.XDG_DATA_HOME||path.join(home,'.local','share'),'opencode'),home},target:launch,environment:env,captureLogicalSetup});
   if(!await exists(path.join(launch.opencodeConfigDirectory,'opencode.json')))await fs.copyFile(new URL('opencode.json',defaultConfigRoot),path.join(launch.opencodeConfigDirectory,'opencode.json'));
-  const directory=await fs.realpath(cwd);
-  const reviewedNativeConfigPath=path.join(sourceRoot,'reviewed-native.json'),reviewedPluginManifestPath=path.join(sourceRoot,'reviewed-plugins.json');
   if(!await exists(reviewedNativeConfigPath))await fs.writeFile(reviewedNativeConfigPath,JSON.stringify({schema:1,configuration:{},
    catalogRequirements:{agents:[],models:[],plugins:[],tools:[]},locations:[{directory,readRoots:[directory],protectedRoots:[controlRoot,dataRoot]}]})+'\n',{mode:0o600});
   if(!await exists(reviewedPluginManifestPath))await fs.writeFile(reviewedPluginManifestPath,JSON.stringify({schema:1,
    plugins:defaultNativeRegistrations(artifacts.manifest.inputs.reviewedPlugins)})+'\n',{mode:0o600});
   // This includes copied defaults created by copyFile, before any native spawn.
   await protectNativeSetupSource({controlRoot,sourceRoot});
-  const launchArtifacts={controllerBinary:artifacts.controller,writerBinary:artifacts.writer,artifactManifestPath:retainedManifestPath,
-   artifactManifestSha256:manifestSha256,reviewedNativeConfigPath,reviewedPluginManifestPath};
   const checkpoint=createRuntimeBundleCheckpoint({ownerID:'fresh-source',generation:1,launch,neverStarted:true,
    closeAdmission:async()=>{},getController:()=>null,stopProducers:async()=>{},drainStores:async()=>{},executionHost:{drain:async()=>{}}});
   const importer=runMigration??(request=>runNativeMigrationProcess({binary:artifacts.controller,cwd:sourceRoot,request,
@@ -110,7 +144,7 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
    return createRuntimeBundleCheckpoint({ownerID:candidate.bundleID,generation:2,launch:candidate.launch,neverStarted:true,
     closeAdmission:async()=>{},getController:()=>null,stopProducers:async()=>{},drainStores:async()=>{},executionHost:{drain:async()=>{}}})(source,action);
   }});
-  candidate=await store.prepare({bundleID:'default-native',generation:2,source:{kind:'legacy',launch},projectMap:[{sourceDirectory:directory,targetDirectory:directory,mode:'identity'}],auxiliary:{kind:'absent'},launchArtifacts});
+  candidate=await store.prepare(input);
   await store.select({bundleID:candidate.bundleID,expectedRevision:0});
   await removeNativeSetupSource({controlRoot,sourceRoot,verifySelected:async()=>{
    const selected=await store.readSelected();if(selected?.descriptor.bundleID!==candidate.bundleID)throw fail('bundle_selection_revision_conflict');
