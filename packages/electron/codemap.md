@@ -49,8 +49,11 @@ and desktop-host broker bridges.
   mutations, cancels pending geometry callbacks and awaits admitted atomic writes.
   Failed writes keep the transition held. `native-settings-directory.mjs` permits
   settings path inspection for cold held recovery without opening execution.
-  The main entry captures the original shell data root before dynamically loading
-  the bundle binding, whose module evaluation relocates the server environment.
+  The main entry first adopts login-shell-only `OPENCHAMBER_DATA_DIR` and
+  `XDG_STATE_HOME` (`selectShellDataRoots`, the data-root subset of the filtered
+  login-shell merge the server inherits), then captures the original shell data
+  root before dynamically loading the bundle binding, whose module evaluation
+  relocates the server environment.
   Service ownership, discovery, registration and discovered-app caches keep that
   shell root, outside selected runtime bundles, including during cold recovery.
   All app relaunch callbacks hand this root to Electron's synchronous relaunch
