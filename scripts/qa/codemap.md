@@ -1,7 +1,8 @@
 # scripts/qa/
 
 - `final-evidence-rules.mjs` validates recorded-cwd journal-gap directory identity
-  and independently pinned raw-hash summary projections. It classifies only a
+  for the exact `gaps --dir <root>` and `--dir <root> gaps --verify` spellings
+  (the result reports which) and independently pinned raw-hash summary projections. It classifies only a
   scenario-declared user Stop joined to bounded canonical journal IDs and a later
   successful turn; all other raw errors remain unexpected. Historical undeclared
   failures are not regraded.

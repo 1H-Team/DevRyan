@@ -26,6 +26,30 @@ test('gap evidence resolves relative and absolute journal spelling only from the
   } finally { await fs.rm(fixture, { recursive: true, force: true }); }
 });
 
+test('verified gap evidence accepts only the exact --dir <root> gaps --verify spelling from the recorded repository cwd', async () => {
+  const fixture = await fs.mkdtemp(path.join(root, '.cache/v2-validation/evidence-rules-'));
+  try {
+    const journalDirectory = path.join(fixture, 'journal'), logPath = path.join(fixture, 'gap.log');
+    await fs.mkdir(journalDirectory); await fs.writeFile(logPath, '');
+    const command = { cwd: root, args: ['scripts/journal.mjs', '--dir', journalDirectory, 'gaps', '--verify'], code: 0, signal: null, spawnError: null,
+      log: logPath, startedAt: '2026-10-05T10:00:00Z', finishedAt: '2026-10-05T10:00:01Z' };
+    const check = value => assertQaGapCommand({ command: value, journalDirectory, repositoryRoot: root, logPath, logBytes: Buffer.alloc(0) });
+    assert.deepEqual(await check(command), { directory: journalDirectory, cwd: root, code: 0, logBytes: 0, verify: true });
+    const relative = ['scripts/journal.mjs', '--dir', path.relative(root, journalDirectory), 'gaps', '--verify'];
+    assert.equal((await check({ ...command, args: relative })).verify, true);
+    assert.equal((await check({ ...command, args: ['scripts/journal.mjs', 'gaps', '--dir', journalDirectory] })).verify, false);
+    for (const args of [[...command.args, '--extra'], ['scripts/journal.mjs', 'gaps', '--dir', journalDirectory, '--verify'],
+      ['scripts/journal.mjs', '--dir', journalDirectory, 'gaps', '--verified'], ['scripts/journal.mjs', '--verify', journalDirectory, 'gaps', '--dir'],
+      ['scripts/journal.mjs', '--dir', '', 'gaps', '--verify']]) {
+      await assert.rejects(check({ ...command, args }), { code: 'qa_gap_command_invalid' });
+    }
+    const foreign = path.join(fixture, 'different'); await fs.mkdir(foreign);
+    await assert.rejects(check({ ...command, args: ['scripts/journal.mjs', '--dir', foreign, 'gaps', '--verify'] }), { code: 'qa_gap_directory_mismatch' });
+    await assert.rejects(assertQaGapCommand({ command, journalDirectory, repositoryRoot: root, logPath, logBytes: Buffer.from('{"type":"gap"}\n') }),
+      { code: 'qa_gap_command_invalid' });
+  } finally { await fs.rm(fixture, { recursive: true, force: true }); }
+});
+
 test('hash summary authority remains exact pinned raw bytes and original sanitizer, including normally redacted hashes', () => {
   const bytes = Buffer.from('original noncredential artifact'), sha256 = createHash('sha256').update(bytes).digest('hex');
   const input = { field: 'seedManifestSha256', bytes, pin: { bytes: bytes.length, sha256 }, integrityHash: sha256 };
