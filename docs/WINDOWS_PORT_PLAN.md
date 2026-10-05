@@ -96,8 +96,16 @@ The first attempt at `c6840ad04d1592ab16b1b2551f6ac13e2528f25a` was
 GitHub cancelled both jobs before acquiring a hosted runner. Neither job ran
 any checks or produced native artifacts. The retained annotations are
 `.cache/release-2.0.2-recovery/windows-sdk-ci-3-{x64,arm64}-unavailable.json`.
-One retry is pending; runner unavailability cannot qualify the new file owner
-boundary. The local workflow contract now checks both independent boundary
+The retry acquired both runners and compiled both SDK artifacts. Each passed
+the process/parent identity check and 13 filesystem checks, including private
+file ownership, Unicode/case identity, hard links, and junction refusal. Both
+then failed the exclusive-file-lock refusal: attribute/security-only handles
+can bypass Windows sharing restrictions. The inspection operation now requests
+read access as well, so an exclusive lock must refuse the identity. This needs
+a fresh native run. The retained receipts are under
+`.cache/release-2.0.2-recovery/windows-sdk-ci-3`.
+Full confinement and controller/writer builds still fail; execution remains
+unavailable. The local workflow contract checks both independent boundary
 steps and requires their actual `outcome` in the final gate.
 
 `scripts/build-native-runtime.mjs` currently requires Darwin ARM64 and seals

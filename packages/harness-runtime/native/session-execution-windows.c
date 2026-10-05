@@ -72,7 +72,9 @@ static int inspect_file_handle(HANDLE file) {
 }
 
 static int inspect_path(const wchar_t *path) {
-  HANDLE file = CreateFileW(path, FILE_READ_ATTRIBUTES | READ_CONTROL,
+  /* Attribute/security access bypasses sharing restrictions. A read handle
+   * must also prove that an exclusive owner has not locked this identity. */
+  HANDLE file = CreateFileW(path, GENERIC_READ,
     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
     FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
   if (file == INVALID_HANDLE_VALUE) fail("file identity handle");
