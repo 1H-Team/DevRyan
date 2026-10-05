@@ -91,6 +91,15 @@ accepting an inherited/default owner. It bounds input, flushes the file before
 identity publication, rejects device/stream aliases, refuses replacements, and
 retains an interrupted file for recovery. Fresh native results are required.
 
+The first attempt at `c6840ad04d1592ab16b1b2551f6ac13e2528f25a` was
+[unavailable](https://github.com/1H-Team/DevRyan/actions/runs/37366300612):
+GitHub cancelled both jobs before acquiring a hosted runner. Neither job ran
+any checks or produced native artifacts. The retained annotations are
+`.cache/release-2.0.2-recovery/windows-sdk-ci-3-{x64,arm64}-unavailable.json`.
+One retry is pending; runner unavailability cannot qualify the new file owner
+boundary. The local workflow contract now checks both independent boundary
+steps and requires their actual `outcome` in the final gate.
+
 `scripts/build-native-runtime.mjs` currently requires Darwin ARM64 and seals
 Darwin PTY, AST, Claude, and supervisor assets. The Windows builder must select
 reviewed inputs by the actual host architecture, emit `.exe` artifacts, and

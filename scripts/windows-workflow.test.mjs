@@ -10,7 +10,7 @@ test('Windows qualification builds and executes independent pinned native archit
   assert.equal(job.strategy['fail-fast'], false);
   assert.deepEqual(job.strategy.matrix.include, [{ runner: 'windows-2022', arch: 'x64' }, { runner: 'windows-11-arm', arch: 'arm64' }]);
   assert.equal(job.steps.find(step => step.uses?.startsWith('oven-sh/setup-bun@')).with['bun-version'], '1.3.14');
-  assert.deepEqual(workflow.on.push.branches, ['release/2.0.2']);
+  assert.deepEqual(workflow.on.push.branches, ['release/2.0.2', 'implementation/windows-port']);
   assert.deepEqual(workflow.on.push.paths, workflow.on.pull_request.paths);
   assert.equal(job.steps.find(step => step.uses?.startsWith('actions/setup-node@')).with.architecture, '${{ matrix.arch }}');
   assert.equal(job.env.GIT_CEILING_DIRECTORIES, '${{ github.workspace }}/.cache/test-fixtures');
@@ -29,7 +29,12 @@ test('Windows qualification builds and executes independent pinned native archit
   const required = job.steps.find(step => step.env?.SUPERVISOR_ACCEPTANCE);
   assert.equal(required.if, '${{ always() }}');
   assert.equal(required['continue-on-error'], undefined);
-  assert.deepEqual(Object.keys(required.env).sort(), ['RUNTIME', 'RUNTIME_ACCEPTANCE', 'SUPERVISOR', 'SUPERVISOR_ACCEPTANCE']);
+  assert.deepEqual(Object.keys(required.env).sort(), ['FILESYSTEM_BOUNDARY', 'HOST_BOUNDARY', 'RUNTIME', 'RUNTIME_ACCEPTANCE', 'SUPERVISOR', 'SUPERVISOR_ACCEPTANCE']);
+  for (const [name, id] of [['HOST_BOUNDARY', 'host_boundary'], ['FILESYSTEM_BOUNDARY', 'filesystem_boundary']]) {
+    assert.equal(required.env[name], '${{ steps.' + id + '.outcome }}');
+    assert.ok(byID[id].run.includes(`verify-windows-${id === 'host_boundary' ? 'host' : 'filesystem'}-boundary.mjs`));
+    assert.equal(byID[id].if, "${{ always() && steps.supervisor.outcome == 'success' }}");
+  }
   assert.match(required.run, /\$outcome -ne 'success'/);
   assert.match(required.run, /if \(\$failed\).*throw/);
   const processSource = fs.readFileSync(new URL('../packages/web/server/lib/opencode/runtime-host/native-process.js', import.meta.url), 'utf8');
