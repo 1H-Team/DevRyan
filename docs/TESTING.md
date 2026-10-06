@@ -14,13 +14,23 @@ the enclosing DevRyan checkout. The fixture's own Git repositories still work;
 non-Git assertions must not be changed to accept the parent repository.
 - Release verification also runs `bun run build` and `bun run bundle:check`.
 
-A fresh macOS ARM64 checkout also needs the exact reviewed Claude input and
-accepted supervisor before the native script tests. Prepare them separately:
+A fresh macOS ARM64 checkout needs the exact reviewed Claude input, accepted
+supervisor, generated Electron web assets and retained legacy Tauri test
+sidecar before the full suite. Prepare them through their existing owners:
 
 ```sh
 node scripts/hydrate-reviewed-claude.mjs
 node scripts/build-session-execution.mjs packages/web/runtime/darwin-arm64 --verify
+bun run build
+bun run --cwd packages/electron build:web-assets
+node -e "require('node:fs').cpSync('packages/web/dist', 'packages/desktop/src-tauri/resources/web-dist', { recursive: true })"
+bun build --compile packages/web/server/index.js --outfile packages/desktop/src-tauri/sidecars/openchamber-server-aarch64-apple-darwin
 ```
+
+Prepare only the missing sidecar. The legacy `build:sidecar` command also
+refreshes frozen tracked configuration assets and makes their contract checks
+fail; do not use it to prepare this suite. These prerequisites do not launch
+either app or add Tauri feature backports.
 
 Keep the repository-owned fixture path short enough for macOS Unix sockets;
 a deeply nested worktree may use the main checkout's ignored fixture directory

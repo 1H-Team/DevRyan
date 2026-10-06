@@ -268,14 +268,27 @@ boot refusal; both writers exit 0 without a reply. Independent payload review
 finds the exported writer helpers but no protocol handler guarded by
 `import.meta.main`. The compiled builder now uses the thin `writer-entry.ts`
 to invoke that same owner explicitly. Fifteen routing checks and a fresh macOS
-native build, signature/resource verification and both boot refusals pass;
-actual Windows reruns are still required.
+native build, signature/resource verification and both boot refusals pass.
+The following native rerun verifies the entry correction on both architectures.
 
 The ARM64 failure receipt was written before an `EPERM` directory rename hid
 the boot error. Unqualified Windows builds now create their private output
 exclusively, write `native-candidate.json` last with exclusive creation only
 after all checks pass, and retain failed files in place. They never replace an
 existing output, produce a production bundle, or grant admission.
+
+Run [37408333818](https://github.com/1H-Team/DevRyan/actions/runs/37408333818)
+at `725c354d` compiles both controller/writer pairs and passes both exact
+empty-input boot refusals on x64 and ARM64. Independent downloaded-artifact
+review verifies PE architecture, all payload and source hashes, original
+dependency pins, the reviewed libsql source/ABI receipts and all nine actual
+step outcomes. Both receipts remain explicitly unqualified with
+`admission: false`; no production manifest or accepted launcher is emitted.
+Supervision still fails on both hosts. x64 retains the confined Node
+`0xc0000142` initialization failure; ARM64 reaches descendant, inherited-handle,
+Unix-socket, permission-mode and Revert durability failures. The compiled
+runtime inventory is skipped. Build and boot success do not establish the
+read boundary, descendant containment or initialized runtime acceptance.
 
 Command supervision remains failed. The x64 confined Node command returns
 `0xc0000142`; this is separate from the writer's compiled entry failure.
@@ -285,6 +298,26 @@ requires access to both the selected window station and desktop, and its
 identifies missing access as a possible DLL initialization failure. Review a
 private UI-object owner and prove standard-user behavior before changing this
 boundary; do not alter the user's window-station ACL or enable admission.
+
+The separate startup diagnostic now compiles four disposable source copies:
+original, no UI job limits, an exclusive private window station, and their
+combination. Each runs a trusted stdout-only probe with the actual Node and
+pinned Bun executable. Source/binary/output digests and empty, partial or
+complete termination receipts remain evidence; no copy receives an acceptance
+marker, enters a runtime bundle, or satisfies a required Windows gate.
+The station probe restores the inherited station and changes no inherited ACL.
+Actual native results and standard-user/concurrent station ownership remain
+unqualified. Its API owners are
+[CreateWindowStationW](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-createwindowstationw)
+and [SetProcessWindowStation](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setprocesswindowstation).
+
+Integrated local `validate:full` passes on macOS ARM64 at `874ab3f4`, including
+6,328 web tests, 4,049 UI tests and 39 retained legacy Rust tests. Earlier failed
+attempts are preserved. Only builder-generated legacy defaults were restored
+to their frozen source bytes; the missing ignored web/sidecar fixtures were
+prepared without changing those defaults. The successful log digest is
+`9e90adb2a0e44ddbfc25ce7629ea08f4ae21627e5eef730dd25eee2889500b48`.
+This local pass does not qualify native Windows execution or the final release.
 
 The [Rust platform contract](https://doc.rust-lang.org/stable/rustc/platform-support/windows-msvc.html)
 supports native MSVC ARM64 host tools; that support does not establish libsql
@@ -316,8 +349,8 @@ refuses before environment or filesystem access. Native PE inspection and both
 empty-input boot refusals precede an immutable `native-candidate.json` receipt
 with `admission: false`. It emits no production manifest or accepted launcher
 and cannot be packaged as an accepted runtime. The original native PE builds
-are retained, but their boot gate failed; the explicit entry correction still
-needs both native reruns. Initialized controller/writer behavior, held file
+are retained, including the failed earlier probes; the explicit entry
+correction passes both native reruns. Initialized controller/writer behavior, held file
 authority, read confinement and the integrated acceptance inventory remain
 unqualified; the ordinary production builder continues to refuse Windows.
 
