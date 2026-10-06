@@ -120,10 +120,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --test --test-name-pattern=Windows packages/electron/tests/runtime-service-startup.test.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Push-Location packages/ui
-          bun test src/lib/terminalApi.test.ts src/components/views/TerminalView.mounted.test.tsx src/components/sections/providers/ProvidersPage.authenticationSummary.test.tsx
+          node scripts/test-ui.mjs src/lib/terminalApi.test.ts src/components/views/TerminalView.mounted.test.tsx src/components/sections/providers/ProvidersPage.authenticationSummary.test.tsx
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Pop-Location
       - name: Verify pinned executable resources on this native architecture
         id: reviewed_executables
         if: ${{ always() }}
@@ -192,11 +190,13 @@ jobs:
           rustup toolchain install "1.85.1-$target" --profile minimal --no-self-update
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/build-windows-reviewed-libsql.mjs
-      - name: Compile and verify controller and writer on this architecture
+      - name: Compile controller and writer candidates and execute their boot refusals
         id: runtime
         if: ${{ always() && steps.inputs.outcome == 'success' }}
         continue-on-error: true
-        run: bun scripts/build-native-runtime.mjs
+        # Candidate receipts explicitly deny admission and cannot be consumed
+        # by production artifact verification or the compiled acceptance gate.
+        run: bun scripts/build-native-runtime.mjs --windows-candidate
       - name: Execute the compiled native acceptance inventory
         id: runtime_acceptance
         if: ${{ always() && steps.runtime.outcome == 'success' && steps.supervisor_acceptance.outcome == 'success' }}

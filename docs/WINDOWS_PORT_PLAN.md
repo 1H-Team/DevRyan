@@ -191,6 +191,19 @@ assertions. Original failures and unavailable fixture journals remain recorded.
 The next native run also captures an independent empty-job UI-limit probe and
 read-only containing-job flags. It never changes the containing job, starts a
 child, or permits breakaway; its diagnostic result cannot enable admission.
+Run [37399204561](https://github.com/1H-Team/DevRyan/actions/runs/37399204561)
+at `79cd2dd9` failed on both architectures. The Cursor fixture and native feature
+guards advanced to the UI files, where a terminal mock leaked into the provider
+test. The exact original three-file command independently reproduced the
+missing `I18nProvider` export. CI now reuses the existing UI test runner, which
+isolates files that mock modules. The empty-job diagnostic also stopped before
+writing its receipt: both native SDKs emitted `requestedUIFlags: 1023`, whereas
+the verifier expected 255. The validator now requires the actual ten-flag SDK
+mask and retains UI refusal as a valid diagnostic outcome, without changing the
+supervisor policy. The two additional flags and their OS requirements are
+documented in [Microsoft's UI policy](https://github.com/microsoft/mxc/blob/main/docs/process-container/os-version-support.md).
+Actual native receipts are still required; this change does not qualify
+containing-job isolation or runtime admission.
 
 The [Rust platform contract](https://doc.rust-lang.org/stable/rustc/platform-support/windows-msvc.html)
 supports native MSVC ARM64 host tools; that support does not establish libsql
@@ -212,6 +225,19 @@ reviewed inputs by the actual host architecture, emit `.exe` artifacts, and
 inventory the Windows supervisor source and policy in its build identity. It
 must preserve the controller/writer/configuration graph, input provenance,
 source-change detection, and exact asset digests.
+
+The isolated implementation now adds a Windows-only `--windows-candidate`
+mode. It selects the existing verified AST/Claude inputs and source-built
+libsql receipt, preserves the original six-family closure and graph inventory,
+and emits architecture-native `.exe` controller/writer candidates. The original
+Meridian resolver accepts only the selected target; the persistent PTY resolver
+refuses before environment or filesystem access. Native PE inspection and both
+empty-input boot refusals precede an immutable `native-candidate.json` receipt
+with `admission: false`. It emits no production manifest or accepted launcher
+and cannot be packaged as an accepted runtime. This implementation still needs
+actual native build results. Initialized controller/writer behavior, held file
+authority, read confinement and the integrated acceptance inventory remain
+unqualified; the ordinary production builder continues to refuse Windows.
 
 `native-process.js` currently refuses a supervised controller outside Darwin.
 Keep that refusal until the Windows launcher and its termination receipt are

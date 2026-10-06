@@ -569,6 +569,10 @@ relative authority and an empty explicit bundle root refuse before owner access.
   reviewed plugin origin and the separately verified branded AST executable are
   constructor inputs; execution payloads cannot select an executable. The
   original package is transformed only at inventoried, hash-guarded seams.
+  The build-only Meridian libsql transform selects exactly one reviewed native
+  target (Darwin ARM64 or Windows x64/ARM64), with no package lookup fallback.
+  Windows compilation candidates still have no accepted launcher or runtime
+  manifest and cannot grant execution admission.
 - `execution-read-guard.ts` resolves read targets against explicit allowed
   roots and protected paths, including symlink targets and Git metadata.
   Reads remain subject to native permissions and the ledger generation fence.

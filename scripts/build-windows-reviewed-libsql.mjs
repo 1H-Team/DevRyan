@@ -25,6 +25,40 @@ export function assertWindowsBinaryArchitecture(bytes, arch) {
   assert.equal(bytes.readUInt16LE(offset + 4), arch === 'arm64' ? 0xaa64 : 0x8664, 'Windows binary architecture differs from host');
 }
 
+/** Reuse only this host's source-pinned, ABI-checked candidate. The returned
+ * digest binds build input bytes; it is never a confinement acceptance grant. */
+export async function readWindowsReviewedLibsqlAsset({ repository: root = repository, arch } = {}) {
+  assert.ok(arch === 'x64' || arch === 'arm64', 'Windows architecture unsupported');
+  const directory = path.join(root, '.cache/windows-native', arch);
+  const evidencePath = path.join(directory, 'libsql-source-evidence.json');
+  const read = async file => {
+    const info = await fs.lstat(file);
+    assert.ok(info.isFile() && info.nlink === 1 && await fs.realpath(file) === file, 'Windows libsql candidate path invalid');
+    return fs.readFile(file);
+  };
+  const evidenceBytes = await read(evidencePath);
+  assert.ok(evidenceBytes.length <= 65536, 'Windows libsql candidate evidence bound');
+  const evidence = JSON.parse(evidenceBytes.toString('utf8'));
+  const target = `${arch === 'arm64' ? 'aarch64' : 'x86_64'}-pc-windows-msvc`;
+  assert.equal(evidence.schema, 1); assert.equal(evidence.status, 'asset-candidate-passed');
+  assert.equal(evidence.stage, 'complete'); assert.equal(evidence.version, '0.5.29');
+  assert.equal(evidence.sourceCommit, commit); assert.equal(evidence.target, target);
+  assert.equal(evidence.toolchain, `1.85.1-${target}`); assert.equal(evidence.cmakeGenerator, 'NMake Makefiles');
+  assert.deepEqual(evidence.inputs, inputs); assert.deepEqual(evidence.inputSha256, inputs);
+  assert.ok(Array.isArray(evidence.smokes) && evidence.smokes.length === 2);
+  for (const [index, runtime] of ['node', 'bun'].entries()) {
+    const probe = evidence.smokes[index];
+    assert.equal(probe.status, 'passed'); assert.equal(probe.platform, 'win32');
+    assert.equal(probe.arch, arch); assert.equal(probe.runtime, runtime);
+    assert.ok(typeof probe.version === 'string' && (runtime === 'bun' ? probe.version === '1.3.14' : /^22\./.test(probe.version)));
+  }
+  assert.equal(evidence.binary, `DevRyan-libsql-win32-${arch}.node`);
+  const source = path.join(directory, evidence.binary), bytes = await read(source);
+  assertWindowsBinaryArchitecture(bytes, arch); assert.equal(hash(bytes), evidence.sha256);
+  return { source, path: evidence.binary, sha256: evidence.sha256, version: '0.5.29', mode: 0o644,
+    evidencePath, evidenceSha256: hash(evidenceBytes) };
+}
+
 const smoke = String.raw`
 const assert=require('node:assert/strict'),native=require(process.argv[1]);
 const db=native.databaseOpen(':memory:','','aes256cbc','',0,'');

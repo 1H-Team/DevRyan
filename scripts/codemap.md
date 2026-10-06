@@ -25,6 +25,9 @@ Repository automation entrypoint for developer workflows: validation planning, l
   SHA-256, size and PE architecture precede native version probes in an isolated
   home. Changed files and aliased output directories refuse; publication is
   exclusive. Its candidate receipt also cannot grant execution admission.
+  `readWindowsReviewedLibsqlAsset` rechecks the fixed source/toolchain inputs,
+  both actual-host ABI probe identities and exact unaliased PE bytes before
+  supplying the sealed compilation candidate.
   Its source checkout preserves pinned LF bytes on Windows; finite stage and
   public input-hash receipts retain identity failures before compilation.
 
@@ -33,6 +36,13 @@ Repository automation entrypoint for developer workflows: validation planning, l
   controller/writer executables with pinned SDK, dependency, source and asset
   digests. Exact hash-guarded asset rewrites cover dynamic package resolution
   and the image WASM read; the accepted supervisor is copied unchanged.
+  `--windows-candidate` builds only on the actual x64/ARM64 Windows host into
+  an immutable owned cache root. It reuses the reviewed source closure, selects
+  previously qualified Windows executable/database inputs, denies persistent
+  PTY resolution before I/O, and executes both compiled empty-input refusals.
+  `native-candidate.json` explicitly denies admission and never substitutes
+  for `native-bundle.json` or an accepted launcher. Production Windows builds
+  remain unavailable pending complete platform safety qualification.
   `native-compaction-observation-transform.mjs` inserts a read-only observation
   immediately after the pinned SDK's original budget calculation. Its private
   settings have no exported read API. Exact original/transformed hashes enter
@@ -253,7 +263,7 @@ Repository automation entrypoint for developer workflows: validation planning, l
 
 - `verify-crash-memory.mjs` runs synthetic Electron history reconciliation in isolated app-bound and service ownership modes. The `--workload snapshots` option measures a large synthetic managed ledger separately. It writes numerical samples and synthetic allocation profiles beneath `.cache/`, with a default 95-minute soak; it never registers launchd, connects providers or reads installed-app state.
 
-- `build-native-runtime.mjs` builds the sealed native v2 controller/writer/assets plus accepted execution launcher into `packages/web/runtime/<platform>-<arch>`. The current reviewed build is Bun 1.3.14 on Darwin ARM64; other platforms remain unavailable. Default output replaces the platform directory atomically; explicit output roots are immutable. `build-revert-runtime.mjs` is a compatibility command alias and never builds a v1 executable.
+- `build-native-runtime.mjs` builds the sealed native v2 controller/writer/assets plus accepted execution launcher into `packages/web/runtime/<platform>-<arch>`. The accepted build is Bun 1.3.14 on Darwin ARM64; Windows has a separate unqualified `--windows-candidate` cache output with no production manifest or admission grant. Default output replaces the platform directory atomically; explicit output roots are immutable. `build-revert-runtime.mjs` is a compatibility command alias and never builds a v1 executable.
 
 - `hydrate-reviewed-claude.mjs` restores the oversized reviewed Claude executable from the exact public npm archive before native CI builds. Archive SHA-512 and executable SHA-256/size must match; changed existing files are preserved and rejected. The executable stays outside Git, while its metadata, licenses and checksum inventory remain committed.
 

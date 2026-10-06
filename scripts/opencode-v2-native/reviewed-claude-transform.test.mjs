@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {rewriteReviewedClaudeStartup,REVIEWED_CLAUDE_STARTUP} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-claude-transform.js';
+import {rewriteReviewedClaudeStartup,rewriteReviewedMeridianLibsql,REVIEWED_CLAUDE_STARTUP} from '../../packages/web/server/lib/opencode/runtime-host/reviewed-claude-transform.js';
 const repository=path.resolve(import.meta.dirname,'../..');
 const sourceFile=path.join(repository,'scripts/opencode-v2-native/fixtures/reviewed-claude-1.8.0.txt');
 test('reviewed Claude transform exposes exact original startup, health, profile and scrub functions',async()=>{
@@ -12,6 +12,18 @@ test('reviewed Claude transform exposes exact original startup, health, profile 
   assert.equal(REVIEWED_CLAUDE_STARTUP.meridianVersion,'1.62.6');
   assert.throws(()=>rewriteReviewedClaudeStartup(source+'\n'),/native_claude_source_unreviewed/);
   assert.throws(()=>rewriteReviewedClaudeStartup(source.replace('127.0.0.1','0.0.0.0')),/native_claude_source_unreviewed/);
+});
+
+test('sealed libsql resolves only the explicit reviewed native target',async()=>{
+ const source=await fs.readFile(path.join(repository,'packages/web/runtime/reviewed-inputs/claude-1.8.0/node_modules/@rynfar/meridian/dist/cli-wxk8xvd3.js'));
+ const mac=rewriteReviewedMeridianLibsql(source);
+ for(const target of ['win32-x64','win32-arm64']){
+  const windows=rewriteReviewedMeridianLibsql(source,{target});
+  assert.equal(windows.replace(`target !== "${target}"`,'target !== "darwin-arm64"'),mac);
+  assert.doesNotMatch(windows,/return __require\(`@libsql\/\$\{target\}`\)/);
+ }
+ assert.throws(()=>rewriteReviewedMeridianLibsql(source,{target:'win32-ia32'}),/target_unreviewed/);
+ assert.throws(()=>rewriteReviewedMeridianLibsql(Buffer.concat([source,Buffer.from('\n')]),{target:'win32-x64'}),/source_unreviewed/);
 });
 
 test('original health helper accepts only exact signed-out availability; draining and version failures remain negative',async()=>{

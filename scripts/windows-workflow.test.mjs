@@ -2,6 +2,19 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import YAML from 'yaml';
+import { validateWindowsJobBoundary } from './verify-windows-host-boundary.mjs';
+
+test('empty-job diagnostic accepts the exact current SDK mask while retaining UI refusal', () => {
+  const probe = { protocol: 'devryan.windows-job-probe/1', inJob: true, hostLimitFlags: 0x2000,
+    breakawayAllowed: false, silentBreakawayAllowed: false, requestedUIFlags: 0x3ff,
+    uiSet: false, uiError: 87, uiReadBack: 0 };
+  assert.equal(validateWindowsJobBoundary(probe, true), probe);
+  assert.equal(validateWindowsJobBoundary({ ...probe, uiSet: true, uiError: 0, uiReadBack: 0x3ff }, true).uiSet, true);
+  for (const change of [{ requestedUIFlags: 0xff }, { uiError: 0 }, { uiReadBack: 0xff },
+    { breakawayAllowed: true }, { inJob: false }, { extra: 'unreviewed' }]) {
+    assert.throws(() => validateWindowsJobBoundary({ ...probe, ...change }, true));
+  }
+});
 
 test('Windows qualification builds and executes independent pinned native architectures with no publication authority', () => {
   const workflow = YAML.parse(fs.readFileSync(new URL('../.github/workflows/windows.yml', import.meta.url), 'utf8'));
@@ -19,7 +32,7 @@ test('Windows qualification builds and executes independent pinned native archit
   assert.match(commands, /--frozen-lockfile --ignore-scripts/);
   assert.match(commands, /Microsoft\.VisualStudio\.Component\.VC\.Tools\.ARM64/);
   assert.match(commands, /build-session-execution\.mjs.*--verify/);
-  assert.match(commands, /bun scripts\/build-native-runtime\.mjs/);
+  assert.match(commands, /bun scripts\/build-native-runtime\.mjs --windows-candidate/);
   assert.match(commands, /node scripts\/verify-opencode-v2-package\.mjs/);
   assert.doesNotMatch(commands, /npm publish|supabase|gh release|git (?:push|tag)|docker (?:push|login)|checkpoint-export/);
   assert.ok(!job.steps.some(step => /action-gh-release|login-action/.test(step.uses ?? '')));
@@ -36,6 +49,7 @@ test('Windows qualification builds and executes independent pinned native archit
   assert.equal(required.env.FEATURE_CAPABILITIES, '${{ steps.feature_capabilities.outcome }}');
   assert.equal(byID.feature_capabilities.if, "${{ always() && steps.dependencies.outcome == 'success' }}");
   assert.match(byID.feature_capabilities.run, /TerminalView\.mounted\.test\.tsx/);
+  assert.match(byID.feature_capabilities.run, /node scripts\/test-ui\.mjs src\/lib\/terminalApi\.test\.ts/);
   assert.match(byID.feature_capabilities.run, /cursor-sdk-runtime\/platform-capabilities\.test\.js/);
   assert.match(byID.feature_capabilities.run, /provider-routes\.test\.js -t Windows/);
   assert.match(byID.feature_capabilities.run, /ProvidersPage\.authenticationSummary\.test\.tsx/);
