@@ -99,18 +99,19 @@ try {
 } finally {await owner?.close();await fs.rm(lockFixture,{recursive:true,force:true})}
 await pin();
 const cancellation=[];
-for(const early of [false,true]){
+for(const mode of ['running-command','before-event-creation','running-descendant']){
+ const early=mode==='before-event-creation',descendant=mode==='running-descendant';
  const fixture=path.join(repo,'.cache/test-fixtures',`windows-cancel-${randomUUID()}`);
  await ensureWindowsPrivateDirectory(binary,fixture);
  const viewDirectory=path.join(fixture,'worktree');await ensureWindowsPrivateDirectory(binary,viewDirectory);
- const lease={viewDirectory};let handle,timer;
+ const lease={viewDirectory};let handle,timer,stderr='';
  try{
   let ready;const started=new Promise(resolve=>{ready=resolve});
   const writer="const fs=require('node:fs');fs.appendFileSync('heartbeat','started');console.log('ready');setInterval(()=>fs.appendFileSync('heartbeat','x'),5)";
   handle=await startSessionExecution({launcher:binary,lease,command:process.execPath,
-   args:['-e',`const {spawn}=require('node:child_process');const child=spawn(process.execPath,['-e',${JSON.stringify(writer)}],{stdio:['ignore','pipe','pipe']});child.stdout.pipe(process.stdout);child.stderr.pipe(process.stderr);setInterval(()=>{},1000)`],
+   args:['-e',descendant?`const {spawn}=require('node:child_process');const child=spawn(process.execPath,['-e',${JSON.stringify(writer)}],{stdio:['ignore','pipe','pipe']});child.on('error',error=>{console.error(JSON.stringify({operation:'descendant-spawn',code:error.code,errno:error.errno,syscall:error.syscall}));process.exit(1)});child.stdout.pipe(process.stdout);child.stderr.pipe(process.stderr);setInterval(()=>{},1000)`:"console.log('ready');setInterval(()=>{},1000)"],
    env:{PATH:process.env.PATH,SystemRoot:process.env.SystemRoot??process.env.SYSTEMROOT},
-   onOutput:({stream,data})=>{if(stream==='stdout'&&data.toString().includes('ready'))ready()}});
+   onOutput:({stream,data})=>{if(stream==='stdout'&&data.toString().includes('ready'))ready();if(stream==='stderr')stderr=(stderr+data.toString()).slice(-8192)}});
   if(!early){
    await Promise.race([started,handle.result.then(()=>{throw Error('Cancellation command exited before readiness')}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Cancellation readiness timeout')),10000)})]);
    clearTimeout(timer);
@@ -125,11 +126,13 @@ for(const early of [false,true]){
   clearTimeout(timer);assert.equal(receipt.cancelled,true);assert.equal(receipt.confined,true);assert.equal(receipt.exitCode,130);
   assert.deepEqual(await readSessionExecutionReceipt(lease,{launcher:binary}),receipt);
   const heartbeat=path.join(viewDirectory,'heartbeat'),before=await fs.readFile(heartbeat).catch(()=>Buffer.alloc(0));
-  if(!early)assert.ok(before.length>=7);
+  if(descendant)assert.ok(before.length>=7);
   await new Promise(resolve=>setTimeout(resolve,100));
   assert.deepEqual(await fs.readFile(heartbeat).catch(()=>Buffer.alloc(0)),before);
-  cancellation.push({mode:early?'before-event-creation':'running-descendant',status:'passed',receipt,
+  cancellation.push({mode,status:'passed',receipt,
    receiptSha256:hash(await fs.readFile(path.join(fixture,'termination.json')))});
+ }catch(error){
+  cancellation.push({mode,status:'failed',error:{message:error.message,code:error.code??null},stderr});
  }finally{
   clearTimeout(timer);
   if(handle?.child.exitCode===null&&handle.child.signalCode===null)handle.child.kill('SIGKILL');
@@ -137,10 +140,11 @@ for(const early of [false,true]){
  }
 }
 await pin();
-const evidence={schema:1,status:'passed',scope:'Windows SDK process identity, host lifetime and owned cancellation prerequisites; no admission or complete acceptance authority',
+const evidence={schema:1,status:cancellation.every(row=>row.status==='passed')?'passed':'failed',scope:'Windows SDK process identity, host lifetime and owned cancellation prerequisites; no admission or complete acceptance authority',
  sourceCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).trim(),platform:process.platform,arch:process.arch,
  supervisorSha256:manifest.sha256,manifestSha256:hash(manifestBytes),host,parentProof,jobBoundary,ownerLock,cancellation,child:identity,childExit:await closed};
 await fs.writeFile(path.join(root,'host-boundary-evidence.json'),JSON.stringify(evidence,null,2)+'\n',{flag:'wx'});
 console.log(JSON.stringify(evidence));
+assert.equal(evidence.status,'passed','Native cancellation or descendant startup failed; admission remains unavailable');
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url))await main();
