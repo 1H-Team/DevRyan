@@ -89,7 +89,7 @@ in [runtime verification](AGENT_RUNTIME_VERIFICATION.md).
 
 | Surface | Command or runner | Ownership |
 | --- | --- | --- |
-| Repository, release, and project-plugin tooling | `bun run test:scripts` | Recursive script tests and `.opencode/plugins/**/*.test.mjs`; `scripts/test-scripts.mjs` routes declared `bun:test` suites to Bun, including the native OpenCode host checks and tests shipped in the pinned reviewed runtime inputs |
+| Repository, release, and project-plugin tooling | `bun run test:scripts` | Recursive script tests and `.opencode/plugins/**/*.test.mjs`; `scripts/test-scripts.mjs` routes declared `bun:test` suites to explicit paths in separate processes, including the native OpenCode host checks and tests shipped in the pinned reviewed runtime inputs. Fixtures do not share resolver/loader state, and matching files outside the discovered inventory are excluded. |
 | Harness runtime | `bun run --cwd packages/harness-runtime test` | Diagnostics journal, evidence, worktree, lifecycle, and process contracts |
 | Managed orchestration | `bun run --cwd packages/orchestration-runtime test` | Shared managed-task admission, scheduling, cancellation, and recovery |
 | Production Bots runtime | `bun run --cwd packages/bots-runtime test` | Strict JSON contracts, lifecycle/policy state, scope isolation, leases, action hashing, and routine recovery |

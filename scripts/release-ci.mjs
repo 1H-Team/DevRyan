@@ -7,11 +7,15 @@ import { releaseAssetName } from '../packages/electron/release-assets.mjs';
 import { describeDirectoryAssets } from './verify-release-assets.mjs';
 import { BOT_RUNTIME_IMAGE_DEFINITIONS, assembleBotRuntimeImages, createBotRuntimeImageBuildPlan, signBotRuntimeImage } from './build-bot-runtime-images.mjs';
 import { readBotRuntimeImageInputs, resolveBotRuntimeImages, tagBotRuntimeImageInputs } from './bot-runtime-image-inputs.mjs';
-import { describeWebArtifact, verifyWebArtifact, stageWebArtifact, hash, releaseIdentity, verifyPreparedMetadata } from './release-artifacts.mjs';
+import { describeWebArtifact, verifyWebArtifact, stageWebArtifact, hash, releaseIdentity, verifyPreparedMetadata, assertBotInputPreparation } from './release-artifacts.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const env = process.env;
 const identity = await releaseIdentity(root, env.GITHUB_SHA);
+const botInputsOnly = assertBotInputPreparation(env, identity.release);
+if (botInputsOnly && !['image-plan', 'image-resolve', 'image-sign', 'image-assemble'].includes(env.RELEASE_OPERATION)) {
+  throw new Error('Bot input preparation prohibits application release operations');
+}
 const output = path.resolve(env.RELEASE_ARTIFACT_DIR || path.join(root, 'artifacts'));
 const write = async (name, value) => {
   await fs.mkdir(output, { recursive: true });
@@ -40,7 +44,8 @@ switch (env.RELEASE_OPERATION) {
     const plan = createBotRuntimeImageBuildPlan({ ...botIdentity, root });
     const build = plan.builds.find((entry) => entry.key === env.IMAGE_KEY);
     if (!build) throw new Error('Unknown image');
-    await fs.appendFile(env.GITHUB_OUTPUT, `dockerfile=${BOT_RUNTIME_IMAGE_DEFINITIONS[build.key].dockerfile}\nrepository=${build.repository}\ntags=${build.repository}:${identity.release},${build.repository}:sha-${identity.revision.slice(0, 12)}\n`);
+    const tags = [...(botInputsOnly ? [] : [`${build.repository}:${identity.release}`]), `${build.repository}:sha-${identity.revision.slice(0, 12)}`];
+    await fs.appendFile(env.GITHUB_OUTPUT, `dockerfile=${BOT_RUNTIME_IMAGE_DEFINITIONS[build.key].dockerfile}\nrepository=${build.repository}\ntags=${tags.join(',')}\n`);
     break;
   }
   case 'image-resolve': {

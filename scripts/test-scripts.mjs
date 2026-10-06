@@ -46,7 +46,8 @@ export function runScriptTests(root = repositoryRoot) {
   }
   const commands = [
     ...(node.length ? [[process.execPath, [...args, ...node]]] : []),
-    ...(bun.length ? [['bun', ['test', ...bun]]] : []),
+    // Native graph fixtures must not share Bun's resolver and loader state.
+    ...bun.map(file => ['bun', ['test', `./${file}`]]),
   ];
   for (const [command, arguments_] of commands) {
     console.log(`\n$ ${command} ${arguments_.join(' ')}`);

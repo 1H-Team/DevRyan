@@ -3,10 +3,29 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describeWebArtifact, stageWebArtifact, verifyWebArtifact, verifyPreparedMetadata } from './release-artifacts.mjs';
+import { describeWebArtifact, stageWebArtifact, verifyWebArtifact, verifyPreparedMetadata, assertBotInputPreparation, assertReleaseWritesAllowed } from './release-artifacts.mjs';
 import { packagePrepared } from '../packages/electron/scripts/package-prepared.mjs';
 
 const identity = { revision: 'a'.repeat(40), release: '1.2.3', lockfile: 'b'.repeat(64) };
+test('Bot input preparation requires a source-bound manual tag and never overrides dry-run refusal', () => {
+  const ref = `refs/tags/v${identity.release}-bot-inputs-${identity.revision.slice(0, 12)}`;
+  const environment = { RELEASE_BOT_INPUTS_ONLY: 'true', GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'workflow_dispatch',
+    GITHUB_SHA: identity.revision, GITHUB_REF: ref, GITHUB_REPOSITORY: '1H-Team/DevRyan',
+    GITHUB_WORKFLOW_REF: `1H-Team/DevRyan/.github/workflows/release.yml@${ref}` };
+  assert.equal(assertBotInputPreparation(environment, identity.release), true);
+  assertReleaseWritesAllowed(environment);
+  assert.throws(() => assertReleaseWritesAllowed({ ...environment, RELEASE_DRY_RUN: 'true' }), { code: 'release_dry_run_write_forbidden' });
+  assert.throws(() => assertBotInputPreparation(environment, '1.2.4'), { code: 'bot_input_preparation_identity_invalid' });
+  for (const change of [{ RELEASE_BOT_INPUTS_ONLY: 'yes' }, { GITHUB_ACTIONS: undefined }, { GITHUB_EVENT_NAME: 'push' },
+    { GITHUB_SHA: 'b'.repeat(40) }, { GITHUB_SHA: 'a'.repeat(39) }, { GITHUB_REF: 'refs/heads/release/2.0.2' },
+    { GITHUB_REF: 'refs/tags/v1.2.3' }, { GITHUB_REPOSITORY: '1H-Team/DevRyan/other' },
+    { GITHUB_WORKFLOW_REF: `1H-Team/DevRyan/.github/workflows/other.yml@${ref}` }]) {
+    assert.throws(() => assertReleaseWritesAllowed({ ...environment, ...change }), { code: 'bot_input_preparation_identity_invalid' });
+  }
+  assert.equal(assertBotInputPreparation({}), false);
+  assert.equal(assertBotInputPreparation({ RELEASE_BOT_INPUTS_ONLY: 'false' }), false);
+});
+
 test('web handoff preserves hidden manifests and rejects changed identity, missing and corrupt files', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-web-artifact-'));
   try {
