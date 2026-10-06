@@ -5,6 +5,7 @@ on:
   push:
     branches: [release/2.0.2, implementation/windows-port]
     paths:
+      - .gitattributes
       - .github/workflows/windows.yml
       - packages/electron/**
       - packages/cursor-sdk-runtime/**
@@ -25,11 +26,13 @@ on:
       - scripts/verify-windows-host-boundary.mjs
       - scripts/verify-windows-filesystem-boundary.mjs
       - scripts/native-runtime-assets.mjs
+      - scripts/native-compaction-observation-transform.mjs
       - scripts/build-windows-reviewed-libsql.mjs
       - scripts/build-windows-reviewed-executables*
       - bun.lock
   pull_request:
     paths:
+      - .gitattributes
       - .github/workflows/windows.yml
       - packages/electron/**
       - packages/cursor-sdk-runtime/**
@@ -50,6 +53,7 @@ on:
       - scripts/verify-windows-host-boundary.mjs
       - scripts/verify-windows-filesystem-boundary.mjs
       - scripts/native-runtime-assets.mjs
+      - scripts/native-compaction-observation-transform.mjs
       - scripts/build-windows-reviewed-libsql.mjs
       - scripts/build-windows-reviewed-executables*
       - bun.lock
