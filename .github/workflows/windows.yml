@@ -3,7 +3,7 @@ name: Windows native qualification
 on:
   workflow_dispatch:
   push:
-    branches: [release/2.0.2, implementation/windows-port]
+    branches: [main, release/2.0.2, implementation/windows-port]
     paths:
       - .gitattributes
       - .github/workflows/windows.yml

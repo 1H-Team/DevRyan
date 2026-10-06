@@ -17,7 +17,8 @@ Repository automation entrypoint for developer workflows: validation planning, l
   version/source-bound `v<version>-bot-inputs-<SHA12>` tag. It retains the same
   keyless tag trust, skips every app/publication owner, and publishes no image
   version tag; dry-run write refusal still applies.
-  `windows.yml` runs native x64/ARM64 qualification separately, with read-only
+  `windows.yml` runs native x64/ARM64 qualification on `main` and the release
+  and Windows implementation branches separately, with read-only
   repository permissions and no runtime-admission bypass.
   Protocol-2 job diagnostics retain the actual OS build, SDK UI mask and every
   available restriction. The supervisor requires exact kernel readback before

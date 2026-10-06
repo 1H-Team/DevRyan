@@ -29,6 +29,8 @@ qualification refuses, and requires both before the integrated compiled
 inventory. A final gate refuses failed or skipped outcomes. It selects the
 architecture-specific MSVC component (including ARM64) and fences Git discovery
 above disposable fixtures. It has no publication authority.
+The implementation is integrated into `main`; pushes there now run both native
+architectures with the same nine required outcomes and admission refusal.
 The first [native CI run](https://github.com/1H-Team/DevRyan/actions/runs/37349064957)
 at `7e328f87690f9b01d0603d302a95a724aae31ef7` compiled both supervisors with
 Bun 1.3.14 and the native SDK. Both qualification jobs failed: the token handle
