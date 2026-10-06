@@ -19,8 +19,14 @@ try {
   const flags = windows ? ['/nologo', '/std:c11', '/W4', '/WX', '/O2', '/D_CRT_SECURE_NO_WARNINGS',
     source, `/Fe:${temporary}`, `/Fo:${temporary}.obj`, '/link', 'advapi32.lib', 'user32.lib', 'userenv.lib']
     : ['-std=c11', '-Wall', '-Wextra', '-Werror', '-O2', source, '-o', temporary];
-  await promisify(execFile)(process.env.CC || (windows ? 'cl.exe' : 'cc'), flags,
-    { cwd: root, timeout: 60_000, maxBuffer: 1024 * 1024 });
+  try {
+    const compiled = await promisify(execFile)(process.env.CC || (windows ? 'cl.exe' : 'cc'), flags,
+      { cwd: root, timeout: 60_000, maxBuffer: 1024 * 1024 });
+    if (windows) await fs.writeFile(path.join(output, 'compile.log'), compiled.stdout + compiled.stderr);
+  } catch (cause) {
+    if (windows) await fs.writeFile(path.join(output, 'compile-failure.log'), (cause.stdout ?? '') + (cause.stderr ?? ''));
+    throw cause;
+  }
   await fs.chmod(temporary, 0o755);
   const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
   const manifest = { version: 1, policy: windows ? 3 : 2, acceptance: false, platform: process.platform, arch: process.arch, binary: name,

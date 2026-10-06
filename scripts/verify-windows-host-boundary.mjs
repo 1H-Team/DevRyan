@@ -4,6 +4,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {spawn,spawnSync,execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {createExecutionHostOwner, executionHostOwnerLost} from '../packages/harness-runtime/lib/execution-host-owner.js';
 
 export function validateWindowsJobBoundary(jobBoundary,inJob) {
 assert.deepEqual(Object.keys(jobBoundary).sort(),['breakawayAllowed','hostLimitFlags','inJob','osBuild','protocol','requestedUIFlags','sdkUIFlags','silentBreakawayAllowed','uiError','uiReadBack','uiSet']);
@@ -72,9 +73,32 @@ try {
  if(closed){let timer;try {await Promise.race([closed,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Owned identity child did not exit')),10000)})]);}finally{clearTimeout(timer)}}
 }
 await pin();
+const lockFixture=await fs.mkdtemp(path.join(repo,'.cache/test-fixtures/windows-owner-'));
+let owner,keeper;
+const ownerLock={live:false,lost:false,abruptLoss:false};
+try {
+ const directory=path.join(lockFixture,'private-owners');
+ owner=await createExecutionHostOwner({directory,launcher:binary});
+ assert.equal(await executionHostOwnerLost({directory,launcher:binary,id:owner.id}),false);
+ ownerLock.live=true;owner.assert();
+ await owner.close();
+ assert.equal(await executionHostOwnerLost({directory,launcher:binary,id:owner.id}),true);
+ ownerLock.lost=true;
+ owner=await createExecutionHostOwner({directory,launcher:binary,spawnImpl:(...args)=>{keeper=spawn(...args);return keeper}});
+ const reaped=new Promise(resolve=>keeper.once('close',resolve));
+ assert.equal(await executionHostOwnerLost({directory,launcher:binary,id:owner.id}),false);
+ keeper.kill('SIGKILL');
+ let timer;
+ try {await Promise.race([reaped,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Keeper death unconfirmed')),5000)})]);}
+ finally {clearTimeout(timer)}
+ assert.equal(owner.signal.aborted,true);
+ assert.equal(await executionHostOwnerLost({directory,launcher:binary,id:owner.id}),true);
+ ownerLock.abruptLoss=true;
+} finally {await owner?.close();await fs.rm(lockFixture,{recursive:true,force:true})}
+await pin();
 const evidence={schema:1,status:'passed',scope:'read-only Windows SDK process creation/liveness and containing-job probes; no confinement/admission authority',
  sourceCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).trim(),platform:process.platform,arch:process.arch,
- supervisorSha256:manifest.sha256,manifestSha256:hash(manifestBytes),host,parentProof,jobBoundary,child:identity,childExit:await closed};
+ supervisorSha256:manifest.sha256,manifestSha256:hash(manifestBytes),host,parentProof,jobBoundary,ownerLock,child:identity,childExit:await closed};
 await fs.writeFile(path.join(root,'host-boundary-evidence.json'),JSON.stringify(evidence,null,2)+'\n',{flag:'wx'});
 console.log(JSON.stringify(evidence));
 }

@@ -7,6 +7,17 @@ import { fileURLToPath } from 'node:url';
 import { validateWindowsJobBoundary } from './verify-windows-host-boundary.mjs';
 import { supervisorStartupVariants } from './diagnose-windows-supervisor-startup.mjs';
 
+test('isolated LPAC probes require both native startup receipts without enabling admission', () => {
+  const workflow = YAML.parse(fs.readFileSync(new URL('../.github/workflows/windows-lpac.yml', import.meta.url), 'utf8'));
+  assert.deepEqual(workflow.permissions, { contents: 'read' });
+  const job = workflow.jobs.startup;
+  assert.deepEqual(job.strategy.matrix.include, [{ runner: 'windows-2022', arch: 'x64' }, { runner: 'windows-11-arm', arch: 'arm64' }]);
+  const commands = job.steps.map(step => step.run ?? '').join('\n');
+  assert.match(commands, /r\.admission!==false\|\|r\.acceptance!==false/);
+  assert.match(commands, /p\.status!=='started'\|\|p\.receipt\?\.confined!==true/);
+  assert.doesNotMatch(commands, /--verify|bun install|gh release|git (?:push|tag)|npm publish/);
+});
+
 test('empty-job diagnostic requires every OS-supported UI restriction and exact readback', () => {
   const probe = { protocol: 'devryan.windows-job-probe/2', osBuild: 26100, sdkUIFlags: 0x3ff, inJob: true, hostLimitFlags: 0x2000,
     breakawayAllowed: false, silentBreakawayAllowed: false, requestedUIFlags: 0x3ff,

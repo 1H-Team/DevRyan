@@ -60,8 +60,12 @@ collecting a failed UI-limit result is distinct from accepting that UI policy.
 The supervisor retains its original parent handle only after comparing parent
 and supervisor creation times, so a recycled parent PID cannot become an owner.
 `verify-windows-host-boundary.mjs` and `verify-windows-filesystem-boundary.mjs`
-exercise these native operations on each architecture. These are independent
-prerequisites: they do not attest read confinement, descendant containment,
+also exercise private SDK creation and the retained byte-range host-owner lock:
+live ownership, ordinary close and abrupt keeper death are independent probes.
+`.github/workflows/windows-lpac.yml` runs those probes and exact Node/Bun startup
+on both native architectures without installing the workspace. It cannot
+satisfy the complete Windows acceptance inventory or grant admission.
+These are independent prerequisites: they do not attest read confinement, descendant containment,
 cancellation, runtime admission or the complete acceptance inventory.
 
 The policy-3 draft creates a unique Less-Privileged AppContainer identity,

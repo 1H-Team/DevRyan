@@ -256,6 +256,44 @@ static int create_private_file(const wchar_t *argument) {
   return result;
 }
 
+/* A retained kernel byte-range lock proves this exact keeper's lifetime.
+ * PID reuse and stale JSON never turn an uncertain owner into a lost one. */
+static int owner_lock(const wchar_t *argument, BOOL probe) {
+  wchar_t path[32768]; HANDLE ancestors[256];
+  DWORD count = anchor_parents(argument, path, ancestors);
+  PSECURITY_DESCRIPTOR security = private_security(FALSE);
+  SECURITY_ATTRIBUTES attributes = { sizeof(attributes), security, FALSE };
+  HANDLE file = CreateFileW(path, GENERIC_READ | GENERIC_WRITE | READ_CONTROL,
+    FILE_SHARE_READ | FILE_SHARE_WRITE, &attributes, probe ? OPEN_EXISTING : CREATE_NEW,
+    FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_WRITE_THROUGH, NULL);
+  if (file == INVALID_HANDLE_VALUE) {
+    if (probe && GetLastError() == ERROR_FILE_NOT_FOUND) return 0;
+    fail("owner lock file");
+  }
+  BY_HANDLE_FILE_INFORMATION info; BOOL own;
+  checked(GetFileInformationByHandle(file, &info), "owner lock identity");
+  if ((info.dwFileAttributes & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY))
+    || info.nNumberOfLinks != 1 || !file_privacy(file, &own)) {
+    SetLastError(ERROR_ACCESS_DENIED); fail("private owner lock");
+  }
+  OVERLAPPED position = {0};
+  if (!LockFileEx(file, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0, &position)) {
+    if (probe && GetLastError() == ERROR_LOCK_VIOLATION) return 73;
+    fail("owner lock acquisition");
+  }
+  if (!probe) {
+    checked(FlushFileBuffers(file), "owner lock durability");
+    DWORD written;
+    checked(WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), "owned\n", 6, &written, NULL) && written == 6, "owner lock acknowledgement");
+    BYTE input; DWORD read;
+    while (ReadFile(GetStdHandle(STD_INPUT_HANDLE), &input, 1, &read, NULL) && read) {}
+  }
+  checked(UnlockFileEx(file, 0, 1, 0, &position), "owner lock release");
+  CloseHandle(file);
+  for (DWORD i = 0; i < count; i++) CloseHandle(ancestors[i]);
+  LocalFree(security); return 0;
+}
+
 /* Read-only OS identity probe. Never grant, signal or infer exit from a PID.
  * Creation identity and liveness come from the same non-inherited handle. */
 static int emit_process_identity(HANDLE process, DWORD pid) {
@@ -502,6 +540,8 @@ int wmain(int argc, wchar_t **argv) {
   if (argc == 3 && !wcscmp(argv[1], L"--inspect-path")) return inspect_path(argv[2]);
   if (argc == 3 && !wcscmp(argv[1], L"--create-private-directory")) return create_private_directory(argv[2]);
   if (argc == 3 && !wcscmp(argv[1], L"--create-private-file")) return create_private_file(argv[2]);
+  if (argc == 3 && !wcscmp(argv[1], L"--owner-lock")) return owner_lock(argv[2], FALSE);
+  if (argc == 3 && !wcscmp(argv[1], L"--owner-probe")) return owner_lock(argv[2], TRUE);
   // The host uses a named cancellation event because TerminateProcess would
   // close the job safely but could not write a termination acknowledgement.
   if (argc == 3 && !wcscmp(argv[1], L"--cancel")) {

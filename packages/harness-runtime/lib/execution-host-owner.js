@@ -3,12 +3,14 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { changeError } from './session-changes-git.js';
+import { ensureWindowsPrivateDirectory } from './windows-private-files.js';
 
 /** A pipe keeps the native lock attached to this host's lifetime. Losing the
  * keeper permanently invalidates this instance, even if its JS host survives. */
 export async function createExecutionHostOwner({ directory, launcher, spawnImpl = spawn,
   startupTimeoutMs = 5000, terminationTimeoutMs = 1000 }) {
-  await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+  if (process.platform === 'win32') await ensureWindowsPrivateDirectory(launcher, directory);
+  else await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   const id = randomUUID(), file = path.join(directory, `${id}.lock`), controller = new AbortController();
   const child = spawnImpl(launcher, ['--owner-lock', file], { stdio: ['pipe', 'pipe', 'ignore'] });
   let closed = false;
