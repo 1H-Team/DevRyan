@@ -88,3 +88,8 @@ still require actual startup and complete safety qualification.
 New private desktops and child process/thread defaults use their own generic
 object descriptor, rather than reusing file data access bits. No inherited
 desktop or station ACL is changed; file grants still exclude ACL ownership.
+`--read-private-file` holds the no-follow file and its ancestors through the
+bounded read, rejects non-private ACLs and hard links, and returns the identity
+before binary bytes. Windows termination receipts are created with a protected
+current-user/SYSTEM descriptor and write-through handle; their ancestors remain
+pinned until the termination receipt flush finishes.

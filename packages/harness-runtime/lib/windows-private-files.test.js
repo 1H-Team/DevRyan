@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { parseWindowsFileIdentity } from './windows-private-files.js';
+import { parseWindowsFileIdentity, parseWindowsPrivateFileRead } from './windows-private-files.js';
 
 test('Windows identity receipts reject guessed, widened and malformed shapes', () => {
   const identity = { protocol: 'devryan.windows-file-identity/1', volume: '0123456789abcdef',
@@ -15,4 +15,18 @@ test('Windows identity receipts reject guessed, widened and malformed shapes', (
   for (const raw of ['null', '[]', '{}', '{', ' '.repeat(4097)]) {
     expect(() => parseWindowsFileIdentity(raw)).toThrow('private_windows_file_unverified');
   }
+});
+
+test('Windows private reads bind binary bytes to a strict private file identity', () => {
+  const identity = { protocol: 'devryan.windows-file-identity/1', volume: '0123456789abcdef',
+    fileId: '0123456789abcdef0123456789abcdef', type: 'file', reparsePoint: false,
+    linkCount: 1, currentOwner: true, privateAcl: true };
+  const bytes = Buffer.from([0, 10, 13, 255]);
+  const framed = value => Buffer.concat([Buffer.from(JSON.stringify(value) + '\r\n'), bytes]);
+  expect(parseWindowsPrivateFileRead(framed(identity))).toEqual({ identity, bytes });
+  for (const changed of [{ type: 'directory' }, { reparsePoint: true }, { linkCount: 2 }, { privateAcl: false }, { currentOwner: false }]) {
+    expect(() => parseWindowsPrivateFileRead(framed({ ...identity, ...changed }))).toThrow('private_windows_file_unverified');
+  }
+  expect(() => parseWindowsPrivateFileRead(Buffer.from('{}'))).toThrow('private_windows_file_unverified');
+  expect(() => parseWindowsPrivateFileRead('unframed')).toThrow('private_windows_file_unverified');
 });

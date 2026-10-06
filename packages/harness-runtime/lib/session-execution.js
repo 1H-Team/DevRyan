@@ -1,11 +1,12 @@
 import fs from 'node:fs/promises';
+import { constants } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { writeFileAtomic } from './atomic-file.js';
 import { writableInputDirectories } from './execution-inputs.js';
-import { ensureWindowsPrivateDirectory, createWindowsPrivateFile } from './windows-private-files.js';
+import { ensureWindowsPrivateDirectory, createWindowsPrivateFile, readWindowsPrivateFile } from './windows-private-files.js';
 
 const error = (code) => Object.assign(new Error(code), { code, status: 409 });
 const sbString = (value) => {
@@ -111,13 +112,34 @@ ${socketDirectory ? `; Sockets this execution's own processes create (for exampl
 `;
 }
 
-export async function readSessionExecutionReceipt(lease) {
+export async function readSessionExecutionReceipt(lease, { launcher } = {}) {
   const file = path.join(path.dirname(lease.viewDirectory), 'termination.json');
-  const stat = await fs.lstat(file);
-  if (!stat.isFile() || stat.size > 1024) throw error('mutation_termination_unconfirmed');
+  let bytes;
+  if (process.platform === 'win32') {
+    if (!launcher) throw error('mutation_termination_unconfirmed');
+    bytes = (await readWindowsPrivateFile(launcher, file)).bytes;
+  } else {
+    const handle = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try {
+      const stat = await handle.stat();
+      if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid() || stat.mode & 0o077 || stat.size > 1024) {
+        throw error('mutation_termination_unconfirmed');
+      }
+      const buffer = Buffer.alloc(1025), read = await handle.read(buffer, 0, buffer.length, 0);
+      const after = await handle.stat(), named = await fs.lstat(file);
+      if (read.bytesRead !== stat.size || !named.isFile() || stat.dev !== named.dev || stat.ino !== named.ino
+        || stat.size !== after.size || stat.mtimeMs !== after.mtimeMs || stat.ctimeMs !== after.ctimeMs || after.nlink !== 1) {
+        throw error('mutation_termination_unconfirmed');
+      }
+      bytes = buffer.subarray(0, read.bytesRead);
+    } finally { await handle.close(); }
+  }
+  if (bytes.length > 1024) throw error('mutation_termination_unconfirmed');
   let value;
-  try { value = JSON.parse(await fs.readFile(file, 'utf8')); } catch { throw error('mutation_termination_unconfirmed'); }
-  if (value?.terminated !== true || typeof value.confined !== 'boolean' || !Number.isInteger(value.exitCode) || typeof value.cancelled !== 'boolean') {
+  try { value = JSON.parse(bytes.toString('utf8')); } catch { throw error('mutation_termination_unconfirmed'); }
+  if (!value || Object.keys(value).sort().join(',') !== 'cancelled,confined,exitCode,terminated' || value.terminated !== true
+    || typeof value.confined !== 'boolean' || !Number.isInteger(value.exitCode) || value.exitCode < 0 || value.exitCode > 0xffffffff
+    || typeof value.cancelled !== 'boolean') {
     throw error('mutation_termination_unconfirmed');
   }
   return value;
@@ -494,7 +516,7 @@ export async function startSessionExecution({ launcher, lease, command, args = [
     child.once('close', async (code, signal) => {
       const unconfirmed = () => Object.assign(error('mutation_termination_unconfirmed'), { exitCode: code, signal });
       let value;
-      try { value = await readSessionExecutionReceipt(lease); } catch { reject(unconfirmed()); return; }
+      try { value = await readSessionExecutionReceipt(lease, { launcher }); } catch { reject(unconfirmed()); return; }
       if (code !== value.exitCode) {
         reject(unconfirmed()); return;
       }

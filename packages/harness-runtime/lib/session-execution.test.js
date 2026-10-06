@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { executionSocketDirectory, NODE_SPAWN_PRELOAD, ownedPrivateDirectory, prepareSessionExecution, removeExecutionSocketDirectory,
-  sessionExecutionProfile, windowsSessionExecutionProfile, sweepExecutionSocketDirectories, sweepSessionTemporaryDirectories, verifySessionExecutionLauncher } from './session-execution.js';
+  sessionExecutionProfile, windowsSessionExecutionProfile, readSessionExecutionReceipt, sweepExecutionSocketDirectories, sweepSessionTemporaryDirectories, verifySessionExecutionLauncher } from './session-execution.js';
 
 const roots = [], leases = [];
 afterEach(async () => {
@@ -16,6 +16,25 @@ const prepareTracked = (root, viewDirectory) => {
   const lease = { viewDirectory }; leases.push(lease);
   return prepareSessionExecution({ launcher: path.join(root, 'launcher'), lease });
 };
+
+test('termination receipt refuses linked, widened and malformed evidence through a held file', async () => {
+  if (process.platform === 'win32') return; // Native ACL/handle cases run in the Windows SDK inventory.
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-receipt-')); roots.push(root);
+  const lease = { viewDirectory: path.join(root, 'view') }, file = path.join(root, 'termination.json');
+  const valid = { terminated: true, confined: true, cancelled: false, exitCode: 0 };
+  await fs.writeFile(file, JSON.stringify(valid), { mode: 0o600 });
+  expect(await readSessionExecutionReceipt(lease)).toEqual(valid);
+  for (const changed of [{ terminated: false }, { exitCode: -1 }, { exitCode: 0x100000000 }, { extra: 'unreviewed' }]) {
+    await fs.writeFile(file, JSON.stringify({ ...valid, ...changed }));
+    await expect(readSessionExecutionReceipt(lease)).rejects.toMatchObject({ code: 'mutation_termination_unconfirmed' });
+  }
+  await fs.writeFile(file, JSON.stringify(valid)); await fs.chmod(file, 0o644);
+  await expect(readSessionExecutionReceipt(lease)).rejects.toMatchObject({ code: 'mutation_termination_unconfirmed' });
+  await fs.chmod(file, 0o600); await fs.link(file, path.join(root, 'linked'));
+  await expect(readSessionExecutionReceipt(lease)).rejects.toMatchObject({ code: 'mutation_termination_unconfirmed' });
+  await fs.unlink(file); await fs.symlink(path.join(root, 'linked'), file);
+  await expect(readSessionExecutionReceipt(lease)).rejects.toBeDefined();
+});
 
 test('Windows policy binds canonical roots without widening the writable scope over its runtime', () => {
   const roots = { viewDirectory: 'C:\\Private-Δ\\one\\worktree', scratchDirectory: 'C:\\Private-Δ\\one\\scratch', auxiliaryDirectory: 'C:\\Private-Δ\\cache' };

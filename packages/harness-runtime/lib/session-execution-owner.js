@@ -24,7 +24,7 @@ export function createSessionExecutionOwner({ runtime, launcher, stopSessions, v
     const signal = AbortSignal.any([controller.signal, ...[input.signal, hostOwner?.signal].filter(Boolean)]);
     const lease = await withExecutionAdmission(input,
       () => runtime.reserve({ ...input, kind: 'process', executionFingerprint, ownerID: hostOwner?.id }), { signal });
-    if (lease.state === 'published') return { lease, child: null, result: Promise.resolve({ ...await readSessionExecutionReceipt(lease), ...lease.result }) };
+    if (lease.state === 'published') return { lease, child: null, result: Promise.resolve({ ...await readSessionExecutionReceipt(lease, { launcher }), ...lease.result }) };
     if (hostOwner && lease.ownerID !== hostOwner.id) throw failure('execution_owner_lost');
     if (active.has(lease.token) || lease.executionKind) throw failure('execution_already_started');
     const owned = { lease, controller, settled: null };
@@ -86,7 +86,7 @@ export function createSessionExecutionOwner({ runtime, launcher, stopSessions, v
         // Unknown ownership after a restart needs a durable native receipt;
         // never infer process termination from an empty in-memory collection.
         if (!owned) {
-          await readSessionExecutionReceipt(lease);
+          await readSessionExecutionReceipt(lease, { launcher });
           await runtime.cancelLease({ directory: lease.directory, token: lease.token });
           continue;
         }

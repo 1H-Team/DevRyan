@@ -64,6 +64,12 @@ try {
   assert.equal(original.currentOwner, true); assert.equal(original.type, 'file'); assert.equal(original.linkCount, 1);
   assert.equal(original.reparsePoint, false);
   assert.equal(await fs.readFile(file, 'utf8'), 'owned filesystem fixture\n');
+  const pinnedRead = execFileSync(binary, ['--read-private-file', file], { timeout: 5000, maxBuffer: 4096 });
+  const delimiter = pinnedRead.indexOf(10);
+  assert.deepEqual(JSON.parse(pinnedRead.subarray(0, delimiter).toString()), original);
+  assert.equal(pinnedRead.subarray(delimiter + 1).toString(), 'owned filesystem fixture\n');
+  refused('--read-private-file', ordinary);
+  evidence.checks.push('held-private-read-identity-and-bytes', 'nonprivate-read-refusal');
   refused('--create-private-file', file);
   assert.equal(await fs.readFile(file, 'utf8'), 'owned filesystem fixture\n');
   for (const name of ['CON', 'NUL.txt', 'COM1', 'LPT²', 'CONIN$', 'CONOUT$', 'trailing.', 'trailing ', 'file:stream']) {
@@ -76,6 +82,7 @@ try {
   const links = call('--inspect-path', linked);
   assert.equal(links.fileId, original.fileId); assert.equal(links.volume, original.volume); assert.equal(links.linkCount, 2);
   assert.equal(call('--inspect-path', file).linkCount, 2);
+  refused('--read-private-file', file);
   evidence.checks.push('hard-link-shared-identity-and-count');
   const target = path.join(fixture, 'target');
   call('--create-private-directory', target);

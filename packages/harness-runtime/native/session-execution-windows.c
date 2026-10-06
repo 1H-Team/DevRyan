@@ -256,6 +256,32 @@ static int create_private_file(const wchar_t *argument) {
   return result;
 }
 
+/* The identity and bytes are observed through one retained no-follow handle.
+ * No writer or replacement may race this read, including on parent paths. */
+static int read_private_file(const wchar_t *argument) {
+  wchar_t path[32768]; HANDLE ancestors[256];
+  DWORD count = anchor_parents(argument, path, ancestors);
+  HANDLE file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+  if (file == INVALID_HANDLE_VALUE) fail("private read handle");
+  BY_HANDLE_FILE_INFORMATION info; LARGE_INTEGER size = {0}; BOOL own;
+  checked(GetFileInformationByHandle(file, &info) && GetFileSizeEx(file, &size), "private read identity");
+  if ((info.dwFileAttributes & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY)) || info.nNumberOfLinks != 1
+    || size.QuadPart < 0 || size.QuadPart > 16 * 1024 * 1024 || !file_privacy(file, &own)) {
+    SetLastError(ERROR_ACCESS_DENIED); fail("private read boundary");
+  }
+  inspect_file_handle(file); checked(fflush(stdout) == 0, "private read identity output");
+  BYTE bytes[65536]; DWORD read;
+  for (;;) {
+    checked(ReadFile(file, bytes, sizeof(bytes), &read, NULL), "private read bytes");
+    if (!read) break;
+    DWORD written;
+    checked(WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), bytes, read, &written, NULL) && written == read, "private read output");
+  }
+  CloseHandle(file);
+  for (DWORD i = 0; i < count; i++) CloseHandle(ancestors[i]);
+  return 0;
+}
+
 /* A retained kernel byte-range lock proves this exact keeper's lifetime.
  * PID reuse and stale JSON never turn an uncertain owner into a lost one. */
 static int owner_lock(const wchar_t *argument, BOOL probe) {
@@ -559,6 +585,7 @@ int wmain(int argc, wchar_t **argv) {
   if (argc == 3 && !wcscmp(argv[1], L"--inspect-path")) return inspect_path(argv[2]);
   if (argc == 3 && !wcscmp(argv[1], L"--create-private-directory")) return create_private_directory(argv[2]);
   if (argc == 3 && !wcscmp(argv[1], L"--create-private-file")) return create_private_file(argv[2]);
+  if (argc == 3 && !wcscmp(argv[1], L"--read-private-file")) return read_private_file(argv[2]);
   if (argc == 3 && !wcscmp(argv[1], L"--owner-lock")) return owner_lock(argv[2], FALSE);
   if (argc == 3 && !wcscmp(argv[1], L"--owner-probe")) return owner_lock(argv[2], TRUE);
   // The host uses a named cancellation event because TerminateProcess would
@@ -569,7 +596,12 @@ int wmain(int argc, wchar_t **argv) {
   }
   if (argc < 7 || wcscmp(argv[5], L"--")) return 125;
   DWORD uiMask = maximum_ui_limits(os_build());
-  HANDLE receipt = CreateFileW(argv[4], GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+  wchar_t receiptPath[32768]; HANDLE receiptParents[256];
+  DWORD receiptParentCount = anchor_parents(argv[4], receiptPath, receiptParents);
+  PSECURITY_DESCRIPTOR receiptSecurity = private_security(FALSE);
+  SECURITY_ATTRIBUTES receiptAttributes = { sizeof(receiptAttributes), receiptSecurity, FALSE };
+  HANDLE receipt = CreateFileW(receiptPath, GENERIC_WRITE, 0, &receiptAttributes, CREATE_NEW,
+    FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_WRITE_THROUGH, NULL);
   if (receipt == INVALID_HANDLE_VALUE) fail("exclusive receipt");
   DWORD parentPid; HANDLE parent = parent_process(&parentPid);
   HANDLE token, restricted;
@@ -683,6 +715,8 @@ int wmain(int argc, wchar_t **argv) {
   char result[160]; int count = snprintf(result, sizeof(result), "{\"terminated\":true,\"confined\":true,\"cancelled\":%s,\"exitCode\":%lu}\n", cancelled ? "true" : "false", code);
   DWORD written; checked(WriteFile(receipt, result, count, &written, NULL) && written == (DWORD)count && FlushFileBuffers(receipt), "durable receipt");
   CloseHandle(receipt);
+  for (DWORD i = 0; i < receiptParentCount; i++) CloseHandle(receiptParents[i]);
+  LocalFree(receiptSecurity);
   for (DWORD i = 0; i < rootCount; i++) CloseHandle(roots[i]);
   CloseHandle(cancel); CloseHandle(parent); CloseDesktop(desktop); CloseHandle(restricted); CloseHandle(token);
   DeleteProcThreadAttributeList(startup.lpAttributeList); free(startup.lpAttributeList); free(command); free(user);

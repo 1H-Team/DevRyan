@@ -26,7 +26,9 @@ async function nativeFileOperation(launcher, operation, target, bytes) {
     || typeof target !== 'string' || !/^[A-Za-z]:\\/.test(target) || path.win32.resolve(target) !== target
     || /[\u0000-\u001f]/.test(target)) throw refused();
   const raw = await new Promise((resolve, reject) => {
-    const child = execFile(launcher, [operation, target], { encoding: 'utf8', timeout: 5000, maxBuffer: 4096, windowsHide: true },
+    const reading = operation === '--read-private-file';
+    const child = execFile(launcher, [operation, target], { encoding: reading ? 'buffer' : 'utf8', timeout: 5000,
+      maxBuffer: reading ? 16 * 1024 * 1024 + 4096 : 4096, windowsHide: true },
       (error, stdout, stderr) => {
         if (!error) { resolve(stdout); return; }
         const failure = refused();
@@ -37,7 +39,7 @@ async function nativeFileOperation(launcher, operation, target, bytes) {
     child.stdin.on('error', () => {}); // The callback reports a refused or closed helper.
     child.stdin.end(bytes);
   });
-  return parseWindowsFileIdentity(raw);
+  return operation === '--read-private-file' ? parseWindowsPrivateFileRead(raw) : parseWindowsFileIdentity(raw);
 }
 
 function requirePrivate(identity, type) {
@@ -59,4 +61,16 @@ export async function ensureWindowsPrivateDirectory(launcher, directory) {
 export async function createWindowsPrivateFile(launcher, file, bytes) {
   if (!Buffer.isBuffer(bytes) || bytes.length > 1048576) throw refused();
   return requirePrivate(await nativeFileOperation(launcher, '--create-private-file', file, bytes), 'file');
+}
+
+export function parseWindowsPrivateFileRead(raw) {
+  if (!Buffer.isBuffer(raw)) throw refused();
+  const end = raw.indexOf(10);
+  if (end < 0 || end > 4096 || raw.length - end - 1 > 16 * 1024 * 1024) throw refused();
+  const identity = requirePrivate(parseWindowsFileIdentity(raw.subarray(0, end).toString('utf8')), 'file');
+  return { identity, bytes: raw.subarray(end + 1) };
+}
+
+export async function readWindowsPrivateFile(launcher, file) {
+  return nativeFileOperation(launcher, '--read-private-file', file);
 }

@@ -139,7 +139,7 @@ native('the command cannot retain an inherited writable project handle', async (
     { env: { PATH: process.env.PATH }, stdio: ['ignore', 'pipe', 'pipe', descriptor.fd] });
     child.stdout.resume(); child.stderr.resume();
     const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve); });
-    assert.equal(code, 0); assert.equal((await readSessionExecutionReceipt(f.lease)).terminated, true);
+    assert.equal(code, 0); assert.equal((await readSessionExecutionReceipt(f.lease, { launcher })).terminated, true);
     assert.equal(await fs.readFile(path.join(f.viewDirectory, 'ran'), 'utf8'), 'yes');
     assert.equal(await fs.readFile(original, 'utf8'), 'preserved');
   } finally { await descriptor.close(); }
