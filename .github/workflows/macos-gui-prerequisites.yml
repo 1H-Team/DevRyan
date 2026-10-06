@@ -1,0 +1,35 @@
+name: Disposable macOS GUI prerequisites
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/macos-gui-prerequisites.yml
+      - scripts/qa/macos-gui-prerequisites*
+
+permissions:
+  contents: read
+
+jobs:
+  prerequisites:
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check ephemeral-runner refusal and prerequisite grading
+        run: node --test scripts/qa/macos-gui-prerequisites.test.mjs
+      - name: Verify console, WindowServer, visible window and screenshot access
+        run: node scripts/qa/macos-gui-prerequisites.mjs
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: DevRyan-macos-gui-prerequisites
+          path: .cache/macos-gui-prerequisites
+          if-no-files-found: error
+          retention-days: 7

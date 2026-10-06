@@ -43,7 +43,7 @@ async function fixture() {
   };
   const finish = async (lease) => {
     await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'),
-      JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }));
+      JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }), { flag: 'wx', mode: 0o600 });
     await runtime.claimLease({ directory, token: lease.token, kind: 'process' });
     return runtime.finish({ directory, token: lease.token });
   };

@@ -40,6 +40,12 @@ Repository automation entrypoint for developer workflows: validation planning, l
   SHA-256, size and PE architecture precede native version probes in an isolated
   home. Changed files and aliased output directories refuse; publication is
   exclusive. Its candidate receipt also cannot grant execution admission.
+  `qa/macos-gui-prerequisites.mjs` and its AppKit probe run only on an ephemeral
+  GitHub-hosted ARM64 macOS runner. They check console ownership, GUI bootstrap,
+  WindowServer login, a visible owned window and actual PNG capture. Missing
+  prerequisites remain unavailable; this check installs no app and cannot
+  qualify shipped-version continuity. The read-only workflow retains hashes and
+  the disposable window screenshot before an installed continuity run is allowed.
   `readWindowsReviewedLibsqlAsset` rechecks the fixed source/toolchain inputs,
   both actual-host ABI probe identities and exact unaliased PE bytes before
   supplying the sealed compilation candidate.

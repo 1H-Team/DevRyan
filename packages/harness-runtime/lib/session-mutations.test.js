@@ -744,7 +744,7 @@ test('terminal cleanup survives restart and removes read-only private directorie
   const external = path.join(f.root, 'external'); await fs.mkdir(external, { mode: 0o555 });
   await fs.symlink(external, path.join(lease.viewDirectory, 'external'));
   await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'),
-    JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }));
+    JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }), { flag: 'wx', mode: 0o600 });
   await f.finish(lease);
   await fs.chmod(path.join(f.directory, 'readonly'), 0o755);
   const restarted = createSessionMutationRuntime({ directory: f.storage });
@@ -766,7 +766,7 @@ test('cleanup recovers a legacy orphan pin and retains uncertain process receipt
   await expect(f.runtime.cleanupLease(lease)).rejects.toMatchObject({ code: 'ENOENT' });
   expect((await f.runtime.pendingCleanup({ directory: f.directory }))).toHaveLength(1);
   await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'),
-    JSON.stringify({ terminated: true, confined: true, cancelled: true, exitCode: 1 }));
+    JSON.stringify({ terminated: true, confined: true, cancelled: true, exitCode: 1 }), { flag: 'wx', mode: 0o600 });
   await f.runtime.cleanupLease(lease);
   expect((await git(root, ['--git-dir', gitDir, 'for-each-ref', 'refs/devryan/leases/'])).toString()).toBe('');
 });
@@ -1027,7 +1027,7 @@ bunTest('fast first ingest records exactly the ledger the listing path records, 
     await f.write('d1/e1/f1.txt', 'changed\n');
     const lease = await f.begin('a', 'pb', 'cb');
     await fs.writeFile(path.join(lease.viewDirectory, 'd2/e2/f2.txt'), 'edited by the call\n');
-    await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'), JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }));
+    await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'), JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }), { flag: 'wx', mode: 0o600 });
     await f.runtime.claimLease({ directory: f.directory, token: lease.token, kind: 'process' }).catch(() => {});
     const result = await f.finish(lease);
     expect(result.files).toEqual([{ path: 'd2/e2/f2.txt', status: 'modified' }]);
@@ -1070,7 +1070,7 @@ test('warm builds a missing ledger once, skips non-repositories, and a real call
   const lease = await f.begin('a', 'pa', 'ca');
   expect(await fs.readFile(path.join(lease.viewDirectory, 'd0/e0/f0.txt'), 'utf8')).toBe('external edit after warm\n');
   await fs.writeFile(path.join(lease.viewDirectory, 'd1/e1/f1.txt'), 'by the call\n');
-  await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'), JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }));
+  await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'), JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }), { flag: 'wx', mode: 0o600 });
   await f.runtime.claimLease({ directory: f.directory, token: lease.token, kind: 'process' });
   // The external edit made before the call is not attributed to it.
   expect((await f.finish(lease)).files).toEqual([{ path: 'd1/e1/f1.txt', status: 'modified' }]);
@@ -1092,7 +1092,7 @@ test('record caching is invisible: edits, reverts and outcomes match with the ca
     for (const [index, file] of ['d0/e0/f0.txt', 'd1/e1/f1.txt', 'd0/e0/f0.txt'].entries()) {
       const lease = await f.begin('s', `p${index}`, `c${index}`);
       await fs.writeFile(path.join(lease.viewDirectory, file), `edit ${index}\n`);
-      await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'), JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }));
+      await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'), JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }), { flag: 'wx', mode: 0o600 });
       await f.runtime.claimLease({ directory: f.directory, token: lease.token, kind: 'process' });
       outcomes.push((await f.finish(lease)).files);
       await f.runtime.cleanupLease({ directory: f.directory, token: lease.token });
@@ -1115,7 +1115,7 @@ test('background packing keeps the ledger exact, including while a call runs con
   const call = async (index, file) => {
     const lease = await f.begin('s', `p${index}`, `c${index}`);
     await fs.writeFile(path.join(lease.viewDirectory, file), `edit ${index}\n`);
-    await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'), JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }));
+    await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'), JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }), { flag: 'wx', mode: 0o600 });
     await f.runtime.claimLease({ directory: f.directory, token: lease.token, kind: 'process' });
     const result = await f.finish(lease);
     await f.runtime.cleanupLease({ directory: f.directory, token: lease.token });
@@ -1179,7 +1179,7 @@ describe('direct receipts for native read-only tools', () => {
     const f = await fixture(); await f.write('a.txt', 'before');
     const lease = await f.begin('s', 'p0', 'c0');
     await fs.writeFile(path.join(lease.viewDirectory, 'a.txt'), 'after');
-    await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'), JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }));
+    await fs.writeFile(path.join(path.dirname(lease.viewDirectory), 'termination.json'), JSON.stringify({ terminated: true, confined: true, cancelled: false, exitCode: 0 }), { flag: 'wx', mode: 0o600 });
     await f.runtime.claimLease({ directory: f.directory, token: lease.token, kind: 'process' });
     await f.finish(lease);
     const admitted = await f.runtime.admitDirect(scope(f, 'c1', 'p1'));
