@@ -6,12 +6,13 @@ import {spawn,spawnSync,execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
 export function validateWindowsJobBoundary(jobBoundary,inJob) {
-assert.deepEqual(Object.keys(jobBoundary).sort(),['breakawayAllowed','hostLimitFlags','inJob','protocol','requestedUIFlags','silentBreakawayAllowed','uiError','uiReadBack','uiSet']);
-assert.equal(jobBoundary.protocol,'devryan.windows-job-probe/1');assert.equal(jobBoundary.inJob,inJob);
-for(const field of ['hostLimitFlags','requestedUIFlags','uiError','uiReadBack'])assert.ok(Number.isSafeInteger(jobBoundary[field])&&jobBoundary[field]>=0&&jobBoundary[field]<=0xffffffff);
+assert.deepEqual(Object.keys(jobBoundary).sort(),['breakawayAllowed','hostLimitFlags','inJob','osBuild','protocol','requestedUIFlags','sdkUIFlags','silentBreakawayAllowed','uiError','uiReadBack','uiSet']);
+assert.equal(jobBoundary.protocol,'devryan.windows-job-probe/2');assert.equal(jobBoundary.inJob,inJob);
+for(const field of ['hostLimitFlags','osBuild','requestedUIFlags','sdkUIFlags','uiError','uiReadBack'])assert.ok(Number.isSafeInteger(jobBoundary[field])&&jobBoundary[field]>=0&&jobBoundary[field]<=0xffffffff);
+assert.ok(jobBoundary.osBuild>=10240);assert.equal(jobBoundary.sdkUIFlags,0x3ff);
 assert.equal(jobBoundary.breakawayAllowed,Boolean(jobBoundary.hostLimitFlags&0x800));
 assert.equal(jobBoundary.silentBreakawayAllowed,Boolean(jobBoundary.hostLimitFlags&0x1000));
-assert.equal(jobBoundary.requestedUIFlags,0x3ff);assert.equal(typeof jobBoundary.uiSet,'boolean');
+assert.equal(jobBoundary.requestedUIFlags,0xff|(jobBoundary.osBuild>=22621?0x100:0)|(jobBoundary.osBuild>=26100?0x200:0));assert.equal(typeof jobBoundary.uiSet,'boolean');
 assert.equal(jobBoundary.uiError===0,jobBoundary.uiSet);
 assert.equal(jobBoundary.uiReadBack,jobBoundary.uiSet?jobBoundary.requestedUIFlags:0);
 return jobBoundary;

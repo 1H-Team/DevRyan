@@ -4,13 +4,17 @@ import test from 'node:test';
 import YAML from 'yaml';
 import { validateWindowsJobBoundary } from './verify-windows-host-boundary.mjs';
 
-test('empty-job diagnostic accepts the exact current SDK mask while retaining UI refusal', () => {
-  const probe = { protocol: 'devryan.windows-job-probe/1', inJob: true, hostLimitFlags: 0x2000,
+test('empty-job diagnostic requires every OS-supported UI restriction and exact readback', () => {
+  const probe = { protocol: 'devryan.windows-job-probe/2', osBuild: 26100, sdkUIFlags: 0x3ff, inJob: true, hostLimitFlags: 0x2000,
     breakawayAllowed: false, silentBreakawayAllowed: false, requestedUIFlags: 0x3ff,
     uiSet: false, uiError: 87, uiReadBack: 0 };
   assert.equal(validateWindowsJobBoundary(probe, true), probe);
   assert.equal(validateWindowsJobBoundary({ ...probe, uiSet: true, uiError: 0, uiReadBack: 0x3ff }, true).uiSet, true);
+  for (const [osBuild, mask] of [[10240,0xff],[20348,0xff],[22620,0xff],[22621,0x1ff],[26099,0x1ff],[26100,0x3ff]]) {
+    assert.equal(validateWindowsJobBoundary({ ...probe, osBuild, requestedUIFlags: mask, uiSet: true, uiError: 0, uiReadBack: mask }, true).uiSet, true);
+  }
   for (const change of [{ requestedUIFlags: 0xff }, { uiError: 0 }, { uiReadBack: 0xff },
+    { osBuild: 10239 }, { osBuild: 20348 }, { sdkUIFlags: 0xff },
     { breakawayAllowed: true }, { inJob: false }, { extra: 'unreviewed' }]) {
     assert.throws(() => validateWindowsJobBoundary({ ...probe, ...change }, true));
   }
@@ -81,6 +85,8 @@ test('the Windows supervisor requires kernel job assignment before creating a ch
   assert.match(source, /&job, sizeof\(job\), NULL, NULL\), "atomic command ownership"/);
   assert.doesNotMatch(source, /if\s*\(!AssignProcessToJobObject/);
   assert.match(source, /JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE/);
+  assert.match(source, /maximum_ui_limits\(os_build\(\)\)/);
+  assert.match(source, /observedUI\.UIRestrictionsClass != uiMask/);
   const readOnlyJobFlags = source.replace(/host\.BasicLimitInformation\.LimitFlags & JOB_OBJECT_LIMIT_(?:SILENT_)?BREAKAWAY_OK \? "true" : "false"/g, '');
   assert.doesNotMatch(readOnlyJobFlags, /JOB_OBJECT_LIMIT_(?:SILENT_)?BREAKAWAY_OK/);
   assert.doesNotMatch(source, /CREATE_BREAKAWAY_FROM_JOB/);

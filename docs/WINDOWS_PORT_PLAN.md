@@ -225,6 +225,16 @@ identify the offending public file. The imported Windows build helpers also
 participate in macOS native build identities, verified by an actual shared
 macOS build. Fresh Windows compilation and full safety acceptance remain required.
 
+The supervisor now queries the actual OS build through `RtlGetVersion` and
+requests all available UI restrictions: the eight original flags, IME from
+build 22621, and injection from build 26100. This follows
+[Microsoft's build gates](https://github.com/microsoft/mxc/blob/main/docs/process-container/os-version-support.md).
+Unknown OS identity or changed SDK flags refuse; the kernel must accept the
+mask and read back every requested bit before a command starts. There is no
+retry with reduced restrictions. Protocol-2 diagnostics retain the OS build,
+SDK mask and actual mask. Fresh kernel probes are still required, and containing
+job isolation, read confinement and full runtime admission remain unqualified.
+
 The [Rust platform contract](https://doc.rust-lang.org/stable/rustc/platform-support/windows-msvc.html)
 supports native MSVC ARM64 host tools; that support does not establish libsql
 compatibility by itself.

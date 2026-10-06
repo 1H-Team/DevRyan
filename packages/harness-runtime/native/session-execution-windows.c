@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <wchar.h>
 #include <errno.h>
+#include <string.h>
 
 static void fail(const char *operation) {
   fprintf(stderr, "%s failed (%lu)\n", operation, GetLastError());
@@ -22,9 +23,32 @@ static void fail(const char *operation) {
 }
 static void checked(BOOL ok, const char *operation) { if (!ok) fail(operation); }
 
+/* SDK 26100 adds flags which older kernels reject. Require a genuine OS build,
+ * apply every supported restriction, and never retry with a reduced mask. */
+_Static_assert(JOB_OBJECT_UILIMIT_ALL == 0x3ff, "Reviewed Windows SDK UI flags changed");
+static DWORD os_build(void) {
+  typedef LONG (WINAPI *version_query)(OSVERSIONINFOW *);
+  HMODULE module = GetModuleHandleW(L"ntdll.dll");
+  if (!module) fail("OS version module");
+  FARPROC symbol = GetProcAddress(module, "RtlGetVersion");
+  if (!symbol) fail("OS version operation");
+  version_query query;
+  _Static_assert(sizeof(query) == sizeof(symbol), "Windows version pointer size changed");
+  memcpy(&query, &symbol, sizeof(query));
+  OSVERSIONINFOW version = {0}; version.dwOSVersionInfoSize = sizeof(version);
+  if (query(&version) != 0 || version.dwMajorVersion != 10 || version.dwBuildNumber < 10240) {
+    SetLastError(ERROR_NOT_SUPPORTED); fail("supported Windows version");
+  }
+  return version.dwBuildNumber;
+}
+static DWORD maximum_ui_limits(DWORD build) {
+  return 0xff | (build >= 22621 ? 0x100 : 0) | (build >= 26100 ? 0x200 : 0);
+}
+
 /* Inspect the containing job without changing it. The UI experiment uses a
  * new empty job, never a child or a runtime admission grant. */
 static int inspect_job_boundary(void) {
+  DWORD build = os_build();
   BOOL inJob;
   checked(IsProcessInJob(GetCurrentProcess(), NULL, &inJob), "containing job");
   JOBOBJECT_EXTENDED_LIMIT_INFORMATION host = {0}, limits = {0};
@@ -34,11 +58,12 @@ static int inspect_job_boundary(void) {
   if (!job) fail("probe job");
   limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION;
   checked(SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits)), "probe job ownership");
-  JOBOBJECT_BASIC_UI_RESTRICTIONS ui = { JOB_OBJECT_UILIMIT_ALL }, observed = {0};
+  JOBOBJECT_BASIC_UI_RESTRICTIONS ui = { maximum_ui_limits(build) }, observed = {0};
   BOOL set = SetInformationJobObject(job, JobObjectBasicUIRestrictions, &ui, sizeof(ui));
   DWORD error = set ? ERROR_SUCCESS : GetLastError();
   if (set) checked(QueryInformationJobObject(job, JobObjectBasicUIRestrictions, &observed, sizeof(observed), NULL), "probe job UI receipt");
-  printf("{\"protocol\":\"devryan.windows-job-probe/1\",\"inJob\":%s,\"hostLimitFlags\":%lu,\"breakawayAllowed\":%s,\"silentBreakawayAllowed\":%s,\"requestedUIFlags\":%lu,\"uiSet\":%s,\"uiError\":%lu,\"uiReadBack\":%lu}\n",
+  printf("{\"protocol\":\"devryan.windows-job-probe/2\",\"osBuild\":%lu,\"sdkUIFlags\":%lu,\"inJob\":%s,\"hostLimitFlags\":%lu,\"breakawayAllowed\":%s,\"silentBreakawayAllowed\":%s,\"requestedUIFlags\":%lu,\"uiSet\":%s,\"uiError\":%lu,\"uiReadBack\":%lu}\n",
+    build, (DWORD)JOB_OBJECT_UILIMIT_ALL,
     inJob ? "true" : "false", host.BasicLimitInformation.LimitFlags,
     host.BasicLimitInformation.LimitFlags & JOB_OBJECT_LIMIT_BREAKAWAY_OK ? "true" : "false",
     host.BasicLimitInformation.LimitFlags & JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK ? "true" : "false",
@@ -348,6 +373,7 @@ int wmain(int argc, wchar_t **argv) {
     if (!event) fail("cancel event"); checked(SetEvent(event), "cancel signal"); CloseHandle(event); return 0;
   }
   if (argc < 7 || wcscmp(argv[5], L"--")) return 125;
+  DWORD uiMask = maximum_ui_limits(os_build());
   HANDLE receipt = CreateFileW(argv[4], GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
   if (receipt == INVALID_HANDLE_VALUE) fail("exclusive receipt");
   DWORD parentPid; HANDLE parent = parent_process(&parentPid);
@@ -402,8 +428,10 @@ int wmain(int argc, wchar_t **argv) {
   JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits = {0};
   limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION;
   checked(SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits)), "job ownership");
-  JOBOBJECT_BASIC_UI_RESTRICTIONS ui = { JOB_OBJECT_UILIMIT_ALL };
+  JOBOBJECT_BASIC_UI_RESTRICTIONS ui = { uiMask }, observedUI = {0};
   checked(SetInformationJobObject(job, JobObjectBasicUIRestrictions, &ui, sizeof(ui)), "job UI boundary");
+  checked(QueryInformationJobObject(job, JobObjectBasicUIRestrictions, &observedUI, sizeof(observedUI), NULL), "job UI readback");
+  if (observedUI.UIRestrictionsClass != uiMask) { SetLastError(ERROR_ACCESS_DENIED); fail("exact job UI boundary"); }
   STARTUPINFOEXW startup = {0}; startup.StartupInfo.cb = sizeof(startup); startup.StartupInfo.lpDesktop = desktopName;
   startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
   HANDLE handles[3]; DWORD kinds[] = { STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE };
