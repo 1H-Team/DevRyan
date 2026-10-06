@@ -321,6 +321,20 @@ Untrusted to Low, retaining the original job, handle and write restrictions.
 It tests another startup condition, supplies no policy acceptance, and never
 changes the production supervisor. Both actual architectures must still run it.
 
+The ARM64 receipts from the same run independently verify original and
+UI-limit-only Node/Bun startup. Both exclusive unnamed station variants refuse
+with Windows error 183 and empty termination receipts. Reusing an existing
+station or modifying the inherited station ACL is not an authorized fallback.
+
+A sixth disposable probe adds SYSTEM access only to the token's default DACL
+for newly created child objects. The file-tree ACLs, integrity level, job,
+inherited handles and parent-death contract stay unchanged. It isolates another
+startup condition because [CreateProcessAsUserW](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessasuserw)
+uses that token's default process/thread security when explicit descriptors are
+absent. It supplies no process-security qualification and leaves the production
+supervisor unchanged; actual native results are required before drawing a
+causal conclusion.
+
 Integrated local `validate:full` passes on macOS ARM64 at `874ab3f4`, including
 6,328 web tests, 4,049 UI tests and 39 retained legacy Rust tests. Earlier failed
 attempts are preserved. Only builder-generated legacy defaults were restored

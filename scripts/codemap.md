@@ -30,6 +30,9 @@ Repository automation entrypoint for developer workflows: validation planning, l
   diagnostics change only owned UI objects, never the inherited station ACL.
   A separate low-integrity token copy isolates startup at Low versus Untrusted;
   its job/handle/write restrictions stay intact and it grants no admission.
+  The process-DACL copy adds SYSTEM access only to newly created child objects,
+  retaining the original tree ACLs, token integrity and job/handle restrictions.
+  This trusted startup diagnostic supplies no process-security qualification.
   `build-windows-reviewed-libsql.mjs` attempts the original libsql 0.5.29 source
   commit with an unchanged Cargo lock on each native Windows host. It verifies
   compiler and resource PE architecture, executes the original database ABI
