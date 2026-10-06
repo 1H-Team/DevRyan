@@ -291,13 +291,20 @@ static int read_private_file(const wchar_t *argument) {
 
 /* A retained kernel byte-range lock proves this exact keeper's lifetime.
  * PID reuse and stale JSON never turn an uncertain owner into a lost one. */
-static int owner_lock(const wchar_t *argument, BOOL probe) {
+static HANDLE parent_process(DWORD *pid);
+static int owner_lock(const wchar_t *argument, BOOL probe, BOOL reusable) {
   wchar_t path[32768]; HANDLE ancestors[256];
   DWORD count = anchor_parents(argument, path, ancestors);
+  if (reusable) {
+    BOOL own;
+    if (!count || !file_privacy(ancestors[count - 1], &own)) {
+      SetLastError(ERROR_ACCESS_DENIED); fail("private lock parent");
+    }
+  }
   PSECURITY_DESCRIPTOR security = private_security(FALSE);
   SECURITY_ATTRIBUTES attributes = { sizeof(attributes), security, FALSE };
   HANDLE file = CreateFileW(path, GENERIC_READ | GENERIC_WRITE | READ_CONTROL,
-    FILE_SHARE_READ | FILE_SHARE_WRITE, &attributes, probe ? OPEN_EXISTING : CREATE_NEW,
+    FILE_SHARE_READ | FILE_SHARE_WRITE, &attributes, probe ? OPEN_EXISTING : reusable ? OPEN_ALWAYS : CREATE_NEW,
     FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_WRITE_THROUGH, NULL);
   if (file == INVALID_HANDLE_VALUE) {
     if (probe && GetLastError() == ERROR_FILE_NOT_FOUND) return 0;
@@ -311,15 +318,28 @@ static int owner_lock(const wchar_t *argument, BOOL probe) {
   }
   OVERLAPPED position = {0};
   if (!LockFileEx(file, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0, &position)) {
-    if (probe && GetLastError() == ERROR_LOCK_VIOLATION) return 73;
+    if ((probe || reusable) && GetLastError() == ERROR_LOCK_VIOLATION) return 73;
     fail("owner lock acquisition");
   }
   if (!probe) {
+    DWORD parentPid; HANDLE parent = parent_process(&parentPid);
+    HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
+    if (GetFileType(input) != FILE_TYPE_PIPE) { SetLastError(ERROR_INVALID_HANDLE); fail("owner lifetime pipe"); }
     checked(FlushFileBuffers(file), "owner lock durability");
     DWORD written;
     checked(WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), "owned\n", 6, &written, NULL) && written == 6, "owner lock acknowledgement");
-    BYTE input; DWORD read;
-    while (ReadFile(GetStdHandle(STD_INPUT_HANDLE), &input, 1, &read, NULL) && read) {}
+    for (;;) {
+      DWORD state = WaitForSingleObject(parent, 25);
+      if (state == WAIT_OBJECT_0) break;
+      if (state != WAIT_TIMEOUT) fail("owner lifetime wait");
+      DWORD available;
+      if (!PeekNamedPipe(input, NULL, 0, NULL, &available, NULL)) {
+        if (GetLastError() == ERROR_BROKEN_PIPE || GetLastError() == ERROR_PIPE_NOT_CONNECTED) break;
+        fail("owner lifetime input");
+      }
+      if (available) { SetLastError(ERROR_INVALID_DATA); fail("owner lifetime protocol"); }
+    }
+    CloseHandle(parent);
   }
   checked(UnlockFileEx(file, 0, 1, 0, &position), "owner lock release");
   CloseHandle(file);
@@ -696,8 +716,9 @@ int wmain(int argc, wchar_t **argv) {
   if (argc == 3 && !wcscmp(argv[1], L"--create-private-directory")) return create_private_directory(argv[2]);
   if (argc == 3 && !wcscmp(argv[1], L"--create-private-file")) return create_private_file(argv[2]);
   if (argc == 3 && !wcscmp(argv[1], L"--read-private-file")) return read_private_file(argv[2]);
-  if (argc == 3 && !wcscmp(argv[1], L"--owner-lock")) return owner_lock(argv[2], FALSE);
-  if (argc == 3 && !wcscmp(argv[1], L"--owner-probe")) return owner_lock(argv[2], TRUE);
+  if (argc == 3 && !wcscmp(argv[1], L"--owner-lock")) return owner_lock(argv[2], FALSE, FALSE);
+  if (argc == 3 && !wcscmp(argv[1], L"--owner-probe")) return owner_lock(argv[2], TRUE, FALSE);
+  if (argc == 3 && !wcscmp(argv[1], L"--private-file-lock")) return owner_lock(argv[2], FALSE, TRUE);
   // The host uses a named cancellation event because TerminateProcess would
   // close the job safely but could not write a termination acknowledgement.
   if (argc == 5 && !wcscmp(argv[1], L"--cancel")) return cancel_process(argv[2], argv[3], argv[4]);

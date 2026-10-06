@@ -74,6 +74,19 @@ the private event name from that exact supervisor identity. No bare PID can
 signal an event. These remain independent prerequisites: they do not attest
 complete read confinement, runtime admission or the full acceptance inventory.
 
+`--private-file-lock` reuses a protected private file through one retained
+kernel byte-range lock. It refuses hard links and a non-private parent, anchors
+the entire path, and denies replacement while held. Stale JSON and recycled PIDs
+do not authorize reclamation. The helper retains its actual parent process and
+creation identity; parent death or lifetime-pipe closure releases the lock.
+The shared cross-process lock uses this operation only with a constructor-owned
+verified `windowsLauncher`; missing authority refuses. Graceful native release
+must be confirmed; forced termination cannot report a successful release.
+The filesystem verifier exercises exclusion, replacement refusal, stale bytes,
+callback failure, abrupt keeper death, hard links and cancellation separately.
+This requires both actual architecture receipts; it does not supply durable
+replacement, remaining caller composition or runtime admission.
+
 The policy-3 draft creates a unique Less-Privileged AppContainer identity,
 opts out of ambient All Application Packages access, and keeps the complete
 job/UI/handle boundary. `windowsSessionExecutionProfile` binds the view, scratch
@@ -103,3 +116,10 @@ Execution layout checks hold all parent paths, require one private parent for
 view, scratch, binary policy and receipt, and reject cache/runtime overlap by
 native volume/file identities. Case or short-path aliases cannot bypass those
 checks. The identities remain retained through drain and receipt publication.
+
+`--diagnose-descendant` can create only a fixed self-child inside an existing
+AppContainer and job, with exactly three inherited standard handles. At
+`70831265`, both hosts create that native child successfully. The general pipe
+namespace refuses on both hosts; `LOCAL` pipe creation succeeds. `NUL` access
+refuses on Windows Server 2022 and succeeds on Windows 11 ARM64. Node descendant
+setup remains failed. The diagnostic grants no new capability or acceptance.

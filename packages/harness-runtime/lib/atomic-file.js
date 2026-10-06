@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createExecutionHostOwner } from './execution-host-owner.js';
 
 const DEFAULT_MAX_READ_BYTES = 16 * 1024 * 1024;
 const DEFAULT_STALE_TMP_AGE_MS = 24 * 60 * 60 * 1000;
@@ -133,6 +134,32 @@ export const withCrossProcessFileLock = async (lockPath, callback, options = {})
   const startedAt = now();
   const directory = path.dirname(lockPath);
   const owner = { ownerToken, pid: process.pid, createdAt: startedAt };
+
+  if (process.platform === 'win32') {
+    if (!options.windowsLauncher) throw Object.assign(new Error('private_windows_lock_authority_unavailable'), {
+      code: 'private_windows_lock_authority_unavailable',
+    });
+    while (true) {
+      options.signal?.throwIfAborted();
+      let keeper;
+      try {
+        keeper = await createExecutionHostOwner({ directory, launcher: options.windowsLauncher, lockFile: lockPath });
+      } catch (error) {
+        if (error.code !== 'LOCK_BUSY') throw error;
+        if (now() - startedAt >= timeoutMs) throw Object.assign(new Error('Timed out acquiring cross-process file lock'), {
+          code: 'LOCK_TIMEOUT',
+        });
+        await wait(Math.min(retryMs, Math.max(1, timeoutMs - (now() - startedAt))));
+        continue;
+      }
+      try {
+        options.signal?.throwIfAborted(); keeper.assert();
+        const result = await callback(keeper.signal);
+        keeper.assert(); options.signal?.throwIfAborted();
+        return result;
+      } finally { await keeper.close(); }
+    }
+  }
 
   await fsApi.mkdir(directory, { recursive: true, mode: 0o700 });
   while (true) {

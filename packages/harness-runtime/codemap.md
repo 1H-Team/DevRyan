@@ -59,6 +59,12 @@ API contracts.
 - Derived task checkpoints and project-scoped canonical user decisions: `lib/task-context.js`. Overlapping checkpoint reads share only an exact session/directory/project/query key; each caller rechecks scope and its own write authorization before committing. Existing atomic record stores hold bounded, regenerable task views and provenance/validity-qualified decisions; neither view authorizes execution or replaces native history. Compaction anchors spend their 12 KiB final budget on the objective and mandatory scope before optional detail, retain incomplete-scope guidance, and pass the remaining encoded budget to the child assignment owner.
 
 - Atomic private persistence and cross-process file locking: `lib/atomic-file.js`, `lib/record-store.js`. Replacement permissions and directory flush failures propagate; published bytes remain for recovery when durability cannot be confirmed. JSON quarantine flushes both affected directories. Windows requires a native durable publication owner and cannot qualify through suppressed POSIX flush errors. `lib/windows-private-files.js` parses strict native identities and binds private read bytes to one SDK handle. Windows execution receipt reads require the constructor-owned launcher; remaining recovery/storage callers stay held until they receive that owner.
+  Windows cross-process locking accepts a constructor-owned `windowsLauncher`
+  and reuses the SDK keeper in `lib/execution-host-owner.js`; it requires a
+  protected private parent/file, retains kernel ownership, reports keeper loss,
+  and confirms graceful release. It never steals a lock using stale PID bytes.
+  Native architecture checks and storage/updater constructor composition remain
+  separate gates from this primitive.
   `lib/windows-private-files.js` validates bounded native file identity receipts
   and routes exclusive execution-root and policy creation through the Windows
   SDK owner. Existing unowned/widened ACLs are refused, never repaired. This

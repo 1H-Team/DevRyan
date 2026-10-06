@@ -459,6 +459,16 @@ read-only files, stale lock holders, and volume changes. Run the same authority
 contract against controller state, credential staging, bundle manifests,
 recovery receipts, temporary files, and updater intent.
 
+The SDK private lock now uses a reusable protected file, retained byte-range
+lock and pinned parents. The shared lock accepts its verified launcher only
+through constructor options. Existing bytes and PID values do not establish
+ownership; actual kernel exclusion and keeper lifetime do. The helper retains
+the real parent process and creation time, permits no file replacement while
+held, and acknowledges acquisition only after flushing. Graceful release must
+finish before success; forced termination remains unconfirmed. Both architecture
+checks and storage/recovery/updater composition remain required. This does not
+replace the pending native publication and recovery receipts.
+
 ## Execution and process ownership
 
 The native supervisor assigns the owned Job Object atomically during suspended
@@ -483,8 +493,18 @@ creation identity once. The SDK cancellation helper retains that process,
 checks the exact identity and original host parent, then opens an event whose
 name includes the supervisor PID and creation time. Wrong identities, other
 execution events and exited targets refuse. The actual-host verifier adds early
-cancellation and descendant heartbeat settlement; both architecture runs are
-required before treating those cases as passed.
+cancellation and descendant heartbeat settlement. Run
+[37447349729](https://github.com/1H-Team/DevRyan/actions/runs/37447349729) at
+`70831265` passes running-command and early cancellation with flushed receipts
+on both architectures. The self-only native descendant also starts and exits
+inside the LPAC/job boundary on both. Node descendant setup still fails:
+general named-pipe creation returns access denied on both hosts, while the
+`LOCAL` namespace succeeds. Windows Server 2022 also refuses `NUL`; Windows 11
+ARM64 permits it. The pinned runner Node 22.23.3 source creates its stdio pipes
+outside `LOCAL`; the library's newer AppContainer-aware naming does not qualify
+the installed build. Preserve the dependency pins and isolation rules while
+completing runtime compatibility. Descendant heartbeat settlement, cancellation
+of that tree and full runtime admission remain pending.
 The process-creation attribute is documented by
 [Microsoft](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute).
 

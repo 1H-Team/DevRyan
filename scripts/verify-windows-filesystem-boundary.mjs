@@ -4,6 +4,8 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { withCrossProcessFileLock } from '../packages/harness-runtime/lib/atomic-file.js';
+import { createExecutionHostOwner } from '../packages/harness-runtime/lib/execution-host-owner.js';
 
 if (process.platform !== 'win32' || !['x64', 'arm64'].includes(process.arch)) throw Error('Native Windows filesystem required');
 if (process.argv.length !== 3) throw Error('Expected owned supervisor output directory');
@@ -53,6 +55,46 @@ try {
   refused('--create-private-directory', privatePath);
   assert.deepEqual(call('--inspect-path', privatePath), privateDirectory);
   evidence.checks.push('exclusive-private-unicode-directory', 'stable-no-follow-directory-identity', 'existing-directory-preserved');
+  const lockPath = path.join(privatePath, 'Publication-Δ.lock');
+  const lockOptions = { windowsLauncher: binary, timeoutMs: 100, retryMs: 10 };
+  let lockIdentity;
+  await withCrossProcessFileLock(lockPath, async signal => {
+    assert.equal(signal.aborted, false);
+    lockIdentity = call('--inspect-path', lockPath);
+    assert.equal(lockIdentity.privateAcl, true);
+    await assert.rejects(withCrossProcessFileLock(lockPath, () => { throw Error('Competing lock entered'); }, lockOptions), { code: 'LOCK_TIMEOUT' });
+    await assert.rejects(fs.rename(lockPath, lockPath + '.replaced'));
+    assert.deepEqual(call('--inspect-path', lockPath), lockIdentity);
+  }, lockOptions);
+  // Stale bytes and reused PIDs supply no authority; only the held kernel lock does.
+  await fs.writeFile(lockPath, JSON.stringify({ pid: process.pid, createdAt: 0, ownerToken: 'stale' }));
+  assert.equal(await withCrossProcessFileLock(lockPath, () => 'reclaimed', lockOptions), 'reclaimed');
+  assert.deepEqual(call('--inspect-path', lockPath), lockIdentity);
+  await assert.rejects(withCrossProcessFileLock(lockPath, () => { throw Error('Callback failed'); }, lockOptions), /Callback failed/);
+  assert.equal(await withCrossProcessFileLock(lockPath, () => 'released-after-error', lockOptions), 'released-after-error');
+  let keeper;
+  const owner = await createExecutionHostOwner({ directory: privatePath, lockFile: lockPath, launcher: binary,
+    spawnImpl: (...args) => { keeper = spawn(...args); return keeper; } });
+  try {
+    const reaped = new Promise(resolve => keeper.once('close', resolve));
+    keeper.kill('SIGKILL');
+    let timer;
+    try { await Promise.race([reaped, new Promise((_, reject) => { timer = setTimeout(() => reject(Error('Lock keeper death unconfirmed')), 5000); })]); }
+    finally { clearTimeout(timer); }
+    assert.equal(owner.signal.aborted, true);
+    assert.throws(() => owner.assert());
+    assert.equal(await withCrossProcessFileLock(lockPath, () => 'reclaimed-after-death', lockOptions), 'reclaimed-after-death');
+    assert.deepEqual(call('--inspect-path', lockPath), lockIdentity);
+  } finally { await owner.close(); }
+  const lockAlias = lockPath + '.hard-link';
+  await fs.link(lockPath, lockAlias);
+  refused('--private-file-lock', lockPath);
+  await fs.unlink(lockAlias);
+  const abort = new AbortController(); abort.abort();
+  await assert.rejects(withCrossProcessFileLock(lockPath, () => { throw Error('Aborted lock entered'); }, { ...lockOptions, signal: abort.signal }), { name: 'AbortError' });
+  evidence.lockIdentity = lockIdentity;
+  evidence.checks.push('kernel-lock-exclusion-and-replacement-refusal', 'kernel-lock-stale-pid-reclamation',
+    'kernel-lock-callback-failure-release', 'kernel-lock-abrupt-keeper-death', 'kernel-lock-hard-link-refusal', 'kernel-lock-preaborted-refusal');
   const ordinary = path.join(privatePath, 'ordinary-node-file');
   await fs.writeFile(ordinary, 'ordinary owner observation\n', { flag: 'wx' });
   evidence.ordinaryFile = call('--inspect-path', ordinary);

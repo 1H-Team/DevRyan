@@ -114,7 +114,7 @@ export function writeFileAtomic(
 
 export function withCrossProcessFileLock<T>(
   lockPath: string,
-  callback: () => Promise<T> | T,
+  callback: (ownershipSignal?: AbortSignal) => Promise<T> | T,
   options?: {
     timeoutMs?: number;
     retryMs?: number;
@@ -123,6 +123,9 @@ export function withCrossProcessFileLock<T>(
     wait?: (milliseconds: number) => Promise<void>;
     randomToken?: () => string;
     isProcessAlive?: (pid: number) => boolean;
+    /** Constructor-owned, verified Windows SDK helper; never obtained from HTTP. */
+    windowsLauncher?: string;
+    signal?: AbortSignal;
     fs?: unknown;
   },
 ): Promise<T>;
