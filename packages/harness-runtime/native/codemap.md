@@ -51,6 +51,12 @@ streams. Files explicitly name the current user as owner, use a protected ACL,
 flush before reporting identity, and preserve a partial file on failed input.
 The operations never replace a file or repair an existing ACL. Process probes query
 creation time, liveness and containing-job membership from one held handle.
+`--inspect-job-boundary` reads the containing job's limit flags without changing
+that job. It repeats the draft UI-limit call on a new empty job and records the
+actual error and read-back flags. The probe creates no child, permits no
+breakaway, and grants no confinement or admission authority. The host verifier
+retains this diagnostic in `host-boundary-evidence.json` for each architecture;
+collecting a failed UI-limit result is distinct from accepting that UI policy.
 The supervisor retains its original parent handle only after comparing parent
 and supervisor creation times, so a recycled parent PID cannot become an owner.
 `verify-windows-host-boundary.mjs` and `verify-windows-filesystem-boundary.mjs`

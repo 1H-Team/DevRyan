@@ -180,6 +180,18 @@ complete diagnostic. The Darwin-only controller/writer build still refuses both
 hosts, and compiled runtime acceptance is skipped. Deleted transient fixtures
 provide no durable journal roots. None of these partial passes enables admission.
 
+The isolated branch now creates the Cursor fixture parent before `mkdtemp`.
+All three focused Cursor checks pass locally; actual Windows verification is
+still required. Integrated local validation attempt 5 passed 660 harness cases
+but failed four platform-specific input cases at Bun's default five-second
+deadline. All four failures independently reproduced; their unchanged bodies
+passed with the file's existing 120-second fixture deadline. Applying that same
+deadline to platform-specific registrations passed all 15 input checks and 111
+assertions. Original failures and unavailable fixture journals remain recorded.
+The next native run also captures an independent empty-job UI-limit probe and
+read-only containing-job flags. It never changes the containing job, starts a
+child, or permits breakaway; its diagnostic result cannot enable admission.
+
 The [Rust platform contract](https://doc.rust-lang.org/stable/rustc/platform-support/windows-msvc.html)
 supports native MSVC ARM64 host tools; that support does not establish libsql
 compatibility by itself.

@@ -67,5 +67,7 @@ test('the Windows supervisor requires kernel job assignment before creating a ch
   assert.match(source, /&job, sizeof\(job\), NULL, NULL\), "atomic command ownership"/);
   assert.doesNotMatch(source, /if\s*\(!AssignProcessToJobObject/);
   assert.match(source, /JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE/);
-  assert.doesNotMatch(source, /JOB_OBJECT_LIMIT_(?:SILENT_)?BREAKAWAY_OK/);
+  const readOnlyJobFlags = source.replace(/host\.BasicLimitInformation\.LimitFlags & JOB_OBJECT_LIMIT_(?:SILENT_)?BREAKAWAY_OK \? "true" : "false"/g, '');
+  assert.doesNotMatch(readOnlyJobFlags, /JOB_OBJECT_LIMIT_(?:SILENT_)?BREAKAWAY_OK/);
+  assert.doesNotMatch(source, /CREATE_BREAKAWAY_FROM_JOB/);
 });

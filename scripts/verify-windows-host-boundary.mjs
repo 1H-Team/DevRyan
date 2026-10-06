@@ -32,6 +32,15 @@ const host=probe(process.pid);assert.equal(host.active,true);
 assert.deepEqual(probe(process.pid),host,'Stable host PID changed its creation identity');
 const parentProof=JSON.parse(execFileSync(binary,['--inspect-parent'],{encoding:'utf8',timeout:5000,maxBuffer:4096}));
 assert.deepEqual(parentProof,host,'Native retained parent handle did not bind the actual caller');
+const jobBoundary=JSON.parse(execFileSync(binary,['--inspect-job-boundary'],{encoding:'utf8',timeout:5000,maxBuffer:4096}));
+assert.deepEqual(Object.keys(jobBoundary).sort(),['breakawayAllowed','hostLimitFlags','inJob','protocol','requestedUIFlags','silentBreakawayAllowed','uiError','uiReadBack','uiSet']);
+assert.equal(jobBoundary.protocol,'devryan.windows-job-probe/1');assert.equal(jobBoundary.inJob,host.inJob);
+for(const field of ['hostLimitFlags','requestedUIFlags','uiError','uiReadBack'])assert.ok(Number.isSafeInteger(jobBoundary[field])&&jobBoundary[field]>=0&&jobBoundary[field]<=0xffffffff);
+assert.equal(jobBoundary.breakawayAllowed,Boolean(jobBoundary.hostLimitFlags&0x800));
+assert.equal(jobBoundary.silentBreakawayAllowed,Boolean(jobBoundary.hostLimitFlags&0x1000));
+assert.equal(jobBoundary.requestedUIFlags,0xff);assert.equal(typeof jobBoundary.uiSet,'boolean');
+assert.equal(jobBoundary.uiError===0,jobBoundary.uiSet);
+assert.equal(jobBoundary.uiReadBack,jobBoundary.uiSet?jobBoundary.requestedUIFlags:0);
 for(const argument of ['0','-1','1x','4294967296',' 1']){
  const result=spawnSync(binary,['--inspect-process',argument],{encoding:'utf8',timeout:5000,maxBuffer:4096});
  assert.equal(result.status,125);assert.equal(result.stdout,'');
@@ -54,6 +63,6 @@ try {
 await pin();
 const evidence={schema:1,status:'passed',scope:'read-only Windows SDK process creation/liveness and containing-job probes; no confinement/admission authority',
  sourceCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).trim(),platform:process.platform,arch:process.arch,
- supervisorSha256:manifest.sha256,manifestSha256:hash(manifestBytes),host,parentProof,child:identity,childExit:await closed};
+ supervisorSha256:manifest.sha256,manifestSha256:hash(manifestBytes),host,parentProof,jobBoundary,child:identity,childExit:await closed};
 await fs.writeFile(path.join(root,'host-boundary-evidence.json'),JSON.stringify(evidence,null,2)+'\n',{flag:'wx'});
 console.log(JSON.stringify(evidence));

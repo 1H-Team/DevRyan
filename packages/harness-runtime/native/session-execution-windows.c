@@ -22,6 +22,31 @@ static void fail(const char *operation) {
 }
 static void checked(BOOL ok, const char *operation) { if (!ok) fail(operation); }
 
+/* Inspect the containing job without changing it. The UI experiment uses a
+ * new empty job, never a child or a runtime admission grant. */
+static int inspect_job_boundary(void) {
+  BOOL inJob;
+  checked(IsProcessInJob(GetCurrentProcess(), NULL, &inJob), "containing job");
+  JOBOBJECT_EXTENDED_LIMIT_INFORMATION host = {0}, limits = {0};
+  if (inJob) checked(QueryInformationJobObject(NULL, JobObjectExtendedLimitInformation,
+    &host, sizeof(host), NULL), "containing job limits");
+  HANDLE job = CreateJobObjectW(NULL, NULL);
+  if (!job) fail("probe job");
+  limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION;
+  checked(SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits)), "probe job ownership");
+  JOBOBJECT_BASIC_UI_RESTRICTIONS ui = { JOB_OBJECT_UILIMIT_ALL }, observed = {0};
+  BOOL set = SetInformationJobObject(job, JobObjectBasicUIRestrictions, &ui, sizeof(ui));
+  DWORD error = set ? ERROR_SUCCESS : GetLastError();
+  if (set) checked(QueryInformationJobObject(job, JobObjectBasicUIRestrictions, &observed, sizeof(observed), NULL), "probe job UI receipt");
+  printf("{\"protocol\":\"devryan.windows-job-probe/1\",\"inJob\":%s,\"hostLimitFlags\":%lu,\"breakawayAllowed\":%s,\"silentBreakawayAllowed\":%s,\"requestedUIFlags\":%lu,\"uiSet\":%s,\"uiError\":%lu,\"uiReadBack\":%lu}\n",
+    inJob ? "true" : "false", host.BasicLimitInformation.LimitFlags,
+    host.BasicLimitInformation.LimitFlags & JOB_OBJECT_LIMIT_BREAKAWAY_OK ? "true" : "false",
+    host.BasicLimitInformation.LimitFlags & JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK ? "true" : "false",
+    ui.UIRestrictionsClass, set ? "true" : "false", error, observed.UIRestrictionsClass);
+  CloseHandle(job);
+  return 0;
+}
+
 static TOKEN_USER *current_user(void) {
   HANDLE token;
   checked(OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token), "identity token");
@@ -307,6 +332,7 @@ static PSID cache_sid(const wchar_t *directory) {
 }
 
 int wmain(int argc, wchar_t **argv) {
+  if (argc == 2 && !wcscmp(argv[1], L"--inspect-job-boundary")) return inspect_job_boundary();
   if (argc == 3 && !wcscmp(argv[1], L"--inspect-process")) return inspect_process(argv[2]);
   if (argc == 2 && !wcscmp(argv[1], L"--inspect-parent")) {
     DWORD pid; HANDLE parent = parent_process(&pid);
