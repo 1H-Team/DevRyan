@@ -5,9 +5,16 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { executionSocketDirectory, NODE_SPAWN_PRELOAD, ownedPrivateDirectory, prepareSessionExecution, removeExecutionSocketDirectory,
-  sessionExecutionProfile, windowsSessionExecutionProfile, readSessionExecutionReceipt, sweepExecutionSocketDirectories, sweepSessionTemporaryDirectories, verifySessionExecutionLauncher } from './session-execution.js';
+  sessionExecutionProfile, windowsSessionExecutionProfile, parseWindowsExecutionProcessIdentity, readSessionExecutionReceipt, sweepExecutionSocketDirectories, sweepSessionTemporaryDirectories, verifySessionExecutionLauncher } from './session-execution.js';
 
 const roots = [], leases = [];
+test('Windows cancellation identity refuses recycled or widened process observations', () => {
+  const value = { protocol: 'devryan.windows-process-identity/1', pid: 12, startIdentity: 'win32:0123456789abcdef', active: true, inJob: true };
+  expect(parseWindowsExecutionProcessIdentity(JSON.stringify(value), 12)).toEqual(value);
+  for (const change of [{ pid: 13 }, { startIdentity: '12' }, { active: 'true' }, { extra: true }]) {
+    expect(() => parseWindowsExecutionProcessIdentity(JSON.stringify({ ...value, ...change }), 12)).toThrow('mutation_termination_unconfirmed');
+  }
+});
 afterEach(async () => {
   for (const lease of leases.splice(0)) await removeExecutionSocketDirectory(lease);
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));

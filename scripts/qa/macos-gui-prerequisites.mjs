@@ -37,6 +37,8 @@ export async function probeDisposableMacGui() {
   const sourceCommit = (await exec('git', ['rev-parse', 'HEAD'], { cwd: repo })).stdout.trim();
   assert.equal(sourceCommit, process.env.GITHUB_SHA);
   const output = path.join(repo, '.cache/macos-gui-prerequisites');
+  await fs.mkdir(path.dirname(output), { mode: 0o700 }).catch(error => { if (error.code !== 'EEXIST') throw error; });
+  assert.equal(await fs.realpath(path.dirname(output)), path.dirname(output));
   await fs.mkdir(output, { mode: 0o700 });
   assert.equal(await fs.realpath(output), output);
   const source = path.join(repo, 'scripts/qa/macos-gui-prerequisites.swift'), binary = path.join(output, 'DevRyan-gui-prerequisite');

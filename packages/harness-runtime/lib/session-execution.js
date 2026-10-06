@@ -9,6 +9,20 @@ import { writableInputDirectories } from './execution-inputs.js';
 import { ensureWindowsPrivateDirectory, createWindowsPrivateFile, readWindowsPrivateFile } from './windows-private-files.js';
 
 const error = (code) => Object.assign(new Error(code), { code, status: 409 });
+
+/** @returns {{ protocol: 'devryan.windows-process-identity/1', pid: number,
+ * startIdentity: string, active: boolean, inJob: boolean }} */
+export function parseWindowsExecutionProcessIdentity(raw, pid) {
+  if (typeof raw !== 'string' || Buffer.byteLength(raw) > 4096) throw error('mutation_termination_unconfirmed');
+  let value;
+  try { value = JSON.parse(raw); } catch { throw error('mutation_termination_unconfirmed'); }
+  if (!value || Object.keys(value).sort().join(',') !== 'active,inJob,pid,protocol,startIdentity'
+    || value.protocol !== 'devryan.windows-process-identity/1' || value.pid !== pid
+    || !Number.isSafeInteger(pid) || pid < 1 || pid > 0xffffffff
+    || typeof value.startIdentity !== 'string' || !/^win32:[a-f0-9]{16}$/.test(value.startIdentity)
+    || typeof value.active !== 'boolean' || typeof value.inJob !== 'boolean') throw error('mutation_termination_unconfirmed');
+  return value;
+}
 const sbString = (value) => {
   if (typeof value !== 'string' || /[\u0000-\u001f]/.test(value)) throw error('invalid_execution_path');
   return JSON.stringify(value);
@@ -498,16 +512,37 @@ export async function startSessionExecution({ launcher, lease, command, args = [
     child.stdout.on('data', output('stdout')); child.stderr.on('data', output('stderr'));
   }
   let cancellationRequested = false;
+  // Capture once while this owned ChildProcess is alive. Later cancellation
+  // must prove the same native creation identity, even if its PID is reused.
+  const supervisorIdentity = process.platform === 'win32' ? new Promise((resolve, reject) => {
+    execFile(launcher, ['--inspect-process', String(child.pid)], { timeout: 5000, maxBuffer: 4096, windowsHide: true }, (cause, raw) => {
+      if (cause) { reject(error('mutation_termination_unconfirmed')); return; }
+      try {
+        const identity = parseWindowsExecutionProcessIdentity(raw, child.pid);
+        if (!identity.active) throw error('mutation_termination_unconfirmed');
+        resolve(identity);
+      } catch (cause) { reject(cause); }
+    });
+  }) : null;
+  // A very short command may exit before this read-only probe. Its receipt
+  // remains authoritative; failed identity capture can never signal a PID.
+  void supervisorIdentity?.catch(() => {});
   const cancel = () => {
     if (cancellationRequested) return;
     cancellationRequested = true;
     if (process.platform !== 'win32') { terminate('SIGTERM'); return; }
     // An early cancellation can race event creation. Retry while this owned
     // supervisor is alive; a forced kill would lose its durable acknowledgement.
-    const signalEvent = () => execFile(launcher, ['--cancel', prepared.environment.DEVRYAN_EXECUTION_CANCEL_EVENT], { timeout: 1000, windowsHide: true }, (cause) => {
-      if (cause && child.exitCode === null && child.signalCode === null) setTimeout(signalEvent, 20).unref();
-    });
-    signalEvent();
+    void supervisorIdentity.then(identity => {
+      const signalEvent = () => {
+        if (child.exitCode !== null || child.signalCode !== null) return;
+        execFile(launcher, ['--cancel', prepared.environment.DEVRYAN_EXECUTION_CANCEL_EVENT, String(identity.pid), identity.startIdentity],
+          { timeout: 1000, windowsHide: true }, (cause) => {
+            if (cause && child.exitCode === null && child.signalCode === null) setTimeout(signalEvent, 20).unref();
+          });
+      };
+      signalEvent();
+    }).catch(() => {}); // Unknown creation authority keeps settlement held.
   };
   signal?.addEventListener('abort', cancel, { once: true });
   if (signal?.aborted) cancel();

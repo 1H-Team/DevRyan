@@ -557,12 +557,12 @@ static wchar_t *command_line(int argc, wchar_t **argv, int first) {
   *out = 0; return line;
 }
 
-static DWORD parent_id(void) {
+static DWORD parent_id(DWORD subject) {
   HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
   if (snapshot == INVALID_HANDLE_VALUE) fail("owner snapshot");
   PROCESSENTRY32 entry = { .dwSize = sizeof(entry) }; DWORD parent = 0;
   if (Process32First(snapshot, &entry)) do {
-    if (entry.th32ProcessID == GetCurrentProcessId()) { parent = entry.th32ParentProcessID; break; }
+    if (entry.th32ProcessID == subject) { parent = entry.th32ParentProcessID; break; }
   } while (Process32Next(snapshot, &entry));
   CloseHandle(snapshot); if (!parent) fail("execution owner"); return parent;
 }
@@ -570,7 +570,7 @@ static DWORD parent_id(void) {
 /* A recycled parent PID cannot authorize a new owner. Open the actual process,
  * require creation before this supervisor, and retain that handle until drain. */
 static HANDLE parent_process(DWORD *pid) {
-  *pid = parent_id();
+  *pid = parent_id(GetCurrentProcessId());
   HANDLE parent = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, *pid);
   if (!parent) fail("owner handle");
   FILETIME parentCreated, created, exited, kernel, user;
@@ -580,6 +580,44 @@ static HANDLE parent_process(DWORD *pid) {
     SetLastError(ERROR_INVALID_PARAMETER); fail("original owner identity");
   }
   return parent;
+}
+
+/* Cancellation names include the retained supervisor's creation identity.
+ * A reused PID or another execution's event never acknowledges this request. */
+static void cancel_event_name(const wchar_t *base, DWORD pid, FILETIME created, wchar_t *name) {
+  if (wcslen(base) > 120 || wcsncmp(base, L"Local\\DevRyan-", 14)) {
+    SetLastError(ERROR_INVALID_PARAMETER); fail("cancel event scope");
+  }
+  for (const wchar_t *p = base + 14; *p; p++) if (!((*p >= L'a' && *p <= L'z')
+    || (*p >= L'A' && *p <= L'Z') || (*p >= L'0' && *p <= L'9') || *p == L'-')) {
+    SetLastError(ERROR_INVALID_PARAMETER); fail("cancel event name");
+  }
+  swprintf(name, 192, L"%s-%lu-win32:%08lx%08lx", base, pid, created.dwHighDateTime, created.dwLowDateTime);
+}
+
+static int cancel_process(const wchar_t *base, const wchar_t *argument, const wchar_t *expected) {
+  if (!*argument) return 125;
+  for (const wchar_t *p = argument; *p; p++) if (*p < L'0' || *p > L'9') return 125;
+  wchar_t *end; errno = 0; unsigned long pid = wcstoul(argument, &end, 10);
+  if (errno || *end || !pid) return 125;
+  HANDLE supervisor = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, (DWORD)pid);
+  if (!supervisor) fail("cancel supervisor handle");
+  FILETIME created = {0}, exited = {0}, kernel = {0}, user = {0}, ownerCreated = {0}, helperCreated = {0};
+  checked(GetProcessTimes(supervisor, &created, &exited, &kernel, &user), "cancel supervisor identity");
+  wchar_t identity[24]; swprintf(identity, 24, L"win32:%08lx%08lx", created.dwHighDateTime, created.dwLowDateTime);
+  DWORD ownerPid; HANDLE owner = parent_process(&ownerPid);
+  checked(GetProcessTimes(owner, &ownerCreated, &exited, &kernel, &user), "cancel owner identity");
+  checked(GetProcessTimes(GetCurrentProcess(), &helperCreated, &exited, &kernel, &user), "cancel helper identity");
+  if (wcscmp(identity, expected) || WaitForSingleObject(supervisor, 0) != WAIT_TIMEOUT
+    || parent_id((DWORD)pid) != ownerPid || CompareFileTime(&ownerCreated, &created) >= 0
+    || CompareFileTime(&created, &helperCreated) >= 0) {
+    SetLastError(ERROR_ACCESS_DENIED); fail("cancel owned supervisor");
+  }
+  wchar_t name[192]; cancel_event_name(base, (DWORD)pid, created, name);
+  HANDLE event = OpenEventW(EVENT_MODIFY_STATE, FALSE, name);
+  if (!event) fail("cancel event");
+  checked(SetEvent(event), "cancel signal");
+  CloseHandle(event); CloseHandle(owner); CloseHandle(supervisor); return 0;
 }
 
 int wmain(int argc, wchar_t **argv) {
@@ -597,10 +635,7 @@ int wmain(int argc, wchar_t **argv) {
   if (argc == 3 && !wcscmp(argv[1], L"--owner-probe")) return owner_lock(argv[2], TRUE);
   // The host uses a named cancellation event because TerminateProcess would
   // close the job safely but could not write a termination acknowledgement.
-  if (argc == 3 && !wcscmp(argv[1], L"--cancel")) {
-    HANDLE event = OpenEventW(EVENT_MODIFY_STATE, FALSE, argv[2]);
-    if (!event) fail("cancel event"); checked(SetEvent(event), "cancel signal"); CloseHandle(event); return 0;
-  }
+  if (argc == 5 && !wcscmp(argv[1], L"--cancel")) return cancel_process(argv[2], argv[3], argv[4]);
   if (argc < 7 || wcscmp(argv[5], L"--")) return 125;
   DWORD uiMask = maximum_ui_limits(os_build());
   const wchar_t *cache = _wgetenv(L"DEVRYAN_EXECUTION_CACHE");
@@ -671,10 +706,13 @@ int wmain(int argc, wchar_t **argv) {
   checked(GetSecurityDescriptorDacl(objectSecurity, &present, &dacl, &defaulted) && present, "process DACL");
   TOKEN_DEFAULT_DACL defaultDacl = { dacl };
   checked(SetTokenInformation(restricted, TokenDefaultDacl, &defaultDacl, sizeof(defaultDacl)), "child process security");
-  wchar_t eventName[192];
-  DWORD eventLength = GetEnvironmentVariableW(L"DEVRYAN_EXECUTION_CANCEL_EVENT", eventName, 192);
+  wchar_t eventBase[192], eventName[192];
+  DWORD eventLength = GetEnvironmentVariableW(L"DEVRYAN_EXECUTION_CANCEL_EVENT", eventBase, 192);
   if (!eventLength || eventLength >= 192) fail("cancel identity");
-  HANDLE cancel = CreateEventW(NULL, TRUE, FALSE, eventName);
+  FILETIME supervisorCreated = {0}, supervisorExited = {0}, supervisorKernel = {0}, supervisorUser = {0};
+  checked(GetProcessTimes(GetCurrentProcess(), &supervisorCreated, &supervisorExited, &supervisorKernel, &supervisorUser), "cancel creation identity");
+  cancel_event_name(eventBase, GetCurrentProcessId(), supervisorCreated, eventName);
+  HANDLE cancel = CreateEventW(&receiptAttributes, TRUE, FALSE, eventName);
   if (!cancel || GetLastError() == ERROR_ALREADY_EXISTS) fail("exclusive cancel event");
   wchar_t desktopName[96]; swprintf(desktopName, 96, L"DevRyan-%lu-%lu", (DWORD)luid.HighPart, luid.LowPart);
   SECURITY_ATTRIBUTES desktopSecurity = { sizeof(desktopSecurity), objectSecurity, FALSE };

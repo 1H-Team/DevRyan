@@ -65,8 +65,14 @@ live ownership, ordinary close and abrupt keeper death are independent probes.
 `.github/workflows/windows-lpac.yml` runs those probes and exact Node/Bun startup
 on both native architectures without installing the workspace. It cannot
 satisfy the complete Windows acceptance inventory or grant admission.
-These are independent prerequisites: they do not attest read confinement, descendant containment,
-cancellation, runtime admission or the complete acceptance inventory.
+The host verifier also executes early cancellation and a running descendant,
+requires the private flushed receipt and observes no later heartbeat writes.
+Wrong creation identities and unrelated event names refuse while the real
+supervisor stays alive. Cancellation retains the target process handle,
+compares its creation time and actual parent with the calling host, and derives
+the private event name from that exact supervisor identity. No bare PID can
+signal an event. These remain independent prerequisites: they do not attest
+complete read confinement, runtime admission or the full acceptance inventory.
 
 The policy-3 draft creates a unique Less-Privileged AppContainer identity,
 opts out of ambient All Application Packages access, and keeps the complete

@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {createHash} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import {spawn,spawnSync,execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {createExecutionHostOwner, executionHostOwnerLost} from '../packages/harness-runtime/lib/execution-host-owner.js';
+import {ensureWindowsPrivateDirectory} from '../packages/harness-runtime/lib/windows-private-files.js';
+import {startSessionExecution,readSessionExecutionReceipt} from '../packages/harness-runtime/lib/session-execution.js';
 
 export function validateWindowsJobBoundary(jobBoundary,inJob) {
 assert.deepEqual(Object.keys(jobBoundary).sort(),['breakawayAllowed','hostLimitFlags','inJob','osBuild','protocol','requestedUIFlags','sdkUIFlags','silentBreakawayAllowed','uiError','uiReadBack','uiSet']);
@@ -96,9 +98,48 @@ try {
  ownerLock.abruptLoss=true;
 } finally {await owner?.close();await fs.rm(lockFixture,{recursive:true,force:true})}
 await pin();
-const evidence={schema:1,status:'passed',scope:'read-only Windows SDK process creation/liveness and containing-job probes; no confinement/admission authority',
+const cancellation=[];
+for(const early of [false,true]){
+ const fixture=path.join(repo,'.cache/test-fixtures',`windows-cancel-${randomUUID()}`);
+ await ensureWindowsPrivateDirectory(binary,fixture);
+ const viewDirectory=path.join(fixture,'worktree');await ensureWindowsPrivateDirectory(binary,viewDirectory);
+ const lease={viewDirectory};let handle,timer;
+ try{
+  let ready;const started=new Promise(resolve=>{ready=resolve});
+  const writer="const fs=require('node:fs');fs.appendFileSync('heartbeat','started');console.log('ready');setInterval(()=>fs.appendFileSync('heartbeat','x'),5)";
+  handle=await startSessionExecution({launcher:binary,lease,command:process.execPath,
+   args:['-e',`const {spawn}=require('node:child_process');const child=spawn(process.execPath,['-e',${JSON.stringify(writer)}],{stdio:['ignore','pipe','pipe']});child.stdout.pipe(process.stdout);child.stderr.pipe(process.stderr);setInterval(()=>{},1000)`],
+   env:{PATH:process.env.PATH,SystemRoot:process.env.SystemRoot??process.env.SYSTEMROOT},
+   onOutput:({stream,data})=>{if(stream==='stdout'&&data.toString().includes('ready'))ready()}});
+  if(!early){
+   await Promise.race([started,handle.result.then(()=>{throw Error('Cancellation command exited before readiness')}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Cancellation readiness timeout')),10000)})]);
+   clearTimeout(timer);
+   const observed=probe(handle.pid);
+   for(const identity of ['win32:0000000000000000',observed.startIdentity]){
+    const refusal=spawnSync(binary,['--cancel',`Local\\DevRyan-${randomUUID()}`,String(handle.pid),identity],{encoding:'utf8',timeout:5000,maxBuffer:4096});
+    assert.equal(refusal.status,125);assert.equal(probe(handle.pid).active,true);
+   }
+  }
+  handle.cancel();
+  const receipt=await Promise.race([handle.result,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Cancellation receipt timeout')),10000)})]);
+  clearTimeout(timer);assert.equal(receipt.cancelled,true);assert.equal(receipt.confined,true);assert.equal(receipt.exitCode,130);
+  assert.deepEqual(await readSessionExecutionReceipt(lease,{launcher:binary}),receipt);
+  const heartbeat=path.join(viewDirectory,'heartbeat'),before=await fs.readFile(heartbeat).catch(()=>Buffer.alloc(0));
+  if(!early)assert.ok(before.length>=7);
+  await new Promise(resolve=>setTimeout(resolve,100));
+  assert.deepEqual(await fs.readFile(heartbeat).catch(()=>Buffer.alloc(0)),before);
+  cancellation.push({mode:early?'before-event-creation':'running-descendant',status:'passed',receipt,
+   receiptSha256:hash(await fs.readFile(path.join(fixture,'termination.json')))});
+ }finally{
+  clearTimeout(timer);
+  if(handle?.child.exitCode===null&&handle.child.signalCode===null)handle.child.kill('SIGKILL');
+  await handle?.result.catch(()=>{});await fs.rm(fixture,{recursive:true,force:true});
+ }
+}
+await pin();
+const evidence={schema:1,status:'passed',scope:'Windows SDK process identity, host lifetime and owned cancellation prerequisites; no admission or complete acceptance authority',
  sourceCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).trim(),platform:process.platform,arch:process.arch,
- supervisorSha256:manifest.sha256,manifestSha256:hash(manifestBytes),host,parentProof,jobBoundary,ownerLock,child:identity,childExit:await closed};
+ supervisorSha256:manifest.sha256,manifestSha256:hash(manifestBytes),host,parentProof,jobBoundary,ownerLock,cancellation,child:identity,childExit:await closed};
 await fs.writeFile(path.join(root,'host-boundary-evidence.json'),JSON.stringify(evidence,null,2)+'\n',{flag:'wx'});
 console.log(JSON.stringify(evidence));
 }

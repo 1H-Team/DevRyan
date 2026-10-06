@@ -478,6 +478,13 @@ Flush the receipt before reporting termination. A failed or missing receipt
 keeps admission held, prevents bundle publication, and requires reconciliation.
 Test parent death, descendant escape attempts, handle inheritance, PID reuse,
 busy refusal, abrupt supervisor death, cancellation races, and receipt tampering.
+The current cancellation implementation captures the owned supervisor's native
+creation identity once. The SDK cancellation helper retains that process,
+checks the exact identity and original host parent, then opens an event whose
+name includes the supervisor PID and creation time. Wrong identities, other
+execution events and exited targets refuse. The actual-host verifier adds early
+cancellation and descendant heartbeat settlement; both architecture runs are
+required before treating those cases as passed.
 The process-creation attribute is documented by
 [Microsoft](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute).
 
