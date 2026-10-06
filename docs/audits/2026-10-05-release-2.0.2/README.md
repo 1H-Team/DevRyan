@@ -816,8 +816,14 @@ three-branch Git bundle remain preserved under
 `.cache/release-2.0.2-recovery/main-integration-20261006-0627`.
 Implementation continues on `main`. Windows qualification now follows pushes
 to `main` with the same required native outcomes and no publication authority.
-Combined-source full validation, build, bundle and documentation checks are
-pending. The earlier macOS source/native bindings below remain historical;
+Combined-source `validate:full`, build, bundle and documentation checks pass at
+`b5327d60`, including 6,328 web tests, 4,049 UI tests and 39 retained Rust tests.
+The clean source tree and all four log hashes are retained in
+`main-integration-20261006-0627/validation-1-review.json`, SHA-256
+`db54488d41f5c8ecec94ab8c0cc1910db0bb1a6d0df27c288f937fcc3c68b158`.
+The full-validation log SHA-256 is
+`d2eaafd092fc518dd6dfbf0b5f2e344292f686f6ad8ac2908afedb54b5bd3625`.
+The earlier macOS source/native bindings below remain historical;
 the shared Windows changes require fresh final qualification, not relabeling
 their retained results.
 
@@ -850,7 +856,9 @@ The thirteen local synthetic performance prerequisites passed for source
 The original six-launch attribution phase then failed after its first arm.
 Its natural exit, closed tracking and zero remaining owned processes are
 retained in `macos-release-dry-run-2-stage-e-2`. This failed cohort is not
-resumed or spliced. Calibration, frozen grading and paired launches remain
+resumed or spliced. Read-only investigation verifies zero gaps in both retained
+journals and durable parent/child success; this does not prove receipt of the
+exact terminal event. Calibration, frozen grading and paired launches remain
 not run; the interval stays 750 ms.
 
 Windows run [37419982853](https://github.com/1H-Team/DevRyan/actions/runs/37419982853)
@@ -868,7 +876,7 @@ admission stays unavailable, and no installer or native safety pass is claimed.
 
 | Mandatory gate | Status | Evidence or prerequisite |
 | --- | --- | --- |
-| Full integrated validation, build, bundle budgets and documentation | Prior engineering checks passed; merged `main` checks pending | Image-only preparation's fourth full validation, build, bundle budgets and documentation pass after exact file dispatch and Bun process isolation. All original assertions/deadlines remain; 34 runner/coverage checks pass and earlier failed evidence is preserved. Combined-source checks and final source/artifact identities remain pending |
+| Full integrated validation, build, bundle budgets and documentation | Passed on merged `main` at `b5327d60`; final freeze pending | Clean combined source passes all four commands, including 6,328 web, 4,049 UI and 39 Rust tests. Review digest `db54488d` retains exact source/tree and all log hashes. Earlier failed evidence remains preserved; final source/artifact qualification is pending |
 | Packaged prompt conflict notice and explicit restore | Passed (focused and private packaged); final freeze pending | Native notice, two explicit restores with exact backups, configuration apply, both original primary guidance requests, four reviewed screenshots and verified journal gaps |
 | Tracked credential owner and synthetic rehearsal | Passed (compiled synthetic); live not run | Original SDK OAuth, compiled native key/CAS owners, held projection, ready boot and zero evidence leaks; final identities and attended live/launcher qualification pending |
 | Complete B1 review closure | Consolidated (focused); qualification pending | Seven engineering scopes above retain original reproductions, corrected checks and current drift; final compiled/live/package evidence pending |
