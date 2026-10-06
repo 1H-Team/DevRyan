@@ -125,6 +125,45 @@ process.exit(2);`), { mode: 0o755 });
 
 const version = JSON.parse(readFileSync(path.join(repository, 'package.json'), 'utf8')).version;
 const workflow = { GITHUB_REPOSITORY: '1H-Team/DevRyan', GITHUB_REF: `refs/tags/v${version}`, GITHUB_WORKFLOW_REF: `1H-Team/DevRyan/.github/workflows/release.yml@refs/tags/v${version}` };
+const inputRef = `refs/tags/v${version}-bot-inputs-${revision.slice(0, 12)}`;
+const preparation = { ...workflow, RELEASE_BOT_INPUTS_ONLY: 'true', GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'workflow_dispatch',
+  GITHUB_REF: inputRef, GITHUB_WORKFLOW_REF: `1H-Team/DevRyan/.github/workflows/release.yml@${inputRef}` };
+
+test('Bot-only preparation plans immutable image tags and refuses every application operation before writing', async t => {
+  const root = await checkout(t), output = path.join(root, 'image-output');
+  let result = run(root, 'image-plan', { ...preparation, IMAGE_KEY: 'rest', GITHUB_OUTPUT: output });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(await fs.readFile(output, 'utf8'), new RegExp(`tags=ghcr.io/1h-team/devryan-bot-rest:sha-${revision.slice(0, 12)}\\n$`));
+  await fs.rm(output);
+  for (const operation of ['asset-describe', 'web-pack', 'web-describe', 'web-stage', 'prepare-export', 'prepare-import']) {
+    result = run(root, operation, { ...preparation, GITHUB_OUTPUT: output });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Bot input preparation prohibits application release operations/);
+    assert.equal(await fs.stat(path.join(root, 'artifacts')).catch(() => null), null);
+    assert.equal(await fs.stat(output).catch(() => null), null);
+  }
+  result = run(root, 'image-plan', { ...preparation, GITHUB_SHA: 'b'.repeat(40), IMAGE_KEY: 'rest', GITHUB_OUTPUT: output });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Bot input preparation requires/);
+  assert.equal(await fs.stat(output).catch(() => null), null);
+});
+
+test('Bot-only preparation signs trusted input tags and dry runs still make no registry writes', async t => {
+  const root = await imageCheckout(t), registry = await fakeRegistry(root);
+  const signing = { ...preparation, ACTIONS_ID_TOKEN_REQUEST_URL: 'https://fixture.invalid/token', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'fixture',
+    IMAGE_KEY: 'rest', IMAGE_DIGEST: registry.indexDigest, PATH: registry.PATH };
+  const result = run(root, 'image-sign', signing);
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(new RegExp(botRuntimeImageSignerIdentity('1H-Team/DevRyan')).test(`https://github.com/${preparation.GITHUB_WORKFLOW_REF}`));
+  const { digest } = await readBotRuntimeImageInputs({ key: 'rest', root });
+  assert.ok((await registry.calls()).some(call => call.includes(`ghcr.io/1h-team/devryan-bot-rest:${botRuntimeImageInputTag(digest)}`)));
+  await fs.rm(path.join(root, 'fake-registry/calls.log'));
+  for (const change of [{ RELEASE_DRY_RUN: 'true' }, { GITHUB_REF: workflow.GITHUB_REF }, { GITHUB_EVENT_NAME: 'push' }]) {
+    const refused = run(root, 'image-sign', { ...signing, ...change });
+    assert.notEqual(refused.status, 0);
+    assert.deepEqual(await registry.calls(), []);
+  }
+});
 
 test('image resolution reuses a verified input-tagged image as an image-sign result', async t => {
   const root = await imageCheckout(t), output = path.join(root, 'image-output');

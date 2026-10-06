@@ -21,6 +21,31 @@ describe('script framework dispatch', () => {
     assert.equal(isBunTestSource("import { test } from 'bun:test';"), true);
     assert.equal(isBunTestSource("import { test } from 'node:test';"), false);
   });
+
+  test('isolates discovered Bun paths and propagates their failures', () => {
+    mkdirSync(new URL('.cache/', repoRoot), { recursive: true });
+    const root = mkdtempSync(fileURLToPath(new URL('.cache/script-runner-', repoRoot)));
+    const environment = { ...process.env };
+    delete environment.NODE_TEST_CONTEXT;
+    const run = () => spawnSync(process.execPath, ['--input-type=module', '-e',
+      `import { runScriptTests } from ${JSON.stringify(new URL('./test-scripts.mjs', import.meta.url).href)}; process.exit(runScriptTests(process.argv[1]));`, root],
+    { encoding: 'utf8', env: environment });
+    try {
+      mkdirSync(path.join(root, 'scripts'));
+      mkdirSync(path.join(root, 'unowned/scripts'), { recursive: true });
+      writeFileSync(path.join(root, 'scripts/selected.test.mjs'), "import { test } from 'bun:test'; test('selected', () => {});");
+      writeFileSync(path.join(root, 'scripts/a.fixture.test.mjs'), "import { test, expect } from 'bun:test'; globalThis.devryanRunnerFixture = 'owned'; test('own process state', () => expect(globalThis.devryanRunnerFixture).toBe('owned'));");
+      writeFileSync(path.join(root, 'scripts/b.fixture.test.mjs'), "import { test, expect } from 'bun:test'; test('fresh process state', () => expect(globalThis.devryanRunnerFixture).toBeUndefined());");
+      writeFileSync(path.join(root, 'unowned/scripts/selected.test.mjs'), "import { test } from 'bun:test'; test('undiscovered', () => { throw Error('undiscovered_test_executed'); });");
+      const passing = run();
+      assert.equal(passing.status, 0, passing.stdout + passing.stderr);
+      assert.doesNotMatch(passing.stdout + passing.stderr, /undiscovered_test_executed/);
+      writeFileSync(path.join(root, 'scripts/selected.test.mjs'), "import { test } from 'bun:test'; test('selected failure', () => { throw Error('selected_test_failed'); });");
+      const failing = run();
+      assert.notEqual(failing.status, 0);
+      assert.match(failing.stdout + failing.stderr, /selected_test_failed/);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
 });
 
 describe('isIsolatedUiTestSource', () => {
@@ -223,7 +248,7 @@ describe('release workflow', () => {
     assert.match(workflow, /RELEASE_DRY_RUN: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.dry_run == true \}\}/);
     assert.match(
       job.slice(migrationStep, releaseStep),
-      /^- name: Deploy and verify Supabase configuration and migrations\n        if: \$\{\{ env\.RELEASE_DRY_RUN != 'true' \}\}/,
+      /^- name: Deploy and verify Supabase configuration and migrations\n        if: \$\{\{ env\.RELEASE_DRY_RUN != 'true' && env\.RELEASE_BOT_INPUTS_ONLY != 'true' \}\}/,
     );
     assert.match(job, /SUPABASE_ACCESS_TOKEN: \$\{\{ secrets\.SUPABASE_ACCESS_TOKEN \}\}/);
     assert.match(job, /SUPABASE_DB_PASSWORD: \$\{\{ secrets\.SUPABASE_DB_PASSWORD \}\}/);

@@ -392,6 +392,39 @@ reproduced 404 for each exact content-addressed tag without using Docker Engine.
 CI status and probe receipts. This confirms the write refusal, while full
 dry-run qualification remains failed until those signed image inputs exist.
 
+The image-only preparation mode now preserves the original keyless tag trust
+while skipping application assets and all release/npm/hosted database/notification
+owners. Its manual purpose tag binds version and the commit prefix; core guards
+refuse a wrong identity, every non-image CI operation and all dry-run registry
+writes. Focused image/workflow checks pass **29 tests, zero skips**. The first
+full run passed 1,189 Node checks and failed an existing exact workflow assertion;
+that assertion now requires the additional image-only publication refusal. The
+next run passed all **1,190 Node checks**, then passed 252 Bun script checks and
+failed the AST whole-file and reviewed-resource child deadlines. Original logs
+and hashes remain in `bot-input-preparation-validation-review-1.json`; neither
+attempt is a full qualification pass. Those fixtures remove their roots, so no
+durable journal/gap grade is available. Image preparation has not yet run and
+no app release or final source freeze is established.
+
+The unchanged AST file passes independently within its original deadline. The
+reviewed-resource file passes with an explicit Bun path, and 12 unchanged
+repetitions pass. A disposable dispatch fixture reproduces Bun's substring
+selection of an undiscovered sibling when filenames lack `./`. The third full
+attempt passes all **1,191 Node checks**, then fails in the large Bun batch with
+corrupted resolver paths. A reduced four-file batch independently reproduces a
+notification graph build failure (22 passed, one failed); the unchanged
+notification file passes both cases alone. The script runner now uses explicit
+paths and one process per Bun file. Its 34 dispatch/coverage checks pass, with
+all original native assertions and deadlines retained. Original failures remain
+recorded. The fourth complete validation passes after file isolation, including
+all lint/type gates, the full script and harness inventory, Electron checks,
+4,048 UI tests and 6,325 web tests. The required build and bundle budget check
+also pass. Logs are `bot-input-preparation-full-validation-4.log`,
+`bot-input-preparation-build-1.log` and
+`bot-input-preparation-bundle-check-1.log`. This validates release engineering;
+it does not replace final artifact, packaged updater, attended live or
+continuity qualification.
+
 Windows run `37383981687` at `a92c85e2` built pinned libsql 0.5.29 from the
 unchanged official source on both native architectures using NMake. Node
 22.23.3 and Bun 1.3.14 passed both ABI/transaction checks. Downloaded PE machine
@@ -418,6 +451,74 @@ lacks that complete diagnostic. Supervisor manifests retain `acceptance: false`.
 Deleted transient fixtures have no retained durable journal roots. Windows
 changes remain isolated on `implementation/windows-port`; macOS candidate
 source and archive identities are unchanged.
+
+Run [37399204561](https://github.com/1H-Team/DevRyan/actions/runs/37399204561)
+at `79cd2dd9` failed the grouped UI command and an empty-job validator mask
+assumption. The exact UI command independently reproduces module-mock leakage;
+the existing per-file UI runner passes all 12 corrected checks. Run
+[37401394828](https://github.com/1H-Team/DevRyan/actions/runs/37401394828) at
+`91bd7494` then passes the feature inventory, read-only process/job probes,
+15 filesystem checks, pinned AST/Claude probes and libsql Node/Bun ABI checks
+on both hosts. Both full jobs still fail supervisor acceptance and reviewed-byte
+identity before native candidate compilation; compiled acceptance is skipped.
+All nine actual outcomes, exact PE/source pins and downloaded receipt hashes
+are independently reviewed in `windows-native-ci-{8,9}-review.json`.
+The new receipts show both containing jobs permit breakaway; the empty-job
+`0x3ff` UI mask is refused on Server 2022 with error 87 and accepted on ARM64.
+These are diagnostics, not confinement acceptance.
+
+A real disposable Windows-style Git checkout independently reproduces CRLF
+conversion of the pinned reviewed Slim source. Scoped `.gitattributes` now
+preserves original resource bytes; all four native-asset checks pass. Imported
+Windows build helpers are included in macOS native identities. Two actual Mac
+builds of the isolated Windows branch pass, including the corrected helper hash
+record; they qualify neither Windows nor the final Mac release candidate.
+The subsequent Windows supervisor change selects every available UI restriction
+from the genuine OS build and requires exact kernel readback, with no reduced
+retry. Three focused contract checks pass. Runs
+[37402878771](https://github.com/1H-Team/DevRyan/actions/runs/37402878771) at
+`e0ba65b0` and [37403407287](https://github.com/1H-Team/DevRyan/actions/runs/37403407287)
+at `22e302ca` advance past reviewed byte checks and refuse the build-only
+compaction helper path before inventory. Its POSIX prefix guard is replaced
+with native absolute-path validation; the exact SDK byte and insertion guards
+remain, and all five focused observation checks pass.
+Run 11 compiles both supervisors and retains exact kernel UI readback: Server
+2022 build 20348 accepts `0xff`, and ARM64 build 26200 accepts `0x3ff`.
+Both containing jobs still allow explicit/silent breakaway, and command
+supervision acceptance still fails. All nine actual outcomes and downloaded
+PE/source/pin/receipt digests are independently checked in
+`windows-native-ci-{10,11}-review.json`. Compiled controller/writer acceptance
+is skipped, manifests retain `acceptance: false`, and deleted transient fixtures
+have no durable journal/gap grade. Fresh native qualification remains required.
+
+Runs [37404790881](https://github.com/1H-Team/DevRyan/actions/runs/37404790881)
+at `121faa3a` and [37405887286](https://github.com/1H-Team/DevRyan/actions/runs/37405887286)
+at `81f39b99` reach the controller/writer builds. Run 12 fails the x64 writer
+boot refusal; ARM64 cleanup fails with `EBUSY` and masks the original error.
+Run 13 retains both complete seven-file sets and exact source/build identities:
+both controllers refuse empty input correctly, while both writers exit 0 with
+no reply. Independent payload review finds the original exported helpers and
+the eliminated `import.meta.main` protocol block. All nine outcomes and original
+PE, pin, Git checkout-byte and receipt hashes are checked in
+`windows-native-ci-{12,13}-review.json`. The native supervision gate remains
+failed, and runtime acceptance is skipped on both architectures.
+
+The Windows branch now uses an explicit compiled writer entry and retains
+unqualified candidate files without directory promotion, which also refused
+with `EPERM` on ARM64. Fifteen routing checks pass. A fresh shared macOS build,
+signature/resource verification and both empty-input boot refusals pass in
+`windows-candidate-shared-macos-native-build-{3,4}-review.json`. Build 4 includes
+the current exclusive-output correction; both Windows reruns remain required. No Windows
+admission, integrated compiled acceptance or installer pass is implied.
+
+The fifth local full Windows-branch validation passed its preceding gates and
+660 harness checks but failed four unchanged platform input cases at the default
+five-second runner cutoff. Their independent unchanged reproduction passes;
+the affected fixture registrations now use a bounded 120-second deadline, and
+all 15 input checks pass with original confinement/receipt assertions intact.
+The failed full log remains bound to `6c216d8c` in
+`windows-feature-integrated-full-validation-5-review.json`. Final integrated
+Windows validation remains required.
 
 Windows run `37366300612` initially had no acquired runners; its retry compiled
 both supervisors and passed both process/parent identity checks. Each retained
@@ -459,6 +560,13 @@ Separate hash-bound review and gap receipts are
 `service-correction-stage-f-2-runtime-gaps.json`. Full wire screenshot review,
 physical devices, paid providers and native compaction are not covered by this
 review; original earlier failed grades remain preserved.
+
+The separate wire screenshot review now covers **168 of 395 unique images**.
+All reviewed light/web dark images and the Electron dark images checked so far
+have readable controls and recovery states without actionable visual defects.
+The original 401 image inventory and each reviewed SHA-256 remain tied to the
+same source, runner and archive in `stage-f-wire-visual-review-progress-1.json`.
+The remaining 227 unique images are not yet reviewed.
 
 The original seven actual lifecycle modes passed with the independently built
 predecessor and current frozen artifacts in
@@ -545,7 +653,7 @@ evidence in `.cache/release-2.0.2-recovery`.
 
 | Mandatory gate | Status | Evidence or prerequisite |
 | --- | --- | --- |
-| Full integrated validation, build, bundle budgets and documentation | Passed at `bf2aa44a`; freeze pending | Corrected full suite, build, bundle and docs logs above; rerun after code changes |
+| Full integrated validation, build, bundle budgets and documentation | Passed (engineering); final freeze pending | Image-only preparation's fourth full validation, build, bundle budgets and documentation pass after exact file dispatch and Bun process isolation. All original assertions/deadlines remain; 34 runner/coverage checks pass and earlier failed evidence is preserved. Final source/artifact identities remain pending |
 | Packaged prompt conflict notice and explicit restore | Passed (focused and private packaged); final freeze pending | Native notice, two explicit restores with exact backups, configuration apply, both original primary guidance requests, four reviewed screenshots and verified journal gaps |
 | Tracked credential owner and synthetic rehearsal | Passed (compiled synthetic); live not run | Original SDK OAuth, compiled native key/CAS owners, held projection, ready boot and zero evidence leaks; final identities and attended live/launcher qualification pending |
 | Complete B1 review closure | Consolidated (focused); qualification pending | Seven engineering scopes above retain original reproductions, corrected checks and current drift; final compiled/live/package evidence pending |
@@ -561,9 +669,9 @@ evidence in `.cache/release-2.0.2-recovery`.
 | Managed-user verification | Unavailable | Non-production Supabase environment not supplied |
 | Cold/warm loopback and full performance audit | Passed (engineering baselines); final not run | Three baseline and three candidate repetitions; gains within noise, candidate removed; full audit and frozen grading pending |
 | Burst, six attribution, 21 calibration, conditional 42 paired launches | Not run | Quiet window and frozen grading pending; retain 750 ms |
-| Release dry-run with no external writes and exact asset digests | Write refusal verified; CI qualification failed | Actual Mac native/web builds passed; eight missing signed input-image tags independently reproduced; release/image/npm/database/notification writes did not run; DMG packaging and final digests remain pending |
+| Release dry-run with no external writes and exact asset digests | Write refusal verified; CI qualification failed | Actual Mac native/web builds passed; eight missing signed inputs independently reproduced. Image-only preparation engineering passes 29 focused checks with strict source/tag/write boundaries; actual preparation, DMG packaging and final digests remain pending |
 | Downloaded DMG digest, mounted app, isolated launch and updater | Not run | Publication requires all preceding mandatory gates |
-| Windows x64 / ARM64 native safety and installers | Partial native checks; release gate failed | Runs 6/7: process/parent identities, 15 filesystem checks, pinned AST/Claude versions and libsql source/Node/Bun ABI candidates pass on both hosts; supervisor and controller/writer gates fail, feature inventory awaits fixture correction; compiled acceptance skipped and installers not run |
+| Windows x64 / ARM64 native safety and installers | Partial native checks; release gate failed | Run 13 retains both PE controller/writer sets and pinned AST/Claude/libsql candidates. Controller boot refusals pass; the writer boot gate fails (exit 0, no reply). Explicit-entry and file-lock corrections await native reruns. Supervision fails, acceptance is skipped and installers are not run |
 
 macOS remains ad-hoc signed. Windows packaging is unsigned. No notarization,
 Authenticode, live provider, or Windows runtime pass is claimed. Verification

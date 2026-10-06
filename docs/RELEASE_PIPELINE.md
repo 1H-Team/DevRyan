@@ -182,6 +182,20 @@ image lane before publication rather than manufacturing development evidence.
 Bot build/sign/tag functions also enforce this prohibition in core code. Local
 fixture verification uses fake registry commands and makes no external writes.
 
+When changed image inputs prevent a dry run, `prepare_bot_inputs_only` prepares
+the eight signed inputs and runs anonymous-access and topology checks without
+creating a GitHub Release, app assets, npm publication, database changes or
+notifications. Dispatch `release.yml` manually from an immutable
+`v<version>-bot-inputs-<first 12 commit SHA characters>` tag, with the package
+version as `version` and `prepare_bot_inputs_only=true`. Pushing that purpose
+tag does not trigger the ordinary release workflow. The preflight requires the
+exact tag/source/version and workflow identity; the CI adapter refuses every
+non-image operation in this mode. Images receive source and input-digest tags,
+without advancing the release-version image tags. The existing `refs/tags/v*`
+keyless signer trust remains unchanged. A dry run in this mode still cannot
+publish missing images. After successful preparation, run the read-only release
+qualification from the final source and require all original release gates.
+
 `windows.yml` provides separate `windows-2022` x64 and `windows-11-arm` ARM64
 qualification jobs with Bun 1.3.14, native MSVC environments, compiled supervisor
 acceptance and controller/writer/package checks. It has only read permissions.

@@ -113,3 +113,24 @@ test('dry-run guards every external writer and verifies staged digests without c
     if (step.uses?.startsWith('oven-sh/setup-bun@')) assert.equal(step.with['bun-version'], '1.3.14');
   }
 });
+
+test('Bot input preparation excludes automatic releases and every application publication owner', () => {
+  const workflow = YAML.parse(fs.readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8'));
+  assert.deepEqual(workflow.on.push.tags, ['v*', '!v*-bot-inputs-*']);
+  assert.equal(workflow.on.workflow_dispatch.inputs.prepare_bot_inputs_only.default, false);
+  assert.equal(workflow.on.workflow_dispatch.inputs.prepare_bot_inputs_only.type, 'boolean');
+  assert.equal(workflow.env.RELEASE_BOT_INPUTS_ONLY, "${{ github.event_name == 'workflow_dispatch' && inputs.prepare_bot_inputs_only == true }}");
+  const { jobs } = workflow;
+  assert.match(jobs['create-release'].steps.find(step => step.id === 'get_version').run, /assertBotInputPreparation\(process.env, version\)/);
+  for (const name of ['publish-npm', 'build-web-artifact', 'prepare-desktop-electron-macos', 'build-desktop-electron-macos', 'finalize-release']) {
+    assert.match(jobs[name].if, /!\(github.event_name == 'workflow_dispatch' && inputs.prepare_bot_inputs_only == true\)/);
+  }
+  for (const job of Object.values(jobs)) for (const step of job.steps) {
+    if (step.uses?.startsWith('softprops/action-gh-release@') || /npm publish|supabase db push|fetch\(process\.env\.DISCORD_WEBHOOK_URL/.test(step.run ?? '')) {
+      assert.match(step.if, /env\.RELEASE_BOT_INPUTS_ONLY != 'true'/);
+    }
+  }
+  for (const name of ['resolve-bot-runtime-images', 'build-bot-runtime-image', 'publish-bot-runtime-images', 'verify-bot-runtime-topology']) {
+    assert.equal(jobs[name].if, undefined);
+  }
+});

@@ -180,6 +180,112 @@ complete diagnostic. The Darwin-only controller/writer build still refuses both
 hosts, and compiled runtime acceptance is skipped. Deleted transient fixtures
 provide no durable journal roots. None of these partial passes enables admission.
 
+The isolated branch now creates the Cursor fixture parent before `mkdtemp`.
+All three focused Cursor checks pass locally; actual Windows verification is
+still required. Integrated local validation attempt 5 passed 660 harness cases
+but failed four platform-specific input cases at Bun's default five-second
+deadline. All four failures independently reproduced; their unchanged bodies
+passed with the file's existing 120-second fixture deadline. Applying that same
+deadline to platform-specific registrations passed all 15 input checks and 111
+assertions. Original failures and unavailable fixture journals remain recorded.
+The next native run also captures an independent empty-job UI-limit probe and
+read-only containing-job flags. It never changes the containing job, starts a
+child, or permits breakaway; its diagnostic result cannot enable admission.
+Run [37399204561](https://github.com/1H-Team/DevRyan/actions/runs/37399204561)
+at `79cd2dd9` failed on both architectures. The Cursor fixture and native feature
+guards advanced to the UI files, where a terminal mock leaked into the provider
+test. The exact original three-file command independently reproduced the
+missing `I18nProvider` export. CI now reuses the existing UI test runner, which
+isolates files that mock modules. The empty-job diagnostic also stopped before
+writing its receipt: both native SDKs emitted `requestedUIFlags: 1023`, whereas
+the verifier expected 255. The validator now requires the actual ten-flag SDK
+mask and retains UI refusal as a valid diagnostic outcome, without changing the
+supervisor policy. The two additional flags and their OS requirements are
+documented in [Microsoft's UI policy](https://github.com/microsoft/mxc/blob/main/docs/process-container/os-version-support.md).
+Actual native receipts are still required; this change does not qualify
+containing-job isolation or runtime admission.
+
+Run [37401394828](https://github.com/1H-Team/DevRyan/actions/runs/37401394828)
+at `91bd7494` passed the corrected feature checks, read-only process/job probes,
+15 filesystem checks and pinned executable/libsql ABI checks on both hosts.
+Supervision acceptance failed, and controller/writer compilation stopped on a
+reviewed-input hash mismatch before producing candidates. Independently reviewed
+receipts show both containing jobs permit explicit and silent breakaway. The
+empty-job UI probe requests `0x3ff`: x64 Server 2022 refuses with error 87;
+ARM64 Windows accepts and reads back the exact mask. These diagnostic passes
+grant no admission authority.
+
+A disposable `core.autocrlf=true` checkout independently changes the reviewed
+Slim JavaScript from 2,452,141 to 2,522,205 bytes. Its converted digest differs
+from the manifest; LF normalization reproduces the original digest.
+`.gitattributes` now preserves the exact reviewed closure and the reviewed
+document/browser source bytes across checkout platforms. A real Git checkout
+regression verifies the scoped rules; runtime hash checks remain exact and now
+identify the offending public file. The imported Windows build helpers also
+participate in macOS native build identities, verified by an actual shared
+macOS build. Fresh Windows compilation and full safety acceptance remain required.
+
+Run [37402878771](https://github.com/1H-Team/DevRyan/actions/runs/37402878771)
+at `e0ba65b0` advanced past reviewed-input checking on both hosts, then refused
+the compaction observation transform before inventory. Its original guard
+requires a helper path starting with `/`, which rejects the drive paths supplied
+by the Windows build owner. The transform now uses native `path.isAbsolute`
+while preserving the exact SDK digest, single insertion anchor and control
+character refusals. Focused tests exercise a real native helper path and verify
+that removing the observation restores the original bytes. Actual Windows
+compilation and the complete native safety inventory remain outstanding.
+
+The supervisor now queries the actual OS build through `RtlGetVersion` and
+requests all available UI restrictions: the eight original flags, IME from
+build 22621, and injection from build 26100. This follows
+[Microsoft's build gates](https://github.com/microsoft/mxc/blob/main/docs/process-container/os-version-support.md).
+Unknown OS identity or changed SDK flags refuse; the kernel must accept the
+mask and read back every requested bit before a command starts. There is no
+retry with reduced restrictions. Protocol-2 diagnostics retain the OS build,
+SDK mask and actual mask. Fresh kernel probes are still required, and containing
+job isolation, read confinement and full runtime admission remain unqualified.
+
+Run [37403407287](https://github.com/1H-Team/DevRyan/actions/runs/37403407287)
+at `22e302ca` compiled both supervisors and retained exact kernel readback:
+Server 2022 build 20348 accepts `0xff`; ARM64 build 26200 accepts `0x3ff`.
+Both containing jobs still permit explicit and silent breakaway, and supervision
+acceptance failed. The controller/writer build reached the compaction helper
+path refusal described above. These diagnostic receipts establish the OS mask
+selection, without qualifying command confinement or enabling admission.
+The native supervision verifier retains an exact supervisor operation/error
+number when receipt validation fails; arbitrary worker output is not printed.
+The x64 job in run `37404790881` advances through native compilation and then
+fails the writer's empty-input boot probe. The subsequent diagnostic build
+retains compiled files and source identities, with exit/error fields, output
+digests and bounded error summaries. Failed outputs contain no
+`native-bundle.json` or accepted launcher and grant no admission.
+The original probe deadline and required refusal reply remain unchanged.
+
+Run [37405887286](https://github.com/1H-Team/DevRyan/actions/runs/37405887286)
+at `81f39b99` retains both architecture-native controller/writer binaries and
+their original source identities. Both controllers return the expected empty
+boot refusal; both writers exit 0 without a reply. Independent payload review
+finds the exported writer helpers but no protocol handler guarded by
+`import.meta.main`. The compiled builder now uses the thin `writer-entry.ts`
+to invoke that same owner explicitly. Fifteen routing checks and a fresh macOS
+native build, signature/resource verification and both boot refusals pass;
+actual Windows reruns are still required.
+
+The ARM64 failure receipt was written before an `EPERM` directory rename hid
+the boot error. Unqualified Windows builds now create their private output
+exclusively, write `native-candidate.json` last with exclusive creation only
+after all checks pass, and retain failed files in place. They never replace an
+existing output, produce a production bundle, or grant admission.
+
+Command supervision remains failed. The x64 confined Node command returns
+`0xc0000142`; this is separate from the writer's compiled entry failure.
+[Microsoft's process contract](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessasuserw)
+requires access to both the selected window station and desktop, and its
+[initialization guidance](https://learn.microsoft.com/en-us/troubleshoot/windows/win32/user32-kernel32-not-initialize)
+identifies missing access as a possible DLL initialization failure. Review a
+private UI-object owner and prove standard-user behavior before changing this
+boundary; do not alter the user's window-station ACL or enable admission.
+
 The [Rust platform contract](https://doc.rust-lang.org/stable/rustc/platform-support/windows-msvc.html)
 supports native MSVC ARM64 host tools; that support does not establish libsql
 compatibility by itself.
@@ -200,6 +306,20 @@ reviewed inputs by the actual host architecture, emit `.exe` artifacts, and
 inventory the Windows supervisor source and policy in its build identity. It
 must preserve the controller/writer/configuration graph, input provenance,
 source-change detection, and exact asset digests.
+
+The isolated implementation now adds a Windows-only `--windows-candidate`
+mode. It selects the existing verified AST/Claude inputs and source-built
+libsql receipt, preserves the original six-family closure and graph inventory,
+and emits architecture-native `.exe` controller/writer candidates. The original
+Meridian resolver accepts only the selected target; the persistent PTY resolver
+refuses before environment or filesystem access. Native PE inspection and both
+empty-input boot refusals precede an immutable `native-candidate.json` receipt
+with `admission: false`. It emits no production manifest or accepted launcher
+and cannot be packaged as an accepted runtime. The original native PE builds
+are retained, but their boot gate failed; the explicit entry correction still
+needs both native reruns. Initialized controller/writer behavior, held file
+authority, read confinement and the integrated acceptance inventory remain
+unqualified; the ordinary production builder continues to refuse Windows.
 
 `native-process.js` currently refuses a supervised controller outside Darwin.
 Keep that refusal until the Windows launcher and its termination receipt are
