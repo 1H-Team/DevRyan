@@ -64,7 +64,7 @@ export async function prepareReviewedNativeInputs(repository,{target='darwin-arm
   for(const file of input.files){
    if(typeof file.path!=='string'||path.isAbsolute(file.path)||file.path.split(/[\\/]/).some(part=>part==='..'||part==='')||paths.has(file.path))throw new Error('Reviewed input path invalid');
    paths.add(file.path);const bytes=await read(`${input.id}/${file.path}`);
-   if(bytes.length!==file.size||hash(bytes)!==file.sha256)throw new Error('Reviewed input bytes changed');
+   if(bytes.length!==file.size||hash(bytes)!==file.sha256)throw new Error(`Reviewed input bytes changed: ${input.id}/${file.path}`);
   }
  }
  await read('README.md');await read('slim-2.2.25/dist/server/index.d.ts');await read('jsdom-30.1.1/node_modules/jsdom/lib/api.d.ts');

@@ -205,6 +205,26 @@ documented in [Microsoft's UI policy](https://github.com/microsoft/mxc/blob/main
 Actual native receipts are still required; this change does not qualify
 containing-job isolation or runtime admission.
 
+Run [37401394828](https://github.com/1H-Team/DevRyan/actions/runs/37401394828)
+at `91bd7494` passed the corrected feature checks, read-only process/job probes,
+15 filesystem checks and pinned executable/libsql ABI checks on both hosts.
+Supervision acceptance failed, and controller/writer compilation stopped on a
+reviewed-input hash mismatch before producing candidates. Independently reviewed
+receipts show both containing jobs permit explicit and silent breakaway. The
+empty-job UI probe requests `0x3ff`: x64 Server 2022 refuses with error 87;
+ARM64 Windows accepts and reads back the exact mask. These diagnostic passes
+grant no admission authority.
+
+A disposable `core.autocrlf=true` checkout independently changes the reviewed
+Slim JavaScript from 2,452,141 to 2,522,205 bytes. Its converted digest differs
+from the manifest; LF normalization reproduces the original digest.
+`.gitattributes` now preserves the exact reviewed closure and the reviewed
+document/browser source bytes across checkout platforms. A real Git checkout
+regression verifies the scoped rules; runtime hash checks remain exact and now
+identify the offending public file. The imported Windows build helpers also
+participate in macOS native build identities, verified by an actual shared
+macOS build. Fresh Windows compilation and full safety acceptance remain required.
+
 The [Rust platform contract](https://doc.rust-lang.org/stable/rustc/platform-support/windows-msvc.html)
 supports native MSVC ARM64 host tools; that support does not establish libsql
 compatibility by itself.
