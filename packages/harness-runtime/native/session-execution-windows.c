@@ -469,17 +469,17 @@ static wchar_t *stage_execution_runtime(const wchar_t *source, const wchar_t *vi
 }
 
 static SID_AND_ATTRIBUTES *network_capabilities(DWORD *count) {
-  const wchar_t *names[] = { L"internetClient", L"internetClientServer", L"privateNetworkClientServer" };
+  const WELL_KNOWN_SID_TYPE kinds[] = { WinCapabilityInternetClientSid,
+    WinCapabilityInternetClientServerSid, WinCapabilityPrivateNetworkClientServerSid };
   *count = 3;
   SID_AND_ATTRIBUTES *result = calloc(*count, sizeof(*result));
   if (!result) fail("network capability allocation");
   for (DWORD i = 0; i < *count; i++) {
-    PSID *groups, *capabilities; DWORD groupCount, capabilityCount;
-    checked(DeriveCapabilitySidsFromName(names[i], &groups, &groupCount, &capabilities, &capabilityCount), "network capability identity");
-    if (capabilityCount != 1) { SetLastError(ERROR_INVALID_DATA); fail("network capability count"); }
-    result[i].Sid = capabilities[0]; result[i].Attributes = SE_GROUP_ENABLED;
-    for (DWORD j = 0; j < groupCount; j++) LocalFree(groups[j]);
-    LocalFree(groups); LocalFree(capabilities);
+    DWORD size = SECURITY_MAX_SID_SIZE;
+    result[i].Sid = LocalAlloc(LMEM_FIXED, size);
+    if (!result[i].Sid) fail("network capability allocation");
+    checked(CreateWellKnownSid(kinds[i], NULL, result[i].Sid, &size), "network capability identity");
+    result[i].Attributes = SE_GROUP_ENABLED;
   }
   return result;
 }
