@@ -85,33 +85,16 @@ test('Windows qualification builds and executes independent pinned native archit
   assert.match(processSource, /process\.platform !== 'darwin'.*native_controller_supervisor_unavailable/);
 });
 
-test('startup diagnostics retain the original helper and core fences in every disposable variant', () => {
+test('startup diagnostics run the exact LPAC helper without lowering restrictions or supplying acceptance', () => {
   const source = fs.readFileSync(new URL('../packages/harness-runtime/native/session-execution-windows.c', import.meta.url), 'utf8');
-  const variants = supervisorStartupVariants(source);
-  assert.deepEqual(variants.map(row => row.id), ['original', 'no-ui-job', 'private-station', 'private-station-no-ui-job', 'low-integrity', 'system-process-dacl', 'system-desktop-dacl']);
-  assert.equal(variants[0].source, source);
-  for (const row of variants) {
-    for (const fence of ['DISABLE_MAX_PRIVILEGE | WRITE_RESTRICTED | LUA_TOKEN', 'S-1-16-0',
-      'PROC_THREAD_ATTRIBUTE_HANDLE_LIST', 'PROC_THREAD_ATTRIBUTE_JOB_LIST', 'JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE',
-      'TerminateJobObject(job', 'FlushFileBuffers(receipt)', 'original owner identity']) assert.ok(row.source.includes(fence), row.id);
-    assert.ok(row.source.indexOf('PROC_THREAD_ATTRIBUTE_JOB_LIST') < row.source.indexOf('checked(CreateProcessAsUserW('));
-    assert.equal(row.source.includes('uiMask = 0;'), row.id.includes('no-ui-job'));
-    assert.equal(row.source.match(/ConvertStringSidToSidW\(L"(S-1-16-[0-9]+)", &integrity\)/)?.[1],
-      row.id === 'low-integrity' ? 'S-1-16-4096' : 'S-1-16-0');
-    assert.equal(row.source.includes('diagnostic process security'), row.id === 'system-process-dacl');
-    assert.equal(row.source.includes('L"D:P(A;;GA;;;%s)(A;;GA;;;%s)(A;;GA;;;SY)"'), row.id === 'system-process-dacl');
-    assert.equal(row.source.includes('LocalFree(processSecurity)'), row.id === 'system-process-dacl');
-    assert.equal(row.source.includes('diagnostic desktop security'), row.id === 'system-desktop-dacl');
-    assert.equal(row.source.includes('LocalFree(desktopDescriptor)'), row.id === 'system-desktop-dacl');
-    assert.equal(row.source.includes('L"D:P(A;OICI;GA;;;%s)(A;OICI;GA;;;%s)(A;OICI;GA;;;SY)S:(ML;OICI;NW;;;S-1-16-0)"'), row.id === 'system-desktop-dacl');
-    if (row.id.startsWith('private-station')) {
-      assert.ok(row.source.includes('CreateWindowStationW(NULL, CWF_CREATE_ONLY, GENERIC_ALL, &desktopSecurity)'));
-      assert.ok(row.source.includes(String.raw`L"%ls\\%ls"`));
-      assert.ok(row.source.includes('SetProcessWindowStation(inheritedStation)'));
-      assert.ok(row.source.includes('CloseWindowStation(station)'));
-    }
-  }
-  assert.throws(() => supervisorStartupVariants(source.replace('DWORD uiMask = maximum_ui_limits(os_build());', '')), /anchor changed/);
+  assert.deepEqual(supervisorStartupVariants(source), [{ id: 'original-lpac', source }]);
+  for (const fence of ['DISABLE_MAX_PRIVILEGE | LUA_TOKEN', 'S-1-16-4096',
+    'PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES', 'PROCESS_CREATION_ALL_APPLICATION_PACKAGES_OPT_OUT',
+    'PROC_THREAD_ATTRIBUTE_HANDLE_LIST', 'PROC_THREAD_ATTRIBUTE_JOB_LIST', 'JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE',
+    'TerminateJobObject(job', 'FlushFileBuffers(receipt)', 'original owner identity']) assert.ok(source.includes(fence), fence);
+  assert.ok(source.indexOf('PROC_THREAD_ATTRIBUTE_JOB_LIST') < source.indexOf('checked(CreateProcessAsUserW('));
+  assert.doesNotMatch(source, /WRITE_RESTRICTED|uiMask = 0;/);
+  assert.throws(() => supervisorStartupVariants('unreviewed source'), /LPAC supervisor source required/);
   const refused = spawnSync(process.execPath, [fileURLToPath(new URL('./diagnose-windows-supervisor-startup.mjs', import.meta.url)),
     'unused-output', 'extra-argument'], { encoding: 'utf8' });
   assert.equal(refused.status, 1);

@@ -11,6 +11,7 @@ import { createSessionRevertCoordinator } from '../packages/harness-runtime/lib/
 import { git } from '../packages/harness-runtime/lib/session-changes-git.js';
 import { spawnConfinedProvider } from '../packages/web/server/lib/opencode/session-provider-spawn.js';
 import { fileURLToPath } from 'node:url';
+import { ensureWindowsPrivateDirectory } from '../packages/harness-runtime/lib/windows-private-files.js';
 
 const launcher = process.env.DEVRYAN_TEST_EXECUTION_LAUNCHER;
 if (!launcher) throw new Error('Set DEVRYAN_TEST_EXECUTION_LAUNCHER to the built native helper');
@@ -20,7 +21,8 @@ afterEach(async () => { await Promise.all(roots.splice(0).map((root) => fs.rm(ro
 async function fixture({ scope } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-execution-')); roots.push(root);
   const canonical = await fs.realpath(root), viewDirectory = path.join(canonical, 'worktree');
-  await fs.mkdir(viewDirectory);
+  if (process.platform === 'win32') await ensureWindowsPrivateDirectory(launcher, viewDirectory);
+  else await fs.mkdir(viewDirectory);
   const lease = { viewDirectory, ...(scope ? { scope } : {}) };
   const start = async (command, args, signal) => {
     let stdout = '', stderr = '';
@@ -53,6 +55,26 @@ native('native boundary denies absolute, symlink and hardlink writes while allow
   const receipt = await handle.result;
   assert.equal(handle.output().stderr, ''); assert.equal(receipt.terminated, true); assert.equal(receipt.exitCode, 0);
   assert.equal(await fs.readFile(original, 'utf8'), 'preserved');
+  assert.equal(await fs.readFile(path.join(f.viewDirectory, 'owned'), 'utf8'), 'private');
+}, 20_000);
+
+if (process.platform === 'win32') native('LPAC denies private host and other execution reads and cannot rewrite its sealed runtime', async () => {
+  const f = await fixture(), other = await fixture();
+  const secret = path.join(f.root, 'host-secret'), foreign = path.join(other.viewDirectory, 'other-execution');
+  await fs.writeFile(secret, 'private-fixture-only'); await fs.writeFile(foreign, 'other-fixture-only');
+  const handle = await f.run(`const fs = require('node:fs');
+    for (const file of ${JSON.stringify([secret, foreign])}) {
+      try { fs.readFileSync(file); process.exit(2); }
+      catch (error) { if (!['EPERM', 'EACCES'].includes(error.code)) throw error; }
+    }
+    try { fs.writeFileSync(process.execPath, 'changed'); process.exit(3); }
+    catch (error) { if (!['EPERM', 'EACCES', 'EBUSY'].includes(error.code)) throw error; }
+    fs.writeFileSync('owned', 'private'); process.stdout.write('read-boundary-held');`);
+  const receipt = await handle.result;
+  assert.equal(receipt.confined, true); assert.equal(receipt.exitCode, 0, handle.output().stderr);
+  assert.equal(handle.output().stdout, 'read-boundary-held');
+  assert.equal(await fs.readFile(secret, 'utf8'), 'private-fixture-only');
+  assert.equal(await fs.readFile(foreign, 'utf8'), 'other-fixture-only');
   assert.equal(await fs.readFile(path.join(f.viewDirectory, 'owned'), 'utf8'), 'private');
 }, 20_000);
 

@@ -63,3 +63,16 @@ and supervisor creation times, so a recycled parent PID cannot become an owner.
 exercise these native operations on each architecture. These are independent
 prerequisites: they do not attest read confinement, descendant containment,
 cancellation, runtime admission or the complete acceptance inventory.
+
+The policy-3 draft creates a unique Less-Privileged AppContainer identity,
+opts out of ambient All Application Packages access, and keeps the complete
+job/UI/handle boundary. `windowsSessionExecutionProfile` binds the view, scratch
+and cache through a bounded UTF-16 policy. The cache cannot contain the private
+runtime root. The selected executable is copied through a pinned no-follow
+handle into a read-only sibling; its installed ACL is untouched. Scoped data
+grants exclude ACL ownership, and OWNER RIGHTS suppresses implicit WRITE_DAC.
+The startup diagnostic now runs the exact production source with Node and Bun;
+the seven historical restriction variants remain retained evidence. Successful
+termination also requires LPAC profile settlement. Native startup, private read
+denial, complete resource projection, abrupt-death profile recovery and all
+existing safety cases must qualify before this draft receives acceptance.

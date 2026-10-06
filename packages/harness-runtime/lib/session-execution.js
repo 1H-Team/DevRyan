@@ -5,6 +5,7 @@ import { spawn, execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { writeFileAtomic } from './atomic-file.js';
 import { writableInputDirectories } from './execution-inputs.js';
+import { ensureWindowsPrivateDirectory, createWindowsPrivateFile } from './windows-private-files.js';
 
 const error = (code) => Object.assign(new Error(code), { code, status: 409 });
 const sbString = (value) => {
@@ -39,7 +40,7 @@ export async function verifySessionExecutionLauncher({ launcher, platform = proc
     verifiedLaunchers.delete(cacheKey);
     const manifest = JSON.parse(await fs.readFile(`${launcher}.json`, 'utf8'));
     const stat = await fs.lstat(launcher);
-    if (!stat.isFile() || stat.size > 1024 * 1024 || manifest.version !== 1 || manifest.policy !== 2 || manifest.acceptance !== true
+    if (!stat.isFile() || stat.size > 1024 * 1024 || manifest.version !== 1 || manifest.policy !== (platform === 'win32' ? 3 : 2) || manifest.acceptance !== true
       || manifest.platform !== platform || manifest.arch !== process.arch || manifest.binary !== path.basename(launcher)) return false;
     if (platform === 'darwin') {
       if (manifest.spawnLibrary !== `${path.basename(launcher)}-spawn.dylib`) return false;
@@ -59,6 +60,23 @@ const validateDeniedReadDirectories = (directories) => {
   if (!Array.isArray(directories) || directories.length > 32 || directories.some(directory =>
     typeof directory !== 'string' || !path.isAbsolute(directory) || /[\u0000-\u001f]/.test(directory))) throw error('invalid_execution_path');
 };
+
+export function windowsSessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory }) {
+  const roots = [viewDirectory, scratchDirectory, auxiliaryDirectory];
+  for (const directory of roots) {
+    if (typeof directory !== 'string' || !/^[A-Za-z]:\\/.test(directory)
+      || path.win32.resolve(directory) !== directory || /[\u0000-\u001f]/.test(directory)) throw error('invalid_execution_path');
+  }
+  const root = path.win32.dirname(viewDirectory);
+  const cacheRelative = path.win32.relative(auxiliaryDirectory, root);
+  if (scratchDirectory !== path.win32.join(root, 'scratch')
+    || cacheRelative === '' || cacheRelative !== '..' && !cacheRelative.startsWith('..\\') && !path.win32.isAbsolute(cacheRelative)) {
+    throw error('invalid_execution_path');
+  }
+  const bytes = Buffer.from(['DevRyan-Windows-LPAC-1', ...roots, ''].join('\0'), 'utf16le');
+  if (bytes.length > 65536) throw error('invalid_execution_path');
+  return bytes;
+}
 
 export function sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory, socketDirectory, writableDirectories = [], deniedReadDirectories = [], chromiumRendezvous = false }) {
   validateDeniedReadDirectories(deniedReadDirectories);
@@ -208,7 +226,7 @@ export async function prepareSessionExecution({ launcher, lease, socketDirectory
   if (!['darwin', 'linux', 'win32'].includes(process.platform)) throw error('mutation_platform_unsupported');
   if (!path.isAbsolute(launcher ?? '')) throw error('mutation_runtime_unsupported');
   validateDeniedReadDirectories(deniedReadDirectories);
-  if (deniedReadDirectories.length && process.platform !== 'darwin') throw error('mutation_platform_unsupported');
+  if (deniedReadDirectories.length && !['darwin', 'win32'].includes(process.platform)) throw error('mutation_platform_unsupported');
   const deniedRoots = await Promise.all(deniedReadDirectories.map(async directory => {
     const resolved = await fs.realpath(directory);
     if (!(await fs.stat(resolved)).isDirectory()) throw error('invalid_execution_path');
@@ -219,7 +237,8 @@ export async function prepareSessionExecution({ launcher, lease, socketDirectory
   const workingDirectory = await fs.realpath(lease.workingDirectory ?? viewDirectory);
   const relative = path.relative(viewDirectory, workingDirectory);
   if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw error('invalid_execution_path');
-  await fs.mkdir(scratchDirectory, { recursive: true, mode: 0o700 });
+  if (process.platform === 'win32') await ensureWindowsPrivateDirectory(launcher, scratchDirectory);
+  else await fs.mkdir(scratchDirectory, { recursive: true, mode: 0o700 });
   // Ledger/restart cleanup receives only the durable lease, not this call's
   // constructor options. Persist explicit no-socket selection in its owned
   // parent so that cleanup never probes the legacy global socket directory.
@@ -228,7 +247,8 @@ export async function prepareSessionExecution({ launcher, lease, socketDirectory
   else await fs.rm(noSocketPolicy, { force: true });
   // Seatbelt matches resolved paths; dependency overlays link caches here.
   const requestedAuxiliary = lease.auxiliaryDirectory ? path.resolve(lease.auxiliaryDirectory) : scratchDirectory;
-  await fs.mkdir(requestedAuxiliary, { recursive: true, mode: 0o700 });
+  if (process.platform === 'win32') await ensureWindowsPrivateDirectory(launcher, requestedAuxiliary);
+  else await fs.mkdir(requestedAuxiliary, { recursive: true, mode: 0o700 });
   const auxiliaryDirectory = await fs.realpath(requestedAuxiliary);
   // Session-scoped tool calls on macOS may launch headless Chromium (a
   // project's Playwright check); provider transports never can.
@@ -246,7 +266,7 @@ export async function prepareSessionExecution({ launcher, lease, socketDirectory
   if (requestedSocketDirectory !== undefined && requestedSocketDirectory !== null) {
     await writeFileAtomic(noSocketPolicy, JSON.stringify({ version: 1, directory: socketDirectory }));
   }
-  const sessionTemporaryDirectory = await prepareSessionTemporaryDirectory(auxiliaryDirectory, lease);
+  const sessionTemporaryDirectory = await prepareSessionTemporaryDirectory(auxiliaryDirectory, lease, launcher);
   // Only the macOS profile grants write-through; the Linux and Windows
   // launchers are not approved for production and keep inputs read-only.
   const writableDirectories = process.platform === 'darwin' ? await writableInputDirectories({
@@ -254,7 +274,15 @@ export async function prepareSessionExecution({ launcher, lease, socketDirectory
     protectedDirectories: [ledgerStorageOf(viewDirectory), auxiliaryDirectory],
   }) : [];
   const profile = path.join(root, `sandbox-${randomUUID()}.sb`);
-  await writeFileAtomic(profile, sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory, socketDirectory, writableDirectories,
+  if (process.platform === 'win32') {
+    for (const denied of deniedRoots) for (const granted of [viewDirectory, scratchDirectory, auxiliaryDirectory]) {
+      for (const [parent, child] of [[denied, granted], [granted, denied]]) {
+        const relative = path.relative(parent, child);
+        if (!relative || relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) throw error('invalid_execution_path');
+      }
+    }
+    await createWindowsPrivateFile(launcher, profile, windowsSessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory }));
+  } else await writeFileAtomic(profile, sessionExecutionProfile({ viewDirectory, scratchDirectory, auxiliaryDirectory, socketDirectory, writableDirectories,
     deniedReadDirectories: deniedRoots, chromiumRendezvous: browsers }));
   const cancelEvent = `Local\\DevRyan-execution-${randomUUID()}`;
   return { launcher, arguments: [viewDirectory, scratchDirectory, profile, path.join(root, 'termination.json'), '--'],
@@ -372,12 +400,16 @@ export const sessionTemporaryDirectory = (auxiliaryDirectory, lease) => {
   return path.join(auxiliaryDirectory, SESSION_TEMPORARY_ROOT, createHash('sha256').update(sessionID).digest('hex').slice(0, 16));
 };
 const sessionTemporarySweeps = new Map();
-async function prepareSessionTemporaryDirectory(auxiliaryDirectory, lease) {
+async function prepareSessionTemporaryDirectory(auxiliaryDirectory, lease, launcher) {
   const directory = sessionTemporaryDirectory(auxiliaryDirectory, lease);
   if (!directory) return null;
   // Workers may write here, so an earlier call may have replaced either level
   // with a file or a link: never follow one, start the directory over instead.
   for (const level of [path.dirname(directory), directory]) {
+    if (process.platform === 'win32') {
+      await ensureWindowsPrivateDirectory(launcher, level);
+      continue;
+    }
     const existing = await fs.lstat(level).catch((cause) => { if (cause.code === 'ENOENT') return null; throw cause; });
     if (existing && !existing.isDirectory()) await fs.rm(level, { recursive: true, force: true });
     await fs.mkdir(level, { recursive: true, mode: 0o700 });

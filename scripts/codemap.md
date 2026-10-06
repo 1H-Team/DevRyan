@@ -23,20 +23,13 @@ Repository automation entrypoint for developer workflows: validation planning, l
   Protocol-2 job diagnostics retain the actual OS build, SDK UI mask and every
   available restriction. The supervisor requires exact kernel readback before
   command creation; it never retries with fewer restrictions.
-  `diagnose-windows-supervisor-startup.mjs` separately compiles disposable
-  original, UI-limit and exclusive private-window-station variants, then probes
-  trusted Node/Bun startup. It preserves source/binary/output hashes and partial
-  receipts. These binaries receive no accepted manifest, never enter a runtime
-  bundle, and cannot satisfy the nine required Windows outcomes. Station
-  diagnostics change only owned UI objects, never the inherited station ACL.
-  A separate low-integrity token copy isolates startup at Low versus Untrusted;
-  its job/handle/write restrictions stay intact and it grants no admission.
-  The process-DACL copy adds SYSTEM access only to newly created child objects,
-  retaining the original tree ACLs, token integrity and job/handle restrictions.
-  This trusted startup diagnostic supplies no process-security qualification.
-  The desktop-DACL copy adds SYSTEM only to its newly created desktop, retaining
-  its Untrusted label and the original token default DACL and file-tree ACLs.
-  It changes no inherited UI object and supplies no desktop-policy acceptance.
+  `diagnose-windows-supervisor-startup.mjs` compiles an exact-source disposable
+  policy-3 LPAC helper and probes trusted Node/Bun startup with its bound binary
+  lease policy. It preserves source/binary/output hashes and partial receipts.
+  Its binary receives no accepted manifest, never enters a runtime bundle,
+  and cannot satisfy any of the nine required Windows outcomes. The seven
+  historical restriction variants remain evidence; the current probe neither
+  lowers UI/token restrictions nor changes inherited UI-object ACLs.
   `build-windows-reviewed-libsql.mjs` attempts the original libsql 0.5.29 source
   commit with an unchanged Cargo lock on each native Windows host. It verifies
   compiler and resource PE architecture, executes the original database ABI

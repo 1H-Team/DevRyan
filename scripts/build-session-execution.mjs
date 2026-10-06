@@ -17,13 +17,13 @@ await fs.mkdir(output, { recursive: true, mode: 0o700 });
 const temporary = path.join(output, `${name}.${process.pid}.tmp`);
 try {
   const flags = windows ? ['/nologo', '/std:c11', '/W4', '/WX', '/O2', '/D_CRT_SECURE_NO_WARNINGS',
-    source, `/Fe:${temporary}`, `/Fo:${temporary}.obj`, '/link', 'advapi32.lib', 'user32.lib']
+    source, `/Fe:${temporary}`, `/Fo:${temporary}.obj`, '/link', 'advapi32.lib', 'user32.lib', 'userenv.lib']
     : ['-std=c11', '-Wall', '-Wextra', '-Werror', '-O2', source, '-o', temporary];
   await promisify(execFile)(process.env.CC || (windows ? 'cl.exe' : 'cc'), flags,
     { cwd: root, timeout: 60_000, maxBuffer: 1024 * 1024 });
   await fs.chmod(temporary, 0o755);
   const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
-  const manifest = { version: 1, policy: 2, acceptance: false, platform: process.platform, arch: process.arch, binary: name,
+  const manifest = { version: 1, policy: windows ? 3 : 2, acceptance: false, platform: process.platform, arch: process.arch, binary: name,
     sha256: hash(await fs.readFile(temporary)), sourceSha256: hash(await fs.readFile(source)) };
   if (process.platform === 'darwin') {
     const spawnSource = path.join(root, 'packages/harness-runtime/native/session-spawn-darwin.c');

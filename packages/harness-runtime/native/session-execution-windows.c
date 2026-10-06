@@ -1,6 +1,6 @@
 /* DevRyan Windows execution supervisor. Uses only Windows SDK facilities.
- * A write-restricted token and untrusted integrity level restrict mutations to
- * the private trees. A private desktop and job contain the entire process tree.
+ * An LPAC token grants reads and mutations only through scoped ACLs.
+ * A private desktop and job contain the entire process tree.
  * The command receives only its three pipe handles, never the job or receipt.
  */
 #define UNICODE
@@ -9,7 +9,7 @@
 #include <windows.h>
 #include <aclapi.h>
 #include <sddl.h>
-#include <wincrypt.h>
+#include <userenv.h>
 #include <tlhelp32.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,8 +17,29 @@
 #include <errno.h>
 #include <string.h>
 
+static wchar_t active_profile[96];
+static HANDLE active_job;
+
 static void fail(const char *operation) {
-  fprintf(stderr, "%s failed (%lu)\n", operation, GetLastError());
+  DWORD error = GetLastError();
+  BOOL settled = TRUE;
+  if (active_job) {
+    settled = TerminateJobObject(active_job, 125);
+    ULONGLONG deadline = GetTickCount64() + 5000;
+    while (settled) {
+      JOBOBJECT_BASIC_ACCOUNTING_INFORMATION state;
+      settled = QueryInformationJobObject(active_job, JobObjectBasicAccountingInformation, &state, sizeof(state), NULL);
+      if (!settled || !state.ActiveProcesses) break;
+      if (GetTickCount64() >= deadline) { settled = FALSE; break; }
+      Sleep(10);
+    }
+    CloseHandle(active_job); active_job = NULL;
+  }
+  if (*active_profile && settled) {
+    HRESULT cleanup = DeleteAppContainerProfile(active_profile);
+    if (FAILED(cleanup)) fprintf(stderr, "LPAC profile cleanup failed (%lu)\n", (DWORD)cleanup);
+  }
+  fprintf(stderr, "%s failed (%lu)\n", operation, error);
   ExitProcess(125);
 }
 static void checked(BOOL ok, const char *operation) { if (!ok) fail(operation); }
@@ -86,16 +107,14 @@ static TOKEN_USER *current_user(void) {
 
 /* File identity and ACL come from one no-follow handle. Mode bits are not an
  * ownership boundary on Windows. Unknown ACL forms never attest privacy. */
-static int inspect_file_handle(HANDLE file) {
-  BY_HANDLE_FILE_INFORMATION info; FILE_ID_INFO identity;
-  checked(GetFileInformationByHandle(file, &info), "file identity attributes");
-  checked(GetFileInformationByHandleEx(file, FileIdInfo, &identity, sizeof(identity)), "file identity");
+static BOOL file_privacy(HANDLE file, BOOL *own) {
   PSID owner; PACL dacl; PSECURITY_DESCRIPTOR security;
   DWORD error = GetSecurityInfo(file, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
     &owner, NULL, &dacl, NULL, &security);
   if (error != ERROR_SUCCESS) { SetLastError(error); fail("file ownership"); }
   TOKEN_USER *user = current_user();
-  BOOL own = owner && EqualSid(owner, user->User.Sid), private = own && dacl != NULL;
+  *own = owner && EqualSid(owner, user->User.Sid);
+  BOOL private = *own && dacl != NULL;
   SECURITY_DESCRIPTOR_CONTROL control; DWORD revision;
   checked(GetSecurityDescriptorControl(security, &control, &revision), "file security control");
   if (!(control & SE_DACL_PROTECTED)) private = FALSE;
@@ -111,13 +130,21 @@ static int inspect_file_handle(HANDLE file) {
     } else if (!EqualSid(principal, system)) private = FALSE;
   }
   if (!ownerAccess) private = FALSE;
+  LocalFree(system); LocalFree(security); free(user);
+  return private;
+}
+
+static int inspect_file_handle(HANDLE file) {
+  BY_HANDLE_FILE_INFORMATION info; FILE_ID_INFO identity;
+  checked(GetFileInformationByHandle(file, &info), "file identity attributes");
+  checked(GetFileInformationByHandleEx(file, FileIdInfo, &identity, sizeof(identity)), "file identity");
+  BOOL own; BOOL private = file_privacy(file, &own);
   printf("{\"protocol\":\"devryan.windows-file-identity/1\",\"volume\":\"%016llx\",\"fileId\":\"", (unsigned long long)identity.VolumeSerialNumber);
   for (DWORD i = 0; i < sizeof(identity.FileId.Identifier); i++) printf("%02x", (unsigned int)identity.FileId.Identifier[i]);
   printf("\",\"type\":\"%s\",\"reparsePoint\":%s,\"linkCount\":%lu,\"currentOwner\":%s,\"privateAcl\":%s}\n",
     info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY ? "directory" : "file",
     info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT ? "true" : "false", info.nNumberOfLinks,
     own ? "true" : "false", private ? "true" : "false");
-  LocalFree(system); LocalFree(security); free(user);
   return 0;
 }
 
@@ -262,38 +289,161 @@ static wchar_t *joined(const wchar_t *left, const wchar_t *right) {
 /* Never follow a reparse point while granting access. A hard link in the view
  * would share the source security descriptor, so reject multiply linked files
  * before changing any label or DACL. Views are copied, not hard linked. */
-static void grant_tree(const wchar_t *name, PSECURITY_DESCRIPTOR security) {
+static HANDLE grant_tree(const wchar_t *name, PSECURITY_DESCRIPTOR security, BOOL root) {
   HANDLE file = CreateFileW(name, READ_CONTROL | WRITE_DAC | WRITE_OWNER | FILE_READ_ATTRIBUTES,
-    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
+    FILE_SHARE_READ, NULL, OPEN_EXISTING,
     FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
   if (file == INVALID_HANDLE_VALUE) fail("private tree handle");
   BY_HANDLE_FILE_INFORMATION info;
   checked(GetFileInformationByHandle(file, &info), "private tree attributes");
-  if (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) { CloseHandle(file); return; }
+  if (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+    if (root) { SetLastError(ERROR_ACCESS_DENIED); fail("scope root reparse boundary"); }
+    CloseHandle(file); return NULL;
+  }
+  if (root) {
+    BOOL own;
+    if (!(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || !file_privacy(file, &own)) {
+      SetLastError(ERROR_ACCESS_DENIED); fail("private scope root");
+    }
+  }
   if (!(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && info.nNumberOfLinks > 1) {
     SetLastError(ERROR_ACCESS_DENIED); fail("private tree hard link");
   }
+  PSID owner; PSECURITY_DESCRIPTOR observedSecurity;
+  DWORD ownerError = GetSecurityInfo(file, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION,
+    &owner, NULL, NULL, NULL, &observedSecurity);
+  if (ownerError != ERROR_SUCCESS) { SetLastError(ownerError); fail("scope file owner"); }
+  TOKEN_USER *user = current_user();
+  if (!owner || !EqualSid(owner, user->User.Sid)) { SetLastError(ERROR_ACCESS_DENIED); fail("current scope owner"); }
+  free(user); LocalFree(observedSecurity);
   BOOL present, defaulted; PACL dacl, sacl;
   checked(GetSecurityDescriptorDacl(security, &present, &dacl, &defaulted) && present, "private DACL");
   checked(GetSecurityDescriptorSacl(security, &present, &sacl, &defaulted) && present, "private integrity");
   DWORD error = SetSecurityInfo(file, SE_FILE_OBJECT,
     DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION | LABEL_SECURITY_INFORMATION,
     NULL, NULL, dacl, sacl);
-  CloseHandle(file);
   if (error != ERROR_SUCCESS) { SetLastError(error); fail("private tree security"); }
-  if (!(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) return;
+  if (!(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) { CloseHandle(file); return NULL; }
   wchar_t *pattern = joined(name, L"*"); WIN32_FIND_DATAW found;
   HANDLE search = FindFirstFileW(pattern, &found); free(pattern);
   if (search == INVALID_HANDLE_VALUE) {
-    if (GetLastError() == ERROR_FILE_NOT_FOUND) return;
+    if (GetLastError() == ERROR_FILE_NOT_FOUND) {
+      if (root) return file;
+      CloseHandle(file); return NULL;
+    }
     fail("private tree enumeration");
   }
   do {
     if (!wcscmp(found.cFileName, L".") || !wcscmp(found.cFileName, L"..")) continue;
-    wchar_t *child = joined(name, found.cFileName); grant_tree(child, security); free(child);
+    wchar_t *child = joined(name, found.cFileName); grant_tree(child, security, FALSE); free(child);
   } while (FindNextFileW(search, &found));
   if (GetLastError() != ERROR_NO_MORE_FILES) fail("private tree enumeration");
   FindClose(search);
+  if (root) return file;
+  CloseHandle(file); return NULL;
+}
+
+/* The host's binary policy binds the three granted roots to the exact lease.
+ * It is not a list of arbitrary host paths whose ACLs a worker may widen. */
+static HANDLE read_execution_policy(const wchar_t *argument, const wchar_t *view,
+  const wchar_t *scratch, const wchar_t *cache) {
+  wchar_t canonical[32768]; HANDLE ancestors[256];
+  DWORD count = anchor_parents(argument, canonical, ancestors);
+  HANDLE file = CreateFileW(canonical, GENERIC_READ, FILE_SHARE_READ, NULL,
+    OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+  if (file == INVALID_HANDLE_VALUE) fail("execution policy handle");
+  BY_HANDLE_FILE_INFORMATION info; LARGE_INTEGER size;
+  checked(GetFileInformationByHandle(file, &info) && GetFileSizeEx(file, &size), "execution policy identity");
+  if ((info.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT))
+    || info.nNumberOfLinks != 1 || size.QuadPart < 8 || size.QuadPart > 65536 || size.QuadPart % 2) {
+    SetLastError(ERROR_INVALID_DATA); fail("execution policy bound");
+  }
+  BOOL own;
+  if (!file_privacy(file, &own)) { SetLastError(ERROR_ACCESS_DENIED); fail("private execution policy"); }
+  wchar_t *bytes = calloc((size_t)size.QuadPart + sizeof(wchar_t), 1);
+  if (!bytes) fail("execution policy allocation");
+  DWORD read;
+  checked(ReadFile(file, bytes, (DWORD)size.QuadPart, &read, NULL) && read == (DWORD)size.QuadPart, "execution policy read");
+  wchar_t *cursor = bytes, *end = bytes + size.QuadPart / 2;
+  const wchar_t *expected[] = { L"DevRyan-Windows-LPAC-1", view, scratch, cache };
+  for (unsigned int i = 0; i < 4; i++) {
+    wchar_t *zero = wmemchr(cursor, 0, (size_t)(end - cursor));
+    if (!zero || wcscmp(cursor, expected[i])) { SetLastError(ERROR_INVALID_DATA); fail("execution policy binding"); }
+    cursor = zero + 1;
+  }
+  if (cursor != end) { SetLastError(ERROR_INVALID_DATA); fail("execution policy trailing data"); }
+  free(bytes);
+  for (DWORD i = 0; i < count; i++) CloseHandle(ancestors[i]);
+  return file;
+}
+
+static PSECURITY_DESCRIPTOR execution_security(const wchar_t *owner, const wchar_t *container, BOOL writable) {
+  wchar_t descriptor[2048];
+  /* OWNER RIGHTS suppresses implicit owner WRITE_DAC. The host retains its
+   * explicit full grant; the LPAC receives data access without ACL ownership. */
+  swprintf(descriptor, 2048,
+    L"O:%sD:P(A;OICI;FA;;;%s)(A;OICI;FA;;;SY)(A;OICI;RC;;;OW)(A;OICI;%s;;;%s)S:(ML;OICI;NW;;;LW)",
+    owner, owner, writable ? L"0x1301bf" : L"GRGX", container);
+  PSECURITY_DESCRIPTOR security;
+  checked(ConvertStringSecurityDescriptorToSecurityDescriptorW(descriptor, SDDL_REVISION_1, &security, NULL), "LPAC scope security");
+  return security;
+}
+
+/* Copy the selected executable from a pinned no-follow handle, never change
+ * its installed ACL. The sealed copy lives beside, outside, the writable view
+ * and scratch. Children execute the same read-only copy through execPath. */
+static wchar_t *stage_execution_runtime(const wchar_t *source, const wchar_t *view,
+  PSECURITY_DESCRIPTOR readonlySecurity) {
+  wchar_t canonical[32768]; HANDLE ancestors[256];
+  DWORD count = anchor_parents(source, canonical, ancestors);
+  HANDLE input = CreateFileW(canonical, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+    FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+  if (input == INVALID_HANDLE_VALUE) fail("runtime input handle");
+  BY_HANDLE_FILE_INFORMATION info;
+  checked(GetFileInformationByHandle(input, &info), "runtime input identity");
+  if (info.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) {
+    SetLastError(ERROR_ACCESS_DENIED); fail("runtime input boundary");
+  }
+  wchar_t root[32768]; checked(wcslen(view) < 32768, "runtime scope length"); wcscpy(root, view);
+  wchar_t *separator = wcsrchr(root, L'\\');
+  if (!separator) { SetLastError(ERROR_INVALID_PARAMETER); fail("runtime scope parent"); }
+  *separator = 0;
+  wchar_t *directory = joined(root, L"runtime");
+  PSECURITY_DESCRIPTOR private = private_security(TRUE);
+  SECURITY_ATTRIBUTES attributes = { sizeof(attributes), private, FALSE };
+  checked(CreateDirectoryW(directory, &attributes), "exclusive runtime scope");
+  wchar_t *target = joined(directory, wcsrchr(canonical, L'\\') + 1);
+  HANDLE output = CreateFileW(target, GENERIC_WRITE | READ_CONTROL | WRITE_DAC | WRITE_OWNER,
+    FILE_SHARE_READ, &attributes, CREATE_NEW, FILE_FLAG_WRITE_THROUGH, NULL);
+  if (output == INVALID_HANDLE_VALUE) fail("exclusive runtime copy");
+  BYTE buffer[65536]; DWORD read;
+  for (;;) {
+    checked(ReadFile(input, buffer, sizeof(buffer), &read, NULL), "runtime copy read");
+    if (!read) break;
+    DWORD written;
+    checked(WriteFile(output, buffer, read, &written, NULL) && written == read, "runtime copy write");
+  }
+  checked(FlushFileBuffers(output), "runtime copy durability"); CloseHandle(output); CloseHandle(input);
+  for (DWORD i = 0; i < count; i++) CloseHandle(ancestors[i]);
+  HANDLE sealed = grant_tree(directory, readonlySecurity, TRUE);
+  CloseHandle(sealed); LocalFree(private); free(directory);
+  return target;
+}
+
+static SID_AND_ATTRIBUTES *network_capabilities(DWORD *count) {
+  const wchar_t *names[] = { L"internetClient", L"internetClientServer", L"privateNetworkClientServer" };
+  *count = 3;
+  SID_AND_ATTRIBUTES *result = calloc(*count, sizeof(*result));
+  if (!result) fail("network capability allocation");
+  for (DWORD i = 0; i < *count; i++) {
+    PSID *groups, *capabilities; DWORD groupCount, capabilityCount;
+    checked(DeriveCapabilitySidsFromName(names[i], &groups, &groupCount, &capabilities, &capabilityCount), "network capability identity");
+    if (capabilityCount != 1) { SetLastError(ERROR_INVALID_DATA); fail("network capability count"); }
+    result[i].Sid = capabilities[0]; result[i].Attributes = SE_GROUP_ENABLED;
+    for (DWORD j = 0; j < groupCount; j++) LocalFree(groups[j]);
+    LocalFree(groups); LocalFree(capabilities);
+  }
+  return result;
 }
 
 static wchar_t *command_line(int argc, wchar_t **argv, int first) {
@@ -342,20 +492,6 @@ static HANDLE parent_process(DWORD *pid) {
   return parent;
 }
 
-static PSID cache_sid(const wchar_t *directory) {
-  HCRYPTPROV provider; HCRYPTHASH hash; BYTE digest[32]; DWORD size = sizeof(digest);
-  checked(CryptAcquireContextW(&provider, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT), "cache identity provider");
-  checked(CryptCreateHash(provider, CALG_SHA_256, 0, 0, &hash), "cache identity hash");
-  checked(CryptHashData(hash, (const BYTE *)directory, (DWORD)(wcslen(directory) * sizeof(wchar_t)), 0), "cache identity input");
-  checked(CryptGetHashParam(hash, HP_HASHVAL, digest, &size, 0), "cache identity output");
-  CryptDestroyHash(hash); CryptReleaseContext(provider, 0);
-  DWORD parts[4]; memcpy(parts, digest, sizeof(parts));
-  SID_IDENTIFIER_AUTHORITY authority = SECURITY_NT_AUTHORITY; PSID sid;
-  checked(AllocateAndInitializeSid(&authority, 5, SECURITY_SERVICE_ID_BASE_RID, parts[0], parts[1], parts[2], parts[3],
-    0, 0, 0, &sid), "cache SID");
-  return sid;
-}
-
 int wmain(int argc, wchar_t **argv) {
   if (argc == 2 && !wcscmp(argv[1], L"--inspect-job-boundary")) return inspect_job_boundary();
   if (argc == 3 && !wcscmp(argv[1], L"--inspect-process")) return inspect_process(argv[2]);
@@ -384,32 +520,36 @@ int wmain(int argc, wchar_t **argv) {
   if (!user) fail("user allocation");
   checked(GetTokenInformation(token, TokenUser, user, length, &length), "user identity");
   LUID luid; checked(AllocateLocallyUniqueId(&luid), "scope identity");
-  SID_IDENTIFIER_AUTHORITY authority = SECURITY_NT_AUTHORITY; PSID sid;
-  checked(AllocateAndInitializeSid(&authority, 3, SECURITY_LOGON_IDS_RID, (DWORD)luid.HighPart, luid.LowPart,
-    0, 0, 0, 0, 0, &sid), "scope SID");
   const wchar_t *cache = _wgetenv(L"DEVRYAN_EXECUTION_CACHE");
-  PSID cacheSid = cache_sid(cache ? cache : argv[2]);
-  SID_AND_ATTRIBUTES scopes[] = { { sid, 0 }, { cacheSid, 0 } };
-  checked(CreateRestrictedToken(token, DISABLE_MAX_PRIVILEGE | WRITE_RESTRICTED | LUA_TOKEN,
-    0, NULL, 0, NULL, 2, scopes, &restricted), "restricted token");
-  PSID integrity; checked(ConvertStringSidToSidW(L"S-1-16-0", &integrity), "integrity SID");
+  if (!cache || !*cache) { SetLastError(ERROR_INVALID_PARAMETER); fail("execution cache identity"); }
+  HANDLE policy = read_execution_policy(argv[3], argv[1], argv[2], cache);
+  wchar_t profileName[96];
+  swprintf(profileName, 96, L"DevRyan-%lu-%lu-%lu", GetCurrentProcessId(), (DWORD)luid.HighPart, luid.LowPart);
+  PSID sid; DWORD capabilityCount;
+  SID_AND_ATTRIBUTES *capabilities = network_capabilities(&capabilityCount);
+  HRESULT profileResult = CreateAppContainerProfile(profileName, L"DevRyan execution", L"Private execution scope",
+    capabilities, capabilityCount, &sid);
+  if (FAILED(profileResult)) { SetLastError((DWORD)profileResult); fail("exclusive LPAC profile"); }
+  wcscpy(active_profile, profileName);
+  checked(CreateRestrictedToken(token, DISABLE_MAX_PRIVILEGE | LUA_TOKEN,
+    0, NULL, 0, NULL, 0, NULL, &restricted), "restricted token");
+  // Elevated runners otherwise default new files to the Administrators group.
+  // Worker-created files must retain the scoped host principal as their owner.
+  TOKEN_OWNER childOwner = { user->User.Sid };
+  checked(SetTokenInformation(restricted, TokenOwner, &childOwner, sizeof(childOwner)), "child file owner");
+  PSID integrity; checked(ConvertStringSidToSidW(L"S-1-16-4096", &integrity), "integrity SID");
   TOKEN_MANDATORY_LABEL label = { { integrity, SE_GROUP_INTEGRITY } };
-  checked(SetTokenInformation(restricted, TokenIntegrityLevel, &label, sizeof(label) + GetLengthSid(integrity)), "untrusted integrity");
+  checked(SetTokenInformation(restricted, TokenIntegrityLevel, &label, sizeof(label) + GetLengthSid(integrity)), "LPAC integrity");
   LPWSTR sidText, userText;
   checked(ConvertSidToStringSidW(sid, &sidText), "scope string");
   checked(ConvertSidToStringSidW(user->User.Sid, &userText), "owner string");
-  wchar_t descriptor[1024];
-  swprintf(descriptor, 1024, L"D:P(A;OICI;GA;;;%s)(A;OICI;GA;;;%s)S:(ML;OICI;NW;;;S-1-16-0)", sidText, userText);
-  PSECURITY_DESCRIPTOR security;
-  checked(ConvertStringSecurityDescriptorToSecurityDescriptorW(descriptor, SDDL_REVISION_1, &security, NULL), "scope security");
-  grant_tree(argv[1], security); grant_tree(argv[2], security);
-  if (cache && wcscmp(cache, argv[2])) {
-    LPWSTR cacheText; PSECURITY_DESCRIPTOR cacheSecurity;
-    checked(ConvertSidToStringSidW(cacheSid, &cacheText), "cache SID string");
-    swprintf(descriptor, 1024, L"D:P(A;OICI;GA;;;%s)(A;OICI;GA;;;%s)S:(ML;OICI;NW;;;S-1-16-0)", cacheText, userText);
-    checked(ConvertStringSecurityDescriptorToSecurityDescriptorW(descriptor, SDDL_REVISION_1, &cacheSecurity, NULL), "cache security");
-    grant_tree(cache, cacheSecurity); LocalFree(cacheSecurity); LocalFree(cacheText);
-  }
+  PSECURITY_DESCRIPTOR security = execution_security(userText, sidText, TRUE);
+  HANDLE roots[3]; DWORD rootCount = 2;
+  roots[0] = grant_tree(argv[1], security, TRUE); roots[1] = grant_tree(argv[2], security, TRUE);
+  if (wcscmp(cache, argv[2])) roots[rootCount++] = grant_tree(cache, security, TRUE);
+  PSECURITY_DESCRIPTOR readonlySecurity = execution_security(userText, sidText, FALSE);
+  wchar_t *runtime = stage_execution_runtime(argv[6], argv[1], readonlySecurity);
+  LocalFree(readonlySecurity);
   BOOL present, defaulted; PACL dacl;
   checked(GetSecurityDescriptorDacl(security, &present, &dacl, &defaulted) && present, "process DACL");
   TOKEN_DEFAULT_DACL defaultDacl = { dacl };
@@ -425,6 +565,7 @@ int wmain(int argc, wchar_t **argv) {
   if (!desktop) fail("private desktop");
   HANDLE job = CreateJobObjectW(NULL, NULL);
   if (!job) fail("process job");
+  active_job = job;
   JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits = {0};
   limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION;
   checked(SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits)), "job ownership");
@@ -439,18 +580,26 @@ int wmain(int argc, wchar_t **argv) {
     checked(DuplicateHandle(GetCurrentProcess(), GetStdHandle(kinds[i]), GetCurrentProcess(), &handles[i], 0, TRUE, DUPLICATE_SAME_ACCESS), "pipe handle");
   }
   startup.StartupInfo.hStdInput = handles[0]; startup.StartupInfo.hStdOutput = handles[1]; startup.StartupInfo.hStdError = handles[2];
-  SIZE_T bytes = 0; InitializeProcThreadAttributeList(NULL, 2, 0, &bytes);
+  SIZE_T bytes = 0; InitializeProcThreadAttributeList(NULL, 4, 0, &bytes);
   startup.lpAttributeList = malloc(bytes); if (!startup.lpAttributeList) fail("handle list allocation");
-  checked(InitializeProcThreadAttributeList(startup.lpAttributeList, 2, 0, &bytes), "process attributes");
+  checked(InitializeProcThreadAttributeList(startup.lpAttributeList, 4, 0, &bytes), "process attributes");
   checked(UpdateProcThreadAttribute(startup.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
     handles, sizeof(handles), NULL, NULL), "inherited handle boundary");
   // The kernel assigns the child while creating it. A suspended process
   // followed by AssignProcessToJobObject leaves an escape window on host death.
   checked(UpdateProcThreadAttribute(startup.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_JOB_LIST,
     &job, sizeof(job), NULL, NULL), "atomic command ownership");
+  SECURITY_CAPABILITIES app = { sid, capabilities, capabilityCount, 0 };
+  checked(UpdateProcThreadAttribute(startup.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
+    &app, sizeof(app), NULL, NULL), "LPAC command identity");
+  DWORD packagePolicy = PROCESS_CREATION_ALL_APPLICATION_PACKAGES_OPT_OUT;
+  checked(UpdateProcThreadAttribute(startup.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_ALL_APPLICATION_PACKAGES_POLICY,
+    &packagePolicy, sizeof(packagePolicy), NULL, NULL), "LPAC ambient access refusal");
   wchar_t cwd[32768]; DWORD cwdLength = GetEnvironmentVariableW(L"DEVRYAN_EXECUTION_CWD", cwd, 32768);
   if (!cwdLength || cwdLength >= 32768) wcscpy(cwd, argv[1]);
-  wchar_t *command = command_line(argc, argv, 6); PROCESS_INFORMATION process = {0};
+  wchar_t *originalRuntime = argv[6]; argv[6] = runtime;
+  wchar_t *command = command_line(argc, argv, 6); argv[6] = originalRuntime;
+  PROCESS_INFORMATION process = {0};
   checked(CreateProcessAsUserW(restricted, NULL, command, NULL, NULL, TRUE,
     CREATE_SUSPENDED | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT, NULL, cwd, &startup.StartupInfo, &process), "confined command");
   checked(ResumeThread(process.hThread) != (DWORD)-1, "command start");
@@ -467,11 +616,19 @@ int wmain(int argc, wchar_t **argv) {
     Sleep(10);
   }
   if (cancelled) code = 130;
+  CloseHandle(process.hThread); CloseHandle(process.hProcess); CloseHandle(job); active_job = NULL;
+  HRESULT removedProfile = DeleteAppContainerProfile(profileName);
+  if (FAILED(removedProfile)) { SetLastError((DWORD)removedProfile); fail("LPAC profile settlement"); }
+  *active_profile = 0;
   char result[160]; int count = snprintf(result, sizeof(result), "{\"terminated\":true,\"confined\":true,\"cancelled\":%s,\"exitCode\":%lu}\n", cancelled ? "true" : "false", code);
   DWORD written; checked(WriteFile(receipt, result, count, &written, NULL) && written == (DWORD)count && FlushFileBuffers(receipt), "durable receipt");
-  CloseHandle(receipt); CloseHandle(job); CloseHandle(process.hThread); CloseHandle(process.hProcess);
+  CloseHandle(receipt);
+  for (DWORD i = 0; i < rootCount; i++) CloseHandle(roots[i]);
   CloseHandle(cancel); CloseHandle(parent); CloseDesktop(desktop); CloseHandle(restricted); CloseHandle(token);
   DeleteProcThreadAttributeList(startup.lpAttributeList); free(startup.lpAttributeList); free(command); free(user);
-  LocalFree(security); LocalFree(sidText); LocalFree(userText); LocalFree(integrity); FreeSid(sid); FreeSid(cacheSid);
+  CloseHandle(policy); free(runtime);
+  for (DWORD i = 0; i < capabilityCount; i++) LocalFree(capabilities[i].Sid);
+  free(capabilities);
+  LocalFree(security); LocalFree(sidText); LocalFree(userText); LocalFree(integrity); FreeSid(sid);
   return (int)code;
 }

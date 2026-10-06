@@ -1,4 +1,4 @@
-// Trusted startup probes only. Modified helpers never receive an acceptance
+// Trusted startup probes only. Diagnostic helpers never receive an acceptance
 // marker, enter a runtime bundle or authorize execution. Production is untouched.
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -6,61 +6,17 @@ import { createHash, randomUUID } from 'node:crypto';
 import { execFile, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { windowsSessionExecutionProfile } from '../packages/harness-runtime/lib/session-execution.js';
+import { ensureWindowsPrivateDirectory, createWindowsPrivateFile } from '../packages/harness-runtime/lib/windows-private-files.js';
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const exec = promisify(execFile);
-const once = (source, anchor, replacement) => {
-  if (source.split(anchor).length !== 2) throw new Error('Supervisor diagnostic anchor changed');
-  return source.replace(anchor, replacement);
-};
-
 export function supervisorStartupVariants(source) {
-  if (typeof source !== 'string') throw new Error('Supervisor diagnostic source required');
-  const noUi = source => once(source, 'DWORD uiMask = maximum_ui_limits(os_build());',
-    'DWORD uiMask = maximum_ui_limits(os_build()); uiMask = 0; // Diagnostic only.');
-  let station = once(source,
-    'HDESK desktop = CreateDesktopW(desktopName, NULL, NULL, 0, GENERIC_ALL, &desktopSecurity);',
-    `HWINSTA inheritedStation = GetProcessWindowStation();
-  if (!inheritedStation) fail("inherited window station");
-  HWINSTA station = CreateWindowStationW(NULL, CWF_CREATE_ONLY, GENERIC_ALL, &desktopSecurity);
-  if (!station) fail("private window station");
-  checked(SetProcessWindowStation(station), "select private window station");
-  HDESK desktop = CreateDesktopW(desktopName, NULL, NULL, 0, GENERIC_ALL, &desktopSecurity);
-  DWORD desktopError = desktop ? ERROR_SUCCESS : GetLastError();
-  checked(SetProcessWindowStation(inheritedStation), "restore inherited window station");
-  if (!desktop) { SetLastError(desktopError); fail("private desktop"); }
-  wchar_t stationName[128], fullDesktopName[256]; DWORD stationNameBytes = 0;
-  checked(GetUserObjectInformationW(station, UOI_NAME, stationName, sizeof(stationName), &stationNameBytes), "private station name");
-  swprintf(fullDesktopName, 256, L"%ls\\\\%ls", stationName, desktopName);`);
-  station = once(station, 'startup.StartupInfo.lpDesktop = desktopName;', 'startup.StartupInfo.lpDesktop = fullDesktopName;');
-  station = once(station, 'CloseDesktop(desktop);', 'CloseDesktop(desktop); CloseWindowStation(station);');
-  let systemDacl = once(source, 'TOKEN_DEFAULT_DACL defaultDacl = { dacl };',
-    `PSECURITY_DESCRIPTOR processSecurity;
-  swprintf(descriptor, 1024, L"D:P(A;;GA;;;%s)(A;;GA;;;%s)(A;;GA;;;SY)", sidText, userText);
-  checked(ConvertStringSecurityDescriptorToSecurityDescriptorW(descriptor, SDDL_REVISION_1, &processSecurity, NULL), "diagnostic process security");
-  checked(GetSecurityDescriptorDacl(processSecurity, &present, &dacl, &defaulted) && present, "diagnostic process DACL");
-  TOKEN_DEFAULT_DACL defaultDacl = { dacl };`);
-  systemDacl = once(systemDacl, 'LocalFree(security); LocalFree(sidText);',
-    'LocalFree(processSecurity); LocalFree(security); LocalFree(sidText);');
-  let systemDesktop = once(source,
-    'SECURITY_ATTRIBUTES desktopSecurity = { sizeof(desktopSecurity), security, FALSE };',
-    `PSECURITY_DESCRIPTOR desktopDescriptor;
-  swprintf(descriptor, 1024, L"D:P(A;OICI;GA;;;%s)(A;OICI;GA;;;%s)(A;OICI;GA;;;SY)S:(ML;OICI;NW;;;S-1-16-0)", sidText, userText);
-  checked(ConvertStringSecurityDescriptorToSecurityDescriptorW(descriptor, SDDL_REVISION_1, &desktopDescriptor, NULL), "diagnostic desktop security");
-  SECURITY_ATTRIBUTES desktopSecurity = { sizeof(desktopSecurity), desktopDescriptor, FALSE };`);
-  systemDesktop = once(systemDesktop, 'LocalFree(security); LocalFree(sidText);',
-    'LocalFree(desktopDescriptor); LocalFree(security); LocalFree(sidText);');
-  return [
-    { id: 'original', source },
-    { id: 'no-ui-job', source: noUi(source) },
-    { id: 'private-station', source: station },
-    { id: 'private-station-no-ui-job', source: noUi(station) },
-    { id: 'low-integrity', source: once(source, 'ConvertStringSidToSidW(L"S-1-16-0", &integrity)',
-      'ConvertStringSidToSidW(L"S-1-16-4096", &integrity)') },
-    { id: 'system-process-dacl', source: systemDacl },
-    { id: 'system-desktop-dacl', source: systemDesktop },
-  ];
+  if (typeof source !== 'string' || !source.includes('PROC_THREAD_ATTRIBUTE_ALL_APPLICATION_PACKAGES_POLICY')) {
+    throw new Error('LPAC supervisor source required');
+  }
+  return [{ id: 'original-lpac', source }];
 }
 
 export async function runSupervisorStartupDiagnostic(directory) {
@@ -91,7 +47,7 @@ export async function runSupervisorStartupDiagnostic(directory) {
     const row = { id: variant.id, sourceSha256: hash(variant.source), admission: false, acceptance: false, runs: [] };
     try {
       const compiled = await exec('cl.exe', ['/nologo', '/std:c11', '/W4', '/WX', '/O2', '/D_CRT_SECURE_NO_WARNINGS',
-        candidateSource, `/Fe:${executable}`, `/Fo:${path.join(candidate, 'supervisor.obj')}`, '/link', 'advapi32.lib', 'user32.lib'],
+        candidateSource, `/Fe:${executable}`, `/Fo:${path.join(candidate, 'supervisor.obj')}`, '/link', 'advapi32.lib', 'user32.lib', 'userenv.lib'],
       { cwd: root, timeout: 60000, maxBuffer: 65536 });
       await fs.writeFile(path.join(candidate, 'compile.log'), compiled.stdout + compiled.stderr);
       row.compilation = 'passed'; row.binarySha256 = hash(await fs.readFile(executable));
@@ -103,9 +59,9 @@ export async function runSupervisorStartupDiagnostic(directory) {
     for (const runtime of runtimes) {
         const fixture = path.join(candidate, runtime.id); await fs.mkdir(fixture);
         const view = path.join(fixture, 'view'), scratch = path.join(fixture, 'scratch');
-        await fs.mkdir(view); await fs.mkdir(scratch);
+        await ensureWindowsPrivateDirectory(executable, view); await ensureWindowsPrivateDirectory(executable, scratch);
         const profile = path.join(fixture, 'diagnostic-profile'), receiptPath = path.join(fixture, 'termination.json');
-        await fs.writeFile(profile, 'Trusted diagnostic; no admission or confinement qualification.\n', { flag: 'wx' });
+        await createWindowsPrivateFile(executable, profile, windowsSessionExecutionProfile({ viewDirectory: view, scratchDirectory: scratch, auxiliaryDirectory: scratch }));
         const marker = `DevRyan startup diagnostic ${variant.id}/${runtime.id}\n`;
         const result = spawnSync(executable, [view, scratch, profile, receiptPath, '--', runtime.executable, '-e',
           `process.stdout.write(${JSON.stringify(marker)});`], { cwd: view, encoding: 'utf8', timeout: 15000, maxBuffer: 65536,

@@ -164,7 +164,7 @@ jobs:
       - name: Diagnose confined Node and Bun startup without admission
         if: ${{ always() && steps.supervisor.outcome == 'success' }}
         continue-on-error: true
-        # Disposable source variants have no accepted manifest and cannot
+        # Exact-source disposable probes have no accepted manifest and cannot
         # satisfy any required qualification outcome.
         run: node scripts/diagnose-windows-supervisor-startup.mjs .cache/windows-native/${{ matrix.arch }}/supervisor-startup-diagnostic
       - name: Verify native process identities and containing host jobs

@@ -410,6 +410,27 @@ Windows. Presentation paths and security paths have distinct contracts.
 
 ## Filesystem authority
 
+The current policy-3 supervision draft uses a unique LPAC profile and the native
+`SECURITY_CAPABILITIES`/All Application Packages opt-out attributes, following
+[Microsoft's LPAC launch contract](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer).
+It replaces the write-only restricted-SID check. A bounded binary policy binds
+the exact view, scratch and cache roots; a cache covering the private runtime
+root refuses. The selected executable is copied from a pinned no-follow handle
+into a read-only sibling, so its installed ACL is unchanged. Scoped ACLs grant
+data access without WRITE_DAC/WRITE_OWNER; OWNER RIGHTS removes implicit owner
+WRITE_DAC. Atomic job assignment, all supported UI flags, three inherited handles,
+parent creation identity and flushed termination receipts remain mandatory.
+The startup diagnostic now executes the exact source on Node and Bun rather
+than repeating seven historical source variants. Their original results remain
+preserved. Complete runtime/input projection and abrupt-death profile recovery
+are still required; no native confinement or startup pass is inferred locally.
+
+All three platforms retain version 2.0.2. Finish engineering before one common
+source freeze, publish the qualified macOS asset first, then append both qualified
+Windows installers through the existing `desktop` exact asset scope. Preserve
+the frozen tag and macOS digest. Provider sign-ins and non-production Supabase
+are unavailable currently; their mandatory gates stay pending.
+
 Use Windows handles to inspect owner SID, protected DACL, volume/file identity,
 link count, reparse tag, and final path. Private roots must belong to the current
 owner and permit only the owner and required system principals. Never infer

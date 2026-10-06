@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { executionSocketDirectory, NODE_SPAWN_PRELOAD, ownedPrivateDirectory, prepareSessionExecution, removeExecutionSocketDirectory,
-  sessionExecutionProfile, sweepExecutionSocketDirectories, sweepSessionTemporaryDirectories, verifySessionExecutionLauncher } from './session-execution.js';
+  sessionExecutionProfile, windowsSessionExecutionProfile, sweepExecutionSocketDirectories, sweepSessionTemporaryDirectories, verifySessionExecutionLauncher } from './session-execution.js';
 
 const roots = [], leases = [];
 afterEach(async () => {
@@ -16,6 +16,17 @@ const prepareTracked = (root, viewDirectory) => {
   const lease = { viewDirectory }; leases.push(lease);
   return prepareSessionExecution({ launcher: path.join(root, 'launcher'), lease });
 };
+
+test('Windows policy binds canonical roots without widening the writable scope over its runtime', () => {
+  const roots = { viewDirectory: 'C:\\Private-Δ\\one\\worktree', scratchDirectory: 'C:\\Private-Δ\\one\\scratch', auxiliaryDirectory: 'C:\\Private-Δ\\cache' };
+  const bytes = windowsSessionExecutionProfile(roots);
+  expect(bytes.toString('utf16le').split('\0')).toEqual(['DevRyan-Windows-LPAC-1', ...Object.values(roots), '']);
+  for (const update of [{ auxiliaryDirectory: 'C:\\Private-Δ' }, { auxiliaryDirectory: 'C:\\Private-Δ\\one' },
+    { scratchDirectory: 'C:\\Private-Δ\\one' }, { viewDirectory: 'C:\\Private-Δ\\one\\..\\worktree' },
+    { auxiliaryDirectory: '\\\\server\\share' }, { viewDirectory: 'relative' }, { auxiliaryDirectory: 'C:\\bad\npath' }]) {
+    expect(() => windowsSessionExecutionProfile({ ...roots, ...update })).toThrow('invalid_execution_path');
+  }
+});
 
 test('all confined workers use their scratch home and temporary paths, including QA-preloaded providers', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-execution-home-')); roots.push(root);
