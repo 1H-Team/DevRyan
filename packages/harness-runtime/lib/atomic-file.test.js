@@ -53,6 +53,19 @@ describe('atomic file primitives', () => {
     await expect(fs.readFile(fresh, 'utf8')).resolves.toBe('new');
   });
 
+  test('refuses unconfirmed replacement durability and preserves the published bytes', async () => {
+    const directory = await temporaryDirectory(), filePath = path.join(directory, 'record.json');
+    let closed = false;
+    const failure = Object.assign(new Error('fixture directory sync failed'), { code: 'EIO' });
+    const fsApi = { ...fs, open: async (file, ...arguments_) => file === directory ? {
+      sync: async () => { throw failure; }, close: async () => { closed = true; },
+    } : fs.open(file, ...arguments_) };
+    await expect(writeFileAtomic(filePath, '{"new":true}\n', { fs: fsApi })).rejects.toBe(failure);
+    expect(closed).toBe(true);
+    expect(await fs.readFile(filePath, 'utf8')).toBe('{"new":true}\n');
+    expect(await fs.readdir(directory)).toEqual(['record.json']);
+  });
+
   test('quarantines partial JSON and continues with an empty read', async () => {
     const directory = await temporaryDirectory();
     const filePath = path.join(directory, 'record.json');

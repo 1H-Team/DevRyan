@@ -11,15 +11,8 @@ const DEFAULT_MALFORMED_LOCK_STALE_MS = 30_000;
 const isNotFound = (error) => error && typeof error === 'object' && error.code === 'ENOENT';
 
 const syncDirectory = async (fsApi, directory) => {
-  let handle;
-  try {
-    handle = await fsApi.open(directory, 'r');
-    await handle.sync();
-  } catch {
-    // Directory fsync is unavailable on some supported filesystems.
-  } finally {
-    await handle?.close().catch(() => undefined);
-  }
+  const handle = await fsApi.open(directory, 'r');
+  try { await handle.sync(); } finally { await handle.close(); }
 };
 
 export const cleanupStaleAtomicFiles = async (filePath, options = {}) => {
@@ -76,7 +69,7 @@ export const writeFileAtomic = async (filePath, data, options = {}) => {
     await handle.close();
     handle = undefined;
     await fsApi.rename(temporaryPath, filePath);
-    await fsApi.chmod(filePath, mode).catch(() => undefined);
+    await fsApi.chmod(filePath, mode);
     await syncDirectory(fsApi, directory);
   } catch (error) {
     await handle?.close().catch(() => undefined);
@@ -204,6 +197,7 @@ const quarantineInvalidFile = async (filePath, error, options) => {
   await fsApi.mkdir(quarantineDir, { recursive: true, mode: 0o700 });
   await fsApi.rename(filePath, destination);
   await syncDirectory(fsApi, quarantineDir);
+  await syncDirectory(fsApi, path.dirname(filePath));
   options.onQuarantine?.({
     filePath,
     quarantinedPath: destination,
