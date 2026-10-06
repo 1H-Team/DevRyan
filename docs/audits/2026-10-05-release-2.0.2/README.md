@@ -381,6 +381,17 @@ oracle mistook the original SDK title prompt for a primary prompt. The corrected
 rehearsal recognizes its independently verified exact hash, accepts at most one
 per role, and keeps both guidance assertions for the two actual primaries.
 
+The actual publication-disabled [release rehearsal](https://github.com/1H-Team/DevRyan/actions/runs/37392421905)
+at `0c2d4235` built and verified the Mac native runtime, native helpers and web
+assets. Its resolver then refused all eight missing signed input-image tags;
+no image build/publication, DMG packaging, npm publication or finalization ran.
+The Create GitHub Release step was skipped, and subsequent read-only API checks
+found neither a `v2.0.2` release nor tag. Independent anonymous GHCR HEAD probes
+reproduced 404 for each exact content-addressed tag without using Docker Engine.
+`macos-release-dry-run-1-review.json` binds these observations to the original
+CI status and probe receipts. This confirms the write refusal, while full
+dry-run qualification remains failed until those signed image inputs exist.
+
 Windows run `37383981687` at `a92c85e2` built pinned libsql 0.5.29 from the
 unchanged official source on both native architectures using NMake. Node
 22.23.3 and Bun 1.3.14 passed both ABI/transaction checks. Downloaded PE machine
@@ -532,7 +543,7 @@ evidence in `.cache/release-2.0.2-recovery`.
 | Managed-user verification | Unavailable | Non-production Supabase environment not supplied |
 | Cold/warm loopback and full performance audit | Passed (engineering baselines); final not run | Three baseline and three candidate repetitions; gains within noise, candidate removed; full audit and frozen grading pending |
 | Burst, six attribution, 21 calibration, conditional 42 paired launches | Not run | Quiet window and frozen grading pending; retain 750 ms |
-| Release dry-run with no external writes and exact asset digests | Passed (focused); CI not run | Fake-registry refusal/reuse tests, workflow writer guards and packaging-digest verification; actual signed images and frozen package pending |
+| Release dry-run with no external writes and exact asset digests | Write refusal verified; CI qualification failed | Actual Mac native/web builds passed; eight missing signed input-image tags independently reproduced; release/image/npm/database/notification writes did not run; DMG packaging and final digests remain pending |
 | Downloaded DMG digest, mounted app, isolated launch and updater | Not run | Publication requires all preceding mandatory gates |
 | Windows x64 / ARM64 native safety and installers | Partial native checks; release gate failed | Both process/parent identities, 15 filesystem checks and pinned libsql source/Node/Bun ABI candidates pass; confinement and controller/writer builds still fail; installers not run |
 
