@@ -620,7 +620,55 @@ static int cancel_process(const wchar_t *base, const wchar_t *argument, const wc
   CloseHandle(event); CloseHandle(owner); CloseHandle(supervisor); return 0;
 }
 
+/* Trusted self-only probe separates native child creation from Node's pipe
+ * setup. It cannot run outside the existing AppContainer/job boundary. */
+static int diagnose_descendant(BOOL leaf) {
+  HANDLE token; DWORD app = 0, returned; BOOL inJob;
+  checked(OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token), "diagnostic token");
+  checked(GetTokenInformation(token, TokenIsAppContainer, &app, sizeof(app), &returned), "diagnostic AppContainer");
+  checked(IsProcessInJob(GetCurrentProcess(), NULL, &inJob), "diagnostic containing job");
+  CloseHandle(token);
+  if (!app || !inJob) return 125;
+  if (leaf) { puts("DevRyan confined descendant started"); return 0; }
+  wchar_t executable[32768];
+  DWORD length = GetModuleFileNameW(NULL, executable, 32768);
+  if (!length || length >= 32768) fail("diagnostic executable");
+  HANDLE image = CreateFileW(executable, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+  DWORD imageError = image == INVALID_HANDLE_VALUE ? GetLastError() : 0;
+  if (image != INVALID_HANDLE_VALUE) CloseHandle(image);
+  STARTUPINFOEXW startup = {0}; startup.StartupInfo.cb = sizeof(startup); startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+  HANDLE handles[3]; DWORD kinds[] = {STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE};
+  for (DWORD i = 0; i < 3; i++) checked(DuplicateHandle(GetCurrentProcess(), GetStdHandle(kinds[i]), GetCurrentProcess(),
+    &handles[i], 0, TRUE, DUPLICATE_SAME_ACCESS), "diagnostic standard handle");
+  startup.StartupInfo.hStdInput = handles[0]; startup.StartupInfo.hStdOutput = handles[1]; startup.StartupInfo.hStdError = handles[2];
+  SIZE_T size = 0; InitializeProcThreadAttributeList(NULL, 1, 0, &size);
+  startup.lpAttributeList = malloc(size); if (!startup.lpAttributeList) fail("diagnostic attributes allocation");
+  checked(InitializeProcThreadAttributeList(startup.lpAttributeList, 1, 0, &size), "diagnostic process attributes");
+  checked(UpdateProcThreadAttribute(startup.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+    handles, sizeof(handles), NULL, NULL), "diagnostic three handles");
+  wchar_t *arguments[] = {executable, L"--diagnose-descendant-leaf"}, *command = command_line(2, arguments, 0);
+  PROCESS_INFORMATION child = {0};
+  BOOL created = CreateProcessW(NULL, command, NULL, NULL, TRUE, CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT,
+    NULL, NULL, &startup.StartupInfo, &child);
+  DWORD error = created ? 0 : GetLastError(), code = 125;
+  if (created) {
+    if (WaitForSingleObject(child.hProcess, 5000) != WAIT_OBJECT_0) {
+      checked(TerminateProcess(child.hProcess, 125), "diagnostic child stop");
+      checked(WaitForSingleObject(child.hProcess, 5000) == WAIT_OBJECT_0, "diagnostic child settlement");
+    }
+    checked(GetExitCodeProcess(child.hProcess, &code), "diagnostic child result");
+    CloseHandle(child.hThread); CloseHandle(child.hProcess);
+  }
+  for (DWORD i = 0; i < 3; i++) CloseHandle(handles[i]);
+  DeleteProcThreadAttributeList(startup.lpAttributeList); free(startup.lpAttributeList); free(command);
+  printf("{\"protocol\":\"devryan.windows-descendant-startup/1\",\"imageReadError\":%lu,\"created\":%s,\"windowsError\":%lu,\"exitCode\":%lu}\n",
+    imageError, created ? "true" : "false", error, code);
+  return created && !code ? 0 : 125;
+}
+
 int wmain(int argc, wchar_t **argv) {
+  if (argc == 2 && !wcscmp(argv[1], L"--diagnose-descendant")) return diagnose_descendant(FALSE);
+  if (argc == 2 && !wcscmp(argv[1], L"--diagnose-descendant-leaf")) return diagnose_descendant(TRUE);
   if (argc == 2 && !wcscmp(argv[1], L"--inspect-job-boundary")) return inspect_job_boundary();
   if (argc == 3 && !wcscmp(argv[1], L"--inspect-process")) return inspect_process(argv[2]);
   if (argc == 2 && !wcscmp(argv[1], L"--inspect-parent")) {

@@ -99,6 +99,19 @@ try {
 } finally {await owner?.close();await fs.rm(lockFixture,{recursive:true,force:true})}
 await pin();
 const cancellation=[];
+const descendantFixture=path.join(repo,'.cache/test-fixtures',`windows-descendant-${randomUUID()}`);
+await ensureWindowsPrivateDirectory(binary,descendantFixture);
+const descendantView=path.join(descendantFixture,'worktree');await ensureWindowsPrivateDirectory(binary,descendantView);
+let descendantStartup;
+try{
+ let stdout='',stderr='';
+ const started=await startSessionExecution({launcher:binary,lease:{viewDirectory:descendantView},command:binary,args:['--diagnose-descendant'],
+  env:{PATH:process.env.PATH,SystemRoot:process.env.SystemRoot??process.env.SYSTEMROOT},
+  onOutput:({stream,data})=>{if(stream==='stdout')stdout=(stdout+data).slice(-8192);else stderr=(stderr+data).slice(-8192)}});
+ const receipt=await started.result;
+ descendantStartup={receipt,stdout,stderr};
+}catch(error){descendantStartup={error:{message:error.message,code:error.code??null}}}
+finally{await fs.rm(descendantFixture,{recursive:true,force:true})}
 for(const mode of ['running-command','before-event-creation','running-descendant']){
  const early=mode==='before-event-creation',descendant=mode==='running-descendant';
  const fixture=path.join(repo,'.cache/test-fixtures',`windows-cancel-${randomUUID()}`);
@@ -142,7 +155,7 @@ for(const mode of ['running-command','before-event-creation','running-descendant
 await pin();
 const evidence={schema:1,status:cancellation.every(row=>row.status==='passed')?'passed':'failed',scope:'Windows SDK process identity, host lifetime and owned cancellation prerequisites; no admission or complete acceptance authority',
  sourceCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).trim(),platform:process.platform,arch:process.arch,
- supervisorSha256:manifest.sha256,manifestSha256:hash(manifestBytes),host,parentProof,jobBoundary,ownerLock,cancellation,child:identity,childExit:await closed};
+ supervisorSha256:manifest.sha256,manifestSha256:hash(manifestBytes),host,parentProof,jobBoundary,ownerLock,descendantStartup,cancellation,child:identity,childExit:await closed};
 await fs.writeFile(path.join(root,'host-boundary-evidence.json'),JSON.stringify(evidence,null,2)+'\n',{flag:'wx'});
 console.log(JSON.stringify(evidence));
 assert.equal(evidence.status,'passed','Native cancellation or descendant startup failed; admission remains unavailable');
