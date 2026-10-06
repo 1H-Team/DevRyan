@@ -80,3 +80,8 @@ the seven historical restriction variants remain retained evidence. Successful
 termination also requires LPAC profile settlement. Native startup, private read
 denial, complete resource projection, abrupt-death profile recovery and all
 existing safety cases must qualify before this draft receives acceptance.
+The fixed capability set keeps the existing three network grants and adds only
+Windows `registryRead` for LPAC system/DLL initialization. It uses the SDK's
+`DeriveCapabilitySidsFromName` through `onecoreuap.lib`; it grants no registry
+writes or file access outside the scoped package ACLs. Both native runtimes
+still require actual startup and complete safety qualification.

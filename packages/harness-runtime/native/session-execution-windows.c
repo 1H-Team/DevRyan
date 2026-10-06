@@ -468,19 +468,28 @@ static wchar_t *stage_execution_runtime(const wchar_t *source, const wchar_t *vi
   return target;
 }
 
-static SID_AND_ATTRIBUTES *network_capabilities(DWORD *count) {
+static SID_AND_ATTRIBUTES *execution_capabilities(DWORD *count) {
   const WELL_KNOWN_SID_TYPE kinds[] = { WinCapabilityInternetClientSid,
     WinCapabilityInternetClientServerSid, WinCapabilityPrivateNetworkClientServerSid };
-  *count = 3;
+  *count = 4;
   SID_AND_ATTRIBUTES *result = calloc(*count, sizeof(*result));
   if (!result) fail("network capability allocation");
-  for (DWORD i = 0; i < *count; i++) {
+  for (DWORD i = 0; i < 3; i++) {
     DWORD size = SECURITY_MAX_SID_SIZE;
     result[i].Sid = LocalAlloc(LMEM_FIXED, size);
     if (!result[i].Sid) fail("network capability allocation");
     checked(CreateWellKnownSid(kinds[i], NULL, result[i].Sid, &size), "network capability identity");
     result[i].Attributes = SE_GROUP_ENABLED;
   }
+  /* LPAC otherwise cannot read the system registry used by DLL startup.
+   * This grants only the OS's registryRead capability, never registry writes
+   * or access to files lacking this execution's package SID. */
+  PSID *groups = NULL, *sids = NULL; DWORD groupCount = 0, sidCount = 0;
+  checked(DeriveCapabilitySidsFromName(L"registryRead", &groups, &groupCount, &sids, &sidCount), "system registry capability");
+  for (DWORD i = 0; i < groupCount; i++) LocalFree(groups[i]);
+  LocalFree(groups);
+  if (sidCount != 1) { SetLastError(ERROR_INVALID_DATA); fail("system registry capability count"); }
+  result[3].Sid = sids[0]; result[3].Attributes = SE_GROUP_ENABLED; LocalFree(sids);
   return result;
 }
 
@@ -566,7 +575,7 @@ int wmain(int argc, wchar_t **argv) {
   wchar_t profileName[96];
   swprintf(profileName, 96, L"DevRyan-%lu-%lu-%lu", GetCurrentProcessId(), (DWORD)luid.HighPart, luid.LowPart);
   PSID sid; DWORD capabilityCount;
-  SID_AND_ATTRIBUTES *capabilities = network_capabilities(&capabilityCount);
+  SID_AND_ATTRIBUTES *capabilities = execution_capabilities(&capabilityCount);
   HRESULT profileResult = CreateAppContainerProfile(profileName, L"DevRyan execution", L"Private execution scope",
     capabilities, capabilityCount, &sid);
   if (FAILED(profileResult)) { SetLastError((DWORD)profileResult); fail("exclusive LPAC profile"); }
