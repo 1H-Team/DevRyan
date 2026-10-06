@@ -85,3 +85,6 @@ Windows `registryRead` for LPAC system/DLL initialization. It uses the SDK's
 `DeriveCapabilitySidsFromName` through `onecoreuap.lib`; it grants no registry
 writes or file access outside the scoped package ACLs. Both native runtimes
 still require actual startup and complete safety qualification.
+New private desktops and child process/thread defaults use their own generic
+object descriptor, rather than reusing file data access bits. No inherited
+desktop or station ACL is changed; file grants still exclude ACL ownership.

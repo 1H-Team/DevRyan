@@ -427,6 +427,16 @@ static PSECURITY_DESCRIPTOR execution_security(const wchar_t *owner, const wchar
   return security;
 }
 
+static PSECURITY_DESCRIPTOR execution_object_security(const wchar_t *owner, const wchar_t *container) {
+  wchar_t descriptor[2048];
+  /* File-specific access bits are not desktop/process access bits. These
+   * objects belong only to this execution; never apply this to a host object. */
+  swprintf(descriptor, 2048, L"O:%sD:P(A;;GA;;;%s)(A;;GA;;;SY)(A;;RC;;;OW)(A;;GA;;;%s)S:(ML;;NW;;;LW)", owner, owner, container);
+  PSECURITY_DESCRIPTOR security;
+  checked(ConvertStringSecurityDescriptorToSecurityDescriptorW(descriptor, SDDL_REVISION_1, &security, NULL), "private object security");
+  return security;
+}
+
 /* Copy the selected executable from a pinned no-follow handle, never change
  * its installed ACL. The sealed copy lives beside, outside, the writable view
  * and scratch. Children execute the same read-only copy through execPath. */
@@ -600,7 +610,8 @@ int wmain(int argc, wchar_t **argv) {
   wchar_t *runtime = stage_execution_runtime(argv[6], argv[1], readonlySecurity);
   LocalFree(readonlySecurity);
   BOOL present, defaulted; PACL dacl;
-  checked(GetSecurityDescriptorDacl(security, &present, &dacl, &defaulted) && present, "process DACL");
+  PSECURITY_DESCRIPTOR objectSecurity = execution_object_security(userText, sidText);
+  checked(GetSecurityDescriptorDacl(objectSecurity, &present, &dacl, &defaulted) && present, "process DACL");
   TOKEN_DEFAULT_DACL defaultDacl = { dacl };
   checked(SetTokenInformation(restricted, TokenDefaultDacl, &defaultDacl, sizeof(defaultDacl)), "child process security");
   wchar_t eventName[192];
@@ -609,7 +620,7 @@ int wmain(int argc, wchar_t **argv) {
   HANDLE cancel = CreateEventW(NULL, TRUE, FALSE, eventName);
   if (!cancel || GetLastError() == ERROR_ALREADY_EXISTS) fail("exclusive cancel event");
   wchar_t desktopName[96]; swprintf(desktopName, 96, L"DevRyan-%lu-%lu", (DWORD)luid.HighPart, luid.LowPart);
-  SECURITY_ATTRIBUTES desktopSecurity = { sizeof(desktopSecurity), security, FALSE };
+  SECURITY_ATTRIBUTES desktopSecurity = { sizeof(desktopSecurity), objectSecurity, FALSE };
   HDESK desktop = CreateDesktopW(desktopName, NULL, NULL, 0, GENERIC_ALL, &desktopSecurity);
   if (!desktop) fail("private desktop");
   HANDLE job = CreateJobObjectW(NULL, NULL);
@@ -678,6 +689,6 @@ int wmain(int argc, wchar_t **argv) {
   CloseHandle(policy); free(runtime);
   for (DWORD i = 0; i < capabilityCount; i++) LocalFree(capabilities[i].Sid);
   free(capabilities);
-  LocalFree(security); LocalFree(sidText); LocalFree(userText); LocalFree(integrity); FreeSid(sid);
+  LocalFree(objectSecurity); LocalFree(security); LocalFree(sidText); LocalFree(userText); LocalFree(integrity); FreeSid(sid);
   return (int)code;
 }
