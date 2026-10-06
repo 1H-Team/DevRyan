@@ -390,7 +390,7 @@ static HANDLE read_execution_policy(const wchar_t *argument, const wchar_t *view
   HANDLE file = CreateFileW(canonical, GENERIC_READ, FILE_SHARE_READ, NULL,
     OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, NULL);
   if (file == INVALID_HANDLE_VALUE) fail("execution policy handle");
-  BY_HANDLE_FILE_INFORMATION info; LARGE_INTEGER size;
+  BY_HANDLE_FILE_INFORMATION info; LARGE_INTEGER size = {0};
   checked(GetFileInformationByHandle(file, &info) && GetFileSizeEx(file, &size), "execution policy identity");
   if ((info.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT))
     || info.nNumberOfLinks != 1 || size.QuadPart < 8 || size.QuadPart > 65536 || size.QuadPart % 2) {
