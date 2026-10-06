@@ -93,3 +93,7 @@ bounded read, rejects non-private ACLs and hard links, and returns the identity
 before binary bytes. Windows termination receipts are created with a protected
 current-user/SYSTEM descriptor and write-through handle; their ancestors remain
 pinned until the termination receipt flush finishes.
+Execution layout checks hold all parent paths, require one private parent for
+view, scratch, binary policy and receipt, and reject cache/runtime overlap by
+native volume/file identities. Case or short-path aliases cannot bypass those
+checks. The identities remain retained through drain and receipt publication.

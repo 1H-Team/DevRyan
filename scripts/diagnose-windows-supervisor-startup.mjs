@@ -58,7 +58,7 @@ export async function runSupervisorStartupDiagnostic(directory) {
       variants.push(row); continue;
     }
     for (const runtime of runtimes) {
-        const fixture = path.join(candidate, runtime.id); await fs.mkdir(fixture);
+        const fixture = path.join(candidate, runtime.id); await ensureWindowsPrivateDirectory(executable, fixture);
         const view = path.join(fixture, 'view'), scratch = path.join(fixture, 'scratch');
         await ensureWindowsPrivateDirectory(executable, view); await ensureWindowsPrivateDirectory(executable, scratch);
         const profile = path.join(fixture, 'diagnostic-profile'), receiptPath = path.join(fixture, 'termination.json');

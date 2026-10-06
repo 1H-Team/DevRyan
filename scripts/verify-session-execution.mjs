@@ -12,6 +12,7 @@ import { git } from '../packages/harness-runtime/lib/session-changes-git.js';
 import { spawnConfinedProvider } from '../packages/web/server/lib/opencode/session-provider-spawn.js';
 import { fileURLToPath } from 'node:url';
 import { ensureWindowsPrivateDirectory } from '../packages/harness-runtime/lib/windows-private-files.js';
+import { randomUUID } from 'node:crypto';
 
 const launcher = process.env.DEVRYAN_TEST_EXECUTION_LAUNCHER;
 if (!launcher) throw new Error('Set DEVRYAN_TEST_EXECUTION_LAUNCHER to the built native helper');
@@ -19,7 +20,10 @@ const native = (name, body, timeout) => test(name, { timeout }, body);
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true }))); });
 async function fixture({ scope } = {}) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-execution-')); roots.push(root);
+  const root = process.platform === 'win32' ? path.join(os.tmpdir(), `devryan-execution-${randomUUID()}`)
+    : await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-execution-'));
+  if (process.platform === 'win32') await ensureWindowsPrivateDirectory(launcher, root);
+  roots.push(root);
   const canonical = await fs.realpath(root), viewDirectory = path.join(canonical, 'worktree');
   if (process.platform === 'win32') await ensureWindowsPrivateDirectory(launcher, viewDirectory);
   else await fs.mkdir(viewDirectory);

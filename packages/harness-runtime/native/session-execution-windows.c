@@ -150,6 +150,13 @@ static int inspect_file_handle(HANDLE file) {
 
 static DWORD anchor_parents(const wchar_t *argument, wchar_t *path, HANDLE *ancestors);
 
+static BOOL same_file(HANDLE left, HANDLE right) {
+  FILE_ID_INFO a, b;
+  checked(GetFileInformationByHandleEx(left, FileIdInfo, &a, sizeof(a))
+    && GetFileInformationByHandleEx(right, FileIdInfo, &b, sizeof(b)), "execution path identity");
+  return a.VolumeSerialNumber == b.VolumeSerialNumber && !memcmp(a.FileId.Identifier, b.FileId.Identifier, sizeof(a.FileId.Identifier));
+}
+
 static int inspect_path(const wchar_t *argument) {
   wchar_t path[32768]; HANDLE ancestors[256];
   DWORD count = anchor_parents(argument, path, ancestors);
@@ -596,6 +603,26 @@ int wmain(int argc, wchar_t **argv) {
   }
   if (argc < 7 || wcscmp(argv[5], L"--")) return 125;
   DWORD uiMask = maximum_ui_limits(os_build());
+  const wchar_t *cache = _wgetenv(L"DEVRYAN_EXECUTION_CACHE");
+  if (!cache || !*cache) { SetLastError(ERROR_INVALID_PARAMETER); fail("execution cache identity"); }
+  wchar_t canonical[32768]; HANDLE scopeParents[4][256], cacheParents[256]; DWORD scopeCounts[4];
+  for (DWORD i = 0; i < 4; i++) scopeCounts[i] = anchor_parents(argv[i + 1], canonical, scopeParents[i]);
+  HANDLE scope = scopeParents[0][scopeCounts[0] - 1]; BOOL scopeOwner;
+  if (!file_privacy(scope, &scopeOwner)) { SetLastError(ERROR_ACCESS_DENIED); fail("private execution parent"); }
+  for (DWORD i = 1; i < 4; i++) if (!same_file(scope, scopeParents[i][scopeCounts[i] - 1])) {
+    SetLastError(ERROR_ACCESS_DENIED); fail("execution sibling binding");
+  }
+  DWORD cacheParentCount = anchor_parents(cache, canonical, cacheParents);
+  HANDLE cacheRoot = CreateFileW(canonical, FILE_READ_ATTRIBUTES | READ_CONTROL, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+    FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+  if (cacheRoot == INVALID_HANDLE_VALUE) fail("cache scope identity");
+  for (DWORD i = 0; i < scopeCounts[0]; i++) if (same_file(cacheRoot, scopeParents[0][i])) {
+    SetLastError(ERROR_ACCESS_DENIED); fail("cache runtime overlap");
+  }
+  HANDLE scratchRoot = CreateFileW(argv[2], FILE_READ_ATTRIBUTES, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+    FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+  if (scratchRoot == INVALID_HANDLE_VALUE) fail("scratch scope identity");
+  BOOL cacheIsScratch = same_file(cacheRoot, scratchRoot); CloseHandle(scratchRoot);
   wchar_t receiptPath[32768]; HANDLE receiptParents[256];
   DWORD receiptParentCount = anchor_parents(argv[4], receiptPath, receiptParents);
   PSECURITY_DESCRIPTOR receiptSecurity = private_security(FALSE);
@@ -611,8 +638,6 @@ int wmain(int argc, wchar_t **argv) {
   if (!user) fail("user allocation");
   checked(GetTokenInformation(token, TokenUser, user, length, &length), "user identity");
   LUID luid; checked(AllocateLocallyUniqueId(&luid), "scope identity");
-  const wchar_t *cache = _wgetenv(L"DEVRYAN_EXECUTION_CACHE");
-  if (!cache || !*cache) { SetLastError(ERROR_INVALID_PARAMETER); fail("execution cache identity"); }
   HANDLE policy = read_execution_policy(argv[3], argv[1], argv[2], cache);
   wchar_t profileName[96];
   swprintf(profileName, 96, L"DevRyan-%lu-%lu-%lu", GetCurrentProcessId(), (DWORD)luid.HighPart, luid.LowPart);
@@ -637,7 +662,7 @@ int wmain(int argc, wchar_t **argv) {
   PSECURITY_DESCRIPTOR security = execution_security(userText, sidText, TRUE);
   HANDLE roots[3]; DWORD rootCount = 2;
   roots[0] = grant_tree(argv[1], security, TRUE); roots[1] = grant_tree(argv[2], security, TRUE);
-  if (wcscmp(cache, argv[2])) roots[rootCount++] = grant_tree(cache, security, TRUE);
+  if (!cacheIsScratch) roots[rootCount++] = grant_tree(cache, security, TRUE);
   PSECURITY_DESCRIPTOR readonlySecurity = execution_security(userText, sidText, FALSE);
   wchar_t *runtime = stage_execution_runtime(argv[6], argv[1], readonlySecurity);
   LocalFree(readonlySecurity);
@@ -718,6 +743,9 @@ int wmain(int argc, wchar_t **argv) {
   for (DWORD i = 0; i < receiptParentCount; i++) CloseHandle(receiptParents[i]);
   LocalFree(receiptSecurity);
   for (DWORD i = 0; i < rootCount; i++) CloseHandle(roots[i]);
+  CloseHandle(cacheRoot);
+  for (DWORD i = 0; i < cacheParentCount; i++) CloseHandle(cacheParents[i]);
+  for (DWORD i = 0; i < 4; i++) for (DWORD j = 0; j < scopeCounts[i]; j++) CloseHandle(scopeParents[i][j]);
   CloseHandle(cancel); CloseHandle(parent); CloseDesktop(desktop); CloseHandle(restricted); CloseHandle(token);
   DeleteProcThreadAttributeList(startup.lpAttributeList); free(startup.lpAttributeList); free(command); free(user);
   CloseHandle(policy); free(runtime);
