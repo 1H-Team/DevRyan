@@ -20,14 +20,14 @@ test('finite private and sanitized contracts retain exact witnesses and reject a
 });
 test('only the exact native source gets one observation insertion; removal reproduces original bytes',async()=>{
  const original=await fs.readFile(path.resolve(import.meta.dirname,'../../node_modules/@opencode/core/dist/chunks/credential-nye1dag9.js'),'utf8');
- const helper='/owned/native-compaction-observation.ts';const result=rewriteNativeCompactionObservation(original,helper);
+ const helper=path.resolve(import.meta.dirname,'../../packages/web/server/lib/opencode/runtime-host/native-compaction-observation.ts');const result=rewriteNativeCompactionObservation(original,helper);
  expect(result.originalSha256).toBe(NATIVE_COMPACTION_SOURCE_SHA256);
  expect(result.transformedSha256).toBe(createHash('sha256').update(result.contents).digest('hex'));
  const restored=result.contents.replace(`import { observeNativeCompactionBudget } from ${JSON.stringify(helper)};\n`,'')
   .replace(/    try \{ observeNativeCompactionBudget\(trigger, \{[\s\S]*?    \}\); \} catch \{ \/\* Read-only evidence must not alter native compaction\. \*\/ \}\n/,'');
  expect(restored).toBe(original);expect(result.contents.match(/observeNativeCompactionBudget\(trigger,/g)?.length).toBe(1);
  expect(()=>rewriteNativeCompactionObservation(original+'\n',helper)).toThrow('native_compaction_observation_source_changed');
- expect(()=>rewriteNativeCompactionObservation(original,'relative')).toThrow('native_compaction_observation_source_changed');
+ for(const invalid of ['relative','C:relative',helper+'\0',helper+'\r',helper+'\n'])expect(()=>rewriteNativeCompactionObservation(original,invalid)).toThrow('native_compaction_observation_source_changed');
 });
 test('budget observation is actual-trigger scoped, frozen, removed and cannot fail native compaction',()=>{
  const triggerObject={},other={};let count=0;

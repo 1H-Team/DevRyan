@@ -53,7 +53,8 @@ Repository automation entrypoint for developer workflows: validation planning, l
   immediately after the pinned SDK's original budget calculation. Its private
   settings have no exported read API. Exact original/transformed hashes enter
   the artifact manifest; a mismatch refuses the build, and diagnostics cannot
-  change the native compaction decision.
+  change the native compaction decision. Build-only helper paths use native
+  absolute-path validation on macOS and Windows; SDK byte guards remain exact.
   The separate package verifier uses relocated disposable bundles, the actual
   offline importer and an ordinary local HTTP provider. Its fixture responses
   drive real compiled tools, supervisor receipts and publication.

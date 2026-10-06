@@ -225,6 +225,16 @@ identify the offending public file. The imported Windows build helpers also
 participate in macOS native build identities, verified by an actual shared
 macOS build. Fresh Windows compilation and full safety acceptance remain required.
 
+Run [37402878771](https://github.com/1H-Team/DevRyan/actions/runs/37402878771)
+at `e0ba65b0` advanced past reviewed-input checking on both hosts, then refused
+the compaction observation transform before inventory. Its original guard
+requires a helper path starting with `/`, which rejects the drive paths supplied
+by the Windows build owner. The transform now uses native `path.isAbsolute`
+while preserving the exact SDK digest, single insertion anchor and control
+character refusals. Focused tests exercise a real native helper path and verify
+that removing the observation restores the original bytes. Actual Windows
+compilation and the complete native safety inventory remain outstanding.
+
 The supervisor now queries the actual OS build through `RtlGetVersion` and
 requests all available UI restrictions: the eight original flags, IME from
 build 22621, and injection from build 26100. This follows
