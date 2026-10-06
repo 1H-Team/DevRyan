@@ -268,14 +268,27 @@ boot refusal; both writers exit 0 without a reply. Independent payload review
 finds the exported writer helpers but no protocol handler guarded by
 `import.meta.main`. The compiled builder now uses the thin `writer-entry.ts`
 to invoke that same owner explicitly. Fifteen routing checks and a fresh macOS
-native build, signature/resource verification and both boot refusals pass;
-actual Windows reruns are still required.
+native build, signature/resource verification and both boot refusals pass.
+The following native rerun verifies the entry correction on both architectures.
 
 The ARM64 failure receipt was written before an `EPERM` directory rename hid
 the boot error. Unqualified Windows builds now create their private output
 exclusively, write `native-candidate.json` last with exclusive creation only
 after all checks pass, and retain failed files in place. They never replace an
 existing output, produce a production bundle, or grant admission.
+
+Run [37408333818](https://github.com/1H-Team/DevRyan/actions/runs/37408333818)
+at `725c354d` compiles both controller/writer pairs and passes both exact
+empty-input boot refusals on x64 and ARM64. Independent downloaded-artifact
+review verifies PE architecture, all payload and source hashes, original
+dependency pins, the reviewed libsql source/ABI receipts and all nine actual
+step outcomes. Both receipts remain explicitly unqualified with
+`admission: false`; no production manifest or accepted launcher is emitted.
+Supervision still fails on both hosts. x64 retains the confined Node
+`0xc0000142` initialization failure; ARM64 reaches descendant, inherited-handle,
+Unix-socket, permission-mode and Revert durability failures. The compiled
+runtime inventory is skipped. Build and boot success do not establish the
+read boundary, descendant containment or initialized runtime acceptance.
 
 Command supervision remains failed. The x64 confined Node command returns
 `0xc0000142`; this is separate from the writer's compiled entry failure.
@@ -316,8 +329,8 @@ refuses before environment or filesystem access. Native PE inspection and both
 empty-input boot refusals precede an immutable `native-candidate.json` receipt
 with `admission: false`. It emits no production manifest or accepted launcher
 and cannot be packaged as an accepted runtime. The original native PE builds
-are retained, but their boot gate failed; the explicit entry correction still
-needs both native reruns. Initialized controller/writer behavior, held file
+are retained, including the failed earlier probes; the explicit entry
+correction passes both native reruns. Initialized controller/writer behavior, held file
 authority, read confinement and the integrated acceptance inventory remain
 unqualified; the ordinary production builder continues to refuse Windows.
 

@@ -14,6 +14,21 @@ the enclosing DevRyan checkout. The fixture's own Git repositories still work;
 non-Git assertions must not be changed to accept the parent repository.
 - Release verification also runs `bun run build` and `bun run bundle:check`.
 
+Fresh macOS ARM64 checkouts need generated Electron web assets and the retained
+legacy Tauri test sidecar before the full suite:
+
+```sh
+bun run build
+bun run --cwd packages/electron build:web-assets
+node -e "require('node:fs').cpSync('packages/web/dist', 'packages/desktop/src-tauri/resources/web-dist', { recursive: true })"
+bun build --compile packages/web/server/index.js --outfile packages/desktop/src-tauri/sidecars/openchamber-server-aarch64-apple-darwin
+```
+
+Prepare only the missing sidecar. The legacy `build:sidecar` command also
+refreshes frozen tracked configuration assets and makes their contract checks
+fail; do not use it to prepare this suite. These prerequisites do not launch
+either app or add Tauri feature backports.
+
 The full gate rejects skipped or todo tests, undiscovered JavaScript/TypeScript test files, test-owning workspace packages omitted from `test:full`, and stale paths in the checked feature matrix.
 
 Documentation-only changes select `docs:validate`. Packaged agent/skill Markdown

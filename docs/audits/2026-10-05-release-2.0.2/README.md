@@ -557,16 +557,24 @@ readable, and the published file change survives completion. Both actual-runtime
 journals have zero verified gaps and owned process cleanup has no errors.
 Separate hash-bound review and gap receipts are
 `service-correction-stage-f-2-runtime-visual-review.json` and
-`service-correction-stage-f-2-runtime-gaps.json`. Full wire screenshot review,
-physical devices, paid providers and native compaction are not covered by this
-review; original earlier failed grades remain preserved.
+`service-correction-stage-f-2-runtime-gaps.json`. Physical devices, paid
+providers and native compaction are not covered by this review; original
+earlier failed grades remain preserved.
 
-The separate wire screenshot review now covers **168 of 395 unique images**.
-All reviewed light/web dark images and the Electron dark images checked so far
-have readable controls and recovery states without actionable visual defects.
-The original 401 image inventory and each reviewed SHA-256 remain tied to the
-same source, runner and archive in `stage-f-wire-visual-review-progress-1.json`.
-The remaining 227 unique images are not yet reviewed.
+The separate manual wire screenshot review now covers **395 of 395 unique
+images**, accounting for all **401 original references** and six duplicate
+references across the seven cells. No actionable layout defect was found in
+the recorded desktop, phone, tablet and landscape layouts in either theme.
+Per-image notes distinguish controls visible in the captured scroll position
+from content outside it; behavioral and disabled-state claims remain owned by
+the wire assertions. The completion receipt
+`stage-f-wire-visual-review-completed-1.json` has SHA-256
+`03b96cb88b9e6b721887e505e7806570720a98e5725cde2753757f07d4eee61a`.
+It verifies every original image hash, both provenance closures, the prepared
+input and the QA archive against the original source, runner and archive
+identities. `stage-f-wire-visual-review-progress-1.json` retains all review
+notes. This closes the recorded wire visual gate at that frozen QA source;
+final release artifact qualification remains separate.
 
 The original seven actual lifecycle modes passed with the independently built
 predecessor and current frozen artifacts in
@@ -651,6 +659,62 @@ identity, image manifest identity, packaging digests, and installed artifacts
 before it can authorize publication. Current evidence is interim engineering
 evidence in `.cache/release-2.0.2-recovery`.
 
+Scoped Bot input preparation
+[37408733885](https://github.com/1H-Team/DevRyan/actions/runs/37408733885)
+passed at `b68b63964722586234cf91240aa0b8a1402b3995`. It built and signed all
+eight inputs under the purpose tag `v2.0.2-bot-inputs-b68b63964722`. Independent
+assembly, input-tag and source checks passed; application release, npm,
+database and notification jobs were skipped. Its manifest SHA-256 is
+`77fe88c7b1c74ffaf2c08d3c29d900c880c6de2ec0680465feaee91a424f83bb`.
+`bot-input-preparation-ci-1-review.json` preserves the preparation grade;
+the subsequent resolver owns cryptographic reuse verification.
+
+The fresh macOS dry run
+[37410353334](https://github.com/1H-Team/DevRyan/actions/runs/37410353334)
+passed at the same source. All eight images were reused through the original
+OIDC signature checks for each index and both platform digests (24 total),
+followed by anonymous access and isolated production topology verification.
+Every image build/sign/tag step and every application, npm, database and
+notification publication step was skipped. The candidate application tag and
+release both remain absent (original 404 probes retained).
+`macos-release-dry-run-2-review.json` binds the completed CI metadata, original
+logs, image receipts and exact asset allowlist. Its SHA-256 is
+`ebae01ff9b520f89cddb1d8d6275b4c78f69a73dcea3103f1ad1c0d63b06e9d5`.
+Local cosign replay was unavailable; the signature gate passed in the exact
+frozen CI resolver, without changing its signer policy.
+
+The downloaded **551,316,441-byte** `DevRyan-2.0.2-arm64.dmg` matches the
+packaging job's SHA-256
+`fd15f2c88e63200e55dfdc8bb5e324e993c82a1cf0b415b4b2bf9c19fee87a2a`.
+Image integrity, read-only mounting and strict ad-hoc app signing passed.
+The native inventory and all 4,695 current build-input hashes passed, as did
+the 35 packaged configuration files, 18 runtime plugins, exact Bot manifest
+and four Cursor native resources. The shipped Electron executable loaded the
+packaged updater bridge in isolated Node mode and exposed both required
+functions; no service, installer or GUI method was called. The image was
+unmounted afterward. Native build ID is
+`77deeb6c26d5a132aeddd467ef142dfd08141ee626b9d6f35c1daa01c140885a`,
+manifest SHA-256 is
+`de0417915a42053498f1e0dbf12ed7f0c00f014b48acf7ea0a89936d321d49df`,
+and the app archive SHA-256 is
+`9f5e20b56835de87d286a6b9014e88185b6094719ecf4a84f18db139f7932ce3`.
+`macos-release-dry-run-2-mounted-artifact-review.json` has SHA-256
+`2c79315bdfedb8b2c66c3343f3c996ead8afca7c147d3e16d7f167c3bdaa0717`.
+Installed GUI launch, actual packaged updater cases, shipped continuity,
+attended providers, final performance qualification and publication remain
+outstanding. No notarization is claimed.
+
+Windows native run
+[37408333818](https://github.com/1H-Team/DevRyan/actions/runs/37408333818)
+at `725c354d` passes both native controller/writer builds and their exact
+empty-input boot refusals. Downloaded PE/source/pin/ABI and all nine actual
+outcome checks pass as evidence of failed qualification in
+`windows-native-ci-14-review.json`. Supervision remains failed: x64 retains
+Node initialization refusal; ARM64 reaches descendant, inherited-handle,
+Unix-socket, mode and Revert durability failures. No meaningful runtime
+journal roots or compiled inventory pass is supplied by these host probes.
+Admission remains false and both installer gates remain not run.
+
 | Mandatory gate | Status | Evidence or prerequisite |
 | --- | --- | --- |
 | Full integrated validation, build, bundle budgets and documentation | Passed (engineering); final freeze pending | Image-only preparation's fourth full validation, build, bundle budgets and documentation pass after exact file dispatch and Bun process isolation. All original assertions/deadlines remain; 34 runner/coverage checks pass and earlier failed evidence is preserved. Final source/artifact identities remain pending |
@@ -669,9 +733,9 @@ evidence in `.cache/release-2.0.2-recovery`.
 | Managed-user verification | Unavailable | Non-production Supabase environment not supplied |
 | Cold/warm loopback and full performance audit | Passed (engineering baselines); final not run | Three baseline and three candidate repetitions; gains within noise, candidate removed; full audit and frozen grading pending |
 | Burst, six attribution, 21 calibration, conditional 42 paired launches | Not run | Quiet window and frozen grading pending; retain 750 ms |
-| Release dry-run with no external writes and exact asset digests | Write refusal verified; CI qualification failed | Actual Mac native/web builds passed; eight missing signed inputs independently reproduced. Image-only preparation engineering passes 29 focused checks with strict source/tag/write boundaries; actual preparation, DMG packaging and final digests remain pending |
-| Downloaded DMG digest, mounted app, isolated launch and updater | Not run | Publication requires all preceding mandatory gates |
-| Windows x64 / ARM64 native safety and installers | Partial native checks; release gate failed | Run 13 retains both PE controller/writer sets and pinned AST/Claude/libsql candidates. Controller boot refusals pass; the writer boot gate fails (exit 0, no reply). Explicit-entry and file-lock corrections await native reruns. Supervision fails, acceptance is skipped and installers are not run |
+| Release dry-run with no external writes and exact asset digests | Passed at `b68b6396`; final freeze pending | Scoped signed Bot preparation passed; the fresh dry run reused all eight images through the original 24-digest signature gate, passed isolated topology and packaged the exact DMG. All application, registry, npm, database and notification writes were skipped; downloaded digest matches the packaging job |
+| Downloaded DMG digest, mounted app, isolated launch and updater | Digest and mounted artifact passed; installed GUI and updater not run | Strict ad-hoc signing, native inventory, 4,695 current build inputs, packaged configuration, Bot manifest, Cursor resources and the shipped Electron Node-mode updater bridge passed. Isolated installation environment remains required |
+| Windows x64 / ARM64 native safety and installers | Native build and boot refusals passed; release gate failed | Run 14 independently verifies both native PE controller/writer sets, both canonical boot refusals, pinned resources and source-built libsql ABI receipts. Supervision fails on both architectures; compiled runtime acceptance is skipped, admission stays false and installers are not run |
 
 macOS remains ad-hoc signed. Windows packaging is unsigned. No notarization,
 Authenticode, live provider, or Windows runtime pass is claimed. Verification
