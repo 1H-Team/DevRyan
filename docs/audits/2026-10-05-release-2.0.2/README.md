@@ -704,6 +704,66 @@ Installed GUI launch, actual packaged updater cases, shipped continuity,
 attended providers, final performance qualification and publication remain
 outstanding. No notarization is claimed.
 
+The downloaded DMG's complete compiled inventory passes all 122 original cases
+in `package-aiDCCy/result.json`, including 23 captured skill bodies, 14 support
+reads, all 507 captured files, seeded credential consumption and supervised
+restart. The captured user-owned skills remain unchanged. Candidate, baseline
+and parent-death journals contain 1,479, 12 and 107 meaningful records, with
+sealed chunks, reconciled writer counts and zero verified gaps. All owned
+processes drained, and the 730 native acceptance sources remain at digest
+`d4a0c1a0f7323e8862e280f611c65df4e143e209cadbc81d978f2b6edd61f0f4`.
+`macos-release-dry-run-2-compiled-acceptance-2-review.json` has SHA-256
+`1c01ad2833edba0c354c9891a90be07119d7d6e248fa36921644443d27801245`.
+The first 84-case run omitted captured skills and remains explicitly incomplete;
+its result is not spliced into this fresh complete run.
+
+The same downloaded native inventory passes all seven original application
+lifecycle modes in `dmg-native-application-l4hERs/result.json` (SHA-256
+`14faa18a9c6fde523ca0a235ec365a71f2900013664136badd8fdb31269814fd`).
+Actual native Cancel returns the original preload acknowledgement and preserves
+held state. Positive Electron Resume separately passes in
+`dmg-native-positive-electron-nfCdXr/result.json` (SHA-256
+`e972d3631fe9eaabec790a6bc58f1afcebcdea725089b6b046f49ed6888f8284`):
+revision 3, natural original exit, a distinct private relaunch owner and OS start
+identity, ready UI, durable controller receipt and retained history/credentials.
+All 210 observed process identities are physically closed. The four retained
+journals contain 121, 314, 107 and 219 records, with zero verified gaps. The
+crash path retains one open chunk; these application lanes lack accepted-count
+tees and do not replace the separate sealed 3/3 compiled journal gate.
+The independent review SHA-256 is
+`bc6d30de8435af55f2d9c5c203b1a744947e882bc8a28abdb0e51ea01d145600`.
+The first lifecycle invocation correctly refused a stale default native stage
+before launch. Its original 11 files were preserved byte-for-byte before
+staging the verified DMG copy; the reversible staging receipt is
+`macos-release-dry-run-2-default-staging-1.json`.
+The predecessor is an independently built fixture, not shipped 2.0.1. These
+runs use the unchanged private QA app, not an installed DMG GUI. The positive
+fixture disables Bots prospectively and its intentionally partial capture
+is distinct from the complete seven-mode result.
+
+Fresh original web and Electron actual-runtime cells also pass with this DMG
+native inventory. Result `dmg-native-runtime-ui-zY0haX/result.json` has SHA-256
+`fb682c143ae599af94e8c8b6cdd289b813ba7ae2b05ddfdaca725e6df46630ad`.
+Send, reload, cancellation, reconnect and native read/write publication pass.
+All nine screenshots were individually reviewed; both completed views show
+resolved one-file changes and usable composers. Their sealed archived journals
+contain 255 and 252 records with zero verified gaps; all 100 observed process
+identities are closed. Source, runner and served artifact proofs are unchanged
+within each cell. The original exact input verifier passes before private input
+cleanup; sanitized exports do not independently recover those removed inputs.
+Review SHA-256 is
+`64b5011262bbdda51540b9a2a87e98e1d187143645025e422379adb6e46914da`.
+
+The same native artifact passes the existing burst diagnostic at 750 ms: three
+warmup turns and two measured turns, each with eight completed writer calls.
+All five timing sets retain physical provider send, first byte, first output,
+first text, bridge and ledger marks. All 16 measured writer process identities
+join to their receipts; owned cleanup succeeds. The sealed journal reconciles
+all 642 records with zero verified gaps. The independent review digest is
+`09d52547304b0d9929650d1bd0147f360b48040dacc6a6195fac7894f9fb7615`.
+This diagnostic retained 34,128 KiB after cleanup. It supplies neither a full
+cohort grade nor justification to change the interval.
+
 Windows native run
 [37408333818](https://github.com/1H-Team/DevRyan/actions/runs/37408333818)
 at `725c354d` passes both native controller/writer builds and their exact
@@ -715,27 +775,59 @@ Unix-socket, mode and Revert durability failures. No meaningful runtime
 journal roots or compiled inventory pass is supplied by these host probes.
 Admission remains false and both installer gates remain not run.
 
+Runs [37414619426](https://github.com/1H-Team/DevRyan/actions/runs/37414619426)
+and [37416091535](https://github.com/1H-Team/DevRyan/actions/runs/37416091535)
+repeat the independent native builds and exact boot refusals. All nine actual
+outcomes remain reviewed as failed qualification: supervision fails and compiled
+acceptance is skipped. Downloaded disposable startup probes verify that x64
+Node/Bun initialization failures persist without UI job limits, with a private
+station, and with Low token integrity. ARM64 starts the original, no-UI and Low
+copies; exclusive unnamed station copies refuse error 183 with empty receipts.
+These probes grant no admission. The run-16 native review digest is
+`78d2f4b55043860d2c7bae9cafc85094a81a69d803a76b87d7cff3d8800b22a2`;
+its separate 20-probe startup review digest is
+`147ed3b446ec95621ff974e11646ac16b601efed62531d88ad2aee245454e540`.
+The isolated Windows branch's macOS `validate:full` passes at `874ab3f4`,
+including 6,328 web tests, 4,049 UI tests and 39 retained legacy Rust tests;
+log SHA-256 is `9e90adb2a0e44ddbfc25ce7629ea08f4ae21627e5eef730dd25eee2889500b48`.
+This local validation does not qualify native Windows execution.
+
+Run [37417726695](https://github.com/1H-Team/DevRyan/actions/runs/37417726695)
+at `583110a2` again passes both native builds and boot refusals while failing
+required supervisor acceptance; compiled runtime acceptance remains skipped.
+Its downloaded native review SHA-256 is
+`ab676fa9d20dc1b4507b7c8fe0d7a2de63e593722efd7b352217bcb070362e6a`.
+All 24 disposable startup probes have exact frozen-source, PE, binary/output
+and receipt checks. Adding SYSTEM solely to the child process default DACL
+does not change x64 Node/Bun initialization failures. ARM64 starts the original,
+no-UI, Low and process-DACL probes; Bun retains ancestor configuration access
+diagnostics. Exclusive station creation refuses error 183 with empty receipts.
+Startup review SHA-256 is
+`dcc30d661e6ed6bf07b53a30ef7a0015585646433d115792f53575372b2fb2cd`.
+The next isolated probe changes only the new desktop's descriptor; production
+confinement remains unchanged and admission remains unavailable.
+
 | Mandatory gate | Status | Evidence or prerequisite |
 | --- | --- | --- |
 | Full integrated validation, build, bundle budgets and documentation | Passed (engineering); final freeze pending | Image-only preparation's fourth full validation, build, bundle budgets and documentation pass after exact file dispatch and Bun process isolation. All original assertions/deadlines remain; 34 runner/coverage checks pass and earlier failed evidence is preserved. Final source/artifact identities remain pending |
 | Packaged prompt conflict notice and explicit restore | Passed (focused and private packaged); final freeze pending | Native notice, two explicit restores with exact backups, configuration apply, both original primary guidance requests, four reviewed screenshots and verified journal gaps |
 | Tracked credential owner and synthetic rehearsal | Passed (compiled synthetic); live not run | Original SDK OAuth, compiled native key/CAS owners, held projection, ready boot and zero evidence leaks; final identities and attended live/launcher qualification pending |
 | Complete B1 review closure | Consolidated (focused); qualification pending | Seven engineering scopes above retain original reproductions, corrected checks and current drift; final compiled/live/package evidence pending |
-| Compiled acceptance and seeded-credential boot | Passed (122 cases); final freeze pending | Original inventory, seeded import/consumption and supervised restart passed after the verifier checkpoint correction; both earlier failed runs remain preserved |
-| Three meaningful durable journal roots and verified gaps | Passed (3/3); final freeze pending | Candidate 1,496, baseline 12 and parent-death 109 meaningful records; explicit gap verification and exact accepted-record reconciliation passed |
-| Seven lifecycle modes and seven wire cells | Passed at frozen source; final freeze pending | All seven actual lifecycle modes and seven wire cells passed; original predecessor/current artifact proofs, native Cancel and verified gaps retained |
-| Two actual-runtime UI cells and reviewed screenshots | Passed at `bf2aa44a`; final freeze pending | Web and packaged Electron passed; all nine recorded screenshots reviewed; verified journal gaps and clean owned-process drain |
-| CLI persistence/refusal and Electron Resume | Passed at current artifacts; final freeze pending | Seven original compiled persistence checks, eight actual refusal modes with TTY review, packaged Cancel and positive native Resume/relaunch/preservation/cleanup passed; prospective Bots-disabled supplement scope above |
+| Compiled acceptance and seeded-credential boot | Passed (122 cases from downloaded DMG); final freeze pending | Native build `77deeb6c`, exact complete captured-skills inventory, seeded import/consumption and supervised restart passed; earlier incomplete and failed runs remain preserved |
+| Three meaningful durable journal roots and verified gaps | Passed (3/3 from downloaded DMG); final freeze pending | Candidate 1,479, baseline 12 and parent-death 107 meaningful records; explicit gap verification and accepted-record reconciliation passed |
+| Seven lifecycle modes and seven wire cells | Seven modes passed with downloaded DMG native files; seven wire cells passed at retained source; final freeze pending | Native Cancel and exact prior/current identities retained. Application journals have zero verified gaps but one crash-open chunk and no accepted-count tees; separate compiled 3/3 gate passes |
+| Two actual-runtime UI cells and reviewed screenshots | Passed with downloaded DMG native files; final freeze pending | Fresh web and private packaged Electron cells passed; all nine screenshots reviewed; archived journal counts 255/252, verified gaps zero and 100 owned identities physically closed |
+| CLI persistence/refusal and Electron Resume | Passed at current artifacts; final freeze pending | Seven original compiled persistence checks, eight actual refusal modes with TTY review, DMG-native packaged Cancel and positive Resume/relaunch/preservation/cleanup passed; prospective Bots-disabled supplement scope above |
 | Shipped 2.0.1 → candidate → 2.0.1 continuity | Unavailable on current host; VM prerequisite pending | Unmodified shipped startup registers a global LaunchServices protocol; disposable HOME cannot isolate it |
 | Packaged first launch and service mode | All six first launches and service mode passed; final freeze pending | Ten-boundary/composer correction passes 16 focused checks; six original screenshots reviewed and gaps verified; all earlier failures retained; production registration and authenticated lease remain separate |
 | DMG update success/refusal/interruption/rollback | Passed (focused); packaged not run | Verified downloads, native app exchange, startup acknowledgement and guarded rollback; killed-helper/native exchange checks pass; disposable package qualification pending |
 | Exact provider/role graph, 12 journeys, 16 compaction boundaries | Not run | Owner sign-in window after credential-free rehearsal |
 | Managed-user verification | Unavailable | Non-production Supabase environment not supplied |
 | Cold/warm loopback and full performance audit | Passed (engineering baselines); final not run | Three baseline and three candidate repetitions; gains within noise, candidate removed; full audit and frozen grading pending |
-| Burst, six attribution, 21 calibration, conditional 42 paired launches | Not run | Quiet window and frozen grading pending; retain 750 ms |
+| Burst, six attribution, 21 calibration, conditional 42 paired launches | Burst diagnostic passed; full cohort not run | Downloaded DMG native artifact, five complete timing sets, 40 writer calls, 16/16 measured process identities, 642 reconciled journal records and zero gaps; fresh local entry bindings and frozen grading remain pending; retain 750 ms |
 | Release dry-run with no external writes and exact asset digests | Passed at `b68b6396`; final freeze pending | Scoped signed Bot preparation passed; the fresh dry run reused all eight images through the original 24-digest signature gate, passed isolated topology and packaged the exact DMG. All application, registry, npm, database and notification writes were skipped; downloaded digest matches the packaging job |
 | Downloaded DMG digest, mounted app, isolated launch and updater | Digest and mounted artifact passed; installed GUI and updater not run | Strict ad-hoc signing, native inventory, 4,695 current build inputs, packaged configuration, Bot manifest, Cursor resources and the shipped Electron Node-mode updater bridge passed. Isolated installation environment remains required |
-| Windows x64 / ARM64 native safety and installers | Native build and boot refusals passed; release gate failed | Run 14 independently verifies both native PE controller/writer sets, both canonical boot refusals, pinned resources and source-built libsql ABI receipts. Supervision fails on both architectures; compiled runtime acceptance is skipped, admission stays false and installers are not run |
+| Windows x64 / ARM64 native safety and installers | Native build and boot refusals passed; release gate failed | Runs 14–17 independently verify both native PE controller/writer sets, both canonical boot refusals, pinned resources and source-built libsql ABI receipts. Supervision fails on both architectures; compiled runtime acceptance is skipped, admission stays false and installers are not run |
 
 macOS remains ad-hoc signed. Windows packaging is unsigned. No notarization,
 Authenticode, live provider, or Windows runtime pass is claimed. Verification
