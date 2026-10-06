@@ -164,6 +164,22 @@ function reproduction retained `bot_runtime_secret_invalid`. The Windows
 construction guard now lives in its own test module so native qualification
 does not initialize unsupported POSIX service fixtures. This correction and
 the new ARM64 Cursor guard still require a subsequent native CI result.
+Run [37395518850](https://github.com/1H-Team/DevRyan/actions/runs/37395518850)
+at `6c216d8c` repeated the process/parent checks, all 15 filesystem checks,
+pinned AST/Claude version checks, and libsql Node/Bun ABI checks on both actual
+architectures. Downloaded receipts, PE identities, pins and binary digests were
+independently verified in `windows-native-ci-7-review.json`. The supervisor
+source receipt matches the tracked source after Windows checkout CRLF
+conversion; both manifests still explicitly record `acceptance: false`.
+Both jobs remain failed. The feature inventory stops before runtime construction
+because the Cursor fixture's parent directory is absent. The original failure
+and a disposable filesystem reproduction are retained; the fixture correction
+still requires a native rerun. The x64 supervisor log records UI boundary error
+87; the ARM64 log records descendant and inherited-handle failures without that
+complete diagnostic. The Darwin-only controller/writer build still refuses both
+hosts, and compiled runtime acceptance is skipped. Deleted transient fixtures
+provide no durable journal roots. None of these partial passes enables admission.
+
 The [Rust platform contract](https://doc.rust-lang.org/stable/rustc/platform-support/windows-msvc.html)
 supports native MSVC ARM64 host tools; that support does not establish libsql
 compatibility by itself.
