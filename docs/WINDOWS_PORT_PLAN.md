@@ -245,6 +245,22 @@ retry with reduced restrictions. Protocol-2 diagnostics retain the OS build,
 SDK mask and actual mask. Fresh kernel probes are still required, and containing
 job isolation, read confinement and full runtime admission remain unqualified.
 
+Run [37403407287](https://github.com/1H-Team/DevRyan/actions/runs/37403407287)
+at `22e302ca` compiled both supervisors and retained exact kernel readback:
+Server 2022 build 20348 accepts `0xff`; ARM64 build 26200 accepts `0x3ff`.
+Both containing jobs still permit explicit and silent breakaway, and supervision
+acceptance failed. The controller/writer build reached the compaction helper
+path refusal described above. These diagnostic receipts establish the OS mask
+selection, without qualifying command confinement or enabling admission.
+The native supervision verifier retains an exact supervisor operation/error
+number when receipt validation fails; arbitrary worker output is not printed.
+The x64 job in run `37404790881` advances through native compilation and then
+fails the writer's empty-input boot probe. Future failures retain compiled
+files and source identities under an immutable `runtime-candidate-failed-*`
+directory, with exit/error fields, output digests and bounded error summaries.
+They contain no `native-bundle.json` or accepted launcher and grant no admission.
+The original probe deadline and required refusal reply remain unchanged.
+
 The [Rust platform contract](https://doc.rust-lang.org/stable/rustc/platform-support/windows-msvc.html)
 supports native MSVC ARM64 host tools; that support does not establish libsql
 compatibility by itself.

@@ -49,6 +49,9 @@ Repository automation entrypoint for developer workflows: validation planning, l
   `native-candidate.json` explicitly denies admission and never substitutes
   for `native-bundle.json` or an accepted launcher. Production Windows builds
   remain unavailable pending complete platform safety qualification.
+  Failed Windows compilations/boot probes retain their source/file digests and
+  compiled outputs in `runtime-candidate-failed-*`, with bounded error evidence.
+  They remain diagnostic artifacts without a bundle manifest or admission.
   `native-compaction-observation-transform.mjs` inserts a read-only observation
   immediately after the pinned SDK's original budget calculation. Its private
   settings have no exported read API. Exact original/transformed hashes enter

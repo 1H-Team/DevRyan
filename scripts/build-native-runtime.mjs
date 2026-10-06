@@ -73,6 +73,7 @@ const assetFilter=windowsCandidate?/(credential-nye1dag9|persistent-pty[\\/]bina
 const plugin={name:'devryan-pinned-asset-resolvers',setup(builder){builder.onLoad({filter:assetFilter},event=>{const contents=rewrites.get(path.resolve(event.path));if(contents===undefined) throw new Error('Unexpected native asset resolver');return {contents,loader:'js'};});}};
 const settings={target:'bun',minify:true,conditions:['bun'],sourcemap:'none',metafile:true,plugins:[plugin,reviewedNativeInputPlugin(reviewed)]};
 const stage=await fs.mkdtemp(path.join(await fs.mkdir(path.dirname(output),{recursive:true}).then(()=>path.dirname(output)),'native-build-'));
+let failureEvidence;
 try {
   // Inventory the actual linked graph before embedding its immutable identity.
   const definitions={DEVRYAN_NATIVE_BUILD_ID:JSON.stringify('0'.repeat(64)),DEVRYAN_HOST_DIGEST:JSON.stringify('0'.repeat(64)),DEVRYAN_REVIEWED_PLUGIN_ORIGINS:'[]',DEVRYAN_CORE_DIGEST:JSON.stringify(coreDigest)};
@@ -140,6 +141,9 @@ try {
   const identity={bunVersion:Bun.version,bunRevision:Bun.revision,opencodeVersion:'2.0.20',target:`bun-${target}`,compiledContracts:[NATIVE_BUNDLE_CREDENTIAL_CONTRACT,CLAUDE_LIFECYCLE_PROTOCOL,'devryan-v2-clone/1','devryan.primary-step-stop/1','devryan.bundle.credential-owners/2'],inputs};
   const buildId=hash(JSON.stringify(identity));
   const files=[];
+  if(windowsCandidate)failureEvidence={schema:1,status:'failed',admission:false,
+    scope:'Failed native build/boot diagnostic only; no accepted launcher or runtime admission',
+    buildId,...identity,files,bootProbes:[]};
   const configurationFilename='DevRyan-native-configuration.mjs';
   const configuration=await Bun.build({...settings,target:'node',conditions:['node'],format:'esm',entrypoints:[configurationEntry],
     outdir:stage,naming:{entry:configurationFilename},define:{DEVRYAN_NATIVE_BUILD_ID:JSON.stringify(buildId)}});
@@ -218,6 +222,10 @@ try {
       Object.assign(env,{HOME:scratch,USERPROFILE:scratch,APPDATA:scratch,LOCALAPPDATA:scratch,TEMP:scratch,TMP:scratch,TMPDIR:scratch,NO_COLOR:'1'});
       for(const role of ['controller','writer']){
         const result=spawnSync(path.join(stage,`DevRyan-native-${role}.exe`),[],{input:'',cwd:scratch,env,encoding:'utf8',windowsHide:true,timeout:30000,maxBuffer:65536});
+        failureEvidence.bootProbes.push({role,exitCode:result.status,signal:result.signal,errorCode:result.error?.code??null,
+          stdoutBytes:Buffer.byteLength(result.stdout??''),stderrBytes:Buffer.byteLength(result.stderr??''),
+          stdoutSha256:hash(result.stdout??''),stderrSha256:hash(result.stderr??''),
+          stderrSummary:(result.stderr??'').split(/\r?\n/).filter(line=>line.length<=400&&/^(?:[A-Za-z]*Error:|error:|\s*code:)/.test(line)).slice(0,8)});
         if(result.error||result.status!==1)throw new Error(`Windows ${role} boot refusal failed`);
         const reply=JSON.parse(result.stdout.trim());
         if(reply.ok!==false||reply.error?.code!==(role==='controller'?'native_boot_missing':undefined)||reply.error?.message!==(role==='controller'?'native_boot_missing':'native_worker_input_invalid'))throw new Error(`Windows ${role} boot refusal changed`);
@@ -282,4 +290,14 @@ try {
   }
   process.stdout.write(JSON.stringify({output,buildId,manifestSha256:hash(await fs.readFile(path.join(output,'native-bundle.json'))),files:files.map(({path,sha256})=>({path,sha256}))})+'\n');
   }
-} catch(error) {await fs.rm(stage,{recursive:true,force:true});throw error;}
+} catch(error) {
+  if(windowsCandidate&&failureEvidence){
+    // Failed binaries remain immutable diagnostic evidence, never a bundle.
+    const failed=output+'-failed-'+failureEvidence.buildId;
+    await fs.writeFile(path.join(stage,'native-candidate-failure.json'),JSON.stringify(failureEvidence,null,2)+'\n',{flag:'wx'});
+    try{await fs.lstat(failed);throw new Error('Failed candidate evidence already exists');}catch(cause){if(cause.code!=='ENOENT')throw cause;}
+    await fs.rename(stage,failed);
+    process.stderr.write('Unqualified Windows failure evidence: '+failed+'\n');
+  }else await fs.rm(stage,{recursive:true,force:true});
+  throw error;
+}
