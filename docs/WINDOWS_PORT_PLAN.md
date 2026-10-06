@@ -130,6 +130,13 @@ dependency and updates no lockfile. Source changes and dependency resolution
 changes refuse the build. `libsql-source-evidence.json` is an asset candidate
 receipt, not runtime acceptance. Native build results remain pending; the
 controller/writer must still seal and qualify the actual reviewed resource.
+The Windows AST 0.45.3 and Claude 2.1.251 resources now have independent native
+CI qualification. Their original published archive integrity and full binary
+digests are pinned separately for x64 and ARM64. The builder extracts only the
+selected executable, rejects changed/aliased files, verifies PE architecture,
+and executes `--version` with an isolated home/configuration. Original Mac
+hydration and the six-family reviewed source closure stay unchanged. Native
+results remain pending; these executable candidates supply no admission grant.
 Run `37381203090` built the exact source on x64 and passed the Node and Bun
 database checks. ARM64 preserved the same source bytes but failed CMake's
 Visual Studio generator discovery. The builder now explicitly uses MSVC's

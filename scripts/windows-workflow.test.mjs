@@ -29,7 +29,10 @@ test('Windows qualification builds and executes independent pinned native archit
   const required = job.steps.find(step => step.env?.SUPERVISOR_ACCEPTANCE);
   assert.equal(required.if, '${{ always() }}');
   assert.equal(required['continue-on-error'], undefined);
-  assert.deepEqual(Object.keys(required.env).sort(), ['FEATURE_CAPABILITIES', 'FILESYSTEM_BOUNDARY', 'HOST_BOUNDARY', 'REVIEWED_LIBSQL', 'RUNTIME', 'RUNTIME_ACCEPTANCE', 'SUPERVISOR', 'SUPERVISOR_ACCEPTANCE']);
+  assert.deepEqual(Object.keys(required.env).sort(), ['FEATURE_CAPABILITIES', 'FILESYSTEM_BOUNDARY', 'HOST_BOUNDARY', 'REVIEWED_EXECUTABLES', 'REVIEWED_LIBSQL', 'RUNTIME', 'RUNTIME_ACCEPTANCE', 'SUPERVISOR', 'SUPERVISOR_ACCEPTANCE']);
+  assert.equal(required.env.REVIEWED_EXECUTABLES, '${{ steps.reviewed_executables.outcome }}');
+  assert.equal(byID.reviewed_executables.if, '${{ always() }}');
+  assert.match(byID.reviewed_executables.run, /node scripts\/build-windows-reviewed-executables\.mjs/);
   assert.equal(required.env.FEATURE_CAPABILITIES, '${{ steps.feature_capabilities.outcome }}');
   assert.equal(byID.feature_capabilities.if, "${{ always() && steps.dependencies.outcome == 'success' }}");
   assert.match(byID.feature_capabilities.run, /TerminalView\.mounted\.test\.tsx/);

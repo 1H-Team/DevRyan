@@ -20,6 +20,11 @@ Repository automation entrypoint for developer workflows: validation planning, l
   compiler and resource PE architecture, executes the original database ABI
   through Node/Bun, and retains source/build receipts. Those candidate resources
   cannot supply runtime admission or replace the controller/writer safety gate.
+  `build-windows-reviewed-executables.mjs` restores pinned AST/Claude Windows
+  archives without changing the original reviewed closure. Archive SRI, binary
+  SHA-256, size and PE architecture precede native version probes in an isolated
+  home. Changed files and aliased output directories refuse; publication is
+  exclusive. Its candidate receipt also cannot grant execution admission.
   Its source checkout preserves pinned LF bytes on Windows; finite stage and
   public input-hash receipts retain identity failures before compilation.
 

@@ -22,6 +22,7 @@ on:
       - scripts/verify-windows-filesystem-boundary.mjs
       - scripts/native-runtime-assets.mjs
       - scripts/build-windows-reviewed-libsql.mjs
+      - scripts/build-windows-reviewed-executables*
       - bun.lock
   pull_request:
     paths:
@@ -42,6 +43,7 @@ on:
       - scripts/verify-windows-filesystem-boundary.mjs
       - scripts/native-runtime-assets.mjs
       - scripts/build-windows-reviewed-libsql.mjs
+      - scripts/build-windows-reviewed-executables*
       - bun.lock
 
 permissions:
@@ -112,6 +114,11 @@ jobs:
           bun test src/lib/terminalApi.test.ts src/components/views/TerminalView.mounted.test.tsx
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Pop-Location
+      - name: Verify pinned executable resources on this native architecture
+        id: reviewed_executables
+        if: ${{ always() }}
+        continue-on-error: true
+        run: node scripts/build-windows-reviewed-executables.mjs
       - name: Select Windows SDK compiler for the native architecture
         shell: pwsh
         env:
@@ -195,11 +202,12 @@ jobs:
           FILESYSTEM_BOUNDARY: ${{ steps.filesystem_boundary.outcome }}
           FEATURE_CAPABILITIES: ${{ steps.feature_capabilities.outcome }}
           REVIEWED_LIBSQL: ${{ steps.reviewed_libsql.outcome }}
+          REVIEWED_EXECUTABLES: ${{ steps.reviewed_executables.outcome }}
           RUNTIME: ${{ steps.runtime.outcome }}
           RUNTIME_ACCEPTANCE: ${{ steps.runtime_acceptance.outcome }}
         run: |
           $failed = $false
-          foreach ($name in @('SUPERVISOR', 'SUPERVISOR_ACCEPTANCE', 'HOST_BOUNDARY', 'FILESYSTEM_BOUNDARY', 'FEATURE_CAPABILITIES', 'REVIEWED_LIBSQL', 'RUNTIME', 'RUNTIME_ACCEPTANCE')) {
+          foreach ($name in @('SUPERVISOR', 'SUPERVISOR_ACCEPTANCE', 'HOST_BOUNDARY', 'FILESYSTEM_BOUNDARY', 'FEATURE_CAPABILITIES', 'REVIEWED_LIBSQL', 'REVIEWED_EXECUTABLES', 'RUNTIME', 'RUNTIME_ACCEPTANCE')) {
             $outcome = [Environment]::GetEnvironmentVariable($name)
             "$name=$outcome" >> $env:GITHUB_STEP_SUMMARY
             if ($outcome -ne 'success') { $failed = $true }
