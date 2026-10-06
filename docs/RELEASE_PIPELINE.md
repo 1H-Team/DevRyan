@@ -201,3 +201,23 @@ qualification jobs with Bun 1.3.14, native MSVC environments, compiled superviso
 acceptance and controller/writer/package checks. It has only read permissions.
 These jobs expose unported Windows contracts as failures and do not open runtime
 admission or publish an installer. See [Windows port](WINDOWS_PORT_PLAN.md).
+
+Version 2.0.2 keeps one frozen tag/source for all platforms. Publish the qualified
+macOS DMG first, then use `windows-release-append.yml` with that full source SHA,
+the original macOS publication run ID, and the successful two-architecture
+Windows qualification run ID. Its default `dry_run=true` verifies without uploads.
+The read-only preflight requires actual native, compiled acceptance and NSIS
+installation/update outcomes on both architectures, plus the completed macOS
+publication gates. Startup diagnostics and boot-refusal receipts cannot satisfy
+those gates. The installer qualification stage is still pending in `windows.yml`.
+
+The macOS packaging job retains its source/version/name/size/SHA-256 receipt
+as `DevRyan-macos-arm64-packaging` for 90 days. Windows qualification must retain
+`DevRyan-windows-installer-{x64,arm64}` with the exact installer and
+`qualification.json`. The append owner compares those receipts with held local
+bytes and verifies the downloaded macOS digest before any upload. It creates no
+release or tag, preserves the existing macOS asset ID, uploads only the two
+Windows installers and requires the exact existing `desktop` allowlist. A retry
+may reuse an already uploaded Windows asset only when its packaging digest
+matches. Unknown assets or uncertain integrity stop the append without deleting
+the existing release.

@@ -736,6 +736,12 @@ jobs:
           path: packages/electron/dist/DevRyan-${{ needs.create-release.outputs.version }}-arm64.dmg
           if-no-files-found: error
           retention-days: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DevRyan-macos-arm64-packaging
+          path: artifacts/macos-arm64-asset.json
+          if-no-files-found: error
+          retention-days: 90
       - name: Upload DMG to release
         if: ${{ env.RELEASE_DRY_RUN != 'true' && env.RELEASE_BOT_INPUTS_ONLY != 'true' }}
         uses: softprops/action-gh-release@v2

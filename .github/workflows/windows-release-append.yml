@@ -1,0 +1,93 @@
+name: Append qualified Windows installers
+
+on:
+  workflow_dispatch:
+    inputs:
+      frozen_source:
+        description: 'Full source SHA already published as v2.0.2'
+        required: true
+        type: string
+      macos_release_run:
+        description: 'Successful macOS publication run on the frozen source'
+        required: true
+        type: string
+      windows_qualification_run:
+        description: 'Successful two-architecture native and installer run on the frozen source'
+        required: true
+        type: string
+      dry_run:
+        description: 'Verify every gate and downloaded asset without uploading'
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: devryan-release-2.0.2-windows-append
+  cancel-in-progress: false
+
+env:
+  FROZEN_SOURCE: ${{ inputs.frozen_source }}
+  MACOS_RELEASE_RUN: ${{ inputs.macos_release_run }}
+  WINDOWS_QUALIFICATION_RUN: ${{ inputs.windows_qualification_run }}
+  RELEASE_DRY_RUN: ${{ inputs.dry_run }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.frozen_source }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify published tag and both original qualification runs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$FROZEN_SOURCE"
+          node scripts/append-windows-release.mjs --verify-qualification
+
+  append:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.frozen_source }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Download original macOS packaging receipt
+        uses: actions/download-artifact@v4
+        with:
+          name: DevRyan-macos-arm64-packaging
+          path: artifacts/DevRyan-macos-arm64-packaging
+          run-id: ${{ inputs.macos_release_run }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+      - name: Download both qualified Windows installers and receipts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: DevRyan-windows-installer-*
+          merge-multiple: false
+          path: artifacts
+          run-id: ${{ inputs.windows_qualification_run }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+      - name: Verify desktop allowlist and append only the two Windows assets
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$FROZEN_SOURCE"
+          node scripts/append-windows-release.mjs artifacts

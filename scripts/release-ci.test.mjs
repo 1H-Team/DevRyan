@@ -253,5 +253,12 @@ test('packaged asset description emits the actual SHA-256 and refuses escaped di
   const result = run(root, 'asset-describe', { RELEASE_ASSET_PLATFORM: 'macos-arm64', RELEASE_ASSET_DIRECTORY: directory, GITHUB_OUTPUT: output });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(await fs.readFile(output, 'utf8'), `sha256=${digestOf(bytes).slice(7)}\n`);
+  const receipt = JSON.parse(await fs.readFile(path.join(root, 'artifacts/macos-arm64-asset.json'), 'utf8'));
+  assert.equal(receipt.protocol, 'devryan.release-asset/1');
+  assert.equal(receipt.source, revision);
+  assert.equal(receipt.version, version);
+  assert.equal(receipt.name, `DevRyan-${version}-arm64.dmg`);
+  assert.equal(receipt.size, bytes.length);
+  assert.equal(receipt.sha256, digestOf(bytes).slice(7));
   assert.notEqual(run(root, 'asset-describe', { RELEASE_ASSET_PLATFORM: 'macos-arm64', RELEASE_ASSET_DIRECTORY: repository, GITHUB_OUTPUT: output }).status, 0);
 });

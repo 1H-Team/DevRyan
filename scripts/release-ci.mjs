@@ -38,6 +38,9 @@ switch (env.RELEASE_OPERATION) {
     const assets = await describeDirectoryAssets(directory), asset = assets.find(asset => asset.name === name);
     if (!asset || asset.state !== 'uploaded' || asset.size <= 0 || !/^sha256:[a-f0-9]{64}$/.test(asset.digest)) throw new Error('Packaged release asset missing or invalid');
     await fs.appendFile(env.GITHUB_OUTPUT, `sha256=${asset.digest.slice(7)}\n`);
+    await write(`${env.RELEASE_ASSET_PLATFORM}-asset.json`, { protocol: 'devryan.release-asset/1',
+      source: identity.revision, version: identity.release, platform: env.RELEASE_ASSET_PLATFORM,
+      name: asset.name, size: asset.size, sha256: asset.digest.slice(7) });
     break;
   }
   case 'image-plan': {

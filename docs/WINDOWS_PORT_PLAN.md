@@ -20,6 +20,14 @@ storage, lifecycle, UX, skills, prompt, journal, and Bot image work.
 4. Enable core execution only after the compiled safety inventory passes.
 5. Package, exercise installation/update recovery, then qualify both installers.
 
+All installers retain version 2.0.2 and the same frozen source. The manual
+`windows-release-append.yml` workflow defaults to a dry run and requires both
+architecture installer gates before appending to the already qualified macOS
+release. It binds original CI runs, packaging receipts, downloaded macOS bytes
+and the unchanged tag, then verifies the exact `desktop` asset allowlist.
+The NSIS qualification stage and production Windows updater remain unfinished;
+the append preflight refuses until that actual stage passes.
+
 ## Current gaps
 
 `.github/workflows/windows.yml` now defines both native runner jobs. It selects

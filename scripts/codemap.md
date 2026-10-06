@@ -281,6 +281,7 @@ Repository automation entrypoint for developer workflows: validation planning, l
 - Release asset verification rejects extension packages and artifacts before publication.
 
 - **Release handoffs**: `release-artifacts.mjs` verifies web files and native archive identity/checksums; `release-ci.mjs` adapts fixed workflow operations. Image planning and prepared import run before dependency installation; runtime packaging imports are scoped to the operations that need them. Web assets build once, and native tar handoffs preserve permissions/symlinks per architecture. See [release pipeline](../docs/RELEASE_PIPELINE.md) for commands, failure semantics and timing acceptance.
+- **Windows release append** (`append-windows-release.mjs`, `windows-release-append.yml`): manual, dry-run-by-default append to the published 2.0.2 release. Requires the unchanged tag/source, original macOS publication gates and both complete native/installer jobs. Derives digests from their packaging receipts, hashes the downloaded macOS DMG, pins both installer files, and uploads only missing qualified Windows assets. The existing macOS asset ID is preserved and the final `desktop` allowlist must match exactly. Incomplete qualification, changed receipts/assets or dry runs cannot authorize publication.
 
 - **npm runtime closure**: `pack-web-release.mjs` stages private runtime workspaces as bundled dependencies and preserves their external ranges in published metadata. `release-ci.mjs` invokes it after verified web staging; npm publishes the exact checked tarball, not a second pack.
 
