@@ -151,7 +151,7 @@ static int inspect_file_handle(HANDLE file) {
 static DWORD anchor_parents(const wchar_t *argument, wchar_t *path, HANDLE *ancestors);
 
 static BOOL same_file(HANDLE left, HANDLE right) {
-  FILE_ID_INFO a, b;
+  FILE_ID_INFO a = {0}, b = {0};
   checked(GetFileInformationByHandleEx(left, FileIdInfo, &a, sizeof(a))
     && GetFileInformationByHandleEx(right, FileIdInfo, &b, sizeof(b)), "execution path identity");
   return a.VolumeSerialNumber == b.VolumeSerialNumber && !memcmp(a.FileId.Identifier, b.FileId.Identifier, sizeof(a.FileId.Identifier));
