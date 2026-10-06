@@ -128,7 +128,7 @@ database API in Node and Bun. The upstream toolchain file remains pinned and
 unchanged; the explicit Windows build-tool override adds no application
 dependency and updates no lockfile. Source changes and dependency resolution
 changes refuse the build. `libsql-source-evidence.json` is an asset candidate
-receipt, not runtime acceptance. Native build results remain pending; the
+receipt, not runtime acceptance. Native build results are recorded below; the
 controller/writer must still seal and qualify the actual reviewed resource.
 The Windows AST 0.45.3 and Claude 2.1.251 resources now have independent native
 CI qualification. Their original published archive integrity and full binary
@@ -136,7 +136,7 @@ digests are pinned separately for x64 and ARM64. The builder extracts only the
 selected executable, rejects changed/aliased files, verifies PE architecture,
 and executes `--version` with an isolated home/configuration. Original Mac
 hydration and the six-family reviewed source closure stay unchanged. Native
-results remain pending; these executable candidates supply no admission grant.
+results are recorded below; these executable candidates supply no admission grant.
 Run `37381203090` built the exact source on x64 and passed the Node and Bun
 database checks. ARM64 preserved the same source bytes but failed CMake's
 Visual Studio generator discovery. The builder now explicitly uses MSVC's
@@ -151,6 +151,19 @@ binary inspection confirms the PE architecture and receipt SHA-256:
 `.cache/release-2.0.2-recovery/windows-libsql-ci-4`. These are verified database
 asset candidates; both jobs still fail the full safety gate, so neither
 architecture has controller/writer or runtime admission acceptance.
+
+Run `37393296975` at `b655752f` executed the pinned AST and Claude versions on
+both native architectures and repeated the pinned libsql Node/Bun ABI checks.
+Downloaded binary digests, PE identities and all nine required step outcomes
+were independently reviewed in `windows-native-ci-6-review.json`. Process and
+filesystem identity checks also passed, while supervisor acceptance failed,
+the controller/writer build refused its Darwin-only host boundary, and compiled
+runtime acceptance did not run. The feature inventory failed while importing
+legacy Bot service fixtures with a POSIX default path; an independent original
+function reproduction retained `bot_runtime_secret_invalid`. The Windows
+construction guard now lives in its own test module so native qualification
+does not initialize unsupported POSIX service fixtures. This correction and
+the new ARM64 Cursor guard still require a subsequent native CI result.
 The [Rust platform contract](https://doc.rust-lang.org/stable/rustc/platform-support/windows-msvc.html)
 supports native MSVC ARM64 host tools; that support does not establish libsql
 compatibility by itself.
@@ -255,6 +268,15 @@ That status error was independently reproduced before correction in
 and service-registration refusals have focused Windows checks. The native CI
 jobs run these guards on each actual architecture and require their outcome;
 this does not replace controller, confinement or installer acceptance.
+
+The shared Cursor runtime now exposes an immutable Windows ARM64 refusal and
+empty catalogs, preserving saved configuration and history. Verification,
+warming, title/text helpers and primary prompts refuse before credential or
+admission owners, SDK loads and worker starts. The provider status route does
+not inspect credentials for an unsupported host, action routes retain the
+typed 503 refusal, and the shared authentication view disables setup and shows
+the platform restriction even for a saved key. These checks run on both native
+architectures; Windows x64 retains the existing Cursor declaration behavior.
 
 ## Packaging and updating
 

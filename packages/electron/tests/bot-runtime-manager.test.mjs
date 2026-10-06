@@ -24,15 +24,6 @@ import { BOT_RESOURCE_LIMITS } from '../../bot-supervisor/src/docker.js';
 import { BOT_DB_MIGRATIONS, loadBotDatabaseSql } from '@openchamber/bot-db';
 
 const REPOSITORY_ROOT = path.resolve(import.meta.dir, '../../..');
-test('Windows Bot construction refuses before manifest, credentials, database or Docker work', () => {
-  const touched = mock(() => { throw new Error('Unsupported host reached a runtime owner'); });
-  expect(() => createBotRuntimeManager({ platform: 'win32', loadManifest: touched,
-    loadRuntimeEnvironment: touched, loadDatabaseSql: touched, resolveDocker: touched,
-    runProcess: touched, stateStore: { read: touched, write: touched } }))
-    .toThrow(expect.objectContaining({ code: 'bots_platform_unsupported' }));
-  expect(touched.mock.calls).toHaveLength(0);
-});
-
 const loadDatabaseSql = () => loadBotDatabaseSql({
   supabaseMigrationsDirectory: path.join(REPOSITORY_ROOT, 'supabase/migrations'),
   sqlDirectory: path.join(REPOSITORY_ROOT, 'packages/bot-db/sql'),

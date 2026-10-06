@@ -36,7 +36,10 @@ test('Windows qualification builds and executes independent pinned native archit
   assert.equal(required.env.FEATURE_CAPABILITIES, '${{ steps.feature_capabilities.outcome }}');
   assert.equal(byID.feature_capabilities.if, "${{ always() && steps.dependencies.outcome == 'success' }}");
   assert.match(byID.feature_capabilities.run, /TerminalView\.mounted\.test\.tsx/);
-  assert.match(byID.feature_capabilities.run, /bot-runtime-manager\.test\.mjs.*speech-manager\.test\.mjs -t Windows/);
+  assert.match(byID.feature_capabilities.run, /cursor-sdk-runtime\/platform-capabilities\.test\.js/);
+  assert.match(byID.feature_capabilities.run, /provider-routes\.test\.js -t Windows/);
+  assert.match(byID.feature_capabilities.run, /ProvidersPage\.authenticationSummary\.test\.tsx/);
+  assert.match(byID.feature_capabilities.run, /bot-runtime-manager-platform\.test\.mjs.*speech-manager\.test\.mjs -t Windows/);
   assert.match(byID.feature_capabilities.run, /node --test --test-name-pattern=Windows.*runtime-service-startup\.test\.mjs/);
   assert.match(byID.feature_capabilities.run, /runtime\.test\.js.* -t Windows/);
   const libsql = job.steps.find(step => step.with?.repository === 'tursodatabase/libsql-js');

@@ -1498,6 +1498,7 @@ export const settingsDict = {
   'settings.providers.page.auth.cursorSdkConfigured': 'Cursor SDK auth is configured. Usage tracking remains controlled by the dashboard session token below.',
   'settings.providers.page.auth.cursorSdkNotConfigured': 'Cursor SDK auth is missing. Save an API key here or set CURSOR_API_KEY.',
   'settings.providers.page.auth.cursorSdkTitle': 'SDK connection',
+  'settings.providers.page.auth.cursorUnavailable': 'Cursor is unavailable on Windows ARM64.',
   'settings.providers.page.auth.cursorSyncTerminalLabel': 'Sync Cursor Models',
   'settings.providers.page.auth.cursorUsageChecking': 'Checking...',
   'settings.providers.page.auth.cursorUsageConfigured': 'Usage token saved',

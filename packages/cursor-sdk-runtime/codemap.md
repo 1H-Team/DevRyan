@@ -5,6 +5,11 @@ Shared Cursor SDK runtime for DevRyan hosts. It keeps Cursor model execution, SD
 
 ## Design
 - `index.js`: ESM runtime and credential helpers.
+- Windows ARM64 exposes a frozen unsupported runtime capability and empty
+  cached/declared catalogs. Catalog, verification, warming, helper and prompt
+  entrypoints refuse before credential, grant, SDK or worker work; prompt
+  refusal also precedes execution activity reservation. History and shutdown
+  remain available. Constructor host identity defaults to the actual process.
 - `getDeclaredVirtualProvider()` returns fresh original offline capability
   declarations for native readiness; it does not discover accounts or providers.
   `getCachedVirtualProvider()` remains the separate mutable discovery cache.

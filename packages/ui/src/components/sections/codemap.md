@@ -12,6 +12,10 @@ Defines settings-domain feature sections (providers, agents, Bots, MCP, skills, 
   separately permissioned `sessions` page), Behavior and host-only Runtime above
   the agent lists; see `agents/codemap.md`.
 - **Managed quota credentials**: `providers/ManagedQuotaCredentials.tsx` is the shared, secret-non-prefilling editor for OpenCode Zen, Ollama Cloud, and Cursor dashboard/OAuth quota credentials; it reuses the single quota refresh coordinator.
+- **Cursor platform availability**: `providers/ProvidersPage.tsx` projects the
+  typed runtime capability before authentication status. Windows ARM64 keeps
+  saved settings but disables setup and never displays a saved key as a working
+  SDK connection. Pending disconnect status retains precedence.
 - **Shared-host administration**: `users/UserManagementPage.tsx` renders role-aware user/invite/activity review for senior developers and full user, project, branch, GitHub-account, policy, audit export/purge administration for admins. Checked persisted branches expose a separate write-only preview URL/service-token editor with connection testing, rotation, and removal.
 - **Managed issue intake and diagnostics**: `bug-reports/BugReportsPage.tsx` provides permission-gated report submission plus lazily mounted administrator report/error review without adding broadly shared store state.
 - **Production Bot management**: `BotsPage` uses the shared catalog retry controller

@@ -7,13 +7,17 @@ on:
     paths:
       - .github/workflows/windows.yml
       - packages/electron/**
+      - packages/cursor-sdk-runtime/**
       - packages/harness-runtime/**
       - packages/web/server/lib/opencode/runtime-host/**
       - packages/web/server/lib/terminal/**
       - packages/web/server/lib/bots/routes*
+      - packages/web/server/lib/opencode/routes.js
+      - packages/web/server/lib/opencode/provider-routes.test.js
       - packages/ui/src/lib/terminalApi*
       - packages/ui/src/lib/api/types.ts
       - packages/ui/src/components/views/TerminalView*
+      - packages/ui/src/components/sections/providers/ProvidersPage*
       - packages/web/src/api/terminal.ts
       - scripts/build-native-runtime.mjs
       - scripts/build-session-execution.mjs
@@ -28,13 +32,17 @@ on:
     paths:
       - .github/workflows/windows.yml
       - packages/electron/**
+      - packages/cursor-sdk-runtime/**
       - packages/harness-runtime/**
       - packages/web/server/lib/opencode/runtime-host/**
       - packages/web/server/lib/terminal/**
       - packages/web/server/lib/bots/routes*
+      - packages/web/server/lib/opencode/routes.js
+      - packages/web/server/lib/opencode/provider-routes.test.js
       - packages/ui/src/lib/terminalApi*
       - packages/ui/src/lib/api/types.ts
       - packages/ui/src/components/views/TerminalView*
+      - packages/ui/src/components/sections/providers/ProvidersPage*
       - packages/web/src/api/terminal.ts
       - scripts/build-native-runtime.mjs
       - scripts/build-session-execution.mjs
@@ -103,15 +111,17 @@ jobs:
           node -e "if(process.platform!=='win32'||process.arch!==process.env.EXPECTED_ARCH)throw Error('Native runner architecture mismatch')"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Push-Location packages/web
-          node node_modules/vitest/vitest.mjs run server/lib/terminal/runtime.test.js server/lib/bots/routes.test.js -t Windows --no-file-parallelism --maxWorkers=1
+          node node_modules/vitest/vitest.mjs run server/lib/terminal/runtime.test.js server/lib/bots/routes.test.js server/lib/opencode/provider-routes.test.js -t Windows --no-file-parallelism --maxWorkers=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Pop-Location
-          bun test packages/electron/tests/bot-runtime-manager.test.mjs packages/electron/tests/speech-manager.test.mjs -t Windows
+          bun test packages/cursor-sdk-runtime/platform-capabilities.test.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          bun test packages/electron/tests/bot-runtime-manager-platform.test.mjs packages/electron/tests/speech-manager.test.mjs -t Windows
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --test --test-name-pattern=Windows packages/electron/tests/runtime-service-startup.test.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Push-Location packages/ui
-          bun test src/lib/terminalApi.test.ts src/components/views/TerminalView.mounted.test.tsx
+          bun test src/lib/terminalApi.test.ts src/components/views/TerminalView.mounted.test.tsx src/components/sections/providers/ProvidersPage.authenticationSummary.test.tsx
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Pop-Location
       - name: Verify pinned executable resources on this native architecture
