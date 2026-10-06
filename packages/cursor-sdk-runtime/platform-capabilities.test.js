@@ -4,7 +4,9 @@ import path from 'node:path';
 import { createCursorSdkRuntime } from './index.js';
 
 test('Windows ARM64 refuses every execution entry before credentials, admission, SDK or workers', async () => {
-  const root = await fs.mkdtemp(path.resolve(import.meta.dirname, '../../.cache/v2-validation/cursor-platform-'));
+  const fixtures = path.resolve(import.meta.dirname, '../../.cache/v2-validation');
+  await fs.mkdir(fixtures, { recursive: true });
+  const root = await fs.mkdtemp(path.join(fixtures, 'cursor-platform-'));
   const untouched = () => { throw Error('Unsupported platform entered an owner'); };
   const runtime = createCursorSdkRuntime({ platform: 'win32', arch: 'arm64', storageDir: path.join(root, 'unused'), env: {},
     readAuth: untouched, resolveApiKey: untouched, loadSdk: untouched, ownedReadOnly: untouched, spawnImpl: untouched,
