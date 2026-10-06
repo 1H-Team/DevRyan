@@ -43,6 +43,14 @@ export function supervisorStartupVariants(source) {
   TOKEN_DEFAULT_DACL defaultDacl = { dacl };`);
   systemDacl = once(systemDacl, 'LocalFree(security); LocalFree(sidText);',
     'LocalFree(processSecurity); LocalFree(security); LocalFree(sidText);');
+  let systemDesktop = once(source,
+    'SECURITY_ATTRIBUTES desktopSecurity = { sizeof(desktopSecurity), security, FALSE };',
+    `PSECURITY_DESCRIPTOR desktopDescriptor;
+  swprintf(descriptor, 1024, L"D:P(A;OICI;GA;;;%s)(A;OICI;GA;;;%s)(A;OICI;GA;;;SY)S:(ML;OICI;NW;;;S-1-16-0)", sidText, userText);
+  checked(ConvertStringSecurityDescriptorToSecurityDescriptorW(descriptor, SDDL_REVISION_1, &desktopDescriptor, NULL), "diagnostic desktop security");
+  SECURITY_ATTRIBUTES desktopSecurity = { sizeof(desktopSecurity), desktopDescriptor, FALSE };`);
+  systemDesktop = once(systemDesktop, 'LocalFree(security); LocalFree(sidText);',
+    'LocalFree(desktopDescriptor); LocalFree(security); LocalFree(sidText);');
   return [
     { id: 'original', source },
     { id: 'no-ui-job', source: noUi(source) },
@@ -51,6 +59,7 @@ export function supervisorStartupVariants(source) {
     { id: 'low-integrity', source: once(source, 'ConvertStringSidToSidW(L"S-1-16-0", &integrity)',
       'ConvertStringSidToSidW(L"S-1-16-4096", &integrity)') },
     { id: 'system-process-dacl', source: systemDacl },
+    { id: 'system-desktop-dacl', source: systemDesktop },
   ];
 }
 
@@ -132,7 +141,7 @@ export async function runSupervisorStartupDiagnostic(directory) {
   if (hash(await fs.readFile(sourcePath)) !== sourceSha256) throw new Error('Production supervisor changed during diagnostic');
   const result = { schema: 1, status: 'diagnostic-completed', platform: process.platform, arch: process.arch,
     admission: false, acceptance: false, sourceSha256, runtimes, variants,
-    excluded: ['read confinement', 'integrity-policy qualification', 'process-security qualification', 'descendant containment qualification', 'standard-user and concurrent station ownership', 'runtime acceptance'] };
+    excluded: ['read confinement', 'integrity-policy qualification', 'process-security qualification', 'desktop-security qualification', 'descendant containment qualification', 'standard-user and concurrent station ownership', 'runtime acceptance'] };
   await fs.writeFile(path.join(output, 'result.json'), JSON.stringify(result, null, 2) + '\n', { flag: 'wx' });
   return result;
 }

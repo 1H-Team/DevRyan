@@ -88,7 +88,7 @@ test('Windows qualification builds and executes independent pinned native archit
 test('startup diagnostics retain the original helper and core fences in every disposable variant', () => {
   const source = fs.readFileSync(new URL('../packages/harness-runtime/native/session-execution-windows.c', import.meta.url), 'utf8');
   const variants = supervisorStartupVariants(source);
-  assert.deepEqual(variants.map(row => row.id), ['original', 'no-ui-job', 'private-station', 'private-station-no-ui-job', 'low-integrity', 'system-process-dacl']);
+  assert.deepEqual(variants.map(row => row.id), ['original', 'no-ui-job', 'private-station', 'private-station-no-ui-job', 'low-integrity', 'system-process-dacl', 'system-desktop-dacl']);
   assert.equal(variants[0].source, source);
   for (const row of variants) {
     for (const fence of ['DISABLE_MAX_PRIVILEGE | WRITE_RESTRICTED | LUA_TOKEN', 'S-1-16-0',
@@ -101,6 +101,9 @@ test('startup diagnostics retain the original helper and core fences in every di
     assert.equal(row.source.includes('diagnostic process security'), row.id === 'system-process-dacl');
     assert.equal(row.source.includes('L"D:P(A;;GA;;;%s)(A;;GA;;;%s)(A;;GA;;;SY)"'), row.id === 'system-process-dacl');
     assert.equal(row.source.includes('LocalFree(processSecurity)'), row.id === 'system-process-dacl');
+    assert.equal(row.source.includes('diagnostic desktop security'), row.id === 'system-desktop-dacl');
+    assert.equal(row.source.includes('LocalFree(desktopDescriptor)'), row.id === 'system-desktop-dacl');
+    assert.equal(row.source.includes('L"D:P(A;OICI;GA;;;%s)(A;OICI;GA;;;%s)(A;OICI;GA;;;SY)S:(ML;OICI;NW;;;S-1-16-0)"'), row.id === 'system-desktop-dacl');
     if (row.id.startsWith('private-station')) {
       assert.ok(row.source.includes('CreateWindowStationW(NULL, CWF_CREATE_ONLY, GENERIC_ALL, &desktopSecurity)'));
       assert.ok(row.source.includes(String.raw`L"%ls\\%ls"`));

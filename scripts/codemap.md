@@ -33,6 +33,9 @@ Repository automation entrypoint for developer workflows: validation planning, l
   The process-DACL copy adds SYSTEM access only to newly created child objects,
   retaining the original tree ACLs, token integrity and job/handle restrictions.
   This trusted startup diagnostic supplies no process-security qualification.
+  The desktop-DACL copy adds SYSTEM only to its newly created desktop, retaining
+  its Untrusted label and the original token default DACL and file-tree ACLs.
+  It changes no inherited UI object and supplies no desktop-policy acceptance.
   `build-windows-reviewed-libsql.mjs` attempts the original libsql 0.5.29 source
   commit with an unchanged Cargo lock on each native Windows host. It verifies
   compiler and resource PE architecture, executes the original database ABI

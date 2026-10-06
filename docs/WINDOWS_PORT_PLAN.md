@@ -335,6 +335,22 @@ absent. It supplies no process-security qualification and leaves the production
 supervisor unchanged; actual native results are required before drawing a
 causal conclusion.
 
+Run [37417726695](https://github.com/1H-Team/DevRyan/actions/runs/37417726695)
+retains 24 independently reviewed startup probes. The process-DACL variant
+leaves x64 Node/Bun failures unchanged. ARM64 starts that variant and the
+original, no-UI and Low variants; Bun retains ancestor configuration access
+diagnostics. The private-station variants refuse at window-station creation
+with error 183. Both required supervisor acceptance gates still fail and
+runtime acceptance remains skipped.
+
+A seventh disposable probe adds SYSTEM access only to the newly created
+desktop's descriptor. Its Untrusted integrity label, file-tree ACLs, token
+default DACL, full job restrictions and inherited handle boundary remain
+unchanged. [CreateDesktopW](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-createdesktopw)
+accepts a separate descriptor for that object; this probe isolates it without
+changing the inherited station. It supplies no desktop-security qualification
+and changes no production helper. Native evidence must precede any root fix.
+
 Integrated local `validate:full` passes on macOS ARM64 at `874ab3f4`, including
 6,328 web tests, 4,049 UI tests and 39 retained legacy Rust tests. Earlier failed
 attempts are preserved. Only builder-generated legacy defaults were restored
