@@ -41,6 +41,10 @@ for (const boundary of ['physical','context'] as const) test(`owned original sta
   replace('const gates = createAdmissionGates({','const gates = createAdmissionGates({executionActivity:inner=>{nativeExecution=inner;return inner;},captureSessionStore:inner=>{nativeStore=inner;return Effect.succeed(inner);},');
   replace('      const output = JSON.stringify(body)',`      if(${JSON.stringify(boundary)}==='physical'&&primaryBodies.has(createHash('sha256').update(text).digest('hex'))){primaryObserved();await responseBarrier;}
       const output = JSON.stringify(body)`);
+  // The context cell deliberately holds primary before its physical request.
+  // Start the original pair deadline only after that controlled hold is released.
+  replace('const awaitInitialPhysicalPair = async kind => {',`const awaitInitialPhysicalPair = async kind => {
+   if(${JSON.stringify(boundary)}==='context')await responseBarrier;`);
   const begin=source.indexOf('  const session = await callerContext.run(caller, () => client.sessions.create(');
   const end=source.indexOf('} catch (error) { primaryFailure = error;');
   if(begin<0||end<begin)throw Error('Original graph main changed');

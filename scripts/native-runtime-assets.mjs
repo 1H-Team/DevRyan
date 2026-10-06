@@ -20,6 +20,12 @@ const resolvePinnedJsonc=async resolved=>{
  return {modulePath,packagePath,packageBytes};
 };
 export const NATIVE_ASSET_SOURCE_SHA=Object.freeze({pty:'fe38312cd4acdfb067f520d3917daf52add098bb267e33bf7a8f7f44fc74ac8f',photon:'d60656705f0d59baa79e36b0381eb023f1864eeb57e92956cf21dcd9fb8f879f'});
+/** Windows has no approved persistent PTY. Refuse before resolving a command,
+ * creating an installation directory, or reading an environment override. */
+export function rewriteUnavailableNativePty(source) {
+ if(hash(source)!=='fd478c6e033e2772ec73c96680918b00271997a4911f346e0b058103a78d5e92')throw new Error('Pinned native PTY resolver changed');
+ return 'async function resolveBinary(){throw new Error("native_pty_platform_unsupported");}\nexport {resolveBinary};\n';
+}
 /** Build-only transformations require the exact pinned bytes before rewriting. */
 export function rewriteNativeAsset(kind,source,{assetPath,assetSha256}={}) {
  if(!Object.hasOwn(NATIVE_ASSET_SOURCE_SHA,kind)||hash(source)!==NATIVE_ASSET_SOURCE_SHA[kind]) throw new Error('Pinned native asset resolver changed');
@@ -37,7 +43,7 @@ export const REVIEWED_PONYTAIL_MODULE='devryan:reviewed-ponytail-instructions';
 export const REVIEWED_AST_FILENAME='DevRyan-ast-grep-darwin-arm64';
 
 /** Build-only original closure; none of these paths are runtime search roots. */
-export async function prepareReviewedNativeInputs(repository) {
+export async function prepareReviewedNativeInputs(repository,{target='darwin-arm64'}={}) {
  const root=path.join(repository,'packages/web/runtime/reviewed-inputs');
  const inputFiles=new Map();
  const jsoncMain=Bun.resolveSync('jsonc-parser',path.join(repository,'packages/web'));
@@ -58,7 +64,7 @@ export async function prepareReviewedNativeInputs(repository) {
   for(const file of input.files){
    if(typeof file.path!=='string'||path.isAbsolute(file.path)||file.path.split(/[\\/]/).some(part=>part==='..'||part==='')||paths.has(file.path))throw new Error('Reviewed input path invalid');
    paths.add(file.path);const bytes=await read(`${input.id}/${file.path}`);
-   if(bytes.length!==file.size||hash(bytes)!==file.sha256)throw new Error('Reviewed input bytes changed');
+   if(bytes.length!==file.size||hash(bytes)!==file.sha256)throw new Error(`Reviewed input bytes changed: ${input.id}/${file.path}`);
   }
  }
  await read('README.md');await read('slim-2.2.25/dist/server/index.d.ts');await read('jsdom-30.1.1/node_modules/jsdom/lib/api.d.ts');
@@ -94,7 +100,7 @@ export async function prepareReviewedNativeInputs(repository) {
  const claudePath=path.join(root,'claude-1.8.0/node_modules/opencode-with-claude/dist/index.js');
  const claudeOriginal=await fs.readFile(claudePath,'utf8'),claudeContents=rewriteReviewedClaudeStartup(claudeOriginal);
  const libsqlPath=path.join(root,'claude-1.8.0/node_modules/@rynfar/meridian/dist/cli-wxk8xvd3.js');
- const libsqlOriginal=await fs.readFile(libsqlPath),libsqlContents=rewriteReviewedMeridianLibsql(libsqlOriginal);
+ const libsqlOriginal=await fs.readFile(libsqlPath),libsqlContents=rewriteReviewedMeridianLibsql(libsqlOriginal,{target});
  const spawnPath=path.join(root,'claude-1.8.0/node_modules/@rynfar/meridian/dist/devryan-session-provider-spawn.js');
  const spawnOriginal=await fs.readFile(spawnPath),spawnContents=rewriteReviewedClaudeSpawn(spawnOriginal);
  const httpPath=path.join(root,'claude-1.8.0/node_modules/@rynfar/meridian/dist/devryan-meridian-http-server.js');
@@ -178,9 +184,10 @@ export function reviewedNativeInputPlugin({rewrites,virtualModules,inputFiles,re
     return {path:event.path,namespace:'devryan-reviewed'};
    }
    if(isBuiltin(event.path)||event.path.startsWith('bun:'))return {path:event.path,external:true};
-   const captured=event.importer.includes('/reviewed-inputs/jsdom-30.1.1/node_modules/')||event.importer.includes('/reviewed-inputs/claude-1.8.0/node_modules/')||event.importer.includes('/reviewed-inputs/imagegen-0.1.12/');
+   const importer=path.resolve(event.importer);
+   const captured=['jsdom-30.1.1/node_modules','claude-1.8.0/node_modules','imagegen-0.1.12'].some(part=>importer.includes(path.sep+path.join('reviewed-inputs',part)+path.sep));
    if(captured){
-    const resolved=resolutions.get(event.importer+'\0'+event.path);
+    const resolved=resolutions.get(importer+'\0'+event.path);
     if(resolved)return {path:resolved};
     throw new Error('Reviewed DOM dependency outside captured closure');
    }

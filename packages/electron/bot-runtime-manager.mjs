@@ -1140,7 +1140,11 @@ export function createBotRuntimeManager({
   loadBackupKey = null,
   streamProcess = defaultStreamProcess,
   recordEvent = () => {},
+  platform = process.platform,
 } = {}) {
+  if (platform === 'win32') {
+    fail('Production Bots are unavailable on Windows', 'bots_platform_unsupported');
+  }
   if (typeof composePath !== 'string' || !path.isAbsolute(composePath)) {
     fail('Bot runtime compose path must be absolute', 'bot_runtime_configuration_invalid');
   }

@@ -67,10 +67,11 @@ test('actual original image executor publishes versioned PNG only after a real r
   const started=await f.start({prompt:'Use reference image',out:path.join(f.directory,'art.png'),quality:'auto',images:['reference.png']});
   const terminal=await f.settle(started.handle);
   expect(terminal).toMatchObject({type:'settled',ok:true,receipt:{terminated:true,confined:true,cancelled:false,exitCode:0},result:{metadata:{out:path.join(f.directory,'art-v2.png'),versioned:true,billing:'subscription'}}});
-  expect(terminal.result.output).toContain(path.join(f.directory,'art-v2.png'));expect(terminal.result.output).not.toContain('/worktree');
+  const lease=await f.host.runtime.leaseForCall(f.scope);
+  expect(terminal.result.output).toContain(path.join(f.directory,'art-v2.png'));expect(terminal.result.output).not.toContain(lease.viewDirectory);
   expect(await fs.readFile(path.join(f.directory,'art-v2.png'))).toEqual(png);expect(await fs.readFile(path.join(f.directory,'art.png'),'utf8')).toBe('Existing image');
   expect(f.requests).toHaveLength(1);expect(f.requests[0].args).toEqual({prompt:'Use reference image',quality:'auto',referenceImages:['data:image/png;base64,'+png.toString('base64')]});
-  const lease=await f.host.runtime.leaseForCall(f.scope);expect(f.requests[0].invocation.token).toBe(lease.token);expect(lease.state).toBe('published');
+  expect(f.requests[0].invocation.token).toBe(lease.token);expect(lease.state).toBe('published');
   expect(f.receipts).toHaveLength(1);expect(f.outcomes).toHaveLength(1);expect(f.outcomes[0].state).toBe('published');expect(f.checks()).toBeGreaterThan(5);
   expect(await fs.readFile(path.join(f.directory,'keep.txt'),'utf8')).toBe('Preserved');
  }finally{await f.host.drain();}

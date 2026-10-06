@@ -4,8 +4,8 @@
 uses an inherited Seatbelt profile. The Linux implementation uses Landlock ABI 3
 and seccomp, but has not passed platform acceptance and is not approved for
 production admission. Artifact verification returns false for Linux until
-metadata and IPC escape mediation is complete. Windows support remains
-unimplemented. The remaining metadata restriction gap is documented in the
+metadata and IPC escape mediation is complete. Windows execution remains
+unqualified. The remaining metadata restriction gap is documented in the
 [kernel Landlock API](https://docs.kernel.org/userspace-api/landlock.html#filesystem-flags).
 
 The supervisor closes inherited descriptors, retains the leader until its group
@@ -37,3 +37,29 @@ Build with `scripts/build-session-execution.mjs`; run the explicit native suite
 with `scripts/verify-session-execution.mjs`. These checks use disposable roots.
 The source and helper are internal implementation work, not enabled in the
 production host or shipped native artifacts.
+
+`session-execution-windows.c` is the Windows SDK supervisor draft. Its standalone
+identity operations query a no-follow file handle for volume/file ID, reparse
+state, hard-link count, owner and protected ACL. Inspection requests read access
+so an exclusive file lock refuses the identity; attribute-only access would
+bypass that sharing boundary. Inspection and creation anchor the canonical
+path's parents and refuse a reparse parent, even when the leaf itself has an
+ordinary file identity. Exclusive private-directory and bounded private-file
+creation hold every ancestor against write/delete
+sharing and refuse reparse parents, traversal, device aliases and alternate
+streams. Files explicitly name the current user as owner, use a protected ACL,
+flush before reporting identity, and preserve a partial file on failed input.
+The operations never replace a file or repair an existing ACL. Process probes query
+creation time, liveness and containing-job membership from one held handle.
+`--inspect-job-boundary` reads the containing job's limit flags without changing
+that job. It repeats the draft UI-limit call on a new empty job and records the
+actual error and read-back flags. The probe creates no child, permits no
+breakaway, and grants no confinement or admission authority. The host verifier
+retains this diagnostic in `host-boundary-evidence.json` for each architecture;
+collecting a failed UI-limit result is distinct from accepting that UI policy.
+The supervisor retains its original parent handle only after comparing parent
+and supervisor creation times, so a recycled parent PID cannot become an owner.
+`verify-windows-host-boundary.mjs` and `verify-windows-filesystem-boundary.mjs`
+exercise these native operations on each architecture. These are independent
+prerequisites: they do not attest read confinement, descendant containment,
+cancellation, runtime admission or the complete acceptance inventory.

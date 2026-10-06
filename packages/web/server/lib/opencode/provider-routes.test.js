@@ -608,6 +608,23 @@ describe('OpenCode provider routes', () => {
     });
   });
 
+  it('Windows ARM64 status does not enter credential authorization and actions keep the typed refusal', async () => {
+    const refused = () => Promise.reject(Object.assign(new Error('Cursor is unavailable on Windows ARM64.'), { code: 'cursor_platform_unsupported', statusCode: 503 }));
+    const authorize = vi.fn(() => { throw Error('Unsupported platform entered credential authorization'); });
+    const { app } = createApp({ getNativeRuntimeOwner: () => ({ withProviderConfigurationAuthorization: authorize }), cursorSdkRuntime: {
+      getRuntimeStatus: () => ({ capabilities: { supported: false, code: 'cursor_platform_unsupported' }, sdkAuthConfigured: false }),
+      verifyConnection: refused, prewarmSession: refused,
+    } });
+    const status = await request(app).get('/api/provider/cursor-acp/runtime-status');
+    expect(status.status).toBe(200); expect(status.body.capabilities).toEqual({ supported: false, code: 'cursor_platform_unsupported' });
+    expect(status.body.sdkAuthConfigured).toBe(false); expect(authorize).not.toHaveBeenCalled();
+    for (const [route, body] of [['configure', {}], ['session-prewarm', { sessionID: 'saved' }]]) {
+      const response = await request(app).post('/api/provider/cursor-acp/' + route).send(body);
+      expect(response.status).toBe(503); expect(response.body.code).toBe('cursor_platform_unsupported');
+    }
+    expect(authorize).not.toHaveBeenCalled();
+  });
+
   it('prewarms a Cursor SDK session through the provider route', async () => {
     const prewarmSession = vi.fn(async () => ({
       ok: true,

@@ -1,3 +1,5 @@
+import type { TerminalCapabilities } from './api/types';
+
 export interface TerminalWebSocketDescriptor {
   path: string;
   v?: number;
@@ -762,6 +764,22 @@ const sendTerminalInputHttp = async (sessionId: string, data: string): Promise<v
     throw new Error(error.error || 'Failed to send terminal input');
   }
 };
+
+export async function getTerminalCapabilities(): Promise<TerminalCapabilities> {
+  const response = await fetch('/api/terminal/capabilities', { cache: 'no-store', signal: AbortSignal.timeout(4000) });
+  if (!response.ok) throw new Error('Terminal availability could not be checked.');
+  const value: unknown = await response.json();
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('Invalid terminal capabilities.');
+  }
+  if ('available' in value && 'code' in value) {
+    if (value.available === true && value.code === null) return { available: true, code: null };
+    if (value.available === false && value.code === 'terminal_platform_unsupported') {
+      return { available: false, code: 'terminal_platform_unsupported' };
+    }
+  }
+  throw new Error('Invalid terminal capabilities.');
+}
 
 export async function createTerminalSession(options: CreateTerminalOptions): Promise<TerminalSession> {
   const response = await fetch('/api/terminal/create', {

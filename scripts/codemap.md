@@ -19,17 +19,63 @@ Repository automation entrypoint for developer workflows: validation planning, l
   version tag; dry-run write refusal still applies.
   `windows.yml` runs native x64/ARM64 qualification separately, with read-only
   repository permissions and no runtime-admission bypass.
+  Protocol-2 job diagnostics retain the actual OS build, SDK UI mask and every
+  available restriction. The supervisor requires exact kernel readback before
+  command creation; it never retries with fewer restrictions.
+  `diagnose-windows-supervisor-startup.mjs` separately compiles disposable
+  original, UI-limit and exclusive private-window-station variants, then probes
+  trusted Node/Bun startup. It preserves source/binary/output hashes and partial
+  receipts. These binaries receive no accepted manifest, never enter a runtime
+  bundle, and cannot satisfy the nine required Windows outcomes. Station
+  diagnostics change only owned UI objects, never the inherited station ACL.
+  A separate low-integrity token copy isolates startup at Low versus Untrusted;
+  its job/handle/write restrictions stay intact and it grants no admission.
+  The process-DACL copy adds SYSTEM access only to newly created child objects,
+  retaining the original tree ACLs, token integrity and job/handle restrictions.
+  This trusted startup diagnostic supplies no process-security qualification.
+  The desktop-DACL copy adds SYSTEM only to its newly created desktop, retaining
+  its Untrusted label and the original token default DACL and file-tree ACLs.
+  It changes no inherited UI object and supplies no desktop-policy acceptance.
+  `build-windows-reviewed-libsql.mjs` attempts the original libsql 0.5.29 source
+  commit with an unchanged Cargo lock on each native Windows host. It verifies
+  compiler and resource PE architecture, executes the original database ABI
+  through Node/Bun, and retains source/build receipts. Those candidate resources
+  cannot supply runtime admission or replace the controller/writer safety gate.
+  `build-windows-reviewed-executables.mjs` restores pinned AST/Claude Windows
+  archives without changing the original reviewed closure. Archive SRI, binary
+  SHA-256, size and PE architecture precede native version probes in an isolated
+  home. Changed files and aliased output directories refuse; publication is
+  exclusive. Its candidate receipt also cannot grant execution admission.
+  `readWindowsReviewedLibsqlAsset` rechecks the fixed source/toolchain inputs,
+  both actual-host ABI probe identities and exact unaliased PE bytes before
+  supplying the sealed compilation candidate.
+  Its source checkout preserves pinned LF bytes on Windows; finite stage and
+  public input-hash receipts retain identity failures before compilation.
 
 - **Compiled native package** (`build-native-runtime.mjs`,
   `native-runtime-assets.mjs`, `verify-opencode-v2-package.mjs`): builds branded
   controller/writer executables with pinned SDK, dependency, source and asset
   digests. Exact hash-guarded asset rewrites cover dynamic package resolution
   and the image WASM read; the accepted supervisor is copied unchanged.
+  `.gitattributes` disables checkout text conversion only for the byte-pinned
+  reviewed closure and the reviewed document/browser plugin sources. Imported
+  Windows build helpers also participate in macOS native build identities.
+  `--windows-candidate` builds only on the actual x64/ARM64 Windows host into
+  an immutable owned cache root. It reuses the reviewed source closure, selects
+  previously qualified Windows executable/database inputs, denies persistent
+  PTY resolution before I/O, and executes both compiled empty-input refusals.
+  `native-candidate.json` explicitly denies admission and never substitutes
+  for `native-bundle.json` or an accepted launcher. Production Windows builds
+  remain unavailable pending complete platform safety qualification.
+  Failed Windows compilations/boot probes retain their source/file digests and
+  compiled outputs in `runtime-candidate-failed-*`, with bounded error evidence.
+  They remain diagnostic artifacts without a bundle manifest or admission.
   `native-compaction-observation-transform.mjs` inserts a read-only observation
   immediately after the pinned SDK's original budget calculation. Its private
   settings have no exported read API. Exact original/transformed hashes enter
   the artifact manifest; a mismatch refuses the build, and diagnostics cannot
-  change the native compaction decision.
+  change the native compaction decision. Build-only helper paths use native
+  absolute-path validation on macOS and Windows; SDK byte guards remain exact.
   The separate package verifier uses relocated disposable bundles, the actual
   offline importer and an ordinary local HTTP provider. Its fixture responses
   drive real compiled tools, supervisor receipts and publication.
@@ -189,6 +235,8 @@ Repository automation entrypoint for developer workflows: validation planning, l
 - **Orchestrator scripts** (`*.mjs`) spawn and supervise child processes with graceful shutdown (`SIGINT` → `SIGTERM` → `SIGKILL`) and detached-group handling on macOS. Group shutdown remains active after a wrapper leader exits, so nested watchers can finish reaping their owned runtimes before the orchestrator returns.
 - **Development data isolation** (`dev-data-directory.mjs`): derives a stable temporary `OPENCHAMBER_DATA_DIR` from the checkout path and launcher mode while preserving any explicit override. The web-stack, HMR, full-web, direct server watcher, and Electron launchers pass that value to every process that shares their runtime so development cannot silently reuse an installed app's production ledger.
 - **Validation planner** (`validate.mjs`): computes changed-file impact via git diff, maps files to package scopes, and selects quick/affected/full command sets. Cursor and Production Bots contract/supervisor/egress/computer changes run their package suites; affected mode also expands to their host dependents. Rust source changes select the locked desktop Cargo suite; manifests and lockfiles require the full gate. Shared-runtime changes select its suite and the web dependent. Markdown runtime prompts select their owning contract tests instead of being treated as documentation-only. Current documentation references are checked by `docs/repository-links.mjs`, with historical and generated targets reported separately.
+- **Windows host boundary** (`verify-windows-host-boundary.mjs`): native-only read-only supervisor probes bind parent/child PID liveness and Windows creation `FILETIME` to the actual compiled helper, including its retained original-parent handle. Records containing host-job membership and physical owned-child exit without granting confinement or admission; each architecture retains its own evidence in CI.
+- **Windows filesystem boundary** (`verify-windows-filesystem-boundary.mjs`): actual SDK file identity and exclusive private ACL creation checks, including mode-bit refusal, Unicode/case paths, hard links, no-follow junctions, anchored reparse/traversal refusal and locked files. Each architecture retains source/binary/manifest digests; these are prerequisites, not complete execution qualification.
 - **Full-suite discovery** (`test-scripts.mjs`, `test-electron.mjs`, `test-ui.mjs`): recursively discovers deterministic tests for runner-owned surfaces, including repository scripts and project-owned `.opencode` agent/plugin contracts. The script runner passes explicit Bun file paths in separate processes: substring matching cannot admit files outside its inventory, and native fixtures do not share resolver/loader state. `test-suite-contract.test.mjs` rejects undiscovered files, skipped/todo declarations, omitted test-owning workspaces, and stale feature-matrix paths. `feature-test-matrix.mjs` is the checked coverage index; usage and fixture policy live in `docs/TESTING.md`. Electron reports the actual macOS DMG helper/atomic-bridge inventory as a separate explicit `DEVRYAN_RUN_DMG_INSTALLER_NATIVE_TESTS=1` acceptance gate; unsupported platforms fail that gate rather than declaring skipped tests.
 - **Bundle budget checker** (`check-bundle-budgets.mjs` + `bundle-budgets.config.mjs`): reads existing web Vite manifests, traverses entry static imports, then resolves explicitly configured immediate dynamic roots in order across the graph accumulated so far. This permits an explicitly measured render root beneath an earlier app root without treating sibling lazy imports as startup. It sums unique raw/default-gzip JavaScript bytes and rejects `.bun` output chunks, configured exact emitted startup chunk identities, or budget regressions with stable report/JSON output. Proven lazy view/dialog boundaries are guarded by their stable Vite manifest names, while byte budgets retain 5% headroom over the measured graph without exceeding historical baselines. It does not infer source-module or worker exclusion from generic chunk labels.
 - **Agent evaluation harness** (`agent-evals/`): external-dependency-free, non-interactive schema-v1 runner for pinned loopback DevRyan/OpenCode sessions, deterministic inspect/repair/managed-change cases, bounded focused/deep Oracle review cases with safe semantic graders, exact Git fixture restoration, whitelist-only aggregate reports, shared provider prompt-tool policy, and the macOS Electron process-tree retry-memory profile. See [agent-evals/codemap.md](agent-evals/codemap.md).
@@ -243,7 +291,7 @@ Repository automation entrypoint for developer workflows: validation planning, l
 
 - `verify-crash-memory.mjs` runs synthetic Electron history reconciliation in isolated app-bound and service ownership modes. The `--workload snapshots` option measures a large synthetic managed ledger separately. It writes numerical samples and synthetic allocation profiles beneath `.cache/`, with a default 95-minute soak; it never registers launchd, connects providers or reads installed-app state.
 
-- `build-native-runtime.mjs` builds the sealed native v2 controller/writer/assets plus accepted execution launcher into `packages/web/runtime/<platform>-<arch>`. The current reviewed build is Bun 1.3.14 on Darwin ARM64; other platforms remain unavailable. Default output replaces the platform directory atomically; explicit output roots are immutable. `build-revert-runtime.mjs` is a compatibility command alias and never builds a v1 executable.
+- `build-native-runtime.mjs` builds the sealed native v2 controller/writer/assets plus accepted execution launcher into `packages/web/runtime/<platform>-<arch>`. The accepted build is Bun 1.3.14 on Darwin ARM64; Windows has a separate unqualified `--windows-candidate` cache output with no production manifest or admission grant. Its output is created exclusively, the candidate receipt is written last after verification, and failed files remain in place. The writer uses an explicit executable entry. Default Darwin output replaces the platform directory atomically; explicit output roots are immutable. `build-revert-runtime.mjs` is a compatibility command alias and never builds a v1 executable.
 
 - `hydrate-reviewed-claude.mjs` restores the oversized reviewed Claude executable from the exact public npm archive before native CI builds. Archive SHA-512 and executable SHA-256/size must match; changed existing files are preserved and rejected. The executable stays outside Git, while its metadata, licenses and checksum inventory remain committed.
 

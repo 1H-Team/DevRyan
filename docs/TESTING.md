@@ -14,10 +14,13 @@ the enclosing DevRyan checkout. The fixture's own Git repositories still work;
 non-Git assertions must not be changed to accept the parent repository.
 - Release verification also runs `bun run build` and `bun run bundle:check`.
 
-Fresh macOS ARM64 checkouts need generated Electron web assets and the retained
-legacy Tauri test sidecar before the full suite:
+A fresh macOS ARM64 checkout needs the exact reviewed Claude input, accepted
+supervisor, generated Electron web assets and retained legacy Tauri test
+sidecar before the full suite. Prepare them through their existing owners:
 
 ```sh
+node scripts/hydrate-reviewed-claude.mjs
+node scripts/build-session-execution.mjs packages/web/runtime/darwin-arm64 --verify
 bun run build
 bun run --cwd packages/electron build:web-assets
 node -e "require('node:fs').cpSync('packages/web/dist', 'packages/desktop/src-tauri/resources/web-dist', { recursive: true })"
@@ -28,6 +31,13 @@ Prepare only the missing sidecar. The legacy `build:sidecar` command also
 refreshes frozen tracked configuration assets and makes their contract checks
 fail; do not use it to prepare this suite. These prerequisites do not launch
 either app or add Tauri feature backports.
+
+Keep the repository-owned fixture path short enough for macOS Unix sockets;
+a deeply nested worktree may use the main checkout's ignored fixture directory
+with the matching Git ceiling. These checks do not use the installed app.
+The managed Rust-browser case additionally requires the preserved, reviewed
+agent-browser 0.38.1 fixture under `.cache/browser-upgrade/current`; it refuses
+missing inputs rather than substituting the installed browser.
 
 The full gate rejects skipped or todo tests, undiscovered JavaScript/TypeScript test files, test-owning workspace packages omitted from `test:full`, and stale paths in the checked feature matrix.
 

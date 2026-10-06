@@ -518,6 +518,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         return res.status(500).json({ error: 'Cursor SDK runtime is unavailable.' });
       }
       const status = cursorSdkRuntime.getRuntimeStatus();
+      if (status.capabilities?.supported === false) return res.json(status);
       const native = nativeProviderOwner(CURSOR_ACP_PROVIDER_ID);
       if (!native) return res.json(status);
       const directory = await resolveRequestDirectory(req);
@@ -580,7 +581,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       return res.json(result);
     } catch (error) {
       console.error('Failed to prewarm Cursor session:', error);
-      return res.status(500).json({ ok: false, error: error.message || 'Failed to prewarm Cursor session' });
+      return res.status(error.statusCode ?? 500).json({ ok: false, error: error.message || 'Failed to prewarm Cursor session', code: error.code });
     }
   });
 
@@ -607,7 +608,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       });
     } catch (error) {
       console.error('Failed to configure Cursor provider:', error);
-      return res.status(500).json({ error: error.message || 'Failed to configure Cursor provider' });
+      return res.status(error.statusCode ?? 500).json({ error: error.message || 'Failed to configure Cursor provider', code: error.code });
     }
   });
 

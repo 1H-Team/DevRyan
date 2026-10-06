@@ -1,5 +1,6 @@
 import {
   connectTerminalStream,
+  getTerminalCapabilities,
   createTerminalSession,
   resizeTerminal,
   sendTerminalInput,
@@ -29,6 +30,7 @@ const getRetryPolicy = (options?: TerminalStreamOptions) => {
 };
 
 export const createWebTerminalAPI = (): TerminalAPI => ({
+  getCapabilities: getTerminalCapabilities,
   async createSession(options: CreateTerminalOptions): Promise<TerminalSession> {
     return createTerminalSession(options);
   },

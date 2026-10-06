@@ -1,7 +1,23 @@
 import {test} from 'bun:test';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import {createRequire} from 'node:module';import {createHash} from 'node:crypto';import path from 'node:path';
-import {rewriteNativeAsset,NATIVE_ASSET_SOURCE_SHA,prepareReviewedNativeInputs,REVIEWED_PONYTAIL_MODULE,REVIEWED_AST_FILENAME} from '../native-runtime-assets.mjs';
+import {rewriteNativeAsset,rewriteUnavailableNativePty,NATIVE_ASSET_SOURCE_SHA,prepareReviewedNativeInputs,REVIEWED_PONYTAIL_MODULE,REVIEWED_AST_FILENAME} from '../native-runtime-assets.mjs';
+import {execFileSync} from 'node:child_process';
 const repository=path.resolve(import.meta.dirname,'../..'),core=await fs.realpath(path.join(repository,'node_modules/@opencode/core'));
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
+test('Windows-style Git checkout preserves byte-pinned reviewed resources',async()=>{
+ const fixture=await fs.mkdtemp(path.join(repository,'.cache/test-fixtures/reviewed-checkout-'));
+ const files=['packages/web/runtime/reviewed-inputs/slim-2.2.25/dist/server/index.js',
+  'packages/web/server/default-config/plugins/devryan-document-reader.mjs','packages/web/server/default-config/plugins/devryan-browser.mjs'];
+ try{
+  execFileSync('git',['init','-q'],{cwd:fixture});
+  await fs.copyFile(path.join(repository,'.gitattributes'),path.join(fixture,'.gitattributes'));
+  const originals=await Promise.all(files.map(file=>fs.readFile(path.join(repository,file))));
+  for(let i=0;i<files.length;i++){await fs.mkdir(path.dirname(path.join(fixture,files[i])),{recursive:true});await fs.writeFile(path.join(fixture,files[i]),originals[i]);}
+  execFileSync('git',['-c','core.autocrlf=false','add','-f','.gitattributes',...files],{cwd:fixture});
+  for(const file of files)await fs.rm(path.join(fixture,file));
+  execFileSync('git',['-c','core.autocrlf=true','checkout','--',...files],{cwd:fixture});
+  for(let i=0;i<files.length;i++)assert.deepEqual(await fs.readFile(path.join(fixture,files[i])),originals[i]);
+ }finally{await fs.rm(fixture,{recursive:true,force:true});}
+});
 test('asset rewrites require exact pinned sources and embed only reviewed native paths',async()=>{
  const require=createRequire(path.join(core,'package.json'));
  const pty=await fs.readFile(path.join(core,'dist/chunks/credential-dajrwvna.js'));
@@ -16,6 +32,14 @@ test('asset rewrites require exact pinned sources and embed only reviewed native
  assert.equal(rewritten.includes('new WebAssembly.Module(bytes)'),true);
  for(const kind of ['pty','photon']) assert.throws(()=>rewriteNativeAsset(kind,Buffer.from('changed source'),{assetPath,assetSha256}),/resolver changed/);
  assert.throws(()=>rewriteNativeAsset('pty',pty,{assetPath,assetSha256:'0'.repeat(64)}),/asset changed/);
+});
+test('Windows native PTY refuses before environment or filesystem discovery',async()=>{
+ const source=await fs.readFile(path.join(core,'dist/persistent-pty/binary.bun.js'));
+ const transformed=rewriteUnavailableNativePty(source);
+ const resolveBinary=new Function('process',transformed.replace('export {resolveBinary};','return resolveBinary;'))(new Proxy({}, {get(){throw new Error('environment must not be read');}}));
+ await assert.rejects(resolveBinary('/not-an-owned-path'),/native_pty_platform_unsupported/);
+ assert.doesNotMatch(transformed,/import|require|mkdir|OPENCODE_PTY_BIN|process/);
+ assert.throws(()=>rewriteUnavailableNativePty(Buffer.concat([source,Buffer.from('\n')])),/resolver changed/);
 });
 test('reviewed original closure and exact constructor transforms are inventoried without runtime cache roots',async()=>{
  const reviewed=await prepareReviewedNativeInputs(repository);

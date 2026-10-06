@@ -26,7 +26,13 @@ async function fixture({ scope } = {}) {
     let stdout = '', stderr = '';
     const handle = await startSessionExecution({ launcher, lease, command, args, env: { PATH: process.env.PATH }, signal,
       onOutput: ({ stream, data }) => { if (stream === 'stdout') stdout += data; else stderr += data; } });
-    return { ...handle, output: () => ({ stdout, stderr }) };
+    const result = handle.result.catch(cause => {
+      // Retain the native operation/error number without printing worker output.
+      const refusal = process.platform === 'win32' ? /^([a-z ]{1,80}) failed \(([0-9]{1,10})\)$/.exec(stderr.trim()) : null;
+      if (cause instanceof Error && refusal) cause.message += `: ${refusal[1]} failed (${refusal[2]})`;
+      throw cause;
+    });
+    return { ...handle, result, output: () => ({ stdout, stderr }) };
   };
   return { root: canonical, viewDirectory, lease, run: (source, signal) => start(process.execPath, ['-e', source], signal),
     // Through /bin/sh, as `npm run` starts scripts: macOS strips DYLD_* here.

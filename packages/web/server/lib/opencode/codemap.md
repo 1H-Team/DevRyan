@@ -5,6 +5,10 @@ Core OpenCode integration layer: config entities (agents/commands/skills/provide
 
 ## Design
 
+- Cursor runtime status preserves its platform capability. Unsupported hosts
+  return that status before provider credential authorization; warming and
+  verification routes retain the runtime's typed 503 refusal.
+
 - **Native candidate host** (`runtime-host/`) embeds the pinned SDK under
   mandatory admission and execution gates, using the existing Node ledger
   and scheduler through their private bridge. See

@@ -5,6 +5,8 @@ import path from 'node:path';
 import http from 'node:http';
 import { once } from 'node:events';
 import WebSocket from 'ws';
+import express from 'express';
+import request from '../../test-supertest.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as nodePty from 'node-pty';
 
@@ -30,7 +32,7 @@ function createRuntime(server, options = {}) {
     delete: new Map(),
   };
 
-  const app = {
+  const app = options.app ?? {
     use() {},
     post(route, ...handlers) {
       routes.post.set(route, handlers);
@@ -54,13 +56,14 @@ function createRuntime(server, options = {}) {
     searchPathFor: () => null,
     isExecutable: options.isExecutable ?? (() => false),
     isRequestOriginAllowed: async () => true,
-    rejectWebSocketUpgrade() {},
+    rejectWebSocketUpgrade: options.rejectWebSocketUpgrade ?? (() => {}),
     TERMINAL_INPUT_WS_HEARTBEAT_INTERVAL_MS: 30_000,
     TERMINAL_INPUT_WS_REBIND_WINDOW_MS: 1_000,
     TERMINAL_INPUT_WS_MAX_REBINDS_PER_WINDOW: 3,
     multiUserRuntime: options.multiUserRuntime,
     onTerminalSessionClosed: options.onTerminalSessionClosed,
     killPtyProcess: options.killPtyProcess,
+    platform: options.platform ?? 'darwin',
   });
 
   return { runtime, routes };
@@ -95,6 +98,41 @@ describe('terminal runtime', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(process, 'kill').mockImplementation(() => true);
+  });
+
+  it('advertises Windows unavailability and refuses HTTP/WS before PTY or filesystem work', async () => {
+    const app = express();
+    app.use(express.json());
+    const server = new EventEmitter();
+    const rejected = vi.fn();
+    const access = vi.spyOn(fs.promises, 'access');
+    const stat = vi.spyOn(fs.promises, 'stat');
+    const { runtime } = createRuntime(server, { app, platform: 'win32', rejectWebSocketUpgrade: rejected });
+    try {
+      const capability = { available: false, code: 'terminal_platform_unsupported' };
+      expect((await request(app).get('/api/terminal/capabilities')).body).toEqual(capability);
+      expect(runtime.getCapabilities()).toEqual(capability);
+      expect(Object.isFrozen(runtime.getCapabilities())).toBe(true);
+      for (const endpoint of ['create', 'existing/restart', 'force-kill', 'existing/input', 'existing/resize']) {
+        const response = await request(app).post(`/api/terminal/${endpoint}`).send({ cwd: 'C:\\Owned 雪', input: 'probe' });
+        expect(response.status).toBe(503);
+        expect(response.body).toMatchObject(capability);
+      }
+      expect((await request(app).get('/api/terminal/existing/stream')).status).toBe(503);
+      expect((await request(app).delete('/api/terminal/existing')).status).toBe(503);
+      const socket = {};
+      server.emit('upgrade', { url: '/api/terminal/ws?probe=1' }, socket);
+      expect(rejected).toHaveBeenCalledWith(socket, 503, 'Persistent terminals are unavailable');
+      server.emit('upgrade', { url: '/another-feature' }, socket);
+      expect(rejected).toHaveBeenCalledTimes(1);
+      expect(access).not.toHaveBeenCalled();
+      expect(stat).not.toHaveBeenCalled();
+      expect(nodePty.spawn).not.toHaveBeenCalled();
+      expect(runtime.getSessionDescriptor('existing')).toBeNull();
+      expect(runtime.touchSession('existing')).toBeNull();
+      expect(await runtime.terminateOwnerSessions('owner')).toBe(0);
+    } finally { await runtime.shutdown(); }
+    expect(server.listenerCount('upgrade')).toBe(0);
   });
 
   it('awaits removed-session cleanup on close and concurrent shutdown', async () => {

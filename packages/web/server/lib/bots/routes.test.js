@@ -19,6 +19,17 @@ const SHARED_FILE_ID = 'f0000000-0000-4000-8000-000000000002';
 const USER_ID = 'a0000000-0000-4000-8000-000000000001';
 const TIMESTAMP = '2026-08-23T12:00:00.000Z';
 
+it('Windows capabilities refuse even a ready Electron catalog without key or Docker probes', async () => {
+  const getStatus = vi.fn(() => { throw new Error('Docker must remain untouched'); });
+  const getKey = vi.fn(() => { throw new Error('Keys must remain untouched'); });
+  const result = await resolveBotCapabilities({ platform: 'win32', hasSupabase: true,
+    catalog: { state: 'ready' }, botHost: { owner: 'electron', getStatus }, encryption: { getKey } });
+  expect(result).toMatchObject({ available: false, catalogAvailable: false, canManageRuntime: false,
+    state: 'unsupported_host', code: 'bots_platform_unsupported', owner: 'unsupported' });
+  expect(getStatus).not.toHaveBeenCalled();
+  expect(getKey).not.toHaveBeenCalled();
+});
+
 const host = (state, extras = {}) => ({
   owner: 'electron',
   getStatus: vi.fn(async () => ({ state, code: null, issues: [], ...extras })),

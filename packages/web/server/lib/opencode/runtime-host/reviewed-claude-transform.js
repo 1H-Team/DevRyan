@@ -26,11 +26,12 @@ export function rewriteReviewedClaudeCredentials(source){
 }
 
 /** Only the captured NAPI resolver changes; the original libsql implementation remains linked. */
-export function rewriteReviewedMeridianLibsql(source) {
+export function rewriteReviewedMeridianLibsql(source,{target='darwin-arm64'}={}) {
+  if(!['darwin-arm64','win32-x64','win32-arm64'].includes(target))throw new Error('native_libsql_target_unreviewed');
   if(createHash('sha256').update(source).digest('hex')!=='95f3ff9cf5b4cb6fb3d530f3a06a3d70fbd6bbdaa7a06dbd9404c3cd0410abb8')throw new Error('native_meridian_source_unreviewed');
   const text=Buffer.from(source).toString('utf8'),original='return __require(`@libsql/${target}`);';
   if(text.split(original).length!==2)throw new Error('native_meridian_source_shape_changed');
-  let output=text.replace(original,'const nativeAsset = globalThis.__DEVRYAN_LIBSQL_ASSET;\n    if (target !== "darwin-arm64" || typeof nativeAsset !== "string") throw new Error("native_libsql_asset_unverified");\n    return __require(nativeAsset);');
+  let output=text.replace(original,`const nativeAsset = globalThis.__DEVRYAN_LIBSQL_ASSET;\n    if (target !== ${JSON.stringify(target)} || typeof nativeAsset !== "string") throw new Error("native_libsql_asset_unverified");\n    return __require(nativeAsset);`);
   const marker='        const parsedOutputFormat = parseOutputFormat(body.output_config, body.tools);';
   if(output.split(marker).length!==2)throw new Error('native_meridian_source_shape_changed');
   output=output.replace(marker,`        let ownedDirectory;

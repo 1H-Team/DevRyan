@@ -299,6 +299,66 @@ identifies missing access as a possible DLL initialization failure. Review a
 private UI-object owner and prove standard-user behavior before changing this
 boundary; do not alter the user's window-station ACL or enable admission.
 
+The separate startup diagnostic now compiles four disposable source copies:
+original, no UI job limits, an exclusive private window station, and their
+combination. Each runs a trusted stdout-only probe with the actual Node and
+pinned Bun executable. Source/binary/output digests and empty, partial or
+complete termination receipts remain evidence; no copy receives an acceptance
+marker, enters a runtime bundle, or satisfies a required Windows gate.
+The station probe restores the inherited station and changes no inherited ACL.
+Actual native results and standard-user/concurrent station ownership remain
+unqualified. Its API owners are
+[CreateWindowStationW](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-createwindowstationw)
+and [SetProcessWindowStation](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setprocesswindowstation).
+
+The x64 startup probes in run
+[37414619426](https://github.com/1H-Team/DevRyan/actions/runs/37414619426)
+reproduce all four variants with verified source, PE, binary/output hashes and
+durable receipt bytes. Node remains at `0xc0000142`; Bun remains at
+`0xc06d007e`. Neither a private station nor absent UI restrictions resolves
+startup. A fifth disposable variant changes only the token integrity SID from
+Untrusted to Low, retaining the original job, handle and write restrictions.
+It tests another startup condition, supplies no policy acceptance, and never
+changes the production supervisor. Both actual architectures must still run it.
+
+The ARM64 receipts from the same run independently verify original and
+UI-limit-only Node/Bun startup. Both exclusive unnamed station variants refuse
+with Windows error 183 and empty termination receipts. Reusing an existing
+station or modifying the inherited station ACL is not an authorized fallback.
+
+A sixth disposable probe adds SYSTEM access only to the token's default DACL
+for newly created child objects. The file-tree ACLs, integrity level, job,
+inherited handles and parent-death contract stay unchanged. It isolates another
+startup condition because [CreateProcessAsUserW](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessasuserw)
+uses that token's default process/thread security when explicit descriptors are
+absent. It supplies no process-security qualification and leaves the production
+supervisor unchanged; actual native results are required before drawing a
+causal conclusion.
+
+Run [37417726695](https://github.com/1H-Team/DevRyan/actions/runs/37417726695)
+retains 24 independently reviewed startup probes. The process-DACL variant
+leaves x64 Node/Bun failures unchanged. ARM64 starts that variant and the
+original, no-UI and Low variants; Bun retains ancestor configuration access
+diagnostics. The private-station variants refuse at window-station creation
+with error 183. Both required supervisor acceptance gates still fail and
+runtime acceptance remains skipped.
+
+A seventh disposable probe adds SYSTEM access only to the newly created
+desktop's descriptor. Its Untrusted integrity label, file-tree ACLs, token
+default DACL, full job restrictions and inherited handle boundary remain
+unchanged. [CreateDesktopW](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-createdesktopw)
+accepts a separate descriptor for that object; this probe isolates it without
+changing the inherited station. It supplies no desktop-security qualification
+and changes no production helper. Native evidence must precede any root fix.
+
+Integrated local `validate:full` passes on macOS ARM64 at `874ab3f4`, including
+6,328 web tests, 4,049 UI tests and 39 retained legacy Rust tests. Earlier failed
+attempts are preserved. Only builder-generated legacy defaults were restored
+to their frozen source bytes; the missing ignored web/sidecar fixtures were
+prepared without changing those defaults. The successful log digest is
+`9e90adb2a0e44ddbfc25ce7629ea08f4ae21627e5eef730dd25eee2889500b48`.
+This local pass does not qualify native Windows execution or the final release.
+
 The [Rust platform contract](https://doc.rust-lang.org/stable/rustc/platform-support/windows-msvc.html)
 supports native MSVC ARM64 host tools; that support does not establish libsql
 compatibility by itself.

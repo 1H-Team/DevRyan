@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import {
+  describeRuntimeServiceStatus,
   ensureRuntimeServiceRegistered,
   prepareAutomaticRuntimeService,
   createRuntimeOwnerAcquirer,
@@ -25,6 +26,23 @@ const run = async ({ currentMode = 'app_bound', optedOut = false, status, regist
   });
   return { result, modes };
 };
+
+test('Windows preserves a service preference without granting registration, connection or execution', async () => {
+  const touched = () => { throw Error('Unsupported service reached a native owner'); };
+  const owner = createRuntimeServiceRegistration({ platform: 'win32', fsPromises: { stat: touched }, execFile: touched });
+  const registration = await owner.status();
+  const status = describeRuntimeServiceStatus({ platform: 'win32', isPackaged: true, configuredMode: 'service',
+    optedOut: false, registrationMode: owner.mode, registration, handshake: { ready: true }, settingsUrl: 'unreachable' });
+  assert.deepEqual({ configuredMode: status.configuredMode, serviceEnabled: status.serviceEnabled,
+    connected: status.connected, canEnable: status.canEnable, handshake: status.handshake, settingsUrl: status.settingsUrl },
+  { configuredMode: 'service', serviceEnabled: false, connected: false, canEnable: false, handshake: null, settingsUrl: null });
+  await assert.rejects(owner.register(), { code: 'runtime_service_platform_unsupported' });
+  const prepared = await prepareAutomaticRuntimeService({ platform: 'win32', isPackaged: true,
+    currentMode: 'app_bound', registration: { status: touched, register: touched }, setMode: touched });
+  assert.equal(prepared.state, 'skipped');
+  assert.equal(describeRuntimeServiceStatus({ platform: 'darwin', isPackaged: true, configuredMode: 'service',
+    registration: { state: 'enabled' }, handshake: null }).serviceEnabled, true);
+});
 
 describe('automatic background runtime startup', () => {
   test('registers a first launch and selects service ownership', async () => {

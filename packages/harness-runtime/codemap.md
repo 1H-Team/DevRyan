@@ -35,6 +35,9 @@ API contracts.
   Undo/Redo only after verifying matching accepted artifacts. Contracts are in
   `docs/CONCURRENT_REVERT.md`; platform verification is recorded in
   `docs/audits/2026-09-20-concurrent-revert/README.md`.
+  Windows selects every OS-supported UI restriction from the genuine build
+  number and requires exact kernel readback. Its version-2 diagnostic records
+  the SDK and requested masks; diagnostic success grants no admission.
 
 - Session-owned tool captures, cumulative revisions, stored diffs and conflict-checked restore: `lib/session-changes.js`; authenticated host HTTP/plugin adapter: `lib/session-changes-host.js`. `lib/session-changes-tools.js` owns shared tool/receipt normalization; `lib/session-changes-receipts.js` persists exact evidence and immutable segments. Snapshot observations never establish ownership. Call-scoped repair, monotonic exact evidence, retained descendant lineage and pending reconciliation are covered by `lib/session-changes-recovery.test.js`; the host acknowledges private Cursor execution receipts after persistence. `lib/session-changes-git.js` streams Git I/O; `lib/session-changes-snapshot.js` owns scoped capture and the bounded stat cache; `lib/session-changes-store.js` owns individually indexed metadata and atomic publication. `lib/session-changes-scale.test.js` covers large capture, pagination, migration and collection. See `docs/SESSION_CHANGES.md`.
 

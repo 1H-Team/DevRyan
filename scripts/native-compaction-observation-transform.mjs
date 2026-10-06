@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import path from 'node:path';
 export const NATIVE_COMPACTION_SOURCE_SHA256='ee75603a2777d98c7274b94768da438641356d8ca6716c33c3f6a93c62566342';
 export const NATIVE_COMPACTION_SOURCE_SUFFIX='@opencode/core/dist/chunks/credential-nye1dag9.js';
 const hash=value=>createHash('sha256').update(value).digest('hex');
@@ -13,7 +14,7 @@ const inserted=`    try { observeNativeCompactionBudget(trigger, {
     }); } catch { /* Read-only evidence must not alter native compaction. */ }
 `;
 export function rewriteNativeCompactionObservation(source,helperSpecifier){
- if(typeof helperSpecifier!=='string'||!helperSpecifier.startsWith('/')||/[\0\r\n]/.test(helperSpecifier)
+ if(typeof helperSpecifier!=='string'||!path.isAbsolute(helperSpecifier)||/[\0\r\n]/.test(helperSpecifier)
    ||hash(source)!==NATIVE_COMPACTION_SOURCE_SHA256||source.split(anchor).length!==2)throw new Error('native_compaction_observation_source_changed');
  const prefix=`import { observeNativeCompactionBudget } from ${JSON.stringify(helperSpecifier)};\n`;
  const contents=prefix+source.replace(anchor,anchor+inserted);

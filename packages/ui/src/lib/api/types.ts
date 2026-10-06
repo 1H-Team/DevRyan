@@ -87,7 +87,13 @@ export interface ForceKillOptions {
   cwd?: string;
 }
 
+export type TerminalCapabilities = Readonly<
+  { available: true; code: null }
+  | { available: false; code: 'terminal_platform_unsupported' }
+>;
+
 export interface TerminalAPI {
+  getCapabilities?(): Promise<TerminalCapabilities>;
   createSession(options: CreateTerminalOptions): Promise<TerminalSession>;
   connect(sessionId: string, handlers: TerminalHandlers, options?: TerminalStreamOptions): Subscription;
   sendInput(sessionId: string, input: string): Promise<void>;

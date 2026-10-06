@@ -45,6 +45,20 @@ const createFakeChild = ({ markExitedOnKill = false } = {}) => {
 };
 
 describe('MacosSpeechManager', () => {
+  test('Windows speech refuses before resolving or executing the helper', async () => {
+    const original = Object.getOwnPropertyDescriptor(process, 'platform');
+    const manager = createManager();
+    Object.defineProperty(manager, 'helperPath', { get: () => { throw Error('Unsupported speech reached its helper'); } });
+    try {
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+      expect(await manager.getCapability()).toMatchObject({ available: false, platform: 'win32', reason: 'platform_unsupported' });
+      expect(await manager.requestAuthorization()).toMatchObject({ available: false, reason: 'platform_unsupported' });
+      expect(await manager.getInputDevices()).toEqual([]);
+      await expect(manager.start()).rejects.toThrow('only supported on macOS');
+      expect(manager.child).toBeNull();
+    } finally { Object.defineProperty(process, 'platform', original); }
+  });
+
   test('stop sends a graceful stdin stop command before falling back to signals', () => {
     const manager = createManager();
     const fake = createFakeChild();

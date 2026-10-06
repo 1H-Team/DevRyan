@@ -4,7 +4,7 @@ import { RiAddLine, RiArrowDownLine, RiArrowGoBackLine, RiArrowLeftLine, RiArrow
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useTerminalStore } from '@/stores/useTerminalStore';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
-import { type TerminalStreamEvent } from '@/lib/api/types';
+import { type TerminalAPI, type TerminalStreamEvent } from '@/lib/api/types';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useFontPreferences } from '@/hooks/useFontPreferences';
 import { CODE_FONT_OPTION_MAP, DEFAULT_MONO_FONT } from '@/lib/fontOptions';
@@ -85,6 +85,27 @@ const getSequenceForKey = (key: MobileKey, modifier: Modifier | null): string | 
 };
 
 export const TerminalView: React.FC = () => {
+    const { terminal } = useRuntimeAPIs();
+    const { t } = useI18n();
+    const [checked, setChecked] = React.useState<{ terminal: TerminalAPI; available: boolean } | null>(null);
+    React.useEffect(() => {
+        let disposed = false;
+        if (!terminal.getCapabilities) return;
+        void terminal.getCapabilities().then(
+            capability => { if (!disposed) setChecked({ terminal, available: capability.available }); },
+            () => { if (!disposed) setChecked({ terminal, available: false }); },
+        );
+        return () => { disposed = true; };
+    }, [terminal]);
+    if (terminal.getCapabilities && (checked?.terminal !== terminal || !checked.available)) {
+        return <div className="flex h-full items-center justify-center p-4 text-center text-sm text-muted-foreground">
+            {t(checked?.terminal === terminal ? 'common.unavailable' : 'common.loading')}
+        </div>;
+    }
+    return <SupportedTerminalView />;
+};
+
+const SupportedTerminalView: React.FC = () => {
     const { t } = useI18n();
     const { terminal, runtime } = useRuntimeAPIs();
     const { currentTheme } = useThemeSystem();

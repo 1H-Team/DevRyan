@@ -26,6 +26,7 @@ export type CursorRunUsageObservation = {
 export type CursorRuntimeStatus = {
   providerId: string;
   bridge: { kind: 'cursor-sdk' };
+  capabilities: Readonly<{ supported: true; code: null } | { supported: false; code: 'cursor_platform_unsupported' }>;
   sdkAuthConfigured: boolean;
   authSource?: 'native-credential';
   authObservation?: 'unknown';
@@ -233,6 +234,9 @@ export function resolveCursorSdkWorkerRuntimeConfig(options?: {
   workerEnv: Record<string, string>;
 };
 export function createCursorSdkRuntime(options: Record<string, unknown> & {
+  /** Constructor-only host identity; defaults to the actual process. */
+  platform?: NodeJS.Platform;
+  arch?: string;
   /** Native hosts resolve the current selected key for each operation. No
    * compatibility auth or environment fallback runs when this is supplied. */
   resolveApiKey?: (input:

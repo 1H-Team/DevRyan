@@ -419,6 +419,7 @@ const createManager = ({
   backupBeforeMigrate,
 } = {}) => ({
   manager: createBotRuntimeManager({
+    platform: 'darwin',
     composePath: COMPOSE,
     loadDatabaseSql,
     databaseStateStore: databaseStateStore.store,

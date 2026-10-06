@@ -1,8 +1,31 @@
 import { describe, expect, test } from 'bun:test';
 
-import { keepAliveTerminal } from './terminalApi';
+import { getTerminalCapabilities, keepAliveTerminal } from './terminalApi';
 
 const originalFetch = globalThis.fetch;
+
+test('terminal capability reads require a complete explicit grant and never accept a malformed replacement', async () => {
+  try {
+    for (const value of [
+      { available: true, code: null },
+      { available: false, code: 'terminal_platform_unsupported' },
+    ]) {
+      globalThis.fetch = (async (input, init) => {
+        expect(input).toBe('/api/terminal/capabilities');
+        expect(init?.cache).toBe('no-store');
+        return Response.json(value);
+      }) as typeof fetch;
+      expect(await getTerminalCapabilities()).toEqual(value);
+    }
+    for (const value of [null, [], {}, { available: 'true', code: null }, { available: true },
+      { available: true, code: 'terminal_platform_unsupported' }, { available: false, code: null }]) {
+      globalThis.fetch = (async () => Response.json(value)) as typeof fetch;
+      await expect(getTerminalCapabilities()).rejects.toThrow('Invalid terminal capabilities.');
+    }
+    globalThis.fetch = (async () => new Response('', { status: 401 })) as typeof fetch;
+    await expect(getTerminalCapabilities()).rejects.toThrow('Terminal availability could not be checked.');
+  } finally { globalThis.fetch = originalFetch; }
+});
 
 describe('terminal API keepalive', () => {
   test('returns true when the terminal touch endpoint succeeds', async () => {

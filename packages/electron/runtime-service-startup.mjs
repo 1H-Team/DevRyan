@@ -1,3 +1,20 @@
+export const describeRuntimeServiceStatus = ({ platform, isPackaged, configuredMode,
+  optedOut, registrationMode, registration, handshake, settingsUrl }) => {
+  const supported = platform === 'darwin';
+  const connected = supported && Boolean(handshake);
+  return Object.freeze({
+    configuredMode,
+    serviceEnabled: supported && (connected || configuredMode === 'service'
+      || (configuredMode !== 'disabled' && optedOut !== true && isPackaged === true)),
+    registrationMode: registrationMode || 'unsupported',
+    registration,
+    connected,
+    handshake: supported ? handshake : null,
+    settingsUrl: supported ? settingsUrl : null,
+    canEnable: supported && (registration.state === 'not_registered' || registration.state === 'enabled'),
+  });
+};
+
 export const prepareAutomaticRuntimeService = async ({
   currentMode,
   optedOut = false,

@@ -187,7 +187,7 @@ async function run() {
   lines.close(); process.stdin.destroy();
 }
 
-if (import.meta.main) {
+export async function runNativeWriterEntry() {
   if(process.argv.slice(2).length===1&&process.argv[2]==='--interview-document'){
     const worker=await import('./native-interview-worker.js');
     try{await worker.runNativeInterviewDocumentWorker();}
@@ -206,3 +206,5 @@ if (import.meta.main) {
     lines?.close(); process.stdin.destroy(); process.exitCode = 1;
   }
 }
+
+if (import.meta.main) await runNativeWriterEntry();

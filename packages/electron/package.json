@@ -117,6 +117,22 @@
     "artifactName": "${productName}-${version}-${arch}.${ext}",
     "afterPack": "./scripts/adhoc-sign-macos-app.mjs",
     "npmRebuild": false,
+    "win": {
+      "appId": "dev.devryan.desktop",
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "DevRyan-${version}-win-${arch}.exe",
+      "signExecutable": false
+    },
+    "nsis": {
+      "guid": "f8140f18-5574-54bc-8df6-bf218619bfba",
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": false,
+      "runAfterFinish": false,
+      "artifactName": "DevRyan-${version}-win-${arch}.exe"
+    },
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "resources/icons/icon.icns",

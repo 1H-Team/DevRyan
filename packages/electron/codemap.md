@@ -24,6 +24,13 @@ and desktop-host broker bridges.
   second server.
 - **Bridge/shim pattern**: `preload.mjs` exposes `__OPENCHAMBER_ELECTRON__` and a `__TAURI__` compatibility surface so shared UI code can run on both Electron and legacy Tauri.
 - **Isolated QA packaging**: `scripts/bundle-main.mjs` exports `bundleElectronMain({ outdir })` with the production external-module boundaries; production manifest checks are enforced by `scripts/package-prepared.mjs`. Repository-only `scripts/qa/package-electron.mjs` reuses it to build a separate unsigned app from current main/server/preload and a selected UI artifact; its private test bootstrap and native-integration exclusions are documented in `docs/QA.md`.
+- **Windows packaging identity**: `package.json` declares per-user unsigned NSIS targets with `dev.devryan.desktop`, a fixed installer GUID and exact `DevRyan-<version>-win-<arch>.exe` names; main uses that Windows AppUserModelID. macOS retains its compatibility app ID. Installer/update execution and platform resources remain gated by the [Windows port plan](../../docs/WINDOWS_PORT_PLAN.md).
+- **Windows Bot refusal**: `bot-runtime-manager.mjs` refuses construction on
+  Windows before manifest, key, catalog, file or Docker owners can act. The web
+  capability owner separately reports no catalog/execution/management grant.
+  `runtime-service-startup.mjs` owns the platform-aware service status projection:
+  a preserved service preference cannot grant connection, enablement or service
+  availability on an unsupported host. Main skips its handshake request there.
 - **Origin policy**: `origin-policy.mjs` centralizes privileged-local vs allowed-content origin rules used by `main.mjs`, `preload.mjs`, init-script injection, navigation handlers, and IPC gates.
 - **Capability gating**: sensitive commands are enforced in main-process handlers (`openchamber:invoke`), with remote/local origin checks.
   The preload keeps an early Bot-runtime rejection when its immutable local-origin

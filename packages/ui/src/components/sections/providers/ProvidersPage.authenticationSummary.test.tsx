@@ -72,4 +72,13 @@ describe('collapsed provider authentication summary', () => {
     expect(render({ providerId: 'cursor-acp' })).not.toContain('status-success');
     expect(render({ providerId: 'cursor-acp', cursorConfigured: true })).toContain('Connected');
   });
+
+  test('Windows ARM64 availability takes precedence over a saved Cursor credential', () => {
+    const markup = render({ providerId: 'cursor-acp', cursorConfigured: true, cursorUnavailable: true });
+    expect(markup).toContain('Cursor is unavailable on Windows ARM64.');
+    expect(markup).toContain('data-cursor-capability="unsupported"');
+    expect(markup).not.toContain('Connected');
+    expect(markup).not.toContain('status-success');
+    expect(render({ providerId: 'cursor-acp', cursorUnavailable: true, connectionState: 'disconnect_pending' })).toContain('Disconnect pending');
+  });
 });

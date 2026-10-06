@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
-import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { Switch } from '@base-ui/react/switch';
+import { createRequire } from 'node:module';
 import { QA_COMPACTION_COMPOSER, qaManualCompactionKey, observeQaManualCompactionRequest,
   QA_QUEUE_MODE_STATE, readQaManualCompactionQueueMode, withQaManualCompactionSubmission } from './manual-compaction-submission.mjs';
+
+const requireUi = createRequire(new URL('../../packages/ui/package.json', import.meta.url));
+const React = requireUi('react');
+const { renderToStaticMarkup } = requireUi('react-dom/server');
+const { Switch } = requireUi('@base-ui/react/switch');
 
 const origin='http://127.0.0.1:3101';
 const sessionID='ses_manual123';

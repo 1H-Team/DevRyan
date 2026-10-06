@@ -3,27 +3,63 @@ name: Windows native qualification
 on:
   workflow_dispatch:
   push:
-    branches: [release/2.0.2]
+    branches: [release/2.0.2, implementation/windows-port]
     paths:
+      - .gitattributes
       - .github/workflows/windows.yml
       - packages/electron/**
+      - packages/cursor-sdk-runtime/**
       - packages/harness-runtime/**
       - packages/web/server/lib/opencode/runtime-host/**
+      - packages/web/server/lib/terminal/**
+      - packages/web/server/lib/bots/routes*
+      - packages/web/server/lib/opencode/routes.js
+      - packages/web/server/lib/opencode/provider-routes.test.js
+      - packages/ui/src/lib/terminalApi*
+      - packages/ui/src/lib/api/types.ts
+      - packages/ui/src/components/views/TerminalView*
+      - packages/ui/src/components/sections/providers/ProvidersPage*
+      - packages/web/src/api/terminal.ts
       - scripts/build-native-runtime.mjs
       - scripts/build-session-execution.mjs
       - scripts/verify-session-execution.mjs
+      - scripts/diagnose-windows-supervisor-startup.mjs
+      - scripts/windows-workflow.test.mjs
+      - scripts/verify-windows-host-boundary.mjs
+      - scripts/verify-windows-filesystem-boundary.mjs
       - scripts/native-runtime-assets.mjs
+      - scripts/native-compaction-observation-transform.mjs
+      - scripts/build-windows-reviewed-libsql.mjs
+      - scripts/build-windows-reviewed-executables*
       - bun.lock
   pull_request:
     paths:
+      - .gitattributes
       - .github/workflows/windows.yml
       - packages/electron/**
+      - packages/cursor-sdk-runtime/**
       - packages/harness-runtime/**
       - packages/web/server/lib/opencode/runtime-host/**
+      - packages/web/server/lib/terminal/**
+      - packages/web/server/lib/bots/routes*
+      - packages/web/server/lib/opencode/routes.js
+      - packages/web/server/lib/opencode/provider-routes.test.js
+      - packages/ui/src/lib/terminalApi*
+      - packages/ui/src/lib/api/types.ts
+      - packages/ui/src/components/views/TerminalView*
+      - packages/ui/src/components/sections/providers/ProvidersPage*
+      - packages/web/src/api/terminal.ts
       - scripts/build-native-runtime.mjs
       - scripts/build-session-execution.mjs
       - scripts/verify-session-execution.mjs
+      - scripts/diagnose-windows-supervisor-startup.mjs
+      - scripts/windows-workflow.test.mjs
+      - scripts/verify-windows-host-boundary.mjs
+      - scripts/verify-windows-filesystem-boundary.mjs
       - scripts/native-runtime-assets.mjs
+      - scripts/native-compaction-observation-transform.mjs
+      - scripts/build-windows-reviewed-libsql.mjs
+      - scripts/build-windows-reviewed-executables*
       - bun.lock
 
 permissions:
@@ -46,6 +82,8 @@ jobs:
       DEVRYAN_SKIP_INSTALL_PREPARE: '1'
       TMPDIR: ${{ github.workspace }}/.cache/test-fixtures
       GIT_CEILING_DIRECTORIES: ${{ github.workspace }}/.cache/test-fixtures
+      RUSTUP_HOME: ${{ github.workspace }}/.cache/rustup
+      CARGO_HOME: ${{ github.workspace }}/.cache/cargo
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -70,6 +108,33 @@ jobs:
       - name: Install pinned dependencies
         id: dependencies
         run: bun install --frozen-lockfile --ignore-scripts
+      - name: Verify unavailable Windows features on this architecture
+        id: feature_capabilities
+        if: ${{ always() && steps.dependencies.outcome == 'success' }}
+        continue-on-error: true
+        shell: pwsh
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          node -e "if(process.platform!=='win32'||process.arch!==process.env.EXPECTED_ARCH)throw Error('Native runner architecture mismatch')"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location packages/web
+          node node_modules/vitest/vitest.mjs run server/lib/terminal/runtime.test.js server/lib/bots/routes.test.js server/lib/opencode/provider-routes.test.js -t Windows --no-file-parallelism --maxWorkers=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+          bun test packages/cursor-sdk-runtime/platform-capabilities.test.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          bun test packages/electron/tests/bot-runtime-manager-platform.test.mjs packages/electron/tests/speech-manager.test.mjs -t Windows
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test --test-name-pattern=Windows packages/electron/tests/runtime-service-startup.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/test-ui.mjs src/lib/terminalApi.test.ts src/components/views/TerminalView.mounted.test.tsx src/components/sections/providers/ProvidersPage.authenticationSummary.test.tsx
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify pinned executable resources on this native architecture
+        id: reviewed_executables
+        if: ${{ always() }}
+        continue-on-error: true
+        run: node scripts/build-windows-reviewed-executables.mjs
       - name: Select Windows SDK compiler for the native architecture
         shell: pwsh
         env:
@@ -96,16 +161,56 @@ jobs:
         # No acceptance marker is written until the actual platform inventory
         # passes. Missing Windows read/ACL/process contracts fail this job.
         run: node scripts/build-session-execution.mjs .cache/windows-native/${{ matrix.arch }} --verify
+      - name: Diagnose confined Node and Bun startup without admission
+        if: ${{ always() && steps.supervisor.outcome == 'success' }}
+        continue-on-error: true
+        # Disposable source variants have no accepted manifest and cannot
+        # satisfy any required qualification outcome.
+        run: node scripts/diagnose-windows-supervisor-startup.mjs .cache/windows-native/${{ matrix.arch }}/supervisor-startup-diagnostic
+      - name: Verify native process identities and containing host jobs
+        id: host_boundary
+        if: ${{ always() && steps.supervisor.outcome == 'success' }}
+        continue-on-error: true
+        run: node scripts/verify-windows-host-boundary.mjs .cache/windows-native/${{ matrix.arch }}
+      - name: Verify native file identities and private filesystem ownership
+        id: filesystem_boundary
+        if: ${{ always() && steps.supervisor.outcome == 'success' }}
+        continue-on-error: true
+        run: node scripts/verify-windows-filesystem-boundary.mjs .cache/windows-native/${{ matrix.arch }}
       - name: Restore exact reviewed build inputs
         id: inputs
         if: ${{ always() && steps.dependencies.outcome == 'success' }}
         continue-on-error: true
         run: node scripts/hydrate-reviewed-claude.mjs
-      - name: Compile and verify controller and writer on this architecture
+      - name: Check out the published libsql 0.5.29 source commit
+        uses: actions/checkout@v4
+        env:
+          GIT_CONFIG_COUNT: '1'
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: 'false'
+        with:
+          repository: tursodatabase/libsql-js
+          ref: 55bee86d1c284f1ddf2b9e280e870d2b6cef884a
+          path: .cache/libsql-source
+          persist-credentials: false
+      - name: Build the pinned libsql source and execute its ABI on this native host
+        id: reviewed_libsql
+        continue-on-error: true
+        shell: pwsh
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          $target = if ($env:EXPECTED_ARCH -eq 'arm64') { 'aarch64-pc-windows-msvc' } else { 'x86_64-pc-windows-msvc' }
+          rustup toolchain install "1.85.1-$target" --profile minimal --no-self-update
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/build-windows-reviewed-libsql.mjs
+      - name: Compile controller and writer candidates and execute their boot refusals
         id: runtime
         if: ${{ always() && steps.inputs.outcome == 'success' }}
         continue-on-error: true
-        run: bun scripts/build-native-runtime.mjs
+        # Candidate receipts explicitly deny admission and cannot be consumed
+        # by production artifact verification or the compiled acceptance gate.
+        run: bun scripts/build-native-runtime.mjs --windows-candidate
       - name: Execute the compiled native acceptance inventory
         id: runtime_acceptance
         if: ${{ always() && steps.runtime.outcome == 'success' && steps.supervisor_acceptance.outcome == 'success' }}
@@ -117,11 +222,16 @@ jobs:
         env:
           SUPERVISOR: ${{ steps.supervisor.outcome }}
           SUPERVISOR_ACCEPTANCE: ${{ steps.supervisor_acceptance.outcome }}
+          HOST_BOUNDARY: ${{ steps.host_boundary.outcome }}
+          FILESYSTEM_BOUNDARY: ${{ steps.filesystem_boundary.outcome }}
+          FEATURE_CAPABILITIES: ${{ steps.feature_capabilities.outcome }}
+          REVIEWED_LIBSQL: ${{ steps.reviewed_libsql.outcome }}
+          REVIEWED_EXECUTABLES: ${{ steps.reviewed_executables.outcome }}
           RUNTIME: ${{ steps.runtime.outcome }}
           RUNTIME_ACCEPTANCE: ${{ steps.runtime_acceptance.outcome }}
         run: |
           $failed = $false
-          foreach ($name in @('SUPERVISOR', 'SUPERVISOR_ACCEPTANCE', 'RUNTIME', 'RUNTIME_ACCEPTANCE')) {
+          foreach ($name in @('SUPERVISOR', 'SUPERVISOR_ACCEPTANCE', 'HOST_BOUNDARY', 'FILESYSTEM_BOUNDARY', 'FEATURE_CAPABILITIES', 'REVIEWED_LIBSQL', 'REVIEWED_EXECUTABLES', 'RUNTIME', 'RUNTIME_ACCEPTANCE')) {
             $outcome = [Environment]::GetEnvironmentVariable($name)
             "$name=$outcome" >> $env:GITHUB_STEP_SUMMARY
             if ($outcome -ne 'success') { $failed = $true }

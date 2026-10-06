@@ -123,14 +123,20 @@ const claudeAuthenticationDescriptionKeys = {
   signed_out: 'settings.providers.page.auth.claudeLoginDescription',
 } as const;
 
-export function ProviderAuthenticationSummary({ providerId, connectionState, cursorConfigured, claudeStatus, claudeLoading }: {
+export function ProviderAuthenticationSummary({ providerId, connectionState, cursorConfigured, cursorUnavailable = false, claudeStatus, claudeLoading }: {
   providerId: string;
   connectionState: ProviderConnectionState;
   cursorConfigured: boolean;
+  cursorUnavailable?: boolean;
   claudeStatus: ClaudeCliStatus | null;
   claudeLoading: boolean;
 }) {
   const { t } = useI18n();
+  if (providerId === CURSOR_ACP_PROVIDER_ID && cursorUnavailable && connectionState !== 'disconnect_pending') {
+    return <div className="py-1.5 typography-ui-label text-muted-foreground" data-cursor-capability="unsupported">
+      {t('settings.providers.page.auth.cursorUnavailable')}
+    </div>;
+  }
   if (isAnthropicOAuthProviderId(providerId) && connectionState !== 'disconnect_pending' && connectionState !== 'not_connected') {
     const status = getClaudeAuthenticationState(claudeStatus, claudeLoading);
     return (
@@ -168,15 +174,9 @@ export function ProviderAuthenticationSummary({ providerId, connectionState, cur
 }
 
 interface CursorAcpRuntimeStatus {
-  sdkAuthConfigured?: boolean;
-  usageAuthConfigured?: boolean;
-  activeRuns?: number;
-  modelCount?: number;
-  modelsSource?: string;
-  lastError?: string | null;
-  bridge?: {
-    kind?: string;
-  };
+  sdkAuthConfigured: boolean;
+  platformUnavailable: boolean;
+  lastError: string | null;
 }
 
 
@@ -502,7 +502,16 @@ const ProvidersPageContent: React.FC = () => {
       if (!response.ok) {
         throw new Error(payload?.error || 'Cursor runtime status request failed');
       }
-      setCursorRuntimeStatus(isRecord(payload) ? payload as CursorAcpRuntimeStatus : null);
+      if (!isRecord(payload)) { setCursorRuntimeStatus(null); return; }
+      const capability = payload.capabilities;
+      const unavailable = isRecord(capability) && capability.supported === false && capability.code === 'cursor_platform_unsupported';
+      const supported = isRecord(capability) && capability.supported === true && capability.code === null;
+      if (capability !== undefined && !unavailable && !supported) { setCursorRuntimeStatus(null); return; }
+      setCursorRuntimeStatus({
+        sdkAuthConfigured: !unavailable && payload.sdkAuthConfigured === true,
+        platformUnavailable: unavailable,
+        lastError: typeof payload.lastError === 'string' ? payload.lastError : null,
+      });
     } catch (error) {
       console.error('Failed to load Cursor runtime status:', error);
       setCursorRuntimeStatus(null);
@@ -574,6 +583,7 @@ const ProvidersPageContent: React.FC = () => {
   const selectedProviderName = selectedProvider ? getProviderDisplayName(selectedProvider, selectedSources) : '';
   const selectedProviderSupportsApiKey = selectedProvider ? providerSupportsApiKey(selectedProvider.id) : false;
   const selectedProviderIsCursor = isCursorAcpProviderId(selectedProvider?.id);
+  const selectedCursorUnavailable = selectedProviderIsCursor && cursorRuntimeStatus?.platformUnavailable === true;
   const cursorSdkConfigured = cursorRuntimeStatus?.sdkAuthConfigured === true;
   const selectedDisconnectPending = selectedProvider
     ? Object.prototype.hasOwnProperty.call(pendingRevisionByProvider, selectedProvider.id)
@@ -1449,7 +1459,7 @@ const ProvidersPageContent: React.FC = () => {
               size="xs"
               className="!font-normal"
               onClick={() => setShowAuthPanel((prev) => !prev)}
-              disabled={selectedDisconnectPending}
+              disabled={selectedDisconnectPending || selectedCursorUnavailable}
             >
               {showAuthPanel
                 ? t('settings.providers.page.actions.hide')
@@ -1460,11 +1470,12 @@ const ProvidersPageContent: React.FC = () => {
           </div>
 
           <section className="px-2 pb-2 pt-0">
-            {!showAuthPanel ? (
+            {!showAuthPanel || selectedCursorUnavailable ? (
               <ProviderAuthenticationSummary
                 providerId={selectedProvider.id}
                 connectionState={selectedConnectionState}
                 cursorConfigured={cursorSdkConfigured}
+                cursorUnavailable={selectedCursorUnavailable}
                 claudeStatus={claudeCliStatus}
                 claudeLoading={claudeCliStatusLoading}
               />

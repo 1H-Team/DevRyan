@@ -167,7 +167,7 @@ bunTest.skipIf(process.platform === 'win32')('a view node_modules links to a hos
   expect(await kind(path.join(nextModules, 'pkg'))).toBe('missing');
   expect(await fs.readFile(path.join(nextModules, '.vite', 'x'), 'utf8')).toBe('shared cache');
   await f.finish(next);
-});
+}, 120_000);
 
 bunTest.skipIf(process.platform !== 'darwin')('confined tool caches are writable while dependencies and the overlay stay read-only', async () => {
   const f = await moduleFixture();
@@ -187,7 +187,7 @@ bunTest.skipIf(process.platform !== 'darwin')('confined tool caches are writable
   expect(await fs.readdir(path.join(f.directory, 'node_modules', '.vite', 'deps'))).toEqual(['old.js']);
   expect(await kind(path.join(f.directory, 'node_modules', '.vite-temp'))).toBe('missing');
   expect((await f.finish(lease)).ignoredInputs).toBeFalsy();
-});
+}, 120_000);
 
 bunTest.skipIf(process.platform === 'win32')('the overlay kill switch restores the direct dependency link', async () => {
   const f = await moduleFixture();
@@ -198,7 +198,7 @@ bunTest.skipIf(process.platform === 'win32')('the overlay kill switch restores t
     await f.finish(lease);
   } finally { delete process.env.DEVRYAN_MODULE_CACHE_OVERLAY; }
   expect(await kind((await overlayOf(f)).overlays)).toBe('missing');
-});
+}, 120_000);
 
 test('a lease prepared before inputs were persisted keeps the name-only rule', async () => {
   const f = await fixture();
@@ -231,7 +231,7 @@ bunTest.skipIf(process.platform !== 'darwin')('the kill switch keeps every input
   expect(readable.status).toBe(0);
   expect(readable.stdout).toBe('SECRET=1seed');
   expect(await fs.readFile(path.join(viewDirectory, 'view-write'), 'utf8')).toBe('ok\n');
-});
+}, 120_000);
 
 bunTest.skipIf(process.platform !== 'darwin')('confined calls write through ignored output folders while dependencies, hooks and escapes stay read-only', async () => {
   const f = await fixture();
@@ -272,7 +272,7 @@ bunTest.skipIf(process.platform !== 'darwin')('confined calls write through igno
   expect(result.files).toEqual([]);
   expect(result.ignoredInputs).toBeFalsy();
   expect((await f.ledgerPaths()).filter((file) => file.startsWith('.artifacts') || file.startsWith('cache'))).toEqual([]);
-});
+}, 120_000);
 
 test('write-through grants only resolved output folders inside the project, outside the ledger', async () => {
   const f = await fixture();

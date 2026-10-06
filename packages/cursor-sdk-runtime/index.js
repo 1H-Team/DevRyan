@@ -1627,23 +1627,36 @@ const defaultStorageDir = () => path.join(
 );
 
 export function createCursorSdkRuntime(options = {}) {
+  const platform = options.platform ?? process.platform;
+  const arch = options.arch ?? process.arch;
+  const hostSupported = platform !== 'win32' || arch !== 'arm64';
+  const capabilities = Object.freeze({ supported: hostSupported, code: hostSupported ? null : 'cursor_platform_unsupported' });
+  const assertHostSupported = () => {
+    if (!hostSupported) throw Object.assign(new Error('Cursor is unavailable on Windows ARM64.'), { code: capabilities.code, statusCode: 503 });
+  };
   const readAuth = typeof options.readAuth === 'function' ? options.readAuth : () => ({});
   const env = isPlainObject(options.env) ? options.env : process.env;
-  const resolveApiKey = async (scope) => typeof options.resolveApiKey === 'function'
-    ? trimString(await options.resolveApiKey(scope)) || null
-    : getCursorSdkApiKey({ env, readAuth });
-  const withReadOnly = (scope, action) => typeof options.ownedReadOnly === 'function'
-    ? options.ownedReadOnly(scope, action) : action();
+  const resolveApiKey = async (scope) => {
+    assertHostSupported();
+    return typeof options.resolveApiKey === 'function'
+      ? trimString(await options.resolveApiKey(scope)) || null : getCursorSdkApiKey({ env, readAuth });
+  };
+  const withReadOnly = async (scope, action) => {
+    assertHostSupported();
+    return typeof options.ownedReadOnly === 'function' ? options.ownedReadOnly(scope, action) : action();
+  };
   const storageDir = trimString(options.storageDir) || defaultStorageDir();
   const executionOutbox = typeof options.onSessionChangeExecution === 'function'
     ? createCursorChangeOutbox({ directory: path.join(storageDir, 'change-outbox'), deliver: options.onSessionChangeExecution }) : null;
   const hasInjectedLoadSdk = typeof options.loadSdk === 'function';
   const rawLoadSdk = hasInjectedLoadSdk ? options.loadSdk : () => importRuntimeModule('@cursor/sdk');
   const ripgrepPath = trimString(options.ripgrepPath);
-  const initialRipgrepResolution = resolveCursorRipgrepPath({
+  const initialRipgrepResolution = hostSupported ? resolveCursorRipgrepPath({
     explicitRipgrepPath: ripgrepPath,
     env,
-  });
+    platform,
+    arch,
+  }) : { path: '', source: 'unsupported' };
   let lastRipgrepStatus = {
     configured: Boolean(initialRipgrepResolution.path),
     source: initialRipgrepResolution.source,
@@ -1651,6 +1664,7 @@ export function createCursorSdkRuntime(options = {}) {
     resolvedSource: initialRipgrepResolution.source,
   };
   const loadSdk = async () => {
+    assertHostSupported();
     if (!hasInjectedLoadSdk) {
       assertCursorSdkNodeCompatibility();
     }
@@ -1664,7 +1678,7 @@ export function createCursorSdkRuntime(options = {}) {
   const workerPath = trimString(options.workerPath) || fileURLToPath(new URL('./node-worker.mjs', import.meta.url));
   const persistentWorkerPath = trimString(options.persistentWorkerPath)
     || workerPath.replace(/node-worker\.mjs$/, 'persistent-worker.mjs');
-  const workerConfig = resolveCursorSdkWorkerRuntimeConfig({
+  const workerConfig = hostSupported ? resolveCursorSdkWorkerRuntimeConfig({
     env,
     hasInjectedLoadSdk,
     requestedNodeBinary: options.nodeBinary,
@@ -1673,7 +1687,7 @@ export function createCursorSdkRuntime(options = {}) {
     requestedWorkerEnv: options.workerEnv,
     workerPath,
     ripgrepPath,
-  });
+  }) : { nodeBinary: '', useNodeWorkerForPrompts: false, workerCwd: '', workerEnv: {} };
   const {
     nodeBinary,
     useNodeWorkerForPrompts,
@@ -1857,11 +1871,12 @@ export function createCursorSdkRuntime(options = {}) {
 
   const getStatus = () => {
     const nativeCredential = typeof options.resolveApiKey === 'function';
-    const auth = nativeCredential ? {} : readAuth();
-    const sdkAuthConfigured = nativeCredential ? false : Boolean(getCursorSdkApiKey({ env, readAuth }));
+    const auth = !hostSupported || nativeCredential ? {} : readAuth();
+    const sdkAuthConfigured = hostSupported && !nativeCredential && Boolean(getCursorSdkApiKey({ env, readAuth }));
     return {
       providerId: CURSOR_PROVIDER_ID,
       bridge: { kind: 'cursor-sdk' },
+      capabilities,
       sdkAuthConfigured,
       ...(nativeCredential ? { authSource: 'native-credential', authObservation: 'unknown' } : {}),
       usageAuthConfigured: isCursorUsageAuthConfigured(auth),
@@ -1869,8 +1884,8 @@ export function createCursorSdkRuntime(options = {}) {
         ? persistentWorkerRuntime.getStatus()
         : { workerMode: useNodeWorkerForPrompts ? 'node-worker' : 'direct', workerReady: false, workerRestarts: 0 }),
       activeRuns: activeRuns.size,
-      modelsSource: lastModelsSource,
-      modelCount: Object.keys(lastModelRecords).length,
+      modelsSource: hostSupported ? lastModelsSource : 'unavailable',
+      modelCount: hostSupported ? Object.keys(lastModelRecords).length : 0,
       modelsRefreshing: Boolean(modelRefreshInFlight),
       lastModelRefreshStartedAt,
       lastModelRefreshCompletedAt,
@@ -1919,6 +1934,7 @@ export function createCursorSdkRuntime(options = {}) {
     }
   };
   const refreshModels = async ({ force = false, reason = 'refresh', directory } = {}) => {
+    assertHostSupported();
     if (typeof options.resolveApiKey === 'function') {
       const { Cursor } = await loadSdk();
       const apiKey = await resolveApiKey({ kind: 'catalog', directory });
@@ -2031,6 +2047,7 @@ export function createCursorSdkRuntime(options = {}) {
   };
 
   const resolveCursorSdkModelSelection = async ({ modelID, variant, directory }) => {
+    assertHostSupported();
     const normalizedModelID = normalizeModelId(modelID);
     let records = lastModelRecords;
     if (typeof options.resolveApiKey === 'function') {
@@ -3493,6 +3510,7 @@ export function createCursorSdkRuntime(options = {}) {
   };
 
   const prewarmCursorSession = async (input = {}) => {
+    assertHostSupported();
     if (options.nativeWarming === false) return { ok: false, configured: false, disabled: true, reason: 'native_warming_disabled' };
     const sessionID = trimString(input.sessionID);
     const directory = trimString(input.directory);
@@ -5000,7 +5018,8 @@ export function createCursorSdkRuntime(options = {}) {
     return ownedPrompt ? ownedPrompt.run(dispatch) : dispatch();
   };
 
-  const runPrompt = (input) => {
+  const runPrompt = async (input) => {
+    assertHostSupported();
     if (!options.executionAdapter) return runPromptImpl(input);
     const releaseActivity = options.executionAdapter.reserveActivity?.(input) ?? (() => {});
     const runs = startingRuns.get(input.sessionID) ?? new Set();
@@ -5096,6 +5115,7 @@ export function createCursorSdkRuntime(options = {}) {
       });
     },
     async prewarm() {
+      assertHostSupported();
       if (options.nativeWarming === false) return { ...getStatus(), ok: false, disabled: true, reason: 'native_warming_disabled' };
       const apiKey = await resolveApiKey({ kind: 'prewarm' });
       if (!apiKey) {
@@ -5126,17 +5146,18 @@ export function createCursorSdkRuntime(options = {}) {
       });
     },
     getCachedVirtualProvider() {
-      return buildVirtualProvider(lastModelRecords);
+      return buildVirtualProvider(hostSupported ? lastModelRecords : {});
     },
     // Offline capability metadata must not inherit another account's discovery
     // cache. Reuse the original declarations, with fresh records on every read.
     getDeclaredVirtualProvider() {
-      return buildVirtualProvider(fallbackModelRecords());
+      return buildVirtualProvider(hostSupported ? fallbackModelRecords() : {});
     },
     refreshVirtualProvider(options = {}) {
       return refreshVirtualProviderNow(options);
     },
     async validateModelSelection(input) {
+      if (!hostSupported) return false;
       try { await resolveCursorSdkModelSelection(input); return true; }
       catch (error) { return error?.code === 'cursor_model_unavailable' ? false : null; }
     },
