@@ -266,7 +266,11 @@ relative authority and an empty explicit bundle root refuse before owner access.
   pinned SDK/Bun identity and real Darwin signatures before launch. Source
   files and installed packages are build inputs, never runtime verification
   dependencies. `controller-entry.ts` handles boot, offline migration and asset
-  verification; `native-process-protocol.js` bounds and validates each message.
+  verification; `writer-entry.ts` unconditionally starts the compiled worker's
+  protocol owner. The importable `writer-worker.ts` keeps registry helpers and
+  direct-source entry compatibility. Compiled startup does not depend on Bun's
+  platform-sensitive `import.meta.main` folding. `native-process-protocol.js`
+  bounds and validates each message.
 - `native-authorization.js` retains the original web principal and rechecks
   managed grants before effects. Integration and provider-configuration grants
   also recheck current provider/MCP settings read or edit permissions; chat

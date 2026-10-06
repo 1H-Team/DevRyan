@@ -52,7 +52,7 @@ if(windowsCandidate){
   for(const asset of [reviewed.ast,...Object.values(reviewed.claudeAssets)])reviewed.inputFiles.set(asset.source,asset.sha256);
   reviewed.inputFiles.set(libsql.evidencePath,libsql.evidenceSha256);
 }
-const entries=[['controller',path.join(host,'controller-entry.ts')],['writer',path.join(host,'writer-worker.ts')]];
+const entries=[['controller',path.join(host,'controller-entry.ts')],['writer',path.join(host,'writer-entry.ts')]];
 const configurationEntry=path.join(host,'reviewed-configuration-entry.ts');
 const ptyBinding=path.join(coreRoot,windowsCandidate?'dist/persistent-pty/binary.bun.js':'dist/chunks/credential-dajrwvna.js');
 const photonFile=createRequire(path.join(coreRoot,'package.json')).resolve('@silvia-odwyer/photon-node');
@@ -72,7 +72,10 @@ for(const [file,contents] of rewrites) transforms.push({path:path.relative(repos
 const assetFilter=windowsCandidate?/(credential-nye1dag9|persistent-pty[\\/]binary\.bun|photon_rs)\.js$/:/(credential-dajrwvna|credential-nye1dag9|photon_rs)\.js$/;
 const plugin={name:'devryan-pinned-asset-resolvers',setup(builder){builder.onLoad({filter:assetFilter},event=>{const contents=rewrites.get(path.resolve(event.path));if(contents===undefined) throw new Error('Unexpected native asset resolver');return {contents,loader:'js'};});}};
 const settings={target:'bun',minify:true,conditions:['bun'],sourcemap:'none',metafile:true,plugins:[plugin,reviewedNativeInputPlugin(reviewed)]};
-const stage=await fs.mkdtemp(path.join(await fs.mkdir(path.dirname(output),{recursive:true}).then(()=>path.dirname(output)),'native-build-'));
+await fs.mkdir(path.dirname(output),{recursive:true});
+// Windows keeps compiled executable handles open. Its unqualified output is
+// created exclusively; only the last receipt can attest successful checks.
+const stage=windowsCandidate?await fs.mkdir(output).then(()=>output):await fs.mkdtemp(path.join(path.dirname(output),'native-build-'));
 let failureEvidence;
 try {
   // Inventory the actual linked graph before embedding its immutable identity.
@@ -238,9 +241,7 @@ try {
     const candidate={schema:1,status:'unqualified',admission:false,
       scope:'Native compilation, sealed resource identity and empty-input boot refusal only; no confinement, initialized controller/writer or runtime admission acceptance',
       buildId,...identity,files,bootRefusals};
-    await fs.writeFile(path.join(stage,'native-candidate.json'),JSON.stringify(candidate,null,2)+'\n');
-    try{await fs.lstat(output);throw new Error('Output root already exists');}catch(error){if(error.code!=='ENOENT')throw error;}
-    await fs.rename(stage,output);
+    await fs.writeFile(path.join(stage,'native-candidate.json'),JSON.stringify(candidate,null,2)+'\n',{flag:'wx'});
     process.stdout.write(JSON.stringify({output,buildId,status:candidate.status,admission:false,candidateSha256:hash(await fs.readFile(path.join(output,'native-candidate.json')))})+'\n');
   }else{
   // Explicit qualification outputs retain the accepted supervisor. A clean
@@ -291,13 +292,11 @@ try {
   process.stdout.write(JSON.stringify({output,buildId,manifestSha256:hash(await fs.readFile(path.join(output,'native-bundle.json'))),files:files.map(({path,sha256})=>({path,sha256}))})+'\n');
   }
 } catch(error) {
-  if(windowsCandidate&&failureEvidence){
-    // Failed binaries remain immutable diagnostic evidence, never a bundle.
-    const failed=output+'-failed-'+failureEvidence.buildId;
-    await fs.writeFile(path.join(stage,'native-candidate-failure.json'),JSON.stringify(failureEvidence,null,2)+'\n',{flag:'wx'});
-    try{await fs.lstat(failed);throw new Error('Failed candidate evidence already exists');}catch(cause){if(cause.code!=='ENOENT')throw cause;}
-    await fs.rename(stage,failed);
-    process.stderr.write('Unqualified Windows failure evidence: '+failed+'\n');
+  if(windowsCandidate){
+    // This exclusive output never becomes a production bundle. Preserve the
+    // original failure even when compiled files cannot yet be moved/deleted.
+    if(failureEvidence)await fs.writeFile(path.join(stage,'native-candidate-failure.json'),JSON.stringify(failureEvidence,null,2)+'\n',{flag:'wx'});
+    process.stderr.write('Unqualified Windows failure evidence: '+stage+'\n');
   }else await fs.rm(stage,{recursive:true,force:true});
   throw error;
 }

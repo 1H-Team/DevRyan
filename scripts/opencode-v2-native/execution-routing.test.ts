@@ -15,6 +15,7 @@ import { nativeVcsGitFlags } from '../../packages/web/server/lib/opencode/execut
 import { runWithHostRefusal } from '../../packages/web/server/lib/opencode/runtime-host/host-refusal.ts';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { createNativeReadGuard } from '../../packages/web/server/lib/opencode/runtime-host/execution-read-guard.ts';
 import { captureReviewedSkill } from '../../packages/web/server/lib/opencode/runtime-host/reviewed-skills.js';
 
@@ -250,6 +251,26 @@ test('actual Environment serves only verified skill files through the current di
     expect(calls.filter(value => value.endsWith('direct-admit')).length).toBe(calls.filter(value => value.endsWith('direct-finish')).length);
   } finally { await routing.close(); await fs.rm(root, { recursive: true, force: true }); }
 });
+
+test('the explicit writer entry refuses empty input with a failed protocol reply', async () => {
+  const repository = path.resolve(import.meta.dirname, '../..');
+  const base = path.join(repository, '.cache/v2-validation');
+  await fs.mkdir(base, { recursive: true });
+  const root = await fs.mkdtemp(path.join(base, 'writer-entry-'));
+  try {
+    const env = Object.fromEntries(['PATH', 'SystemRoot', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'PATHEXT']
+      .filter(key => typeof process.env[key] === 'string').map(key => [key, process.env[key]!]));
+    Object.assign(env, { HOME: root, USERPROFILE: root, APPDATA: root, LOCALAPPDATA: root,
+      XDG_CONFIG_HOME: root, XDG_DATA_HOME: root, XDG_CACHE_HOME: root, XDG_STATE_HOME: root,
+      TEMP: root, TMP: root, TMPDIR: root });
+    const result = spawnSync(process.execPath,
+      [path.join(repository, 'packages/web/server/lib/opencode/runtime-host/writer-entry.ts')],
+      { input: '', cwd: root, env, encoding: 'utf8', timeout: 15_000, maxBuffer: 65_536 });
+    expect(result.error).toBeUndefined();
+    expect({ status: result.status, stderr: result.stderr }).toEqual({ status: 1, stderr: '' });
+    expect(JSON.parse(result.stdout)).toEqual({ type: 'result', ok: false, error: { message: 'native_worker_input_invalid' } });
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+}, 20_000);
 
 test('fresh private SDK awaits real native write/edit/patch registration', async () => {
   const base = path.resolve(import.meta.dirname, '../../.cache/v2-validation');

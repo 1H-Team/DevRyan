@@ -255,11 +255,36 @@ selection, without qualifying command confinement or enabling admission.
 The native supervision verifier retains an exact supervisor operation/error
 number when receipt validation fails; arbitrary worker output is not printed.
 The x64 job in run `37404790881` advances through native compilation and then
-fails the writer's empty-input boot probe. Future failures retain compiled
-files and source identities under an immutable `runtime-candidate-failed-*`
-directory, with exit/error fields, output digests and bounded error summaries.
-They contain no `native-bundle.json` or accepted launcher and grant no admission.
+fails the writer's empty-input boot probe. The subsequent diagnostic build
+retains compiled files and source identities, with exit/error fields, output
+digests and bounded error summaries. Failed outputs contain no
+`native-bundle.json` or accepted launcher and grant no admission.
 The original probe deadline and required refusal reply remain unchanged.
+
+Run [37405887286](https://github.com/1H-Team/DevRyan/actions/runs/37405887286)
+at `81f39b99` retains both architecture-native controller/writer binaries and
+their original source identities. Both controllers return the expected empty
+boot refusal; both writers exit 0 without a reply. Independent payload review
+finds the exported writer helpers but no protocol handler guarded by
+`import.meta.main`. The compiled builder now uses the thin `writer-entry.ts`
+to invoke that same owner explicitly. Fifteen routing checks and a fresh macOS
+native build, signature/resource verification and both boot refusals pass;
+actual Windows reruns are still required.
+
+The ARM64 failure receipt was written before an `EPERM` directory rename hid
+the boot error. Unqualified Windows builds now create their private output
+exclusively, write `native-candidate.json` last with exclusive creation only
+after all checks pass, and retain failed files in place. They never replace an
+existing output, produce a production bundle, or grant admission.
+
+Command supervision remains failed. The x64 confined Node command returns
+`0xc0000142`; this is separate from the writer's compiled entry failure.
+[Microsoft's process contract](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessasuserw)
+requires access to both the selected window station and desktop, and its
+[initialization guidance](https://learn.microsoft.com/en-us/troubleshoot/windows/win32/user32-kernel32-not-initialize)
+identifies missing access as a possible DLL initialization failure. Review a
+private UI-object owner and prove standard-user behavior before changing this
+boundary; do not alter the user's window-station ACL or enable admission.
 
 The [Rust platform contract](https://doc.rust-lang.org/stable/rustc/platform-support/windows-msvc.html)
 supports native MSVC ARM64 host tools; that support does not establish libsql
@@ -290,8 +315,9 @@ Meridian resolver accepts only the selected target; the persistent PTY resolver
 refuses before environment or filesystem access. Native PE inspection and both
 empty-input boot refusals precede an immutable `native-candidate.json` receipt
 with `admission: false`. It emits no production manifest or accepted launcher
-and cannot be packaged as an accepted runtime. This implementation still needs
-actual native build results. Initialized controller/writer behavior, held file
+and cannot be packaged as an accepted runtime. The original native PE builds
+are retained, but their boot gate failed; the explicit entry correction still
+needs both native reruns. Initialized controller/writer behavior, held file
 authority, read confinement and the integrated acceptance inventory remain
 unqualified; the ordinary production builder continues to refuse Windows.
 
