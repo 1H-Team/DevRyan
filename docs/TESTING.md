@@ -14,6 +14,21 @@ the enclosing DevRyan checkout. The fixture's own Git repositories still work;
 non-Git assertions must not be changed to accept the parent repository.
 - Release verification also runs `bun run build` and `bun run bundle:check`.
 
+A fresh macOS ARM64 checkout also needs the exact reviewed Claude input and
+accepted supervisor before the native script tests. Prepare them separately:
+
+```sh
+node scripts/hydrate-reviewed-claude.mjs
+node scripts/build-session-execution.mjs packages/web/runtime/darwin-arm64 --verify
+```
+
+Keep the repository-owned fixture path short enough for macOS Unix sockets;
+a deeply nested worktree may use the main checkout's ignored fixture directory
+with the matching Git ceiling. These checks do not use the installed app.
+The managed Rust-browser case additionally requires the preserved, reviewed
+agent-browser 0.38.1 fixture under `.cache/browser-upgrade/current`; it refuses
+missing inputs rather than substituting the installed browser.
+
 The full gate rejects skipped or todo tests, undiscovered JavaScript/TypeScript test files, test-owning workspace packages omitted from `test:full`, and stale paths in the checked feature matrix.
 
 Documentation-only changes select `docs:validate`. Packaged agent/skill Markdown

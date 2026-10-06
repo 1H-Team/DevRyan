@@ -44,12 +44,12 @@ test('whole original image worker publishes canonical user-boundary assets after
   expect(await fs.readFile(file)).toEqual(bytes);expect(await fs.readFile(path.join(directory,'.opencode/.gitignore'),'utf8')).toBe('images/\n');
   expect(await fs.readFile(path.join(directory,'.opencode/.gitignore.oh-my-opencode-slim-legacy'),'utf8')).toBe('*\n');
   expect(result.messages[0].parts[0]).toEqual(message.parts[0]);expect(result.messages[0].parts[1].text).toContain('Saved to: '+file);
-  expect(result.messages[0].parts[1].text).not.toContain('/worktree');expect(result.imagesSkipped).toBe(false);
+  const lease=await host.runtime.leaseForCall({directory,sessionID:'ses_images',messageID:'msg_user',callID:receipts[0].callID});
+  expect(result.messages[0].parts[1].text).not.toContain(lease.viewDirectory);expect(result.imagesSkipped).toBe(false);
   expect(changes).toHaveLength(1);expect(changes[0]).toMatchObject({tool:'context-assets',sessionID:'ses_images',messageID:'msg_user',userMessageID:'msg_user'});
   const summary=await changeHost.summarize({directory,rootSessionID:'ses_images',firstUserMessageID:'msg_user'});
   expect(summary.coverage).toBe('complete');expect(summary.files.map(file=>file.path).sort()).toEqual(result.publication.files.map(file=>file.path).sort());
   expect(checks()).toBeGreaterThan(7);expect(await fs.readFile(path.join(directory,'keep.txt'),'utf8')).toBe('Canonical workspace bytes');
-  const lease=await host.runtime.leaseForCall({directory,sessionID:'ses_images',messageID:'msg_user',callID:receipts[0].callID});
   expect(lease).toMatchObject({state:'published',publicationPolicy:'context-images'});
  }finally{await host.drain();}
 },60_000);

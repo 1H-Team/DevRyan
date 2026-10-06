@@ -9,6 +9,7 @@ import {loadReviewedClaudeCredentials} from '../../packages/web/server/lib/openc
 import {emptyClaudeLifecycle,transitionClaudeLifecycle,claudeRecordFingerprint,claudeGrantFingerprint} from '../../packages/web/server/lib/opencode/runtime-host/native-claude-lifecycle.js';
 import {credentialMutationFingerprint as fingerprint} from '../../packages/web/server/lib/opencode/runtime-host/native-credential-mutation-owner.js';
 const repository=path.resolve(import.meta.dirname,'../..');
+await fs.mkdir(path.join(repository,'.cache/v2-validation/claude-host-renewal'),{recursive:true});
 const original=await fs.readFile(path.join(repository,'packages/web/runtime/reviewed-inputs/claude-1.8.0/node_modules/@rynfar/meridian/dist/cli-khhjyk04.js'));
 const transformed=rewriteReviewedClaudeCredentials(original),module=await import('data:text/javascript;base64,'+Buffer.from(transformed).toString('base64'));
 const serviceA='Claude Code-credentials-01234567',serviceB='Claude Code-credentials-89abcdef';
