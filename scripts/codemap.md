@@ -22,6 +22,12 @@ Repository automation entrypoint for developer workflows: validation planning, l
   Protocol-2 job diagnostics retain the actual OS build, SDK UI mask and every
   available restriction. The supervisor requires exact kernel readback before
   command creation; it never retries with fewer restrictions.
+  `diagnose-windows-supervisor-startup.mjs` separately compiles disposable
+  original, UI-limit and exclusive private-window-station variants, then probes
+  trusted Node/Bun startup. It preserves source/binary/output hashes and partial
+  receipts. These binaries receive no accepted manifest, never enter a runtime
+  bundle, and cannot satisfy the nine required Windows outcomes. Station
+  diagnostics change only owned UI objects, never the inherited station ACL.
   `build-windows-reviewed-libsql.mjs` attempts the original libsql 0.5.29 source
   commit with an unchanged Cargo lock on each native Windows host. It verifies
   compiler and resource PE architecture, executes the original database ABI

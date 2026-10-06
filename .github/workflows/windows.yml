@@ -23,6 +23,8 @@ on:
       - scripts/build-native-runtime.mjs
       - scripts/build-session-execution.mjs
       - scripts/verify-session-execution.mjs
+      - scripts/diagnose-windows-supervisor-startup.mjs
+      - scripts/windows-workflow.test.mjs
       - scripts/verify-windows-host-boundary.mjs
       - scripts/verify-windows-filesystem-boundary.mjs
       - scripts/native-runtime-assets.mjs
@@ -50,6 +52,8 @@ on:
       - scripts/build-native-runtime.mjs
       - scripts/build-session-execution.mjs
       - scripts/verify-session-execution.mjs
+      - scripts/diagnose-windows-supervisor-startup.mjs
+      - scripts/windows-workflow.test.mjs
       - scripts/verify-windows-host-boundary.mjs
       - scripts/verify-windows-filesystem-boundary.mjs
       - scripts/native-runtime-assets.mjs
@@ -157,6 +161,12 @@ jobs:
         # No acceptance marker is written until the actual platform inventory
         # passes. Missing Windows read/ACL/process contracts fail this job.
         run: node scripts/build-session-execution.mjs .cache/windows-native/${{ matrix.arch }} --verify
+      - name: Diagnose confined Node and Bun startup without admission
+        if: ${{ always() && steps.supervisor.outcome == 'success' }}
+        continue-on-error: true
+        # Disposable source variants have no accepted manifest and cannot
+        # satisfy any required qualification outcome.
+        run: node scripts/diagnose-windows-supervisor-startup.mjs .cache/windows-native/${{ matrix.arch }}/supervisor-startup-diagnostic
       - name: Verify native process identities and containing host jobs
         id: host_boundary
         if: ${{ always() && steps.supervisor.outcome == 'success' }}

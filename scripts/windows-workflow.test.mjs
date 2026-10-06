@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import YAML from 'yaml';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { validateWindowsJobBoundary } from './verify-windows-host-boundary.mjs';
+import { supervisorStartupVariants } from './diagnose-windows-supervisor-startup.mjs';
 
 test('empty-job diagnostic requires every OS-supported UI restriction and exact readback', () => {
   const probe = { protocol: 'devryan.windows-job-probe/2', osBuild: 26100, sdkUIFlags: 0x3ff, inJob: true, hostLimitFlags: 0x2000,
@@ -42,6 +45,10 @@ test('Windows qualification builds and executes independent pinned native archit
   assert.doesNotMatch(commands, /npm publish|supabase|gh release|git (?:push|tag)|docker (?:push|login)|checkpoint-export/);
   assert.ok(!job.steps.some(step => /action-gh-release|login-action/.test(step.uses ?? '')));
   const byID = Object.fromEntries(job.steps.filter(step => step.id).map(step => [step.id, step]));
+  const startup = job.steps.find(step => step.run?.includes('diagnose-windows-supervisor-startup.mjs'));
+  assert.equal(startup.if, "${{ always() && steps.supervisor.outcome == 'success' }}");
+  assert.equal(startup['continue-on-error'], true);
+  assert.equal(startup.id, undefined, 'Startup diagnostics cannot supply a required acceptance outcome');
   assert.ok(!byID.runtime.if.includes('supervisor'), 'Supervisor refusal must not hide an independent controller/writer build failure');
   assert.ok(byID.runtime_acceptance.if.includes("steps.supervisor_acceptance.outcome == 'success'"));
   const required = job.steps.find(step => step.env?.SUPERVISOR_ACCEPTANCE);
@@ -76,6 +83,31 @@ test('Windows qualification builds and executes independent pinned native archit
   assert.match(required.run, /if \(\$failed\).*throw/);
   const processSource = fs.readFileSync(new URL('../packages/web/server/lib/opencode/runtime-host/native-process.js', import.meta.url), 'utf8');
   assert.match(processSource, /process\.platform !== 'darwin'.*native_controller_supervisor_unavailable/);
+});
+
+test('startup diagnostics retain the original helper and core fences in every disposable variant', () => {
+  const source = fs.readFileSync(new URL('../packages/harness-runtime/native/session-execution-windows.c', import.meta.url), 'utf8');
+  const variants = supervisorStartupVariants(source);
+  assert.deepEqual(variants.map(row => row.id), ['original', 'no-ui-job', 'private-station', 'private-station-no-ui-job']);
+  assert.equal(variants[0].source, source);
+  for (const row of variants) {
+    for (const fence of ['DISABLE_MAX_PRIVILEGE | WRITE_RESTRICTED | LUA_TOKEN', 'S-1-16-0',
+      'PROC_THREAD_ATTRIBUTE_HANDLE_LIST', 'PROC_THREAD_ATTRIBUTE_JOB_LIST', 'JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE',
+      'TerminateJobObject(job', 'FlushFileBuffers(receipt)', 'original owner identity']) assert.ok(row.source.includes(fence), row.id);
+    assert.ok(row.source.indexOf('PROC_THREAD_ATTRIBUTE_JOB_LIST') < row.source.indexOf('checked(CreateProcessAsUserW('));
+    assert.equal(row.source.includes('uiMask = 0;'), row.id.includes('no-ui-job'));
+    if (row.id.startsWith('private-station')) {
+      assert.ok(row.source.includes('CreateWindowStationW(NULL, CWF_CREATE_ONLY, GENERIC_ALL, &desktopSecurity)'));
+      assert.ok(row.source.includes(String.raw`L"%ls\\%ls"`));
+      assert.ok(row.source.includes('SetProcessWindowStation(inheritedStation)'));
+      assert.ok(row.source.includes('CloseWindowStation(station)'));
+    }
+  }
+  assert.throws(() => supervisorStartupVariants(source.replace('DWORD uiMask = maximum_ui_limits(os_build());', '')), /anchor changed/);
+  const refused = spawnSync(process.execPath, [fileURLToPath(new URL('./diagnose-windows-supervisor-startup.mjs', import.meta.url)),
+    'unused-output', 'extra-argument'], { encoding: 'utf8' });
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /Pass only the owned diagnostic output directory/);
 });
 
 test('the Windows supervisor requires kernel job assignment before creating a child', () => {
