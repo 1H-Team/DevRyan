@@ -51,7 +51,8 @@ export async function runNativeImagegenWorker(request:WorkerInput&{readonly tool
   }finally{await handle.close();}
  };
  const tool=(await original.GptImagePlugin({})).tool.gpt_imagegen;
- return original.withReviewedImagegenOwner({readFile,writeFile:async(file,bytes)=>{
+ let apiKeyBilling=false;
+ const generated=await original.withReviewedImagegenOwner({readFile,writeFile:async(file,bytes)=>{
   callbacks.signal.throwIfAborted();await guard(file);
   const existing=await fs.lstat(file).catch(error=>{if(error?.code==='ENOENT')return undefined;throw error;});
   if(existing?.isSymbolicLink())throw Error('native_read_root_denied');
@@ -68,7 +69,9 @@ export async function runNativeImagegenWorker(request:WorkerInput&{readonly tool
   try{const stat=await handle.stat();if(!stat.isFile()||stat.size>IMAGEGEN_SCRATCH_LIMIT||(stat.mode&0o077)!==0)throw Error('native_imagegen_result_invalid');
    const bytes=await handle.readFile();if(bytes.length!==stat.size)throw Error('native_imagegen_result_invalid');result=JSON.parse(bytes.toString('utf8'));
   }finally{await handle.close();}
-  if(!result||typeof result!=='object'||Array.isArray(result)||Object.keys(result).join(',')!=='base64'||!('base64' in result)||!base64(result.base64))throw Error('native_imagegen_result_invalid');
+  if(!result||typeof result!=='object'||Array.isArray(result)||Object.keys(result).some(key=>!['base64','billing'].includes(key))
+   ||!('base64' in result)||!base64(result.base64)||'billing' in result&&result.billing!=='api-key')throw Error('native_imagegen_result_invalid');
+  apiKeyBilling='billing' in result&&result.billing==='api-key';
   const content=result.base64,png=Buffer.from(content,'base64');
   if(png.toString('base64')!==content||png.length<24||!png.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))||png.readUInt32BE(12)!==0x49484452)throw Error('native_imagegen_result_invalid');
   const location=Schema.decodeUnknownSync(Location.Info)({directory:request.directory,
@@ -82,4 +85,5 @@ export async function runNativeImagegenWorker(request:WorkerInput&{readonly tool
   }).pipe(Effect.provide(LayerNode.compile(Image.node,{replacements:[Location.node.replace(Layer.succeed(Location.Service,location))]})))));
   await guard(out);callbacks.signal.throwIfAborted();return content;
  }},()=>tool.execute({...input,out,...(images?{images}:{})},{directory:request.directory}));
+ return apiKeyBilling?{...generated,metadata:{...generated.metadata,billing:'api-key'}}:generated;
 }

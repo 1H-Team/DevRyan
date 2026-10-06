@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { prepareSourceImageAccounts, assertSourceImageOAuthProof } from './package-image-oauth-process.mjs';
 
-test('owned source OAuth connects two native accounts through real grants and survives scope close/reopen', { timeout: 45000 }, async () => {
+test('owned source SDK creates two synthetic SIWC native records and survives scope close/reopen', { timeout: 45000 }, async () => {
   const repository = path.resolve(import.meta.dirname, '../..');
   const root = await fs.mkdtemp(path.join(repository, '.cache/v2-validation/source-image-test-'));
   try {
@@ -13,7 +13,7 @@ test('owned source OAuth connects two native accounts through real grants and su
     const result = await prepareSourceImageAccounts({ root, databasePath, directory });
     assert.equal(result.sourceOAuthCreation, true); assert.equal(result.compiledOAuthCreation, false);
     assert.deepEqual(result.proof.reopened, result.proof.accounts[1]);
-    assert.ok(result.proof.accounts[1].expires < Date.now() + 60000, 'B must require native refresh at the compiled physical attempt');
+    assert.ok(result.proof.accounts[1].expires < Date.now() + 60000, 'B remains short-lived for the compiled no-refresh refusal check');
     assert.equal(JSON.stringify(result.proof).includes('owned-image-access'), false);
     assert.equal(JSON.stringify(result.proof).includes('owned-image-refresh'), false);
     assert.throws(() => assertSourceImageOAuthProof({ ...result.proof, compiledOAuthCreation: true }));

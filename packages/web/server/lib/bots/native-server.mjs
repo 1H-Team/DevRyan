@@ -55,6 +55,17 @@ export function botNativeAuthorized(header, token) {
   return supplied.length === expected.length && timingSafeEqual(supplied, expected);
 }
 
+/** Assemble the same gateway wrappers used by the native graph. Refusal precedes
+ * the reviewed image executor, including its reference-file reads. */
+export async function createBotNativeTools({ directory, access, environment, openaiOAuth, imageToolFactory }) {
+  return (await gateway.createPlugin({ toolApi: tool, environment,
+    imageToolFactory: imageToolFactory ?? (() => createBotNativeImageTool({ directory, access })),
+    beforeImage: () => {
+      if (openaiOAuth) throw Object.assign(new Error('native_image_generation_siwc_unsupported'), { code: 'native_image_generation_siwc_unsupported' });
+    },
+  })).tool;
+}
+
 /** A Bot container has one immutable revision, one workspace, and one run capability. */
 export async function createBotNativeServer({
   directory = '/workspace', configDirectory = '/runtime-config', databasePath = '/data/opencode/bot-v2.db',
@@ -77,9 +88,7 @@ export async function createBotNativeServer({
     auth.openai = { ...auth.openai, access: current.accessToken, expires: current.expiresAt };
   }
   const projected = projectNativeSetupCredentials(auth);
-  const tools = (await gateway.createPlugin({ toolApi: tool, environment,
-    imageToolFactory: imageToolFactory ?? (() => createBotNativeImageTool({ directory, access })),
-  })).tool;
+  const tools = await createBotNativeTools({ directory, access, environment, openaiOAuth, imageToolFactory });
   let context, resolver, client, nativePlugins, nativePermission, ready = false, closing;
   const managedOpenaiCredentials = new Set();
   const scope = await Effect.runPromise(Scope.make());
@@ -158,7 +167,7 @@ export async function createBotNativeServer({
         // Refresh remains exclusively owned by the host coordinator, including after native restart.
         return Effect.tryPromise({ try: signal => access('access', { signal }),
           catch: () => new Integration.AuthorizationError({ cause: new Error('bot_opencode_provider_authentication') }) })
-          .pipe(Effect.map(value => ({ type: 'oauth', methodID: 'chatgpt-browser', access: value.accessToken,
+          .pipe(Effect.map(value => ({ type: 'oauth', methodID: 'chatgpt-siwc', access: value.accessToken,
             refresh: '', expires: value.expiresAt, metadata: { accountID: value.accountId } })));
       } } };
     })).pipe(Layer.provide(layer)))),

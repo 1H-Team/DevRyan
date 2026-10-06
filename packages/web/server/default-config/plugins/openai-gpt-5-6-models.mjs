@@ -27,8 +27,6 @@ const NO_REASONING_SUMMARY_MODEL_IDS = new Set([
   "gpt-5.3-codex-spark",
   "gpt-5.3-codex-spark-fast",
 ]);
-const CODEX_ORIGINATOR = "codex_cli_rs";
-const CODEX_USER_AGENT = "codex_cli_rs/0.0.0 (OpenCode)";
 const OPENCODE_COMPACTION_BUFFER = 20_000;
 const OPENCODE_OUTPUT_TOKEN_MAX = 32_000;
 
@@ -45,8 +43,8 @@ const CODEX_128K_LIMITS = Object.freeze({
   autoCompact: 115_200,
 });
 
-// Pinned from Codex's model catalog. Fast rows are separate OpenCode catalog
-// entries, but use the same Codex context policy as their base model.
+// Historical Codex catalog windows reused for SIWC OAuth context pinning.
+// Fast rows are separate OpenCode catalog entries with the same policy.
 const CODEX_LIMITS_BY_MODEL_ID = new Map([
   ["gpt-5.3-codex-spark", CODEX_128K_LIMITS],
   ["gpt-5.3-codex-spark-fast", CODEX_128K_LIMITS],
@@ -257,11 +255,9 @@ export const normalizeOpenAIModels = (models, { oauth = false, compactionReserve
   return normalizeReasoningSummaries(limited);
 };
 
-export const openAIModelHeaders = (model, oauth) => (
-  oauth && model?.providerID === PROVIDER_ID && model?.api?.id === LUNA_API_MODEL_ID
-    ? { originator: CODEX_ORIGINATOR, "User-Agent": CODEX_USER_AGENT }
-    : {}
-);
+// Sign in with ChatGPT plan usage uses bearer auth only; do not spoof Codex CLI
+// identity headers against api.openai.com.
+export const openAIModelHeaders = (_model, _oauth) => ({});
 
 export const OpenAIGpt56ModelsPlugin = async () => {
   let openAIOAuthActive = false;

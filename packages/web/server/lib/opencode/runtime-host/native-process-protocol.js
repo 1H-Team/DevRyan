@@ -4,6 +4,7 @@ import {parseClaudeLifecycleOperation} from './native-claude-lifecycle.js';
 
 export const NATIVE_PROCESS_PROTOCOL = 1;
 export const NATIVE_PROCESS_LIMITS = Object.freeze({ bootBytes: 4 * 1024 * 1024, messageBytes: 64 * 1024, recordBytes:32*1024*1024, inFlight: 32 });
+export const NATIVE_HARNESS_LIMITS=Object.freeze({requestBytes:4*1024*1024,resultBytes:1024*1024});
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const invalid = () => Object.assign(new Error('Invalid native process protocol'), { code: 'native_process_protocol_invalid' });
 const keys = (value, allowed) => { if (!record(value) || Object.keys(value).some(key => !allowed.includes(key))) throw invalid(); };
@@ -41,7 +42,7 @@ const permit = value => { keys(value, ['token', 'sessionID', 'revision']); diges
 const bounded = (value, max) => { const text = JSON.stringify(value); if (text === undefined || Buffer.byteLength(text) > max) throw invalid(); return value; };
 const oauth = value => {
   keys(value, ['type', 'methodID', 'access', 'refresh', 'expires', 'metadata']);
-  if (value.type !== 'oauth' || !['chatgpt-browser', 'chatgpt-headless'].includes(value.methodID)
+  if (value.type !== 'oauth' || value.methodID !== 'chatgpt-siwc'
     || !Number.isSafeInteger(value.expires) || value.metadata !== undefined && !record(value.metadata)) throw invalid();
   string(value.access); string(value.refresh); return value;
 };
@@ -58,9 +59,14 @@ const credentialMutation = value => {
     keys(value, ['operation', 'input']);
     keys(value.input, ['integrationID', 'value', 'id', 'label', 'activate']);
     if (!['openai', 'cursor-acp', 'xai', 'opencode', 'opencode-go'].includes(value.input.integrationID)) throw invalid();
-    keys(value.input.value, ['type', 'key']);
-    if (value.input.value.type !== 'key') throw invalid();
-    string(value.input.value.key);
+    if (value.input.value?.type === 'oauth') {
+      if (value.input.integrationID !== 'openai') throw invalid();
+      oauth(value.input.value);
+    } else {
+      keys(value.input.value, ['type', 'key']);
+      if (value.input.value.type !== 'key') throw invalid();
+      string(value.input.value.key);
+    }
     if (value.input.id !== undefined) identifier(value.input.id);
     if (value.input.label !== undefined) label(value.input.label);
     if (value.input.activate !== undefined && typeof value.input.activate !== 'boolean') throw invalid();
@@ -75,7 +81,8 @@ const credentialMutation = value => {
 /** The data descriptor supplies configuration; executable registrations remain compiled. */
 export function parseNativeBoot(value) {
   bounded(value, NATIVE_PROCESS_LIMITS.bootBytes);
-  keys(value, ['protocol', 'type', 'bundleID', 'instanceID', 'buildId', 'manifestSha256', 'databasePath', 'globals', 'directory', 'locations', 'bridge', 'httpToken', 'configuration', 'configurationSnapshot', 'reviewedPlugins', 'migrationEvidence', 'catalogRequirements', 'cursorCatalog','recoveredSessionIDs']);
+  keys(value, ['protocol', 'type', 'bundleID', 'instanceID', 'buildId', 'manifestSha256', 'databasePath', 'globals', 'directory', 'locations', 'bridge', 'httpToken', 'configuration', 'configurationSnapshot', 'reviewedPlugins', 'migrationEvidence', 'catalogRequirements', 'cursorCatalog','recoveredSessionIDs','setupCredentialSeed']);
+  if(value.setupCredentialSeed!==undefined&&value.setupCredentialSeed!==null){keys(value.setupCredentialSeed,['sha256','count']);digest(value.setupCredentialSeed.sha256);if(!Number.isSafeInteger(value.setupCredentialSeed.count)||value.setupCredentialSeed.count<0||value.setupCredentialSeed.count>128)throw invalid();}
   if(value.recoveredSessionIDs!==undefined){array(value.recoveredSessionIDs,sessionID);if(value.recoveredSessionIDs.length>128||new Set(value.recoveredSessionIDs).size!==value.recoveredSessionIDs.length)throw invalid();}
   if (value.protocol !== 1 || value.type !== 'boot') throw invalid();
   string(value.bundleID); string(value.instanceID); digest(value.buildId); digest(value.manifestSha256); absolute(value.databasePath); absolute(value.directory);
@@ -145,6 +152,7 @@ export function parseNativeCommand(value) {
     'claude-lifecycle-read-owned':['controllerInstanceID'],
     'claude-lifecycle-transition-owned':['controllerInstanceID','expectedRevision','operation'],
     'provider-catalog-selection-owned': ['directory', 'controllerInstanceID', 'integrationID', 'acquisitionID', 'configurationDigest', 'origin'],
+    'openai-read-credential-owned': ['directory', 'controllerInstanceID', 'credentialID'],
     'openai-read-selected-owned': ['directory', 'controllerInstanceID'],
     'openai-cas-selected-owned': ['directory', 'controllerInstanceID', 'expected', 'next'],
     'interview-action-owned':['sessionID','permit','kind','body'],
@@ -206,7 +214,8 @@ export function parseNativeReply(value) {
   bounded(value, NATIVE_PROCESS_LIMITS.messageBytes);
   if (!record(value) || value.protocol !== 1) throw invalid();
   if (value.type === 'bound') {
-    keys(value, ['protocol', 'type', 'bundleID', 'instanceID', 'url', 'port', 'buildId', 'catalog', 'migration']);
+    keys(value, ['protocol', 'type', 'bundleID', 'instanceID', 'url', 'port', 'buildId', 'catalog', 'migration','setupCredentialSeed']);
+    if(value.setupCredentialSeed!==undefined){const seed=value.setupCredentialSeed;keys(seed,['status','count','sha256']);if(!['applied','already-applied','absent'].includes(seed.status)||!Number.isSafeInteger(seed.count)||seed.count<0||seed.count>128)throw invalid();if(seed.status==='absent'){if(seed.count!==0||seed.sha256!==null)throw invalid();}else digest(seed.sha256);}
     string(value.bundleID); string(value.instanceID); digest(value.buildId);
     const url = new URL(string(value.url));
     if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || !Number.isSafeInteger(value.port) || value.port < 1 || value.port > 65535 || Number(url.port) !== value.port) throw invalid();
@@ -257,4 +266,35 @@ export function parseNativeAssetRequest(value) {
   keys(value.globals,['home','config','data','state','cache','bin','log','repos','tmp']);
   for(const key of ['home','config','data','state','cache','bin','log','repos','tmp']) absolute(value.globals[key]);
   return structuredClone(value);
+}
+
+export function parseNativeHarnessRequest(value){
+ bounded(value,NATIVE_HARNESS_LIMITS.requestBytes);
+ const fixedAbsolute=value=>{absolute(value);if(path.normalize(value)!==value)throw invalid();};
+ keys(value,['protocol','requestID','webDataDirectory','sourceWebDataDirectory','checkpointID','projectMap','relocate','sessionIDs','messageIDs','preservedRefs','verifiedContinuations']);
+ if(value.protocol!=='devryan-native-harness-relocation/1'||typeof value.relocate!=='boolean')throw invalid();
+ string(value.requestID);fixedAbsolute(value.webDataDirectory);fixedAbsolute(value.sourceWebDataDirectory);string(value.checkpointID);
+ if(!/^[a-zA-Z0-9_-]{1,128}$/.test(value.checkpointID))throw invalid();
+ array(value.projectMap,mapping=>{keys(mapping,['sourceDirectory','targetDirectory','mode']);fixedAbsolute(mapping.sourceDirectory);fixedAbsolute(mapping.targetDirectory);if(!['identity','synthetic-copy'].includes(mapping.mode))throw invalid();});
+ for(const field of ['sessionIDs','messageIDs'])if(value[field]!==undefined){if(!Array.isArray(value[field])||value[field].length>10000||new Set(value[field]).size!==value[field].length)throw invalid();value[field].forEach(string);}
+ const refs=rows=>array(rows,row=>{keys(row,['directory','ref','oid']);absolute(row.directory);string(row.ref);if(row.ref.length>1024||!/^refs\//.test(row.ref)||typeof row.oid!=='string'||!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(row.oid))throw invalid();});
+ if(value.preservedRefs!==undefined){keys(value.preservedRefs,['checkpointID','refs']);string(value.preservedRefs.checkpointID);refs(value.preservedRefs.refs);}
+ if(value.verifiedContinuations!==undefined)array(value.verifiedContinuations,row=>{
+  keys(row,['id','sessionID','directory','itemProof','inboxSha256','sessionSha256','sourceSha256','file','fileSha256','paths','cancellation']);string(row.id);sessionID(row.sessionID);
+  for(const field of ['directory','file'])if(row[field]!==undefined)absolute(row[field]);
+  for(const field of ['sessionSha256','sourceSha256'])digest(row[field]);
+  if(row.inboxSha256!==null)digest(row.inboxSha256);if(row.fileSha256!==undefined)digest(row.fileSha256);
+  if(row.paths!==undefined)array(row.paths,string);
+  if(row.itemProof!==undefined){keys(row.itemProof,['type','delivery','hash']);string(row.itemProof.type);string(row.itemProof.delivery);digest(row.itemProof.hash);}
+  if(row.cancellation!==undefined){keys(row.cancellation,['enqueuedSeq','payloadHash','type','delivery','eventID','seq','receiptSha256']);for(const field of ['enqueuedSeq','seq'])if(!Number.isSafeInteger(row.cancellation[field])||row.cancellation[field]<0)throw invalid();for(const field of ['payloadHash','receiptSha256'])digest(row.cancellation[field]);for(const field of ['type','delivery','eventID'])string(row.cancellation[field]);}
+ });
+ return structuredClone(value);
+}
+export function parseNativeHarnessResult(value,request){
+ bounded(value,NATIVE_HARNESS_LIMITS.resultBytes-1);keys(value,['protocol','requestID','status','harness']);
+ if(value.protocol!=='devryan-native-harness-relocation/1'||value.requestID!==request.requestID||value.status!==(request.relocate?'relocated':'inspected'))throw invalid();
+ keys(value.harness,['refs','sessionReferences','messageReferences']);
+ array(value.harness.refs,row=>{keys(row,['directory','ref','oid']);absolute(row.directory);string(row.ref);if(!/^refs\//.test(row.ref)||!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(row.oid??''))throw invalid();});
+ for(const field of ['sessionReferences','messageReferences']){if(!Array.isArray(value.harness[field])||value.harness[field].length>10000||new Set(value.harness[field]).size!==value.harness[field].length)throw invalid();value.harness[field].forEach(string);}
+ return structuredClone(value);
 }

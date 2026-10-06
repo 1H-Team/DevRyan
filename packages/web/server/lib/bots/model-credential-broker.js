@@ -259,11 +259,12 @@ export function createBotModelCredentialBroker({
 
     if (isHostOpenAiCredential(credentialRow)) {
       const binding = await oauthConnections.resolve(credentialRow);
-      await oauthConnections.access(binding.accountId, candidate.credentialId);
-      return { authType: 'oauth', accountId: binding.accountId,
+      await oauthConnections.access(binding.accountId, candidate.credentialId, binding.registrationKey);
+      return { authType: 'oauth', accountId: binding.accountId, registrationKey: binding.registrationKey,
         // A non-secret discriminator keeps OpenCode's OAuth model metadata.
         // Only the coordinated transport may authenticate provider requests.
-        secret: { type: 'oauth', access: '', refresh: '', expires: 0, accountId: binding.accountId },
+        secret: { type: 'oauth', methodID: binding.methodID, access: '', refresh: '', expires: 0, accountId: binding.accountId,
+          metadata: { accountID: binding.accountId, subject: binding.subject, clientId: binding.clientId, scopes: binding.scopes, planUsage: true } },
         hostOAuth: true };
     }
 
@@ -342,6 +343,7 @@ export function createBotModelCredentialBroker({
           authType: credential.authType,
           hostOAuth: credential.hostOAuth === true,
           accountId: credential.accountId,
+          registrationKey: credential.registrationKey,
         };
       } catch (error) {
         if (!isCandidateUnavailable(error)) throw error;
@@ -383,6 +385,7 @@ export function createBotModelCredentialBroker({
         provisional: provisional === true,
         hostOAuth: selection.hostOAuth === true,
         accountId: selection.accountId,
+        registrationKey: selection.registrationKey,
         run,
         candidate: selection.candidate,
       };
@@ -397,8 +400,7 @@ export function createBotModelCredentialBroker({
         credentialId: selection.candidate.credentialId,
         coordinatedOAuth: selection.hostOAuth === true,
         egressHosts: selection.egressHosts,
-        chatgptImageGeneration: selection.candidate.providerId === 'openai'
-          && selection.authType === 'oauth',
+        chatgptImageGeneration: false,
         modelSnapshot: snapshot,
         provisional: provisional === true,
       });
@@ -423,9 +425,9 @@ export function createBotModelCredentialBroker({
       }
       if (!active.hostOAuth) fail('Bot OAuth is unavailable', 'bot_oauth_access_denied', 403);
       const current = await readCredential({ run: active.run, candidate: active.candidate });
-      if (!current.hostOAuth || current.accountId !== active.accountId) fail('Bot connection changed', 'bot_opencode_provider_authentication', 401);
+      if (!current.hostOAuth || current.accountId !== active.accountId || current.registrationKey !== active.registrationKey) fail('Bot connection changed', 'bot_opencode_provider_authentication', 401);
       if (activeRuns.get(claims.runId) !== active) fail('Bot OAuth scope is invalid', 'bot_oauth_access_denied', 403);
-      return oauthConnections.access(active.accountId, active.credentialId);
+      return oauthConnections.access(active.accountId, active.credentialId, active.registrationKey);
     },
     async assertRuntimeReady(runId) {
       const active = activeRuns.get(runId);
@@ -452,8 +454,7 @@ export function createBotModelCredentialBroker({
         }),
         credentialId: selection.candidate.credentialId,
         egressHosts: selection.egressHosts,
-        chatgptImageGeneration: selection.candidate.providerId === 'openai'
-          && selection.authType === 'oauth',
+        chatgptImageGeneration: false,
         modelSnapshot: snapshot,
       });
     },

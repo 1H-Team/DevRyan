@@ -6,6 +6,7 @@ import {spawnSync} from 'node:child_process';
 import {createRequire} from 'node:module';
 import {rewriteNativeAsset,rewriteUnavailableNativePty,prepareReviewedNativeInputs,reviewedNativeInputPlugin,rewriteSealedNodeRequire} from './native-runtime-assets.mjs';
 import {hydrateWindowsReviewedExecutables} from './build-windows-reviewed-executables.mjs';
+import {hydrateWindowsGit} from './build-windows-git.mjs';
 import {assertWindowsBinaryArchitecture,readWindowsReviewedLibsqlAsset} from './build-windows-reviewed-libsql.mjs';
 import {createReviewedNativePluginRegistry} from '../packages/web/server/lib/opencode/runtime-host/native-plugin-registry.ts';
 import {rewriteNativeCompactionObservation} from './native-compaction-observation-transform.mjs';
@@ -28,7 +29,7 @@ const host=path.join(repository,'packages/web/server/lib/opencode/runtime-host')
 const buildSources=await Promise.all(['scripts/build-native-runtime.mjs','scripts/native-runtime-assets.mjs',
   'scripts/native-compaction-observation-transform.mjs',
   'scripts/build-session-execution.mjs','scripts/verify-session-execution.mjs',
-  'scripts/build-windows-reviewed-executables.mjs','scripts/build-windows-reviewed-libsql.mjs',
+  'scripts/build-windows-reviewed-executables.mjs','scripts/build-windows-reviewed-libsql.mjs','scripts/build-windows-git.mjs',
   ...(windowsCandidate?['packages/harness-runtime/native/session-execution-windows.c']:[]),
   'packages/harness-runtime/native/session-execution.c','packages/harness-runtime/native/session-spawn-darwin.c',
   'packages/web/server/lib/opencode/runtime-host/reviewed-package-transforms.js',
@@ -42,7 +43,10 @@ const loaded=new Map(),transforms=[];
 const coreRoot=await fs.realpath(path.join(repository,'node_modules/@opencode/core'));
 let coreDigest=hash(await fs.readFile(path.join(coreRoot,'package.json')));
 const reviewed=await prepareReviewedNativeInputs(repository,{target});
+let windowsGitResource;
 if(windowsCandidate){
+  windowsGitResource=await hydrateWindowsGit({repository,arch:process.arch,fetchImpl:async()=>{throw new Error('Pinned Windows Git must be qualified before compilation');}});
+  for(const row of windowsGitResource.files)reviewed.inputFiles.set(path.join(windowsGitResource.directory,row.path.slice(4)),row.sha256);
   const {directory,assets}=await hydrateWindowsReviewedExecutables({repository,arch:process.arch,fetchImpl:async()=>{throw new Error('Windows reviewed inputs must be qualified before compilation');}});
   const ast=assets.find(asset=>asset.kind==='ast'),claude=assets.find(asset=>asset.kind==='claude');
   if(!ast||!claude)throw new Error('Windows reviewed input inventory incomplete');
@@ -141,7 +145,8 @@ try {
   const inputs={buildSources,lockSha256:hash(lockBytes),coreDigest,hostDigest,sourceFiles,resolvedPackages,
     reviewedInputProvenance:reviewed.provenance,
     nativeRegistrations:[...createReviewedNativePluginRegistry(coreDigest,{hostDigest}).values()].map(({id,manifestDigest,capabilities})=>({id,manifestDigest,capabilities})),reviewedPlugins,transforms};
-  const identity={bunVersion:Bun.version,bunRevision:Bun.revision,opencodeVersion:'2.0.20',target:`bun-${target}`,compiledContracts:[NATIVE_BUNDLE_CREDENTIAL_CONTRACT,CLAUDE_LIFECYCLE_PROTOCOL,'devryan-v2-clone/1','devryan.primary-step-stop/1','devryan.bundle.credential-owners/2'],inputs};
+  const identity={bunVersion:Bun.version,bunRevision:Bun.revision,opencodeVersion:'2.0.20',target:`bun-${target}`,compiledContracts:[NATIVE_BUNDLE_CREDENTIAL_CONTRACT,CLAUDE_LIFECYCLE_PROTOCOL,'devryan-v2-clone/1','devryan.primary-step-stop/1','devryan.bundle.credential-owners/2'],inputs,
+    ...(windowsGitResource?{windowsGit:windowsGitResource.windowsGit}:{})};
   const buildId=hash(JSON.stringify(identity));
   const files=[];
   if(windowsCandidate)failureEvidence={schema:1,status:'failed',admission:false,
@@ -214,6 +219,14 @@ try {
     files.push({role:'asset',path:asset.path,size:bytes.length,sha256:asset.sha256,mode:asset.mode,signing});
   }
   if(windowsCandidate){
+    // Keep the entire official MinGit loader/runtime inventory and licenses.
+    // Every byte is a manifest asset; no user's installed Git or PATH enters it.
+    for(const row of windowsGitResource.files){
+      const source=path.join(windowsGitResource.directory,row.path.slice(4)),destination=path.join(stage,row.path);
+      await fs.mkdir(path.dirname(destination),{recursive:true});await fs.copyFile(source,destination);await fs.chmod(destination,row.mode);
+      const bytes=await fs.readFile(destination);if(bytes.length!==row.size||hash(bytes)!==row.sha256)throw new Error('Copied pinned Windows Git asset changed');
+      files.push({role:'asset',...row,signing:{mode:'unsigned',verified:false}});
+    }
     // A candidate has no native-bundle.json or acceptedLauncher. Production
     // artifact verification continues to refuse these independently built files.
     await fs.rm(path.join(stage,'inventory'),{recursive:true});

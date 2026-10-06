@@ -11,7 +11,7 @@ const failure = (code, cause) => Object.assign(new Error(code, { cause }), { cod
  * termination; a status-map entry or abort-request acceptance is insufficient.
  * No project publication lock is held while waiting for a provider or command.
  */
-export function createSessionRevertCoordinator({ runtime, conversation, executions, directory: storage, onDiagnostic, legacy }) {
+export function createSessionRevertCoordinator({ runtime, conversation, executions, directory: storage, onDiagnostic, legacy, windowsOwner, windowsLauncher }) {
   if (!path.isAbsolute(storage ?? '')) throw new TypeError('Absolute coordinator storage directory is required');
   const event = (tx, phase, code) => {
     const id = (value) => typeof value === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(value) ? value : undefined;
@@ -132,7 +132,7 @@ export function createSessionRevertCoordinator({ runtime, conversation, executio
         event(tx, 'recovery_failed', cause.code);
         throw failure('mutation_recovery_required', cause);
       }
-    }, { timeoutMs: 60_000 },
+    }, { timeoutMs: 60_000, windowsLauncher },
   );
   // Adopted Revert for conversations the ledger never owned: they ran while the
   // companion was unavailable, so only their uncaptured change evidence exists.
@@ -141,7 +141,7 @@ export function createSessionRevertCoordinator({ runtime, conversation, executio
   const legacyRecordFile = async (directory, sessionID) => path.join(storage,
     changeKey(await runtime.projectDirectory({ directory })), 'legacy', `${changeKey(sessionID)}.json`);
   const readLegacyRecord = async (file) => {
-    try { return JSON.parse(await fs.readFile(file, 'utf8')); }
+    try { return JSON.parse(process.platform === 'win32' ? (await windowsOwner.read(file)).bytes.toString('utf8') : await fs.readFile(file, 'utf8')); }
     catch (cause) { if (cause.code === 'ENOENT') return null; throw cause; }
   };
   const legacyRun = async () => { throw failure('mutation_history_unavailable'); };

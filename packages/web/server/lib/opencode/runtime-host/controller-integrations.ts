@@ -74,9 +74,9 @@ export function createControllerIntegrations(options:ControllerIntegrationsOptio
   const openaiBinding=(input:{directory:string;methodID?:string}):NativeIntegrationBinding=>{
     const acquisition=acquisitions.get(input.directory),configurationDigest=digests.get(input.directory);
     if(closed||!acquisition||acquisition.closed||!configurationDigest)return refuse('native_integration_acquisition_expired');
-    if(input.methodID!==undefined&&!['chatgpt-browser','chatgpt-headless'].includes(input.methodID))refuse('native_openai_method_unsupported');
+    if(input.methodID!==undefined&&input.methodID!=='chatgpt-siwc')refuse('native_openai_method_unsupported');
     return {kind:'openai',directory:input.directory,controllerInstanceID:options.controllerInstanceID,integrationID:'openai',
-      acquisitionID:acquisition.id,configurationDigest,...(input.methodID==='chatgpt-browser'||input.methodID==='chatgpt-headless'?{methodID:input.methodID}:{})};
+      acquisitionID:acquisition.id,configurationDigest,...(input.methodID==='chatgpt-siwc'?{methodID:input.methodID}:{})};
   };
   const cursorBinding=(directory:string):NativeIntegrationBinding=>{
     const acquisition=acquisitions.get(directory);
@@ -96,7 +96,10 @@ export function createControllerIntegrations(options:ControllerIntegrationsOptio
       ...(methodID==='device'?{methodID:'device'}:{})};
   };
   const fullBinding=(binding:CredentialMutationBinding):NativeIntegrationBinding=>{
-    if(binding.kind==='openai')return openaiBinding(binding);
+    if(binding.kind==='openai'){
+      if(binding.valueType==='oauth'&&binding.operation==='remove'&&(binding.methodID==='chatgpt-browser'||binding.methodID==='chatgpt-headless'))return {...openaiBinding({directory:binding.directory}),kind:'openai',methodID:binding.methodID};
+      return openaiBinding(binding);
+    }
     if(binding.kind==='cursor')return cursorBinding(binding.directory);
     if(binding.kind==='provider')return providerBinding(binding.directory,binding.integrationID,binding.valueType==='oauth'?binding.methodID:undefined);
     if(binding.valueType!=='oauth')return refuse('native_mcp_credential_scope_required');
@@ -132,7 +135,7 @@ export function createControllerIntegrations(options:ControllerIntegrationsOptio
       if(value===undefined||value===null)return undefined;
       if(!record(value)||typeof value.credentialID!=='string'||typeof value.methodID!=='string'||typeof value.accountId!=='string'
         ||typeof value.accessToken!=='string'||typeof value.expiresAt!=='number'||!Number.isFinite(value.expiresAt)||typeof value.generation!=='string')return refuse('native_openai_access_invalid');
-      if(value.credentialID!==input.credentialID||!['chatgpt-browser','chatgpt-headless'].includes(value.methodID))return refuse('native_openai_access_invalid');
+      if(value.credentialID!==input.credentialID||!['chatgpt-siwc'].includes(value.methodID))return refuse('native_openai_access_invalid');
       return {credentialID:value.credentialID,methodID:value.methodID,accountId:value.accountId,accessToken:value.accessToken,expiresAt:value.expiresAt,generation:value.generation} satisfies NativeOpenAiAttempt;
     }});
   const mcp=createOwnedRemoteMcp({reviewedServersByDirectory:reviewed,registrationOrigin:options.registrationOrigin,
@@ -237,6 +240,15 @@ export function createControllerIntegrations(options:ControllerIntegrationsOptio
       assertAcquisition(acquisition);return {};
     }).pipe(Effect.provideService(Location.Service,acquisition.location),Effect.provideService(CapturedAcquisition,acquisition),Effect.provide(Logger.layer([],{mergeWithExisting:false})))));
   };
+  const readOpenAiCredentialOwned=async(input:{readonly directory:string;readonly credentialID:string})=>{
+    const acquisition=acquisitions.get(input.directory);
+    if(!acquisition)return refuse('native_integration_acquisition_expired');
+    assertAcquisition(acquisition);
+    const value=await Effect.runPromise(acquisition.credentials.get(Schema.decodeUnknownSync(Credential.ID)(input.credentialID)).pipe(Effect.provide(Logger.layer([],{mergeWithExisting:false}))));
+    assertAcquisition(acquisition);
+    if(value&&value.integrationID!=='openai')return refuse('native_integration_binding_invalid');
+    return value?{...value,expectedFingerprint:credentialMutationFingerprint(value)}:null;
+  };
   const credentialMetadataOwned=async(input:{readonly directory:string;readonly integrationID:string})=>{
     const acquisition=acquisitions.get(input.directory);
     if(!acquisition)return refuse('native_integration_acquisition_expired');
@@ -319,5 +331,5 @@ export function createControllerIntegrations(options:ControllerIntegrationsOptio
       if(!claudeLifecycle)return refuse('native_claude_lifecycle_owner_expired');return claudeLifecycle.transitionOwned(input);
     },
     readSelectedOwned:openai.readSelectedOwned,compareAndSwapSelectedOwned:openai.compareAndSwapSelectedOwned,
-    discoverCopilot,readCatalogSelectionOwned,readSelectedCursorKeyOwned,readCursorReadOnlyKeyOwned,commitCredentialOwned:mutation.commitOwned,credentialOwned,credentialMetadataOwned,close};
+    discoverCopilot,readCatalogSelectionOwned,readSelectedCursorKeyOwned,readCursorReadOnlyKeyOwned,commitCredentialOwned:mutation.commitOwned,credentialOwned,credentialMetadataOwned,readOpenAiCredentialOwned,close};
 }

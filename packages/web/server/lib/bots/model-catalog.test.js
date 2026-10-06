@@ -74,7 +74,7 @@ describe('Bot model catalog loader', () => {
       connections: [{ id: 'host:openai', kind: 'oauth', status: 'active' }],
       models: [{
         id: 'gpt-5.6-sol',
-        reviewedEgressHosts: ['auth.openai.com:443', 'chatgpt.com:443'],
+        reviewedEgressHosts: ['auth.openai.com:443', 'api.openai.com:443'],
         egressReviewed: true,
       }],
     });

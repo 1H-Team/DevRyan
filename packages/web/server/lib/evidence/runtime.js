@@ -32,6 +32,7 @@ export const createWebEvidenceRuntime = (options = {}) => {
   const evidenceDirectory = options.evidenceDirectory;
   const store = createRecordStore({
     directory: path.join(evidenceDirectory, 'records'),
+    windowsOwner: options.windowsOwner,
     validateRecord: validateEvidenceRecord,
     logger: options.logger ?? console,
   });

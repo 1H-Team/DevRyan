@@ -123,3 +123,44 @@ AppContainer and job, with exactly three inherited standard handles. At
 namespace refuses on both hosts; `LOCAL` pipe creation succeeds. `NUL` access
 refuses on Windows Server 2022 and succeeds on Windows 11 ARM64. Node descendant
 setup remains failed. The diagnostic grants no new capability or acceptance.
+
+The Windows SDK publication operations retain no-follow parent and file handles,
+protected owner/ACL, volume/file IDs and exact hash/size through durable
+compare-and-swap publication, deletion and recovery. The namespace prerequisite
+is a real directory flush; unavailable durability cannot fall back to a file
+flush. Finite same-parent intents and immutable receipts preserve interrupted
+state; completed backups/receipts remain for bounded cleanup qualification.
+
+The private read/publication protocol defaults to 16 MiB; the managed
+orchestration ledger explicitly selects the 64 MiB variant for reads, retained
+old-file proof and atomic replacement. The native owner enforces the same
+bound. Copy operations retain all included source and destination files through
+hashing and publication, with a fixed SDK-control exclusion policy and an
+optional runtime-bundle exclusion policy. SQLite output holds an exclusively
+created empty file and its parent across `VACUUM INTO`, then checks the same
+file identity and SQLite header before flushing and returning a native receipt.
+
+`--hold-native-import` accepts only migration or bundle-harness relocation.
+It pins the complete artifact tree, the compiled controller digest, source
+tree, relevant Git configurations, output parents and environment directories
+before starting the child. The fixed controller runs under a restricted token
+with three explicit inherited standard handles and a private kill-on-close job.
+The controller independently verifies its native parent/job membership and
+uses the manifest-owned `git/cmd/git.exe`; ambient Git and configuration
+overrides do not supply authority. Child output uses bounded binary framing.
+Settlement requires child/descendant exit, pipe drain, exact tree identities,
+durable output namespace and a nonce-bound receipt outside the imported tree.
+Read-only relocation seals only its separate environment. Actual Windows
+qualification, including mutation-directory rename while configuration handles
+remain held, is still required; none of these private operations grant runtime
+execution admission.
+
+Updater operations own bounded streaming installer files and exact tree tokens,
+hold original host creation identities through drain and create per-user NSIS
+inside a kernel job. Settlement requires descendant termination plus installed
+file/directory and receipt namespace durability. Exact tree rollback also
+restores the fixed HKCU 64-bit per-user registration with readback and registry
+flush. `--terminate-update-process` holds the supplied PID/creation-time handle
+through WM_CLOSE or forced termination and bounded root-exit observation; it
+does not claim descendant settlement. Both actual Windows architectures must
+qualify these operations before the installer/release gates can pass.

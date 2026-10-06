@@ -17,7 +17,7 @@ await fs.mkdir(output, { recursive: true, mode: 0o700 });
 const temporary = path.join(output, `${name}.${process.pid}.tmp`);
 try {
   const flags = windows ? ['/nologo', '/std:c11', '/W4', '/WX', '/O2', '/D_CRT_SECURE_NO_WARNINGS',
-    source, `/Fe:${temporary}`, `/Fo:${temporary}.obj`, '/link', 'advapi32.lib', 'user32.lib', 'userenv.lib', 'onecoreuap.lib']
+    source, `/Fe:${temporary}`, `/Fo:${temporary}.obj`, '/link', 'advapi32.lib', 'user32.lib', 'userenv.lib', 'onecoreuap.lib', 'version.lib']
     : ['-std=c11', '-Wall', '-Wextra', '-Werror', '-O2', source, '-o', temporary];
   try {
     const compiled = await promisify(execFile)(process.env.CC || (windows ? 'cl.exe' : 'cc'), flags,

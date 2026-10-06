@@ -493,7 +493,8 @@ export async function runNativePackageAcceptance({ artifactRoot = path.join(repo
         assert.equal(outcomes.length, 1); assert.equal(outcomes[0].outcome, 'finished');
       } else if (!scenario.direct) await assertWriterOutcome({ runtime: host.runtime, directory: operationDirectory, sessionID, callID: turn.callID, observations, succeeded: true });
       cases.push({ id: scenario.id, status: 'passed', source: scenario.deniedBeforePermission ? 'compiled-reviewed-read-root-preflight-refusal'
-        : scenario.control ? 'compiled-native-owned-control' : scenario.direct ? 'compiled-native-direct-read' : 'compiled-writer-real-termination-publication' });
+        : scenario.expectedError ? 'compiled-native-tool-refusal' : scenario.control ? 'compiled-native-owned-control'
+          : scenario.direct ? 'compiled-native-direct-read' : 'compiled-writer-real-termination-publication' });
       return call;
     };
     cases.push(...await runCompiledHumanQueue({ provider, client, managed, runtimeOwner, controller: currentController,

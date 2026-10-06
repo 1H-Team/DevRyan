@@ -9,6 +9,7 @@ import {
   validateManagedTaskResultEnvelope,
 } from '@openchamber/orchestration-runtime';
 import { writeFileAtomic } from '@openchamber/harness-runtime';
+import { createExecutionHostOwner } from '@openchamber/harness-runtime/lib/execution-host-owner.js';
 
 // Well above the 20 MiB the scheduler writes: an oversized ledger is
 // quarantined, which forgets every task, so reading must tolerate one a
@@ -111,6 +112,89 @@ const validateSnapshot = (value) => {
   return { ...value, tasks: normalizedTasks, resultEnvelopes: normalizedEnvelopes };
 };
 
+/** The Windows lifetime belongs to the retained native kernel keeper. Ledger
+ * JSON, timestamps and numeric process probes never authorize stealing it. */
+function createWindowsManagedLedger({ filePath, ownerPath, maxReadBytes, now, logger, windowsLedgerOwner, windowsLauncher, createWindowsKeeper }) {
+  const files = windowsLedgerOwner;
+  if (!files || files.maxBytes !== DEFAULT_MAX_LEDGER_READ_BYTES || !Number.isSafeInteger(maxReadBytes)
+    || maxReadBytes < 1 || maxReadBytes > files.maxBytes || path.dirname(ownerPath) !== path.dirname(filePath)) {
+    throw Object.assign(new Error('managed_orchestration_windows_authority_unavailable'), { code: 'managed_orchestration_windows_authority_unavailable', statusCode: 503 });
+  }
+  const createKeeper = createWindowsKeeper ?? (() => createExecutionHostOwner({ directory: path.dirname(ownerPath), launcher: windowsLauncher, lockFile: ownerPath }));
+  let keeper, acquirePromise, closePromise, saveTail = Promise.resolve(), releasing = false, closing = false, ownershipState = 'unowned', observedAt = null,
+    quarantinedPath = null, recoveryWarning = null, writeCount = 0;
+  const lost = cause => {
+    ownershipState = 'lost';
+    return Object.assign(createOwnershipError('managed_orchestration_ownership_lost', 'Managed orchestration lost its native data-directory owner'), { cause });
+  };
+  const assertOwnership = async () => {
+    if (!keeper || closing) throw createOwnershipError('managed_orchestration_owner_conflict', 'Managed orchestration requires its native data-directory owner');
+    try { keeper.assert(); observedAt = now(); } catch (error) { throw lost(error); }
+  };
+  const acquireOwnership = () => acquirePromise ??= (async () => {
+    if (keeper) { await assertOwnership(); return; }
+    if (closing || releasing) throw createOwnershipError('managed_orchestration_owner_conflict', 'Managed orchestration is shutting down');
+    await files.ensureDirectory(path.dirname(ownerPath));
+    try { keeper = await createKeeper(); keeper.assert(); ownershipState = 'owned'; observedAt = now(); }
+    catch (error) {
+      ownershipState = 'conflict';
+      if (keeper) { await keeper.close(); keeper = null; }
+      if (error.code === 'LOCK_BUSY') throw createOwnershipError('managed_orchestration_owner_conflict', 'Another native owner holds managed orchestration'); throw error;
+    }
+  })().finally(() => { acquirePromise = null; });
+  const read = async target => {
+    await assertOwnership();
+    const value = await files.read(target).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+    await assertOwnership(); return value;
+  };
+  const loadNow = async () => {
+    const previous = await read(filePath); if (!previous) return null;
+    let value;
+    try {
+      if (!Buffer.isBuffer(previous.bytes) || previous.bytes.length > maxReadBytes) throw new RangeError(`managed orchestration ledger exceeds ${maxReadBytes} bytes`);
+      value = validateSnapshot(JSON.parse(previous.bytes.toString('utf8')));
+    } catch (error) {
+      await assertOwnership(); quarantinedPath = await files.quarantine(filePath, previous); await assertOwnership();
+      recoveryWarning = `Managed orchestration ledger was quarantined: ${error instanceof Error ? error.message : String(error)}`;
+      logger.warn?.('[ManagedOrchestration] Quarantined invalid ledger', { reason: error instanceof Error ? error.message : String(error) }); return null;
+    }
+    await assertOwnership(); return value;
+  };
+  const saveNow = async snapshot => {
+    await assertOwnership(); const bytes = Buffer.from(JSON.stringify(validateSnapshot(snapshot)) + '\n');
+    if (bytes.length > files.maxBytes) throw Object.assign(new RangeError('managed orchestration ledger exceeds native byte bound'), { code: 'ledger_capacity_exceeded' });
+    const previous = await read(filePath);
+    if (previous && previous.bytes.length >= COMPACTION_BACKUP_MIN_BYTES && bytes.length * 2 < previous.bytes.length) {
+      const backup = filePath + COMPACTION_BACKUP_SUFFIX;
+      if (await read(backup) === null) {
+        await assertOwnership(); await files.write(backup, previous.bytes, { expected: null }); await assertOwnership();
+      }
+    }
+    await assertOwnership(); await files.write(filePath, bytes, { expected: previous }); await assertOwnership(); writeCount++;
+  };
+  const enqueue = action => {
+    if (releasing || closing) return Promise.reject(createOwnershipError('managed_orchestration_owner_conflict', 'Managed orchestration is shutting down'));
+    const operation = saveTail.then(action); saveTail = operation.catch(() => {}); return operation;
+  };
+  const save = snapshot => enqueue(() => saveNow(snapshot));
+  const load = () => enqueue(loadNow);
+  const releaseOwnership = () => closePromise ??= (async () => {
+    // Keep the kernel lease until every admitted write has settled. New work
+    // is fenced immediately; uncertain close never reports released ownership.
+    releasing = true; await acquirePromise?.catch(() => {});
+    const held = keeper; if (!held) { await saveTail; return false; }
+    await saveTail; closing = true;
+    let failure;
+    try { held.assert(); } catch (error) { failure = error; }
+    try { await held.close(); keeper = null; } catch (error) { throw lost(error); }
+    if (failure) throw lost(failure);
+    ownershipState = 'unowned'; return true;
+  })();
+  return { filePath, acquireOwnership, verifyOwnership: assertOwnership, releaseOwnership, load, save,
+    getDiagnostics: () => ({ filePath, quarantinedPath, recoveryWarning, writeCount, ownership: { state: ownershipState,
+      heartbeatAgeMs: observedAt === null ? null : Math.max(0, now() - observedAt), staleAfterMs: DEFAULT_OWNER_STALE_MS } }) };
+}
+
 export const createAtomicManagedOrchestrationLedger = (options = {}) => {
   const dataDirectory = path.resolve(options.dataDirectory);
   const filePath = options.filePath
@@ -124,6 +208,7 @@ export const createAtomicManagedOrchestrationLedger = (options = {}) => {
   const ownerPath = options.ownerPath
     ? path.resolve(options.ownerPath)
     : path.join(path.dirname(filePath), 'owner.lock');
+  if ((options.platform ?? process.platform) === 'win32') return createWindowsManagedLedger({ ...options, filePath, ownerPath, maxReadBytes, now, logger });
   const processId = options.pid ?? process.pid;
   const isProcessAlive = options.isProcessAlive ?? defaultIsProcessAlive;
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_OWNER_HEARTBEAT_MS;

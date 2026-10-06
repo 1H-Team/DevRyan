@@ -70,8 +70,8 @@ const proposalFor = (providerID, modelID, variant, transport) => ({ profile: { i
   runtimeHash: 'a'.repeat(64), providerID, modelID, variant, providerHash: 'b'.repeat(64), providerScope: 'selected-route', transport } });
 
 test('live proposals select their provider wire route and must carry its host-attested transport', () => {
-  assert.equal(resolveDuplicateLiveRoute(proposalFor('openai', 'gpt-6-astra', 'medium', 'openai-chatgpt-managed-responses-v1')).host, 'chatgpt.com');
-  assert.equal(resolveDuplicateLiveRoute(proposalFor('openai', 'gpt-5.6-sol', 'medium', 'openai-chatgpt-managed-responses-v1')).path, '/backend-api/codex/responses');
+  assert.equal(resolveDuplicateLiveRoute(proposalFor('openai', 'gpt-6-astra', 'medium', 'openai-chatgpt-managed-responses-v1')).host, 'api.openai.com');
+  assert.equal(resolveDuplicateLiveRoute(proposalFor('openai', 'gpt-5.6-sol', 'medium', 'openai-chatgpt-managed-responses-v1')).path, '/v1/responses');
   for (const [modelID, variant] of [['grok-4.7', 'medium'], ['grok-4.6', 'high']]) {
     const route = resolveDuplicateLiveRoute(proposalFor('xai', modelID, variant, 'xai-oauth-responses-v1'));
     assert.deepEqual([route.provider, route.host, route.path, route.auth], ['xai', 'api.x.ai', '/v1/responses', 'oauth']);

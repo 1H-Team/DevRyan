@@ -48,7 +48,7 @@ export async function runSupervisorStartupDiagnostic(directory) {
     const row = { id: variant.id, sourceSha256: hash(variant.source), admission: false, acceptance: false, runs: [] };
     try {
       const compiled = await exec('cl.exe', ['/nologo', '/std:c11', '/W4', '/WX', '/O2', '/D_CRT_SECURE_NO_WARNINGS',
-        candidateSource, `/Fe:${executable}`, `/Fo:${path.join(candidate, 'supervisor.obj')}`, '/link', 'advapi32.lib', 'user32.lib', 'userenv.lib', 'onecoreuap.lib'],
+        candidateSource, `/Fe:${executable}`, `/Fo:${path.join(candidate, 'supervisor.obj')}`, '/link', 'advapi32.lib', 'user32.lib', 'userenv.lib', 'onecoreuap.lib', 'version.lib'],
       { cwd: root, timeout: 60000, maxBuffer: 65536 });
       await fs.writeFile(path.join(candidate, 'compile.log'), compiled.stdout + compiled.stderr);
       row.compilation = 'passed'; row.binarySha256 = hash(await fs.readFile(executable));

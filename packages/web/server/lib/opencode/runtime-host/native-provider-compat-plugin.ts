@@ -19,7 +19,7 @@ export interface NativeProviderCompatibilityOptions {
 const openaiOAuth=(integration:Pick<IntegrationDomain,'connection'>)=>Effect.gen(function*(){
   const connection=yield* integration.connection.active('openai');
   const value=connection?yield* integration.connection.resolve(connection).pipe(Effect.orElseSucceed(()=>undefined)):undefined;
-  return value?.type==='oauth'&&['chatgpt-browser','chatgpt-headless'].includes(value.methodID);
+  return value?.type==='oauth'&&['chatgpt-siwc'].includes(value.methodID);
 });
 
 /** Scoped registered data policy; the final physical credential hooks remain owned separately. */
@@ -35,7 +35,7 @@ export const createNativeProviderCompatibility=(options:NativeProviderCompatibil
       if(!active)return yield* Effect.die(new Error('native_provider_location_expired'));
       const connection=yield* integration.connection.active(Schema.decodeUnknownSync(NativeIntegration.ID)('openai'));
       const value=connection?yield* integration.connection.resolve(connection).pipe(Effect.orElseSucceed(()=>undefined)):undefined;
-      const oauth=options.isOpenAiOAuth?yield* options.isOpenAiOAuth({directory:location.directory,integration}):value?.type==='oauth'&&['chatgpt-browser','chatgpt-headless'].includes(value.methodID);
+      const oauth=options.isOpenAiOAuth?yield* options.isOpenAiOAuth({directory:location.directory,integration}):value?.type==='oauth'&&['chatgpt-siwc'].includes(value.methodID);
       if(!active)return yield* Effect.die(new Error('native_provider_location_expired'));
       const normalized=normalizeNativeOpenAiModels(models,{oauth,...policy});
       const rows=options.discoverCopilot?yield* options.discoverCopilot({directory:location.directory,integration}):undefined;

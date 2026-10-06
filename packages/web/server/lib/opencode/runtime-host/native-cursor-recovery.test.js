@@ -25,7 +25,7 @@ test('Cursor recovery retains uncertain start and exact receipt-backed intent un
   // Unit schema oracle only: integrated diagnostic must obtain this file from
   // the real accepted supervisor; a terminal ledger state alone is insufficient.
   const receipt=path.join(root,'lease','termination.json');
-  await fs.writeFile(receipt,JSON.stringify({terminated:true,confined:false,cancelled:true,exitCode:143}));
+  await fs.writeFile(receipt,JSON.stringify({terminated:true,confined:false,cancelled:true,exitCode:143}),{mode:0o600});
   await expect(recover()).rejects.toMatchObject({code:'native_cursor_recovery_termination_unconfirmed'});
   await fs.writeFile(receipt,JSON.stringify({terminated:true,confined:true,cancelled:true,exitCode:143}));
   const token=lease.token;lease.token='foreign';await expect(recover()).rejects.toMatchObject({code:'native_cursor_recovery_termination_unconfirmed'});lease.token=token;

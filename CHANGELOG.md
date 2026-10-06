@@ -2,13 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2.0.2] - 2026-10-05
+## [2.0.2] - 2026-10-06
 
+Candidate qualification is tracked in [the release evidence](docs/audits/2026-10-05-release-2.0.2/README.md). This entry does not establish publication or installed-platform acceptance.
+
+- Add DevRyan-owned Sign in with ChatGPT for eligible plan usage, with separate OpenAI API-key authentication. Saved registrations remain distinct across workspaces; sign-in without plan permission stays signed in and requires explicit reauthorization before subscription inference. Legacy Codex OAuth requires reconnect.
+- Use the selected native credential for account-specific OpenAI model discovery. Unavailable discovery no longer implies model entitlement. SIWC Responses requests preserve local tools, reject unsupported capabilities before sending, and require a completed stream; API-key requests retain their existing behavior.
+- Image generation uses an explicitly selected OpenAI API key with API billing. SIWC image requests refuse before token refresh or network traffic; account changes invalidate an in-flight image request.
 - Runtime settings show when packaged agent instructions conflict with your edits. Restore is explicit, preserves a backup, and refuses a file changed since inspection. Planning and implementation guidance now follows the saved plan and keeps incomplete work visible.
 - Skills use their human names in tool rows, permission requests and restored history. Generic reviewed skills remain available; bundled Superpowers integration is retired.
 - Dedicated Claude enrollment preserves healthy accounts when another enrollment is interrupted. Recover and Use settles the original verified credential without repeating sign-in. Read-only account inspection remains access-only.
 - Runtime updates and recovery retain the original owner, credential checkpoint and durable execution evidence. A completed update recovers even when its caller disconnects, and an uncertain shutdown keeps the runtime held for reconciliation.
 - In-app macOS updates use verified, resumable DMG downloads, installation preflight, owned runtime drain and durable rollback state. The app retains its current ad-hoc signing class.
+- Prepare unsigned Windows x64/ARM64 NSIS packaging, native file ownership and updater recovery. Core execution remains disabled until native safety, namespace durability and actual installer/update qualification pass on both architectures; no qualified Windows release is claimed.
 - Release preparation reuses Bot images only after verifying identical build inputs and signed image evidence. Dry runs prohibit publication, tags and other external writes; release assets must match their packaging digests and exact names.
 - Add durable diagnostics for provider sends, ledger waits, bridge calls, first output and first answer text. No performance improvement is claimed.
 

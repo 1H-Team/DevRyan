@@ -20,10 +20,14 @@ const checked=value=>{
 
 /** Write-ahead lifecycle identities only. Existing ledger and launcher receipts
  * remain the sole process/publication authority. An uncertain intent is retained. */
-export function createNativeCursorRecovery({directory,ownerID,runtime}){
+export function createNativeCursorRecovery({directory,ownerID,runtime,windowsOwner,windowsLauncher}){
  if(!path.isAbsolute(directory)||typeof ownerID!=='string'||!ownerID)throw fail('native_cursor_recovery_configuration');
  const pending=new Set();
  const ensureDirectory=async()=>{
+  if(process.platform==='win32'){
+   if(typeof windowsOwner?.ensureDirectory!=='function')throw fail('private_windows_publication_authority_unavailable');
+   await windowsOwner.ensureDirectory(directory);return;
+  }
   let existing=directory;
   for(;;){try{const stat=await fs.lstat(existing);
     if(!stat.isDirectory()||await fs.realpath(existing)!==existing)throw fail('native_cursor_recovery_path_invalid');break;
@@ -33,7 +37,16 @@ export function createNativeCursorRecovery({directory,ownerID,runtime}){
  };
  const key=scope=>createHash('sha256').update(`${scope.directory}\0${scope.sessionID}\0${scope.assistantMessageID}`).digest('hex');
  const file=scope=>path.join(directory,`${key(scope)}.json`);
+ const observed=new Map();
  const read=async name=>{
+  if(process.platform==='win32'){
+   if(typeof windowsOwner?.read!=='function')throw fail('private_windows_read_authority_unavailable');
+   let prior;try{prior=await windowsOwner.read(name);}catch(error){if(error.code==='ENOENT'){observed.set(name,null);return null;}throw error;}
+   if(prior.bytes.length>64*1024)throw fail('native_cursor_recovery_invalid');
+   const value=checked(JSON.parse(prior.bytes.toString('utf8')));
+   if(value.ownerID!==ownerID||name!==file(value.scope))throw fail('native_cursor_recovery_owner_mismatch');
+   observed.set(name,prior);return value;
+  }
   let stat;try{stat=await fs.lstat(name);}catch(error){if(error.code==='ENOENT')return null;throw error;}
   if(!stat.isFile()||stat.size>64*1024)throw fail('native_cursor_recovery_invalid');
   const value=checked(JSON.parse(await fs.readFile(name,'utf8')));
@@ -42,10 +55,18 @@ export function createNativeCursorRecovery({directory,ownerID,runtime}){
  const locked=(scope,action)=>{
   checked({version:1,ownerID,scope,revision:0,phase:'pending'});
   const operation=(async()=>{if(await fs.realpath(scope.directory)!==scope.directory)throw fail('native_cursor_recovery_path_invalid');await ensureDirectory();
-   return withCrossProcessFileLock(path.join(directory,'.lock'),()=>action(file(scope)));})();
+   return withCrossProcessFileLock(path.join(directory,'.lock'),()=>action(file(scope)),{windowsLauncher});})();
   pending.add(operation);void operation.finally(()=>pending.delete(operation)).catch(()=>{});return operation;
  };
- const save=(name,value)=>writeFileAtomic(name,JSON.stringify(checked(value))+'\n',{mode:0o600,directoryMode:0o700});
+ const save=async(name,value)=>{
+  const bytes=Buffer.from(JSON.stringify(checked(value))+'\n');
+  if(process.platform==='win32'){await windowsOwner.write(name,bytes,{expected:observed.get(name)});observed.delete(name);return;}
+  await writeFileAtomic(name,bytes,{mode:0o600,directoryMode:0o700});
+ };
+ const remove=async name=>{
+  if(process.platform==='win32'){await windowsOwner.delete(name,{expected:observed.get(name)});observed.delete(name);return;}
+  await fs.rm(name);
+ };
  const change=(scope,action)=>locked(scope,async name=>{
   const value=await read(name);if(!value||fingerprint(value.scope)!==fingerprint(scope))throw fail('native_cursor_recovery_scope_invalid');
   return action(name,value);
@@ -65,7 +86,7 @@ export function createNativeCursorRecovery({directory,ownerID,runtime}){
     ||lease.scope.userMessageID!==scope.userMessageID||lease.scope.callID!==`cursor_${scope.assistantMessageID}`)throw fail('native_cursor_recovery_scope_invalid');
    await save(name,{...value,phase:'bound',leaseToken:lease.token,leaseGeneration:lease.generation});
   }),
-  complete:scope=>change(scope,name=>fs.rm(name)),
+  complete:scope=>change(scope,name=>remove(name)),
   async recover({directory:projectDirectory,settle}){
    await Promise.allSettled([...pending]);
    if(await fs.realpath(projectDirectory)!==projectDirectory)throw fail('native_cursor_recovery_path_invalid');await ensureDirectory();
@@ -80,13 +101,13 @@ export function createNativeCursorRecovery({directory,ownerID,runtime}){
        ||lease.directory!==scope.directory||lease.scope.sessionID!==scope.sessionID||lease.scope.userMessageID!==scope.userMessageID
        ||lease.scope.messageID!==scope.assistantMessageID||lease.scope.callID!==callID
        ||lease.executionKind!=='process'||!['published','cancelled'].includes(lease.state))throw fail('native_cursor_recovery_termination_unconfirmed');
-      if(!lease.cancelledBeforeStart){const receipt=await readSessionExecutionReceipt(lease);
+      if(!lease.cancelledBeforeStart){const receipt=await readSessionExecutionReceipt(lease,{launcher:windowsLauncher});
        if(receipt.terminated!==true||receipt.confined!==true)throw fail('native_cursor_recovery_termination_unconfirmed');}
      }else if(current.phase!=='pending'){
       const [outcome]=await runtime.executionOutcomes({directory:scope.directory,sessionID:scope.sessionID,calls:[{callID,messageID:scope.assistantMessageID}]});
       if(outcome?.outcome!=='never_started')throw fail('native_cursor_recovery_termination_unconfirmed');
      }
-     await settle(scope,current.revision);await fs.rm(filename);
+     await settle(scope,current.revision);await remove(filename);
     });
    }
   },

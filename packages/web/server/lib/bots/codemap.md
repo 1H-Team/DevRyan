@@ -146,7 +146,7 @@ must preserve those checks. A grant never inherits global administrator access.
 - `validation.js`: strict JSON/UUID/base64/page request boundaries.
 - `encryption.js`: exact deployment-key AES-256-GCM JSON envelopes.
 - `credential-vault.js`: host-local encrypted connector credential lifecycle.
-- `host-oauth-connections.js`: identity-proven legacy OpenAI OAuth migration, host-connection references, sanitized auth state and optimistic Manager reconnection. Shared refresh ownership lives in `../opencode/openai-oauth-coordinator.js`; `gateway-host.js` provides private run-scoped access-only delivery outside the tool operation registry.
+- `host-oauth-connections.js`: verified subject/client-bound OpenAI OAuth connection references, sanitized auth state and optimistic Manager reconnection. Shared SIWC refresh ownership lives in `../opencode/openai-oauth-coordinator.js`; `gateway-host.js` provides private run-scoped access-only delivery outside the tool operation registry. Legacy Codex OAuth records are refused and require reconnect. Async native binding reads never fall back to auth files, and same-subject registrations retain distinct issued-client identity.
 - `environment-secret-vault.js`: atomic host-local encrypted Bot environment
   values, opaque recovery export/restore, rotation/delete compensation, and
   Bot-scoped purge.
@@ -180,13 +180,15 @@ must preserve those checks. A grant never inherits global administrator access.
 - `native-server.mjs`: pinned native ServerFetch graph inside the existing Bot
   container; workspace-bound native routes, explicit native credential seeding,
   host-owned OAuth refresh, readiness and no-history structured generation.
+- `native-server.mjs` assembles gateway tools with SIWC image refusal before
+  dependency execution/reference reads, including retained image tool calls.
 - `native-image-tool.mjs`: scoped I/O and cancellation adapter around the
   source-gated original image executor and existing native image transport.
 - `native-tool-policy.js`: separate revision write/edit grants in native tool
   filtering and execution, retaining the original SDK file executors.
 - `ag-ui-reasoning-adapter.js`: pinned `@ag-ui/core@0.0.58` reviewed SSE subset,
   exact event ordering/size/replay checks, the `devryan_bot` gateway and
-  OAuth-gated primary-agent `devryan_image` tool contracts,
+  independent primary-agent `devryan_image` tool contracts (SIWC plan use does not grant this capability),
   continuation via ToolMessage, and fail-closed recovery.
 - `agent-connections.js`: Bot-scoped Manager CRUD, encrypted bearer resolution,
   exact public HTTPS/SSE descriptors/digests, health checks, revocation, and
@@ -196,7 +198,10 @@ must preserve those checks. A grant never inherits global administrator access.
   binding resolution, and draft-only creation through normal publication gates.
 - `model-credential-broker.js`: ordered catalog/credential/egress model
   selection, chosen-model persistence, one-provider scoped auth, and refresh
-  ingestion/removal.
+  ingestion/removal. SIWC runs use a token-free native seed retaining their
+  method, issued client, subject, scopes and host identity plus private access
+  bound to the account and registration; finalization never writes OAuth tokens
+  back to host credentials.
 - `model-catalog.js`: authenticated, deadline-bound, streaming-size-bounded
   loading plus secret-free Bot projection of the host OpenCode provider/model
   catalog, safe auth kind, and opaque existing OAuth-connection selectors.

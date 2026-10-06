@@ -2484,12 +2484,12 @@
         "label": "Sign in with ChatGPT"
        },
        {
-        "id": "chatgpt-browser",
+        "id": "chatgpt-siwc",
         "type": "oauth",
         "label": "ChatGPT Pro/Plus (browser)"
        },
        {
-        "id": "chatgpt-headless",
+        "id": "chatgpt-siwc",
         "type": "oauth",
         "label": "ChatGPT Pro/Plus (headless)"
        }

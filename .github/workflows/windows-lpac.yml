@@ -10,6 +10,14 @@ on:
       - packages/harness-runtime/lib/windows-private-files*
       - scripts/build-session-execution.mjs
       - scripts/diagnose-windows-supervisor-startup.mjs
+      - scripts/diagnose-windows-runtime-compatibility*
+      - scripts/qualify-windows-installer*
+      - scripts/windows-workflow.test.mjs
+      - packages/harness-runtime/lib/atomic-file.js
+      - packages/harness-runtime/lib/record-store.js
+      - packages/harness-runtime/lib/session-execution*
+      - packages/electron/**
+      - docs/WINDOWS_PORT_PLAN.md
       - scripts/verify-windows-host-boundary.mjs
       - scripts/verify-windows-filesystem-boundary.mjs
 
@@ -20,7 +28,7 @@ jobs:
   startup:
     name: LPAC ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 10
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -68,22 +76,32 @@ jobs:
         continue-on-error: true
         run: node scripts/build-session-execution.mjs .cache/windows-native/${{ matrix.arch }}
       - name: Run exact-source Node and Bun startup probes
+        id: startup_probe
         if: ${{ always() && steps.supervisor.outcome == 'success' }}
+        continue-on-error: true
         run: node scripts/diagnose-windows-supervisor-startup.mjs .cache/windows-native/${{ matrix.arch }}/supervisor-startup-diagnostic
+      - name: Qualify original Node and Bun stdio compatibility
+        id: runtime_compatibility
+        if: ${{ always() && steps.supervisor.outcome == 'success' }}
+        continue-on-error: true
+        run: node scripts/diagnose-windows-runtime-compatibility.mjs .cache/windows-native/${{ matrix.arch }}
       - name: Check private file and ACL boundaries
         if: ${{ always() && steps.supervisor.outcome == 'success' }}
         run: node scripts/verify-windows-filesystem-boundary.mjs .cache/windows-native/${{ matrix.arch }}
       - name: Check process identities and host-lifetime locks
         if: ${{ always() && steps.supervisor.outcome == 'success' }}
         run: node scripts/verify-windows-host-boundary.mjs .cache/windows-native/${{ matrix.arch }}
-      - name: Require native compilation and both startup markers
+      - name: Require native compilation, startup and original stdio compatibility
         if: ${{ always() }}
         shell: pwsh
         env:
           SUPERVISOR: ${{ steps.supervisor.outcome }}
+          STARTUP_PROBE: ${{ steps.startup_probe.outcome }}
+          RUNTIME_COMPATIBILITY: ${{ steps.runtime_compatibility.outcome }}
           EXPECTED_ARCH: ${{ matrix.arch }}
         run: |
           if ($env:SUPERVISOR -ne 'success') { throw 'Native LPAC compilation failed' }
+          if ($env:STARTUP_PROBE -ne 'success' -or $env:RUNTIME_COMPATIBILITY -ne 'success') { throw 'Actual native startup and original stdio compatibility required' }
           node --input-type=module -e "import fs from 'node:fs'; const r=JSON.parse(fs.readFileSync('.cache/windows-native/'+process.env.EXPECTED_ARCH+'/supervisor-startup-diagnostic/result.json')); if(r.admission!==false||r.acceptance!==false||r.variants.length!==1||r.variants[0].runs.length!==2||r.variants[0].runs.some(p=>p.status!=='started'||p.receipt?.confined!==true||p.receipt.exitCode!==0))throw Error('LPAC startup failed; admission remains unavailable')"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4

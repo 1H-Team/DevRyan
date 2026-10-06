@@ -1,4 +1,5 @@
 import { selectedRuntimeBundle, getRuntimeHome } from './lib/opencode/runtime-host/runtime-bundle-binding.js';
+import {createNativePrivatePersistence} from './lib/opencode/runtime-host/native-private-persistence.js';
 import { loadNativeRuntimeBundle, createNativeRuntimeOwner, createRuntimeBundleVerifier } from './lib/opencode/runtime-host/native-runtime-owner.js';
 import { createRuntimeBundleLifecycle, createRuntimeBundleAdmissionGate, createRuntimeBundleWorkFence, registerRuntimeBundleLifecycleRoutes } from './lib/opencode/runtime-host/runtime-bundle-lifecycle.js';
 import { createNativeAuthorization } from './lib/opencode/runtime-host/native-authorization.js';
@@ -95,6 +96,7 @@ import { createSettingsNormalizationRuntime } from './lib/opencode/settings-norm
 import { createSettingsHelpers } from './lib/opencode/settings-helpers.js';
 import { createThemeRuntime } from './lib/opencode/theme-runtime.js';
 import { createFeatureRoutesRuntime } from './lib/opencode/feature-routes-runtime.js';
+import { createHostChatgptSiwcEnrollment } from './lib/opencode/chatgpt-siwc-host.js';
 import { canReceiveProjectMetadataEvent } from './lib/scheduled-tasks/routes.js';
 import { parseServeCliOptions } from './lib/opencode/cli-options.js';
 import {
@@ -190,7 +192,8 @@ import { createProxyMiddleware, responseInterceptor } from 'http-proxy-middlewar
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const bundleWork = createRuntimeBundleWorkFence();
-const verifySelectedRuntimeBundle = selectedRuntimeBundle ? createRuntimeBundleVerifier(selectedRuntimeBundle) : null;
+const privatePersistence = selectedRuntimeBundle ? await createNativePrivatePersistence(selectedRuntimeBundle) : {};
+const verifySelectedRuntimeBundle = selectedRuntimeBundle ? createRuntimeBundleVerifier(selectedRuntimeBundle, privatePersistence) : null;
 if (verifySelectedRuntimeBundle) await verifySelectedRuntimeBundle();
 const configuredDefaultConfigRoot = typeof process.env.DEVRYAN_DEFAULT_CONFIG_ROOT === 'string'
   ? process.env.DEVRYAN_DEFAULT_CONFIG_ROOT.trim()
@@ -364,6 +367,7 @@ const projectIconStore = createProjectIconStore({
   dataDirectory: OPENCHAMBER_DATA_DIR,
 });
 const harnessRuntime = createWebHarnessRuntime({
+  ...privatePersistence,
   dataDirectory: OPENCHAMBER_DATA_DIR,
   runtime: process.env.OPENCHAMBER_RUNTIME || 'web',
   logger: console,
@@ -731,6 +735,7 @@ const projectConfigRuntime = createProjectConfigRuntime({
   projectsDirPath: OPENCHAMBER_PROJECTS_CONFIG_DIR,
 });
 evidenceRuntime = createWebEvidenceRuntime({
+  ...privatePersistence,
   evidenceDirectory: harnessRuntime.paths.evidenceDir,
   projectConfigRuntime,
   getSessionActivity: (sessionID) => sessionRuntime.getSessionActivitySnapshot()[sessionID] ?? null,
@@ -1270,6 +1275,11 @@ const staticRoutesRuntime = createStaticRoutesRuntime({
 const featureRoutesRuntime = createFeatureRoutesRuntime({
   clientReloadDelayMs: CLIENT_RELOAD_DELAY_MS,
 });
+const chatgptSiwcEnrollment = createHostChatgptSiwcEnrollment({
+  dataDirectory: OPENCHAMBER_DATA_DIR,
+  getNativeRuntimeOwner: () => nativeRuntime,
+  getOpenCodeRuntime,
+});
 const bootstrapRuntime = createBootstrapRuntime({
   createUiAuth,
   registerServerStatusRoutes,
@@ -1552,6 +1562,7 @@ const commandDeadlineRuntime = createWebCommandDeadlineRuntime({
 });
 harnessRuntime.setCommandDeadlineRuntime(commandDeadlineRuntime);
 const primaryRecoveryRuntime = createWebPrimaryRecoveryRuntime({
+  ...privatePersistence,
   openCodeClient,
   ...(nativeBundle?{isNativeFallbackError:error=>nativeBundle.reviewedConfiguration?.isReviewedSlimFailoverError(error)===true,
     dispatchNativeRecovery:(record,prompt)=>nativeRuntime.dispatchNativeRecovery(record,prompt)}:{}),
@@ -1595,6 +1606,7 @@ const harnessFingerprintReader = createHarnessRunFingerprintReader({
   recordDiagnostic: (entry) => harnessRuntime.record(entry),
 });
 const harnessTaskContext = createHarnessTaskContextHost({
+  ...privatePersistence,
   openCodeClient,
   dataDirectory: OPENCHAMBER_DATA_DIR, buildOpenCodeUrl, getOpenCodeAuthHeaders,
   readPrimaryRecord: (sessionID) => primaryRecoveryRuntime.readRecord(sessionID),
@@ -1612,6 +1624,7 @@ const harnessTaskContext = createHarnessTaskContextHost({
 });
 harnessRuntime.setTaskContextRuntime(harnessTaskContext);
 const sessionChangeHost = createSessionChangeHost({
+  ...privatePersistence,
   openCodeClient,
   restoreOwned: input => sessionExecutionHost.coordinator.restoreFiles(input),
   dataDirectory: OPENCHAMBER_DATA_DIR,
@@ -1628,7 +1641,8 @@ const sessionChangeHost = createSessionChangeHost({
   reconcileExecutionReceipts: (input) => cursorSdkRuntime.reconcileSessionChanges(input),
 });
 harnessRuntime.setSessionChangeHost(sessionChangeHost);
-const sessionExecutionHost = createSessionExecutionHost({ assertExecutionReady: executionReadiness.assertReady, dataDirectory: OPENCHAMBER_DATA_DIR, activityGate: sessionActivityGate,
+const sessionExecutionHost = createSessionExecutionHost({
+  ...privatePersistence, assertExecutionReady: executionReadiness.assertReady, dataDirectory: OPENCHAMBER_DATA_DIR, activityGate: sessionActivityGate,
   openCodeClient,
   getLauncher: () => nativeBundle?.artifacts.launcher ?? executionArtifacts().launcher, buildOpenCodeUrl, getOpenCodeAuthHeaders,
   ...(nativeBundle ? { nativeExecution: {
@@ -1675,7 +1689,7 @@ if (selectedRuntimeBundle && (ENV_SKIP_OPENCODE_START || ENV_CONFIGURED_OPENCODE
   throw new Error('Selected runtime bundles require their owned controller');
 }
 if (nativeBundle) {
-  nativeRuntime = createNativeRuntimeOwner({ bundle: nativeBundle, openCodeClient, admission: openCodeAdmission,
+  nativeRuntime = createNativeRuntimeOwner({ privatePersistence, bundle: nativeBundle, openCodeClient, admission: openCodeAdmission,
     getRequestPrincipal,
     clientDependencies: openCodeClientDeps,
     getManagedBrowserEnvironment: async () => managedBrowserEnvironmentProvider?.(),
@@ -1906,7 +1920,7 @@ async function main(options = {}) {
   const requestHostRestart = typeof options.onRestartHost === 'function' ? options.onRestartHost
     : process.env.DEVRYAN_SUPERVISED_RESTART === '1'
       ? async () => { await gracefulShutdown({ exitProcess: false }); process.exit(1); } : undefined;
-  const runtimeBundleLifecycle = createRuntimeBundleLifecycle({ binding: selectedRuntimeBundle,
+  const runtimeBundleLifecycle = createRuntimeBundleLifecycle({ privatePersistence, binding: selectedRuntimeBundle,
     retainCheckpoint: options.retainRuntimeBundleCheckpoint,
     getController: () => nativeRuntime.checkpointController(),
     closeAdmission: async () => {
@@ -2151,7 +2165,23 @@ async function main(options = {}) {
 
   reportStartupPhase('identity', 'Loading local access policy…');
   const multiUserRuntimePromise = createMultiUserRuntime({
-    oauthCoordinator: openAiOAuthCoordinator,
+    oauthCoordinator: {
+      getBindingAsync: () => {
+        const owner = nativeRuntime?.getOpenAiOAuthCoordinator();
+        if (!owner) throw Object.assign(new Error('bot_oauth_coordinator_unavailable'), { code: 'bot_oauth_coordinator_unavailable' });
+        return owner.getBindingAsync();
+      },
+      getAuthStateAsync: accountId => {
+        const owner = nativeRuntime?.getOpenAiOAuthCoordinator();
+        if (!owner) throw Object.assign(new Error('bot_oauth_coordinator_unavailable'), { code: 'bot_oauth_coordinator_unavailable' });
+        return owner.getAuthStateAsync(accountId);
+      },
+      access: input => {
+        const owner = nativeRuntime?.getOpenAiOAuthCoordinator();
+        if (!owner) throw Object.assign(new Error('bot_oauth_coordinator_unavailable'), { code: 'bot_oauth_coordinator_unavailable' });
+        return owner.access(input);
+      },
+    },
     dataDirectory: OPENCHAMBER_DATA_DIR,
     fetchImpl: fetch,
     logger: console,
@@ -2507,6 +2537,8 @@ async function main(options = {}) {
     return execution;
   };
   managedOrchestrationRuntime = createWebManagedOrchestrationRuntime({
+    windowsLedgerOwner: privatePersistence.windowsLedgerOwner,
+    windowsLauncher: privatePersistence.windowsLauncher,
     openCodeClient,
     onRequiredCheckReceipt: ({ task, receipt }) => {
       harnessRuntime.record({ type: 'lifecycle', event: 'required_check_observed', sessionID: task.rootSessionId,
@@ -2739,6 +2771,7 @@ async function main(options = {}) {
   await featureRoutesRuntime.registerRoutes(app, {
     openCodeClient,
     getNativeRuntimeOwner: () => nativeRuntime,
+    getChatgptSiwcEnrollmentOwner: () => chatgptSiwcEnrollment,
     isProviderAdministrator: () => canForceConfigRestart(getRequestPrincipal()),
     crypto,
     getLoginShellEnvSnapshot,

@@ -17,6 +17,7 @@ const normalizeKey = (value) => {
 export const createRecordStore = (options = {}) => {
   const directory = path.resolve(options.directory);
   const fsApi = options.fs ?? fs;
+  const windowsOwner = options.windowsOwner;
   const version = options.version ?? STORE_VERSION;
   const validateRecord = typeof options.validateRecord === 'function'
     ? options.validateRecord
@@ -47,7 +48,12 @@ export const createRecordStore = (options = {}) => {
 
   const initialize = async () => {
     if (initialized) return;
-    await fsApi.mkdir(directory, { recursive: true, mode: 0o700 });
+    if (process.platform === 'win32') {
+      if (typeof windowsOwner?.ensureDirectory !== 'function') throw Object.assign(new Error('private_windows_publication_authority_unavailable'), {
+        code: 'private_windows_publication_authority_unavailable',
+      });
+      await windowsOwner.ensureDirectory(directory);
+    } else await fsApi.mkdir(directory, { recursive: true, mode: 0o700 });
     initialized = true;
   };
 
@@ -70,6 +76,7 @@ export const createRecordStore = (options = {}) => {
     await (tails.get(normalized) ?? Promise.resolve()).catch(() => undefined);
     const envelope = await readJsonGuarded(filePathFor(normalized), {
       fs: fsApi,
+      windowsOwner,
       maxBytes: maxReadBytes,
       quarantineDir: path.join(directory, 'quarantine'),
       validate: validateEnvelope,
@@ -92,13 +99,18 @@ export const createRecordStore = (options = {}) => {
     await writeFileAtomic(
       filePathFor(normalized),
       `${JSON.stringify({ version, key: normalized, record: validated }, null, 2)}\n`,
-      { fs: fsApi },
+      { fs: fsApi, windowsOwner },
     );
     return validated;
   });
 
   const deleteRecord = (key) => enqueue(key, async () => {
     await initialize();
+    if (process.platform === 'win32') {
+      if (typeof windowsOwner?.delete !== 'function') throw Object.assign(new Error('private_windows_delete_authority_unavailable'), { code: 'private_windows_delete_authority_unavailable' });
+      await windowsOwner.delete(filePathFor(key));
+      return;
+    }
     await fsApi.rm(filePathFor(key), { force: true });
   });
 

@@ -83,7 +83,7 @@ test('wire routes are registered per provider and bound to the host-attested tra
     assert.equal(route.transport, 'responses'); assert.equal(route.auth, 'oauth'); assert.equal(Object.isFrozen(route), true);
     assert.equal(resolveDuplicateWireRoute(provider), route);
   }
-  assert.deepEqual([DUPLICATE_WIRE_ROUTES.openai.host, DUPLICATE_WIRE_ROUTES.openai.path], ['chatgpt.com', '/backend-api/codex/responses']);
+  assert.deepEqual([DUPLICATE_WIRE_ROUTES.openai.host, DUPLICATE_WIRE_ROUTES.openai.path], ['api.openai.com', '/v1/responses']);
   assert.deepEqual([DUPLICATE_WIRE_ROUTES.xai.host, DUPLICATE_WIRE_ROUTES.xai.path], ['api.x.ai', '/v1/responses']);
   assert.throws(() => resolveDuplicateWireRoute('anthropic'), { message: 'unsupported-route:anthropic-meridian' });
   for (const [providerID, message] of [['cursor-acp', 'unsupported-route:cursor-acp'], ['__proto__', 'unsupported-route:__proto__'],
@@ -133,7 +133,7 @@ test('xAI route forwards only registered OAuth Responses traffic byte-for-byte a
   try {
     assert.equal(proxy.route, DUPLICATE_WIRE_ROUTES.xai);
     const names = new X509Certificate(await fs.readFile(proxy.cert)).subjectAltName;
-    assert.match(names, /DNS:api\.x\.ai/); assert.doesNotMatch(names, /chatgpt\.com/);
+    assert.match(names, /DNS:api\.x\.ai/); assert.doesNotMatch(names, /api\.openai\.com/);
 
     const bytes = Buffer.from(JSON.stringify(xaiManagedBody(fixture)));
     const split = bytes.indexOf(Buffer.from('世')) + 1; // inside a three-byte sequence
@@ -161,7 +161,7 @@ test('xAI route forwards only registered OAuth Responses traffic byte-for-byte a
     assert.equal(usage.cost.provenance, 'unknown', 'OAuth usage ticks are not provider-billed evidence');
 
     // Unregistered connects, paths, methods, models, sizes and counts fail closed.
-    assert.equal((await send(proxy, { host: 'chatgpt.com', target: '/backend-api/codex/responses' })).connectStatus, 403);
+    assert.equal((await send(proxy, { host: 'api.openai.com', target: '/v1/responses' })).connectStatus, 403);
     assert.equal((await send(proxy, { host: 'auth.x.ai', target: '/oauth2/token' })).connectStatus, 403);
     assert.equal((await send(proxy, { host: 'api.x.ai', target: '/v1/chat/completions', chunks: [bytes] })).statusCode, 502);
     assert.equal((await send(proxy, { host: 'api.x.ai', method: 'GET', target: '/v1/models' })).statusCode, 502);
@@ -170,7 +170,7 @@ test('xAI route forwards only registered OAuth Responses traffic byte-for-byte a
     const oversized = Buffer.from(JSON.stringify({ model: 'grok-4.7', input: 'x'.repeat(2 * 1024 * 1024) }));
     await send(proxy, { host: 'api.x.ai', target: '/v1/responses', chunks: [oversized] });
     assert.equal((await send(proxy, { host: 'api.x.ai', target: '/v1/responses', chunks: [bytes] })).statusCode, 502);
-    assert.deepEqual(proxy.failures, ['unregistered-connect:chatgpt.com:443', 'unregistered-connect:auth.x.ai:443',
+    assert.deepEqual(proxy.failures, ['unregistered-connect:api.openai.com:443', 'unregistered-connect:auth.x.ai:443',
       'unregistered-request', 'unregistered-request', 'unregistered-model', 'oversized-request', 'unregistered-request']);
     assert.equal(upstream.calls.length, 1, 'no refused request reached the upstream');
     assert.deepEqual(proxy.evidence.slice(1).map(row => [row.status, row.failure, row.request]), [
@@ -185,7 +185,7 @@ test('xAI route forwards only registered OAuth Responses traffic byte-for-byte a
   await fs.rm(root, { recursive: true, force: true });
 });
 
-test('OpenAI route keeps its ChatGPT origin and refuses xAI; Anthropic Meridian is refused before any file exists', async () => {
+test('OpenAI route keeps its SIWC api.openai.com origin and refuses xAI; Anthropic Meridian is refused before any file exists', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'duplicate-wire-openai-'));
   try {
     for (const [providerID, model, message] of [['anthropic', 'claude-opus-5-5', 'unsupported-route:anthropic-meridian'],
@@ -200,11 +200,11 @@ test('OpenAI route keeps its ChatGPT origin and refuses xAI; Anthropic Meridian 
       providerID: 'openai', model: 'gpt-6-astra', fetchImpl: upstream.fetchImpl });
     try {
       const names = new X509Certificate(await fs.readFile(proxy.cert)).subjectAltName;
-      assert.match(names, /DNS:chatgpt\.com/); assert.doesNotMatch(names, /x\.ai/);
+      assert.match(names, /DNS:api\.openai\.com/); assert.doesNotMatch(names, /x\.ai/);
       assert.equal((await send(proxy, { host: 'api.x.ai', target: '/v1/responses' })).connectStatus, 403);
       const body = Buffer.from(JSON.stringify({ model: 'gpt-6-astra', input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'READY?' }] }] }));
-      assert.equal((await send(proxy, { host: 'chatgpt.com', target: '/backend-api/codex/responses', chunks: [body] })).statusCode, 200);
-      assert.equal(upstream.calls[0].url, 'https://chatgpt.com/backend-api/codex/responses');
+      assert.equal((await send(proxy, { host: 'api.openai.com', target: '/v1/responses', chunks: [body] })).statusCode, 200);
+      assert.equal(upstream.calls[0].url, 'https://api.openai.com/v1/responses');
       assert.deepEqual(proxy.failures, ['unregistered-connect:api.x.ai:443']);
       const usage = proxy.evidence[0].usageObservation;
       assert.deepEqual([proxy.evidence[0].status, usage.provider, usage.auth, usage.transport, usage.route, usage.tokens.totalInput],

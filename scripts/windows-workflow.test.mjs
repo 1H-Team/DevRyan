@@ -15,6 +15,13 @@ test('isolated LPAC probes require both native startup receipts without enabling
   const commands = job.steps.map(step => step.run ?? '').join('\n');
   assert.match(commands, /r\.admission!==false\|\|r\.acceptance!==false/);
   assert.match(commands, /p\.status!=='started'\|\|p\.receipt\?\.confined!==true/);
+  const compatibility = job.steps.find(step => step.id === 'runtime_compatibility');
+  assert.equal(compatibility.if, "${{ always() && steps.supervisor.outcome == 'success' }}");
+  assert.equal(compatibility['continue-on-error'], true);
+  assert.match(compatibility.run, /diagnose-windows-runtime-compatibility\.mjs/);
+  const required = job.steps.find(step => step.env?.RUNTIME_COMPATIBILITY);
+  assert.equal(required.env.RUNTIME_COMPATIBILITY, '${{ steps.runtime_compatibility.outcome }}');
+  assert.match(required.run, /RUNTIME_COMPATIBILITY -ne 'success'/);
   assert.doesNotMatch(commands, /--verify|bun install|gh release|git (?:push|tag)|npm publish/);
 });
 
@@ -43,7 +50,10 @@ test('Windows qualification builds and executes independent pinned native archit
   assert.equal(job.steps.find(step => step.uses?.startsWith('oven-sh/setup-bun@')).with['bun-version'], '1.3.14');
   assert.deepEqual(workflow.on.push.branches, ['main', 'release/2.0.2', 'implementation/windows-port']);
   assert.deepEqual(workflow.on.push.paths, workflow.on.pull_request.paths);
-  for (const input of ['.gitattributes', 'scripts/native-compaction-observation-transform.mjs']) assert.ok(workflow.on.push.paths.includes(input));
+  for (const input of ['.gitattributes', 'scripts/native-compaction-observation-transform.mjs',
+    'scripts/qualify-windows-installer*', 'scripts/diagnose-windows-runtime-compatibility*',
+    'scripts/qa/package-electron.mjs', 'scripts/append-windows-release*', 'docs/WINDOWS_PORT_PLAN.md', 'package.json',
+    'packages/**', 'vite.config.ts', 'vite-theme-plugin.ts', 'postcss.config.js', 'tsconfig.json', 'components.json']) assert.ok(workflow.on.push.paths.includes(input));
   assert.equal(job.steps.find(step => step.uses?.startsWith('actions/setup-node@')).with.architecture, '${{ matrix.arch }}');
   assert.equal(job.env.GIT_CEILING_DIRECTORIES, '${{ github.workspace }}/.cache/test-fixtures');
   const commands = job.steps.map(step => step.run ?? '').join('\n');
@@ -65,7 +75,23 @@ test('Windows qualification builds and executes independent pinned native archit
   const required = job.steps.find(step => step.env?.SUPERVISOR_ACCEPTANCE);
   assert.equal(required.if, '${{ always() }}');
   assert.equal(required['continue-on-error'], undefined);
-  assert.deepEqual(Object.keys(required.env).sort(), ['FEATURE_CAPABILITIES', 'FILESYSTEM_BOUNDARY', 'HOST_BOUNDARY', 'REVIEWED_EXECUTABLES', 'REVIEWED_LIBSQL', 'RUNTIME', 'RUNTIME_ACCEPTANCE', 'SUPERVISOR', 'SUPERVISOR_ACCEPTANCE']);
+  assert.deepEqual(Object.keys(required.env).sort(), ['FEATURE_CAPABILITIES', 'FILESYSTEM_BOUNDARY', 'HOST_BOUNDARY', 'INSTALLER_QUALIFICATION', 'REVIEWED_EXECUTABLES', 'REVIEWED_GIT', 'REVIEWED_LIBSQL', 'RUNTIME', 'RUNTIME_ACCEPTANCE', 'RUNTIME_COMPATIBILITY', 'SUPERVISOR', 'SUPERVISOR_ACCEPTANCE']);
+  assert.equal(required.env.REVIEWED_GIT,'${{ steps.reviewed_git.outcome }}');
+  assert.equal(byID.reviewed_git.if,'${{ always() }}');
+  assert.match(byID.reviewed_git.run,/node scripts\/build-windows-git\.mjs/);
+  assert.match(required.run,/'REVIEWED_GIT'/);
+  assert.ok(workflow.on.push.paths.includes('scripts/build-windows-git*'));
+  assert.equal(required.env.RUNTIME_COMPATIBILITY, '${{ steps.runtime_compatibility.outcome }}');
+  assert.equal(required.env.INSTALLER_QUALIFICATION, '${{ steps.installer_qualification.outcome }}');
+  assert.equal(byID.installer_qualification.name, 'Qualify per-user NSIS installation and updater recovery');
+  assert.equal(byID.installer_qualification.if, '${{ always() }}');
+  assert.match(byID.installer_qualification.run, /node scripts\/qualify-windows-installer\.mjs/);
+  const installerUpload = job.steps.find(step => step.with?.name === 'DevRyan-windows-installer-${{ matrix.arch }}');
+  assert.match(installerUpload.with.path, /qualification\.json/);
+  assert.match(installerUpload.with.path, /evidence\.json/);
+  assert.match(installerUpload.with.path, /DevRyan-2\.0\.2-win-/);
+  assert.doesNotMatch(installerUpload.with.path, /home|private-inputs|build-baseline/);
+  assert.match(job.steps.find(step => step.with?.name === 'DevRyan-windows-native-${{ matrix.arch }}').with.path, /!.*installer-qualification\/\*\*/);
   assert.equal(required.env.REVIEWED_EXECUTABLES, '${{ steps.reviewed_executables.outcome }}');
   assert.equal(byID.reviewed_executables.if, '${{ always() }}');
   assert.match(byID.reviewed_executables.run, /node scripts\/build-windows-reviewed-executables\.mjs/);

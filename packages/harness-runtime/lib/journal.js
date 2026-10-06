@@ -7,6 +7,7 @@ import { createGunzip, gunzip, gzip } from 'node:zlib';
 import { promisify } from 'node:util';
 
 import { writeFileAtomic } from './atomic-file.js';
+import {createWindowsJournalFiles} from './windows-journal-files.js';
 import { createJournalTrimmer, RUNTIME_KEY } from './journal-trim.js';
 import { resolveRecordSessionID, resolveSessionRelation } from './session-id.js';
 
@@ -205,10 +206,11 @@ const updateManifestFromRecord = (manifest, record) => {
   }
 };
 
-const readJson = async (fsApi, filePath) => {
+const readJson = async (fsApi, filePath, strictPrivate=false) => {
   try {
     return JSON.parse(await fsApi.readFile(filePath, 'utf8'));
-  } catch {
+  } catch(error) {
+    if(strictPrivate&&error.code!=='ENOENT'&&!(error instanceof SyntaxError))throw error;
     return null;
   }
 };
@@ -217,7 +219,10 @@ export const createDiagnosticJournal = (options = {}) => {
   const directory = path.resolve(options.directory);
   const sessionsDirectory = path.join(directory, 'sessions');
   const runtimeDirectory = path.join(directory, 'runtime');
-  const fsApi = options.fs ?? fs;
+  const nativeFiles=(options.platform??process.platform)==='win32'
+    ?createWindowsJournalFiles({directory,owner:options.windowsOwner,metadata:options.fs??fs}):null;
+  const fsApi = nativeFiles?.fs ?? options.fs ?? fs;
+  const publish=(file,bytes)=>nativeFiles?options.windowsOwner.write(file,Buffer.isBuffer(bytes)?bytes:Buffer.from(bytes)):writeFileAtomic(file,bytes,{fs:fsApi,now});
   const sanitizer = options.sanitizer;
   if (!sanitizer || typeof sanitizer.sanitizeRecord !== 'function') {
     throw new TypeError('diagnostic journal sanitizer is required');
@@ -229,7 +234,7 @@ export const createDiagnosticJournal = (options = {}) => {
   const maxAgeMs = options.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
   const blobThresholdBytes = options.blobThresholdBytes ?? DEFAULT_BLOB_THRESHOLD_BYTES;
   const maxOpenWriters = options.maxOpenWriters ?? DEFAULT_MAX_OPEN_WRITERS;
-  const openReadStream = options.createReadStream ?? createReadStream;
+  const openReadStream = nativeFiles?.createReadStream ?? options.createReadStream ?? createReadStream;
   const trim = options.trim !== false;
   const queue = [];
   const afterClearQueue = [];
@@ -319,7 +324,7 @@ export const createDiagnosticJournal = (options = {}) => {
     if (existing) return existing;
     await fsApi.mkdir(explicitDirectory, { recursive: true, mode: 0o700 });
     const manifestPath = path.join(explicitDirectory, 'manifest.json');
-    const loaded = await readJson(fsApi, manifestPath);
+    const loaded = await readJson(fsApi, manifestPath, Boolean(nativeFiles));
     const bucket = {
       key,
       sessionID: sessionID || '',
@@ -355,7 +360,7 @@ export const createDiagnosticJournal = (options = {}) => {
   const writeIfChanged = async (filePath, content) => {
     const previous = await fsApi.readFile(filePath, 'utf8').catch(() => '');
     if (previous === content) return false;
-    await writeFileAtomic(filePath, content, { fs: fsApi, now });
+    await publish(filePath, content);
     return true;
   };
 
@@ -409,13 +414,11 @@ export const createDiagnosticJournal = (options = {}) => {
     const operation = metadataWritePromise.then(async () => {
       if (metadataTimer) clearTimeout(metadataTimer);
       metadataTimer = null;
+      await nativeFiles?.flush();
       await syncTrimStats();
       for (const bucket of buckets.values()) {
         if (!bucket.dirty) continue;
-        await writeFileAtomic(bucket.manifestPath, `${JSON.stringify(bucket.manifest, null, 2)}\n`, {
-          fs: fsApi,
-          now,
-        });
+        await publish(bucket.manifestPath, `${JSON.stringify(bucket.manifest, null, 2)}\n`);
         bucket.dirty = false;
       }
       await writeIfChanged(path.join(directory, 'README.md'), README_CONTENT);
@@ -437,17 +440,17 @@ export const createDiagnosticJournal = (options = {}) => {
   };
 
   const gzipOpenFile = async (source) => {
-    const raw = await fsApi.readFile(source).catch(() => null);
+    const raw = await fsApi.readFile(source).catch(error => {if(nativeFiles&&error.code!=='ENOENT')throw error;return null;});
     if (!raw) return null;
     const lastNewline = raw.lastIndexOf(0x0a);
     if (lastNewline < 0) {
-      await fsApi.rm(source, { force: true });
+      await fsApi.rm(source, { force: true, ...nativeFiles?{expectedBytes:raw}:{} });
       return null;
     }
     const complete = raw.subarray(0, lastNewline + 1);
     const destination = source.replace(/\.ndjson\.open$/, '.ndjson.gz');
-    await writeFileAtomic(destination, await gzipAsync(complete), { fs: fsApi, now });
-    await fsApi.rm(source, { force: true });
+    await publish(destination, await gzipAsync(complete));
+    await fsApi.rm(source, { force: true, ...nativeFiles?{expectedBytes:raw}:{} });
     return destination;
   };
 
@@ -459,11 +462,13 @@ export const createDiagnosticJournal = (options = {}) => {
       const raw = await fsApi.readFile(source);
       const lastNewline = raw.lastIndexOf(0x0a);
       if (lastNewline < 0) {
-        await fsApi.rm(source, { force: true });
+        await fsApi.rm(source, { force: true, ...nativeFiles?{expectedBytes:raw}:{} });
         continue;
       }
-      if (lastNewline + 1 < raw.length) await fsApi.truncate(source, lastNewline + 1);
-      await fsApi.rename(source, source.slice(0, -'.open'.length));
+      if (lastNewline + 1 < raw.length){
+        if(nativeFiles)await fsApi.truncate(source,lastNewline+1,{expectedBytes:raw});else await fsApi.truncate(source,lastNewline+1);
+      }
+      if(nativeFiles)await fsApi.rename(source,source.slice(0,-'.open'.length),{expectedBytes:raw});else await fsApi.rename(source,source.slice(0,-'.open'.length));
     }
   };
 
@@ -778,7 +783,7 @@ export const createDiagnosticJournal = (options = {}) => {
     for (const entry of sessionEntries) {
       if (!entry.isDirectory()) continue;
       const bucketPath = path.join(sessionsDirectory, entry.name);
-      const loaded = await readJson(fsApi, path.join(bucketPath, 'manifest.json'));
+      const loaded = await readJson(fsApi, path.join(bucketPath, 'manifest.json'), Boolean(nativeFiles));
       let sessionID = typeof loaded?.sessionID === 'string' ? loaded.sessionID : '';
       if (!sessionID) {
         try {
@@ -988,7 +993,7 @@ export const createDiagnosticJournal = (options = {}) => {
     for (const entry of sessionEntries) {
       if (!entry.isDirectory()) continue;
       const bucketPath = path.join(sessionsDirectory, entry.name);
-      const loaded = await readJson(fsApi, path.join(bucketPath, 'manifest.json'));
+      const loaded = await readJson(fsApi, path.join(bucketPath, 'manifest.json'), Boolean(nativeFiles));
       let sessionID = typeof loaded?.sessionID === 'string' ? loaded.sessionID : '';
       if (!sessionID) {
         try {
@@ -1013,7 +1018,9 @@ export const createDiagnosticJournal = (options = {}) => {
       sanitizer,
       runtime: options.runtime,
       now,
-      fs: fsApi,
+      fs: options.fs ?? fs,
+      windowsOwner:options.windowsOwner,
+      platform:options.platform,
       createReadStream: openReadStream,
       maxQueue,
       maxSegmentBytes,

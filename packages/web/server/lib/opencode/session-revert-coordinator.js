@@ -89,9 +89,9 @@ export function createScopedRevertConversation({ openCodeClient, nativeConversat
  * this directory is captured and confined. Runtime version alone is not proof.
  */
 export function createScopedRevertCoordinator({ runtime, executions, openchamberDataDir,
-  onDiagnostic, legacy, openCodeClient, nativeConversation }) {
+  onDiagnostic, legacy, openCodeClient, nativeConversation, windowsOwner, windowsLauncher }) {
   return createSessionRevertCoordinator({ directory: path.join(openchamberDataDir, 'harness', 'revert-transactions'), runtime, executions,
-    onDiagnostic, legacy, conversation: createScopedRevertConversation({
+    onDiagnostic, legacy, windowsOwner, windowsLauncher, conversation: createScopedRevertConversation({
       openCodeClient, nativeConversation,
     }) });
 }

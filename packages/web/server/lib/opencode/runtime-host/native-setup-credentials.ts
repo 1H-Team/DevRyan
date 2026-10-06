@@ -17,7 +17,7 @@ const Stamp=Schema.Struct({schema:Schema.Literal(1),sha256:Schema.String,count:S
 /** Constructor-only, original global services before caller-grant decoration.
  * A transaction couples original credential activation and its one-time stamp;
  * later account changes are never overwritten by startup seeding. */
-export function bootstrapNativeSetupCredentials({seedPath}:{readonly seedPath:string}){
+export function bootstrapNativeSetupCredentials({seedPath,expected,platform=process.platform}:{readonly seedPath:string;readonly expected?:{readonly sha256:string;readonly count:number}|null;readonly platform?:NodeJS.Platform}){
  return Effect.gen(function*(){
   const db=yield* Database.Service,kv=yield* KV.Service,credentials=yield* Credential.Service;
   let identity:{ino:number;dev:number;mtimeMs:number;ctimeMs:number}|undefined;
@@ -34,22 +34,23 @@ export function bootstrapNativeSetupCredentials({seedPath}:{readonly seedPath:st
   if(bytes){try{seed=Schema.decodeUnknownSync(Seed)(JSON.parse(bytes.toString('utf8')),{onExcessProperty:'error'});}catch{return fail('native_setup_credentials_invalid');}
    if(seed.credentials.length>128||new Set(seed.credentials.map(item=>item.integrationID)).size!==seed.credentials.length)return fail('native_setup_credentials_invalid');}
   const digest=bytes?createHash('sha256').update(bytes).digest('hex'):undefined;
+  if(platform==='win32'&&(expected===undefined||expected===null&&bytes!==undefined||expected!==null&&expected!==undefined&&(digest!==expected.sha256||seed?.credentials.length!==expected.count)))return fail('native_setup_credentials_changed');
   const captured=seed;
   const result=yield* db.db.$client.withTransaction(Effect.gen(function*(){
    const stamp=yield* kv.get(NATIVE_SETUP_CREDENTIAL_STAMP);
    if(stamp!==undefined){
     let saved:typeof Stamp.Type;try{saved=Schema.decodeUnknownSync(Stamp)(stamp);}catch{return fail('native_setup_credentials_stamp_invalid');}
-    if(!/^[a-f0-9]{64}$/.test(saved.sha256)||!Number.isSafeInteger(saved.count)||saved.count<0||saved.count>128||digest!==undefined&&saved.sha256!==digest)return fail('native_setup_credentials_stamp_invalid');
-    return {status:'already-applied' as const,count:saved.count};
+    if(!/^[a-f0-9]{64}$/.test(saved.sha256)||!Number.isSafeInteger(saved.count)||saved.count<0||saved.count>128||digest!==undefined&&(saved.sha256!==digest||saved.count!==captured?.credentials.length))return fail('native_setup_credentials_stamp_invalid');
+    return {status:'already-applied' as const,count:saved.count,sha256:saved.sha256};
    }
-   if(!captured||!digest)return {status:'absent' as const,count:0};
+   if(!captured||!digest)return {status:'absent' as const,count:0,sha256:null};
    if((yield* credentials.all()).length)return fail('native_setup_credentials_target_not_fresh');
    for(const item of captured.credentials)yield* credentials.create({...item,activate:true});
    yield* kv.set(NATIVE_SETUP_CREDENTIAL_STAMP,{schema:1,sha256:digest,count:captured.credentials.length});
-   return {status:'applied' as const,count:captured.credentials.length};
+   return {status:'applied' as const,count:captured.credentials.length,sha256:digest};
   })).pipe(Effect.orDie);
-  if(bytes&&result.status!=='absent')yield* Effect.promise(async()=>{const current=await fs.lstat(seedPath);
+  if(platform!=='win32'&&bytes&&result.status!=='absent')yield* Effect.promise(async()=>{const current=await fs.lstat(seedPath);
    if(!identity||current.isSymbolicLink()||current.ino!==identity.ino||current.dev!==identity.dev||current.mtimeMs!==identity.mtimeMs||current.ctimeMs!==identity.ctimeMs)return fail('native_setup_credentials_changed');await fs.unlink(seedPath);});
-  return result;
+  return platform==='win32'?result:{status:result.status,count:result.count};
  });
 }

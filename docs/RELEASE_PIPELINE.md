@@ -198,9 +198,11 @@ qualification from the final source and require all original release gates.
 
 `windows.yml` provides separate `windows-2022` x64 and `windows-11-arm` ARM64
 qualification jobs with Bun 1.3.14, native MSVC environments, compiled supervisor
-acceptance and controller/writer/package checks. It has only read permissions.
-These jobs expose unported Windows contracts as failures and do not open runtime
-admission or publish an installer. See [Windows port](WINDOWS_PORT_PLAN.md).
+acceptance, controller/writer checks, pinned-runtime stdio probes and per-user NSIS
+installation/update recovery. It has only read permissions. Native namespace
+durability, supervision and runtime compatibility must pass before installer
+scenarios run. These jobs do not open runtime admission or publish a release.
+See [Windows port](WINDOWS_PORT_PLAN.md).
 
 Version 2.0.2 keeps one frozen tag/source for all platforms. Publish the qualified
 macOS DMG first, then use `windows-release-append.yml` with that full source SHA,
@@ -209,13 +211,16 @@ Windows qualification run ID. Its default `dry_run=true` verifies without upload
 The read-only preflight requires actual native, compiled acceptance and NSIS
 installation/update outcomes on both architectures, plus the completed macOS
 publication gates. Startup diagnostics and boot-refusal receipts cannot satisfy
-those gates. The installer qualification stage is still pending in `windows.yml`.
+those gates. The implemented `Qualify per-user NSIS installation and updater recovery`
+stage records blockers explicitly; both native Windows runs remain required.
 
 The macOS packaging job retains its source/version/name/size/SHA-256 receipt
 as `DevRyan-macos-arm64-packaging` for 90 days. Windows qualification must retain
 `DevRyan-windows-installer-{x64,arm64}` with the exact installer and
-`qualification.json`. The append owner compares those receipts with held local
-bytes and verifies the downloaded macOS digest before any upload. It creates no
+`qualification.json` and its digest-bound `evidence.json`. The append owner requires
+explicit acceptance, matching source and installer identities, passing prerequisites
+and all five installation/update/refusal/interruption/rollback scenarios. It compares
+those receipts with held local bytes and verifies the downloaded macOS digest before any upload. It creates no
 release or tag, preserves the existing macOS asset ID, uploads only the two
 Windows installers and requires the exact existing `desktop` allowlist. A retry
 may reuse an already uploaded Windows asset only when its packaging digest

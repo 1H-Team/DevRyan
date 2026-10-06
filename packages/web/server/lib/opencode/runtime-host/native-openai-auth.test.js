@@ -3,8 +3,16 @@ import { createOpenAiOAuthCoordinator } from '../openai-oauth-coordinator.js';
 import { createNativeOpenAiAuth } from './native-openai-auth.js';
 
 const directory = '/fixture/project', now = 1000000;
-const oauth = (overrides = {}) => ({ type: 'oauth', methodID: 'chatgpt-browser', access: 'fixture-access', refresh: 'fixture-refresh',
-  expires: now + 120000, metadata: { accountID: 'fixture-account', retained: 'fixture' }, ...overrides });
+const oauth = (overrides = {}) => ({ type: 'oauth', methodID: 'chatgpt-siwc', access: 'fixture-access', refresh: 'fixture-refresh',
+  expires: now + 120000, metadata: {
+    accountID: 'fixture-account',
+    clientId: 'oaiapp_fixture_client',
+    scopes: ['openid', 'profile', 'email', 'offline_access', 'resource.invoke', 'chatgpt.tokens.use.direct'],
+    subject: 'fixture-account',
+    extAgentHostId: 'urn:uuid:00000000-0000-4000-8000-000000000001',
+    planUsage: true,
+    retained: 'fixture',
+  }, ...overrides });
 function fixture(value = oauth()) {
   let instanceID = 'fixture-controller-1';
   let record = { directory, controllerInstanceID: instanceID, credentialID: 'fixture-credential-1', integrationID: 'openai', value };
@@ -27,7 +35,7 @@ describe('native OpenAI canonical credential adapter', () => {
     expect(f.coordinator.usesOAuth()).toBe(false);
     expect(await f.coordinator.usesOAuthAsync()).toBe(true);
     const first = await f.adapter.access(f.coordinator, { directory });
-    expect(first).toMatchObject({ credentialID: 'fixture-credential-1', methodID: 'chatgpt-browser', accountId: 'fixture-account', accessToken: 'fixture-access' });
+    expect(first).toMatchObject({ credentialID: 'fixture-credential-1', methodID: 'chatgpt-siwc', accountId: 'fixture-account', accessToken: 'fixture-access' });
     expect(f.fetchImpl).not.toHaveBeenCalled();
     f.rotate('fixture-controller-2'); f.set({ ...f.get(), controllerInstanceID: 'fixture-controller-2' });
     const second = await f.adapter.access(f.coordinator, { directory });
@@ -40,13 +48,13 @@ describe('native OpenAI canonical credential adapter', () => {
     expect(first.accessToken).toBe('fixture-rotated-access');
     expect(f.fetchImpl).toHaveBeenCalledTimes(1);
     expect(f.compareAndSwapSelected).toHaveBeenCalledTimes(1);
-    expect(f.get().value).toMatchObject({ methodID: 'chatgpt-browser', metadata: { accountID: 'fixture-account', retained: 'fixture' }, refresh: 'fixture-rotated-refresh' });
+    expect(f.get().value).toMatchObject({ methodID: 'chatgpt-siwc', metadata: { accountID: 'fixture-account', retained: 'fixture' }, refresh: 'fixture-rotated-refresh' });
   });
   it('does not accept a forged or modified normalized CAS record', async () => {
     const f = fixture();
     const original = await f.adapter.asyncStorage.readAuth();
     expect(await f.adapter.asyncStorage.compareAndSwap({ ...original }, { ...original, access: 'forged' })).toBe(false);
-    await expect(f.adapter.asyncStorage.compareAndSwap(original, { ...original, methodID: 'chatgpt-headless' })).rejects.toMatchObject({ code: 'native_openai_owner_unavailable' });
+    await expect(f.adapter.asyncStorage.compareAndSwap(original, { ...original, methodID: 'foreign-method' })).rejects.toMatchObject({ code: 'native_openai_owner_unavailable' });
     expect(f.compareAndSwapSelected).not.toHaveBeenCalled();
   });
   it('refuses account/controller switches during asynchronous selection reads', async () => {
@@ -68,6 +76,30 @@ describe('native OpenAI canonical credential adapter', () => {
     const f = fixture({ type: 'key', key: 'fixture-native-key' });
     expect(await f.adapter.access(f.coordinator, { directory })).toBeUndefined();
     expect(f.fetchImpl).not.toHaveBeenCalled();
+  });
+  it('projects only the exact selected key for image access and refuses forged, changed or replaced proofs', async () => {
+    const f = fixture({ type: 'key', key: 'fixture-native-key' });
+    const access = await f.adapter.imageAccess({ directory });
+    expect(access).toMatchObject({ valueType: 'key', methodID: 'api-key', credentialID: 'fixture-credential-1', accessToken: 'fixture-native-key' });
+    expect(access).not.toHaveProperty('accountId');
+    await f.adapter.recheckImageAccess(access, { directory });
+    await expect(f.adapter.recheckImageAccess({ ...access }, { directory })).rejects.toMatchObject({ code: 'native_openai_owner_unavailable' });
+    await expect(f.adapter.recheckImageAccess(access, { directory: '/fixture/foreign' })).rejects.toMatchObject({ code: 'native_openai_owner_unavailable' });
+    const selected = f.get();
+    for (const change of [{ credentialID: 'fixture-other-key' }, { value: { type: 'key', key: 'fixture-changed-key' } }]) {
+      f.set({ ...selected, ...change });
+      await expect(f.adapter.recheckImageAccess(access, { directory })).rejects.toMatchObject({ code: 'native_image_generation_credential_changed' });
+    }
+    f.set(selected); f.rotate('fixture-controller-2');
+    await expect(f.adapter.recheckImageAccess(access, { directory })).rejects.toMatchObject({ code: 'native_openai_owner_unavailable' });
+    expect(f.fetchImpl).not.toHaveBeenCalled(); expect(f.compareAndSwapSelected).not.toHaveBeenCalled();
+  });
+  it.each(['chatgpt-siwc', 'chatgpt-browser', 'chatgpt-headless'])('image access refuses %s before refresh or credential mutation', async methodID => {
+    const f = fixture(oauth({ methodID, expires: now - 1 }));
+    await expect(f.adapter.imageAccess({ directory })).rejects.toMatchObject({
+      code: methodID === 'chatgpt-siwc' ? 'native_image_generation_siwc_unsupported' : 'native_openai_method_unsupported',
+    });
+    expect(f.fetchImpl).not.toHaveBeenCalled(); expect(f.compareAndSwapSelected).not.toHaveBeenCalled();
   });
   it('does not release a token after a same-account selected-credential switch', async () => {
     const f = fixture();

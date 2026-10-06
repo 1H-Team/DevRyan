@@ -52,7 +52,7 @@ export const createDefaultBotRevisionContract = (
       providerId: 'openai',
       modelId: 'gpt-5.6-sol',
       credentialId: PLACEHOLDER_CREDENTIAL_ID,
-      egressHosts: ['auth.openai.com:443', 'chatgpt.com:443'],
+      egressHosts: ['auth.openai.com:443', 'api.openai.com:443'],
     },
     fallbacks: [],
   },

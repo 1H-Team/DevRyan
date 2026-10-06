@@ -8,8 +8,10 @@ import {DEVRYAN_MANAGED_PLUGINS} from '../managed-plugins.js';
 import {verifyNativeRuntimeArtifacts} from './native-artifacts.js';
 import {runNativeMigrationProcess} from './native-migration-process.js';
 import {createRuntimeBundleStore} from './runtime-bundle.js';
+import {createPrivatePersistenceFromVerifiedArtifacts} from './native-private-persistence.js';
 import {createRuntimeBundleCheckpoint} from './bundle-checkpoint.js';
 import {withCrossProcessFileLock} from '../../../../../harness-runtime/lib/atomic-file.js';
+import {nativeBundleFileOperations} from './native-bundle-file-operations.js';
 import {seedNativeSetup} from './native-setup-seed.js';
 import {readRuntimeBundleBinding} from './runtime-bundle-binding.js';
 import {resolveRuntimeBundleRoot} from './runtime-bundle-root.js';
@@ -44,11 +46,12 @@ const owned=async(directory,parent)=>{
  * So does a matching draft whose prepared.json no longer verifies (changed after
  * its seal); it is reset, never trusted. Remove it with the source files derived
  * from its manifest and cwd. */
-const resetStaleDefaultDraft=async({controlRoot,sourceRoot,inputSha256,verifySealed})=>{
+const resetStaleDefaultDraft=async({controlRoot,sourceRoot,inputSha256,verifySealed,windowsOwner})=>{
+ const options={windowsOwner},operations=nativeBundleFileOperations(options);
  const bundles=path.join(controlRoot,'bundles'),root=path.join(bundles,'default-native');
  if(await exists(root)){
   await owned(bundles,controlRoot);await owned(root,bundles);
-  let draft;try{draft=await readBundleJSON(path.join(root,'sources','preparation.json'));}
+  let draft;try{draft=await readBundleJSON(path.join(root,'sources','preparation.json'),options);}
   catch(error){if(!['ENOENT','ENOTDIR','bundle_document_invalid'].includes(error.code)&&!(error instanceof SyntaxError))throw error;}
   if(isRecord(draft)&&draft.schema===1&&draft.inputSha256===inputSha256){
    if(!await exists(path.join(root,'prepared.json')))return false;
@@ -59,33 +62,34 @@ const resetStaleDefaultDraft=async({controlRoot,sourceRoot,inputSha256,verifySea
   const file=path.join(sourceRoot,name);if(!await exists(file))continue;
   await owned(sourceRoot,path.dirname(controlRoot));const stat=await fs.lstat(file);
   if(!stat.isFile()||typeof process.getuid==='function'&&stat.uid!==process.getuid())throw fail('bundle_path_invalid');
-  await fs.rm(file);
+  if(operations.windows)await windowsOwner.delete(file,{expected:await windowsOwner.read(file)});else await fs.rm(file);
  }
  if(!await exists(root))return false;
  // Never remove in place: an interrupted removal leaves only a sibling the next launch sweeps.
  const stale=path.join(bundles,`.stale-${randomBytes(8).toString('hex')}`);
- await fs.rename(root,stale);await syncDirectory(bundles);
- await fs.rm(stale,{recursive:true});return true;
+ if(operations.windows){const token=await windowsOwner.renameTree(root,stale,await windowsOwner.tree(root));await windowsOwner.removeTree(stale,token);}
+ else{await fs.rename(root,stale);await syncDirectory(bundles);await fs.rm(stale,{recursive:true});}return true;
 };
 /** Call inside the bootstrap lock before any draft or seed decision while no
  * selection.json exists (the abandoned-seed reset refuses while any bundles/* entry
  * exists), or through sweepSelectedLeftovers once one does. */
-const sweepStaleDrafts=async controlRoot=>{
+const sweepStaleDrafts=async (controlRoot,options={})=>{
+ const operations=nativeBundleFileOperations(options);
  const bundles=path.join(controlRoot,'bundles');let names;
  try{names=(await fs.readdir(bundles)).filter(name=>name.startsWith('.stale-'));}catch(error){if(error.code==='ENOENT')return;throw error;}
  if(names.length)await owned(bundles,controlRoot);
- for(const name of names){const entry=path.join(bundles,name);await owned(entry,bundles);await fs.rm(entry,{recursive:true});}
+ for(const name of names){const entry=path.join(bundles,name);await owned(entry,bundles);if(operations.windows)await options.windowsOwner.removeTree(entry,await options.windowsOwner.tree(entry));else await fs.rm(entry,{recursive:true});}
 };
 /** Inside the bootstrap lock of an unheld selection. It never waits for a lifecycle
  * operation: while one holds selection.lock, a later launch sweeps instead. Storage
  * hygiene never blocks a verified selected launch; its failure is only reported. */
-const sweepSelectedLeftovers=async controlRoot=>{
+const sweepSelectedLeftovers=async (controlRoot,privatePersistence={})=>{
  try{
   await withCrossProcessFileLock(path.join(controlRoot,'selection.lock'),async()=>{
    if(readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot},{allowHeldInspection:true}).admission==='held')return;
-   await sweepStaleDrafts(controlRoot);
-   await pruneRetainedNativeArtifacts({controlRoot});
-  },{timeoutMs:0});
+   await sweepStaleDrafts(controlRoot,privatePersistence);
+   await pruneRetainedNativeArtifacts({controlRoot,...privatePersistence});
+  },{timeoutMs:0,windowsLauncher:privatePersistence.windowsLauncher});
  }catch(error){
   if(error.code==='LOCK_TIMEOUT')return;
   console.warn(`[runtime-bundle] selected install cleanup deferred: ${/^[a-z][a-z0-9_]{1,100}$/i.test(error.code??'')?error.code:'cleanup_failed'}`);
@@ -111,26 +115,39 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
  if(env.DEVRYAN_RUNTIME_BUNDLE_ROOT!==undefined)return controlRoot;
  const dataRoot=path.resolve(env.OPENCHAMBER_DATA_DIR||path.join(home,'.config','openchamber'));
  const sourceRoot=path.join(path.dirname(controlRoot),'fresh-native-source');
- await fs.mkdir(controlRoot,{recursive:true,mode:0o700});
- if(await fs.realpath(controlRoot)!==controlRoot)throw fail('bundle_path_invalid');
- await fs.chmod(controlRoot,0o700);
+ let privatePersistence={};
+ if(process.platform==='win32'){
+  // Windows cannot create even bootstrap state using POSIX permission bits.
+  // Complete accepted-artifact verification precedes protected root creation.
+  const manifestPath=path.join(artifactDirectory,'native-bundle.json'),stat=await fs.lstat(manifestPath);
+  if(!stat.isFile()||stat.isSymbolicLink()||stat.size>4*1024*1024)throw fail('native_runtime_artifacts_unverified');
+  const bytes=await fs.readFile(manifestPath);
+  const artifacts=await verifyArtifacts({manifestPath,manifestSha256:hash(bytes),launcher:executionArtifacts(artifactDirectory).launcher});
+  privatePersistence=createPrivatePersistenceFromVerifiedArtifacts({artifacts,roots:[controlRoot,sourceRoot]});
+  await privatePersistence.windowsOwner.ensureDirectory(controlRoot);
+ }else{
+  await fs.mkdir(controlRoot,{recursive:true,mode:0o700});
+  if(await fs.realpath(controlRoot)!==controlRoot)throw fail('bundle_path_invalid');
+  await fs.chmod(controlRoot,0o700);
+ }
+ const operations=nativeBundleFileOperations(privatePersistence);
  const lock=path.join(controlRoot,'bootstrap.lock');
  const provision=async()=>{
-  await sweepRemovedNativeSetupSources({controlRoot,sourceRoot});
+  await sweepRemovedNativeSetupSources({controlRoot,sourceRoot,...privatePersistence});
   if(await exists(path.join(controlRoot,'selection.json'))){
    const selected=readRuntimeBundleBinding({DEVRYAN_RUNTIME_BUNDLE_ROOT:controlRoot},{allowHeldInspection:true});
    if(selected.admission==='held'||selected.selection.reconciliationRequired)return controlRoot;
-   if(await exists(sourceRoot))await removeNativeSetupSource({controlRoot,sourceRoot,verifySelected:async()=>{
-    const store=createRuntimeBundleStore({controlRoot,allowRecoveredInputStartup:true,runMigration:async()=>{throw fail('bundle_migration_generation_invalid');},
+   if(await exists(sourceRoot))await removeNativeSetupSource({controlRoot,sourceRoot,...privatePersistence,verifySelected:async()=>{
+    const store=createRuntimeBundleStore({...privatePersistence,controlRoot,allowRecoveredInputStartup:true,runMigration:async()=>{throw fail('bundle_migration_generation_invalid');},
      withQuiescedSource:async()=>{throw fail('bundle_quiescence_unverified');},
      verifyArtifacts:async({launch:value})=>{const verified=await verifyArtifacts({manifestPath:value.artifactManifestPath,manifestSha256:value.artifactManifestSha256,launcher:executionArtifacts(path.dirname(value.artifactManifestPath)).launcher});
       if(verified.controller!==value.controllerBinary||verified.writer!==value.writerBinary)throw fail('bundle_artifact_generation_mismatch');}});
     await store.verify({bundleID:selected.descriptor.bundleID,phase:'resume'});
    }});
-   await sweepSelectedLeftovers(controlRoot);
+   await sweepSelectedLeftovers(controlRoot,privatePersistence);
    return controlRoot;
   }
-  await sweepStaleDrafts(controlRoot);
+  await sweepStaleDrafts(controlRoot,privatePersistence);
   const manifestPath=path.join(artifactDirectory,'native-bundle.json');
   const manifestStat=await fs.lstat(manifestPath).catch(()=>{throw fail('native_runtime_artifacts_unverified');});
   if(!manifestStat.isFile()||manifestStat.isSymbolicLink()||manifestStat.size>4*1024*1024)throw fail('native_runtime_artifacts_unverified');
@@ -138,10 +155,10 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
   if(manifestBytes.length>4*1024*1024)throw fail('native_runtime_artifacts_unverified');
   const manifestSha256=hash(manifestBytes),launcher=executionArtifacts(artifactDirectory).launcher;
   await verifyArtifacts({manifestPath,manifestSha256,launcher});
-  const artifacts=await retainNativeArtifacts({controlRoot,manifestPath,manifestSha256,verifyArtifacts});
+  const artifacts=await retainNativeArtifacts({controlRoot,manifestPath,manifestSha256,verifyArtifacts,...privatePersistence});
   const retainedManifestPath=artifacts.manifestPath;
   const retainedLauncher=artifacts.launcher;
-  const launch={opencodeDatabasePath:path.join(sourceRoot,'empty.db'),webDataDirectory:path.join(sourceRoot,'web-data'),
+  const launch={opencodeDatabasePath:operations.windows?path.join(sourceRoot,'opencode','empty.db'):path.join(sourceRoot,'empty.db'),webDataDirectory:path.join(sourceRoot,'web-data'),
    webConfigDirectory:path.join(sourceRoot,'web-config'),opencodeConfigDirectory:path.join(sourceRoot,'opencode-config'),global:{home:path.join(sourceRoot,'home')}};
   const directory=await fs.realpath(cwd);
   const reviewedNativeConfigPath=path.join(sourceRoot,'reviewed-native.json'),reviewedPluginManifestPath=path.join(sourceRoot,'reviewed-plugins.json');
@@ -150,13 +167,13 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
   const input={bundleID:'default-native',generation:2,source:{kind:'legacy',launch},projectMap:[{sourceDirectory:directory,targetDirectory:directory,mode:'identity'}],auxiliary:{kind:'absent'},launchArtifacts};
   const checkpoint=createRuntimeBundleCheckpoint({ownerID:'fresh-source',generation:1,launch,neverStarted:true,
    closeAdmission:async()=>{},getController:()=>null,stopProducers:async()=>{},drainStores:async()=>{},executionHost:{drain:async()=>{}}});
-  const importer=runMigration??(request=>runNativeMigrationProcess({binary:artifacts.controller,cwd:sourceRoot,request,
+  const importer=runMigration??(request=>runNativeMigrationProcess({...privatePersistence,binary:artifacts.controller,cwd:sourceRoot,request,
    environment:{PATH:env.PATH,LANG:env.LANG||'en_US.UTF-8',HOME:path.join(request.isolatedRoot,'home'),
     XDG_CONFIG_HOME:path.join(request.isolatedRoot,'config'),XDG_DATA_HOME:path.join(request.isolatedRoot,'data'),
     XDG_STATE_HOME:path.join(request.isolatedRoot,'state'),XDG_CACHE_HOME:path.join(request.isolatedRoot,'cache'),TMPDIR:path.join(request.isolatedRoot,'tmp')},
    beforeSpawn:()=>verifyArtifacts({manifestPath:retainedManifestPath,manifestSha256,launcher:retainedLauncher})}));
   let candidate;
-  const store=createRuntimeBundleStore({controlRoot,runMigration:importer,
+  const store=createRuntimeBundleStore({...privatePersistence,controlRoot,runMigration:importer,
    verifyArtifacts:async({generation,launch:value})=>{
     if(generation!==2)throw fail('bundle_artifact_generation_mismatch');
     const verified=await verifyArtifacts({manifestPath:value.artifactManifestPath,manifestSha256:value.artifactManifestSha256,launcher:executionArtifacts(path.dirname(value.artifactManifestPath)).launcher});
@@ -169,39 +186,44 @@ export async function provisionDefaultNativeBundle({env=process.env,home=os.home
   }});
   // No selection exists here. A stale draft goes first: the abandoned-seed reset
   // below refuses while any bundles/* entry exists.
-  await resetStaleDefaultDraft({controlRoot,sourceRoot,inputSha256:sha256(canonicalJSON(input)),verifySealed:()=>store.verify({bundleID:input.bundleID,phase:'prepared'})});
+  await resetStaleDefaultDraft({controlRoot,sourceRoot,...privatePersistence,inputSha256:sha256(canonicalJSON(input)),verifySealed:()=>store.verify({bundleID:input.bundleID,phase:'prepared'})});
   // A stamped seed that never pinned its marker is reseeded.
-  await resetAbandonedNativeSetupSource({controlRoot,sourceRoot});
-  await protectNativeSetupSource({controlRoot,sourceRoot});
-  for(const directory of [launch.webDataDirectory,launch.webConfigDirectory,launch.opencodeConfigDirectory,launch.global.home])await fs.mkdir(directory,{recursive:true,mode:0o700});
+  await resetAbandonedNativeSetupSource({controlRoot,sourceRoot,...privatePersistence});
+  await protectNativeSetupSource({controlRoot,sourceRoot,...privatePersistence});
+  for(const directory of [launch.webDataDirectory,launch.webConfigDirectory,launch.opencodeConfigDirectory,launch.global.home])await operations.ensureDirectory(directory);
   // Only this privately created source is eligible for an automatic checkpoint.
-  if(!await exists(launch.opencodeDatabasePath)){await fs.writeFile(launch.opencodeDatabasePath,'',{flag:'wx',mode:0o600});const db=resolveSqliteDriver().open(launch.opencodeDatabasePath);db.close();await fs.chmod(launch.opencodeDatabasePath,0o600);}
+  if(!await exists(launch.opencodeDatabasePath))await operations.withSqliteOutput(launch.opencodeDatabasePath,async file=>{
+   if(!operations.windows)await operations.writeFresh(file,'');
+   const db=resolveSqliteDriver().open(file);
+   try{if(operations.windows)db.exec('PRAGMA user_version=0');}finally{db.close();}
+   if(!operations.windows)await fs.chmod(file,0o600);
+  });
   await seedNativeSetup({source:{webDataDirectory:dataRoot,webConfigDirectory:path.join(home,'.config','openchamber'),
    // OpenCode always loads its global config directory; OPENCODE_CONFIG_DIR is one more layer over it.
    opencodeConfigDirectory:path.resolve(env.XDG_CONFIG_HOME||path.join(home,'.config'),'opencode'),
    opencodeConfigOverlayDirectory:env.OPENCODE_CONFIG_DIR?path.resolve(env.OPENCODE_CONFIG_DIR):undefined,
    opencodeConfigFile:env.OPENCODE_CONFIG?path.resolve(env.OPENCODE_CONFIG):undefined,
-   opencodeDataDirectory:path.resolve(env.XDG_DATA_HOME||path.join(home,'.local','share'),'opencode'),home},target:launch,environment:env,captureLogicalSetup});
-  if(!await exists(path.join(launch.opencodeConfigDirectory,'opencode.json')))await fs.copyFile(new URL('opencode.json',defaultConfigRoot),path.join(launch.opencodeConfigDirectory,'opencode.json'));
-  if(!await exists(reviewedNativeConfigPath))await fs.writeFile(reviewedNativeConfigPath,JSON.stringify({schema:1,configuration:{},
-   catalogRequirements:{agents:[],models:[],plugins:[],tools:[]},locations:[{directory,readRoots:[directory],protectedRoots:[controlRoot,dataRoot]}]})+'\n',{mode:0o600});
-  if(!await exists(reviewedPluginManifestPath))await fs.writeFile(reviewedPluginManifestPath,JSON.stringify({schema:1,
-   plugins:defaultNativeRegistrations(artifacts.manifest.inputs.reviewedPlugins)})+'\n',{mode:0o600});
+   opencodeDataDirectory:path.resolve(env.XDG_DATA_HOME||path.join(home,'.local','share'),'opencode'),home},target:launch,environment:env,captureLogicalSetup,...privatePersistence});
+  if(!await exists(path.join(launch.opencodeConfigDirectory,'opencode.json')))await operations.writeFresh(path.join(launch.opencodeConfigDirectory,'opencode.json'),await fs.readFile(new URL('opencode.json',defaultConfigRoot)));
+  if(!await exists(reviewedNativeConfigPath))await operations.writeFresh(reviewedNativeConfigPath,JSON.stringify({schema:1,configuration:{},
+   catalogRequirements:{agents:[],models:[],plugins:[],tools:[]},locations:[{directory,readRoots:[directory],protectedRoots:[controlRoot,dataRoot]}]})+'\n');
+  if(!await exists(reviewedPluginManifestPath))await operations.writeFresh(reviewedPluginManifestPath,JSON.stringify({schema:1,
+   plugins:defaultNativeRegistrations(artifacts.manifest.inputs.reviewedPlugins)})+'\n');
   // This includes copied defaults created by copyFile, before any native spawn.
-  await protectNativeSetupSource({controlRoot,sourceRoot});
+  await protectNativeSetupSource({controlRoot,sourceRoot,...privatePersistence});
   candidate=await store.prepare(input);
   await store.select({bundleID:candidate.bundleID,expectedRevision:0});
-  await removeNativeSetupSource({controlRoot,sourceRoot,verifySelected:async()=>{
+  await removeNativeSetupSource({controlRoot,sourceRoot,...privatePersistence,verifySelected:async()=>{
    const selected=await store.readSelected();if(selected?.descriptor.bundleID!==candidate.bundleID)throw fail('bundle_selection_revision_conflict');
    await store.verify({bundleID:candidate.bundleID,phase:'resume'});
   }});
   return controlRoot;
  };
- await reclaimReusedLock(lock);
- try{return await withCrossProcessFileLock(lock,provision,{timeoutMs:BOOTSTRAP_LOCK_TIMEOUT_MS});}
+ if(process.platform!=='win32')await reclaimReusedLock(lock);
+ try{return await withCrossProcessFileLock(lock,provision,{timeoutMs:BOOTSTRAP_LOCK_TIMEOUT_MS,windowsLauncher:privatePersistence.windowsLauncher});}
  catch(error){
   // A holder pid reused while this launch waited is reclaimed once; a live holder never.
-  if(error.code!=='LOCK_TIMEOUT'||!await reclaimReusedLock(lock))throw error;
-  return withCrossProcessFileLock(lock,provision,{timeoutMs:BOOTSTRAP_LOCK_TIMEOUT_MS});
+  if(error.code!=='LOCK_TIMEOUT'||process.platform==='win32'||!await reclaimReusedLock(lock))throw error;
+  return withCrossProcessFileLock(lock,provision,{timeoutMs:BOOTSTRAP_LOCK_TIMEOUT_MS,windowsLauncher:privatePersistence.windowsLauncher});
  }
 }

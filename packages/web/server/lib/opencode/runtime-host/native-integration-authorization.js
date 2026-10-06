@@ -21,6 +21,7 @@ function operation(spec) {
       || spec.methodID !== undefined && (spec.integrationID !== 'xai' || spec.methodID !== 'device'))
     || spec.kind === 'openai' && spec.integrationID !== 'openai'
     || spec.kind === 'cursor' && (spec.integrationID !== 'cursor-acp' || spec.methodID !== undefined)) throw fail('native_integration_scope_invalid');
+  if (spec.expectedActiveFingerprint !== undefined && (spec.kind !== 'openai' || !sha(spec.expectedActiveFingerprint))) throw fail('native_integration_scope_invalid');
   const encoded = value => { if (!id(value)) throw fail('native_integration_scope_invalid'); return encodeURIComponent(value); };
   const integration = () => `/api/integration/${encoded(spec.integrationID)}`;
   const attempt = () => `${integration()}/connect/oauth/${encoded(spec.attemptID)}`;
@@ -62,10 +63,10 @@ function operation(spec) {
   if (spec.kind === 'provider' && spec.operation.startsWith('provider.oauth.') && (spec.integrationID !== 'xai' || spec.methodID !== 'device')) throw fail('native_integration_scope_invalid');
   if (!spec.operation.startsWith(`${spec.kind}.`)
     || spec.kind === 'openai' && spec.operation.startsWith('openai.oauth.')
-      && spec.methodID !== undefined && !['chatgpt-browser', 'chatgpt-headless'].includes(spec.methodID)) throw fail('native_integration_scope_invalid');
+      && spec.methodID !== undefined && !['chatgpt-siwc'].includes(spec.methodID)) throw fail('native_integration_scope_invalid');
   if (['openai', 'cursor', 'provider'].includes(spec.kind) && spec.operation.startsWith(`${spec.kind}.credential.`) && (!['key', 'oauth'].includes(spec.valueType)
     || spec.kind === 'cursor' && spec.valueType !== 'key'
-    || spec.valueType === 'oauth' && (spec.kind === 'provider' ? spec.integrationID !== 'xai' || spec.methodID !== 'device' : !['chatgpt-browser', 'chatgpt-headless'].includes(spec.methodID))
+    || spec.valueType === 'oauth' && (spec.kind === 'provider' ? spec.integrationID !== 'xai' || spec.methodID !== 'device' : !['chatgpt-siwc', ...(spec.operation === 'openai.credential.remove' ? ['chatgpt-browser', 'chatgpt-headless'] : [])].includes(spec.methodID))
     || !spec.operation.endsWith('.credential.create') && !sha(spec.expectedFingerprint))) throw fail('native_integration_scope_invalid');
   if (method !== spec.method || route !== spec.path || stable(body) !== stable(spec.body)) throw fail('native_integration_scope_invalid');
   return structuredClone(spec);
@@ -80,7 +81,7 @@ const bindingScope = binding => {
     || binding.kind === 'provider' && (!['xai', 'opencode', 'opencode-go'].includes(binding.integrationID) || binding.server !== undefined
       || binding.methodID !== undefined && (binding.integrationID !== 'xai' || binding.methodID !== 'device'))
     || binding.kind === 'openai' && (binding.integrationID !== 'openai'
-      || binding.methodID !== undefined && !['chatgpt-browser', 'chatgpt-headless'].includes(binding.methodID))) throw fail('native_integration_binding_invalid');
+      || binding.methodID !== undefined && !['chatgpt-siwc', 'chatgpt-browser', 'chatgpt-headless'].includes(binding.methodID))) throw fail('native_integration_binding_invalid');
   return { kind: binding.kind, controllerInstanceID: binding.controllerInstanceID, directory: binding.directory,
     server: binding.server, configurationDigest: binding.configurationDigest, acquisitionID: binding.acquisitionID,
     integrationID: binding.integrationID, methodID: binding.methodID };

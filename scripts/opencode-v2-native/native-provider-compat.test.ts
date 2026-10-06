@@ -22,11 +22,11 @@ test('native model shapes use the original OpenAI OAuth policy while preserving 
   expect(key.map(model=>String(model.id))).toContain('gpt-5.6');
   expect(key[0].limit).toEqual(source[0].limit);
 });
-test('native request policy keeps final Spark summary absent and exact Luna OAuth headers without credential authority',()=>{
+test('native request policy keeps final Spark summary absent and leaves SIWC headers without Codex identity',()=>{
   const settings={reasoningEffort:'high',reasoningSummary:'auto',retained:true},headers={'x-retained':'yes'};
   expect(normalizeNativeOpenAiRequest(make('gpt-5.3-codex-spark'),settings,headers,{oauth:true})).toEqual({settings:{reasoningEffort:'high',retained:true},headers});
   const luna=Schema.decodeUnknownSync(Model.Info)({...make('luna-route'),modelID:'gpt-5.6-luna'});
-  expect(normalizeNativeOpenAiRequest(luna,settings,headers,{oauth:true}).headers).toEqual({...headers,originator:'codex_cli_rs','User-Agent':'codex_cli_rs/0.0.0 (OpenCode)'});
+  expect(normalizeNativeOpenAiRequest(luna,settings,headers,{oauth:true}).headers).toEqual(headers);
   expect(normalizeNativeOpenAiRequest(luna,settings,headers,{oauth:false}).headers).toBe(headers);
 });
 test('native Copilot catalog keeps picker priority and original utility fallback, endpoint and auto row',()=>{

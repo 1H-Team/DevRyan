@@ -34,32 +34,29 @@ export async function prepareSourceOpenAiFixture({ databasePath, directory, prof
   let account = 'A';
   globalThis.fetch = async (url, init = {}) => {
     assert.equal(typeof url, 'string'); assert.equal(init.method, 'POST'); init.signal?.throwIfAborted();
+    assert.equal(url, 'https://auth.openai.com/api/accounts/oauth/token', 'Source fixture attempted an unowned endpoint');
     const body = new URLSearchParams(init.body);
-    if (url === 'https://auth.openai.com/api/accounts/deviceauth/usercode') {
-      assert.equal(JSON.parse(init.body).client_id, 'app_EMoamEEZ73f0CkXaXp7hrann'); requests.push({ account, phase: 'usercode' });
-      return Response.json({ device_auth_id: `owned-device-${account}`, user_code: `owned-code-${account}`, interval: '1' });
-    }
-    if (url === 'https://auth.openai.com/api/accounts/deviceauth/token') {
-      assert.deepEqual(JSON.parse(init.body), { device_auth_id: `owned-device-${account}`, user_code: `owned-code-${account}` });
-      requests.push({ account, phase: 'authorization' });
-      return Response.json({ authorization_code: `owned-authorization-${account}`, code_verifier: `owned-verifier-${account}` });
-    }
-    assert.equal(url, 'https://auth.openai.com/oauth/token', 'Source fixture attempted an unowned endpoint');
-    assert.equal(body.get('grant_type'), 'authorization_code'); assert.equal(body.get('code'), `owned-authorization-${account}`);
-    assert.equal(body.get('code_verifier'), `owned-verifier-${account}`); requests.push({ account, phase: 'exchange' });
+    assert.equal(body.get('grant_type'), 'refresh_token');
+    assert.equal(body.get('client_id'), 'oaiapp_fixture_client');
+    assert.equal(body.get('resource'), 'https://api.openai.com/v1');
+    requests.push({ account, phase: 'refresh' });
     const claims = Buffer.from(JSON.stringify({ chatgpt_account_id: `owned-image-account-${account}` })).toString('base64url');
-    return Response.json({ access_token: `${canaryPrefix??'owned'}-image-access-${account}`, refresh_token: `${canaryPrefix??'owned'}-image-refresh-${account}`,
-      id_token: `owned.${claims}.fixture`, expires_in: expiresIn[account] });
+    return Response.json({
+      access_token: `${canaryPrefix??'owned'}-image-access-${account}`,
+      refresh_token: `${canaryPrefix??'owned'}-image-refresh-${account}-rotated`,
+      expires_in: expiresIn[account],
+      id_token: `owned.${claims}.fixture`,
+    });
   };
   const readProof = (selected,metadata) => {
-    assert.ok(selected?.credentialID); assert.equal(selected.value.type, 'oauth'); assert.equal(selected.value.methodID, 'chatgpt-headless');
+    assert.ok(selected?.credentialID); assert.equal(selected.value.type, 'oauth'); assert.equal(selected.value.methodID, 'chatgpt-siwc');
     assert.equal(metadata?.id,selected.credentialID);assert.equal(metadata.integrationID,'openai');
     return { credentialID: selected.credentialID, methodID: selected.value.methodID, accountID: selected.value.metadata.accountID,
       expectedFingerprint:credentialMutationFingerprint(metadata),valueFingerprint: credentialMutationFingerprint(selected.value), expires: selected.value.expires };
   };
   const run = async prepare => {
     const instanceID = randomUUID(), acquisitionID = randomUUID(), configurationDigest = credentialMutationFingerprint({});
-    let active = true, integration, plugins,credentials;
+    let active = true, integration, plugins, credentials, location;
     const principal = Object.freeze({ scope: 'local-admin', id: 'owned-source-oauth-fixture' });
     const authorization = createNativeAuthorization({ locations: [{ directory }], manifest: { inputs: { nativeRegistrations: [], reviewedPlugins: [] } },
       getRequestPrincipal: () => principal, captureLocalAuthorization: original => original === principal ? () => active : null,
@@ -70,7 +67,7 @@ export async function prepareSourceOpenAiFixture({ databasePath, directory, prof
       assert.equal(binding.kind, 'openai'); assert.equal(binding.integrationID, 'openai');
       if (binding.acquisitionID !== undefined) assert.equal(binding.acquisitionID, acquisitionID);
       if (binding.configurationDigest !== undefined) assert.equal(binding.configurationDigest, configurationDigest);
-      if (binding.methodID !== undefined) assert.equal(binding.methodID, 'chatgpt-headless');
+      if (binding.methodID !== undefined) assert.equal(binding.methodID, 'chatgpt-siwc');
     };
     const grants = createNativeIntegrationAuthorization({ controllerIdentity: () => active ? instanceID : undefined, verifyBinding,
       captureWebAuthorization: input => authorization.captureWebAuthorization(input), authorizeConfiguredConnection: verifyBinding });
@@ -80,8 +77,15 @@ export async function prepareSourceOpenAiFixture({ databasePath, directory, prof
       rpc: (method, input, context) => mutationOwner.handleRpc(method, input, context),
       captureAuthorization: binding => Effect.gen(function* () {
         const authorizationID = yield* CredentialAuthorizationRef;
-        assert.ok(authorizationID, 'Original OAuth grant required');
-        return { authorizationID, reauthorize: Effect.promise(() => grants.reauthorize({ authorizationID, binding: full(binding) })) };
+        if (authorizationID) {
+          return { authorizationID, reauthorize: Effect.promise(() => grants.reauthorize({ authorizationID, binding: full(binding) })) };
+        }
+        const captured = yield* Effect.promise(() => grants.capture({
+          binding: full(binding), operation: 'mutation',
+          requestAuthorization: grants.requestHeaders()['x-devryan-native-integration-grant'],
+        }));
+        return { authorizationID: captured.authorizationID,
+          reauthorize: Effect.promise(() => grants.reauthorize({ authorizationID: captured.authorizationID, binding: full(binding) })) };
       }) });
     mutationOwner = createNativeCredentialMutationOwner({ controllerInstanceID: instanceID, withMutationQueue: queue.withAuthMutation,
       resolveAuthorization: input => grants.resolveMutation(input), verifyBinding,
@@ -102,6 +106,7 @@ export async function prepareSourceOpenAiFixture({ databasePath, directory, prof
         const inner = yield* Integration.Service;
         const actual = Option.getOrUndefined(Context.getOption(yield* Effect.context(), Location.Service));
         assert.equal(actual?.directory, directory, 'Actual source native location required');
+        location = actual;
         integration = adapter.decorateIntegration(inner, actual);
         yield* Effect.addFinalizer(() => adapter.closeLocation(directory, inner)); return integration;
       })).pipe(Layer.provide(original)))),
@@ -113,12 +118,36 @@ export async function prepareSourceOpenAiFixture({ databasePath, directory, prof
       const sdk = yield* OpenCode.create({ database: { path: databasePath }, config: { project: false },
         models: { fetch: false, snapshot: false }, fs: { filewatcher: false, fff: false }, events: { persist: false } }, { overrides });
       yield* sdk.agent.list({ location: { directory } }); yield* plugins.awaitActivation;
-      assert.ok(integration);
+      assert.ok(integration); assert.ok(location);
       if (prepare) for (const current of ['A', 'B']) {
         account = current;
-        yield* Effect.promise(() => grants.withCallerOperation({ kind: 'openai', integrationID: 'openai', directory, configurationDigest,
-          methodID: 'chatgpt-headless', operation: 'openai.oauth.start', method: 'POST', path: '/api/integration/openai/connect/oauth',
-          body: { methodID: 'chatgpt-headless' } }, () => Effect.runPromise(integration.oauth.connect({ integrationID: 'openai', methodID: 'chatgpt-headless' }).pipe(Effect.provide(Logger.layer([Logger.withConsoleError(Logger.formatLogFmt)], { mergeWithExisting: false }))))));
+        const value = {
+          type: 'oauth',
+          methodID: 'chatgpt-siwc',
+          access: `${canaryPrefix??'owned'}-image-access-${current}`,
+          refresh: `${canaryPrefix??'owned'}-image-refresh-${current}`,
+          expires: Date.now() + expiresIn[current] * 1000,
+          metadata: {
+            accountID: `owned-image-account-${current}`,
+            clientId: 'oaiapp_fixture_client',
+            scopes: ['openid', 'profile', 'email', 'offline_access', 'resource.invoke', 'chatgpt.tokens.use.direct'],
+            subject: `owned-image-account-${current}`,
+            extAgentHostId: 'urn:uuid:00000000-0000-4000-8000-0000000000aa',
+            planUsage: true,
+            idToken: `owned.${Buffer.from(JSON.stringify({ chatgpt_account_id: `owned-image-account-${current}` })).toString('base64url')}.fixture`,
+          },
+        };
+        const input = { integrationID: 'openai', value, activate: true, label: `SIWC ${current}` };
+        yield* Effect.promise(() => grants.withCallerOperation({
+          kind: 'openai', integrationID: 'openai', directory, configurationDigest,
+          methodID: 'chatgpt-siwc', valueType: 'oauth', operation: 'openai.credential.create',
+          method: 'POST', path: '/api/credential', body: input,
+          requestedFingerprint: credentialMutationFingerprint(input),
+        }, () => Effect.runPromise(credentials.create(input).pipe(
+          Effect.provideService(Location.Service, location),
+          Effect.provide(Logger.layer([Logger.withConsoleError(Logger.formatLogFmt)], { mergeWithExisting: false })),
+        ))));
+        requests.push({ account: current, phase: 'create' });
         const selected = yield* Effect.promise(async () => {
           const deadline = Date.now() + 15000;
           while (Date.now() < deadline) {
@@ -138,10 +167,10 @@ export async function prepareSourceOpenAiFixture({ databasePath, directory, prof
   try {
     const before = await run(true), reopened = await run(false); assert.deepEqual(reopened, before);
     assert.equal(accounts.length, 2); assert.notEqual(accounts[0].credentialID, accounts[1].credentialID);
-    assert.deepEqual(requests.map(row => `${row.account}:${row.phase}`), ['A:usercode','A:authorization','A:exchange','B:usercode','B:authorization','B:exchange']);
+    assert.deepEqual(requests.map(row => `${row.account}:${row.phase}`), ['A:create','B:create']);
     // Native Credential.create activates atomically; no separate activation is emitted.
     assert.equal(mutationsSeen.length, 2);
-    return { source: 'original-native-headless-oauth-disposable-source-sdk-real-grants-and-shared-queue', nativeVersion: '2.0.20',
+    return { source: 'synthetic-siwc-native-credential-create-source-sdk-shared-queue', nativeVersion: '2.0.20',
       accounts, reopened, requestPhases: requests, settledMutations: mutationsSeen.length, compiledOAuthCreation: false };
   } finally { globalThis.fetch = previousFetch; }
 }

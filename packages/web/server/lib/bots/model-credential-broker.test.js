@@ -74,12 +74,32 @@ const createVault = (records = {}) => ({
   }),
 });
 
+const siwcAuth = (overrides = {}) => ({
+  type: 'oauth',
+  accountId: 'account-a',
+  access: 'host-access',
+  refresh: 'host-refresh',
+  expires: Date.now() + 3600000,
+  methodID: 'chatgpt-siwc',
+  clientId: 'oaiapp_fixture_client',
+  scopes: ['openid', 'profile', 'email', 'offline_access', 'resource.invoke', 'chatgpt.tokens.use.direct'],
+  metadata: {
+    accountID: 'account-a',
+    clientId: 'oaiapp_fixture_client',
+    scopes: ['openid', 'profile', 'email', 'offline_access', 'resource.invoke', 'chatgpt.tokens.use.direct'],
+    subject: 'account-a',
+    extAgentHostId: 'urn:uuid:00000000-0000-4000-8000-000000000001',
+    planUsage: true,
+  },
+  ...overrides,
+});
+
 const oauthDependencies = () => {
-  const oauthCoordinator = createOpenAiOAuthCoordinator({ readAuth: () => ({ type: 'oauth', accountId: 'account-a', access: 'host-access', refresh: 'host-refresh', expires: Date.now() + 3600000 }) });
+  const oauthCoordinator = createOpenAiOAuthCoordinator({ readAuth: () => siwcAuth() });
   oauthCoordinator.markReady();
   return { oauthCoordinator, store: { repositories: { bot_credentials: { get: async () => ({ id: PRIMARY_CREDENTIAL, bot_id: BOT_ID,
     provider: 'openai', kind: 'oauth', credential_scope: 'team', owner_user_id: null, status: 'active',
-    metadata: { connectionId: 'host:openai', oauthAccountKey: oauthAccountKey('account-a') } }) } } } };
+    metadata: { connectionId: 'host:openai', oauthAccountKey: oauthAccountKey('account-a'), oauthRegistrationKey: oauthCoordinator.getBinding().registrationKey } }) } } } };
 };
 
 describe('Bot model credential broker', () => {
@@ -139,7 +159,7 @@ describe('Bot model credential broker', () => {
       recordSelectedModel: vi.fn(async () => ({})),
     });
     const oauthModels = models();
-    oauthModels.primary.egressHosts = ['auth.openai.com:443', 'chatgpt.com:443'];
+    oauthModels.primary.egressHosts = ['auth.openai.com:443', 'api.openai.com:443'];
     const { updatedAt: _updatedAt, ...preflightRun } = run();
 
     const checked = await broker.preflightRun({
@@ -152,7 +172,7 @@ describe('Bot model credential broker', () => {
 
     expect(checked.modelSnapshot.egressHosts).toEqual([
       'auth.openai.com:443',
-      'chatgpt.com:443',
+      'api.openai.com:443',
     ]);
   });
 
@@ -338,8 +358,7 @@ describe('Bot model credential broker', () => {
   it('uses a bound host login without copying refresh tokens or accepting stale run writeback', async () => {
     const dataDirectory = await makeDirectory();
     const vault = createVault();
-    let host = { type: 'oauth', access: 'host-access', refresh: 'host-refresh',
-      accountId: 'account-a', expires: Date.now() + 3600000 };
+    let host = siwcAuth();
     const coordinator = createOpenAiOAuthCoordinator({ readAuth: () => host });
     coordinator.markReady();
     const credentialRow = {
@@ -351,7 +370,7 @@ describe('Bot model credential broker', () => {
       owner_user_id: OWNER_ID,
       status: 'active',
       created_by: OWNER_ID,
-      metadata: { label: 'Selected OpenAI account', connectionId: 'host:openai', oauthAccountKey: oauthAccountKey('account-a') },
+      metadata: { label: 'Selected OpenAI account', connectionId: 'host:openai', oauthAccountKey: oauthAccountKey('account-a'), oauthRegistrationKey: coordinator.getBinding().registrationKey },
     };
     const broker = createBotModelCredentialBroker({
       dataDirectory,
@@ -366,17 +385,17 @@ describe('Bot model credential broker', () => {
     });
     const prepared = await broker.prepareRun({
       run: run(),
-      models: { ...models(), primary: { ...models().primary, egressHosts: ['auth.openai.com:443', 'chatgpt.com:443'] } },
+      models: { ...models(), primary: { ...models().primary, egressHosts: ['auth.openai.com:443', 'api.openai.com:443'] } },
       catalog: [{
         providerId: 'openai',
         modelId: 'gpt-5.6-sol',
-        egressHosts: ['auth.openai.com:443', 'chatgpt.com:443'],
+        egressHosts: ['auth.openai.com:443', 'api.openai.com:443'],
       }],
     });
     expect(vault.create).not.toHaveBeenCalled();
     const newerRunId = 'a0000000-0000-4000-8000-000000000002';
     await broker.prepareRun({ run: { ...run(), id: newerRunId },
-      models: { ...models(), primary: { ...models().primary, egressHosts: ['auth.openai.com:443', 'chatgpt.com:443'] } },
+      models: { ...models(), primary: { ...models().primary, egressHosts: ['auth.openai.com:443', 'api.openai.com:443'] } },
       catalog: [{ providerId: 'openai', modelId: 'gpt-5.6-sol' }] });
     expect(await fs.readFile(path.join(prepared.authDirectory, 'auth.json'), 'utf8')).not.toMatch(/host-access|host-refresh/);
     await expect(broker.assertRuntimeReady(RUN_ID)).rejects.toMatchObject({ code: 'bot_oauth_runtime_update_required' });

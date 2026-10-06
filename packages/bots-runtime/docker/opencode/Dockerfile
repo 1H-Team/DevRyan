@@ -34,6 +34,7 @@ COPY --chown=10001:10001 packages/web/server/lib/opencode/runtime-host/native-im
 COPY --chown=10001:10001 packages/web/server/lib/opencode/runtime-host/native-read-paths.js /opt/devryan/packages/web/server/lib/opencode/runtime-host/native-read-paths.js
 COPY --chown=10001:10001 packages/web/server/lib/opencode/runtime-host/reviewed-imagegen-transform.js /opt/devryan/reviewed-imagegen-transform.mjs
 COPY --chown=10001:10001 packages/web/server/lib/opencode/runtime-host/native-setup-credential-data.js /opt/devryan/packages/web/server/lib/opencode/runtime-host/native-setup-credential-data.js
+COPY --chown=10001:10001 packages/web/server/lib/opencode/chatgpt-siwc.js /opt/devryan/packages/web/server/lib/opencode/chatgpt-siwc.js
 COPY --chown=10001:10001 packages/web/server/lib/opencode/runtime-host/native-model-catalog.ts /opt/devryan/packages/web/server/lib/opencode/runtime-host/native-model-catalog.ts
 COPY --chown=10001:10001 packages/web/runtime/reviewed-inputs/model-catalog/DevRyan-model-catalog.json /opt/devryan/packages/web/runtime/reviewed-inputs/model-catalog/DevRyan-model-catalog.json
 COPY --chown=10001:10001 packages/web/server/lib/opencode/imagegen-model-hotfix.js /opt/devryan/imagegen-model-hotfix.mjs

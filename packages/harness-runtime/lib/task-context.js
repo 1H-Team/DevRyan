@@ -165,7 +165,7 @@ export const createTaskContextRuntime = (options) => {
   const now = options.now ?? Date.now;
   const sanitizeText = options.sanitizeText ?? ((value) => value);
   const store = options.store ?? createRecordStore({ directory: path.join(options.dataDirectory, 'harness', 'context'),
-    validateRecord: validateTaskContextRecord, maxReadBytes: MAX_RECORD_BYTES + 4096, logger: options.logger });
+    validateRecord: validateTaskContextRecord, maxReadBytes: MAX_RECORD_BYTES + 4096, logger: options.logger, windowsOwner: options.windowsOwner });
   const pending = new Map();
   const operations = new Set();
   let lastPruneAt = null;
@@ -192,7 +192,7 @@ export const createTaskContextRuntime = (options) => {
     return pruning;
   };
   const withLock = (key, run) => options.withLock ? options.withLock(key, run)
-    : withCrossProcessFileLock(path.join(store.directory, `${key}.lock`), run);
+    : withCrossProcessFileLock(path.join(store.directory, `${key}.lock`), run, { windowsLauncher: options.windowsLauncher });
   const scope = async (sessionID, directory) => {
     const value = await options.readScope({ sessionID, directory });
     if (!value || value.session?.id !== sessionID || value.session.directory !== directory || value.session.time?.archived

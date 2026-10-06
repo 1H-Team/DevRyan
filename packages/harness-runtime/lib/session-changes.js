@@ -33,7 +33,7 @@ export function createSessionChangeRuntime(options) {
       withCrossProcessFileLock(path.join(storage, 'locks', `${hash(key)}.lock`), () => {
         executionStep('changes_queue_wait', Date.now() - queued);
         return timedExecutionStep('changes_transaction', run);
-      }, { timeoutMs: 60_000 }));
+      }, { timeoutMs: 60_000, windowsLauncher:options.windowsLauncher }));
     const settled = operation.catch(() => {}).finally(() => { if (tails.get(key) === settled) tails.delete(key); });
     tails.set(key, settled);
     return operation;

@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import openAiPlugin from '../../../default-config/plugins/devryan-openai-oauth.mjs';
 import { Credential } from '@opencode/core/credential';
 import { Integration } from '@opencode/core/integration';
 import type { Location } from '@opencode/core/location';
@@ -10,8 +11,15 @@ import type { NativeOpenAiAttempt, NativeOpenAiSelected } from './native-openai-
 import { HostRefusal, refuseHost } from './host-refusal.js';
 import { OperationPermitRef, requestPermit, type OperationPermit } from './native-admission-contract.js';
 
-const methods = new Set(['chatgpt-browser', 'chatgpt-headless']);
+const siwcPolicy = openAiPlugin.siwcPolicy;
+const methods = new Set(['chatgpt-siwc']);
 const openaiID = Schema.decodeUnknownSync(Integration.ID)('openai');
+const siwcMethod = Schema.decodeUnknownSync(Integration.OAuthMethod)({ id: 'chatgpt-siwc', type: 'oauth', label: 'Sign in with ChatGPT' });
+const projectCatalog = (info: Integration.Info): Integration.Info => info.id !== openaiID ? info : {
+  ...info,
+  methods: [...info.methods.filter(method => method.type !== 'oauth'
+    || !['chatgpt-siwc', 'chatgpt-browser', 'chatgpt-headless'].includes(method.id)), siwcMethod],
+};
 function ordered(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(ordered);
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => [key, ordered(item)]));
@@ -22,6 +30,7 @@ const deny = (code = 'native_openai_owner_unavailable') => refuseHost(new HostRe
 export type NativeOpenAiKind = 'primary'|'compaction'|'title'|'generate';
 interface PhysicalIdentity { readonly sessionID: string; readonly model: { readonly providerID: string }; readonly kind: NativeOpenAiKind }
 interface HttpAttempt extends PhysicalIdentity { request: Request }
+interface ResponseAttempt extends HttpAttempt { response: Response }
 interface HandshakeAttempt extends PhysicalIdentity { url: string; headers: Record<string, string> }
 interface SendAttempt extends PhysicalIdentity { frame: string }
 function physical(value: unknown): value is PhysicalIdentity {
@@ -31,21 +40,24 @@ function physical(value: unknown): value is PhysicalIdentity {
     && 'providerID' in value.model && typeof value.model.providerID === 'string';
 }
 function http(value: unknown): value is HttpAttempt { return physical(value) && 'request' in value && value.request instanceof Request; }
+function response(value: unknown): value is ResponseAttempt { return http(value) && 'response' in value && value.response instanceof Response; }
 function handshake(value: unknown): value is HandshakeAttempt {
   return physical(value) && 'url' in value && typeof value.url === 'string' && 'headers' in value
     && typeof value.headers === 'object' && value.headers !== null && !Array.isArray(value.headers)
     && Object.values(value.headers).every(item => typeof item === 'string');
 }
 function send(value: unknown): value is SendAttempt { return physical(value) && 'frame' in value && typeof value.frame === 'string'; }
-function codexURL(input: string, websocket: boolean): string | undefined {
+function responsesURL(input: string, websocket: boolean): string | undefined {
+  // Sign in with ChatGPT plan usage uses the public Responses API only.
+  // WebSockets are unsupported for this path; Codex chatgpt.com rewrites are retired.
+  if (websocket) return undefined;
   const url = new URL(input);
-  if (url.username || url.password) return undefined;
-  const protocol = websocket ? 'wss:' : 'https:';
-  if (url.protocol !== protocol) return undefined;
-  if (url.hostname === 'api.openai.com' && url.port === '' && url.pathname === '/v1/responses') {
-    url.hostname = 'chatgpt.com'; url.pathname = '/backend-api/codex/responses';
+  if (url.username || url.password || url.protocol !== 'https:') return undefined;
+  if (url.hostname === 'chatgpt.com' && url.port === '' && url.pathname === '/backend-api/codex/responses') {
+    url.hostname = 'api.openai.com';
+    url.pathname = '/v1/responses';
   }
-  if (url.hostname !== 'chatgpt.com' || url.port !== '' || url.pathname !== '/backend-api/codex/responses') return undefined;
+  if (url.hostname !== 'api.openai.com' || url.port !== '' || url.pathname !== '/v1/responses' || url.search || url.hash) return undefined;
   return url.href;
 }
 
@@ -66,6 +78,7 @@ export interface NativeOpenAiOptions {
 /** Captured services perform CAS; only the Node coordinator owns refresh. */
 export function createNativeOpenAi(options: NativeOpenAiOptions) {
   let credentials: Credential.Interface | undefined;
+  const siwcRequests = new WeakSet<Request>();
   interface Acquisition { readonly inner: Integration.Interface; readonly location: Location.Interface; readonly controllerInstanceID: string; closed: boolean; readonly attempts: Map<Integration.AttemptID, OAuthScope> }
   interface OAuthScope { readonly acquisition: Acquisition; readonly methodID: Integration.MethodID; readonly grant: { readonly authorizationID: string; readonly reauthorize: Effect.Effect<void> } }
   const OAuthAuthorization = Context.Reference<OAuthScope | undefined>('DevRyan/OpenAiOAuthAuthorization', { defaultValue: () => undefined });
@@ -110,7 +123,8 @@ export function createNativeOpenAi(options: NativeOpenAiOptions) {
     if (oauth && (oauth.acquisition !== acquisition || value.type !== 'oauth' || oauth.methodID !== value.methodID)) return yield* deny('native_openai_oauth_scope_required');
     if (oauth) { yield* oauth.grant.reauthorize; requireCurrent(acquisition); }
     if (!store) return yield* deny();
-    if (value.type === 'oauth' && !methods.has(value.methodID)) return yield* deny('native_openai_method_unsupported');
+    if (value.type === 'oauth' && !methods.has(value.methodID)
+      && !(operation === 'remove' && ['chatgpt-browser', 'chatgpt-headless'].includes(value.methodID))) return yield* deny('native_openai_method_unsupported');
     const original = record ? structuredClone(record) : undefined;
     const binding: CredentialMutationBinding = { kind: 'openai', directory: actual.directory, controllerInstanceID,
       integrationID: 'openai', operation, credentialID: original?.id,
@@ -189,7 +203,9 @@ export function createNativeOpenAi(options: NativeOpenAiOptions) {
       return yield* info?.integrationID === openaiID ? live(action.pipe(Effect.provideService(NativeLocation.Service,acquisition.location))) : action;
     });
     return { ...inner, transform: callback => live(inner.transform(callback)), reload: () => live(inner.reload()),
-      get: id => live(inner.get(id)), list: () => live(inner.list()),
+      // Enrollment remains host-owned; this projection cannot register an SDK authorize callback.
+      get: id => live(inner.get(id).pipe(Effect.map(info => info ? projectCatalog(info) : info))),
+      list: () => live(inner.list().pipe(Effect.map(rows => rows.map(projectCatalog)))),
       connection: { ...inner.connection, key: input => input.integrationID === openaiID
         ? live(inner.connection.key(input).pipe(Effect.provideService(NativeLocation.Service,acquisition.location))) : inner.connection.key(input),
       activate: id => connectionMutation(id,inner.connection.activate(id)),
@@ -256,7 +272,21 @@ export function createNativeOpenAi(options: NativeOpenAiOptions) {
   const finalize = (name: PropertyKey, event: unknown, original: { sessionID: string; kind: string; modelFingerprint: string }): Effect.Effect<void> => Effect.gen(function* () {
     if (!physical(event) || event.sessionID !== original.sessionID || event.kind !== original.kind
       || fingerprint(event.model) !== original.modelFingerprint) return yield* deny('native_openai_hook_identity_changed');
-    const actual = yield* location(), proof = yield* fresh(actual.directory, event); requireCurrent(proof.acquisition);
+    if (name === 'http.response') {
+      if (!response(event)) return yield* deny('native_openai_hook_invalid');
+      if (siwcRequests.has(event.request)) event.response = siwcPolicy.completedResponse(event.response);
+      return;
+    }
+    const actual = yield* location();
+    let siwcBody: string | undefined;
+    if (name === 'http.request' && http(event)) {
+      const current = yield* selected(actual.directory);
+      if (current?.value.type === 'oauth' && methods.has(current.value.methodID)) {
+        if (!responsesURL(event.request.url, false)) return yield* deny('native_openai_route_unreviewed');
+        siwcBody = yield* Effect.promise(() => siwcPolicy.encodeRequest(event.request));
+      }
+    }
+    const proof = yield* fresh(actual.directory, event); requireCurrent(proof.acquisition);
     if (name === 'experimental.ws.send' && send(event)) {
       const socket = sockets.get(event.sessionID);
       const key = proof.selected?.value.type === 'key' ? proof.selected : undefined;
@@ -289,31 +319,32 @@ export function createNativeOpenAi(options: NativeOpenAiOptions) {
       return yield* deny('native_openai_socket_changed');
     }
     if (name === 'http.request' && http(event)) {
-      const url = codexURL(event.request.url, false);
+      const url = responsesURL(event.request.url, false);
       if (!url) return yield* deny('native_openai_route_unreviewed');
       const headers = new Headers(event.request.headers);
-      headers.set('authorization', `Bearer ${attempt.accessToken}`); headers.set('chatgpt-account-id', attempt.accountId);
-      event.request = new Request(url, new Request(event.request, { headers })); return;
+      headers.set('authorization', `Bearer ${attempt.accessToken}`);
+      headers.delete('chatgpt-account-id');
+      headers.delete('x-openai-internal-codex-residency'); headers.delete('x-opencode-title');
+      headers.delete('content-length'); headers.set('content-type', 'application/json');
+      if (siwcBody === undefined) return yield* deny('native_credential_changed');
+      event.request = new Request(url, { method: 'POST', body: siwcBody, headers, signal: event.request.signal, redirect: 'error' });
+      siwcRequests.add(event.request); return;
     }
     if (name === 'experimental.ws.handshake' && handshake(event)) {
-      const url = codexURL(event.url, true);
-      if (!url) return yield* deny('native_openai_route_unreviewed');
-      const headers = new Headers(event.headers);
-      headers.set('authorization', `Bearer ${attempt.accessToken}`); headers.set('chatgpt-account-id', attempt.accountId);
-      event.url = url; event.headers = Object.fromEntries(headers.entries());
-      sockets.set(event.sessionID, { directory: actual.directory, controllerInstanceID: proof.controllerInstanceID,
-        acquisition: proof.acquisition, generation: attempt.generation, credentialID: attempt.credentialID, accountId: attempt.accountId }); return;
+      // ChatGPT plan usage does not support websocket Responses.
+      return yield* deny('native_openai_route_unreviewed');
     }
     return yield* deny('native_openai_hook_invalid');
   });
   const decorateHooks = (inner: PluginHooks.Interface): PluginHooks.Interface => ({ ...inner,
     has: (domain, name, providerID) => domain === 'session' && (providerID === undefined || providerID === 'openai')
-      && ['http.request', 'experimental.ws.handshake', 'experimental.ws.send'].includes(String(name)) ? Effect.succeed(true) : inner.has(domain, name, providerID),
+      && ['http.request', 'http.response', 'experimental.ws.handshake', 'experimental.ws.send'].includes(String(name)) ? Effect.succeed(true) : inner.has(domain, name, providerID),
     trigger: (domain, name, event) => Effect.suspend(() => {
-      const original = domain === 'session' && ['http.request', 'experimental.ws.handshake', 'experimental.ws.send'].includes(String(name))
+      const original = domain === 'session' && ['http.request', 'http.response', 'experimental.ws.handshake', 'experimental.ws.send'].includes(String(name))
         && physical(event) && event.model.providerID === 'openai'
-        ? { sessionID: event.sessionID, kind: event.kind, modelFingerprint: fingerprint(event.model) } : undefined;
-      return inner.trigger(domain, name, event).pipe(Effect.tap(result => original ? finalize(name, result, original) : Effect.void));
+        ? { sessionID: event.sessionID, kind: event.kind, modelFingerprint: fingerprint(event.model), request: name === 'http.response' && http(event) ? event.request : undefined } : undefined;
+      return inner.trigger(domain, name, event).pipe(Effect.tap(result => original?.request && (!http(result) || result.request !== original.request)
+        ? deny('native_openai_hook_identity_changed') : original ? finalize(name, result, original) : Effect.void));
     }),
   });
   return Object.freeze({ decorateIntegration, decorateCredential, decorateHooks, closeLocation,
@@ -323,8 +354,12 @@ export function createNativeOpenAi(options: NativeOpenAiOptions) {
       if (!store || expected.directory !== input.directory || expected.controllerInstanceID !== identity()
         || expected.integrationID !== 'openai' || expected.value.type !== 'oauth' || next.type !== 'oauth'
         || next.methodID !== expected.value.methodID || !methods.has(next.methodID)) return false;
-      if (fingerprint({ ...expected.value, access: undefined, refresh: undefined, expires: undefined })
-        !== fingerprint({ ...next, access: undefined, refresh: undefined, expires: undefined })) return false;
+      const binding = (value: Credential.OAuth) => {
+        const metadata = { ...value.metadata };
+        for (const field of ['scopes', 'idToken', 'planUsage']) delete metadata[field];
+        return { ...value, access: undefined, refresh: undefined, expires: undefined, metadata };
+      };
+      if (fingerprint(binding(expected.value)) !== fingerprint(binding(next))) return false;
       const current = yield* selected(input.directory);
       if (!current || fingerprint(current) !== fingerprint(expected)) return false;
       if (identity() !== expected.controllerInstanceID) return false;

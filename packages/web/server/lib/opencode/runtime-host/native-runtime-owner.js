@@ -1,3 +1,5 @@
+import {captureNativeSetupCredentialSeed} from './native-setup-credential-ack.js';
+import {nativeBundleFileOperations} from './native-bundle-file-operations.js';
 import {createNativeHelperOwner} from './native-helper-owner.js';
 import fs from 'node:fs/promises';
 import {bundleContinuationItem} from './bundle-owned-continuations.js';
@@ -50,9 +52,9 @@ const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 /** Every launch rechecks the frozen selection and the complete bundle. */
-export function createRuntimeBundleVerifier(binding) {
+export function createRuntimeBundleVerifier(binding, privatePersistence={}) {
   const store = createRuntimeBundleStore({ controlRoot: binding.controlRoot,
-    allowRecoveredInputStartup:true,
+    allowRecoveredInputStartup:true, ...privatePersistence,
     withQuiescedSource: async () => { throw fail('runtime_bundle_checkpoint_required'); },
     runMigration: async () => { throw fail('runtime_bundle_migration_not_requested'); } });
   return async () => {
@@ -114,7 +116,7 @@ export function createNativeRuntimeOwner(options) {
       || hash(await fs.readFile(descriptor.preparedManifestPath)) !== selectedPreparedManifestSha256) throw fail('native_clone_evidence_invalid');
   };
   const cursorRecovery=createNativeCursorRecovery({directory:path.join(descriptor.launch.webDataDirectory,'harness','native-cursor'),
-    ownerID:descriptor.bundleID,runtime:executionHost.runtime});
+    ownerID:descriptor.bundleID,runtime:executionHost.runtime,...options.privatePersistence});
   let child, starting, primaryStep, stopping = false, stopped = false, phase = 'closed', checkpointHeld = false;
   let recoveredInputs;
   let claudeEnrollment;
@@ -490,7 +492,8 @@ export function createNativeRuntimeOwner(options) {
         if (!record(model) || model.id !== id || model.variants !== undefined && !record(model.variants)) throw fail('native_cursor_catalog_invalid');
         return { id, variants: Object.keys(model.variants ?? {}) };
       }) } : undefined;
-      const boot = { protocol: 1, type: 'boot', bundleID: descriptor.bundleID, instanceID, buildId: artifacts.manifest.buildId,
+      const setupCredentialSeed=process.platform==='win32'?await captureNativeSetupCredentialSeed(path.join(globals.config,'native-setup-credentials.json'),options.privatePersistence?.windowsOwner):undefined;
+      const boot = { ...(setupCredentialSeed?{setupCredentialSeed:setupCredentialSeed.expected}:{}),protocol: 1, type: 'boot', bundleID: descriptor.bundleID, instanceID, buildId: artifacts.manifest.buildId,
         manifestSha256: artifacts.manifestSha256, databasePath: descriptor.launch.opencodeDatabasePath, globals,
         directory: bundle.locations[0].directory, locations: bundle.locations,
         bridge: { url: privateEnvironment.DEVRYAN_ORCHESTRATION_URL, token: privateEnvironment.DEVRYAN_ORCHESTRATION_TOKEN }, httpToken,
@@ -508,7 +511,7 @@ export function createNativeRuntimeOwner(options) {
       if(providerOrigin&&configurationSnapshot){
         const profiles=await resolveNativeProviderConfiguration({globals,environment:options.providerEnvironment??{},controlRoot:bundle.controlRoot});
         providerConfiguration=hash(JSON.stringify(profiles));
-        const storage=path.join(globals.state,'provider-transport');await fs.mkdir(storage,{recursive:true});
+        const storage=path.join(globals.state,'provider-transport');await nativeBundleFileOperations(options.privatePersistence).ensureDirectory(storage);
         if(!artifacts.reviewedClaude)throw fail('native_provider_assets_required');
         const claudeSupported=supportsClaudeLifecycle;
         const claudeLifecycle=createNativeClaudeLifecycleClient({controller:active,
@@ -529,7 +532,7 @@ export function createNativeRuntimeOwner(options) {
               assets:artifacts.reviewedClaude,transport:{launcher:artifacts.launcher,storage,directories:bundle.locations.map(location=>location.directory)}}},
         });
         if(claudeSupported&&artifacts.reviewedClaudeCredentials){
-          const publication=createNativeClaudeProfilePublication({home:globals.home,controlRoot:bundle.controlRoot});
+          const publication=createNativeClaudeProfilePublication({home:globals.home,controlRoot:bundle.controlRoot,...options.privatePersistence});
           const snapshot=configurationSnapshot,bindings=new WeakSet();
           const principalKey=()=>{
             const principal=options.getRequestPrincipal?.();
@@ -600,6 +603,7 @@ export function createNativeRuntimeOwner(options) {
         },
       });
       try {
+        await setupCredentialSeed?.settle(child.bound.setupCredentialSeed);
         await options.onBound?.(child);
         if (!child.bound.catalog.asserted) {
           const missing = child.bound.catalog.missing;
@@ -760,6 +764,48 @@ export function createNativeRuntimeOwner(options) {
     credentialOperation: (operation, mutation) => {
       if (!integrations) throw fail('native_integration_owner_unavailable');
       return integrations.credentialOperation(operation, mutation);
+    },
+    getOpenAiOAuthCoordinator: () => {
+      if (!integrations || phase !== 'ready' || stopping) throw fail('native_integration_owner_unavailable');
+      return integrations.getOpenAiOAuthCoordinator();
+    },
+    readOpenAiAccountSelection: operation => {
+      if (!integrations) throw fail('native_integration_owner_unavailable');
+      return integrations.readOpenAiAccountSelection(operation);
+    },
+    stopOpenAiRequests: async operation => {
+      if (!integrations || phase !== 'ready' || stopping) throw fail('native_integration_owner_unavailable');
+      const captured = active(), instanceID = nativeInstanceID;
+      const unblock = await integrations.holdOpenAiSelection(operation);
+      const held = [];
+      const release = async cleared => {
+        for (const sessionID of held) {
+          if (active() !== captured || nativeInstanceID !== instanceID || captured.hasExited()) throw fail('native_chatgpt_siwc_settlement_changed');
+          await captured.call({ action: 'release', sessionID });
+        }
+        unblock(cleared);
+      };
+      try {
+        await helperText.stopProvider('openai');
+        const sessions = await openCodeClient.sessions.list({ limit: 10001 });
+        if (!Array.isArray(sessions) || sessions.length > 10000) throw fail('native_chatgpt_siwc_sessions_unbounded');
+        for (const session of sessions.filter(row => row.model?.providerID === 'openai')) {
+          if (active() !== captured || nativeInstanceID !== instanceID || phase !== 'ready' || stopping) throw fail('native_chatgpt_siwc_settlement_changed');
+          const state = await executionHost.runtime.nativeAdmissionState({ directory: session.directory, sessionID: session.id });
+          if (state.held) continue;
+          // The native hold owns cancellation acknowledgement and descendant settlement.
+          await captured.call({ action: 'hold', sessionID: session.id }); held.push(session.id);
+        }
+        return release;
+      } catch (error) { await release(false); throw error; }
+    },
+    readOpenAiCredential: (operation, credentialID) => {
+      if (!integrations) throw fail('native_integration_owner_unavailable');
+      return integrations.readOpenAiCredential(operation, credentialID);
+    },
+    readOpenAiSelected: operation => {
+      if (!integrations) throw fail('native_integration_owner_unavailable');
+      return integrations.readOpenAiSelected(operation);
     },
     credentialMetadata: operation => {
       if (!integrations) throw fail('native_integration_owner_unavailable');

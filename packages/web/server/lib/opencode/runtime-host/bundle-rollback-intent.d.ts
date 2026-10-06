@@ -1,3 +1,4 @@
+import type {WindowsPrivateFileOwner} from '../../../../../harness-runtime/lib/windows-private-files.js';
 import type {RuntimeBundleSelection, RuntimeBundleDescriptor, RuntimeBundleCheckpoint} from './runtime-bundle.js';
 export interface RollbackSettlement {
  readonly host:{readonly pid:number;readonly startIdentity:string};
@@ -17,7 +18,7 @@ export function rollbackIntentPath(root:string):string;
 export function parseRollbackIntent(value:unknown):RollbackIntent;
 export function readRollbackIntentSync(root:string):RollbackIntent|null;
 export function rollbackIntentUnresolved(intent:RollbackIntent|null,selection:RuntimeBundleSelection):boolean;
-export function saveRollbackIntent(root:string,intent:RollbackIntent):Promise<void>;
+export function saveRollbackIntent(root:string,intent:RollbackIntent,options?:{readonly windowsOwner?:WindowsPrivateFileOwner}):Promise<void>;
 export function assertPrivateBundleControlRoot(root:string,uid?:number):Promise<void>;
 export function processIdentity(pid:number):{readonly pid:number;readonly startIdentity:string}|null;
 export function assertRollbackPhysicalExit(intent:RollbackIntent,candidate:RuntimeBundleDescriptor,readIdentity?:(pid:number)=>{readonly pid:number;readonly startIdentity:string}|null):Promise<void>;

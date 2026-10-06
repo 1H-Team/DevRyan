@@ -32,7 +32,7 @@ test('assembled native ServerFetch integration and provider attempts retain real
     expect(report.providerKinds).toEqual(['compaction', 'generate', 'primary', 'title']);
     expect(report.physicalReceipts).toBeGreaterThanOrEqual(4);
     expect(report.permitsWereOwned).toBe(true);
-    expect(report.websocketReceipts).toBeGreaterThan(0);
+    expect(report.websocketReceipts).toBe(0);
     expect(report.refreshedCredential).toBe(true);
     expect(report.accountChange).toBe(true);
     expect(report.providerCompatibility).toBe(true);

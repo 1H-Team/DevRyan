@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import { describe, expect, test } from 'bun:test';
 
 import plugin, * as exports from './devryan-bot-tools.mjs';
@@ -289,6 +290,23 @@ describe('scoped OpenCode Bot plugin', () => {
     await expect(loaded.tool.devryan_image.execute({
       prompt: 'No escape', out: '/tmp/blue.png', quality: 'medium',
     }, {})).rejects.toMatchObject({ code: 'DEVRYAN_BOT_INPUT_INVALID' });
+  });
+
+  test('packages the relative module closure of copied Bot runtime sources', async () => {
+    const repository = new URL('../../../', import.meta.url);
+    const dockerfile = await fs.readFile(new URL('../docker/opencode/Dockerfile', import.meta.url), 'utf8');
+    const copies = new Map([...dockerfile.matchAll(/^COPY --chown=\S+ (packages\/\S+) (\/opt\/devryan\/\S+)$/gm)]
+      .map(([, source, target]) => [target, source]));
+    expect(copies.size).toBeGreaterThan(10);
+    for (const [target, source] of copies) {
+      if (!/\.[cm]?[jt]s$/.test(source)) continue;
+      const scanner = new Bun.Transpiler({ loader: source.endsWith('.ts') ? 'ts' : 'js' });
+      for (const dependency of scanner.scan(await fs.readFile(new URL(source, repository), 'utf8')).imports) {
+        if (!dependency.path.startsWith('.')) continue;
+        const resolved = path.posix.resolve(path.posix.dirname(target), dependency.path);
+        expect(copies.has(resolved), `${source} requires uncopied image input ${resolved}`).toBe(true);
+      }
+    }
   });
 
   test('pins the image and generates one autonomous but fail-closed Bot agent', async () => {

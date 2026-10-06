@@ -3,7 +3,7 @@ export type NativeIntegrationBinding = {
   readonly directory: string; readonly controllerInstanceID: string; readonly integrationID: string;
   readonly acquisitionID: string; readonly configurationDigest: string;
 } & ({readonly kind:'mcp';readonly server:string;readonly methodID:string}
-  | {readonly kind:'openai';readonly methodID?:'chatgpt-browser'|'chatgpt-headless'}
+  | {readonly kind:'openai';readonly methodID?:'chatgpt-siwc'|'chatgpt-browser'|'chatgpt-headless'}
   | {readonly kind:'cursor';readonly methodID?:never}
   | {readonly kind:'provider';readonly integrationID:'xai'|'opencode'|'opencode-go';readonly methodID?:'device'});
 export interface NativeIntegrationOperation {
@@ -11,6 +11,7 @@ export interface NativeIntegrationOperation {
   readonly server?:string;readonly integrationID?:string;readonly operation:string;
   readonly method:'GET'|'POST'|'PATCH'|'DELETE';readonly path:string;readonly body?:unknown;
   readonly methodID?:string;readonly attemptID?:string;readonly credentialID?:string;
+  readonly expectedActiveFingerprint?:string;readonly assertCurrent?:()=>void|Promise<void>;
   readonly valueType?:'key'|'oauth';readonly expectedFingerprint?:string;readonly requestedFingerprint?:string;
 }
 export interface NativeIntegrationAuthorizationOptions {

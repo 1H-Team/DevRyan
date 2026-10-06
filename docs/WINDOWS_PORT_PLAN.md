@@ -25,8 +25,10 @@ All installers retain version 2.0.2 and the same frozen source. The manual
 architecture installer gates before appending to the already qualified macOS
 release. It binds original CI runs, packaging receipts, downloaded macOS bytes
 and the unchanged tag, then verifies the exact `desktop` asset allowlist.
-The NSIS qualification stage and production Windows updater remain unfinished;
-the append preflight refuses until that actual stage passes.
+The NSIS qualification stage and SDK-backed updater are implemented, with
+execution held behind their native prerequisites. No actual installer or update
+qualification is claimed from source or local macOS tests; the append preflight
+refuses until that actual stage passes on both Windows architectures.
 
 ## Current gaps
 
@@ -38,7 +40,8 @@ inventory. A final gate refuses failed or skipped outcomes. It selects the
 architecture-specific MSVC component (including ARM64) and fences Git discovery
 above disposable fixtures. It has no publication authority.
 The implementation is integrated into `main`; pushes there now run both native
-architectures with the same nine required outcomes and admission refusal.
+architectures with eleven required outcomes and admission refusal, including
+original Node/Bun stdio compatibility and actual installer/update qualification.
 The first [native CI run](https://github.com/1H-Team/DevRyan/actions/runs/37349064957)
 at `7e328f87690f9b01d0603d302a95a724aae31ef7` compiled both supervisors with
 Bun 1.3.14 and the native SDK. Both qualification jobs failed: the token handle
@@ -404,6 +407,29 @@ correction passes both native reruns. Initialized controller/writer behavior, he
 authority, read confinement and the integrated acceptance inventory remain
 unqualified; the ordinary production builder continues to refuse Windows.
 
+The Windows candidate now provisions official MinGit `v2.56.0.windows.2` for
+the actual x64 or ARM64 host. The complete archives are pinned by published
+SHA-256, with independent exact inventories covering 373 x64 files or 499
+ARM64 files, including the original runtime and license closure. Cache reuse
+rechecks those inventories. The Windows workflow must run the fixed
+`git/cmd/git.exe` version probe in a disposable home before the candidate builder
+can consume the archive; actual Windows probes remain separate from local
+archive verification. Its candidate manifest records the source archive and
+complete Git payload, and accepted artifact verification checks them before
+the native importer starts. This adds no production admission.
+
+The private filesystem owner now has bounded native tree copy, held SQLite
+output, and a fixed compiled migration/relocation importer. The importer pins
+artifacts and source identities through a post-READY verifier barrier, creates
+the fixed environment without ambient executable selection, retains private
+Git configuration handles through child work, and settles its native job
+before producing durable output and a nonce-bound receipt. The orchestration
+ledger uses a separate explicit 64 MiB native CAS contract and keeper fencing.
+Local protocol and disposable fixture suites cover these contracts; actual
+Windows compilation, namespace durability, Git-backed relocation and mutation
+directory rename with retained configuration handles remain qualification
+requirements. The Windows runtime gate stays closed until that evidence exists.
+
 `native-process.js` currently refuses a supervised controller outside Darwin.
 Keep that refusal until the Windows launcher and its termination receipt are
 qualified. The draft `session-execution-windows.c` uses a restricted token,
@@ -570,6 +596,87 @@ destination ownership, and the installed version before acknowledging success.
 Keep the previous installation and intent until an isolated next launch proves
 readiness; preserve recovery state on interruption or refusal. Do not claim
 Authenticode signing for unsigned installers.
+
+## Native publication and updater qualification
+
+`windows-private-files.js` composes the SDK's held private-file reads with
+compare-and-swap publication, deletion and quarantine. Each transition retains
+the exact parent and file identities, byte hash, size, protected owner/ACL and
+same-parent recovery intent. File and namespace flush failures propagate;
+POSIX mode bits and an absent numeric PID cannot attest these contracts.
+Completed private publication backups and receipts have a bounded native
+pruner. It preserves the current recovery intent and removes historical
+artifacts only by retained identities, with namespace flushes. Journal append,
+rotation, compression and staged clear now use constructor-owned native file
+operations; retained executable inventories stream beyond the JSON size bound
+and use native tree transitions. These implementations still require actual
+Windows architecture and namespace qualification.
+
+The managed orchestration ledger now uses a constructor-owned kernel keeper
+and an explicit 64 MiB native read/compare-and-swap contract. Keeper loss fences
+mutations; shutdown drains queued writes before confirmed release. Ordinary
+private JSON operations retain their 16 MiB ceiling. Bundle cloning uses native
+tree-copy identities, and SQLite `VACUUM INTO` retains its exclusively created
+output file through native commit. Migration and bundle-harness relocation use
+the fixed compiled controller under a native job with pinned artifacts, source
+and Git configuration handles. Private source creation, credential seeding and
+acknowledgement use their constructor-owned native file operations. Accepted
+artifact verification still precedes bootstrap or application storage creation.
+
+These owners and their focused protocol/fixture tests establish the implemented
+source contracts. Actual x64 and ARM64 compilation, namespace durability,
+Git-backed migration/relocation, SQLite commit, keeper failure/recovery and
+credential acknowledgement still require native qualification. In particular,
+directory flush support and mutation-directory rename while Git configuration
+handles remain held need actual Windows evidence. Existing core admission
+remains false; source implementation does not establish platform acceptance or
+release readiness.
+
+The Windows updater uses `windows-update-owner.mjs` for private resumable
+downloads, installation-tree cloning/renames, version inspection and native
+NSIS process ownership. Its standalone bundled helper and copied launcher are
+bound by actual file identities and SHA-256 before acknowledgement. The native
+owner retains the original host's creation-time handle through drain, creates
+NSIS in a containing job, confirms descendant termination, flushes the installed
+tree and publishes a durable nonce-bound receipt. Unknown candidate launch or
+termination remains held. Recovery observes that receipt and exact backup tree,
+waits for its own recovery host to exit, restores the fixed per-user registration
+and keeps the intent until a normal launch can finish cleanup. Forced process
+termination receipts prove the retained root exited; the separate NSIS job
+receipt proves installer descendants settled.
+
+`scripts/qualify-windows-installer.mjs` runs only on disposable GitHub-hosted
+Windows runners. It first executes the native private namespace prerequisite,
+then independently checks actual supervisor acceptance, all sixteen original
+Node/Bun stdio cells and the production native artifact verifier. Missing or
+failed prerequisites yield `acceptance:false` and five explicit blocked rows;
+the script does not build or execute an installer in that case.
+
+When those prerequisites pass, the driver builds actual unsigned per-user NSIS
+installers with the existing Electron resources and bundle closure. Both the
+baseline fixture and candidate retain version 2.0.2 and the same source. The
+baseline has an explicit fixture metadata field; it is not an earlier shipped
+Windows release. The five cells exercise initial installation plus real app
+window/runtime health, acknowledged update readiness, integrity refusal with
+unchanged installation, native installer interruption, and restoration after a
+successful install loses its helper before candidate launch. Each app uses a
+private profile and the production resource/preload paths. A failed cell or
+unconfirmed cleanup blocks later cells. Process cleanup uses exact creation
+identities rather than process-name or PID-only termination.
+
+The driver refuses an existing fixed-GUID registration or DevRyan shortcut
+before any installation. It captures the actual HKCU 64-bit install location,
+uninstall identity/version/commands and shortcut targets and compares them
+through update and rollback. Registry or shortcut mismatches cannot pass from
+a restored app directory alone.
+
+`qualification.json` and sibling `evidence.json` bind the full source byte
+inventory, native inputs, exact installer name/size/SHA-256, prerequisites and
+all five scenario results. The receipt includes `evidenceSha256` and
+`sourceTreeSha256`; only a complete actual run emits `acceptance:true`. CI
+uploads that evidence and the exact candidate as
+`DevRyan-windows-installer-{x64,arm64}`. Private runtime/browser profiles and
+fixture installations are excluded from downloadable qualification artifacts.
 
 ## CI and evidence
 

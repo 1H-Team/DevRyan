@@ -2,8 +2,28 @@ import { describe, expect, it, vi } from 'vitest';
 import { createOpenAiOAuthCoordinator } from '../opencode/openai-oauth-coordinator.js';
 import { createHostOAuthConnections, oauthAccountKey } from './host-oauth-connections.js';
 
+const siwcAuth = (overrides = {}) => ({
+  type: 'oauth',
+  accountId: 'account-a',
+  access: 'access-a',
+  refresh: 'refresh-a',
+  expires: Date.now() + 3600000,
+  methodID: 'chatgpt-siwc',
+  clientId: 'oaiapp_fixture_client',
+  scopes: ['openid', 'profile', 'email', 'offline_access', 'resource.invoke', 'chatgpt.tokens.use.direct'],
+  metadata: {
+    accountID: 'account-a',
+    clientId: 'oaiapp_fixture_client',
+    scopes: ['openid', 'profile', 'email', 'offline_access', 'resource.invoke', 'chatgpt.tokens.use.direct'],
+    subject: 'account-a',
+    extAgentHostId: 'urn:uuid:00000000-0000-4000-8000-000000000001',
+    planUsage: true,
+  },
+  ...overrides,
+});
+
 function fixture({ legacyAccount = 'account-a', bound = false } = {}) {
-  let host = { type: 'oauth', accountId: 'account-a', access: 'access-a', refresh: 'refresh-a', expires: Date.now() + 3600000 };
+  let host = siwcAuth();
   let row = { id: 'credential', bot_id: 'bot', provider: 'openai', kind: 'oauth', status: 'active', updated_at: 'version-1',
     metadata: { label: 'Original label', ...(bound ? { connectionId: 'host:openai', oauthAccountKey: oauthAccountKey('account-a') } : {}) } };
   let secret = legacyAccount ? { ...host, accountId: legacyAccount } : null;

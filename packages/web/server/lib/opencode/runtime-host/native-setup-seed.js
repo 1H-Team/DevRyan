@@ -7,6 +7,7 @@ import path from 'node:path';
 import {constants} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {saveBundleJSON} from './bundle-migration-inventory.js';
+import {nativeBundleFileOperations} from './native-bundle-file-operations.js';
 
 const fail=code=>Object.assign(new Error(code),{code,status:503,statusCode:503});
 // An unusable optional source entry: copy() records it and continues.
@@ -66,7 +67,8 @@ export function projectNativeSetupSettings(value){
 export async function seedNativeSetup(input){
  try{return await seed(input);}catch(error){throw coded(error);}
 }
-async function seed({source,target,environment={},captureLogicalSetup}){
+async function seed({source,target,environment={},captureLogicalSetup,windowsOwner}){
+ const operations=nativeBundleFileOperations({windowsOwner});
  const marker=path.join(target.webDataDirectory,'native-setup-seed.json');
  let total=0,visited=0,pinned=24,exhausted=false,skippedCount=0;const files=[],skippedRows=[],reasons={};
  const skip=(relative,reason,detail={})=>{skippedCount++;reasons[reason]=(reasons[reason]??0)+1;if(skippedRows.length<MAX_REPORTED)skippedRows.push({relativePath:sanitize(relative),reason,...detail});};
@@ -101,9 +103,13 @@ async function seed({source,target,environment={},captureLogicalSetup}){
   }finally{await handle.close();}
  };
  // Destination reads: anything unreadable or oversized cannot be the pinned bytes.
- const readTarget=(file,root,code,limit)=>read(file,root,limit).catch(error=>{if(error.code==='native_setup_source_skipped')throw fail(code);throw error;});
+ const readTarget=async(file,root,code,limit=MAX_FILE_BYTES)=>{
+  if(!operations.windows)return read(file,root,limit).catch(error=>{if(error.code==='native_setup_source_skipped')throw fail(code);throw error;});
+  try{const value=await windowsOwner.read(file);if(value.bytes.length>limit)throw fail(code);return value.bytes;}
+  catch(error){if(error.code==='ENOENT')return undefined;throw error;}
+ };
  const roots=[target.webDataDirectory,target.webConfigDirectory,target.opencodeConfigDirectory,target.global.home].map(value=>path.resolve(value));
- for(const root of roots){await fs.mkdir(root,{recursive:true,mode:0o700});const stat=await fs.lstat(root);
+ for(const root of roots){await operations.ensureDirectory(root);if(operations.windows)continue;const stat=await fs.lstat(root);
   if(!stat.isDirectory()||stat.isSymbolicLink()||await fs.realpath(root)!==root||typeof process.getuid==='function'&&stat.uid!==process.getuid())throw fail('native_setup_target_invalid');
   await fs.chmod(root,0o700);
  }
@@ -128,12 +134,12 @@ async function seed({source,target,environment={},captureLogicalSetup}){
   // Generated credential, Meridian and owner rows are never budget-skipped.
   if(over&&required)throw Object.assign(fail('native_setup_source_too_large'),{reason:over});
   if(over){skip(relative,over);return;}
-  await fs.mkdir(path.dirname(file),{recursive:true,mode:0o700});
+  await operations.ensureDirectory(path.dirname(file));
   const root=roots.find(value=>file.startsWith(value+path.sep));if(!root)throw fail('native_setup_target_invalid');
   const existing=await readTarget(file,root,'native_setup_seed_changed');
   if(existing!==undefined){if(hash(existing)!==hash(bytes))throw fail('native_setup_seed_changed');}
-  else await fs.writeFile(file,bytes,{flag:'wx',mode:0o600});
-  await fs.chmod(file,0o600);files.push(row);total+=bytes.length;pinned+=size;
+  else await operations.writeFresh(file,bytes);
+  if(!operations.windows)await fs.chmod(file,0o600);files.push(row);total+=bytes.length;pinned+=size;
  };
  const uid=typeof process.getuid==='function'?process.getuid():undefined,owned=stat=>uid===undefined||stat.uid===uid;
  // A source root (stow-managed ~/.config/opencode, ~/.agents, ...) is canonicalized once:
@@ -259,7 +265,7 @@ async function seed({source,target,environment={},captureLogicalSetup}){
   if(typeof exported==='string'&&exported.trim()){profiles=Buffer.byteLength(exported)>MAX_FILE_BYTES?undefined:parseJSON(exported);if(profiles===undefined)skip(label,'profiles_invalid');}
   if(profiles===undefined){label=profileFile;const bytes=await load(source.home,profileFile,{required:true});if(bytes===undefined)return;profiles=parseJSON(bytes);if(profiles===undefined){skip(label,'profiles_invalid');return;}}
   const relocated=await relocateNativeSetupProfiles({profiles,sourceHome:source.home,targetHome:target.global.home,onSkip:({reason,...detail})=>skip(label,reason,detail),
-   copyAccount:async(account,destination)=>{await fs.mkdir(destination,{recursive:true,mode:0o700});
+   copyAccount:async(account,destination)=>{await operations.ensureDirectory(destination);
     await copy(source.home,path.join(path.relative(source.home,account),'.credentials.json'),path.join(destination,'.credentials.json'),undefined,{account:true,required:true});}});
   await save(path.join(target.global.home,profileFile),Buffer.from(JSON.stringify(relocated)+'\n'),profileFile,true);
  });
@@ -331,7 +337,7 @@ async function seed({source,target,environment={},captureLogicalSetup}){
   }
  }
  for(const relative of ['.agents/skills','.opencode/skill','.opencode/skills'])await copy(source.home,relative,path.join(target.global.home,relative));
- const saved={schema:1,files};await saveBundleJSON(marker,saved);
+ const saved={schema:1,files};await saveBundleJSON(marker,saved,{windowsOwner});
  if(skippedCount)console.warn(`[native-setup] seed skipped ${skippedCount} setup entries (${Object.entries(reasons).map(([reason,count])=>reason+'='+count).join(', ')}): `
   +skippedRows.slice(0,5).map(row=>row.relativePath).join(', ')+(skippedCount>5?', ...':''));
  return {...saved,skipped:skippedRows,skippedCount};

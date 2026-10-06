@@ -134,6 +134,7 @@ export async function startNativeController(boot:NativeProcessBoot,identity:{cor
   }):undefined;
   if(slim)executeOwned=slim.executeOwned;
   const providerOrigin=origins.find(row=>row.id==='devryan.provider-compat');
+  let setupCredentialSeed:import('./native-process-protocol.js').NativeSetupCredentialAck|undefined;
   const integrations=boot.configurationSnapshot?createControllerIntegrations({controllerInstanceID:boot.instanceID,
     configurationSnapshot:boot.configurationSnapshot,rpc,registrationOrigin:remoteMcpOrigin,
     providerCompatibilityOrigin:providerOrigin,
@@ -141,7 +142,7 @@ export async function startNativeController(boot:NativeProcessBoot,identity:{cor
     reviewedConfigurationOrigins:new Map([...nativePlugins].filter(([id])=>['opencode.config.mcp','opencode.mcp.codemode.defaults','opencode.provider.opencode'].includes(id))),
     isBound:()=>bound,isExecutionReady:()=>executionReady,executeOwnedFallback:executeOwned,
     authorizeMcpCall:(invocation,_binding,action)=>routing.withControl(invocation,action),
-    bootstrapCredentials:()=>bootstrapNativeSetupCredentials({seedPath:path.join(boot.globals.config,'native-setup-credentials.json')}).pipe(Effect.asVoid),
+    bootstrapCredentials:()=>bootstrapNativeSetupCredentials({seedPath:path.join(boot.globals.config,'native-setup-credentials.json'),expected:boot.setupCredentialSeed}).pipe(Effect.tap(result=>Effect.sync(()=>{if('sha256' in result)setupCredentialSeed={status:result.status,count:result.count,sha256:result.sha256};})),Effect.asVoid),
     authorizeCursorKey:input=>Effect.promise(()=>rpc('native.cursor.key.assert',input)).pipe(Effect.asVoid),
     authorizeCursorReadOnlyKey:input=>Effect.promise(()=>rpc('native.cursor.readonly.key.assert',input)).pipe(Effect.asVoid),
   }):undefined;
@@ -236,6 +237,7 @@ export async function startNativeController(boot:NativeProcessBoot,identity:{cor
       case 'credential-metadata-owned':return requireIntegrations(input.controllerInstanceID).credentialMetadataOwned(input);
       case 'claude-lifecycle-read-owned':return requireIntegrations(input.controllerInstanceID).readClaudeLifecycleOwned(input);
       case 'claude-lifecycle-transition-owned':return requireIntegrations(input.controllerInstanceID).transitionClaudeLifecycleOwned(input);
+      case 'openai-read-credential-owned':return requireIntegrations(input.controllerInstanceID).readOpenAiCredentialOwned(input);
       case 'openai-read-selected-owned':return requireIntegrations(input.controllerInstanceID).readSelectedOwned(input);
       case 'openai-cas-selected-owned':return requireIntegrations(input.controllerInstanceID).compareAndSwapSelectedOwned(input);
       case 'provider-catalog-selection-owned':{
@@ -257,5 +259,5 @@ export async function startNativeController(boot:NativeProcessBoot,identity:{cor
       case 'cancel-recovered-input-owned':return runWithRequestPermit(new Headers({'x-devryan-native-permit':JSON.stringify(input.permit)}),()=>host.cancelRecoveredInputOwned(input));
     }
   };
-  return {...host,close,command,closeStartup:()=>{executionReady=false;host.closeStartup();}};
+  return {...host,...(process.platform==='win32'?{setupCredentialSeed}:{}),close,command,closeStartup:()=>{executionReady=false;host.closeStartup();}};
 }

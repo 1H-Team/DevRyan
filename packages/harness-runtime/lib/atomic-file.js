@@ -17,6 +17,8 @@ const syncDirectory = async (fsApi, directory) => {
 };
 
 export const cleanupStaleAtomicFiles = async (filePath, options = {}) => {
+  // Native publication owns its candidate/backup/intent lifetime on Windows.
+  if (process.platform === 'win32') return 0;
   const fsApi = options.fs ?? fs;
   const now = options.now ?? Date.now;
   const staleAfterMs = options.staleAfterMs ?? DEFAULT_STALE_TMP_AGE_MS;
@@ -47,6 +49,13 @@ export const cleanupStaleAtomicFiles = async (filePath, options = {}) => {
 };
 
 export const writeFileAtomic = async (filePath, data, options = {}) => {
+  if (process.platform === 'win32') {
+    if (typeof options.windowsOwner?.write !== 'function') throw Object.assign(new Error('private_windows_publication_authority_unavailable'), {
+      code: 'private_windows_publication_authority_unavailable',
+    });
+    const bytes = typeof data === 'string' ? Buffer.from(data, options.encoding ?? 'utf8') : Buffer.from(data);
+    return options.windowsOwner.write(filePath, bytes);
+  }
   const fsApi = options.fs ?? fs;
   const now = options.now ?? Date.now;
   const randomId = options.randomId ?? (() => crypto.randomUUID().replaceAll('-', ''));
@@ -215,6 +224,14 @@ export const withCrossProcessFileLock = async (lockPath, callback, options = {})
 };
 
 const quarantineInvalidFile = async (filePath, error, options) => {
+  if (process.platform === 'win32') {
+    if (typeof options.windowsOwner?.quarantine !== 'function' || !options.windowsRead) throw Object.assign(new Error('private_windows_quarantine_authority_unavailable'), {
+      code: 'private_windows_quarantine_authority_unavailable',
+    });
+    const destination = await options.windowsOwner.quarantine(filePath, options.windowsRead);
+    options.onQuarantine?.({ filePath, quarantinedPath: destination, error });
+    return destination;
+  }
   const fsApi = options.fs ?? fs;
   const now = options.now ?? Date.now;
   const randomId = options.randomId ?? (() => crypto.randomUUID().replaceAll('-', ''));
@@ -236,6 +253,22 @@ const quarantineInvalidFile = async (filePath, error, options) => {
 export const readJsonGuarded = async (filePath, options = {}) => {
   const fsApi = options.fs ?? fs;
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_READ_BYTES;
+  if (process.platform === 'win32') {
+    if (typeof options.windowsOwner?.read !== 'function') throw Object.assign(new Error('private_windows_read_authority_unavailable'), {
+      code: 'private_windows_read_authority_unavailable',
+    });
+    let value;
+    try { value = await options.windowsOwner.read(filePath); }
+    catch (error) { if (isNotFound(error)) return null; throw error; }
+    try {
+      if (value.bytes.length > maxBytes) throw new RangeError(`JSON record exceeds ${maxBytes} bytes`);
+      const parsed = JSON.parse(value.bytes.toString('utf8'));
+      return typeof options.validate === 'function' ? options.validate(parsed) : parsed;
+    } catch (error) {
+      await quarantineInvalidFile(filePath, error, { ...options, windowsRead: value });
+      return null;
+    }
+  }
   try {
     const stat = await fsApi.stat(filePath);
     if (!stat.isFile()) {

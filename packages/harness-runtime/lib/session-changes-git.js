@@ -4,14 +4,29 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import fs from 'node:fs/promises';
 
+const ownedRunners=new WeakMap();
+/** Constructor-only runner for an immutable executable inside an already owned
+ * offline job. Requests never supply this handle or its executable/environment. */
+export function createOwnedGitRunner({binary,environment,argumentsPrefix=[],assertAllowed}){
+ const handle=Object.freeze({});ownedRunners.set(handle,{binary,environment:Object.freeze({...environment}),argumentsPrefix:[...argumentsPrefix],assertAllowed});
+ return Object.freeze({
+  git:(cwd,args,options)=>git(cwd,args,{...options,ownedRunner:handle}),
+  gitTokens:(cwd,args,options)=>gitTokens(cwd,args,{...options,ownedRunner:handle}),
+  gitRecords:(cwd,args,rows)=>gitRecords(cwd,args,rows,{ownedRunner:handle}),
+ });
+}
+
 export const changeError = (code, status = 409) => Object.assign(new Error(code), { code, status });
 
 // Never inherit a caller's index or object-store overrides. All mutation callers
 // supply the private repository explicitly; checkout commands are read-only.
-const start = (cwd, args, { env, input, timeoutMs = 30_000, stdout = 'pipe', acceptExitCodes = [] } = {}) => {
+const start = (cwd, args, { env, input, timeoutMs = 30_000, stdout = 'pipe', acceptExitCodes = [],ownedRunner } = {}) => {
   const signal = executionSignal();
   signal?.throwIfAborted();
-  const child = spawn('git', args, { cwd, env: { ...process.env,
+  const owned=ownedRunner?ownedRunners.get(ownedRunner):undefined;
+  if(ownedRunner&&!owned)throw changeError('owned_git_runner_invalid',503);
+  owned?.assertAllowed?.(cwd,args,{env});
+  const child = spawn(owned?.binary??'git', [...(owned?.argumentsPrefix??[]),...args], { cwd, env: { ...(owned?.environment??process.env),
     GIT_DIR: undefined, GIT_COMMON_DIR: undefined, GIT_INDEX_FILE: undefined, GIT_WORK_TREE: undefined,
     GIT_OBJECT_DIRECTORY: undefined, GIT_ALTERNATE_OBJECT_DIRECTORIES: undefined,
     GIT_OPTIONAL_LOCKS: '0', ...env }, stdio: ['pipe', stdout, 'pipe'] });
@@ -114,10 +129,10 @@ export async function gitToFile(cwd, args, file, options = {}) {
 
 // Read small metadata blobs in one Git process. Each input and output batch is
 // bounded; history length never determines the size of a stdout buffer.
-export async function* gitRecords(cwd, args, rows) {
+export async function* gitRecords(cwd, args, rows,options={}) {
   let batch = [], bytes = 0;
   const read = async (entries) => {
-    const data = await git(cwd, [...args, 'cat-file', '--batch'], {
+    const data = await git(cwd, [...args, 'cat-file', '--batch'], {...options,
       input: entries.map((entry) => entry.oid).join('\n') + '\n', limit: 8 * 1024 * 1024 + 16 * 1024,
     });
     let offset = 0;

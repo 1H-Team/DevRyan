@@ -157,19 +157,22 @@ ingests any refreshed record into the OS-sealed vault on stop, and removes the
 plaintext directory. Startup rollback removes it without attempting refresh.
 Host-linked OpenAI OAuth instead uses `host-oauth-connections.js` and the
 managed `openai-oauth-coordinator.js`. Existing credential/revision IDs stay
-fixed. A legacy sealed snapshot must prove its account matches the current
-host account before migration; missing/different identities need explicit
-Manager reconnection. Metadata holds `connectionId` and a one-way account
-identity key; projections expose only `authState` (`unknown`, `ready`,
+fixed. Binding reads use the current native owner; unavailable native state
+cannot fall back to legacy auth files. A legacy sealed snapshot must prove its
+subject and issued client match the current host registration before migration;
+missing/different identities need explicit Manager reconnection. Metadata holds
+`connectionId`, a one-way account key and a one-way issued-registration key; projections expose only `authState` (`unknown`, `ready`,
 `reauth_required`, `unavailable`). Migrated vault entries contain a reference,
-never reusable OAuth tokens. Scoped auth starts as a non-secret discriminator;
+never reusable OAuth tokens. Scoped auth starts as a token-free native
+SIWC discriminator retaining issued client, verified subject, scopes/plan-use
+and host identity;
 finalization never ingests its OpenAI OAuth contents.
 
 `POST /api/bots/:botId/credentials/:credentialId/reconnect` requires Manager
 authorization, `connectionId: "host:openai"`, and `expectedUpdatedAt`. It
 updates the existing credential with optimistic concurrency and invalidates
 unused warm runtimes. It does not repair a revoked provider login; reconnect
-that account in Providers first. Active runs pinned to a different account
+that account in Providers first. Active runs pinned to a different account or issued registration
 fail authentication rather than silently switching.
 
 The separate private `/api/bots/private/oauth` endpoint accepts only protocol
@@ -774,7 +777,9 @@ non-replayable.
 ChatGPT image generation is a narrower automatic path. The reviewed
 `devryan_image` tool exposes the pinned image plugin's exact `prompt`, `out`,
 `quality`, optional `size`, and optional `images` schema only to the primary
-agent and only for the server-derived OpenAI OAuth capability. The legacy
+agent and only for the server-derived image capability. SIWC plan use grants
+no image capability, and physical native and packaged transports refuse its
+image requests. API-key image behavior retains its independent policy. The legacy
 `devryan_bot image.generate` executor remains readable for persisted 1.2 calls
 but is no longer model-visible. After authoritative
 idle and assistant checkpoint finalization—but before reasoning teardown—the

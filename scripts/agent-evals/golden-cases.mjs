@@ -57,7 +57,9 @@ const command = (spec) => {
   if (spec.runner === 'bun') return { executable: 'bun', args: ['test', spec.file, '-t', spec.pattern] };
   if (spec.runner === 'ui') return { executable: 'bun', cwd: path.join(repoRoot, 'packages/ui'), args: ['test', spec.file.slice('packages/ui/'.length), '-t', spec.pattern] };
   const directory = `packages/${spec.runner}`;
-  return { executable: 'bun', args: ['run', '--cwd', directory, 'test', spec.file.slice(directory.length + 1), '-t', spec.pattern] };
+  return { executable: process.execPath, cwd: path.join(repoRoot, directory),
+    args: [path.join(repoRoot, directory, 'node_modules/vitest/vitest.mjs'), 'run',
+      spec.file.slice(directory.length + 1), '-t', spec.pattern, '--no-file-parallelism', '--maxWorkers=1'] };
 };
 
 const runContract = (spec, timeoutMs) => new Promise((resolve) => {

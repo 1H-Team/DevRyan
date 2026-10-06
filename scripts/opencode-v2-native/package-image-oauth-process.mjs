@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { startOwnedProcess } from '../qa/process.mjs';
 import { createQaHostLaunchEnvironment } from '../qa/launch-environment.mjs';
 const repository = path.resolve(import.meta.dirname, '../..');
-const source = 'original-native-headless-oauth-disposable-source-sdk-real-grants-and-shared-queue';
+const source = 'synthetic-siwc-native-credential-create-source-sdk-shared-queue';
 const sha = value => createHash('sha256').update(value).digest('hex');
 
 export function assertSourceImageOAuthProof(proof) {
@@ -16,13 +16,13 @@ export function assertSourceImageOAuthProof(proof) {
   assert.equal(proof.accounts.length, 2);
   proof.accounts.forEach((account, index) => {
     assert.deepEqual(Object.keys(account).sort(), ['accountID', 'credentialID', 'expectedFingerprint', 'expires', 'methodID', 'valueFingerprint']);
-    assert.match(account.credentialID, /^cred_[A-Za-z0-9]+$/); assert.equal(account.methodID, 'chatgpt-headless');
+    assert.match(account.credentialID, /^cred_[A-Za-z0-9]+$/); assert.equal(account.methodID, 'chatgpt-siwc');
     assert.equal(account.accountID, `owned-image-account-${index === 0 ? 'A' : 'B'}`);
     assert.match(account.valueFingerprint, /^[a-f0-9]{64}$/);assert.match(account.expectedFingerprint,/^[a-f0-9]{64}$/); assert.ok(Number.isSafeInteger(account.expires));
   });
   assert.notEqual(proof.accounts[0].credentialID, proof.accounts[1].credentialID);
   assert.deepEqual(proof.reopened, proof.accounts[1]);
-  assert.deepEqual(proof.requestPhases, ['A', 'B'].flatMap(account => ['usercode', 'authorization', 'exchange'].map(phase => ({ account, phase }))));
+  assert.deepEqual(proof.requestPhases, ['A', 'B'].map(account => ({ account, phase: 'create' })));
   return proof;
 }
 

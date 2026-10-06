@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import {createNativeMigrationFiles} from './native-migration-files.js';
 import path from 'node:path';
 import { Database as SQLite } from 'bun:sqlite';
 import { Effect, Layer, Logger, Schema } from 'effect';
@@ -41,14 +42,16 @@ const ownedFile = async (root: string, file: string) => {
 };
 
 /** Offline copy importer. Deliberately does not acquire a server or any plugin. */
-export async function runMigrationRequest(input: MigrationRequest): Promise<MigrationReceipt> {
+export async function runMigrationRequest(input: MigrationRequest,options:{readonly nativeInstanceID?:string}={}): Promise<MigrationReceipt> {
   const request = parseNativeMigrationRequest(input);
+  const files=process.platform==='win32'?await createNativeMigrationFiles(request,options.nativeInstanceID):undefined;
+  const readDocument=files?.read??readBundleJSON,saveDocument=files?.save??saveBundleJSON;
   const root = await fs.realpath(path.dirname(request.isolatedRoot));
   if (request.isolatedRoot !== path.join(root, 'global') || !containsPath(root, request.receiptPath)
     || !containsPath(root, request.candidateDatabasePath) || await fs.realpath(path.dirname(request.receiptPath)) !== path.dirname(request.receiptPath)) throw bundleFailure('migration_path_invalid');
   await ownedFile(root, request.candidateDatabasePath);
   const globals = Object.fromEntries(['home','data','config','state','cache','tmp','bin','log','repos'].map(key => [key,path.join(request.isolatedRoot,key)]));
-  await fs.mkdir(request.isolatedRoot, { recursive:true, mode:0o700 });
+  if(!files)await fs.mkdir(request.isolatedRoot, { recursive:true, mode:0o700 });
   await absent(path.join(request.isolatedRoot,'data','auth.json'));
   const nextPath = request.auxiliary.kind === 'copy' ? request.auxiliary.databasePath : path.join(root,'sources','absent-opencode-next.db');
   if (request.auxiliary.kind === 'absent') await absent(nextPath);
@@ -69,7 +72,7 @@ export async function runMigrationRequest(input: MigrationRequest): Promise<Migr
       }
     } finally { auxiliary.close(); }
   }
-  await fs.mkdir(path.join(root,'sources'),{recursive:true,mode:0o700});
+  if(!files)await fs.mkdir(path.join(root,'sources'),{recursive:true,mode:0o700});
   const snapshotPath = request.receiptPath + '.source.json';
   const requestSha256 = sha256(canonicalJSON(request));
   let snapshot: typeof Snapshot.Type;
@@ -77,21 +80,21 @@ export async function runMigrationRequest(input: MigrationRequest): Promise<Migr
   try {
     const db = adapter(raw); assertNoPendingMigration(db);
     try {
-      snapshot = Schema.decodeUnknownSync(Snapshot)(await readBundleJSON(snapshotPath));
+      snapshot = Schema.decodeUnknownSync(Snapshot)(await readDocument(snapshotPath));
       if (snapshot.requestSha256 !== requestSha256) throw bundleFailure('migration_source_checkpoint_mismatch');
     } catch (error) {
       if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
       if (migrationMarker(db)) throw bundleFailure('migration_source_checkpoint_missing');
       snapshot = { schema:1, requestSha256, inventory:captureMigrationInventory(db) };
-      await saveBundleJSON(snapshotPath,snapshot);
+      await saveDocument(snapshotPath,snapshot);
     }
     raw.exec('BEGIN IMMEDIATE');
     try {
       await applyMigrationProjectMap(db,snapshot.inventory,request.projectMap,[request.isolatedRoot,request.candidateDatabasePath,request.receiptPath,path.join(root,'web-data'),path.join(root,'config')]);
-      await saveBundleJSON(snapshotPath,snapshot);
+      await saveDocument(snapshotPath,snapshot);
       raw.exec('COMMIT');
     } catch (error) { raw.exec('ROLLBACK'); throw error; }
-    await saveBundleJSON(snapshotPath,snapshot);
+    await saveDocument(snapshotPath,snapshot);
   } finally { raw.close(); }
   // All roots are explicit. In particular, schema acquisition's credential
   // migration can only inspect this private, absent auth.json.
@@ -128,11 +131,11 @@ export async function runMigrationRequest(input: MigrationRequest): Promise<Migr
     const verification = verifyMigrationReferences(db,snapshot.inventory,{projectMap:request.projectMap});
     marker = migrationMarker(db)?.phase === 'completed' ? 'completed' : 'not-needed';
     if (snapshot.inventory.sessions.length && marker !== 'completed') throw bundleFailure('migration_incomplete');
-    verificationSha256 = await saveBundleJSON(request.receiptPath+'.verification.json',verification);
+    verificationSha256 = await saveDocument(request.receiptPath+'.verification.json',verification);
   } finally { verificationDB.close(); }
   const receipt: MigrationReceipt = { protocol:'devryan-native-migration/1',requestID:request.requestID,bundleID:request.bundleID,
     databasePath:request.candidateDatabasePath,status:'completed',nativeVersion:'2.0.20',marker,
     sourceInventorySha256:sha256(await fs.readFile(snapshotPath)),verificationSha256 };
-  await saveBundleJSON(request.receiptPath,receipt);
+  await saveDocument(request.receiptPath,receipt);
   return receipt;
 }

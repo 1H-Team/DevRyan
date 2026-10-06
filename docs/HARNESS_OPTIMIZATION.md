@@ -149,7 +149,7 @@ Live behavior is a separate gate in `scripts/qa/duplicate-behavior.mjs`. Supply 
 
 | Provider | Forwarded request | Host-attested `transport` |
 | --- | --- | --- |
-| `openai` | `POST chatgpt.com/backend-api/codex/responses`, ChatGPT OAuth | `openai-chatgpt-managed-responses-v1` |
+| `openai` | `POST api.openai.com/v1/responses`, Sign in with ChatGPT | `openai-chatgpt-managed-responses-v1` |
 | `xai` | `POST api.x.ai/v1/responses`, xAI OAuth | `xai-oauth-responses-v1` |
 | `anthropic` | Loopback Meridian | None; fails with `unsupported-route:anthropic-meridian` |
 

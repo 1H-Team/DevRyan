@@ -23,3 +23,10 @@ describe('production-derived golden set', () => {
     assertSchemaV1ReportSafe(report);
   });
 });
+
+test('executes only the selected web contract with the installed Vitest runner', async () => {
+  const result = await executeGoldenCase({ caseId: 'golden-image-inspection', repetition: 1, timeoutMs: 10000 });
+  assert.equal(result.status, 'passed', result.errorCode);
+  assert.ok(result.contractEvidence.selected > 0 && result.contractEvidence.selected < 20,
+    'The golden selector must not execute the whole web suite');
+});

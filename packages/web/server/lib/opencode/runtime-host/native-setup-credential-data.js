@@ -1,3 +1,4 @@
+import { siwcClientIdFromAuth, parseScopeList, hasSiwcPlanUsage } from '../chatgpt-siwc.js';
 const fail=code=>Object.assign(new Error(code),{code,status:503,statusCode:503});
 const record=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const strings=value=>record(value)&&Object.values(value).every(item=>typeof item==='string');
@@ -25,8 +26,9 @@ export function projectNativeSetupCredentials(auth,{onSkip}={}){
   else if(record(input)&&input.type==='oauth'&&typeof input.access==='string'&&typeof input.refresh==='string'&&Number.isSafeInteger(input.expires)&&input.expires>=0
    &&(input.accountId===undefined||typeof input.accountId==='string')&&(input.enterpriseUrl===undefined||typeof input.enterpriseUrl==='string')){
    // Same compatibility mapping as the pinned SDK's legacy credential migration.
-   const methodID=integrationID==='openai'?'chatgpt-browser':['github-copilot','opencode','xai'].includes(integrationID)?'device':'oauth';
-   const metadata={...input.accountId?{accountID:input.accountId}:{},...input.enterpriseUrl?{enterpriseUrl:input.enterpriseUrl}:{}};
+   const methodID=integrationID==='openai'?(input.methodID==='chatgpt-siwc'&&siwcClientIdFromAuth(input)?'chatgpt-siwc':'chatgpt-browser'):['github-copilot','opencode','xai'].includes(integrationID)?'device':'oauth';
+   const metadata={...record(input.metadata)?input.metadata:{},...input.accountId?{accountID:input.accountId}:{},...input.enterpriseUrl?{enterpriseUrl:input.enterpriseUrl}:{}};
+   if(methodID==='chatgpt-siwc'){metadata.clientId=siwcClientIdFromAuth(input);metadata.scopes=parseScopeList(input.scopes??metadata.scopes);metadata.idToken=input.idToken??metadata.idToken;metadata.planUsage=hasSiwcPlanUsage(metadata.scopes);}
    value={type:'oauth',methodID,access:input.access,refresh:input.refresh,expires:input.expires,...Object.keys(metadata).length?{metadata}:{}};
   }else{skip('credential_invalid',integrationID);continue;}
   if(credentials.some(item=>item.integrationID===integrationID)){skip('credential_duplicate',integrationID);continue;}
@@ -48,8 +50,9 @@ function strict(auth){
   if(input.type==='api'&&typeof input.key==='string'&&input.key)value={type:'key',key:input.key,...record(input.metadata)?{metadata:input.metadata}:{}};
   else if(input.type==='wellknown'&&typeof input.token==='string'&&input.token)value={type:'key',key:input.token};
   else if(input.type==='oauth'&&typeof input.access==='string'&&typeof input.refresh==='string'&&Number.isSafeInteger(input.expires)){
-   const methodID=integrationID==='openai'?'chatgpt-browser':['github-copilot','opencode','xai'].includes(integrationID)?'device':'oauth';
-   const metadata={...typeof input.accountId==='string'?{accountID:input.accountId}:{},...typeof input.enterpriseUrl==='string'?{enterpriseUrl:input.enterpriseUrl}:{}};
+   const methodID=integrationID==='openai'?(input.methodID==='chatgpt-siwc'&&siwcClientIdFromAuth(input)?'chatgpt-siwc':'chatgpt-browser'):['github-copilot','opencode','xai'].includes(integrationID)?'device':'oauth';
+   const metadata={...record(input.metadata)?input.metadata:{},...typeof input.accountId==='string'?{accountID:input.accountId}:{},...typeof input.enterpriseUrl==='string'?{enterpriseUrl:input.enterpriseUrl}:{}};
+   if(methodID==='chatgpt-siwc'){metadata.clientId=siwcClientIdFromAuth(input);metadata.scopes=parseScopeList(input.scopes??metadata.scopes);metadata.idToken=input.idToken??metadata.idToken;metadata.planUsage=hasSiwcPlanUsage(metadata.scopes);}
    value={type:'oauth',methodID,access:input.access,refresh:input.refresh,expires:input.expires,...Object.keys(metadata).length?{metadata}:{}};
   }else throw fail('native_setup_credentials_invalid');
   if(credentials.some(item=>item.integrationID===integrationID))throw fail('native_setup_credentials_invalid');

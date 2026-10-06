@@ -2436,7 +2436,7 @@ describe('Electron-owned Docker Bot runtime manager', () => {
     expect(compose).not.toMatch(/\bdown\b|--volumes|-v\b/);
     // Packaged apps ship the reviewed SQL beside the compose file.
     expect(packageJson.dependencies['@openchamber/bot-db']).toBe('workspace:*');
-    expect(packageJson.build.extraResources).toEqual(expect.arrayContaining([
+    expect(packageJson.build.mac.extraResources).toEqual(expect.arrayContaining([
       expect.objectContaining({ from: '../../supabase/migrations', to: 'bot-db/supabase-migrations' }),
       expect.objectContaining({ from: '../bot-db/sql', to: 'bot-db/sql' }),
     ]));

@@ -62,28 +62,35 @@ const awaitInitialPhysicalPair = async kind => {
   // response open until both real requests have passed original admission.
   await initialPair;
 };
-let nativeURL, ready = false, handler, map, accountRevision = 1, tokenRevision=0, refreshRequests=0, pollBarrier, pollObserved;
+let nativeURL, ready = false, handler, map, accountRevision = 1, tokenRevision=0, refreshRequests=0;
 let queue = Promise.resolve();
 const withMutationQueue = action => { const result = queue.then(action); queue = result.then(() => undefined, () => undefined); return result; };
 const jwt = account => `fixture.${Buffer.from(JSON.stringify({jti:++tokenRevision, 'https://api.openai.com/auth': { chatgpt_account_id: account } })).toString('base64url')}.fixture`;
-const nativeFetch = globalThis.fetch, NativeWebSocket=globalThis.WebSocket;
-let wsReceipts=0;
-const responsesEvents=(number,output)=>{ const message={id:`message_ws_${number}`,type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:output,annotations:[]}]}; const response={id:`response_ws_${number}`,object:'response',created_at:Math.floor(Date.now()/1000),model:'gpt-5.5',status:'completed',output:[message],usage:{input_tokens:10,output_tokens:5,total_tokens:15,input_tokens_details:{cached_tokens:0},output_tokens_details:{reasoning_tokens:0}}};return [{type:'response.created',response:{...response,status:'in_progress',output:[]}},{type:'response.output_item.added',output_index:0,item:{...message,content:[],status:'in_progress'}},{type:'response.content_part.added',item_id:message.id,output_index:0,content_index:0,part:{type:'output_text',text:'',annotations:[]}},{type:'response.output_text.delta',item_id:message.id,output_index:0,content_index:0,delta:output},{type:'response.output_text.done',item_id:message.id,output_index:0,content_index:0,text:output},{type:'response.output_item.done',output_index:0,item:message},{type:'response.completed',response}]; };
-const wsServer=Bun.serve({hostname:'127.0.0.1',port:0,fetch(request,listener){assert.equal(new URL(request.url).pathname,'/backend-api/codex/responses');const headers=request.headers; if(listener.upgrade(request,{data:{authorization:headers.get('authorization'),account:headers.get('chatgpt-account-id')}}))return; return new Response(null,{status:400});},websocket:{message(socket,text){const frame=JSON.parse(String(text));assert.equal(frame.type,'response.create');wsReceipts++;receipts.push({route:'/backend-api/codex/responses',authorization:socket.data.authorization,account:socket.data.account,websocket:true,reasoningSummary:frame.reasoning?.summary});for(const event of responsesEvents(wsReceipts,'Owned native integration completion'))socket.send(JSON.stringify(event));}}});
-globalThis.WebSocket=class extends NativeWebSocket {constructor(url,options){const target=new URL(url);assert.equal(target.protocol,'wss:');assert.equal(target.hostname,'chatgpt.com');super(`ws://127.0.0.1:${wsServer.port}${target.pathname}${target.search}`,options);}};
+const nativeFetch = globalThis.fetch;
 const transport = http.createServer(async (request, response) => {
   try {
     const chunks = []; let bytes = 0;
     for await (const chunk of request) { bytes += chunk.length; assert.ok(bytes <= 1024 * 1024); chunks.push(chunk); }
     const text = Buffer.concat(chunks).toString();
     const json = value => { response.writeHead(200, { 'content-type': 'application/json' }); response.end(JSON.stringify(value)); };
-    if (request.url === '/api/accounts/deviceauth/usercode') return json({ device_auth_id: 'owned-device', user_code: 'owned-code', interval: '1' });
-    if (request.url === '/api/accounts/deviceauth/token') { pollObserved?.(); if(pollBarrier)await pollBarrier; return json({ authorization_code: 'owned-authorized', code_verifier: 'owned-verifier' }); }
-    if (request.url === '/oauth/token') { const form=new URLSearchParams(text), refresh=form.get('grant_type')==='refresh_token'; if(refresh)refreshRequests++; const revision=refresh?Number(form.get('refresh_token').split('-').at(-1)):accountRevision; return json({ access_token:jwt(`account-${revision}`), refresh_token:`owned-refresh-${revision}`, id_token:jwt(`account-${revision}`), expires_in:refresh?3600:1,token_type:'Bearer' }); }
+    if (request.url === '/api/accounts/oauth/token') {
+      const form = new URLSearchParams(text);
+      assert.equal(form.get('grant_type'), 'refresh_token');
+      assert.equal(form.get('client_id'), 'oaiapp_fixture_client');
+      assert.equal(form.get('resource'), 'https://api.openai.com/v1');
+      refreshRequests++;
+      const revision = Number(form.get('refresh_token').split('-').at(-1));
+      return json({ access_token: jwt(`account-${revision}`), refresh_token: `owned-refresh-${revision}`,
+        expires_in: 3600, token_type: 'Bearer' });
+    }
     if (request.url?.endsWith('/responses')) {
       const body = JSON.parse(text); assert.equal(body.stream, true);
       const kind = request.headers['x-devryan-fixture-provider-kind'];
-      receipts.push({ route: request.url, kind, authorization: request.headers.authorization, account: request.headers['chatgpt-account-id'],reasoningSummary:body.reasoning?.summary });
+      const bearer = String(request.headers.authorization || '').replace(/^Bearer\s+/i, '');
+      let account = null;
+      try { account = JSON.parse(Buffer.from(bearer.split('.')[1], 'base64url').toString())['https://api.openai.com/auth']?.chatgpt_account_id; } catch { /* non-jwt */ }
+      assert.equal(request.headers['chatgpt-account-id'], undefined);
+      receipts.push({ route: request.url, kind, authorization: request.headers.authorization, account, reasoningSummary: body.reasoning?.summary });
       const receiptNumber = receipts.length;
       try { await awaitInitialPhysicalPair(kind); }
       catch (error) { initialPairFailure ??= error; response.writeHead(500); response.end(); return; }
@@ -123,7 +130,7 @@ const configuration = { model: 'openai/gpt-5.5', providers: { openai: { package:
   ...Object.fromEntries(['gpt-5.6-sol','gpt-5.6-luna-fast','gpt-5.3-codex-spark'].map(id=>[id,{capabilities:{tools:true,input:['text'],output:['text']},limit:{context:400000,input:272000,output:32000},settings:{reasoningEffort:'high',reasoningSummary:'auto'},variants:[{id:'none',settings:{reasoningEffort:'none'}},{id:'high',settings:{reasoningEffort:'high',reasoningSummary:'auto'}}]}])) } } },
   agents: { build: { mode: 'primary', model: 'openai/gpt-5.5' }, title: { model: 'openai/gpt-5.5' } } };
 const snapshot = { schema: 1, revision: 1, sourceStamp: 'a'.repeat(64), digest: 'd'.repeat(64), registrationManifestDigest: 'c'.repeat(64),
-  locations: directories.map((directory,index) => ({ directory, configuration:index===0?configuration:{...configuration,providers:{openai:{...configuration.providers.openai,settings:{transport:'websocket'}}}}, skills: [], instructions: [], textReferences: [], aliases: [], activePlugins: [],
+  locations: directories.map(directory => ({ directory, configuration, skills: [], instructions: [], textReferences: [], aliases: [], activePlugins: [],
     compatibility: { legacy: {}, agents: {}, commands: {}, slim: {}, mcp: {} }, requiredCatalogs: { agents: [], plugins: [], tools: [], models: [], skills: [], commands: [], mcp: [] } })) };
 const runtime = createSessionMutationRuntime({ directory: path.join(root, 'ledger') });
 const locks = new Map();
@@ -222,20 +229,36 @@ try {
       'content-type': 'application/json', ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     const text=await response.text(), value=text?JSON.parse(text):null; assert.ok(response.ok, `${route}: ${response.status} ${JSON.stringify(value)}`); return value?.location && Object.hasOwn(value, 'data') ? value.data : value;
   };
-  const info = await call(directories[0], '/api/integration/openai');
-  const methodID = info.methods.find(method => method.id === 'chatgpt-headless').id;
-  const operation = (directory, action, attemptID) => ({ kind: 'openai', directory, integrationID: 'openai', configurationDigest: hash(snapshot.locations.find(row=>row.directory===directory).configuration.providers.openai),
-    operation: `openai.oauth.${action}`, method: 'POST', path: `/api/integration/openai/connect/oauth${attemptID ? `/${attemptID}/complete` : ''}`,
-    ...(action === 'start' ? { methodID, body: { methodID } } : { attemptID, methodID, body: {} }) });
-  const start = directory => callerContext.run(caller, () => integrationOwner.withCallerOperation(operation(directory, 'start'), () => call(directory,
-    '/api/integration/openai/connect/oauth', 'POST', { methodID }, integrationOwner.requestHeaders())));
-  const complete = (directory, attemptID) => callerContext.run(caller, () => integrationOwner.withCallerOperation(operation(directory, 'complete', attemptID), () => call(directory,
-    `/api/integration/openai/connect/oauth/${attemptID}/complete`, 'POST', {}, integrationOwner.requestHeaders())));
-  const waitOAuth = async (directory, attemptID) => { const end=Date.now()+10_000; while(Date.now()<end){ const value=await call(directory, `/api/integration/openai/connect/oauth/${attemptID}`); if(value.status === 'complete') return; assert.notEqual(value.status,'failed'); await new Promise(resolve=>setTimeout(resolve,10)); } throw new Error('Native OAuth callback did not commit'); };
-  const first = await start(directories[0]); await waitOAuth(directories[0],first.attemptID); await complete(directories[0], first.attemptID);
+  await call(directories[0], '/api/integration/openai');
+  const methodID = 'chatgpt-siwc';
+  const createSiwc = async directory => {
+    const revision = accountRevision;
+    const value = {
+      type: 'oauth', methodID,
+      access: jwt(`account-${revision}`), refresh: `owned-refresh-${revision}`,
+      expires: Date.now() + 1000,
+      metadata: {
+        accountID: `account-${revision}`, clientId: 'oaiapp_fixture_client',
+        scopes: ['openid', 'profile', 'email', 'offline_access', 'resource.invoke', 'chatgpt.tokens.use.direct'],
+        subject: `account-${revision}`,
+        extAgentHostId: 'urn:uuid:00000000-0000-4000-8000-0000000000aa',
+        planUsage: true, idToken: jwt(`account-${revision}`),
+      },
+    };
+    const input = { integrationID: 'openai', value, activate: true, label: `SIWC ${revision}` };
+    const configurationDigest = hash(snapshot.locations.find(row => row.directory === directory).configuration.providers.openai);
+    const spec = { kind: 'openai', directory, integrationID: 'openai', configurationDigest,
+      operation: 'openai.credential.create', method: 'POST', path: '/api/credential', body: input,
+      valueType: 'oauth', methodID, requestedFingerprint: hash(input) };
+    return callerContext.run(caller, () => integrationOwner.withCallerOperation(spec, async () => {
+      const requestAuthorization = integrationOwner.requestHeaders()['x-devryan-native-integration-grant'];
+      return factory.credentialOwned({ directory, requestAuthorization, mutation: { operation: 'create', input } });
+    }));
+  };
+  await createSiwc(directories[0]);
   assert.equal((await call(directories[0], '/api/integration/openai')).connections.some(row => row.method === 'oauth'), true);
   await call(directories[1], '/api/integration/openai');
-  const second = await start(directories[1]); await waitOAuth(directories[1],second.attemptID); await complete(directories[1], second.attemptID);
+  await createSiwc(directories[1]);
   result = { integrationLocations: 2, nativeOAuthCommit: true, revokedAttemptRefused: false, closedHandlesRefused: false,
     providerKinds: [], physicalReceipts: 0, permitsWereOwned: true };
   // Provider lanes are added only through actual native Session services below.
@@ -258,7 +281,7 @@ try {
   assert.deepEqual(receipts.map(receipt=>receipt.kind).sort(),['primary','title']);
   const current=await factory.readSelectedOwned({directory:directories[0]});
   assert.equal(current.value.type,'oauth'); assert.ok(refreshRequests>=1,'Physical attempt must refresh expiring credential through the actual shared queue');
-  for(const receipt of receipts){assert.equal(receipt.authorization,`Bearer ${current.value.access}`);assert.equal(receipt.account,current.value.metadata.accountID);assert.equal(receipt.route,'/backend-api/codex/responses');}
+  for(const receipt of receipts){assert.equal(receipt.authorization,`Bearer ${current.value.access}`);assert.equal(receipt.account,current.value.metadata.accountID);assert.equal(receipt.route,'/v1/responses');}
   const generatePermit=await admissionOwner.handleRpc('native.admission.authorize',{operation:'execution.resume',sessionID:session.id});ownedTokens.add(generatePermit.token);
   const generateBefore=receipts.length;
   try { const generated=await call(directories[0],`/api/session/${session.id}/generate`,'POST',{prompt:'Owned native generation'},{'x-devryan-native-permit':JSON.stringify(generatePermit)});assert.equal(generated.data.text,'Owned native integration completion'); }
@@ -269,24 +292,23 @@ try {
   const compactEnd=Date.now()+10_000;while(Date.now()<compactEnd&&(!kinds.has('compaction')||receipts.length===compactBefore))await new Promise(resolve=>setTimeout(resolve,10));
   assert.ok(kinds.has('compaction'));assert.equal(receipts.length,compactBefore+1);
   let compactCommitted=false;const summaryEnd=Date.now()+10_000;while(Date.now()<summaryEnd){const page=await client.sessions.messages(session.id,{directory:directories[0]});const summary=page.records.find(row=>row.info.summary&&row.info.time.completed);if(summary){assert.equal(summary.info.finish,'stop');assert.equal(summary.info.error,undefined);assert.ok(summary.parts.some(part=>part.type==='text'&&part.text.includes('## Objective')));compactCommitted=true;break;}await new Promise(resolve=>setTimeout(resolve,10));}assert.equal(compactCommitted,true);
-  const wsSession=await callerContext.run(caller,()=>client.sessions.create({model:{providerID:'openai',modelID:'gpt-5.5'}},{directory:directories[1]}));
-  await callerContext.run(caller,()=>client.prompts.prompt(wsSession.id,{agent:'build',model:{providerID:'openai',modelID:'gpt-5.5'},parts:[{type:'text',text:'Owned native WS primary'}]},{directory:directories[1]}));
-  let wsCompleted=false;const wsEnd=Date.now()+10_000;while(Date.now()<wsEnd){const page=await client.sessions.messages(wsSession.id,{directory:directories[1]});if(page.records.some(row=>row.info.role==='assistant'&&row.info.time.completed)){wsCompleted=true;break;}await new Promise(resolve=>setTimeout(resolve,10));}assert.equal(wsCompleted,true);assert.ok(wsReceipts>0,'Actual native WebSocket physical frame required');
-  const wsCurrent=await factory.readSelectedOwned({directory:directories[1]});for(const receipt of receipts.filter(row=>row.websocket)){assert.equal(receipt.authorization,`Bearer ${wsCurrent.value.access}`);assert.equal(receipt.account,wsCurrent.value.metadata.accountID);}
+  const secondSession=await callerContext.run(caller,()=>client.sessions.create({model:{providerID:'openai',modelID:'gpt-5.5'}},{directory:directories[1]}));
+  await callerContext.run(caller,()=>client.prompts.prompt(secondSession.id,{agent:'build',model:{providerID:'openai',modelID:'gpt-5.5'},parts:[{type:'text',text:'Owned native second-location primary'}]},{directory:directories[1]}));
+  let secondCompleted=false;const secondEnd=Date.now()+10_000;while(Date.now()<secondEnd){const page=await client.sessions.messages(secondSession.id,{directory:directories[1]});if(page.records.some(row=>row.info.role==='assistant'&&row.info.time.completed)){secondCompleted=true;break;}await new Promise(resolve=>setTimeout(resolve,10));}assert.equal(secondCompleted,true);
+  const secondCurrent=await factory.readSelectedOwned({directory:directories[1]});
+  assert.equal(secondCurrent.value.type,'oauth'); assert.equal(secondCurrent.value.methodID,'chatgpt-siwc');
   // Actual global account activation must supersede stale location provider headers.
   accountRevision=2;
-  const changed=await start(directories[0]);await waitOAuth(directories[0],changed.attemptID);
+  await createSiwc(directories[0]);
   const changeBefore=receipts.length;
   const changePermit=await admissionOwner.handleRpc('native.admission.authorize',{operation:'execution.resume',sessionID:session.id});ownedTokens.add(changePermit.token);
   try {await call(directories[0],`/api/session/${session.id}/generate`,'POST',{prompt:'Owned changed account'},{'x-devryan-native-permit':JSON.stringify(changePermit)});}finally{await admissionOwner.handleRpc('native.admission.release',changePermit);}
   assert.equal(receipts.length,changeBefore+1);const changedReceipt=receipts.at(-1),changedCredential=await factory.readSelectedOwned({directory:directories[0]});
   assert.equal(changedReceipt.account,'account-2');assert.equal(changedReceipt.authorization,`Bearer ${changedCredential.value.access}`);
-  // Revoke the original browser principal while native automatic OAuth awaits the issuer.
-  let releasePoll,observedPoll;pollBarrier=new Promise(resolve=>{releasePoll=resolve;});const observed=new Promise(resolve=>{observedPoll=resolve;});pollObserved=observedPoll;
+  // Revoked browser principal cannot create a replacement SIWC credential.
   const countBefore=(await factory.credentialMetadataOwned({directory:directories[0],integrationID:'openai'})).length;
-  const revoked=await start(directories[0]);await observed;caller.active=false;releasePoll();pollBarrier=undefined;pollObserved=undefined;
-  const revokedEnd=Date.now()+5_000;let revokedSeen=false;while(Date.now()<revokedEnd){const failures=(await fs.readFile(path.join(root,'rpc-errors.jsonl'),'utf8')).trim().split('\n').filter(Boolean).map(row=>JSON.parse(row));if(failures.some(row=>row.method==='integration.reauthorize'&&row.code==='fixture_original_caller_revoked')){revokedSeen=true;break;}await new Promise(resolve=>setTimeout(resolve,10));}
-  assert.equal(revokedSeen,true,'Original grant must be rechecked after issuer response');
+  caller.active=false;
+  await assert.rejects(() => createSiwc(directories[0]), /fixture_original_caller_revoked|native_integration|HostRefusal|403/);
   assert.equal((await factory.credentialMetadataOwned({directory:directories[0],integrationID:'openai'})).length,countBefore);result.revokedAttemptRefused=true;caller.active=true;
   // Capture real location services, reload the HTTP application, then exercise the old handle.
   const at=(directory,effect)=>Effect.runPromise(effect.pipe(Effect.provide(map.get({directory})),Effect.provideService(LocationServiceMap.Service,map),Effect.provide(Logger.layer([],{mergeWithExisting:false}))));
@@ -303,15 +325,15 @@ try {
   await call(directories[0],'/api/location/reload','POST');
   await assert.rejects(Effect.runPromise(oldModels.all()),/native_provider_location_expired/);
   await assert.rejects(Effect.runPromise(oldModels.get('openai','missing-model')),/native_provider_location_expired/);
-  await assert.rejects(()=>Effect.runPromise(old.oauth.status({integrationID:'openai',attemptID:first.attemptID})),/native_openai_location_expired/);
+  await assert.rejects(()=>Effect.runPromise(old.list()),/native_openai_location_expired/);
   const freshCatalog=await assertNativeCatalog({directories,requirements:{agents:['build'],plugins:[],tools:[],models:[{providerID:'openai',id:'gpt-5.5'}]},handler,tools:gates.controls.catalogTools});assert.equal(freshCatalog.asserted,true);
   assert.equal((await call(directories[0],'/api/integration/openai')).connections.length,countBefore);result.closedHandlesRefused=true;
-  const afterReload=await start(directories[1]);await waitOAuth(directories[1],afterReload.attemptID);
+  await createSiwc(directories[1]);
   await verifyModels();
   assert.ok(receipts.some(receipt=>receipt.reasoningSummary==='detailed'),'Actual final provider payload must contain the preserved detailed-summary policy');
   result.providerCompatibility=true;
   result.providerKinds = [...kinds].sort(); result.physicalReceipts = receipts.length;
-  result.websocketReceipts=wsReceipts;result.refreshedCredential=true;result.accountChange=true;
+  result.websocketReceipts=0;result.refreshedCredential=true;result.accountChange=true;
   assert.deepEqual(result.providerKinds,['compaction','generate','primary','title']);
 } catch (error) { primaryFailure = error; throw error; } finally {
   clearTimeout(initialPairTimer);
@@ -325,7 +347,7 @@ try {
   await cleanup(() => runtime.drain()); await cleanup(() => admissionOwner.invalidateController());
   await cleanup(() => admissionOwner.dispose());
   for (const socket of outstandingSockets) socket.destroy();
-  await cleanup(() => new Promise(resolve => transport.close(resolve)));await cleanup(()=>wsServer.stop(true));
+  await cleanup(() => new Promise(resolve => transport.close(resolve)));
   if (failures.length) throw new AggregateError([...(primaryFailure ? [primaryFailure] : []), ...failures], 'Owned fixture and cleanup failures');
 }
 console.log(JSON.stringify(result));

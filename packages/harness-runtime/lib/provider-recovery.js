@@ -29,7 +29,7 @@ const progressSignature = (part) => ['text', 'reasoning'].includes(part.type) ? 
 
 export function createPrimaryRecoveryController(options) {
   const now = options.now ?? Date.now;
-  const store = options.store ?? createRecordStore({ directory: options.directory, validateRecord: validatePrimaryRecoveryRecord, maxReadBytes: 128 * 1024 });
+  const store = options.store ?? createRecordStore({ directory: options.directory, validateRecord: validatePrimaryRecoveryRecord, maxReadBytes: 128 * 1024, windowsOwner: options.windowsOwner });
   if ([options.mode, options.anthropicMode].some((value) => value !== undefined && !['off', 'observe', 'enforce'].includes(value))) throw new TypeError('Invalid provider recovery mode');
   const progressTimeoutMs = options.progressTimeoutMs ?? PROVIDER_PROGRESS_TIMEOUT_MS;
   if (progressTimeoutMs !== false && (!Number.isSafeInteger(progressTimeoutMs) || progressTimeoutMs < 1)) {
@@ -87,7 +87,7 @@ export function createPrimaryRecoveryController(options) {
   }, { directory: record.directory });
   const lock = (id, fn) => (options.withLock
     ? options.withLock(id, fn)
-    : withCrossProcessFileLock(path.join(store.directory, `${keyFor(id)}.lock`), fn));
+    : withCrossProcessFileLock(path.join(store.directory, `${keyFor(id)}.lock`), fn, { windowsLauncher: options.windowsLauncher }));
   const mutate = (id, fn, authorizeWrite) => lock(id, async () => {
     const existing = await store.readRecord(keyFor(id));
     const next = await fn(existing);
@@ -1159,7 +1159,7 @@ export function createPrimaryRecoveryController(options) {
         ownerTask = withCrossProcessFileLock(path.join(store.directory, 'runtime-owner.lock'), async () => {
           ownsRuntime = true;
           await new Promise((release) => { releaseOwner = release; resolve(); });
-        }, { timeoutMs: 0 }).catch(() => { diagnostic('provider_recovery_owner_unavailable'); resolve(); });
+        }, { timeoutMs: 0, windowsLauncher: options.windowsLauncher }).catch(() => { diagnostic('provider_recovery_owner_unavailable'); resolve(); });
       });
       for (const { record } of await store.listRecords()) {
         records.set(record.sessionID, record);

@@ -27,9 +27,22 @@ Repository automation entrypoint for developer workflows: validation planning, l
   policy-3 LPAC helper and probes trusted Node/Bun startup with its bound binary
   lease policy. It preserves source/binary/output hashes and partial receipts.
   Its binary receives no accepted manifest, never enters a runtime bundle,
-  and cannot satisfy any of the nine required Windows outcomes. The seven
+  and cannot satisfy any of the eleven required Windows outcomes. The seven
   historical restriction variants remain evidence; the current probe neither
   lowers UI/token restrictions nor changes inherited UI-object ACLs.
+  `diagnose-windows-runtime-compatibility.mjs` independently tests original
+  Node/Bun binary stdin/stdout/stderr and nested spawn APIs through confined
+  `LOCAL` stdio. Its sixteen actual cells still grant no admission; both Windows
+  workflows require the result instead of treating it as an optional probe.
+  `qualify-windows-installer.mjs` checks native namespace durability first and
+  records every independent native/acceptance blocker before packaging. Only a
+  disposable hosted Windows runner with all prerequisites can build and execute
+  real per-user NSIS installation, update, refusal, interruption and rollback.
+  Installed app health/readiness, exact process cleanup and HKCU/shortcut
+  preservation enter source/artifact-bound evidence. A same-source/version
+  baseline fixture is explicitly distinguished from shipped continuity.
+  `qualification.json` binds sibling `evidence.json`; private fixture profiles
+  are excluded from both downloaded installer and native evidence artifacts.
   `build-windows-reviewed-libsql.mjs` attempts the original libsql 0.5.29 source
   commit with an unchanged Cargo lock on each native Windows host. It verifies
   compiler and resource PE architecture, executes the original database ABI
@@ -40,6 +53,14 @@ Repository automation entrypoint for developer workflows: validation planning, l
   SHA-256, size and PE architecture precede native version probes in an isolated
   home. Changed files and aliased output directories refuse; publication is
   exclusive. Its candidate receipt also cannot grant execution admission.
+  `build-windows-git.mjs` provisions the complete official MinGit
+  `v2.56.0.windows.2` archive for x64 or ARM64. Published archive hashes and
+  fixed path/size/content inventories bind every runtime and license file;
+  existing caches are reverified against those source pins. Native qualification
+  executes only `git/cmd/git.exe` in an isolated home and records its actual
+  version. The candidate builder requires this qualification, inventories all
+  Git files, and records the exact seven-field `windowsGit` manifest contract.
+  Git qualification does not grant runtime admission.
   `qa/macos-gui-prerequisites.mjs` and its AppKit probe run only on an ephemeral
   GitHub-hosted ARM64 macOS runner. They check console ownership, GUI bootstrap,
   WindowServer login, a visible owned window and actual PNG capture. Missing
@@ -108,6 +129,11 @@ Repository automation entrypoint for developer workflows: validation planning, l
   the compiled native registry, physical HTTP calls, canonical tool results and
   host control receipts in both owned locations. OAuth remains a separate graph
   and saved-account qualification.
+  `package-image-lane.mjs` refuses a selected synthetic SIWC credential without
+  refresh, provider traffic or publication, then explicitly creates native API
+  keys for public Responses generation, account switching, versioned PNG
+  publication and owned cancellation. Billing must remain `api-key`; original
+  Codex image-plugin/parser fixtures remain separate and unchanged.
   `package-slim-tools-lane.mjs` checks original AST search, default preview and
   replacement with exact worker receipts and workspace bytes, then original
   webfetch over local text/HTML with its HTTPS fallback and owned control calls.

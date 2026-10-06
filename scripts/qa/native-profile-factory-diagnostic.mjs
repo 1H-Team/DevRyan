@@ -23,8 +23,7 @@ export async function runQaNativeFactoryDiagnostic({ artifactRoot, bun = 'bun' }
   const sourceHome = path.join(root, 'mirror'), workspace = path.join(root, 'workspace'), runtimeRoot = path.join(root, 'runtime');
   for (const directory of [sourceHome, workspace, path.join(sourceHome, 'opencode'), path.join(sourceHome, 'web')]) await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   const names = (await fs.readdir(path.join(repository, 'packages/web/server/default-config/agents'))).filter(file => file.endsWith('.md')).map(file => file.slice(0, -3));
-  // The original OAuth catalog deliberately excludes the bare gpt-5.6 row.
-  // Declare a supported synthetic tuple, never substitute a saved user's model.
+  // Declare the synthetic model tuple explicitly; never substitute a saved user's model.
   const modelID = 'gpt-5.6-sol', model = `openai/${modelID}`;
   const agents = Object.fromEntries(names.map(name => [name, { model, variant: 'high',
     ...(name === 'council' ? { councillors: [{ model, variant: 'high' }] } : {}) }]));
@@ -62,9 +61,10 @@ export async function runQaNativeFactoryDiagnostic({ artifactRoot, bun = 'bun' }
       return JSON.parse(match[1].replace(/\\/g, ''));
     });
     assert.deepEqual(creationLogs, proof.accounts.map(account => ({ credentialID: account.credentialID, integrationID: 'openai', type: 'oauth', active: true })), 'Unexpected native credential creation log'); assert.equal(proof.compiledOAuthCreation, false); assert.equal(proof.nativeVersion, '2.0.20');
-    assert.equal(proof.reopened.methodID, 'chatgpt-headless');
-    report.cases.push({ id: 'synthetic-original-source-oauth', source: proof.source, methodID: proof.reopened.methodID,
-      settledMutations: proof.settledMutations, knownNativeCreationLogCount: creationLogs.length, compiledOAuthCreation: false });
+    assert.equal(proof.reopened.methodID, 'chatgpt-siwc');
+    report.cases.push({ id: 'synthetic-siwc-source-sdk-credential-mutations', source: 'source-sdk-native-credential-create', methodID: proof.reopened.methodID,
+      settledMutations: proof.settledMutations, knownNativeCreationLogCount: creationLogs.length,
+      oauthEnrollment: 'not-run', deviceCodeGrant: 'not-run', compiledOAuthCreation: false });
     return { status: 'ready', credentials: { openai: { kind: 'native-credential', providerId: 'openai',
       bundleID: binding.descriptor.bundleID, controlRoot: binding.controlRoot, credentialID: proof.reopened.credentialID,
       expectedFingerprint: proof.reopened.expectedFingerprint, valueType: 'oauth', expires: proof.reopened.expires,

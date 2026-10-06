@@ -144,3 +144,50 @@ test('controller exit bounds an in-flight fetch even if the transport ignores ab
  await helper.controllerSettled(target.instanceID);
  expect(await result).toMatchObject({code:'native_helper_controller_exited'});expect(released).toBe(true);
 });
+
+test('provider sign-out drains only selected-provider helpers and waits for actual cancellation ACK',async()=>{
+ const permits=new Map(),released=new Set(),started=new Set();let cancelSignal;
+ const target={instanceID:'signout-helpers',url:'http://fixture'};
+ const helper=createNativeHelperOwner({admissionOwner:{withHelperOperation:async(request,action)=>{
+  const permit={token:(request.providerID==='openai'?'d':'e').repeat(64),sessionID:'ses_signout_helper',revision:0};permits.set(request.providerID,permit);
+  try{return await action(permit);}finally{released.add(request.providerID);}
+ },assertHelperOperation:async()=>null},current:()=>target,headers:()=>({}),settlementTimeoutMs:40,cancellationTimeoutMs:40,fetchImpl:async(url,options)=>{
+  if(url.endsWith('/cancel')){cancelSignal=options.signal;return Response.json({});}
+  const request=JSON.parse(options.body);started.add(request.providerID);return new Promise(()=>{});
+ }});
+ const openai=helper.generate({...input,providerID:'openai',operationID:'openai'}).catch(error=>error);
+ const anthropic=helper.generate({...input,providerID:'anthropic',operationID:'anthropic'}).catch(error=>error);
+ while(started.size!==2)await new Promise(resolve=>setTimeout(resolve,1));
+ let drained=false;const drain=helper.stopProvider('openai').then(()=>{drained=true;});
+ await new Promise(resolve=>setTimeout(resolve,2));
+ expect(cancelSignal?.aborted).toBe(false);expect(drained).toBe(false);expect(released.size).toBe(0);
+ helper.settled({permit:permits.get('openai')});await drain;
+ expect(await openai).toMatchObject({code:'native_helper_provider_signed_out'});
+ expect(released).toEqual(new Set(['openai']));
+ await helper.controllerSettled(target.instanceID);await anthropic;
+});
+
+test('provider sign-out can settle after a late actual ACK and refuses an unacknowledged timeout',async()=>{
+ let permit,started,startedCalls=0;const began=new Promise(resolve=>{started=resolve;});const target={instanceID:'signout-late-ack',url:'http://fixture'};
+ const helper=createNativeHelperOwner({admissionOwner:{withHelperOperation:async(_request,action)=>action(permit={token:'f'.repeat(64),sessionID:'ses_late_helper',revision:0}),assertHelperOperation:async()=>null},current:()=>target,headers:()=>({}),settlementTimeoutMs:5,cancellationTimeoutMs:20,fetchImpl:async url=>{
+  if(url.endsWith('/cancel'))return Response.json({});startedCalls++;started();return new Promise(()=>{});
+ }});
+ const outcome=helper.generate({...input,providerID:'openai',timeoutMs:2}).catch(error=>error);
+ await began;expect(await outcome).toMatchObject({code:'native_helper_unsettled'});
+ const stopped=helper.stopProvider('openai');setTimeout(()=>helper.settled({permit}),1);
+ await stopped;
+ const unknown=helper.generate({...input,providerID:'openai',operationID:'unacknowledged',timeoutMs:2}).catch(error=>error);
+ while(startedCalls<2)await new Promise(resolve=>setTimeout(resolve,1));
+ await expect(helper.stopProvider('openai')).rejects.toMatchObject({code:'native_helper_unsettled'});
+ expect(await unknown).toMatchObject({code:'native_helper_unsettled'});
+ await helper.controllerSettled(target.instanceID);
+});
+
+test('sign-out before helper admission prevents traffic without requiring a nonexistent provider ACK',async()=>{
+ let admit,admitted;const allow=new Promise(resolve=>{admit=resolve;});const waiting=new Promise(resolve=>{admitted=resolve;});let sends=0;
+ const target={instanceID:'signout-before-admission',url:'http://fixture'};
+ const helper=createNativeHelperOwner({admissionOwner:{withHelperOperation:async(_request,action)=>{admitted();await allow;return action({token:'0'.repeat(64),sessionID:'ses_unadmitted_helper',revision:0});},assertHelperOperation:async()=>null},current:()=>target,headers:()=>({}),settlementTimeoutMs:5,cancellationTimeoutMs:5,fetchImpl:async()=>{sends++;return Response.json({});}});
+ const outcome=helper.generate({...input,providerID:'openai'}).catch(error=>error);await waiting;
+ const stopped=helper.stopProvider('openai');admit();await stopped;
+ expect(await outcome).toMatchObject({code:'native_helper_provider_signed_out'});expect(sends).toBe(0);
+});

@@ -1,3 +1,4 @@
+import type {WindowsPrivateFileOwner} from '../../../../../harness-runtime/lib/windows-private-files.js';
 import type { VerifiedBundleContinuation } from './bundle-owned-continuations.js';
 export type SQLValue = string | number | null;
 export interface MigrationDatabase {
@@ -33,8 +34,8 @@ export function isRecord(value: unknown): value is Record<string, unknown>;
 export function canonicalJSON(value: unknown): string;
 export function sha256(value: string | Uint8Array): string;
 export function containsPath(root: string, value: string): boolean;
-export function saveBundleJSON(file: string, value: unknown): Promise<string>;
-export function readBundleJSON(file: string): Promise<unknown>;
+export function saveBundleJSON(file: string, value: unknown, options?:{readonly windowsOwner?:WindowsPrivateFileOwner}): Promise<string>;
+export function readBundleJSON(file: string, options?:{readonly windowsOwner?:WindowsPrivateFileOwner}): Promise<unknown>;
 export function hasMigrationTable(db: MigrationDatabase, name: string): boolean;
 export function migrationMarker(db: MigrationDatabase): { readonly phase: 'sessions' | 'completed'; readonly cursor?: string } | null;
 export function assertBundlePendingInput(db: MigrationDatabase, verifiedContinuations?: readonly VerifiedBundleContinuation[]): void;

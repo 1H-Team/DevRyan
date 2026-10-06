@@ -9,9 +9,14 @@ export function createHostOAuthConnections({ coordinator, repository, vault }) {
     if (!coordinator) throw new OpenAiOAuthError('bot_oauth_coordinator_unavailable');
     return coordinator;
   };
-  const bindingMetadata = () => {
-    const binding = requireCoordinator().getBinding();
-    return { connectionId: binding.connectionId, oauthAccountKey: oauthAccountKey(binding.accountId) };
+  const getBinding = async () => {
+    const owner = requireCoordinator();
+    return typeof owner.getBindingAsync === 'function' ? await owner.getBindingAsync() : owner.getBinding();
+  };
+  const bindingMetadata = async () => {
+    const binding = await getBinding();
+    return { connectionId: binding.connectionId, oauthAccountKey: oauthAccountKey(binding.accountId),
+      ...(binding.registrationKey ? { oauthRegistrationKey: binding.registrationKey } : {}) };
   };
   const forgetLegacySecret = async (row) => {
     let stored;
@@ -37,9 +42,9 @@ export function createHostOAuthConnections({ coordinator, repository, vault }) {
     bindingMetadata,
     async resolve(row, { migrate = true } = {}) {
       const botId = row.bot_id;
-      const binding = requireCoordinator().getBinding();
+      const binding = await getBinding();
       const key = oauthAccountKey(binding.accountId);
-      if (!row.metadata?.oauthAccountKey) {
+      if (!row.metadata?.oauthAccountKey || binding.registrationKey && !row.metadata?.oauthRegistrationKey) {
         // Legacy connections imported a host snapshot without binding its account.
         // Only the encrypted old snapshot can establish identity; absence is not
         // permission to use whichever account happens to be signed in today.
@@ -48,13 +53,16 @@ export function createHostOAuthConnections({ coordinator, repository, vault }) {
           if (error?.code !== 'bot_credential_not_found') throw error;
         }
         if (stored?.credential?.botId !== row.bot_id || stored?.credential?.provider !== 'openai'
-          || openAiAccountId(stored?.secret) !== binding.accountId) {
+          || openAiAccountId(stored?.secret) !== binding.accountId
+          || binding.registrationKey && (stored?.secret?.methodID !== binding.methodID
+            || (stored?.secret?.clientId ?? stored?.secret?.metadata?.clientId) !== binding.clientId)) {
           throw new OpenAiOAuthError(OPENAI_OAUTH_AUTHENTICATION, 401);
         }
         if (migrate) {
           try {
             row = await repository.updateIfRevision({ id: row.id, bot_id: row.bot_id }, {
-              metadata: { ...row.metadata, connectionId: 'host:openai', oauthAccountKey: key },
+              metadata: { ...row.metadata, connectionId: 'host:openai', oauthAccountKey: key,
+                ...(binding.registrationKey ? { oauthRegistrationKey: binding.registrationKey } : {}) },
             }, row.updated_at);
           } catch (error) {
             if (error?.code !== 'bot_revision_conflict') throw error;
@@ -64,18 +72,18 @@ export function createHostOAuthConnections({ coordinator, repository, vault }) {
       }
       if (row?.bot_id !== botId || !isHostOpenAiCredential(row)
         || row?.metadata?.connectionId !== 'host:openai' || row.metadata.oauthAccountKey !== key
-        || row.status !== 'active') throw new OpenAiOAuthError(OPENAI_OAUTH_AUTHENTICATION, 401);
+        || row.status !== 'active' || binding.registrationKey && row.metadata.oauthRegistrationKey !== binding.registrationKey) throw new OpenAiOAuthError(OPENAI_OAUTH_AUTHENTICATION, 401);
       if (migrate) await forgetLegacySecret(row);
       return binding;
     },
     async authState(row) {
       try {
         const binding = await this.resolve(row, { migrate: false });
-        return coordinator.getAuthState(binding.accountId);
+        return typeof coordinator.getAuthStateAsync === 'function' ? await coordinator.getAuthStateAsync(binding.accountId) : coordinator.getAuthState(binding.accountId);
       } catch (error) { return error?.code === OPENAI_OAUTH_AUTHENTICATION ? 'reauth_required' : 'unavailable'; }
     },
     async reconnect(row, expectedUpdatedAt) {
-      const metadata = bindingMetadata();
+      const metadata = await bindingMetadata();
       const updated = await repository.updateIfRevision({ id: row.id, bot_id: row.bot_id }, {
         metadata: { ...row.metadata, ...metadata },
       }, expectedUpdatedAt);
@@ -84,6 +92,6 @@ export function createHostOAuthConnections({ coordinator, repository, vault }) {
       await forgetLegacySecret(updated);
       return updated;
     },
-    access: (accountId, credentialId = null) => requireCoordinator().access({ expectedAccountId: accountId, credentialId }),
+    access: (accountId, credentialId = null, registrationKey = null) => requireCoordinator().access({ expectedAccountId: accountId, expectedRegistrationKey: registrationKey, credentialId }),
   });
 }

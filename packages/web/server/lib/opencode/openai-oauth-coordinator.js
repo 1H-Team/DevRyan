@@ -2,9 +2,17 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { AUTH_FILE, readProviderAuthRecord } from './auth.js';
+import {
+  isLegacyCodexChatgptMethodId,
+  isSiwcAuthRecord,
+  refreshSiwcAccessToken,
+  siwcClientIdFromAuth,
+  verifySiwcIdToken,
+  parseScopeList,
+  hasSiwcPlanUsage,
+} from './chatgpt-siwc.js';
 
 export const OPENAI_OAUTH_AUTHENTICATION = 'bot_opencode_provider_authentication';
-const CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
 const orderedJson = (value) => {
   if (Array.isArray(value)) return value.map(orderedJson);
   if (!value || typeof value !== 'object') return value;
@@ -26,12 +34,22 @@ export class OpenAiOAuthError extends Error {
 }
 
 export function openAiAccountId(record) {
-  if (typeof record?.accountId === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(record.accountId)) return record.accountId;
+  const direct = record?.accountId
+    ?? (typeof record?.metadata?.accountID === 'string' ? record.metadata.accountID : null)
+    ?? (typeof record?.metadata?.subject === 'string' ? record.metadata.subject : null);
+  if (record?.methodID === 'chatgpt-siwc' && typeof direct === 'string' && direct && Buffer.byteLength(direct) <= 512 && !/[\x00-\x1f\x7f]/.test(direct)) return direct;
+  if (typeof direct === 'string' && /^[A-Za-z0-9_.:@-]{1,256}$/.test(direct)) return direct;
   try {
     const claims = JSON.parse(Buffer.from(record.access.split('.')[1], 'base64url').toString('utf8'));
     const value = claims['https://api.openai.com/auth']?.chatgpt_account_id;
     return typeof value === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(value) ? value : null;
   } catch { return null; }
+}
+
+export function requireSiwcAuth(auth) {
+  if (auth?.type !== 'oauth') return false;
+  if (isLegacyCodexChatgptMethodId(auth.methodID) || !isSiwcAuthRecord(auth)) return false;
+  return Boolean(openAiAccountId(auth));
 }
 
 // Synchronous compare/read/merge/rename contains no await boundary. All managed
@@ -52,6 +70,7 @@ export function createOpenAiOAuthCoordinator({
   compareAndSwap = compareAndSwapOpenAiAuth,
   fetchImpl = fetch,
   now = Date.now,
+  jwksImpl,
   recordDiagnostic = () => {},
   stateFile = null,
   asyncStorage = /** @type {import('./runtime-host/native-openai-auth.js').NativeOpenAiAsyncStorage | null} */ (null),
@@ -161,10 +180,11 @@ export function createOpenAiOAuthCoordinator({
       } });
     } catch { /* diagnostics must not replace the provider failure */ }
   };
-  const requireAccount = (auth, expectedAccountId) => {
+  const requireAccount = (auth, expectedAccountId, expectedRegistrationKey) => {
     if (persistenceFailure) throw new OpenAiOAuthError('bot_oauth_persistence_failed');
     const accountId = openAiAccountId(auth);
-    if (auth?.type !== 'oauth' || !accountId || (expectedAccountId && expectedAccountId !== accountId) || state.blocked) {
+    if (!requireSiwcAuth(auth) || !accountId || (expectedAccountId && expectedAccountId !== accountId)
+      || expectedRegistrationKey && expectedRegistrationKey !== fingerprint([siwcClientIdFromAuth(auth), auth.metadata?.subject ?? accountId]) || state.blocked) {
       throw new OpenAiOAuthError(OPENAI_OAUTH_AUTHENTICATION, 401);
     }
     return accountId;
@@ -175,25 +195,35 @@ export function createOpenAiOAuthCoordinator({
     if (fingerprint(auth) !== state.fingerprint) return;
     current(storage);
     diagnostic('refresh', 'started', null, credentialId);
+    const clientId = siwcClientIdFromAuth(auth);
+    if (!clientId) {
+      state.blocked = true;
+      if (storage) blockRefresh(auth);
+      persist();
+      diagnostic('refresh', 'reauth_required', 401, credentialId, 'legacy_codex_oauth');
+      throw new OpenAiOAuthError(OPENAI_OAUTH_AUTHENTICATION, 401);
+    }
     let response;
     try {
       state.refreshing = true;
       if (storage) state.refreshFingerprint = tokenFingerprint(auth);
       persist();
-      response = await fetchImpl('https://auth.openai.com/oauth/token', {
-        method: 'POST', redirect: 'error', signal: AbortSignal.timeout(15_000),
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: auth.refresh, client_id: CLIENT_ID }),
+      const exchanged = await refreshSiwcAccessToken({
+        clientId,
+        refreshToken: auth.refresh,
+        fetchImpl,
       });
+      response = exchanged.response;
       // A login/disconnect that won while refresh was in flight is authoritative.
       await readAsync(storage);
       if (state.fingerprint !== original) {
         if (storage && response.ok) blockRefresh(auth);
-        await response.body?.cancel(); return;
+        if (!exchanged.tokens) await response.body?.cancel().catch(() => {});
+        return;
       }
       current(storage);
       if (!response.ok) {
-        await response.body?.cancel();
+        await response.body?.cancel().catch(() => {});
         state.refreshing = false;
         if ([400, 401, 403].includes(response.status)) {
           state.blocked = true;
@@ -205,31 +235,43 @@ export function createOpenAiOAuthCoordinator({
         persist();
         throw new OpenAiOAuthError('bot_oauth_refresh_unavailable');
       }
-      // Never retain or log arbitrary OAuth error bodies.
-      const reader = response.body.getReader();
-      const chunks = [];
-      let bytes = 0;
-      try {
-        for (;;) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          bytes += value.byteLength;
-          if (bytes > 64 * 1024) throw new Error('oversized OAuth response');
-          chunks.push(value);
-        }
-      } finally { await reader.cancel().catch(() => {}); }
-      const tokens = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-      const expires = now() + tokens.expires_in * 1000;
-      if (typeof tokens.access_token !== 'string' || !tokens.access_token
-        || typeof tokens.refresh_token !== 'string' || !tokens.refresh_token
-        || !Number.isFinite(tokens.expires_in) || tokens.expires_in < 120 || !Number.isSafeInteger(expires)) {
-        throw new OpenAiOAuthError('bot_oauth_response_invalid');
+      const tokens = exchanged.tokens;
+      if (!tokens) {
+        state.refreshing = false;
+        state.blocked = true;
+        if (storage) blockRefresh(auth);
+        persist();
+        throw new OpenAiOAuthError(exchanged.invalid ? 'bot_oauth_response_invalid' : 'bot_oauth_response_invalid');
       }
-      const next = { ...auth, access: tokens.access_token, refresh: tokens.refresh_token,
-        expires };
+      const expires = now() + tokens.expires_in * 1000;
+      if (!Number.isSafeInteger(expires)) throw new OpenAiOAuthError('bot_oauth_response_invalid');
+      if (tokens.id_token) {
+        const identity = await verifySiwcIdToken(tokens.id_token, { audience: clientId, ...(jwksImpl ? { jwksImpl } : {}) });
+        if (identity.sub !== auth.metadata?.subject) throw new OpenAiOAuthError(OPENAI_OAUTH_AUTHENTICATION, 401);
+      }
+      const grantedScopes = tokens.scope === undefined ? parseScopeList(auth.scopes ?? auth.metadata?.scopes) : parseScopeList(tokens.scope);
+      const next = {
+        ...auth,
+        access: tokens.access_token,
+        refresh: tokens.refresh_token,
+        expires,
+        clientId,
+        ...(tokens.id_token ? { idToken: tokens.id_token } : {}),
+        scopes: grantedScopes,
+      };
+      if (auth.metadata && typeof auth.metadata === 'object') {
+        next.metadata = {
+          ...auth.metadata,
+          clientId,
+          ...(tokens.id_token ? { idToken: tokens.id_token } : {}),
+          scopes: grantedScopes,
+          planUsage: hasSiwcPlanUsage(grantedScopes),
+        };
+      }
       await readAsync(storage);
       if (state.fingerprint !== original) { if (storage) blockRefresh(auth); return; }
       current(storage);
+      // Bind against the new access token claims only — never reuse the prior accountId field.
       const refreshedAccount = openAiAccountId({ access: tokens.access_token });
       if (refreshedAccount && refreshedAccount !== openAiAccountId(auth)) {
         state.blocked = true;
@@ -269,6 +311,10 @@ export function createOpenAiOAuthCoordinator({
       throw new OpenAiOAuthError('bot_oauth_refresh_unavailable');
     }
   };
+  const bindingFor = auth => ({ type: 'host_oauth', connectionId: 'host:openai', accountId: requireAccount(auth),
+    registrationKey: fingerprint([siwcClientIdFromAuth(auth), auth.metadata?.subject ?? openAiAccountId(auth)]),
+    methodID: auth.methodID, scopes: parseScopeList(auth.scopes ?? auth.metadata?.scopes), clientId: siwcClientIdFromAuth(auth),
+    subject: auth.metadata?.subject ?? openAiAccountId(auth) });
   return Object.freeze({
     withAuthMutation,
     markReady() { ready = true; },
@@ -277,7 +323,7 @@ export function createOpenAiOAuthCoordinator({
     getBinding() {
       if (!ready) throw new OpenAiOAuthError('bot_oauth_coordinator_unavailable');
       const auth = read();
-      return { type: 'host_oauth', connectionId: 'host:openai', accountId: requireAccount(auth) };
+      return bindingFor(auth);
     },
     getAuthState(expectedAccountId = null) {
       try {
@@ -291,7 +337,7 @@ export function createOpenAiOAuthCoordinator({
     async getBindingAsync() {
       if (!ready) throw new OpenAiOAuthError('bot_oauth_coordinator_unavailable');
       const storage = activeStorage(), auth = await readAsync(storage); current(storage);
-      return { type: 'host_oauth', connectionId: 'host:openai', accountId: requireAccount(auth) };
+      return bindingFor(auth);
     },
     async getAuthStateAsync(expectedAccountId = null) {
       try {
@@ -301,14 +347,14 @@ export function createOpenAiOAuthCoordinator({
         return auth.access && auth.expires > now() + 60_000 ? 'ready' : 'unknown';
       } catch (error) { return error?.code === OPENAI_OAUTH_AUTHENTICATION ? 'reauth_required' : 'unavailable'; }
     },
-    async access({ expectedAccountId = null, credentialId = null } = {}) {
+    async access({ expectedAccountId = null, expectedRegistrationKey = null, credentialId = null } = {}) {
       const safeCredentialId = typeof credentialId === 'string' && /^[a-f0-9-]{36}$/i.test(credentialId) ? credentialId : null;
       const storage = activeStorage();
       current(storage);
       for (let attempt = 0; attempt < 2; attempt++) {
         current(storage);
         const auth = await readAsync(storage); current(storage);
-        const accountId = requireAccount(auth, expectedAccountId);
+        const accountId = requireAccount(auth, expectedAccountId, expectedRegistrationKey);
         if (auth.access && Number.isFinite(auth.expires) && auth.expires > now() + 60_000) {
           return { accessToken: auth.access, expiresAt: auth.expires, accountId, generation: state.generation };
         }

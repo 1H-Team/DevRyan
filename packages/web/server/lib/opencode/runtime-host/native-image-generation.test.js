@@ -24,14 +24,14 @@ test('image requests retain exact lease scope, fresh checks and generation until
 
 test('original image transport receives current account per fetch, bounds output and closes revoked response',async()=>{
  const context=new AsyncLocalStorage();let account='a',revoked=false,canceled=0,calls=0;
- const endpoint='https://chatgpt.com/backend-api/codex/responses';
+ const pluginEndpoint='https://chatgpt.com/backend-api/codex/responses';
  const originals={withReviewedImagegenOwner:(owner,action)=>context.run(owner,action),callReviewedImagegenResponses:async()=>{
-  const response=await context.getStore().fetch(endpoint,{method:'POST',headers:{Authorization:'Bearer stale'},body:'{}'});
+  const response=await context.getStore().fetch(pluginEndpoint,{method:'POST',headers:{Authorization:'Bearer stale'},body:'{}'});
   return response.text();
  }};
- const withImageGeneration=(_invocation,action)=>action({access:async()=>({accountId:account,accessToken:account+'-fixture'}),recheck:async()=>{if(revoked)throw Error('revoked');}});
+ const withImageGeneration=(_invocation,action)=>action({access:async()=>({methodID:'chatgpt-headless',accountId:account,accessToken:account+'-fixture'}),recheck:async()=>{if(revoked)throw Error('revoked');}});
  const generated=createNativeImageGeneration({originals,withImageGeneration,fetchImpl:async(url,init)=>{
-  calls++;expect(url).toBe(endpoint);expect(init.redirect).toBe('error');expect(init.signal).toBeInstanceOf(AbortSignal);
+  calls++;expect(url).toBe(pluginEndpoint);expect(init.redirect).toBe('error');expect(init.signal).toBeInstanceOf(AbortSignal);
   expect(init.headers.get('Authorization')).toBe(`Bearer ${account}-fixture`);expect(init.headers.get('ChatGPT-Account-Id')).toBe(account);
   return new Response('cG5n');
  }});
@@ -44,4 +44,37 @@ test('original image transport receives current account per fetch, bounds output
  await expect(malformed({},args)).rejects.toMatchObject({code:'native_image_generation_result_invalid'});
  const large=createNativeImageGeneration({originals,withImageGeneration,fetchImpl:async()=>new Response(new Uint8Array(36*1024*1024+1))});
  await expect(large({},args)).rejects.toMatchObject({code:'native_image_generation_response_overflow'});
+});
+
+test.each(['https://api.openai.com/v1/responses','https://chatgpt.com/backend-api/codex/responses'])('SIWC image transport refuses %s before provider traffic even with an injected credential owner',async endpoint=>{
+ const context=new AsyncLocalStorage();let calls=0;
+ const originals={withReviewedImagegenOwner:(owner,action)=>context.run(owner,action),callReviewedImagegenResponses:async()=>{
+  const response=await context.getStore().fetch(endpoint,{method:'POST',body:'{}'});
+  return response.text();
+ }};
+ const generate=createNativeImageGeneration({originals,
+  withImageGeneration:(_invocation,action)=>action({access:async()=>({methodID:'chatgpt-siwc',accessToken:'synthetic-only'}),recheck:async()=>{}}),
+  fetchImpl:async()=>{calls++;return new Response('cG5n');},
+ });
+ await expect(generate({},{prompt:'fixture',referenceImages:[]})).rejects.toMatchObject({code:'native_image_generation_siwc_unsupported'});
+ expect(calls).toBe(0);
+});
+
+test('explicit API-key image access sends the original body to public Responses without an account header',async()=>{
+ const context=new AsyncLocalStorage();let calls=0;
+ const body=JSON.stringify({input:[{role:'user',content:[{type:'input_text',text:'fixture'}]}],tools:[{type:'image_generation'}],stream:true,store:false});
+ const originals={withReviewedImagegenOwner:(owner,action)=>context.run(owner,action),callReviewedImagegenResponses:async()=>{
+  const response=await context.getStore().fetch('https://chatgpt.com/backend-api/codex/responses',
+   {method:'POST',headers:{Authorization:'Bearer stale','ChatGPT-Account-Id':'stale'},body});
+  return response.text();
+ }};
+ const generate=createNativeImageGeneration({originals,
+  withImageGeneration:(_invocation,action)=>action({access:async()=>({valueType:'key',methodID:'api-key',accessToken:'synthetic-key'}),recheck:async()=>{}}),
+  fetchImpl:async(url,init)=>{
+   calls++;expect(url).toBe('https://api.openai.com/v1/responses');expect(init.body).toBe(body);
+   expect(init.headers.get('Authorization')).toBe('Bearer synthetic-key');expect(init.headers.get('ChatGPT-Account-Id')).toBeNull();
+   return new Response('cG5n');
+  },
+ });
+ await expect(generate({},{prompt:'fixture',referenceImages:[]})).resolves.toEqual({base64:'cG5n',billing:'api-key'});expect(calls).toBe(1);
 });

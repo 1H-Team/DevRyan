@@ -62,7 +62,9 @@ prompt overrides and logical local-owner identities retain their original owners
 
 `retained-native-artifacts.js` retains every verified manifest-owned file under
 the existing bundle control root before application Resources can be replaced,
-including the reviewed Claude host credential module. Under `artifacts/retention.lock` it
+including the reviewed Claude host credential module and the complete accepted
+Windows MinGit tree. Its inventory cap is 4096 only for the pinned Windows Git
+contract; other targets keep the 256-file cap. Under `artifacts/retention.lock` it
 sweeps abandoned `.retaining-*` copies and restarts a reused set's age.
 `pruneRetainedNativeArtifacts` removes (rename to `.pruning-*`, then delete) only sets at
 least an hour old that no selected, previous, newer-than-selected draft, rollback intent or
@@ -175,6 +177,37 @@ relative authority and an empty explicit bundle root refuse before owner access.
   are rechecked, `session_pending` remains closed, and copy/import/selection checks
   retain strict pending refusal. This offline proof opens no admission; the fresh
   controller's capture and authorization remain the sole dispatch authority.
+- `native-bundle-file-operations.js` is the constructor-owned Windows creation
+  boundary for setup, fresh-source provisioning and candidate copies. Native
+  tree copies retain source and destination identities; SQLite output is reserved
+  under a dedicated private directory and accepted only after its exact file and
+  namespace flush receipt. The POSIX implementations keep their existing behavior.
+  `native-migration-process.js` uses the fixed native import lease for Windows:
+  it captures provisional artifact identities, waits for retained ownership, runs
+  the full accepted artifact verifier while every artifact is immutable, compares
+  the accepted controller digest, and sends the request only after that succeeds.
+  The compiled `native-migration-files.js` writer requires the kernel parent/job
+  probe and writes only the bound import outputs. It grants no session admission.
+  `native-setup-credential-ack.js` captures the original seed before launch;
+  the compiled credential transaction returns the matching digest/count ACK,
+  and only the Node host retires the exact captured seed through native CAS.
+  Missing or mismatched ACKs retain it for an unchanged retry.
+- `native-harness-relocation.js` owns fixed Windows Git inspection and relocation
+  inside that import job. The accepted artifact inventory includes the pinned
+  Git executable and complete loading payload. After the same retained artifact
+  verification, the compiled mode checks its kernel job proof before accessing
+  the exact harness root. It parses local bare Git configuration as include-free
+  data outside the repository, rejects includes, hooks, filters, fsmonitor,
+  unsupported extensions and alternate object roots, and keeps each original
+  config immutable throughout plumbing. The original change-store transactions
+  retain state, lease and migration refs and their objects; no history is dropped.
+  Read-only inspection uses a separate protected HOME/XDG/TMP root and cannot
+  mutate source payload. Mutation success additionally requires descendant
+  settlement, sealed objects/refs/JSON, the bound output tree and namespace flush
+  receipt. Git-bearing Windows inspection cannot fall back to ambient Git.
+  The deterministic tests verify protocol, verifier ordering, refusal and original
+  metadata/ref preservation. Actual Windows build, config-held ancestor rename,
+  filesystem durability and architecture qualification remain separate gates.
 - `runtime-entry-bootstrap.js` initializes the application binding before store-owner imports.
   `native-default-bundle.js` verifies the bundled native controller, writer and supervisor,
   creates a private never-started empty source for a fresh install, and uses the same
@@ -265,7 +298,10 @@ relative authority and an empty explicit bundle root refuse before owner access.
 - `native-artifacts.js` verifies every packaged output, the accepted supervisor,
   pinned SDK/Bun identity and real Darwin signatures before launch. Source
   files and installed packages are build inputs, never runtime verification
-  dependencies. `controller-entry.ts` handles boot, offline migration and asset
+  dependencies. `reviewed-windows-git.js` pins the official MinGit archive,
+  architecture, canonical complete inventory digest, file count and fixed entry point, rejects Windows
+  path aliases, and checks its exact subtree including DLLs, libexec helpers,
+  templates and licenses. `controller-entry.ts` handles boot, offline migration and asset
   verification; `writer-entry.ts` unconditionally starts the compiled worker's
   protocol owner. The importable `writer-worker.ts` keeps registry helpers and
   direct-source entry compatibility. Compiled startup does not depend on Bun's
@@ -389,7 +425,11 @@ relative authority and an empty explicit bundle root refuse before owner access.
   including in-process mutations. Its fixed key Integration exists even without
   a saved provider stanza; the existing external SDK still owns Cursor models
   and execution. No native model transport or mirrored auth file is introduced.
-  `native-openai.ts` checks each physical inference attempt and final transport
+  `native-openai.ts` projects one host-owned Sign in with ChatGPT catalog method,
+  removes retired Codex browser/headless methods, and preserves other entries.
+  The projection supplies no SDK authorization callback. It reuses the bundled SIWC body/terminal-stream policy at final
+  HTTP request/response hooks, fencing unsupported tools before refresh and
+  preserving API-key request bodies. It checks each physical inference attempt and final transport
   headers; `remote-mcp.ts` binds tools, OAuth and selected-credential refresh to
   their exact catalog acquisition and configuration digest. Reload expires old
   closures before cleanup; it does not delete unrelated credentials.
@@ -503,10 +543,19 @@ relative authority and an empty explicit bundle root refuse before owner access.
   lifecycle and controller-death recovery qualification remain required.
 - `native-imagegen-plugin.ts` and `native-imagegen-worker.ts` use the sealed
   original image schema, Responses transport and versioned output allocator.
+  The original image parser retains its Codex endpoint and account header;
+  `native-image-generation.js` refuses SIWC images before provider traffic.
+  Original parser fixtures do not authorize legacy enrollment or inference.
   Native registration declares the original string output; the SDK validates
   it before projecting exact text content and preserving image metadata.
-  Each physical request obtains the current native OpenAI account through
-  `native-integration-owner.js`, bound to the actual process lease. Request/result
+  Production images use the selected native OpenAI API key through
+  `native-openai-auth.js` and `native-integration-owner.js`, bound to the actual
+  process lease and a private exact selected-record proof. Selection changes
+  refuse before traffic or publication. SIWC is refused before the refresh
+  coordinator; legacy OAuth still requires reconnection. The key transport uses
+  public Responses without a ChatGPT account header. Its private result marks
+  API-key billing, which the worker projects over the original subscription
+  metadata while retaining the original output allocator and parser. Request/result
   files are private and bounded; cancellation settles transport and process before
   publication or discard. `native-image-runtime.js` and `controller-images.ts`
   separately route existing prompt images through the original image-context
@@ -696,10 +745,20 @@ paths, a simulated native model and the accepted Darwin arm64 supervisor.
 Simulation changes model responses; it does not replace native tool execution,
 receipts, publication or task ownership.
 
+- SIWC enrollment and disconnect use `chatgpt-siwc-host.js` against this owner's
+  scoped native selected/read-record commands and existing mutation grants.
+  Grants compare the selected fingerprint before commit and recheck attempt
+  cancellation. `holdOpenAiSelection` drains the shared refresh queue and blocks
+  physical native/helper/Bot access until exact local token cleanup succeeds;
+  `stopOpenAiRequests` additionally settles existing helpers and session owners.
+  `native-setup-credential-data.js` retains explicit SIWC method/client/subject,
+  scopes, host identity and ID token metadata; old OpenAI imports keep their
+  legacy browser discriminator and cannot acquire SIWC permissions by relabeling.
+
 - Fresh application startup uses `native-default-bundle.js` and the existing private empty-source prepare/select flow. Old conversation databases and diagnostic journals do not enter the new bundle and cannot block it. A valid native selection is reused with all current state on subsequent boots. `native-setup-seed.js` copies a bounded setup allowlist: preferences/registered projects, declarative agents/commands/skills/roles/Council/provider configuration, connection setup and exact account inputs. Session pointers, tasks, recovery/receipt authority, permits and caches are excluded; published project files remain unchanged. OpenCode configuration is layered as OpenCode loads it: the global directory (`$XDG_CONFIG_HOME/opencode`, default `~/.config/opencode`) is always a source, and an `OPENCODE_CONFIG_DIR` that is another directory is layered over it into the one target directory (`native-default-bundle.js` passes it as `opencodeConfigOverlayDirectory`). Folders (`agent(s)`, `command(s)`, `prompts`, `skill(s)`) union both layers, a same-named top-level entry (an agent file, a whole skill folder) coming from the overlay; `AGENTS.md`, `.openchamber/config.json`, `ponytail/config.json` and the Slim JSON/JSONC pair (one setting) come from the highest layer that supplies them; `config.json`/`opencode.json`/`opencode.jsonc` keep their bytes when only one layer has any, otherwise they merge in OpenCode's order (global `config.json`, `opencode.json`, `opencode.jsonc`, then the same names in the overlay; objects merge deeply, later scalars and arrays win, top-level `plugin`/`instructions` concatenate without duplicates) into one target `opencode.json` without comments, and a layer that does not parse fails closed with `native_setup_json_invalid` and its file name. Web-config `projects/` imports only top-level `*.json` object records; `projects/<id>/plans/**` are v1 conversation artifacts left in place. Finder metadata (`.DS_Store`, `._*`, `Icon\r`) is skipped in every copied folder and tolerated directly inside `fresh-native-source`. Benign setup never fails launch: unusable optional entries are skipped and returned as a non-persisted `skipped` list (sanitized `relativePath` + reason, capped at 200 with `skippedCount`) plus one `console.warn` summary. Source roots are canonicalized once (a linked root only to a uid-owned directory); a symlink inside is followed only when its realpath stays in the canonical HOME, is a uid-owned file or directory, is neither HOME itself nor an ancestor of the copied root, is not in DevRyan state or the seed target, and is not a cycle; credential, token and browser stores (`~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.azure`, `~/.kube`, `~/.docker`, `~/.config/gcloud`, `~/.config/gh`, `~/.password-store`, `~/.netrc`, `~/Library/Keychains`, `~/Library/Cookies`, `~/.codex`, `~/.claude.json`, `~/.git-credentials`, `~/.npmrc`, `~/.pypirc`, `~/Library/Application Support/{Google,BraveSoftware,Firefox,Microsoft Edge,Arc}`, every `~/Library/Application Support` entry named like DevRyan/OpenChamber (Electron userData, its `-runtime-service` sibling, `@openchamber`, legacy Tauri data), and absolute `$XDG_CONFIG_HOME/gh`, `$GH_CONFIG_DIR`, `$CLOUDSDK_CONFIG`) and anything below them are skipped as `protected`, as is any Chromium/Electron `Cookies`, `Login Data`, `Web Data` (and `-journal`), `Local Storage`, `Session Storage`, `IndexedDB` or `Partitions` entry; the v1 web data/config roots are read only from their own roots by the exact setup copies, so a link reaching into them is `protected` (unless the root is HOME or above another setup root; an exact setup folder/file such as `themes` linked strictly below its own web root, not onto or above any web root nor into another web root nested in it, is still that root's setup), and their `multi-user-vault.*`, `branch-preview-vault.*`, `jwt-secret`, `github-auth.json`, `ui-passkeys.json`, `bots/`, `multi-user/`, `credentials/` and runtime state (`bot-integrations/`, `runtime/`, `push-subscriptions.json`, `cursor-sdk-sessions/`, `harness/`, `orchestration/`, `processes/`) are never copied (`multi-user-vault.*` are read only by `captureNativeSetupOwners`); account stores (the raw OpenCode data directory, `~/.claude`, `~/.config/meridian/accounts`) are likewise `protected` from every link and copied folder, and read only by the exact `auth.json`, `~/.claude/.credentials.json` and Meridian account copies. The one exception is setup shared from Claude Code/Codex: inside canonical `~/.claude` and `~/.codex` a link or copied folder may reach only the top-level `skills/`, `commands/`, `agents/`, `prompts/`, `output-styles/` directories and `CLAUDE.md`/`AGENTS.md` files; everything else there (credentials, projects, history, sessions, settings, `auth.json`, ...) stays `protected`, and links nested inside shared folders are checked again. Stores are canonicalized first; one that resolves to HOME, outside HOME, or to/above a setup root protects nothing. Every entry is checked by its canonical path, so a requested name in a different case (a Meridian `claudeConfigDir` of `~/.SSH`) meets the store it is on disk. On case-insensitive volumes a requested name stored with different case (`agents.md` for `AGENTS.md`, `Skills/`) is the same entry when its realpath differs only by case and has the same dev:ino; the destination keeps the requested name. `.git`/`.hg`/`.svn`/`node_modules`/`.venv`/`__pycache__` are never traversed; FIFOs, sockets, devices and EACCES/EPERM entries are skipped (reads use `O_NONBLOCK|O_NOFOLLOW` and require a regular file). A file with more than one hard link is skipped as `hard_link`, since another name of it may sit in a protected store; the opened descriptor must have the dev:ino of the entry checked by the component walk, and after the read the path must still `lstat` to that inode and canonicalize to the checked path, otherwise the seed fails closed with `native_setup_source_changed` (a same-uid swap of the file or of a checked directory component never reaches a protected store). `native-setup-source.js` exports the one seed budget (4096 rows, 1 MiB per file, 16 MiB total, bundle-document marker cap) used both when saving and by `verifySeed`; generated auth/Meridian/local-owner rows (and the copied `~/.claude/.credentials.json` and Meridian account `.credentials.json` rows) are saved first and are never budget-skipped (one that cannot fit fails closed with `native_setup_source_too_large` and its `relativePath`); their required source inputs (`auth.json`, Meridian `settings.json`/`profiles.json`, those `.credentials.json` files) are never skipped or truncated for size either: one over the 1 MiB per-file cap fails closed with `native_setup_source_too_large`, `reason: 'file_too_large'`, its sanitized `relativePath`, `size` and `limit`, never its bytes; exact records, project records and bulk folders follow and only those are skipped when over budget. Meridian `settings.json` is saved once (`MERIDIAN_DEFAULT_PROFILE` merged as `activeProfile`); profiles follow the runtime loader's tolerance, dropping id-less rows, non-absolute `claudeConfigDir` values (`profile_account_invalid`), accounts outside HOME, non-standard keychain services (`profile_keychain_invalid`), later duplicate ids and rows past 64 with a profile-id diagnostic; bundle clones stay strict. Corrupt required records, non-JSON `auth.json`, changed files and tampered retry pins still fail closed with their `code` and sanitized `relativePath`; raw platform errors surface as `native_setup_io_failed`. `native-setup-credential-data.js` is the shared pure auth projection; it mirrors the pinned SDK legacy import (trailing-slash IDs, skip undecodable/duplicate entries) and skips wellknown entries whose origins the controller cannot store (each reported as `credential_wellknown_unsupported` on `auth.json` without an integration ID, because the URL-shaped key may carry userinfo; their token is not imported and that provider is signed in again natively, while sibling entries still import); without `onSkip` (bots) the original strict projection applies unchanged and any unknown shape fails closed. `native-setup-credentials.ts` imports its bounded envelope through the original Credential/KV/Database services before decoration; original activation and the one-time native KV stamp share a transaction. Later native account choices are never reset, and the transient active seed is removed only after commit.
 - `runtime-entry-bootstrap.js` runs before the thin `server/index.js` dynamically imports `server/application.js`, so no feature store can capture the old data/config paths while provisioning is pending.
 
-- `native-helper-owner.js` and `controller-helper-text.ts` own authenticated, constructor-issued title/Git text requests. `controller-webfetch.ts` reuses the captured native location, model resolver and decorated SessionModelRequest/LLM graph with exact selected model/variant, bounded output and final tools empty. There is no helper Session, Inbox, Step or history write. `native-helper-context.ts` exposes transient correlation only to the matching plugin session read within the provider Effect. A bounded cancellation response may report `native_helper_unsettled`; its original permit remains held until actual provider acknowledgement or confirmed owning controller exit. The owner never kills unrelated conversations for that timeout. Reverse settlement compares the exact token/session/revision field set independently of JSON key order, so the original controller header reconstruction can acknowledge cancellation without accepting foreign or extra fields. One caller-created logical operation ID spans repairs, model/account rotation and title retries. Pending/unsettled IDs reject overlap and late publication; four unsettled helpers block new helpers until real settlement frees capacity. Native provider HTTP statuses remain classified without exposing upstream bodies.
+- `native-helper-owner.js` and `controller-helper-text.ts` own authenticated, constructor-issued title/Git text requests. `controller-webfetch.ts` reuses the captured native location, model resolver and decorated SessionModelRequest/LLM graph with exact selected model/variant, bounded output and final tools empty. There is no helper Session, Inbox, Step or history write. `native-helper-context.ts` exposes transient correlation only to the matching plugin session read within the provider Effect. A bounded cancellation response may report `native_helper_unsettled`; its original permit remains held until actual provider acknowledgement or confirmed owning controller exit. The owner never kills unrelated conversations for that timeout. Reverse settlement compares the exact token/session/revision field set independently of JSON key order, so the original controller header reconstruction can acknowledge cancellation without accepting foreign or extra fields. One caller-created logical operation ID spans repairs, model/account rotation and title retries. Pending/unsettled IDs reject overlap and late publication; four unsettled helpers block new helpers until real settlement frees capacity. Sign-out uses `stopProvider` to cancel only matching helper inference and waits for its actual provider ACK/work settlement; timeout refuses revocation and preserves held admission. Helpers canceled before dispatch require no provider ACK. Native provider HTTP statuses remain classified without exposing upstream bodies.
 - Detached titles use the existing canonical session owner checks, distinct from ordinary directory helpers. `native-helper-title.ts` pins the previous title inside the sole native Bus transaction before the original rename projector; concurrent manual renames win. Cursor raw helpers retain selected models, no tools/settings, and wait for owned worker receipts. Meridian transport keeps each copied account's original constructor-owned keychain service identity.
 
 - Claude's supervised worker requests credentials for the concrete Meridian

@@ -40,6 +40,7 @@ const createResponse = () => ({
 const runtimes = [];
 
 const createRuntime = ({
+  fileSystem = fs,
   reachable = true,
   probeUrl = async () => reachable,
   now,
@@ -53,7 +54,7 @@ const createRuntime = ({
   ));
   const runtime = createProjectPreviewInstancesRuntime({
     crypto,
-    fs,
+    fs: fileSystem,
     path,
     probeUrl,
     ...(now ? { now } : {}),
@@ -299,6 +300,13 @@ describe('project preview grants', () => {
     let markProbeStarted = () => {};
     const probeStarted = new Promise((resolve) => { markProbeStarted = resolve; });
     const { runtime, sessions } = createRuntime({
+      // Both readers must reach the held refresh before the probe is released.
+      fileSystem: {
+        promises: {
+          realpath: async (directory) => directory,
+          stat: async () => ({ isDirectory: () => true }),
+        },
+      },
       sweepIntervalMs: 60 * 60 * 1_000,
       probeUrl: async () => {
         probeCalls += 1;

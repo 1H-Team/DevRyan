@@ -3,7 +3,7 @@ const DEFAULT_MAXIMUM_BYTES = 4 * 1024 * 1024;
 const REVIEWED_PROVIDER_EGRESS_HOSTS = Object.freeze({
   openai: Object.freeze({
     api: Object.freeze(['api.openai.com:443']),
-    oauth: Object.freeze(['auth.openai.com:443', 'chatgpt.com:443']),
+    oauth: Object.freeze(['auth.openai.com:443', 'api.openai.com:443']),
   }),
 });
 

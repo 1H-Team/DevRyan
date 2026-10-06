@@ -74,18 +74,18 @@ export async function packageQaElectron({ webDist, nativeSourceApp } = {}) {
     electronVersion: installedElectron,
     directories: { ...packageJson.build.directories, output: path.join(output, 'app') },
     files: [
-      ...packageJson.build.files.filter(file => file !== 'dist-bundle/main.mjs'),
+      ...packageJson.build.files.filter(file => !['dist-bundle/main.mjs', 'dist-bundle/desktop-update-install.mjs', 'dist-bundle/desktop-update-install-windows.mjs'].includes(file)),
       // Deterministic suites create and remove private fixtures while QA builds.
       '!node_modules/**/.tmp{,/**/*}',
-      { from: path.dirname(main), to: 'dist-bundle', filter: ['main.mjs'] },
+      { from: path.dirname(main), to: 'dist-bundle', filter: ['main.mjs', 'desktop-update-install.mjs', 'desktop-update-install-windows.mjs'] },
       { from: path.join(root, 'scripts/qa'), to: '.', filter: ['packaged-host.mjs', 'packaged-host-policy.mjs', 'isolated-home.mjs'] },
     ],
     extraMetadata: { main: './packaged-host.mjs' },
-    extraResources: packageJson.build.extraResources
+    extraResources: [...packageJson.build.extraResources, ...packageJson.build.mac.extraResources]
       .filter(resource => ['web-dist', 'native', 'revert-runtime'].includes(resource.to))
       .map(resource => resource.to === 'web-dist' ? { from: canonicalDist, to: 'web-dist' } : resource),
     extraFiles: [],
-    mac: { ...packageJson.build.mac, target: ['dir'], identity: null, hardenedRuntime: false, notarize: false },
+    mac: { ...packageJson.build.mac, extraResources: [], extraFiles: [], target: ['dir'], identity: null, hardenedRuntime: false, notarize: false },
     publish: null,
     afterPack: afterPackPath,
   };
@@ -106,6 +106,9 @@ export async function packageQaElectron({ webDist, nativeSourceApp } = {}) {
   const archive = path.join(resources, 'app.asar');
   const packagedMain = asar.extractFile(archive, 'dist-bundle/main.mjs');
   if (sha256(packagedMain) !== sha256(await readFile(main))) throw new Error('Packaged Electron main differs from the fresh bundle');
+  for (const [file, expected] of [['desktop-update-install.mjs', mainInputs.installerSha256], ['desktop-update-install-windows.mjs', mainInputs.windowsInstallerSha256]]) {
+    if (sha256(asar.extractFile(archive, `dist-bundle/${file}`)) !== expected) throw new Error('Packaged update helper differs from the fresh bundle');
+  }
   for (const input of mainInputs.inputs) {
     const absolute = path.resolve(canonicalRoot, input.file);
     if (!inside(canonicalRoot, absolute) || sha256(await readFile(absolute)) !== input.sha256) throw new Error('Electron main input changed during packaging');

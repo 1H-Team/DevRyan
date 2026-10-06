@@ -52,6 +52,7 @@
     "files": [
       "dist-bundle/main.mjs",
       "dist-bundle/desktop-update-install.mjs",
+      "dist-bundle/desktop-update-install-windows.mjs",
       "preload.mjs",
       "origin-policy.mjs",
       "browser-webview-policy.mjs",
@@ -66,48 +67,6 @@
       {
         "from": "resources/web-dist",
         "to": "web-dist"
-      },
-      {
-        "from": "resources/native",
-        "to": "native"
-      },
-      {
-        "from": "../../docker/bots/compose.yml",
-        "to": "bot-runtime/compose.yml"
-      },
-      {
-        "from": "resources/bot-runtime/images.release.json",
-        "to": "bot-runtime/images.release.json"
-      },
-      {
-        "from": "../../supabase/migrations",
-        "to": "bot-db/supabase-migrations",
-        "filter": [
-          "*.sql"
-        ]
-      },
-      {
-        "from": "../bot-db/sql",
-        "to": "bot-db/sql",
-        "filter": [
-          "**/*.sql"
-        ]
-      },
-      {
-        "from": "../web/runtime",
-        "to": "revert-runtime",
-        "filter": [
-          "darwin-arm64/native-bundle.json",
-          "darwin-arm64/DevRyan-*",
-          "!**/DevRyan-opencode*",
-          "!**/companion.json"
-        ]
-      }
-    ],
-    "extraFiles": [
-      {
-        "from": "resources/runtime-service/dev.openchamber.desktop.runtime-service.plist",
-        "to": "Library/LaunchAgents/dev.openchamber.desktop.runtime-service.plist"
       }
     ],
     "directories": {
@@ -123,7 +82,19 @@
         "nsis"
       ],
       "artifactName": "DevRyan-${version}-win-${arch}.exe",
-      "signExecutable": false
+      "signExecutable": false,
+      "extraResources": [
+        {
+          "from": "../web/runtime",
+          "to": "revert-runtime",
+          "filter": [
+            "win32-${arch}/native-bundle.json",
+            "win32-${arch}/DevRyan-*",
+            "!**/DevRyan-opencode*",
+            "!**/companion.json"
+          ]
+        }
+      ]
     },
     "nsis": {
       "guid": "f8140f18-5574-54bc-8df6-bf218619bfba",
@@ -151,6 +122,50 @@
       "notarize": false,
       "target": [
         "dmg"
+      ],
+      "extraResources": [
+        {
+          "from": "resources/native",
+          "to": "native"
+        },
+        {
+          "from": "../../docker/bots/compose.yml",
+          "to": "bot-runtime/compose.yml"
+        },
+        {
+          "from": "resources/bot-runtime/images.release.json",
+          "to": "bot-runtime/images.release.json"
+        },
+        {
+          "from": "../../supabase/migrations",
+          "to": "bot-db/supabase-migrations",
+          "filter": [
+            "*.sql"
+          ]
+        },
+        {
+          "from": "../bot-db/sql",
+          "to": "bot-db/sql",
+          "filter": [
+            "**/*.sql"
+          ]
+        },
+        {
+          "from": "../web/runtime",
+          "to": "revert-runtime",
+          "filter": [
+            "darwin-arm64/native-bundle.json",
+            "darwin-arm64/DevRyan-*",
+            "!**/DevRyan-opencode*",
+            "!**/companion.json"
+          ]
+        }
+      ],
+      "extraFiles": [
+        {
+          "from": "resources/runtime-service/dev.openchamber.desktop.runtime-service.plist",
+          "to": "Library/LaunchAgents/dev.openchamber.desktop.runtime-service.plist"
+        }
       ]
     },
     "dmg": {

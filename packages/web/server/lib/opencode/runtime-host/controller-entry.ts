@@ -46,8 +46,11 @@ try {
     const request=parseNativeMigrationRequest(first.value);
     // This branch imports no controller/SDK module before isolated migration.
     const {runMigrationRequest}=await import('./migration-mode.js');
-    const receipt=await runMigrationRequest(request),bytes=await fs.readFile(request.receiptPath);
+    const receipt=await runMigrationRequest(request,{nativeInstanceID:args[2]}),bytes=await fs.readFile(request.receiptPath);
     write({protocol:'devryan-native-migration/1',ok:true,receipt,receiptPath:request.receiptPath,sha256:hash(bytes)});
+  } else if(args[0]==='--relocate-bundle-harness'&&args.length===3&&args[1]==='--native-instance'&&/^[a-f0-9]{32}$/.test(args[2]??'')) {
+    const {runNativeHarnessRelocation}=await import('./native-harness-relocation.js');
+    process.stdout.write(JSON.stringify(await runNativeHarnessRelocation(first.value,args[2]))+'\n');
   } else if(args[0]==='--bundle-credentials'&&args.length===3&&args[1]==='--native-instance'&&/^[a-f0-9-]{32,64}$/i.test(args[2]??'')) {
     const {parseNativeBundleCredentialBoot,NATIVE_BUNDLE_CREDENTIAL_BYTES}=await import('./native-bundle-credential-contract.js');
     const request=parseNativeBundleCredentialBoot(first.value);
@@ -91,7 +94,7 @@ try {
     const {startNativeController}=await import('./controller-startup.js');
     const host=await startNativeController(boot,{coreDigest:DEVRYAN_CORE_DIGEST,hostDigest:DEVRYAN_HOST_DIGEST,reviewedPlugins:DEVRYAN_REVIEWED_PLUGIN_ORIGINS,migration:migration.marker});
     close=host.close;
-    write({protocol:1,type:'bound',bundleID:boot.bundleID,instanceID:boot.instanceID,url:host.url,port:host.port,buildId:boot.buildId,catalog:host.catalog,migration:{v1:migration.marker}});
+    write({protocol:1,type:'bound',bundleID:boot.bundleID,instanceID:boot.instanceID,url:host.url,port:host.port,buildId:boot.buildId,catalog:host.catalog,migration:{v1:migration.marker},...(host.setupCredentialSeed?{setupCredentialSeed:host.setupCredentialSeed}:{})});
     const dispatcher=createNativeCommandDispatcher({run:host.command,closeStartup:host.closeStartup,respond:(id,result)=>write({protocol:1,id,...result})});
     for await(const value of lines) dispatcher.dispatch(parseNativeCommand(value));
     host.closeStartup();await close();await dispatcher.drain();

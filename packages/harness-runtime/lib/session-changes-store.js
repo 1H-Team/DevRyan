@@ -29,10 +29,11 @@ const validKey = (key) => typeof key === 'string' && /^[a-zA-Z0-9/_-]+\.json$/.t
 // Git's tree is the on-disk index: one small blob per entity, fixed-size pages
 // for lists, and one atomic ref update for the entire transaction. Old readers
 // retain their tree identity. No lifetime-sized JSON document is rewritten.
-export async function openChangeStore(cwd, gitDir, { ref = STATE_REF } = {}) {
+export async function openChangeStore(cwd, gitDir, { ref = STATE_REF,gitRunner,syncObjects=syncPendingObjectDirectory } = {}) {
   if (ref !== STATE_REF && !/^refs\/devryan\/leases\/[a-f0-9-]{36}$/.test(ref)) throw changeError('invalid_change_record');
   const args = ['--git-dir', gitDir];
-  const run = (command, extra) => git(cwd, [...args, ...command], extra);
+  const runGit=gitRunner?.git??git,runTokens=gitRunner?.gitTokens??gitTokens,runRecords=gitRunner?.gitRecords??gitRecords;
+  const run = (command, extra) => runGit(cwd, [...args, ...command], extra);
   const refs = (await run(['for-each-ref', '--format=%(objectname)', ref])).toString().trim();
   let tree = refs || null;
   const oidLength = tree?.length ?? ((await run(['rev-parse', '--show-object-format'])).toString().trim() === 'sha256' ? 64 : 40);
@@ -50,7 +51,7 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF } = {}) {
     if (!listings.has(identity)) {
       const work = (async () => {
         const rows = []; let bytes = 0;
-        for await (const row of gitTokens(cwd, [...args, 'ls-tree', '-r', '-l', '-z', snapshot])) {
+        for await (const row of runTokens(cwd, [...args, 'ls-tree', '-r', '-l', '-z', snapshot])) {
           bytes += Buffer.byteLength(row);
           if (bytes > 1024 * 1024) { oversizedStores.add(gitDir); return null; } // Larger ledgers stay paged from Git.
           const tab = row.indexOf('\t'), fields = row.slice(0, tab).trim().split(/\s+/);
@@ -70,7 +71,7 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF } = {}) {
       for (let at = lowerBound(rows, start); at < rows.length && rows[at].key.startsWith(start); at++) yield rows[at];
       return;
     }
-    for await (const row of gitTokens(cwd, [...args, '--literal-pathspecs', 'ls-tree', '-r', '-l', '-z', snapshot, '--', start])) {
+    for await (const row of runTokens(cwd, [...args, '--literal-pathspecs', 'ls-tree', '-r', '-l', '-z', snapshot, '--', start])) {
       const tab = row.indexOf('\t'), fields = row.slice(0, tab).trim().split(/\s+/);
       yield { key: row.slice(tab + 1), oid: fields[2], size: Number(fields[3]) };
     }
@@ -115,7 +116,7 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF } = {}) {
           yield row;
         }
       };
-      for await (const row of gitRecords(cwd, args, rows())) {
+      for await (const row of runRecords(cwd, args, rows())) {
         remember(`${gitDir}:${row.oid}`, JSON.stringify(row.value));
         yield row;
       }
@@ -148,7 +149,7 @@ export async function openChangeStore(cwd, gitDir, { ref = STATE_REF } = {}) {
   const commit = async () => {
     if (!pending.size) return;
     // Objects this transaction references are durable before it is.
-    await syncPendingObjectDirectory(cwd);
+    await syncObjects(cwd);
     const index = path.join(path.dirname(gitDir), `${crypto.randomUUID()}.metadata-index`);
     const env = { GIT_INDEX_FILE: index };
     try {

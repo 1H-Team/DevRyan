@@ -14,13 +14,19 @@ export const canonicalJSON = value => JSON.stringify(value, (_key, item) => isRe
   ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
 export const sha256 = value => createHash('sha256').update(value).digest('hex');
 export const containsPath = (root, value) => value === root || value.startsWith(root + path.sep);
-export const saveBundleJSON = async (file, value) => {
+export const saveBundleJSON = async (file, value, options={}) => {
   const bytes = canonicalJSON(value) + '\n';
   if (Buffer.byteLength(bytes)>BUNDLE_DOCUMENT_MAX_BYTES) throw bundleFailure('bundle_document_too_large');
-  await writeFileAtomic(file, bytes, { mode: 0o600, directoryMode: 0o700 });
+  await writeFileAtomic(file, bytes, { mode: 0o600, directoryMode: 0o700, windowsOwner:options.windowsOwner });
   return sha256(bytes);
 };
-export const readBundleJSON = async file => {
+export const readBundleJSON = async (file,options={}) => {
+  if(process.platform==='win32'){
+    if(typeof options.windowsOwner?.read!=='function')throw bundleFailure('private_windows_read_authority_unavailable');
+    const {bytes}=await options.windowsOwner.read(file);
+    if(bytes.length>BUNDLE_DOCUMENT_MAX_BYTES)throw bundleFailure('bundle_document_invalid');
+    return JSON.parse(bytes.toString('utf8'));
+  }
   const stat = await fs.lstat(file);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > BUNDLE_DOCUMENT_MAX_BYTES) throw bundleFailure('bundle_document_invalid');
   return JSON.parse(await fs.readFile(file, 'utf8'));

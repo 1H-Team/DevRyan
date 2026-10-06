@@ -7,19 +7,19 @@ on:
     paths:
       - .gitattributes
       - .github/workflows/windows.yml
-      - packages/electron/**
-      - packages/cursor-sdk-runtime/**
-      - packages/harness-runtime/**
-      - packages/web/server/lib/opencode/runtime-host/**
-      - packages/web/server/lib/terminal/**
-      - packages/web/server/lib/bots/routes*
-      - packages/web/server/lib/opencode/routes.js
-      - packages/web/server/lib/opencode/provider-routes.test.js
-      - packages/ui/src/lib/terminalApi*
-      - packages/ui/src/lib/api/types.ts
-      - packages/ui/src/components/views/TerminalView*
-      - packages/ui/src/components/sections/providers/ProvidersPage*
-      - packages/web/src/api/terminal.ts
+      - .github/workflows/windows-lpac.yml
+      - scripts/qualify-windows-installer*
+      - scripts/diagnose-windows-runtime-compatibility*
+      - scripts/qa/package-electron.mjs
+      - scripts/append-windows-release*
+      - docs/WINDOWS_PORT_PLAN.md
+      - package.json
+      - packages/**
+      - vite.config.ts
+      - vite-theme-plugin.ts
+      - postcss.config.js
+      - tsconfig.json
+      - components.json
       - scripts/build-native-runtime.mjs
       - scripts/build-session-execution.mjs
       - scripts/verify-session-execution.mjs
@@ -31,24 +31,25 @@ on:
       - scripts/native-compaction-observation-transform.mjs
       - scripts/build-windows-reviewed-libsql.mjs
       - scripts/build-windows-reviewed-executables*
+      - scripts/build-windows-git*
       - bun.lock
   pull_request:
     paths:
       - .gitattributes
       - .github/workflows/windows.yml
-      - packages/electron/**
-      - packages/cursor-sdk-runtime/**
-      - packages/harness-runtime/**
-      - packages/web/server/lib/opencode/runtime-host/**
-      - packages/web/server/lib/terminal/**
-      - packages/web/server/lib/bots/routes*
-      - packages/web/server/lib/opencode/routes.js
-      - packages/web/server/lib/opencode/provider-routes.test.js
-      - packages/ui/src/lib/terminalApi*
-      - packages/ui/src/lib/api/types.ts
-      - packages/ui/src/components/views/TerminalView*
-      - packages/ui/src/components/sections/providers/ProvidersPage*
-      - packages/web/src/api/terminal.ts
+      - .github/workflows/windows-lpac.yml
+      - scripts/qualify-windows-installer*
+      - scripts/diagnose-windows-runtime-compatibility*
+      - scripts/qa/package-electron.mjs
+      - scripts/append-windows-release*
+      - docs/WINDOWS_PORT_PLAN.md
+      - package.json
+      - packages/**
+      - vite.config.ts
+      - vite-theme-plugin.ts
+      - postcss.config.js
+      - tsconfig.json
+      - components.json
       - scripts/build-native-runtime.mjs
       - scripts/build-session-execution.mjs
       - scripts/verify-session-execution.mjs
@@ -60,6 +61,7 @@ on:
       - scripts/native-compaction-observation-transform.mjs
       - scripts/build-windows-reviewed-libsql.mjs
       - scripts/build-windows-reviewed-executables*
+      - scripts/build-windows-git*
       - bun.lock
 
 permissions:
@@ -69,7 +71,7 @@ jobs:
   native:
     name: Native ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -135,6 +137,11 @@ jobs:
         if: ${{ always() }}
         continue-on-error: true
         run: node scripts/build-windows-reviewed-executables.mjs
+      - name: Verify the complete pinned MinGit runtime and native version
+        id: reviewed_git
+        if: ${{ always() }}
+        continue-on-error: true
+        run: node scripts/build-windows-git.mjs
       - name: Select Windows SDK compiler for the native architecture
         shell: pwsh
         env:
@@ -167,6 +174,13 @@ jobs:
         # Exact-source disposable probes have no accepted manifest and cannot
         # satisfy any required qualification outcome.
         run: node scripts/diagnose-windows-supervisor-startup.mjs .cache/windows-native/${{ matrix.arch }}/supervisor-startup-diagnostic
+      - name: Qualify original Node and Bun stdio compatibility
+        id: runtime_compatibility
+        if: ${{ always() && steps.supervisor.outcome == 'success' }}
+        continue-on-error: true
+        # Exact binary I/O and original nested spawning are independently
+        # required. This diagnostic still grants no runtime admission.
+        run: node scripts/diagnose-windows-runtime-compatibility.mjs .cache/windows-native/${{ matrix.arch }}
       - name: Verify native process identities and containing host jobs
         id: host_boundary
         if: ${{ always() && steps.supervisor.outcome == 'success' }}
@@ -216,6 +230,13 @@ jobs:
         if: ${{ always() && steps.runtime.outcome == 'success' && steps.supervisor_acceptance.outcome == 'success' }}
         continue-on-error: true
         run: node scripts/verify-opencode-v2-package.mjs
+      - name: Qualify per-user NSIS installation and updater recovery
+        id: installer_qualification
+        if: ${{ always() }}
+        continue-on-error: true
+        # Native namespace/acceptance blockers are retained before any build
+        # or installer launch. Only actual hosted NSIS/app scenarios can pass.
+        run: node scripts/qualify-windows-installer.mjs .cache/windows-native/${{ matrix.arch }}
       - name: Require every native build and acceptance result
         if: ${{ always() }}
         shell: pwsh
@@ -227,11 +248,14 @@ jobs:
           FEATURE_CAPABILITIES: ${{ steps.feature_capabilities.outcome }}
           REVIEWED_LIBSQL: ${{ steps.reviewed_libsql.outcome }}
           REVIEWED_EXECUTABLES: ${{ steps.reviewed_executables.outcome }}
+          REVIEWED_GIT: ${{ steps.reviewed_git.outcome }}
           RUNTIME: ${{ steps.runtime.outcome }}
           RUNTIME_ACCEPTANCE: ${{ steps.runtime_acceptance.outcome }}
+          RUNTIME_COMPATIBILITY: ${{ steps.runtime_compatibility.outcome }}
+          INSTALLER_QUALIFICATION: ${{ steps.installer_qualification.outcome }}
         run: |
           $failed = $false
-          foreach ($name in @('SUPERVISOR', 'SUPERVISOR_ACCEPTANCE', 'HOST_BOUNDARY', 'FILESYSTEM_BOUNDARY', 'FEATURE_CAPABILITIES', 'REVIEWED_LIBSQL', 'REVIEWED_EXECUTABLES', 'RUNTIME', 'RUNTIME_ACCEPTANCE')) {
+          foreach ($name in @('SUPERVISOR', 'SUPERVISOR_ACCEPTANCE', 'HOST_BOUNDARY', 'FILESYSTEM_BOUNDARY', 'FEATURE_CAPABILITIES', 'REVIEWED_LIBSQL', 'REVIEWED_EXECUTABLES', 'REVIEWED_GIT', 'RUNTIME', 'RUNTIME_ACCEPTANCE', 'RUNTIME_COMPATIBILITY', 'INSTALLER_QUALIFICATION')) {
             $outcome = [Environment]::GetEnvironmentVariable($name)
             "$name=$outcome" >> $env:GITHUB_STEP_SUMMARY
             if ($outcome -ne 'success') { $failed = $true }
@@ -243,6 +267,17 @@ jobs:
           name: DevRyan-windows-native-${{ matrix.arch }}
           path: |
             .cache/windows-native/${{ matrix.arch }}
+            !.cache/windows-native/${{ matrix.arch }}/installer-qualification/**
             packages/web/runtime/win32-${{ matrix.arch }}
           if-no-files-found: warn
           retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: DevRyan-windows-installer-${{ matrix.arch }}
+          path: |
+            .cache/windows-native/${{ matrix.arch }}/installer-qualification/qualification.json
+            .cache/windows-native/${{ matrix.arch }}/installer-qualification/evidence.json
+            .cache/windows-native/${{ matrix.arch }}/installer-qualification/DevRyan-2.0.2-win-${{ matrix.arch }}.exe
+          if-no-files-found: warn
+          retention-days: 90

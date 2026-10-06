@@ -43,7 +43,7 @@ test('exact original image body/parser and retained model hotfix use only inject
  await expect(originals.callReviewedImagegenResponses({access:'fixture-selected'},{prompt:'No ambient fetch',quality:'auto'},[])).rejects.toThrow('reviewed_imagegen_owner_required');
 });
 
-async function fixture({revokeAfterReceipt=false,hold=false,malformed=false}={}){
+async function fixture({revokeAfterReceipt=false,hold=false,malformed=false,billing}={}){
  const directory=await fs.mkdtemp(path.join(root,'project-'));await git(directory,['init','--quiet']);await fs.writeFile(path.join(directory,'keep.txt'),'Preserved');
  let live=true,checks=0;const receipts=[],outcomes=[],requests=[],waiting=Promise.withResolvers();
  const sessionID='ses_imagegen',messageID='msg_assistant',callID='call_'+randomUUID();
@@ -51,7 +51,7 @@ async function fixture({revokeAfterReceipt=false,hold=false,malformed=false}={})
  const host=createSessionExecutionHost({dataDirectory:directory+'-data',getLauncher:()=>path.join(repository,'packages/web/runtime/darwin-arm64/DevRyan-execution-darwin-arm64'),
   openCodeClient:{generation:()=>2,sessions:{get:async()=>info,message:async()=>record}},nativeExecution:{workerCommand:process.execPath,workerArgs:[worker],workerEnvironment:{PATH:'/usr/bin:/bin',GIT_CEILING_DIRECTORIES:directory},socketDirectory:null,workerBrowsers:false,reviewedImagegenOrigin:origin,
    recheckPermit:async()=>{checks++;if(!live)throw Object.assign(Error('original_grant_revoked'),{code:'original_grant_revoked'});},
-   imageGeneration:async(invocation,args,{signal})=>{requests.push({invocation,args});waiting.resolve();if(hold)await new Promise((resolve,reject)=>{signal.addEventListener('abort',()=>reject(signal.reason),{once:true});if(signal.aborted)reject(signal.reason);});return {base64:malformed?'not-an-image':png.toString('base64')};},
+   imageGeneration:async(invocation,args,{signal})=>{requests.push({invocation,args});waiting.resolve();if(hold)await new Promise((resolve,reject)=>{signal.addEventListener('abort',()=>reject(signal.reason),{once:true});if(signal.aborted)reject(signal.reason);});return {base64:malformed?'not-an-image':png.toString('base64'),...(billing!==undefined?{billing}:{})};},
    onTermination:event=>{receipts.push(event);if(revokeAfterReceipt)live=false;},onOutcome:event=>outcomes.push(event)}});
  const start=async(input)=>{
   const spec={kind:'writer',tool:'gpt_imagegen',input};
@@ -133,7 +133,7 @@ yield* sdk.agent.list({location:{directory:${JSON.stringify(directory)}}});yield
 
 test('actual original transport uses fresh selected account for each physical request and awaits cancelled stream settlement',async()=>{
  let selected='account-one',checks=0,cancelled=false;const requests=[];
- const transport=createNativeImageGeneration({originals,withImageGeneration:async(_invocation,action)=>action({access:async()=>({accessToken:'fixture-'+selected,accountId:selected}),recheck:async()=>{checks++;}}),fetchImpl:async(url,init)=>{
+ const transport=createNativeImageGeneration({originals,withImageGeneration:async(_invocation,action)=>action({access:async()=>({methodID:'chatgpt-headless',accessToken:'fixture-'+selected,accountId:selected}),recheck:async()=>{checks++;}}),fetchImpl:async(url,init)=>{
   const body=JSON.parse(init.body);requests.push({url,body,headers:new Headers(init.headers)});
   if(body.input[0].content[0].text==='Cancel original parser')return new Response(new ReadableStream({start(controller){init.signal.addEventListener('abort',()=>{cancelled=true;controller.error(init.signal.reason);},{once:true});},cancel(){cancelled=true;}}));
   return new Response(`data: ${JSON.stringify({type:'response.output_item.done',item:{type:'image_generation_call',result:png.toString('base64')}})}\n\n`);
@@ -141,13 +141,67 @@ test('actual original transport uses fresh selected account for each physical re
  const args={prompt:'Original transport',quality:'high',size:'1024x1024',referenceImages:['data:image/png;base64,'+png.toString('base64')]};
  expect(await transport({token:'lease-one'},args)).toEqual({base64:png.toString('base64')});selected='account-two';
  expect(await transport({token:'lease-two'},args)).toEqual({base64:png.toString('base64')});
- expect(requests.map(row=>[row.headers.get('Authorization'),row.headers.get('ChatGPT-Account-Id')])).toEqual([['Bearer fixture-account-one','account-one'],['Bearer fixture-account-two','account-two']]);
+ expect(requests.map(row=>[row.url,row.headers.get('Authorization'),row.headers.get('ChatGPT-Account-Id')])).toEqual([
+  ['https://chatgpt.com/backend-api/codex/responses','Bearer fixture-account-one','account-one'],
+  ['https://chatgpt.com/backend-api/codex/responses','Bearer fixture-account-two','account-two'],
+ ]);
  expect(requests.every(row=>row.body.model==='gpt-6-astra'&&row.body.reasoning.effort==='medium')).toBe(true);
  expect(requests[1].body.tools).toEqual([{type:'image_generation',output_format:'png',quality:'high',size:'1024x1024'}]);expect(requests[1].body.input[0].content[1].image_url).toBe(args.referenceImages[0]);
  const controller=new AbortController(),work=transport({token:'lease-cancel'},{prompt:'Cancel original parser',quality:'auto',referenceImages:[]},{signal:controller.signal});
  while(requests.length<3)await new Promise(resolve=>setTimeout(resolve,1));controller.abort(Error('fixture_cancelled'));
  await expect(work).rejects.toThrow('fixture_cancelled');expect(cancelled).toBe(true);expect(checks).toBeGreaterThan(5);
 });
+
+test('explicit API-key image transport retains the original body/parser and refuses changed selection or cancelled streams',async()=>{
+ let selected='key-one',mode='success',cancelled=0;const requests=[],entered=Promise.withResolvers();
+ const transport=createNativeImageGeneration({originals,
+  withImageGeneration:async(_invocation,action)=>{
+   const captured=selected;
+   return action({access:async()=>({valueType:'key',methodID:'api-key',credentialID:'cred_fixture',accessToken:'fixture-'+captured,generation:captured}),
+    recheck:async()=>{if(selected!==captured)throw Error('native_image_generation_selection_changed');}});
+  },fetchImpl:async(url,init)=>{
+   const body=JSON.parse(init.body);requests.push({url,body,headers:new Headers(init.headers)});
+   if(mode==='changed'){
+    selected='key-three';return new Response(new ReadableStream({cancel(){cancelled++;}}));
+   }
+   if(mode==='cancel')return new Response(new ReadableStream({start(controller){
+    init.signal.addEventListener('abort',()=>{cancelled++;controller.error(init.signal.reason);},{once:true});entered.resolve();
+   }}));
+   return new Response(`data: ${JSON.stringify({type:'response.output_item.done',item:{type:'image_generation_call',result:png.toString('base64')}})}\n\n`);
+  },
+ });
+ const args={prompt:'Original API image parser',quality:'high',size:'1024x1024',referenceImages:['data:image/png;base64,'+png.toString('base64')]};
+ expect(await transport({token:'api-one'},args)).toEqual({base64:png.toString('base64'),billing:'api-key'});selected='key-two';
+ expect(await transport({token:'api-two'},args)).toEqual({base64:png.toString('base64'),billing:'api-key'});
+ expect(requests.map(row=>[row.url,row.headers.get('Authorization'),row.headers.get('ChatGPT-Account-Id')])).toEqual([
+  ['https://api.openai.com/v1/responses','Bearer fixture-key-one',null],
+  ['https://api.openai.com/v1/responses','Bearer fixture-key-two',null],
+ ]);
+ expect(requests[0].body).toEqual(requests[1].body);
+ expect(requests[0].body).toMatchObject({model:'gpt-6-astra',reasoning:{effort:'medium'},stream:true,store:false,
+  tools:[{type:'image_generation',output_format:'png',quality:'high',size:'1024x1024'}],tool_choice:{type:'image_generation'},
+  input:[{role:'user',content:[{type:'input_text',text:args.prompt},{type:'input_image',image_url:args.referenceImages[0]}]}]});
+ mode='changed';await expect(transport({token:'api-changed'},args)).rejects.toThrow('native_image_generation_selection_changed');expect(cancelled).toBe(1);
+ mode='cancel';const controller=new AbortController(),work=transport({token:'api-cancel'},args,{signal:controller.signal});
+ await entered.promise;controller.abort(Error('api_fixture_cancelled'));await expect(work).rejects.toThrow('api_fixture_cancelled');expect(cancelled).toBe(2);
+});
+
+test('actual image worker projects explicit API-key billing after the original executor and rejects an invalid marker',async()=>{
+ const success=await fixture({billing:'api-key'});
+ try{
+  const started=await success.start({prompt:'Explicit API-key billing',out:'api-art.png',quality:'auto'}),terminal=await success.settle(started.handle);
+  expect(terminal).toMatchObject({type:'settled',ok:true,receipt:{terminated:true,confined:true,exitCode:0},
+   result:{metadata:{out:path.join(success.directory,'api-art.png'),versioned:false,billing:'api-key'}}});
+  expect(await fs.readFile(path.join(success.directory,'api-art.png'))).toEqual(png);
+ }finally{await success.host.drain();}
+ const invalid=await fixture({billing:'subscription'});
+ try{
+  const started=await invalid.start({prompt:'Invalid API-key billing',out:'invalid-api-art.png',quality:'auto'}),terminal=await invalid.settle(started.handle);
+  expect(terminal.ok).toBe(false);expect(terminal.error.message).toContain('native_imagegen_result_invalid');
+  expect(terminal.receipt).toMatchObject({terminated:true,confined:true,exitCode:1});
+  expect(await fs.stat(path.join(invalid.directory,'invalid-api-art.png')).catch(()=>null)).toBeNull();
+ }finally{await invalid.host.drain();}
+},60_000);
 
 test('original version selection cannot follow a dangling output symlink outside the private view',async()=>{
  const f=await fixture();try{

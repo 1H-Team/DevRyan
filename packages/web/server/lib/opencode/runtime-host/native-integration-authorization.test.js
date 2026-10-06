@@ -65,7 +65,7 @@ test('browser scopes bind the actual method, path, body and current controller t
 });
 
 const openaiBinding={kind:'openai',directory:binding.directory,controllerInstanceID:binding.controllerInstanceID,
-  configurationDigest:binding.configurationDigest,acquisitionID:'openai-acquisition',integrationID:'openai',methodID:'chatgpt-browser'};
+  configurationDigest:binding.configurationDigest,acquisitionID:'openai-acquisition',integrationID:'openai',methodID:'chatgpt-siwc'};
 test('OpenAI OAuth pins original caller, controller, configuration and actual acquisition',async()=>{
   const f=fixture();let authorizationID;
   await f.owner.withCallerOperation({...openaiBinding,operation:'openai.oauth.start',method:'POST',path:'/api/integration/openai/connect/oauth',body:{methodID:openaiBinding.methodID}},async()=>{
@@ -94,8 +94,8 @@ test.each([['openai','openai'],['cursor','cursor-acp'],['provider','xai'],['prov
   await expect(f.owner.withCallerOperation({...direct,operation:`${kind}.credential.create`,method:'POST',path:'/api/credential',body:{...request,label:'changed'}},async()=>{})).rejects.toMatchObject({code:'native_integration_scope_invalid'});
   if(kind==='cursor'){
     await expect(f.owner.capture({binding:direct,operation:'connection'})).rejects.toMatchObject({code:'native_integration_scope_invalid'});
-    const body={integrationID,value:{type:'oauth',methodID:'chatgpt-browser'}};
-    await expect(f.owner.withCallerOperation({...direct,valueType:'oauth',methodID:'chatgpt-browser',operation:'cursor.credential.create',method:'POST',path:'/api/credential',body,requestedFingerprint:credentialMutationFingerprint(body)},async()=>{})).rejects.toMatchObject({code:'native_integration_scope_invalid'});
+    const body={integrationID,value:{type:'oauth',methodID:'chatgpt-siwc'}};
+    await expect(f.owner.withCallerOperation({...direct,valueType:'oauth',methodID:'chatgpt-siwc',operation:'cursor.credential.create',method:'POST',path:'/api/credential',body,requestedFingerprint:credentialMutationFingerprint(body)},async()=>{})).rejects.toMatchObject({code:'native_integration_scope_invalid'});
     await expect(f.owner.withCallerOperation({...direct,operation:'openai.credential.create',method:'POST',path:'/api/credential',body:request},async()=>{})).rejects.toMatchObject({code:'native_integration_scope_invalid'});
   }
 });

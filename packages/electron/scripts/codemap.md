@@ -8,6 +8,13 @@ Script-first utilities (small Node/shell entrypoints) that run outside runtime c
 
 Native packaging is explicit and fail-closed: `rebuild-native.mjs` resolves each declared ABI-sensitive dependency from its declaring workspace, and the `afterPack` hook verifies the app bindings plus Cursor SDK `rg`, `cursorsandbox`, and both tree-sitter bindings before signing. Cursor SDK 1.0.28 relies on built-in `node:sqlite`, so Cursor's old transitive `sqlite3` rebuild path is intentionally absent.
 
+`bundle-main.mjs` emits the main process and both standalone update helpers from
+one verified source closure. Copied Windows helpers have no relocated relative
+dependency imports. The hosted Windows installer qualifier reuses the existing
+unsigned per-user resource/NSIS configuration after native prerequisites pass;
+it does not substitute a fixture app or candidate manifest for production
+artifact acceptance.
+
 ## Flow
 1. Workspace script invokes a helper in this folder.
 2. Helper reads local package/release inputs.

@@ -39,7 +39,7 @@ API contracts.
   number and requires exact kernel readback. Its version-2 diagnostic records
   the SDK and requested masks; diagnostic success grants no admission.
 
-- Session-owned tool captures, cumulative revisions, stored diffs and conflict-checked restore: `lib/session-changes.js`; authenticated host HTTP/plugin adapter: `lib/session-changes-host.js`. `lib/session-changes-tools.js` owns shared tool/receipt normalization; `lib/session-changes-receipts.js` persists exact evidence and immutable segments. Snapshot observations never establish ownership. Call-scoped repair, monotonic exact evidence, retained descendant lineage and pending reconciliation are covered by `lib/session-changes-recovery.test.js`; the host acknowledges private Cursor execution receipts after persistence. `lib/session-changes-git.js` streams Git I/O; `lib/session-changes-snapshot.js` owns scoped capture and the bounded stat cache; `lib/session-changes-store.js` owns individually indexed metadata and atomic publication. `lib/session-changes-scale.test.js` covers large capture, pagination, migration and collection. See `docs/SESSION_CHANGES.md`.
+- Session-owned tool captures, cumulative revisions, stored diffs and conflict-checked restore: `lib/session-changes.js`; authenticated host HTTP/plugin adapter: `lib/session-changes-host.js`. `lib/session-changes-tools.js` owns shared tool/receipt normalization; `lib/session-changes-receipts.js` persists exact evidence and immutable segments. Snapshot observations never establish ownership. Call-scoped repair, monotonic exact evidence, retained descendant lineage and pending reconciliation are covered by `lib/session-changes-recovery.test.js`; the host acknowledges private Cursor execution receipts after persistence. `lib/session-changes-git.js` streams Git I/O; its constructor-only `createOwnedGitRunner` binds one absolute executable, frozen environment, argument prefix and synchronous scope validator for the offline Windows bundle job. `openChangeStore` accepts that owned runner and an explicit object durability callback while keeping the original indexed metadata/ref transactions; ordinary callers keep their existing Git and durability behavior. `lib/session-changes-snapshot.js` owns scoped capture and the bounded stat cache; `lib/session-changes-store.js` owns individually indexed metadata and atomic publication. `lib/session-changes-scale.test.js` covers large capture, pagination, migration and collection. See `docs/SESSION_CHANGES.md`.
 
 - Startup recovered inputs reuse the primary recovery owner: dedicated same-ID
   adoption and pre-cancel/event-backed disposition CAS preserve tools and fallback
@@ -65,6 +65,14 @@ API contracts.
   and confirms graceful release. It never steals a lock using stale PID bytes.
   Native architecture checks and storage/updater constructor composition remain
   separate gates from this primitive.
+  Native private publication retains exact parent/file identities, content
+  hash/size, nonce-bound intent and backup across compare-and-swap replacement,
+  deletion and quarantine. `record-store.js` routes Windows deletion through
+  that owner; corrupt JSON uses owned quarantine rather than Node rename/unlink
+  or mode-bit repair. Namespace durability errors remain visible. Completed
+  backups/receipts have a bounded native pruner that preserves current recovery
+  proofs and removes historical artifacts by retained identities. Actual native
+  cleanup and namespace durability remain qualification gates.
   `lib/windows-private-files.js` validates bounded native file identity receipts
   and routes exclusive execution-root and policy creation through the Windows
   SDK owner. Existing unowned/widened ACLs are refused, never repaired. This
@@ -77,6 +85,17 @@ API contracts.
 - Session attribution: `lib/session-id.js`. Exact DevRyan-owned managed-task events resolve to their root and establish their canonical child relation even when native session-created history has expired. Conflicting explicit session IDs and unknown ownership cannot add child scope; same-directory foreign roots remain excluded from task exports.
 - Hot-event trim/coalescing policy: `lib/journal-trim.js`
 - Sanitization/session-partitioned journal/export: `lib/sanitizer.js`, `lib/journal.js`, `lib/export.js`
+  Windows journal bytes and mutations use `lib/windows-journal-files.js` with
+  native 64 KiB append batches and a 16 MiB file/read ceiling. Legacy
+  truncation/rename and gzip deletion preserve the captured byte/identity
+  compare-and-swap proof; staged clear uses private tree transitions. Node
+  enumerates metadata only, and this adapter grants no execution admission.
+  This does not qualify the separate
+  managed orchestration ledger's actual Windows execution. Its constructor now
+  owns a kernel keeper and explicitly bounded 64 MiB native atomic adapter;
+  keeper loss fences subsequent mutations and shutdown drains queued writes
+  before confirmed native release. Native durability and bundle/credential
+  composition remain held behind existing Windows core admission.
   Native request/compaction evidence uses the finite shared `native-observation`
   contract, stable hashed directory witnesses and dedicated journal/export
   projection. Prompt/reasoning content and arbitrary provider options remain

@@ -122,7 +122,7 @@ const mapBounded = async (items, fn, limit = FILE_CONCURRENCY) => {
  * Adapters must enforce write confinement and stop every writer before finish.
  * The private Git metadata store pages histories and commits accepted intent
  * with an atomic ref update before the publication transaction writes files. */
-export function createSessionMutationRuntime({ directory: storage, onChange = () => {}, onMaterialize, onDiagnostic = () => {}, onLockTiming, maintenance: maintenanceOptions } = {}) {
+export function createSessionMutationRuntime({ directory: storage, onChange = () => {}, onMaterialize, onDiagnostic = () => {}, onLockTiming, maintenance: maintenanceOptions, windowsOwner, windowsLauncher } = {}) {
   if (!path.isAbsolute(storage ?? '')) throw new TypeError('Absolute mutation storage directory is required');
   // Background failures outside any admission context (codes only).
   const diagnostic = (record) => { try { onDiagnostic(record); } catch { /* Observer only. */ } };
@@ -186,7 +186,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
   const putBytes = async (repo, bytes) => {
     const hash = digest(bytes), target = path.join(repo.root, 'objects', hash);
     try { markObjectIfUnsynced(path.dirname(target), (await fs.lstat(target)).ctimeMs); }
-    catch (error) { if (error.code !== 'ENOENT') throw error; await writeFileAtomic(target, bytes); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; await writeFileAtomic(target, bytes, { windowsOwner }); }
     return hash;
   };
   const inspect = (repo, file, directory) => withExecutionIO(repo.root, () => inspectMutationFile(repo, file, directory));
@@ -289,7 +289,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         queueMeter.following = holder; queueMeter.progress = Date.now();
         try { return await holdLock(); }
         finally { if (queueMeter.following === holder) queueMeter.following = undefined; queueMeter.progress = Date.now(); }
-      }), { timeoutMs: 30_000, signal: executionSignal() }).catch(cause => {
+      }), { timeoutMs: 30_000, signal: executionSignal(), windowsLauncher }).catch(cause => {
         if (!acquired) executionDiagnostic({ phase: 'lock_wait', state: 'failed', elapsedMs: Date.now() - lockStarted,
           code: cause?.code === 'LOCK_TIMEOUT' ? 'local_execution_timeout' : 'local_execution_failed' });
         timing.failed = true;

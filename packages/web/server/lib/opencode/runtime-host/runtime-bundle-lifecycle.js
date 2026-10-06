@@ -24,7 +24,7 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
   stopProducers, drainStores, executionHost, afterExit, beforeControllerStop, requestRecomposition,
   artifactDirectory = executionArtifacts().directory, verifyArtifacts = verifyNativeRuntimeArtifacts,
   credentialProcess = runNativeBundleCredentialProcess, storeFactory = createRuntimeBundleStore,
-  retainArtifacts = retainNativeArtifacts, retainCheckpoint }) {
+  retainArtifacts = retainNativeArtifacts, retainCheckpoint, privatePersistence={} }) {
   if (retainCheckpoint !== undefined && typeof retainCheckpoint !== 'function') throw fail('bundle_checkpoint_grant_invalid');
   // Permanent for this process: the application admission gate never reopens
   // after a checkpoint starts closing it, so neither may the lifecycle.
@@ -63,7 +63,7 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
     return { status: 'compatible', binding: { protocol: cloneContract, sourceBundleID: source.bundleID,
       sourceManifestSha256: source.launch.artifactManifestSha256, targetManifestSha256: artifacts.artifactManifestSha256 } };
   };
-  const store = storeFactory({ controlRoot: binding.controlRoot, allowRecoveredInputStartup: true,
+  const store = storeFactory({ ...privatePersistence, controlRoot: binding.controlRoot, allowRecoveredInputStartup: true,
     withQuiescedSource: withCheckpoint,
     runMigration: async () => { throw fail('bundle_migration_generation_invalid'); },
     verifyArtifacts: async ({ launch }) => verifyLaunch(launch),
@@ -151,7 +151,7 @@ export function createRuntimeBundleLifecycle({ binding, getController, closeAdmi
     upgrade: input => run('upgrade', input, async current => {
       const candidate = await readCandidate();
       if (candidate.manifestSha256 === current.descriptor.launch.artifactManifestSha256) throw fail('bundle_upgrade_not_available');
-      const retained = await retainArtifacts({ controlRoot: binding.controlRoot, ...candidate, verifyArtifacts });
+      const retained = await retainArtifacts({ ...privatePersistence, controlRoot: binding.controlRoot, ...candidate, verifyArtifacts });
       const inputRoot = path.join(binding.controlRoot, 'upgrade-inputs', retained.manifestSha256);
       await fs.mkdir(inputRoot, { recursive: true, mode: 0o700 });
       if (await fs.realpath(inputRoot) !== inputRoot) throw fail('bundle_path_invalid');

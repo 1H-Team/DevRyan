@@ -25,6 +25,16 @@ and desktop-host broker bridges.
 - **Bridge/shim pattern**: `preload.mjs` exposes `__OPENCHAMBER_ELECTRON__` and a `__TAURI__` compatibility surface so shared UI code can run on both Electron and legacy Tauri.
 - **Isolated QA packaging**: `scripts/bundle-main.mjs` exports `bundleElectronMain({ outdir })` with the production external-module boundaries; production manifest checks are enforced by `scripts/package-prepared.mjs`. Repository-only `scripts/qa/package-electron.mjs` reuses it to build a separate unsigned app from current main/server/preload and a selected UI artifact; its private test bootstrap and native-integration exclusions are documented in `docs/QA.md`.
 - **Windows packaging identity**: `package.json` declares per-user unsigned NSIS targets with `dev.devryan.desktop`, a fixed installer GUID and exact `DevRyan-<version>-win-<arch>.exe` names; main uses that Windows AppUserModelID. macOS retains its compatibility app ID. Installer/update execution and platform resources remain gated by the [Windows port plan](../../docs/WINDOWS_PORT_PLAN.md).
+- **Windows update ownership**: `desktop-download-windows.mjs` streams resumable
+  downloads through `windows-update-owner.mjs`; `desktop-updater-windows.mjs`
+  stages private backup/intent/helper state, and the standalone bundled
+  `desktop-update-install-windows.mjs` owns NSIS acknowledgement, settlement,
+  candidate readiness and recovery. `windows-installed-artifacts.mjs` routes
+  installation checks through the same production native verifier. Unknown
+  candidate termination or unavailable namespace durability stays held. Exact
+  tree restoration also verifies per-user registration before rollback settles.
+  Hosted qualification lives in `scripts/qualify-windows-installer.mjs`; source
+  and deterministic fixtures cannot qualify either native Windows architecture.
 - **Windows Bot refusal**: `bot-runtime-manager.mjs` refuses construction on
   Windows before manifest, key, catalog, file or Docker owners can act. The web
   capability owner separately reports no catalog/execution/management grant.

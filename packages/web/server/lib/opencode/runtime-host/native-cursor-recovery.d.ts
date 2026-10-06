@@ -1,3 +1,4 @@
+import type {WindowsPrivateFileOwner} from '../../../../../harness-runtime/lib/windows-private-files.js';
 import type {NativeCursorScope} from './native-cursor-owner.js';
 import type {SessionMutationRuntime,MutationLease} from '../../../../../harness-runtime/lib/session-mutations.js';
 export interface NativeCursorRecovery {
@@ -9,4 +10,5 @@ export interface NativeCursorRecovery {
  readonly drain:()=>Promise<void>;
 }
 export function createNativeCursorRecovery(options:{readonly directory:string;readonly ownerID:string;
+ readonly windowsOwner?:WindowsPrivateFileOwner;readonly windowsLauncher?:string;
  readonly runtime:Pick<SessionMutationRuntime,'leaseForCall'|'executionOutcomes'>}):NativeCursorRecovery;

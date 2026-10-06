@@ -1,4 +1,5 @@
-// Real compiled/source owners with synthetic grants. Never paid inference,
+// Real compiled/source owners with synthetic credential records and application
+// grants. OAuth enrollment/device grants are not exercised. Never paid inference,
 // installed profiles, the user's Keychain or a CLI runtime override.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -79,7 +80,8 @@ async function runOwnerRehearsal(sessionFile){
     const {stdout,stderr}=await promisify(execFile)('bun',['--eval',code],{cwd:qaRepository,timeout:60000,maxBuffer:1024*1024,
       env:createQaHostLaunchEnvironment({HOME:session.binding.descriptor.launch.global.home,GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_SYSTEM:'/dev/null',GIT_CONFIG_NOSYSTEM:'1'})});
     checkNoCanaries(stdout+stderr);sourceProof=JSON.parse(stdout);assert.equal(sourceProof.settledMutations,2);assert.equal(sourceProof.compiledOAuthCreation,false);
-    cases.push({id:'original-source-sdk-oauth-grants',status:'passed',compiledOAuthCreation:false});
+    cases.push({id:'synthetic-siwc-source-sdk-credential-mutations',status:'passed',sourceCredentialCreation:true,
+      oauthEnrollment:'not-run',deviceCodeGrant:'not-run',compiledOAuthCreation:false});
   };
   const runMatrix=async(configPath,options)=>{
     let stage='fixture';try{

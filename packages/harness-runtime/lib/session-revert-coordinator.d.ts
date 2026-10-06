@@ -1,3 +1,4 @@
+import type {WindowsPrivateFileOwner} from './windows-private-files.js';
 import type { MutationFile, MutationTarget, SessionMutationRuntime } from './session-mutations.js';
 
 export interface MutationSession {
@@ -30,6 +31,8 @@ export interface SessionRevertCoordinator {
 }
 export function createSessionRevertCoordinator(options: {
   directory: string;
+  windowsOwner?:WindowsPrivateFileOwner;
+  windowsLauncher?:string;
   runtime: SessionMutationRuntime;
   conversation: {
     capabilities(input: { directory: string }): Promise<{ conversationOnlyRevert?: number }>;

@@ -17,7 +17,12 @@ const id = value => typeof value === 'string' && /^msg_[a-zA-Z0-9]{1,128}$/.test
 
 // Read the existing envelope without creating directories, quarantining data,
 // taking the provider owner lock or granting execution authority.
-export async function readBundleRecoveryEnvelope(file) {
+export async function readBundleRecoveryEnvelope(file,{windowsOwner}={}) {
+  if(process.platform==='win32'||windowsOwner){
+    if(typeof windowsOwner?.read!=='function')throw bundleFailure('private_windows_read_authority_unavailable');
+    const {bytes}=await windowsOwner.read(file);if(bytes.length>MAX_RECORD_BYTES)invalid();
+    return parseRecoveryEnvelope(file,bytes);
+  }
   if (await fs.realpath(path.dirname(file)) !== path.dirname(file)) invalid();
   const handle = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
@@ -26,14 +31,17 @@ export async function readBundleRecoveryEnvelope(file) {
     const buffer=Buffer.alloc(MAX_RECORD_BYTES+1);
     const {bytesRead}=await handle.read(buffer,0,buffer.length,0);
     if (bytesRead>MAX_RECORD_BYTES || bytesRead!==stat.size) invalid();
-    const bytes=buffer.subarray(0,bytesRead), envelope=JSON.parse(bytes.toString('utf8'));
+    return parseRecoveryEnvelope(file,buffer.subarray(0,bytesRead));
+  } finally { await handle.close(); }
+}
+const parseRecoveryEnvelope=(file,bytes)=>{
+    const envelope=JSON.parse(bytes.toString('utf8'));
     if (!isRecord(envelope) || !same(Object.keys(envelope).sort(),['key','record','version']) || envelope.version!==1
       || !isRecord(envelope.record) || envelope.key!==sha256(envelope.record.sessionID)
       || path.basename(file)!==envelope.key+'.json') invalid();
     validatePrimaryRecoveryRecord(envelope.record);
     return {envelope,sha256:sha256(bytes)};
-  } finally { await handle.close(); }
-}
+};
 
 /** Exact queued prompt encoding shared by offline proof and fresh owned dispatch. */
 export function bundleContinuationItem(record) {

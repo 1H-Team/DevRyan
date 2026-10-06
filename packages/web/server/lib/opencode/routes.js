@@ -15,6 +15,8 @@ import {
   mergeGitHubCopilotProvider,
 } from './provider-integrations.js';
 import { annotateOpenAIModelAvailability } from './openai-model-availability.js';
+import { resolveSiwcAccountModels } from './openai-siwc-model-catalog.js';
+import { readNativeOpenAiSelection } from './chatgpt-siwc-host.js';
 import { annotateModelDefaultThinking } from './model-default-thinking.js';
 import { stripMessageDiffContent } from './diff-summary.js';
 import { discoverGitHubCopilotModels } from './github-copilot-models.js';
@@ -96,6 +98,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     openCodeClient,
     getNativeRuntimeOwner = () => null,
     getClaudeEnrollmentOwner = () => null,
+    getChatgptSiwcEnrollmentOwner = () => null,
     isProviderAdministrator = () => false,
     getOpenCodeAuthHeaders = () => ({}),
     getOpenCodeWorkingDirectory = () => null,
@@ -456,6 +459,52 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     return owner.select(req.params.id,context);
   }));
 
+  const siwcAdmin=(req,res,next)=>isProviderAdministrator(req)?next():res.status(403).json({code:'native_chatgpt_siwc_administrator_required'});
+  const siwcCsrf=(req,res,next)=>req.get('x-devryan-csrf')==='1'?next():res.status(403).json({code:'native_chatgpt_siwc_csrf_required'});
+  const siwcBody=limit=>{const parse=express.json({limit});return(req,res,next)=>parse(req,res,error=>error?res.status(400).json({code:'native_chatgpt_siwc_request_invalid'}):next());};
+  const emptySiwcBody=body=>body===undefined||body!==null&&typeof body==='object'&&!Array.isArray(body)&&Object.keys(body).length===0;
+  const siwcSelectionBody=(body,allowRegistration=false)=>{
+    if(body===undefined)body={};
+    if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(key=>key!=='expectedActiveCredentialID'&&(!allowRegistration||key!=='registrationRef'))
+      ||body.expectedActiveCredentialID!==undefined&&body.expectedActiveCredentialID!==null&&(typeof body.expectedActiveCredentialID!=='string'||!/^[A-Za-z0-9_-]{1,256}$/.test(body.expectedActiveCredentialID))
+      ||body.registrationRef!==undefined&&(typeof body.registrationRef!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(body.registrationRef)))
+      throw Object.assign(new Error('native_chatgpt_siwc_request_invalid'),{code:'native_chatgpt_siwc_request_invalid',status:400});
+    return body;
+  };
+  const siwcReply=async(req,res,action)=>{
+    try{
+      const owner=getChatgptSiwcEnrollmentOwner();
+      if(!owner) return res.status(409).json({code:'native_chatgpt_siwc_update_required'});
+      const context={request:req,directory:await resolveRequestDirectory(req)};
+      res.json(await action(owner,context));
+    }catch(error){
+      const code=/^native_chatgpt_siwc_[a-z_]+$/.test(error?.code??'')?error.code:'native_chatgpt_siwc_refused';
+      res.status([400,403,404,408,409,503].includes(error?.status)?error.status:409).json({code,
+        ...(['confirmed','unconfirmed','not_applicable'].includes(error?.remoteRevocation)?{remoteRevocation:error.remoteRevocation}:{}),
+        ...(['complete','failed'].includes(error?.localCleanup)?{localCleanup:error.localCleanup}:{}),
+      });
+    }
+  };
+  app.get('/api/provider/openai/siwc',siwcAdmin,(req,res)=>siwcReply(req,res,async(owner,context)=>owner.status(context)));
+  app.post('/api/provider/openai/siwc',siwcAdmin,siwcCsrf,siwcBody('4kb'),(req,res)=>siwcReply(req,res,async(owner,context)=>{
+    return owner.begin({...context,...siwcSelectionBody(req.body,true)});
+  }));
+  app.post('/api/provider/openai/siwc/:id/complete',siwcAdmin,siwcCsrf,siwcBody('4kb'),(req,res)=>siwcReply(req,res,(owner,context)=>{
+    if(!emptySiwcBody(req.body))throw Object.assign(new Error('native_chatgpt_siwc_request_invalid'),{code:'native_chatgpt_siwc_request_invalid',status:400});
+    return owner.complete(req.params.id,req.body,context);
+  }));
+  app.post('/api/provider/openai/siwc/:id/select',siwcAdmin,siwcCsrf,siwcBody('4kb'),(req,res)=>siwcReply(req,res,(owner,context)=>{
+    const body=siwcSelectionBody(req.body);
+    if(body.expectedActiveCredentialID===undefined)throw Object.assign(new Error('native_chatgpt_siwc_request_invalid'),{code:'native_chatgpt_siwc_request_invalid',status:400});
+    return owner.select(req.params.id,{...context,...body});
+  }));
+  app.delete('/api/provider/openai/siwc/:id',siwcAdmin,siwcCsrf,(req,res)=>siwcReply(req,res,(owner,context)=>owner.cancel(req.params.id,context)));
+  app.delete('/api/provider/openai/siwc',siwcAdmin,siwcCsrf,siwcBody('4kb'),(req,res)=>siwcReply(req,res,(owner,context)=>{
+    const body=siwcSelectionBody(req.body);
+    if(body.expectedActiveCredentialID===undefined)throw Object.assign(new Error('native_chatgpt_siwc_request_invalid'),{code:'native_chatgpt_siwc_request_invalid',status:400});
+    return owner.disconnect({...context,...body});
+  }));
+
   app.get('/api/provider/anthropic/prompt-mode', (_req, res) => {
     if (isExternalOpenCode()) {
       return res.json({
@@ -694,9 +743,20 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     });
     let withOpenAIAvailability = withGitHubCopilot;
     if (!isExternalOpenCode()) {
-      const { readAuthFile } = await getAuthLibrary();
-      const auth = readAuthFile();
-      withOpenAIAvailability = annotateOpenAIModelAvailability(withGitHubCopilot, auth?.openai);
+      let selected, lookupUnavailable = false;
+      try { selected = await readNativeOpenAiSelection(getNativeRuntimeOwner, directory, { refresh: true }); } catch {
+        lookupUnavailable = true;
+        try { selected = await readNativeOpenAiSelection(getNativeRuntimeOwner, directory); } catch { /* Unknown ownership remains unavailable. */ }
+      }
+      let auth = selected?.value;
+      let accountModels = lookupUnavailable ? null : await resolveSiwcAccountModels(auth);
+      if (selected) {
+        try {
+          const current = await readNativeOpenAiSelection(getNativeRuntimeOwner, directory);
+          if (JSON.stringify(current) !== JSON.stringify(selected)) { auth = current?.value; accountModels = null; lookupUnavailable = true; }
+        } catch { accountModels = null; lookupUnavailable = true; }
+      }
+      withOpenAIAvailability = annotateOpenAIModelAvailability(withGitHubCopilot, auth, { accountModels, unavailable: lookupUnavailable });
     }
     return mergeCursorProvider(withOpenAIAvailability, { directory: await resolveRequestDirectory(req) });
   };
@@ -736,7 +796,8 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       // If merging fails, still return the upstream provider list so the UI never
       // blanks the entire provider list or persists an empty snapshot.
       console.error('Failed to merge provider integrations:', error);
-      return res.json(markIncomplete(annotateModelDefaultThinking(upstreamPayload)));
+      const availablePayload = isExternalOpenCode() ? upstreamPayload : annotateOpenAIModelAvailability(upstreamPayload, undefined, { unavailable: true });
+      return res.json(markIncomplete(annotateModelDefaultThinking(availablePayload)));
     }
   });
 

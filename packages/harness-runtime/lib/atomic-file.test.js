@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 import {
   cleanupStaleAtomicFiles,
@@ -11,6 +12,42 @@ import {
 } from './atomic-file.js';
 
 const temporaryDirectories = [];
+
+test('Windows persistence uses constructor owners, identity-bound quarantine and guarded deletion', () => {
+  const atomicModule = new URL('./atomic-file.js', import.meta.url).href;
+  const storeModule = new URL('./record-store.js', import.meta.url).href;
+  // Isolate the platform fixture: no Windows receipt or platform pass is
+  // inferred, and every accidental Node filesystem fallback fails this test.
+  const source = `
+    import assert from 'node:assert/strict';
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const { readJsonGuarded, writeFileAtomic } = await import(${JSON.stringify(atomicModule)});
+    const { createRecordStore } = await import(${JSON.stringify(storeModule)});
+    const fs = new Proxy({}, { get: () => () => { throw new Error('Node filesystem fallback'); } });
+    const file = 'fixture.json';
+    await assert.rejects(writeFileAtomic(file, '{}', { fs }), { code: 'private_windows_publication_authority_unavailable' });
+    await assert.rejects(readJsonGuarded(file, { fs }), { code: 'private_windows_read_authority_unavailable' });
+    const record = { identity: { fileId: 'fixture' }, bytes: Buffer.from('{broken') };
+    let preserved = true, quarantined = 0, notified = 0;
+    const owner = { read: async () => record, ensureDirectory: async () => {},
+      write: async (target, bytes) => { assert.equal(target, file); assert.deepEqual(bytes, Buffer.from('{}')); return { receipt: true }; },
+      quarantine: async (target, expected) => { assert.equal(target, file); assert.equal(expected, record); preserved = false; quarantined++; return 'held-backup'; } };
+    await assert.rejects(readJsonGuarded(file, { fs, windowsOwner: { read: owner.read } }), { code: 'private_windows_quarantine_authority_unavailable' });
+    assert.equal(preserved, true);
+    assert.equal(await readJsonGuarded(file, { fs, windowsOwner: owner, onQuarantine: value => { assert.equal(value.quarantinedPath, 'held-backup'); notified++; } }), null);
+    assert.equal(quarantined, 1); assert.equal(notified, 1);
+    assert.deepEqual(await writeFileAtomic(file, '{}', { fs, windowsOwner: owner }), { receipt: true });
+    owner.read = async () => { throw Object.assign(new Error('private'), { code: 'private_windows_file_unverified' }); };
+    await assert.rejects(readJsonGuarded(file, { fs, windowsOwner: owner }), { code: 'private_windows_file_unverified' });
+    assert.equal(quarantined, 1);
+    owner.read = async () => { throw Object.assign(new Error('missing'), { code: 'ENOENT' }); };
+    assert.equal(await readJsonGuarded(file, { fs, windowsOwner: owner }), null);
+    let deleted = 0; owner.delete = async target => { assert.ok(target.endsWith('item.json')); deleted++; };
+    const store = createRecordStore({ directory: 'fixture-records', fs, windowsOwner: owner });
+    await store.deleteRecord('item'); await store.drain(); assert.equal(deleted, 1);
+  `;
+  expect(() => execFileSync('node', ['--input-type=module', '-e', source], { stdio: 'pipe' })).not.toThrow();
+});
 
 const temporaryDirectory = async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-harness-atomic-'));

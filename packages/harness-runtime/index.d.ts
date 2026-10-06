@@ -1,3 +1,4 @@
+import type {WindowsPrivateFileOwner} from './lib/windows-private-files.js';
 export * from './lib/session-mutations.js';
 export * from './lib/session-revert-coordinator.js';
 
@@ -412,6 +413,7 @@ export interface DiagnosticJournal {
 }
 
 export function createDiagnosticJournal(options: {
+  windowsOwner?:WindowsPrivateFileOwner;
   directory: string;
   sanitizer: DiagnosticSanitizer;
   runtime?: string;

@@ -25,7 +25,7 @@ const metadataHosts = [...new Set([...metadataRoutes.keys()].map(route => route.
 // function_call_output pairs). `transportIdentity` is the host-attested route a
 // release profile's `transport` must equal (lib/opencode/duplicate-provider-route.js).
 export const DUPLICATE_WIRE_ROUTES = Object.freeze({
-  openai: Object.freeze({ provider: 'openai', host: 'chatgpt.com', path: '/backend-api/codex/responses',
+  openai: Object.freeze({ provider: 'openai', host: 'api.openai.com', path: '/v1/responses',
     transport: 'responses', auth: 'oauth', transportIdentity: 'openai-chatgpt-managed-responses-v1' }),
   // OpenCode's xAI loader selects @ai-sdk/xai Responses; its OAuth plugin keeps
   // the SDK default origin and injects the bearer token.

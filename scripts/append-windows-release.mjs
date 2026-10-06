@@ -15,6 +15,7 @@ const requiredSteps = ['Verify native host and prepare owned fixtures',
   'Compile architecture-specific supervisor', 'Qualify compiled supervision and file boundaries',
   'Verify native process identities and containing host jobs',
   'Verify native file identities and private filesystem ownership',
+  'Qualify original Node and Bun stdio compatibility',
   'Build the pinned libsql source and execute its ABI on this native host',
   'Compile controller and writer candidates and execute their boot refusals',
   'Execute the compiled native acceptance inventory',
@@ -37,6 +38,7 @@ export function verifyWindowsQualification(run, jobs, source) {
 export function verifyWindowsInstallerReceipt(receipt, { source, version, arch }) {
   if (receipt?.protocol !== 'devryan.windows-installer-qualification/1' || receipt.source !== source
     || receipt.version !== version || receipt.arch !== arch || receipt.status !== 'passed'
+    || receipt.acceptance !== true || !sha256.test(receipt.evidenceSha256 ?? '') || !sha256.test(receipt.sourceTreeSha256 ?? '')
     || receipt.name !== releaseAssetName(`win-${arch}`, version) || !sha256.test(receipt.sha256 ?? '')
     || !Number.isSafeInteger(receipt.size) || receipt.size <= 0 || receipt.size > 8 * 1024 ** 3) {
     fail('Frozen Windows installer receipt required');
@@ -60,14 +62,16 @@ export function verifyMacosPublication(run, jobs, source) {
   }
 }
 
-async function readReceipt(file) {
+async function readReceipt(file, { maxBytes = 4096, expectedSha256 } = {}) {
   const handle = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const identity = await handle.stat();
-    if (!identity.isFile() || identity.nlink !== 1 || identity.size > 4096) fail('Bounded packaging receipt required');
-    const bytes = Buffer.alloc(4097), { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
+    if (!identity.isFile() || identity.nlink !== 1 || identity.size > maxBytes) fail('Bounded packaging receipt required');
+    const bytes = Buffer.alloc(maxBytes + 1), { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
     if (bytesRead !== identity.size) fail('Packaging receipt changed');
-    return JSON.parse(bytes.subarray(0, bytesRead).toString('utf8'));
+    const body = bytes.subarray(0, bytesRead);
+    if (expectedSha256 && createHash('sha256').update(body).digest('hex') !== expectedSha256) fail('Windows qualification evidence digest changed');
+    return JSON.parse(body.toString('utf8'));
   } finally { await handle.close(); }
 }
 
@@ -108,8 +112,22 @@ export async function appendWindowsRelease({ source, version, directory, environ
     || macReceipt.platform !== 'macos-arm64' || macReceipt.name !== macName || !sha256.test(macReceipt.sha256 ?? '')
     || !Number.isSafeInteger(macReceipt.size) || macReceipt.size <= 0 || macReceipt.size > 8 * 1024 ** 3) fail('Frozen macOS packaging receipt required');
   const windowsReceipts = new Map();
-  for (const arch of ['x64', 'arm64']) windowsReceipts.set(arch, verifyWindowsInstallerReceipt(
-    await readReceipt(path.join(directory, `DevRyan-windows-installer-${arch}`, 'qualification.json')), { source, version, arch }));
+  for (const arch of ['x64', 'arm64']) {
+    const root = path.join(directory, `DevRyan-windows-installer-${arch}`);
+    const receipt = verifyWindowsInstallerReceipt(await readReceipt(path.join(root, 'qualification.json')), { source, version, arch });
+    const evidence = await readReceipt(path.join(root, 'evidence.json'), { maxBytes: 4 * 1024 ** 2, expectedSha256: receipt.evidenceSha256 });
+    const scenarios = ['installation', 'update-success', 'update-refusal', 'interruption', 'rollback'];
+    if (evidence.protocol !== 'devryan.windows-installer-evidence/1' || evidence.status !== 'passed' || evidence.acceptance !== true
+      || evidence.source !== source || evidence.version !== version || evidence.arch !== arch
+      || evidence.sourceTreeSha256 !== receipt.sourceTreeSha256
+      || evidence.installer?.name !== receipt.name || evidence.installer?.sha256 !== receipt.sha256 || evidence.installer?.size !== receipt.size
+      || !Array.isArray(evidence.prerequisites) || evidence.prerequisites.length === 0 || evidence.prerequisites.some(row => row.status !== 'passed')
+      || !Array.isArray(evidence.scenarios) || evidence.scenarios.length !== scenarios.length
+      || scenarios.some(id => evidence.scenarios.filter(row => row.id === id && row.status === 'passed').length !== 1)) {
+      fail('Complete Windows installer evidence required');
+    }
+    windowsReceipts.set(arch, receipt);
+  }
   const digests = expectedReleaseDigests('desktop', version, { RELEASE_SHA256_MACOS_ARM64: macReceipt.sha256,
     RELEASE_SHA256_WIN_X64: windowsReceipts.get('x64').sha256, RELEASE_SHA256_WIN_ARM64: windowsReceipts.get('arm64').sha256 });
   const release = await json(`/releases/tags/${tag}`);

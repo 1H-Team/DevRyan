@@ -278,7 +278,7 @@ pinned `opencode-gpt-imagegen@0.1.12` inside the `1.1.8` runtime image and uses
 the existing scoped `auth.json`. Subagents are denied the tool. The hidden
 legacy `devryan_bot image.generate` executor remains compatible with persisted
 1.2.0 calls. Egress remains limited to
-`auth.openai.com:443` and `chatgpt.com:443`.
+`auth.openai.com:443` and `api.openai.com:443`.
 
 ## Reasoning adapters and durable execution
 

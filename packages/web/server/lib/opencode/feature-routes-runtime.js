@@ -126,6 +126,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       openCodeClient,
       getNativeRuntimeOwner: routeDependencies.getNativeRuntimeOwner,
       getClaudeEnrollmentOwner: () => routeDependencies.getNativeRuntimeOwner?.()?.getClaudeEnrollmentOwner?.(),
+      getChatgptSiwcEnrollmentOwner: routeDependencies.getChatgptSiwcEnrollmentOwner,
       isProviderAdministrator: routeDependencies.isProviderAdministrator,
       crypto,
       clientReloadDelayMs,

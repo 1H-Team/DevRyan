@@ -23,6 +23,9 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createDesktopUpdater } from './desktop-updater.mjs';
 import { createMacDmgInstaller } from './desktop-updater-macos.mjs';
+import { createWindowsNsisInstaller } from './desktop-updater-windows.mjs';
+import { createWindowsUpdateOwner } from './windows-update-owner.mjs';
+import { verifyWindowsInstalledArtifacts } from './windows-installed-artifacts.mjs';
 import { verifyNativeRuntimeArtifacts } from '@openchamber/web/server/lib/opencode/runtime-host/native-artifacts.js';
 import { ElectronSshManager } from './ssh-manager.mjs';
 import { MacosSpeechManager } from './speech-manager.mjs';
@@ -123,8 +126,12 @@ const BOT_RUNTIME_RETRY_HOST = 'retry-bot-runtime';
 const BOT_RUNTIME_CONTINUE_HOST = 'continue-without-bots';
 const APP_USER_MODEL_ID = process.platform === 'win32' ? 'dev.devryan.desktop' : 'dev.openchamber.desktop';
 
-if (isDev && typeof process.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR === 'string') {
-  const devUserDataDirectory = path.resolve(process.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR);
+if (typeof process.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR === 'string') {
+  const configuredUserDataDirectory = process.env.OPENCHAMBER_ELECTRON_USER_DATA_DIR;
+  if (!path.isAbsolute(configuredUserDataDirectory) || /[\u0000-\u001f]/.test(configuredUserDataDirectory)) {
+    throw new Error('Electron user data directory must be an absolute path');
+  }
+  const devUserDataDirectory = path.resolve(configuredUserDataDirectory);
   fs.mkdirSync(devUserDataDirectory, { recursive: true });
   // A packaged development binary otherwise contends with the installed app's
   // single-instance lock and Chromium profile. Isolate both before acquiring
@@ -3809,12 +3816,31 @@ const startDesktopRuntime = () => {
 };
 
 const updateCacheDirectory = path.join(app.getPath('userData'), 'updates');
+const windowsUpdateRuntimeDirectory = path.join(process.resourcesPath, 'revert-runtime', `win32-${process.arch}`);
+const windowsUpdateLauncher = path.join(windowsUpdateRuntimeDirectory, `DevRyan-execution-win32-${process.arch}.exe`);
+const verifyWindowsUpdateLauncher = async () => {
+  const manifestPath = path.join(windowsUpdateRuntimeDirectory, 'native-bundle.json');
+  const stat = await fsp.lstat(manifestPath);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4 * 1024 * 1024) throw new Error('update_native_manifest_unverified');
+  const bytes = await fsp.readFile(manifestPath);
+  if (bytes.length !== stat.size) throw new Error('update_native_manifest_changed');
+  return verifyNativeRuntimeArtifacts({ manifestPath, manifestSha256: crypto.createHash('sha256').update(bytes).digest('hex'), launcher: windowsUpdateLauncher });
+};
+const windowsUpdateOwner = app.isPackaged && process.platform === 'win32' && ['x64', 'arm64'].includes(process.arch)
+  ? createWindowsUpdateOwner({ launcher: windowsUpdateLauncher, verifyLauncher: verifyWindowsUpdateLauncher }) : null;
+const verifyWindowsUpdateArtifacts = () => verifyWindowsInstalledArtifacts({ target: path.dirname(process.execPath), arch: process.arch,
+  owner: windowsUpdateOwner, verifyNativeArtifacts: verifyNativeRuntimeArtifacts });
 const desktopUpdater = createDesktopUpdater({ currentVersion: APP_VERSION, cacheDirectory: updateCacheDirectory,
+  windowsOwner: windowsUpdateOwner, verifyWindowsArtifacts: verifyWindowsUpdateArtifacts,
   onProgress: progress => emitToAllWindows('openchamber:update-progress', progress) });
 const desktopDmgInstaller = app.isPackaged && process.platform === 'darwin' && !isRuntimeServiceMode && !isRuntimeServiceControlProbe
   ? createMacDmgInstaller({ installedBundle: path.dirname(path.dirname(path.dirname(process.execPath))),
     currentVersion: APP_VERSION, cacheDirectory: updateCacheDirectory, verifyNativeArtifacts: verifyNativeRuntimeArtifacts,
-    trashItem: target => shell.trashItem(target), onRollbackRequested: () => rollbackCandidateUpdate() }) : null;
+    trashItem: target => shell.trashItem(target), onRollbackRequested: () => rollbackCandidateUpdate() })
+  : windowsUpdateOwner && !isRuntimeServiceMode && !isRuntimeServiceControlProbe
+    ? createWindowsNsisInstaller({ installedDirectory: path.dirname(process.execPath), currentVersion: APP_VERSION, cacheDirectory: updateCacheDirectory,
+      owner: windowsUpdateOwner, verifyNativeArtifacts: ({ target, arch }) => verifyWindowsInstalledArtifacts({ target, arch,
+        owner: windowsUpdateOwner, verifyNativeArtifacts: verifyNativeRuntimeArtifacts }), onRollbackRequested: () => rollbackCandidateUpdate() }) : null;
 const cleanupUpdateOwners = async () => {
   // A startup that has not published its handle still owns native resources.
   // Never acknowledge candidate shutdown while that construction is pending.

@@ -1,9 +1,10 @@
+import {isWindowsPrivateControlName} from '../../../../../harness-runtime/lib/windows-private-files.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { readBundleRecoveryEnvelope } from './bundle-owned-continuations.js';
 import { git } from '../../../../../harness-runtime/lib/session-changes-git.js';
 import { openChangeStore, changeKey } from '../../../../../harness-runtime/lib/session-changes-store.js';
-import { bundleFailure, containsPath, isRecord, readBundleJSON, saveBundleJSON, sha256, canonicalJSON } from './bundle-migration-inventory.js';
+import { bundleFailure, containsPath, isRecord, readBundleJSON as readBundleJSONOwned, saveBundleJSON as saveBundleJSONOwned, sha256, canonicalJSON } from './bundle-migration-inventory.js';
 
 const entries = async directory => fs.readdir(directory,{withFileTypes:true}).catch(error => {
   if (error.code === 'ENOENT') return []; throw error;
@@ -99,15 +100,26 @@ const relocateRecord = (record,maps,owned) => {
 };
 /** Reads/reconciles the existing stores; it never creates an execution ledger. */
 export async function inspectBundleHarness(webDataDirectory,{projectMap=[],relocate=false,checkpointID='checkpoint',sessionIDs,messageIDs,
-  sourceWebDataDirectory=webDataDirectory,preservedRefs,verifiedContinuations=[]}={}) {
+  sourceWebDataDirectory=webDataDirectory,preservedRefs,verifiedContinuations=[],windowsOwner,windowsLedgerOwner,gitRunner,nativeFiles,runWindowsInspection}={}) {
+  const windows=process.platform==='win32'||windowsOwner!==undefined||nativeFiles!==undefined;
+  const documentOptions={windowsOwner:windowsLedgerOwner??windowsOwner};
+  const readBundleJSON=nativeFiles?.readJSON??(file=>readBundleJSONOwned(file,documentOptions)),saveBundleJSON=nativeFiles?.saveJSON??((file,value)=>saveBundleJSONOwned(file,value,documentOptions));
+  const runGit=gitRunner?.git??git;
+  if(windows&&!nativeFiles&&typeof windowsOwner?.tree!=='function')throw bundleFailure('private_windows_storage_authority_unavailable');
   const collected = {sessions:new Set(),messages:new Set(),messageScopes:new Map()}, refs = [];
   const removed={sessions:new Set(),messages:new Set()}, verifiedFiles=new Set(),shellPins=[];
   const storage = path.join(webDataDirectory,'harness','session-mutations');
-  for (const entry of await entries(storage)) {
+  const storesToInspect=(await entries(storage)).filter(entry=>!windows||!isWindowsPrivateControlName(entry.name));
+  if(windows&&!gitRunner&&storesToInspect.length){
+   if(typeof runWindowsInspection!=='function')throw bundleFailure('private_windows_git_relocation_unavailable');
+   return runWindowsInspection({projectMap,relocate,checkpointID,sessionIDs,messageIDs,sourceWebDataDirectory,preservedRefs,verifiedContinuations});
+  }
+  for (const entry of storesToInspect) {
     if (!entry.isDirectory() || !/^[a-f0-9]{64}$/.test(entry.name)) throw bundleFailure('bundle_harness_layout_invalid');
+    if(windows&&relocate&&!nativeFiles)throw bundleFailure('private_windows_git_relocation_unavailable');
     const root = path.join(storage,entry.name), gitDirectory = path.join(root,'git');
-    const before = (await git(root,['--git-dir',gitDirectory,'for-each-ref','--format=%(refname) %(objectname)'])).toString().trim().split('\n').filter(Boolean);
-    const db = await openChangeStore(root,gitDirectory);
+    const before = (await runGit(root,['--git-dir',gitDirectory,'for-each-ref','--format=%(refname) %(objectname)'])).toString().trim().split('\n').filter(Boolean);
+    const db = await openChangeStore(root,gitDirectory,{gitRunner,...nativeFiles?{syncObjects:nativeFiles.deferObjectDurability}:{}});
     if (!db.exists || await db.get('materialization.json')) throw bundleFailure('bundle_materialization_pending');
     const meta = await db.get('meta.json');
     if (!meta || meta.version !== 1 || changeKey(meta.directory) !== entry.name) throw bundleFailure('bundle_harness_layout_invalid');
@@ -121,16 +133,16 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
       refs.push({directory:meta.directory,ref:name,oid});
       if (relocate && /^refs\/devryan\/(state|leases\/[a-f0-9-]{36})$/.test(name)) {
         if (!/^[a-zA-Z0-9_-]{1,128}$/.test(checkpointID)) throw bundleFailure('bundle_checkpoint_invalid');
-        await git(root,['--git-dir',gitDirectory,'update-ref',`refs/devryan/migration/${checkpointID}/${name.slice('refs/devryan/'.length)}`,oid]);
+        await runGit(root,['--git-dir',gitDirectory,'update-ref',`refs/devryan/migration/${checkpointID}/${name.slice('refs/devryan/'.length)}`,oid]);
       }
     }
     const stores = [{store:db,ref:'refs/devryan/state'}];
     if (relocate) for (const ref of before) {
       const name = ref.split(' ')[0];
-      if (/^refs\/devryan\/leases\/[a-f0-9-]{36}$/.test(name)) stores.push({store:await openChangeStore(root,gitDirectory,{ref:name}),ref:name});
+      if (/^refs\/devryan\/leases\/[a-f0-9-]{36}$/.test(name)) stores.push({store:await openChangeStore(root,gitDirectory,{ref:name,gitRunner,...nativeFiles?{syncObjects:nativeFiles.deferObjectDurability}:{}}),ref:name});
     }
     for (const {store,ref} of stores) {
-      const keys = (await git(root,['--git-dir',gitDirectory,'ls-tree','-r','--name-only',store.tree])).toString().trim().split('\n').filter(Boolean);
+      const keys = (await runGit(root,['--git-dir',gitDirectory,'ls-tree','-r','--name-only',store.tree])).toString().trim().split('\n').filter(Boolean);
       for (const key of keys) {
         const record = await store.get(key);
         if (key.startsWith('transactions/') && record.state === 'prepared') throw bundleFailure('migration_revert_pending');
@@ -160,7 +172,7 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
       if (targetRoot !== root) {
         try { await fs.lstat(targetRoot); throw bundleFailure('bundle_harness_relocation_conflict'); }
         catch (error) { if (error.code !== 'ENOENT') throw error; }
-        await fs.rename(root,targetRoot);
+        if(nativeFiles)await nativeFiles.renameDirectory(root,targetRoot);else if(windows)await windowsOwner.renameTree(root,targetRoot,await windowsOwner.tree(root));else await fs.rename(root,targetRoot);
       }
     }
   }
@@ -168,14 +180,15 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
     const directory=mapDirectory(expected.directory,projectMap), root=path.join(storage,changeKey(directory));
     const ref=/^refs\/devryan\/(state|leases\/[a-f0-9-]{36})$/.test(expected.ref)
       ? `refs/devryan/migration/${preservedRefs.checkpointID}/${expected.ref.slice('refs/devryan/'.length)}`:expected.ref;
-    const oid=(await git(root,['--git-dir',path.join(root,'git'),'rev-parse','--verify',ref])).toString().trim();
+    const oid=(await runGit(root,['--git-dir',path.join(root,'git'),'rev-parse','--verify',ref])).toString().trim();
     if (oid!==expected.oid) throw bundleFailure('bundle_harness_reference_lost');
   }
   for (const directory of ['provider-recovery','context']) for (const entry of await entries(path.join(webDataDirectory,'harness',directory))) {
+    if(windows&&isWindowsPrivateControlName(entry.name))continue;
     if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
     const file = path.join(webDataDirectory,'harness',directory,entry.name);
     const exception=!relocate && directory==='provider-recovery' ? verifiedContinuations.filter(proof=>proof.file===file) : [];
-    const loaded=exception.length ? await readBundleRecoveryEnvelope(file) : undefined;
+    const loaded=exception.length ? await readBundleRecoveryEnvelope(file,{windowsOwner:nativeFiles?{read:async file=>({bytes:await nativeFiles.readEnvelope(file)})}:windowsOwner}) : undefined;
     if (exception.length) {
       if (exception.some(proof=>loaded.sha256!==proof.fileSha256) || verifiedFiles.has(file)) throw bundleFailure('bundle_message_reference_lost');
       verifiedFiles.add(file);
@@ -191,11 +204,11 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
         const sourceScope = projectMap.find(row => entry.name === `task_${sha256(`${record.sessionID}:${row.sourceDirectory}`)}.json`);
         if (!sourceScope) throw bundleFailure('bundle_context_scope_unknown');
         const targetFile = path.join(path.dirname(file),`task_${sha256(`${record.sessionID}:${sourceScope.targetDirectory}`)}.json`);
-        await saveBundleJSON(targetFile,next); if (targetFile !== file) await fs.rm(file);
+        const previous=windows&&!nativeFiles?await windowsOwner.read(file):undefined;await saveBundleJSON(targetFile,next); if (targetFile !== file){if(nativeFiles)await nativeFiles.deleteFile(file);else if(windows)await windowsOwner.delete(file,{expected:previous});else await fs.rm(file);}
       } else await saveBundleJSON(file,next);
     }
   }
-  for(const pin of shellPins){try{const current=await openChangeStore(pin.root,pin.gitDirectory,{ref:pin.ref}),record=await current.get(pin.key),session=await current.get(pin.sessionKey);
+  for(const pin of shellPins){try{const current=await openChangeStore(pin.root,pin.gitDirectory,{ref:pin.ref,gitRunner,...nativeFiles?{syncObjects:nativeFiles.deferObjectDurability}:{}}),record=await current.get(pin.key),session=await current.get(pin.sessionKey);
     if(!record||!session||sha256(canonicalJSON(record))!==pin.recordHash||sha256(canonicalJSON(session))!==pin.sessionHash
       ||sha256(canonicalJSON(await readBundleJSON(pin.file)))!==pin.receiptHash)throw bundleFailure('migration_pending_input_unsupported');
   }catch{throw bundleFailure('migration_pending_input_unsupported');}}
@@ -211,6 +224,7 @@ export async function inspectBundleHarness(webDataDirectory,{projectMap=[],reloc
     if (relocate) await saveBundleJSON(ledgerFile,{...ledger,tasks:ledger.tasks.map(task => relocateRecord(task,projectMap))});
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   for (const entry of await entries(path.join(webDataDirectory,'harness','evidence','records'))) {
+    if(windows&&isWindowsPrivateControlName(entry.name))continue;
     if (!entry.isFile() || !entry.name.endsWith('.json')) throw bundleFailure('bundle_evidence_layout_invalid');
     const file=path.join(webDataDirectory,'harness','evidence','records',entry.name),record=await readBundleJSON(file);
     if (!isRecord(record) || !['complete','gap'].includes(record.status)) throw bundleFailure('bundle_evidence_unsettled');

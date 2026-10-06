@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { verifySessionExecutionLauncher } from '@openchamber/harness-runtime/lib/session-execution.js';
 import { REVIEWED_AST_ASSET_SHA256 } from './reviewed-package-transforms.js';
 import { REVIEWED_CLAUDE_ASSETS, REVIEWED_CLAUDE_CREDENTIALS } from './reviewed-claude-transform.js';
+import {nativeArtifactInventoryLimit,validWindowsArtifactPath,verifyWindowsGitInventory,verifyWindowsGitMetadata} from './reviewed-windows-git.js';
 
 const exec = promisify(execFile), digestPattern = /^[a-f0-9]{64}$/;
 const fail = () => Object.assign(new Error('native_runtime_artifacts_unverified'), { code: 'native_runtime_artifacts_unverified', status: 503 });
@@ -34,8 +35,10 @@ export async function verifyNativeRuntimeArtifacts({ manifestPath, manifestSha25
     || manifest.compiledContracts !== undefined && (!Array.isArray(manifest.compiledContracts) || manifest.compiledContracts.length > 32
       || new Set(manifest.compiledContracts).size !== manifest.compiledContracts.length || manifest.compiledContracts.some(value => typeof value !== 'string' || !/^[a-zA-Z0-9._/-]{1,128}$/.test(value)))
     || !Array.isArray(manifest.files)
-    || manifest.files.length < 2 || manifest.files.length > 256) throw fail();
+    || manifest.files.length < 2 || manifest.files.length > nativeArtifactInventoryLimit(manifest,process.platform,process.arch)) throw fail();
+  if(process.platform==='win32')verifyWindowsGitMetadata(manifest.windowsGit,process.arch);
   const directory = await fs.realpath(path.dirname(manifestPath)), files = new Map();
+  const foldedPaths=new Set();
   let controller, writer, reviewedAst, reviewedConfiguration, reviewedClaudeCredentials;
   const reviewedClaude={};
   for (const file of manifest.files) {
@@ -44,9 +47,13 @@ export async function verifyNativeRuntimeArtifacts({ manifestPath, manifestSha25
       || /[\u0000-\u001f]/.test(file.path) || files.has(file.path) || !digestPattern.test(file.sha256)
       || !Number.isSafeInteger(file.size) || file.size < 0 || !Number.isInteger(file.mode) || file.mode < 0 || file.mode > 0o777
       || !['unsigned','adhoc','release'].includes(file.signing?.mode)) throw fail();
+    if(process.platform==='win32'){
+      const folded=file.path.toLowerCase();
+      if(!validWindowsArtifactPath(file.path)||foldedPaths.has(folded))throw fail();foldedPaths.add(folded);
+    }
     const target = path.join(directory, file.path), actual = await fs.lstat(target);
     if (!actual.isFile() || await fs.realpath(target) !== target || actual.size !== file.size
-      || (actual.mode & 0o777) !== file.mode || await hashFile(target) !== file.sha256) throw fail();
+      || process.platform!=='win32' && (actual.mode & 0o777) !== file.mode || await hashFile(target) !== file.sha256) throw fail();
     files.set(file.path, target);
     if (file.path === 'DevRyan-native-configuration.mjs') {
       if (reviewedConfiguration || file.role !== 'asset' || file.mode !== 0o644) throw fail();
@@ -89,6 +96,8 @@ export async function verifyNativeRuntimeArtifacts({ manifestPath, manifestSha25
   if(manifest.inputs.reviewedPlugins.some(origin=>origin.id==='devryan.provider-compat')&&(!reviewedClaude.claude||!reviewedClaude.libsql))throw fail();
   if(Object.keys(reviewedClaude).length===1)throw fail();
   if(manifest.compiledContracts?.some(value=>['devryan.bundle.credentials/1','devryan.bundle.credentials/2','devryan.claude-lifecycle/1'].includes(value)) && reviewedClaude.claude && !reviewedClaudeCredentials)throw fail();
+  const reviewedGit=process.platform==='win32'?await verifyWindowsGitInventory({manifest,directory,arch:process.arch}):undefined;
   return Object.freeze({ manifest, manifestPath, manifestSha256, directory, controller, writer, launcher, reviewedAst, reviewedConfiguration, reviewedClaudeCredentials,
+    ...(reviewedGit?{reviewedGit}:{}),
     ...(reviewedClaude.claude?{reviewedClaude:Object.freeze(reviewedClaude)}:{}) });
 }

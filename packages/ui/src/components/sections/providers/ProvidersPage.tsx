@@ -53,6 +53,8 @@ import { useUsageOnlySelectionAvailable } from './useProviderUsage';
 import { useI18n } from '@/lib/i18n';
 import { useAuthPrincipal } from '@/lib/authSession';
 import { ClaudeDedicatedEnrollment } from './ClaudeDedicatedEnrollment';
+import { ChatgptSiwcEnrollment } from './ChatgptSiwcEnrollment';
+import { getProviderModelUnavailableMessage } from '@/lib/providers/modelAvailability';
 import { BundledRuntimeUpdate } from './BundledRuntimeUpdate';
 import {
   getClaudePromptMode,
@@ -245,6 +247,7 @@ const ProvidersPageContent: React.FC = () => {
   const [authLoading, setAuthLoading] = React.useState(false);
   const [apiKeyInputs, setApiKeyInputs] = React.useState<Record<string, string>>({});
   const [authBusyKey, setAuthBusyKey] = React.useState<string | null>(null);
+  const [openAiAuthRevision, setOpenAiAuthRevision] = React.useState(0);
   const [modelQuery, setModelQuery] = React.useState('');
   const pendingConnections = useProviderConnectionStore((state) => state.pending);
   const [pendingOAuth, setPendingOAuth] = React.useState<PendingProviderOAuth | null>(null);
@@ -692,6 +695,7 @@ const ProvidersPageContent: React.FC = () => {
         throw new Error(message);
       }
 
+      if (providerId === 'openai') setOpenAiAuthRevision(value => value + 1);
       toast.success(t('settings.providers.page.toast.apiKeySaved'));
       setApiKeyInputs((prev) => ({ ...prev, [providerId]: '' }));
       recordConfigMutationResponse(payload);
@@ -967,6 +971,7 @@ const ProvidersPageContent: React.FC = () => {
 
     try {
       const payload = await disconnectProvider(providerId, currentDirectory);
+      if (providerId === 'openai') setOpenAiAuthRevision(value => value + 1);
       const applyStatus = recordConfigMutationResponse(payload);
       markDisconnectRequested(providerId, payload);
       useProviderConnectionStore.getState().clear(providerId);
@@ -1042,6 +1047,20 @@ const ProvidersPageContent: React.FC = () => {
       />
     </>;
   };
+
+  const renderChatgptSiwcAuth = () => (
+    <ChatgptSiwcEnrollment
+      refreshRevision={openAiAuthRevision}
+      administrator={principal.role === 'admin' && principal.scope !== 'tunnel-bot'}
+      principalID={principal.id}
+      directory={currentDirectory}
+      onSelected={async () => {
+        const result = await requestPostAuthConfigReload();
+        if (!result.ok) throw new Error('reload');
+        await loadProviders({ directory: null });
+      }}
+    />
+  );
 
   const renderClaudeCompatibilityMode = () => (
     <div className="flex min-w-0 flex-col gap-2 py-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
@@ -1273,6 +1292,8 @@ const ProvidersPageContent: React.FC = () => {
                       {renderClaudeCompatibilityMode()}
                     </>
                   )}
+
+                  {candidateProviderId === 'openai' && renderChatgptSiwcAuth()}
 
                   {activeCursorAcpProviderId === candidateProviderId && (
                     <div className="flex items-center justify-between gap-3 py-1.5">
@@ -1525,6 +1546,8 @@ const ProvidersPageContent: React.FC = () => {
                   renderClaudeCodeAuth()
                 )}
 
+                {selectedProvider.id === 'openai' && renderChatgptSiwcAuth()}
+
                 {activeCursorAcpProviderId === selectedProvider.id && (
                   <div className="flex items-center justify-between gap-3 py-1.5">
                     <div>
@@ -1761,6 +1784,7 @@ const ProvidersPageContent: React.FC = () => {
                 {filteredModels.map((model) => {
                   const modelId = typeof model?.id === 'string' ? model.id : '';
                   const modelName = typeof model?.name === 'string' ? model.name : modelId;
+                  const unavailableMessage = getProviderModelUnavailableMessage(model);
                   const metadata = modelId ? getModelMetadata(selectedProvider.id, modelId) as ModelMetadata | undefined : undefined;
                   const hiddenRefs = getHiddenModelRefsForProviderModel(selectedProvider.id, model);
                   const isHidden = isHiddenProviderModelRef(hiddenModels, selectedProvider.id, model);
@@ -1810,6 +1834,7 @@ const ProvidersPageContent: React.FC = () => {
                         </button>
                       </div>
                       </div>
+                      {unavailableMessage ? <p className="typography-meta text-muted-foreground">{unavailableMessage}</p> : null}
                     </div>
                   );
                 })}

@@ -13,10 +13,14 @@ const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}
 
 /** Publish only an explicitly selected enrollment into the existing Meridian
  * files. Raw source bytes stay private and unrelated saved fields survive. */
-export function createNativeClaudeProfilePublication({home,controlRoot,writeAtomic=writeFileAtomic}){
+export function createNativeClaudeProfilePublication({home,controlRoot,writeAtomic=writeFileAtomic,windowsOwner,windowsLauncher}){
  const directory=path.join(home,'.config','meridian');
  const files={profiles:path.join(directory,'profiles.json'),settings:path.join(directory,'settings.json')};
  const guard=async(file,create=false)=>{
+  if(process.platform==='win32'){
+   if(typeof windowsOwner?.ensureDirectory!=='function')throw fail('private_windows_publication_authority_unavailable');
+   if(create)await windowsOwner.ensureDirectory(path.dirname(file));return;
+  }
   if(!path.isAbsolute(home)||path.resolve(home)!==home||await fs.realpath(home)!==home)throw fail('native_claude_enrollment_configuration_invalid');
   let current=home;
   for(const part of path.relative(home,file).split(path.sep)){
@@ -30,7 +34,13 @@ export function createNativeClaudeProfilePublication({home,controlRoot,writeAtom
     ||(current===file?!stat.isFile():!stat.isDirectory()))throw fail('native_claude_enrollment_configuration_invalid');
   }
  };
+ const observed=new Map();
  const read=async file=>{
+  if(process.platform==='win32'){
+   if(typeof windowsOwner?.read!=='function')throw fail('private_windows_read_authority_unavailable');
+   try{const result=await windowsOwner.read(file);if(result.bytes.length>1024*1024)throw fail('native_claude_enrollment_configuration_invalid');observed.set(file,result);return result.bytes;}
+   catch(error){if(error.code==='ENOENT'){observed.set(file,null);return null;}throw error;}
+  }
   await guard(file);let handle;
   try{
    handle=await fs.open(file,constants.O_RDONLY|constants.O_NOFOLLOW);const stat=await handle.stat();
@@ -47,6 +57,14 @@ export function createNativeClaudeProfilePublication({home,controlRoot,writeAtom
   if(!Array.isArray(rows)||rows.length>64||rows.some(row=>!record(row)||typeof row.id!=='string'||!row.id)
    ||new Set(rows.map(row=>row.id)).size!==rows.length||!record(value))throw fail('native_claude_enrollment_configuration_invalid');
   return {profiles,settings,rows,value};
+ };
+ const write=async(file,bytes)=>{
+  if(process.platform==='win32'){await windowsOwner.write(file,bytes,{expected:observed.get(file)});observed.delete(file);return;}
+  await writeAtomic(file,bytes);
+ };
+ const remove=async file=>{
+  if(process.platform==='win32'){await windowsOwner.delete(file,{expected:observed.get(file)});observed.delete(file);return;}
+  await fs.unlink(file);
  };
  const baseline=value=>({profilesSha256:digest(value.profiles),settingsSha256:digest(value.settings),selectedProfileID:typeof value.value.activeProfile==='string'?value.value.activeProfile:null});
  const matches=(value,expected)=>JSON.stringify(baseline(value))===JSON.stringify(expected);
@@ -69,12 +87,12 @@ export function createNativeClaudeProfilePublication({home,controlRoot,writeAtom
     const profiles=Buffer.from(JSON.stringify(prior?before.rows:[...before.rows,profile],null,2)+'\n');
     const settings=Buffer.from(JSON.stringify({...before.value,activeProfile:profile.id},null,2)+'\n');
     await recheck();if(!matches(await load(),expected))throw fail('native_claude_enrollment_configuration_changed');
-    await writeAtomic(files.profiles,profiles);
+    await write(files.profiles,profiles);
     try{
      await recheck();
      const current=await load();
      if(digest(current.profiles)!==digest(profiles)||digest(current.settings)!==digest(before.settings))throw fail('native_claude_enrollment_configuration_changed');
-     await writeAtomic(files.settings,settings);
+     await write(files.settings,settings);
      const after=await load();
      if(digest(after.profiles)!==digest(profiles)||digest(after.settings)!==digest(settings))throw fail('native_claude_enrollment_selection_uncertain');
      await recheck();
@@ -83,12 +101,12 @@ export function createNativeClaudeProfilePublication({home,controlRoot,writeAtom
      // committed settings write remains visible for explicit recovery.
      const current=await load();
      if(digest(current.profiles)===digest(profiles)&&digest(current.settings)===digest(before.settings)){
-      if(before.profiles===null)await fs.unlink(files.profiles);else await writeAtomic(files.profiles,before.profiles);
+      if(before.profiles===null)await remove(files.profiles);else await write(files.profiles,before.profiles);
       throw cause;
      }
      throw fail('native_claude_enrollment_selection_uncertain');
     }
-   });
+   },{windowsLauncher});
   },
  };
 }

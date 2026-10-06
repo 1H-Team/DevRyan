@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { writeFileAtomic } from '../harness-runtime/lib/atomic-file.js';
 import { RELEASE_REPOSITORY, RELEASE_VERSION_PATTERN, releaseAssetName, releaseAssetDownloadUrl } from './release-assets.mjs';
+import { downloadWindowsOwnedUpdate } from './desktop-download-windows.mjs';
 
 const metadataUrl = `https://api.github.com/repos/${RELEASE_REPOSITORY}/releases/latest`;
 const fail = (code, message) => Object.assign(new Error(message), { code });
@@ -74,7 +75,7 @@ export async function verifyDownloadedUpdate(file, update) {
 }
 
 export function createDesktopUpdater({ currentVersion, cacheDirectory, platform = process.platform, arch = process.arch,
-  fetchImpl = fetch, onProgress = () => {}, idleTimeoutMs = 30_000 }) {
+  fetchImpl = fetch, onProgress = () => {}, idleTimeoutMs = 30_000, windowsOwner, verifyWindowsArtifacts }) {
   versionParts(currentVersion);
   if (!path.isAbsolute(cacheDirectory ?? '')) throw new TypeError('An absolute update cache directory is required');
   let pending = null, downloaded = null, operation = null, downloadAbort = null;
@@ -118,6 +119,16 @@ export function createDesktopUpdater({ currentVersion, cacheDirectory, platform 
   });
   const download = () => exclusive(async () => {
     if (!pending) throw fail('update_not_pending', 'No verified update is pending');
+    if (platform === 'win32') {
+      if (!windowsOwner || typeof verifyWindowsArtifacts !== 'function') throw fail('update_native_owner_unavailable', 'Windows installer ownership is unavailable');
+      await verifyWindowsArtifacts();
+      const update = pending; downloaded = null; downloadAbort = new AbortController();
+      try {
+        const file = await downloadWindowsOwnedUpdate({ owner: windowsOwner, cacheDirectory, update, fetchImpl,
+          controller: downloadAbort, emit, idleTimeoutMs });
+        downloaded = { file, update }; return null;
+      } finally { downloadAbort?.abort(); downloadAbort = null; }
+    }
     const update = pending, directory = await directoryFor(update);
     const destination = path.join(directory, update.name), partial = `${destination}.partial`, identityPath = `${partial}.json`;
     const identity = JSON.stringify({ url: update.url, size: update.size, sha256: update.sha256 });
@@ -185,6 +196,12 @@ export function createDesktopUpdater({ currentVersion, cacheDirectory, platform 
   return { check, download, isDownloaded: () => Boolean(downloaded),
     getDownloaded: async () => {
       if (!downloaded) throw fail('update_not_downloaded', 'Download the verified installer first');
+      if (platform === 'win32') {
+        await verifyWindowsArtifacts();
+        const verified = await windowsOwner.file(downloaded.file);
+        if (verified.size !== downloaded.update.size || verified.token.split(':')[2] !== downloaded.update.sha256) throw fail('update_integrity_failed', 'Installer SHA-256 verification failed');
+        return { ...downloaded };
+      }
       await verifyDownloadedUpdate(downloaded.file, downloaded.update);return { ...downloaded };
     }, cancelDownload: () => downloadAbort?.abort(fail('update_download_interrupted', 'Installer download was interrupted; retry to resume')) };
 }

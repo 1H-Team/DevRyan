@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDiagnosticJournal, createDiagnosticSanitizer } from '@openchamber/harness-runtime';
 import { compareAndSwapOpenAiAuth, createOpenAiOAuthCoordinator } from './openai-oauth-coordinator.js';
@@ -10,7 +11,24 @@ import plugin from '../../default-config/plugins/devryan-openai-oauth.mjs';
 const cleanups = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
 const clock = Date.now();
-const originalAuth = () => ({ type: 'oauth', accountId: 'account-a', access: 'old-access', refresh: 'old-refresh', expires: clock - 1 });
+const originalAuth = () => ({
+  type: 'oauth',
+  accountId: 'account-a',
+  access: 'old-access',
+  refresh: 'old-refresh',
+  expires: clock - 1,
+  methodID: 'chatgpt-siwc',
+  clientId: 'oaiapp_fixture_client',
+  scopes: ['openid', 'profile', 'email', 'offline_access', 'resource.invoke', 'chatgpt.tokens.use.direct'],
+  metadata: {
+    accountID: 'account-a',
+    clientId: 'oaiapp_fixture_client',
+    scopes: ['openid', 'profile', 'email', 'offline_access', 'resource.invoke', 'chatgpt.tokens.use.direct'],
+    subject: 'account-a',
+    extAgentHostId: 'urn:uuid:00000000-0000-4000-8000-000000000001',
+    planUsage: true,
+  },
+});
 const refreshed = () => Response.json({ access_token: 'new-access', refresh_token: 'new-refresh', expires_in: 3600 });
 function fixture(options = {}) {
   let record = originalAuth();
@@ -27,12 +45,48 @@ function fixture(options = {}) {
   return { coordinator, fetchImpl, write, diagnostic, get: () => record, set: (next) => { record = next; } };
 }
 
+describe('SIWC refreshed grant and registration binding', () => {
+  it('does not release a different issued registration for the same subject', async () => {
+    const f = fixture(); f.set({ ...originalAuth(), expires: clock + 3600000 });
+    const expectedRegistrationKey = f.coordinator.getBinding().registrationKey;
+    f.set({ ...f.get(), clientId: 'other-issued-client', metadata: { ...f.get().metadata, clientId: 'other-issued-client' } });
+    await expect(f.coordinator.access({ expectedAccountId: 'account-a', expectedRegistrationKey }))
+      .rejects.toMatchObject({ code: 'bot_opencode_provider_authentication' });
+    expect(f.fetchImpl).not.toHaveBeenCalled();
+  });
+  it('persists an explicitly narrowed refresh grant and stops plan usage', async () => {
+    const fetchImpl = vi.fn(async () => Response.json({ access_token: 'new-access', refresh_token: 'new-refresh', expires_in: 3600, scope: 'openid' }));
+    const f = fixture({ fetchImpl });
+    await expect(f.coordinator.access()).rejects.toMatchObject({ code: 'bot_opencode_provider_authentication' });
+    expect(f.get().metadata).toMatchObject({ scopes: ['openid'], planUsage: false });
+    expect(f.write).toHaveBeenCalledOnce();
+  });
+  it.each(['valid', 'issuer', 'audience', 'subject', 'signature'])('verifies returned refresh ID token %s before writing credentials', async (kind) => {
+    const keys = await generateKeyPair('RS256'), jwk = await exportJWK(keys.publicKey);
+    const privateKey = kind === 'signature' ? (await generateKeyPair('RS256')).privateKey : keys.privateKey;
+    const idToken = await new SignJWT({ email: 'fixture@example.test' }).setProtectedHeader({ alg: 'RS256' })
+      .setIssuer(kind === 'issuer' ? 'https://fixture.invalid' : 'https://auth.openai.com')
+      .setAudience(kind === 'audience' ? 'foreign-client' : 'oaiapp_fixture_client')
+      .setSubject(kind === 'subject' ? 'foreign-subject' : 'account-a').setIssuedAt()
+      .setExpirationTime(Math.floor(Date.now() / 1000) + 3600).sign(privateKey);
+    const f = fixture({ jwksImpl: createLocalJWKSet({ keys: [jwk] }),
+      fetchImpl: async () => Response.json({ access_token: 'new-access', refresh_token: 'new-refresh', expires_in: 3600, id_token: idToken }) });
+    if (kind === 'valid') {
+      expect(await f.coordinator.access()).toMatchObject({ accessToken: 'new-access' });
+      expect(f.get().metadata.idToken).toBe(idToken);
+    } else {
+      await expect(f.coordinator.access()).rejects.toBeInstanceOf(Error);
+      expect(f.write).not.toHaveBeenCalled(); expect(f.get().refresh).toBe('old-refresh');
+    }
+  });
+});
+
 describe('explicit native async storage', () => {
   it('persists crash ambiguity by token hash while allowing a genuinely new login token', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'native-oauth-crash-'));
     cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
     const stateFile = path.join(dir, 'state.json');
-    let record = { ...originalAuth(), credentialID: 'native-a', methodID: 'chatgpt-browser' };
+    let record = { ...originalAuth(), credentialID: 'native-a', methodID: 'chatgpt-siwc' };
     let startedResolve, finish;
     const started = new Promise(resolve => { startedResolve = resolve; });
     const pending = new Promise(resolve => { finish = resolve; });
@@ -62,7 +116,7 @@ describe('explicit native async storage', () => {
     const started = new Promise(resolve => { entered = resolve; });
     const owned = legacy.coordinator.withAuthMutation(async () => { entered(); await waiting; });
     await started;
-    let record = { ...originalAuth(), credentialID: 'native-a', methodID: 'chatgpt-browser' };
+    let record = { ...originalAuth(), credentialID: 'native-a', methodID: 'chatgpt-siwc' };
     const fetchImpl = vi.fn(async () => refreshed());
     const native = createOpenAiOAuthCoordinator({ now: () => clock, readAuth: () => null, fetchImpl,
       withMutationQueue: legacy.coordinator.withAuthMutation, asyncStorage: {
@@ -93,7 +147,7 @@ describe('explicit native async storage', () => {
     expect(readAuth).not.toHaveBeenCalled(); expect(nativeRead).not.toHaveBeenCalled();
   });
   it('does not unblock ambiguous refresh by changing credential ID with the same token', async () => {
-    let record = { ...originalAuth(), credentialID: 'native-a', methodID: 'chatgpt-browser' };
+    let record = { ...originalAuth(), credentialID: 'native-a', methodID: 'chatgpt-siwc' };
     const fetchImpl = vi.fn(async () => { throw new Error('fixture connection lost after rotation'); });
     const coordinator = createOpenAiOAuthCoordinator({ now: () => clock, fetchImpl,
       readAuth: () => ({ type: 'api', key: 'legacy-fixture' }),
@@ -107,7 +161,7 @@ describe('explicit native async storage', () => {
     expect(await coordinator.getAuthStateAsync()).toBe('reauth_required');
   });
   it('does not replace a concurrently switched selected credential on refresh completion', async () => {
-    let record = { ...originalAuth(), credentialID: 'native-a', methodID: 'chatgpt-browser' };
+    let record = { ...originalAuth(), credentialID: 'native-a', methodID: 'chatgpt-siwc' };
     let release;
     const pending = new Promise(resolve => { release = resolve; });
     let startedResolve;
@@ -121,7 +175,7 @@ describe('explicit native async storage', () => {
     coordinator.markReady();
     const access = coordinator.access({ expectedAccountId: 'account-a' });
     await started;
-    record = { ...originalAuth(), accountId: 'account-b', credentialID: 'native-b', methodID: 'chatgpt-browser', refresh: 'different-refresh' };
+    record = { ...originalAuth(), accountId: 'account-b', credentialID: 'native-b', methodID: 'chatgpt-siwc', refresh: 'different-refresh' };
     release();
     await expect(access).rejects.toMatchObject({ code: 'bot_opencode_provider_authentication' });
     expect(cas).not.toHaveBeenCalled();
@@ -305,22 +359,19 @@ describe('managed OpenAI OAuth owner', () => {
     await expect(f.coordinator.access()).rejects.toMatchObject({ code: 'bot_opencode_provider_authentication' });
   });
 
-  it('updates access-only image credentials in place and rechecks each invocation', async () => {
+  it('refuses SIWC image generation before access or scoped credential mutation', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-oauth-'));
     cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
     const scopedAuthFile = path.join(dir, 'auth.json');
     fs.writeFileSync(scopedAuthFile, '{}', { mode: 0o600 });
     const inode = fs.statSync(scopedAuthFile).ino;
-    let accessToken = 'image-access-1';
-    const hooks = await plugin({}, { environment: { DEVRYAN_BOT_GATEWAY_URL: 'http://egress:43121', DEVRYAN_BOT_RUNTIME_TOKEN: 'a'.repeat(43) },
-      scopedAuthFile, fetchImpl: async (_url, init) => JSON.parse(init.body).operation === 'ready'
-        ? Response.json({ protocol: 1, oauth: true })
-        : Response.json({ accessToken, expiresAt: Date.now() + 3600000, accountId: 'account-a', generation: 'safe-generation' }) });
-    await hooks['tool.execute.before']({ tool: 'devryan_image' });
-    accessToken = 'image-access-2';
-    await hooks['tool.execute.before']({ tool: 'devryan_image' });
+    const fetchImpl = vi.fn(async () => Response.json({ protocol: 1, oauth: true }));
+    const hooks = await plugin({}, { environment: { DEVRYAN_BOT_GATEWAY_URL: 'http://egress:43121', DEVRYAN_BOT_RUNTIME_TOKEN: 'a'.repeat(43) }, scopedAuthFile, fetchImpl });
+    for (const tool of ['gpt_imagegen', 'devryan_image'])
+      await expect(hooks['tool.execute.before']({ tool })).rejects.toMatchObject({ code: 'chatgpt_siwc_tool_unsupported' });
+    expect(fetchImpl).toHaveBeenCalledTimes(1); // Readiness only.
     expect(fs.statSync(scopedAuthFile).ino).toBe(inode);
-    expect(JSON.parse(fs.readFileSync(scopedAuthFile, 'utf8')).openai).toMatchObject({ access: accessToken, refresh: '' });
+    expect(fs.readFileSync(scopedAuthFile, 'utf8')).toBe('{}');
   });
 
   it('persists rejected generation across a service restart', async () => {
@@ -360,7 +411,7 @@ describe('managed OpenAI OAuth owner', () => {
     const failed = await plugin({}, { environment, fetchImpl: async () => { throw new Error('offline'); } });
     const config = {};
     await failed.config(config);
-    await expect(config.provider.openai.options.fetch('https://api.openai.com/v1/responses')).rejects.toBeDefined();
+    await expect(config.provider.openai.options.fetch('https://api.openai.com/v1/responses', {method:'POST', body:'{"input":[]}'})).rejects.toBeDefined();
     const api = await plugin({}, { environment, fetchImpl: async () => Response.json({ protocol: 1, oauth: false }) });
     const apiConfig = { provider: { openai: { options: { apiKey: 'fixture-key' } } } };
     await api.config(apiConfig);
@@ -381,7 +432,7 @@ describe('managed OpenAI OAuth owner', () => {
     const config = {};
     await hooks.config(config);
     expect(handshakeSettled).toBe(true); // the hook waited only for the bounded handshake
-    await expect(config.provider.openai.options.fetch('https://api.openai.com/v1/responses')).rejects.toBeDefined();
+    await expect(config.provider.openai.options.fetch('https://api.openai.com/v1/responses', {method:'POST', body:'{"input":[]}'})).rejects.toBeDefined();
   });
 
   it('does not dispatch or replay after cancellation while waiting for access', async () => {
@@ -391,11 +442,11 @@ describe('managed OpenAI OAuth owner', () => {
       controller.abort();
       return { accessToken: 'cancelled-access', accountId: 'account-a' };
     }, providerFetch);
-    await expect(transport('https://api.openai.com/v1/responses', { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(transport('https://api.openai.com/v1/responses', { method:'POST',body:'{"input":[]}', signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
     expect(providerFetch).not.toHaveBeenCalled();
   });
 
-  it('protects the private bridge and preserves login hooks, request body and SSE', async () => {
+  it('protects the private bridge and preserves login hooks and applies the SIWC physical policy to SSE', async () => {
     const f = fixture();
     const bridge = createOpenAiOAuthBridge({ coordinator: f.coordinator });
     cleanups.push(() => bridge.close());
@@ -408,16 +459,17 @@ describe('managed OpenAI OAuth owner', () => {
     await hooks.config(config);
     expect(config.provider.openai.options.timeout).toBe(123);
     const access = plugin.testing.createAccessClient(environment);
-    const providerFetch = vi.fn(async () => new Response('data: fixture\n\n', { headers: { 'content-type': 'text/event-stream' } }));
+    const providerFetch = vi.fn(async () => new Response('data: {"type":"response.completed"}\n\n', { headers: { 'content-type': 'text/event-stream' } }));
     const transport = plugin.testing.createTransport(access, providerFetch);
     const signal = new AbortController().signal;
-    const response = await transport('https://api.openai.com/v1/responses', { method: 'POST', body: '{"model":"gpt-5.6-luna"}', signal, headers: { 'session-id': 'ses-fixture' } });
-    expect(await response.text()).toBe('data: fixture\n\n');
-    expect(providerFetch.mock.calls[0][0].href).toBe('https://chatgpt.com/backend-api/codex/responses');
+    const response = await transport('https://api.openai.com/v1/responses', { method: 'POST', body: '{"model":"gpt-5.6-luna","input":[]}', signal, headers: { 'session-id': 'ses-fixture' } });
+    expect(await response.text()).toBe('data: {"type":"response.completed"}\n\n');
+    expect(providerFetch.mock.calls[0][0].href).toBe('https://api.openai.com/v1/responses');
     const request = providerFetch.mock.calls[0][1];
     expect(request.headers.get('authorization')).toBe('Bearer new-access');
+    expect(request.headers.get('chatgpt-account-id')).toBeNull();
     expect(request.headers.get('session-id')).toBe('ses-fixture');
-    expect(request.body).toBe('{"model":"gpt-5.6-luna"}');
+    expect(JSON.parse(request.body)).toEqual({model:'gpt-5.6-luna',input:[],store:false,stream:true});
     expect(request.signal).toBe(signal);
     expect(request.redirect).toBe('error');
     await expect(transport('https://attacker.example/')).rejects.toBeDefined();

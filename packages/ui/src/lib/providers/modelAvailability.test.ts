@@ -17,7 +17,7 @@ describe('provider model availability', () => {
       available: false,
       unavailableReason: 'auth_type_unsupported',
       requiredAuthType: 'api',
-    })).toBe('This model is unavailable with ChatGPT/Codex OAuth. Connect OpenAI with an API key to use it.');
+    })).toBe('This model is unavailable with Sign in with ChatGPT. Connect OpenAI with an API key to use it.');
   });
 
   test('falls back within the preferred provider before using another provider', () => {
@@ -44,4 +44,10 @@ describe('provider model availability', () => {
       modelId: 'gpt-5.6-sol',
     });
   });
+});
+
+test('distinguishes unknown account models, denied plan usage and legacy reconnect without inferring API entitlement', () => {
+  expect(getProviderModelUnavailableMessage({ available: false, unavailableReason: 'account_models_unavailable' })).toBe('ChatGPT account models could not be loaded. Retry before choosing a model.');
+  expect(getProviderModelUnavailableMessage({ available: false, unavailableReason: 'plan_usage_disabled' })).toBe('You are signed in, but ChatGPT plan usage is disabled. Authorize plan usage or explicitly choose API-key authentication in Providers.');
+  expect(getProviderModelUnavailableMessage({ available: false, unavailableReason: 'reauthorization_required' })).toBe('Reconnect with Sign in with ChatGPT in Providers to use ChatGPT plan usage.');
 });

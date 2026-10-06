@@ -22,8 +22,9 @@ test('finite image transport is captured during initial and replacement startup 
       captured = globalThis.fetch; assert.notEqual(captured, original);
       assert.equal(await (await captured(origin)).text(), 'owned fixture origin');
       await assert.rejects(captured('https://example.invalid/private'), /denied non-owned transport/);
-      await assert.rejects(captured('https://chatgpt.com/backend-api/codex/responses', { method: 'POST' }), /Unexpected or repeated physical image/);
-      await assert.rejects(captured('https://auth.openai.com/oauth/token', { method: 'POST', redirect: 'error',
+      await assert.rejects(captured('https://api.openai.com/v1/responses', { method: 'POST' }), /Unexpected or repeated physical image/);
+      await assert.rejects(captured('https://chatgpt.com/backend-api/codex/responses', { method: 'POST' }), /denied non-owned transport/);
+      await assert.rejects(captured('https://auth.openai.com/api/accounts/oauth/token', { method: 'POST', redirect: 'error',
         body: new URLSearchParams({ grant_type: 'client_credentials' }) }));
     });
     assert.equal(globalThis.fetch, original);
@@ -31,8 +32,12 @@ test('finite image transport is captured during initial and replacement startup 
     const marker = Error('owned startup failed');
     await assert.rejects(lane.withCapturedTransport(async () => { throw marker; }), error => error === marker);
     assert.equal(globalThis.fetch, original);
-    let auth = { type: 'oauth', accountId: 'owned-image-account-B', access: 'owned-image-access-B',
-      refresh: 'owned-image-refresh-B', expires: 0 };
+    let auth = {
+      type: 'oauth', methodID: 'chatgpt-siwc', accountId: 'owned-image-account-B',
+      access: 'owned-image-access-B', refresh: 'owned-image-refresh-B', expires: 0,
+      clientId: 'oaiapp_fixture_client',
+      scopes: ['openid', 'profile', 'email', 'offline_access', 'resource.invoke', 'chatgpt.tokens.use.direct'],
+    };
     let writes = 0;
     const owner = { async start() {
       const coordinator = createOpenAiOAuthCoordinator({ asyncStorage: {
@@ -41,8 +46,9 @@ test('finite image transport is captured during initial and replacement startup 
       } });
       coordinator.markReady(); return coordinator;
     } };
-    // The initial controller is constructed in the startup capture. Every
-    // replacement must capture the same finite fetch before it is restored.
+    // Coordinator refresh is independently exercised here; the compiled image
+    // lane must refuse SIWC without reaching this endpoint. Every replacement
+    // must capture the same finite fetch before it is restored.
     await lane.withCapturedTransport(() => owner.start());
     lane.captureRestarts(owner);
     const replacement = await owner.start();

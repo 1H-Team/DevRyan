@@ -71,9 +71,9 @@ export const rollbackIntentUnresolved = (intent, selection) => Boolean(intent &&
     && selection.revision === intent.revision + 1 && selection.preparedManifestSha256 === intent.targetPreparedSha256 && selection.reconciliationRequired === false
   || ['resuming', 'resumed'].includes(intent.state) && selection.selectedBundleID === intent.candidateBundleID
     && selection.revision === intent.resumeRevision && selection.preparedManifestSha256 === intent.candidatePreparedSha256 && selection.reconciliationRequired === false));
-export async function saveRollbackIntent(root, intent) {
+export async function saveRollbackIntent(root, intent, options={}) {
   parseRollbackIntent(intent);
-  await saveBundleJSON(rollbackIntentPath(root), intent);
+  await saveBundleJSON(rollbackIntentPath(root), intent, options);
 }
 export async function assertPrivateBundleControlRoot(root, uid = process.getuid?.()) {
   if (!Number.isSafeInteger(uid) || !path.isAbsolute(root) || path.normalize(root) !== root) throw fail('bundle_recovery_owner_required');

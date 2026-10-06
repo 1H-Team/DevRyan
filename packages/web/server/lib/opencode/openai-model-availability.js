@@ -1,54 +1,31 @@
-const OPENAI_PROVIDER_ID = 'openai';
-const OPENAI_OAUTH_GPT_56_MODEL_IDS = new Set([
-  'gpt-5.6-sol',
-  'gpt-5.6-sol-fast',
-  'gpt-5.6-terra',
-  'gpt-5.6-terra-fast',
-  'gpt-5.6-luna',
-  'gpt-5.6-luna-fast',
-]);
-const isOpenAIOAuthUnsupportedModel = (modelID) => (
-  (modelID === 'gpt-5.6' || modelID.startsWith('gpt-5.6-'))
-  && !OPENAI_OAUTH_GPT_56_MODEL_IDS.has(modelID)
-);
+import { CHATGPT_SIWC_METHOD_ID, hasSiwcPlanUsage } from './chatgpt-siwc.js';
 
-const normalizeAuthType = (authEntry) => {
-  const type = typeof authEntry?.type === 'string' ? authEntry.type.trim().toLowerCase() : '';
-  if (type === 'oauth') return 'oauth';
-  if (type === 'api') return 'api';
-  return undefined;
-};
-
-export const annotateOpenAIModelAvailability = (payload, authEntry) => {
-  const authType = normalizeAuthType(authEntry);
-  if (!authType || !payload || typeof payload !== 'object' || !Array.isArray(payload.providers)) {
-    return payload;
-  }
-
-  return {
-    ...payload,
-    providers: payload.providers.map((provider) => {
-      if (provider?.id !== OPENAI_PROVIDER_ID) return provider;
-
-      const models = provider.models && typeof provider.models === 'object' ? provider.models : {};
-      const nextModels = Object.fromEntries(Object.entries(models).map(([modelID, model]) => {
-        if (authType !== 'oauth' || !isOpenAIOAuthUnsupportedModel(modelID)) {
-          return [modelID, model];
-        }
-
-        return [modelID, {
-          ...model,
-          available: false,
-          unavailableReason: 'auth_type_unsupported',
-          requiredAuthType: 'api',
-        }];
-      }));
-
-      return {
-        ...provider,
-        authType,
-        models: nextModels,
-      };
-    }),
-  };
+/** Account discovery establishes availability; bundled catalogs cannot grant it. */
+export const annotateOpenAIModelAvailability = (payload, authEntry, options = {}) => {
+  if (!payload || typeof payload !== 'object' || !Array.isArray(payload.providers)) return payload;
+  const authType = ['api', 'key'].includes(authEntry?.type) ? 'api' : authEntry?.type === 'oauth' ? 'oauth' : undefined;
+  if (!authType && !options.unavailable) return payload;
+  const siwc = authEntry?.methodID === CHATGPT_SIWC_METHOD_ID;
+  const permitted = siwc && hasSiwcPlanUsage(authEntry.scopes ?? authEntry.metadata?.scopes);
+  const accountModels = Array.isArray(options.accountModels) ? options.accountModels
+    : options.accountModels instanceof Set ? [...options.accountModels].map(slug => ({ slug, displayName: slug })) : null;
+  return { ...payload, providers: payload.providers.map(provider => {
+    if (provider?.id !== 'openai') return provider;
+    const models = provider.models && typeof provider.models === 'object' ? provider.models : {};
+    if (authType === 'api') return { ...provider, authType };
+    const reason = !authType ? 'account_models_unavailable' : !siwc ? 'reauthorization_required' : !permitted ? 'plan_usage_disabled' : 'account_models_unavailable';
+    if (!permitted || !accountModels) return { ...provider, authType, accountModelsStatus: 'unavailable',
+      models: Object.fromEntries(Object.entries(models).map(([id, model]) => [id, { ...model, available: false, unavailableReason: reason }])) };
+    const next = {};
+    for (const { slug, displayName } of accountModels) {
+      if (Object.hasOwn(next, slug)) continue;
+      const model = models[slug];
+      next[slug] = model ? { ...model, name: displayName, available: true }
+        : { id: slug, name: displayName, available: false, unavailableReason: 'runtime_unsupported' };
+    }
+    for (const [id, model] of Object.entries(models)) {
+      if (!Object.hasOwn(next, id)) next[id] = { ...model, available: false, unavailableReason: 'auth_type_unsupported', requiredAuthType: 'api' };
+    }
+    return { ...provider, authType, accountModelsStatus: 'available', models: next };
+  }) };
 };

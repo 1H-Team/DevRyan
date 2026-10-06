@@ -13,6 +13,7 @@ import {
   __resetGitHubCopilotModelDiscoveryCache,
   GITHUB_COPILOT_AUTO_MODEL,
 } from './github-copilot-models.js';
+import { clearSiwcAccountModelCache } from './openai-siwc-model-catalog.js';
 import { registerOpenCodeRoutes } from './routes.js';
 
 vi.mock('./auth.js', () => ({
@@ -24,6 +25,41 @@ vi.mock('./auth.js', () => ({
 }));
 
 const COPILOT_AUTO_MODEL = GITHUB_COPILOT_AUTO_MODEL;
+
+describe('dedicated SIWC routes', () => {
+  it('requires administrator and CSRF before enrollment or cancellation work', async () => {
+    const begin = vi.fn(), cancel = vi.fn();
+    const denied = createApp({ getChatgptSiwcEnrollmentOwner: () => ({ begin, cancel }), isProviderAdministrator: () => false, useJsonParser: false });
+    expect((await request(denied.app).post('/api/provider/openai/siwc').set('Content-Type', 'application/json').send('{')).status).toBe(403);
+    const allowed = createApp({ getChatgptSiwcEnrollmentOwner: () => ({ begin, cancel }), isProviderAdministrator: () => true });
+    expect((await request(allowed.app).delete('/api/provider/openai/siwc/attempt')).status).toBe(403);
+    expect(begin).not.toHaveBeenCalled(); expect(cancel).not.toHaveBeenCalled();
+  });
+  it('carries only typed opaque registration and selection values to the scoped owner', async () => {
+    const registrationRef = '00000000-0000-4000-8000-000000000001';
+    const begin = vi.fn(async () => ({ status: 'pending' })), select = vi.fn(async () => ({ status: 'selected' })), cancel = vi.fn(async () => ({ status: 'cancelled' }));
+    const { app } = createApp({ getChatgptSiwcEnrollmentOwner: () => ({ begin, select, cancel }), isProviderAdministrator: () => true });
+    await request(app).post('/api/provider/openai/siwc').set('x-devryan-csrf', '1').send({ registrationRef, expectedActiveCredentialID: null }).expect(200);
+    expect(begin.mock.calls[0][0]).toMatchObject({ directory: '/tmp/project', registrationRef, expectedActiveCredentialID: null });
+    await request(app).post(`/api/provider/openai/siwc/${registrationRef}/select`).set('x-devryan-csrf', '1').send({ expectedActiveCredentialID: 'current-native' }).expect(200);
+    expect(select).toHaveBeenCalledWith(registrationRef, expect.objectContaining({ directory: '/tmp/project', expectedActiveCredentialID: 'current-native' }));
+    await request(app).delete('/api/provider/openai/siwc/attempt').set('x-devryan-csrf', '1').expect(200);
+    expect(cancel).toHaveBeenCalledWith('attempt', expect.objectContaining({ directory: '/tmp/project' }));
+    for (const body of [{ clientId: 'foreign' }, { subject: 'foreign' }, { registrationRef: 'subject@example.test' }, { expectedActiveCredentialID: {} }]) {
+      await request(app).post('/api/provider/openai/siwc').set('x-devryan-csrf', '1').send(body).expect(400);
+    }
+    expect(begin).toHaveBeenCalledOnce();
+    await request(app).post('/api/provider/openai/siwc/attempt/complete').set('x-devryan-csrf', '1').send({ scope: 'chatgpt.tokens.use.direct' }).expect(400);
+  });
+  it('preserves typed remote/local sign-out outcomes while redacting owner error details', async () => {
+    const disconnect = vi.fn(async () => { throw Object.assign(new Error('fixture-sensitive-token'), {
+      code: 'native_chatgpt_siwc_cleanup_failed', status: 503, remoteRevocation: 'unconfirmed', localCleanup: 'failed', token: 'fixture-sensitive-token',
+    }); });
+    const { app } = createApp({ getChatgptSiwcEnrollmentOwner: () => ({ disconnect }), isProviderAdministrator: () => true });
+    const result = await request(app).delete('/api/provider/openai/siwc').set('x-devryan-csrf', '1').send({ expectedActiveCredentialID: 'current-native' }).expect(503);
+    expect(result.body).toEqual({ code: 'native_chatgpt_siwc_cleanup_failed', remoteRevocation: 'unconfirmed', localCleanup: 'failed' });
+  });
+});
 
 describe('dedicated Claude enrollment routes',()=>{
   it('requires administrator and CSRF before any enrollment work',async()=>{
@@ -293,6 +329,7 @@ describe('OpenCode provider routes', () => {
 
   afterEach(() => {
     __resetGitHubCopilotModelDiscoveryCache();
+    clearSiwcAccountModelCache();
     vi.restoreAllMocks();
     vi.clearAllMocks();
     authModule.removeProviderAuth.mockImplementation(() => false);
@@ -714,7 +751,8 @@ describe('OpenCode provider routes', () => {
       {
         id: 'openai',
         name: 'OpenAI',
-        models: { 'gpt-5.5': { id: 'gpt-5.5', name: 'GPT-5.5' } },
+        accountModelsStatus: 'unavailable',
+        models: { 'gpt-5.5': { id: 'gpt-5.5', name: 'GPT-5.5', available: false, unavailableReason: 'account_models_unavailable' } },
       },
       {
         id: 'cursor-acp',
@@ -729,42 +767,65 @@ describe('OpenCode provider routes', () => {
     fetchSpy.mockRestore();
   });
 
-  it('keeps only real GPT-5.6 family rows selectable for OAuth without exposing credentials', async () => {
+  it('annotates SIWC OAuth authType without the retired Codex model matrix and without exposing credentials', async () => {
     readAuthFile.mockReturnValue({
-      openai: { type: 'oauth', access: 'secret-access-token', refresh: 'secret-refresh-token' },
+      openai: {
+        type: 'oauth',
+        methodID: 'chatgpt-siwc',
+        access: 'secret-access-token',
+        refresh: 'secret-refresh-token',
+        clientId: 'oaiapp_fixture_client',
+        scopes: ['openid', 'profile', 'email', 'offline_access', 'resource.invoke', 'chatgpt.tokens.use.direct'],
+        accountId: 'fixture-account',
+      },
     });
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      json: vi.fn(async () => ({
-        providers: [{
-          id: 'openai',
-          name: 'OpenAI',
-          models: {
-            'gpt-5.6': { id: 'gpt-5.6', name: 'GPT-5.6' },
-            'gpt-5.6-pro': { id: 'gpt-5.6-pro', name: 'GPT-5.6 Pro' },
-            'gpt-5.6-sol': { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' },
-            'gpt-5.6-sol-fast': { id: 'gpt-5.6-sol-fast', name: 'GPT-5.6 Sol Fast' },
-            'gpt-5.6-sol-pro': { id: 'gpt-5.6-sol-pro', name: 'GPT-5.6 Sol Pro' },
-            'gpt-5.6-terra': { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra' },
-            'gpt-5.6-luna': {
-              id: 'gpt-5.6-luna',
-              name: 'GPT-5.6 Luna',
-              variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {} },
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      if (String(url) === 'https://api.openai.com/v1/models') {
+        return {
+          ok: true,
+          json: vi.fn(async () => ({
+            models: [
+              { slug: 'gpt-5.6-sol', visibility: 'list' },
+              { slug: 'gpt-5.6-luna', visibility: 'list' },
+              { slug: 'gpt-5.5', visibility: 'list' },
+            ],
+          })),
+        };
+      }
+      return {
+        ok: true,
+        json: vi.fn(async () => ({
+          providers: [{
+            id: 'openai',
+            name: 'OpenAI',
+            models: {
+              'gpt-5.6': { id: 'gpt-5.6', name: 'GPT-5.6' },
+              'gpt-5.6-pro': { id: 'gpt-5.6-pro', name: 'GPT-5.6 Pro' },
+              'gpt-5.6-sol': { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' },
+              'gpt-5.6-sol-fast': { id: 'gpt-5.6-sol-fast', name: 'GPT-5.6 Sol Fast' },
+              'gpt-5.6-sol-pro': { id: 'gpt-5.6-sol-pro', name: 'GPT-5.6 Sol Pro' },
+              'gpt-5.6-terra': { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra' },
+              'gpt-5.6-luna': {
+                id: 'gpt-5.6-luna',
+                name: 'GPT-5.6 Luna',
+                variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {} },
+              },
+              'gpt-5.6-luna-fast': {
+                id: 'gpt-5.6-luna-fast',
+                name: 'GPT-5.6 Luna Fast',
+                variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {} },
+              },
+              'gpt-5.5': { id: 'gpt-5.5', name: 'GPT-5.5' },
             },
-            'gpt-5.6-luna-fast': {
-              id: 'gpt-5.6-luna-fast',
-              name: 'GPT-5.6 Luna Fast',
-              variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {} },
-            },
-            'gpt-5.5': { id: 'gpt-5.5', name: 'GPT-5.5' },
-          },
-        }],
-        default: { openai: 'gpt-5.6' },
-      })),
+          }],
+          default: { openai: 'gpt-5.6' },
+        })),
+      };
     });
     const { app } = createApp({
       buildOpenCodeUrl: vi.fn((requestPath) => `http://opencode.test${requestPath}`),
       cursorSdkRuntime: null,
+      getNativeRuntimeOwner: () => ({ isReady: () => true, getConfigurationSnapshot: () => ({ locations: [{ directory: '/tmp/project', configuration: { providers: {} } }] }), readOpenAiSelected: async () => ({ credentialID: 'native-fixture', value: readAuthFile().openai }) }),
     });
 
     const response = await request(app).get('/api/config/providers').expect(200);
@@ -783,18 +844,18 @@ describe('OpenCode provider routes', () => {
           id: 'gpt-5.6-luna',
           variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {} },
         },
-        'gpt-5.6-luna-fast': {
-          id: 'gpt-5.6-luna-fast',
-          variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {} },
-        },
         'gpt-5.6-sol': {
           id: 'gpt-5.6-sol',
         },
         'gpt-5.6-sol-fast': {
-          id: 'gpt-5.6-sol-fast',
+          available: false,
+          unavailableReason: 'auth_type_unsupported',
+          requiredAuthType: 'api',
         },
         'gpt-5.6-terra': {
-          id: 'gpt-5.6-terra',
+          available: false,
+          unavailableReason: 'auth_type_unsupported',
+          requiredAuthType: 'api',
         },
         'gpt-5.6-pro': {
           available: false,
@@ -812,12 +873,57 @@ describe('OpenCode provider routes', () => {
       },
     });
     expect(response.body.providers[0].models['gpt-5.6-luna'].available).not.toBe(false);
-    expect(response.body.providers[0].models['gpt-5.6-luna-fast'].available).not.toBe(false);
     expect(response.body.providers[0].models['gpt-5.6-sol'].available).not.toBe(false);
-    expect(response.body.providers[0].models['gpt-5.6-terra'].available).not.toBe(false);
+    expect(response.body.providers[0].models['gpt-5.5'].available).not.toBe(false);
     expect(JSON.stringify(response.body)).not.toContain('secret-access-token');
     expect(JSON.stringify(response.body)).not.toContain('secret-refresh-token');
     fetchSpy.mockRestore();
+  });
+
+  it('uses scoped native SIWC catalog order and names while refusing retired synthetic entries and runtime-missing slugs', async () => {
+    readAuthFile.mockReturnValue({ openai: { type: 'oauth', access: 'legacy-auth-file-token' } });
+    const selected = { credentialID: 'native-order', value: { type: 'oauth', methodID: 'chatgpt-siwc', access: 'native-account-token',
+      metadata: { clientId: 'issued-order', subject: 'subject-order', scopes: ['chatgpt.tokens.use.direct'] } } };
+    const read = vi.fn(async () => selected);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, input) => {
+      if (String(url) === 'https://api.openai.com/v1/models') {
+        expect(input.headers.authorization).toBe('Bearer native-account-token');
+        return Response.json({ models: [{ slug: 'second', display_name: 'Account Second', visibility: 'list' },
+          { slug: 'missing', display_name: 'Runtime Missing', visibility: 'list' }, { slug: 'first', display_name: 'Account First', visibility: 'list' }] });
+      }
+      return Response.json({ providers: [{ id: 'openai', name: 'OpenAI', models: {
+        first: { id: 'first', name: 'Bundled First' }, second: { id: 'second', name: 'Bundled Second' },
+        'gpt-5.6-luna-fast': { id: 'gpt-5.6-luna-fast', name: 'Legacy Synthetic' },
+      } }], default: {} });
+    });
+    const { app } = createApp({ cursorSdkRuntime: null, getNativeRuntimeOwner: () => ({ isReady: () => true,
+      getConfigurationSnapshot: () => ({ locations: [{ directory: '/tmp/project', configuration: { providers: {} } }] }), readOpenAiSelected: read }) });
+    const result = await request(app).get('/api/config/providers').expect(200);
+    const provider = result.body.providers[0];
+    expect(Object.keys(provider.models)).toEqual(['second', 'missing', 'first', 'gpt-5.6-luna-fast']);
+    expect(provider.models.second.name).toBe('Account Second');
+    expect(provider.models.missing).toMatchObject({ name: 'Runtime Missing', available: false, unavailableReason: 'runtime_unsupported' });
+    expect(provider.models['gpt-5.6-luna-fast']).toMatchObject({ available: false, requiredAuthType: 'api' });
+    expect(read.mock.calls.every(([scope]) => scope.directory === '/tmp/project')).toBe(true);
+    expect(JSON.stringify(result.body)).not.toMatch(/native-account-token|legacy-auth-file-token|issued-order|subject-order/);
+    fetchSpy.mockRestore();
+  });
+
+  it('does not release a late account catalog after native selection changes', async () => {
+    let selected = { credentialID: 'native-first', value: { type: 'oauth', methodID: 'chatgpt-siwc', access: 'first-token',
+      metadata: { clientId: 'issued-first', subject: 'first-subject', scopes: ['chatgpt.tokens.use.direct'] } } };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async url => {
+      if (String(url) === 'https://api.openai.com/v1/models') {
+        selected = { ...selected, credentialID: 'native-second', value: { ...selected.value, access: 'second-token', metadata: { ...selected.value.metadata, clientId: 'issued-second' } } };
+        return Response.json({ models: [{ slug: 'account-only', visibility: 'list' }] });
+      }
+      return Response.json({ providers: [{ id: 'openai', name: 'OpenAI', models: { 'account-only': { id: 'account-only', name: 'Account' } } }], default: {} });
+    });
+    const { app } = createApp({ cursorSdkRuntime: null, getNativeRuntimeOwner: () => ({ isReady: () => true,
+      getConfigurationSnapshot: () => ({ locations: [{ directory: '/tmp/project', configuration: { providers: {} } }] }), readOpenAiSelected: async () => selected }) });
+    const result = await request(app).get('/api/config/providers').expect(200);
+    expect(result.body.providers[0].models['account-only']).toMatchObject({ available: false, unavailableReason: 'account_models_unavailable' });
+    expect(result.body.providers[0].accountModelsStatus).toBe('unavailable'); fetchSpy.mockRestore();
   });
 
   it('keeps OpenAI Luna available for API-key authentication', async () => {
@@ -838,6 +944,7 @@ describe('OpenCode provider routes', () => {
     const { app } = createApp({
       buildOpenCodeUrl: vi.fn((requestPath) => `http://opencode.test${requestPath}`),
       cursorSdkRuntime: null,
+      getNativeRuntimeOwner: () => ({ isReady: () => true, getConfigurationSnapshot: () => ({ locations: [{ directory: '/tmp/project', configuration: { providers: {} } }] }), readOpenAiSelected: async () => ({ credentialID: 'native-key-fixture', value: { type: 'key', key: 'native-secret-api-key' } }) }),
     });
 
     const response = await request(app).get('/api/config/providers').expect(200);
@@ -930,7 +1037,8 @@ describe('OpenCode provider routes', () => {
       {
         id: 'openai',
         name: 'OpenAI',
-        models: { 'gpt-5.5': { id: 'gpt-5.5', name: 'GPT-5.5' } },
+        accountModelsStatus: 'unavailable',
+        models: { 'gpt-5.5': { id: 'gpt-5.5', name: 'GPT-5.5', available: false, unavailableReason: 'account_models_unavailable' } },
       },
     ]);
     expect(response.body.default).toEqual({
@@ -967,7 +1075,7 @@ describe('OpenCode provider routes', () => {
       .expect(200);
 
     expect(response.body.providers).toEqual([
-      { id: 'openai', name: 'OpenAI', models: { 'gpt-5.5': { id: 'gpt-5.5', name: 'GPT-5.5' } } },
+      { id: 'openai', name: 'OpenAI', accountModelsStatus: 'unavailable', models: { 'gpt-5.5': { id: 'gpt-5.5', name: 'GPT-5.5', available: false, unavailableReason: 'account_models_unavailable' } } },
     ]);
     expect(response.body).not.toHaveProperty('catalogIncomplete');
 
@@ -1078,7 +1186,8 @@ describe('OpenCode provider routes', () => {
       {
         id: 'openai',
         name: 'OpenAI',
-        models: { 'gpt-5.5': { id: 'gpt-5.5', name: 'GPT-5.5' } },
+        accountModelsStatus: 'unavailable',
+        models: { 'gpt-5.5': { id: 'gpt-5.5', name: 'GPT-5.5', available: false, unavailableReason: 'account_models_unavailable' } },
       },
       {
         id: 'github-copilot',

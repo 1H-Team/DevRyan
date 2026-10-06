@@ -1,3 +1,4 @@
+import type {WindowsPrivateFileOwner} from '../../../../../harness-runtime/lib/windows-private-files.js';
 import type { MigrationRequest, MigrationReceipt, NativeGlobalRoots } from './native-process-protocol.js';
 import type { ProjectMapping } from './bundle-migration-inventory.js';
 export interface RuntimeBundleLaunch {
@@ -43,6 +44,9 @@ export interface RuntimeBundleSelection {
 export interface RuntimeBundleVerification { readonly descriptor: RuntimeBundleDescriptor; readonly phase: 'prepared' | 'resume'; readonly integrity: 'verified'; readonly admission: 'held' }
 export interface RuntimeBundleStoreOptions {
   readonly controlRoot: string;
+  readonly windowsOwner?:WindowsPrivateFileOwner;
+  readonly windowsLedgerOwner?:WindowsPrivateFileOwner;
+  readonly windowsLauncher?:string;
   /** Private native owner installs the reconstructed epoch fence before launching/opening the controller. */
   readonly allowRecoveredInputStartup?:boolean;
   /** Host-owned admission close, native/OS/ACK settlement and matching store flush span. Never supplied by RPC. */
@@ -68,4 +72,4 @@ export function createRuntimeBundleStore(options: RuntimeBundleStoreOptions): {
   /** Static incompatibility keeps B active. A checkpointed partial projection is held for Resume B recovery. */
   rollback(input: { readonly targetBundleID: string; readonly expectedRevision: number }): Promise<{ readonly selection: RuntimeBundleSelection; readonly admission: 'held'; readonly reason: string | null }>;
 };
-export function readRuntimeBundleDescriptor(controlRoot: string, bundleID: string): Promise<RuntimeBundleDescriptor>;
+export function readRuntimeBundleDescriptor(controlRoot: string, bundleID: string, options?:Pick<RuntimeBundleStoreOptions,'windowsOwner'>): Promise<RuntimeBundleDescriptor>;

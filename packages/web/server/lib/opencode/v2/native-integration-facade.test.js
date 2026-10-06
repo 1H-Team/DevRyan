@@ -25,11 +25,11 @@ async function setup() {
       disabled: { type: 'remote', url: 'http://127.0.0.1:9/disabled', enabled: false } } } })) };
   const digest = reviewedMcpConfiguration(snapshot, ['/owned']).get('/owned').get('remote').configurationDigest;
   const records = new Map([
-    ['credential_openai', { id: 'credential_openai', integrationID: 'openai', label: 'Account', value: { type: 'oauth', methodID: 'chatgpt-browser', access: 'synthetic-access', refresh: 'synthetic-refresh' } }],
+    ['credential_openai', { id: 'credential_openai', integrationID: 'openai', label: 'Account', value: { type: 'oauth', methodID: 'chatgpt-siwc', access: 'synthetic-access', refresh: 'synthetic-refresh' } }],
     ['credential_mcp', { id: 'credential_mcp', integrationID: 'mcp_remote', label: 'Remote', value: { type: 'oauth', methodID: 'mcp_method', access: 'synthetic-mcp-access' } }],
   ]);
   const info = id => ({ id, name: id === 'openai' ? 'OpenAI' : id === 'cursor-acp' ? 'Cursor' : 'remote', metadata: id === 'mcp_remote' ? { source: 'mcp' } : {},
-    methods: id === 'openai' ? [{ id: 'key', type: 'key', label: 'API key' }, { id: 'chatgpt-browser', type: 'oauth', label: 'ChatGPT' }]
+    methods: id === 'openai' ? [{ id: 'key', type: 'key', label: 'API key' }, { id: 'chatgpt-siwc', type: 'oauth', label: 'ChatGPT' }]
       : ['cursor-acp', 'opencode', 'opencode-go'].includes(id) ? [{ id: 'key', type: 'key', label: 'API key' }]
       : id === 'xai' ? [{ id: 'device', type: 'oauth', label: 'SuperGrok Subscription' }, { type: 'key', label: 'Manually enter API Key' }] : [{ id: 'mcp_method', type: 'oauth', label: 'Remote OAuth' }],
     connections: [...records.values()].filter(row => row.integrationID === id).map(row => ({ type: 'credential', id: row.id, label: row.label, method: row.value.type })) });
@@ -133,11 +133,11 @@ describe('native integration public facade with original caller grants', () => {
   });
   it('maps provider methods and key creation without a public secret credential route', async () => {
     const f = await setup();
-    expect((await request(f.app).get('/api/provider/auth')).body).toEqual({ openai: [{ type: 'api', label: 'API key' }, { type: 'oauth', label: 'ChatGPT' }],
+    expect((await request(f.app).get('/api/provider/auth')).body).toEqual({ openai: [{ type: 'api', label: 'API key' }],
       xai: [{ type: 'oauth', label: 'SuperGrok Subscription' }, { type: 'api', label: 'Manually enter API Key' }],
       opencode: [{ type: 'api', label: 'API key' }], 'opencode-go': [{ type: 'api', label: 'API key' }], 'cursor-acp': [{ type: 'api', label: 'API key' }] });
-    expect((await request(f.app).post('/api/provider/openai/oauth/authorize').send({ method: 1 })).status).toBe(200);
-    expect((await request(f.app).post('/api/provider/openai/oauth/callback').send({ method: 1, code: 'owned-code' })).status).toBe(200);
+    expect((await request(f.app).post('/api/provider/openai/oauth/authorize').send({ method: 1 })).status).toBe(400);
+    expect((await request(f.app).post('/api/provider/openai/oauth/callback').send({ method: 1, code: 'owned-code' })).status).toBe(400);
     expect((await request(f.app).put('/api/auth/openai').send({ type: 'api', key: 'synthetic-fixture-key' })).body).toEqual({ success: true, configured: true });
     for (const providerID of ['xai','opencode','opencode-go']) expect((await request(f.app).put('/api/auth/'+providerID).send({type:'api',key:'synthetic-'+providerID})).status).toBe(200);
     expect(f.mutations).toEqual(['create','create','create','create']);
@@ -148,17 +148,17 @@ describe('native integration public facade with original caller grants', () => {
   it('binds Integration list and OAuth HTTP calls to each actual reviewed location', async () => {
     const f = await setup(); f.allowForeign();
     expect((await request(f.app).get('/api/provider/auth?directory=/foreign')).status).toBe(200);
-    expect((await request(f.app).post('/api/provider/openai/oauth/authorize?directory=/foreign').send({ method: 1 })).status).toBe(200);
-    expect((await request(f.app).post('/api/provider/openai/oauth/callback?directory=/foreign').send({ method: 1, code: 'owned-code' })).status).toBe(200);
+    expect((await request(f.app).post('/api/provider/xai/oauth/authorize?directory=/foreign').send({ method: 0 })).status).toBe(200);
+    expect((await request(f.app).post('/api/provider/xai/oauth/callback?directory=/foreign').send({ method: 0, code: 'owned-code' })).status).toBe(200);
     expect(f.nativeLocations).toEqual([
       { path: '/api/integration/openai', directory: '/foreign' },
       { path: '/api/integration/cursor-acp', directory: '/foreign' },
       { path: '/api/integration/xai', directory: '/foreign' },
       { path: '/api/integration/opencode', directory: '/foreign' },
       { path: '/api/integration/opencode-go', directory: '/foreign' },
-      { path: '/api/integration/openai', directory: '/foreign' },
-      { path: '/api/integration/openai/connect/oauth', directory: '/foreign' },
-      { path: '/api/integration/openai/connect/oauth/attempt_1/complete', directory: '/foreign' },
+      { path: '/api/integration/xai', directory: '/foreign' },
+      { path: '/api/integration/xai/connect/oauth', directory: '/foreign' },
+      { path: '/api/integration/xai/connect/oauth/attempt_1/complete', directory: '/foreign' },
     ]);
     expect((await request(f.app).get('/api/provider/auth')).status).toBe(200);
     expect(f.nativeLocations.slice(-5)).toEqual(['openai','cursor-acp','xai','opencode','opencode-go'].map(id=>({path:'/api/integration/'+id,directory:'/owned'})));
@@ -215,12 +215,12 @@ describe('native integration public facade with original caller grants', () => {
     expect(again.status).toBe(409); expect(again.body.code).toBe('native_integration_attempt_pending');
     expect(f.starts()).toBe(1);
   });
-  it('disconnects native provider accounts without a legacy auth write', async () => {
+  it('refuses generic OAuth removal and preserves native saved registrations', async () => {
     const f = await setup();
     const removed = await request(f.app).delete('/api/provider/openai/auth?scope=all');
-    expect(removed.status).toBe(200); expect(removed.body).toMatchObject({ success: true, removed: true, stillProvidedBy: [] });
-    expect(f.records.has('credential_openai')).toBe(false); expect(f.records.has('credential_mcp')).toBe(true);
-    expect(f.mutations).toEqual(['remove']);
+    expect(removed.status).toBe(409); expect(removed.body.code).toBe('native_chatgpt_siwc_disconnect_required');
+    expect(f.records.has('credential_openai')).toBe(true); expect(f.records.has('credential_mcp')).toBe(true);
+    expect(f.mutations).toEqual([]);
   });
   it('refuses config-wide disconnect before any credential effect when prepared config would remain', async () => {
     const f = await setup(); f.configureProvider();
@@ -238,16 +238,16 @@ describe('native integration public facade with original caller grants', () => {
     expect(f.mutations).toEqual([]);
   });
   it('refuses revocation before concrete commit and copied attempts after runtime replacement', async () => {
-    const f = await setup(); f.revokeAtCommit();
+    const f = await setup(); f.records.get('credential_openai').value = { type: 'key', key: 'fixture-key' }; f.revokeAtCommit();
     expect((await request(f.app).delete('/api/credential/credential_openai')).status).toBe(403);
     expect(f.records.has('credential_openai')).toBe(true); expect(f.mutations).toEqual([]);
     f.original.active = true;
-    expect((await request(f.app).post('/api/provider/openai/oauth/authorize').send({ method: 1 })).status).toBe(200);
+    expect((await request(f.app).post('/api/provider/xai/oauth/authorize').send({ method: 0 })).status).toBe(200);
     f.bumpEpoch();
-    const completed = await request(f.app).post('/api/provider/openai/oauth/callback').send({ method: 1, code: 'owned-code' });
+    const completed = await request(f.app).post('/api/provider/xai/oauth/callback').send({ method: 0, code: 'owned-code' });
     expect(completed.status).toBe(403); expect(completed.body.code).toBe('native_integration_grant_expired');
     expect(f.mutations).toEqual([]);
-    expect((await request(f.app).post('/api/provider/openai/oauth/authorize').send({ method: 1 })).status).toBe(200);
+    expect((await request(f.app).post('/api/provider/xai/oauth/authorize').send({ method: 0 })).status).toBe(200);
     expect(f.starts()).toBe(2);
   });
 });

@@ -288,6 +288,8 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   const persistence = options.persistence ?? createAtomicManagedOrchestrationLedger({
     dataDirectory: options.dataDirectory,
     logger,
+    windowsLedgerOwner: options.windowsLedgerOwner,
+    windowsLauncher: options.windowsLauncher,
   });
   const terminalErrors = options.terminalErrors ?? createManagedTerminalErrorRegistry({ now });
   const operatorAborts = options.operatorAborts ?? createManagedOperatorAbortRegistry({ now });

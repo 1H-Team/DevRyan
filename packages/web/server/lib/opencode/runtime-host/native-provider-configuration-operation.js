@@ -98,7 +98,7 @@ export function createNativeProviderConfigurationOperation({ descriptor, getSnap
       await recheck();
       if (!Array.isArray(rows) || rows.length > 256 || rows.some(row => !row || row.integrationID !== integrationID || !/^[A-Za-z0-9_-]{1,256}$/.test(row.id ?? '')
         || !/^[a-f0-9]{64}$/.test(row.expectedFingerprint ?? '') || !['key', 'oauth'].includes(row.valueType)
-        || kind === 'cursor' && row.valueType !== 'key' || row.valueType === 'oauth' && !['chatgpt-browser', 'chatgpt-headless'].includes(row.methodID))
+        || kind === 'cursor' && row.valueType !== 'key' || row.valueType === 'oauth' && !['chatgpt-siwc', 'chatgpt-browser', 'chatgpt-headless'].includes(row.methodID))
         || new Set(rows.map(row => row.id)).size !== rows.length) throw fail('native_credential_metadata_invalid', 502);
       return rows;
     };
@@ -115,7 +115,8 @@ export function createNativeProviderConfigurationOperation({ descriptor, getSnap
       disconnectCredentials: async (onCommitted, onStarted = () => {}) => {
         if (!['auth', 'all'].includes(input.scope)) throw fail('native_provider_configuration_scope_invalid', 400);
         const rows = await metadata(); verify();
-        for (const row of rows) {
+        if (integrationID === 'openai' && rows.some(row => row.active && row.valueType === 'oauth')) throw fail('native_chatgpt_siwc_disconnect_required', 409);
+        for (const row of rows.filter(row => integrationID !== 'openai' || row.valueType === 'key')) {
           await recheck(); verify();
           const spec = { ...base, operation: `${kind}.credential.remove`, method: 'DELETE', path: `/api/credential/${row.id}`, credentialID: row.id,
             valueType: row.valueType, ...(row.methodID === undefined ? {} : { methodID: row.methodID }), expectedFingerprint: row.expectedFingerprint,

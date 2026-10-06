@@ -46,13 +46,13 @@ const gates = createAdmissionGates(`);
     replace('  const client = createOpenCodeClient({ ...deps, getAdmission: () => admission });', '  const client = createOpenCodeClient({ ...deps, getAdmission: () => admission });observationClient=client;');
     replace('  await verifyModels();\n  const old=', `  const physical=attempts.filter(row=>row.stage!=='step'),steps=attempts.filter(row=>row.stage==='step');
   assert.ok(physical.some(row=>row.stage==='http.request'));
-  assert.ok(physical.some(row=>row.stage==='experimental.ws.send'));
+  assert.equal(physical.some(row=>row.stage==='experimental.ws.send'),false,'SIWC plan usage does not use websocket Responses');
   assert.ok(steps.length>=2);
   for(const row of physical){assert.ok(row.identity,'Actual native attempt span missing');
     assert.ok(steps.some(step=>step.sessionID===row.sessionID&&step.identity?.traceID===row.identity.traceID&&step.identity?.spanID===row.identity.spanID),'Physical request has no exact native Step.Started span');}
   assert.equal(attempts.find(row=>row.sessionID===session.id).stage,'http.request','First request must precede durable Step.Started');
   const records=diagnosticObservations.map(row=>row.payload);
-  for(const actual of physical){const wire=records.find(row=>row.stage==='physical'&&row.sessionID===actual.sessionID&&row.attempt?.spanID===actual.identity.spanID&&row.transport===(actual.stage==='http.request'?'http':'ws'));
+  for(const actual of physical){const wire=records.find(row=>row.stage==='physical'&&row.sessionID===actual.sessionID&&row.attempt?.spanID===actual.identity.spanID&&row.transport==='http');
     assert.ok(wire,'Actual post-hook physical observation missing: '+JSON.stringify({stage:actual.stage,identity:actual.identity,records:records.map(row=>({stage:row.stage,requestID:row.requestID,attempt:row.attempt}))}));
     const prepared=records.find(row=>row.stage==='model-prepared'&&row.requestID===wire.requestID);assert.ok(prepared);
     assert.equal(prepared.execution.providerID,'openai');assert.equal(prepared.options.reasoningEffort,'high');assert.equal(wire.wireOptions.reasoning.effort,'high');

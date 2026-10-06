@@ -10,8 +10,8 @@ import { assertWriterOutcome, toolTurn } from './assertions.mjs';
 import { assertNativeCancellationSettled, waitFor } from './process-lanes.mjs';
 import { readSessionExecutionReceipt } from '../../packages/harness-runtime/lib/session-execution.js';
 
-const imageEndpoint = 'https://chatgpt.com/backend-api/codex/responses';
-const refreshEndpoint = 'https://auth.openai.com/oauth/token';
+const imageEndpoint = 'https://api.openai.com/v1/responses';
+const refreshEndpoint = 'https://auth.openai.com/api/accounts/oauth/token';
 let activeCapture;
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const imagePNG = () => {
@@ -28,13 +28,15 @@ const imagePNG = () => {
     chunk('IDAT', deflateSync(pixels)), chunk('IEND', Buffer.alloc(0))]);
 };
 
-/** Synthetic OAuth is acquired in a separate source-SDK child against the
+/** Synthetic SIWC records are created in a separate source-SDK child against the
  * quiesced owned database. The compiled controller never gets an endpoint override.
+ * The compiled lane proves SIWC refusal, then explicitly creates API keys.
  * The existing Node transports capture this finite fetch at each controller start. */
 export function createCompiledImageLane({ root, getOwnedOrigins }) {
   assert.ok(path.isAbsolute(root)); assert.equal(typeof getOwnedOrigins, 'function');
   const originalFetch = globalThis.fetch, png = imagePNG(), records = [], streams = new Set();
   const access = new Map(['A', 'B'].map(account => [account, `owned-image-access-${account}`]));
+  const keys = new Map(['A', 'B'].map(account => [account, `owned-image-api-key-${account}`]));
   let prepared, capturing = false, closed = false, expected, refreshes = 0, cancelled = 0;
   const arm = (input, account, { references = [], hold = false } = {}) => {
     assert.equal(expected, undefined, 'Previous physical image attempt remains unconsumed');
@@ -47,7 +49,8 @@ export function createCompiledImageLane({ root, getOwnedOrigins }) {
       assert.ok(prepared); assert.equal(init?.method, 'POST'); assert.equal(init.redirect, 'error');
       const body = new URLSearchParams(init.body);
       assert.equal(body.get('grant_type'), 'refresh_token'); assert.equal(body.get('refresh_token'), 'owned-image-refresh-B');
-      assert.ok(body.get('client_id')); assert.deepEqual([...body.keys()].sort(), ['client_id', 'grant_type', 'refresh_token']);
+      assert.ok(body.get('client_id')); assert.equal(body.get('resource'), 'https://api.openai.com/v1');
+      assert.deepEqual([...body.keys()].sort(), ['client_id', 'grant_type', 'refresh_token', 'resource']);
       assert.equal(++refreshes, 1, 'Synthetic account refresh repeated');
       access.set('B', 'owned-image-access-B-refreshed'); records.push({ phase: 'refresh', account: 'B' });
       return Response.json({ access_token: access.get('B'), refresh_token: 'owned-image-refresh-B-rotated', expires_in: 3600 });
@@ -56,8 +59,9 @@ export function createCompiledImageLane({ root, getOwnedOrigins }) {
       assert.ok(expected, 'Unexpected or repeated physical image attempt'); const plan = expected; expected = undefined;
       assert.equal(init?.method, 'POST'); assert.equal(init.redirect, 'error'); init.signal.throwIfAborted();
       const headers = new Headers(init.headers);
-      assert.equal(headers.get('Authorization'), `Bearer ${access.get(plan.account)}`);
-      assert.equal(headers.get('ChatGPT-Account-Id'), `owned-image-account-${plan.account}`);
+      assert.equal(headers.get('Authorization'), `Bearer ${keys.get(plan.account)}`);
+      assert.equal(headers.get('ChatGPT-Account-Id'), null);
+      assert.equal(headers.get('chatgpt-account-id'), null);
       const body = JSON.parse(init.body);
       assert.equal(body.model, 'gpt-6-astra'); assert.deepEqual(body.reasoning, { effort: 'medium' });
       assert.equal(body.stream, true); assert.equal(body.store, false); assert.deepEqual(body.tool_choice, { type: 'image_generation' });
@@ -110,33 +114,53 @@ export function createCompiledImageLane({ root, getOwnedOrigins }) {
     },
     run: async ({ invoke, client, directory, executionHost, managed, runtimeOwner, databasePath, environment, observations, provider }) => {
       assert.ok(prepared); assert.equal(capturing, false); assert.equal(globalThis.fetch, originalFetch);
-      const [accountA, accountB] = prepared.proof.accounts;
+      const [, siwcB] = prepared.proof.accounts;
       const before = await metadata(runtimeOwner, directory);
-      const selectedB = before.find(row => row.id === accountB.credentialID);
-      assert.ok(selectedB?.active && selectedB.valueType === 'oauth' && selectedB.methodID === 'chatgpt-headless');
+      const selectedB = before.find(row => row.id === siwcB.credentialID);
+      assert.ok(selectedB?.active && selectedB.valueType === 'oauth' && selectedB.methodID === 'chatgpt-siwc');
       const session = await client.sessions.create({ title: 'Compiled owned image fixture', agent: 'orchestrator',
         model: { providerID: 'devryan-smoke', modelID: 'smoke-write' } }, { directory });
       await managed.admitPrimary(session.id);
       const input = { prompt: 'A tiny isolated local fixture raster.', out: 'compiled-image.png', quality: 'high', size: '1024x1024' };
+      const refused = await invoke({ id: 'compiled-image-siwc-refused', tool: 'gpt_imagegen', input,
+        expectedError: /native_image_generation_siwc_unsupported/, direct: true }, { sessionID: session.id });
+      await assertWriterOutcome({ runtime: executionHost.runtime, directory, sessionID: session.id, callID: refused.callID,
+        observations, succeeded: false, files: [input.out], before: { [input.out]: null } });
+      assert.equal(refreshes, 0); assert.deepEqual(records, []);
+      assert.deepEqual(await metadata(runtimeOwner, directory), before, 'SIWC image refusal mutated credentials');
+      const configuration = runtimeOwner.getConfigurationSnapshot().locations.find(row => row.directory === directory).configuration;
+      const accounts = [];
+      for (const account of ['A', 'B']) {
+        const credential = { integrationID: 'openai', value: { type: 'key', key: keys.get(account) }, activate: true,
+          label: `Compiled image API key ${account}` };
+        await runtimeOwner.credentialOperation({ kind: 'openai', directory, integrationID: 'openai',
+          configurationDigest: credentialMutationFingerprint(configuration.providers?.openai ?? {}),
+          operation: 'openai.credential.create', method: 'POST', path: '/api/credential', body: credential,
+          valueType: 'key', requestedFingerprint: credentialMutationFingerprint(credential) }, { operation: 'create', input: credential });
+        const selected = (await metadata(runtimeOwner, directory)).find(row => row.active);
+        assert.equal(selected?.valueType, 'key'); assert.ok(!before.some(row => row.id === selected.id));
+        accounts.push(selected);
+      }
+      const [accountA, accountB] = accounts;
+      assert.notEqual(accountA.id, accountB.id);
       arm(input, 'B');
-      const first = await invoke({ id: 'compiled-image-refresh-B', tool: 'gpt_imagegen', input }, { sessionID: session.id });
+      const first = await invoke({ id: 'compiled-image-api-key-B', tool: 'gpt_imagegen', input }, { sessionID: session.id });
       await assertWriterOutcome({ runtime: executionHost.runtime, directory, sessionID: session.id, callID: first.callID, observations, succeeded: true });
-      assert.equal(refreshes, 1); assert.equal(expected, undefined);
+      assert.equal(refreshes, 0); assert.equal(expected, undefined);
       const file = path.join(directory, input.out); assert.deepEqual(await fs.readFile(file), png);
       assert.equal(first.state.metadata.out, file); assert.equal(first.state.metadata.versioned, false);
+      assert.equal(first.state.metadata.billing, 'api-key');
       assert.ok(first.state.output.includes(file)); assert.ok(!first.state.output.includes('/worktree'));
-      const updatedB = (await metadata(runtimeOwner, directory)).find(row => row.id === accountB.credentialID);
-      assert.ok(updatedB?.active); assert.notEqual(updatedB.expectedFingerprint, selectedB.expectedFingerprint,
-        'Actual native refresh did not persist its changed credential record');
-      const account = (await metadata(runtimeOwner, directory)).find(row => row.id === accountA.credentialID);
-      assert.ok(account && account.valueType === 'oauth' && account.methodID === 'chatgpt-headless');
-      const configuration = runtimeOwner.getConfigurationSnapshot().locations.find(row => row.directory === directory).configuration;
+      const updatedB = (await metadata(runtimeOwner, directory)).find(row => row.id === accountB.id);
+      assert.deepEqual(updatedB, accountB, 'API-key image generation mutated its credential');
+      const account = (await metadata(runtimeOwner, directory)).find(row => row.id === accountA.id);
+      assert.ok(account && account.valueType === 'key');
       await runtimeOwner.credentialOperation({ kind: 'openai', directory, integrationID: 'openai',
         configurationDigest: credentialMutationFingerprint(configuration.providers?.openai ?? {}),
         operation: 'openai.credential.activate', method: 'POST', path: `/api/credential/${account.id}/activate`,
-        valueType: 'oauth', methodID: account.methodID, credentialID: account.id, expectedFingerprint: account.expectedFingerprint,
+        valueType: 'key', credentialID: account.id, expectedFingerprint: account.expectedFingerprint,
         requestedFingerprint: credentialMutationFingerprint({ id: account.id }) }, { operation: 'activate', id: account.id });
-      assert.equal((await metadata(runtimeOwner, directory)).find(row => row.active)?.id, accountA.credentialID);
+      assert.equal((await metadata(runtimeOwner, directory)).find(row => row.active)?.id, accountA.id);
       const reference = 'data:image/png;base64,' + png.toString('base64');
       const nextInput = { ...input, prompt: 'Use image one as the exact local fixture reference.', images: [input.out] };
       arm(nextInput, 'A', { references: [reference] });
@@ -145,6 +169,7 @@ export function createCompiledImageLane({ root, getOwnedOrigins }) {
       const secondFile = path.join(directory, 'compiled-image-v2.png');
       assert.deepEqual(await fs.readFile(file), png); assert.deepEqual(await fs.readFile(secondFile), png);
       assert.equal(second.state.metadata.out, secondFile); assert.equal(second.state.metadata.versioned, true);
+      assert.equal(second.state.metadata.billing, 'api-key');
       const cancelInput = { ...input, out: 'compiled-image-cancelled.png', prompt: 'Hold this isolated fixture image for cancellation.' };
       const held = arm(cancelInput, 'A', { hold: true });
       const turn = toolTurn('gpt_imagegen', cancelInput, 'compiled-image-cancel'); await provider.setResponder(turn.responder);
@@ -162,10 +187,13 @@ export function createCompiledImageLane({ root, getOwnedOrigins }) {
       assert.ok(receipt.terminated && receipt.confined && receipt.cancelled);
       await assert.rejects(fs.stat(path.join(directory, cancelInput.out)), error => error.code === 'ENOENT');
       assert.deepEqual(await executionHost.runtime.activeLeases({ directory, sessions: [session.id] }), []);
-      assert.deepEqual(records, [{ phase: 'refresh', account: 'B' }, { phase: 'image', account: 'B', references: 0, held: false },
+      assert.deepEqual(records, [{ phase: 'image', account: 'B', references: 0, held: false },
         { phase: 'image', account: 'A', references: 1, held: false }, { phase: 'image', account: 'A', references: 0, held: true }]);
-      return [{ id: 'compiled-image-native-refresh-account-switch-publication', status: 'passed', sessionID: session.id,
-        credentialIDs: [accountA.credentialID, accountB.credentialID], sourceOAuthCreation: true, compiledOAuthCreation: false,
+      return [{ id: 'compiled-image-siwc-refusal-no-refresh-or-publication', status: 'passed', sessionID: session.id,
+        callID: refused.callID, credentialID: siwcB.credentialID, refreshes: 0, requests: 0 },
+      { id: 'compiled-image-api-key-account-switch-publication', status: 'passed', sessionID: session.id,
+        credentialIDs: [accountA.id, accountB.id], syntheticSourceSiwcCreation: true, compiledApiKeyCreation: true,
+        compiledOAuthCreation: false,
         sourceProofPath: prepared.proofPath, sourceInputHashes: prepared.inputHashes, refreshes,
         callIDs: [first.callID, second.callID], files: [input.out, path.basename(secondFile)], sha256: sha(png) },
       { id: 'compiled-image-owned-cancellation-no-publication', status: 'passed', sessionID: session.id,

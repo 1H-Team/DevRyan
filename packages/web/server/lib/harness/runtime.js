@@ -25,17 +25,20 @@ export const createWebHarnessRuntime = (options = {}) => {
   });
   const journal = createDiagnosticJournal({
     directory: paths.journalDir,
+    windowsOwner:options.windowsOwner,
     sanitizer,
     runtime: options.runtime ?? 'web',
     maxBytes: options.maxJournalBytes,
   });
   const worktreeStore = createRecordStore({
     directory: paths.worktreeOpsDir,
+    windowsOwner: options.windowsOwner,
     validateRecord: validateWorktreeBootstrapReceipt,
     logger: options.logger ?? console,
   });
   const commandDeadlineStore = createRecordStore({
     directory: paths.commandDeadlineDir,
+    windowsOwner: options.windowsOwner,
     validateRecord: validateCommandDeadlineRecord,
     logger: options.logger ?? console,
   });

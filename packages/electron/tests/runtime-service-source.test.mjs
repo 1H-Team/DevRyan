@@ -157,10 +157,10 @@ describe('runtime-service desktop bootstrap source contract', () => {
       adhocSignSource,
       /run\("codesign", \["--force", "--sign", "-", runtimeServiceBridgePath\]\)/,
     );
-    assert.ok(packageManifest.build.extraResources.some((resource) => (
+    assert.ok(packageManifest.build.mac.extraResources.some((resource) => (
       resource.from === 'resources/native' && resource.to === 'native'
     )));
-    assert.ok(packageManifest.build.extraFiles.some((resource) => (
+    assert.ok(packageManifest.build.mac.extraFiles.some((resource) => (
       resource.to === 'Library/LaunchAgents/dev.openchamber.desktop.runtime-service.plist'
     )));
     assert.match(packageVerifierSource, /DevRyan-\$\{packageManifest\.version\}-\$\{requestedArchitecture\}/);

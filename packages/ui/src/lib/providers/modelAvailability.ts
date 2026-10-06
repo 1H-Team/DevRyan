@@ -1,6 +1,6 @@
 export type ProviderModelAvailability = {
   available?: boolean;
-  unavailableReason?: 'auth_type_unsupported' | 'runtime_unsupported';
+  unavailableReason?: 'auth_type_unsupported' | 'runtime_unsupported' | 'account_models_unavailable' | 'plan_usage_disabled' | 'reauthorization_required';
   requiredAuthType?: 'api';
 };
 
@@ -46,8 +46,17 @@ export const getProviderModelUnavailableMessage = (
 ): string | undefined => {
   if (isProviderModelAvailable(model)) return undefined;
   const availability = model as ProviderModelAvailability;
+  if (availability.unavailableReason === 'account_models_unavailable') {
+    return 'ChatGPT account models could not be loaded. Retry before choosing a model.';
+  }
+  if (availability.unavailableReason === 'plan_usage_disabled') {
+    return 'You are signed in, but ChatGPT plan usage is disabled. Authorize plan usage or explicitly choose API-key authentication in Providers.';
+  }
+  if (availability.unavailableReason === 'reauthorization_required') {
+    return 'Reconnect with Sign in with ChatGPT in Providers to use ChatGPT plan usage.';
+  }
   if (availability.unavailableReason === 'auth_type_unsupported' && availability.requiredAuthType === 'api') {
-    return 'This model is unavailable with ChatGPT/Codex OAuth. Connect OpenAI with an API key to use it.';
+    return 'This model is unavailable with Sign in with ChatGPT. Connect OpenAI with an API key to use it.';
   }
   return 'This model is unavailable for the connected provider.';
 };

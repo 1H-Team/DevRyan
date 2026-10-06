@@ -14,6 +14,7 @@ const error = (code, status = 409) => Object.assign(new Error(code), { code, sta
 // directory against OpenCode before touching the filesystem.
 export function createSessionChangeHost(options) {
   const runtime = createSessionChangeRuntime({ directory: path.join(options.dataDirectory, 'harness', 'session-changes'),
+    windowsOwner:options.windowsOwner, windowsLauncher:options.windowsLauncher,
     onDiagnostic: options.onDiagnostic,
     restoreOwned: options.restoreOwned,
     assertLegacyRestore: options.assertLegacyRestore,

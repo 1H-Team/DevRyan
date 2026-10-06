@@ -42,7 +42,7 @@ export async function bundleElectronMain({ outdir = path.join(root, 'dist-bundle
   }
   const settings = {
     root: repository,
-    entrypoints: [path.join(root, 'main.mjs'), path.join(root, 'desktop-update-install.mjs')],
+    entrypoints: [path.join(root, 'main.mjs'), path.join(root, 'desktop-update-install.mjs'), path.join(root, 'desktop-update-install-windows.mjs')],
     outdir,
     target: 'node',
     format: 'esm',
@@ -89,7 +89,8 @@ export async function bundleElectronMain({ outdir = path.join(root, 'dist-bundle
     workingDirectory: repository, bunVersion: Bun.version, bunRevision: Bun.revision,
     entrypoint: path.relative(repository, settings.entrypoints[0]),
     mainSha256: hash(await fs.readFile(main)),
-    installerSha256: hash(await fs.readFile(path.join(outdir, 'desktop-update-install.mjs'))), inputs }, null, 2) + '\n');
+    installerSha256: hash(await fs.readFile(path.join(outdir, 'desktop-update-install.mjs'))),
+    windowsInstallerSha256: hash(await fs.readFile(path.join(outdir, 'desktop-update-install-windows.mjs'))), inputs }, null, 2) + '\n');
   return main;
 }
 

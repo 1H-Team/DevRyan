@@ -1877,7 +1877,7 @@ export function createBotManagement({
     }
 
     const oauthMetadata = provider === 'openai'
-      ? (await getOAuthConnections())?.bindingMetadata()
+      ? await (await getOAuthConnections())?.bindingMetadata()
       : null;
     if (provider === 'openai' && !oauthMetadata) fail('Managed OAuth is unavailable', 'bot_oauth_coordinator_unavailable', 503);
     const id = uuid();

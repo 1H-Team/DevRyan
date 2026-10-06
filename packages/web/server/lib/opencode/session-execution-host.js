@@ -89,6 +89,7 @@ const nativePublicationResult = (result, publication, lease, tool) => {
  */
 export function createSessionExecutionHost(options) {
   const runtime = createSessionMutationRuntime({ directory: path.join(options.dataDirectory, 'harness', 'session-mutations'),
+    windowsOwner: options.windowsOwner, windowsLauncher: options.windowsLauncher,
     onMaterialize: options.onMaterialize,
     // Ledger maintenance and input-classification failures reach the journal.
     onDiagnostic: (record) => { try { options.onDiagnostic?.({ event: 'session_execution', ...record }); } catch { /* Observer only. */ } },
@@ -573,7 +574,8 @@ export function createSessionExecutionHost(options) {
                     const result=await nativeOptions.imageGeneration({...input,userMessageID:record.info.parentID,token:job.lease.token},
                       {prompt:args.prompt,quality:args.quality,...(args.size===undefined?{}:{size:args.size}),referenceImages:payload.referenceImages},{signal:job.controller.signal});
                     await nativeRecheck(input);job.controller.signal.throwIfAborted();
-                    if(!result||Object.keys(result).join(',')!=='base64'||typeof result.base64!=='string'||!result.base64||result.base64.length>limit
+                    if(!result||typeof result!=='object'||Array.isArray(result)||Object.keys(result).some(key=>!['base64','billing'].includes(key))
+                      ||result.billing!==undefined&&result.billing!=='api-key'||typeof result.base64!=='string'||!result.base64||result.base64.length>limit
                       ||result.base64.length%4!==0||!/^[A-Za-z0-9+/]+={0,2}$/.test(result.base64)||Buffer.from(result.base64,'base64').toString('base64')!==result.base64)throw failure('native_imagegen_result_invalid',403);
                     const bytes=JSON.stringify(result);if(Buffer.byteLength(bytes)>limit)throw failure('native_imagegen_result_invalid',403);
                     await fs.writeFile(resultPath,bytes,{flag:'wx',mode:0o600});reply={type:'image-generation',id:event.id,ok:true};
@@ -766,6 +768,7 @@ export function createSessionExecutionHost(options) {
     },
   };
   const rawCoordinator = createScopedRevertCoordinator({ runtime, executions, openchamberDataDir: options.dataDirectory,
+    windowsOwner: options.windowsOwner, windowsLauncher: options.windowsLauncher,
     nativeConversation: options.nativeExecution?.conversation,
     onDiagnostic: options.onDiagnostic, legacy: options.legacyChanges,
     openCodeClient: options.openCodeClient });

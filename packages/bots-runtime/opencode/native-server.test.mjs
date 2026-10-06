@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Global } from '@opencode/util/global';
-import { createBotNativeServer } from '../../web/server/lib/bots/native-server.mjs';
+import { createBotNativeServer, createBotNativeTools } from '../../web/server/lib/bots/native-server.mjs';
 
 const token = 'a'.repeat(43);
 const environment = { DEVRYAN_BOT_GATEWAY_URL: 'http://egress:43121', DEVRYAN_BOT_RUNTIME_TOKEN: token,
@@ -112,3 +112,18 @@ test('native Bot startup, private routes, session persistence, and input isolati
     expect((await restored.json()).data.title).toBe('Bot persisted fixture');
   } finally { await runtime?.close(); await provider.stop(true); await fs.rm(root, { recursive: true, force: true }); }
 }, 30_000);
+
+
+test('native Bot SIWC image refusal precedes dependency file reads, OAuth access and provider requests', async () => {
+  let executions = 0, accessCalls = 0;
+  const tools = await createBotNativeTools({ directory: '/workspace', openaiOAuth: true,
+    access: async () => { accessCalls++; throw new Error('unexpected access'); },
+    environment: { ...environment, DEVRYAN_BOT_CHATGPT_IMAGE_GENERATION: '1' },
+    imageToolFactory: async () => ({ args: {}, execute: async () => { executions++; throw new Error('reference file read would begin here'); } }),
+  });
+  const image = { prompt: 'fixture', out: 'fixture.png', quality: 'medium', images: ['reference.png'] };
+  await expect(tools.devryan_image.execute(image, { directory: '/workspace' })).rejects.toMatchObject({ code: 'native_image_generation_siwc_unsupported' });
+  await expect(tools.devryan_bot.execute({ operation: 'image.generate', payload: image }, { directory: '/workspace' }))
+    .rejects.toMatchObject({ code: 'native_image_generation_siwc_unsupported' });
+  expect(executions).toBe(0); expect(accessCalls).toBe(0);
+});

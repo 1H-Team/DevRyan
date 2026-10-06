@@ -15,10 +15,16 @@ const nativeSteps = YAML.parse(await fs.readFile(new URL('../.github/workflows/w
 const qualification = () => ({ run: { status: 'completed', conclusion: 'success', head_sha: source,
   path: '.github/workflows/windows.yml', head_repository: { full_name: repo }, event: 'push' },
 jobs: ['x64', 'arm64'].map(arch => ({ name: `Native ${arch}`, conclusion: 'success', steps: [
-  ...nativeSteps.filter(step => step.name).map(({ name }) => ({ name, status: 'completed', conclusion: 'success' })),
-  { name: 'Qualify per-user NSIS installation and updater recovery', status: 'completed', conclusion: 'success' },
-] })) });
+  ...new Set([...nativeSteps.filter(step => step.name).map(({ name }) => name),
+    'Qualify per-user NSIS installation and updater recovery'])].map(name => ({ name, status: 'completed', conclusion: 'success' })),
+})) });
+const installerEvidence = arch => ({ protocol: 'devryan.windows-installer-evidence/1', source, version, arch, status: 'passed', acceptance: true,
+  sourceTreeSha256: 'a'.repeat(64), installer: { name: `DevRyan-${version}-win-${arch}.exe`,
+    size: bytes(`DevRyan-${version}-win-${arch}.exe`).length, sha256: digest(`DevRyan-${version}-win-${arch}.exe`) },
+  prerequisites: [{ id: 'native', status: 'passed' }],
+  scenarios: ['installation', 'update-success', 'update-refusal', 'interruption', 'rollback'].map(id => ({ id, status: 'passed' })) });
 const receipt = arch => ({ protocol: 'devryan.windows-installer-qualification/1', source, version, arch, status: 'passed',
+  acceptance: true, sourceTreeSha256: 'a'.repeat(64), evidenceSha256: createHash('sha256').update(JSON.stringify(installerEvidence(arch))).digest('hex'),
   name: `DevRyan-${version}-win-${arch}.exe`, size: bytes(`DevRyan-${version}-win-${arch}.exe`).length, sha256: digest(`DevRyan-${version}-win-${arch}.exe`) });
 const macQualification = () => ({ run: { ...qualification().run, path: '.github/workflows/release.yml' }, jobs:
   ['build-desktop-electron-macos', 'publish-bot-runtime-images', 'verify-bot-runtime-topology', 'finalize-release'].map(name => ({ name, conclusion: 'success', steps:
@@ -32,7 +38,7 @@ test('Windows append requires both complete native and installer gates on frozen
     assert.throws(() => verifyWindowsQualification({ ...q.run, ...change }, q.jobs, source));
   }
   for (const stepName of ['Qualify compiled supervision and file boundaries', 'Execute the compiled native acceptance inventory',
-    'Qualify per-user NSIS installation and updater recovery']) {
+    'Qualify original Node and Bun stdio compatibility', 'Qualify per-user NSIS installation and updater recovery']) {
     q = qualification(); q.jobs[1].steps.find(step => step.name === stepName).conclusion = 'skipped';
     assert.throws(() => verifyWindowsQualification(q.run, q.jobs, source));
   }
@@ -41,6 +47,7 @@ test('Windows append requires both complete native and installer gates on frozen
   for (const change of [{ status: 'failed' }, { arch: 'arm64' }, { source: '2'.repeat(40) }, { name: macName }, { size: 0 }, { sha256: '' }]) {
     assert.throws(() => verifyWindowsInstallerReceipt({ ...valid, ...change }, { source, version, arch: 'x64' }));
   }
+  assert.throws(() => verifyWindowsInstallerReceipt({ ...valid, acceptance: false }, { source, version, arch: 'x64' }), /Frozen Windows installer receipt/);
   const mac = macQualification(); verifyMacosPublication(mac.run, mac.jobs, source);
   mac.jobs.at(-1).steps.at(-1).conclusion = 'skipped';
   assert.throws(() => verifyMacosPublication(mac.run, mac.jobs, source), /Published macOS release gates/);
@@ -84,9 +91,20 @@ test('Windows append verifies downloaded macOS bytes, preserves its asset and ta
     for (const arch of ['x64', 'arm64']) {
       const root = path.join(directory, `DevRyan-windows-installer-${arch}`); await fs.mkdir(root);
       const metadata = receipt(arch); await fs.writeFile(path.join(root, 'qualification.json'), JSON.stringify(metadata));
+      await fs.writeFile(path.join(root, 'evidence.json'), JSON.stringify(installerEvidence(arch)));
       await fs.writeFile(path.join(root, metadata.name), bytes(metadata.name));
     }
     assert.equal((await append()).status, 'dry-run-verified'); assert.deepEqual(uploads, []);
+    const evidenceFile = path.join(directory, 'DevRyan-windows-installer-x64', 'evidence.json');
+    const receiptFile = path.join(directory, 'DevRyan-windows-installer-x64', 'qualification.json');
+    const incomplete = installerEvidence('x64'); incomplete.scenarios.at(-1).status = 'blocked';
+    const incompleteBytes = JSON.stringify(incomplete);
+    await fs.writeFile(evidenceFile, incompleteBytes);
+    await assert.rejects(append(), /evidence digest changed/); assert.deepEqual(uploads, []);
+    await fs.writeFile(receiptFile, JSON.stringify({ ...receipt('x64'), evidenceSha256: createHash('sha256').update(incompleteBytes).digest('hex') }));
+    await assert.rejects(append(), /Complete Windows installer evidence/); assert.deepEqual(uploads, []);
+    await fs.writeFile(evidenceFile, JSON.stringify(installerEvidence('x64')));
+    await fs.writeFile(receiptFile, JSON.stringify(receipt('x64')));
     macBytes = Buffer.alloc(bytes(macName).length); await assert.rejects(append(), /Downloaded macOS digest/); assert.deepEqual(uploads, []);
     macBytes = bytes(macName); tagSource = '2'.repeat(40); await assert.rejects(append(), /frozen source/); assert.deepEqual(uploads, []);
     tagSource = source; assets.push(asset('unexpected.exe', 200)); await assert.rejects(append(), /Unexpected release asset/); assets.pop();

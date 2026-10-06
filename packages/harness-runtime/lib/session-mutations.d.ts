@@ -1,3 +1,4 @@
+import type {WindowsPrivateFileOwner} from './windows-private-files.js';
 export interface NativeRemovalMember { id: string; parentID: string | null; directory: string; generation: number }
 export interface NativeRemovalDisposition { sessionID: string; inboxIDs: string[]; pendingIDs: string[] }
 export interface NativeRemovalIntent {
@@ -152,6 +153,8 @@ export interface SessionMutationRuntime {
 }
 export function createSessionMutationRuntime(options: {
   directory: string;
+  windowsOwner?:WindowsPrivateFileOwner;
+  windowsLauncher?:string;
   onChange?(input: MutationPublication & { directory: string }): void | Promise<void>;
   onMaterialize?(row: { path: string; before: unknown; after: unknown }): void | Promise<void>;
   /** Background failures (ledger maintenance, input classification); codes only. */

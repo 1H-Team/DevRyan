@@ -10,19 +10,34 @@ refresh owners. Provider revocation can still require reconnection.
 
 - The web/Electron server owns refresh and atomic persistence for `host:openai`.
   Refreshes coalesce; conversations and valid requests do not serialize.
+- ChatGPT subscription auth is **Sign in with ChatGPT** (OSS plan usage): DevRyan
+  owns enrollment (`/api/provider/openai/siwc`), stores issued `client_id` with
+  tokens in the selected native credential, and refreshes at
+  `https://auth.openai.com/api/accounts/oauth/token`. The host registration cache
+  retains only an opaque reference, verified subject, issued client, host ID and
+  native credential references. A missing plan-use scope keeps the user signed
+  in while disabling plan requests. Legacy Codex browser/headless OAuth remains
+  identifiable and requires reconnection through SIWC.
 - The packaged OpenCode config hook supplies a provider-specific HTTP transport.
-  It retains built-in OAuth login methods, model selection, transformations,
-  SSE streaming, cancellation, account headers and residency handling. It does
-  not opt into experimental OpenCode WebSockets.
-- Bots store connection references with a one-way account identity binding.
+  SIWC inference uses `https://api.openai.com/v1/responses` with a bearer access
+  token only (no Codex `chatgpt.com` rewrite). Built-in API-key login remains.
+  The transport does not opt into experimental OpenCode WebSockets for plan usage.
+- Bots store connection references with one-way account and issued-registration
+  identity bindings. Two clients issued for the same subject stay distinct.
   No reusable refresh token goes into a per-run file. Successful refresh
   credentials are saved before access is released. Finishing Bot runs do not
   write these credentials back.
 - Private runtime access is capability-bound and derived from server run
   claims. It is not a renderer API, agent tool, or caller-selected URL proxy.
-  Image tools receive short-lived access through their existing private inode;
-  tools cannot select a credential file or connection.
-- Matching legacy accounts migrate in place; absent or mismatched account
+  SIWC accepts only POST Responses inference and GET account model discovery.
+  Image generation, Chat Completions and other endpoints are refused at their
+  physical request boundaries. API-key image behavior remains independent.
+  Native images read only the selected OpenAI API key under the admitted tool
+  lease, compare the exact native credential through request and publication,
+  and use public Responses without a ChatGPT account header. Image output
+  reports API-key billing. Expired SIWC credentials refuse before refresh;
+  original Codex parser fixtures remain separate from production auth acceptance.
+- Matching legacy accounts with issued-client identity proof migrate in place; absent or mismatched account
   evidence requires explicit Manager reconnection. Existing IDs, revisions and
   audit records remain intact. Database binding commits before legacy vault
   cleanup; cleanup failure is explicit and retried on subsequent admission.
@@ -31,6 +46,22 @@ refresh owners. Provider revocation can still require reconnection.
   including across crashes. A changed host login clears that state. Corrupt
   state or persistence failure fails closed; repair storage before restarting.
 - No accepted prompt is replayed as part of authentication recovery.
+
+- Returning enrollment resolves an opaque registration reference server-side,
+  reuses its issued client and verifies JWT issuer, audience, signature, expiry,
+  nonce and subject before saving. New credentials stage inactive, publish a
+  recoverable cache intent, then activate under selected-credential comparison.
+  Cancellation removes only its exact inactive stage; publication failures retain
+  a recovery reference. Browser requests cannot provide issuer/client/token data.
+- Models come from the currently selected native credential and account endpoint.
+  Account order and display names are preserved. Lookup failure is unavailable;
+  runtime-missing slugs remain visible as unsupported. A late account response
+  cannot change the catalog after selection moves.
+- Sign-out blocks the selected credential, drains helpers and native session
+  owners, attempts discovered remote revocation with bounded retry, then removes
+  exactly the compared local credential. It reports remote confirmation and local
+  cleanup separately. Local failure leaves the credential blocked. Issued
+  registration and host identity survive for reconnection.
 
 ## Scope
 
@@ -60,7 +91,9 @@ persistence queue because OpenCode writes the complete auth file.
 
 ## Verification
 
-Focused Vitest suites cover refresh coalescing, host login changes, late
+Focused Vitest suites cover signed enrollment and refreshed identity checks,
+registration selection/cancellation/recovery, native catalog ownership and order,
+remote versus local sign-out outcomes, refresh coalescing, host login changes, late
 completion, persistence failures, ambiguous exchanges, account migration,
 reconnect races, private capability denial/revocation, warm adoption, image
 credential preparation and exact authentication classification. Existing
@@ -84,10 +117,11 @@ plugins instead of mounting the working-tree plugins. The acceptance verifies
 the dependency versions before making fixture requests. Run it after other
 large suites on resource-constrained Docker hosts.
 
-Implementation verification (2026-08-31): 218 focused server tests passed;
+Historical pre-SIWC verification (2026-08-31): 218 focused server tests passed;
 affected validation passed (including 3,157 web tests); repository type checks
 and lint passed. Offline OpenCode 1.18.25 acceptance completed six
 chat/structured requests across a managed host and two Bot processes, one real
-image-plugin request, and three coordinated refresh cycles. The check also
+image-plugin request, and three coordinated refresh cycles. These historical
+Codex/image results are not SIWC production or release evidence. The check also
 passed with the freshly built image's baked plugins. No production
 login, Bot, failed run or audit event was changed.

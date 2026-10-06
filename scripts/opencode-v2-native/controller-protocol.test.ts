@@ -73,12 +73,12 @@ test('close allows correlated settlement reentry and only acknowledges after dra
  expect(replies).toContainEqual({id:'refusal',ok:false,error:{code:'native_fixture_refused',status:403,message:'native_fixture_refused'}});
 });
 test('private credential commands bind controller, directory and method without accepting extra payloads',()=>{
- const value=Schema.decodeUnknownSync(Credential.OAuth)({type:'oauth',methodID:'chatgpt-browser',access:'fixture-access',refresh:'fixture-refresh',expires:123,metadata:{accountID:'fixture'}});
+ const value=Schema.decodeUnknownSync(Credential.OAuth)({type:'oauth',methodID:'chatgpt-siwc',access:'fixture-access',refresh:'fixture-refresh',expires:123,metadata:{accountID:'fixture'}});
  const command={protocol:1 as const,id:'private-cas',action:'openai-cas-selected-owned' as const,directory:'/project/a',controllerInstanceID:'controller-one',
   expected:{directory:'/project/a',controllerInstanceID:'controller-one',integrationID:'openai' as const,credentialID:'credential-one',value},next:{...value,access:'next-fixture-access'}};
  expect(parseNativeCommand(command)).toEqual(command);
  for(const changed of [{...command,directory:'/project/b'},{...command,controllerInstanceID:'controller-two'},
-  {...command,next:{...value,methodID:'chatgpt-headless'}},{...command,next:{...value,unexpected:true}}]) expect(()=>parseNativeCommand(changed)).toThrow();
+  {...command,next:{...value,methodID:'chatgpt-browser'}},{...command,next:{...value,unexpected:true}}]) expect(()=>parseNativeCommand(changed)).toThrow();
  expect(parseNativeCommand({protocol:1,id:'commit',action:'credential-commit-owned',callID:'call-one',controllerInstanceID:'controller-one',bindingFingerprint:'b'.repeat(64)}).action).toBe('credential-commit-owned');
 });
 test('manual credential commands accept only key creation, labels and exact account operations',()=>{
