@@ -36,6 +36,9 @@ Repository automation entrypoint for developer workflows: validation planning, l
   controller/writer executables with pinned SDK, dependency, source and asset
   digests. Exact hash-guarded asset rewrites cover dynamic package resolution
   and the image WASM read; the accepted supervisor is copied unchanged.
+  `.gitattributes` disables checkout text conversion only for the byte-pinned
+  reviewed closure and the reviewed document/browser plugin sources. Imported
+  Windows build helpers also participate in macOS native build identities.
   `--windows-candidate` builds only on the actual x64/ARM64 Windows host into
   an immutable owned cache root. It reuses the reviewed source closure, selects
   previously qualified Windows executable/database inputs, denies persistent
