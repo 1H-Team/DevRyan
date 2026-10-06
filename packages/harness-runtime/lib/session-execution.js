@@ -288,6 +288,7 @@ export async function prepareSessionExecution({ launcher, lease, socketDirectory
   return { launcher, arguments: [viewDirectory, scratchDirectory, profile, path.join(root, 'termination.json'), '--'],
     cwd: workingDirectory, profile, scratchDirectory, socketDirectory,
     environment: { DEVRYAN_EXECUTION_WORKER: '1', HOME: scratchDirectory,
+      ...(process.platform === 'win32' ? { USERPROFILE: scratchDirectory, LOCALAPPDATA: scratchDirectory, APPDATA: scratchDirectory } : {}),
       DEVRYAN_EXECUTION_CWD: lease.logicalWorkingDirectory ?? workingDirectory, DEVRYAN_EXECUTION_CANCEL_EVENT: cancelEvent,
       DEVRYAN_EXECUTION_CACHE: auxiliaryDirectory,
       ...(sessionTemporaryDirectory ? { DEVRYAN_SESSION_TMP: sessionTemporaryDirectory } : {}),

@@ -30,7 +30,8 @@ export async function runSupervisorStartupDiagnostic(directory) {
   const source = await fs.readFile(sourcePath, 'utf8'), sourceSha256 = hash(source);
   const inputProfile = path.join(output, 'inputs'); await fs.mkdir(inputProfile);
   const environment = scratch => ({ PATH: process.env.PATH, SystemRoot: process.env.SystemRoot ?? process.env.SYSTEMROOT,
-    HOME: scratch, USERPROFILE: scratch, TMP: scratch, TEMP: scratch, TMPDIR: scratch });
+    HOME: scratch, USERPROFILE: scratch, LOCALAPPDATA: scratch, APPDATA: scratch,
+    TMP: scratch, TEMP: scratch, TMPDIR: scratch });
   const bun = spawnSync('bun', ['-e', 'process.stdout.write(JSON.stringify({version:Bun.version,arch:process.arch,path:process.execPath}))'],
     { cwd: inputProfile, env: environment(inputProfile), encoding: 'utf8', timeout: 15000, maxBuffer: 65536 });
   if (bun.error || bun.status !== 0) throw new Error('Pinned native Bun identity unavailable');
