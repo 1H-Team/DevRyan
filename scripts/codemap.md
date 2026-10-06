@@ -28,6 +28,8 @@ Repository automation entrypoint for developer workflows: validation planning, l
   receipts. These binaries receive no accepted manifest, never enter a runtime
   bundle, and cannot satisfy the nine required Windows outcomes. Station
   diagnostics change only owned UI objects, never the inherited station ACL.
+  A separate low-integrity token copy isolates startup at Low versus Untrusted;
+  its job/handle/write restrictions stay intact and it grants no admission.
   `build-windows-reviewed-libsql.mjs` attempts the original libsql 0.5.29 source
   commit with an unchanged Cargo lock on each native Windows host. It verifies
   compiler and resource PE architecture, executes the original database ABI

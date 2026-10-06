@@ -311,6 +311,16 @@ unqualified. Its API owners are
 [CreateWindowStationW](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-createwindowstationw)
 and [SetProcessWindowStation](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setprocesswindowstation).
 
+The x64 startup probes in run
+[37414619426](https://github.com/1H-Team/DevRyan/actions/runs/37414619426)
+reproduce all four variants with verified source, PE, binary/output hashes and
+durable receipt bytes. Node remains at `0xc0000142`; Bun remains at
+`0xc06d007e`. Neither a private station nor absent UI restrictions resolves
+startup. A fifth disposable variant changes only the token integrity SID from
+Untrusted to Low, retaining the original job, handle and write restrictions.
+It tests another startup condition, supplies no policy acceptance, and never
+changes the production supervisor. Both actual architectures must still run it.
+
 Integrated local `validate:full` passes on macOS ARM64 at `874ab3f4`, including
 6,328 web tests, 4,049 UI tests and 39 retained legacy Rust tests. Earlier failed
 attempts are preserved. Only builder-generated legacy defaults were restored

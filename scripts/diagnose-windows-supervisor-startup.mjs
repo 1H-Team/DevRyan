@@ -40,6 +40,8 @@ export function supervisorStartupVariants(source) {
     { id: 'no-ui-job', source: noUi(source) },
     { id: 'private-station', source: station },
     { id: 'private-station-no-ui-job', source: noUi(station) },
+    { id: 'low-integrity', source: once(source, 'ConvertStringSidToSidW(L"S-1-16-0", &integrity)',
+      'ConvertStringSidToSidW(L"S-1-16-4096", &integrity)') },
   ];
 }
 
@@ -121,7 +123,7 @@ export async function runSupervisorStartupDiagnostic(directory) {
   if (hash(await fs.readFile(sourcePath)) !== sourceSha256) throw new Error('Production supervisor changed during diagnostic');
   const result = { schema: 1, status: 'diagnostic-completed', platform: process.platform, arch: process.arch,
     admission: false, acceptance: false, sourceSha256, runtimes, variants,
-    excluded: ['read confinement', 'descendant containment qualification', 'standard-user and concurrent station ownership', 'runtime acceptance'] };
+    excluded: ['read confinement', 'integrity-policy qualification', 'descendant containment qualification', 'standard-user and concurrent station ownership', 'runtime acceptance'] };
   await fs.writeFile(path.join(output, 'result.json'), JSON.stringify(result, null, 2) + '\n', { flag: 'wx' });
   return result;
 }
