@@ -213,6 +213,9 @@ Repository automation entrypoint for developer workflows: validation planning, l
   timing or resource evidence remains inconclusive. Native host unit tests declare
   `bun:test` and are discovered by `test-scripts.mjs`; process acceptance is
   a separate opt-in command documented in `docs/QA.md`.
+  `package-managed-interval-lane.mjs` accepts locationless native success only
+  for the exact arm parent after its reply; explicit foreign directories and
+  other sessions cannot settle that wait. Attribution deadlines stay unchanged.
   `verify-opencode-v2-package.mjs --managed-correctness
   --event-reconcile-interval-ms 750|1500` selects three focused compiled cases:
   dropped projected hints with a real writer receipt, explicit managed

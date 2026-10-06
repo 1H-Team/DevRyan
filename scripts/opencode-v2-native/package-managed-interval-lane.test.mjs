@@ -4,8 +4,24 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { gradeCompiledManagedInterval, managedIntervalPolicy } from './package-managed-interval-lane.mjs';
+import { gradeCompiledManagedInterval, managedIntervalPolicy, isCompiledIntervalParentCompletion } from './package-managed-interval-lane.mjs';
+import { parseV2EventBlock } from '../../packages/web/server/lib/opencode/opencode-client/v2.js';
 import { createQaHostLaunchEnvironment } from '../qa/launch-environment.mjs';
+
+test('actual native terminal shape settles only the owned interval parent after its reply', () => {
+  const directory = '/private/interval-project', rootID = 'ses_owned';
+  const frame = (changes = {}) => parseV2EventBlock('data: ' + JSON.stringify({
+    id: 'evt_owned', type: 'session.execution.succeeded', data: { sessionID: rootID }, ...changes,
+  }));
+  assert.equal(isCompiledIntervalParentCompletion(frame(), directory, rootID, true), true);
+  assert.equal(isCompiledIntervalParentCompletion(frame({ location: { directory } }), directory, rootID, true), true);
+  for (const parsed of [frame({ data: { sessionID: 'ses_child' } }), frame({ location: { directory: '/foreign' } }),
+    frame({ location: { directory: '' } }), frame({ type: 'session.execution.failed' })]) {
+    assert.equal(isCompiledIntervalParentCompletion(parsed, directory, rootID, true), false);
+  }
+  assert.equal(isCompiledIntervalParentCompletion(frame(), directory, rootID, false), false);
+  assert.equal(isCompiledIntervalParentCompletion(frame(), directory, undefined, true), false);
+});
 
 // Finite synthetic policy records only: no native, provider or OS measurements.
 const cohort = () => managedIntervalPolicy.order.map(intervalMs => ({ intervalMs, correctness: 'passed', cleanup: 'passed',

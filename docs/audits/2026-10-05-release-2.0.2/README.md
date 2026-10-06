@@ -874,9 +874,41 @@ configuration access diagnostic; exclusive station creation still refuses
 error 183 with empty receipts. Production confinement remains unchanged,
 admission stays unavailable, and no installer or native safety pass is claimed.
 
+`main` was pushed at `1d161d92`; local and remote heads matched and the checkout
+was clean. [macOS input verification](https://github.com/1H-Team/DevRyan/actions/runs/37426159240)
+passed on that exact source. [Windows qualification](https://github.com/1H-Team/DevRyan/actions/runs/37426159338)
+failed on both architectures. Downloaded evidence confirms all nine actual
+outcomes: candidate builds, host/filesystem boundaries, feature refusals and
+pinned resources pass; supervisor acceptance fails and runtime acceptance is
+skipped. The native review SHA-256 is
+`9e63ac0ababe78ad4da9ed5186e985fdea1b5ac5771e450a1ae6920b52ed74b6`.
+All 28 startup probes also pass independent evidence review at SHA-256
+`231fd0fc551be02735ed46432e51c54cc3a9fb8bdfcf0f1cab3844018d567060`.
+Their initialization/refusal behavior is unchanged; admission stays unavailable.
+
+Fresh local native build `9311bb5b` reproduces the attribution failure with
+the original 60-second deadline. Structural stream evidence confirms both
+success terminals omit directory metadata; the diagnostic discarded its exact
+parent's terminal. The correction accepts only that owned parent after its
+reply, rejects explicit foreign directories and other sessions, and preserves
+the remaining stream filters. Policy, grading and the 750 ms interval are exact.
+Four regression checks and a fresh original compiled arm pass: nine cases,
+measured causal timing, one observed receipt-bound writer identity, 212 observed
+process identities physically closed and zero verified gaps in both journals.
+The correction review SHA-256 is
+`8b85245ab745bfdf6cc574d42c42cb62785ea13906ea533965e0ca67d79ad2bd`.
+The first observation harness failed on its abort handler; its evidence and
+closed cleanup remain preserved and supply no qualification.
+`validate:quick` selected and passed full validation for this QA change,
+including 6,328 web, 4,049 UI and 39 Rust tests. The exact patch/file/log review
+SHA-256 is `96851091fbb11b8ce44937ee7c3f9bcf7666c10ff01e5bd69cb26255e57c9686`.
+Product build inputs are unchanged from the earlier passing build/bundle gate.
+This isolated arm supplies no six-arm comparison or performance retention grade;
+the original failed cohort is not relabeled or resumed.
+
 | Mandatory gate | Status | Evidence or prerequisite |
 | --- | --- | --- |
-| Full integrated validation, build, bundle budgets and documentation | Passed on merged `main` at `b5327d60`; final freeze pending | Clean combined source passes all four commands, including 6,328 web, 4,049 UI and 39 Rust tests. Review digest `db54488d` retains exact source/tree and all log hashes. Earlier failed evidence remains preserved; final source/artifact qualification is pending |
+| Full integrated validation, build, bundle budgets and documentation | Passed on merged `main`; QA correction also passes full validation; final freeze pending | Combined source passes all four commands at `b5327d60`; review `db54488d` retains exact source/tree/log hashes. Correction review `96851091` retains the later exact patch and full validation; product build inputs stay unchanged. Final source/artifact qualification is pending |
 | Packaged prompt conflict notice and explicit restore | Passed (focused and private packaged); final freeze pending | Native notice, two explicit restores with exact backups, configuration apply, both original primary guidance requests, four reviewed screenshots and verified journal gaps |
 | Tracked credential owner and synthetic rehearsal | Passed (compiled synthetic); live not run | Original SDK OAuth, compiled native key/CAS owners, held projection, ready boot and zero evidence leaks; final identities and attended live/launcher qualification pending |
 | Complete B1 review closure | Consolidated (focused); qualification pending | Seven engineering scopes above retain original reproductions, corrected checks and current drift; final compiled/live/package evidence pending |
@@ -891,10 +923,10 @@ admission stays unavailable, and no installer or native safety pass is claimed.
 | Exact provider/role graph, 12 journeys, 16 compaction boundaries | Not run | Owner sign-in window after credential-free rehearsal |
 | Managed-user verification | Unavailable | Non-production Supabase environment not supplied |
 | Cold/warm loopback and full performance audit | Passed (engineering baselines); final not run | Three baseline and three candidate repetitions; gains within noise, candidate removed; full audit and frozen grading pending |
-| Burst, six attribution, 21 calibration, conditional 42 paired launches | Burst passed; attribution failed after first arm; later phases not run | Downloaded DMG native artifact, five complete timing sets, 40 writer calls, 16/16 measured process identities, 642 reconciled journal records and zero gaps. Failed cohort retained with closed cleanup; merged-source bindings and frozen grading remain pending; retain 750 ms |
+| Burst, six attribution, 21 calibration, conditional 42 paired launches | Burst passed; failed attribution retained; compiled correction passed; fresh cohort not run | Downloaded DMG burst retains five complete timing sets, 40 writer calls, 16/16 measured identities and 642 reconciled journal records with zero gaps. Fresh local one-arm correction passes nine cases and causal/receipt checks; six-arm bindings, calibration and frozen grading remain pending; retain 750 ms |
 | Release dry-run with no external writes and exact asset digests | Passed at `b68b6396`; final freeze pending | Scoped signed Bot preparation passed; the fresh dry run reused all eight images through the original 24-digest signature gate, passed isolated topology and packaged the exact DMG. All application, registry, npm, database and notification writes were skipped; downloaded digest matches the packaging job |
 | Downloaded DMG digest, mounted app, isolated launch and updater | Digest and mounted artifact passed; installed GUI and updater not run | Strict ad-hoc signing, native inventory, 4,695 current build inputs, packaged configuration, Bot manifest, Cursor resources and the shipped Electron Node-mode updater bridge passed. Isolated installation environment remains required |
-| Windows x64 / ARM64 native safety and installers | Native build and boot refusals passed; release gate failed | Runs 14–18 independently verify both native PE controller/writer sets, both canonical boot refusals, pinned resources and source-built libsql ABI receipts. Supervision fails on both architectures; compiled runtime acceptance is skipped, admission stays false and installers are not run |
+| Windows x64 / ARM64 native safety and installers | Native build and boot refusals passed; release gate failed | Runs 14–19 independently verify both native PE controller/writer sets, both canonical boot refusals, pinned resources and source-built libsql ABI receipts; run 19 is merged `main`. Supervision fails on both architectures; compiled runtime acceptance is skipped, admission stays false and installers are not run |
 
 macOS remains ad-hoc signed. Windows packaging is unsigned. No notarization,
 Authenticode, live provider, or Windows runtime pass is claimed. Verification

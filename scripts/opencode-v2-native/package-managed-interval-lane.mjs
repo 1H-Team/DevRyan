@@ -77,6 +77,13 @@ export function gradeCompiledManagedInterval(arms) {
       'OS identities or short-lived writer sampling gaps make this diagnostic inconclusive.'] };
 }
 
+export function isCompiledIntervalParentCompletion(parsed, directory, rootID, replyIssued) {
+  const event = parsed.envelope;
+  return parsed.kind === 'event' && replyIssued === true && typeof rootID === 'string' && rootID.length > 0
+    && event.type === 'session.execution.succeeded' && event.data?.sessionID === rootID
+    && (parsed.directory === directory || (parsed.directory === null && event.location?.directory === undefined));
+}
+
 /** One actual compiled arm, called only after the existing package catalog gate.
  * readCounts observes the existing client fetch; it must not perform extra reads. */
 export async function runCompiledManagedIntervalArm({ caseID, intervalMs, client, managed, provider,
@@ -133,6 +140,9 @@ export async function runCompiledManagedIntervalArm({ caseID, intervalMs, client
             const block = pending.slice(0, end); pending = pending.slice(end + 2);
             const parsed = client.events.parseBlock(block); if (parsed?.kind !== 'event') continue;
             const event = parsed.envelope;
+            // Native execution terminals omit location; only this arm's exact
+            // parent may settle its wait without a directory.
+            if (isCompiledIntervalParentCompletion(parsed, directory, rootID, parentReplyIssued)) releaseParent();
             if (parsed.directory !== directory && event.location?.directory !== directory) continue;
             assert.ok(++eventCount <= managedIntervalPolicy.maxEvents);
             const data = event.data, at = performance.now();
@@ -141,7 +151,6 @@ export async function runCompiledManagedIntervalArm({ caseID, intervalMs, client
                 sessionID: data?.sessionID, assistantMessageID: data?.assistantMessageID, callID: data?.id, at });
             }
             if (event.type === 'session.tool.called' && data?.sessionID === rootID && data.id === turn.callIDs.waitID) releaseWait();
-            if (event.type === 'session.execution.succeeded' && data?.sessionID === rootID && parentReplyIssued) releaseParent();
             for (const projected of projector.project(event)) {
               managed.getManagedRuntime().processOpenCodeEvent(projected.payload, projected.directory); forwardedHints++;
             }
