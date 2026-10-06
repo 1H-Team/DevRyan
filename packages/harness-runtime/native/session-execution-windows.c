@@ -636,6 +636,23 @@ static int diagnose_descendant(BOOL leaf) {
   HANDLE image = CreateFileW(executable, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, NULL);
   DWORD imageError = image == INVALID_HANDLE_VALUE ? GetLastError() : 0;
   if (image != INVALID_HANDLE_VALUE) CloseHandle(image);
+  DWORD nullErrors[2];
+  for (DWORD i = 0; i < 2; i++) {
+    HANDLE device = CreateFileW(L"NUL", i ? FILE_GENERIC_WRITE | FILE_READ_ATTRIBUTES : FILE_GENERIC_READ,
+      FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+    nullErrors[i] = device == INVALID_HANDLE_VALUE ? GetLastError() : 0;
+    if (device != INVALID_HANDLE_VALUE) CloseHandle(device);
+  }
+  LUID pipeId; checked(AllocateLocallyUniqueId(&pipeId), "diagnostic pipe identity");
+  DWORD pipeErrors[2];
+  for (DWORD i = 0; i < 2; i++) {
+    wchar_t name[192]; swprintf(name, 192, L"\\\\.\\pipe\\%sDevRyan-diagnostic-%lu-%lu-%lu", i ? L"LOCAL\\" : L"",
+      GetCurrentProcessId(), (DWORD)pipeId.HighPart, pipeId.LowPart);
+    HANDLE pipe = CreateNamedPipeW(name, PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
+      PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT, 1, 4096, 4096, 0, NULL);
+    pipeErrors[i] = pipe == INVALID_HANDLE_VALUE ? GetLastError() : 0;
+    if (pipe != INVALID_HANDLE_VALUE) CloseHandle(pipe);
+  }
   STARTUPINFOEXW startup = {0}; startup.StartupInfo.cb = sizeof(startup); startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
   HANDLE handles[3]; DWORD kinds[] = {STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE};
   for (DWORD i = 0; i < 3; i++) checked(DuplicateHandle(GetCurrentProcess(), GetStdHandle(kinds[i]), GetCurrentProcess(),
@@ -661,8 +678,8 @@ static int diagnose_descendant(BOOL leaf) {
   }
   for (DWORD i = 0; i < 3; i++) CloseHandle(handles[i]);
   DeleteProcThreadAttributeList(startup.lpAttributeList); free(startup.lpAttributeList); free(command);
-  printf("{\"protocol\":\"devryan.windows-descendant-startup/1\",\"imageReadError\":%lu,\"created\":%s,\"windowsError\":%lu,\"exitCode\":%lu}\n",
-    imageError, created ? "true" : "false", error, code);
+  printf("{\"protocol\":\"devryan.windows-descendant-startup/1\",\"imageReadError\":%lu,\"nullReadError\":%lu,\"nullWriteError\":%lu,\"generalPipeError\":%lu,\"localPipeError\":%lu,\"created\":%s,\"windowsError\":%lu,\"exitCode\":%lu}\n",
+    imageError, nullErrors[0], nullErrors[1], pipeErrors[0], pipeErrors[1], created ? "true" : "false", error, code);
   return created && !code ? 0 : 125;
 }
 
