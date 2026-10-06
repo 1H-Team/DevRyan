@@ -48,6 +48,152 @@ Complete and verify the isolation policy under a containing host job; do not
 remove the boundary merely to make CI pass. The retained rerun log is
 `.cache/release-2.0.2-recovery/windows-native-token-right-run.log`.
 
+The isolated Windows implementation adds a read-only `--inspect-process PID`
+supervisor operation. It queries creation `FILETIME`, physical liveness and
+containing-job membership from one non-inherited Windows process handle,
+without changing files, security descriptors or admission. Its separate native
+CI check retains stable parent/child identities, actual child exit and invalid
+PID refusals in `host-boundary-evidence.json`. This measures the runner's actual
+job membership before revising the containment design; it does not qualify
+restricted execution or authorize takeover. Shared ownership callers still
+remain conservatively fenced pending integration and the full safety inventory.
+The native APIs are [GetProcessTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes)
+and [IsProcessInJob](https://learn.microsoft.com/en-us/windows/win32/api/jobapi/nf-jobapi-isprocessinjob).
+
+The [identity run](https://github.com/1H-Team/DevRyan/actions/runs/37359682512)
+at `1aff987701f9c8c45d6e443aa602b260fcc57eb8` passed stable native process
+creation/liveness and owned child exit on both architectures. Both actual runners
+report containing-job membership. Full safety and controller/writer builds still
+fail, and execution remains unavailable. A following change binds the native
+supervisor's parent handle to creation before the supervisor, rather than
+accepting a numeric parent PID alone.
+
+The SDK boundary also now inspects file identities and private ACLs from the same
+no-follow handle and creates private directories exclusively while retaining all
+ancestors against write/delete sharing. Existing ACLs are never repaired.
+Separate architecture checks cover inherited ACLs despite `chmod(0700)`, Unicode
+and case paths, hard-link identities, junction refusal and locked files. These
+native checks must pass before shared filesystem owners use that boundary; they
+do not replace the confinement inventory. The underlying APIs are
+[GetFileInformationByHandleEx](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfileinformationbyhandleex),
+[GetSecurityInfo](https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-getsecurityinfo)
+and [CreateDirectoryW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createdirectoryw).
+
+The [filesystem run](https://github.com/1H-Team/DevRyan/actions/runs/37363627676)
+at `6c466e82ae1b063152c28bdfe2bd3d379d24de68` compiled both SDK boundaries and
+passed native parent identity on each architecture. Both filesystem receipts
+remain failed after their private-directory checks: an ordinary Node-created
+file did not satisfy the current-user ownership assertion. GitHub's displayed
+step conclusion is not acceptance when `continue-on-error` applies; inspect
+the retained receipt and final gate outcomes. The next implementation explicitly
+creates private files with current-user ownership and a protected ACL instead of
+accepting an inherited/default owner. It bounds input, flushes the file before
+identity publication, rejects device/stream aliases, refuses replacements, and
+retains an interrupted file for recovery. Fresh native results are required.
+
+The first attempt at `c6840ad04d1592ab16b1b2551f6ac13e2528f25a` was
+[unavailable](https://github.com/1H-Team/DevRyan/actions/runs/37366300612):
+GitHub cancelled both jobs before acquiring a hosted runner. Neither job ran
+any checks or produced native artifacts. The retained annotations are
+`.cache/release-2.0.2-recovery/windows-sdk-ci-3-{x64,arm64}-unavailable.json`.
+The retry acquired both runners and compiled both SDK artifacts. Each passed
+the process/parent identity check and 13 filesystem checks, including private
+file ownership, Unicode/case identity, hard links, and junction refusal. Both
+then failed the exclusive-file-lock refusal: attribute/security-only handles
+can bypass Windows sharing restrictions. The inspection operation now requests
+read access as well, so an exclusive lock must refuse the identity. This needs
+a fresh native run. The retained receipts are under
+`.cache/release-2.0.2-recovery/windows-sdk-ci-3`.
+Full confinement and controller/writer builds still fail; execution remains
+unavailable. The local workflow contract checks both independent boundary
+steps and requires their actual `outcome` in the final gate.
+
+Run `37370143551` at `a8810206` passed all 14 filesystem checks and both
+process/parent identity checks on both architectures. Run `37371384474` at
+`0a8225ae` also passed the new parent-anchored inspection refusal: 15 filesystem
+checks pass on each architecture. Original receipts remain under
+`.cache/release-2.0.2-recovery/windows-sdk-ci-{4,5}`. The latter supervisor
+SHA-256 values are `a8e55bdba2d6f39dae0114b6deae548bf8275b64f8c9b83fbb72dcf7beb945e4`
+(x64) and `74239280e1046628be870b610597a38cf68c5d3f5e9a893c7c30fc7db17b720b`
+(ARM64). Neither run qualifies confinement or controller/writer execution.
+
+The pinned libsql 0.5.29 publication has no Windows ARM64 native package.
+Its [registry metadata](https://registry.npmjs.org/libsql/0.5.29) records source
+commit `55bee86d1c284f1ddf2b9e280e870d2b6cef884a` in `tursodatabase/libsql-js`.
+The Windows job now attempts that exact source with its original Cargo lock
+(`897f93398893ce805b389b482ddf7555b75365a5f48a2e345703f21c1c58d74e`).
+It uses Rust 1.85.1 native host tools, available for both MSVC architectures,
+and verifies compiler/binary PE architecture before executing the existing
+database API in Node and Bun. The upstream toolchain file remains pinned and
+unchanged; the explicit Windows build-tool override adds no application
+dependency and updates no lockfile. Source changes and dependency resolution
+changes refuse the build. `libsql-source-evidence.json` is an asset candidate
+receipt, not runtime acceptance. Native build results are recorded below; the
+controller/writer must still seal and qualify the actual reviewed resource.
+The Windows AST 0.45.3 and Claude 2.1.251 resources now have independent native
+CI qualification. Their original published archive integrity and full binary
+digests are pinned separately for x64 and ARM64. The builder extracts only the
+selected executable, rejects changed/aliased files, verifies PE architecture,
+and executes `--version` with an isolated home/configuration. Original Mac
+hydration and the six-family reviewed source closure stay unchanged. Native
+results are recorded below; these executable candidates supply no admission grant.
+Run `37381203090` built the exact source on x64 and passed the Node and Bun
+database checks. ARM64 preserved the same source bytes but failed CMake's
+Visual Studio generator discovery. The builder now explicitly uses MSVC's
+`NMake Makefiles` generator with the native architecture's `VsDevCmd` tools;
+Run `37383981687` at `a92c85e2` then built the unchanged source natively on
+both architectures with NMake. Both passed the existing database transaction,
+rollback and Unicode checks in Node 22.23.3 and Bun 1.3.14. Independent downloaded
+binary inspection confirms the PE architecture and receipt SHA-256:
+`3ec054ed07b0e8cc756e77a6a52d06ea10b26611527baa869a60610cc189a8b1`
+(x64) and `f9a7564676a8d6b51d0db15628a68d7900783d9b2c424f190ab99365507531de`
+(ARM64). Evidence is retained under
+`.cache/release-2.0.2-recovery/windows-libsql-ci-4`. These are verified database
+asset candidates; both jobs still fail the full safety gate, so neither
+architecture has controller/writer or runtime admission acceptance.
+
+Run `37393296975` at `b655752f` executed the pinned AST and Claude versions on
+both native architectures and repeated the pinned libsql Node/Bun ABI checks.
+Downloaded binary digests, PE identities and all nine required step outcomes
+were independently reviewed in `windows-native-ci-6-review.json`. Process and
+filesystem identity checks also passed, while supervisor acceptance failed,
+the controller/writer build refused its Darwin-only host boundary, and compiled
+runtime acceptance did not run. The feature inventory failed while importing
+legacy Bot service fixtures with a POSIX default path; an independent original
+function reproduction retained `bot_runtime_secret_invalid`. The Windows
+construction guard now lives in its own test module so native qualification
+does not initialize unsupported POSIX service fixtures. This correction and
+the new ARM64 Cursor guard still require a subsequent native CI result.
+Run [37395518850](https://github.com/1H-Team/DevRyan/actions/runs/37395518850)
+at `6c216d8c` repeated the process/parent checks, all 15 filesystem checks,
+pinned AST/Claude version checks, and libsql Node/Bun ABI checks on both actual
+architectures. Downloaded receipts, PE identities, pins and binary digests were
+independently verified in `windows-native-ci-7-review.json`. The supervisor
+source receipt matches the tracked source after Windows checkout CRLF
+conversion; both manifests still explicitly record `acceptance: false`.
+Both jobs remain failed. The feature inventory stops before runtime construction
+because the Cursor fixture's parent directory is absent. The original failure
+and a disposable filesystem reproduction are retained; the fixture correction
+still requires a native rerun. The x64 supervisor log records UI boundary error
+87; the ARM64 log records descendant and inherited-handle failures without that
+complete diagnostic. The Darwin-only controller/writer build still refuses both
+hosts, and compiled runtime acceptance is skipped. Deleted transient fixtures
+provide no durable journal roots. None of these partial passes enables admission.
+
+The [Rust platform contract](https://doc.rust-lang.org/stable/rustc/platform-support/windows-msvc.html)
+supports native MSVC ARM64 host tools; that support does not establish libsql
+compatibility by itself.
+
+The initial source attempt in run `37377148453` failed before compilation on
+both architectures. The x64 stage receipt from `37380055984` independently
+identified checkout line-ending conversion: its `Cargo.toml` digest
+`1095aa076118ca6e5da4379c23a1cfc40dde4201c55beb3896412a5f1e0762c4`
+exactly matches the official pinned bytes converted to CRLF. The source
+checkout now overrides `core.autocrlf=false` for that step alone. A disposable
+actual Git checkout reproduces conversion and verifies the override preserves
+the original bytes with a clean index. The original Cargo/source hash gates
+remain exact; a native build and ABI pass are still required.
+
 `scripts/build-native-runtime.mjs` currently requires Darwin ARM64 and seals
 Darwin PTY, AST, Claude, and supervisor assets. The Windows builder must select
 reviewed inputs by the actual host architecture, emit `.exe` artifacts, and
@@ -125,6 +271,29 @@ history, recovery inspection, and installation available where qualified.
 Core execution remains unavailable until all safety contracts above pass;
 an unsigned installer or successful compile does not enable it.
 
+The persistent-terminal owner now reports a typed unsupported capability on
+Windows and rejects HTTP/WS work before backend imports, filesystem access or
+environment projection. The shared view waits for this capability before
+mounting transport and session owners, and refuses failed or superseded reads.
+Bot capability reads grant neither catalog, execution nor management and never
+retrieve keys or probe Docker; the Electron manager separately refuses before
+construction work. A saved background `service` preference also no longer
+projects an enabled service on Windows; the preference remains preserved.
+That status error was independently reproduced before correction in
+`windows-background-capability-reproduction-1.json`. Existing native speech
+and service-registration refusals have focused Windows checks. The native CI
+jobs run these guards on each actual architecture and require their outcome;
+this does not replace controller, confinement or installer acceptance.
+
+The shared Cursor runtime now exposes an immutable Windows ARM64 refusal and
+empty catalogs, preserving saved configuration and history. Verification,
+warming, title/text helpers and primary prompts refuse before credential or
+admission owners, SDK loads and worker starts. The provider status route does
+not inspect credentials for an unsupported host, action routes retain the
+typed 503 refusal, and the shared authentication view disables setup and shows
+the platform restriction even for a saved key. These checks run on both native
+architectures; Windows x64 retains the existing Cursor declaration behavior.
+
 ## Packaging and updating
 
 Build unsigned, per-user NSIS installers with Windows app ID
@@ -132,6 +301,15 @@ Build unsigned, per-user NSIS installers with Windows app ID
 all protocol/package compatibility identities. Public names are exactly
 `DevRyan-<version>-win-x64.exe` and `DevRyan-<version>-win-arm64.exe`.
 The release asset table in `packages/electron/release-assets.mjs` owns naming.
+
+The isolated implementation now declares the Windows app ID, native AppUserModelID,
+unsigned NSIS target and exact per-architecture installer names. Its fixed GUID is
+`f8140f18-5574-54bc-8df6-bf218619bfba`, the pinned builder's deterministic GUID
+for `dev.devryan.desktop`; do not change it for later upgrades. Installation is
+per-user, cannot request elevation, and does not auto-launch at Finish. The owner
+controls relaunch after update validation. Source configuration is not installer
+qualification: Windows native preparation, resource selection, safety acceptance
+and actual installer/update launches still remain outstanding.
 
 Windows updating shares verified release discovery, architecture selection,
 resumable downloads, SHA-256 verification, disk preflight, and durable intent

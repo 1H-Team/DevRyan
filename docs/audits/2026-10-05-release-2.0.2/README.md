@@ -401,6 +401,24 @@ identities and full SHA-256 values independently match the receipts:
 (ARM64). `windows-libsql-ci-4` retains the artifacts. Both full Windows jobs
 remain failed; these database asset candidates grant no runtime admission.
 
+Windows runs [37393296975](https://github.com/1H-Team/DevRyan/actions/runs/37393296975)
+(`b655752f`) and [37395518850](https://github.com/1H-Team/DevRyan/actions/runs/37395518850)
+(`6c216d8c`) passed the pinned AST 0.45.3 and Claude 2.1.251 PE/version checks,
+pinned libsql Node/Bun ABI checks, process/parent identity checks, and all 15
+filesystem checks on both actual architectures. Independent downloaded receipt,
+PE, pin and binary hash reviews are `windows-native-ci-6-review.json` and
+`windows-native-ci-7-review.json`. All nine final step outcomes were reviewed;
+both full jobs failed supervisor acceptance and the Darwin-only controller/writer
+build, and compiled runtime acceptance was skipped. Run 7's feature inventory
+fails before runtime construction at a missing Cursor fixture parent. The
+original ENOENT is independently reproduced in
+`windows-cursor-fresh-fixture-reproduction-1.json`. The x64 supervisor log records
+UI boundary error 87; ARM64 records descendant/inherited-handle failures but
+lacks that complete diagnostic. Supervisor manifests retain `acceptance: false`.
+Deleted transient fixtures have no retained durable journal roots. Windows
+changes remain isolated on `implementation/windows-port`; macOS candidate
+source and archive identities are unchanged.
+
 Windows run `37366300612` initially had no acquired runners; its retry compiled
 both supervisors and passed both process/parent identity checks. Each retained
 filesystem receipt passed 13 checks and then failed exclusive-file-lock refusal.
@@ -545,7 +563,7 @@ evidence in `.cache/release-2.0.2-recovery`.
 | Burst, six attribution, 21 calibration, conditional 42 paired launches | Not run | Quiet window and frozen grading pending; retain 750 ms |
 | Release dry-run with no external writes and exact asset digests | Write refusal verified; CI qualification failed | Actual Mac native/web builds passed; eight missing signed input-image tags independently reproduced; release/image/npm/database/notification writes did not run; DMG packaging and final digests remain pending |
 | Downloaded DMG digest, mounted app, isolated launch and updater | Not run | Publication requires all preceding mandatory gates |
-| Windows x64 / ARM64 native safety and installers | Partial native checks; release gate failed | Both process/parent identities, 15 filesystem checks and pinned libsql source/Node/Bun ABI candidates pass; confinement and controller/writer builds still fail; installers not run |
+| Windows x64 / ARM64 native safety and installers | Partial native checks; release gate failed | Runs 6/7: process/parent identities, 15 filesystem checks, pinned AST/Claude versions and libsql source/Node/Bun ABI candidates pass on both hosts; supervisor and controller/writer gates fail, feature inventory awaits fixture correction; compiled acceptance skipped and installers not run |
 
 macOS remains ad-hoc signed. Windows packaging is unsigned. No notarization,
 Authenticode, live provider, or Windows runtime pass is claimed. Verification
