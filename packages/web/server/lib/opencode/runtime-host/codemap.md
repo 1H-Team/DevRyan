@@ -298,7 +298,11 @@ relative authority and an empty explicit bundle root refuse before owner access.
 - `native-artifacts.js` verifies every packaged output, the accepted supervisor,
   pinned SDK/Bun identity and real Darwin signatures before launch. Source
   files and installed packages are build inputs, never runtime verification
-  dependencies. `reviewed-windows-git.js` pins the official MinGit archive,
+  dependencies. `reviewed-windows-assets.js` owns the existing architecture-specific
+  AST/Claude pins, PE inspection and exact libsql source/ABI evidence shared by
+  the Windows builders and portable artifact verifier. Windows candidates seal
+  `DevRyan-libsql-source-evidence.json`; resource verification grants no admission.
+  `reviewed-windows-git.js` pins the official MinGit archive,
   architecture, canonical complete inventory digest, file count and fixed entry point, rejects Windows
   path aliases, and checks its exact subtree including DLLs, libexec helpers,
   templates and licenses. `controller-entry.ts` handles boot, offline migration and asset

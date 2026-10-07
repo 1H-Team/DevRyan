@@ -1,6 +1,6 @@
 # Windows port and qualification
 
-Windows follows the macOS 2.0.2 release. Both architectures must build and run
+Windows qualification follows the macOS 2.0.2 release. Both architectures must build and run
 their own artifacts: x64 on `windows-2022`, ARM64 on `windows-11-arm`.
 These are [GitHub hosted runner labels](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 Bun stays at 1.3.14 and dependency versions stay pinned in `bun.lock`.
@@ -20,7 +20,7 @@ storage, lifecycle, UX, skills, prompt, journal, and Bot image work.
 4. Enable core execution only after the compiled safety inventory passes.
 5. Package, exercise installation/update recovery, then qualify both installers.
 
-All installers retain version 2.0.2 and the same frozen source. The manual
+All installers in a release share one version and frozen source. The manual
 `windows-release-append.yml` workflow defaults to a dry run and requires both
 architecture installer gates before appending to the already qualified macOS
 release. It binds original CI runs, packaging receipts, downloaded macOS bytes
@@ -31,6 +31,31 @@ qualification is claimed from source or local macOS tests; the append preflight
 refuses until that actual stage passes on both Windows architectures.
 
 ## Current gaps
+
+### October 7 repair work
+
+The published `v2.0.2` source, `0964e306`, failed native supervisor compilation
+on both architectures in [run 37519621690](https://github.com/1H-Team/DevRyan/actions/runs/37519621690).
+The compiler fix at `89e36f31` separates output-producing Windows API calls
+from short-circuit expressions, retaining `/W4 /WX` and every failure check.
+[Run 37606663566](https://github.com/1H-Team/DevRyan/actions/runs/37606663566)
+compiles both architectures and passes startup and private filesystem probes.
+Its original Node/Bun compatibility matrix and nested-descendant cancellation
+still fail; no runtime or installer qualification is claimed.
+
+The append verifier now recognizes the actual macOS ARM64 matrix job name.
+Installer qualification, release receipts and the exact uploaded installer path
+derive their version from matching root and Electron package manifests. Windows
+asset verification shares the existing reviewed executable/source pins and
+requires sealed libsql source/ABI evidence. Candidate manifests remain
+unqualified and cannot grant execution admission.
+
+Further source fixes need a new common release commit and version. Preserve the
+published `v2.0.2` tag and macOS asset; do not append different-source Windows
+installers to that release. Freeze the next patch only after both native lanes
+and the real installer scenarios qualify.
+
+### Earlier qualification history
 
 `.github/workflows/windows.yml` now defines both native runner jobs. It selects
 the matching Bun, Node and MSVC architectures, installs the frozen lock without
@@ -459,8 +484,8 @@ than repeating seven historical source variants. Their original results remain
 preserved. Complete runtime/input projection and abrupt-death profile recovery
 are still required; no native confinement or startup pass is inferred locally.
 
-All three platforms retain version 2.0.2. Finish engineering before one common
-source freeze, publish the qualified macOS asset first, then append both qualified
+Finish engineering before one common source and version freeze for the next
+release, publish the qualified macOS asset first, then append both qualified
 Windows installers through the existing `desktop` exact asset scope. Preserve
 the frozen tag and macOS digest. Provider sign-ins and non-production Supabase
 are unavailable currently; their mandatory gates stay pending.
@@ -654,7 +679,7 @@ the script does not build or execute an installer in that case.
 
 When those prerequisites pass, the driver builds actual unsigned per-user NSIS
 installers with the existing Electron resources and bundle closure. Both the
-baseline fixture and candidate retain version 2.0.2 and the same source. The
+baseline fixture and candidate retain the package version and the same source. The
 baseline has an explicit fixture metadata field; it is not an earlier shipped
 Windows release. The five cells exercise initial installation plus real app
 window/runtime health, acknowledged update readiness, integrity refusal with
@@ -695,6 +720,6 @@ installer launches. Reuse the macOS evidence table format and record unavailable
 or not-run cells explicitly. Platform signing is unavailable by design; native
 execution checks cannot be marked passed from a macOS simulation.
 
-The Windows release follows macOS 2.0.2 only after both architecture columns
+The Windows release follows its matching macOS publication only after both architecture columns
 pass their mandatory gates. Until those results exist, Windows remains a port
 in qualification.

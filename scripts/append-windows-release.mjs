@@ -3,12 +3,19 @@ import { constants } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { RELEASE_REPOSITORY, releaseAssetName, releaseAssetDownloadUrl } from '../packages/electron/release-assets.mjs';
+import { RELEASE_REPOSITORY, RELEASE_VERSION_PATTERN, releaseAssetName, releaseAssetDownloadUrl } from '../packages/electron/release-assets.mjs';
 import { assertReleaseWritesAllowed } from './release-artifacts.mjs';
 import { verifyReleaseAssets, expectedReleaseDigests } from './verify-release-assets.mjs';
 
 const sha256 = /^[a-f0-9]{64}$/;
 const fail = message => { throw new Error(message); };
+export async function readWindowsReleaseVersion(root = fileURLToPath(new URL('../', import.meta.url))) {
+  const [packageJson, electronPackage] = await Promise.all(['package.json', 'packages/electron/package.json']
+    .map(async name => JSON.parse(await fs.readFile(path.join(root, name), 'utf8'))));
+  if (typeof packageJson.version !== 'string' || !RELEASE_VERSION_PATTERN.test(packageJson.version)
+    || electronPackage.version !== packageJson.version) fail('Matching root and Electron release versions required');
+  return packageJson.version;
+}
 const requiredSteps = ['Verify native host and prepare owned fixtures',
   'Verify unavailable Windows features on this architecture',
   'Verify pinned executable resources on this native architecture',
@@ -50,7 +57,8 @@ export function verifyMacosPublication(run, jobs, source) {
   if (run?.status !== 'completed' || run.conclusion !== 'success' || run.head_sha !== source
     || run.path !== '.github/workflows/release.yml' || run.head_repository?.full_name !== RELEASE_REPOSITORY
     || !['push', 'workflow_dispatch'].includes(run.event)) fail('Frozen macOS publication run required');
-  for (const name of ['build-desktop-electron-macos', 'publish-bot-runtime-images', 'verify-bot-runtime-topology', 'finalize-release']) {
+  for (const name of ['build-desktop-electron-macos (aarch64-apple-darwin, arm64, darwin-aarch64)',
+    'publish-bot-runtime-images', 'verify-bot-runtime-topology', 'finalize-release']) {
     const matches = jobs.filter(job => job.name === name);
     if (matches.length !== 1 || matches[0].conclusion !== 'success') fail('Complete macOS publication required');
   }
@@ -76,12 +84,13 @@ async function readReceipt(file, { maxBytes = 4096, expectedSha256 } = {}) {
 }
 
 export async function appendWindowsRelease({ source, version, directory, environment = process.env, fetchImpl = fetch, verifyOnly = false }) {
-  if (!/^[a-f0-9]{40}$/.test(source ?? '') || version !== '2.0.2'
+  if (!/^[a-f0-9]{40}$/.test(source ?? '') || typeof version !== 'string' || !RELEASE_VERSION_PATTERN.test(version)
     || environment.GITHUB_REPOSITORY !== RELEASE_REPOSITORY || !environment.GITHUB_TOKEN
     || ![undefined, 'false'].includes(environment.RELEASE_BOT_INPUTS_ONLY)
     || !/^[1-9][0-9]*$/.test(environment.WINDOWS_QUALIFICATION_RUN ?? '')
     || !/^[1-9][0-9]*$/.test(environment.MACOS_RELEASE_RUN ?? '')
     || !['true', 'false'].includes(environment.RELEASE_DRY_RUN)) fail('Frozen Windows append identity required');
+  if (version !== await readWindowsReleaseVersion()) fail('Frozen Windows append package version required');
   const api = `https://api.github.com/repos/${RELEASE_REPOSITORY}`;
   const headers = { Authorization: `Bearer ${environment.GITHUB_TOKEN}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
   const json = async suffix => {
@@ -209,7 +218,7 @@ export async function appendWindowsRelease({ source, version, directory, environ
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const verifyOnly = process.argv.length === 3 && process.argv[2] === '--verify-qualification';
   if (!verifyOnly && process.argv.length !== 3) fail('Expected qualified artifact directory or --verify-qualification');
-  const version = JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
+  const version = await readWindowsReleaseVersion();
   console.log(JSON.stringify(await appendWindowsRelease({ source: process.env.FROZEN_SOURCE, version,
     directory: verifyOnly ? null : path.resolve(process.argv[2]), verifyOnly })));
 }

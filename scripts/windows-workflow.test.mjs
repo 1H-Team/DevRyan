@@ -66,6 +66,9 @@ test('Windows qualification builds and executes independent pinned native archit
   assert.doesNotMatch(commands, /npm publish|supabase|gh release|git (?:push|tag)|docker (?:push|login)|checkpoint-export/);
   assert.ok(!job.steps.some(step => /action-gh-release|login-action/.test(step.uses ?? '')));
   const byID = Object.fromEntries(job.steps.filter(step => step.id).map(step => [step.id, step]));
+  assert.equal(byID.host.name, 'Verify native host and prepare owned fixtures');
+  assert.match(byID.host.run, /appendFileSync\(process\.env\.GITHUB_OUTPUT, 'version=' \+ await readWindowsReleaseVersion\(\)/);
+  assert.match(byID.host.run, /node --input-type=module/);
   const startup = job.steps.find(step => step.run?.includes('diagnose-windows-supervisor-startup.mjs'));
   assert.equal(startup.if, "${{ always() && steps.supervisor.outcome == 'success' }}");
   assert.equal(startup['continue-on-error'], true);
@@ -89,7 +92,8 @@ test('Windows qualification builds and executes independent pinned native archit
   const installerUpload = job.steps.find(step => step.with?.name === 'DevRyan-windows-installer-${{ matrix.arch }}');
   assert.match(installerUpload.with.path, /qualification\.json/);
   assert.match(installerUpload.with.path, /evidence\.json/);
-  assert.match(installerUpload.with.path, /DevRyan-2\.0\.2-win-/);
+  assert.ok(installerUpload.with.path.includes('DevRyan-${{ steps.host.outputs.version }}-win-${{ matrix.arch }}.exe'));
+  assert.doesNotMatch(installerUpload.with.path, /\*/);
   assert.doesNotMatch(installerUpload.with.path, /home|private-inputs|build-baseline/);
   assert.match(job.steps.find(step => step.with?.name === 'DevRyan-windows-native-${{ matrix.arch }}').with.path, /!.*installer-qualification\/\*\*/);
   assert.equal(required.env.REVIEWED_EXECUTABLES, '${{ steps.reviewed_executables.outcome }}');

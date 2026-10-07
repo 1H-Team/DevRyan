@@ -11,9 +11,12 @@ import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { createWindowsUpdateOwner, parseWindowsNsisReceipt } from '../packages/electron/windows-update-owner.mjs';
 import { createWindowsNsisInstaller } from '../packages/electron/desktop-updater-windows.mjs';
+import { releaseAssetName } from '../packages/electron/release-assets.mjs';
+import { readWindowsReleaseVersion } from './append-windows-release.mjs';
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const script = fileURLToPath(import.meta.url);
+const version = await readWindowsReleaseVersion(repository);
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const errorEvidence = error => ({ code: error.code ?? error.name ?? 'qualification_failed', message: String(error.message).slice(0, 1200) });
 export const WINDOWS_INSTALLER_SCENARIOS = Object.freeze(['installation', 'update-success', 'update-refusal', 'interruption', 'rollback']);
@@ -191,7 +194,7 @@ async function installationRegistration(target, environment) {
     + `[pscustomobject]@{registry=$entries;shortcuts=@($links|Sort-Object path)}|ConvertTo-Json -Depth 6 -Compress`;
   const value = JSON.parse(await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { env: environment, timeout: 10_000 }));
   assert.ok(Array.isArray(value.registry) && value.registry.length === 1, 'Exact per-user uninstall registration required');
-  assert.equal(value.registry[0].name, 'DevRyan'); assert.equal(value.registry[0].version, '2.0.2');
+  assert.equal(value.registry[0].name, 'DevRyan'); assert.equal(value.registry[0].version, version);
   assert.equal(path.win32.resolve(value.registry[0].location), target);
   assert.ok(Array.isArray(value.shortcuts) && value.shortcuts.length > 0, 'Actual per-user application shortcut required');
   return value;
@@ -251,9 +254,9 @@ async function actualInstallerScenarios({ root, owner, baseline, candidate, arch
       }
       const source = await owner.file(candidate);
       if (id === 'update-refusal') {
-        const installer = createWindowsNsisInstaller({ installedDirectory: target, currentVersion: '2.0.2', cacheDirectory: cache, arch,
+        const installer = createWindowsNsisInstaller({ installedDirectory: target, currentVersion: version, cacheDirectory: cache, arch,
           owner, helperSource, verifyNativeArtifacts: ({ target: installed, arch: architecture }) => verifyInstalled(installed, architecture, owner, nativeIdentity) });
-        await assert.rejects(installer.prepare({ file: candidate, update: { version: '2.0.2', size: source.size, sha256: '0'.repeat(64) } }), { code: 'update_integrity_failed' });
+        await assert.rejects(installer.prepare({ file: candidate, update: { version, size: source.size, sha256: '0'.repeat(64) } }), { code: 'update_integrity_failed' });
         assert.equal(await owner.tree(target), before);
         row.registrationAfter = await installationRegistration(target, env);
         assert.deepEqual(row.registrationAfter, row.registrationBefore);
@@ -395,7 +398,7 @@ async function buildInstallers(root, arch, environment) {
   const requireElectron = createRequire(path.join(electronRoot, 'package.json'));
   const { build, Platform, Arch } = requireElectron('electron-builder');
   const packageJson = JSON.parse(await fs.readFile(path.join(electronRoot, 'package.json'), 'utf8'));
-  assert.equal(packageJson.version, '2.0.2');
+  assert.equal(packageJson.version, version);
   const inputBytes = await fs.readFile(path.join(electronRoot, 'dist-bundle/main.inputs.json'));
   assert.ok(inputBytes.length <= 4 * 1024 ** 2);
   const mainInputs = JSON.parse(inputBytes); assert.equal(mainInputs.bunVersion, '1.3.14'); assert.equal(mainInputs.workingDirectory, repository);
@@ -414,7 +417,7 @@ async function buildInstallers(root, arch, environment) {
     await fs.writeFile(configFile, `module.exports = ${JSON.stringify(config, null, 2)};\n`, { flag: 'wx' });
     buildEvidence.configurations.push({ role, sha256: hash(await fs.readFile(configFile)) });
     await build({ projectDir: electronRoot, targets: Platform.WINDOWS.createTarget('nsis', arch === 'arm64' ? Arch.arm64 : Arch.x64), config: configFile, publish: 'never' });
-    artifacts[role] = path.join(output, `DevRyan-2.0.2-win-${arch}.exe`);
+    artifacts[role] = path.join(output, releaseAssetName(`win-${arch}`, version));
   }
   return { ...artifacts, buildEvidence, helperSource: path.join(electronRoot, 'dist-bundle/desktop-update-install-windows.mjs') };
 }
@@ -430,7 +433,7 @@ export async function qualifyWindowsInstaller(directory) {
   const root = path.join(parent, 'installer-qualification'); await fs.mkdir(root, { recursive: false });
   const source = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repository, encoding: 'utf8' }).trim();
   const bound = await captureInstallerQualificationSource();
-  const evidence = { protocol: 'devryan.windows-installer-evidence/1', source, version: '2.0.2', arch: process.arch,
+  const evidence = { protocol: 'devryan.windows-installer-evidence/1', source, version, arch: process.arch,
     status: 'blocked', acceptance: false, ...bound, prerequisites: [], scenarios: [], installer: null, baseline: null };
   const launcher = path.join(parent, `DevRyan-execution-win32-${process.arch}.exe`);
   let owner, nativeManifest, launcherPin, manifestPin;
@@ -532,10 +535,10 @@ async function updateHost(parameters) {
   assert.ok(Object.values(parameters.nativeIdentity).every(value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)));
   const owner = createWindowsUpdateOwner({ launcher: parameters.launcher });
   const source = await owner.file(parameters.candidate);
-  const installer = createWindowsNsisInstaller({ installedDirectory: parameters.target, currentVersion: '2.0.2', cacheDirectory: parameters.cache,
+  const installer = createWindowsNsisInstaller({ installedDirectory: parameters.target, currentVersion: version, cacheDirectory: parameters.cache,
     arch: parameters.arch, owner, helperSource: parameters.helperSource, executable: path.join(parameters.target, 'DevRyan.exe'),
     verifyNativeArtifacts: ({ target, arch }) => verifyInstalled(target, arch, owner, parameters.nativeIdentity) });
-  const prepared = await installer.prepare({ file: parameters.candidate, update: { version: '2.0.2', size: source.size, sha256: source.token.split(':')[2] } });
+  const prepared = await installer.prepare({ file: parameters.candidate, update: { version, size: source.size, sha256: source.token.split(':')[2] } });
   await installer.launchPrepared(prepared);
   process.stdout.write(JSON.stringify({ status: 'waiting', nonce: prepared.nonce }) + '\n');
   process.stdin.resume(); await new Promise(resolve => process.stdin.once('end', resolve));

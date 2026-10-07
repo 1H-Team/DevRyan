@@ -5,6 +5,7 @@ import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {createRequire} from 'node:module';
 import {rewriteNativeAsset,rewriteUnavailableNativePty,prepareReviewedNativeInputs,reviewedNativeInputPlugin,rewriteSealedNodeRequire} from './native-runtime-assets.mjs';
+import {REVIEWED_WINDOWS_LIBSQL_EVIDENCE} from '../packages/web/server/lib/opencode/runtime-host/reviewed-windows-assets.js';
 import {hydrateWindowsReviewedExecutables} from './build-windows-reviewed-executables.mjs';
 import {hydrateWindowsGit} from './build-windows-git.mjs';
 import {assertWindowsBinaryArchitecture,readWindowsReviewedLibsqlAsset} from './build-windows-reviewed-libsql.mjs';
@@ -30,6 +31,7 @@ const buildSources=await Promise.all(['scripts/build-native-runtime.mjs','script
   'scripts/native-compaction-observation-transform.mjs',
   'scripts/build-session-execution.mjs','scripts/verify-session-execution.mjs',
   'scripts/build-windows-reviewed-executables.mjs','scripts/build-windows-reviewed-libsql.mjs','scripts/build-windows-git.mjs',
+  'packages/web/server/lib/opencode/runtime-host/reviewed-windows-assets.js',
   ...(windowsCandidate?['packages/harness-runtime/native/session-execution-windows.c']:[]),
   'packages/harness-runtime/native/session-execution.c','packages/harness-runtime/native/session-spawn-darwin.c',
   'packages/web/server/lib/opencode/runtime-host/reviewed-package-transforms.js',
@@ -219,6 +221,10 @@ try {
     files.push({role:'asset',path:asset.path,size:bytes.length,sha256:asset.sha256,mode:asset.mode,signing});
   }
   if(windowsCandidate){
+    const libsqlEvidence=await fs.readFile(reviewed.claudeAssets.libsql.evidencePath);
+    if(hash(libsqlEvidence)!==reviewed.claudeAssets.libsql.evidenceSha256)throw new Error('Windows libsql source evidence changed');
+    await fs.writeFile(path.join(stage,REVIEWED_WINDOWS_LIBSQL_EVIDENCE),libsqlEvidence,{flag:'wx'});
+    files.push({role:'asset',path:REVIEWED_WINDOWS_LIBSQL_EVIDENCE,size:libsqlEvidence.length,sha256:hash(libsqlEvidence),mode:0o644,signing:{mode:'unsigned',verified:false}});
     // Keep the entire official MinGit loader/runtime inventory and licenses.
     // Every byte is a manifest asset; no user's installed Git or PATH enters it.
     for(const row of windowsGitResource.files){
