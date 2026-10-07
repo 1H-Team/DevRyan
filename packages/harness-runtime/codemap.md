@@ -110,6 +110,8 @@ API contracts.
 
 - Rejected historical-receipt memoization remains in `lib/session-changes.js`; `lib/bounded-read-pool.js` bounds and shares authenticated host summary reads. `lib/managed-collection-continuation.js` validates the narrow transport-failure collection proof; `provider-recovery.js` persists and reconciles wake identity before dispatch.
 
+- Windows mutation/Revert storage and read-only execution roots require the constructor-owned `WindowsPrivateFileOwner`: create protected directories before acquiring native locks or launching workers; POSIX mode bits never establish Windows privacy. Nested working directories and provider views are native-created, and owner refusals propagate without repairing foreign ACLs.
+
 - `lib/session-execution.js`, `lib/session-execution-owner.js` and `native/` own native confinement, process termination receipts and publication ownership. `lib/session-mutations.js` and `lib/session-revert-coordinator.js` share durable operation decisions with file Undo/Redo. See [Concurrent Revert](../../docs/CONCURRENT_REVERT.md).
 
 - `lib/execution-admission.js`: scoped admission deadlines, cancellable queue waits, preparation checkpoints and sanitized phase diagnostics. Bounded `toolOrigin`, `executionTier` and `fallbackReason` enums identify native/custom execution; preparation timing uses existing `elapsedMs` phase summaries, never tool contents. `withExecutionSummary` journals the same step summary for work that must not gain a deadline (the host's `direct_finish`); `executionStep`/`timedExecutionStep` add timing-only steps (the session-changes queue) that never check cancellation. Durable publication retains ownership through settlement.

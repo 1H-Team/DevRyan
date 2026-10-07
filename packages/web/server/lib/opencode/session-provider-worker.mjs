@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { startReadOnlySessionExecution } from '@openchamber/harness-runtime/lib/session-execution.js';
+import { startReadOnlySessionExecution, verifySessionExecutionLauncher } from '@openchamber/harness-runtime/lib/session-execution.js';
+import { createWindowsPrivateFileOwner } from '@openchamber/harness-runtime/lib/windows-private-files.js';
 import { prepareClaudeTransportEnvironment } from './claude-credential-projection.js';
 
 const input = JSON.parse(process.env.DEVRYAN_PROVIDER_COMMAND || '{}');
@@ -16,7 +17,15 @@ const account = process.env.CLAUDE_CONFIG_DIR || path.join(process.env.HOME || '
 // input.directory is the requesting session directory (resolveSessionWorkingDirectory),
 // so each project keeps separate Claude state.
 const state = path.join(storage, 'state', createHash('sha256').update(JSON.stringify([account, input.directory])).digest('hex'));
-await fs.mkdir(state, { recursive: true, mode: 0o700 });
+const launcher = process.env.DEVRYAN_EXECUTION_LAUNCHER;
+let windowsOwner;
+if (process.platform === 'win32') {
+  if (!await verifySessionExecutionLauncher({ launcher })) throw new Error('mutation_runtime_unsupported');
+  windowsOwner = createWindowsPrivateFileOwner({ launcher });
+  await windowsOwner.ensureDirectory(storage);
+  await windowsOwner.ensureDirectory(path.dirname(state));
+  await windowsOwner.ensureDirectory(state);
+} else await fs.mkdir(state, { recursive: true, mode: 0o700 });
 // The transport keeps its own transcripts. Its sandbox denies keychain lookups,
 // so the account's current access token is projected; the token is never
 // logged or written here, and refresh stays with Meridian on the host.
@@ -24,7 +33,7 @@ const { env, unavailable } = await prepareClaudeTransportEnvironment({ account, 
   env: { ...process.env, CLAUDE_CONFIG_DIR: state, DEVRYAN_EXECUTION_WORKER: '1' } });
 // Claude still starts: its own "Not logged in" keeps the precise auth classification.
 if (unavailable) process.stderr.write(`DevRyan Claude transport sign-in unavailable (${unavailable})\n`);
-const handle = await startReadOnlySessionExecution({ launcher: process.env.DEVRYAN_EXECUTION_LAUNCHER, storage,
+const handle = await startReadOnlySessionExecution({ launcher, storage, windowsOwner,
   auxiliaryDirectory: state, logicalDirectory: input.directory, command: input.command, args: input.args, signal: controller.signal, interactive: true,
   env });
 process.stdin.pipe(handle.child.stdin); handle.child.stdout.pipe(process.stdout); handle.child.stderr.pipe(process.stderr);

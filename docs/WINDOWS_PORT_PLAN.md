@@ -43,6 +43,15 @@ compiles both architectures and passes startup and private filesystem probes.
 Its original Node/Bun compatibility matrix and nested-descendant cancellation
 still fail; no runtime or installer qualification is claimed.
 
+Private ownership of the compatibility fixtures is corrected at `59666d0e`.
+Bounded stderr evidence from [run 37609149036](https://github.com/1H-Team/DevRyan/actions/runs/37609149036)
+at `58d65dc1` shows both hosts creating and settling the direct child, then
+failing before the project script starts: Node 22.23.3 attempts to inspect the
+denied drive root, and Bun 1.3.14 cannot enumerate the working directory's
+ancestors. All sixteen compatibility cases remain unchanged. Changing fixture
+ownership does not resolve these runtime bootstrap requirements, and host-root
+ACLs must not be widened to bypass confinement.
+
 The append verifier now recognizes the actual macOS ARM64 matrix job name.
 Installer qualification, release receipts and the exact uploaded installer path
 derive their version from matching root and Electron package manifests. Windows
