@@ -110,7 +110,7 @@ API contracts.
 
 - Rejected historical-receipt memoization remains in `lib/session-changes.js`; `lib/bounded-read-pool.js` bounds and shares authenticated host summary reads. `lib/managed-collection-continuation.js` validates the narrow transport-failure collection proof; `provider-recovery.js` persists and reconciles wake identity before dispatch.
 
-- Windows mutation/Revert storage and read-only execution roots require the constructor-owned `WindowsPrivateFileOwner`: create protected directories before acquiring native locks or launching workers; POSIX mode bits never establish Windows privacy. Nested working directories and provider views are native-created, and owner refusals propagate without repairing foreign ACLs.
+- Windows mutation/Revert storage and read-only execution roots require the constructor-owned `WindowsPrivateFileOwner`: create protected directories before acquiring native locks or launching workers; POSIX mode bits never establish Windows privacy. Working directories in empty control views and provider views are native-created, and owner refusals propagate without repairing foreign ACLs.
 
 - `lib/session-execution.js`, `lib/session-execution-owner.js` and `native/` own native confinement, process termination receipts and publication ownership. `lib/session-mutations.js` and `lib/session-revert-coordinator.js` share durable operation decisions with file Undo/Redo. See [Concurrent Revert](../../docs/CONCURRENT_REVERT.md).
 

@@ -1248,15 +1248,6 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
     preparations.set(lease.token, work);
     return work;
   };
-  const prepareWorkingDirectory = async (lease, mode) => {
-    if (process.platform !== 'win32') return fs.mkdir(lease.workingDirectory, { recursive: true, ...(mode ? { mode } : {}) });
-    const relative = path.relative(lease.viewDirectory, lease.workingDirectory);
-    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw changeError('invalid_execution_path');
-    let working = lease.viewDirectory;
-    for (const part of relative.split(path.sep).filter(Boolean)) {
-      working = path.join(working, part); await windowsOwner.ensureDirectory(working);
-    }
-  };
   const prepareView = async (lease) => {
     try {
       // Defined only when this preparation created the view: the fast
@@ -1270,7 +1261,14 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
         catch (cause) { if (cause.code !== 'EEXIST') throw cause; await windowsOwner.ensureDirectory(lease.viewDirectory); }
       } else createdView = await fs.mkdir(lease.viewDirectory, { recursive: true, mode: 0o700 });
       if (lease.preparation === 'none') {
-        await prepareWorkingDirectory(lease, 0o700);
+        if (process.platform === 'win32') {
+          const relative = path.relative(lease.viewDirectory, lease.workingDirectory);
+          if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw changeError('invalid_execution_path');
+          let working = lease.viewDirectory;
+          for (const part of relative.split(path.sep).filter(Boolean)) {
+            working = path.join(working, part); await windowsOwner.ensureDirectory(working);
+          }
+        } else await fs.mkdir(lease.workingDirectory, { recursive: true, mode: 0o700 });
         return await locked(lease.directory, async (repo) => {
           const current = await repo.db.get(key('leases', lease.token));
           if (current?.state !== 'preparing') throw changeError('execution_cancelled');
@@ -1374,7 +1372,7 @@ export function createSessionMutationRuntime({ directory: storage, onChange = ()
           await fs.symlink(linked, target, 'dir');
         }
       });
-      await prepareWorkingDirectory(lease);
+      await fs.mkdir(lease.workingDirectory, { recursive: true });
       return await locked(lease.directory, async (current) => {
         if ((await current.db.get(key('leases', lease.token)))?.state === 'cancelled') throw changeError('execution_cancelled');
         const session = await current.db.get(key('sessions', lease.scope.sessionID));
