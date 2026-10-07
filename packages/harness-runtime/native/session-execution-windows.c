@@ -1533,9 +1533,9 @@ static int copy_private_tree(wchar_t **argv) {
   hash_update_tree_internal(destination, NULL, 0, copied, FALSE, &destinationSnapshot);
   if (wcscmp(filtered + 50, copied + 50)) { SetLastError(ERROR_INVALID_DATA); fail("copy filtered content proof"); }
   FILE_ID_INFO left, right;
-  checked(GetFileInformationByHandleEx(sourceParent, FileIdInfo, &left, sizeof(left))
-    && GetFileInformationByHandleEx(destinationParent, FileIdInfo, &right, sizeof(right))
-    && FlushFileBuffers(destinationParent), "copy namespace durability");
+  checked(GetFileInformationByHandleEx(sourceParent, FileIdInfo, &left, sizeof(left)), "copy source parent identity");
+  checked(GetFileInformationByHandleEx(destinationParent, FileIdInfo, &right, sizeof(right)), "copy destination parent identity");
+  checked(FlushFileBuffers(destinationParent), "copy namespace durability");
   printf("{\"protocol\":\"devryan.windows-private-tree-copy/1\",\"sourceToken\":\"%ls\",\"destinationToken\":\"%ls\",\"sourceParentVolume\":\"%016llx\",\"sourceParentFileId\":\"", token, copied, (unsigned long long)left.VolumeSerialNumber);
   for (DWORD i = 0; i < 16; i++) printf("%02x", (unsigned int)left.FileId.Identifier[i]);
   printf("\",\"destinationParentVolume\":\"%016llx\",\"destinationParentFileId\":\"", (unsigned long long)right.VolumeSerialNumber);
@@ -1838,8 +1838,9 @@ static int hold_native_import(wchar_t **argv) {
   BOOL present,defaulted;PACL dacl;checked(GetSecurityDescriptorDacl(jobSecurity,&present,&dacl,&defaulted)&&present,"import default private DACL");
   TOKEN_DEFAULT_DACL defaultDacl={dacl};checked(SetTokenInformation(restricted,TokenDefaultDacl,&defaultDacl,sizeof(defaultDacl)),"import child private creations");
   SECURITY_ATTRIBUTES inherited={sizeof(inherited),NULL,TRUE};HANDLE childHandles[3],hostInput,hostOutput,hostError;
-  checked(CreatePipe(&childHandles[0],&hostInput,&inherited,65536)&&CreatePipe(&hostOutput,&childHandles[1],&inherited,65536)
-    &&CreatePipe(&hostError,&childHandles[2],&inherited,65536),"import three bounded stdio pipes");
+  checked(CreatePipe(&childHandles[0],&hostInput,&inherited,65536),"import bounded stdin pipe");
+  checked(CreatePipe(&hostOutput,&childHandles[1],&inherited,65536),"import bounded stdout pipe");
+  checked(CreatePipe(&hostError,&childHandles[2],&inherited,65536),"import bounded stderr pipe");
   checked(SetHandleInformation(hostInput,HANDLE_FLAG_INHERIT,0)&&SetHandleInformation(hostOutput,HANDLE_FLAG_INHERIT,0)&&SetHandleInformation(hostError,HANDLE_FLAG_INHERIT,0),"import host handle isolation");
   STARTUPINFOEXW startup={0};startup.StartupInfo.cb=sizeof(startup);startup.StartupInfo.dwFlags=STARTF_USESTDHANDLES;
   startup.StartupInfo.hStdInput=childHandles[0];startup.StartupInfo.hStdOutput=childHandles[1];startup.StartupInfo.hStdError=childHandles[2];
@@ -2221,15 +2222,16 @@ static int inspect_update_version(const wchar_t *argument) {
   if (!size || size > 1048576) { SetLastError(ERROR_INVALID_DATA); fail("update executable version bound"); }
   BYTE *bytes = malloc(size); if (!bytes) fail("update executable version allocation");
   VS_FIXEDFILEINFO *version; UINT length;
-  checked(GetFileVersionInfoW(executable, 0, size, bytes) && VerQueryValueW(bytes, L"\\", (void **)&version, &length)
+  checked(GetFileVersionInfoW(executable, 0, size, bytes), "update executable version bytes");
+  checked(VerQueryValueW(bytes, L"\\", (void **)&version, &length)
     && length == sizeof(*version) && version->dwSignature == 0xfeef04bd, "update executable version");
   IMAGE_DOS_HEADER dos; DWORD read; LARGE_INTEGER offset;
   checked(ReadFile(file, &dos, sizeof(dos), &read, NULL) && read == sizeof(dos) && dos.e_magic == IMAGE_DOS_SIGNATURE
     && dos.e_lfanew > 0 && dos.e_lfanew < 1048576, "update executable DOS header");
   offset.QuadPart = dos.e_lfanew; DWORD signature; IMAGE_FILE_HEADER header;
   checked(SetFilePointerEx(file, offset, NULL, FILE_BEGIN) && ReadFile(file, &signature, sizeof(signature), &read, NULL)
-    && read == sizeof(signature) && signature == IMAGE_NT_SIGNATURE && ReadFile(file, &header, sizeof(header), &read, NULL)
-    && read == sizeof(header), "update executable PE architecture");
+    && read == sizeof(signature) && signature == IMAGE_NT_SIGNATURE, "update executable PE signature");
+  checked(ReadFile(file, &header, sizeof(header), &read, NULL) && read == sizeof(header), "update executable PE architecture");
   const char *arch = header.Machine == IMAGE_FILE_MACHINE_AMD64 ? "x64" : header.Machine == IMAGE_FILE_MACHINE_ARM64 ? "arm64" : "unsupported";
   printf("{\"protocol\":\"devryan.windows-update-version/1\",\"version\":\"%u.%u.%u\",\"arch\":\"%s\"}\n",
     (unsigned int)HIWORD(version->dwProductVersionMS), (unsigned int)LOWORD(version->dwProductVersionMS), (unsigned int)HIWORD(version->dwProductVersionLS), arch);
