@@ -114,6 +114,12 @@ test('dry-run guards every external writer and verifies staged digests without c
   }
 });
 
+test('docs source automation preserves the exact Windows preview asset inventory', () => {
+  const workflow = YAML.parse(fs.readFileSync(new URL('../.github/workflows/docs-source.yml', import.meta.url), 'utf8'));
+  assert.equal(workflow.jobs['validate-and-package'].if,
+    "${{ !contains(github.event.release.tag_name || inputs.release_tag || '', '-windows-preview.') }}");
+});
+
 test('Bot input preparation excludes automatic releases and every application publication owner', () => {
   const workflow = YAML.parse(fs.readFileSync(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8'));
   assert.deepEqual(workflow.on.push.tags, ['v*', '!v*-bot-inputs-*', '!v*-windows-preview.*']);

@@ -242,6 +242,8 @@ stable version parsing, native acceptance or published `v2.0.2`.
 
 Windows preview tags are excluded from the stable release workflow; its version
 parser and production acceptance checks remain unchanged.
+Docs-source automation also excludes preview tags, including manual tag inputs,
+so it cannot append an archive or dispatch website docs sync for this lane.
 
 The initial prerelease is `v2.0.3-windows-preview.1`; its exact public inventory is
 `DevRyan-2.0.3-windows-preview.1-win-x64.exe` and
