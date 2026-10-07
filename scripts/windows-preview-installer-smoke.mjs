@@ -14,7 +14,10 @@ export async function readPreviewSigning(file, execute = exec) {
   const script = "$ErrorActionPreference='Stop'; $s=Get-AuthenticodeSignature -LiteralPath $env:DEVRYAN_SIGNING_TARGET; $thumbprint=$null; if($s.SignerCertificate){$thumbprint=$s.SignerCertificate.Thumbprint}; @{status=$s.Status.ToString();thumbprint=$thumbprint} | ConvertTo-Json -Compress";
   let output;
   try {
-    output = await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script],
+    // The native workflow runs in PowerShell 7. Reuse that host: spawning
+    // Windows PowerShell 5 from its inherited module environment can select
+    // incompatible Microsoft.PowerShell.Security modules before verification.
+    output = await execute('pwsh.exe', ['-NoProfile', '-NonInteractive', '-Command', script],
       { env: { ...process.env, DEVRYAN_SIGNING_TARGET: file }, timeout: 30_000, maxBuffer: 4096, windowsHide: true });
   } catch (cause) {
     const error = new Error('windows_preview_signing_probe_failed');

@@ -102,7 +102,8 @@ test('preview workflow runs architecture-native packaging and installer checks b
 
 test('signing probe records bounded command-only diagnostics and still rejects invalid signatures', async () => {
   const file = '/fixture/DevRyan-preview.exe';
-  const read = value => readPreviewSigning(file, async (_, args, options) => {
+  const read = value => readPreviewSigning(file, async (command, args, options) => {
+    assert.equal(command, 'pwsh.exe');
     assert.equal(options.env.DEVRYAN_SIGNING_TARGET, file);
     assert.equal(options.timeout, 30000);
     assert.ok(args.includes('-NonInteractive'));
