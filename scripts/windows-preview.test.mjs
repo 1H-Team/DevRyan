@@ -8,7 +8,7 @@ import { parseWindowsPreviewVersion, windowsPreviewAssetName, verifyWindowsPrevi
   verifyWindowsPreviewEvidence, sha256File } from './windows-preview-release.mjs';
 import { assertPreviewPeArchitecture, stageWindowsPreviewOpencode, WINDOWS_PREVIEW_OPENCODE_PINS } from './windows-preview-opencode.mjs';
 import { windowsPreviewBuilderConfig, windowsPreviewPackagingEnvironment } from './package-windows-preview.mjs';
-import { readPreviewSigning, waitForPreviewExecutable } from './windows-preview-installer-smoke.mjs';
+import { readPreviewSigning, waitForPreviewExecutable, waitForPreviewRemoval } from './windows-preview-installer-smoke.mjs';
 import { WINDOWS_PREVIEW_VERSION, WINDOWS_PREVIEW_GUID } from '../packages/electron/windows-preview.mjs';
 
 test('preview release version and exact two branded assets are distinct from stable', () => {
@@ -160,4 +160,24 @@ test('installer completion waits for the exact executable and refuses missing or
     await fs.mkdir(path.join(directory, 'invalid.exe'));
     await assert.rejects(waitForPreviewExecutable(path.join(directory, 'invalid.exe')), /windows_preview_installed_executable_invalid/);
   } finally { await fs.rm(directory, { recursive: true, force: true }); }
+});
+
+test('uninstall waits through delete-pending access errors and accepts only verified absence', async () => {
+  const executable = '/fixture/DevRyan Windows Preview.exe';
+  const states = ['EPERM', 'EACCES', 'present', 'ENOENT'];
+  await waitForPreviewRemoval(executable, { timeout: 1000, pollInterval: 1, inspect: async file => {
+    assert.equal(file, executable);
+    const state = states.shift();
+    if (state !== 'present') throw Object.assign(new Error('fixture'), { code: state });
+    return {};
+  } });
+  assert.deepEqual(states, []);
+  await assert.rejects(waitForPreviewRemoval(executable, { timeout: 20, pollInterval: 5,
+    inspect: async () => { throw Object.assign(new Error('fixture'), { code: 'EPERM' }); } }),
+    error => error.message === 'windows_preview_uninstall_failed' && error.code === 'EPERM');
+  await assert.rejects(waitForPreviewRemoval(executable, { timeout: 20, pollInterval: 5, inspect: async () => ({}) }),
+    /windows_preview_uninstall_failed/);
+  await assert.rejects(waitForPreviewRemoval(executable, { inspect: async () => {
+    throw Object.assign(new Error('fixture IO failure'), { code: 'EIO' });
+  } }), error => error.code === 'EIO');
 });

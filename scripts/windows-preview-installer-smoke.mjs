@@ -22,6 +22,26 @@ export async function waitForPreviewExecutable(executable, { timeout = 60_000, p
     await sleep(Math.min(pollInterval, Math.max(1, deadline - Date.now())));
   }
 }
+export async function waitForPreviewRemoval(executable, { timeout = 60_000, pollInterval = 250, inspect = fs.lstat } = {}) {
+  const deadline = Date.now() + timeout;
+  let permissionError;
+  while (true) {
+    try { await inspect(executable); permissionError = undefined; }
+    catch (error) {
+      if (error.code === 'ENOENT') return;
+      // Windows can deny access to an image pending deletion. This is not
+      // evidence of removal: continue until ENOENT or the original deadline.
+      if (!['EPERM', 'EACCES'].includes(error.code)) throw error;
+      permissionError = error;
+    }
+    if (Date.now() >= deadline) {
+      const error = new Error('windows_preview_uninstall_failed');
+      if (permissionError) error.code = permissionError.code;
+      throw error;
+    }
+    await sleep(Math.min(pollInterval, Math.max(1, deadline - Date.now())));
+  }
+}
 async function previewDirectoryInventory(directory) {
   try {
     const entries = await fs.readdir(directory, { withFileTypes: true });
@@ -135,15 +155,13 @@ export async function qualifyWindowsPreviewInstaller({ arch, sourceSha }) {
   finally {
     const uninstaller = path.join(installed, 'Uninstall ' + WINDOWS_PREVIEW_NAME + '.exe');
     installedApp ||= await fs.stat(uninstaller).then(stat => stat.isFile(), () => false);
+    let uninstallStage = 'uninstaller-execution';
     if (installedApp) try {
       await exec(uninstaller, ['/S'], { timeout: 120_000, windowsHide: true, maxBuffer: 4096 });
-      const deadline = Date.now() + 60_000;
-      while (Date.now() < deadline) {
-        try { await fs.access(executable); } catch (error) { if (error.code === 'ENOENT') { report.uninstall = 'passed'; break; } throw error; }
-        await sleep(250);
-      }
-      if (report.uninstall !== 'passed') throw new Error('windows_preview_uninstall_failed');
-    } catch (error) { failure ||= error; report.failedStage ||= 'uninstall'; }
+      uninstallStage = 'installed-executable-removal';
+      await waitForPreviewRemoval(executable);
+      report.uninstall = 'passed';
+    } catch (error) { failure ||= error; report.failedStage ||= 'uninstall'; report.uninstallFailureStage = uninstallStage; }
   }
   report.status = failure ? 'failed' : 'passed';
   if (failure) report.errorCode = /^windows_preview_[a-z_]+$/.test(failure.message || '') ? failure.message : 'windows_preview_smoke_failed';
@@ -153,7 +171,7 @@ export async function qualifyWindowsPreviewInstaller({ arch, sourceSha }) {
   await fs.writeFile(evidence, JSON.stringify(report, null, 2) + '\n', { flag: 'wx' });
   if (failure) throw new Error(report.errorCode);
   await verifyWindowsPreviewEvidence({ installer, evidence, arch, sourceSha });
-  await fs.rm(fixtureRoot, { recursive: true, force: true });
+  await fs.rm(fixtureRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 250 });
   console.log(JSON.stringify({ status: report.status, arch, installer: report.installer.name, signing: report.installer.signing.status }));
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
