@@ -5,6 +5,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { inspectMutationFile } from './session-mutation-files.js';
 import { openChangeStore } from './session-changes-store.js';
+import * as windowsNative from './windows-private-files.js';
 import { markObjectDirectoryPending, markObjectIfUnsynced, syncPendingObjectDirectory } from './object-durability.js';
 
 const roots = [];
@@ -111,4 +112,67 @@ test('an existing object linked since the last sync began is synced before a com
     await syncPendingObjectDirectory(root);
     expect(syncs.events).toEqual(['sync-start', 'sync-end']);
   } finally { syncs.restore(); }
+});
+
+const namespaceReceipt = { protocol: 'devryan.windows-namespace-durability/1', volume: 'a'.repeat(16), fileId: 'b'.repeat(32),
+  directoryFlushed: true, windowsError: 0, publicationQualified: false };
+
+test('Windows objects refuse missing native authority without losing the pending flush', async () => {
+  const root = await objectRoot(), objects = path.join(root, 'objects');
+  const native = spyOn(windowsNative, 'inspectWindowsNamespaceDurability').mockResolvedValue(namespaceReceipt);
+  const open = spyOn(fs, 'open'), descriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+  try {
+    Object.defineProperty(process, 'platform', { ...descriptor, value: 'win32' });
+    markObjectDirectoryPending(objects);
+    await expect(syncPendingObjectDirectory(root)).rejects.toMatchObject({ code: 'private_windows_namespace_authority_unavailable' });
+    expect(native).not.toHaveBeenCalled(); expect(open).not.toHaveBeenCalled();
+    await syncPendingObjectDirectory(root, { windowsLauncher: 'fixture-launcher' });
+    expect(native).toHaveBeenCalledWith('fixture-launcher', path.join(objects, 'object-durability'));
+    expect(await fs.readdir(objects)).toEqual([]);
+    await syncPendingObjectDirectory(root, { windowsLauncher: 'fixture-launcher' });
+    expect(native).toHaveBeenCalledTimes(1); expect(open).not.toHaveBeenCalled();
+  } finally { Object.defineProperty(process, 'platform', descriptor); native.mockRestore(); open.mockRestore(); }
+});
+
+test('Windows native refusal and failed directory flush remain pending until an awaited successful retry', async () => {
+  const root = await objectRoot(), objects = path.join(root, 'objects');
+  const refusal = Object.assign(new Error('native parent refused'), { code: 'private_windows_file_unverified' });
+  const native = spyOn(windowsNative, 'inspectWindowsNamespaceDurability').mockRejectedValueOnce(refusal)
+    .mockResolvedValueOnce({ ...namespaceReceipt, directoryFlushed: false, windowsError: 5 });
+  const descriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+  try {
+    Object.defineProperty(process, 'platform', { ...descriptor, value: 'win32' });
+    const options = { windowsLauncher: 'fixture-launcher' };
+    markObjectDirectoryPending(objects);
+    await expect(syncPendingObjectDirectory(root, options)).rejects.toBe(refusal);
+    await expect(syncPendingObjectDirectory(root, options)).rejects.toMatchObject({ code: 'private_windows_namespace_durability_unavailable' });
+    let release, done = false;
+    native.mockImplementationOnce(() => new Promise(resolve => { release = () => resolve(namespaceReceipt); }));
+    const first = syncPendingObjectDirectory(root, options).then(() => { done = true; });
+    const second = syncPendingObjectDirectory(root, options);
+    await tick(); expect(done).toBe(false); expect(native).toHaveBeenCalledTimes(3);
+    release(); await Promise.all([first, second]); expect(done).toBe(true);
+    await syncPendingObjectDirectory(root, options); expect(native).toHaveBeenCalledTimes(3);
+  } finally { Object.defineProperty(process, 'platform', descriptor); native.mockRestore(); }
+});
+
+test('Windows ledger publication waits for the native objects flush before updating its metadata ref', async () => {
+  const f = await fixture();
+  await fs.writeFile(path.join(f.project, 'new.txt'), 'new bytes'); await inspectMutationFile(f.repo, 'new.txt');
+  let release;
+  const native = spyOn(windowsNative, 'inspectWindowsNamespaceDurability')
+    .mockImplementation(() => new Promise(resolve => { release = () => resolve(namespaceReceipt); }));
+  const descriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+  try {
+    const db = await openChangeStore(f.repo.root, f.gitDir, {
+      syncObjects: root => syncPendingObjectDirectory(root, { windowsLauncher: 'fixture-launcher' }),
+    });
+    db.set('meta.json', { sequence: 1 });
+    Object.defineProperty(process, 'platform', { ...descriptor, value: 'win32' });
+    const commit = db.commit(); await tick(); expect(db.exists).toBe(false);
+    expect((await openChangeStore(f.repo.root, f.gitDir)).exists).toBe(false);
+    release(); await commit;
+    expect(await (await openChangeStore(f.repo.root, f.gitDir)).get('meta.json')).toEqual({ sequence: 1 });
+    expect(native).toHaveBeenCalledWith('fixture-launcher', path.join(f.repo.root, 'objects', 'object-durability'));
+  } finally { Object.defineProperty(process, 'platform', descriptor); native.mockRestore(); }
 });
